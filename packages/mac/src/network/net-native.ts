@@ -14,15 +14,11 @@ const STATUS: Record<string, PresenceState> = { 'status-online': 'online', 'stat
 
 /** A menu item about friends or your status; false if it's someone else's. */
 export function runNetworkMenuItem(id: string, client: SocketClient): boolean {
-  const net = client.store.getState().network;
-  const off = (): true => {
-    client.store.dispatch({ type: 'toast', text: 'Turn on talking with friends first (Settings › People & access)', level: 'info' });
-    return true;
-  };
-  if (id === 'add-friend') return net.enabled ? (openNet({ kind: 'add_friend' }), true) : off();
-  if (id === 'new-group') return net.enabled ? (openNet({ kind: 'new_group' }), true) : off();
-  if (id === 'status-set') return net.enabled ? (openNet({ kind: 'status' }), true) : off();
-  const note = net.self?.presence.note;
+  // While the network is off, these sheets open as a Turn On sheet first (see NetworkSheets).
+  if (id === 'add-friend') return openNet({ kind: 'add_friend' }), true;
+  if (id === 'new-group') return openNet({ kind: 'new_group' }), true;
+  if (id === 'status-set') return openNet({ kind: 'status' }), true;
+  const note = client.store.getState().network.self?.presence.note;
   const set = (state: PresenceState, duration?: 'hour' | 'tomorrow'): true => {
     void client.api.network['presence.set'](presenceFor(state, { ...(note ? { note } : {}), ...(duration ? { duration } : {}) }));
     return true;

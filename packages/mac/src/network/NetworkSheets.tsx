@@ -8,7 +8,7 @@ import { AddFriendSheet, JoinGroupSheet } from './AddFriendSheet.js';
 import { closeChat } from './ChatTabs.js';
 import { PersonAvatar } from './Avatars.js';
 import { addableFriends, groupId, presenceLine, shownState, sortFriends } from './net-model.js';
-import { closeNet, openNet, useNetSheet } from './net-sheets.js';
+import { type NetSheet, closeNet, openNet, useNetSheet } from './net-sheets.js';
 import { StatusSheet } from './StatusMenu.js';
 import { errorText, openGroup, quietly, useSay, useShownConversation } from './use-net.js';
 import s from './network.module.css';
@@ -277,10 +277,77 @@ function Confirmations() {
   return null;
 }
 
+/** Talking with friends is off: say so and turn it on right here; the sheet that was asked for opens once it's on. */
+function TurnOnSheet({ asked }: { asked: string }) {
+  const { client, ui } = useBeluga();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const turnOn = async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await quietly(client, client.api.network.setEnabled(true));
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet
+      title="Talking with friends is off"
+      subtitle={`Turn it on to ${asked}.`}
+      icon="people"
+      close={closeNet}
+      onReturn={() => void turnOn()}
+      footer={
+        <>
+          <span className={s.chosen}>
+            {error ? (
+              <span style={{ color: 'var(--error)' }}>{error}</span>
+            ) : (
+              <button
+                type="button"
+                className={s.settingsLink}
+                onClick={() => {
+                  closeNet();
+                  ui.patch({ settings: 'people' });
+                }}
+              >
+                Open Settings › People & access
+              </button>
+            )}
+          </span>
+          <Button onClick={closeNet}>Not Now</Button>
+          <Button variant="primary" autoFocus disabled={busy} onClick={() => void turnOn()}>
+            {busy ? 'Turning On…' : 'Turn On'}
+          </Button>
+        </>
+      }
+    >
+      <p className={s.halfText} style={{ margin: '2px 0 4px' }}>
+        Messages, channels and files go straight from Mac to Mac, end-to-end encrypted. No server, no account. You can turn it off again in Settings.
+      </p>
+    </Sheet>
+  );
+}
+
+/** What a sheet needs the network for, said for the Turn On sheet. */
+const NEEDS: Partial<Record<NetSheet['kind'], string>> = {
+  add_friend: 'add a friend',
+  join_group: 'join this channel',
+  new_group: 'start a channel',
+  add_people: 'add people',
+  status: 'set your status',
+};
+
 /** Whichever friends-and-groups sheet is open (the group info is drawn by its header). */
 export function NetworkSheets() {
   const sheet = useNetSheet();
+  const enabled = useApp((st) => st.network.enabled);
   if (!sheet) return null;
+  const asked = NEEDS[sheet.kind];
+  if (!enabled && asked) return <TurnOnSheet asked={asked} />;
   switch (sheet.kind) {
     case 'add_friend':
       return <AddFriendSheet {...(sheet.accept ? { accept: sheet.accept } : {})} />;

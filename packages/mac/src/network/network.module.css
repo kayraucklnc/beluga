@@ -1034,6 +1034,15 @@
   color: var(--text-3);
   font-size: 0.86rem;
 }
+/* The Turn On sheet's quiet way to the setting itself. */
+.settingsLink {
+  color: var(--text-2);
+  font-size: 0.86rem;
+}
+.settingsLink:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
 
 /* ---- chats: tabs, files, Claudes */
 
