@@ -7,8 +7,35 @@
 
 export type MathPiece = { readonly text: string } | { readonly tex: string };
 
-const isSpace = (c: string | undefined): boolean => c === undefined || /\s/.test(c);
+/** Where an inline code span was held out while the prose around it is read (private-use characters). */
+const HOLE = '';
+const HOLE_END = '';
+
+const isSpace =(c: string | undefined): boolean => c === undefined || /\s/.test(c);
 const isDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
+
+/**
+ * Where the inline code span opening at `i` (a backtick) ends, past its closing run, or -1 when the
+ * backticks are words. As CommonMark reads it: a run of n backticks closes only on a run of exactly
+ * n, so "` ```diff `" is one span.
+ */
+function codeSpanEnd(s: string, i: number): number {
+  let n = 0;
+  while (s[i + n] === '`') n++;
+  for (let j = i + n; j < s.length; ) {
+    if (s[j] !== '`') {
+      // A span ends with its paragraph.
+      if (s[j] === '\n' && /^\n[ \t]*(\n|$)/.test(s.slice(j, j + 80))) return -1;
+      j++;
+      continue;
+    }
+    let m = 0;
+    while (s[j + m] === '`') m++;
+    if (m === n) return j + m;
+    j += m;
+  }
+  return -1;
+}
 
 /** Where the inline math that starts at `i` (a lone `$`) ends, or -1 when it's just a dollar. */
 function closing(s: string, i: number): number {
@@ -19,7 +46,7 @@ function closing(s: string, i: number): number {
       j++;
       continue;
     }
-    if (c === '`') return -1;
+    if (c === '`' || c === HOLE) return -1;
     if (c !== '$') continue;
     if (s[j + 1] === '$') return -1;
     if (isSpace(s[j - 1]) || isDigit(s[j + 1])) return -1;
@@ -40,12 +67,12 @@ export function splitInlineMath(line: string): MathPiece[] {
       continue;
     }
     if (c === '`') {
-      const end = line.indexOf('`', i + 1);
-      if (end > i) {
-        text += line.slice(i, end + 1);
-        i = end;
-        continue;
-      }
+      const end = codeSpanEnd(line, i);
+      let run = 1;
+      while (line[i + run] === '`') run++;
+      text += line.slice(i, end > 0 ? end : i + run);
+      i = (end > 0 ? end : i + run) - 1;
+      continue;
     }
     if (c === '$' && line[i + 1] !== '$' && line[i - 1] !== '$') {
       const end = closing(line, i);
@@ -81,10 +108,27 @@ function outsideCode(markdown: string, f: (prose: string) => string): string {
   let prose: string[] = [];
   const flush = (): void => {
     if (!prose.length) return;
-    // Inline code spans stay as written.
+    // Inline code spans stay as written: each is held out as a placeholder, so `f` still sees
+    // whole lines (a line that starts with `$$` really starts with it).
     const joined = prose.join('\n');
-    const parts = joined.split(/(`+[^`]*`+)/);
-    out.push(parts.map((p, i) => (i % 2 ? p : f(p))).join(''));
+    const spans: string[] = [];
+    let masked = '';
+    for (let i = 0; i < joined.length; i++) {
+      if (joined[i] !== '`') {
+        masked += joined[i];
+        continue;
+      }
+      const end = codeSpanEnd(joined, i);
+      if (end < 0) {
+        while (joined[i + 1] === '`') masked += joined[i++];
+        masked += joined[i];
+        continue;
+      }
+      masked += `${HOLE}${spans.length}${HOLE_END}`;
+      spans.push(joined.slice(i, end));
+      i = end - 1;
+    }
+    out.push(f(masked).replace(new RegExp(`${HOLE}(\\d+)${HOLE_END}`, 'g'), (_m, n: string) => spans[Number(n)]!));
     prose = [];
   };
   for (const line of lines) {

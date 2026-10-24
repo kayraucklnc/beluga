@@ -99,6 +99,25 @@ describe('math (BLG-91)', () => {
     expect(prepareMath('```sh\necho $HOME $PATH\n```')).toBe('```sh\necho $HOME $PATH\n```');
   });
 
+  it('leaves dollars in code spans alone, however many backticks they use', () => {
+    // A table that once turned the rest of an answer into one red KaTeX error.
+    const table = [
+      '| Claude writes | Draw it as |',
+      '|---|---|',
+      '| ` ```diff ` blocks | A diff view |',
+      '| ` ```mermaid ` | A graph |',
+      '| ` ```json ` (large) | A JSON explorer |',
+      '| `$…$` / `$$…$$` | Rendered math |',
+      '| Terminal output | A log view |',
+      '',
+      'Screenshots in `.beluga/scratch/` shown inline.',
+    ].join('\n');
+    expect(prepareMath(table)).toBe(table);
+    expect(prepareMath('`` a ` $$ b `` and $x$')).toBe('`` a ` $$ b `` and $x$');
+    expect(splitInlineMath('` ```sh ` then $a$')).toEqual([{ text: '` ```sh ` then ' }, { tex: 'a' }]);
+    expect(splitInlineMath('`` `$x$` ``')).toEqual([{ text: '`` `$x$` ``' }]);
+  });
+
   it('finds display blocks and math fences', () => {
     expect(displayMathAt(['$$', 'a + b', '$$'], 0)).toEqual({ tex: 'a + b', end: 2 });
     expect(displayMathAt(['$$ unclosed', '', 'x'], 0)).toBeUndefined();
