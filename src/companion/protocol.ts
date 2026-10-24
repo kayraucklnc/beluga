@@ -1,0 +1,381 @@
+import { z } from 'zod';
+
+/**
+ * What your phone and your Mac say over the companion link (docs/companion.md). The Mac's side
+ * (src/companion/host.ts) and the phone app (packages/companion) both import this file, so the two
+ * can't disagree within one commit. Runs anywhere: zod only, no Node, no React Native.
+ *
+ * Versions: within a major only additive changes (new topics, fields, needs-you kinds); the phone
+ * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
+ * previous major for a release.
+ */
+export const COMPANION_PROTO = { major: 1, minor: 3 } as const;
+
+/** One frame's biggest payload, and a file piece. */
+export const MAX_COMPANION_FRAME = 1024 * 1024;
+export const COMPANION_PIECE = 192 * 1024;
+/** How often the phone's link pings while open, and how long it stays after the app goes to the background. */
+export const KEEPALIVE_MS = 20_000;
+export const BACKGROUND_GRACE_MS = 15_000;
+/** Views of one topic are sent at most this often. */
+export const VIEW_COALESCE_MS = 500;
+/** Turns a conversation view carries (older ones: companion.older). */
+export const VIEW_TURNS = 40;
+/** Phones one identity may pair. */
+export const MAX_DEVICES = 4;
+/** What the phone may send the Mac (photos, files): this big a file, this many in one message. */
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const MAX_UPLOADS = 10;
+
+const id = z.string().min(1).max(200);
+const text = z.string().max(64_000);
+const ts = z.number().int().min(0);
+
+// ---- topics
+
+/** What a screen shows; the phone subscribes to the ones on screen. */
+export const Topic = z.union([
+  z.literal('home'),
+  z.literal('work'),
+  z.literal('plans'),
+  z.literal('chats'),
+  z.literal('people'),
+  z.string().regex(/^conv:[\w:.-]{1,200}$/),
+  z.string().regex(/^plan:[\w.-]{1,200}$/),
+  z.string().regex(/^chat:[\w:.-]{1,200}$/),
+]);
+export type Topic = z.infer<typeof Topic>;
+
+// ---- what views are made of
+
+/** A file the phone sent the Mac (`put`): named by this ref in `companion.ask` / `companion.post`. */
+export const UploadRef = z.string().regex(/^up:[\w-]{8,64}$/);
+
+/** A file the Mac handed out: fetched by `ref` (resolved and checked on the Mac). */
+export const OutputView = z.object({
+  ref: z.string().regex(/^out:[\w-]{8,64}$/),
+  name: z.string().max(256),
+  kind: z.enum(['image', 'pdf', 'video', 'json', 'markdown', 'text', 'file']),
+  size: z.number().int().min(0).optional(),
+  ts: ts.optional(),
+  /** Who made it: a sub-agent's id, else the conversation's Claude. */
+  by: z.string().max(200).optional(),
+});
+export type OutputView = z.infer<typeof OutputView>;
+
+export const UsageWindowView = z.object({ label: z.string().max(40), pct: z.number().min(0).max(100), resetsAt: ts.optional() });
+/** One agent provider's allowance (Claude Code today; others later). */
+export const UsageView = z.object({ provider: z.string().max(40), plan: z.string().max(40).optional(), windows: z.array(UsageWindowView).max(4), updatedAt: ts });
+export type UsageView = z.infer<typeof UsageView>;
+
+export const Choice = z.object({ label: z.string().max(200), description: z.string().max(1000).optional() });
+
+/**
+ * Something waiting for you. `kind` tells the phone which buttons to draw; one it doesn't know is
+ * drawn as a plain card with "Open on your Mac". `actions` are API calls the phone makes as they are.
+ */
+export const NeedsYou = z.object({
+  id,
+  kind: z.union([z.enum(['approval', 'question', 'request', 'decision', 'confirm']), z.string().max(40)]),
+  title: z.string().max(500),
+  detail: text.optional(),
+  /** Who is asking ("your Claude", "mia's Claude"). */
+  from: z.string().max(100).optional(),
+  /** The conversation it holds up, to open. */
+  topic: Topic.optional(),
+  askedAt: ts.optional(),
+  timeoutMs: z.number().int().min(0).optional(),
+  /** A question's options (pick one, or several). */
+  choices: z.array(Choice).max(12).optional(),
+  multi: z.boolean().optional(),
+  /** Free words are taken too. */
+  freeText: z.boolean().optional(),
+  /** Buttons: what they say and the call they make. `tone` main is the swipe-right one, danger the swipe-left. */
+  actions: z
+    .array(z.object({ label: z.string().max(40), tone: z.enum(['main', 'danger', 'plain']), method: z.string().max(80), args: z.array(z.unknown()).max(8) }))
+    .max(4),
+  /**
+   * How to send an answer of your own (picked options, or words): call `method` with `args`, after
+   * putting the answer at `slot` (a path into args: [1, 'answers', 'Which store?'] is
+   * args[1].answers['Which store?']). Several picks go in as one string joined by `join`
+   * (Claude's questions), or as a list when `list` is set. `text` says whether words are taken,
+   * `picks` whether options are (one, or several with `multi`). No `answer`: only the buttons.
+   */
+  answer: z
+    .object({
+      method: z.string().max(80),
+      args: z.array(z.unknown()).max(8),
+      slot: z.array(z.union([z.number().int().min(0), z.string().max(1000)])).min(1).max(6),
+      join: z.string().max(10).optional(),
+      list: z.boolean().optional(),
+      text: z.boolean(),
+      picks: z.boolean(),
+      /** What the send button says ("Send", "Send back"). */
+      label: z.string().max(40).optional(),
+    })
+    .optional(),
+});
+export type NeedsYou = z.infer<typeof NeedsYou>;
+
+export const SubAgentView = z.object({
+  id,
+  title: z.string().max(300),
+  status: z.enum(['running', 'done', 'failed']),
+  /** Its steps in words, newest last (at most 30). */
+  steps: z.array(z.string().max(300)).max(30),
+  outputs: z.array(OutputView).max(50),
+});
+export type SubAgentView = z.infer<typeof SubAgentView>;
+
+/** Claude's text, with code blocks taken out: each is a `[[code:n]]` marker and one entry in `code`. */
+export const ProseView = z.object({
+  text,
+  code: z.array(z.object({ lang: z.string().max(40).optional(), lines: z.number().int().min(0) })).max(200),
+});
+export type ProseView = z.infer<typeof ProseView>;
+
+export const TurnView = z.object({
+  id,
+  who: z.enum(['you', 'claude', 'friend', 'system']),
+  name: z.string().max(100),
+  prose: ProseView,
+  ts,
+  status: z.enum(['queued', 'working', 'done', 'failed', 'stopped']).optional(),
+  /** What it's doing now, in words ("Running the tests · 137/215"). */
+  step: z.string().max(300).optional(),
+  steps: z.number().int().min(0).optional(),
+  subagents: z.array(SubAgentView).max(40).optional(),
+  outputs: z.array(OutputView).max(50).optional(),
+  endTs: ts.optional(),
+  /**
+   * Your message, steered into Claude's running turn, that Claude hasn't read yet (1.3): it waits
+   * for Claude's next step (Send now: host.steerNow with `request`), or for its step to stop.
+   */
+  steer: z.object({ request: id, waiting: z.enum(['next_step', 'stopping']) }).optional(),
+});
+export type TurnView = z.infer<typeof TurnView>;
+
+export const ConvSummary = z.object({
+  topic: Topic,
+  title: z.string().max(300),
+  project: z.string().max(200).optional(),
+  status: z.enum(['working', 'waiting', 'idle', 'failed']),
+  last: z.string().max(300).optional(),
+  lastAt: ts.optional(),
+  unread: z.number().int().min(0).optional(),
+  needsYou: z.boolean().optional(),
+  /** Running sub-agents, for the dots. */
+  agents: z.number().int().min(0).optional(),
+});
+export type ConvSummary = z.infer<typeof ConvSummary>;
+
+// ---- views, one per topic
+
+export const HomeView = z.object({
+  mac: z.object({ name: z.string().max(100), version: z.string().max(40) }),
+  me: z.object({ name: z.string().max(64), peerId: id }),
+  usage: z.array(UsageView).max(8),
+  needsYou: z.array(NeedsYou).max(50),
+  running: z.array(ConvSummary).max(20),
+  outputs: z.array(OutputView.extend({ topic: Topic.optional() })).max(30),
+  unread: z.object({ work: z.number().int().min(0), chats: z.number().int().min(0) }),
+});
+export type HomeView = z.infer<typeof HomeView>;
+
+export const WorkView = z.object({
+  projects: z.array(z.object({ id, name: z.string().max(200), conversations: z.array(ConvSummary).max(200) })).max(200),
+});
+export type WorkView = z.infer<typeof WorkView>;
+
+export const ConvView = z.object({
+  topic: Topic,
+  title: z.string().max(300),
+  project: z.string().max(200).optional(),
+  turns: z.array(TurnView).max(200),
+  /** Older turns exist (companion.older). */
+  more: z.boolean(),
+  needsYou: z.array(NeedsYou).max(20),
+  /** You may write here (it's yours, or shared with you to work in). */
+  canSend: z.boolean(),
+  working: z.boolean(),
+});
+export type ConvView = z.infer<typeof ConvView>;
+
+export const PlanTaskView = z.object({ id, title: z.string().max(300), state: z.string().max(40), mine: z.boolean().optional(), topic: Topic.optional() });
+export const PlanView = z.object({
+  id,
+  title: z.string().max(300),
+  goal: z.string().max(4000).optional(),
+  state: z.string().max(40),
+  topic: Topic.optional(),
+  milestones: z.array(z.object({ id, title: z.string().max(300), state: z.string().max(40), criteria: z.array(z.string().max(1000)).max(40), tasks: z.array(PlanTaskView).max(100) })).max(50),
+  needsYou: z.array(NeedsYou).max(20),
+});
+export type PlanView = z.infer<typeof PlanView>;
+export const PlansView = z.object({ plans: z.array(PlanView.pick({ id: true, title: true, state: true, topic: true }).extend({ done: z.number().int(), total: z.number().int() })).max(100) });
+export type PlansView = z.infer<typeof PlansView>;
+
+export const ChatMessageView = z.object({
+  id,
+  from: z.string().max(100),
+  mine: z.boolean(),
+  claude: z.boolean().optional(),
+  text,
+  ts,
+  files: z.array(OutputView).max(20).optional(),
+});
+export type ChatMessageView = z.infer<typeof ChatMessageView>;
+export const ChatsView = z.object({
+  chats: z.array(z.object({ topic: Topic, name: z.string().max(100), kind: z.enum(['dm', 'group']), last: z.string().max(300).optional(), lastAt: ts.optional(), unread: z.number().int().min(0) })).max(600),
+});
+export type ChatsView = z.infer<typeof ChatsView>;
+/** Someone in a chat (you too, `me`): whose Claude a message can ask (companion.post `ask`). Since 1.2. */
+export const ChatMemberView = z.object({ peerId: id, name: z.string().max(64), me: z.boolean().optional() });
+export type ChatMemberView = z.infer<typeof ChatMemberView>;
+export const ChatView = z.object({
+  topic: Topic,
+  name: z.string().max(100),
+  kind: z.enum(['dm', 'group']),
+  messages: z.array(ChatMessageView).max(200),
+  more: z.boolean(),
+  live: z.array(z.string().max(100)).max(20),
+  /** Who's in it, you first (1.2; older Macs leave it out). */
+  members: z.array(ChatMemberView).max(200).optional(),
+});
+export type ChatView = z.infer<typeof ChatView>;
+
+export const PeopleView = z.object({
+  people: z
+    .array(
+      z.object({
+        peerId: id,
+        name: z.string().max(64),
+        presence: z.enum(['online', 'away', 'dnd', 'offline']),
+        note: z.string().max(200).optional(),
+        usage: UsageView.optional(),
+        /** What their Beluga lets your Claude do (their card): "screen", "commands"… */
+        offers: z.array(z.string().max(40)).max(20),
+        chat: Topic.optional(),
+      }),
+    )
+    .max(600),
+});
+export type PeopleView = z.infer<typeof PeopleView>;
+
+// ---- frames
+
+export const PhoneFrame = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('hello'), v: z.object({ major: z.number().int(), minor: z.number().int() }), app: z.string().max(40), platform: z.enum(['android', 'ios']), topics: z.array(Topic).max(16) }),
+  z.object({ t: z.literal('sub'), topics: z.array(Topic).max(16) }),
+  z.object({ t: z.literal('call'), id: z.number().int().min(0), method: z.string().max(80), args: z.array(z.unknown()).max(16) }),
+  z.object({ t: z.literal('get'), id: z.number().int().min(0), ref: OutputView.shape.ref, variant: z.enum(['thumb', 'full', 'text']), off: z.number().int().min(0) }),
+  /**
+   * A piece of a file for the Mac (a photo to attach): pieces of at most COMPANION_PIECE bytes, in
+   * order from 0, the last with `eof`. Each is answered with `result {id}`; the last one's value is
+   * `{ ref }` (an `up:` ref for companion.ask / companion.post). At most MAX_UPLOAD_BYTES a file.
+   */
+  z.object({ t: z.literal('put'), id: z.number().int().min(0), name: z.string().min(1).max(200), mime: z.string().max(100), size: z.number().int().min(0).max(MAX_UPLOAD_BYTES), off: z.number().int().min(0), b64: z.string().max(Math.ceil(COMPANION_PIECE / 3) * 4 + 4), eof: z.boolean() }),
+  z.object({ t: z.literal('push'), platform: z.enum(['fcm', 'apns']), token: z.string().max(4096), relayKey: z.string().max(200) }),
+  /** The app went to the background (the link closes after the grace) or came back. */
+  z.object({ t: z.literal('focus'), on: z.boolean() }),
+  z.object({ t: z.literal('bye') }),
+]);
+export type PhoneFrame = z.infer<typeof PhoneFrame>;
+
+export const MacFrame = z.discriminatedUnion('t', [
+  z.object({
+    t: z.literal('welcome'),
+    v: z.object({ major: z.number().int(), minor: z.number().int() }),
+    /** The oldest phone protocol this Mac still answers. */
+    min: z.object({ major: z.number().int(), minor: z.number().int() }),
+    mac: z.object({ name: z.string().max(100), version: z.string().max(40) }),
+    me: z.object({ name: z.string().max(64), peerId: id }),
+  }),
+  z.object({ t: z.literal('view'), topic: Topic, rev: z.number().int().min(0), data: z.unknown() }),
+  z.object({ t: z.literal('result'), id: z.number().int().min(0), ok: z.boolean(), value: z.unknown().optional(), error: z.string().max(2000).optional() }),
+  z.object({ t: z.literal('chunk'), id: z.number().int().min(0), off: z.number().int().min(0), b64: z.string().max(Math.ceil(COMPANION_PIECE / 3) * 4 + 4), eof: z.boolean(), size: z.number().int().min(0), mime: z.string().max(100) }),
+  z.object({ t: z.literal('nudge'), kind: z.enum(['needsYou', 'done', 'mentions']), title: z.string().max(200), body: z.string().max(1000), topic: Topic.optional() }),
+  z.object({ t: z.literal('bye'), reason: z.string().max(200) }),
+]);
+export type MacFrame = z.infer<typeof MacFrame>;
+
+/** Which view type a topic carries. */
+export function viewSchema(topic: Topic): z.ZodType {
+  if (topic === 'home') return HomeView;
+  if (topic === 'work') return WorkView;
+  if (topic === 'plans') return PlansView;
+  if (topic === 'chats') return ChatsView;
+  if (topic === 'people') return PeopleView;
+  if (topic.startsWith('conv:')) return ConvView;
+  if (topic.startsWith('plan:')) return PlanView;
+  return ChatView;
+}
+
+/** Can this side talk to that one: same major, or the other side still answers ours. */
+export const compatible = (mine: { major: number }, theirs: { major: number }, theirMin: { major: number }): boolean => mine.major === theirs.major || (mine.major < theirs.major && mine.major >= theirMin.major);
+
+const parse = <T>(schema: z.ZodType<T>, raw: string): T | undefined => {
+  try {
+    const r = schema.safeParse(JSON.parse(raw));
+    return r.success ? r.data : undefined;
+  } catch {
+    return undefined;
+  }
+};
+export const parsePhoneFrame = (raw: string): PhoneFrame | undefined => parse(PhoneFrame, raw);
+export const parseMacFrame = (raw: string): MacFrame | undefined => parse(MacFrame, raw);
+
+// ---- pairing (docs/companion.md, "Signing in")
+
+/** What the pairing QR holds: `beluga://device#<22 chars>`; a code is typed as for friends. */
+export const DEVICE_LINK = /^(?:beluga|klaud):\/\/device#([\w-]{22})$/;
+
+export const DeviceCert = z.object({
+  v: z.literal(1),
+  /** Your peer id and identity key (base64 SPKI). */
+  owner: id,
+  ownerKey: z.string().max(200),
+  /** The phone's own Ed25519 key (hex), its Noise link key (hex) and box key (hex X25519). */
+  device: z.string().regex(/^[0-9a-f]{64}$/),
+  link: z.string().regex(/^[0-9a-f]{64}$/),
+  box: z.string().regex(/^[0-9a-f]{64}$/),
+  name: z.string().min(1).max(64),
+  platform: z.enum(['android', 'ios']),
+  issuedAt: ts,
+  /** Your identity's signature over the canonical JSON of the rest ('beluga-device-v1'). */
+  sig: z.string().max(200),
+});
+export type DeviceCert = z.infer<typeof DeviceCert>;
+
+/**
+ * The pairing's messages. `mac` on dev_hello and dev_ok is the sender's proof that it holds the
+ * pairing's secret: keyed BLAKE2b over its role, the Noise handshake hash and the canonical JSON
+ * of the message without `mac` (src/companion/device-crypto.ts `devProof`).
+ */
+export const DevicePair = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('dev_hello'), proto: z.number().int(), mac: z.string().max(100), device: z.string().regex(/^[0-9a-f]{64}$/), box: z.string().regex(/^[0-9a-f]{64}$/), name: z.string().min(1).max(64), platform: z.enum(['android', 'ios']), app: z.string().max(40) }),
+  /** The Mac is showing "Pair this phone?" with the fingerprint; waits for your click. */
+  z.object({ t: z.literal('dev_wait'), fingerprint: z.string().max(40) }),
+  z.object({ t: z.literal('dev_ok'), mac: z.string().max(100), cert: DeviceCert, address: z.string().regex(/^[0-9a-f]{64}$/), macName: z.string().max(100) }),
+  z.object({ t: z.literal('dev_refused'), reason: z.string().max(200) }),
+]);
+export type DevicePair = z.infer<typeof DevicePair>;
+export const parseDevicePair = (raw: string): DevicePair | undefined => parse(DevicePair, raw);
+
+/** The paired phones, as the Mac's screens see them (never keys). */
+export interface DeviceView {
+  readonly id: string;
+  readonly name: string;
+  readonly platform: 'android' | 'ios';
+  readonly app?: string;
+  readonly pairedAt: number;
+  readonly lastSeen?: number;
+  /** Linked right now. */
+  readonly linked: boolean;
+  /** It can be told things while closed (Beluga Push is set up for it). */
+  readonly push: boolean;
+}
+
+export interface CompanionSlice {
+  readonly companion: { readonly devices: readonly DeviceView[]; readonly pairing?: { readonly link: string; readonly code: string; readonly expiresAt: number; readonly waiting?: { readonly name: string; readonly fingerprint: string } } };
+}

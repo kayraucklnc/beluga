@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { LogItem, SubAgent } from '../src/core/store.js';
 import type { StepSummary } from '../src/shared/steps.js';
-import { READS_AFTER_STEP, STEERED_IN } from '../src/shared/claude-notices.js';
+import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR, steeredMessages } from '../src/shared/claude-notices.js';
+import { Store, initialState } from '../src/core/store.js';
 import { inHead, isLiveTurn, withLiveTails, workingPhase } from '../packages/mac/src/chat/live-tail.js';
 
 /** A turn you spoke during goes on below what you said; once it ends it stays where it was drawn (BLG-22). */
@@ -74,6 +75,108 @@ describe('withLiveTails', () => {
   it('two Claudes at work: each live part goes to the end, in order', () => {
     const rows = [turn('mine', 1), chat('hey', 3), turn('bobs', 4, { owner: 'bob' }), chat('more', 5)];
     expect(order(rows)).toEqual(['mine:head', 'hey', 'bobs:head', 'more', 'mine:tail', 'bobs:tail']);
+  });
+});
+
+describe('one working line per Claude, always its last row (BLG-54)', () => {
+  const sub = (id: string, status: SubAgent['status'], kind: SubAgent['kind'] = 'background'): SubAgent => ({ id, title: id, steps: [], status, kind });
+  /** The chat's order, a split turn's parts marked, `*` on the row with the working line. */
+  const drawn = (rows: readonly LogItem[]) => withLiveTails(rows).map((x) => `${x.part ? `${x.row.id}:${x.part.side}` : x.row.id}${x.working ? `*${x.working.id}` : ''}`);
+  const workingLines = (rows: readonly LogItem[]) => withLiveTails(rows).filter((x) => x.working).length;
+
+  it('a running turn its own steered message took over: no working line of its own, drawn as if it ended there', () => {
+    // The screenshot: c (still "Thinking") above your message, then your message's turn d at work.
+    const rows = [chat('ask', 1), turn('c', 2, { between: 'thinking' }), chat('steer', 5), turn('d', 6)];
+    expect(drawn(rows)).toEqual(['ask', 'c:head', 'steer', 'c:tail', 'd*d']);
+    expect(workingLines(rows)).toBe(1);
+  });
+
+  it('what a taken-over turn left running (background jobs, sub-agents) goes to the very bottom, with the one working line', () => {
+    const rows = [chat('ask', 1), turn('c', 2, { text: 'Started the jobs', subagents: [sub('npm run build', 'running'), sub('done one', 'done')] }), chat('also', 5), turn('d', 6)];
+    const shown = withLiveTails(rows);
+    expect(drawn(rows)).toEqual(['ask', 'c:head', 'also', 'c:tail', 'd', 'c:live*d']);
+    // Its running work is drawn there, the rest where it started.
+    expect(shown.find((x) => x.key === 'c:tail')?.subs).toBe('settled');
+    expect(shown.find((x) => x.key === 'c:live')?.subs).toBe('running');
+    // d answered: the working line says what still runs (c's background job), still last.
+    const after = [...rows.slice(0, 3), turn('d', 6, { status: 'done', text: 'ok', endTs: 9 })];
+    expect(drawn(after)).toEqual(['ask', 'c:head', 'also', 'c:tail', 'd', 'c:live*c']);
+    expect(withLiveTails(after).at(-1)?.working?.id).toBe('c');
+  });
+
+  it('taken over by your message’s own turn (its card from the same moment): nothing moves when the interrupted turn ends', () => {
+    const running = [chat('ask', 1), turn('c', 2, { text: 'Interrupted to read your message' }), chat('steer', 5), turn('d', 5)];
+    const ended = [chat('ask', 1), turn('c', 2, { status: 'done', text: 'Interrupted to read your message', endTs: 9 }), chat('steer', 5), turn('d', 5)];
+    expect(drawn(running)).toEqual(['ask', 'c:head', 'steer', 'c:tail', 'd*d']);
+    expect(drawn(ended)).toEqual(['ask', 'c:head', 'steer', 'c:tail', 'd*d']);
+  });
+
+  it('never two working lines for one Claude, however many of its cards still say they run', () => {
+    const rows = [turn('a', 1, { between: 'thinking' }), chat('x', 2), turn('b', 3), chat('y', 4), turn('c', 5, { between: 'writing', text: 'So far' })];
+    expect(workingLines(rows)).toBe(1);
+    expect(withLiveTails(rows).at(-1)?.working?.id).toBe('c');
+  });
+
+  it('a steered message waiting to be read keeps the running turn at work: its live part, with the line, below the message', () => {
+    const rows = [chat('ask', 1), turn('c', 2), chat('steer', 5), turn('s', 5, { status: 'started', text: READS_AFTER_STEP })];
+    expect(drawn(rows)).toEqual(['ask', 'c:head', 'steer', 's', 'c:tail*c']);
+    const stopping = [chat('ask', 1), turn('c', 2), chat('steer', 5), turn('s', 5, { status: 'started', text: STOPPING_FOR })];
+    expect(drawn(stopping)).toEqual(['ask', 'c:head', 'steer', 's', 'c:tail*c']);
+  });
+
+  it('each Claude at work has its own line', () => {
+    const rows = [turn('mine', 1), chat('hey', 3), turn('bobs', 4, { owner: 'bob' }), chat('more', 5)];
+    expect(drawn(rows)).toEqual(['mine:head', 'hey', 'bobs:head', 'more', 'mine:tail*mine', 'bobs:tail*bobs']);
+  });
+
+  it('none when nobody works', () => {
+    expect(workingLines([chat('ask', 1), turn('c', 2, { status: 'done', text: 'ok', endTs: 3 })])).toBe(0);
+  });
+});
+
+describe('a steered message: sent, then read (BLG-54)', () => {
+  const said = (id: string, ts: number, request: string): LogItem => ({ ...(chat(id, ts) as Extract<LogItem, { type: 'chat' }>), request });
+
+  it('waits on the message until Claude reads it; the note card isn’t drawn', () => {
+    const items = [chat('ask', 1), turn('c', 2), said('m', 5, 'r2'), turn('n', 5, { requestId: 'r2', status: 'started', text: READS_AFTER_STEP })];
+    const { waiting, notes } = steeredMessages(items);
+    expect(waiting.get('m')).toEqual({ request: 'r2', waiting: 'next_step' });
+    expect([...notes]).toEqual(['n']);
+    // Its step being stopped for it (Send now, a long step).
+    expect(steeredMessages([items[2]!, turn('n', 5, { requestId: 'r2', status: 'started', text: STOPPING_FOR })]).waiting.get('m')?.waiting).toBe('stopping');
+    // Read mid-turn: nothing waits; the note still isn't drawn.
+    const read = steeredMessages([items[2]!, turn('n', 5, { requestId: 'r2', status: 'done', text: STEERED_IN })]);
+    expect(read.waiting.size).toBe(0);
+    expect([...read.notes]).toEqual(['n']);
+    // Its own turn: nothing waits, and the card is a turn like any other.
+    const own = steeredMessages([items[2]!, turn('n', 5, { requestId: 'r2', status: 'started', text: '' })]);
+    expect(own.waiting.size).toBe(0);
+    expect(own.notes.size).toBe(0);
+  });
+
+  it('sent to steer: not read from the moment it’s drawn, before its card comes', () => {
+    const sent = { ...(said('m', 5, 'r2') as Extract<LogItem, { type: 'chat' }>), steer: true as const };
+    expect(steeredMessages([sent]).waiting.get('m')).toEqual({ request: 'r2', waiting: 'next_step' });
+    // It got a turn of its own at once (no run to steer after all): nothing waits.
+    expect(steeredMessages([sent, turn('n', 5, { requestId: 'r2', status: 'started' })]).waiting.size).toBe(0);
+  });
+
+  it('a message that doesn’t know its request keeps its note card', () => {
+    expect(steeredMessages([chat('m', 5), turn('n', 5, { requestId: 'r2', status: 'started', text: READS_AFTER_STEP })]).notes.size).toBe(0);
+  });
+
+  it('the store: the note goes once its own turn starts, a newer note replaces it, Claude’s words follow', () => {
+    const store = new Store(initialState('room', 'auto'));
+    const ev = (event: 'text' | 'started', text = '') => store.dispatch({ type: 'agent_event', owner: 'me', requestId: 'r2', requester: 'me', event, text, ts: 1, channel: 'ws:1' });
+    const card = () => store.getState().log.find((l) => l.type === 'agent' && l.requestId === 'r2') as Agent;
+    ev('text', READS_AFTER_STEP);
+    expect(card().text).toBe(READS_AFTER_STEP);
+    ev('text', STOPPING_FOR);
+    expect(card().text).toBe(STOPPING_FOR);
+    ev('started');
+    expect(card().text).toBe('');
+    ev('text', 'Looking at the retries');
+    expect(card().text).toBe('Looking at the retries');
   });
 });
 

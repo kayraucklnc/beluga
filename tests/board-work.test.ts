@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
-import { issueForWorkspace } from '../src/core/board/model.js';
+import { isStartable, issueForWorkspace, worktreeDoing } from '../src/core/board/model.js';
 import { boardNote, briefPrompt, describeIssue, describeList } from '../src/core/board/prompt.js';
 import { BoardWork, startPrompt } from '../src/core/board/work.js';
 import { Store, initialState } from '../src/core/store.js';
@@ -122,6 +122,65 @@ describe('starting a task’s worktree', () => {
     expect(asked).toEqual([[startPrompt(now), `ws:${id}`]]);
     expect(asked[0]![0]).toContain('Work on BOB-1: Refund endpoint.');
     expect(asked[0]![0]).toContain('- [ ] Partial refunds');
+  });
+
+  it('Start (BLG-55): a branch from its key and title, In Progress, your Claude on it (even if it was yours), told the whole brief', async () => {
+    const { store, board, work, asked } = setup();
+    const t = board.create(
+      { projectId: 'api', title: 'Refund endpoint', status: 'backlog', assignee: work.me(), brief: { goal: 'Admins refund orders.', acceptance: '- [ ] Partial refunds', context: 'Stripe refunds API.', decisions: '- Refunds go through the queue' } },
+      work.me(),
+    );
+    const id = await work.start(t.key, { claude: true });
+    const w = store.getState().projects.flatMap((p) => p.workspaces).find((x) => x.id === id)!;
+    expect(w).toMatchObject({ projectId: 'api', name: 'bob-1-refund-endpoint' });
+    expect(board.need(t.key)).toMatchObject({ status: 'in_progress', worktrees: [id], branch: 'beluga/bob-1-refund-endpoint', assignee: { kind: 'claude', owner: 'p-me' } });
+    const [prompt, channel] = asked[0]!;
+    expect(channel).toBe(`ws:${id}`);
+    expect(prompt).toContain("You're working on BOB-1");
+    for (const words of ['Admins refund orders.', '- [ ] Partial refunds', 'Stripe refunds API.', '- Refunds go through the queue']) expect(prompt).toContain(words);
+  });
+
+  it('Start keeps a task someone else has as theirs, and without Claude asks nobody', async () => {
+    const { board, work, asked } = setup();
+    const theirs = board.create({ projectId: 'api', title: 'Theirs', assignee: { kind: 'person', id: 'p-ann', name: 'Ann' } }, work.me());
+    await work.start(theirs.key, { claude: true });
+    expect(board.need(theirs.key).assignee).toMatchObject({ kind: 'person', id: 'p-ann' });
+    const bare = board.create({ projectId: 'api', title: 'Bare' }, work.me());
+    await work.start(bare.key);
+    expect(board.need(bare.key)).toMatchObject({ status: 'in_progress' });
+    expect(board.need(bare.key).assignee).toBeUndefined();
+    expect(asked).toHaveLength(1);
+  });
+
+  it('a canceled or archived task isn’t started; one a live worktree carries goes there instead', async () => {
+    const { board, work, open } = setup();
+    const canceled = board.create({ projectId: 'api', title: 'Dropped', status: 'canceled' }, work.me());
+    await expect(work.start(canceled.key)).rejects.toThrow(/canceled: reopen it/);
+    const archived = board.create({ projectId: 'api', title: 'Old', status: 'done' }, work.me());
+    board.archive(archived.key, work.me());
+    board.update(archived.key, { status: 'todo' }, work.me());
+    await expect(work.start(archived.key)).rejects.toThrow(/Archive/);
+    open(ws('w9', 'api', 'buglist'));
+    const carried = board.create({ projectId: 'api', title: 'Fix the badge' }, work.me());
+    work.forRun('ws:w9', 'p-me')!.tools!.update(carried.key, { status: 'in_progress' });
+    expect(board.need(carried.key).carriedBy).toBe('w9');
+    await expect(work.start(carried.key, { claude: true })).rejects.toThrow(/already being worked on in buglist/);
+    expect(board.need(carried.key).worktrees).toEqual([]);
+  });
+});
+
+describe('the worktree doing a task', () => {
+  const live = (ids: string[]) => (id: string) => ids.includes(id);
+  it('is its own while it’s here, else a live one carrying its work', () => {
+    expect(worktreeDoing({ worktrees: ['a', 'b'] }, live(['b']))).toBe('b');
+    expect(worktreeDoing({ worktrees: ['b'], worktreeGone: true }, live(['b']))).toBeUndefined();
+    expect(worktreeDoing({ worktrees: ['b'], carriedBy: 'c' }, live(['c']))).toBe('c');
+    expect(worktreeDoing({ worktrees: [], carriedBy: 'c' }, live([]))).toBeUndefined();
+  });
+  it('Start is for open, unfinished, unarchived tasks', () => {
+    expect(['backlog', 'todo', 'in_progress'].every((status) => isStartable({ status: status as never }))).toBe(true);
+    expect(['in_review', 'in_plan', 'done', 'canceled'].some((status) => isStartable({ status: status as never }))).toBe(false);
+    expect(isStartable({ status: 'todo', archivedAt: 1 })).toBe(false);
   });
 });
 

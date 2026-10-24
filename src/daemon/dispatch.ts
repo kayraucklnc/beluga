@@ -1,0 +1,27 @@
+import { runAsClient } from '../core/client-context.js';
+import type { Session } from '../core/session.js';
+import { isMethod, parseArgs } from '../ipc/api.js';
+import { HANDLERS } from '../ipc/handlers.js';
+
+export type CallOutcome = { readonly ok: true; readonly value?: unknown } | { readonly ok: false; readonly error: string };
+
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * One API call, the way every screen's goes: the method must exist, its arguments are checked
+ * against its zod tuple (api.ts), and its handler runs as that client (so what it asks a screen
+ * to do goes back to that screen). The daemon's socket (server.ts) and the phone's link
+ * (companion/host.ts) both call through here.
+ */
+export async function dispatchCall(session: Session, clientId: string, method: string, raw: readonly unknown[]): Promise<CallOutcome> {
+  if (!isMethod(method)) return { ok: false, error: `Unknown method ${method}` };
+  try {
+    // JSON has no undefined: a left-out argument arrives as null.
+    const args = parseArgs(method, raw.map((v) => (v === null ? undefined : v)));
+    const handler = HANDLERS[method] as (s: Session, ...a: unknown[]) => unknown;
+    const value = await runAsClient(clientId, () => handler(session, ...(args as unknown[])));
+    return { ok: true, ...(value === undefined ? {} : { value }) };
+  } catch (err) {
+    return { ok: false, error: errorText(err) };
+  }
+}

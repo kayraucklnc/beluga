@@ -13,6 +13,7 @@ import { chooseProjectIcon, readProjectIcon, suggestProjects } from '../core/pro
 import type { Args, Method } from './api.js';
 import { NETWORK_HANDLERS } from './network-handlers.js';
 import { STRIPE_HANDLERS } from './stripe-handlers.js';
+import { SUPPORT_HANDLERS } from './support-handlers.js';
 import { CLAUDE_CODE_HANDLERS } from './claude-code-handlers.js';
 import { STEPS_HANDLERS } from './steps-handlers.js';
 import { GATEWAY_HANDLERS } from './gateway-handlers.js';
@@ -21,6 +22,7 @@ import { PLANS_HANDLERS } from './plans-handlers.js';
 import { GIT_HANDLERS } from './git-handlers.js';
 import { VIEWS_HANDLERS } from './views-handlers.js';
 import { FILES_EDIT_HANDLERS } from './files-handlers.js';
+import { COMPANION_HANDLERS } from './companion-handlers.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
@@ -76,6 +78,7 @@ export const HANDLERS = {
   'host.answerApproval': (s, answer, id) => s.answerApproval(answer, id),
   'host.promote': (s, requestId) => s.host.promote(requestId),
   'host.sendNext': (s, requestId) => s.host.sendNext(requestId),
+  'host.steerNow': (s, requestId) => s.host.steerNow(requestId),
   'host.stopRun': (s, channel) => s.host.stopRun(channel),
   'host.cancelQueued': (s, requestId) => s.host.cancelQueued(requestId),
   'host.reorderQueued': (s, requestId, index) => s.host.reorderQueued(requestId, index),
@@ -283,6 +286,7 @@ export const HANDLERS = {
   'local.statFiles': (_s, paths) => paths.map(pathInfo),
   ...NETWORK_HANDLERS,
   ...STRIPE_HANDLERS,
+  ...SUPPORT_HANDLERS,
   ...CLAUDE_CODE_HANDLERS,
   ...STEPS_HANDLERS,
   ...GATEWAY_HANDLERS,
@@ -291,6 +295,7 @@ export const HANDLERS = {
   ...GIT_HANDLERS,
   ...VIEWS_HANDLERS,
   ...FILES_EDIT_HANDLERS,
+  ...COMPANION_HANDLERS,
 } satisfies Handlers;
 
 export type Result<M extends Method> = Awaited<ReturnType<(typeof HANDLERS)[M]>>;

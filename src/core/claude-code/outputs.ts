@@ -53,7 +53,8 @@ export function isArtifact(p: string, cwd?: string): boolean {
   if (!path.isAbsolute(p) || NEVER.test(p)) return false;
   if (isMedia(p)) return true;
   if (!TEXT.test(p)) return false;
-  return !cwd || !inside(cwd, p) || OUTPUT_DIRS.test(p);
+  // Only the folders inside the project count: a project that itself sits in a tmp/ (or coverage/…) folder isn't all output.
+  return !cwd || !inside(cwd, p) || OUTPUT_DIRS.test(p.slice(cwd.length));
 }
 
 /** Where a command's output was sent (a redirect, tee, -o): any picture or text file. */

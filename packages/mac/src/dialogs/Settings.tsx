@@ -14,11 +14,15 @@ import { ContextSettings } from './ContextSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
+import { MaintainerChip } from './SupportSheets.js';
 import s from './settings.module.css';
 import { TerminalSettings } from './TerminalSettings.js';
 import { NetworkSettings } from '../network/NetworkSettings.js';
+import { PhoneSettings } from '../phone/Phone.js';
 import { AccessSettings } from '../gateway/AccessSettings.js';
 import { UpdateAboutRow, UpdateSettingsGroup } from './UpdateSettings.js';
+import { GITHUB_URL, openSupport } from '../lib/support.js';
+import { openExternal } from '../lib/system.js';
 
 const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> = [
   { id: 'general', label: 'General', icon: 'gear' },
@@ -29,6 +33,7 @@ const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> 
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
   { id: 'environment', label: 'Environment', icon: 'lock' },
   { id: 'people', label: 'People & access', icon: 'people' },
+  { id: 'phone', label: 'Phone', icon: 'phone' },
   { id: 'about', label: 'About', icon: 'globe' },
 ];
 
@@ -324,30 +329,54 @@ function People() {
 }
 
 function About() {
-  const { client } = useBeluga();
+  const { client, ui } = useBeluga();
   const home = useApp((st) => st.home);
   const logPath = `${home}/.beluga/logs/daemon.log`;
   return (
-    <Group>
-      <Row label="Beluga for Mac">{APP_VERSION}</Row>
-      <UpdateAboutRow />
-      <Row label="Beluga (the part that runs your room)">{client.daemonVersion}</Row>
-      <Row label="Windows attached" detail="Beluga windows connected to the room right now.">
-        {client.clients}
-      </Row>
-      <Row label="Log" detail="~/.beluga/logs/daemon.log">
-        <Button size="small" onClick={() => void client.api.local.openFolder(logPath)}>
-          Open in Console
-        </Button>
-        <Button size="small" variant="quiet" onClick={() => void revealInFinder(client, logPath)}>
-          Show in Finder
-        </Button>
-      </Row>
-    </Group>
+    <>
+      <Group>
+        <Row label="Beluga for Mac">{APP_VERSION}</Row>
+        <UpdateAboutRow />
+        <Row label="Beluga (the part that runs your room)">{client.daemonVersion}</Row>
+        <Row label="Windows attached" detail="Beluga windows connected to the room right now.">
+          {client.clients}
+        </Row>
+        <Row label="Log" detail="~/.beluga/logs/daemon.log">
+          <Button size="small" onClick={() => void client.api.local.openFolder(logPath)}>
+            Open in Console
+          </Button>
+          <Button size="small" variant="quiet" onClick={() => void revealInFinder(client, logPath)}>
+            Show in Finder
+          </Button>
+        </Row>
+      </Group>
+      <Group title="Support Beluga">
+        <Row label="Beluga is free, and a passion project" detail={
+            <>
+              Built and maintained by <MaintainerChip />. A star helps others find it; a coffee keeps it going.
+            </>
+          }>
+          <Button size="small" icon="star" onClick={() => void openExternal(GITHUB_URL)}>
+            Star on GitHub
+          </Button>
+          <Button
+            size="small"
+            icon="cup"
+            onClick={() => {
+              // The sheet opens where Settings was (Settings sits above sheets).
+              ui.patch({ settings: undefined });
+              openSupport('coffee');
+            }}
+          >
+            Buy a Coffee…
+          </Button>
+        </Row>
+      </Group>
+    </>
   );
 }
 
-const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, environment: EnvironmentSettings, people: People, about: About };
+const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, about: About };
 
 /** Beluga's settings: this window's look on the left panes, Beluga's shared settings on the rest. */
 export function Settings() {

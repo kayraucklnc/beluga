@@ -1,4 +1,4 @@
-import { type CSSProperties, memo, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { cx } from '../ui.js';
 import { type TokenLines, tokenize } from './highlight.js';
 import c from './code.module.css';
@@ -37,7 +37,20 @@ export interface CodeLinesProps {
  * just the code (the numbers are drawn, not text, so Find and copying skip them too).
  */
 export const CodeLines = memo(function CodeLines({ text, lang, numbers = false, wrap = false, className }: CodeLinesProps) {
-  const tokens = useTokens(text, lang);
+  const fresh = useTokens(text, lang);
+  // While a changed text is colored again (a log that grew), the lines it shares with the last
+  // colored one keep their colors, so it doesn't flash plain.
+  const last = useRef<{ lang: string | undefined; text: readonly string[]; lines: TokenLines } | undefined>(undefined);
+  const tokens = useMemo(() => {
+    const plain = text.split('\n');
+    if (fresh) {
+      last.current = { lang, text: plain, lines: fresh };
+      return fresh;
+    }
+    const was = last.current;
+    if (!was || was.lang !== lang) return undefined;
+    return plain.map((content, i) => (was.text[i] === content && was.lines[i] ? was.lines[i] : content ? [{ content }] : []));
+  }, [fresh, text, lang]);
   const lines = useMemo(() => {
     const out = tokens ?? plainLines(text);
     // A file's last line break doesn't make an empty last line.

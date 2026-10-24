@@ -5,6 +5,7 @@ import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
 import { NETWORK_API } from './network-api.js';
 import { STRIPE_API } from './stripe-api.js';
+import { SUPPORT_API } from './support-api.js';
 import { CLAUDE_CODE_API } from './claude-code-api.js';
 import { STEPS_API } from './steps-api.js';
 import { GATEWAY_API } from './gateway-api.js';
@@ -13,6 +14,7 @@ import { PLANS_API } from './plans-api.js';
 import { GIT_API } from './git-api.js';
 import { VIEWS_API } from './views-api.js';
 import { FILES_EDIT_API } from './files-api.js';
+import { COMPANION_API } from './companion-api.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -110,6 +112,8 @@ export const API = {
   'host.promote': args(id),
   // Send a waiting message next, never interrupting (Send Now).
   'host.sendNext': args(id),
+  // Send now a message steered into the running turn that Claude hasn't read yet: its step stops, your message is next (BLG-54).
+  'host.steerNow': args(id),
   // Stop your Claude in one conversation: → { stopped, returned: your queued prompts, in order }.
   'host.stopRun': args(channel),
   'host.cancelQueued': args(id),
@@ -305,6 +309,8 @@ export const API = {
 
   // ---- earnings from Stripe, per project (stripe-api.ts)
   ...STRIPE_API,
+  // ---- supporting Beluga: the star and coffee asks merges bring (support-api.ts)
+  ...SUPPORT_API,
   ...CLAUDE_CODE_API,
   ...STEPS_API,
   ...GATEWAY_API,
@@ -316,6 +322,8 @@ export const API = {
   ...VIEWS_API,
   // ---- your workspace's files: searching their contents, editing, formatting (files-api.ts)
   ...FILES_EDIT_API,
+  // ---- your phone: pairing it, removing it, what it asks for (companion-api.ts)
+  ...COMPANION_API,
 } as const;
 
 export type Api = typeof API;

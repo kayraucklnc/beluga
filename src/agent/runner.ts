@@ -357,7 +357,38 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         if (!sent) settle();
         return sent !== false;
       };
-      input.onSteer?.(Object.assign((followUp: FollowUp) => deliver(followUp, true) !== false, { status, interrupt }) satisfies Steer);
+      /** Messages steered into a running turn, by the prompt id they went in with (see force). */
+      const steered = new WeakMap<FollowUp, string>();
+      const steerIn = (followUp: FollowUp): boolean => {
+        const between = turns.between;
+        const uuid = deliver(followUp, true);
+        if (uuid !== false && !between) steered.set(followUp, uuid);
+        return uuid !== false;
+      };
+      /**
+       * Send now (see Steer.force): the message is in Claude Code's queue already; a plain interrupt
+       * keeps it there (its still_queued), so it runs as the next turn, its own (unless the
+       * interrupted turn's result says it took it in after all).
+       */
+      const force = async (followUp: FollowUp, note: string): Promise<boolean> => {
+        const uuid = steered.get(followUp);
+        if (!uuid || prompts.closed || turns.between || interrupting !== undefined || !turns.unsteer(uuid)) return false;
+        interrupting = note;
+        try {
+          let timer: NodeJS.Timeout | undefined;
+          const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('interrupt timed out')), INTERRUPT_TIMEOUT_MS)));
+          await Promise.race([q.interrupt(), late]).finally(() => clearTimeout(timer));
+        } catch {
+          interrupting = undefined;
+          turns.resteer(uuid);
+          if (turns.between) settle();
+          return false;
+        }
+        // The interrupted turn ended already (its result kept the run open: the message waits).
+        if (turns.between) interrupting = undefined;
+        return true;
+      };
+      input.onSteer?.(Object.assign(steerIn, { status, interrupt, force }) satisfies Steer);
 
       const ends = () => ({ stderr, ...(rejectedUntil !== undefined ? { rejectedUntil } : {}), ...(apiError ? { apiError } : {}) });
       const q = query({ prompt: prompts, options });

@@ -4,7 +4,7 @@ import type { Store } from '../store.js';
 import type { Plan, TaskWatch } from './model.js';
 import type { Plans } from './plans.js';
 import type { PlanView, TaskView } from './progress.js';
-import { READS_AFTER_STEP } from '../../shared/claude-notices.js';
+import { READS_AFTER_STEP, STOPPING_FOR } from '../../shared/claude-notices.js';
 import { hhmm, span } from '../../shared/clock.js';
 import { CONTINUE_PROMPT, CRASH_RETRY_MS, type RunFailure, decodeFailure, failureText, resetWords } from '../../shared/run-failure.js';
 
@@ -91,7 +91,7 @@ export interface WaitingMessage {
 export function messageState(item: { readonly status: string; readonly text?: string; readonly steps?: readonly string[] } | undefined): 'unsent' | 'queued' | 'in_turn' | 'started' | 'read' {
   if (!item) return 'unsent';
   if (item.status === 'queued') return 'queued';
-  if (item.status === 'started' && !item.steps?.length) return item.text === READS_AFTER_STEP ? 'in_turn' : item.text ? 'read' : 'started';
+  if (item.status === 'started' && !item.steps?.length) return item.text === READS_AFTER_STEP || item.text === STOPPING_FOR ? 'in_turn' : item.text ? 'read' : 'started';
   return 'read';
 }
 

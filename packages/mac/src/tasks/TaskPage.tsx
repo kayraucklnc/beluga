@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById, worktreeDoing } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
@@ -221,12 +221,16 @@ function GoneBanner({ issue }: { issue: Issue }) {
 /**
  * The worktree a task has (or had): the last one that did it, even once it's archived or its work
  * finished (BLG-13). `had`: some worktree did it (perhaps since removed): that's where its work is,
- * so the page offers no Start (starting afresh is ⋯ › Start).
+ * so the page offers no Start (starting afresh is ⋯ › Start). A worktree carrying its work (Claude
+ * moved it along there) counts as the one doing it: Open Worktree, not Start.
  */
 function useTaskWorktree(issue: Issue): { readonly ws: Workspace | undefined; readonly live: Workspace | undefined; readonly had: boolean } {
   const last = issue.worktrees.at(-1);
-  const ws = useApp((s) => (last ? findWorkspace(s.projects, last) : undefined));
-  const live = ws && !ws.archived ? ws : undefined;
+  const own = useApp((s) => (last ? findWorkspace(s.projects, last) : undefined));
+  const carrier = useApp((s) => (issue.carriedBy ? findWorkspace(s.projects, issue.carriedBy) : undefined));
+  const doing = worktreeDoing(issue, (id) => (id === own?.id ? !own.archived : id === carrier?.id ? !carrier.archived : false));
+  const live = doing === own?.id ? own : doing === carrier?.id ? carrier : undefined;
+  const ws = live ?? own;
   const had = Boolean(ws) || issue.worktrees.length > 0 || issue.activity.some((a) => a.kind === 'worktree');
   return { ws, live, had };
 }
@@ -278,26 +282,24 @@ function NextStep({ issue }: { issue: Issue }) {
   const { api, act } = useTaskActions();
   const { ws, live, had } = useTaskWorktree(issue);
   const [starting, setStarting] = useState(false);
-  const start = async (claude: boolean): Promise<void> => {
+  // One click: a new worktree named after it, In Progress, your Claude on it with its brief, and you there (BLG-55).
+  const start = async (): Promise<void> => {
     setStarting(true);
-    await act(() => api.start(issue.id, { claude }));
+    await act(() => api.start(issue.id, { claude: true }));
     setStarting(false);
   };
   if (isFinished(issue.status)) return <Outcome issue={issue} ws={ws} live={live} />;
   if (!STATUS_INFO[issue.status].open && !live) return null;
   return (
     <div className={t.nextStep}>
-      {had ? (
+      {had || live ? (
         <WorktreeLinks issue={issue} ws={ws} live={live} />
       ) : (
         <>
-          <Button variant="primary" size="small" icon="claude" disabled={starting} onClick={() => void start(true)}>
-            Start with Claude
+          <Button variant="primary" size="small" icon="play" disabled={starting} onClick={() => void start()}>
+            {starting ? 'Starting…' : 'Start'}
           </Button>
-          <Button size="small" icon="branch" disabled={starting} onClick={() => void start(false)}>
-            Start Worktree
-          </Button>
-          <span className={t.nextInfo}>A new worktree from the latest origin{issue.brief.goal ? ', and Claude reads this brief' : ''}</span>
+          <span className={t.nextInfo}>A new worktree from the latest origin, with Claude working on {issue.key}{issue.brief.goal ? ' from this brief' : ''}</span>
         </>
       )}
       <span className={t.grow} />

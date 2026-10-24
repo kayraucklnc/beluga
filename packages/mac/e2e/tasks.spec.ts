@@ -88,7 +88,7 @@ test('a task merged into its plan looks finished: no Start, what happened instea
   await sheet.getByRole('button', { name: 'Create Task' }).click();
   await expect(sheet).toBeHidden();
   await page.getByRole('row', { name: /Merged already, Ready/ }).click();
-  const start = page.getByRole('button', { name: 'Start with Claude' });
+  const start = page.getByRole('button', { name: 'Start', exact: true });
   await expect(start).toBeVisible();
 
   // Merged into the plan: its outcome, no Start on the page or in its ⋯ menu.
@@ -98,16 +98,38 @@ test('a task merged into its plan looks finished: no Start, what happened instea
   await expect(props).toContainText('Merged into Plan');
   await expect(page.getByTestId('task-outcome')).toContainText('Merged into the plan · ships with the plan’s pull request');
   await expect(start).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Start Worktree' })).toHaveCount(0);
   await page.getByRole('navigation', { name: 'Where this task is' }).getByRole('button', { name: 'More' }).click();
   const menu = page.getByRole('menu');
-  await expect(menu.getByRole('menuitem', { name: /Start with Claude|Start Worktree/ })).toHaveCount(0);
+  await expect(menu.getByRole('menuitem', { name: /^Start/ })).toHaveCount(0);
 
   // ⋯ › Reopen the Task: back to Ready, and Start is back.
   await menu.getByRole('menuitem', { name: /Reopen the Task/ }).click();
   await expect(props).toContainText('Ready');
   await expect(start).toBeVisible();
   await expect(page.getByTestId('task-outcome')).toHaveCount(0);
+});
+
+test('Start on a task: a worktree named after it, Claude told it’s working on it, and you in its chat; back on the task, Open Worktree (BLG-55)', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('button', { name: 'New Task', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Task' });
+  await sheet.getByRole('button', { name: 'Write title and goal myself' }).click();
+  await sheet.getByLabel('Title').fill('Receipt totals');
+  await sheet.getByRole('button', { name: 'Create Task' }).click();
+  await expect(sheet).toBeHidden();
+  await page.getByRole('row', { name: /Receipt totals, Ready/ }).click();
+  const key = (await page.getByRole('navigation', { name: 'Where this task is' }).locator('span').filter({ hasText: /^[A-Z]+-\d+$/ }).first().textContent())!;
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  // In the new worktree's chat, Claude asked to work on it.
+  await expect(page.getByRole('navigation', { name: 'Where this task is' })).toHaveCount(0, { timeout: 15_000 });
+  await expect(main(page)).toContainText(`You're working on ${key}`);
+  await expect(sidebar(page)).toContainText(`${key.toLowerCase()}-receipt-totals`);
+  // The task is In Progress with your Claude on it, and its page goes to the worktree now.
+  await openTasks(page);
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('row', { name: /Receipt totals, In Progress/ }).click();
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open Worktree' })).toBeVisible();
 });
 
 test('a column’s +: describe it, pick a priority, Create; the card lands there and Claude writes its title', async ({ page }) => {

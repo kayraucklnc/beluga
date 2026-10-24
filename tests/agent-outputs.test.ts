@@ -30,6 +30,9 @@ describe('what counts as something an agent made', () => {
     expect(isArtifact(`${CWD}/test-results/run/error-context.md`, CWD)).toBe(true);
     expect(isArtifact(`${CWD}/coverage/summary.txt`, CWD)).toBe(true);
     expect(isArtifact(`${CWD}/.context/screens.json`, CWD)).toBe(true);
+    // Only folders inside the project count: a project kept in a tmp folder isn't all output.
+    expect(isArtifact('/tmp/proj/notes.md', '/tmp/proj')).toBe(false);
+    expect(isArtifact('/tmp/proj/tmp/run.log', '/tmp/proj')).toBe(true);
     // Code is never an output; neither is anything in node_modules or .git.
     expect(isArtifact('/tmp/a.ts', CWD)).toBe(false);
     expect(isArtifact(`${CWD}/node_modules/x/shot.png`, CWD)).toBe(false);

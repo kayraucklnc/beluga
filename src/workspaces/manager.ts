@@ -1,7 +1,7 @@
 import { type MergePreview, mergePreview } from './merge-preview.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { systemOpen } from '../core/os-open.js';
-import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { findProjects, isMainCheckout } from './discovery.js';
@@ -40,6 +40,12 @@ export const real = (p: string): string => {
     return path.resolve(p);
   }
 };
+
+/** Whether git still has `dir` as one of `repo`'s worktrees (when it can't tell, assume it does). */
+async function isWorktreeOf(repo: string, dir: string): Promise<boolean> {
+  const list = await g.listWorktrees(repo).catch(() => undefined);
+  return !list || list.some((w) => real(w.path) === real(dir));
+}
 
 export const projectId = (root: string): string => createHash('sha1').update(real(root)).digest('hex').slice(0, 10);
 const pathId = (p: string): string => `wt-${createHash('sha1').update(real(p)).digest('hex').slice(0, 10)}`;
@@ -858,9 +864,14 @@ export class WorkspaceManager {
       // (its uncommitted work isn't ours to discard) and keep its branch.
       const foreign = ws.external || !real(ws.path).startsWith(real(this.store.workspacesDir) + path.sep);
       if (!ws.archived) await stopTestProcesses(ws.path, { leaving: true }).catch(() => 0);
-      if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, !foreign);
-      // Folder deleted by hand: forget it in git too, or the branch stays "checked out" and the worktree comes back.
-      else if (!ws.archived) await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);
+      if (!ws.archived && existsSync(ws.path) && (await isWorktreeOf(ws.projectRoot, ws.path))) await g.removeWorktree(ws.projectRoot, ws.path, !foreign);
+      else if (!ws.archived) {
+        // Git already let the folder go (an earlier delete stopped halfway): `worktree remove` would only say
+        // "is not a working tree", so take what's left away here. Another tool's folder only when it's empty.
+        if (existsSync(ws.path) && (!foreign || !readdirSync(ws.path).length)) rmSync(ws.path, { recursive: true, force: true });
+        // Folder deleted by hand: forget it in git too, or the branch stays "checked out" and the worktree comes back.
+        await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);
+      }
       if (ws.branch && !foreign) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
     }
     rmSync(this.store.historyFile(id), { force: true });

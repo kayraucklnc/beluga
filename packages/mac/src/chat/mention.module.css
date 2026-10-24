@@ -86,6 +86,63 @@
   box-shadow: 0 0 0 2px var(--bg-press);
 }
 
+.mark[data-kind='task'] {
+  background: color-mix(in srgb, var(--info) 15%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--info) 15%, transparent);
+}
+
+/* The tasks the words name ("@BLG-24"), above the message box: key and a short title. */
+.taskRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px 0;
+}
+
+.taskChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 20em;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.86rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--info) 11%, transparent);
+  cursor: default;
+}
+
+.taskChip:hover {
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+}
+
+.taskChip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.taskChip svg {
+  flex: none;
+}
+
+.taskKey {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--info) 80%, var(--text));
+}
+
+.taskTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
 .mark[data-kind='image'] {
   background: var(--bg-press);
   box-shadow: 0 0 0 2px var(--bg-press);
