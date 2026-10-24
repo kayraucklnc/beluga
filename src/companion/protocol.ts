@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 9 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 10 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -25,9 +25,10 @@ export const COMPANION_PROTO = { major: 1, minor: 9 } as const;
  * Mac (`companion.terminals` / `termOpen` / `termClose`, the `term_*` frames). 1.8: a branch's every
  * step from the phone, as the Mac's toolbar has them (`BranchView.steps`, `companion.branchStep`).
  * 1.9 (BLG-87): more of Claude's blocks drawn (`tree`, `json`, `terminal`, `math` blocks, mermaid as
- * a graph or view) and its math typeset (`ProseView.math`).
+ * a graph or view) and its math typeset (`ProseView.math`). 1.10 (BLG-110): a sub-agent opened on
+ * the phone, its whole activity and the report it gave back (`companion.subAgent`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -72,6 +73,12 @@ export const Topic = z.union([
   z.string().regex(/^task:[\w.-]{1,200}$/),
 ]);
 export type Topic = z.infer<typeof Topic>;
+
+/**
+ * One of Your Mac's chats: `conv:mac:assistant`, and since BLG-102 (the Mac's chat tabs) also
+ * `conv:mac:assistant:<id>`. Home's `assistant` names the one open on the Mac.
+ */
+export const isMacTopic = (topic: string | undefined): boolean => topic === 'conv:mac:assistant' || Boolean(topic?.startsWith('conv:mac:assistant:'));
 
 // ---- what views are made of
 
@@ -224,6 +231,24 @@ export const ProseView = z.object({
 });
 export type ProseView = z.infer<typeof ProseView>;
 
+/**
+ * 1.10 (BLG-110): one sub-agent opened on the phone (`companion.subAgent`): its activity, every
+ * step in words with when it began (newest last), and once it ended the report it gave back, code
+ * stripped as Claude's answers are (`stripCode`). `missing`: the Mac keeps no details of it
+ * (someone else's Claude, or gone); the phone shows what the view had.
+ */
+export const SubAgentStepView = StepView.extend({ at: ts.optional() });
+export type SubAgentStepView = z.infer<typeof SubAgentStepView>;
+export const SubAgentDetailView = z.object({
+  id,
+  timeline: z.array(SubAgentStepView).max(200),
+  /** Steps it took in all (the timeline keeps the last 200). */
+  count: z.number().int().min(0).optional(),
+  result: ProseView.optional(),
+  missing: z.boolean().optional(),
+});
+export type SubAgentDetailView = z.infer<typeof SubAgentDetailView>;
+
 export const TurnView = z.object({
   id,
   who: z.enum(['you', 'claude', 'friend', 'system']),
@@ -281,7 +306,7 @@ export const HomeView = z.object({
    */
   outputs: z.array(OutputView.extend({ topic: Topic.optional() })).max(30),
   unread: z.object({ work: z.number().int().min(0), chats: z.number().int().min(0) }),
-  /** 1.5: "Your Mac" (`conv:mac:assistant`): its last line and whether it works, for Home's "Ask your Mac". */
+  /** 1.5: "Your Mac" (`conv:mac:assistant`): its last line and whether it works, for Home's "Ask your Mac". Since BLG-102 the chat open on the Mac (its topic may be `conv:mac:assistant:<id>`, see isMacTopic). */
   assistant: ConvSummary.optional(),
   /** 1.3: tasks waiting for your review (Home links to them). */
   review: z.object({ count: z.number().int().min(0), first: z.object({ topic: Topic, key: z.string().max(40), title: z.string().max(300) }).optional() }).optional(),
@@ -431,6 +456,9 @@ export type PlansView = z.infer<typeof PlansView>;
 export const TaskStatus = z.union([z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled']), z.string().max(20)]);
 export const TaskPriority = z.union([z.enum(['urgent', 'high', 'medium', 'low', 'none']), z.string().max(20)]);
 
+/** At most this many of the board's other tasks in the Tasks view (`TasksView.others`). */
+export const TASK_OTHERS = 1500;
+
 /** A task in a list (1.3): its key, title, status, priority, who has it ("you", "your Claude", "Mia"). */
 export const TaskSummary = z.object({
   id,
@@ -461,6 +489,12 @@ export const TasksView = z.object({
       }),
     )
     .max(100),
+  /**
+   * The board's other tasks, the ones `groups` leave out (older done, canceled, past a group's
+   * 100), newest first: only what a task key in Claude's words needs to be a live chip (BLG-109).
+   * Optional: an older Mac leaves it out, and the phone then knows only the listed ones.
+   */
+  others: z.array(z.object({ id, key: z.string().max(40), title: z.string().max(300), status: TaskStatus })).max(TASK_OTHERS).optional(),
 });
 export type TasksView = z.infer<typeof TasksView>;
 

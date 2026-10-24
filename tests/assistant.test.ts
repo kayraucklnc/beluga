@@ -112,7 +112,7 @@ describe('Your Mac’s folder', () => {
     const first = assistant(undefined, dir);
     first.a.place().onSession('sess-1');
     first.store.dispatch({ type: 'chat', id: 'c1', from: ME, text: 'hello Mac', ts: 1, byAgent: false, channel: ASSISTANT_CHANNEL });
-    await waitFor(() => existsSync(path.join(dir, 'history.json')));
+    await waitFor(() => existsSync(path.join(dir, 'chats', 'main', 'history.json')));
     first.a.stop();
     const again = assistant(undefined, dir);
     expect(again.a.place().resume).toBe('sess-1');

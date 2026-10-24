@@ -11,7 +11,7 @@ import { dispatchCall } from '../daemon/dispatch.js';
 import type { Identity } from '../net/crypto.js';
 import { listScratch } from '../workspaces/scratch.js';
 import { assistantOf } from '../core/assistant/registry.js';
-import { ASSISTANT_CHANNEL } from '../shared/assistant.js';
+import { ASSISTANT_CHANNEL, isAssistant } from '../shared/assistant.js';
 import { DeviceBook } from './devices.js';
 import { CompanionHost } from './host.js';
 import { macIdleMs } from './push.js';
@@ -45,7 +45,8 @@ class OutputCache {
     private readonly changed: () => void,
   ) {}
 
-  get = (channel: string): readonly ConvOutput[] => this.cache.get(channel) ?? [];
+  // Your Mac's chats share its folder, so its outputs (BLG-102).
+  get = (channel: string): readonly ConvOutput[] => this.cache.get(isAssistant(channel) ? ASSISTANT_CHANNEL : channel) ?? [];
 
   watch(channels: readonly string[], linked: boolean): void {
     this.watched = channels;

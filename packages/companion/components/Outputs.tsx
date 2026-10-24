@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { FileJson, FileText, FileType, Film, ImageIcon, ScrollText } from 'lucide-react-native';
+import { FileJson, FileText, FileType, Film, ImageIcon, Play, ScrollText } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useFile } from '../lib/hooks';
@@ -10,8 +10,9 @@ import { color, elevation, radius } from '../lib/theme';
 import { IconBadge, Press, T } from './ui';
 
 /**
- * Outputs: pictures as thumbnails (fetched by ref, thumb first; the full image only when opened)
- * and text files as tiles that open in the reader. Never source code: the Mac only hands out what
+ * Outputs: pictures as thumbnails (fetched by ref, thumb first; the full image only when opened),
+ * videos as their first frame with a play mark (streamed only when played, in the viewer), and
+ * text files as tiles that open in the reader. Never source code: the Mac only hands out what
  * `isArtifact` calls an output.
  */
 
@@ -26,7 +27,7 @@ export const isText = (o: OutputView): boolean => o.kind === 'text' || o.kind ==
  */
 export function openOutput(o: OutputView, group: readonly OutputView[], origin?: Origin): void {
   const items = group.some((g) => g.ref === o.ref) ? [...group] : [o];
-  if (o.kind === 'image' || items.length > 1) {
+  if (o.kind === 'image' || o.kind === 'video' || items.length > 1) {
     store.gallery = { items, index: Math.max(0, items.findIndex((g) => g.ref === o.ref)), origin };
     router.push('/viewer');
     return;
@@ -44,7 +45,9 @@ export const sizeOf = (n?: number): string => (n === undefined ? '' : n < 1024 ?
 export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; readonly group: readonly OutputView[]; readonly w: number; readonly h: number; readonly style?: ViewStyle }) {
   const ref = useRef<React.ComponentRef<typeof View>>(null);
   const image = o.kind === 'image';
-  const file = useFile(image ? o.ref : undefined, 'thumb');
+  const video = o.kind === 'video';
+  // A video's thumbnail is its first frame (a Mac that can't make one says so: then it's a tile).
+  const file = useFile(image || video ? o.ref : undefined, 'thumb');
   const Icon = iconOf(o);
   const open = () => {
     if (!ref.current) return openOutput(o, group);
@@ -59,6 +62,11 @@ export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; reado
           ) : (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>{file?.status === 'error' ? <ImageIcon color={color.text3} size={22} /> : <ActivityIndicator color={color.text3} />}</View>
           )
+        ) : video && file?.uri ? (
+          <View style={{ flex: 1 }}>
+            <Image source={{ uri: file.uri }} style={{ flex: 1 }} contentFit="cover" transition={260} />
+            <PlayMark size={Math.min(40, Math.round(Math.min(w, h) * 0.34))} />
+          </View>
         ) : (
           <View style={{ flex: 1, padding: 12, justifyContent: 'space-between' }}>
             <IconBadge Icon={Icon} tone={o.kind === 'json' ? 'butter' : o.kind === 'markdown' ? 'lavender' : 'sky'} size={34} square />
@@ -74,6 +82,17 @@ export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; reado
         )}
       </View>
     </Press>
+  );
+}
+
+/** A video's mark over its first frame: a quiet round chip, no glow. */
+export function PlayMark({ size = 40 }: { readonly size?: number }) {
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+      <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: color.onStageChip }}>
+        <Play color={color.onStage} fill={color.onStage} size={Math.round(size * 0.42)} style={{ marginLeft: size * 0.06 }} />
+      </View>
+    </View>
   );
 }
 
@@ -115,7 +134,7 @@ const TURN_H = 84;
 export function TurnOutputs({ items }: { readonly items: readonly OutputView[] }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
-      {items.map((o) => (o.kind === 'image' ? <Thumb key={o.ref} o={o} group={items} w={110} h={TURN_H} /> : <FileCard key={o.ref} o={o} group={items} />))}
+      {items.map((o) => (o.kind === 'image' || o.kind === 'video' ? <Thumb key={o.ref} o={o} group={items} w={110} h={TURN_H} /> : <FileCard key={o.ref} o={o} group={items} />))}
     </ScrollView>
   );
 }

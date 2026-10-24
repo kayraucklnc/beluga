@@ -1,5 +1,5 @@
 import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
-import { ASSISTANT_CHANNEL } from '../shared/assistant.js';
+import { type AssistantChats, NO_ASSISTANT_CHATS, activeAssistantChannel, assistantChannel } from '../shared/assistant.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
 import { NotifySettings as NotifySchema } from '../shared/settings-schema.js';
@@ -267,8 +267,8 @@ export interface Transfer {
 /** What the main area shows. */
 export type View =
   | { readonly kind: 'room' }
-  /** "Your Mac" (core/assistant): one conversation with your Claude for the whole Mac, the same as on the phone. */
-  | { readonly kind: 'assistant' }
+  /** "Your Mac" (core/assistant): your Claude for the whole Mac, the same as on the phone; one of its chats (tabs, BLG-102), the open one when unset. */
+  | { readonly kind: 'assistant'; readonly chat?: string }
   | { readonly kind: 'files' }
   | { readonly kind: 'overview' }
   | { readonly kind: 'workspace'; readonly id: string; readonly tab: WorkspaceTab }
@@ -329,7 +329,7 @@ export interface Compaction {
 }
 
 export const channelOf = (view: View): string =>
-  view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'assistant' ? ASSISTANT_CHANNEL : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
+  view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'assistant' ? (view.chat ? assistantChannel(view.chat) : activeAssistantChannel(NO_ASSISTANT_CHATS)) : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
 
 /** The conversation a view shows, if any (Overview, Search, Terminal… show none, so the chat's unread count stays). */
 export const shownChannel = (view: View): string | undefined =>
@@ -416,6 +416,8 @@ export interface DomainState extends CollabState, WorkState, NetworkSlice, Earni
   /** Recent downloads (newest last). */
   readonly transfers: readonly Transfer[];
   readonly prefs: Prefs;
+  /** Your Mac's chats, as tabs (BLG-102, core/assistant): which there are and the one open. */
+  readonly assistant: AssistantChats;
 }
 
 /** What one screen shows: where it is, its tabs and dialogs, and its own cursors and scroll positions. */
@@ -511,6 +513,8 @@ export type Action =
   | { type: 'identity'; selfId: string; isHost: boolean; home?: string }
   /** Your paired phones (never keys) and the pairing open now (src/companion/host.ts). */
   | { type: 'companion'; companion: CompanionSlice['companion'] }
+  /** Your Mac's chats changed (one made, opened or deleted; core/assistant). */
+  | { type: 'assistant_chats'; assistant: AssistantChats }
   | CollabAction
   | WorkAction
   | NetworkAction
@@ -595,6 +599,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialBoard,
     ...initialPlans,
     companion: { devices: [] },
+    assistant: NO_ASSISTANT_CHATS,
   };
 }
 
@@ -1002,6 +1007,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, ...reduceNetwork(state, action) };
     case 'support':
       return { ...state, support: action.support };
+    case 'assistant_chats':
+      return { ...state, assistant: action.assistant };
     case 'earnings':
     case 'fx_rates':
       return { ...state, ...reduceEarnings(state, action) };

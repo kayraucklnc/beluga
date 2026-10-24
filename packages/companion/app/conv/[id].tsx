@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Sparkles, Square, SquareTerminal } from 'lucide-react-native';
+import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Square, SquareTerminal } from 'lucide-react-native';
 import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
 import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
@@ -19,10 +19,12 @@ import { Sheet } from '../../components/Sheet';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
 import { ago, elapsed, useSince, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
-import type { ConvView, OutputView, SubAgentView, Topic, TurnView } from '../../lib/link/protocol';
+import { type ConvView, type OutputView, type SubAgentView, type Topic, type TurnView, isMacTopic } from '../../lib/link/protocol';
 import { type Send as Pending, sends, useSends } from '../../lib/sends';
 import { SendStatus } from '../../components/SendStatus';
+import { AgentStrip, SubAgentSheet } from '../../components/SubAgents';
 import { store } from '../../lib/store';
+import { upload } from '../../lib/pick';
 import { color } from '../../lib/theme';
 import { router } from 'expo-router';
 
@@ -31,8 +33,6 @@ import { router } from 'expo-router';
  * step, sub-agents as chips (tap: a sheet with their steps and outputs), what it waits on you for,
  * and a composer with Send and Stop.
  */
-/** Your Mac's conversation (1.5): your Claude for the whole Mac. */
-const ASSISTANT = 'conv:mac:assistant' as Topic;
 
 /** An empty Your Mac: three first things to ask, one tap each (the composer is there too). */
 function MacStarters({ topic }: { readonly topic: Topic }) {
@@ -102,7 +102,7 @@ export default function Conversation() {
 
   return (
     <Screen>
-      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={topic === ASSISTANT ? <IconBadge Icon={Laptop} tone="sky" size={30} /> : c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
+      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={isMacTopic(topic) ? <IconBadge Icon={Laptop} tone="sky" size={30} /> : c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {c?.working && !all.length ? <Pill label="Working" tone="peach" /> : null}
             {all.length ? (
@@ -129,6 +129,8 @@ export default function Conversation() {
             <BranchBand topic={topic} branch={c.branch} canMerge={Boolean(c.mergeable) && store.supports('merge')} onMerge={() => setMergeOpen(true)} />
           </View>
         ) : null}
+        {/* Its sub-agents at work stay in view, wherever their turn is (BLG-110). */}
+        <AgentStrip turns={turns} onOpen={setAgent} />
         <ScrollView
           ref={scroll}
           onContentSizeChange={follow}
@@ -152,7 +154,7 @@ export default function Conversation() {
             </Press>
           ) : null}
           {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
-          {c && topic === ASSISTANT && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
+          {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
           {turns.map((t, i) => (
             <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
               {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
@@ -173,12 +175,16 @@ export default function Conversation() {
           ))}
         </ScrollView>
         <Composer
-          placeholder={c?.working ? 'Steer Claude, or queue what’s next…' : 'Reply to Claude…'}
+          placeholder={c?.working ? 'What’s next for Claude…' : 'Reply to Claude…'}
           working={c?.working}
           disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
-          onSend={(text) => {
+          photos
+          onSend={(text, photos) => {
             atEnd.current = true;
-            // While Claude works, Send queues (after), as on the Mac; Steer is beside it.
+            // Photos go up first (`put`), then the message names them; on the Mac it waits its
+            // turn while Claude works, as a queued message does.
+            if (photos.length) return sends.message(topic, text, async () => calls.send(topic, text, await Promise.all(photos.map(upload))), { photo: true });
+            // While Claude works, Send queues (after), as on the Mac; Steer is a long-press away.
             const call = c?.working && !topic.startsWith('conv:task:') ? calls.queue(topic, text) : calls.send(topic, text);
             sends.message(topic, text, call);
           }}
@@ -203,7 +209,7 @@ export default function Conversation() {
           }
         />
       </KeyboardLift>
-      <AgentSheet agent={liveAgent} onClose={() => setAgent(undefined)} />
+      <SubAgentSheet topic={topic} turn={agent ? c?.turns.find((t) => t.subagents?.some((a) => a.id === agent.id))?.id : undefined} agent={liveAgent} onClose={() => setAgent(undefined)} />
       <Sheet
         visible={outputsOpen}
         onDismiss={() => setOutputsOpen(false)}
@@ -251,7 +257,6 @@ export default function Conversation() {
           { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
           { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
           { Icon: SquareTerminal, label: 'Terminal', sub: 'The same terminal as on your Mac', tone: 'lavender', hidden: !hasFolder || !store.supports('terminal'), onPress: () => router.push({ pathname: '/terminal', params: { topic, title: c?.title ?? '' } }) },
-          { Icon: Sparkles, label: 'Ask with a photo', sub: 'Opens Ask, aimed here', tone: 'peach', onPress: () => router.push({ pathname: '/ask', params: { topic } }) },
           { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
           { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
         ]}
@@ -266,7 +271,7 @@ function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) 
   return (
     <Press onLongPress={onLongPress} disabled={!onLongPress} scaleTo={0.99} style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
       <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: waiting ? 0.6 : 1 }}>
-        <Prose prose={t.prose} size={15} />
+        <Prose prose={t.prose} size={15} tasks />
       </View>
       {waiting ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4, marginRight: 4 }}>
@@ -288,7 +293,7 @@ function PendingTurn({ s }: { s: Pending }) {
     <View style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
       <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: s.state === 'failed' ? 1 : 0.6, borderWidth: s.state === 'failed' ? 1 : 0, borderColor: color.error }}>
         <T v="body" style={{ fontSize: 15 }}>
-          {s.text}
+          {s.text || 'Photo'}
         </T>
       </View>
       <SendStatus s={s} />
@@ -314,7 +319,7 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
         </T>
         <T v="caption">{ago(t.ts)}</T>
       </View>
-      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} /> : null}
+      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} tasks /> : null}
       {working ? <LivePanel t={t} /> : <StepsFold t={t} />}
       {t.subagents?.length ? (
         working || t.subagents.length <= 3 ? (
@@ -342,99 +347,5 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
         </View>
       ) : null}
     </View>
-  );
-}
-
-/** What a sub-agent is doing now, breathing, with how long it has been at work. */
-function AgentNow({ a }: { a: SubAgentView }) {
-  const secs = useSince(a.startedAt);
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
-      <Breathe>
-        <ToolBadge kind={a.tool ?? 'agent'} size={22} />
-      </Breathe>
-      <T v="callout" c={color.subagent} numberOfLines={1} style={{ flex: 1, fontWeight: '600' }}>
-        {a.step ?? 'Working'}
-      </T>
-      <TypingDots tone="lavender" />
-      {secs !== undefined ? <T v="caption">{elapsed(secs)}</T> : null}
-    </View>
-  );
-}
-
-function AgentSheet({ agent, onClose }: { agent?: SubAgentView; onClose: () => void }) {
-  const { width } = useWindowDimensions();
-  const [last, setLast] = useState<SubAgentView | undefined>(agent);
-  if (agent && agent !== last) setLast(agent);
-  const a = agent ?? last;
-  const tone: Tone = a?.status === 'running' ? 'lavender' : a?.status === 'failed' ? 'rose' : 'mint';
-  return (
-    <Sheet
-      visible={!!agent}
-      onDismiss={onClose}
-      header={
-        a ? (
-          <View style={{ paddingHorizontal: 20, paddingBottom: 12, gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <IconBadge Icon={Bot} tone="lavender" size={30} />
-              <T v="callout" style={{ flex: 1 }}>
-                Sub-agent{a.type ? ` · ${a.type}` : ''}
-              </T>
-              <Pill label={a.status === 'running' ? 'Working' : a.status === 'failed' ? 'Failed' : 'Done'} tone={tone} />
-            </View>
-            <T v="title" style={{ fontSize: 20, lineHeight: 26 }}>
-              {a.title}
-            </T>
-          </View>
-        ) : null
-      }
-    >
-      {a ? (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 18 }}>
-          <View>
-            <T v="eyebrow" style={{ marginBottom: 10 }}>
-              Steps{a.count ? ` · ${a.count}` : ''}
-            </T>
-            {a.trail ? (
-              <View style={{ gap: 6 }}>
-                {a.trail.length ? <StepList steps={a.trail} shown={10} /> : null}
-                {a.status === 'running' ? <AgentNow a={a} /> : null}
-              </View>
-            ) : null}
-            {a.trail ? null : a.steps.map((s, i) => {
-              const lastStep = i === a.steps.length - 1;
-              const live = lastStep && a.status === 'running';
-              return (
-                <View key={i} style={{ flexDirection: 'row', gap: 12 }}>
-                  <View style={{ alignItems: 'center', width: 14 }}>
-                    <View style={{ width: 9, height: 9, borderRadius: 5, marginTop: 6, backgroundColor: live ? color.subagent : color.ok }} />
-                    {!lastStep ? <View style={{ width: 1.5, flex: 1, backgroundColor: color.hairlineStrong, marginVertical: 3 }} /> : null}
-                  </View>
-                  <View style={{ flex: 1, paddingBottom: 12 }}>
-                    {live ? <StepTicker step={s} tone="lavender" size={14} /> : <T v="callout" c={color.text}>{s}</T>}
-                  </View>
-                </View>
-              );
-            })}
-            {a.status === 'done' ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                <CircleCheck color={color.ok} size={15} />
-                <T v="caption" c={color.ok}>
-                  Done
-                </T>
-              </View>
-            ) : null}
-          </View>
-          {a.outputs.length ? (
-            <View>
-              <T v="eyebrow" style={{ marginBottom: 10 }}>
-                Outputs · {a.outputs.length}
-              </T>
-              <OutputGrid items={a.outputs} cols={2} width={Math.min(width, 520) - 40} />
-            </View>
-          ) : null}
-        </ScrollView>
-      ) : null}
-    </Sheet>
   );
 }

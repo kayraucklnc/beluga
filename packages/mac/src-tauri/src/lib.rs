@@ -8,6 +8,7 @@ mod daemon;
 mod focus;
 mod menu;
 mod popup;
+mod privacy;
 mod rename;
 mod requests;
 mod sounds;
@@ -232,6 +233,8 @@ pub fn run() {
             sounds::notification_access,
             sounds::open_notification_settings,
             sounds::open_focus_settings,
+            privacy::privacy_access,
+            privacy::privacy_request,
             updater::update_state,
             updater::update_check,
             updater::update_set_mode,

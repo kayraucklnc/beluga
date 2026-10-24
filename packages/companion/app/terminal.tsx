@@ -1,8 +1,8 @@
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams } from 'expo-router';
-import { Maximize2, Plus, RotateCcw, SquareTerminal, Trash2 } from 'lucide-react-native';
+import { AArrowDown, AArrowUp, type LucideIcon, Maximize2, Plus, RotateCcw, SquareTerminal, Trash2 } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyBar } from '../components/KeyBar';
@@ -17,15 +17,36 @@ import { calls } from '../lib/link/calls';
 import type { TerminalView, TerminalsView, Topic } from '../lib/link/protocol';
 import { store, type TermFrame } from '../lib/store';
 import { terminalPage } from '../lib/terminal/page';
-import { color, scheme, tint } from '../lib/theme';
+import { readFont, stepFont, TERM_FONT_KEY, type TermFont, FONT_MAX, FONT_MIN } from '../lib/terminal/zoom';
+import { color, ink, scheme, tint } from '../lib/theme';
 
 /**
  * A worktree's terminal on the phone (BLG-42): the very session the Mac's terminal dock shows.
  * Both see the same output as it comes, and either can type. xterm.js draws it (bundled, in a
- * WebView) at the Mac's size: fitted to the screen's width, a pinch zooms in, one finger scrolls
- * back. Above the keyboard, what a phone keyboard lacks: Esc, Tab, Ctrl and the arrows, and ••• for
- * |, ~, / and paste. Output streams only while this screen is open, coalesced on the Mac to ~30 a second.
+ * WebView) at the Mac's size (cols × rows, never resized from here), in JetBrains Mono at a
+ * readable 13 px (BLG-108): wider than the screen, it pans sideways. A pinch or ••• › A−/A+ sets
+ * the text size (kept between launches); ••• › Fit draws the whole width. One finger pans, then
+ * scrolls back. Above the keyboard, what a phone keyboard lacks: Esc, Tab, Ctrl and the arrows, and
+ * ••• for |, ~, /, - and paste. Output streams only while this screen is open, coalesced on the Mac
+ * to ~30 a second.
  */
+
+/** A− / A+ / Fit in the ••• sheet: instant, and the sheet stays open while you try sizes. */
+function SizeStep({ Icon, label, on, disabled, onPress }: { readonly Icon: LucideIcon; readonly label: string; readonly on?: boolean; readonly disabled?: boolean; readonly onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled, selected: !!on }}
+      disabled={disabled}
+      onPressIn={() => haptic.tap()}
+      onPress={onPress}
+      style={({ pressed }) => ({ width: 44, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : 1, backgroundColor: on ? tint.sky : pressed ? color.sunken : color.card, borderWidth: StyleSheet.hairlineWidth, borderColor: on ? 'transparent' : color.hairline })}
+    >
+      <Icon color={on ? ink.sky : color.text2} size={18} />
+    </Pressable>
+  );
+}
 
 export default function Terminal() {
   const { topic, key: wanted, title } = useLocalSearchParams<{ topic: string; key?: string; title?: string }>();
@@ -43,6 +64,8 @@ export default function Terminal() {
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [others, setOthers] = useState<TerminalView[]>([]);
+  // The text size the page draws now (it tells us), for A−/A+.
+  const [font, setFont] = useState<{ size: number; fit: boolean } | undefined>();
   // Opening again (another terminal, or one started again) attaches afresh.
   const [gen, setGen] = useState(0);
 
@@ -71,7 +94,7 @@ export default function Terminal() {
   }, [t, wanted, link.phase]);
 
   // The page is made once per terminal (at its size then); later sizes, and the output, are messages.
-  const html = useMemo(() => (term ? terminalPage({ scheme, cols: term.cols, rows: term.rows, zoom: kv.get<number>('term-zoom') ?? 1 }) : undefined), [term?.key]);
+  const html = useMemo(() => (term ? terminalPage({ scheme, cols: term.cols, rows: term.rows, font: readFont(kv.get(TERM_FONT_KEY)) }) : undefined), [term?.key]);
   useEffect(() => {
     ready.current = false;
     queued.current = [];
@@ -98,8 +121,12 @@ export default function Terminal() {
       return;
     }
     if (m.t === 'ctrlUsed') return setCtrl(false);
-    if (m.t === 'zoom') kv.set('term-zoom', m.zoom);
+    if (m.t === 'font') {
+      setFont({ size: m.size, fit: m.fit });
+      kv.set(TERM_FONT_KEY, m.fit ? 'fit' : m.size);
+    }
   };
+  const setSize = (v: TermFont) => send(v === 'fit' ? { t: 'font', fit: true } : { t: 'font', size: v });
 
   const toggleCtrl = () => {
     send({ t: 'ctrl', on: !ctrl });
@@ -173,20 +200,26 @@ export default function Terminal() {
         visible={menu}
         onClose={() => setMenu(false)}
         title={term?.label}
+        head={
+          font ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 10 }}>
+              <View style={{ flex: 1 }}>
+                <T v="body" style={{ fontWeight: '500' }}>
+                  Text size
+                </T>
+                <T v="caption">{font.fit ? `Fits the width · ${Math.round(font.size * 10) / 10} px` : `${font.size} px · pinch to zoom`}</T>
+              </View>
+              <SizeStep Icon={AArrowDown} label="Smaller text" disabled={font.size <= FONT_MIN} onPress={() => setSize(stepFont(font.size, -1))} />
+              <SizeStep Icon={AArrowUp} label="Larger text" disabled={!font.fit && font.size >= FONT_MAX} onPress={() => setSize(stepFont(font.size, 1))} />
+              <SizeStep Icon={Maximize2} label="Fit to the width" on={font.fit} onPress={() => setSize('fit')} />
+            </View>
+          ) : undefined
+        }
         options={[
           ...others
             .filter((o) => o.key !== term?.key)
             .map((o) => ({ Icon: SquareTerminal, label: o.label, sub: o.running ? undefined : 'Ended', tone: 'lavender' as const, onPress: () => open({ key: o.key }) })),
           { Icon: Plus, label: 'New terminal', tone: 'mint', onPress: () => open({ fresh: true }) },
-          {
-            Icon: Maximize2,
-            label: 'Fit to the screen',
-            tone: 'sky',
-            onPress: () => {
-              kv.set('term-zoom', 1);
-              send({ t: 'zoom', zoom: 1 });
-            },
-          },
           { Icon: Trash2, label: 'Close terminal…', tone: 'rose', hidden: !term || !status?.running, onPress: () => setConfirm(true) },
         ]}
       />

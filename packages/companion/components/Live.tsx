@@ -232,7 +232,23 @@ export function StepsFold({ t }: { readonly t: TurnView }) {
 
 const AGENT_TONE = (s: SubAgentView['status']): Tone => (s === 'running' ? 'lavender' : s === 'failed' ? 'rose' : 'mint');
 
-/** The sub-agents of a run, each with what it's doing now (live), tap one for its steps and outputs. */
+/** How long a sub-agent has been at work (ticking), or how long it took; '' when its start isn't known. */
+export function useAgentTime(a: Pick<SubAgentView, 'status' | 'startedAt' | 'endTs'>): string {
+  const secs = useSince(a.status === 'running' ? a.startedAt : undefined);
+  if (a.status === 'running') return secs !== undefined ? elapsed(secs) : '';
+  return a.startedAt !== undefined && a.endTs !== undefined && a.endTs >= a.startedAt ? elapsed(Math.round((a.endTs - a.startedAt) / 1000)) : '';
+}
+
+function AgentTime({ a, tone }: { readonly a: SubAgentView; readonly tone: Tone }) {
+  const time = useAgentTime(a);
+  return time ? (
+    <T v="caption" c={toneInk(tone)} style={{ opacity: 0.75, fontVariant: ['tabular-nums'] }}>
+      {time}
+    </T>
+  ) : null;
+}
+
+/** The sub-agents of a run, each with what it's doing now (live) and for how long, tap one for its activity, report and outputs. */
 export function AgentList({ agents, onOpen }: { readonly agents: readonly SubAgentView[]; readonly onOpen: (a: SubAgentView) => void }) {
   const running = agents.filter((a) => a.status === 'running').length;
   return (
@@ -246,7 +262,7 @@ export function AgentList({ agents, onOpen }: { readonly agents: readonly SubAge
         const Icon = a.status === 'done' ? Check : a.status === 'failed' ? CircleAlert : Bot;
         const now = a.status === 'running' ? (a.step ?? a.steps.at(-1)) : (a.trail?.at(-1)?.text ?? a.steps.at(-1));
         return (
-          <Animated.View key={a.id} entering={FadeInDown.duration(260)} layout={LinearTransition.springify().stiffness(220).damping(26)}>
+          <Animated.View key={a.id} entering={FadeIn.duration(240)} layout={LinearTransition.duration(220)}>
             <Press scaleTo={0.985} onPress={() => onOpen(a)} accessibilityLabel={a.title} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 14, backgroundColor: toneBg(tone) }}>
               <Breathe on={a.status === 'running'}>
                 <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card }}>
@@ -266,6 +282,7 @@ export function AgentList({ agents, onOpen }: { readonly agents: readonly SubAge
                   </Animated.View>
                 ) : null}
               </View>
+              <AgentTime a={a} tone={tone} />
               {a.outputs.length ? (
                 <T v="caption" c={toneInk(tone)} style={{ fontWeight: '700' }}>
                   {a.outputs.length}

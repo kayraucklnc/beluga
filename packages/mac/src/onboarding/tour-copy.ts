@@ -25,6 +25,13 @@ export const TOUR_COPY: Readonly<Partial<Record<Step, TourCopy>>> = {
     body: 'Steps arrive as Claude works: the files it reads, the commands it runs, the screenshots it takes, the sub-agents and background tasks it starts. Say something mid-run and it changes course.',
     points: ['Sub-agents and background commands, live', 'Screenshots, logs and test output in one place', 'Redirect a run, or queue what comes next'],
   },
+  tables: {
+    eyebrow: 'In the chat',
+    icon: 'table',
+    title: 'Answers you can sort, not just read.',
+    body: 'Ask about your data and Claude finds the database, picks the way in (Postgres, SQLite, a file, a URL), connects and runs the query. The answer comes back as a live table in the conversation.',
+    points: ['Headings sort, long tables search and page', 'A table turns into a chart in a click', 'File trees, JSON, terminal output and diagrams too'],
+  },
   friends: {
     eyebrow: 'Together',
     icon: 'people',

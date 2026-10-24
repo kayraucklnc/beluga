@@ -234,7 +234,7 @@ export function Toolbar() {
   if (view.kind === 'conversation') return <ConversationBar id={view.id} headerRef={headerRef} />;
 
   if (view.kind === 'assistant') {
-    return <Shell headerRef={headerRef} title={<span className={s.name}>{ASSISTANT_TITLE}</span>} subtitle={<span className={s.meta}>Your Claude for this whole Mac · the same conversation as on your phone</span>} />;
+    return <Shell headerRef={headerRef} title={<span className={s.name}>{ASSISTANT_TITLE}</span>} subtitle={<span className={s.meta}>Your Claude for this whole Mac · the open chat is the one on your phone</span>} />;
   }
 
   if (view.kind === 'room') {

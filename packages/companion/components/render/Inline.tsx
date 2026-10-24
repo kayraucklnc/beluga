@@ -4,12 +4,12 @@ import { ArrowDownRight, ArrowRight, ArrowUpRight, GitBranch, Workflow } from 'l
 import { Text, View } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 import { useView } from '../../lib/hooks';
-import type { PlansView, TasksView, WorkView } from '../../lib/link/protocol';
+import type { PlansView, WorkView } from '../../lib/link/protocol';
 import { type InlineElement, parseColor, readInline, relative, toneOf } from '../../lib/render';
 import { store } from '../../lib/store';
 import { color, ink, tint, type } from '../../lib/theme';
-import { taskHref } from '../Tasks';
 import { haptic, Press, type Tone, toneBg, toneInk } from '../ui';
+import { TaskChip } from './TaskChip';
 
 /**
  * The inline elements of docs/views.md, inside a sentence: an inline code span the Mac draws as
@@ -142,22 +142,6 @@ function PlanChip({ id }: { readonly id: string }) {
       <Text numberOfLines={1} style={{ ...type.caption, color: ink.butter, fontWeight: '700', maxWidth: 180 }}>
         {plan?.title ?? 'Plan'}
       </Text>
-    </Press>
-  );
-}
-
-/** A board task by its key, from the phone's own Tasks view (live). */
-function TaskChip({ k }: { readonly k: string }) {
-  const tasks = useView<TasksView>(store.supports('tasks') ? 'tasks' : undefined);
-  const t = tasks?.data.projects.flatMap((p) => p.groups.flatMap((g) => g.tasks)).find((x) => x.key.toUpperCase() === k);
-  return (
-    <Press haptics={false} onPress={() => (t ? router.push(taskHref(t)) : store.toast({ text: `${k}: not on the board here`, tone: 'info' }))} style={[pill, { backgroundColor: tint.sky }]}>
-      <Text style={{ ...type.caption, color: ink.sky, fontWeight: '800' }}>{k}</Text>
-      {t ? (
-        <Text numberOfLines={1} style={{ ...type.caption, color: ink.sky, maxWidth: 160 }}>
-          {t.title}
-        </Text>
-      ) : null}
     </Press>
   );
 }

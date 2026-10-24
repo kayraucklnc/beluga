@@ -59,8 +59,8 @@ function DeviceList({ now }: { now: number }) {
   );
 }
 
-/** Pair a Phone…: the QR and the code while a pairing is open, and "Pair this phone?" once one is waiting. */
-function Pairing({ now }: { now: number }) {
+/** Pair a Phone…: the QR and the code while a pairing is open, and "Pair this phone?" once one is waiting (also on the welcome's phone step). */
+export function Pairing({ now }: { now: number }) {
   const { client } = useBeluga();
   const pairing = usePairing();
   const devices = useDevices();

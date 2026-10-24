@@ -152,10 +152,15 @@ describe('pairing a phone and its link', () => {
     await expect(client.call('no.suchMethod', [])).rejects.toThrow(/only on your Mac/);
     expect(calls).toHaveLength(1);
 
+    // Back in front (BLG-105): the open link is checked with one ping, and the Mac answers it.
+    expect(await client.probe(3_000)).toBe(true);
+
     // Removing the phone drops its link at once, and its key is refused from then on.
     expect(host.removeDevice(id)).toBe(true);
     await waitFor(() => closes.length > 0, 5_000);
     expect(closes[0]).toBe(4010);
+    // A closed link fails the check at once, without waiting out the timeout.
+    expect(await client.probe(60_000)).toBe(false);
     expect(store.getState().companion.devices).toEqual([]);
     await expect(client.connect()).rejects.toThrow();
     // No phone and no pairing: the node stops.

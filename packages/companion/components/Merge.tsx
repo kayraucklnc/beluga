@@ -11,7 +11,7 @@ import { color } from '../lib/theme';
 import { Breathe, TypingDots } from './Live';
 import { Options } from './Options';
 import { Sheet } from './Sheet';
-import { Button, Card, haptic, IconBadge, Pill, Press, T, type Tone, toneBg, toneInk } from './ui';
+import { Button, Card, haptic, IconBadge, More, Pill, Press, T, type Tone, toneBg, toneInk } from './ui';
 
 /**
  * Merging a worktree from the phone (BLG-67), the Mac's own way: the sheet shows what would merge
@@ -206,9 +206,10 @@ const toneOf = (s: BranchStepView): Tone => (s.danger ? 'rose' : s.claude ? 'pea
 const bare = (label: string): string => label.replace(/…$/, '');
 
 /**
- * Where a worktree's branch stands, as the Mac's toolbar shows it: Merged (lavender), Ready to
- * merge, Conflicts, checks… with why, and the one step it needs next as a button. Its other steps
- * are under Other Steps, as the Mac's chevron has them. One place for all of it: the conversation's
+ * Where a worktree's branch stands, as the Mac's toolbar shows it, in one quiet line (BLG-104):
+ * Merged (lavender), Ready to merge, Conflicts, checks… with why, and the one step it needs next
+ * as a small pastel chip. Its other steps are under •••, as the Mac's chevron has them (tapping
+ * the line opens them too). One place for all of it: the conversation's
  * ••• doesn't repeat them. Steps Claude does, and the ones that can't be undone, ask first.
  * An older Mac (before 1.8) only says the next step, besides merging and resolving here.
  */
@@ -248,31 +249,43 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
   // An older Mac: its next step in words, and merging or resolving here.
   const next = branch.next;
   const here = steps.length ? undefined : next?.id === 'merge' && canMerge ? 'merge' : next?.id === 'merge_claude' ? 'resolve' : undefined;
+  // The one step it needs next, as a small pastel chip; an older Mac's merge or resolve the same way.
+  const chip: { label: string; Icon: LucideIcon; tone: Tone; onPress: () => void } | undefined = main
+    ? { label: busy ? 'Working…' : bare(main.label), Icon: iconOf(main), tone: toneOf(main), onPress: () => tap(main) }
+    : here === 'merge'
+      ? { label: bare(next!.label), Icon: GitMerge, tone: 'lavender', onPress: onMerge }
+      : here === 'resolve'
+        ? { label: 'Resolve', Icon: Sparkles, tone: 'peach', onPress: resolve }
+        : undefined;
+  const line = next && !here && !steps.length ? `Next, on your Mac: ${bare(next.label)}${next.claude ? ' (Claude does it)' : ''}` : branch.detail;
+  // The row itself opens every step (the next one too), under the branch's state.
+  const all = [...(main ? [main] : []), ...others];
   return (
     <Animated.View key={branch.kind} entering={FadeIn.duration(200)} layout={LinearTransition.springify()}>
-      <Card style={{ paddingVertical: 10, paddingHorizontal: 12, gap: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 }}>
+        <Press scaleTo={0.99} disabled={!all.length} onPress={() => setMore(true)} accessibilityLabel={`${branch.label}. ${line}`} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Pill label={branch.pr ? `${branch.label} #${branch.pr.number}` : branch.label} tone={t.tone} Icon={t.Icon} />
-          <T v="caption" numberOfLines={2} style={{ flex: 1 }}>
-            {branch.detail}
+          <T v="caption" c={color.text3} numberOfLines={1} style={{ flex: 1 }}>
+            {line}
           </T>
-        </View>
-        {main ? (
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Button flex={1} label={busy ? 'Working…' : bare(main.label)} Icon={iconOf(main)} disabled={Boolean(busy)} onPress={() => tap(main)} />
-            {others.length ? <Button label="Other Steps" quiet disabled={Boolean(busy)} onPress={() => setMore(true)} /> : null}
-          </View>
+        </Press>
+        {chip ? (
+          <Press
+            disabled={Boolean(busy)}
+            onPress={chip.onPress}
+            accessibilityLabel={chip.label}
+            hitSlop={6}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 30, maxWidth: 180, paddingHorizontal: 12, borderRadius: 15, backgroundColor: toneBg(chip.tone), opacity: busy ? 0.6 : 1 }}
+          >
+            {busy ? <ActivityIndicator size="small" color={toneInk(chip.tone)} /> : <chip.Icon color={toneInk(chip.tone)} size={14} strokeWidth={2.3} />}
+            <T v="caption" c={toneInk(chip.tone)} numberOfLines={1} style={{ fontWeight: '700', flexShrink: 1 }}>
+              {chip.label}
+            </T>
+          </Press>
         ) : null}
-        {here === 'merge' ? <Button label={next!.label.replace(/…$/, '')} Icon={GitMerge} quiet onPress={onMerge} /> : null}
-        {here === 'resolve' ? <Button label="Ask Claude to resolve" Icon={Sparkles} onPress={resolve} /> : null}
-        {next && !here && !steps.length ? (
-          <T v="caption" c={color.text3}>
-            Next, on your Mac: {next.label.replace(/…$/, '')}
-            {next.claude ? ' (Claude does it)' : ''}
-          </T>
-        ) : null}
-      </Card>
-      <Options visible={more} onClose={() => setMore(false)} title={`${branch.label} · ${branch.branch}`} options={others.map((s) => ({ Icon: iconOf(s), label: bare(s.label), sub: s.claude ? `Claude · ${s.hint}` : s.hint, tone: toneOf(s), onPress: () => tap(s) }))} />
+        {others.length ? <More onPress={() => setMore(true)} label="Other steps" size={30} /> : null}
+      </View>
+      <Options visible={more} onClose={() => setMore(false)} title={`${branch.label} · ${branch.branch}`} options={all.map((s) => ({ Icon: iconOf(s), label: bare(s.label), sub: s.claude ? `Claude · ${s.hint}` : s.hint, tone: toneOf(s), onPress: () => tap(s) }))} />
       <Options
         visible={Boolean(asking)}
         onClose={() => setAsking(undefined)}

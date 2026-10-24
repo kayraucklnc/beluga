@@ -21,6 +21,7 @@
     "@types/react": "~19.3.0",
     "b4a": "^1.9.0",
     "bare-events": "^2.9.2",
+    "bare-tcp": "^2.6.1",
     "elkjs": "^0.12.0",
     "expo": "^58.0.17",
     "expo-build-properties": "~58.0.11",
@@ -43,6 +44,7 @@
     "expo-secure-store": "~58.0.2",
     "expo-status-bar": "~58.0.4",
     "expo-system-ui": "~58.0.6",
+    "expo-video": "~58.0.12",
     "hyperdht": "^6.34.1",
     "lucide-react-native": "^1.61.0",
     "react": "19.3.0",
@@ -63,8 +65,10 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
     "bare-link": "^4.0.1",
-    "bare-pack": "^3.0.2",
-    "@xterm/xterm": "^6.0.0"
+    "bare-pack": "^3.0.2"
   }
 }

@@ -85,6 +85,8 @@ export const calls = {
   termOpen: (topic: Topic, opts: { key?: string; fresh?: boolean } = {}): Call => make('companion.termOpen', [topic, opts], 'Open a terminal'),
   termClose: (key: string): Call => make('companion.termClose', [key], 'Close the terminal'),
   older: (topic: Topic, before: string): Call => make('companion.older', [topic, { before }], 'Load older'),
+  /** 1.10: one sub-agent of a turn, opened: its activity in words and the report it gave back. */
+  subAgent: (topic: Topic, turn: string, id: string): Call => make('companion.subAgent', [topic, turn, id], 'Sub-agent'),
   /** Write in a friends' chat (with photos, or asking Claude). */
   /** `ask`: whose Claude answers too: everyone's ('all') or the chosen people's (peer ids, you included). */
   chat: (topic: Topic, text: string, opts: { files?: Files; ask?: 'all' | readonly string[] } = {}): Call =>

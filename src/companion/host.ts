@@ -40,7 +40,7 @@ import {
   parsePhoneFrame,
 } from './protocol.js';
 import { type Delivery, NO_PUSH, type Nudge, type Pusher, deliver } from './push.js';
-import { type ConvOutput, type ViewContext, channelOf, chatMessages, convTopic, convTurns, needsYou, viewOf } from './views.js';
+import { type ConvOutput, type ViewContext, channelOf, chatMessages, convTopic, convTurns, needsYou, phoneChannel, viewOf } from './views.js';
 
 /**
  * Your Mac's side of the phone link (docs/companion.md, "The link"). Its own DHT node listens at
@@ -479,7 +479,8 @@ export class CompanionHost {
       if (typeof id !== 'string') throw new Error('Couldn’t start a chat in that project');
       channel = `ws:${id}`;
     } else {
-      channel = a.target.topic.slice('conv:'.length);
+      // An older phone's Your Mac (`conv:mac:assistant`) is the chat open on the Mac once the first is deleted.
+      channel = phoneChannel(this.state(), a.target.topic.slice('conv:'.length));
       const conv = viewOf(this.state(), this.ctx, a.target.topic as Topic) as { canSend?: boolean } | undefined;
       if (!conv?.canSend) throw new Error('You can’t write in that conversation');
     }

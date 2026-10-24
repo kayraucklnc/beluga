@@ -24,6 +24,15 @@ export class BareTransport implements Transport {
   private readonly sockets = new Map<number, WebSocket>();
   private readonly pairs = new Map<number, (step: PairStep) => void>();
   private pairSeq = 0;
+  /** Which open is current (rpc.ts `gen`): phases from an earlier one are stale and ignored. */
+  private gen = 0;
+  private readonly probes = new Map<number, (ok: boolean) => void>();
+  private probeSeq = 0;
+  /** Asks for the media server's base URL, by id (the worklet answers `media`). */
+  private readonly medias = new Map<number, { resolve: (base: string) => void; reject: (e: Error) => void }>();
+  private mediaSeq = 0;
+  /** The base URL while this worklet runs (a new worklet has a new server). */
+  private media: Promise<string> | undefined;
 
   constructor(
     private readonly creds: () => Promise<{ pairing: Pairing; secret: DeviceSecret } | undefined>,
@@ -60,6 +69,8 @@ export class BareTransport implements Transport {
     }
     switch (msg.ev) {
       case 'phase':
+        // A late word from a link already replaced (closed, then opened again at once): not this one's.
+        if (msg.gen !== undefined && msg.gen !== this.gen) return;
         this.phases.emit(msg.phase, msg.detail, { ...(msg.report ? { report: msg.report } : {}), ...(msg.code !== undefined ? { code: msg.code } : {}) });
         if (msg.phase === 'closed' || msg.phase === 'unreachable' || msg.phase === 'refused') this.stopWorklet();
         return;
@@ -68,6 +79,10 @@ export class BareTransport implements Transport {
         if (frame) this.frames.emit(frame);
         return;
       }
+      case 'probe':
+        this.probes.get(msg.id)?.(msg.ok);
+        this.probes.delete(msg.id);
+        return;
       case 'pair.wait':
         this.pairs.get(msg.id)?.({ step: 'waiting', fingerprint: msg.fingerprint });
         return;
@@ -98,6 +113,13 @@ export class BareTransport implements Transport {
       case 'log':
         if (__DEV__) console.log('[link]', msg.line);
         return;
+      case 'media': {
+        const m = this.medias.get(msg.id);
+        this.medias.delete(msg.id);
+        if (msg.base) m?.resolve(msg.base);
+        else m?.reject(new Error(msg.error ?? 'Videos can’t play right now'));
+        return;
+      }
       default:
         return;
     }
@@ -131,11 +153,13 @@ export class BareTransport implements Transport {
   }
 
   open(hello: PhoneFrame & { t: 'hello' }, hints?: LinkHints): void {
+    const gen = ++this.gen;
     this.phases.emit('dialing');
     void this.creds().then((c) => {
+      if (gen !== this.gen) return;
       if (!c) return this.phases.emit('refused', 'This phone is not paired.');
       try {
-        this.post({ op: 'open', pairing: c.pairing, secret: c.secret, hello: JSON.stringify(hello), ...(hints ? { hints } : {}) });
+        this.post({ op: 'open', pairing: c.pairing, secret: c.secret, hello: JSON.stringify(hello), gen, ...(hints ? { hints } : {}) });
       } catch (e) {
         this.phases.emit('unreachable', (e as Error).message);
       }
@@ -144,7 +168,30 @@ export class BareTransport implements Transport {
 
   close(reason: string): void {
     if (!this.worklet) return;
-    this.post({ op: 'close', reason });
+    this.post({ op: 'close', reason, gen: this.gen });
+  }
+
+  probe(ms: number): Promise<boolean> {
+    if (!this.worklet) return Promise.resolve(false);
+    const id = ++this.probeSeq;
+    return new Promise((resolve) => {
+      // The worklet answers within `ms`; this is for one that can't (stuck, or terminated meanwhile).
+      const timer = setTimeout(() => {
+        this.probes.delete(id);
+        resolve(false);
+      }, ms + 2_000);
+      this.probes.set(id, (ok) => {
+        clearTimeout(timer);
+        resolve(ok);
+      });
+      try {
+        this.post({ op: 'probe', id, ms });
+      } catch {
+        this.probes.delete(id);
+        clearTimeout(timer);
+        resolve(false);
+      }
+    });
   }
 
   send(frame: PhoneFrame): void {
@@ -159,6 +206,19 @@ export class BareTransport implements Transport {
   }
   onPath(listener: (info: PathInfo) => void): () => void {
     return this.paths.on(listener);
+  }
+
+  mediaBase(): Promise<string> {
+    if (!this.worklet) return Promise.reject(new Error('Your Mac is away'));
+    this.media ??= new Promise<string>((resolve, reject) => {
+      const id = ++this.mediaSeq;
+      this.medias.set(id, { resolve, reject });
+      this.post({ op: 'media', id });
+    }).catch((e: Error) => {
+      this.media = undefined;
+      throw e;
+    });
+    return this.media;
   }
 
   pair(input: PairInput, onStep: (step: PairStep) => void): { cancel(): void } {
@@ -185,9 +245,19 @@ export class BareTransport implements Transport {
     this.sockets.clear();
     this.worklet?.terminate();
     this.worklet = undefined;
+    for (const answer of this.probes.values()) answer(false);
+    this.probes.clear();
+    this.dropMedia();
+  }
+
+  private dropMedia(): void {
+    this.media = undefined;
+    for (const m of this.medias.values()) m.reject(new Error('Your Mac is away'));
+    this.medias.clear();
   }
 
   dispose(): void {
+    this.dropMedia();
     for (const ws of this.sockets.values()) ws.close();
     this.sockets.clear();
     this.worklet?.terminate();
@@ -195,5 +265,7 @@ export class BareTransport implements Transport {
     this.frames.clear();
     this.phases.clear();
     this.pairs.clear();
+    for (const answer of this.probes.values()) answer(false);
+    this.probes.clear();
   }
 }

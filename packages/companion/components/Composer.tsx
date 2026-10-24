@@ -1,16 +1,24 @@
-import { ArrowUp, Clock, ListPlus, Navigation, Square, X } from 'lucide-react-native';
-import { useState } from 'react';
-import { Platform, TextInput, View } from 'react-native';
-import Animated, { FadeInDown, FadeOutUp, LinearTransition, useAnimatedStyle, withSpring, ZoomIn, ZoomOut } from 'react-native-reanimated';
+import { Image } from 'expo-image';
+import { ArrowUp, Clock, ImagePlus, ListPlus, Navigation, Square, X } from 'lucide-react-native';
+import { useRef, useState } from 'react';
+import { Platform, ScrollView, TextInput, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp, LinearTransition, useAnimatedStyle, withSpring, ZoomIn, ZoomOut } from 'react-native-reanimated';
+import { composerPlan, FIELD_LINE_HEIGHT, FIELD_PAD, fieldHeight, MAX_PHOTOS } from '../lib/composer';
+import { pickPhoto } from '../lib/pick';
 import { color, ink, spring, tint } from '../lib/theme';
+import { Options } from './Options';
 import { Card, haptic, Press, T } from './ui';
 
 /**
- * Write to your Mac: a field that grows with what you write, and one button that is Send (when
- * there's something to send) or Stop (rose, while Claude works and the field is empty). While
- * Claude works, what you write can Steer it now or Queue for after (the Mac's composer: ⌥↩
- * steers), and what's queued shows above the field.
+ * Write to your Mac: a field that takes the width and grows with what you write (up to seven
+ * lines, then it scrolls inside), a photo button that's there whatever you've written, and one
+ * round button: Send, or Stop (rose, while Claude works and there's nothing to send). While Claude
+ * works the button queues (after what it's doing, the Mac's ↩) and a long-press offers Steer (now,
+ * the Mac's ⌥↩); what's queued shows above the field. Which does what: lib/composer.ts.
  */
+
+/** A photo picked to go with the message (lib/pick.ts). */
+export type Photo = NonNullable<Awaited<ReturnType<typeof pickPhoto>>>;
 
 /** Your messages waiting for Claude here: steer with one now, or take it out. */
 export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readonly { id: string; text: string }[]; readonly onSteer: (id: string) => void; readonly onRemove: (id: string) => void }) {
@@ -49,13 +57,64 @@ export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readon
     </Animated.View>
   );
 }
-export function Composer({ placeholder, onSend, onStop, onSteer, working, disabled, bottom = 0, left, above }: { readonly placeholder: string; readonly onSend: (text: string) => void; readonly onStop?: () => void; /** While Claude works: Steer (now) beside Send, which then queues (after), as the Mac's composer. */ readonly onSteer?: (text: string) => void; readonly working?: boolean; readonly disabled?: string; readonly bottom?: number; readonly left?: React.ReactNode; /** Above the field: what's queued. */ readonly above?: React.ReactNode }) {
+
+/** The photos going with the message, small, each with its ×. */
+function PhotoStrip({ photos, onRemove }: { readonly photos: readonly Photo[]; readonly onRemove: (uri: string) => void }) {
+  if (!photos.length) return null;
+  return (
+    <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 8, paddingHorizontal: 6, paddingTop: 6, paddingBottom: 2 }}>
+        {photos.map((p) => (
+          <Animated.View key={p.uri} entering={ZoomIn.duration(200)} exiting={ZoomOut.duration(140)} style={{ width: 64, height: 64 }}>
+            <Image source={{ uri: p.uri }} style={{ width: 64, height: 64, borderRadius: 14, backgroundColor: color.sunken }} contentFit="cover" />
+            <Press onPress={() => onRemove(p.uri)} accessibilityLabel="Remove photo" hitSlop={8} style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card }}>
+              <X color={color.text2} size={13} strokeWidth={2.4} />
+            </Press>
+          </Animated.View>
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
+}
+
+export function Composer({
+  placeholder,
+  onSend,
+  onStop,
+  onSteer,
+  working,
+  disabled,
+  bottom = 0,
+  left,
+  above,
+  photos: canAttach,
+}: {
+  readonly placeholder: string;
+  /** Send (and, while Claude works, queue) what you wrote, with the photos you attached. */
+  readonly onSend: (text: string, photos: readonly Photo[]) => void;
+  readonly onStop?: () => void;
+  /** While Claude works: Steer (now) is a long-press on the button, which then queues (after), as the Mac's composer. */
+  readonly onSteer?: (text: string) => void;
+  readonly working?: boolean;
+  readonly disabled?: string;
+  readonly bottom?: number;
+  /** More beside the photo button (the chat's Ask Claude). */
+  readonly left?: React.ReactNode;
+  /** Above the field: what's queued. */
+  readonly above?: React.ReactNode;
+  /** Photos can go with a message: the photo button, there whatever you've written. */
+  readonly photos?: boolean;
+}) {
   const [text, setText] = useState('');
-  const [h, setH] = useState(22);
-  const can = text.trim().length > 0;
-  const stop = working && !can && onStop;
-  const split = Boolean(working && can && onSteer);
-  const btn = useAnimatedStyle(() => ({ transform: [{ scale: withSpring(can || stop ? 1 : 0.86, spring.bouncy) }], opacity: withSpring(can || stop ? 1 : 0.45) }));
+  const [h, setH] = useState(fieldHeight(0));
+  const [pics, setPics] = useState<readonly Photo[]>([]);
+  const [menu, setMenu] = useState(false);
+  // What the long-press sheet sends, read when its row is tapped (after the sheet has closed).
+  const now = useRef({ text: '', pics: [] as readonly Photo[] });
+  now.current = { text, pics };
+  const plan = composerPlan({ working: Boolean(working), hasText: text.trim().length > 0, photos: pics.length, canSteer: Boolean(onSteer), canStop: Boolean(onStop) });
+  const live = plan.tap !== 'idle';
+  const btn = useAnimatedStyle(() => ({ transform: [{ scale: withSpring(live ? 1 : 0.9, spring.bouncy) }] }));
   if (disabled) {
     return (
       <View style={{ paddingHorizontal: 16, paddingBottom: bottom + 10, paddingTop: 8 }}>
@@ -65,70 +124,113 @@ export function Composer({ placeholder, onSend, onStop, onSteer, working, disabl
       </View>
     );
   }
-  const send = (steer = false) => {
-    if (!can) return;
+  const send = (how: 'send' | 'steer') => {
+    const words = now.current.text.trim();
+    const attached = now.current.pics;
+    if (!words && !attached.length) return;
     haptic.commit();
-    if (steer && onSteer) onSteer(text.trim());
-    else onSend(text.trim());
+    if (how === 'steer' && onSteer && words && !attached.length) onSteer(words);
+    else onSend(words, attached);
     setText('');
-    setH(22);
+    setPics([]);
+    setH(fieldHeight(0));
   };
+  const full = pics.length >= MAX_PHOTOS;
+  const attach = async () => {
+    if (full) return;
+    const p = await pickPhoto().catch(() => undefined);
+    if (p) setPics((l) => (l.some((x) => x.uri === p.uri) ? l : [...l, p].slice(0, MAX_PHOTOS)));
+  };
+  // While Claude works, one quiet line says what the button does (no second button).
+  const hint = plan.more.length ? 'Goes after what Claude is doing · hold ↑ to steer now' : working && plan.tap === 'queue' && pics.length ? 'Photos go after what Claude is doing' : undefined;
   return (
-    <View style={{ paddingHorizontal: 12, paddingBottom: bottom + 10, paddingTop: 8, gap: 8 }}>
+    <View style={{ paddingHorizontal: 10, paddingBottom: bottom + 8, paddingTop: 6, gap: 6 }}>
       {above}
-      <Card r={26} style={{ flexDirection: 'row', alignItems: 'flex-end', paddingLeft: left ? 6 : 16, paddingRight: 6, paddingVertical: 6, gap: 6 }}>
-        {left}
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          placeholder={placeholder}
-          placeholderTextColor={color.text3}
-          multiline
-          onContentSizeChange={(e) => setH(Math.min(120, Math.max(22, e.nativeEvent.contentSize.height)))}
-          style={{ flex: 1, color: color.text, fontSize: 16, lineHeight: 21, minHeight: 22, height: Platform.OS === 'web' ? h : undefined, maxHeight: 120, paddingVertical: 9, ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }}
-          onKeyPress={(e) => {
-            // On the web, Enter sends (Shift+Enter is a new line).
-            const ne = e.nativeEvent as unknown as { key: string; shiftKey?: boolean };
-            if (Platform.OS === 'web' && ne.key === 'Enter' && !ne.shiftKey) {
-              (e as unknown as { preventDefault(): void }).preventDefault();
-              // ⌥↩ steers, as on the Mac.
-              send((ne as { altKey?: boolean }).altKey === true);
-            }
-          }}
-        />
-        {split ? (
-          <Animated.View key="split" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)} style={{ flexDirection: 'row', gap: 6 }}>
-            <Press onPress={() => send(true)} accessibilityLabel="Steer: Claude reads this now" style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: tint.sky }}>
-              <Navigation color={ink.sky} size={14} strokeWidth={2.4} />
-              <T v="callout" c={ink.sky} style={{ fontWeight: '700' }}>
-                Steer
-              </T>
-            </Press>
-            <Press onPress={() => send(false)} accessibilityLabel="Queue: after what Claude is doing" style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: color.primary }}>
-              <ListPlus color={color.onPrimary} size={15} strokeWidth={2.4} />
-              <T v="callout" c={color.onPrimary} style={{ fontWeight: '700' }}>
-                Queue
-              </T>
-            </Press>
-          </Animated.View>
-        ) : (
-        <Animated.View style={btn}>
-          {stop ? (
-            <Animated.View key="stop" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
-              <Press onPress={() => (haptic.commit(), onStop?.())} accessibilityLabel="Stop" style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: tint.rose }}>
-                <Square color={color.error} fill={color.error} size={13} />
-              </Press>
-            </Animated.View>
-          ) : (
-            <Animated.View key="send" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
-              <Press onPress={() => send(false)} disabled={!can} accessibilityLabel="Send" style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: can ? color.primary : color.sunken }}>
-                <ArrowUp color={can ? color.onPrimary : color.text3} size={20} strokeWidth={2.6} />
-              </Press>
-            </Animated.View>
-          )}
+      {hint ? (
+        <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14 }}>
+          <Clock color={color.text3} size={12} />
+          <T v="caption" numberOfLines={1} style={{ flex: 1 }}>
+            {hint}
+          </T>
         </Animated.View>
-        )}
+      ) : null}
+      <Card r={24} style={{ paddingHorizontal: 4, paddingVertical: 4, gap: 2 }}>
+        <PhotoStrip photos={pics} onRemove={(uri) => setPics((l) => l.filter((p) => p.uri !== uri))} />
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
+          {canAttach ? (
+            <Press onPress={() => void attach()} disabled={full} accessibilityLabel="Add a photo" hitSlop={4} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', opacity: full ? 0.4 : 1 }}>
+              <ImagePlus color={color.text2} size={21} />
+            </Press>
+          ) : null}
+          {left}
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            placeholder={placeholder}
+            placeholderTextColor={color.text3}
+            multiline
+            scrollEnabled
+            onContentSizeChange={(e) => setH(fieldHeight(e.nativeEvent.contentSize.height))}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              color: color.text,
+              fontSize: 16.5,
+              lineHeight: FIELD_LINE_HEIGHT,
+              paddingTop: FIELD_PAD,
+              paddingBottom: FIELD_PAD,
+              paddingLeft: canAttach || left ? 4 : 12,
+              paddingRight: 6,
+              minHeight: fieldHeight(0),
+              maxHeight: fieldHeight(Number.POSITIVE_INFINITY),
+              height: Platform.OS === 'web' ? h : undefined,
+              textAlignVertical: 'top',
+              ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}),
+            }}
+            onKeyPress={(e) => {
+              // On the web, Enter sends (Shift+Enter is a new line); ⌥↩ steers, as on the Mac.
+              const ne = e.nativeEvent as unknown as { key: string; shiftKey?: boolean; altKey?: boolean };
+              if (Platform.OS === 'web' && ne.key === 'Enter' && !ne.shiftKey) {
+                (e as unknown as { preventDefault(): void }).preventDefault();
+                if (plan.tap === 'stop' || plan.tap === 'idle') return;
+                send(ne.altKey === true && plan.more.includes('steer') ? 'steer' : 'send');
+              }
+            }}
+          />
+          <Animated.View style={btn}>
+            {plan.tap === 'stop' ? (
+              <Animated.View key="stop" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
+                <Press onPress={() => (haptic.commit(), onStop?.())} accessibilityLabel="Stop" style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: tint.rose }}>
+                  <Square color={color.error} fill={color.error} size={13} />
+                </Press>
+              </Animated.View>
+            ) : (
+              <Animated.View key="send" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
+                <Press
+                  onPress={() => send('send')}
+                  onLongPress={plan.more.length ? () => (haptic.commit(), setMenu(true)) : undefined}
+                  delayLongPress={320}
+                  disabled={!live}
+                  accessibilityLabel={plan.tap === 'queue' ? 'Queue: after what Claude is doing' : 'Send'}
+                  accessibilityHint={plan.more.length ? 'Hold to steer Claude now instead' : undefined}
+                  style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: live ? color.primary : color.sunken }}
+                >
+                  <ArrowUp color={live ? color.onPrimary : color.text3} size={20} strokeWidth={2.6} />
+                </Press>
+              </Animated.View>
+            )}
+          </Animated.View>
+        </View>
       </Card>
+      <Options
+        visible={menu}
+        onClose={() => setMenu(false)}
+        title="While Claude works"
+        options={[
+          { Icon: Navigation, label: 'Steer now', sub: 'Claude reads it at its next step', tone: 'sky', onPress: () => send('steer') },
+          { Icon: ListPlus, label: 'Queue', sub: 'After what Claude is doing', tone: 'mint', onPress: () => send('send') },
+        ]}
+      />
     </View>
   );
 }

@@ -6,7 +6,7 @@ import { WebView, type WebViewMessageEvent, type WebViewNavigation, type WebView
 const Web = WebView as unknown as ComponentType<WebViewProps & { ref?: Ref<WebView> }>;
 
 /** The page's messages out (lib/terminal/page.ts). */
-export type TermPageMsg = { readonly t: 'ready' } | { readonly t: 'input'; readonly data: string } | { readonly t: 'ctrlUsed' } | { readonly t: 'zoom'; readonly zoom: number };
+export type TermPageMsg = { readonly t: 'ready' } | { readonly t: 'input'; readonly data: string } | { readonly t: 'ctrlUsed' } | { readonly t: 'font'; readonly size: number; readonly fit: boolean };
 export interface TermHandle {
   /** A message into the page (`window.__beluga`). */
   send(msg: object): void;
@@ -34,7 +34,8 @@ export function TermView({ html, onMessage, style, ref }: { readonly html: strin
           // not ours
         }
       }}
-      // Nothing but the page itself: no navigation, no files, no zooming the page (pinch is the terminal's).
+      // Nothing but the page itself: no navigation, no files, no zooming the page (pinch is the
+      // terminal's text size), no page scrolling (the page pans the grid itself).
       onShouldStartLoadWithRequest={(r: WebViewNavigation) => r.url === 'about:blank' || r.url.startsWith('data:')}
       javaScriptEnabled
       domStorageEnabled={false}

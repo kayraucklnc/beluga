@@ -15,6 +15,7 @@ import { GIT_API } from './git-api.js';
 import { VIEWS_API } from './views-api.js';
 import { FILES_EDIT_API } from './files-api.js';
 import { COMPANION_API } from './companion-api.js';
+import { ASSISTANT_API } from './assistant-api.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -169,7 +170,7 @@ export const API = {
   'files.downloadSpec': args(z.string().max(4096)),
   'files.closeViewer': args(),
   'files.readImage': args(),
-  // An image a document points at (Markdown's ![](diagram.png)) or a PDF, read the way files.open reads one: → { mediaType, data (base64) }.
+  // An image a document points at (Markdown's ![](diagram.png)), a PDF or a video (the reader plays it), read the way files.open reads one: → { mediaType, data (base64) }.
   'files.readImageFile': args(Location),
   // A file's text without opening it in the viewer (the Mac Changes tab shows a changed file as itself): → { content, truncated }.
   'files.read': args(Location),
@@ -328,6 +329,8 @@ export const API = {
   ...FILES_EDIT_API,
   // ---- your phone: pairing it, removing it, what it asks for (companion-api.ts)
   ...COMPANION_API,
+  // ---- Your Mac's chats, as tabs on the Mac (assistant-api.ts)
+  ...ASSISTANT_API,
 } as const;
 
 export type Api = typeof API;

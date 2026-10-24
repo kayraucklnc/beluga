@@ -9,6 +9,7 @@ import { Archive } from './scenes/Archive.js';
 import { Earnings } from './scenes/Earnings.js';
 import { Friends } from './scenes/Friends.js';
 import { Parallel } from './scenes/Parallel.js';
+import { Tables } from './scenes/Tables.js';
 import { TOUR_COPY } from './tour-copy.js';
 import s from './onboarding.module.css';
 
@@ -54,6 +55,7 @@ export function GlowButton({ children, onClick, autoFocus, quiet }: { readonly c
 const SCENES: Partial<Record<Step, () => ReactNode>> = {
   parallel: () => <Parallel />,
   agents: () => <Agents />,
+  tables: () => <Tables />,
   friends: () => <Friends />,
   earnings: () => <Earnings />,
   archive: () => <Archive />,

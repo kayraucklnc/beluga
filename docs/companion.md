@@ -116,6 +116,24 @@ One Noise stream (`@hyperswarm/secret-stream` over hyperdht's UDX), framed as to
 | `term_input {term, data}` (1.7): keys typed on the phone | (the session's own echo, in `term_data`) |
 | `bye` | `bye {reason}` |
 
+**Files come in pieces, the phone asking for each.** One `get` is answered by one `chunk` of at most
+`COMPANION_PIECE` (192 KB) from `off`; the phone asks for the next offset until `eof`
+(`packages/companion/lib/pieces.ts`, BLG-106), writing a full picture to its cache as it comes
+(`lib/sink.ts`) and showing the thumbnail meanwhile, with how far it is. A piece that doesn't come
+in 20 s fails the fetch with words and Retry, never an endless spinner.
+
+**Videos stream** (BLG-100, BLG-103). The link worklet runs a small HTTP server on the phone's
+loopback (`127.0.0.1`, a random port and a random token in every URL;
+`src/companion/media-stream.ts`), and the player (expo-video) plays from it. Each range request is
+answered with pieces fetched over the link with the same `get {ref, 'full', off}`, so no protocol
+change: only what the player reads is fetched, two pieces ahead and no faster than it takes them,
+and what came is kept in a 48 MB cache (seeking back costs nothing). Nothing autoplays or loops; a
+video plays only when tapped and pauses when you swipe away, leave or put the app away. MP4, M4V and
+MOV play on both platforms, WebM on Android (iPhone says so); a codec the player lacks shows why.
+Nothing is transcoded. The Mac makes a video's thumbnail from its first frame (Quick Look). Android
+allows plain http only to 127.0.0.1 (`plugins/loopback-cleartext.js`), iOS only to local addresses
+(`NSAllowsLocalNetworking`).
+
 **Views, not state.** The Mac's shared state is several MB and full of things the phone mustn't
 show. The phone never sees it: `src/companion/views.ts` turns it into small views per topic, each
 already cut down for the phone (code stripped, steps in words, paths as opaque refs):
@@ -138,7 +156,10 @@ already cut down for the phone (code stripped, steps in words, paths as opaque r
   (`dependsOn`), each task its goal, acceptance, the tasks it waits on (`blockedBy`) and why.
 - `tasks` and `task:<id>` (1.3): the board by project and status (key, title, priority, who has
   it); a task's goal, acceptance with ticks, activity, worktree and pull request, and where it may
-  be moved.
+  be moved. `tasks.others` (optional, BLG-109): the tasks the lists leave out (older done,
+  canceled), by key, title and status only, so a task key in words is a live chip on the phone
+  as on the Mac: `task:BLG-12` in inline code, a bare `BLG-12` the board has, `@BLG-12`, read by
+  the Mac's own `linkTaskKeys` (src/shared/task-refs.ts). An older Mac leaves it out.
 
 **Drawn blocks (1.3).** What Claude drew for the screen in an answer (a `beluga-view`: table,
 chart, stats, code, colors; a `beluga-graph`; `beluga-tasks`) goes along with its code chip entry
@@ -182,6 +203,12 @@ and the rest under Other Steps, the very steps of the Mac's toolbar (`BranchView
 `companion.branchStep`. Steps Claude does, and the ones that can't be undone, ask first; Merge into
 the main folder keeps its sheet, and Open PR opens GitHub. That band is the one place for them: the
 conversation's ••• doesn't repeat Merge. An older Mac's band only says the next step.
+1.10 (BLG-110) brought a sub-agent opened on the phone (`SINCE.subAgent`): `companion.subAgent(topic,
+turn, id)` → `SubAgentDetailView`, its whole activity in words (up to 200 steps, from your Claude's
+step records of the turn, else the transcript Claude Code keeps of it) and, once it ended, the report
+it gave back, through `stripCode` like any answer of Claude's (never its prompt, its tools' input or
+output, or a file). A sub-agent Claude Code still sees working stays `running` in the view though its
+turn ended (one left working in the background). An older Mac's sheet shows the view's steps.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
@@ -273,11 +300,15 @@ the same output live, and either can type.
 - **Size: the Mac's.** The session keeps the Mac's grid (`cols × rows`, told in `term_status`, again
   when the Mac resizes it). The phone never resizes it: with two screens on one PTY the last resize
   wins, and the Mac's terminal would reflow under you each time you looked from the phone. The phone
-  draws that grid fitted to its width; a pinch zooms in (then it pans sideways), one finger scrolls
-  back, and the zoom is remembered.
+  draws that grid at a readable text size (13 px by default, BLG-108) and pans over what's wider or
+  taller than the screen; a pinch or ••• › A−/A+ sets the size (8–24 px), ••• › Fit draws the whole
+  width instead, and the choice is remembered (`lib/terminal/zoom.ts`). One finger pans, then
+  scrolls back; output keeps the cursor in view.
 - **Drawn by xterm.js in a WebView** (`react-native-webview`, an iframe in the web build), bundled
-  with the app (`lib/terminal/xterm.generated.ts`, `npm run terminal:bundle`): no CDN, nothing
-  fetched. Raw PTY bytes go in, so colours, cursor moves and full-screen programs draw as on the Mac.
+  with the app (`lib/terminal/xterm.generated.ts`, `npm run terminal:bundle`), in JetBrains Mono
+  (OFL, Latin subsets inline as `lib/terminal/font.generated.ts`, no ligatures) and xterm's WebGL
+  renderer (`@xterm/addon-webgl`, in the same bundle), which draws box drawing, blocks and braille
+  itself, lined up to the cell; without WebGL the DOM renderer draws. No CDN, nothing fetched. Raw PTY bytes go in, so colours, cursor moves and full-screen programs draw as on the Mac.
   The page drops xterm's answers to the program's own queries (cursor position, device
   attributes): the Mac's screen answers those, once.
 - **Keys.** A key bar above the keyboard: Esc, Tab, Ctrl (for the next key), ↑ ↓ ← → (in the
@@ -353,6 +384,13 @@ The phone holds no connection it isn't using.
   destroyed: no UDP, no keepalives, no wakeups. Coming back is about one second (the DHT lookup and
   the handshake; the Mac's last direct address is tried first, and on the same Wi-Fi hyperdht
   connects over the LAN).
+- **Coming back checks the link (BLG-105).** Android stops the app's timers in the background, so
+  the grace may never fire there and the process is frozen with the link "open". Back in front
+  (AppState, or a link or notification opening it), the phone goes by the clock
+  (`packages/companion/lib/link/resume.ts`): away past the grace, the link is replaced at once;
+  otherwise one ping (3 s) checks it, and a link that doesn't answer is replaced. A dial under way
+  is left alone (one at a time). A link that drops while you look is dialed again by itself, after
+  1, 2, 4… up to 30 s, six times, then it waits for Try again or the next time the app comes back.
 - **The relay costs nothing extra.** It's one more way to open the same link, open only while the
   app is in front and closed with it; the keepalives and views over it are the same. The phone
   never holds a relay socket in the background.
@@ -412,12 +450,18 @@ Advanced at the bottom. Learn it once and it works everywhere.
 - **Work**: Conversations · Plans · Tasks. A conversation reads as cards: your message, Claude's
   answer (code folded into chips; views and graphs drawn), and while it works a live panel: thinking
   or writing with a soft shimmer, the step it's on with its tool, time and progress, the steps
-  before it sliding in. Sub-agents are rows with their own live step; tap one for a sheet with its
-  steps and its outputs. While Claude works the composer offers Steer (now) and Queue (after), and
-  what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
+  before it sliding in. Sub-agents are rows in the turn that started them, with their own live step
+  and how long they've been at it; while any works, a strip under the header says "3 agents · 2
+  running" with a chip each, wherever their turn has scrolled to. Tap one for a sheet with what it's
+  doing now, its activity, the report it gave back and its outputs (BLG-110). The composer's field
+  takes the width and grows to seven lines; its photo button is always there (photos go along as
+  `companion.ask` files). While Claude works its one round button queues (after) and a long-press
+  offers Steer (now, words only); what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
   worktree made; ••• › Merge… checks, merges and gets conflicts resolved; ••• › Files reads the
   worktree's files and ••• › Terminal is its terminal, shared with the Mac (BLG-42). Images open full screen from where they are (shared
-  transition): pinch, swipe between them, swipe down to put back. Text files open in a reader with
+  transition): pinch, swipe between them, swipe down to put back; GIFs animate. Videos show their
+  first frame with a play mark and stream when tapped, with the platform's controls (play, pause,
+  seek, full screen); Done gives the swipes back. Text files open in a reader with
   search, wrap and "follow" for logs.
 - **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes
   as one pill: **Your Mac** first and by default (a laptop), then a project, an open conversation,
@@ -460,9 +504,19 @@ bug", "Open a task to fix X". The same conversation on both screens: the Ask she
 and Home's compact **Ask your Mac** row on the phone (`conv:mac:assistant`, live steps, Steer and
 Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `assistant` view).
 
-- **Where it runs.** `~/.beluga/assistant/work/` is its Claude's folder; its scratch folder is
-  `work/.beluga/scratch/`. Its Claude session id (`state.json`) and its history (`history.json`) sit
-  beside it. Everything in Beluga's home is secret to the phone (`isSecretPath`) except the folders
+- **Its chats (BLG-102).** Several at once, tabs on its page on the Mac: + starts one, × deletes
+  one for good after asking (its messages here and on the phone, its folder, its Claude transcript;
+  there's no archive; deleting the last leaves a fresh one). Each is its own conversation: the first
+  keeps `conv:mac:assistant`, the others are `conv:mac:assistant:<id>` (`isMacTopic`). The tab open
+  on the Mac is Home's `assistant` (its topic), so Ask your Mac talks to it; the others are listed
+  by name ("Your Mac · …") wherever conversations are (working now, what needs you). An older
+  phone, knowing only `conv:mac:assistant`, reaches the open chat once the first one is deleted
+  (`phoneChannel`), and a message it sends there brings the first chat back as a tab.
+- **Where it runs.** `~/.beluga/assistant/work/` is its Claude's folder, shared by its chats; its
+  scratch folder is `work/.beluga/scratch/`. Each chat's Claude session id and history sit beside
+  it (`chats/<id>/state.json`, `history.json`; `chats.json` lists them in tab order with the one
+  open). The one chat from before BLG-102 (`state.json`, `history.json`) moves into `chats/main/`
+  on the first start. Everything in Beluga's home is secret to the phone (`isSecretPath`) except the folders
   Claude works in (`workspaces`, `chats`, `tasks/work`…): `assistant/work` joins them, narrowly, the
   way friends' tasks' `tasks/work` did, and nothing beside it does. Credentials are secret anywhere,
   so a `.env` in it still never leaves. Outside the home (`~/Beluga Assistant`) would have put a

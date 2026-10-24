@@ -29,6 +29,7 @@ import {
   type PlanView,
   type StepView,
   type SubAgentView,
+  TASK_OTHERS,
   type TaskPageView,
   type TaskSummary,
   type TasksView,
@@ -40,7 +41,7 @@ import {
 } from './protocol.js';
 import { HIDDEN_STEP, humanizeDoing, humanizeStep, plainLine, stepWords, stripCode } from './strip.js';
 import { withMath } from './math-svg.js';
-import { ASSISTANT_CHANNEL, ASSISTANT_TITLE } from '../shared/assistant.js';
+import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, activeAssistantChannel, assistantChatTitle, isAssistant } from '../shared/assistant.js';
 import { STEERED_IN, type SteeredMessage, steeredMessages, steerWaiting } from '../shared/claude-notices.js';
 
 /** Words for a turn: code taken out (strip.ts), math typeset (math-svg.ts). */
@@ -370,8 +371,31 @@ interface Conversation {
   readonly mine: boolean;
 }
 
-/** "Your Mac" (BLG-47, core/assistant): one conversation for the whole Mac, not in any project. */
-const ASSISTANT: Conversation = { channel: ASSISTANT_CHANNEL, title: ASSISTANT_TITLE, mine: true };
+/**
+ * "Your Mac" (BLG-47, core/assistant): your Claude for the whole Mac, not in any project. Since
+ * BLG-102 it has chats (the Mac's tabs): each its own conversation, named by its tab when there
+ * are more than one; the open one is Home's Ask your Mac.
+ */
+function assistantConversations(state: DomainState): Conversation[] {
+  const chats = state.assistant.chats;
+  if (!chats.length) return [{ channel: ASSISTANT_CHANNEL, title: ASSISTANT_TITLE, mine: true }];
+  return chats.map((c) => ({ channel: c.channel, title: chats.length > 1 ? `${ASSISTANT_TITLE} · ${assistantChatTitle(c.channel, state.log)}` : ASSISTANT_TITLE, mine: true }));
+}
+
+/** The open chat of Your Mac: Home's Ask your Mac. */
+const openAssistant = (state: DomainState): Conversation => {
+  const channel = activeAssistantChannel(state.assistant);
+  return assistantConversations(state).find((c) => c.channel === channel) ?? { channel, title: ASSISTANT_TITLE, mine: true };
+};
+
+/**
+ * The conversation a channel the phone names is: an older phone knows only `mac:assistant`, so
+ * once that first chat is deleted it means the chat open on the Mac. Anything else as it is.
+ */
+export function phoneChannel(state: DomainState, channel: string): string {
+  if (channel !== ASSISTANT_CHANNEL || !state.assistant.chats.length || state.assistant.chats.some((c) => c.channel === channel)) return channel;
+  return activeAssistantChannel(state.assistant);
+}
 
 /**
  * Every conversation the phone can open: Your Mac, your workspaces (not archived), the ones shared
@@ -390,7 +414,7 @@ export function conversations(state: DomainState): Conversation[] {
     .slice(-TASKS_SHOWN)
     .map((t) => ({ channel: `task:${t.id}`, title: plainLine(t.summary ?? t.ask, 300) || 'A question', project: 'Asked of friends', projectId: 'asked', mine: false }));
   const seen = new Set<string>();
-  return [ASSISTANT, ...own, ...shared, ...room, ...asked].filter((c) => !seen.has(c.channel) && Boolean(seen.add(c.channel)));
+  return [...assistantConversations(state), ...own, ...shared, ...room, ...asked].filter((c) => !seen.has(c.channel) && Boolean(seen.add(c.channel)));
 }
 
 const itemsOf = (state: DomainState, channel: string): LogItem[] => state.log.filter((l) => l.channel === channel);
@@ -488,19 +512,22 @@ function ccAgents(state: DomainState, channel: string): Map<string, CcAgent> {
 function subView(sub: SubAgent, outputs: readonly OutputView[], cc?: CcAgent): SubAgentView {
   const steps = sub.steps.filter((s) => !HIDDEN_STEP.test(s));
   const last = steps.at(-1);
+  // Still at work when Claude Code sees it working, though its run counted it done (BLG-110: its
+  // turn ended while it works on in the background): the phone shouldn't say nothing happens.
+  const status = sub.status === 'done' && cc?.status === 'running' ? 'running' : sub.status;
   // What it's doing now: Claude Code's own words for it when it's watched, else its last step.
-  const now = sub.status !== 'running' ? undefined : cc?.step ? humanizeDoing(cc.step) : last ? (({ doing, tool }) => ({ text: doing, tool }))(stepWords(last)) : undefined;
+  const now = status !== 'running' ? undefined : cc?.step ? humanizeDoing(cc.step) : last ? (({ doing, tool }) => ({ text: doing, tool }))(stepWords(last)) : undefined;
   return {
     id: clip(sub.id, 200),
     title: clip(plainLine(sub.title, 300) || 'Sub-agent', 300),
-    status: sub.status,
+    status,
     steps: sub.steps.slice(-30).map(humanizeStep),
     outputs: outputs.filter((o) => o.by === sub.id).slice(0, 50),
     trail: trailOf(sub.steps, 30),
     ...(now ? { step: clip(now.text, 300), tool: now.tool } : {}),
     ...(cc?.type ? { type: clip(cc.type, 60) } : {}),
     ...((sub.startedAt ?? cc?.startedAt) !== undefined ? { startedAt: Math.round((sub.startedAt ?? cc?.startedAt)!) } : {}),
-    ...(cc?.endedAt !== undefined && sub.status !== 'running' ? { endTs: Math.round(cc.endedAt) } : {}),
+    ...(cc?.endedAt !== undefined && status !== 'running' ? { endTs: Math.round(cc.endedAt) } : {}),
     count: Math.max(steps.length, cc?.steps ?? 0),
   };
 }
@@ -735,7 +762,7 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
   const chats = state.network.friends.reduce((n, f) => n + f.unread, 0) + state.network.groups.reduce((n, g) => n + g.unread, 0);
   const review = boardIssues(state).filter((i) => i.status === 'in_review');
   const first = review[0] ? taskTopic(review[0].id) : undefined;
-  const assistant = summaryOf(state, ASSISTANT, waiting, ctx);
+  const assistant = summaryOf(state, openAssistant(state), waiting, ctx);
   return {
     mac: { name: clip(ctx.mac.name, 100), version: clip(ctx.mac.version, 40) },
     // 1.5: Your Mac, for Home's "Ask your Mac" (its last line, whether it works).
@@ -757,7 +784,7 @@ export function workView(state: DomainState, ctx?: ViewContext): WorkView {
   const byProject = new Map<string, { id: string; name: string; conversations: ConvSummary[]; icon?: string }>();
   // Your Mac has its own places (Home, the Ask sheet's first target).
   for (const c of convs) {
-    if (c.channel === ASSISTANT_CHANNEL) continue;
+    if (isAssistant(c.channel)) continue;
     const s = summaryOf(state, c, waiting, ctx);
     if (!s) continue;
     const key = c.projectId ?? (c.channel === 'room' ? 'room' : `shared:${c.project ?? ''}`);
@@ -775,7 +802,8 @@ export function workView(state: DomainState, ctx?: ViewContext): WorkView {
 }
 
 /** One conversation's turns (the last VIEW_TURNS, or those before `before`). */
-export function convTurns(state: DomainState, ctx: ViewContext, channel: string, opts: { before?: string; limit?: number } = {}): { turns: TurnView[]; more: boolean } {
+export function convTurns(state: DomainState, ctx: ViewContext, named: string, opts: { before?: string; limit?: number } = {}): { turns: TurnView[]; more: boolean } {
+  const channel = phoneChannel(state, named);
   const conv = conversations(state).find((c) => c.channel === channel) ?? { channel };
   const task = taskOf(state, channel);
   const outputs = task ? [] : outputsOf(ctx, conv);
@@ -789,10 +817,11 @@ export function convTurns(state: DomainState, ctx: ViewContext, channel: string,
 }
 
 export function convView(state: DomainState, ctx: ViewContext, topic: Topic): ConvView {
-  const channel = channelOf(topic) ?? '';
+  const channel = phoneChannel(state, channelOf(topic) ?? '');
   const conv = conversations(state).find((c) => c.channel === channel);
   const { turns, more } = convTurns(state, ctx, channel);
-  const items = needsYou(state).filter((n) => n.topic === topic);
+  const real = convTopic(channel);
+  const items = needsYou(state).filter((n) => n.topic === topic || (real && n.topic === real));
   const task = taskOf(state, channel);
   const working = task ? !isFinal(task.state) : itemsOf(state, channel).some((l) => l.type === 'agent' && isRunning(l.status));
   // Everything this worktree made, newest first: what the viewer swipes through from here.
@@ -990,7 +1019,15 @@ export function tasksView(state: DomainState, ctx?: ViewContext): TasksView {
   });
   // The project with the latest change first.
   const latest = (id: string): number => Math.max(0, ...issues.filter((i) => i.projectId === id).map((i) => i.updatedAt));
-  return { projects: projects.sort((a, b) => latest(b.id) - latest(a.id)).slice(0, 100) };
+  const sorted = projects.sort((a, b) => latest(b.id) - latest(a.id)).slice(0, 100);
+  // Every other task by key, title and status (BLG-109): a key in Claude's words is a chip even when the list leaves it out.
+  const listed = new Set(sorted.flatMap((p) => p.groups.flatMap((g) => g.tasks.map((t) => t.id))));
+  const others = issues
+    .filter((i) => !listed.has(i.id) && taskTopic(i.id))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, TASK_OTHERS)
+    .map((i) => ({ id: clip(i.id, 200), key: clip(i.key, 40), title: clip(plainLine(i.title, 120) || i.key, 120), status: i.status }));
+  return { projects: sorted, ...(others.length ? { others } : {}) };
 }
 
 /** Where a task may be moved from the phone (board.move): the open statuses and Done, not where it is. */

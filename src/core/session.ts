@@ -731,7 +731,7 @@ export class Session {
       return;
     }
     if (opts.fresh && isAssistant(channel)) {
-      assistantOf(this)?.forget();
+      assistantOf(this)?.forget(channel);
       this.store.dispatch({ type: 'context_reset', channel });
       this.host.forgetContext(channel);
       this.toast('Cleared. Your Mac starts a fresh conversation', 'success');

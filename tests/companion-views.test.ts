@@ -332,6 +332,22 @@ describe('the views of a known Mac', () => {
     expect(viewOf(state, ctx, 'task:nope')).toBeUndefined();
   });
 
+  it('tasks: the ones the lists leave out go by key, title and status, so a key in words is a chip (BLG-109)', () => {
+    expect(TasksView.parse(viewOf(state, ctx, 'tasks')).others).toBeUndefined();
+    const old = (n: number): Issue => issue(`d${n}`, `LND-${10 + n}`, `Done long ago ${n}`, 'done', { updatedAt: T0 + n, closedAt: T0 + n } as Partial<Issue>);
+    const more = { ...state, board: { ...state.board, issues: [...state.board.issues, ...Array.from({ length: 12 }, (_, n) => old(n)), issue('c1', 'LND-40', 'Dropped', 'canceled')] } };
+    const tasks = TasksView.parse(viewOf(more, ctx, 'tasks'));
+    const listed = tasks.projects.flatMap((p) => p.groups.flatMap((g) => g.tasks.map((t) => t.key)));
+    // Done shows the latest 10; the two oldest and the canceled one come as others, newest first.
+    expect(listed).toContain('LND-21');
+    expect(tasks.others?.map((t) => [t.key, t.status])).toEqual([
+      ['LND-40', 'canceled'],
+      ['LND-11', 'done'],
+      ['LND-10', 'done'],
+    ]);
+    expect(tasks.others?.[1]).toEqual({ id: 'd1', key: 'LND-11', title: 'Done long ago 1', status: 'done' });
+  });
+
   it('a file written after the last answer ended shows with that answer (not nowhere)', () => {
     const late: ViewContext = { ...context(), outputs: (channel) => (channel === 'ws:w1' ? [{ path: '/Users/k/landing/.beluga/scratch/after.png', size: 10, ts: T0 + 1_000_000, cwd: '/Users/k/landing' }] : []) };
     const w1 = ConvView.parse(viewOf(state, late, 'conv:ws:w1'));
