@@ -115,12 +115,32 @@ One Noise stream (`@hyperswarm/secret-stream` over hyperdht's UDX), framed as to
 show. The phone never sees it: `src/companion/views.ts` turns it into small views per topic, each
 already cut down for the phone (code stripped, steps in words, paths as opaque refs):
 
-- `home`: the Mac (name, awake), your usage, what needs you, what's running now, recent outputs,
-  unread counts.
-- `work`: projects and their conversations (title, status, last line).
-- `conv:<channel>`: one conversation: turns (your messages, Claude's answers), live step, sub-agents
-  (title, status, steps, outputs), outputs, its pending question or approval.
+- `home`: the Mac (name, awake), your usage, what needs you, what's running now, unread counts, tasks
+  waiting for your review (1.3). Outputs aren't listed here any more (1.3: `outputs` is sent empty);
+  each running conversation says how many it made since its latest run began (`fresh`).
+- `work`: projects (with their icon's checksum, 1.3) and their conversations (title, status, last line).
+- `conv:<channel>`: one conversation: turns (your messages, Claude's answers), what a running turn
+  is doing now (`live`: thinking, writing, the step with its tool, time and count) and its steps in
+  words with their tools (`trail`), sub-agents (title, status, steps, their own live step, kind,
+  outputs), everything its worktree made (`outputs`: scratch files, reports, its Claude's and
+  sub-agents' outputs, newest first), your queued messages (`queue`), where a merge started from the
+  phone stands (`merge`), its pending question or approval.
 - `plans` and `plan:<id>`: milestones, tasks and their status, decisions waiting.
+- `tasks` and `task:<id>` (1.3): the board by project and status (key, title, priority, who has
+  it); a task's goal, acceptance with ticks, activity, worktree and pull request, and where it may
+  be moved.
+
+**Drawn blocks (1.3).** What Claude drew for the screen in an answer (a `beluga-view`: table,
+chart, stats, code, colors; a `beluga-graph`; `beluga-tasks`) goes along with its code chip entry
+(`code[n].block`, its JSON as written). The phone reads it with the Mac's own parsers and models
+(`src/shared/view-spec.ts`, `graph-spec.ts`, `src/shared/render/`) and draws it natively. A view's
+source never runs on the phone: `companion.viewFetch` names the view (conversation, turn, block) and
+the Mac runs its source as `view.fetch` does for the window, only for your own Claude's answers and
+only sources the view names. Any other code still never leaves the Mac.
+
+**What came when.** A phone checks the Mac's minor (`welcome.v`, `SINCE` in protocol.ts) before it
+subscribes to a newer topic or makes a newer call: an older Mac drops a whole `sub` frame that names a
+topic it doesn't know.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
@@ -152,6 +172,17 @@ parsed. The type is `Record<Method, …>`, so a new API method doesn't compile u
   from their card on the Mac (`gateway.ask`; their approval and trust rules apply). It reads as the
   conversation `conv:task:<id>`: what you asked, their Claude's steps and answer, its files.
 - `companion.signOut`: the calling phone's own certificate goes (never another's), its link closes.
+- `companion.openOnMac {topic | need}` (1.3): every screen is told where to go (a navigate intent)
+  and the Mac app's window comes to the front (its `raise` capability) → `{opened, why?}`.
+- `companion.icon(sum)` (1.3): a project's icon, a PNG of at most 128 px (or a small SVG), by the
+  checksum views carry; the phone keeps it by that checksum.
+- `companion.mergeCheck` / `merge` / `resolve` (1.3): a worktree's merge, the Mac's own way (the
+  Merge sheet's checks, the controller's merge, Solve merge conflict), followed in its `merge`.
+- `companion.draftTask` / `addTask` (1.3): a task described in words, Claude's draft shown first.
+- `companion.viewFetch` (1.3): a live view's rows (above).
+- Also `phone` since 1.3: `board.move` and `board.start` (a task moved along, or started in a new
+  worktree with Claude), and `session.submit` with `urgent` (Steer) next to `host.promote` and
+  `host.cancelQueued` for the queue.
 
 **Answering.** Every needs-you item carries its buttons as calls (`actions`), and, when it takes
 picks or words, an `answer` template: call `method` with `args` after putting the answer at
@@ -280,11 +311,16 @@ Advanced at the bottom. Learn it once and it works everywhere.
 - **Home**: your Mac at the top (a small status dot: linked, away, asleep), and your allowance as
   two soft progress bars (5 hours and week, each with its percentage and reset time). Then **Needs you** as a
   stack of cards: swipe right to approve, left to decline, tap to read it whole, long-press for
-  Always. Then **Running now**: each live conversation as a card with its step ticking over and its
-  sub-agents as dots. Then **Outputs**: the newest images and files, a strip you swipe.
-- **Work**: projects, then conversations. A conversation reads as cards: your message, Claude's
-  answer (code folded into chips), the live step. Sub-agents are a row of chips; tap one for a sheet
-  with its steps and its outputs as a grid. Images open full screen from where they are (shared
+  Always. Then **Running now**: each live conversation as a card with its project's icon, its step
+  ticking over, its sub-agents as dots and a small count of new outputs. Then tasks **for your
+  review**.
+- **Work**: Conversations · Plans · Tasks. A conversation reads as cards: your message, Claude's
+  answer (code folded into chips; views and graphs drawn), and while it works a live panel: thinking
+  or writing with a soft shimmer, the step it's on with its tool, time and progress, the steps
+  before it sliding in. Sub-agents are rows with their own live step; tap one for a sheet with its
+  steps and its outputs. While Claude works the composer offers Steer (now) and Queue (after), and
+  what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
+  worktree made; ••• › Merge… checks, merges and gets conflicts resolved. Images open full screen from where they are (shared
   transition): pinch, swipe between them, swipe down to put back. Text files open in a reader with
   search, wrap and "follow" for logs.
 - **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes

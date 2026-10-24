@@ -84,6 +84,8 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
     },
     desktopNotify: (n) => server.notify([n]),
     zoom: async (dir) => (await server.callCap('zoom', [dir], currentClient())) as { ok: boolean; message: string },
+    // The Mac app's window to the front (Open on your Mac, from the phone): the window that can.
+    raise: () => server.callCap('raise', []),
     open: (target) => openWithSystem(target),
     shutdown: () => void stop('Quit from a screen'),
   }, { network: true });

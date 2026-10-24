@@ -1,4 +1,7 @@
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
+import { criteria, tally } from '../core/board/criteria.js';
+import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived } from '../core/board/model.js';
+import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
 import { type TaskView as GwTask, isFinal } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
@@ -13,19 +16,25 @@ import {
   type ConvSummary,
   type ConvView,
   type HomeView,
+  type LiveView,
+  type MergeView,
   type NeedsYou,
   type OutputView,
   type PeopleView,
   type PlansView,
   type PlanView,
+  type StepView,
   type SubAgentView,
+  type TaskPageView,
+  type TaskSummary,
+  type TasksView,
   Topic,
   type TurnView,
   type UsageView,
   VIEW_TURNS,
   type WorkView,
 } from './protocol.js';
-import { humanizeStep, plainLine, stripCode } from './strip.js';
+import { HIDDEN_STEP, humanizeDoing, humanizeStep, plainLine, stepWords, stripCode } from './strip.js';
 
 /**
  * What the phone sees: small, finished views of the Mac's shared state, one per topic
@@ -55,6 +64,10 @@ export interface ViewContext {
   readonly mac: { readonly name: string; readonly version: string };
   /** Outputs per conversation (channel), newest first. */
   readonly outputs?: (channel: string) => readonly ConvOutput[];
+  /** A project's icon, as the checksum of its small PNG (companion.icon), once it's been made (icons.ts). */
+  readonly icons?: (projectId: string) => string | undefined;
+  /** Where a merge started from the phone stands, per worktree (merge.ts). */
+  readonly merges?: (workspaceId: string) => MergeView | undefined;
 }
 
 // ---- small helpers
@@ -66,6 +79,7 @@ const valid = (t: string): Topic | undefined => (Topic.safeParse(t).success ? (t
 export const convTopic = (channel: string): Topic | undefined => valid(`conv:${channel}`);
 export const chatTopic = (conversation: string): Topic | undefined => valid(`chat:${conversation}`);
 export const planTopic = (id: string): Topic | undefined => valid(`plan:${id}`);
+export const taskTopic = (id: string): Topic | undefined => valid(`task:${id}`);
 /** The channel a `conv:` topic names. */
 export const channelOf = (topic: string): string | undefined => (topic.startsWith('conv:') ? topic.slice(5) : undefined);
 
@@ -435,29 +449,110 @@ function turnStatus(item: AgentItem): TurnView['status'] {
   }
 }
 
-function subView(sub: SubAgent, outputs: readonly OutputView[]): SubAgentView {
+/** Steps in words with their tools' kinds, newest last (what the Mac's chat hides stays hidden). */
+const trailOf = (steps: readonly string[], max: number): StepView[] =>
+  steps
+    .filter((s) => !HIDDEN_STEP.test(s))
+    .slice(-max)
+    .map((s) => {
+      const w = stepWords(s);
+      return { tool: w.tool, text: w.did };
+    });
+
+/** The Claude Code agents of a conversation's own sessions (a worktree's), by the tool call that started each: their live step and kind. */
+function ccAgents(state: DomainState, channel: string): Map<string, CcAgent> {
+  const ws = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  const out = new Map<string, CcAgent>();
+  if (!ws) return out;
+  for (const s of state.claudeCode.sessions) if (s.workspaceId === ws) for (const a of s.agents) out.set(a.toolUseId ?? a.id, a);
+  return out;
+}
+
+function subView(sub: SubAgent, outputs: readonly OutputView[], cc?: CcAgent): SubAgentView {
+  const steps = sub.steps.filter((s) => !HIDDEN_STEP.test(s));
+  const last = steps.at(-1);
+  // What it's doing now: Claude Code's own words for it when it's watched, else its last step.
+  const now = sub.status !== 'running' ? undefined : cc?.step ? humanizeDoing(cc.step) : last ? (({ doing, tool }) => ({ text: doing, tool }))(stepWords(last)) : undefined;
   return {
     id: clip(sub.id, 200),
     title: clip(plainLine(sub.title, 300) || 'Sub-agent', 300),
     status: sub.status,
     steps: sub.steps.slice(-30).map(humanizeStep),
     outputs: outputs.filter((o) => o.by === sub.id).slice(0, 50),
+    trail: trailOf(sub.steps, 30),
+    ...(now ? { step: clip(now.text, 300), tool: now.tool } : {}),
+    ...(cc?.type ? { type: clip(cc.type, 60) } : {}),
+    ...((sub.startedAt ?? cc?.startedAt) !== undefined ? { startedAt: Math.round((sub.startedAt ?? cc?.startedAt)!) } : {}),
+    ...(cc?.endedAt !== undefined && sub.status !== 'running' ? { endTs: Math.round(cc.endedAt) } : {}),
+    count: Math.max(steps.length, cc?.steps ?? 0),
   };
 }
 
-/** The step a running turn is on, in words ("Ran npm test · 137/215", "Thinking"). */
-function liveStep(item: AgentItem): string | undefined {
-  if (!isRunning(item.status)) return undefined;
-  if (item.status === 'queued') return 'Waiting its turn';
-  if (item.status === 'awaiting_approval') return 'Waiting for your approval';
-  if (item.between === 'thinking') return 'Thinking';
-  if (item.between === 'writing') return 'Writing';
-  const last = item.steps.at(-1);
-  const words = last ? humanizeStep(last) : 'Working';
-  return clip(item.progress ? `${words} · ${item.progress}` : words, 300);
+/**
+ * A Claude Code agent of this worktree's sessions that no run reported as its own sub-agent (one a
+ * sub-agent started, say): drawn with the turn it worked in, from what Claude Code says of it.
+ */
+function ccSubView(a: CcAgent, outputs: readonly OutputView[]): SubAgentView {
+  const status: SubAgentView['status'] = a.status === 'running' || a.status === 'idle' ? (a.status === 'running' ? 'running' : 'done') : a.status === 'failed' ? 'failed' : 'done';
+  const now = status === 'running' && a.step ? humanizeDoing(a.step) : undefined;
+  const id = a.toolUseId ?? a.id;
+  return {
+    id: clip(id, 200),
+    title: clip(plainLine(a.description, 300) || a.type || 'Sub-agent', 300),
+    status,
+    steps: [],
+    outputs: outputs.filter((o) => o.by === id).slice(0, 50),
+    trail: [],
+    ...(now ? { step: clip(now.text, 300), tool: now.tool } : {}),
+    ...(a.type ? { type: clip(a.type, 60) } : {}),
+    startedAt: Math.round(a.startedAt),
+    ...(a.endedAt !== undefined ? { endTs: Math.round(a.endedAt) } : {}),
+    count: a.steps,
+  };
 }
 
-function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[]): TurnView | undefined {
+/** What a running turn is doing now: thinking, writing, a step with its tool and count, waiting. */
+function liveOf(item: AgentItem): LiveView | undefined {
+  if (!isRunning(item.status)) return undefined;
+  const agents = item.subagents.filter((s) => s.status === 'running' && s.kind !== 'background').length;
+  const subs = agents ? { agents } : {};
+  if (item.status === 'queued') return { phase: 'queued', ...subs };
+  if (item.status === 'awaiting_approval') return { phase: 'approval', ...subs };
+  if (item.between === 'thinking' || item.between === 'writing') return { phase: item.between, ...(item.betweenAt !== undefined ? { since: Math.round(item.betweenAt) } : {}), ...subs };
+  const last = item.steps.filter((s) => !HIDDEN_STEP.test(s)).at(-1);
+  if (!last) return item.text ? { phase: 'writing', ...subs } : { phase: 'starting', ...(item.ts ? { since: item.ts } : {}), ...subs };
+  const w = stepWords(last);
+  return {
+    phase: 'step',
+    words: clip(w.doing, 300),
+    tool: w.tool,
+    ...(item.progress ? { progress: clip(item.progress, 40) } : {}),
+    ...(item.stepAt !== undefined ? { since: Math.round(item.stepAt) } : {}),
+    ...subs,
+  };
+}
+
+/** The step a running turn is on, in words ("Running the tests · 137/215", "Thinking"). */
+function liveStep(item: AgentItem): string | undefined {
+  const live = liveOf(item);
+  if (!live) return undefined;
+  switch (live.phase) {
+    case 'queued':
+      return 'Waiting its turn';
+    case 'approval':
+      return 'Waiting for your approval';
+    case 'thinking':
+      return 'Thinking';
+    case 'writing':
+      return 'Writing';
+    case 'starting':
+      return 'Working';
+    default:
+      return clip(live.progress ? `${live.words ?? 'Working'} · ${live.progress}` : (live.words ?? 'Working'), 300);
+  }
+}
+
+function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[], cc: ReadonlyMap<string, CcAgent> = new Map()): TurnView | undefined {
   const me = myId(state);
   if (item.type === 'chat') {
     const who = item.byAgent ? 'claude' : item.from === me ? 'you' : 'friend';
@@ -475,9 +570,17 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
     return { id: item.id, who: 'system', name: 'Beluga', prose: { text: `${clip(item.by, 60)} ran a command on ${clip(item.ownerName, 60)}'s Mac: it ${how}.`, code: [] }, ts: item.ts };
   }
   const end = item.endTs ?? Number.POSITIVE_INFINITY;
-  const mineOut = outputs.filter((o) => o.ts !== undefined && o.ts >= item.ts && o.ts <= end && !item.subagents.some((s) => s.id === o.by));
   const status = turnStatus(item);
   const step = status === 'working' || status === 'queued' ? liveStep(item) : undefined;
+  const live = status === 'working' || status === 'queued' ? liveOf(item) : undefined;
+  const subs = item.subagents.filter((s) => s.kind !== 'background');
+  const known = new Set(item.subagents.map((s) => s.id));
+  // Agents Claude Code saw working in this turn that no run event named (a sub-agent's own helpers).
+  const extra = [...cc.values()].filter((a) => !known.has(a.toolUseId ?? a.id) && !a.background && a.startedAt >= item.ts && a.startedAt <= end);
+  const theirs = new Set([...known, ...extra.map((a) => a.toolUseId ?? a.id)]);
+  const mineOut = outputs.filter((o) => o.ts !== undefined && o.ts >= item.ts && o.ts <= end && !(o.by && theirs.has(o.by)));
+  const agents = [...subs.map((s) => subView(s, outputs, cc.get(s.id))), ...extra.map((a) => ccSubView(a, outputs.filter((o) => o.by === (a.toolUseId ?? a.id))))].slice(-40);
+  const trail = trailOf(item.steps, 40);
   return {
     id: item.id,
     who: 'claude',
@@ -487,9 +590,11 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
     ...(status ? { status } : {}),
     ...(step ? { step } : {}),
     steps: item.steps.length,
-    ...(item.subagents.length ? { subagents: item.subagents.filter((s) => s.kind !== 'background').slice(-40).map((s) => subView(s, outputs)) } : {}),
+    ...(agents.length ? { subagents: agents } : {}),
     ...(mineOut.length ? { outputs: mineOut.slice(0, 50) } : {}),
     ...(item.endTs !== undefined ? { endTs: item.endTs } : {}),
+    ...(live ? { live } : {}),
+    ...(trail.length ? { trail } : {}),
   };
 }
 
@@ -518,7 +623,21 @@ function outputsOf(ctx: ViewContext, conv: Pick<Conversation, 'channel' | 'cwd'>
   });
 }
 
-function summaryOf(state: DomainState, conv: Conversation, waiting: ReadonlySet<string>): ConvSummary | undefined {
+/** A project's icon checksum, when the Mac has one for it. */
+const iconOf = (ctx: ViewContext | undefined, projectId: string | undefined): { icon: string } | Record<string, never> => {
+  const sum = projectId && ctx?.icons ? ctx.icons(projectId) : undefined;
+  return sum && /^[0-9a-f]{16,64}$/.test(sum) ? { icon: sum } : {};
+};
+
+/** Outputs made since the conversation's latest run began (what Home hints at as new). */
+function freshOutputs(state: DomainState, ctx: ViewContext | undefined, conv: Conversation): number {
+  if (!ctx?.outputs) return 0;
+  const since = [...itemsOf(state, conv.channel)].reverse().find((l) => l.type === 'agent' && l.status !== 'queued')?.ts;
+  if (since === undefined) return 0;
+  return outputsOf(ctx, conv).filter((o) => (o.ts ?? 0) >= since).length;
+}
+
+function summaryOf(state: DomainState, conv: Conversation, waiting: ReadonlySet<string>, ctx?: ViewContext): ConvSummary | undefined {
   const topic = convTopic(conv.channel);
   if (!topic) return undefined;
   const task = taskOf(state, conv.channel);
@@ -545,16 +664,21 @@ function summaryOf(state: DomainState, conv: Conversation, waiting: ReadonlySet<
   const lastAt = Math.max(0, ...items.map((l) => (l.type === 'agent' ? (l.lastAt ?? l.endTs ?? l.ts) : l.ts)));
   const subs = running.reduce((n, a) => n + a.subagents.filter((s) => s.status === 'running' && s.kind !== 'background').length, 0);
   const unread = state.unread[conv.channel] ?? 0;
+  const fresh = freshOutputs(state, ctx, conv);
+  // While it works, its line is what it's doing now (as the conversation's live step says it).
+  const liveLine = running.length ? liveStep(running.at(-1)!) : undefined;
   return {
     topic,
     title: clip(conv.title, 300),
     ...(conv.project ? { project: clip(conv.project, 200) } : {}),
     status,
-    ...(lastText ? { last: plainLine(lastText, 300) } : {}),
+    ...(liveLine && status === 'working' ? { last: liveLine } : lastText ? { last: plainLine(lastText, 300) } : {}),
     ...(lastAt ? { lastAt } : {}),
     ...(unread ? { unread } : {}),
     ...(waiting.has(topic) ? { needsYou: true } : {}),
     ...(subs ? { agents: subs } : {}),
+    ...(conv.projectId && conv.projectId !== 'asked' ? { projectId: clip(conv.projectId, 200), ...iconOf(ctx, conv.projectId) } : {}),
+    ...(fresh ? { fresh } : {}),
   };
 }
 
@@ -566,34 +690,34 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
   const items = needsYou(state);
   const waiting = waitingTopics(items);
   const convs = conversations(state);
-  const summaries = convs.flatMap((c) => summaryOf(state, c, waiting) ?? []);
+  const summaries = convs.flatMap((c) => summaryOf(state, c, waiting, ctx) ?? []);
   const running = summaries.filter((s) => s.status === 'working' || s.status === 'waiting').sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0));
-  const outputs = convs
-    .flatMap((c) => outputsOf(ctx, c).map((o) => ({ ...o, ...(convTopic(c.channel) ? { topic: convTopic(c.channel) } : {}) })))
-    .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
-    .slice(0, 30);
   const work = convs.reduce((n, c) => n + (state.unread[c.channel] ?? 0), 0);
   const chats = state.network.friends.reduce((n, f) => n + f.unread, 0) + state.network.groups.reduce((n, g) => n + g.unread, 0);
+  const review = boardIssues(state).filter((i) => i.status === 'in_review');
+  const first = review[0] ? taskTopic(review[0].id) : undefined;
   return {
     mac: { name: clip(ctx.mac.name, 100), version: clip(ctx.mac.version, 40) },
     me: { name: clip(myName(state), 64), peerId: myId(state) },
     usage: usageViews(state.self?.usage),
     needsYou: items,
     running: running.slice(0, 20),
-    outputs,
+    // Outputs live with their conversation now (ConvView `outputs`); Home only hints (`fresh`).
+    outputs: [],
     unread: { work, chats },
+    ...(review.length ? { review: { count: review.length, ...(first ? { first: { topic: first, key: clip(review[0]!.key, 40), title: clip(plainLine(review[0]!.title, 300), 300) } } : {}) } } : {}),
   };
 }
 
-export function workView(state: DomainState): WorkView {
+export function workView(state: DomainState, ctx?: ViewContext): WorkView {
   const waiting = waitingTopics(needsYou(state));
   const convs = conversations(state);
-  const byProject = new Map<string, { id: string; name: string; conversations: ConvSummary[] }>();
+  const byProject = new Map<string, { id: string; name: string; conversations: ConvSummary[]; icon?: string }>();
   for (const c of convs) {
-    const s = summaryOf(state, c, waiting);
+    const s = summaryOf(state, c, waiting, ctx);
     if (!s) continue;
     const key = c.projectId ?? (c.channel === 'room' ? 'room' : `shared:${c.project ?? ''}`);
-    const entry = byProject.get(key) ?? { id: clip(key, 200), name: clip(c.project ?? c.title, 200), conversations: [] };
+    const entry = byProject.get(key) ?? { id: clip(key, 200), name: clip(c.project ?? c.title, 200), conversations: [], ...(c.projectId ? iconOf(ctx, c.projectId) : {}) };
     entry.conversations.push(s);
     byProject.set(key, entry);
   }
@@ -611,7 +735,8 @@ export function convTurns(state: DomainState, ctx: ViewContext, channel: string,
   const conv = conversations(state).find((c) => c.channel === channel) ?? { channel };
   const task = taskOf(state, channel);
   const outputs = task ? [] : outputsOf(ctx, conv);
-  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(itemsOf(state, channel).flatMap((l) => turnOf(state, l, outputs) ?? []), outputs);
+  const cc = ccAgents(state, channel);
+  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(itemsOf(state, channel).flatMap((l) => turnOf(state, l, outputs, cc) ?? []), outputs);
   const end = opts.before ? all.findIndex((t) => t.id === opts.before) : all.length;
   const upto = end < 0 ? all.length : end;
   const limit = opts.limit ?? VIEW_TURNS;
@@ -626,6 +751,9 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
   const items = needsYou(state).filter((n) => n.topic === topic);
   const task = taskOf(state, channel);
   const working = task ? !isFinal(task.state) : itemsOf(state, channel).some((l) => l.type === 'agent' && isRunning(l.status));
+  // Everything this worktree made, newest first: what the viewer swipes through from here.
+  const outputs = task ? turns.flatMap((t) => t.outputs ?? []) : outputsOf(ctx, conv ?? { channel });
+  const queue = queueOf(state, channel);
   return {
     topic,
     title: clip(conv?.title ?? (channel === 'room' ? state.room || 'The room' : 'Conversation'), 300),
@@ -635,7 +763,42 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     needsYou: items.slice(0, 20),
     canSend: conv?.mine ?? false,
     working,
+    ...(conv?.projectId && conv.projectId !== 'asked' ? { projectId: clip(conv.projectId, 200), ...iconOf(ctx, conv.projectId) } : {}),
+    outputs: outputs.slice(0, 100),
+    ...(queue.length ? { queue } : {}),
+    ...mergeOf(state, ctx, channel),
   };
+}
+
+const base = (p: string): string => p.split('/').at(-1) ?? p;
+
+/**
+ * A worktree's merge as the phone follows it: what the phone started (merging, Claude resolving),
+ * or conflicts the Mac's own Merge found. Claude resolving reads as done once its run there ends.
+ */
+function mergeOf(state: DomainState, ctx: ViewContext, channel: string): Pick<ConvView, 'mergeable' | 'merge'> {
+  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  const ws = id ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) : undefined;
+  if (!id || !ws || ws.kind !== 'worktree' || !ws.branch || ws.archived) return {};
+  const conflicts = (state.conflicts[id] ?? []).slice(0, 100).map((f) => clip(base(f), 300));
+  let merge = ctx.merges?.(id);
+  if (merge?.phase === 'resolving') {
+    const at = merge.at;
+    const runs = itemsOf(state, channel).filter((l): l is AgentItem => l.type === 'agent' && l.ts >= at - 1000);
+    if (runs.length && !runs.some((r) => isRunning(r.status))) merge = { ...merge, phase: 'resolved' };
+  }
+  // (No time: the Mac's merge doesn't say when; a view must hash the same while nothing changes.)
+  if (!merge && conflicts.length) merge = { phase: 'conflicts', at: 0, conflicts };
+  return { mergeable: true, ...(merge ? { merge } : {}) };
+}
+
+/** Your messages waiting for your Claude in a conversation, in run order (the Mac's queue tray, src/ui/compose.ts queueIn). */
+function queueOf(state: DomainState, channel: string): NonNullable<ConvView['queue']> {
+  const me = myId(state);
+  return state.log
+    .filter((l): l is AgentItem => l.type === 'agent' && l.channel === channel && l.status === 'queued' && l.owner === me && (l.requester !== undefined ? l.requester === me : l.requesterName === l.ownerName))
+    .slice(0, 20)
+    .map((l) => ({ id: clip(l.requestId, 200), text: plainLine(l.prompt ?? '', 300) || 'A message' }));
 }
 
 const planState = (plan: Plan, progress: PlanProgress): string => (plan.status === 'active' && plan.paused ? 'paused' : plan.status === 'active' && progress.next.kind === 'done' ? 'done' : plan.status);
@@ -676,6 +839,111 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
     needsYou: needsYou(state)
       .filter((n) => n.topic === topic || (home && n.topic === home))
       .slice(0, 20),
+  };
+}
+
+// ---- tasks (the board)
+
+/** The board's tasks the phone shows: not archived, of a project you have. */
+const boardIssues = (state: DomainState): Issue[] => (state.board.enabled ? state.board.issues.filter((i) => !isArchived(i) && state.projects.some((p) => p.id === i.projectId)) : []);
+
+/** "you", "your Claude", "Mia", "Mia's Claude": who has it, from where you look. */
+const assigneeWords = (state: DomainState, i: Issue): string | undefined => {
+  if (!i.assignee) return undefined;
+  const name = assigneeName(i.assignee, myId(state));
+  return clip(name === 'You' ? 'you' : name === 'Your Claude' ? 'your Claude' : name, 80);
+};
+
+/** The conversation of the worktree doing a task, when it's one the phone can open. */
+function taskConv(state: DomainState, i: Issue): Topic | undefined {
+  const ws = i.worktrees.at(-1) ?? i.carriedBy;
+  if (!ws) return undefined;
+  const open = state.projects.some((p) => p.workspaces.some((w) => w.id === ws && !w.archived && !w.pending));
+  return open ? convTopic(`ws:${ws}`) : undefined;
+}
+
+function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
+  const topic = taskTopic(i.id);
+  if (!topic) return undefined;
+  const t = tally(i.brief.acceptance);
+  const conv = taskConv(state, i);
+  const who = assigneeWords(state, i);
+  return {
+    id: clip(i.id, 200),
+    topic,
+    key: clip(i.key, 40),
+    title: clip(plainLine(i.title, 300) || i.key, 300),
+    status: i.status,
+    priority: i.priority,
+    ...(who ? { assignee: who } : {}),
+    ...(t.total ? { checks: { done: t.done, total: t.total } } : {}),
+    ...(conv ? { conv } : {}),
+    ...(i.pr ? { pr: { number: i.pr.number, state: i.pr.state } } : {}),
+    updatedAt: Math.round(i.updatedAt),
+  };
+}
+
+/** The board's statuses as the phone lists them, and how many of the finished ones. */
+const LISTED = ['in_progress', 'in_review', 'in_plan', 'todo', 'backlog', 'done'] as const;
+const DONE_SHOWN = 10;
+const PER_GROUP = 100;
+
+export function tasksView(state: DomainState, ctx?: ViewContext): TasksView {
+  const issues = boardIssues(state);
+  const projects = state.projects.flatMap((p) => {
+    const mine = issues.filter((i) => i.projectId === p.id);
+    if (!mine.length) return [];
+    const groups = byStatus(mine)
+      .filter((g) => (LISTED as readonly string[]).includes(g.status) && g.issues.length)
+      .sort((a, b) => LISTED.indexOf(a.status as (typeof LISTED)[number]) - LISTED.indexOf(b.status as (typeof LISTED)[number]))
+      .map((g) => {
+        // Done: the latest few, newest first; the rest in the board's order.
+        const list = g.status === 'done' ? [...g.issues].sort((a, b) => (b.closedAt ?? b.updatedAt) - (a.closedAt ?? a.updatedAt)) : g.issues;
+        const max = g.status === 'done' ? DONE_SHOWN : PER_GROUP;
+        const tasks = list.slice(0, max).flatMap((i) => taskSummary(state, i) ?? []);
+        return { status: g.status, label: STATUS_INFO[g.status].label, tasks, ...(list.length > max ? { more: list.length - max } : {}) };
+      });
+    return [{ id: clip(p.id, 200), name: clip(p.name, 200), ...iconOf(ctx, p.id), groups }];
+  });
+  // The project with the latest change first.
+  const latest = (id: string): number => Math.max(0, ...issues.filter((i) => i.projectId === id).map((i) => i.updatedAt));
+  return { projects: projects.sort((a, b) => latest(b.id) - latest(a.id)).slice(0, 100) };
+}
+
+/** Where a task may be moved from the phone (board.move): the open statuses and Done, not where it is. */
+const MOVES = ['todo', 'in_progress', 'in_review', 'done', 'backlog', 'canceled'] as const;
+
+export function taskPageView(state: DomainState, id: string, ctx?: ViewContext): TaskPageView | undefined {
+  const i = boardIssues(state).find((x) => x.id === id);
+  const summary = i ? taskSummary(state, i) : undefined;
+  if (!i || !summary) return undefined;
+  const project = state.projects.find((p) => p.id === i.projectId);
+  const me = myId(state);
+  const goal = i.brief.goal?.trim() ? stripCode(i.brief.goal.slice(0, 4000)) : undefined;
+  const words = (s: string, max: number): string => clip(stripCode(s).text.replace(/\[\[code(?::\d+)?\]\]/g, '(code)'), max);
+  const ws = i.worktrees.at(-1);
+  const worktree = ws ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === ws)?.name : undefined;
+  const { pr: _pr, ...rest } = summary;
+  return {
+    ...rest,
+    project: clip(project?.name ?? '', 200),
+    projectId: clip(i.projectId, 200),
+    ...iconOf(ctx, i.projectId),
+    ...(goal ? { goal } : {}),
+    acceptance: criteria(i.brief.acceptance)
+      .slice(0, 60)
+      .map((c) => ({ text: clip(plainLine(c.text, 1000), 1000), state: c.state, ...(c.reason ? { reason: clip(plainLine(c.reason, 1000), 1000) } : {}) })),
+    activity: i.activity.slice(-60).map((a) => ({
+      id: clip(a.id, 200),
+      at: Math.round(a.at),
+      who: clip(actorName(a.by, me), 80),
+      text: clip(plainLine(activityText(a, me), 500), 500),
+      ...(a.body ? { body: words(a.body, 8000) } : {}),
+      ...(a.kind === 'comment' ? { comment: true } : {}),
+    })),
+    ...(worktree ? { worktree: clip(worktree, 200) } : {}),
+    ...(i.pr ? { pr: { number: i.pr.number, state: i.pr.state, title: clip(plainLine(i.pr.title, 300), 300), checks: i.pr.checks } } : {}),
+    moves: MOVES.filter((s) => s !== i.status).map((s) => ({ status: s, label: STATUS_INFO[s].label })),
   };
 }
 
@@ -769,12 +1037,14 @@ export function peopleView(state: DomainState): PeopleView {
 /** The view a topic carries, or undefined when there's nothing by that name (a plan that's gone). */
 export function viewOf(state: DomainState, ctx: ViewContext, topic: Topic): unknown {
   if (topic === 'home') return homeView(state, ctx);
-  if (topic === 'work') return workView(state);
+  if (topic === 'work') return workView(state, ctx);
   if (topic === 'plans') return plansView(state);
   if (topic === 'chats') return chatsView(state);
   if (topic === 'people') return peopleView(state);
+  if (topic === 'tasks') return tasksView(state, ctx);
   if (topic.startsWith('conv:')) return convView(state, ctx, topic);
   if (topic.startsWith('plan:')) return planPageView(state, topic.slice('plan:'.length));
   if (topic.startsWith('chat:')) return chatView(state, ctx, topic);
+  if (topic.startsWith('task:')) return taskPageView(state, topic.slice('task:'.length), ctx);
   return undefined;
 }

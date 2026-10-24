@@ -1,4 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { openOnMac } from '../../lib/mac';
 import { KeyboardLift } from '../../components/KeyboardLift';
 import { Infinity as Always, MessageSquare, Monitor, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
@@ -56,7 +57,7 @@ export default function Need() {
                   }}
                 />
               ) : null}
-              <Row first={!always && !n.topic} Icon={Monitor} tone="plain" label="Open on your Mac" onPress={() => (store.toast({ text: 'It is waiting in Beluga on your Mac.', tone: 'info' }), close())} chevron={false} />
+              <Row first={!always && !n.topic} Icon={Monitor} tone="plain" label="Open on your Mac" onPress={() => (void openOnMac(n.topic ? { topic: n.topic } : { need: n.id }), close())} chevron={false} />
             </Card>
             {n.answer?.text ? (
               <View style={{ gap: 8 }}>

@@ -1,11 +1,15 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Bot, CircleCheck, CircleX, History, Monitor, OctagonX, Sparkles, Square } from 'lucide-react-native';
+import { Bot, CircleCheck, CircleX, GitMerge, History, Images, Monitor, OctagonX, Sparkles, Square } from 'lucide-react-native';
+import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
+import { MergeBand, MergeSheet } from '../../components/Merge';
+import { ProjectMark } from '../../components/ProjectMark';
+import { openOnMac } from '../../lib/mac';
 import { useRef, useState } from 'react';
 import { Platform, ScrollView, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeInUp, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Composer } from '../../components/Composer';
+import { Composer, QueueTray } from '../../components/Composer';
 import { AgentChips, Prose, StepTicker } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace } from '../../components/Needs';
 import { Options } from '../../components/Options';
@@ -13,7 +17,7 @@ import { OutputGrid, Thumb } from '../../components/Outputs';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
-import { ago, useView, useVisibleNeeds } from '../../lib/hooks';
+import { ago, elapsed, useSince, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { ConvView, OutputView, SubAgentView, Topic, TurnView } from '../../lib/link/protocol';
 import { store } from '../../lib/store';
@@ -50,18 +54,33 @@ export default function Conversation() {
     if (atEnd.current) scroll.current?.scrollToEnd({ animated: true });
   };
   const liveAgent = agent && c ? c.turns.flatMap((t) => t.subagents ?? []).find((a) => a.id === agent.id) ?? agent : agent;
-  const all: OutputView[] = c ? c.turns.flatMap((t) => [...(t.outputs ?? []), ...(t.subagents ?? []).flatMap((a) => a.outputs)]) : [];
+  // The viewer swipes through this worktree's outputs (all of them, since 1.3; else the turns').
+  const all: OutputView[] = c ? (c.outputs ?? c.turns.flatMap((t) => [...(t.outputs ?? []), ...(t.subagents ?? []).flatMap((a) => a.outputs)])) : [];
+  const [outputsOpen, setOutputsOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  // What waits its turn is in the queue above the composer, not a turn of its own.
+  const turns = c ? c.turns.filter((t) => !(c.queue && t.who === 'claude' && t.status === 'queued')) : [];
 
   return (
     <Screen>
-      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} right={
+      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {c?.working ? <Pill label="Working" tone="peach" /> : null}
+            {c?.working && !all.length ? <Pill label="Working" tone="peach" /> : null}
+            {all.length ? (
+              <Press onPress={() => setOutputsOpen(true)} accessibilityLabel={`Outputs, ${all.length}`} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: color.sunken }}>
+                <Images color={color.text2} size={16} />
+                <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
+                  {all.length}
+                </T>
+              </Press>
+            ) : null}
             <More onPress={() => setMenu(true)} label="Conversation options" />
           </View>
         }
       />
       <KeyboardLift>
+        {/* Where a merge stands stays in view while the conversation scrolls under it. */}
+        {c?.merge ? <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}><MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} /></View> : null}
         <ScrollView
           ref={scroll}
           onContentSizeChange={follow}
@@ -85,9 +104,9 @@ export default function Conversation() {
             </Press>
           ) : null}
           {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
-          {c?.turns.map((t, i) => (
-            <Animated.View key={t.id} entering={i > c.turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
-              {t.who === 'you' ? <YourTurn t={t} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} />}
+          {turns.map((t, i) => (
+            <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
+              {t.who === 'you' ? <YourTurn t={t} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
             </Animated.View>
           ))}
           {needs.map((n) => (
@@ -100,27 +119,71 @@ export default function Conversation() {
           ))}
         </ScrollView>
         <Composer
-          placeholder={c?.working ? 'Add to what Claude is doing…' : 'Reply to Claude…'}
+          placeholder={c?.working ? 'Steer Claude, or queue what’s next…' : 'Reply to Claude…'}
           working={c?.working}
           disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
           onSend={(text) => {
             atEnd.current = true;
-            void store.call(calls.send(topic, text)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+            // While Claude works, Send queues (after), as on the Mac; Steer is beside it.
+            const call = c?.working && !topic.startsWith('conv:task:') ? calls.queue(topic, text) : calls.send(topic, text);
+            void store.call(call).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
           }}
+          onSteer={
+            topic.startsWith('conv:task:')
+              ? undefined
+              : (text) => {
+                  atEnd.current = true;
+                  void store.call(calls.steer(topic, text)).then(
+                    () => store.toast({ text: 'Claude reads it at its next step', tone: 'ok' }),
+                    (e: Error) => store.toast({ text: e.message, tone: 'error' }),
+                  );
+                }
+          }
           onStop={() => void store.call(calls.stop(topic))}
           bottom={insets.bottom}
+          above={
+            c?.queue?.length ? (
+              <QueueTray
+                queue={c.queue}
+                onSteer={(qid) => void store.call(calls.steerQueued(qid)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}
+                onRemove={(qid) => void store.call(calls.unqueue(qid)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}
+              />
+            ) : null
+          }
         />
       </KeyboardLift>
       <AgentSheet agent={liveAgent} onClose={() => setAgent(undefined)} />
+      <Sheet
+        visible={outputsOpen}
+        onDismiss={() => setOutputsOpen(false)}
+        header={
+          <View style={{ paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <IconBadge Icon={Images} tone="sky" size={32} />
+            <View style={{ flex: 1 }}>
+              <T v="title" style={{ fontSize: 20 }}>
+                Outputs
+              </T>
+              <T v="caption">Screenshots, logs, reports and scratch files from this worktree</T>
+            </View>
+          </View>
+        }
+      >
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+          <OutputGrid items={all} cols={3} />
+        </ScrollView>
+      </Sheet>
+      {c?.mergeable ? <MergeSheet topic={topic} visible={mergeOpen} onClose={() => setMergeOpen(false)} /> : null}
       <Options
         visible={menu}
         onClose={() => setMenu(false)}
         title={c?.title}
         options={[
           { Icon: Square, label: 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(calls.stop(topic)) },
+          { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
+          { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge'), onPress: () => setMergeOpen(true) },
           { Icon: Sparkles, label: 'Ask with a photo', sub: 'Opens Ask, aimed here', tone: 'peach', onPress: () => router.push({ pathname: '/ask', params: { topic } }) },
           { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
-          { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => store.toast({ text: 'Open it in Beluga on your Mac.', tone: 'info' }) },
+          { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
         ]}
       />
     </Screen>
@@ -140,7 +203,7 @@ function YourTurn({ t }: { t: TurnView }) {
   );
 }
 
-function ClaudeTurn({ t, all, onAgent }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void }) {
+function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic }) {
   const working = t.status === 'working';
   const { width } = useWindowDimensions();
   const outs = t.outputs ?? [];
@@ -159,17 +222,19 @@ function ClaudeTurn({ t, all, onAgent }: { t: TurnView; all: OutputView[]; onAge
         </T>
         <T v="caption">{ago(t.ts)}</T>
       </View>
-      {t.prose.text ? <Prose prose={t.prose} /> : null}
-      {working ? <StepTicker step={t.step ?? 'Thinking'} /> : null}
+      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} /> : null}
+      {working ? <LivePanel t={t} /> : <StepsFold t={t} />}
       {t.subagents?.length ? (
-        <View style={{ gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        working || t.subagents.length <= 3 ? (
+          <AgentList agents={t.subagents} onOpen={onAgent} />
+        ) : (
+          <View style={{ gap: 8 }}>
             <T v="caption" style={{ fontWeight: '600' }}>
-              {t.subagents.length} helpers{t.subagents.some((a) => a.status === 'running') ? ` · ${t.subagents.filter((a) => a.status === 'running').length} working` : ''}
+              {t.subagents.length} sub-agents
             </T>
+            <AgentChips agents={t.subagents} onOpen={onAgent} />
           </View>
-          <AgentChips agents={t.subagents} onOpen={onAgent} />
-        </View>
+        )
       ) : null}
       {outs.length ? (
         <Animated.View entering={FadeIn} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -185,6 +250,23 @@ function ClaudeTurn({ t, all, onAgent }: { t: TurnView; all: OutputView[]; onAge
         </View>
       ) : null}
     </Card>
+  );
+}
+
+/** What a sub-agent is doing now, breathing, with how long it has been at work. */
+function AgentNow({ a }: { a: SubAgentView }) {
+  const secs = useSince(a.startedAt);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+      <Breathe>
+        <ToolBadge kind={a.tool ?? 'agent'} size={22} />
+      </Breathe>
+      <T v="callout" c={color.subagent} numberOfLines={1} style={{ flex: 1, fontWeight: '600' }}>
+        {a.step ?? 'Working'}
+      </T>
+      <TypingDots tone="lavender" />
+      {secs !== undefined ? <T v="caption">{elapsed(secs)}</T> : null}
+    </View>
   );
 }
 
@@ -204,7 +286,7 @@ function AgentSheet({ agent, onClose }: { agent?: SubAgentView; onClose: () => v
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <IconBadge Icon={Bot} tone="lavender" size={30} />
               <T v="callout" style={{ flex: 1 }}>
-                Helper
+                Sub-agent{a.type ? ` · ${a.type}` : ''}
               </T>
               <Pill label={a.status === 'running' ? 'Working' : a.status === 'failed' ? 'Failed' : 'Done'} tone={tone} />
             </View>
@@ -219,9 +301,15 @@ function AgentSheet({ agent, onClose }: { agent?: SubAgentView; onClose: () => v
         <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 18 }}>
           <View>
             <T v="eyebrow" style={{ marginBottom: 10 }}>
-              Steps
+              Steps{a.count ? ` · ${a.count}` : ''}
             </T>
-            {a.steps.map((s, i) => {
+            {a.trail ? (
+              <View style={{ gap: 6 }}>
+                {a.trail.length ? <StepList steps={a.trail} shown={10} /> : null}
+                {a.status === 'running' ? <AgentNow a={a} /> : null}
+              </View>
+            ) : null}
+            {a.trail ? null : a.steps.map((s, i) => {
               const lastStep = i === a.steps.length - 1;
               const live = lastStep && a.status === 'running';
               return (

@@ -4,7 +4,7 @@ import { kv } from './kv';
 import { BareTransport } from './link/bare';
 import { type Call, calls } from './link/calls';
 import { DemoTransport } from './link/demo/transport';
-import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, MAX_UPLOAD_BYTES, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
+import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
 import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
 import { checkOnline } from './link/online';
 import type { Attempt, DeviceSecret, LinkHints, LinkPathName, LinkPhase, Pairing } from './link/rpc';
@@ -30,6 +30,8 @@ export interface LinkState {
   readonly me?: { name: string; peerId: string };
   /** The two sides can't talk: whose update would fix it. */
   readonly outdated?: 'mac' | 'app';
+  /** The Mac's protocol version (its minor says what it has: SINCE). */
+  readonly proto?: { major: number; minor: number };
   readonly pairing?: Pairing;
   readonly ready: boolean;
   /** Why it can't connect, in plain words (the away band and its "Why?" sheet). */
@@ -335,8 +337,11 @@ class Store {
       case 'welcome': {
         const ok = compatible(COMPANION_PROTO, f.v, f.min);
         const outdated = ok ? undefined : COMPANION_PROTO.major < f.min.major ? ('app' as const) : ('mac' as const);
-        this.setState({ mac: f.mac, me: f.me, outdated });
+        const older = this.state.proto?.minor !== f.v.minor;
+        this.setState({ mac: f.mac, me: f.me, outdated, proto: f.v });
         this.keepRelay(f.relay);
+        // What's on screen again, now that it's known what this Mac has (an older one drops a `sub` naming a topic it doesn't know).
+        if (older) this.transport?.send({ t: 'sub', topics: this.topics() });
         if (!outdated) this.flushOutbox();
         return;
       }
@@ -385,7 +390,48 @@ class Store {
 
   /** The topics on screen right now (what the Mac should send). */
   private topics(): Topic[] {
-    return [...this.subCounts.keys()].slice(0, 16);
+    return [...this.subCounts.keys()].filter((t) => this.knows(t)).slice(0, 16);
+  }
+
+  /** Does the Mac have this (its protocol's minor, SINCE)? Before its welcome, only what every 1.x has. */
+  supports(what: keyof typeof SINCE): boolean {
+    const v = this.state.proto;
+    if (!v) return this.state.mode === 'demo';
+    return v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE[what]);
+  }
+  private knows(topic: Topic): boolean {
+    return topic === 'tasks' || topic.startsWith('task:') ? this.supports('tasks') : true;
+  }
+
+  // ---- projects' icons: by checksum, fetched once (companion.icon), kept across launches
+
+  private icons = new Map<string, string>();
+  private iconAsked = new Set<string>();
+  /** A project's icon as a data: URI; undefined while it comes (it's asked for once), or without one. */
+  cachedIcon(sum: string | undefined): string | undefined {
+    if (!sum) return undefined;
+    const have = this.icons.get(sum) ?? kv.get<string>(`icon:${sum}`);
+    if (have) this.icons.set(sum, have);
+    return have;
+  }
+  /** The icon, asking the Mac for it once when it isn't here yet. */
+  icon(sum: string | undefined): string | undefined {
+    if (!sum) return undefined;
+    const have = this.cachedIcon(sum);
+    if (have) return have;
+    if (this.state.phase !== 'open' || this.iconAsked.has(sum) || !this.supports('icon')) return undefined;
+    this.iconAsked.add(sum);
+    this.call<{ sum: string; mime: string; b64: string }>(calls.icon(sum), { queue: false }).then(
+      (r) => {
+        if (!r?.b64) return;
+        const uri = `data:${r.mime};base64,${r.b64}`;
+        this.icons.set(sum, uri);
+        kv.set(`icon:${sum}`, uri);
+        this.emit(`icon:${sum}`);
+      },
+      () => this.iconAsked.delete(sum),
+    );
+    return undefined;
   }
 
   /** A screen shows `topic`: subscribe while it's mounted. */

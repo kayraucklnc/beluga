@@ -11,7 +11,8 @@ import { decode, encode } from '../shared/codec.js';
 export const IPC_VERSION = 1;
 
 /** Capabilities a screen may offer: things only it can do (its clipboard, its notifications…). */
-export const CAPS = ['copyText', 'notify', 'openExternal', 'zoom', 'readClipboardImage'] as const;
+/** `raise`: bring the window to the front (the Mac app; Open on your Mac from the phone). */
+export const CAPS = ['copyText', 'notify', 'openExternal', 'zoom', 'readClipboardImage', 'raise'] as const;
 export type Cap = (typeof CAPS)[number];
 
 const id = z.string().min(1).max(200);

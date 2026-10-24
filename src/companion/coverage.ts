@@ -259,10 +259,10 @@ export const PHONE: Record<Method, Side> = {
   'gateway.setCapabilities': 'mac',
   'gateway.image': 'phone',
 
-  // ---- the board: a comment, nothing structural
+  // ---- the board: a comment and a task's status (moving it along), nothing structural
   'board.create': 'mac',
   'board.update': 'mac',
-  'board.move': 'mac',
+  'board.move': 'phone',
   'board.editBrief': 'mac',
   'board.restoreRevision': 'mac',
   'board.comment': 'phone',
@@ -270,7 +270,8 @@ export const PHONE: Record<Method, Side> = {
   'board.addProof': 'mac',
   'board.removeProof': 'mac',
   'board.remove': 'mac',
-  'board.start': 'mac',
+  // Start a task in a new worktree (with Claude on it), as the Mac's Start does.
+  'board.start': 'phone',
   'board.settleGone': 'mac',
   'board.setAutoTasks': 'mac',
   'board.setPrefix': 'mac',
@@ -333,6 +334,19 @@ export const PHONE: Record<Method, Side> = {
   'companion.askPerson': 'phone',
   // Only ever the calling phone's own certificate.
   'companion.signOut': 'phone',
+  // The Mac app's window shows what the phone has open; an icon the views named by its checksum.
+  'companion.openOnMac': 'phone',
+  'companion.icon': 'phone',
+  // Merging a worktree (a deliberate act: the phone confirms with a sheet first): the Mac's checks,
+  // its merge, and Claude resolving conflicts. Files by name only; workspaces.merge itself stays the Mac's.
+  'companion.mergeCheck': 'phone',
+  'companion.merge': 'phone',
+  'companion.resolve': 'phone',
+  // A live view's rows, run on the Mac with view.fetch's rules (only your own Claude's views, only sources they name).
+  'companion.viewFetch': 'phone',
+  // A task described in words: Claude's draft shown first, then added.
+  'companion.draftTask': 'phone',
+  'companion.addTask': 'phone',
 };
 
 /** A method the phone may call (unknown names are not). */

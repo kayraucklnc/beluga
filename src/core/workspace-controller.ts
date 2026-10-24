@@ -9,6 +9,7 @@ import { carrySession } from '../agent/session-carry.js';
 import type { AgentPlace } from '../agent/types.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
+import type { MergeResult } from '../workspaces/git.js';
 import type { ShareService } from './shares.js';
 import { type LogItem, type Store, type WorkspaceTab, settleRun } from './store.js';
 import { type Conversation, isImportedItem } from '../agent/transcript.js';
@@ -682,26 +683,28 @@ export class WorkspaceController {
   }
 
   /** Merge into the main folder; on conflicts, hand the job to Claude. */
-  async merge(id: string): Promise<void> {
+  /** Merge a worktree into its main folder. → how it went (undefined: it couldn't be tried; a toast says why). */
+  async merge(id: string): Promise<MergeResult | undefined> {
     const ws = this.deps.manager.find(id);
-    if (!ws) return;
+    if (!ws) return undefined;
     const result = await this.act("Couldn't merge", () => this.deps.manager.merge(id));
-    if (!result) return;
+    if (!result) return undefined;
     this.deps.store.dispatch({ type: 'conflicts', id, files: !result.ok && result.reason === 'conflict' ? result.files : [] });
     if (result.ok) {
       this.deps.toast(`Merged ${ws.branch} into the main folder`, 'success');
       this.emit({ kind: 'merged', id });
-      return;
+      return result;
     }
     if (result.reason === 'wrong_branch') {
       this.deps.toast(`The main folder is on ${result.current}, not ${result.expected}. Switch it to ${result.expected} first.`, 'warn');
-      return;
+      return result;
     }
     if (result.reason === 'dirty') {
       this.deps.toast(`The main folder has uncommitted changes (${result.files.slice(0, 3).join(', ')}). Commit or stash them first.`, 'warn');
-      return;
+      return result;
     }
     this.deps.toast(`Merge conflict in ${result.files.length} file(s). Click "Solve merge conflict" to let Claude handle it.`, 'warn');
+    return result;
   }
 
   /** Put a project in a group (or none). */

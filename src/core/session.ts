@@ -68,6 +68,8 @@ export interface SessionOptions {
   readonly workspaces?: WorkspaceManager;
   /** Change the terminal's text size (injected so tests don't resize real windows). */
   readonly zoom?: (dir: ZoomDir) => Promise<{ ok: boolean; message: string }>;
+  /** Bring the Mac app's window to the front (its `raise` capability); rejects when no screen can. */
+  readonly raise?: () => Promise<unknown>;
   /** Only on the host: who may be in the room, and the invite link. */
   readonly room?: RoomControl;
   /** Terminal sessions for workspaces (omitted in tests). */
@@ -955,6 +957,19 @@ export class Session {
     this.updateProfile({ name });
     this.opts.saveSettings?.({ name });
     this.toast(`You're now ${name}`, 'success');
+  }
+
+  /**
+   * Show something on every screen (not only the one that asked: the phone isn't one of them) and
+   * bring the Mac app's window to the front. → whether a window came forward.
+   */
+  async showOnScreens(intent: Intent): Promise<boolean> {
+    this.intents.emit(intent, undefined);
+    if (!this.opts.raise) return false;
+    return this.opts.raise().then(
+      () => true,
+      () => false,
+    );
   }
 
   /** Make the terminal's text bigger or smaller, without needing a keyboard shortcut. */

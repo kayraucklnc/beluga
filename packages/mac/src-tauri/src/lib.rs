@@ -151,6 +151,15 @@ fn focus_main(app: &tauri::AppHandle) {
     }
 }
 
+/// The window to the front, asked by Beluga ("Open on your Mac" from the phone).
+#[tauri::command]
+fn focus_window(app: tauri::AppHandle) {
+    // Beluga itself first (it may be hidden with ⌘H), then its window.
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+    focus_main(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // The quiet relaunch after an update installed while you were away: no window, no focus.
@@ -216,6 +225,7 @@ pub fn run() {
             popup::request_popup_action,
             system_idle_seconds,
             take_pending_links,
+            focus_window,
             sounds::sound_install,
             sounds::sound_prune,
             sounds::sound_play_system,
