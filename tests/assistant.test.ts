@@ -9,6 +9,7 @@ import { MacAssistant, listWork } from '../src/core/assistant/assistant.js';
 import { AgentHost } from '../src/core/agent-host.js';
 import { pretendSystem } from '../src/core/gateway/demo-system.js';
 import { isSecretPath } from '../src/core/shares.js';
+import { Body } from '../src/protocol.js';
 import { Store, initialState } from '../src/core/store.js';
 import { ASSISTANT_CHANNEL } from '../src/shared/assistant.js';
 import { readInline } from '../src/shared/render/inline-model.js';
@@ -123,6 +124,17 @@ describe('Your Mac’s folder', () => {
 });
 
 describe('a run in Your Mac', () => {
+  // Your messages to your own Claude are parsed on the way (session's loopback): a channel the
+  // protocol refused meant the phone's and the Mac's messages here never reached Claude.
+  it('its messages, requests and events are valid bodies', () => {
+    const channel = ASSISTANT_CHANNEL;
+    const parsed = (b: object) => (Body.parse(b) as { channel?: string }).channel;
+    expect(parsed({ kind: 'agent_request', requestId: 'r0', prompt: 'hi', channel })).toBe(channel);
+    expect(parsed({ kind: 'agent_event', requestId: 'r0', requester: ME, event: 'started', text: '', channel })).toBe(channel);
+    expect(parsed({ kind: 'chat', text: 'hi', channel })).toBe(channel);
+    expect(() => Body.parse({ kind: 'chat', text: 'hi', channel: 'mac:other' })).toThrow();
+  });
+
   function host(mac: MacAssistant | undefined, store: Store) {
     const runs: AgentRunInput[] = [];
     const sent: Array<{ event?: string; text?: string }> = [];
