@@ -71,11 +71,13 @@ export default function Ask() {
     // Wait for the list the default comes from (projects, unless aimed at a friend or a conversation).
     if (sel || !targets.length || (!params.friend && !params.topic && !work)) return;
     const again = back?.target ? targets.find((t) => keyOf(t) === back.target) : undefined;
-    const want = again ?? params.friend
-      ? targets.find((t) => t.kind === 'friend' && t.id === params.friend)
-      : params.topic
-        ? targets.find((t) => (t.kind === 'conv' || t.kind === 'mac') && t.topic === params.topic)
-        : (targets.find((t) => t.kind === 'mac') ?? targets.find((t) => t.kind === 'project'));
+    const want =
+      again ??
+      (params.friend
+        ? targets.find((t) => t.kind === 'friend' && t.id === params.friend)
+        : params.topic
+          ? targets.find((t) => (t.kind === 'conv' || t.kind === 'mac') && t.topic === params.topic)
+          : (targets.find((t) => t.kind === 'mac') ?? targets.find((t) => t.kind === 'project')));
     setSel(keyOf(want ?? targets[0]!));
   }, [targets]);
   const target = targets.find((t) => keyOf(t) === sel);

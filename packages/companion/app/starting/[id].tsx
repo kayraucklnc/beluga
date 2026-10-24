@@ -1,6 +1,6 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { GitBranch, MessageCircleQuestion, MoonStar, Sparkles, Workflow } from 'lucide-react-native';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { convHref } from '../../components/Conv';
@@ -29,18 +29,21 @@ export default function Starting() {
   const s = useSend(id);
   useEffect(() => (id ? sends.showing(id) : undefined), [id]);
 
-  useEffect(() => {
-    if (!s) return;
-    if (s.state === 'sent' && (s.topic || s.plan)) {
-      // It's there: this screen becomes it.
-      router.replace((s.plan ? `/plan/${encodeURIComponent(s.plan)}` : convHref(s.topic!)) as never);
-    } else if (s.state === 'failed' && s.start) {
-      // Undone: back where you were, Ask open again with your words.
-      store.toast({ text: s.error ?? "It didn't start.", tone: 'error' });
-      router.back();
-      setTimeout(() => (sends.remove(s.id), router.push({ pathname: '/ask', params: { text: s.text, to: s.start!.target, how: s.start!.kind } })), 80);
-    }
-  }, [s?.state]);
+  // Only while it's the screen in front (another may have opened over it); else when you come back to it.
+  useFocusEffect(
+    useCallback(() => {
+      if (!s) return;
+      if (s.state === 'sent' && (s.topic || s.plan)) {
+        // It's there: this screen becomes it.
+        router.replace((s.plan ? `/plan/${encodeURIComponent(s.plan)}` : convHref(s.topic!)) as never);
+      } else if (s.state === 'failed' && s.start) {
+        // Undone: back where you were, Ask open again with your words.
+        store.toast({ text: s.error ?? "It didn't start.", tone: 'error' });
+        router.back();
+        setTimeout(() => (sends.remove(s.id), router.push({ pathname: '/ask', params: { text: s.text, to: s.start!.target, how: s.start!.kind } })), 80);
+      }
+    }, [s?.state]),
+  );
 
   const k = KIND[s?.start?.kind ?? 'question'];
   const waiting = s?.state === 'waiting';
