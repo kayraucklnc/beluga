@@ -52,7 +52,7 @@ export function e2eLine(n: number): string {
   return `  ${ok ? '✓' : '✘'}  ${String(n).padStart(3)} [phone] › ${suite}.spec.ts:${(n * 7) % 180 + 12} › ${ok ? 'renders' : 'swipes'} ${suite} ${['on a small screen', 'offline', 'with a long title', 'after a reconnect'][n % 4]} (${ms}ms)`;
 }
 
-const UNIT_LOG = ` RUN  v5.0.5 /Users/kayra/beluga
+const UNIT_LOG = ` RUN  v5.0.5 /Users/you/beluga
 
  ✓ tests/companion-protocol.test.ts (24 tests) 41ms
  ✓ tests/companion-views.test.ts (38 tests) 212ms
@@ -253,6 +253,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
   const EMPTY_Q = 'What should Home show when nothing is running?';
   const CHECKS_Q = 'Which checks should run before the phone build ships?';
   const PLAN_Q = 'Ship notifications before iOS?';
+  const LONG_Q = 'The release signing key for the Android app expires in nine days and the Play Console needs a new upload certificate. What should I do about it before we ship the companion to testers next week?';
   const needs: NeedsYou[] = [
     {
       id: 'n-deploy',
@@ -267,6 +268,22 @@ export function makeWorld(now = Date.now()): DemoWorld {
         { label: 'Decline', tone: 'danger', method: 'host.answerApproval', args: ['no', 'ap-deploy'] },
         { label: 'Always', tone: 'plain', method: 'host.answerApproval', args: ['always', 'ap-deploy'] },
       ],
+    },
+    {
+      // A long question with many options (as views.ts sends one with more than three: no buttons
+      // per option, the template takes the pick).
+      id: 'n-long',
+      kind: 'question',
+      title: LONG_Q,
+      detail: 'Your MacBook Pro runs the release pipeline for the phone app. The signing key expires in nine days, the Play Console wants a new upload certificate before the next release, and the CI cache for Gradle is 14 GB. I can rotate the key now, schedule it for after the release, or hand it to someone else.',
+      from: 'Your Claude',
+      topic: 'conv:beluga.push',
+      askedAt: now - 3 * MIN,
+      choices: ['Rotate the signing key now, before the release', 'After the release, on Monday', 'Ask Mia to do it from her Mac', 'Only clear the Gradle cache for now', 'Do both now and tell me when done', 'Write a plan for it first', 'Leave it, I will do it myself'].map((label) => ({ label })),
+      multi: false,
+      freeText: true,
+      actions: [{ label: 'Skip', tone: 'danger', method: 'questions.answer', args: ['q-long', { kind: 'skip' }] }],
+      answer: { method: 'questions.answer', args: ['q-long', { kind: 'answers', answers: { [LONG_Q]: '' } }], slot: [1, 'answers', LONG_Q], join: ', ', text: true, picks: true, label: 'Send' },
     },
     {
       // A single question with a few options: a button each, Skip, and the template for your own words.

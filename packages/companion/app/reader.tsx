@@ -6,7 +6,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Prose } from '../components/Conv';
 import { sizeOf } from '../components/Outputs';
-import { Header, Screen } from '../components/Screen';
+import { Header, Screen, useScrolled } from '../components/Screen';
 import { Card, haptic, Press, T } from '../components/ui';
 import { useFile, useOutput } from '../lib/hooks';
 import { store } from '../lib/store';
@@ -18,6 +18,7 @@ import { color, tint, type } from '../lib/theme';
  * reports it grew (in the view, no polling), the next piece is fetched and the end kept in view.
  */
 export default function Reader() {
+  const { scrolled, onScroll } = useScrolled();
   const { ref, name } = useLocalSearchParams<{ ref: string; name?: string }>();
   const insets = useSafeAreaInsets();
   const file = useFile(ref, 'text');
@@ -114,7 +115,7 @@ export default function Reader() {
 
   const reader =
     isMd && formatted ? (
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40 }}>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40 }}>
         <Prose prose={{ text: text.replace(/^\|.*\|$/gm, (row) => (/^\|[-| ]+\|$/.test(row) ? '' : row.split('|').filter(Boolean).map((c) => c.trim()).join('  ·  '))), code: [] }} size={15} />
       </ScrollView>
     ) : (
@@ -128,6 +129,8 @@ export default function Reader() {
         windowSize={12}
         onScrollToIndexFailed={(e) => setTimeout(() => list.current?.scrollToIndex({ index: e.index, animated: false }), 60)}
         onScrollBeginDrag={() => follow && setFollow(false)}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
         contentContainerStyle={{ paddingVertical: 12, paddingBottom: insets.bottom + 40, minWidth: wrap ? undefined : 1400 }}
         ListFooterComponent={
           more && !follow ? (
@@ -143,7 +146,7 @@ export default function Reader() {
 
   return (
     <Screen>
-      <Header back title={name ?? 'File'} eyebrow={`${isMd ? 'Markdown' : isJson ? 'JSON' : 'Text'} · ${sizeOf(size)}${more ? ` · ${sizeOf(got)} shown` : ''}`} />
+      <Header scrolled={scrolled} back title={name ?? 'File'} eyebrow={`${isMd ? 'Markdown' : isJson ? 'JSON' : 'Text'} · ${sizeOf(size)}${more ? ` · ${sizeOf(got)} shown` : ''}`} />
       <Animated.View entering={FadeInDown.springify()} style={{ paddingHorizontal: 16, paddingBottom: 10, gap: 10 }}>
         {searching ? (
           <Card r={18} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 42, gap: 8 }}>

@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 1 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 2 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -224,7 +224,19 @@ export const ChatsView = z.object({
   chats: z.array(z.object({ topic: Topic, name: z.string().max(100), kind: z.enum(['dm', 'group']), last: z.string().max(300).optional(), lastAt: ts.optional(), unread: z.number().int().min(0) })).max(600),
 });
 export type ChatsView = z.infer<typeof ChatsView>;
-export const ChatView = z.object({ topic: Topic, name: z.string().max(100), kind: z.enum(['dm', 'group']), messages: z.array(ChatMessageView).max(200), more: z.boolean(), live: z.array(z.string().max(100)).max(20) });
+/** Someone in a chat (you too, `me`): whose Claude a message can ask (companion.post `ask`). Since 1.2. */
+export const ChatMemberView = z.object({ peerId: id, name: z.string().max(64), me: z.boolean().optional() });
+export type ChatMemberView = z.infer<typeof ChatMemberView>;
+export const ChatView = z.object({
+  topic: Topic,
+  name: z.string().max(100),
+  kind: z.enum(['dm', 'group']),
+  messages: z.array(ChatMessageView).max(200),
+  more: z.boolean(),
+  live: z.array(z.string().max(100)).max(20),
+  /** Who's in it, you first (1.2; older Macs leave it out). */
+  members: z.array(ChatMemberView).max(200).optional(),
+});
 export type ChatView = z.infer<typeof ChatView>;
 
 export const PeopleView = z.object({

@@ -4,7 +4,7 @@ import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chatHref } from '../../components/Conv';
-import { Header, Screen } from '../../components/Screen';
+import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Avatar, Card, Hairline, IconBadge, Press, T } from '../../components/ui';
 import { ago, useView } from '../../lib/hooks';
 import type { ChatsView } from '../../lib/link/protocol';
@@ -12,13 +12,14 @@ import { color, ink, TAB_BAR_H, tint } from '../../lib/theme';
 
 /** Chats: your friends' DMs and channels, as on the Mac. */
 export default function Chats() {
+  const { scrolled, onScroll } = useScrolled();
   const insets = useSafeAreaInsets();
   const view = useView<ChatsView>('chats');
   const chats = view?.data.chats ?? [];
   return (
     <Screen>
-      <Header title="Chats" at={view?.at} />
-      <ScrollView contentContainerStyle={{ paddingTop: 8, paddingBottom: TAB_BAR_H + insets.bottom + 40 }}>
+      <Header scrolled={scrolled} title="Chats" at={view?.at} />
+      <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingTop: 8, paddingBottom: TAB_BAR_H + insets.bottom + 40 }}>
         {!chats.length ? (
           <T v="callout" style={{ paddingHorizontal: 20 }}>
             {view ? 'No chats yet. Friends you add on your Mac show up here.' : 'Loading chats…'}

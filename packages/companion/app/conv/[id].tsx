@@ -1,7 +1,8 @@
 import { useLocalSearchParams } from 'expo-router';
+import { KeyboardLift } from '../../components/KeyboardLift';
 import { Bot, CircleCheck, CircleX, History, Monitor, OctagonX, Sparkles, Square } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, useWindowDimensions, View } from 'react-native';
+import { Platform, ScrollView, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeInUp, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '../../components/Composer';
@@ -9,7 +10,7 @@ import { AgentChips, Prose, StepTicker } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace } from '../../components/Needs';
 import { Options } from '../../components/Options';
 import { OutputGrid, Thumb } from '../../components/Outputs';
-import { Header, Screen } from '../../components/Screen';
+import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
 import { ago, useView, useVisibleNeeds } from '../../lib/hooks';
@@ -25,6 +26,7 @@ import { router } from 'expo-router';
  * and a composer with Send and Stop.
  */
 export default function Conversation() {
+  const { scrolled, onScroll } = useScrolled();
   const { id } = useLocalSearchParams<{ id: string }>();
   const topic = `conv:${decodeURIComponent(id ?? '')}` as Topic;
   const conv = useView<ConvView>(topic);
@@ -52,18 +54,19 @@ export default function Conversation() {
 
   return (
     <Screen>
-      <Header back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} right={
+      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {c?.working ? <Pill label="Working" tone="peach" /> : null}
             <More onPress={() => setMenu(true)} label="Conversation options" />
           </View>
         }
       />
-      <KeyboardAvoidingView behavior={Platform.OS === 'web' ? undefined : 'padding'} style={{ flex: 1 }}>
+      <KeyboardLift>
         <ScrollView
           ref={scroll}
           onContentSizeChange={follow}
           onScroll={(e) => {
+            onScroll(e);
             const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
             atEnd.current = contentOffset.y + layoutMeasurement.height > contentSize.height - 80;
           }}
@@ -107,7 +110,7 @@ export default function Conversation() {
           onStop={() => void store.call(calls.stop(topic))}
           bottom={insets.bottom}
         />
-      </KeyboardAvoidingView>
+      </KeyboardLift>
       <AgentSheet agent={liveAgent} onClose={() => setAgent(undefined)} />
       <Options
         visible={menu}

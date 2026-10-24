@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { ChevronRight, Settings, Workflow } from 'lucide-react-native';
+import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,11 +8,12 @@ import { ConvCard } from '../../components/Conv';
 import { Mark } from '../../components/Mark';
 import { NeedsStack } from '../../components/Needs';
 import { OutputStrip } from '../../components/Outputs';
-import { AwayBand, Screen } from '../../components/Screen';
-import { UsageCard } from '../../components/Usage';
+import { AwayBand, Screen, StatusShade, useScrolled } from '../../components/Screen';
+import { UsageCard, UsageSheet } from '../../components/Usage';
 import { Card, IconBadge, Pill, Press, Section, T } from '../../components/ui';
 import { useLink, useView, useVisibleNeeds } from '../../lib/hooks';
 import type { HomeView, PlansView } from '../../lib/link/protocol';
+import { displayName } from '../../lib/names';
 import { color, TAB_BAR_H } from '../../lib/theme';
 
 /**
@@ -20,6 +22,8 @@ import { color, TAB_BAR_H } from '../../lib/theme';
  */
 export default function Home() {
   const insets = useSafeAreaInsets();
+  const { scrolled, onScroll } = useScrolled();
+  const [usageOpen, setUsageOpen] = useState(false);
   const link = useLink();
   const home = useView<HomeView>('home');
   const plans = useView<PlansView>('plans');
@@ -29,11 +33,13 @@ export default function Home() {
   const linked = link.phase === 'open';
   const asleep = link.phase === 'asleep';
   const hour = new Date().getHours();
+  const name = displayName(h?.me.name);
   const greeting = hour < 5 ? 'Hi' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: TAB_BAR_H + insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
+      <StatusShade scrolled={scrolled} />
+      <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: TAB_BAR_H + insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
         <View style={{ paddingHorizontal: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Mark size={40} intro={false} />
@@ -49,8 +55,7 @@ export default function Home() {
           </View>
           <Animated.View entering={FadeInDown.delay(80).duration(400)} style={{ marginTop: 24 }}>
             <T v="hero">
-              {greeting}
-              {h?.me.name ? `, ${h.me.name}` : ''}
+              {name ? `${greeting}, ${name}` : 'Hi there'}
             </T>
             <T v="callout" style={{ marginTop: 4 }}>
               {needs.length ? `${needs.length} ${needs.length === 1 ? 'thing needs' : 'things need'} you` : 'Nothing needs you'}
@@ -74,8 +79,9 @@ export default function Home() {
               right={
                 needs.length > 1 ? (
                   <Press onPress={() => router.push('/needs')} hitSlop={10}>
-                    <T v="callout" c={color.info} style={{ fontWeight: '600' }}>
-                      All {needs.length}
+                    {/* One string, so Android measures the whole label again when the count changes width. */}
+                    <T v="callout" c={color.info} numberOfLines={1} style={{ fontWeight: '600', flexShrink: 0 }}>
+                      {`All ${needs.length}`}
                     </T>
                   </Press>
                 ) : null
@@ -118,12 +124,13 @@ export default function Home() {
 
             {h.usage.length ? (
               <Section title="Usage">
-                <UsageCard usage={h.usage} />
+                <UsageCard usage={h.usage} onOpen={() => setUsageOpen(true)} />
               </Section>
             ) : null}
           </>
         )}
       </ScrollView>
+      <UsageSheet usage={h?.usage ?? []} visible={usageOpen} onClose={() => setUsageOpen(false)} />
     </Screen>
   );
 }

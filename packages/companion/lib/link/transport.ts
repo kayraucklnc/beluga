@@ -23,7 +23,7 @@ export interface Transport {
 export interface PairInput {
   readonly link?: string;
   readonly code?: string;
-  /** This phone's name as the Mac shows it ("Kayra's Pixel 9"). */
+  /** This phone's name as the Mac shows it ("Mia's Pixel 9"). */
   readonly name: string;
   readonly platform: 'android' | 'ios';
 }

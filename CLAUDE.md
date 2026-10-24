@@ -24,7 +24,7 @@ daemon or the Mac app, check the phone too, in the same change:
 - Nothing that is source code goes to the phone: files only through `isArtifact` and never
   `isSecretPath` (`src/companion/files.ts`), text through `stripCode`.
 - The phone's look (`packages/companion/lib/theme.ts`): soft pastels and icons, never glows or
-  neon. One main action on the surface; advanced options go behind the ••• / long-press sheet or
+  neon. Headers and toolbars are solid with a hairline once scrolled, never a gradient fade. One main action on the surface; advanced options go behind the ••• / long-press sheet or
   Settings › Advanced, never as extra buttons.
 
 ## Also kept in step

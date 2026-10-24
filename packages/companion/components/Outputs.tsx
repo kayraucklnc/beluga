@@ -6,7 +6,7 @@ import { ActivityIndicator, FlatList, StyleSheet, View, type ViewStyle } from 'r
 import { useFile } from '../lib/hooks';
 import type { OutputView } from '../lib/link/protocol';
 import { store } from '../lib/store';
-import { color, radius } from '../lib/theme';
+import { color, elevation, radius } from '../lib/theme';
 import { IconBadge, Press, T } from './ui';
 
 /**
@@ -19,10 +19,14 @@ export type Origin = { x: number; y: number; w: number; h: number };
 
 export const isText = (o: OutputView): boolean => o.kind === 'text' || o.kind === 'json' || o.kind === 'markdown';
 
-/** Open an output from where it is: images in the viewer (from their place), text in the reader. */
+/**
+ * Open an output from where it is, in the viewer: one page per output of the list it was tapped
+ * in (pictures, and text files as previews with Open), starting at it and growing from its place.
+ * A text file on its own goes straight to the reader.
+ */
 export function openOutput(o: OutputView, group: readonly OutputView[], origin?: Origin): void {
-  if (o.kind === 'image') {
-    const items = group.filter((g) => g.kind === 'image');
+  const items = group.some((g) => g.ref === o.ref) ? [...group] : [o];
+  if (o.kind === 'image' || items.length > 1) {
     store.gallery = { items, index: Math.max(0, items.findIndex((g) => g.ref === o.ref)), origin };
     router.push('/viewer');
     return;
@@ -47,7 +51,7 @@ export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; reado
     ref.current.measureInWindow((x: number, y: number, mw: number, mh: number) => openOutput(o, group, { x, y, w: mw, h: mh }));
   };
   return (
-    <Press onPress={open} accessibilityLabel={o.name} style={[{ width: w, height: h, borderRadius: radius.m, overflow: 'hidden', backgroundColor: color.card, borderWidth: StyleSheet.hairlineWidth, borderColor: color.hairline }, style]}>
+    <Press onPress={open} accessibilityLabel={o.name} style={[{ width: w, height: h, borderRadius: radius.m, overflow: 'hidden', backgroundColor: elevation.raised.surface, borderWidth: 1, borderColor: elevation.raised.border }, style]}>
       <View ref={ref} collapsable={false} style={{ flex: 1 }}>
         {image ? (
           file?.uri ? (
@@ -59,7 +63,7 @@ export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; reado
           <View style={{ flex: 1, padding: 12, justifyContent: 'space-between' }}>
             <IconBadge Icon={Icon} tone={o.kind === 'json' ? 'butter' : o.kind === 'markdown' ? 'lavender' : 'sky'} size={34} square />
             <View>
-              <T v="callout" c={color.text} numberOfLines={2} style={{ fontWeight: '600', fontSize: 13.5 }}>
+              <T v="callout" c={color.text} numberOfLines={1} ellipsizeMode="middle" style={{ fontWeight: '600', fontSize: 13.5 }}>
                 {o.name}
               </T>
               <T v="caption" style={{ marginTop: 2 }}>

@@ -64,6 +64,9 @@ const BASE = {
     onStage: '#ECECEE',
     onStageDim: 'rgba(236,236,238,0.4)',
     onStageChip: 'rgba(42,42,46,0.8)',
+    // A file's page in the viewer: solid, one step up from the stage, with a hairline.
+    onStageCard: '#1C1C1F',
+    onStageLine: 'rgba(255,255,255,0.08)',
   },
   dark: {
     bg: '#1E1E21',
@@ -89,6 +92,9 @@ const BASE = {
     onStage: '#ECECEE',
     onStageDim: 'rgba(236,236,238,0.4)',
     onStageChip: 'rgba(42,42,46,0.8)',
+    // A file's page in the viewer: solid, one step up from the stage, with a hairline.
+    onStageCard: '#1C1C1F',
+    onStageLine: 'rgba(255,255,255,0.08)',
   },
 } as const;
 
@@ -110,6 +116,7 @@ export let scheme: Scheme = 'light';
 export function setScheme(s: Scheme): void {
   scheme = s;
   Object.assign(color, BASE[s]);
+  Object.assign(elevation, ELEVATION[s]);
   for (const [name, [bg, fg]] of Object.entries(PASTELS[s])) {
     tint[name as Pastel] = bg;
     ink[name as Pastel] = fg;
@@ -119,7 +126,6 @@ export function setScheme(s: Scheme): void {
     tint[meaning as keyof Tints] = PASTELS[s][pastel][0];
   }
 }
-setScheme('light');
 
 export const alpha = (hex: string, a: number): string => {
   const h = hex.replace('#', '');
@@ -157,5 +163,30 @@ export const spring = {
 
 export const TAB_BAR_H = 64;
 
+/**
+ * Elevation, by tone and a hairline (never shadow alone: shadows don't show on dark grey).
+ * `card` is a card on the page; `raised` a card on a card (an output on a sheet); `behind1` and
+ * `behind2` the cards stacked behind the front one, each a step further back (darker in dark,
+ * dimmer in light), always above the page's own tone so their edges read.
+ */
+const ELEVATION = {
+  light: {
+    card: { surface: '#FFFFFF', border: 'rgba(0,0,0,0.06)' },
+    raised: { surface: '#FFFFFF', border: 'rgba(0,0,0,0.08)' },
+    behind1: { surface: '#FBFBFC', border: 'rgba(0,0,0,0.06)' },
+    behind2: { surface: '#F7F7F8', border: 'rgba(0,0,0,0.05)' },
+  },
+  dark: {
+    card: { surface: '#2A2A2E', border: 'rgba(255,255,255,0.08)' },
+    raised: { surface: '#333338', border: 'rgba(255,255,255,0.10)' },
+    behind1: { surface: '#252529', border: 'rgba(255,255,255,0.06)' },
+    behind2: { surface: '#222225', border: 'rgba(255,255,255,0.045)' },
+  },
+} as const;
+type Level = keyof (typeof ELEVATION)['light'];
+export const elevation = {} as Record<Level, { surface: string; border: string }>;
+
 /** The Beluga mark's own colors (assets/logo.svg): the brand, the same in both themes. */
 export const brand = { tileTop: '#2A2C31', tileBottom: '#0F1013', whale: '#F5F5F7' } as const;
+
+setScheme('light');

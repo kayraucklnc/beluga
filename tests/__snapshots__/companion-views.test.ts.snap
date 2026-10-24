@@ -5,6 +5,17 @@ exports[`the views of a known Mac > snapshot 1`] = `
   "chat:dm:bob00000000000000000000000000bob": {
     "kind": "dm",
     "live": [],
+    "members": [
+      {
+        "me": true,
+        "name": "kayra",
+        "peerId": "me0000000000000000000000000000me",
+      },
+      {
+        "name": "bob",
+        "peerId": "bob00000000000000000000000000bob",
+      },
+    ],
     "messages": [
       {
         "from": "bob",

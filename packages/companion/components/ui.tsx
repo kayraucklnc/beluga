@@ -3,7 +3,7 @@ import { ChevronRight, Ellipsis, type LucideIcon } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { Platform, Pressable, type PressableProps, type StyleProp, StyleSheet, Text, type TextProps, type TextStyle, View, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { color, ink, radius, scheme, spring, tint, type, typeColor } from '../lib/theme';
+import { color, elevation, ink, radius, scheme, spring, tint, type, typeColor } from '../lib/theme';
 
 /**
  * The app's small parts. One pattern everywhere: an icon in a pastel circle, one or two words,
@@ -34,9 +34,10 @@ export function Card({ children, style, tone, r = radius.l }: { readonly childre
       style={[
         {
           borderRadius: r,
-          backgroundColor: tone && tone !== 'plain' ? tint[tone] : color.card,
-          borderWidth: scheme === 'dark' || tone ? 0 : StyleSheet.hairlineWidth,
-          borderColor: color.hairline,
+          backgroundColor: tone && tone !== 'plain' ? tint[tone] : elevation.card.surface,
+          // Tone and a hairline separate cards from the page; in light a soft shadow too.
+          borderWidth: tone ? 0 : 1,
+          borderColor: elevation.card.border,
           ...(scheme === 'light' && !tone ? shadow() : {}),
         },
         style,

@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Toasts } from '../components/Screen';
 import { useScheme } from '../lib/appearance';
@@ -37,6 +38,7 @@ export default function Root() {
   return (
     <GestureHandlerRootView key={scheme} style={{ flex: 1, backgroundColor: color.bg }}>
       <SafeAreaProvider>
+        <KeyboardProvider>
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {/* A new theme fades in over the old background: no flash. */}
         <Animated.View entering={FadeIn.duration(240)} style={{ flex: 1, ...(Platform.OS === 'web' ? { maxWidth: 520, width: '100%', alignSelf: 'center' } : {}) }}>
@@ -51,6 +53,7 @@ export default function Root() {
           </Stack>
           <Toasts />
         </Animated.View>
+        </KeyboardProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

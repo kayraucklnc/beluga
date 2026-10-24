@@ -52,13 +52,13 @@ export function UsageBars({ usage }: { readonly usage: UsageView }) {
   );
 }
 
-export function UsageCard({ usage, title = 'Allowance' }: { readonly usage: readonly UsageView[]; readonly title?: string }) {
-  const [open, setOpen] = useState(false);
+/** The allowance at a glance; tapping it opens every provider (`onOpen`: the screen shows the `UsageSheet`, at its own level). */
+export function UsageCard({ usage, title = 'Allowance', onOpen }: { readonly usage: readonly UsageView[]; readonly title?: string; readonly onOpen: () => void }) {
   const main = usage[0];
   if (!main) return null;
   return (
     <>
-      <Press scaleTo={0.985} onPress={() => setOpen(true)} accessibilityLabel={`${title}: all providers`} style={{ marginHorizontal: 16 }}>
+      <Press scaleTo={0.985} onPress={onOpen} accessibilityLabel={`${title}: all providers`} style={{ marginHorizontal: 16 }}>
         <Card style={{ padding: 16, gap: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <IconBadge Icon={Gauge} tone="mint" size={30} />
@@ -73,14 +73,13 @@ export function UsageCard({ usage, title = 'Allowance' }: { readonly usage: read
           <UsageBars usage={main} />
         </Card>
       </Press>
-      <UsageSheet usage={usage} visible={open} onClose={() => setOpen(false)} />
     </>
   );
 }
 
 export function UsageSheet({ usage, visible, onClose }: { readonly usage: readonly UsageView[]; readonly visible: boolean; readonly onClose: () => void }) {
   return (
-    <Sheet visible={visible} onDismiss={onClose}>
+    <Sheet window visible={visible} onDismiss={onClose}>
       <View style={{ paddingHorizontal: 20, paddingBottom: 12, gap: 22 }}>
         {usage.map((u) => (
           <View key={u.provider} style={{ gap: 12 }}>

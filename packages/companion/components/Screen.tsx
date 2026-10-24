@@ -1,27 +1,46 @@
 import { router } from 'expo-router';
 import { Bell, ChevronLeft, CircleCheck, CircleX, Info, MoonStar, RefreshCw, Trash2, TriangleAlert } from 'lucide-react-native';
 import { type ReactNode, useState } from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
-import Animated, { FadeInDown, FadeInUp, FadeOutUp, LinearTransition } from 'react-native-reanimated';
+import { type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, View, type ViewStyle } from 'react-native';
+import Animated, { FadeIn, FadeInDown, FadeInUp, FadeOut, FadeOutUp, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { asOf, useLink, useOutbox, useToasts } from '../lib/hooks';
 import { store } from '../lib/store';
-import { alpha, color, spring } from '../lib/theme';
-import { LinearGradient } from 'expo-linear-gradient';
+import { color, spring } from '../lib/theme';
 import { Card, IconBadge, Press, T, type Tone } from './ui';
+
+/**
+ * Has the content scrolled under the header? For the header's hairline: a solid header, and a
+ * divider only once something passes under it (no fades).
+ */
+export function useScrolled(): { scrolled: boolean; onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void } {
+  const [scrolled, setScrolled] = useState(false);
+  return { scrolled, onScroll: (e) => setScrolled(e.nativeEvent.contentOffset.y > 2) };
+}
 
 /** A screen: the warm background and the safe area. */
 export function Screen({ children, style }: { readonly children: ReactNode; readonly style?: ViewStyle }) {
   return <View style={[{ flex: 1, backgroundColor: color.bg }, style]}>{children}</View>;
 }
 
+/**
+ * For a screen with no header (Home): the status bar keeps a solid strip of the background, so
+ * what scrolls up never runs under the clock, and a hairline shows once it has.
+ */
+export function StatusShade({ scrolled }: { readonly scrolled?: boolean }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: color.bg, zIndex: 2 }}>
+      {scrolled ? <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(160)} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth, backgroundColor: color.hairline }} /> : null}
+    </View>
+  );
+}
+
 /** A screen's title, a back button when it isn't a tab, and what sits at the right ("•••"). */
-export function Header({ title, subtitle, back, right, eyebrow, at }: { readonly title: string; readonly subtitle?: string; readonly back?: boolean; readonly right?: ReactNode; readonly eyebrow?: string; /** When the view shown arrived (for "as of"). */ readonly at?: number }) {
+export function Header({ title, subtitle, back, right, eyebrow, at, scrolled }: { readonly title: string; readonly subtitle?: string; readonly back?: boolean; readonly right?: ReactNode; readonly eyebrow?: string; /** When the view shown arrived (for "as of"). */ readonly at?: number; /** Content has scrolled under it: a hairline divider shows. */ readonly scrolled?: boolean }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 8, backgroundColor: color.bg, zIndex: 2 }}>
-      {/* What scrolls under the header fades out instead of being cut off mid-line. */}
-      <LinearGradient pointerEvents="none" colors={[color.bg, alpha(color.bg, 0)]} style={{ position: 'absolute', left: 0, right: 0, bottom: -20, height: 20 }} />
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 40, gap: 10 }}>
         {back ? (
           <Press onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} accessibilityLabel="Back" hitSlop={12} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card, marginLeft: -4, borderWidth: StyleSheet.hairlineWidth, borderColor: color.hairline }}>
@@ -46,6 +65,7 @@ export function Header({ title, subtitle, back, right, eyebrow, at }: { readonly
         </T>
       ) : null}
       <AwayBand at={at} />
+      {scrolled ? <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth, backgroundColor: color.hairlineStrong }} /> : null}
     </View>
   );
 }

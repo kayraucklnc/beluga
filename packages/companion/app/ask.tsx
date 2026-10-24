@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
+import { KeyboardLift } from '../components/KeyboardLift';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowUp, ChevronDown, Folder, ImagePlus, MessageSquare, Sparkles, X } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
+import { Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut } from 'react-native-reanimated';
 import { convHref } from '../components/Conv';
 import { Sheet } from '../components/Sheet';
@@ -90,7 +91,7 @@ export default function Ask() {
   ];
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+    <KeyboardLift>
       <Sheet visible={visible} onDismiss={close}>
         <View style={{ paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <T v="title" style={{ flex: 1, fontSize: 22 }}>
@@ -175,6 +176,6 @@ export default function Ask() {
           </View>
         )}
       </Sheet>
-    </KeyboardAvoidingView>
+    </KeyboardLift>
   );
 }

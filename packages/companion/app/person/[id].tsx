@@ -4,7 +4,7 @@ import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chatHref, convHref } from '../../components/Conv';
-import { Header, Screen } from '../../components/Screen';
+import { Header, Screen, useScrolled } from '../../components/Screen';
 import { UsageBars } from '../../components/Usage';
 import { Avatar, Card, haptic, IconBadge, Pill, Press, T, type Tone } from '../../components/ui';
 import { useView } from '../../lib/hooks';
@@ -18,6 +18,7 @@ const OFFER: Record<string, { label: string; Icon: typeof Eye }> = { screen: { l
 
 /** A friend: Message, Ask their Claude, Screenshot of their desktop. */
 export default function Person() {
+  const { scrolled, onScroll } = useScrolled();
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const view = useView<PeopleView>('people');
@@ -54,8 +55,8 @@ export default function Person() {
 
   return (
     <Screen>
-      <Header back title="" />
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
+      <Header scrolled={scrolled} back title="" />
+      <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
         <View style={{ alignItems: 'center', paddingTop: 4 }}>
           <Animated.View entering={ZoomIn.duration(320)}>
             <Avatar name={p.name} size={88} presence={p.presence} />

@@ -1,15 +1,15 @@
 import { router } from 'expo-router';
 import { Check, CircleCheck, Flag, Hand, Monitor, MessageCircleQuestion, PenLine, SquareTerminal, X } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import Animated, { FadeIn, interpolate, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeIn, interpolate, type SharedValue, useAnimatedStyle, useSharedValue, withSpring, withTiming, ZoomIn } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { ago } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
 import type { NeedsYou } from '../lib/link/protocol';
 import { store } from '../lib/store';
-import { color, spring } from '../lib/theme';
+import { color, elevation, ink, spring, tint } from '../lib/theme';
 import { Button, Card, haptic, IconBadge, More, Pill, Press, T, type Tone, toneBg, toneInk } from './ui';
 
 /**
@@ -70,6 +70,8 @@ export function sendOwn(n: NeedsYou, value: string | readonly string[]): boolean
 
 /** Swipes decide only when the card has a yes (an approval, a request); otherwise they put it back. */
 const decides = (n: NeedsYou): boolean => KNOWN.has(n.kind) && !n.choices?.length && !!mainOf(n);
+/** What a swipe that way does: answer with the card's own button, or (no such button) put it back for later. */
+const swipeAnswers = (n: NeedsYou, dir: 1 | -1): boolean => decides(n) && !!(dir === 1 ? mainOf(n) : dangerOf(n));
 
 export function answer(n: NeedsYou, tone: 'main' | 'danger' | 'plain'): void {
   const action = tone === 'main' ? mainOf(n) : tone === 'danger' ? dangerOf(n) : plainOf(n);
@@ -119,6 +121,13 @@ export function NeedFace({ item, full = false, onAnswered, more }: { readonly it
           {full ? item.detail : item.detail.replace(/\s*\n+\s*/g, ' · ')}
         </T>
       ) : null}
+      {!full && (item.title.length > 110 || (item.detail?.length ?? 0) > 120) ? (
+        <Press onPress={() => openDetail(item)} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: -4 }}>
+          <T v="caption" c={color.info} style={{ fontWeight: '700' }}>
+            Read all
+          </T>
+        </Press>
+      ) : null}
       {!known ? <Pill label="Open on your Mac" Icon={Monitor} style={{ alignSelf: 'flex-start' }} /> : null}
       {known && item.choices?.length ? (
         <View style={{ gap: 8, marginTop: 2 }}>
@@ -133,7 +142,7 @@ export function NeedFace({ item, full = false, onAnswered, more }: { readonly it
                   </View>
                 ) : null}
                 <View style={{ flex: 1 }}>
-                  <T v="callout" c={toneInk(k.tone)} style={{ fontWeight: '600' }}>
+                  <T v="callout" c={toneInk(k.tone)} numberOfLines={full ? undefined : 2} style={{ fontWeight: '600' }}>
                     {c.label}
                   </T>
                   {c.description && full ? (
@@ -148,7 +157,7 @@ export function NeedFace({ item, full = false, onAnswered, more }: { readonly it
           {!full && item.choices.length > 3 ? (
             <Press onPress={() => openDetail(item)} style={{ alignSelf: 'flex-start', paddingVertical: 4 }}>
               <T v="caption" c={color.info} style={{ fontWeight: '600' }}>
-                {item.choices.length - 3} more
+                +{item.choices.length - 3} more
               </T>
             </Press>
           ) : null}
@@ -177,15 +186,26 @@ export function NeedButtons({ item, onAnswer }: { readonly item: NeedsYou; reado
   );
 }
 
-function SwipeCard({ item, depth, height, onGone }: { readonly item: NeedsYou; readonly depth: number; readonly height: number; readonly onGone: (item: NeedsYou, dir: 1 | -1, answered: boolean) => void }) {
+/** How far each card behind peeks out below the one in front, and how much smaller it is. */
+const PEEK = 9;
+const SHRINK = 0.04;
+
+/**
+ * One card of the stack. Every card lays its content out at its natural height (measured, and told
+ * to the stack); the card itself is as tall as the front card, so the ones behind show only a
+ * clean edge and never their own, different, size. Their content fades out; the front's in.
+ */
+function SwipeCard({ item, depth, frontH, onMeasure, onGone }: { readonly item: NeedsYou; readonly depth: number; readonly frontH: SharedValue<number>; readonly onMeasure: (id: string, h: number) => void; readonly onGone: (item: NeedsYou, dir: 1 | -1, answered: boolean) => void }) {
   const { width } = useWindowDimensions();
   const W = Math.min(width, 520);
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const armed = useSharedValue(0);
   const d = useSharedValue(depth);
+  const shown = useSharedValue(depth === 0 ? 1 : 0);
   useEffect(() => {
     d.value = withSpring(depth, spring.soft);
+    shown.value = withTiming(depth === 0 ? 1 : 0, { duration: depth === 0 ? 260 : 120 });
     // Put back for later: it comes in again from behind the deck.
     if (depth > 0) {
       tx.value = withSpring(0, spring.soft);
@@ -193,12 +213,32 @@ function SwipeCard({ item, depth, height, onGone }: { readonly item: NeedsYou; r
     }
   }, [depth]);
   const top = depth === 0;
+  const yes = swipeAnswers(item, 1);
+  const no = swipeAnswers(item, -1);
+  // Still the front card a moment after it was swiped away (the answer was refused, or nothing
+  // took it): it comes back, never left off-screen with the card behind showing blank.
+  const depthNow = useRef(depth);
+  depthNow.current = depth;
+  const alive = useRef(true);
+  useEffect(() => () => void (alive.current = false), []);
+  const comeBack = () => {
+    tx.value = withSpring(0, spring.snappy);
+    ty.value = withSpring(0, spring.snappy);
+  };
+  const watch = () =>
+    setTimeout(() => {
+      if (alive.current && depthNow.current === 0) comeBack();
+    }, 700);
 
-  const gone = (dir: 1 | -1) => onGone(item, dir, false);
+  const gone = (dir: 1 | -1) => {
+    onGone(item, dir, false);
+    watch();
+  };
   const tick = () => haptic.tap();
   const fling = (dir: 1 | -1) => {
     tx.value = withTiming(dir * W * 1.3, { duration: 240 });
     setTimeout(() => onGone(item, dir, true), 180);
+    watch();
   };
 
   const pan = usePanGesture({
@@ -208,8 +248,8 @@ function SwipeCard({ item, depth, height, onGone }: { readonly item: NeedsYou; r
     onUpdate: (e) => {
       'worklet';
       tx.value = e.translationX;
-      ty.value = e.translationY * 0.1;
-      const over = Math.abs(e.translationX) > W * 0.3 ? 1 : 0;
+      ty.value = e.translationY * 0.08;
+      const over = Math.abs(e.translationX) > W * 0.28 ? 1 : 0;
       if (over !== armed.value) {
         armed.value = over;
         scheduleOnRN(tick);
@@ -218,7 +258,8 @@ function SwipeCard({ item, depth, height, onGone }: { readonly item: NeedsYou; r
     onDeactivate: (e) => {
       'worklet';
       const dir = tx.value > 0 ? 1 : -1;
-      if (Math.abs(tx.value) > W * 0.3 || Math.abs(e.velocityX) > 900) {
+      // A flick counts as much as a long drag.
+      if (Math.abs(tx.value) > W * 0.28 || Math.abs(e.velocityX) > 800) {
         tx.value = withSpring(dir * W * 1.4, { velocity: e.velocityX, stiffness: 200, damping: 28, overshootClamping: true });
         scheduleOnRN(gone, dir as 1 | -1);
       } else {
@@ -229,44 +270,57 @@ function SwipeCard({ item, depth, height, onGone }: { readonly item: NeedsYou; r
     },
   });
 
-  const style = useAnimatedStyle(() => ({
-    transform: [{ translateY: d.value * 10 + ty.value }, { translateX: tx.value }, { rotate: `${interpolate(tx.value, [-W, 0, W], [-6, 0, 6])}deg` }, { scale: 1 - d.value * 0.04 }],
-    opacity: interpolate(d.value, [0, 2, 3], [1, 0.85, 0]),
+  const card = useAnimatedStyle(() => ({
+    height: frontH.value,
+    // Shrink toward the bottom edge, so the cards behind always peek out below, whatever the height.
+    transformOrigin: 'center bottom',
+    transform: [
+      { translateY: d.value * PEEK + ty.value },
+      { translateX: tx.value },
+      { rotate: `${interpolate(tx.value, [-W, 0, W], [-4, 0, 4])}deg` },
+      { scale: 1 - d.value * SHRINK },
+    ],
+    opacity: interpolate(d.value, [0, 2, 3], [1, 1, 0]),
   }));
-  const yes = useAnimatedStyle(() => ({ opacity: interpolate(tx.value, [0, W * 0.25], [0, 1], 'clamp') }));
-  const no = useAnimatedStyle(() => ({ opacity: interpolate(tx.value, [-W * 0.25, 0], [1, 0], 'clamp') }));
-  const decide = decides(item);
+  // As the card is pulled, its face steps back so the intent (the stamp in the middle) reads alone.
+  const content = useAnimatedStyle(() => ({ opacity: shown.value * interpolate(Math.abs(tx.value), [0, W * 0.2], [1, 0.1], 'clamp') }));
+  // The intent shows as a wash of its color over the card: mint to approve, rose to decline.
+  const yesWash = useAnimatedStyle(() => ({ opacity: interpolate(tx.value, [0, W * 0.3], [0, 0.85], 'clamp') }));
+  const noWash = useAnimatedStyle(() => ({ opacity: interpolate(tx.value, [-W * 0.3, 0], [0.85, 0], 'clamp') }));
   const main = mainOf(item);
   const danger = dangerOf(item);
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, height, zIndex: 10 - depth }, style]} pointerEvents={top ? 'auto' : 'none'}>
-        <Pressable style={{ flex: 1 }} onPress={() => openDetail(item)} onLongPress={() => (haptic.commit(), openDetail(item))} delayLongPress={400}>
-          <Card style={{ flex: 1, padding: 18, gap: 14, overflow: 'hidden' }}>
-            <NeedFace
-              item={item}
-              more
-              onAnswered={() => fling(1)}
-            />
-            <View style={{ flex: 1 }} />
-            <NeedButtons item={item} onAnswer={(t) => (answer(item, t), fling(t === 'main' ? 1 : -1))} />
-          </Card>
-          <Animated.View pointerEvents="none" style={[styles.stamp, { left: 18 }, yes]}>
-            <Pill label={decide ? (main?.label ?? 'Yes') : 'Later'} tone={decide ? 'mint' : 'plain'} Icon={decide ? Check : undefined} />
+      <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, zIndex: 10 - depth }, card]} pointerEvents={top ? 'auto' : 'none'}>
+        <Card style={{ flex: 1, overflow: 'hidden', ...(depth > 0 ? { backgroundColor: elevation[depth === 1 ? 'behind1' : 'behind2'].surface, borderColor: elevation[depth === 1 ? 'behind1' : 'behind2'].border } : null) }}>
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: yes ? tint.mint : color.sunken }, yesWash]} />
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: no ? tint.rose : color.sunken }, noWash]} />
+          <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0 }, content]} onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}>
+            <Pressable onPress={() => openDetail(item)} onLongPress={() => (haptic.commit(), openDetail(item))} delayLongPress={400} style={{ padding: 18, gap: 14 }}>
+              <NeedFace item={item} more onAnswered={() => fling(1)} />
+              <NeedButtons item={item} onAnswer={(t) => (answer(item, t), fling(t === 'main' ? 1 : -1))} />
+            </Pressable>
           </Animated.View>
-          <Animated.View pointerEvents="none" style={[styles.stamp, { right: 18 }, no]}>
-            <Pill label={decide ? (danger?.label ?? 'No') : 'Later'} tone={decide ? 'rose' : 'plain'} Icon={decide ? X : undefined} />
+          <Animated.View pointerEvents="none" style={[styles.stamp, yesWash]}>
+            <Pill label={yes ? (main?.label ?? 'Yes') : 'Later'} tone={yes ? 'mint' : 'plain'} Icon={yes ? Check : undefined} style={{ ...styles.stampPill, backgroundColor: elevation.card.surface, borderColor: yes ? ink.mint : color.hairlineStrong }} />
           </Animated.View>
-        </Pressable>
+          <Animated.View pointerEvents="none" style={[styles.stamp, noWash]}>
+            <Pill label={no ? (danger?.label ?? 'No') : 'Later'} tone={no ? 'rose' : 'plain'} Icon={no ? X : undefined} style={{ ...styles.stampPill, backgroundColor: elevation.card.surface, borderColor: no ? ink.rose : color.hairlineStrong }} />
+          </Animated.View>
+        </Card>
       </Animated.View>
     </GestureDetector>
   );
 }
 
-/** The stack. `height` fits the cards; the deck shows three. */
+/**
+ * The stack: as tall as the front card (measured; it springs to the next card's size when one
+ * leaves), with two cards peeking out below it by a fixed edge.
+ */
 export function NeedsStack({ items }: { readonly items: readonly NeedsYou[] }) {
   const [order, setOrder] = useState<string[]>([]);
+  const [heights, setHeights] = useState<Record<string, number>>({});
   // New items join at the back of the deck; answered ones leave it.
   const deck = useMemo(() => {
     const ids = items.map((n) => n.id);
@@ -275,21 +329,31 @@ export function NeedsStack({ items }: { readonly items: readonly NeedsYou[] }) {
     return kept.map((id) => items.find((n) => n.id === id)!).filter(Boolean);
   }, [items, order]);
 
+  // The deck as it is now, for a swipe's callback (which may hold an older render's closure).
+  const deckNow = useRef(deck);
+  deckNow.current = deck;
+  const front = deck[0];
+  const target = (front && heights[front.id]) || 220;
+  const frontH = useSharedValue(target);
+  useEffect(() => {
+    frontH.value = withSpring(target, { stiffness: 260, damping: 30, mass: 0.9 });
+  }, [target]);
+  const behind = Math.min(2, Math.max(0, deck.length - 1));
+  const box = useAnimatedStyle(() => ({ height: frontH.value + behind * PEEK + 6 }));
+
+  const onMeasure = (id: string, h: number) => setHeights((prev) => (Math.abs((prev[id] ?? 0) - h) < 1 ? prev : { ...prev, [id]: Math.ceil(h) }));
   const onGone = (item: NeedsYou, dir: 1 | -1, answered: boolean) => {
     // Answered by a button or a choice: the store hides it already.
     if (answered) return;
-    if (decides(item)) {
+    if (swipeAnswers(item, dir)) {
       answer(item, dir === 1 ? 'main' : 'danger');
       return;
     }
-    // Nothing to decide by swiping: it goes to the back for later.
+    // Nothing to decide by swiping (or no button that way): it goes to the back for later.
     haptic.tap();
-    setOrder([...deck.map((n) => n.id).filter((id) => id !== item.id), item.id]);
+    const ids = deckNow.current.map((n) => n.id);
+    setOrder([...ids.filter((id) => id !== item.id), item.id]);
   };
-
-  // Tall enough for the top card: approvals are short; questions carry their choices.
-  const top = deck[0];
-  const height = top?.choices?.length && KNOWN.has(top.kind) ? 214 + Math.min(3, top.choices.length) * 50 + (top && multiPick(top) ? 86 : 0) + (top.choices.length > 3 ? 24 : 0) : 236;
 
   if (!deck.length) {
     return (
@@ -305,15 +369,23 @@ export function NeedsStack({ items }: { readonly items: readonly NeedsYou[] }) {
     );
   }
   return (
-    <Animated.View entering={FadeIn} layout={LinearTransition.springify()} style={{ height: height + 22, marginHorizontal: 16 }}>
-      {deck
-        .slice(0, 3)
-        .map((n, i) => <SwipeCard key={n.id} item={n} depth={i} height={height} onGone={onGone} />)
-        .reverse()}
-    </Animated.View>
+    <View>
+      <Animated.View entering={FadeIn} style={[{ marginHorizontal: 16 }, box]}>
+        {deck
+          .slice(0, 3)
+          .map((n, i) => <SwipeCard key={n.id} item={n} depth={i} frontH={frontH} onMeasure={onMeasure} onGone={onGone} />)
+          .reverse()}
+      </Animated.View>
+      {deck.length > 1 ? (
+        <T v="caption" style={{ textAlign: 'center', marginTop: 8 }}>
+          1 of {deck.length}
+        </T>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  stamp: { position: 'absolute', top: -10 },
+  stamp: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  stampPill: { height: 40, paddingHorizontal: 18, borderRadius: 20, borderWidth: 1.5, transform: [{ scale: 1.15 }] },
 });

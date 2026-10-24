@@ -249,6 +249,8 @@ describe('the views of a known Mac', () => {
     const page = PlanView.parse(viewOf(state, ctx, 'plan:pl_auth'));
     expect(page.needsYou.find((n) => n.kind === 'decision')?.actions.map((a) => a.method)).toEqual(['plans.approve', 'plans.discard']);
     const chat = ChatView.parse(viewOf(state, ctx, `chat:dm:${BOB}`));
+    // Whose Claude a message can ask: you, then them.
+    expect(chat.members).toEqual([{ peerId: ME, name: 'kayra', me: true }, { peerId: BOB, name: 'bob' }]);
     expect(chat.messages.map((m) => [m.from, m.mine, m.text])).toEqual([
       ['bob', false, 'see\n[[code:0]]\nhere'],
       ['kayra', true, 'on it'],

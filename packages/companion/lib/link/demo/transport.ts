@@ -1,3 +1,4 @@
+import * as Device from 'expo-device';
 import { toB64, utf8 } from '../../b64';
 import {
   COMPANION_PIECE,
@@ -27,8 +28,16 @@ import { DEMO_IMAGES } from './images.generated';
  *
  * It can also fall asleep (Settings › Demo), to show the cached views and the outbox.
  */
-export const DEMO_MAC = { name: "Kayra's MacBook Pro", version: '0.11.0' };
-export const DEMO_ME = { name: 'Kayra', peerId: 'kayra-7f3a' };
+export const DEMO_MAC = { name: 'MacBook Pro', version: '0.11.0' };
+/**
+ * You, in the demo: the phone owner's name when the phone's own name gives it ("Mia's Galaxy" →
+ * Mia), else no name (Home then just says hello).
+ */
+export const DEMO_ME = { name: ownerName(Device.deviceName), peerId: 'you-7f3a' };
+export function ownerName(deviceName: string | null | undefined): string {
+  const m = /^\s*([\p{L}][\p{L}'-]{0,30})['’]s\s/u.exec(deviceName ?? '');
+  return m ? m[1]! : '';
+}
 
 export class DemoTransport implements Transport {
   readonly kind = 'demo' as const;
@@ -169,7 +178,7 @@ export class DemoTransport implements Transport {
     }
     if (topic.startsWith('chat:')) {
       const c = w.chats.get(topic);
-      return c ? { topic, name: c.name, kind: c.kind, messages: c.messages, more: false, live: c.peer === 'mia' ? ['Mia'] : [] } : undefined;
+      return c ? { topic, name: c.name, kind: c.kind, messages: c.messages, more: false, live: c.peer === 'mia' ? ['Mia'] : [], members: this.membersOf(topic) } : undefined;
     }
     return undefined;
   }
@@ -331,7 +340,16 @@ export class DemoTransport implements Transport {
           chat.unread = 0;
           this.touch(topic, 'chats');
           const who = chat.kind === 'dm' ? chat.name : 'Ada';
-          if (a.ask) this.later(2600, () => this.chatReply(topic, `${who}'s Claude`, "Here's what I found: the radar build on Mia's Mac is from this morning, with the cross-fade in. Tests pass.", true));
+          if (a.ask) {
+            // Only the Claudes asked answer: yours, one person's, or everyone's.
+            const members = this.membersOf(topic);
+            const asked = a.ask === 'all' ? members : members.filter((m) => (a.ask as string[]).includes(m.peerId));
+            asked.forEach((m, i) =>
+              this.later(2200 + i * 1400, () =>
+                this.chatReply(topic, m.me ? 'Your Claude' : `${m.name}'s Claude`, m.me ? 'From your Mac: the radar fix is merged on main and the phone build passed.' : `From ${m.name}'s Mac: the radar build there is from this morning, with the cross-fade in. Tests pass.`, true),
+              ),
+            );
+          }
           else this.later(2400, () => this.chatReply(topic, who, files.length ? 'oh nice photo 😍' : pick(['ha, nice', 'on it 👍', 'can you send a screenshot?', 'looks great from here', 'ok, give me 5 min'])));
         }
         return ok();
@@ -363,6 +381,15 @@ export class DemoTransport implements Transport {
       default:
         this.frames.emit({ t: 'result', id, ok: false, error: `The demo Mac doesn't do ${method}.` });
     }
+  }
+
+  /** Who's in a chat (you first), as views.ts sends it (1.2). */
+  private membersOf(topic: string): { peerId: string; name: string; me?: boolean }[] {
+    const chat = this.world.chats.get(topic as Topic);
+    const me = { peerId: DEMO_ME.peerId, name: DEMO_ME.name || 'You', me: true };
+    if (!chat) return [me];
+    if (chat.kind === 'dm') return [me, { peerId: chat.peer ?? 'friend', name: chat.name }];
+    return [me, ...['Mia', 'Ada', 'Sam', 'Theo'].map((name) => ({ peerId: name.toLowerCase(), name }))];
   }
 
   /** A file from the phone, piece by piece (`put`): each piece answered, the last with its `up:` ref. */

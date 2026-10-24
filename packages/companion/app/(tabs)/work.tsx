@@ -6,7 +6,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AgentDots, convHref, statusIcon } from '../../components/Conv';
 import { PlansList } from '../../components/Plans';
-import { Header, Screen } from '../../components/Screen';
+import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Segments } from '../../components/Segments';
 import { Card, Row, T } from '../../components/ui';
 import { ago, useView } from '../../lib/hooks';
@@ -15,6 +15,7 @@ import { color, TAB_BAR_H } from '../../lib/theme';
 
 /** Work: projects and their conversations; plans beside them. */
 export default function Work() {
+  const { scrolled, onScroll } = useScrolled();
   const insets = useSafeAreaInsets();
   const work = useView<WorkView>('work');
   const plans = useView<PlansView>('plans');
@@ -23,7 +24,7 @@ export default function Work() {
 
   return (
     <Screen>
-      <Header title="Work" at={work?.at} />
+      <Header scrolled={scrolled} title="Work" at={work?.at} />
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
         <Segments
           value={tab}
@@ -34,7 +35,7 @@ export default function Work() {
           ]}
         />
       </View>
-      <ScrollView contentContainerStyle={{ paddingTop: 8, paddingBottom: TAB_BAR_H + insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingTop: 8, paddingBottom: TAB_BAR_H + insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
         {tab === 'plans' ? (
           <Animated.View entering={FadeIn}>
             <PlansList />

@@ -736,7 +736,15 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
     messages,
     more,
     live: (net.live?.[conversation] ?? []).slice(0, 20).map((l) => clip(`${l.name}'s Claude`, 100)),
+    members: chatMembers(state, dm, group),
   };
+}
+
+/** Whose Claude a chat message can ask: you first, then the friend (a DM) or the group's members. */
+function chatMembers(state: DomainState, dm: { peerId: string; name: string } | undefined, group: { members: readonly { peerId: string; name: string; self: boolean }[] } | undefined): ChatView['members'] {
+  const me = { peerId: clip(myId(state), 200), name: clip(myName(state), 64), me: true };
+  const others = dm ? [{ peerId: dm.peerId, name: dm.name }] : (group?.members ?? []).filter((m) => !m.self && m.peerId !== me.peerId).map((m) => ({ peerId: m.peerId, name: m.name }));
+  return [me, ...others.slice(0, 199).map((m) => ({ peerId: clip(m.peerId, 200), name: clip(m.name, 64) }))];
 }
 
 export function peopleView(state: DomainState): PeopleView {

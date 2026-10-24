@@ -1,7 +1,8 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { KeyboardLift } from '../../components/KeyboardLift';
 import { Infinity as Always, MessageSquare, Monitor, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
+import { Platform, ScrollView, TextInput, View } from 'react-native';
 import { convHref } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace, plainOf, sendOwn } from '../../components/Needs';
 import { Sheet } from '../../components/Sheet';
@@ -35,7 +36,7 @@ export default function Need() {
   };
   const always = n ? plainOf(n) : undefined;
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+    <KeyboardLift>
       <Sheet visible={visible} onDismiss={() => close()} maxHeight={0.9}>
         {n ? (
           <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12, gap: 18 }} keyboardShouldPersistTaps="handled">
@@ -78,6 +79,6 @@ export default function Need() {
           </View>
         )}
       </Sheet>
-    </KeyboardAvoidingView>
+    </KeyboardLift>
   );
 }

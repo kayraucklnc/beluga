@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { Platform, ScrollView, Switch, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Header, Screen } from '../components/Screen';
+import { Header, Screen, useScrolled } from '../components/Screen';
 import { Card, haptic, Pill, Row, T } from '../components/ui';
 import { appearance, type Choice } from '../lib/appearance';
 import { useLink } from '../lib/hooks';
@@ -19,6 +19,7 @@ import { color, ink } from '../lib/theme';
  * (each kind of notification, the demo's switches, versions). Appearance sits with the basics under Advanced.
  */
 export default function Settings() {
+  const { scrolled, onScroll } = useScrolled();
   const insets = useSafeAreaInsets();
   const link = useLink();
   const [p, setP] = useState<NotifyPrefs>(prefs());
@@ -46,8 +47,8 @@ export default function Settings() {
 
   return (
     <Screen>
-      <Header back title="Settings" />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 20 }}>
+      <Header scrolled={scrolled} back title="Settings" />
+      <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 20 }}>
         <Animated.View entering={FadeInDown.duration(300)}>
           <Card>
             <Row first Icon={Monitor} tone="mint" label={link.mac?.name ?? link.pairing?.macName ?? 'Your Mac'} sub={link.mode === 'demo' ? 'Demo Mac' : `Beluga ${link.mac?.version ?? ''}`} right={<Pill label={link.phase === 'open' ? 'Linked' : link.phase === 'asleep' ? 'Asleep' : 'Away'} tone={link.phase === 'open' ? 'mint' : 'sky'} />} />

@@ -6,7 +6,7 @@ import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { convHref } from '../../components/Conv';
 import { NeedFace } from '../../components/Needs';
-import { Header, Screen } from '../../components/Screen';
+import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Card, Pill, Press, T, toneBg, toneInk, toneOf } from '../../components/ui';
 import { useView, useVisibleNeeds } from '../../lib/hooks';
 import type { PlanView, Topic } from '../../lib/link/protocol';
@@ -18,6 +18,7 @@ import { color } from '../../lib/theme';
  * shape is edited on the Mac.
  */
 export default function Plan() {
+  const { scrolled, onScroll } = useScrolled();
   const { id } = useLocalSearchParams<{ id: string }>();
   const topic = `plan:${id}` as Topic;
   const view = useView<PlanView>(topic);
@@ -29,8 +30,8 @@ export default function Plan() {
 
   return (
     <Screen>
-      <Header back eyebrow="Plan" title={p?.title ?? 'Plan'} at={view?.at} right={p ? <Pill label={p.state === 'running' ? 'Running' : p.state} tone={toneOf(p.state)} /> : null} />
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
+      <Header scrolled={scrolled} back eyebrow="Plan" title={p?.title ?? 'Plan'} at={view?.at} right={p ? <Pill label={p.state === 'running' ? 'Running' : p.state} tone={toneOf(p.state)} /> : null} />
+      <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
         {p ? (
           <>
             <View style={{ paddingHorizontal: 20, paddingTop: 6, gap: 12 }}>

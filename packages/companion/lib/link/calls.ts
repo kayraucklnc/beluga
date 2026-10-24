@@ -37,8 +37,9 @@ export const calls = {
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
   older: (topic: Topic, before: string): Call => make('companion.older', [topic, { before }], 'Load older'),
   /** Write in a friends' chat (with photos, or asking Claude). */
-  chat: (topic: Topic, text: string, opts: { files?: Files; askClaude?: boolean } = {}): Call =>
-    make('companion.post', [{ conversation: conversationOf(topic), text, ...withFiles(opts.files), ...(opts.askClaude ? { ask: 'all' as const } : {}) }], opts.files?.length ? 'Send a photo' : `Message "${short(text)}"`),
+  /** `ask`: whose Claude answers too: everyone's ('all') or the chosen people's (peer ids, you included). */
+  chat: (topic: Topic, text: string, opts: { files?: Files; ask?: 'all' | readonly string[] } = {}): Call =>
+    make('companion.post', [{ conversation: conversationOf(topic), text, ...withFiles(opts.files), ...(opts.ask ? { ask: opts.ask === 'all' ? ('all' as const) : [...opts.ask] } : {}) }], opts.files?.length ? 'Send a photo' : `Message "${short(text)}"`),
   read: (topic: Topic): Call => make('network.read', [conversationOf(topic)], 'Mark read'),
   /** Ask a friend's Claude yourself; the answer (and files) come back in the topic it returns. */
   askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s Claude`),

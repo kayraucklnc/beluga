@@ -1,12 +1,14 @@
 import { useLocalSearchParams } from 'expo-router';
-import { ImagePlus, Sparkles } from 'lucide-react-native';
+import { KeyboardLift } from '../../components/KeyboardLift';
+import { ImagePlus, Sparkles, X } from 'lucide-react-native';
+import { AskClaudePicker, type AskTarget, askTargets } from '../../components/AskClaudePicker';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { Platform, ScrollView, View } from 'react-native';
 import Animated, { FadeInUp, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '../../components/Composer';
 import { Thumb } from '../../components/Outputs';
-import { Header, Screen } from '../../components/Screen';
+import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Avatar, Press, T } from '../../components/ui';
 import { ago, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
@@ -17,13 +19,16 @@ import { color, ink, tint } from '../../lib/theme';
 
 /** A chat with friends: messages, photos and files both ways, and Ask Claude. */
 export default function Chat() {
+  const { scrolled, onScroll } = useScrolled();
   const { id } = useLocalSearchParams<{ id: string }>();
   const topic = `chat:${decodeURIComponent(id ?? '')}` as Topic;
   const view = useView<ChatView>(topic);
   const c = view?.data;
   const insets = useSafeAreaInsets();
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
-  const [askClaude, setAskClaude] = useState(false);
+  const [ask, setAsk] = useState<AskTarget | undefined>();
+  const [picking, setPicking] = useState(false);
+  const targets = askTargets(c?.members, c?.kind ?? 'dm', c?.name ?? '');
   const pics: OutputView[] = c?.messages.flatMap((m) => (m.files ?? []).filter((f) => f.kind === 'image')) ?? [];
 
   useEffect(() => {
@@ -44,9 +49,9 @@ export default function Chat() {
 
   return (
     <Screen>
-      <Header back title={c?.name ?? 'Chat'} eyebrow={c?.kind === 'group' ? 'Channel' : c?.live.length ? 'Here now' : 'Direct message'} at={view?.at} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'web' ? undefined : 'padding'} style={{ flex: 1 }}>
-        <ScrollView ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })} contentContainerStyle={{ padding: 14, gap: 6 }}>
+      <Header scrolled={scrolled} back title={c?.name ?? 'Chat'} eyebrow={c?.kind === 'group' ? 'Channel' : c?.live.length ? 'Here now' : 'Direct message'} at={view?.at} />
+      <KeyboardLift>
+        <ScrollView onScroll={onScroll} scrollEventThrottle={32} ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })} contentContainerStyle={{ padding: 14, gap: 6 }}>
           {c?.messages.map((m, i) => {
             const prev = c.messages[i - 1];
             const firstOfRun = !prev || prev.from !== m.from || m.ts - prev.ts > 10 * 60_000;
@@ -57,34 +62,41 @@ export default function Chat() {
             );
           })}
         </ScrollView>
-        {askClaude ? (
-          <View style={{ paddingHorizontal: 20, paddingBottom: 2 }}>
-            <T v="caption" c={color.claude}>
-              Asking {c?.kind === 'dm' ? `${c.name}'s` : "everyone's"} Claude
-            </T>
-          </View>
+        {ask ? (
+          <Animated.View entering={FadeInUp.duration(180)} style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 2 }}>
+            <Press onPress={() => setPicking(true)} accessibilityLabel={`Ask: ${ask.label}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingLeft: 10, paddingRight: 4, borderRadius: 15, backgroundColor: tint.peach }}>
+              <Sparkles color={ink.peach} size={14} />
+              <T v="caption" c={ink.peach} style={{ fontWeight: '700' }}>
+                Ask: {ask.label}
+              </T>
+              <Press onPress={() => setAsk(undefined)} accessibilityLabel="Don't ask Claude" hitSlop={8} style={{ width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' }}>
+                <X color={ink.peach} size={14} />
+              </Press>
+            </Press>
+          </Animated.View>
         ) : null}
         <Composer
-          placeholder={askClaude ? 'Ask Claude…' : `Message ${c?.name ?? ''}`}
+          placeholder={ask ? `Ask ${ask.label}…` : `Message ${c?.name ?? ''}`}
           bottom={insets.bottom}
           onSend={(text) => {
-            void store.call(calls.chat(topic, text, { askClaude }));
-            setAskClaude(false);
+            void store.call(calls.chat(topic, text, ask ? { ask: ask.ask } : {}));
+            setAsk(undefined);
           }}
           left={
             <View style={{ flexDirection: 'row', gap: 2 }}>
               <Press onPress={() => void sendPhoto()} accessibilityLabel="Send a photo" style={{ width: 38, height: 40, alignItems: 'center', justifyContent: 'center' }}>
                 <ImagePlus color={color.text2} size={21} />
               </Press>
-              <Press onPress={() => setAskClaude((a) => !a)} accessibilityLabel="Ask Claude" style={{ width: 38, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: askClaude ? tint.peach : 'transparent' }}>
-                  <Sparkles color={askClaude ? ink.peach : color.text2} size={20} />
+              <Press onPress={() => setPicking(true)} accessibilityLabel="Ask Claude" style={{ width: 38, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: ask ? tint.peach : 'transparent' }}>
+                  <Sparkles color={ask ? ink.peach : color.text2} size={20} />
                 </View>
               </Press>
             </View>
           }
         />
-      </KeyboardAvoidingView>
+      </KeyboardLift>
+      <AskClaudePicker visible={picking} onClose={() => setPicking(false)} targets={targets} chosen={ask} onPick={setAsk} members={c?.members} />
     </Screen>
   );
 }
