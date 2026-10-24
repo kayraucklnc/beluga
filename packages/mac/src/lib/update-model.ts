@@ -31,7 +31,11 @@ export interface UpdateState {
   readonly news?: { readonly version: string; readonly notes?: string | null } | null;
 }
 
-export const INITIAL_UPDATE_STATE: UpdateState = { current: '', mode: 'ask', phase: 'idle', waitingOn: [] };
+/**
+ * Until the app shell answers: a new install's mode (updater.rs › NEW_INSTALL_MODE, BLG-99).
+ * The shell's saved mode replaces it at once, so earlier installs keep theirs.
+ */
+export const INITIAL_UPDATE_STATE: UpdateState = { current: '', mode: 'idle', phase: 'idle', waitingOn: [] };
 
 /** Settings' two switches, as the mode the app shell keeps: "Update automatically" and "Check for updates". */
 export interface UpdateSwitches {
