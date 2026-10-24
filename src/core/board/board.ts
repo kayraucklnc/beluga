@@ -18,6 +18,7 @@ import {
   type BriefSection,
   ISSUE_STATUSES,
   type Issue,
+  type IssueLink,
   type IssuePlan,
   type IssuePr,
   type IssueStatus,
@@ -132,7 +133,7 @@ const SavedIssue = z
     activity: z.array(z.unknown()).default([]),
     createdAt: z.number(),
     updatedAt: z.number(),
-    origin: z.enum(['manual', 'worktree', 'claude', 'plan']).default('manual'),
+    origin: z.enum(['manual', 'worktree', 'claude', 'plan', 'sync']).default('manual'),
   })
   .passthrough();
 
@@ -243,7 +244,7 @@ export class Board {
       revisions: [],
       worktrees: [],
       proof: [],
-      activity: [this.entry(by, 'created', origin === 'worktree' ? 'opened this task for a new worktree' : origin === 'plan' ? 'created this task from a plan' : 'created this task', undefined, at)],
+      activity: [this.entry(by, 'created', origin === 'worktree' ? 'opened this task for a new worktree' : origin === 'plan' ? 'created this task from a plan' : origin === 'sync' ? 'brought this task over' : 'created this task', undefined, at)],
       createdAt: at,
       updatedAt: at,
       createdBy: by,
@@ -360,6 +361,17 @@ export class Board {
       },
       [this.entry(by, 'brief', 'wrote the title and goal')],
     );
+  }
+
+  /**
+   * Where the task lives in another tracker, and what both sides looked like as they last agreed
+   * (sync/sync.ts); undefined: not linked any more. Quiet but for the first link and an unlink.
+   */
+  setLink(ref: string, link: IssueLink | undefined, note?: string): Issue {
+    const issue = this.need(ref);
+    if (!link && !issue.link) return issue;
+    const entries = note ? [this.entry({ kind: 'beluga' }, 'link', note)] : [];
+    return this.change(issue, { link }, entries, false);
   }
 
   /** The plan (and milestone) a task belongs to; undefined: none any more. */

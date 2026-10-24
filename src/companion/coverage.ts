@@ -281,6 +281,13 @@ export const PHONE: Record<Method, Side> = {
   'board.settleGone': 'mac',
   'board.setAutoTasks': 'mac',
   'board.setPrefix': 'mac',
+  // Connecting a tracker is a key and settings: the Mac's.
+  'board.syncTeams': 'mac',
+  'board.syncConnect': 'mac',
+  'board.syncDisconnect': 'mac',
+  'board.syncAuto': 'mac',
+  // Sync Now is a tap that fits anywhere, but the phone shows no sync status yet.
+  'board.syncNow': 'mac',
   'board.archive': 'mac',
   'board.archiveDone': 'mac',
   'board.unarchive': 'mac',

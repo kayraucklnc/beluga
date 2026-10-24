@@ -94,6 +94,24 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
   - Every run hears how the board works, and to open tasks unasked when one message asks for two or more separate things (one per thing, under a parent when they belong together), move them along as it works, and show them in its answer as `task:KEY` chips or a `beluga-tasks` block. Not for questions or a single quick ask, and what you ask for instead wins (BLG-25).
   - Runs elsewhere get the tools and a short note that the board is there. Friends' runs, guests and main folders (questions only) get neither. The tools only touch your own board, so they never ask; files holding secrets are refused as proof.
 
+### Sync with Linear (BLG-74)
+
+A project's board can be linked to one Linear team, and kept in step both ways (`src/core/board/sync/`).
+
+- **Connecting:** Tasks › ⋯ › Sync with Linear…. Paste a personal API key (`lin_api_…`), Check Key lists the workspace's teams, pick one, and choose **Autosync** (on by default) and **Also send this project's open tasks** (off: only tasks made from now on go to Linear). The key is kept in `~/.beluga/task-sync.json` (0600) and never reaches a screen or the phone. Screens get `board.sync[projectId]`: the team, autosync, when it last synced, how many tasks are linked, and what went wrong.
+- **What comes over:** on the first sync, the team's open issues and those closed in the last two weeks. After that, everything changed since the last look. Each becomes a task (`origin: 'sync'`, "Linear brought this task over") linked to its issue (`issue.link`: the id, `ENG-12` and its URL).
+- **What goes out:** tasks made in the project since connecting (and its open ones from before, when asked), parents first. Drafts wait until Claude has written them, and archived tasks stay here.
+- **Kept in step:** title, status, priority, labels, estimate, due date, parent, and the brief as the description. The description is the goal first, then each other section under its heading (`## Acceptance criteria`). Reading one back, text under a known heading goes to that section and everything else to the goal.
+  - **Status:** Backlog/Triage ↔ Backlog, Unstarted ↔ Ready, Started ↔ In Progress (a started state named "…Review…" ↔ In Review; Merged into Plan goes as In Review), Completed ↔ Done, Canceled ↔ Canceled.
+  - **Priority:** Linear's 0–4.
+  - **Labels:** matched by name, any case; missing ones are made as team labels.
+  - **Estimates:** only sent when the team uses them.
+- **Who wins:** each link keeps a fingerprint of every field on both sides as they last agreed (`link.local`, `link.remote`). A field only one side changed goes to the other. When both sides changed it, the newer change wins. A side whose value can't say what the other's does (Merged into Plan) doesn't bounce back. Changes from Linear show in the activity as by **Linear**, and brief edits keep their revisions, so Restore This brings back what Linear overwrote.
+- **Autosync:** Linear can't call a Mac back, so Beluga asks every minute (`AUTO_MS`), soon after starting, and a few seconds after a change here to a linked or sendable task (`SOON_MS`). A key Linear turns down stops autosync until you connect a new one (the bar's Linear pill says so). Sync Now is in ⋯ and the sheet.
+- **Disconnecting** forgets the key and unlinks the tasks. Nothing in Linear changes. Connecting another team unlinks the old team's tasks first.
+- **Other trackers:** `sync/provider.ts` is the seam: teams, changed-since, create, update, in the board's terms. GitHub Issues is BLG-75.
+- Claude sees a task's Linear key and URL in its brief (`prompt.ts`). `BELUGA_LINEAR_API` points the daemon at a fake Linear for testing.
+
 ### Sharing with friends — phase 3
 
 - **A board belongs to a project.** It's shared with whoever can see that project (project invites), or with a Channel (a network group).

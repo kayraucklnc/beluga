@@ -8,6 +8,9 @@ import type { DraftContext } from '../../agent/task-drafter.js';
 import { findPr } from '../../workspaces/pr.js';
 import { Board } from './board.js';
 import { seedDemoBoard } from './demo.js';
+import { TaskSync, attachSync, detachSync } from './sync/sync.js';
+import { demoLinear } from './sync/demo.js';
+import { belugaEnv } from '../beluga-env.js';
 import { attachBoard, detachBoard } from './registry.js';
 import { BoardWork } from './work.js';
 import { Plans } from '../plans/plans.js';
@@ -58,6 +61,13 @@ export function launchBoard(host: BoardHost): () => void {
         }),
   });
   attachBoard(session, work);
+  // Two-way sync with Linear, per project. The demo has a pretend Linear and keeps keys in memory only;
+  // BELUGA_LINEAR_API points the real one at a fake Linear.
+  const linearBase = belugaEnv('LINEAR_API');
+  const pretend = host.demo ? demoLinear() : undefined;
+  const sync = new TaskSync({ store, board, ...(pretend ? { file: null, provider: () => pretend } : {}), ...(linearBase ? { linear: { base: linearBase } } : {}) });
+  attachSync(session, sync);
+  sync.start();
   // Plans: drafted in a conversation, approved onto the board, run milestone by milestone.
   const plans = new Plans({ store, dir, now: () => Date.now() - back });
   // Made after the plans' work (it moves the plan along), told by its forYou hook.
@@ -101,6 +111,8 @@ export function launchBoard(host: BoardHost): () => void {
     decisions?.stop();
     detachPlans(session);
     planWork.stop();
+    detachSync(session);
+    sync.stop();
     detachBoard(session);
     work.stop();
     store.dispatch({ type: 'plans_off' });

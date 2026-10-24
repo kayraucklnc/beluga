@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { isOpen, worksOn, worktreeOf } from '@beluga/core/board/model.js';
+import { PROVIDER_INFO, type ProjectSync, isOpen, worksOn, worktreeOf } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
@@ -10,7 +10,7 @@ import { TaskBoard } from './TaskBoard.js';
 import { TaskList } from './TaskList.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { PickMenu } from './PickMenu.js';
-import { type Display, SCOPES, type Scope, assigneesIn, connected, doneCount, projectToShow, scopeCounts, scoped, statusesFor, taskGraph } from './tasks-model.js';
+import { type Display, SCOPES, ago, type Scope, assigneesIn, connected, doneCount, projectToShow, scopeCounts, scoped, statusesFor, taskGraph } from './tasks-model.js';
 import { setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
 
@@ -61,6 +61,7 @@ export function TasksView() {
     return tied.length ? taskGraph(board, tied) : undefined;
   }, [display, board, issues]);
   const here = projects.find((p) => p.id === project);
+  const sync = project ? board.sync?.[project] : undefined;
 
   // ⌘F finds, ⌘N or C (outside a field) makes a task.
   useEffect(() => {
@@ -171,9 +172,12 @@ export function TasksView() {
             ]}
           />
         )}
+        {sync ? <SyncPill sync={sync} onClick={() => openSheet({ kind: 'task_sync', projectId: here.id })} /> : null}
         <ActionsDropdown
           items={[
-            { label: 'Open a Task for Every New Worktree', checked: board.autoTasks, onSelect: () => void act(() => api.setAutoTasks(!board.autoTasks)) },
+            { label: sync ? 'Linear Sync…' : 'Sync with Linear…', icon: 'refresh', onSelect: () => openSheet({ kind: 'task_sync', projectId: here.id }) },
+            ...(sync ? [{ label: 'Sync Now', disabled: Boolean(sync.syncing), onSelect: () => void act(() => api.syncNow(project)) }] : []),
+            { label: 'Open a Task for Every New Worktree', separate: true, checked: board.autoTasks, onSelect: () => void act(() => api.setAutoTasks(!board.autoTasks)) },
             { label: 'Archive Done Tasks', icon: 'archive', separate: true, disabled: !doneCount(board, project), onSelect: () => void act(() => api.archiveDone(project), 'Done tasks are in the Archive') },
             { label: 'Show Canceled Tasks', separate: true, checked: !prefs.folded.includes('canceled'), onSelect: () => setTasksPrefs({ folded: prefs.folded.includes('canceled') ? prefs.folded.filter((s) => s !== 'canceled') : [...prefs.folded, 'canceled'] }) },
           ]}
@@ -221,6 +225,18 @@ export function TasksView() {
       </div>
       {issues.length && display !== 'graph' ? <div className={t.foot}>{archive ? `${issues.length} archived` : `${issues.filter((i) => isOpen(i.status)).length} open · ${issues.length} shown`}</div> : null}
     </div>
+  );
+}
+
+/** How the project syncs with Linear, in the bar: syncing, when it last did, or that it needs you. */
+function SyncPill({ sync, onClick }: { sync: ProjectSync; onClick: () => void }) {
+  const name = PROVIDER_INFO[sync.provider].label;
+  const text = sync.error?.code === 'auth' ? `${name}: needs a new key` : sync.syncing ? `${name}: syncing…` : sync.syncedAt ? `${name} · ${ago(sync.syncedAt)}` : name;
+  return (
+    <button type="button" className={cx(t.syncPill, sync.error && t.syncPillProblem)} onClick={onClick} title={sync.error?.message ?? `Synced with ${sync.team} in ${name}${sync.auto ? ' · Autosync on' : ''}`}>
+      <Icon name={sync.error ? 'alert' : 'refresh'} size={11} className={sync.syncing ? t.syncSpin : undefined} />
+      {text}
+    </button>
   );
 }
 

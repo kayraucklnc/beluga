@@ -93,7 +93,7 @@ export interface BriefRevision {
   readonly reason?: string;
 }
 
-export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan';
+export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan' | 'link';
 
 export interface Activity {
   readonly id: string;
@@ -196,11 +196,56 @@ export interface Issue {
   readonly closedAt?: number;
   /** When it went to the Archive (off the board, its words kept, its proof files let go). */
   readonly archivedAt?: number;
-  /** How it started: by hand, a worktree opening, Claude, or an approved plan. */
-  readonly origin: 'manual' | 'worktree' | 'claude' | 'plan';
+  /** How it started: by hand, a worktree opening, Claude, an approved plan, or brought over from another tracker (Linear). */
+  readonly origin: 'manual' | 'worktree' | 'claude' | 'plan' | 'sync';
   /** The plan it's part of: the plan, its milestone and its task there (ids). */
   readonly plan?: IssuePlan;
+  /** The same task in another tracker (Linear), kept in step by sync (core/board/sync). */
+  readonly link?: IssueLink;
 }
+
+/** Trackers a project's board can sync with. */
+export const SYNC_PROVIDERS = ['linear'] as const;
+export type SyncProvider = (typeof SYNC_PROVIDERS)[number];
+
+export const PROVIDER_INFO: Readonly<Record<SyncProvider, { readonly label: string }>> = {
+  linear: { label: 'Linear' },
+};
+
+/** The fields sync keeps in step, each as a short fingerprint (see sync/fields.ts). */
+export type SyncedPrints = Readonly<Record<string, string>>;
+
+/** Where a task lives in another tracker, and what both sides looked like when they last agreed. */
+export interface IssueLink {
+  readonly provider: SyncProvider;
+  /** The tracker's own id. */
+  readonly id: string;
+  /** What people call it there ("ENG-12"). */
+  readonly key: string;
+  readonly url: string;
+  /** This side's fields at the last sync: a field that differs now was changed here. */
+  readonly local: SyncedPrints;
+  /** The tracker's fields at the last sync: one that differs there was changed there. */
+  readonly remote: SyncedPrints;
+}
+
+/** A project's sync with another tracker, as screens see it (never its key). */
+export interface ProjectSync {
+  readonly provider: SyncProvider;
+  /** The tracker's workspace and team ("Acme", "Engineering", "ENG"). */
+  readonly workspace?: string;
+  readonly team: string;
+  readonly teamKey: string;
+  /** Syncs by itself: every minute or so, and shortly after a change here. */
+  readonly auto: boolean;
+  readonly syncing?: boolean;
+  readonly syncedAt?: number;
+  /** Tasks linked to the tracker. */
+  readonly linked: number;
+  readonly error?: { readonly code: SyncErrorCode; readonly message: string; readonly at: number };
+}
+
+export type SyncErrorCode = 'auth' | 'offline' | 'rate_limited' | 'remote' | 'unknown';
 
 export interface IssuePlan {
   readonly id: string;
@@ -223,6 +268,8 @@ export interface BoardState {
   readonly projects: Readonly<Record<string, BoardProject>>;
   /** Open a task for every new worktree (off by default: tasks come from plans). */
   readonly autoTasks: boolean;
+  /** Projects synced with another tracker (by project id). */
+  readonly sync?: Readonly<Record<string, ProjectSync>>;
 }
 
 export interface BoardSlice {
@@ -246,14 +293,20 @@ export type BoardAction =
   | { type: 'board_issue'; issue: Issue }
   | { type: 'board_remove'; id: string }
   | { type: 'board_meta'; projects: Readonly<Record<string, BoardProject>>; autoTasks: boolean }
+  /** A project's sync changed (no `sync`: disconnected). */
+  | { type: 'board_sync'; projectId: string; sync?: ProjectSync }
   | { type: 'board_off' };
 
-export const BOARD_ACTIONS: ReadonlySet<string> = new Set(['board_init', 'board_issue', 'board_remove', 'board_meta', 'board_off']);
+export const BOARD_ACTIONS: ReadonlySet<string> = new Set(['board_init', 'board_issue', 'board_remove', 'board_meta', 'board_sync', 'board_off']);
 
 export function reduceBoard(state: BoardSlice, action: BoardAction): BoardSlice {
   switch (action.type) {
     case 'board_init':
-      return { board: action.state };
+      return { board: { ...action.state, ...(state.board.sync ? { sync: state.board.sync } : {}) } };
+    case 'board_sync': {
+      const { [action.projectId]: _old, ...rest } = state.board.sync ?? {};
+      return { board: { ...state.board, sync: action.sync ? { ...rest, [action.projectId]: action.sync } : rest } };
+    }
     case 'board_issue': {
       const list = state.board.issues;
       const at = list.findIndex((i) => i.id === action.issue.id);

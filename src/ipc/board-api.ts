@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BRIEF_SECTIONS, ISSUE_STATUSES, PRIORITIES } from '../core/board/model.js';
+import { BRIEF_SECTIONS, ISSUE_STATUSES, PRIORITIES, SYNC_PROVIDERS } from '../core/board/model.js';
 
 /**
  * Tasks (the board) in the API (see api.ts): the Mac app's Tasks view and task pages. You act
@@ -14,6 +14,9 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const peer = z.string().min(1).max(80);
 const assignee = z.union([z.object({ kind: z.literal('person'), id: peer, name: z.string().min(1).max(64) }), z.object({ kind: z.literal('claude'), owner: peer, ownerName: z.string().min(1).max(64) })]);
 const labels = z.array(z.string().min(1).max(32)).max(12);
+const provider = z.enum(SYNC_PROVIDERS);
+// The core checks the key's exact shape and says what's wrong.
+const trackerKey = z.string().trim().min(1).max(400);
 
 export const BOARD_API = {
   // A new task (a sub-task with parent) → the task. With describe instead of a title, your Claude
@@ -76,4 +79,14 @@ export const BOARD_API = {
   'board.setAutoTasks': { args: z.tuple([z.boolean()]) },
   // What a project's task keys start with from now on ("BOB").
   'board.setPrefix': { args: z.tuple([projectId, z.string().min(2).max(6)]) },
+  // Sync with another tracker (Linear), per project. Check a key → { ok: true, workspace?, teams } or { ok: false, error }.
+  'board.syncTeams': { args: z.tuple([provider, trackerKey]) },
+  // Link a project to a team (the key stays on this computer) and sync now → { ok: true, team } or { ok: false, error }.
+  'board.syncConnect': { args: z.tuple([projectId, z.object({ provider, key: trackerKey, teamId: z.string().min(1).max(200), auto: z.boolean().optional(), pushExisting: z.boolean().optional() })]) },
+  // Forget the key; tasks stay, unlinked (nothing in the tracker changes).
+  'board.syncDisconnect': { args: z.tuple([projectId]) },
+  // Sync one project now, or every connected one.
+  'board.syncNow': { args: z.tuple([projectId.optional()]) },
+  // Autosync: every minute, and shortly after a change here.
+  'board.syncAuto': { args: z.tuple([projectId, z.boolean()]) },
 } as const;

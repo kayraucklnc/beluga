@@ -1021,6 +1021,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'board_issue':
     case 'board_remove':
     case 'board_meta':
+    case 'board_sync':
     case 'board_off':
       return { ...state, ...reduceBoard(state, action) };
     case 'plans_init':

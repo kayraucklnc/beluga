@@ -1,5 +1,6 @@
 import { isSecretPath } from '../core/shares.js';
 import { needBoard } from '../core/board/registry.js';
+import { syncOf } from '../core/board/sync/sync.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
 
@@ -69,4 +70,18 @@ export const BOARD_HANDLERS = {
   },
   'board.setAutoTasks': (s, on) => needBoard(s).board.setAutoTasks(on),
   'board.setPrefix': (s, projectId, prefix) => needBoard(s).board.setPrefix(projectId, prefix),
+  'board.syncTeams': (s, provider, key) => answer(() => syncOf(s).teams(provider, key)),
+  'board.syncConnect': (s, projectId, input) => answer(() => syncOf(s).connect(projectId, input)),
+  'board.syncDisconnect': (s, projectId) => syncOf(s).disconnect(projectId),
+  'board.syncNow': async (s, projectId) => void (await syncOf(s).sync(projectId)),
+  'board.syncAuto': (s, projectId, on) => syncOf(s).setAuto(projectId, on),
 } satisfies BoardHandlers;
+
+/** `{ ok: true, … }`, or `{ ok: false, error }` when a key or team won't do (the sheet says why, by the field). */
+async function answer<T extends object>(fn: () => Promise<T>): Promise<({ ok: true } & T) | { ok: false; error: string }> {
+  try {
+    return { ok: true, ...(await fn()) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
