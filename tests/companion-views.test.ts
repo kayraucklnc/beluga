@@ -406,6 +406,15 @@ describe('the views of a known Mac', () => {
     expect(WorkView.parse(viewOf(state, ctx, 'work')).projects.find((p) => p.id === 'p1')?.conversations.map((c) => c.title)).toEqual(['tests', 'auth']);
   });
 
+  it('a friend’s Claude answering you offers to do it on their Mac; answering someone else, it doesn’t', () => {
+    const conv = `dm:${BOB}`;
+    const answer = (id: string, asked: string) => ({ id, conversation: conv, from: BOB, name: 'bob', text: 'I can do that as a request.', ts: T0 + 40, mine: false, claude: { for: asked, request: { ask: 'Send me your wallpaper', needs: ['files' as const] } } });
+    const list = state.network.messages[conv] ?? [];
+    const withAnswers = { ...state, network: { ...state.network, messages: { ...state.network.messages, [conv]: [...list, answer('m3abcdefgh', 'm2abcdefgh'), answer('m4abcdefgh', 'm1abcdefgh')] } } };
+    const chat = ChatView.parse(viewOf(withAnswers, ctx, `chat:dm:${BOB}`));
+    expect(chat.messages.map((m) => m.offer)).toEqual([undefined, undefined, { to: BOB, ask: 'Send me your wallpaper', needs: ['files'] }, undefined]);
+  });
+
   it('every needs-you action is a call the phone may make', async () => {
     const { phoneMay } = await import('../src/companion/coverage.js');
     expect(needsYou(state).flatMap((n) => [...n.actions.map((a) => a.method), ...(n.answer ? [n.answer.method] : [])]).filter((m) => !phoneMay(m))).toEqual([]);

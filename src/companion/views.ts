@@ -1098,7 +1098,15 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     text: stripCode(m.text).text,
     ts: m.ts,
     ...(files.length ? { files: files.slice(0, 20) } : {}),
+    ...(offerOf(state, m) ? { offer: offerOf(state, m) } : {}),
   };
+}
+
+/** A friend's Claude, answering a message of yours, offers to do it on their Mac as a request. */
+function offerOf(state: DomainState, m: MessageView): ChatMessageView['offer'] {
+  const request = m.claude?.request;
+  if (!request || m.mine || !state.network.messages[m.conversation]?.some((x) => x.id === m.claude?.for && x.mine)) return undefined;
+  return { to: m.from, ask: clip(request.ask, 500), ...(request.needs?.length ? { needs: [...request.needs] } : {}) };
 }
 
 /** One chat's messages (the newest, or those before `before`). */

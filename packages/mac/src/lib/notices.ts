@@ -34,3 +34,11 @@ export function openNoticeTarget(actions: Actions, target: MacNoticeTarget, go?:
 
 /** A desktop notification was clicked (the app shell or the browser says so with this event). */
 export const NOTIFICATION_TAP = 'beluga:notification-tap';
+
+/** A friend's message to show as a banner in the window (you're in Beluga, looking elsewhere). */
+export const MESSAGE_BANNER = 'beluga:message-banner';
+export interface MessageBannerDetail {
+  readonly title: string;
+  readonly body: string;
+  readonly channel?: string;
+}

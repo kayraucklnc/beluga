@@ -37,6 +37,19 @@ export interface ChatFile {
   readonly image?: boolean;
 }
 
+/** What the Mac a Claude in a chat can't touch would need to do (chat Claudes have no tools). */
+export interface ChatRequest {
+  /** The task, as a request to that Claude on its owner's Mac ("Send me your desktop wallpaper"). */
+  readonly ask: string;
+  readonly needs?: ReadonlyArray<'project' | 'shell' | 'files' | 'screen' | 'device'>;
+}
+
+/** A Claude's answer in a chat: to message `for`, and what it would take as a real request (the asker's Mac offers to send it). */
+export interface ClaudeReply {
+  readonly for: string;
+  readonly request?: ChatRequest;
+}
+
 /** Who a message asks to answer: everyone's Claude in the chat, or these people's. */
 export interface ChatAsk {
   readonly to: 'all' | readonly string[];
@@ -48,7 +61,7 @@ export interface ChatExtras {
   /** The author called for Claudes to answer this message. */
   readonly ask?: ChatAsk;
   /** This message is the author's Claude answering message `for`. */
-  readonly claude?: { readonly for: string };
+  readonly claude?: ClaudeReply;
 }
 
 /** One message in a conversation with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */

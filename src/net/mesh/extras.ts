@@ -14,6 +14,8 @@ import type { ChatExtras, ChatFile } from './views.js';
 export const MAX_CHAT_FILE = Number.MAX_SAFE_INTEGER;
 /** Files on one message. */
 export const MAX_FILES = 20;
+/** The longest request a chat Claude's answer can offer (see ChatRequest). */
+export const MAX_REQUEST_ASK = 500;
 
 const hex64 = z.string().regex(/^[0-9a-f]{64}$/);
 
@@ -36,7 +38,13 @@ export const ChatFileSchema = z.object({
 export const ExtrasSchema = z.object({
   files: z.array(ChatFileSchema).max(MAX_FILES).optional(),
   ask: z.object({ to: z.union([z.literal('all'), z.array(PeerIdSchema).min(1).max(100)]) }).optional(),
-  claude: z.object({ for: z.string().min(1).max(80) }).optional(),
+  claude: z
+    .object({
+      for: z.string().min(1).max(80),
+      // Older Macs drop `request` (zod strips what it doesn't know) and show the answer alone.
+      request: z.object({ ask: z.string().min(1).max(MAX_REQUEST_ASK), needs: z.array(z.enum(['project', 'shell', 'files', 'screen', 'device'])).max(5).optional() }).optional(),
+    })
+    .optional(),
 });
 
 /** The extras of a message as they came (anything malformed is dropped; nothing at all: undefined). */
@@ -48,7 +56,7 @@ export function parseExtras(raw: unknown): ChatExtras | undefined {
   const out: { files?: ChatFile[]; ask?: ChatExtras['ask']; claude?: ChatExtras['claude'] } = {};
   if (files?.length) out.files = files.map((f) => ({ sha: f.sha, name: f.name, size: f.size, ...(f.mime ? { mime: f.mime } : {}), ...(f.image ? { image: true } : {}) }));
   if (ask) out.ask = ask;
-  if (claude) out.claude = claude;
+  if (claude) out.claude = { for: claude.for, ...(claude.request ? { request: { ask: claude.request.ask, ...(claude.request.needs?.length ? { needs: [...new Set(claude.request.needs)] } : {}) } } : {}) };
   return Object.keys(out).length ? out : undefined;
 }
 

@@ -438,6 +438,31 @@ describe('the Beluga network: messages from friends and groups', () => {
       vi.useRealTimers();
     }
   });
+
+  it('shows in the window, with its sound, while Beluga is in front (even set to notify only when away)', () => {
+    vi.useFakeTimers({ now: 1_000_000 });
+    try {
+      const state = on();
+      const store = new Store({ ...state, attention: { ...state.attention, front: true }, prefs: { ...state.prefs, notify: { ...state.prefs.notify, onlyAway: true } } });
+      const desktop = vi.fn();
+      const notifier = new Notifier({ store, desktop });
+      store.dispatch({ type: 'net_message', message: msg('1', 'dm:b', 'lunch?') });
+      vi.runAllTimers();
+      expect(store.getState().inbox).toMatchObject([{ title: 'bob', channel: 'dm:b', read: false }]);
+      expect(desktop).toHaveBeenCalledTimes(1);
+      expect(desktop.mock.calls[0]![0]).toMatchObject({ title: 'bob', body: 'lunch?', channel: 'dm:b', sound: true, banner: true });
+
+      // A burst is one banner.
+      store.dispatch({ type: 'net_message', message: msg('2', 'dm:b', 'one') });
+      store.dispatch({ type: 'net_message', message: msg('3', 'group:g1', 'two', { conversation: 'group:g1' }) });
+      vi.runAllTimers();
+      expect(desktop).toHaveBeenCalledTimes(2);
+      expect(desktop.mock.calls[1]![0]).toMatchObject({ title: '2 new messages', banner: true });
+      notifier.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('plans: you hear from the plan, not each task', () => {

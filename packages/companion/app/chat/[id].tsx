@@ -137,12 +137,46 @@ function Bubble({ m, first, group, pics }: { m: ChatMessageView; first: boolean;
             </T>
           </View>
         ) : null}
+        {m.offer ? <Offer offer={m.offer} name={m.from.replace(/’s Claude$/, '')} /> : null}
         {first ? (
           <T v="caption" style={{ marginHorizontal: 4, fontSize: 11 }}>
             {ago(m.ts)}
           </T>
         ) : null}
       </View>
+    </View>
+  );
+}
+
+/**
+ * A friend's Claude can't touch their Mac from the chat: what it offers to do there instead, as a
+ * request to their Claude (their trust settings let it in, or they approve it). Requests shows how it goes.
+ */
+function Offer({ offer, name }: { offer: NonNullable<ChatMessageView['offer']>; name: string }) {
+  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  const send = (): void => {
+    setState('sending');
+    store
+      .call(calls.request(offer.to, offer.ask, offer.needs), { queue: false })
+      .then(() => setState('sent'))
+      .catch(() => setState('failed'));
+  };
+  return (
+    <View style={{ gap: 6, padding: 10, borderRadius: 16, backgroundColor: tint.peach }}>
+      <T v="caption" c={ink.peach}>
+        {offer.ask}
+      </T>
+      {state === 'sent' ? (
+        <T v="caption" c={ink.peach} style={{ fontWeight: '700' }}>
+          Sent to {name}’s Mac
+        </T>
+      ) : (
+        <Press onPress={send} disabled={state === 'sending'} style={{ alignSelf: 'flex-start', paddingVertical: 7, paddingHorizontal: 12, borderRadius: 12, backgroundColor: color.card }}>
+          <T v="caption" c={color.text} style={{ fontWeight: '700' }}>
+            {state === 'sending' ? 'Sending…' : state === 'failed' ? 'Couldn’t send. Try again' : `Ask on ${name}’s Mac`}
+          </T>
+        </Press>
+      )}
     </View>
   );
 }
