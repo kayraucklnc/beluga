@@ -123,8 +123,8 @@ export function buildAskOnlyAppend(project: string, canMove: boolean): string {
       ? [
           'When the request asks for ANY change (edit, fix, implement, add, refactor, write tests, commit, run something',
           'that writes), do not refuse and do not try it here: call mcp__beluga__continue_in_worktree right away, as your',
-          'first action, with `task` = the request restated as a complete, self-contained instruction. Beluga creates a',
-          'new worktree from the latest origin, carries this conversation there and you continue the work in it.',
+          'first action, with `task` = the request restated as a complete, self-contained instruction. Beluga turns this',
+          'chat into a new worktree from the latest origin (same conversation, its own folder) and you continue the work there.',
           'After the tool returns, end your turn with one short line; do not start the work in this folder.',
           "Questions (explain, find, review, compare) you answer here as usual.",
         ].join('\n')

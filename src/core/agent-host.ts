@@ -415,7 +415,7 @@ export class AgentHost {
     }
     const ws = await ctl.continueInWorktree(id, (p) => this.deps.nameTask?.(p) ?? Promise.resolve('worktree'), { task, after: finished });
     if (!ws) return "Couldn't create the worktree (Beluga showed the user why). Don't change anything here; tell the user briefly.";
-    return `Done: the new worktree "${ws.name}" (branch ${ws.branch}, from ${ws.base}) has this conversation and the task continues there automatically. Do not do the work here; end your turn now with one short line.`;
+    return `Done: this chat is becoming the worktree "${ws.name}" (branch ${ws.branch}, from ${ws.base}); once this turn ends you continue the task there automatically. Do not do the work now; end your turn with one short line.`;
   }
 
   /**

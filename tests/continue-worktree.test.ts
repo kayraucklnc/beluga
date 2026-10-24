@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -18,7 +18,7 @@ import { attach, waitFor } from './helpers.js';
 
 /**
  * "Never change main": a chat in a project's main folder is questions only, and asking for a
- * change there carries the conversation into a new worktree, where Claude goes on.
+ * change there turns that same chat into a new worktree, where Claude goes on.
  */
 
 const keys = deriveKeys(generateSecret());
@@ -40,6 +40,7 @@ afterEach(async () => {
   terminals.closeAll();
   await hub?.close();
   process.env.BELUGA_HOME = home;
+  delete process.env.CLAUDE_CONFIG_DIR;
 });
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
@@ -100,21 +101,27 @@ const projectOf = (w: WorkspaceManager) => w.list.find((p) => p.root)!;
 const said = (state: () => ReturnType<Store['getState']>, channel: string): string[] => state().log.filter((l) => l.channel === channel).map((l) => ('text' in l ? l.text : ''));
 
 describe('a chat in the main folder', () => {
-  it('is read-only, and a change request moves it to a new worktree with the conversation, without asking', { timeout: 20_000 }, async () => {
+  it('is read-only, and a change request makes the same chat a worktree, with its session, without asking', { timeout: 20_000 }, async () => {
     const dir = repo();
     const kay = await solo(dir, async (input) => {
       // Like real Claude: remember the conversation, and move when asked for a change.
-      input.place?.onSession(`session-${input.place.cwd === dir ? 'main' : 'wt'}`);
+      input.place?.onSession('session-1');
       if (input.place?.askOnly && /blue/.test(input.prompt)) {
         await input.continueInWorktree!('Make the button blue');
         return 'Moving to a new worktree.';
       }
       return 'Answered.';
     });
+    // Claude Code files the conversation under the folder it ran in.
+    const claudeDir = path.join(base, 'claude');
+    process.env.CLAUDE_CONFIG_DIR = claudeDir;
+    const filed = (d: string) => path.join(claudeDir, 'projects', d.replace(/[^a-zA-Z0-9]/g, '-'), 'session-1.jsonl');
+    mkdirSync(path.dirname(filed(dir)), { recursive: true });
+    writeFileSync(filed(dir), '{}\n');
     const project = projectOf(kay.workspaces);
     await kay.session.workspaces!.startChat(project.id, 'How does the button work?');
     await waitFor(() => kay.runs.length === 1, 4000);
-    const chat = project.workspaces.find((w) => w.kind === 'chat') ?? kay.workspaces.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'chat')!;
+    const chat = kay.workspaces.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'chat')!;
     const first = kay.runs[0]!;
     expect(first.place).toMatchObject({ cwd: dir, autoEdit: false, askOnly: { project: 'app' } });
     expect(first.continueInWorktree).toBeTypeOf('function');
@@ -122,25 +129,30 @@ describe('a chat in the main folder', () => {
 
     kay.session.askOwnClaude('Please make the button blue', `ws:${chat.id}`);
     await waitFor(() => kay.runs.length === 3, 8000);
-    const worktree = kay.workspaces.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'worktree' && w.name === 'blue-button')!;
+    // The same chat, now a worktree: no second conversation.
+    const all = kay.workspaces.list.flatMap((p) => p.workspaces);
+    const worktree = all.find((w) => w.id === chat.id)!;
+    expect(worktree).toMatchObject({ kind: 'worktree', name: 'blue-button', base: 'origin/main', sessionId: 'session-1' });
+    expect(worktree.path).not.toBe(dir);
+    expect(worktree.askOnly).toBeFalsy();
+    expect(all.filter((w) => w.kind === 'chat')).toEqual([]);
     const moved = kay.runs[2]!;
-    // In the worktree: may edit, starts on the task, and branches the main chat's conversation.
+    // In the worktree: may edit, starts on the task, and resumes the very same session there.
     expect(moved.prompt).toBe('Make the button blue');
-    expect(moved.place).toMatchObject({ cwd: worktree.path, autoEdit: true, resume: 'session-main', forkSession: true });
+    expect(moved.place).toMatchObject({ cwd: worktree.path, autoEdit: true, resume: 'session-1', forkSession: false });
     expect(moved.place?.askOnly).toBeUndefined();
     expect(moved.continueInWorktree).toBeUndefined();
-    expect(worktree.base).toBe('origin/main');
+    expect(existsSync(filed(realpathSync(worktree.path)))).toBe(true);
     // Your own request: no approval card.
     expect(kay.state().approvals).toEqual([]);
     expect(kay.state().questions).toEqual([]);
-    // The note in main, the conversation carried over, and your screen went there.
-    expect(said(kay.state, `ws:${chat.id}`)).toContain('Moving to a new worktree…');
-    const there = said(kay.state, `ws:${worktree.id}`);
+    // One conversation, start to end, and your screen stayed on it.
+    const there = said(kay.state, `ws:${chat.id}`);
     expect(there).toContain('How does the button work?');
     expect(there).toContain('Please make the button blue');
-    expect(kay.screen.getState().view).toMatchObject({ kind: 'workspace', id: worktree.id });
-    // It only started there once the run in main had finished.
-    expect(said(kay.state, `ws:${chat.id}`)).toContain('Moving to a new worktree.');
+    expect(there).toContain('Moving to a new worktree.');
+    expect(there.some((t) => t.startsWith('This chat is now the worktree blue-button'))).toBe(true);
+    expect(kay.screen.getState().view).toMatchObject({ kind: 'workspace', id: chat.id });
   });
 
   it('continues in a worktree from the button, with what you asked last when no task is given', { timeout: 20_000 }, async () => {

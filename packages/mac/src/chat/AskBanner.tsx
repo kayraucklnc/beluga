@@ -5,7 +5,7 @@ import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import s from './ask.module.css';
 
-const HINT = 'A worktree from the latest origin, with this conversation; Claude goes on there';
+const HINT = 'This chat becomes a worktree from the latest origin; Claude goes on in it';
 
 /** "Continue in New Worktree…": the way out of a questions-only chat (opens its sheet). */
 export function ContinueButton({ wsId, className, variant = 'primary' }: { wsId: string; className?: string; variant?: 'primary' | 'plain' }) {
@@ -32,7 +32,7 @@ export function AskBanner({ wsId }: { wsId: string }) {
       <div className={s.banner} role="note" aria-label="Questions only">
         <Icon name="eye" size={13} className={s.icon} />
         <span className={s.text}>
-          <span className={s.lead}>Questions only</span> — Claude won’t change anything in main. Ask for a change and it moves to a new worktree.
+          <span className={s.lead}>Questions only</span> — Claude won’t change anything in main. Ask for a change and this chat becomes a worktree.
         </span>
         <ContinueButton wsId={wsId} variant="plain" className={s.button} />
       </div>
