@@ -268,6 +268,8 @@ export class CompanionHost {
   private node?: DHT;
   private server?: Server;
   private starting?: Promise<DHT>;
+  /** The starting node, once it's up (before its server listens). */
+  private nodeUp?: Promise<DHT>;
   private keyPair?: KeyPair;
   private offs: Array<() => void> = [];
   private stopped = false;
@@ -292,7 +294,8 @@ export class CompanionHost {
     this.icons = opts.icons ?? new ProjectIcons({ dir: path.join(path.dirname(opts.thumbsDir), 'icons'), root: (id) => this.state().projects.find((p) => p.id === id)?.root, changed: () => this.refreshViews() });
     this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };
     this.pairing = new DevicePairing({
-      node: () => this.ensureNode(),
+      // A pairing listens as soon as the node is up: not after the companion's own server or the relay.
+      node: () => this.readyNode(),
       identity: opts.identity,
       devices: opts.devices,
       address: () => this.address(),
@@ -305,6 +308,7 @@ export class CompanionHost {
       relay: this.reach.server,
       relayUrl: () => this.reach.relayUrl(),
       ...(opts.dht?.refuseDirect ? { refuseDirect: true } : {}),
+      log: (line) => this.opts.log?.(line),
     });
   }
 
@@ -657,14 +661,29 @@ export class CompanionHost {
     } else if (this.node) await this.shutdownNode();
   }
 
+  /** The DHT node as soon as it's up, while the companion's own server and the relay still start. */
+  private readyNode(): Promise<DHT> {
+    if (this.node && this.server) return Promise.resolve(this.node);
+    this.ensureNode().catch(() => undefined);
+    return this.nodeUp!;
+  }
+
   private ensureNode(): Promise<DHT> {
     if (this.node && this.server) return Promise.resolve(this.node);
-    this.starting ??= (async () => {
+    if (this.starting) return this.starting;
+    let up!: (node: DHT) => void;
+    let failed!: (err: unknown) => void;
+    this.nodeUp = new Promise<DHT>((resolve, reject) => ((up = resolve), (failed = reject)));
+    this.nodeUp.catch(() => undefined);
+    this.starting = (async () => {
       const DHTClass = (await import('hyperdht')).default;
       const keyPair = this.keyPair ?? (await companionKeyPair(this.opts.identity));
       this.keyPair = keyPair;
       const node = new DHTClass({ ...(this.opts.dht?.bootstrap ? { bootstrap: this.opts.dht.bootstrap } : {}), ...(this.opts.dht?.host ? { host: this.opts.dht.host } : {}) });
       await node.ready();
+      // Kept from here, so stopping destroys it even if what follows fails.
+      this.node = node;
+      up(node);
       // Only phones you paired (and haven't removed) get through; `true` turns a connection away.
       const firewall = (remote: Buffer): boolean => !this.opts.devices.byLink(remote.toString('hex'));
       const server = node.createServer({ firewall: this.opts.dht?.refuseDirect ? () => true : firewall }, (stream: NoiseSocket) => this.accept(stream));
@@ -673,12 +692,16 @@ export class CompanionHost {
       this.reach.server.add({ keyPair, firewall, accept: (stream) => this.accept(stream, true) });
       await this.reach.start().catch((err: unknown) => this.logLine(`no relay: ${String(err)}`));
       this.reach.publishOn(node, () => [keyPair, ...this.pairing.keyPairs()]);
-      this.node = node;
       this.server = server;
       return node;
-    })().finally(() => {
-      this.starting = undefined;
-    });
+    })()
+      .catch((err: unknown) => {
+        failed(err);
+        throw err;
+      })
+      .finally(() => {
+        this.starting = undefined;
+      });
     return this.starting;
   }
 
