@@ -222,7 +222,7 @@ export const HANDLERS = {
     const bytes = Buffer.from(base64, 'base64');
     const file = await saveImageBytes(bytes, ext);
     const a = registerAttachment(file, bytes.byteLength);
-    return { n: a.n, chip: chipText(a.n) };
+    return { n: a.n, chip: chipText(a.n), file: path.basename(file) };
   },
   'attachments.addFile': async (_s, file) => {
     const info = pathInfo(file);
@@ -234,7 +234,7 @@ export const HANDLERS = {
   'attachments.reattach': (_s, file) => {
     const a = reattach(file);
     if (!a) throw new Error('That image is gone from this computer');
-    return { n: a.n, chip: chipText(a.n) };
+    return { n: a.n, chip: chipText(a.n), file: path.basename(a.path) };
   },
   'attachments.expand': (s, text, channel, only) => {
     if (!text.includes('[image ') || text.startsWith('/')) return text;

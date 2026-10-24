@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { refKey, referencedImages } from '../packages/mac/src/chat/image-refs.js';
+import { boxRef, nameTail, plainRefs, refKey, referencedImages, withoutRef } from '../packages/mac/src/chat/image-refs.js';
 import { chipText, expandChips, reattach, registerAttachment } from '../src/core/attachments.js';
 import { imageLinksAsWords, imageLinksIn } from '../src/shared/attachment-links.js';
 
@@ -34,6 +34,25 @@ describe('"[image N]" in the message box is one thing', () => {
 
   it('lists the images the words reference', () => {
     expect(referencedImages('[image 2] and [image 10]')).toEqual([2, 10]);
+  });
+});
+
+describe('an image\'s chip carries the end of its name', () => {
+  const ref = boxRef(1, '20261024-142525-fpxw.png');
+
+  it('shows the last characters, without the extension, and never wraps', () => {
+    expect(nameTail('20261024-142525-fpxw.png')).toBe('42525-fpxw');
+    expect(nameTail('/Users/me/shot.jpeg')).toBe('shot');
+    expect(ref).toBe('[image\u00a01\u00a0·\u00a042525-fpxw]');
+    expect(boxRef(3)).toBe('[image 3]');
+  });
+
+  it('is still one reference, and goes out as "[image N]"', () => {
+    const text = `see ${ref} here`;
+    expect(referencedImages(text)).toEqual([1]);
+    expect(refKey(text, 4 + ref.length, 4 + ref.length, 'Backspace')).toEqual({ kind: 'delete', start: 4, end: 5 + ref.length, images: [1] });
+    expect(plainRefs(text)).toBe('see [image 1] here');
+    expect(withoutRef(text, 1)).toBe('see here');
   });
 });
 

@@ -5,7 +5,7 @@ import { inApp } from '../lib/boot.js';
 import { toast, useApi, useBeluga } from '../lib/beluga.js';
 import { type Box, MAX_DROPPED, dropHits, droppedFiles, sameBox } from './drop-model.js';
 import { imageLinksIn } from '@beluga/shared/attachment-links.js';
-import { type RefKey, refKey } from './image-refs.js';
+import { type RefKey, boxRef, plainRefs, refKey, referencedImages, withoutRef } from './image-refs.js';
 import { keepPreview, previewOf } from './images.js';
 import { type ImageInText, type PathInfo, insertText, usePastePaths } from './paste-paths.js';
 import s from './composer.module.css';
@@ -25,8 +25,10 @@ import img from './images.module.css';
 const waitingImages = new Map<string, readonly number[]>();
 /** Other files (their paths were pasted) waiting to go with the message, per conversation. */
 const waitingFiles = new Map<string, readonly PathInfo[]>();
+/** The file name each image came with (the end of it shows on its chip in the words). */
+const imageNames = new Map<number, string>();
 /** How the words refer to a waiting image (it becomes a link to it when sent). */
-export const imageRef = (n: number): string => `[image ${n}]`;
+export const imageRef = (n: number): string => boxRef(n, imageNames.get(n));
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -107,9 +109,12 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
       const bytes = new Uint8Array(await file.arrayBuffer());
       let bin = '';
       for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      let added: { n: number; chip: string };
+      let added: { n: number; chip: string; file?: string };
       try {
         added = await api.attachments.add(ext, btoa(bin));
+        // A pasted picture is just "image.png": the name Beluga saved it under tells them apart.
+        const named = file.name && !/^image\.\w+$/i.test(file.name) ? file.name : added.file;
+        if (named) imageNames.set(added.n, named);
         keepPreview(added.n, file);
       } catch (err) {
         toast(client, `Couldn't add ${file.name || 'the image'}: ${errorText(err)}`, 'error');
@@ -124,6 +129,7 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
   const addImageFile = async (f: PathInfo): Promise<number | undefined> => {
     try {
       const added = await api.attachments.addFile(f.path);
+      imageNames.set(added.n, f.name);
       const shown = await api.attachments.read(selfId, added.file);
       keepPreview(added.n, new Blob([Uint8Array.from(atob(shown.data), (c) => c.charCodeAt(0))], { type: shown.mime }));
       setImages([...(waitingImages.get(channel) ?? []), added.n]);
@@ -217,10 +223,8 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
   const removeImage = (n: number): void => {
     setImages(images.filter((x) => x !== n));
     const now = text();
-    if (now.includes(imageRef(n))) {
-      const next = now.replace(` ${imageRef(n)}`, '').replace(imageRef(n), '');
-      setText(next, next.length);
-    }
+    const next = withoutRef(now, n);
+    if (next !== now) setText(next, next.length);
     box.current?.focus();
   };
 
@@ -237,7 +241,8 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     }
     // Through the field's own editing, so ⌘Z brings it back.
     insertText(el, '', { start: edit.start, end: edit.end });
-    const gone = edit.images.filter((n) => !el.value.includes(imageRef(n)));
+    const left = referencedImages(el.value);
+    const gone = edit.images.filter((n) => !left.includes(n));
     if (gone.length) setImages((waitingImages.get(channel) ?? []).filter((n) => !gone.includes(n)));
     return true;
   };
@@ -254,6 +259,7 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
       }
       try {
         const { n } = await api.attachments.reattach(link.file);
+        if (!imageNames.has(n)) imageNames.set(n, link.file);
         if (!previewOf(n)) {
           const shown = await api.attachments.read(selfId, link.file);
           keepPreview(n, new Blob([Uint8Array.from(atob(shown.data), (c) => c.charCodeAt(0))], { type: shown.mime }));
@@ -272,10 +278,13 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
   const take = (typed: string): { text: string; images: readonly number[]; putBack: () => void } => {
     if (typed.startsWith('/')) return { text: typed, images: [], putBack: () => undefined };
     const pictures = pendingImages;
-    const unplaced = pictures.filter((n) => !typed.includes(imageRef(n)));
+    const placed = referencedImages(typed);
+    const unplaced = pictures.filter((n) => !placed.includes(n));
     // Other files go as their paths (Claude reads them from this Mac).
     const others = files;
-    const out = pictures.length || others.length ? [typed, unplaced.map(imageRef).join(' '), others.map((f) => `\`${f.path}\``).join('\n')].filter(Boolean).join('\n\n') : typed;
+    // The chips' names stay in the box: out they go as "[image N]".
+    const words = plainRefs(typed);
+    const out = pictures.length || others.length ? [words, unplaced.map((n) => boxRef(n)).join(' '), others.map((f) => `\`${f.path}\``).join('\n')].filter(Boolean).join('\n\n') : words;
     if (pictures.length) setImages([]);
     if (others.length) setFiles([]);
     return {

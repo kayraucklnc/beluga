@@ -1343,6 +1343,12 @@
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
   cursor: pointer;
 }
+/* The box over its image chips (see MentionHighlighter). */
+.chatInputWrap {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
 .chatInput {
   flex: 1;
   min-width: 0;

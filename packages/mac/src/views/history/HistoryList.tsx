@@ -32,9 +32,13 @@ export function AuthorAvatar({ name, email, size = 20 }: { name: string; email: 
   );
 }
 
-/** One row's slice of the graph: the lines through it and the commit's dot. */
+/**
+ * One row's slice of the graph: the lines through it and the commit's dot. Only as wide as the
+ * lanes running through this row, so the text sits right beside its dot instead of after a gap
+ * kept for a busier stretch of the graph further down.
+ */
 function GraphCell({ row, lanes, height, head, incoming }: { row: GraphRow; lanes: number; height: number; head: boolean; incoming: boolean }) {
-  const width = PAD * 2 + (lanes - 1) * LANE;
+  const width = PAD * 2 + (Math.max(1, Math.min(lanes, row.width)) - 1) * LANE;
   const cx0 = PAD + Math.min(row.lane, lanes - 1) * LANE;
   const color = laneColor(row.color);
   return (

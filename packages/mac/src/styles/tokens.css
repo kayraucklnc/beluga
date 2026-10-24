@@ -42,8 +42,10 @@
   color-scheme: light;
   --bg: #ffffff;
   --bg-sunken: #f6f6f7;
-  --bg-sidebar: rgba(236, 236, 239, 0.78);
-  --bg-sidebar-solid: #ececef;
+  /* Nearly opaque: the window's vibrancy follows the system appearance, not this theme, so a
+     see-through sidebar turns muddy grey (or dark, with macOS in dark mode). */
+  --bg-sidebar: rgba(248, 248, 251, 0.96);
+  --bg-sidebar-solid: #f7f7fa;
   --bg-raised: #ffffff;
   --bg-hover: rgba(0, 0, 0, 0.045);
   --bg-press: rgba(0, 0, 0, 0.08);
