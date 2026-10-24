@@ -210,10 +210,9 @@ export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
   const primary = branch?.steps.length ? undefined : pickPrimary(state, ws, all);
   const shown = (a: ToolAction): boolean => a.action !== primary?.action || isPrStep(primary.action);
   const icons = ICONS.flatMap((id) => all.filter((a) => a.action === id && shown(a)));
-  // A merged PR: archive it, delete it, or carry on here with a new one.
-  const merged = state.prs[ws.id]?.state === 'MERGED' && !ws.archived && !owner;
-  const after: ToolAction[] = merged ? [{ id: 'continue_after_merge', label: 'Continue After Merge…', hint: `PR #${state.prs[ws.id]!.number} is done: start this branch again from the latest base and keep the conversation; the next change gets a new PR`, icon: 'branch', action: 'continue_after_merge' }] : [];
-  const more = inSections([...all.filter((a) => !icons.includes(a) && shown(a)), ...after]);
+  // What the branch's own menu offers (Archive, Delete, Continue After Merge, Commit…) lives there, not twice in ⋯.
+  const steps = new Set<string>(branch?.steps.map((step) => step.id));
+  const more = inSections(all.filter((a) => !icons.includes(a) && shown(a) && !steps.has(a.action)));
   return { ...(branch ? { branch } : {}), ...(primary ? { primary } : {}), icons, more };
 }
 
