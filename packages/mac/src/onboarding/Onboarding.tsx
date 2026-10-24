@@ -12,7 +12,7 @@ import { Glass, GlassBackdrop } from './Glass.js';
 import { type Prepared, prepareWormhole } from './finale-sound.js';
 import { WORMHOLE, WORMHOLE_TOTAL, Wormhole } from './Wormhole.js';
 import { EASE_OUT, SPRING } from './fx.js';
-import { LAST_SETTING, SHOW_WELCOME, STEPS, type Step, afterAccess, afterTour, groupOf, inAccess, inTour, saveMark, shouldShow, stepBy, stepIndex, tourPlace } from './onboarding-model.js';
+import { LAST_SETTING, SHOW_WELCOME, STEPS, type Step, afterAccess, afterTour, clearPlace, groupOf, inAccess, inTour, resumeAt, saveMark, savePlace, shouldShow, stepBy, stepIndex, tourPlace, wasDone } from './onboarding-model.js';
 import { PhoneStep } from './PhoneStep.js';
 import { Look, Popups, Setup } from './SetupSteps.js';
 import { Hello, Ready, Tour } from './Steps.js';
@@ -38,23 +38,31 @@ function arrive(): void {
   setTimeout(() => delete app.dataset.arriving, 2000);
 }
 
-export function useOnboarding(): { open: boolean; close: (how: 'finished' | 'skipped') => void; arrive: () => void } {
+export function useOnboarding(): { open: boolean; start: Step; close: (how: 'finished' | 'skipped') => void; arrive: () => void } {
   const [open, setOpen] = useState(() => shouldShow(localStorage, window.location.search));
+  // Where it opens: the step it was left on (macOS's "Quit & Reopen" after a permission), or the welcome.
+  const [start, setStart] = useState<Step>(() => resumeAt(localStorage) ?? 'hello');
   useEffect(() => {
     // The first time only: quit halfway and it's back next launch. Seeing it again from Help
-    // leaves the mark as it was, so a replay you leave never brings it back on its own.
-    if (open) saveMark(localStorage, APP_VERSION, 'started');
+    // leaves the mark as it was, so a replay you leave never brings it back on its own (only a
+    // permission step's reopen does, for a few minutes).
+    if (open && !wasDone(localStorage)) saveMark(localStorage, APP_VERSION, 'started');
   }, []);
   useEffect(() => {
-    const show = (): void => setOpen(true);
+    const show = (): void => {
+      setStart('hello');
+      setOpen(true);
+    };
     document.addEventListener(SHOW_WELCOME, show);
     return () => document.removeEventListener(SHOW_WELCOME, show);
   }, []);
   return {
     open,
+    start,
     arrive,
     close: (how) => {
       saveMark(localStorage, APP_VERSION, how);
+      clearPlace(localStorage);
       setOpen(false);
     },
   };
@@ -91,13 +99,15 @@ function Progress({ step, go }: { readonly step: Step; readonly go: (to: Step) =
  * then the app. A full window of its own over the app (which is already there
  * underneath, so finishing simply lifts this away).
  */
-export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'finished' | 'skipped') => void; readonly onArrive?: () => void }) {
+export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly start?: Step; readonly onClose: (how: 'finished' | 'skipped') => void; readonly onArrive?: () => void }) {
   const { ui } = useBeluga();
   const prefs = usePrefs();
   const projects = useApp((st) => st.projects.filter((p) => p.root).length);
   const phones = useApp((st) => st.companion.devices.length);
   const still = (useReducedMotion() ?? false) || prefs.reduceMotion;
-  const [step, setStep] = useState<Step>('hello');
+  const [step, setStep] = useState<Step>(start);
+  // Kept as it goes: macOS's "Quit & Reopen" after a permission brings you back to this step.
+  useEffect(() => savePlace(localStorage, step), [step]);
   const [dir, setDir] = useState(1);
   const [leaving, setLeaving] = useState<'finished' | 'skipped'>();
   // Finishing (not skipping) ends in the wormhole: through it, out into the light, onto the app.

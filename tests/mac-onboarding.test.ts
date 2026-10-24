@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ACCESS, DONE_KEY, LAST_SETTING, PREFS_KEY, STEPS, TOUR, accessPlace, afterAccess, afterTour, groupOf, inAccess, inTour, saveMark, shouldShow, stepBy, tourPlace } from '../packages/mac/src/onboarding/onboarding-model.js';
+import { ACCESS, DONE_KEY, LAST_SETTING, PLACE_KEY, PREFS_KEY, RESUME_MS, STEPS, TOUR, accessPlace, afterAccess, afterTour, clearPlace, groupOf, inAccess, inTour, resumeAt, saveMark, savePlace, shouldShow, stepBy, tourPlace, wasDone } from '../packages/mac/src/onboarding/onboarding-model.js';
 import { ACCESS_COPY, accessNext, grantText } from '../packages/mac/src/onboarding/access-copy.js';
 
 /** The Mac app's first-run welcome (packages/mac/src/onboarding): when it shows, and how it steps. */
 
 const memory = (seed: Record<string, string> = {}) => {
   const data = new Map(Object.entries(seed));
-  return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v), data };
+  return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v), removeItem: (k: string) => void data.delete(k), data };
 };
 
 describe('when the welcome shows', () => {
@@ -48,6 +48,41 @@ describe('when the welcome shows', () => {
     expect(saveMark(store, '0.7.0', 'finished', 42)).toEqual({ version: '0.7.0', at: 42, how: 'finished' });
     expect(JSON.parse(store.data.get(DONE_KEY)!)).toEqual({ version: '0.7.0', at: 42, how: 'finished' });
     expect(() => saveMark({ getItem: () => null, setItem: () => { throw new Error('full'); } }, '1', 'finished')).not.toThrow();
+  });
+});
+
+describe('coming back after macOS asks to quit and reopen', () => {
+  const MIN = 60 * 1000;
+
+  it('opens the first run where it was left, not at the welcome', () => {
+    const store = memory();
+    saveMark(store, '0.18.0', 'started');
+    savePlace(store, 'screen', 0);
+    expect(shouldShow(store, '', 2 * 24 * 60 * MIN)).toBe(true);
+    expect(resumeAt(store, 2 * 24 * 60 * MIN)).toBe('screen');
+  });
+
+  it('brings a replay back to a permission step left a few minutes ago, and only that', () => {
+    const store = memory();
+    saveMark(store, '0.18.0', 'finished');
+    savePlace(store, 'accessibility', 0);
+    expect(shouldShow(store, '', 2 * MIN)).toBe(true);
+    expect(resumeAt(store, 2 * MIN)).toBe('accessibility');
+    expect(shouldShow(store, '', RESUME_MS + MIN)).toBe(false);
+    savePlace(store, 'agents', 0);
+    expect(shouldShow(store, '', MIN)).toBe(false);
+    expect(wasDone(store)).toBe(true);
+  });
+
+  it('starts from the welcome once finished or skipped, or with nothing worth coming back to', () => {
+    const store = memory();
+    savePlace(store, 'disk', 0);
+    saveMark(store, '0.18.0', 'skipped');
+    clearPlace(store);
+    expect(resumeAt(store, MIN)).toBeUndefined();
+    expect(shouldShow(store, '', MIN)).toBe(false);
+    expect(resumeAt(memory({ [PLACE_KEY]: '{"step":"nowhere","at":0}' }))).toBeUndefined();
+    expect(resumeAt(memory({ [PLACE_KEY]: 'not json' }))).toBeUndefined();
   });
 });
 

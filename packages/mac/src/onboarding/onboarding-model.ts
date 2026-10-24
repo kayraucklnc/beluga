@@ -4,10 +4,15 @@
  * once per Mac. Updating the app never brings it back (the mark is kept with this window's own
  * storage, which an update leaves alone), and someone who used Beluga before it existed never
  * sees it either. File › Onboard Again (or Help › Welcome to Beluga, or the palette) shows it again.
+ * Quit halfway (macOS's "Quit & Reopen" after a permission, say) and it opens where it was left.
  */
 
 /** Where the mark that you've been through it is kept. */
 export const DONE_KEY = 'beluga.onboarding.v1';
+/** The step it was on, so reopening Beluga (macOS's "Quit & Reopen" after a permission) comes back to it. */
+export const PLACE_KEY = 'beluga.onboarding.place.v1';
+/** How long after leaving a permission step in a replay reopening still comes back to it. */
+export const RESUME_MS = 15 * 60 * 1000;
 /** Beluga's own window preferences (lib/prefs.ts): there only once someone has used the app. */
 export const PREFS_KEY = 'beluga.prefs.v1';
 /** `?welcome` in the address shows it whatever the mark says (screenshots, development). */
@@ -43,6 +48,7 @@ export interface DoneMark {
 export interface Store {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 function readMark(raw: string | null): DoneMark | undefined {
@@ -60,8 +66,9 @@ function readMark(raw: string | null): DoneMark | undefined {
  * used Beluga before the onboarding existed, and isn't shown it. (Picking a theme in it writes
  * preferences too, so it marks itself `started` first: quit halfway and it's back next time.)
  */
-export function shouldShow(store: Store, search = ''): boolean {
+export function shouldShow(store: Store, search = '', now = Date.now()): boolean {
   if (new URLSearchParams(search).has(FORCE_PARAM)) return true;
+  if (resumeAt(store, now)) return true;
   try {
     const raw = store.getItem(DONE_KEY);
     const mark = readMark(raw);
@@ -83,6 +90,53 @@ export function saveMark(store: Store, version: string, how: DoneMark['how'], no
     // Storage full or off: it shows again next time, which is the lesser problem.
   }
   return mark;
+}
+
+/** Whether it was finished or skipped before (a replay then leaves that mark alone). */
+export function wasDone(store: Store): boolean {
+  try {
+    const mark = readMark(store.getItem(DONE_KEY));
+    return mark !== undefined && mark.how !== 'started';
+  } catch {
+    return false;
+  }
+}
+
+/** Keep the step it's on (every step), so a quit and reopen comes back to it. */
+export function savePlace(store: Store, step: Step, now = Date.now()): void {
+  try {
+    store.setItem(PLACE_KEY, JSON.stringify({ step, at: now }));
+  } catch {
+    // It starts from the welcome next time instead.
+  }
+}
+
+/** Finished or skipped: nothing to come back to. */
+export function clearPlace(store: Store): void {
+  try {
+    store.removeItem?.(PLACE_KEY);
+  } catch {
+    // Left behind, it's only read while the welcome would show anyway (or for a few minutes).
+  }
+}
+
+/**
+ * Where to pick up on launch. The first time through, wherever it was left. In a replay (the mark
+ * says finished or skipped), only a permission step left a few minutes ago: that's macOS's
+ * "Quit & Reopen", and anything else is someone who closed the replay on purpose.
+ */
+export function resumeAt(store: Store, now = Date.now()): Step | undefined {
+  try {
+    const raw = store.getItem(PLACE_KEY);
+    if (raw === null) return undefined;
+    const place = JSON.parse(raw) as { step?: unknown; at?: unknown };
+    const step = STEPS.find((st) => st === place.step);
+    if (!step || step === 'hello' || typeof place.at !== 'number') return undefined;
+    if (!wasDone(store)) return step;
+    return inAccess(step) && now - place.at >= 0 && now - place.at < RESUME_MS ? step : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export const stepIndex = (step: Step): number => STEPS.indexOf(step);
