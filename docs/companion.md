@@ -119,8 +119,9 @@ already cut down for the phone (code stripped, steps in words, paths as opaque r
   waiting for your review (1.3), and Your Mac's summary (`assistant`, 1.5). Outputs aren't listed here any more (1.3: `outputs` is sent empty);
   each running conversation says how many it made since its latest run began (`fresh`).
 - `work`: projects (with their icon's checksum, 1.3) and their conversations (title, status, last line):
-  the chats and worktrees you started. A project's own main-folder conversation isn't listed (BLG-70):
-  it still opens, and shows on Home while it works or needs you. Your Mac isn't a project either.
+  the chats and worktrees you started. A project's main checkout has no conversation of its own
+  (BLG-70): one from before became an ordinary chat in its project, listed like any other, and
+  `conv:ws:<main>` isn't a conversation the phone can send to. Your Mac isn't a project either.
 - `conv:<channel>`: one conversation (`conv:mac:assistant` is Your Mac, 1.5): turns (your messages, Claude's answers), what a running turn
   is doing now (`live`: thinking, writing, the step with its tool, time and count) and its steps in
   words with their tools (`trail`), sub-agents (title, status, steps, their own live step, kind,

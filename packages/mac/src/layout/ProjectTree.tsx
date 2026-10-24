@@ -43,11 +43,8 @@ import s from './project-groups.module.css';
 
 type Arrange = (item: Target, place: Place) => void;
 
-/**
- * Spec options the sidebar does its own way (groups as a submenu; Hide with Undo, not an alert),
- * or not at all here: work happens in worktrees, never in the main checkout.
- */
-const ownWay = (id: string): boolean => isGroupOption(id) || id === 'p-hide' || id === 'p-main';
+/** Spec options the sidebar does its own way (groups as a submenu; Hide with Undo, not an alert). */
+const ownWay = (id: string): boolean => isGroupOption(id) || id === 'p-hide';
 
 /** A folder hovered while you drag a project into it opens after a moment (spring-loaded, as in Finder). */
 const SPRING_MS = 700;

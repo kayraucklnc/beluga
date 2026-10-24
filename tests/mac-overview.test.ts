@@ -50,9 +50,9 @@ const base = (): AppState => {
 const ids = (items: readonly { ws: Workspace }[]) => items.map((i) => i.ws.id);
 
 describe('Mac Overview: what it shows', () => {
-  it('shows live workspaces and everything archived, but not sub-agents’ scratch worktrees', () => {
+  it('shows live workspaces and everything archived, but not sub-agents’ scratch worktrees nor the main checkout (BLG-70)', () => {
     const items = overviewItems(base());
-    expect(ids(items)).toEqual(['q', 'main', 'auth', 'hooks', 'old', 'hero']);
+    expect(ids(items)).toEqual(['q', 'auth', 'hooks', 'old', 'hero']);
     expect(items.find((i) => i.ws.id === 'old')?.archived).toBe(true);
   });
 
@@ -69,7 +69,7 @@ describe('Mac Overview: what it shows', () => {
 
 describe('Mac Overview: segments', () => {
   it('counts each segment', () => {
-    expect(filterCounts(overviewItems(base()))).toEqual({ all: 6, active: 4, needs: 0, ready: 1, archived: 2 });
+    expect(filterCounts(overviewItems(base()))).toEqual({ all: 5, active: 3, needs: 0, ready: 1, archived: 2 });
   });
 
   it('ready to merge: committed work and nothing uncommitted', () => {
@@ -108,7 +108,7 @@ describe('Mac Overview: search and project', () => {
     expect(find('fly deploys')).toEqual(['q']);
     expect(find('chats')).toEqual(['q']);
     expect(find('fly nothing')).toEqual([]);
-    expect(find('   ')).toHaveLength(6);
+    expect(find('   ')).toHaveLength(5);
   });
 
   it('narrows to one project, and counts follow', () => {
@@ -123,20 +123,20 @@ describe('Mac Overview: sorting, grouping and moving', () => {
   it('sorts by recent (what needs you first), name, or size (unmeasured last)', () => {
     const s = { ...base(), unread: { 'ws:auth': 2 } };
     const live = overviewItems(s).filter((i) => i.project.id === 'p1');
-    expect(ids(sortItems(live, 'recent'))).toEqual(['auth', 'main', 'hooks', 'old']);
-    expect(ids(sortItems(live, 'name'))).toEqual(['auth', 'main', 'old', 'hooks']);
-    expect(ids(sortItems(live, 'size'))).toEqual(['main', 'hooks', 'auth', 'old']);
+    expect(ids(sortItems(live, 'recent'))).toEqual(['auth', 'hooks', 'old']);
+    expect(ids(sortItems(live, 'name'))).toEqual(['auth', 'old', 'hooks']);
+    expect(ids(sortItems(live, 'size'))).toEqual(['hooks', 'auth', 'old']);
   });
 
   it('groups by project, live first then archived, and the arrow keys walk them in order', () => {
     const groups = groupItems(overviewItems(base()), 'name');
     expect(groups.map((g) => [g.project.id, ids(g.active), ids(g.archived)])).toEqual([
       ['chats', ['q'], []],
-      ['p1', ['auth', 'main', 'hooks'], ['old']],
+      ['p1', ['auth', 'hooks'], ['old']],
       ['p2', [], ['hero']],
     ]);
     const order = rowOrder(groups);
-    expect(order).toEqual(['q', 'auth', 'main', 'hooks', 'old', 'hero']);
+    expect(order).toEqual(['q', 'auth', 'hooks', 'old', 'hero']);
     expect(stepRow(order, 'hooks', 'ArrowDown')).toBe('old');
     expect(stepRow(order, 'hero', 'ArrowDown')).toBe('hero');
     expect(stepRow(order, 'q', 'ArrowUp')).toBe('q');

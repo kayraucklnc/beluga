@@ -427,4 +427,19 @@ describe('WorkspaceController', () => {
     runCommand(session, 'room', [], here());
     expect(screen.getState().view.kind).toBe('room');
   });
+
+  it('the main checkout is no conversation (BLG-70): opening it opens the project’s home, Claude never runs there, and New Chat makes a new chat each time', async () => {
+    const main = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.kind === 'main')!;
+    ctl.open(main.id);
+    expect(screen.getState().view).toEqual({ kind: 'project', id: projectId() });
+    expect(screen.getState().tabs).not.toContain(main.id);
+    expect(ctl.place(`ws:${main.id}`)).toBeUndefined();
+    expect(ctl.ensureLoaded(main.id)).toBeUndefined();
+    const a = await ctl.newChat(projectId(), 'first question');
+    const b = await ctl.newChat(projectId(), 'second question');
+    expect(a!.id).not.toBe(b!.id);
+    const chats = store.getState().projects.find((p) => p.root)!.workspaces.filter((w) => w.kind === 'chat');
+    expect(chats.map((w) => w.name).sort()).toEqual(['first question', 'second question']);
+    expect(ctl.place(`ws:${a!.id}`)?.cwd).toBe(repo);
+  });
 });

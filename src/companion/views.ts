@@ -364,17 +364,19 @@ interface Conversation {
   /** The folder it works in. */
   readonly cwd?: string;
   readonly mine: boolean;
-  /** A project's own main folder conversation (BLG-70): opens, and shows on Home while it works, but isn't listed in Work. */
-  readonly main?: boolean;
 }
 
 /** "Your Mac" (BLG-47, core/assistant): one conversation for the whole Mac, not in any project. */
 const ASSISTANT: Conversation = { channel: ASSISTANT_CHANNEL, title: ASSISTANT_TITLE, mine: true };
 
-/** Every conversation the phone can open: Your Mac, your workspaces (not archived), the ones shared with you, and the room's. */
+/**
+ * Every conversation the phone can open: Your Mac, your workspaces (not archived), the ones shared
+ * with you, and the room's. A project's main checkout is none (BLG-70): its conversations are the
+ * chats and worktrees you started (an old main conversation became one of its chats).
+ */
 export function conversations(state: DomainState): Conversation[] {
   const own = state.projects.flatMap((p) =>
-    p.workspaces.filter((w) => !w.archived && !w.pending).map((w) => ({ channel: `ws:${w.id}`, title: w.name, project: p.name, projectId: p.id, cwd: w.path, mine: true, ...(w.kind === 'main' ? { main: true } : {}) })),
+    p.workspaces.filter((w) => !w.archived && !w.pending && w.kind !== 'main').map((w) => ({ channel: `ws:${w.id}`, title: w.name, project: p.name, projectId: p.id, cwd: w.path, mine: true })),
   );
   const shared = state.shared.map((w) => ({ channel: `ws:${w.id}`, title: w.name, project: `${nameOf(state, w.owner) ?? 'a friend'} · ${w.project}`, mine: w.role === 'contribute' }));
   const room = state.log.some((l) => l.channel === 'room') ? [{ channel: 'room', title: state.room || 'The room', mine: true }] : [];
@@ -749,10 +751,9 @@ export function workView(state: DomainState, ctx?: ViewContext): WorkView {
   const waiting = waitingTopics(needsYou(state));
   const convs = conversations(state);
   const byProject = new Map<string, { id: string; name: string; conversations: ConvSummary[]; icon?: string }>();
-  // Your Mac has its own places (Home, the Ask sheet's first target), and a project's main folder
-  // conversation isn't listed (BLG-70): only the chats and worktrees you started.
+  // Your Mac has its own places (Home, the Ask sheet's first target).
   for (const c of convs) {
-    if (c.channel === ASSISTANT_CHANNEL || c.main) continue;
+    if (c.channel === ASSISTANT_CHANNEL) continue;
     const s = summaryOf(state, c, waiting, ctx);
     if (!s) continue;
     const key = c.projectId ?? (c.channel === 'room' ? 'room' : `shared:${c.project ?? ''}`);

@@ -9,6 +9,7 @@ import * as g from './git.js';
 import * as sync from './sync.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
+import { migrateMainConversations } from './main-migration.js';
 import { stopTestProcesses } from './test-procs.js';
 import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWorktree, dropArchive, freeSpace, planArchive, previewOf, readManifest, restoreWorktree } from './archive.js';
 import { worktreeOrigin } from './origin.js';
@@ -80,7 +81,8 @@ export class WorkspaceManager {
   private remoteDefaults = new Map<string, string>();
 
   constructor(readonly store: WorkspaceStore = new WorkspaceStore()) {
-    this.records = store.loadRecords();
+    // No standing main conversation (BLG-70): one from before becomes a chat in its project, once.
+    this.records = migrateMainConversations(store, store.loadRecords()).records;
     this.config = store.loadConfig();
   }
 

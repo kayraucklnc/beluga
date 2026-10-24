@@ -90,8 +90,8 @@ export function homeModel(state: Pick<AppState, 'log' | 'conflicts' | 'prs'>, pr
   const live = project.workspaces.filter((w) => !w.archived);
   const main = project.workspaces.find((w) => w.kind === 'main');
   const worktrees = live.filter((w) => w.kind === 'worktree' && worktreeOrigin(w) === 'beluga').sort(recent);
-  // The main checkout's own conversation (from before) counts as a question asked there.
-  const asks = live.filter((w) => w.askOnly && (w.kind === 'chat' || (w.kind === 'main' && Boolean(w.sessionId)))).sort(recent);
+  // Questions asked in the main folder: its chats (the main checkout itself is no conversation, BLG-70).
+  const asks = live.filter((w) => w.askOnly && w.kind === 'chat').sort(recent);
   const archived = project.workspaces.filter((w) => w.archived).sort((a, b) => b.createdAt - a.createdAt);
   return {
     project,

@@ -37,6 +37,7 @@ import { useUpdateActivity } from './lib/updates.js';
 import { useState } from 'react';
 import { Onboarding, useOnboarding } from './onboarding/Onboarding.js';
 import { Lightbox } from './chat/ChatImages.js';
+import { newChatProject } from './lib/project-home.js';
 import s from './layout/Shell.module.css';
 
 const TOAST_MS = 3500;
@@ -162,7 +163,8 @@ function useShortcuts() {
         actions.run({ type: 'view', view: { kind: stepPlace(state, e.shiftKey ? -1 : 1) } });
       } else if (cmd && e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
-        actions.run({ type: 'new_chat', projectId: 'chats' });
+        // In a project: a new chat on its main folder (a new one every time); elsewhere a chat of its own.
+        actions.run({ type: 'new_chat', projectId: newChatProject(state) });
       } else if (cmd && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         actions.run({ type: 'view', view: { kind: 'search' } });
