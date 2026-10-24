@@ -4,18 +4,22 @@ import { Icon } from '../components/Icon.js';
 import { APP_VERSION } from '../lib/boot.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
+import { usePrivacyAccess } from '../lib/privacy.js';
+import { AccessStepView } from './AccessSteps.js';
+import { accessNext } from './access-copy.js';
 import { Backdrop } from './Backdrop.js';
 import { Glass, GlassBackdrop } from './Glass.js';
 import { type Prepared, prepareWormhole } from './finale-sound.js';
 import { WORMHOLE, WORMHOLE_TOTAL, Wormhole } from './Wormhole.js';
 import { EASE_OUT, SPRING } from './fx.js';
-import { LAST_SETTING, SHOW_WELCOME, STEPS, type Step, afterTour, inTour, saveMark, shouldShow, stepBy, stepIndex, tourPlace } from './onboarding-model.js';
+import { LAST_SETTING, SHOW_WELCOME, STEPS, type Step, afterAccess, afterTour, groupOf, inAccess, inTour, saveMark, shouldShow, stepBy, stepIndex, tourPlace } from './onboarding-model.js';
+import { PhoneStep } from './PhoneStep.js';
 import { Look, Popups, Setup } from './SetupSteps.js';
 import { Hello, Ready, Tour } from './Steps.js';
 import s from './onboarding.module.css';
 
 /** How lit the backdrop is on each step: bright for the welcome and the end, calm behind settings. */
-const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, friends: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, setup: 0.65, popups: 0.6, ready: 1 };
+const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, tables: 0.9, friends: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, ready: 1 };
 
 /** How long the app takes to settle into place as the wormhole clears (Shell.module.css, `arrive`). */
 const ARRIVE_S = 1.6;
@@ -56,13 +60,24 @@ export function useOnboarding(): { open: boolean; close: (how: 'finished' | 'ski
   };
 }
 
-/** The dots under every step: where you are, the tour's part grouped, each one a way back. */
+/** The dots under every step: where you are, the tour's and the permissions' parts grouped, each one a way back. */
 function Progress({ step, go }: { readonly step: Step; readonly go: (to: Step) => void }) {
   const at = stepIndex(step);
   return (
     <div className={s.progress} role="group" aria-label="Steps">
       {STEPS.map((st, i) => (
-        <button key={st} type="button" aria-current={st === step ? 'step' : undefined} aria-label={`Step ${i + 1} of ${STEPS.length}`} className={s.progressDot} data-past={i < at} disabled={i > at} onClick={() => go(st)}>
+        <button
+          key={st}
+          type="button"
+          aria-current={st === step ? 'step' : undefined}
+          aria-label={`Step ${i + 1} of ${STEPS.length}`}
+          className={s.progressDot}
+          data-past={i < at}
+          // A little room where a group (the tour, the permissions) starts or ends.
+          data-gap={i > 0 && groupOf(st) !== groupOf(STEPS[i - 1]!) ? '' : undefined}
+          disabled={i > at}
+          onClick={() => go(st)}
+        >
           {st === step ? <motion.span layoutId="progress-on" className={s.progressOn} transition={SPRING} /> : null}
         </button>
       ))}
@@ -71,14 +86,16 @@ function Progress({ step, go }: { readonly step: Step; readonly go: (to: Step) =
 }
 
 /**
- * The first time Beluga opens: a welcome, a five-part tour of what it does, a look and a few
- * settings, then the app. A full window of its own over the app (which is already there
+ * The first time Beluga opens: a welcome, a six-part tour of what it does, a look and a few
+ * settings, the macOS permissions (one a step, each optional), notifications, the phone app,
+ * then the app. A full window of its own over the app (which is already there
  * underneath, so finishing simply lifts this away).
  */
 export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'finished' | 'skipped') => void; readonly onArrive?: () => void }) {
   const { ui } = useBeluga();
   const prefs = usePrefs();
   const projects = useApp((st) => st.projects.filter((p) => p.root).length);
+  const phones = useApp((st) => st.companion.devices.length);
   const still = (useReducedMotion() ?? false) || prefs.reduceMotion;
   const [step, setStep] = useState<Step>('hello');
   const [dir, setDir] = useState(1);
@@ -93,6 +110,8 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
   const [out, setOut] = useState(false);
   const theme = prefs.appearance === 'system' ? (systemDark() ? 'dark' : 'light') : prefs.appearance;
   const smoke = useRef<HTMLCanvasElement>(null);
+  // The permissions as macOS has them, checked while one of their steps shows.
+  const privacy = usePrivacyAccess(inAccess(step));
 
   const go = (to: Step): void => {
     setDir(stepIndex(to) >= stepIndex(step) ? 1 : -1);
@@ -219,7 +238,9 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
               {inTour(step) ? <Tour step={step} /> : null}
               {step === 'look' ? <Look /> : null}
               {step === 'setup' ? <Setup /> : null}
+              {inAccess(step) ? <AccessStepView step={step} access={privacy.access} recheck={privacy.recheck} go={go} /> : null}
               {step === 'popups' ? <Popups /> : null}
+              {step === 'phone' ? <PhoneStep /> : null}
               {step === 'ready' ? <Ready projects={projects} onOpen={() => finish('finished')} onAddProject={() => finish('finished', () => ui.patch({ addProject: true }))} /> : null}
             </motion.section>
           </AnimatePresence>
@@ -239,8 +260,13 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
                     Skip Tour
                   </button>
                 ) : null}
-                <motion.button type="button" className={s.navNext} onClick={next} whileTap={{ scale: 0.96 }}>
-                  {step === LAST_SETTING ? 'Finish' : 'Continue'}
+                {inAccess(step) ? (
+                  <button type="button" className={s.navSkipTour} onClick={() => go(afterAccess())}>
+                    Skip Permissions
+                  </button>
+                ) : null}
+                <motion.button type="button" className={s.navNext} data-quiet={(inAccess(step) && privacy.access?.[step] !== 'granted') || (step === 'phone' && !phones) ? '' : undefined} onClick={next} whileTap={{ scale: 0.96 }}>
+                  {step === LAST_SETTING ? 'Finish' : inAccess(step) ? accessNext(privacy.access?.[step]) : 'Continue'}
                   <Icon name="arrowRight" size={13} />
                 </motion.button>
               </div>

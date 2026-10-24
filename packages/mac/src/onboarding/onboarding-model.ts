@@ -1,5 +1,6 @@
 /**
- * The first time Beluga opens: a welcome, a short tour, a few settings, then the app. It shows
+ * The first time Beluga opens: a welcome, a short tour, a few settings, the macOS permissions
+ * (each optional), notifications, the phone app, then the app. It shows
  * once per Mac. Updating the app never brings it back (the mark is kept with this window's own
  * storage, which an update leaves alone), and someone who used Beluga before it existed never
  * sees it either. File › Onboard Again (or Help › Welcome to Beluga, or the palette) shows it again.
@@ -14,14 +15,21 @@ export const FORCE_PARAM = 'welcome';
 /** The document event File › Onboard Again, Help › Welcome to Beluga and the palette send to show it again. */
 export const SHOW_WELCOME = 'beluga:welcome';
 
-export const STEPS = ['hello', 'parallel', 'agents', 'friends', 'earnings', 'archive', 'look', 'setup', 'popups', 'ready'] as const;
+export const STEPS = ['hello', 'parallel', 'agents', 'tables', 'friends', 'earnings', 'archive', 'look', 'setup', 'screen', 'accessibility', 'disk', 'automation', 'popups', 'phone', 'ready'] as const;
 
 /** The last step before the app (its button says Finish). */
-export const LAST_SETTING: Step = 'popups';
+export const LAST_SETTING: Step = 'phone';
 export type Step = (typeof STEPS)[number];
 
 /** The tour: what Beluga does, one idea a step (Skip Tour goes past all of them). */
-export const TOUR: readonly Step[] = ['parallel', 'agents', 'friends', 'earnings', 'archive'];
+export const TOUR: readonly Step[] = ['parallel', 'agents', 'tables', 'friends', 'earnings', 'archive'];
+
+/**
+ * The macOS permissions, one a step, every one optional (Skip Permissions goes past all of them).
+ * Notifications are asked for on the step after (`popups`).
+ */
+export const ACCESS = ['screen', 'accessibility', 'disk', 'automation'] as const;
+export type AccessStep = (typeof ACCESS)[number];
 
 export interface DoneMark {
   /** The app's version when you finished (or skipped). */
@@ -90,8 +98,24 @@ export const afterTour = (): Step => 'look';
 
 export const inTour = (step: Step): boolean => TOUR.includes(step);
 
-/** "2 of 5" for the tour's steps; nothing for the others. */
+export const inAccess = (step: Step): step is AccessStep => (ACCESS as readonly Step[]).includes(step);
+
+/** From any permission step, Skip Permissions goes on to notifications. */
+export const afterAccess = (): Step => 'popups';
+
+/** "2 of 6" for the tour's steps; nothing for the others. */
 export function tourPlace(step: Step): { readonly at: number; readonly of: number } | undefined {
   const i = TOUR.indexOf(step);
   return i < 0 ? undefined : { at: i + 1, of: TOUR.length };
+}
+
+/** "1 of 4" for the permission steps; nothing for the others. */
+export function accessPlace(step: Step): { readonly at: number; readonly of: number } | undefined {
+  const i = (ACCESS as readonly Step[]).indexOf(step);
+  return i < 0 ? undefined : { at: i + 1, of: ACCESS.length };
+}
+
+/** Which group a step's dot sits in (the dots leave a little room between groups). */
+export function groupOf(step: Step): 'tour' | 'access' | 'other' {
+  return inTour(step) ? 'tour' : inAccess(step) ? 'access' : 'other';
 }

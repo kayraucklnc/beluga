@@ -24,6 +24,14 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}').sendWith)).toBe('cmd-enter');
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
+  // The permissions (BLG-101): one a step, each optional; the button opens its pane.
+  await expect(welcome.getByRole('heading', { name: 'Let Claude see your screen.' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Allow in System Settings' }).click();
+  await expect.poll(() => page.evaluate(() => window.__BELUGA_PRIVACY_CALLS__ ?? [])).toEqual(['screen']);
+  await welcome.getByRole('button', { name: 'Not Now', exact: true }).click();
+  await expect(welcome.getByRole('heading', { name: 'Let Claude use your other apps.' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Skip Permissions' }).click();
+
   // On-screen popups (BLG-9): a sample shows on the pop-up, and notifications are asked for.
   await expect(welcome.getByRole('heading', { name: 'Never miss it when Claude needs you.' })).toBeVisible();
   await expect(welcome.getByRole('switch', { name: 'Show on-screen popups when something needs me' })).toHaveAttribute('aria-checked', 'true');
@@ -35,6 +43,12 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await popup.close();
   await welcome.getByRole('button', { name: 'Allow Notifications' }).click();
   await expect(welcome.getByRole('button', { name: 'Asked' })).toBeDisabled();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  // The phone app: Android for now, and the real Pair a Phone….
+  await expect(welcome.getByRole('heading', { name: 'Claude in your pocket.' })).toBeVisible();
+  await expect(welcome.getByText('Android only for now')).toBeVisible();
+  await expect(welcome.getByRole('button', { name: /Pair a Phone/ })).toBeVisible();
   await welcome.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
 
@@ -59,4 +73,25 @@ test('Skip Setup leaves at once, and the palette brings the welcome back', async
   await page.keyboard.type('Onboard Again');
   await page.keyboard.press('Enter');
   await expect(welcome).toBeVisible();
+});
+
+test('a permission macOS already allows shows as allowed, and the tour shows a real table', async ({ page }) => {
+  await page.addInitScript(() => (window.__BELUGA_PRIVACY__ = { screen: 'granted' }));
+  await page.goto('/');
+  const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
+  await welcome.getByRole('button', { name: /Get Started/ }).click();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  // The table weave: Claude picks Postgres, connects, and the answer is a table that sorts.
+  await expect(welcome.getByRole('heading', { name: 'Answers you can sort, not just read.' })).toBeVisible();
+  const table = welcome.getByRole('table');
+  await expect(table).toBeVisible({ timeout: 10_000 });
+  await table.getByRole('button', { name: 'MRR' }).click();
+  await expect(table.locator('tbody tr').first()).toContainText('Globex');
+
+  await welcome.getByRole('button', { name: 'Skip Tour' }).click();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(welcome.getByText('Allowed', { exact: true })).toBeVisible();
+  await expect(welcome.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
 });
