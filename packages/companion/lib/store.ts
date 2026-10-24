@@ -400,6 +400,7 @@ class Store {
     return v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE[what]);
   }
   private knows(topic: Topic): boolean {
+    if (topic === 'conv:mac:assistant') return this.supports('assistant');
     return topic === 'tasks' || topic.startsWith('task:') ? this.supports('tasks') : true;
   }
 

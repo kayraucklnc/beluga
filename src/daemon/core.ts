@@ -12,6 +12,7 @@ import { loadSettings, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
 import { networkSwitch } from '../core/network.js';
 import { launchBoard } from '../core/board/launch.js';
+import { launchAssistant } from '../core/assistant/launch.js';
 import { launchChat } from '../core/chat/launch.js';
 import { launchGateway } from '../core/gateway/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
@@ -306,6 +307,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopGateway = (): void => undefined;
   let stopChat = (): void => undefined;
   let stopBoard = (): void => undefined;
+  let stopAssistant = (): void => undefined;
   let stopCompanion = async (): Promise<void> => undefined;
   const start = (): void => {
     session.start();
@@ -323,6 +325,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopChat = launchChat({ session, store, demo: Boolean(demo) });
     // Tasks (the board): opened by worktrees, moved by pull requests, kept true by Claude.
     if (opts.network) stopBoard = launchBoard({ session, store, demo: Boolean(demo) });
+    // "Your Mac": one conversation with your Claude for the whole Mac, from the phone and the sidebar (core/assistant).
+    if (opts.network) stopAssistant = launchAssistant({ session, store, demo: Boolean(demo) });
     if (opts.network) stopClaudeCode = launchClaudeCode({ session, store, demo: Boolean(demo), notify: (e) => session.notifier.notify(e) });
     // Your phone (docs/companion.md): pairing it, and its link. Its DHT node runs only while a phone is paired or a pairing is open.
     if (opts.network) stopCompanion = launchCompanion({ session, store, identity, demo: Boolean(demo), log: (line) => console.warn(line) });
@@ -355,6 +359,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     closeAllTunnels();
     stopGateway();
     stopChat();
+    stopAssistant();
     stopBoard();
     await stopCompanion();
     await stopNetwork();

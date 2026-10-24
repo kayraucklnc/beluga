@@ -7,6 +7,8 @@ import { useApp } from '../lib/beluga.js';
 import { TonePill } from '../plans/marks.js';
 import { PriorityIcon, StatusIcon } from './marks.js';
 import { useTaskActions } from './use-tasks.js';
+import { useActions } from '../lib/actions.js';
+import { planTitle } from '@beluga/core/plans/model.js';
 import r from './task-ref.module.css';
 
 /**
@@ -20,9 +22,9 @@ const useIssue = (key: string): Issue | undefined => useApp((s) => findIssue(s.b
 
 const tipOf = (issue: Issue): string => `${issue.key} · ${STATUS_INFO[issue.status].label} · ${PRIORITY_INFO[issue.priority].label}. Click to open`;
 
-function Missing({ taskKey, block }: { taskKey: string; block?: boolean }) {
+function Missing({ taskKey, block, label }: { taskKey: string; block?: boolean; label?: 'worktree' | 'plan' }) {
   return (
-    <Tip label={`No task ${taskKey} on this board: deleted, or on someone else's`}>
+    <Tip label={label ? `No ${label} ${taskKey} here: deleted, or on someone else’s Mac` : `No task ${taskKey} on this board: deleted, or on someone else's`}>
       <span className={block ? r.missingRow : r.missing}>
         <span className={r.key}>{taskKey}</span>
         <span>not found</span>
@@ -86,5 +88,39 @@ function TaskCardRow({ taskKey }: { taskKey: string }) {
         </span>
       </button>
     </div>
+  );
+}
+
+/** A worktree Claude started (Your Mac: `worktree:<id>`): a pill with its name; a click opens its conversation. */
+export function WorktreeChip({ id }: { id: string }) {
+  const ws = useApp((s) => s.projects.flatMap((p) => p.workspaces.map((w) => ({ w, project: p.name }))).find((x) => x.w.id === id));
+  const actions = useActions();
+  if (!ws) return <Missing taskKey={id} label="worktree" />;
+  return (
+    <Tip label={`${ws.project} · ${ws.w.name}${ws.w.archived ? ' (archived)' : ''}. Click to open`}>
+      <button type="button" className={r.chip} onClick={() => actions.run({ type: 'open_ws', id })} aria-label={`Worktree ${ws.w.name} in ${ws.project}`}>
+        <Icon name="branch" size={12} />
+        <span className={r.key}>{ws.project}</span>
+        <span className={r.chipTitle}>{ws.w.name}</span>
+        <Icon name="arrowRight" size={10} className={r.chipGo} />
+      </button>
+    </Tip>
+  );
+}
+
+/** A plan Claude started (Your Mac: `plan:<id>`): a pill with its name; a click opens its page. */
+export function PlanChip({ id }: { id: string }) {
+  const plan = useApp((s) => s.plans.plans.find((p) => p.id === id));
+  const actions = useActions();
+  if (!plan) return <Missing taskKey={id} label="plan" />;
+  return (
+    <Tip label={`Plan · ${planTitle(plan)}. Click to open`}>
+      <button type="button" className={r.chip} onClick={() => actions.run({ type: 'view', view: { kind: 'plan', id } })} aria-label={`Plan ${planTitle(plan)}`}>
+        <Icon name="graph" size={12} />
+        <span className={r.key}>Plan</span>
+        <span className={r.chipTitle}>{planTitle(plan)}</span>
+        <Icon name="arrowRight" size={10} className={r.chipGo} />
+      </button>
+    </Tip>
   );
 }

@@ -97,7 +97,8 @@ export class PlansWork {
    * A new plan with Claude: a conversation of its own in the project's main folder (Claude reads
    * the code there and changes nothing), and the plan's page. Claude starts planning from `goal`.
    */
-  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }): Promise<Plan> {
+  /** `quiet`: started from elsewhere (Your Mac), so the Mac's window stays where it is. */
+  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }, opts: { readonly quiet?: boolean } = {}): Promise<Plan> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Plans need a project folder');
     const goal = input.goal.trim();
@@ -106,7 +107,7 @@ export class PlansWork {
     if (!chat) throw new Error('Couldn’t start the plan’s conversation');
     const home = `${WS}${chat.id}`;
     const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}), ...(input.testsAt ? { testsAt: input.testsAt } : {}) }, this.me());
-    this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
+    if (!opts.quiet) this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
     this.deps.askClaude(goal, home, true);
     // Named in a moment by a quick model (your message is never its name); Claude's plan_write names it after that.
     void this.deps

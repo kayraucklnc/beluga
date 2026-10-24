@@ -215,7 +215,7 @@ export function StepsFold({ t }: { readonly t: TurnView }) {
           ))}
         </View>
         <T v="caption" style={{ fontWeight: '600' }}>
-          {t.steps ?? trail.length} steps
+          {(t.steps ?? trail.length) === 1 ? '1 step' : `${t.steps ?? trail.length} steps`}
         </T>
         <Animated.View style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}>
           <ChevronDown color={color.text3} size={14} />

@@ -25,6 +25,7 @@ import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
 import { RequestsNav } from '../gateway/RequestsNav.js';
 import { TasksNav } from '../tasks/TasksNav.js';
+import { AssistantNav } from './AssistantNav.js';
 import { PlansNav } from '../plans/PlansNav.js';
 import { footerStatus } from '../views/room/connection-model.js';
 import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
@@ -158,6 +159,7 @@ export function Sidebar() {
       </div>
       <div className={s.scroll}>
         <section className={s.section}>
+          <AssistantNav />
           {NAV.map((n) => {
             const tab = tabs.find((t) => t.kind === n.kind);
             if (!tab) return null;

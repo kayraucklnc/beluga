@@ -4,7 +4,7 @@ import { copyText } from '../../lib/copy.js';
 import { useClock } from '../../lib/window-active.js';
 import { type InlineElement, readInline, relative } from './inline-model.js';
 import { parseColor, toHex, toHsl, toneOf } from './format.js';
-import { TaskChip } from '../../tasks/TaskRef.js';
+import { PlanChip, TaskChip, WorktreeChip } from '../../tasks/TaskRef.js';
 import v from './inline.module.css';
 
 /**
@@ -68,6 +68,10 @@ function InlineView({ el, raw }: { el: InlineElement; raw: string }) {
       return <Time at={el.at} dateOnly={el.dateOnly} />;
     case 'task':
       return <TaskChip taskKey={el.key} />;
+    case 'worktree':
+      return <WorktreeChip id={el.id} />;
+    case 'plan':
+      return <PlanChip id={el.id} />;
   }
 }
 

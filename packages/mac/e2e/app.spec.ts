@@ -264,7 +264,7 @@ test('shows pasted images before sending, and in the message after', async ({ pa
   const pending = page.getByLabel('Images to send');
   await expect(pending.getByRole('img')).toHaveCount(1);
   // The image waits above the box as a thumbnail, with an "[image N]" in the words where the cursor was.
-  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
+  await expect(composer(page)).toHaveValue(/^\[(?:image \d+|\d+\u2007[^\]\n]+)\] $/);
   // Removing it takes its "[image N]" out of the words too.
   await pending.getByRole('button', { name: /^Remove image/ }).click();
   await expect(pending).toBeHidden();
@@ -272,7 +272,7 @@ test('shows pasted images before sending, and in the message after', async ({ pa
   await composer(page).fill('');
   await pasteImage(page);
   await expect(pending.getByRole('img')).toHaveCount(1);
-  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
+  await expect(composer(page)).toHaveValue(/^\[(?:image \d+|\d+\u2007[^\]\n]+)\] $/);
   const words = `pixel check ${Date.now()}`;
   // The box puts the cursor after "[image N]" on the next frame: type once that frame has run (KLD-84).
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));

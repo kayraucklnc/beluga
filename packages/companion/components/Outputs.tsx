@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { FileJson, FileText, FileType, Film, ImageIcon, ScrollText } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, View, type ViewStyle } from 'react-native';
+import { ActivityIndicator, FlatList, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useFile } from '../lib/hooks';
 import type { OutputView } from '../lib/link/protocol';
 import { store } from '../lib/store';
@@ -101,5 +101,37 @@ export function OutputGrid({ items, cols = 3, gap = 8 }: { readonly items: reado
     <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
       {width ? items.map((o) => <Thumb key={o.ref} o={o} group={items} w={w} h={Math.round(w * (o.kind === 'image' ? 1.3 : 0.8))} />) : null}
     </View>
+  );
+}
+
+/** A turn's outputs, compact (BLG-71): images and files are a row of small cards. */
+const TURN_H = 84;
+
+/**
+ * What one answer made, as one strip you swipe sideways: pictures as ~110 px thumbnails, text and
+ * logs as small cards (an icon, the name, the size). A tap opens the viewer, which swipes through
+ * this answer's outputs.
+ */
+export function TurnOutputs({ items }: { readonly items: readonly OutputView[] }) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+      {items.map((o) => (o.kind === 'image' ? <Thumb key={o.ref} o={o} group={items} w={110} h={TURN_H} /> : <FileCard key={o.ref} o={o} group={items} />))}
+    </ScrollView>
+  );
+}
+
+/** A text output in a turn's strip: its icon, name and size on one small card. */
+function FileCard({ o, group }: { readonly o: OutputView; readonly group: readonly OutputView[] }) {
+  const Icon = iconOf(o);
+  return (
+    <Press onPress={() => openOutput(o, group)} accessibilityLabel={o.name} style={{ width: 156, height: TURN_H, borderRadius: radius.m, padding: 10, justifyContent: 'space-between', backgroundColor: elevation.raised.surface, borderWidth: 1, borderColor: elevation.raised.border }}>
+      <IconBadge Icon={Icon} tone={o.kind === 'json' ? 'butter' : o.kind === 'markdown' ? 'lavender' : 'sky'} size={28} square />
+      <View>
+        <T v="caption" c={color.text} numberOfLines={1} ellipsizeMode="middle" style={{ fontWeight: '600' }}>
+          {o.name}
+        </T>
+        <T v="caption" style={{ fontSize: 11.5 }}>{sizeOf(o.size)}</T>
+      </View>
+    </Press>
   );
 }

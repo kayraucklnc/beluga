@@ -3,26 +3,38 @@
  * whole (and its picture with it), and the arrow keys step over it. (Pure: use-attachments.tsx
  * applies it to the box.)
  *
- * In the box it also carries the end of the image's file name, "[image 1 · 142525-fpxw]" (no
- * breaking spaces, so it never wraps), which the box draws as a chip; it goes out as "[image 1]".
+ * In the box an image with a name is written short, "[1\u2007…8.14.32@2x]": its number, a figure
+ * space and the end of its file name (nothing that breaks, so it never wraps). The box draws a chip
+ * over exactly the room those characters take, and the brackets, number and space pay for the
+ * chip's icon and padding, so the chip hugs its name. It goes out as "[image 1]". The longer
+ * "[image 1 · name]" an older box wrote still reads.
  */
 
-/** "[image 1]", or "[image 1 · name]" in the box. */
-export const IMAGE_REF = /\[image[  ](\d+)(?: · ([^\]\n]{1,24}))?\]/g;
+/** A figure space: as wide as a digit, and it never breaks a line. */
+const GAP = '\u2007';
+
+/** "[image 1]", or "[1\u2007name]" (and the older "[image 1 · name]") in the box. */
+export const IMAGE_REF = /\[(?:image[ \u00a0](\d+)(?:\u00a0·\u00a0([^\]\n]{1,24}))?|(\d+)\u2007([^\]\n]{1,24}))\]/g;
+
+/** A match of IMAGE_REF: its image's number and, when it shows one, its name. */
+export const refOf = (m: readonly (string | undefined)[]): { n: number; name?: string } => {
+  const name = m[2] ?? m[4];
+  return { n: Number(m[1] ?? m[3]), ...(name ? { name } : {}) };
+};
 
 /** How much of a file name a chip shows: its end, without the extension. */
 const TAIL = 10;
 
-/** The end of a file name, for its chip ("20261024-142525-fpxw.png" → "42525-fpxw"). */
+/** The end of a file name, for its chip: "…" and its last characters when it's longer ("Screenshot … at 18.14.32@2x.png" → "…8.14.32@2x"). */
 export const nameTail = (file: string): string => {
   const base = (file.split('/').pop() ?? file).replace(/\.[a-z0-9]{1,5}$/i, '').replace(/[\]\n]/g, '').trim();
-  return base.length > TAIL ? base.slice(-TAIL) : base;
+  return base.length > TAIL ? `…${base.slice(-TAIL).trimStart()}` : base;
 };
 
 /** The reference to image `n` in the box: with the end of its name when it has one. */
 export const boxRef = (n: number, name?: string): string => {
   const tail = name ? nameTail(name) : '';
-  return tail ? `[image ${n} · ${tail}]` : `[image ${n}]`;
+  return tail ? `[${n}${GAP}${tail}]` : `[image ${n}]`;
 };
 
 interface Ref {
@@ -33,14 +45,13 @@ interface Ref {
   readonly name?: string;
 }
 
-export const imageRefsIn = (text: string): Ref[] =>
-  [...text.matchAll(IMAGE_REF)].map((m) => ({ n: Number(m[1]), start: m.index, end: m.index + m[0].length, ...(m[2] ? { name: m[2] } : {}) }));
+export const imageRefsIn = (text: string): Ref[] => [...text.matchAll(IMAGE_REF)].map((m) => ({ ...refOf(m), start: m.index, end: m.index + m[0].length }));
 
 /** The numbers of the images referenced in `text`. */
 export const referencedImages = (text: string): number[] => imageRefsIn(text).map((r) => r.n);
 
 /** The words as they go out: every reference back to a plain "[image N]". */
-export const plainRefs = (text: string): string => text.replace(IMAGE_REF, (_, n: string) => `[image ${n}]`);
+export const plainRefs = (text: string): string => text.replace(IMAGE_REF, (...m: (string | undefined)[]) => `[image ${refOf(m).n}]`);
 
 /** `text` without its reference to image `n` (and the space before it). */
 export const withoutRef = (text: string, n: number): string => {

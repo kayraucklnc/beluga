@@ -10,6 +10,8 @@ import { installedVersion } from '../core/version.js';
 import { dispatchCall } from '../daemon/dispatch.js';
 import type { Identity } from '../net/crypto.js';
 import { listScratch } from '../workspaces/scratch.js';
+import { assistantOf } from '../core/assistant/registry.js';
+import { ASSISTANT_CHANNEL } from '../shared/assistant.js';
 import { DeviceBook } from './devices.js';
 import { CompanionHost } from './host.js';
 import { macIdleMs } from './push.js';
@@ -66,7 +68,8 @@ class OutputCache {
     const last = new Map<string, number>();
     for (const l of state.log) if (l.channel.startsWith('ws:')) last.set(l.channel, Math.max(last.get(l.channel) ?? 0, l.ts));
     const recent = [...last.entries()].sort((a, b) => b[1] - a[1]).slice(0, RECENT).map(([c]) => c);
-    return [...new Set([...this.watched, ...recent])];
+    // Your Mac always: Home's "Ask your Mac" counts what it sent you.
+    return [...new Set([ASSISTANT_CHANNEL, ...this.watched, ...recent])];
   }
 
   private async refresh(): Promise<void> {
@@ -76,6 +79,14 @@ class OutputCache {
       const state = this.store.getState();
       let moved = false;
       for (const channel of this.channels()) {
+        if (channel === ASSISTANT_CHANNEL) {
+          // Its scratch folder: the screenshots and files it sent you (core/assistant).
+          const mine = (await assistantOf(this.session)?.outputs().catch(() => [])) ?? [];
+          const all = mine.slice(0, 100);
+          if (JSON.stringify(this.cache.get(channel)) !== JSON.stringify(all)) moved = true;
+          this.cache.set(channel, all);
+          continue;
+        }
         const wsId = channel.slice(3);
         const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === wsId);
         if (!ws?.path) continue;

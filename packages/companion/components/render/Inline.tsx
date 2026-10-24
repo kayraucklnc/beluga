@@ -1,10 +1,10 @@
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { ArrowDownRight, ArrowRight, ArrowUpRight } from 'lucide-react-native';
+import { ArrowDownRight, ArrowRight, ArrowUpRight, GitBranch, Workflow } from 'lucide-react-native';
 import { Text, View } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 import { useView } from '../../lib/hooks';
-import type { TasksView } from '../../lib/link/protocol';
+import type { PlansView, TasksView, WorkView } from '../../lib/link/protocol';
 import { type InlineElement, parseColor, readInline, relative, toneOf } from '../../lib/render';
 import { store } from '../../lib/store';
 import { color, ink, tint, type } from '../../lib/theme';
@@ -13,7 +13,8 @@ import { haptic, Press, type Tone, toneBg, toneInk } from '../ui';
 
 /**
  * The inline elements of docs/views.md, inside a sentence: an inline code span the Mac draws as
- * something (a color, a badge, key caps, progress, a change, a sparkline, a time, a task) is drawn
+ * something (a color, a badge, key caps, progress, a change, a sparkline, a time, a task, a
+ * worktree or a plan Your Mac started) is drawn
  * as it here, read by the same model (src/shared/render/inline-model.ts). Anything else stays code.
  */
 
@@ -109,7 +110,40 @@ export function InlineThing({ el }: { readonly el: InlineElement }) {
       );
     case 'task':
       return <TaskChip k={el.key} />;
+    case 'worktree':
+      return <WorktreeChip id={el.id} />;
+    case 'plan':
+      return <PlanChip id={el.id} />;
   }
+}
+
+/** A worktree Your Mac started (`worktree:<id>`): its name from Work (live); a tap opens its conversation. */
+function WorktreeChip({ id }: { readonly id: string }) {
+  const work = useView<WorkView>('work');
+  const topic = `conv:ws:${id}`;
+  const found = work?.data.projects.flatMap((p) => p.conversations.map((c) => ({ c, project: p.name }))).find((x) => x.c.topic === topic);
+  return (
+    <Press haptics={false} onPress={() => router.push(`/conv/${encodeURIComponent(`ws:${id}`)}`)} style={[pill, { backgroundColor: tint.mint }]}>
+      <GitBranch color={ink.mint} size={12} strokeWidth={2.4} />
+      <Text numberOfLines={1} style={{ ...type.caption, color: ink.mint, fontWeight: '700', maxWidth: 180 }}>
+        {found ? `${found.project} · ${found.c.title}` : 'New worktree'}
+      </Text>
+    </Press>
+  );
+}
+
+/** A plan Your Mac started (`plan:<id>`): its name from Plans (live); a tap opens it. */
+function PlanChip({ id }: { readonly id: string }) {
+  const plans = useView<PlansView>('plans');
+  const plan = plans?.data.plans.find((p) => p.id === id);
+  return (
+    <Press haptics={false} onPress={() => router.push(`/plan/${encodeURIComponent(id)}`)} style={[pill, { backgroundColor: tint.butter }]}>
+      <Workflow color={ink.butter} size={12} strokeWidth={2.4} />
+      <Text numberOfLines={1} style={{ ...type.caption, color: ink.butter, fontWeight: '700', maxWidth: 180 }}>
+        {plan?.title ?? 'Plan'}
+      </Text>
+    </Press>
+  );
 }
 
 /** A board task by its key, from the phone's own Tasks view (live). */

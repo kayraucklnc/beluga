@@ -25,6 +25,7 @@ import { draftTask } from './task-drafter.js';
 import { createRoomTools } from './tools.js';
 import { ViewShelf, createViewTools } from './view-tools.js';
 import { createTaskTools } from './task-tools.js';
+import { createMacTools } from './mac-tools.js';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, RunProcess, Steer } from './types.js';
 import { keepLines, trackedSpawn } from './claude-process.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
@@ -72,6 +73,11 @@ function taskServer(input: AgentRunInput): { beluga_task?: NonNullable<ReturnTyp
 /** Your own runs get the task board (core/board): the task they're doing, and tools to keep it true. */
 function boardServer(input: AgentRunInput): { beluga_board?: ReturnType<typeof createBoardTools> } {
   return input.board ? { beluga_board: createBoardTools(input.board) } : {};
+}
+
+/** "Your Mac" gets its own tools (core/assistant). */
+function macServer(input: AgentRunInput): { beluga_mac?: ReturnType<typeof createMacTools> } {
+  return input.macTools ? { beluga_mac: createMacTools(input.macTools) } : {};
 }
 
 /** A plan's home conversation gets the plan's tools (core/plans). */
@@ -184,7 +190,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { beluga: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input), ...planServer(input), beluga_view: createViewTools(shelf, cwd) },
+        mcpServers: { beluga: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input), ...planServer(input), ...macServer(input), beluga_view: createViewTools(shelf, cwd) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -221,7 +227,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),

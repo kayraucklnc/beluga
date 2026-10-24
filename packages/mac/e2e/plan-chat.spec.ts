@@ -142,7 +142,7 @@ test('an image path pasted in a sentence goes with the message as the image', as
   await expect(page.getByRole('button', { name: 'Approve Plan' }).first()).toBeVisible({ timeout: 30_000 });
   await box(page).fill('');
   await pasteText(box(page), `the header is cut off here “${shot}” please fix it`);
-  await expect(box(page)).toHaveValue(/^the header is cut off here \[image \d+\] please fix it$/);
+  await expect(box(page)).toHaveValue(/^the header is cut off here \[(?:image \d+|\d+\u2007[^\]\n]+)\] please fix it$/);
   await expect(chat(page).getByRole('group', { name: 'Images to send' }).locator('img')).toHaveCount(1);
   await page.screenshot({ path: path.join(SCRATCH, '12-plan-chat-pasted-path.png') });
   await box(page).press('Enter');

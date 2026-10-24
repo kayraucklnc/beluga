@@ -104,7 +104,7 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.newWorktree': 'mac',
   'workspaces.newChat': 'mac',
   'workspaces.startChat': 'phone',
-  'workspaces.startWorktree': 'mac',
+  'workspaces.startWorktree': 'phone',
   'workspaces.branches': 'mac',
   'workspaces.fork': 'mac',
   'workspaces.continueInWorktree': 'mac',
@@ -286,12 +286,12 @@ export const PHONE: Record<Method, Side> = {
   'board.emptyArchive': 'mac',
 
   // ---- plans: approve, decide at a milestone's gate, send back with words; never edit their structure
-  'plans.create': 'mac',
+  'plans.create': 'phone',
   'plans.here': 'mac',
   'plans.approve': 'phone',
   'plans.discard': 'phone',
   'plans.edit': 'mac',
-  'plans.setAutonomy': 'mac',
+  'plans.setAutonomy': 'phone',
   'plans.setPaused': 'mac',
   'plans.setParallel': 'mac',
   'plans.setTestsAt': 'mac',

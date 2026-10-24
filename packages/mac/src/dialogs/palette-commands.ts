@@ -66,7 +66,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
   const { client, ui, state } = ctx;
   const api = client.api;
   const channel = channelOf(state.view);
-  const talking = state.view.kind === 'room' || state.view.kind === 'workspace';
+  const talking = state.view.kind === 'room' || state.view.kind === 'assistant' || state.view.kind === 'workspace';
   const following = state.peers.find((p) => p.peerId === state.follow);
   const canRun = state.peers.some((p) => canRunOn(state.granted[p.peerId]?.level));
   return [

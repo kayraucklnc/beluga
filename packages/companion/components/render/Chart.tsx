@@ -35,7 +35,7 @@ const xLabel = (c: Cell | undefined, col: Column | undefined, time: boolean): st
   return col ? formatCell(c, col) : String(c);
 };
 
-export function ChartView({ view, columns, rows }: { readonly view: ViewSpec; readonly columns: readonly Column[]; readonly rows: readonly Row[] }) {
+export function ChartView({ view, columns, rows, tall }: { readonly view: ViewSpec; readonly columns: readonly Column[]; readonly rows: readonly Row[]; /** Full screen: taller. */ readonly tall?: boolean }) {
   const [w, setW] = useState(0);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const [at, setAt] = useState<number | undefined>();
@@ -44,7 +44,7 @@ export function ChartView({ view, columns, rows }: { readonly view: ViewSpec; re
   const series = plan.series.map((s, i) => ({ ...s, color: s.color ?? palette[i % palette.length]! }));
   const shown = series.filter((s) => !hidden.has(s.key));
   const kind = view.chart;
-  const h = Math.max(150, Math.min(300, view.height ?? 200));
+  const h = tall ? 380 : Math.max(150, Math.min(300, view.height ?? 200));
   const fmtY = (v: number): string => (plan.yColumn ? formatCell(v, plan.yColumn) : formatNumber(v, { compact: true }));
   const data = plan.rows;
 

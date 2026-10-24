@@ -35,6 +35,7 @@ import {
   type WorkView,
 } from './protocol.js';
 import { HIDDEN_STEP, humanizeDoing, humanizeStep, plainLine, stepWords, stripCode } from './strip.js';
+import { ASSISTANT_CHANNEL, ASSISTANT_TITLE } from '../shared/assistant.js';
 import { STEERED_IN, type SteeredMessage, steeredMessages, steerWaiting } from '../shared/claude-notices.js';
 
 /**
@@ -359,12 +360,17 @@ interface Conversation {
   /** The folder it works in. */
   readonly cwd?: string;
   readonly mine: boolean;
+  /** A project's own main folder conversation (BLG-70): opens, and shows on Home while it works, but isn't listed in Work. */
+  readonly main?: boolean;
 }
 
-/** Every conversation the phone can open: your workspaces (not archived), the ones shared with you, and the room's. */
+/** "Your Mac" (BLG-47, core/assistant): one conversation for the whole Mac, not in any project. */
+const ASSISTANT: Conversation = { channel: ASSISTANT_CHANNEL, title: ASSISTANT_TITLE, mine: true };
+
+/** Every conversation the phone can open: Your Mac, your workspaces (not archived), the ones shared with you, and the room's. */
 export function conversations(state: DomainState): Conversation[] {
   const own = state.projects.flatMap((p) =>
-    p.workspaces.filter((w) => !w.archived && !w.pending).map((w) => ({ channel: `ws:${w.id}`, title: w.name, project: p.name, projectId: p.id, cwd: w.path, mine: true })),
+    p.workspaces.filter((w) => !w.archived && !w.pending).map((w) => ({ channel: `ws:${w.id}`, title: w.name, project: p.name, projectId: p.id, cwd: w.path, mine: true, ...(w.kind === 'main' ? { main: true } : {}) })),
   );
   const shared = state.shared.map((w) => ({ channel: `ws:${w.id}`, title: w.name, project: `${nameOf(state, w.owner) ?? 'a friend'} · ${w.project}`, mine: w.role === 'contribute' }));
   const room = state.log.some((l) => l.channel === 'room') ? [{ channel: 'room', title: state.room || 'The room', mine: true }] : [];
@@ -374,7 +380,7 @@ export function conversations(state: DomainState): Conversation[] {
     .slice(-TASKS_SHOWN)
     .map((t) => ({ channel: `task:${t.id}`, title: plainLine(t.summary ?? t.ask, 300) || 'A question', project: 'Asked of friends', projectId: 'asked', mine: false }));
   const seen = new Set<string>();
-  return [...own, ...shared, ...room, ...asked].filter((c) => !seen.has(c.channel) && Boolean(seen.add(c.channel)));
+  return [ASSISTANT, ...own, ...shared, ...room, ...asked].filter((c) => !seen.has(c.channel) && Boolean(seen.add(c.channel)));
 }
 
 const itemsOf = (state: DomainState, channel: string): LogItem[] => state.log.filter((l) => l.channel === channel);
@@ -683,7 +689,7 @@ function summaryOf(state: DomainState, conv: Conversation, waiting: ReadonlySet<
     title: clip(conv.title, 300),
     ...(conv.project ? { project: clip(conv.project, 200) } : {}),
     status,
-    ...(liveLine && status === 'working' ? { last: liveLine } : lastText ? { last: plainLine(lastText, 300) } : {}),
+    ...(liveLine && status === 'working' ? { last: liveLine } : lastText ? { last: plainLine(refWords(state, lastText), 300) } : {}),
     ...(lastAt ? { lastAt } : {}),
     ...(unread ? { unread } : {}),
     ...(waiting.has(topic) ? { needsYou: true } : {}),
@@ -691,6 +697,18 @@ function summaryOf(state: DomainState, conv: Conversation, waiting: ReadonlySet<
     ...(conv.projectId && conv.projectId !== 'asked' ? { projectId: clip(conv.projectId, 200), ...iconOf(ctx, conv.projectId) } : {}),
     ...(fresh ? { fresh } : {}),
   };
+}
+
+/** A one-line summary names what Your Mac started (`worktree:<id>`, `plan:<id>`, `task:<KEY>`) by its name, not its id. */
+function refWords(state: DomainState, text: string): string {
+  return text.replace(/`(worktree|plan|task):\s*([\w-]+)`/gi, (_m, kind: string, id: string) => {
+    if (kind.toLowerCase() === 'worktree') return state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id)?.name ?? 'a new worktree';
+    if (kind.toLowerCase() === 'plan') {
+      const plan = state.plans.plans.find((p) => p.id === id);
+      return plan ? planTitle(plan) : 'a plan';
+    }
+    return id.toUpperCase();
+  });
 }
 
 const waitingTopics = (items: readonly NeedsYou[]): Set<string> => new Set(items.flatMap((n) => (n.topic ? [n.topic] : [])));
@@ -707,8 +725,11 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
   const chats = state.network.friends.reduce((n, f) => n + f.unread, 0) + state.network.groups.reduce((n, g) => n + g.unread, 0);
   const review = boardIssues(state).filter((i) => i.status === 'in_review');
   const first = review[0] ? taskTopic(review[0].id) : undefined;
+  const assistant = summaryOf(state, ASSISTANT, waiting, ctx);
   return {
     mac: { name: clip(ctx.mac.name, 100), version: clip(ctx.mac.version, 40) },
+    // 1.5: Your Mac, for Home's "Ask your Mac" (its last line, whether it works).
+    ...(assistant ? { assistant } : {}),
     me: { name: clip(myName(state), 64), peerId: myId(state) },
     usage: usageViews(state.self?.usage),
     needsYou: items,
@@ -724,7 +745,10 @@ export function workView(state: DomainState, ctx?: ViewContext): WorkView {
   const waiting = waitingTopics(needsYou(state));
   const convs = conversations(state);
   const byProject = new Map<string, { id: string; name: string; conversations: ConvSummary[]; icon?: string }>();
+  // Your Mac has its own places (Home, the Ask sheet's first target), and a project's main folder
+  // conversation isn't listed (BLG-70): only the chats and worktrees you started.
   for (const c of convs) {
+    if (c.channel === ASSISTANT_CHANNEL || c.main) continue;
     const s = summaryOf(state, c, waiting, ctx);
     if (!s) continue;
     const key = c.projectId ?? (c.channel === 'room' ? 'room' : `shared:${c.project ?? ''}`);
@@ -844,9 +868,28 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
       criteria: m.milestone.criteria.slice(0, 40).map((c) => clip(c, 1000)),
       tasks: m.tasks.slice(0, 100).map((t) => {
         const conv = t.worktree ? convTopic(`ws:${t.worktree}`) : undefined;
-        return { id: clip(t.task.id, 200), title: clip(t.issue?.key ? `${t.issue.key} ${t.task.title}` : t.task.title, 300), state: t.state, ...(t.forYou ? { mine: true } : {}), ...(conv ? { topic: conv } : {}) };
+        const goal = t.task.goal ? plainLine(t.task.goal, 1000) : '';
+        // What it still waits on while it can't start; the plan's wiring while it's a draft.
+        const waits = t.state === 'draft' || t.state === 'later' ? t.task.blockedBy : t.waitsOn;
+        return {
+          id: clip(t.task.id, 200),
+          title: clip(t.issue?.key ? `${t.issue.key} ${t.task.title}` : t.task.title, 300),
+          state: t.state,
+          ...(t.forYou ? { mine: true } : {}),
+          ...(conv ? { topic: conv } : {}),
+          ...(goal ? { goal } : {}),
+          ...(t.task.acceptance.length ? { acceptance: t.task.acceptance.slice(0, 20).map((a) => clip(plainLine(a, 400), 400)) } : {}),
+          ...(waits.length ? { blockedBy: waits.slice(0, 20).map((b) => clip(b, 200)) } : {}),
+          ...(t.why ? { why: clip(plainLine(t.why, 300), 300) } : {}),
+        };
       }),
+      ...(m.dependsOn.length ? { dependsOn: m.dependsOn.slice(0, 20).map((d) => clip(d, 200)) } : {}),
+      ...(m.autonomy !== plan.autonomy ? { autonomy: m.autonomy } : {}),
     })),
+    autonomy: plan.autonomy,
+    ...(plan.paused ? { paused: true } : {}),
+    parallel: plan.maxParallel,
+    running: progress.active.length,
     needsYou: needsYou(state)
       .filter((n) => n.topic === topic || (home && n.topic === home))
       .slice(0, 20),

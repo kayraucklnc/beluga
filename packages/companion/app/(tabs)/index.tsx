@@ -1,17 +1,17 @@
 import { router } from 'expo-router';
-import { ChevronRight, Eye, Settings, Workflow } from 'lucide-react-native';
+import { ChevronRight, Eye, Laptop, Settings, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ConvCard } from '../../components/Conv';
+import { ConvCard, convHref, StepTicker } from '../../components/Conv';
 import { Mark } from '../../components/Mark';
 import { NeedsStack } from '../../components/Needs';
 import { AwayBand, Screen, StatusShade, useScrolled } from '../../components/Screen';
 import { UsageCard, UsageSheet } from '../../components/Usage';
 import { Card, IconBadge, Pill, Press, Section, T } from '../../components/ui';
 import { useLink, useView, useVisibleNeeds } from '../../lib/hooks';
-import type { HomeView, PlansView } from '../../lib/link/protocol';
+import type { ConvSummary, HomeView, PlansView } from '../../lib/link/protocol';
 import { displayName } from '../../lib/names';
 import { color, TAB_BAR_H } from '../../lib/theme';
 
@@ -73,6 +73,8 @@ export default function Home() {
           </Card>
         ) : (
           <>
+            {h.assistant ? <AskYourMac c={h.assistant} /> : null}
+
             <Section
               title="Needs you"
               right={
@@ -144,5 +146,34 @@ export default function Home() {
       </ScrollView>
       <UsageSheet usage={h?.usage ?? []} visible={usageOpen} onClose={() => setUsageOpen(false)} />
     </Screen>
+  );
+}
+
+/**
+ * Your Mac (1.5): one compact row under the greeting, your Claude for the whole Mac. Its last
+ * line (or what it's doing now); a tap opens the conversation, with its composer ready.
+ */
+function AskYourMac({ c }: { readonly c: ConvSummary }) {
+  const working = c.status === 'working' || c.status === 'waiting';
+  return (
+    <Press scaleTo={0.985} onPress={() => router.push(convHref(c.topic) as never)} accessibilityLabel="Ask your Mac" style={{ marginHorizontal: 16, marginTop: 18 }}>
+      <Card style={{ paddingVertical: 12, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <IconBadge Icon={Laptop} tone="sky" size={34} />
+        <View style={{ flex: 1 }}>
+          <T v="heading" numberOfLines={1} style={{ fontSize: 16 }}>
+            Ask your Mac
+          </T>
+          {working ? (
+            <StepTicker step={c.last ?? 'Working'} size={12.5} />
+          ) : (
+            <T v="caption" numberOfLines={1}>
+              {c.last ?? 'Screenshots, what’s running, start a worktree'}
+            </T>
+          )}
+        </View>
+        {c.unread ? <Pill label={String(c.unread)} tone="sky" /> : null}
+        <ChevronRight color={color.text3} size={18} />
+      </Card>
+    </Press>
   );
 }

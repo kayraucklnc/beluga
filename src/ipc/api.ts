@@ -183,7 +183,8 @@ export const API = {
   'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)) }))),
   'workspaces.newChat': args(id, z.string().max(200), opt(path)),
   'workspaces.startChat': args(id, str, opt(path)),
-  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }))),
+  // → the new worktree's id. `plan`: its Claude plans first. `quiet`: started from the phone, the Mac's window stays put.
+  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), quiet: opt(bool) }))),
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),

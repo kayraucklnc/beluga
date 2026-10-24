@@ -19,6 +19,7 @@ import { EnvVars } from './env-vars.js';
 import { useViewEnv } from './views/sources.js';
 import { boardOf } from './board/registry.js';
 import { plansOf } from './plans/registry.js';
+import { assistantOf } from './assistant/registry.js';
 import { stopTestProcesses } from '../workspaces/test-procs.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
@@ -149,6 +150,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       isGuest: (peerId) => invites.isRestricted(peerId),
       board: (channel, from, o) => boardOf(session)?.forRun(channel, from, o),
       plans: (channel, from) => plansOf(session)?.forRun(channel, from),
+      assistant: (channel, from) => assistantOf(session)?.forRun(channel, from),
     });
     const remote = new RemoteWork({
       store: opts.store,

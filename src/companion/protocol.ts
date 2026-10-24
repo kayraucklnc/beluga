@@ -9,16 +9,19 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 4 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 5 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
  * makes a call) only when the Mac's minor has it, since an older Mac drops a `sub` frame naming a
  * topic it doesn't know. 1.3: the relay (any network). 1.4: the tasks topics, `companion.openOnMac`, `companion.icon`, merging
  * from the phone (`companion.mergeCheck` / `merge` / `resolve`), describing a task
- * (`companion.draftTask` / `addTask`) and starting one (`board.start`).
+ * (`companion.draftTask` / `addTask`) and starting one (`board.start`). 1.5: "Your Mac" (the
+ * `conv:mac:assistant` topic, Home's `assistant`), and asking in a project as a new worktree
+ * (`workspaces.startWorktree`, with plan mode) or a plan (`plans.create`), besides a question;
+ * a plan's dependencies, criteria and autonomy (`PlanView`, `plans.setAutonomy`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -190,9 +193,11 @@ export const ProseView = z.object({
          * 1.3: what Claude drew for the screen rather than code (BLG-68): a `beluga-view` (table,
          * chart, stats, code, colors), a `beluga-graph` or `beluga-tasks`, its JSON as written. The
          * phone reads it with the Mac's own parsers (src/shared) and draws it; its source's rows
-         * come through the Mac (companion.viewFetch). A phone before 1.3 shows the chip.
+         * come through the Mac (companion.viewFetch). A phone before 1.3 shows the chip. A table
+         * Claude wrote as text is a `view` (a table) too; 1.5: one that only looks like a table
+         * is `text`, shown monospaced and never wrapped.
          */
-        block: z.object({ kind: z.union([z.enum(['view', 'graph', 'tasks']), z.string().max(20)]), text: z.string().max(200_000) }).optional(),
+        block: z.object({ kind: z.union([z.enum(['view', 'graph', 'tasks', 'text']), z.string().max(20)]), text: z.string().max(200_000) }).optional(),
       }),
     )
     .max(200),
@@ -256,6 +261,8 @@ export const HomeView = z.object({
    */
   outputs: z.array(OutputView.extend({ topic: Topic.optional() })).max(30),
   unread: z.object({ work: z.number().int().min(0), chats: z.number().int().min(0) }),
+  /** 1.5: "Your Mac" (`conv:mac:assistant`): its last line and whether it works, for Home's "Ask your Mac". */
+  assistant: ConvSummary.optional(),
   /** 1.3: tasks waiting for your review (Home links to them). */
   review: z.object({ count: z.number().int().min(0), first: z.object({ topic: Topic, key: z.string().max(40), title: z.string().max(300) }).optional() }).optional(),
 });
@@ -315,15 +322,46 @@ export const ConvView = z.object({
 });
 export type ConvView = z.infer<typeof ConvView>;
 
-export const PlanTaskView = z.object({ id, title: z.string().max(300), state: z.string().max(40), mine: z.boolean().optional(), topic: Topic.optional() });
+export const PlanTaskView = z.object({
+  id,
+  title: z.string().max(300),
+  state: z.string().max(40),
+  mine: z.boolean().optional(),
+  topic: Topic.optional(),
+  /** 1.5: what it's for, done means (its acceptance), the plan's tasks it waits on (ids), and why it can't start yet. */
+  goal: z.string().max(1000).optional(),
+  acceptance: z.array(z.string().max(400)).max(20).optional(),
+  blockedBy: z.array(id).max(20).optional(),
+  why: z.string().max(300).optional(),
+});
+/** How a plan runs (1.5): Step by Step (you start each task), Check-ins (waits at each milestone), Autopilot. */
+export const PlanAutonomy = z.union([z.enum(['step', 'gated', 'autopilot']), z.string().max(20)]);
 export const PlanView = z.object({
   id,
   title: z.string().max(300),
   goal: z.string().max(4000).optional(),
   state: z.string().max(40),
   topic: Topic.optional(),
-  milestones: z.array(z.object({ id, title: z.string().max(300), state: z.string().max(40), criteria: z.array(z.string().max(1000)).max(40), tasks: z.array(PlanTaskView).max(100) })).max(50),
+  milestones: z
+    .array(
+      z.object({
+        id,
+        title: z.string().max(300),
+        state: z.string().max(40),
+        criteria: z.array(z.string().max(1000)).max(40),
+        tasks: z.array(PlanTaskView).max(100),
+        /** 1.5: the milestones it waits on (ids; none: it runs alongside from the start), and its own autonomy when it differs from the plan's. */
+        dependsOn: z.array(id).max(20).optional(),
+        autonomy: PlanAutonomy.optional(),
+      }),
+    )
+    .max(50),
   needsYou: z.array(NeedsYou).max(20),
+  /** 1.5: how it runs (plans.setAutonomy), paused, how many tasks may run at once, and how many run now. */
+  autonomy: PlanAutonomy.optional(),
+  paused: z.boolean().optional(),
+  parallel: z.number().int().min(0).optional(),
+  running: z.number().int().min(0).optional(),
 });
 export type PlanView = z.infer<typeof PlanView>;
 export const PlansView = z.object({ plans: z.array(PlanView.pick({ id: true, title: true, state: true, topic: true }).extend({ done: z.number().int(), total: z.number().int() })).max(100) });

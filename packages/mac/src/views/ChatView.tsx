@@ -61,6 +61,26 @@ function Starters() {
   );
 }
 
+/** First things to ask Your Mac. */
+function AssistantStarters() {
+  const actions = useActions();
+  return (
+    <EmptyActions>
+      {ASSISTANT_STARTERS.map((t) => (
+        <Button key={t.label} icon={t.icon} onClick={() => actions.submit(t.prompt)}>
+          {t.label}
+        </Button>
+      ))}
+    </EmptyActions>
+  );
+}
+
+const ASSISTANT_STARTERS = [
+  { label: 'Take a Screenshot', icon: 'image', prompt: 'Take a screenshot of my screen and send it to me.' },
+  { label: 'What’s Using My CPU', icon: 'gauge', prompt: 'What’s using my CPU and memory right now?' },
+  { label: 'What’s Running', icon: 'pulse', prompt: 'What’s running in Beluga right now, across my projects?' },
+] as const;
+
 const STARTERS = [
   { label: 'Explain This Project', icon: 'eye', prompt: 'Explain how this project is organized: the main parts, how they fit together, and where to start reading.' },
   { label: 'Find a Bug', icon: 'search', prompt: 'Look through the code for a likely bug, explain it, and fix it with a test.' },
@@ -91,6 +111,8 @@ export function ChatView() {
       <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Claude reads the main folder and answers; it won’t change anything here. Ask for a change and it continues in a new worktree." action={<Starters />} />
     ) : view.kind === 'draft_worktree' ? (
       <Empty icon="branch" title="A new worktree" detail="Describe the task below. Beluga makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
+    ) : view.kind === 'assistant' ? (
+      <Empty icon="laptop" title="Ask your Mac" detail="Your Claude for this whole Mac, not one project: screenshots, what’s using the CPU, starting a worktree or a task. The same conversation as on your phone." action={<AssistantStarters />} />
     ) : view.kind === 'room' ? (
       <Empty icon="claude" title={solo ? 'Talk to your Claude' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give Claude a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your Claude.'} action={<Starters />} />
     ) : (

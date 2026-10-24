@@ -37,14 +37,25 @@ export function tableRows(node: Hast | undefined): { columns: string[]; rows: st
 }
 
 /** As a view: numbers read as numbers ("1,204", "$12.50", "42%"), so they sort and chart. */
-export function tableView(t: { columns: string[]; rows: string[][] }): View | undefined {
+export function tableView(t: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[] }): View | undefined {
+  const parsed = readView(tableSpec(t));
+  return parsed.ok ? parsed.view : undefined;
+}
+
+/**
+ * The same as a view's spec (what a `beluga-view` block holds): a table written as text goes to
+ * the phone as this (src/companion/strip.ts), and the phone reads it with the views' own parser.
+ */
+export function tableSpec(t: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[] }): { type: 'table'; data: Row[]; columns: Array<{ key: string; label: string; type?: string; unit?: string }>; pageSize: number; search: boolean } {
   const keys = uniqueKeys(t.columns);
   // A column of numbers with one unit ("388 ms", "12 GB") is numbers, the unit said once.
   const units = keys.map((_, i) => {
     const found = t.rows.map((r) => /^[-+]?\d[\d,]*(\.\d+)?\s*([a-zA-Zµ]{1,4})$/.exec((r[i] ?? '').trim())?.[2]);
     return found.every((u) => u && u === found[0]) ? found[0] : undefined;
   });
-  const data: Row[] = t.rows.map((r) => Object.fromEntries(keys.map((k, i) => [k, cellOf(units[i] ? (r[i] ?? '').replace(units[i]!, '') : (r[i] ?? ''))])));
+  // A column of changes ("+4.9%", "-6.7%") keeps its signs as written: a number would lose the "+".
+  const signed = keys.map((_, i) => t.rows.some((r) => /^\+\s*\$?\d/.test((r[i] ?? '').trim())));
+  const data: Row[] = t.rows.map((r) => Object.fromEntries(keys.map((k, i) => [k, signed[i] ? ((r[i] ?? '').trim() || null) : cellOf(units[i] ? (r[i] ?? '').replace(units[i]!, '') : (r[i] ?? ''))])));
   const numeric = keys.filter((k) => data.every((r) => r[k] === null || typeof r[k] === 'number'));
   const columns = keys.map((key, i) => {
     const raw = t.rows.map((r) => r[i] ?? '');
@@ -52,11 +63,10 @@ export function tableView(t: { columns: string[]; rows: string[][] }): View | un
     const money = numeric.includes(key) && raw.some((x) => /^[-+]?\$/.test(x.trim()));
     return { key, label: t.columns[i]!, ...(pct ? { type: 'number', unit: '%' } : money ? { type: 'currency' } : units[i] ? { type: 'number', unit: units[i] } : {}) };
   });
-  const parsed = readView({ type: 'table', data, columns, pageSize: 15, search: t.rows.length > 8 });
-  return parsed.ok ? parsed.view : undefined;
+  return { type: 'table', data, columns, pageSize: 15, search: t.rows.length > 8 };
 }
 
-function uniqueKeys(cols: string[]): string[] {
+function uniqueKeys(cols: readonly string[]): string[] {
   const seen = new Map<string, number>();
   return cols.map((c) => {
     const n = seen.get(c) ?? 0;

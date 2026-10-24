@@ -4,7 +4,7 @@
     "slug": "beluga-companion",
     "version": "0.1.0",
     "scheme": "beluga",
-    "orientation": "portrait",
+    "orientation": "default",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#FAF8F5",
     "icon": "./assets/icon.png",

@@ -1,6 +1,7 @@
 import { dashboardConv } from './render-demo';
 import type { ChatMessageView, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
 import { DEMO_IMAGES, type DemoImage } from './images.generated';
+import { stripCode } from '../../render';
 
 /**
  * The demo Mac's world: two projects, a conversation at work with sub-agents taking screenshots
@@ -291,7 +292,97 @@ export function makeWorld(now = Date.now()): DemoWorld {
     ],
   };
 
-  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now)].map((c) => [c.topic, c]));
+  // ---- Your Mac (1.5): your Claude for the whole Mac. A screenshot sent back, and a worktree it started.
+  const screen = img('screen-2026-10-24-09-41.png', 'desktop', undefined, 3 * MIN);
+  const loginBug: ConvView = {
+    topic: 'conv:ws:wt-login-bug',
+    title: 'login-redirect-bug',
+    project: 'pixel-weather',
+    more: false,
+    canSend: true,
+    working: true,
+    needsYou: [],
+    turns: [
+      { id: 'lb1', who: 'you', name: 'You', ts: now - 2 * MIN, prose: { text: 'Signing in from the widget lands on a blank page instead of the forecast. Find out why the redirect drops the deep link, fix it, and add a test.', code: [] } },
+      { id: 'lb2', who: 'claude', name: 'Claude', ts: now - 2 * MIN, status: 'working', step: 'Reading src/auth/redirect.ts', steps: 3, live: { phase: 'step', words: 'Reading src/auth/redirect.ts', tool: 'read', since: now - 20_000 }, trail: [{ tool: 'search', text: 'Searched for "returnTo"' }, { tool: 'read', text: 'Read src/widget/open.ts' }], prose: { text: '', code: [] } },
+    ],
+  };
+  const assistant: ConvView = {
+    topic: 'conv:mac:assistant',
+    title: 'Your Mac',
+    more: false,
+    canSend: true,
+    working: false,
+    needsYou: [],
+    turns: [
+      { id: 'a1', who: 'you', name: 'You', ts: now - 4 * MIN, prose: { text: 'Take a screenshot and send it to me', code: [] } },
+      { id: 'a2', who: 'claude', name: 'Claude', ts: now - 4 * MIN, endTs: now - 3 * MIN, status: 'done', steps: 1, trail: [{ tool: 'tool', text: 'Took a screenshot of the main display' }], outputs: [screen], prose: { text: 'Here’s your screen: Xcode on the left, the radar build running in the Simulator on the right.', code: [] } },
+      { id: 'a3', who: 'you', name: 'You', ts: now - 2 * MIN, prose: { text: 'Start a worktree in pixel-weather for the login bug', code: [] } },
+      { id: 'a4', who: 'claude', name: 'Claude', ts: now - 2 * MIN, endTs: now - 2 * MIN + 9000, status: 'done', steps: 2, trail: [{ tool: 'tool', text: 'Listed your projects' }, { tool: 'tool', text: 'Started a worktree' }], prose: { text: 'Started `worktree:wt-login-bug` in pixel-weather. Its Claude is reading the redirect code now; I’ll leave it to it.', code: [] } },
+    ],
+  };
+
+  // ---- tables Claude wrote as text, and an answer with many outputs (BLG-71)
+  const forecastAnswer = [
+    'October is tracking your Sept 30 forecast almost exactly: **$24,480** against **$24,500** (-0.1%). The first two weeks ran ahead; the third dipped when two annual plans renewed later than expected.',
+    '',
+    '┌──────────────┬────────────┬────────────┬──────────┐',
+    '│ Week         │ Forecast   │ Actual     │ Diff     │',
+    '├──────────────┼────────────┼────────────┼──────────┤',
+    '│ Oct 1–7      │ $6,900     │ $7,240     │ +4.9%    │',
+    '│ Oct 8–14     │ $7,100     │ $7,380     │ +3.9%    │',
+    '│ Oct 15–21    │ $7,300     │ $6,810     │ -6.7%    │',
+    '│ Oct 22–24    │ $3,200     │ $3,050     │ -4.7%    │',
+    '├──────────────┼────────────┼────────────┼──────────┤',
+    '│ October      │ $24,500    │ $24,480    │ -0.1%    │',
+    '└──────────────┴────────────┴────────────┴──────────┘',
+    '',
+    'By plan, from the Stripe export:',
+    '',
+    '```',
+    'Plan        Forecast   Actual    Customers   Churned   Net new',
+    '----------  ---------  --------  ----------  --------  --------',
+    'Starter     $5,320     $5,510    290         9         +14',
+    'Team        $13,680    $13,410   114         3         +5',
+    'Business    $5,500     $5,560    11          0         +1',
+    '```',
+    '',
+    'The charts, the export and my notes are below. November’s forecast holds if the two renewals land this week.',
+  ].join('\n');
+  const forecast: ConvView = {
+    topic: 'conv:shop.forecast',
+    title: 'revenue-forecast-from-stripe',
+    project: 'shop',
+    more: false,
+    canSend: true,
+    working: false,
+    needsYou: [],
+    turns: [
+      { id: 'rf1', who: 'you', name: 'You', ts: now - 50 * MIN, prose: { text: 'How does October compare with my Sept 30 forecast?', code: [] } },
+      {
+        id: 'rf2',
+        who: 'claude',
+        name: 'Claude',
+        ts: now - 50 * MIN,
+        endTs: now - 44 * MIN,
+        status: 'done',
+        steps: 9,
+        trail: [{ tool: 'run', text: 'Ran stripe' }, { tool: 'read', text: 'Read forecast-2026-09-30.csv' }, { tool: 'write', text: 'Wrote october-vs-forecast.md' }],
+        prose: stripCode(forecastAnswer),
+        outputs: [
+          img('october-by-week.png', 'timings', undefined, 45 * MIN),
+          img('forecast-vs-actual.png', 'radar', undefined, 45 * MIN),
+          img('mrr-by-plan.png', 'contrast', undefined, 45 * MIN),
+          txt('october-vs-forecast.md', 'markdown', '# October vs the Sept 30 forecast\n\n$24,480 against $24,500 (-0.1%).', undefined, 45 * MIN),
+          txt('stripe-charges-october.json', 'json', '{"count": 415, "total": 2448000}', undefined, 46 * MIN),
+          txt('forecast-2026-09-30.csv', 'text', 'week,forecast\nOct 1-7,6900\nOct 8-14,7100\nOct 15-21,7300\nOct 22-31,3200', undefined, 47 * MIN),
+          txt('stripe-export.log', 'text', 'Fetched 415 charges in 3 pages', undefined, 48 * MIN),
+        ],
+      },
+    ],
+  };
+
+  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now), loginBug, assistant, forecast].map((c) => [c.topic, c]));
 
   // ---- what needs you, one of each kind (and one this phone doesn't know)
   // Shaped exactly as src/companion/views.ts makes them (the same methods, args and templates).
@@ -454,6 +545,9 @@ export function makeWorld(now = Date.now()): DemoWorld {
     state: 'running',
     topic: 'conv:beluga.onboarding',
     needsYou: [],
+    autonomy: 'gated',
+    parallel: 3,
+    running: 2,
     milestones: [
       { id: 'm1', title: 'The contract', state: 'done', criteria: ['protocol.ts with frames, topics and views', 'coverage.ts classifies every API method'], tasks: [
         { id: 'k1', title: 'Frames and topics', state: 'done' },
@@ -463,19 +557,19 @@ export function makeWorld(now = Date.now()): DemoWorld {
       { id: 'm2', title: 'The Mac side', state: 'running', criteria: ['Pair a phone from Settings', 'Only paired link keys get through'], tasks: [
         { id: 'k4', title: 'Pairing and the device certificate', state: 'done' },
         { id: 'k5', title: 'CompanionHost and the firewall', state: 'running', topic: 'conv:beluga.push' },
-        { id: 'k6', title: 'The footer\'s phone mark', state: 'todo' },
-      ] },
+        { id: 'k6', title: 'The footer\'s phone mark', state: 'blocked', blockedBy: ['k5'], why: 'Waits on CompanionHost and the firewall' },
+      ], dependsOn: ['m1'] },
       { id: 'm3', title: 'The app', state: 'running', criteria: ['Every screen against a demo Mac', 'Pairing feels like the Mac\'s onboarding'], tasks: [
         { id: 'k7', title: 'Home, Work and a conversation', state: 'done' },
         { id: 'k8', title: 'Make pairing feel like the Mac', state: 'running', mine: true, topic: 'conv:beluga.onboarding' },
         { id: 'k9', title: 'Outputs viewer', state: 'review' },
-        { id: 'k10', title: 'The link worklet', state: 'todo' },
-      ] },
+        { id: 'k10', title: 'The link worklet', state: 'ready', goal: 'hyperdht and the Noise link in a Bare worklet, so the app reaches the Mac on any network.', acceptance: ['Links over the LAN and over the internet', 'Closes 15 s after the app goes to the background'] },
+      ], dependsOn: ['m1'] },
       { id: 'm4', title: 'Notifications', state: 'waiting', criteria: ['Beluga Push relay', 'Approve from the notification'], tasks: [
-        { id: 'k11', title: 'The Worker', state: 'blocked' },
-        { id: 'k12', title: 'Notification actions', state: 'todo' },
-      ] },
-      { id: 'm5', title: 'iOS', state: 'todo', criteria: ['Keychain, APNs, the service extension'], tasks: [{ id: 'k13', title: 'Port the link to iOS', state: 'todo' }] },
+        { id: 'k11', title: 'The Worker', state: 'blocked', blockedBy: ['k5'] },
+        { id: 'k12', title: 'Notification actions', state: 'blocked', blockedBy: ['k11', 'k10'] },
+      ], dependsOn: ['m2', 'm3'] },
+      { id: 'm5', title: 'iOS', state: 'todo', criteria: ['Keychain, APNs, the service extension'], tasks: [{ id: 'k13', title: 'Port the link to iOS', state: 'later', blockedBy: ['k10'] }], dependsOn: ['m3'] },
     ],
   };
   const docsPlan: PlanView = {
@@ -573,8 +667,8 @@ export function makeWorld(now = Date.now()): DemoWorld {
     convs,
     projects: [
       { id: 'beluga', name: 'beluga', convs: ['conv:beluga.onboarding', 'conv:beluga.push'] },
-      { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:weather.radar', 'conv:weather.ci'] },
-      { id: 'shop', name: 'shop', convs: ['conv:shop.dashboard'] },
+      { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:ws:wt-login-bug', 'conv:weather.radar', 'conv:weather.ci'] },
+      { id: 'shop', name: 'shop', convs: ['conv:shop.forecast', 'conv:shop.dashboard'] },
       { id: 'asked', name: 'Asked of friends', convs: [] },
     ],
     files,

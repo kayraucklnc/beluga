@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import type { AgentBackend, BoardTools, FollowUp, LiveStatus, RunProcess, Steer } from '../agent/types.js';
+import type { AgentBackend, AgentPlace, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer } from '../agent/types.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
@@ -24,6 +24,7 @@ import { belugaEnvBoth } from './beluga-env.js';
 import { planForHome } from './plans/model.js';
 import { findIssue } from './board/model.js';
 import { explainTaskMentions } from '../shared/task-refs.js';
+import { isAssistant } from '../shared/assistant.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -57,6 +58,8 @@ export interface AgentHostDeps {
   readonly board?: (channel: string, from: string, opts: { readonly plan: boolean }) => import('./board/work.js').RunBoard | undefined;
   /** A plan's home conversation (your own runs): its plan tools and what Claude is told about the plan (core/plans). */
   readonly plans?: (channel: string, from: string) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string } | undefined;
+  /** "Your Mac" (core/assistant), your own runs in its conversation: where it runs, its tools, what Claude is told. */
+  readonly assistant?: (channel: string, from: string) => { readonly place: AgentPlace; readonly tools: MacTools; readonly brief: string } | undefined;
 }
 
 /** File tools an Edit guest may use without asking, and the input naming their file. */
@@ -962,7 +965,9 @@ export class AgentHost {
     const requesterName = peerName(this.store.getState(), from);
     const root = body.project && body.channel === 'room' ? this.projectRoot(body.project) : undefined;
     // A friend's request in your project gets a fresh conversation in its main folder: questions only.
-    const place = root ? { cwd: root, additionalDirectories: [], autoEdit: false, onSession: () => undefined, askOnly: { project: body.project ?? '' } } : this.deps.workspaces?.place(body.channel);
+    // "Your Mac": its own folder and session, and its tools (your runs only: nobody else can write there).
+    const mac = root ? undefined : this.deps.assistant?.(body.channel, from);
+    const place = root ? { cwd: root, additionalDirectories: [], autoEdit: false, onSession: () => undefined, askOnly: { project: body.project ?? '' } } : (mac?.place ?? this.deps.workspaces?.place(body.channel));
     let markFinished: () => void = () => undefined;
     /** Claude Code's process for this run (see gone), and whether the run is over. */
     let proc: RunProcess | undefined;
@@ -971,7 +976,7 @@ export class AgentHost {
     // In a main folder, a change request carries the conversation into a new worktree.
     const move = place?.askOnly && !place.syncMain && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
     if (body.channel !== 'room' && !place) {
-      this.emitAgent(body.requestId, from, 'error', 'That workspace is archived or missing.', body.channel);
+      this.emitAgent(body.requestId, from, 'error', isAssistant(body.channel) ? 'Your Mac’s assistant needs the Beluga app.' : 'That workspace is archived or missing.', body.channel);
       if (lane.current === controller) lane.current = undefined;
       return;
     }
@@ -1032,6 +1037,7 @@ export class AgentHost {
         ...(board?.needsDefinition && board.planApproved ? { planTask: { needsDefinition: board.needsDefinition, approved: board.planApproved } } : {}),
         ...(plans?.tools ? { planTools: plans.tools } : {}),
         ...(plans?.brief ? { planBrief: plans.brief } : {}),
+        ...(mac ? { macTools: mac.tools, macBrief: mac.brief } : {}),
         prompt: this.promptOf(body),
         requesterName,
         viaAgent: body.viaAgent,

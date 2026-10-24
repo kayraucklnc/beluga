@@ -1,4 +1,5 @@
 import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
+import { ASSISTANT_CHANNEL } from '../shared/assistant.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
 import { NotifySettings as NotifySchema } from '../shared/settings-schema.js';
@@ -266,6 +267,8 @@ export interface Transfer {
 /** What the main area shows. */
 export type View =
   | { readonly kind: 'room' }
+  /** "Your Mac" (core/assistant): one conversation with your Claude for the whole Mac, the same as on the phone. */
+  | { readonly kind: 'assistant' }
   | { readonly kind: 'files' }
   | { readonly kind: 'overview' }
   | { readonly kind: 'workspace'; readonly id: string; readonly tab: WorkspaceTab }
@@ -326,11 +329,11 @@ export interface Compaction {
 }
 
 export const channelOf = (view: View): string =>
-  view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
+  view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'assistant' ? ASSISTANT_CHANNEL : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
 
 /** The conversation a view shows, if any (Overview, Search, Terminal… show none, so the chat's unread count stays). */
 export const shownChannel = (view: View): string | undefined =>
-  view.kind === 'conversation' ? view.id : view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' ? channelOf(view) : undefined;
+  view.kind === 'conversation' ? view.id : view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' || view.kind === 'assistant' ? channelOf(view) : undefined;
 
 /** What the screens attached to this computer's Beluga are looking at (all of them together). */
 export interface Attention {

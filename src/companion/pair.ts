@@ -54,6 +54,8 @@ export interface DevicePairingOptions {
   readonly relayUrl?: () => string | undefined;
   /** Tests: turn away every direct (hyperdht) connection, as a network that can't connect would. */
   readonly refuseDirect?: boolean;
+  /** What went wrong out of sight (the code couldn't listen, while the QR works). */
+  readonly log?: (line: string) => void;
 }
 
 interface Waiting {
@@ -100,38 +102,51 @@ export class DevicePairing {
     return this.open?.keyPairs ?? [];
   }
 
-  /** Open a new pairing (one at a time: an open one is closed first). */
+  /**
+   * Open a new pairing (one at a time: an open one is closed first). The link and the code listen
+   * side by side, and this returns (the QR shows) once the link listens: the code's Argon2id and its
+   * listening go on meanwhile, long done before anyone has typed twelve characters. Nothing here
+   * waits for the relay's tunnel (its URL joins the link whenever it's up).
+   */
   async start(): Promise<PairingInfo> {
     await this.cancel();
     const secret = randomBytes(16).toString('base64url');
     const code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     const expiresAt = Date.now() + (this.opts.ttlMs ?? PAIR_TTL_MS);
-    const node = await this.opts.node();
     const servers: Server[] = [];
-    const tickets: DeviceTicket[] = [
-      { via: 'link', secret },
-      { via: 'code', code },
-    ];
     const timer = setTimeout(() => void this.cancel(), Math.max(0, expiresAt - Date.now()));
     timer.unref();
     const open: Open = { secret, code, expiresAt, servers, keyPairs: [], timer, failures: [] };
     this.open = open;
+    // The node, and each ticket's keys (the code's take a moment: Argon2id), all at once.
+    const node = this.opts.node();
+    const listen = async (ticket: DeviceTicket): Promise<void> => {
+      const [dht, secrets] = await Promise.all([node, deviceSecrets(ticket)]);
+      if (this.open !== open) return;
+      const raw = signKeyPair(secrets.seed);
+      const keyPair: KeyPair = { publicKey: Buffer.from(raw.publicKey), secretKey: Buffer.from(raw.secretKey) };
+      const accept = (stream: NoiseSocket): void => this.serve(open, secrets.auth, keyPair.publicKey, stream);
+      const server = dht.createServer(this.opts.refuseDirect ? { firewall: () => true } : {}, accept);
+      servers.push(server);
+      open.keyPairs.push(keyPair);
+      this.opts.relay?.add({ keyPair, accept });
+      await server.listen(keyPair);
+    };
+    const byLink = listen({ via: 'link', secret });
+    const byCode = listen({ via: 'code', code });
     try {
-      for (const ticket of tickets) {
-        const secrets = await deviceSecrets(ticket);
-        const raw = signKeyPair(secrets.seed);
-        const keyPair: KeyPair = { publicKey: Buffer.from(raw.publicKey), secretKey: Buffer.from(raw.secretKey) };
-        const accept = (stream: NoiseSocket): void => this.serve(open, secrets.auth, keyPair.publicKey, stream);
-        const server = node.createServer(this.opts.refuseDirect ? { firewall: () => true } : {}, accept);
-        servers.push(server);
-        open.keyPairs.push(keyPair);
-        this.opts.relay?.add({ keyPair, accept });
-        await server.listen(keyPair);
-      }
+      await byLink;
     } catch (err) {
+      byCode.catch(() => undefined);
       if (this.open === open) await this.cancel();
       throw err;
     }
+    if (this.open !== open) throw new Error('The pairing was closed while it opened');
+    byCode.then(
+      // Its key pair gets the relay record too (the host publishes again on a change).
+      () => this.open === open && this.opts.onChange(),
+      (err: unknown) => this.open === open && this.opts.log?.(`companion: the pairing code couldn't listen (the QR still works): ${err instanceof Error ? err.message : String(err)}`),
+    );
     this.opts.onChange();
     return this.info()!;
   }

@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
 import { useMemo } from 'react';
-import { View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
+import { Maximize2 } from 'lucide-react-native';
+import { openFull } from '../../lib/fullscreen';
 import { useView } from '../../lib/hooks';
 import type { ProseView, TasksView } from '../../lib/link/protocol';
 import { parseGraph, parseView, readTaskKeys, viewFenceType } from '../../lib/render';
 import { store } from '../../lib/store';
-import { color } from '../../lib/theme';
+import { color, type } from '../../lib/theme';
 import { statusOf, taskHref } from '../Tasks';
 import { Card, Press, T, toneBg, toneInk } from '../ui';
 import type { BlockAt } from './data';
@@ -28,7 +30,27 @@ export function Block({ entry, at }: { readonly entry: ProseView['code'][number]
   if (graph) return graph.ok ? <GraphCard graph={graph.graph} /> : <Problem incomplete={graph.incomplete} error={graph.error} what="graph" />;
   if (view) return view.ok ? <ViewCard view={view.view} {...(at ? { at } : {})} warnings={view.warnings.length} /> : <Problem incomplete={view.incomplete} error={view.error} what="view" />;
   if (block.kind === 'tasks') return <TaskCards keys={readTaskKeys(block.text)} />;
+  if (block.kind === 'text') return <TextTable text={block.text} />;
   return null;
+}
+
+/**
+ * A table Claude wrote as text that doesn't read as rows and columns (BLG-71): as it is,
+ * monospaced, never wrapped; it scrolls sideways, and opens full screen.
+ */
+export function TextTable({ text, full }: { readonly text: string; readonly full?: boolean }) {
+  return (
+    <View style={{ borderRadius: 14, backgroundColor: color.code, overflow: 'hidden' }}>
+      {full ? null : (
+        <Press onPress={() => openFull({ kind: 'text', text })} accessibilityLabel="Full screen" hitSlop={6} style={{ position: 'absolute', right: 6, top: 6, zIndex: 1, width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card }}>
+          <Maximize2 color={color.text2} size={13} />
+        </Press>
+      )}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 12, paddingRight: full ? 12 : 40 }}>
+        <Text style={[type.mono, { color: color.text, fontSize: 12.5, lineHeight: 17 }]}>{text}</Text>
+      </ScrollView>
+    </View>
+  );
 }
 
 function Problem({ incomplete, error, what }: { readonly incomplete: boolean; readonly error: string; readonly what: string }) {
