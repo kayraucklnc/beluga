@@ -124,11 +124,11 @@ export function createRoomToolDefs(bridge: RoomBridge) {
 
 export const CONTINUE_TOOL = 'mcp__beluga__continue_in_worktree';
 
-/** For runs in a project's main folder: move the conversation into a new worktree and work there. */
+/** For runs in a project's main folder: turn the chat into a new worktree and work there. */
 export function continueInWorktreeToolDef(move: (task: string) => Promise<string>) {
   return tool(
     'continue_in_worktree',
-    "You're in the project's read-only main folder. Call this as soon as the request needs any change: Beluga makes a new worktree from the latest origin, carries this conversation over and you continue the task there. Then end your turn with one short line.",
+    "You're in the project's read-only main folder. Call this as soon as the request needs any change: Beluga turns this chat into a new worktree from the latest origin (same conversation, its own folder) and you continue the task there. Then end your turn with one short line.",
     { task: z.string().min(1).max(8000).describe('The change to make, as a complete instruction (it starts the work in the new worktree)') },
     (a) => guarded(() => move(a.task)),
   );

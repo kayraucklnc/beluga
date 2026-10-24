@@ -494,11 +494,11 @@ export class WorkspaceController {
   }
 
   /**
-   * Carry a conversation into a new worktree and go on there: an ask chat in a main folder (where
-   * nothing may change), or any chat. The worktree starts from the latest origin (or `base`), is
-   * named by a small model after the task (or what you asked last), gets a copy of the chat and
-   * a branch of Claude's conversation, and opens; Claude starts on the task there once `after`
-   * resolves (the run that asked for the move has finished, so its conversation is complete).
+   * Go on in a new worktree: an ask chat in a main folder (where nothing may change) becomes the
+   * worktree itself (same chat, same Claude session); a worktree's conversation is forked into a
+   * new one. The worktree starts from the latest origin (or `base`), is named by a small model
+   * after the task (or what you asked last), and opens; Claude starts on the task there once
+   * `after` resolves (the run that asked for the move has finished, so its conversation is complete).
    */
   async continueInWorktree(id: string, nameTask: (prompt: string) => Promise<string>, opts: { task?: string; base?: string; name?: string; after?: Promise<void> } = {}): Promise<Workspace | undefined> {
     const source = this.deps.manager.find(id);
@@ -513,6 +513,10 @@ export class WorkspaceController {
     const about = task || (asked?.type === 'chat' ? asked.text : '') || source.name;
     const proper = opts.name?.trim() ? undefined : nameTask(about).catch(() => undefined);
     const name = opts.name?.trim() || slugify(about);
+    // The task is often word-for-word what you asked last, already in the conversation: start
+    // Claude with it without showing it a second time.
+    const repeat = Boolean(task) && asked?.type === 'chat' && sameText(asked.text, task!);
+    if (source.kind === 'chat') return this.chatToWorktree(source, project, name, proper, { task, repeat, about, base: opts.base, after: opts.after });
     this.deps.store.dispatch({ type: 'system', channel: from, text: "Moving to a new worktree…" });
     this.saver.flush(); // the copy gets everything said so far
     const made = await this.act("Couldn't create the worktree", () => this.deps.manager.fork(id, name, { base: opts.base ?? project.base }));
@@ -525,15 +529,43 @@ export class WorkspaceController {
     const to = `${WS_PREFIX}${ws.id}`;
     this.loaded.delete(to);
     this.open(ws.id);
-    const where = source.askOnly ? `${project.name}'s main folder` : source.name;
-    this.deps.store.dispatch({ type: 'system', channel: to, text: `Continued from “${source.name}” in ${where}, on a new branch from ${ws.base ?? project.base}. Claude remembers the conversation.` });
-    this.deps.store.dispatch({ type: 'system', channel: from, text: `Continued in the worktree ${ws.name} (${ws.branch}).${source.askOnly ? ' This chat stays here for questions.' : ''}` });
+    this.deps.store.dispatch({ type: 'system', channel: to, text: `Continued from “${source.name}”, on a new branch from ${ws.base ?? project.base}. Claude remembers the conversation.` });
+    this.deps.store.dispatch({ type: 'system', channel: from, text: `Continued in the worktree ${ws.name} (${ws.branch}).` });
     this.deps.toast(`Continuing in ${ws.name}, with the conversation so far`, 'success');
     this.created(ws, { from: id, about });
-    // The task is often word-for-word what you asked last, already in the carried-over chat: start
-    // Claude with it without showing it a second time.
-    const repeat = Boolean(task) && asked?.type === 'chat' && sameText(asked.text, task!);
     void this.startWhen(opts.after, task || CONTINUE_PROMPT, to, !repeat);
+    return ws;
+  }
+
+  /**
+   * A chat in the main folder becomes the worktree itself: same conversation, same chat, same
+   * Claude session, now in its own folder on a new branch. Claude's session moves along once the
+   * run that asked for it has finished (so nothing it said is left behind), then it goes on.
+   */
+  private async chatToWorktree(
+    source: Workspace,
+    project: { name: string; base: string },
+    name: string,
+    proper: Promise<string | undefined> | undefined,
+    opts: { task?: string | undefined; repeat: boolean; about: string; base?: string | undefined; after?: Promise<void> | undefined },
+  ): Promise<Workspace | undefined> {
+    const channel = `${WS_PREFIX}${source.id}`;
+    this.deps.store.dispatch({ type: 'system', channel, text: 'Making this chat a worktree…' });
+    const made = await this.act("Couldn't create the worktree", () => this.deps.manager.chatToWorktree(source.id, name, { base: opts.base ?? project.base }));
+    if (!made) return undefined;
+    if (proper) await this.renameWhenNamed(source.id, proper);
+    const ws = this.deps.manager.find(source.id) ?? made.ws;
+    this.open(ws.id);
+    this.deps.store.dispatch({ type: 'system', channel, text: `This chat is now the worktree ${ws.name} (${ws.branch}), on a new branch from ${ws.base ?? project.base}. Claude remembers the conversation and can make changes.` });
+    this.deps.toast(`${ws.name} is a worktree now; Claude goes on here`, 'success');
+    this.created(ws, { from: source.id, about: opts.about });
+    void (async () => {
+      if (opts.after) await Promise.race([opts.after, new Promise<void>((r) => setTimeout(r, CONTINUE_WAIT_MS).unref())]);
+      // Claude Code looks for a conversation under the folder it runs in: bring it along.
+      const sessionId = this.deps.manager.find(source.id)?.sessionId;
+      if (sessionId) carrySession(sessionId, made.was, ws.path);
+      await this.startWhen(undefined, opts.task || CONTINUE_PROMPT, channel, !opts.repeat);
+    })();
     return ws;
   }
 

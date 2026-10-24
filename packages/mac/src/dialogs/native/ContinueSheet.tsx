@@ -39,7 +39,7 @@ export function ContinueSheet({ wsId, close }: { wsId: string; close: () => void
     <FormSheet
       title="Continue in a New Worktree"
       icon="branch"
-      intro={`Claude gets its own branch and folder, keeps this conversation and starts on the task. This chat stays in ${project.name}’s main folder for questions.`}
+      intro="This chat becomes a worktree: Claude gets its own branch and folder, keeps the conversation and starts on the task."
       submitLabel="Continue"
       onSubmit={async () => {
         await api.workspaces.continueInWorktree(ws.id, { ...(task.trim() ? { task: task.trim() } : {}), ...(chosen !== project.base ? { base: chosen } : {}), ...(name.trim() ? { name: name.trim() } : {}) });
