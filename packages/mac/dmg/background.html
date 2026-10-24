@@ -15,7 +15,7 @@
   .sub{position:absolute;top:74px;left:0;right:0;text-align:center;color:rgba(235,235,245,.55);font-size:13px;letter-spacing:.1px}
   /* Soft light under each icon, and a frosted tag behind each name: Finder draws names white in
      dark mode and black in light mode, and both read on these. */
-  .spot{position:absolute;width:190px;height:190px;border-radius:50%;top:112px;background:radial-gradient(circle,rgba(255,255,255,.10),transparent 68%)}
+  .spot{position:absolute;width:190px;height:190px;border-radius:50%;top:110px;background:radial-gradient(circle,rgba(255,255,255,.10),transparent 68%)}
   .tag{position:absolute;top:268px;height:22px;border-radius:11px;background:rgba(160,162,170,.62);box-shadow:inset 0 .5px 0 rgba(255,255,255,.35),0 2px 8px rgba(0,0,0,.25)}
   svg.arrow{position:absolute;left:0;top:0}
   .foot{position:absolute;bottom:62px;left:0;right:0;text-align:center;color:rgba(235,235,245,.78);font-size:13.5px;font-weight:500}
@@ -30,15 +30,20 @@
   <div class="sub">Your projects, your friends, and everyone's Claude</div>
   <div class="spot" style="left:95px"></div><div class="spot" style="left:375px"></div>
   <div class="tag" style="left:146px;width:88px"></div><div class="tag" style="left:425px;width:90px"></div>
-  <!-- Icons are placed by Finder at (190, 205) and (470, 205), 112 pt. The arrow runs between them. -->
+  <!-- Icons are placed by Finder at (190, 205) and (470, 205), 112 pt (make-dmg.mjs, tauri.conf.json):
+       the spots and tags above are centered on those x's. The arrow runs between them. -->
   <svg class="arrow" width="660" height="420" viewBox="0 0 660 420">
     <defs>
-      <linearGradient id="a" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>
+      <linearGradient id="a" gradientUnits="userSpaceOnUse" x1="268" x2="392"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>
       <filter id="s" x="-20%" y="-50%" width="140%" height="200%"><feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#000" flood-opacity=".35"/></filter>
     </defs>
     <g filter="url(#s)" fill="none" stroke="url(#a)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M268 190 C 305 160, 355 160, 392 190" stroke-dasharray="1 9"/>
-      <path d="M380 178 L393 191 L378 200"/>
+      <!-- The arc: M268 194 C 321 162, 339 162, 392 194, symmetric about x = 330 between the icons'
+           edges (246 and 414). The head's tip is its end, the arms 13 long at 35° either side of its
+           final tangent (53, 32: 31° down). The dots are the arc up to t = 0.87, 22 short of the tip,
+           so the last one sits a dot's gap before the head; pathLength 10 puts one at each end. -->
+      <path d="M268 194 C 314.1 166.2, 333.7 162.5, 373 183.1" pathLength="10" stroke-dasharray="0 1"/>
+      <path d="M386.7 182.1 L392 194 L379 194.9"/>
     </g>
   </svg>
   <div class="foot">Drag <b>Beluga</b> into <b>Applications</b> to install</div>
