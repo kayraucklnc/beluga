@@ -490,3 +490,41 @@
 .showAll:hover {
   text-decoration: underline;
 }
+
+/* A message you steered in that Claude hasn't read yet (BLG-54): dimmed, a quiet line under it saying so, and Send now. */
+.unread .meta,
+.unread .body > :not(.steerWaiting) {
+  opacity: 0.6;
+  transition: opacity var(--dur-fast);
+}
+.steerWaiting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+.steerNow {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  margin-left: 2px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--claude) 9%, transparent);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.steerNow:hover {
+  background: color-mix(in srgb, var(--claude) 15%, transparent);
+  color: var(--text);
+}
+/* What a taken-over turn left running (sub-agents, background jobs), with the working line: the chat's last row (BLG-54). */
+.livePart {
+  padding-top: 0;
+}

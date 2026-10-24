@@ -87,9 +87,11 @@ export function Palette() {
     { id: 'inbox', label: 'Notifications', hint: 'What happened while you were elsewhere', icon: 'bell', run: () => ui.patch({ notices: true }) },
     { id: 'appearance', label: `Appearance: ${prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark'}`, icon: 'eye', run: () => setPrefs({ appearance: prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark' }) },
     { id: 'sidebar', label: prefs.sidebar ? 'Hide the sidebar' : 'Show the sidebar', keys: '⌃⌘S', icon: 'sidebar', run: () => setPrefs({ sidebar: !prefs.sidebar }) },
-    panelFits(state.view)
-      ? { id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', keys: `⌥${mod()}0`, icon: 'panelRight', run: () => togglePanel(state.view) }
-      : { id: 'inspector', label: 'Show or hide the plan’s chat', keys: `⌥${mod()}0`, icon: 'claude', run: () => togglePanel(state.view) },
+    ...(panelFits(state.view)
+      ? [{ id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', keys: `⌥${mod()}0`, icon: 'panelRight' as IconName, run: () => togglePanel(state.view) }]
+      : state.view.kind === 'plan'
+        ? [{ id: 'inspector', label: 'Show or hide the plan’s chat', keys: `⌥${mod()}0`, icon: 'claude' as IconName, run: () => togglePanel(state.view) }]
+        : []),
     { id: 'terminal-toggle', label: 'Show or hide the terminal', hint: prefs.termIn === 'drawer' ? 'under the chat' : 'in the panel', keys: `${mod()}J`, icon: 'terminal', run: () => void toggleTerminal(client.store.getState()) },
     { id: 'bigger', label: 'Bigger text', keys: `${mod()}+`, icon: 'plus', run: () => zoom('in') },
     { id: 'smaller', label: 'Smaller text', keys: `${mod()}−`, icon: 'x', run: () => zoom('out') },

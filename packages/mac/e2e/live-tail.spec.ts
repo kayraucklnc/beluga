@@ -140,7 +140,10 @@ test('a queued message steered from the tray: its note sits above the live part,
   await expect(tray).toBeHidden();
   const tail = page.locator('[data-turn-part="tail"]');
   await expect(tail.locator('[data-working]')).toBeVisible();
-  await expect(page.getByText('Claude read this while it worked; the answer below covers it.')).toBeVisible({ timeout: 10_000 });
+  // Sent, not read yet: said on the message itself (BLG-54), till Claude's next step; then it reads as any message.
+  const message = page.locator('[data-index]', { hasText: 'check the tests while you are at it' }).first();
+  await expect(message.locator('[data-steer-waiting]')).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByText('Claude read this while it worked; the answer below covers it.')).toHaveCount(0);
   const rows = await rowsInOrder(page);
   expect(rows.at(-1)?.part).toBe('tail');
   // Only the live part says it's working: the note doesn't.

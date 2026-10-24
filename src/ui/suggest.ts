@@ -1,6 +1,7 @@
 import { COMMANDS } from '../core/commands.js';
 import type { Location } from '../core/store.js';
 import type { FsEntry, PeerInfo } from '../protocol.js';
+import { type TaskMention, matchTasks } from '../shared/task-refs.js';
 
 export interface Suggestion {
   /** What the list shows. */
@@ -14,6 +15,8 @@ export interface Suggestion {
    * 'complete' fills it in (keep typing), 'submit' fills it in and sends it.
    */
   readonly enter: 'complete' | 'submit';
+  /** A task on the board ("@BLG-24"): the list shows it with its status, in a Tasks section. */
+  readonly task?: TaskMention;
 }
 
 export interface SuggestContext {
@@ -30,6 +33,8 @@ export interface SuggestContext {
   readonly projects?: ReadonlyArray<{ readonly name: string }>;
   /** A folder's entries in this conversation's worktree ("@src/auth.ts"); undefined while not loaded. */
   readonly entries?: (dir: string) => readonly FsEntry[] | undefined;
+  /** Tasks on the board ("@BLG-24", "@24", "@login"). */
+  readonly tasks?: readonly TaskMention[];
 }
 
 /** How a friend is written in a message: "@mia" ("@Mia Chen" → "@MiaChen", "@Zoë" stays). */
@@ -189,10 +194,14 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
     .filter((o) => o.label.toLowerCase().startsWith(token) && o.label.toLowerCase() !== token)
     .map((o) => ({ ...o, value: `${before}${o.label} `, enter: 'complete' as const }));
   const seen = new Set(named.map((o) => o.label.toLowerCase()));
+  // Tasks, the very key included ("@BLG-24" completes to itself, so Return never picks a neighbour).
+  const tasks = matchTasks(typed, ctx.tasks ?? [])
+    .filter((t) => !seen.has(`@${t.key}`.toLowerCase()))
+    .map((t) => ({ label: `@${t.key}`, hint: t.title, value: `${before}@${t.key} `, enter: 'complete' as const, task: t }));
   const paths = pathMentions(typed, ctx)
     .filter((o) => !seen.has(o.label.toLowerCase()))
     .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const }));
-  return [...named, ...paths];
+  return [...named, ...tasks, ...paths];
 }
 
 /** Autocomplete for the composer: /commands, their arguments (incl. file paths), and @mentions. */

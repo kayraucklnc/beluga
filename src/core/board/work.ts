@@ -9,7 +9,7 @@ import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { briefPrompt, boardNote, definePrompt, describeIssue, describeList } from './prompt.js';
-import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isFinished, isOpen, issueForWorkspace, titleFromName } from './model.js';
+import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isArchived, isFinished, isOpen, issueForWorkspace, titleFromName, worktreeDoing } from './model.js';
 
 /**
  * The board at work: tasks open with worktrees and follow their pull requests, a task can start
@@ -208,11 +208,12 @@ export class BoardWork {
     // Claude still writing it: its worktree is named after, and Claude starts with, the real words.
     await this.drafts.get(this.board.need(ref).id);
     const issue = this.board.need(ref);
-    // Finished work starts again only deliberately: reopened (back to Ready) first.
-    if (isFinished(issue.status)) throw new Error(`${issue.key} is ${STATUS_INFO[issue.status].label.toLowerCase()}: reopen it to start it again`);
-    // One worktree per task at a time: another one already doing it is where to go.
-    const doing = issue.worktrees.at(-1);
-    const live = doing && !issue.worktreeGone ? this.workspaces().find((w) => w.id === doing && !w.archived) : undefined;
+    // Finished (or canceled) work starts again only deliberately: reopened (back to Ready) first.
+    if (isFinished(issue.status) || issue.status === 'canceled') throw new Error(`${issue.key} is ${STATUS_INFO[issue.status].label.toLowerCase()}: reopen it to start it again`);
+    if (isArchived(issue)) throw new Error(`${issue.key} is in the Archive: restore it to start it`);
+    // One worktree per task at a time: its own, or another carrying its work, is where to go.
+    const doing = worktreeDoing(issue, (id) => this.workspaces().some((w) => w.id === id && !w.archived));
+    const live = doing ? this.workspaces().find((w) => w.id === doing) : undefined;
     if (live) throw new Error(`${issue.key} is already being worked on in ${live.name}: open it there`);
     const name = slugify(`${issue.key} ${issue.title}`).slice(0, 48) || issue.key.toLowerCase();
     const ticket = { projectId: issue.projectId, name, issueId: issue.id };
@@ -230,7 +231,8 @@ export class BoardWork {
     const now = this.board.need(issue.id);
     const patch: IssuePatch = {
       ...(now.status === 'backlog' || now.status === 'todo' ? { status: 'in_progress' as const } : {}),
-      ...(opts.claude && !now.assignee ? { assignee: this.myClaude() } : {}),
+      // Your Claude does it now (when it was nobody's, or yours); someone else's stays theirs.
+      ...(opts.claude && (!now.assignee || (now.assignee.kind === 'person' && now.assignee.id === this.deps.selfId())) ? { assignee: this.myClaude() } : {}),
     };
     if (Object.keys(patch).length) this.board.update(issue.id, patch, this.me());
     if (opts.claude) this.deps.askClaude(startPrompt(this.board.need(issue.id)), `${WS}${ws.id}`);
@@ -612,10 +614,15 @@ const listOf = (input: string | readonly string[] | undefined): string | undefin
 
 /** What Claude is told when a task starts its worktree with Claude on it. */
 export function startPrompt(issue: Issue): string {
-  const lines = [`Work on ${issue.key}: ${issue.title}.`];
-  if (issue.brief.goal) lines.push('', issue.brief.goal);
-  if (issue.brief.acceptance) lines.push('', 'Done means:', issue.brief.acceptance);
-  lines.push('', 'Its full brief is in your instructions. Keep the task true as you go (decisions, sub-tasks, proof, notes for the next agent).');
+  const lines = [`Work on ${issue.key}: ${issue.title}.`, `You're working on ${issue.key} in this worktree, on your own: carry it through to done.`];
+  const part = (label: string, text: string | undefined): void => {
+    if (text?.trim()) lines.push('', label, text.trim());
+  };
+  part('Goal:', issue.brief.goal);
+  part('Done means:', issue.brief.acceptance);
+  part('Context:', issue.brief.context);
+  part('Decided already:', issue.brief.decisions);
+  lines.push('', `Its full brief is in your instructions. Keep ${issue.key} true as you go (decisions, sub-tasks, proof, notes for the next agent).`);
   return lines.join('\n');
 }
 

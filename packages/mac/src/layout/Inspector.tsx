@@ -4,6 +4,7 @@ import { formatTokens } from '@beluga/ui/work-models.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
 import { unreadCount } from '@beluga/core/work-store.js';
+import { issuesOfWorkspace } from '@beluga/core/board/model.js';
 import { noticeAgo, noticeLook } from '@beluga/ui/notice-models.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, Tip } from '../components/ui.js';
@@ -14,7 +15,7 @@ import { Switch } from '../dialogs/settings-controls.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
 import r from '../dialogs/native/room.module.css';
 import { ConversationDetails } from '../network/ConversationInspector.js';
-import { EarningsPanel } from './EarningsPanel.js';
+import { StatusIcon } from '../tasks/marks.js';
 import { ClaudeCodeInspector } from '../claude-code/Live.js';
 import s from './Inspector.module.css';
 
@@ -91,6 +92,36 @@ function NeedsYou() {
   );
 }
 
+/** The board's tasks this worktree is doing or carrying: each opens its page, and the board opens filtered to them. */
+function WorkspaceTasks({ id, projectId }: { id: string; projectId: string }) {
+  const actions = useActions();
+  const board = useApp((st) => st.board);
+  if (!board.enabled) return null;
+  const tasks = issuesOfWorkspace(board, id);
+  const toBoard = (
+    <Tip label="The board, with only this worktree’s tasks">
+      <Button size="small" variant="quiet" icon="task" onClick={() => actions.run({ type: 'view', view: { kind: 'tasks', projectId, worktree: id } })}>
+        Board
+      </Button>
+    </Tip>
+  );
+  return (
+    <Panel title={tasks.length > 1 ? `Tasks · ${tasks.length}` : 'Tasks'} action={toBoard}>
+      {tasks.length ? (
+        tasks.map((t) => (
+          <button key={t.id} type="button" className={s.taskLink} title={`${t.key} ${t.title}`} onClick={() => actions.run({ type: 'view', view: { kind: 'task', id: t.id } })}>
+            <StatusIcon status={t.status} size={13} />
+            <span className={s.taskKey}>{t.key}</span>
+            <span className={s.taskTitle}>{t.title}</span>
+          </button>
+        ))
+      ) : (
+        <div className={s.dim}>No task yet. Claude links the ones it opens or moves from here.</div>
+      )}
+    </Panel>
+  );
+}
+
 function WorkspaceDetails({ id }: { id: string }) {
   const api = useApi();
   const actions = useActions();
@@ -143,7 +174,7 @@ function WorkspaceDetails({ id }: { id: string }) {
           ) : null}
         </div>
       </Panel>
-      {project?.root ? <EarningsPanel projectId={project.id} /> : null}
+      {project?.root ? <WorkspaceTasks id={ws.id} projectId={ws.projectId} /> : null}
       {pr ? (
         <Panel title={`Pull request #${pr.number}`} action={<Button size="small" variant="quiet" icon="refresh" onClick={() => void api.workbench.refreshPrs(ws.id)} />}>
           <div className={s.prTitle}>{pr.title}</div>

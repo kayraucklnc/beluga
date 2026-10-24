@@ -162,6 +162,14 @@ export function commandState(state: AppState, id: CommandId): CommandState {
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
+ * Send now, for a message you steered in that Claude hasn't read yet (BLG-54): its step stops and
+ * the conversation goes on from your message. The message's Send now and the box's ⇧⌥↩.
+ */
+export function sendSteerNow(client: SocketClient, request: string): void {
+  client.api.host.steerNow(request).catch((err: unknown) => client.store.dispatch({ type: 'toast', text: err instanceof Error ? err.message : String(err), level: 'error' }));
+}
+
+/**
  * Stop your Claude in one conversation. Your messages that were waiting there come back into
  * the box (ahead of anything you're typing), so nothing you wrote is lost.
  */

@@ -1,7 +1,7 @@
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { liveFrom } from '@beluga/core/plans/progress.js';
 import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isArchived, isFinished, isOpen, openBlockers, progressOf } from '@beluga/core/board/model.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isArchived, isOpen, isStartable, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, IconButton, Tip, cx } from '../components/ui.js';
@@ -35,7 +35,7 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
   const blocked = useApp((s) => openBlockers(s.board, issue).length);
   const waitsOn = useApp((s) => openBlockers(s.board, issue).map((b) => `${b.key} ${b.title}`).join(', '));
   const blockedBy = useApp((s) => openBlockers(s.board, issue).map((b) => b.key).join(', '));
-  const last = issue.worktrees.at(-1);
+  const last = worktreeOf(issue);
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
   // What its Claude is doing right now, and the messages waiting for it (the head Claude's, yours).
@@ -121,10 +121,9 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const { client } = useBeluga();
   const projects = useApp((s) => s.projects);
   return (issue) => {
-    // Only a worktree that's still here (an archived one can be restored from its page).
-    const last = issue.worktrees.at(-1);
-    const worktree = last && projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined;
-    const startable = isOpen(issue.status) && !isFinished(issue.status);
+    // Only a worktree that's still here (an archived one can be restored from its page): its own, or one carrying its work.
+    const worktree = worktreeDoing(issue, (id) => projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived)));
+    const startable = isStartable(issue);
     // Archived: its words to read, back out of the Archive, or gone for good.
     if (isArchived(issue)) {
       return [
@@ -140,8 +139,8 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         ? [{ label: 'Open Worktree', icon: 'branch' as const, onSelect: () => openWorktree(worktree) }]
         : startable
           ? [
-              { label: 'Start with Claude', icon: 'claude' as const, hint: 'A new worktree, Claude working on it', onSelect: () => void act(() => api.start(issue.id, { claude: true })) },
-              { label: 'Start Worktree', icon: 'branch' as const, onSelect: () => void act(() => api.start(issue.id, {})) },
+              { label: 'Start', icon: 'play' as const, hint: 'A new worktree, Claude working on it', onSelect: () => void act(() => api.start(issue.id, { claude: true })) },
+              { label: 'Start Worktree Only', icon: 'branch' as const, hint: 'Without Claude', onSelect: () => void act(() => api.start(issue.id, {})) },
             ]
           : []),
       // Finished (or canceled) work starts again only deliberately: back to Ready, then Start.

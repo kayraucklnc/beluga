@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { type Issue, PRIORITY_INFO, STATUS_INFO, findIssue } from '@beluga/core/board/model.js';
 import { readTaskKeys } from '@beluga/shared/task-refs.js';
+import { Icon } from '../components/Icon.js';
 import { Tip } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { TonePill } from '../plans/marks.js';
@@ -30,7 +31,7 @@ function Missing({ taskKey, block }: { taskKey: string; block?: boolean }) {
   );
 }
 
-/** One task inside a sentence: its status ring, key and title (cut short). */
+/** One task inside a sentence: a pill with its status ring, key and title (cut short), and an arrow to open it. */
 export function TaskChip({ taskKey }: { taskKey: string }) {
   const issue = useIssue(taskKey);
   const { open } = useTaskActions();
@@ -41,6 +42,7 @@ export function TaskChip({ taskKey }: { taskKey: string }) {
         <StatusIcon status={issue.status} size={12} />
         <span className={r.key}>{issue.key}</span>
         <span className={r.chipTitle}>{issue.title}</span>
+        <Icon name="arrowRight" size={10} className={r.chipGo} />
       </button>
     </Tip>
   );

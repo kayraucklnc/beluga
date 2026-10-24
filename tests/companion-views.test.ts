@@ -344,6 +344,22 @@ describe('the views of a known Mac', () => {
     expect(WorkView.parse(viewOf(state, ctx, 'work')).projects.find((p) => p.id === 'asked')?.conversations.map((c) => c.topic)).toEqual(['conv:task:t_screen000001']);
   });
 
+  it('a message steered in that Claude hasn’t read yet says so on your turn, not as a turn of Claude’s (BLG-54)', () => {
+    const store = new Store(state);
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r9', requester: ME, event: 'started', text: '', ts: T0 + 20, channel: 'ws:w1' });
+    store.dispatch({ type: 'chat', id: 'c9', from: ME, text: 'look at the retries first', ts: T0 + 21, byAgent: false, channel: 'ws:w1', request: 'r10', steer: true });
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'text', text: 'Claude reads this after its current step', ts: T0 + 21, channel: 'ws:w1' });
+    const conv = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1'));
+    expect(conv.turns.slice(-2).map((t) => [t.who, t.prose.text, t.steer])).toEqual([
+      ['claude', '', undefined],
+      ['you', 'look at the retries first', { request: 'r10', waiting: 'next_step' }],
+    ]);
+    // Read: your turn reads as any other.
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'done', text: 'Claude read this while it worked; the answer above covers it.', ts: T0 + 22, channel: 'ws:w1' });
+    expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.at(-1)).toMatchObject({ who: 'you', prose: { text: 'look at the retries first' } });
+    expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.at(-1)?.steer).toBeUndefined();
+  });
+
   it('pages back through older turns', () => {
     const { turns } = convTurns(state, ctx, 'ws:w1');
     const older = convTurns(state, ctx, 'ws:w1', { before: turns.at(-1)!.id, limit: 1 });

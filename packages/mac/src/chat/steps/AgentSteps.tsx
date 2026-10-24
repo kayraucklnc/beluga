@@ -72,7 +72,7 @@ function spanOf(steps: readonly StepSummary[]): string | undefined {
  * A turn split by what you said meanwhile (`part`, see live-tail.ts) draws only its side's steps. Every step is said in words ("Ran npm test", "Asked bob's Claude: …"), never
  * a tool's name or an id; your own Claude's steps open to show what ran and what came back.
  */
-export const AgentSteps = memo(function AgentSteps({ item, running, part }: { item: AgentItem; running: boolean; part?: TurnPart | undefined }) {
+export const AgentSteps = memo(function AgentSteps({ item, running, part, subs: which }: { item: AgentItem; running: boolean; part?: TurnPart | undefined; subs?: 'running' | 'settled' | undefined }) {
   const selfId = useApp((st) => st.selfId);
   const detail = useApp((st) => st.prefs.subagents);
   const mine = item.owner === selfId;
@@ -100,7 +100,8 @@ export const AgentSteps = memo(function AgentSteps({ item, running, part }: { it
     const next = rich?.length
       ? rich.filter((x) => !x.parent && !(x.tool && LAUNCH.has(x.tool) && subIds.has(x.id)) && !HIDDEN_STEPS.test(x.title)).map(withWords)
       : lines.map((line, i) => lineStep(line, i, item.ts, running && i === lines.length - 1));
-    const mine = part ? next.filter((x) => inHead(x, part.cut) === (part.side === 'head')) : next;
+    // A live part (what a taken-over turn left running) draws no steps of its own, only its running work.
+    const mine = part?.side === 'live' ? [] : part ? next.filter((x) => inHead(x, part.cut) === (part.side === 'head')) : next;
     return (before.current = keepSameById(before.current, mine));
   }, [rich, subIds, item.steps, item.ts, running, part?.side, part?.cut]);
   const working = running && !item.text;
@@ -119,7 +120,9 @@ export const AgentSteps = memo(function AgentSteps({ item, running, part }: { it
   const finished = useMemo(() => (current ? rows.slice(0, -1) : rows), [current, rows]);
   // Sub-agents and background work sit where they started (KLD-51); hidden, they're one line at the end.
   // A split turn's sub-agents and background work are its tail's (what's still going stays in sight at the bottom).
-  const placedSubs = detail === 'hidden' || part?.side === 'head' ? NO_SUBS : subagents;
+  // A taken-over turn's running work is drawn in its live part, at the very bottom (BLG-54); the rest stays where it started.
+  const kept = useMemo(() => (which ? subagents.filter((x) => (x.status === 'running') === (which === 'running')) : subagents), [subagents, which]);
+  const placedSubs = detail === 'hidden' || part?.side === 'head' ? NO_SUBS : kept;
   const timeline = useMemo(() => timelineOf(finished, placedSubs, (id) => rich?.find((x) => x.id === id)?.startedAt), [finished, placedSubs, rich]);
   const ownBefore = useRef<ReadonlyMap<string, readonly StepSummary[]>>(undefined);
   const own = useMemo(() => (ownBefore.current = ownStepsOf(ownBefore.current, rich, subagents)), [rich, subagents]);

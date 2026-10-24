@@ -8,6 +8,7 @@ import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { openSettings } from '../lib/native-routes.js';
 import { openSheet } from '../lib/sheets.js';
 import { openStripe } from '../lib/earnings.js';
+import { openSupport } from '../lib/support.js';
 import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
 import { previewRequestPopup } from '../gateway/request-native.js';
 
@@ -94,6 +95,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     cmd('name', 'name', 'Change Your Name…', 'person', () => openSettings(ui, 'general', 'settings-name'), state.self?.name ? `Now: ${state.self.name}` : undefined),
     cmd('people', 'people', 'People & Access…', 'people', () => openSettings(ui, 'people'), 'Who can use your Claude, and how'),
     stripeCommand(state),
+    { id: 'cmd:support', label: 'Support Beluga…', icon: 'cup', hint: 'Buy the maker a coffee, or star Beluga on GitHub', keywords: ['support', 'coffee', 'donate', 'tip', 'sponsor', 'star', 'github'], run: () => openSupport('coffee') },
     cmd('env', 'env', 'Environment Variables…', 'lock', () => openSettings(ui, 'environment'), 'For your shells, scripts and Claude'),
     cmd('shell', 'shell', 'Terminal Settings…', 'terminal', () => openSettings(ui, 'terminal'), 'Which shell, and how it starts'),
     {

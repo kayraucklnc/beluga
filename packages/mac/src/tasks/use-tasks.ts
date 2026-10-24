@@ -147,6 +147,8 @@ export function useTaskActions() {
       act,
       open: (issue: Pick<Issue, 'id'>): void => actions.run({ type: 'view', view: { kind: 'task', id: issue.id } }),
       openList: (projectId?: string): void => actions.run({ type: 'view', view: { kind: 'tasks', ...(projectId ? { projectId } : {}) } }),
+      /** The board with only the tasks a worktree does or carries (none: every task). */
+      openWorktreeTasks: (projectId: string, worktree?: string): void => actions.run({ type: 'view', view: { kind: 'tasks', projectId, ...(worktree ? { worktree } : {}) } }),
       openWorktree: (workspaceId: string): void => actions.run({ type: 'open_ws', id: workspaceId, tab: 'chat' }),
       /** Out of a task: back where you came from (its project's Tasks when that's unknown). */
       back: (projectId: string): void => actions.run({ type: 'view', view: wayBack(projectId) }),

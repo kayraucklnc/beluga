@@ -63,6 +63,8 @@ export const calls = {
   mergeCheck: (topic: Topic): Call => make('companion.mergeCheck', [topic], 'Check the merge'),
   merge: (topic: Topic): Call => make('companion.merge', [topic], 'Merge'),
   resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask Claude to resolve'),
+  /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
+  steerNow: (request: string): Call => make('host.steerNow', [request], 'Send now'),
   older: (topic: Topic, before: string): Call => make('companion.older', [topic, { before }], 'Load older'),
   /** Write in a friends' chat (with photos, or asking Claude). */
   /** `ask`: whose Claude answers too: everyone's ('all') or the chosen people's (peer ids, you included). */

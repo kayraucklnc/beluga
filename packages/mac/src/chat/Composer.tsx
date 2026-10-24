@@ -6,6 +6,7 @@ import { composeState, queueIn } from '@beluga/ui/compose.js';
 import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@beluga/ui/suggest.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { secretIn } from '@beluga/shared/secret-text.js';
+import { steeredMessages } from '@beluga/shared/claude-notices.js';
 import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -17,11 +18,12 @@ import { ContextMeter } from './ContextMeter.js';
 import { QueueTray } from './QueueTray.js';
 import { expectClaude, launchFlight } from './flight.js';
 import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
-import { stopClaude } from '../lib/commands.js';
+import { sendSteerNow, stopClaude } from '../lib/commands.js';
 import { useAttachments } from './use-attachments.js';
 import { MentionHighlighter } from './MentionHighlighter.js';
 import { useSuggestions } from './Suggestions.js';
 import { useMentionWorld, worktreeOf } from './Mention.js';
+import { MentionedTasks } from './MentionedTasks.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
@@ -89,6 +91,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const shared = state.view.kind === 'shared';
   const compose = composeState(state, ui.get(), state.selfId, channel, shared);
   const queue = useMemo(() => queueIn(state, channel, state.selfId), [state.log, channel, state.selfId]);
+  // Your newest steered message Claude hasn't read yet: ⇧⌥↩ sends it now (BLG-54).
+  const unread = useMemo(() => [...steeredMessages(state.log.filter((l) => l.channel === channel)).waiting.values()].filter((x) => x.waiting === 'next_step').at(-1), [state.log, channel]);
   // Images pasted, dropped or named by their path wait as thumbnails above the text, with an
   // "[image N]" where they go; other pasted files as chips (see use-attachments). They wait with
   // the words, so a new chat or worktree page keeps its own too.
@@ -137,9 +141,10 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   useEffect(() => {
     if (wsId && atDir !== undefined) void api.files.loadDir({ owner: state.selfId, share: shareNameOf(wsId), path: atDir });
   }, [wsId, atDir, state.selfId]);
-  const mentionWorld = useMentionWorld(channel);
+  // "@BLG-24": a task on your board (not in a workspace someone shared with you: their Claude has its own).
+  const mentionWorld = useMentionWorld(channel, { tasks: !shared });
 
-  // Suggestions as you type: commands, people and Claudes, workspaces, folders.
+  // Suggestions as you type: commands, people and Claudes, workspaces, folders, tasks.
   const suggestions: Suggestion[] = useMemo(
     () =>
       !buffer
@@ -153,8 +158,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             friends: state.network.friends,
             projects: state.projects.filter((p) => p.root),
             ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
+            ...(mentionWorld.tasks ? { tasks: mentionWorld.tasks } : {}),
           }),
-    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId, mentionWorld.tasks],
   );
   const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 
@@ -299,6 +305,12 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     if (e.key === 'Enter') {
       const sends = prefs.sendWith === 'enter' ? !e.shiftKey && !modKey : modKey;
+      // ⇧⌥↩: the steered message Claude hasn't read yet goes now (its step stops); what's in the box stays.
+      if (e.altKey && e.shiftKey && unread) {
+        e.preventDefault();
+        sendSteerNow(client, unread.request);
+        return;
+      }
       if (e.altKey) {
         e.preventDefault();
         send(true);
@@ -372,6 +384,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           </div>
         ) : null}
         {att.waiting}
+        <MentionedTasks text={buffer} world={mentionWorld} />
         <div className={s.inputWrap}>
           <MentionHighlighter text={buffer} world={mentionWorld} input={ref} className={s.input ?? ""} />
           <textarea
@@ -463,7 +476,12 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       <div className={s.legend}>
         {queueing ? (
           <>
-            <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> steer ·<Kbd>{mod()}.</Kbd> stop
+            <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> steer ·{unread ? (
+              <>
+                <Kbd>⇧⌥↩</Kbd> send now ·
+              </>
+            ) : null}
+            <Kbd>{mod()}.</Kbd> stop
           </>
         ) : (
           <>

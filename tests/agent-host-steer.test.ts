@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, Steer } from '../src/agent/types.js';
 import { AgentHost, planSteer } from '../src/core/agent-host.js';
-import { READS_AFTER_STEP } from '../src/shared/claude-notices.js';
+import { READS_AFTER_STEP, STOPPING_FOR } from '../src/shared/claude-notices.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { BodyOf } from '../src/protocol.js';
 import { STEERED_IN } from '../src/shared/claude-notices.js';
@@ -14,10 +14,11 @@ const MIN = 60_000;
  * A pretend Claude. "slow" runs until finished (or stopped), offering a steer whose status the
  * test sets; anything else answers at once. `wedged`: a stopped run never ends (a dead process).
  */
-function backend(opts: { wedged?: boolean; interrupts?: boolean; process?: boolean; hold?: Promise<void> } = {}) {
+function backend(opts: { wedged?: boolean; interrupts?: boolean; process?: boolean; hold?: Promise<void>; forces?: boolean } = {}) {
   const prompts: string[] = [];
   const steered: FollowUp[] = [];
   const interrupts: Array<{ followUp: FollowUp; note: string }> = [];
+  const forced: Array<{ followUp: FollowUp; note: string }> = [];
   /** What happened, in order: runs starting, and Claude Code processes killed. */
   const timeline: string[] = [];
   const live: { status: LiveStatus; finish?: () => void; procAlive: boolean } = { status: { lastEventAt: Date.now(), between: false }, procAlive: true };
@@ -54,6 +55,15 @@ function backend(opts: { wedged?: boolean; interrupts?: boolean; process?: boole
               followUp.onDone(`read ${followUp.prompt}`);
               return true;
             },
+            // Send now: the message, steered in already, is the next turn once the step stops.
+            force: async (followUp: FollowUp, note: string) => {
+              forced.push({ followUp, note });
+              await opts.hold;
+              if (opts.forces === false) return false;
+              input.onEvent('text', note);
+              followUp.onStart?.();
+              return true;
+            },
           },
         );
         input.onSteer?.(steer);
@@ -64,7 +74,7 @@ function backend(opts: { wedged?: boolean; interrupts?: boolean; process?: boole
       });
     },
   };
-  return { agent, prompts, steered, interrupts, live, timeline };
+  return { agent, prompts, steered, interrupts, forced, live, timeline };
 }
 
 function host(agent: AgentBackend) {
@@ -327,14 +337,75 @@ describe('urgent sends (⌥↩) behave the same', () => {
     await t.h.idle('room');
   });
 
-  it('steer into a short step, saying so', async () => {
+  it('steer into a short step, saying so on the message (sent, not read yet: BLG-54)', async () => {
     const b = backend();
     const t = host(b.agent);
     await t.ask('r1', 'slow');
     await waitFor(() => Boolean(b.live.finish));
     await t.ask('r2', 'use pnpm', true);
     expect(b.steered.map((f) => f.prompt)).toEqual(['use pnpm']);
-    expect(t.toasts).toContain(READS_AFTER_STEP);
+    expect(t.card('r2')?.text).toBe(READS_AFTER_STEP);
+    expect(t.toasts).not.toContain(READS_AFTER_STEP);
+    // Read at Claude's next step: the card says so.
+    b.steered[0]!.onFolded?.();
+    expect(t.card('r2')).toMatchObject({ status: 'done', text: STEERED_IN });
+    b.live.finish!();
+    await t.h.idle('room');
+  });
+});
+
+describe('a steered message, sent but not read yet (BLG-54)', () => {
+  it('Send now stops Claude’s step: the message is no longer waiting once its own turn starts, and the conversation goes on from it', async () => {
+    let release!: () => void;
+    const b = backend({ hold: new Promise<void>((r) => (release = r)) });
+    const t = host(b.agent);
+    await t.ask('r1', 'slow');
+    await waitFor(() => Boolean(b.live.finish));
+    b.live.status = { tool: { label: 'npm test', since: Date.now() - 5_000 }, lastEventAt: Date.now(), between: false };
+    await t.ask('r2', 'look at retries first', true);
+    expect(t.card('r2')?.text).toBe(READS_AFTER_STEP);
+    const sending = t.h.steerNow('r2');
+    // While Claude's step stops, the message still waits, and says so.
+    await waitFor(() => b.forced.length === 1);
+    expect(b.forced[0]!.note).toBe('Interrupted: npm test to read your message');
+    expect(t.card('r2')?.text).toBe(STOPPING_FOR);
+    release();
+    expect(await sending).toBe(true);
+    // Read: its own turn (the note gone), the interrupted turn saying why; nothing restarted.
+    expect(t.card('r2')).toMatchObject({ status: 'started', text: '' });
+    expect(t.card('r1')?.text).toBe('Interrupted: npm test to read your message');
+    expect(b.prompts).toEqual(['slow']);
+    // Read, it can't be sent again.
+    expect(await t.h.steerNow('r2')).toBe(false);
+    b.live.finish!();
+    await t.h.idle('room');
+  });
+
+  it('Claude can’t be interrupted: its run stops and the message, never read, runs next', async () => {
+    const b = backend({ forces: false });
+    const t = host(b.agent);
+    await t.ask('r1', 'slow');
+    await waitFor(() => Boolean(b.live.finish));
+    await t.ask('r2', 'use pnpm', true);
+    expect(await t.h.steerNow('r2')).toBe(true);
+    // As the runner does when its run is stopped: what it hadn't read comes back.
+    b.steered[0]!.onError('Claude finished before getting to this message');
+    await waitFor(() => t.card('r2')?.text === 'did use pnpm');
+    expect(b.prompts).toEqual(['slow', 'use pnpm']);
+    await t.h.idle('room');
+  });
+
+  it('a steer interrupting a long step says the message waits for it, until the message’s turn starts', async () => {
+    let release!: () => void;
+    const b = backend({ hold: new Promise<void>((r) => (release = r)) });
+    const t = host(b.agent);
+    await t.ask('r1', 'slow');
+    await waitFor(() => Boolean(b.live.finish));
+    b.live.status = { tool: { label: 'npm test', since: Date.now() - 3 * MIN }, lastEventAt: Date.now() - 3 * MIN, between: false };
+    await t.ask('r2', 'stop that', true);
+    expect(t.card('r2')?.text).toBe(STOPPING_FOR);
+    release();
+    await waitFor(() => t.card('r2')?.text === 'read stop that');
     b.live.finish!();
     await t.h.idle('room');
   });

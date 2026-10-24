@@ -35,6 +35,7 @@ import {
   type WorkView,
 } from './protocol.js';
 import { HIDDEN_STEP, humanizeDoing, humanizeStep, plainLine, stepWords, stripCode } from './strip.js';
+import { STEERED_IN, type SteeredMessage, steeredMessages, steerWaiting } from '../shared/claude-notices.js';
 
 /**
  * What the phone sees: small, finished views of the Mac's shared state, one per topic
@@ -552,11 +553,20 @@ function liveStep(item: AgentItem): string | undefined {
   }
 }
 
-function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[], cc: ReadonlyMap<string, CcAgent> = new Map()): TurnView | undefined {
+/**
+ * A conversation's items with your steered messages as the Mac draws them (BLG-54): one Claude
+ * hasn't read yet says so on the message, and the note cards about them aren't turns.
+ */
+function withSteers(items: readonly LogItem[]): Array<{ item: LogItem; steer?: SteeredMessage }> {
+  const { waiting, notes } = steeredMessages(items);
+  return items.flatMap((item) => (notes.has(item.id) ? [] : [{ item, ...(waiting.has(item.id) ? { steer: waiting.get(item.id)! } : {}) }]));
+}
+
+function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[], cc: ReadonlyMap<string, CcAgent> = new Map(), steer?: SteeredMessage): TurnView | undefined {
   const me = myId(state);
   if (item.type === 'chat') {
     const who = item.byAgent ? 'claude' : item.from === me ? 'you' : 'friend';
-    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose: stripCode(item.text), ts: item.ts };
+    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose: stripCode(item.text), ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}) };
   }
   if (item.type === 'system') {
     // Earlier lines of a shared workspace's conversation ("bob: …") read as that person's turn.
@@ -658,7 +668,8 @@ function summaryOf(state: DomainState, conv: Conversation, waiting: ReadonlySet<
   const agents = items.filter((l): l is AgentItem => l.type === 'agent');
   const running = agents.filter((a) => isRunning(a.status));
   const lastAgent = agents.at(-1);
-  const last = [...items].reverse().find((l) => (l.type === 'chat' || l.type === 'agent') && (l.type === 'chat' ? l.text : l.text || l.prompt));
+  // A note about a steered message ("reads this after its current step") isn't the last thing said.
+  const last = [...items].reverse().find((l) => (l.type === 'chat' || (l.type === 'agent' && !steerWaiting(l) && l.text !== STEERED_IN)) && (l.type === 'chat' ? l.text : l.text || l.prompt));
   const lastText = last?.type === 'chat' ? last.text : last?.type === 'agent' ? last.text || last.prompt || '' : '';
   const status: ConvSummary['status'] = waiting.has(topic) ? 'waiting' : running.length ? 'working' : lastAgent && (lastAgent.status === 'error' || lastAgent.status === 'denied') ? 'failed' : 'idle';
   const lastAt = Math.max(0, ...items.map((l) => (l.type === 'agent' ? (l.lastAt ?? l.endTs ?? l.ts) : l.ts)));
@@ -736,7 +747,7 @@ export function convTurns(state: DomainState, ctx: ViewContext, channel: string,
   const task = taskOf(state, channel);
   const outputs = task ? [] : outputsOf(ctx, conv);
   const cc = ccAgents(state, channel);
-  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(itemsOf(state, channel).flatMap((l) => turnOf(state, l, outputs, cc) ?? []), outputs);
+  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(withSteers(itemsOf(state, channel)).flatMap(({ item, steer }) => (turnOf(state, item, outputs, cc, steer) ?? [])), outputs);
   const end = opts.before ? all.findIndex((t) => t.id === opts.before) : all.length;
   const upto = end < 0 ? all.length : end;
   const limit = opts.limit ?? VIEW_TURNS;

@@ -215,6 +215,11 @@ export const TurnView = z.object({
   /** 1.3: what it's doing now (a running turn), and its steps in words with their tools, newest last. */
   live: LiveView.optional(),
   trail: z.array(StepView).max(40).optional(),
+  /**
+   * Your message, steered into Claude's running turn, that Claude hasn't read yet (1.3): it waits
+   * for Claude's next step (Send now: host.steerNow with `request`), or for its step to stop.
+   */
+  steer: z.object({ request: id, waiting: z.enum(['next_step', 'stopping']) }).optional(),
 });
 export type TurnView = z.infer<typeof TurnView>;
 
