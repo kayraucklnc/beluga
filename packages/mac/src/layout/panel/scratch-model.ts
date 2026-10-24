@@ -39,6 +39,15 @@ export function followed(files: readonly ScratchEntry[], follow: boolean, picked
   return files[0]?.path;
 }
 
+/** How near the end (in px) still counts as at the end. */
+export const AT_END_PX = 8;
+
+/**
+ * Scrolled to the end of a file's view, so it follows what's written to it. Only a view that
+ * scrolls has an end to scroll to: one that fits (at its top) waits for the to-the-end button.
+ */
+export const atEnd = (v: { scrollTop: number; scrollHeight: number; clientHeight: number }): boolean => v.scrollTop > 0 && v.scrollHeight - v.scrollTop - v.clientHeight <= AT_END_PX;
+
 /** Where a listed file sits: which shown folder (`root`), the folders under it, and its name. */
 export interface ScratchPlace {
   readonly root: string;

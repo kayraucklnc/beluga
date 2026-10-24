@@ -4,8 +4,8 @@ import { expect, test, type Page } from './fixtures.js';
 
 /**
  * The panel's Scratch tab: what Claude saves to the workspace's .beluga/scratch/ while it works, live and
- * newest first. Following, the preview shows each new file as it's written (JSON laid out, pictures
- * as pictures, redrawn when they change); picking one stays on it.
+ * newest first. Until you pick one, the preview shows each new file as it's written (JSON laid out, pictures
+ * as pictures, redrawn when they change); picking one stays on it, and a log scrolled to its end follows it.
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
@@ -56,9 +56,38 @@ test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', as
   writeFileSync(path.join(dir, 'notes.md'), '# Notes\n\nStill on it.');
   await expect(files.getByRole('option').first()).toContainText('notes.md');
   await expect(panel(page).getByRole('region', { name: 'api-response.json' })).toBeVisible();
-  // Back to following: the newest again.
-  await panel(page).getByRole('tab', { name: 'Latest' }).click();
+  await files.getByRole('option', { name: /notes\.md/ }).click();
   await expect(panel(page).getByRole('region', { name: 'notes.md' }).getByRole('heading', { name: 'Notes' })).toBeVisible();
+
+  // A log that grows: scrolled to its end, it follows what's written to it, in place.
+  const lines = (n: number, from = 1) => Array.from({ length: n }, (_, i) => `line ${from + i}`).join('\n');
+  writeFileSync(path.join(dir, 'run.log'), lines(200));
+  await files.getByRole('option', { name: /run\.log/ }).click();
+  const log = panel(page).getByRole('region', { name: 'run.log' });
+  await expect(log).toContainText('line 200');
+  const follow = log.getByRole('button', { name: 'Follow the End' });
+  await expect(follow).toHaveAttribute('aria-pressed', 'false');
+  const view = log.locator('.selectable').first();
+  const gap = () => view.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+  await view.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(follow).toHaveAttribute('aria-pressed', 'true');
+  await log.locator('pre').evaluate((el) => el.setAttribute('data-was', 'here'));
+  writeFileSync(path.join(dir, 'run.log'), lines(260));
+  await expect(log).toContainText('line 260');
+  // Updated in place: the same drawing, not one drawn anew (no flash).
+  await expect(log.locator('pre')).toHaveAttribute('data-was', 'here');
+  await expect.poll(gap).toBeLessThan(10);
+  await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-follow.png') });
+
+  // Scrolled up, it stays where you are; the button jumps back to the end and follows again.
+  await view.evaluate((el) => (el.scrollTop = 0));
+  await expect(follow).toHaveAttribute('aria-pressed', 'false');
+  writeFileSync(path.join(dir, 'run.log'), lines(300));
+  await expect(log).toContainText('line 300');
+  expect(await view.evaluate((el) => el.scrollTop)).toBe(0);
+  await follow.click();
+  await expect.poll(gap).toBeLessThan(10);
+  await expect(follow).toHaveAttribute('aria-pressed', 'true');
 });
 
 const SHOTS = path.resolve(import.meta.dirname, '../../../.context/shots');
