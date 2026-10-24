@@ -128,9 +128,18 @@ export function rememberTab(map: Readonly<Record<string, PanelTab>>, key: string
   return Object.fromEntries([...rest.slice(Math.max(0, rest.length - REMEMBERED_TABS + 1)), [key, tab]]);
 }
 
-/** The panel's width for a window this wide: at least PANEL_MIN, at most PANEL_MAX_SHARE of it. */
-export function clampPanelWidth(width: number, windowWidth: number): number {
-  const max = Math.max(PANEL_MIN, Math.floor(windowWidth * PANEL_MAX_SHARE));
+/**
+ * The room the center (the conversation and its toolbar) always keeps beside the panel: its name
+ * gives way to … first, down to this, and then the panel stops growing instead of covering it.
+ */
+export const CENTER_MIN = 690;
+
+/**
+ * The panel's width for a window this wide: at least PANEL_MIN, at most PANEL_MAX_SHARE of it,
+ * and never so wide that the center (beside a sidebar `sidebarWidth` wide) gets under CENTER_MIN.
+ */
+export function clampPanelWidth(width: number, windowWidth: number, sidebarWidth = 0): number {
+  const max = Math.max(PANEL_MIN, Math.min(Math.floor(windowWidth * PANEL_MAX_SHARE), windowWidth - sidebarWidth - CENTER_MIN));
   return Math.round(Math.min(max, Math.max(PANEL_MIN, width)));
 }
 
