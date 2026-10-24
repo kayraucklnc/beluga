@@ -150,6 +150,30 @@ export class BoardWork {
    * A task from a description: on the board at once under its first line, while your Claude writes
    * its title, goal, criteria and labels (the board's own first); they fill in when it's done.
    */
+  /**
+   * What your Claude writes for a task described in words, without adding it yet (the phone shows
+   * the draft first, then adds it with addDraft). Without your Claude: the first line as the title.
+   */
+  async draft(projectId: string, describe: string): Promise<TaskDraft> {
+    const text = describe.trim();
+    if (!text) throw new Error('Say what the task is');
+    const title = firstLineTitle(text);
+    const plain: TaskDraft = { title, goal: text, acceptance: [], labels: [] };
+    if (!this.deps.draftTask) return plain;
+    const labels = [...new Set(this.board.list().flatMap((i) => i.labels))].sort();
+    const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
+    return (await this.deps.draftTask(text, { labels, ...(project ? { project } : {}) }).catch(() => undefined)) ?? plain;
+  }
+
+  /** A draft (from draft, maybe changed) added as a task: its title, goal, criteria, labels and priority. */
+  addDraft(projectId: string, d: TaskDraft): Issue {
+    const acceptance = d.acceptance.map((a) => `- [ ] ${a.replace(/\s+/g, ' ').trim()}`).join('\n');
+    return this.board.create(
+      { projectId, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), brief: { ...(d.goal.trim() ? { goal: d.goal.trim() } : {}), ...(acceptance ? { acceptance } : {}) } },
+      this.me(),
+    );
+  }
+
   createDescribed(input: Omit<NewIssue, 'title' | 'brief' | 'drafting'>, describe: string): Issue {
     const text = describe.trim();
     if (!text) throw new Error('Say what the task is');

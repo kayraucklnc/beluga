@@ -216,6 +216,13 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.post` | – the phone only: a message in a friends' chat with files from the phone |
 | `companion.askPerson` | – the phone only: ask a friend's Claude yourself, as from their card in Requests (their approval and trust rules apply) |
 | `companion.signOut` | – the phone only: Sign Out removes that phone's own certificate (the Mac's Remove is `companion.devices.remove`) |
+| `companion.openOnMac` | – the phone only: ••• › Open on your Mac brings this window to the front on that conversation, plan or task (the window's `raise` capability and a navigate intent) |
+| `companion.icon` | – the phone only: a project's icon, small, by the checksum its views carry (the Mac shows `projects.icon`) |
+| `companion.mergeCheck` | – the phone only: the Merge sheet's checks (the Mac's own: `git.mergePreview` and its review) |
+| `companion.merge` | – the phone only: Merge from a worktree's •••, the Mac's own merge (`workspaces.merge`), its progress in the conversation |
+| `companion.resolve` | – the phone only: Ask Claude to resolve, as the Mac's Solve merge conflict (`workspaces.askClaudeToMerge`) |
+| `companion.draftTask` | – the phone only: New task by describing it, Claude's draft shown before it's added (the Mac's describe-to-create is `board.create`) |
+| `companion.addTask` | – the phone only: the draft added as a task |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |

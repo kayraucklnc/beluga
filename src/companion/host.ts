@@ -12,6 +12,8 @@ import { type MessageSocket, fromStream } from '../net/transport.js';
 import { phoneMay } from './coverage.js';
 import { type DeviceBook, type DeviceRecord, deviceId } from './devices.js';
 import { FileServer, RefTable, type Thumbnailer } from './files.js';
+import { ProjectIcons, type SmallIcon } from './icons.js';
+import type { MergeBook } from './merge.js';
 import { DevicePairing, type PairingInfo } from './pair.js';
 import { Uploads } from './uploads.js';
 import {
@@ -20,6 +22,7 @@ import {
   KEEPALIVE_MS,
   type MacFrame,
   MAX_COMPANION_FRAME,
+  type MergeView,
   type NeedsYou,
   type PhoneFrame,
   type Topic,
@@ -79,6 +82,8 @@ export interface CompanionHostOptions {
   readonly log?: (line: string) => void;
   /** Tests: deterministic refs. */
   readonly refs?: RefTable;
+  /** Projects' small icons for the phone (default: made with sips next to the thumbnails). */
+  readonly icons?: ProjectIcons;
 }
 
 /** The companion address's key pair: HKDF of your identity's seed, 'companion-v1'. */
@@ -247,6 +252,7 @@ export class CompanionHost {
   readonly files: FileServer;
   readonly uploads: Uploads;
   readonly coalesceMs: number;
+  readonly icons: ProjectIcons;
   private readonly refs: RefTable;
   private readonly pairing: DevicePairing;
   private readonly links = new Set<PhoneLink>();
@@ -267,7 +273,8 @@ export class CompanionHost {
     this.refs = opts.refs ?? new RefTable();
     this.uploads = new Uploads(opts.uploadsDir ?? path.join(attachmentsDir(), 'phone'));
     this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}) });
-    this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}) };
+    this.icons = opts.icons ?? new ProjectIcons({ dir: path.join(path.dirname(opts.thumbsDir), 'icons'), root: (id) => this.state().projects.find((p) => p.id === id)?.root, changed: () => this.refreshViews() });
+    this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };
     this.pairing = new DevicePairing({
       node: () => this.ensureNode(),
       identity: opts.identity,
@@ -356,6 +363,24 @@ export class CompanionHost {
     if (topic.startsWith('conv:')) return convTurns(state, this.ctx, topic.slice(5), { before, ...(limit ? { limit } : { limit: VIEW_TURNS }) });
     if (topic.startsWith('chat:')) return chatMessages(state, this.ctx, topic.slice(5), { before, ...(limit ? { limit } : {}) });
     throw new Error('Nothing older there');
+  }
+
+  /** Merges started from the phone, per worktree (merge.ts): their conversations' views show where each stands. */
+  readonly merges: MergeBook = {
+    get: (id) => this.mergeState.get(id),
+    set: (id, m) => {
+      if (m) this.mergeState.set(id, m);
+      else this.mergeState.delete(id);
+      this.refreshViews();
+    },
+  };
+  private readonly mergeState = new Map<string, MergeView>();
+
+  /** A project's small icon by the checksum a view handed out (companion.icon). */
+  icon(sum: string): SmallIcon {
+    const icon = this.icons.get(sum);
+    if (!icon) throw new Error('That icon is no longer offered');
+    return icon;
   }
 
   // ---- asking from the phone (companion-api.ts)

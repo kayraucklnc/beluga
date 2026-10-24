@@ -10,6 +10,8 @@ import { NEEDS } from '../core/gateway/protocol.js';
 
 const topic = z.string().regex(/^(conv|chat):[\w:.-]{1,200}$/);
 const files = z.array(UploadRef).max(MAX_UPLOADS);
+/** A worktree's conversation. */
+const wsTopic = z.string().regex(/^conv:ws:[\w.-]{1,200}$/);
 const conversation = z.string().regex(/^(dm:[\w-]{32}|group:[0-9a-f]{32})$/);
 
 export const COMPANION_API = {
@@ -49,4 +51,39 @@ export const COMPANION_API = {
   'companion.askPerson': { args: z.tuple([z.object({ peerId: z.string().regex(/^[\w-]{8,64}$/), text: z.string().min(1).max(16_000), needs: z.array(z.enum(NEEDS)).max(5).optional(), project: z.string().min(1).max(80).optional() }).strict()]) },
   // The phone signs out: its own certificate goes (only the calling phone's), and the link closes.
   'companion.signOut': { args: z.tuple([]) },
+  // Open on your Mac: the Mac app's window comes to the front showing what the phone has open (a
+  // topic, or a needs-you item without one) → { opened, why? } (why not: the Mac app isn't open).
+  'companion.openOnMac': {
+    args: z.tuple([
+      z
+        .object({ topic: z.string().regex(/^(home|work|plans|tasks|chats|people|(conv|plan|chat|task):[\w:.-]{1,200})$/).optional(), need: z.string().min(1).max(300).optional() })
+        .strict()
+        .refine((a) => a.topic || a.need, 'Say what to open'),
+    ]),
+  },
+  // A project's small icon by the checksum a view handed out → { sum, mime, b64 } (PNG, at most 128 px; or a small SVG).
+  'companion.icon': { args: z.tuple([z.string().regex(/^[0-9a-f]{16,64}$/)]) },
+  // Merging a worktree of yours (its conversation's topic), the Mac's own way: look first (the
+  // Merge sheet's checks) → MergeCheckView; merge → where it stands (merged, conflicts by file name,
+  // blocked and why); Claude resolves the conflicts in that worktree → resolving.
+  'companion.mergeCheck': { args: z.tuple([wsTopic]) },
+  'companion.merge': { args: z.tuple([wsTopic]) },
+  'companion.resolve': { args: z.tuple([wsTopic]) },
+  // A task described in words: your Claude's draft of it (title, goal, criteria, labels), not added yet → the draft.
+  'companion.draftTask': { args: z.tuple([z.object({ projectId: z.string().min(1).max(200), text: z.string().min(1).max(8000) }).strict()]) },
+  // Add a draft (maybe changed on the phone) as a task in a project → the task ({ id, key }).
+  'companion.addTask': {
+    args: z.tuple([
+      z
+        .object({
+          projectId: z.string().min(1).max(200),
+          title: z.string().trim().min(1).max(200),
+          goal: z.string().max(20_000),
+          acceptance: z.array(z.string().trim().min(1).max(300)).max(12),
+          labels: z.array(z.string().min(1).max(32)).max(12),
+          priority: z.enum(['urgent', 'high', 'medium', 'low']).optional(),
+        })
+        .strict(),
+    ]),
+  },
 } as const;

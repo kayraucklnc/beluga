@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { RefTable } from '../src/companion/files.js';
-import { ChatsView, ChatView, ConvView, HomeView, PeopleView, PlansView, PlanView, type Topic, WorkView, viewSchema } from '../src/companion/protocol.js';
+import { ChatsView, ChatView, ConvView, HomeView, PeopleView, PlansView, PlanView, TaskPageView, TasksView, type Topic, WorkView, viewSchema } from '../src/companion/protocol.js';
 import { type ViewContext, convTurns, homeView, needsYou, viewOf } from '../src/companion/views.js';
 import { type Action, type DomainState, Store, initialState } from '../src/core/store.js';
 import type { Plan } from '../src/core/plans/model.js';
+import type { Issue } from '../src/core/board/model.js';
 
 /**
  * What the phone sees of a Mac in a known state: every view checked against its zod schema, and
@@ -43,6 +44,39 @@ const plan: Plan = {
   updatedAt: T0 + 50,
 } as unknown as Plan;
 
+function issue(id: string, key: string, title: string, status: Issue['status'], extra: Partial<Issue> = {}): Issue {
+  const by = { kind: 'person' as const, id: ME, name: 'kayra' };
+  return {
+    id,
+    key,
+    number: Number(key.split('-')[1]),
+    projectId: 'p1',
+    title,
+    status,
+    priority: 'medium',
+    labels: [],
+    blockedBy: [],
+    related: [],
+    rank: Number(key.split('-')[1]),
+    brief: {
+      goal: 'Only signed-in users pay:\n\n```ts\nrequireUser()\n```',
+      acceptance: '- [x] Logged-out users get 401\n- [ ] The e2e passes — deferred: suites run at the end\n- [ ] Docs updated',
+    },
+    revisions: [],
+    worktrees: [],
+    proof: [],
+    activity: [
+      { id: `${id}-a1`, at: T0 + 1, by, kind: 'created', text: 'created this' },
+      { id: `${id}-a2`, at: T0 + 2, by: { kind: 'claude', owner: ME, ownerName: 'kayra' }, kind: 'comment', text: 'commented', body: 'Done, see:\n```ts\nx()\n```' },
+    ],
+    createdAt: T0,
+    updatedAt: T0 + 2,
+    createdBy: by,
+    origin: 'manual',
+    ...extra,
+  };
+}
+
 function demoState(): DomainState {
   const store = new Store(initialState('kayra’s room'));
   const run = (a: Action): void => store.dispatch(a);
@@ -64,6 +98,31 @@ function demoState(): DomainState {
   ev('sub', JSON.stringify({ id: 'sa1', phase: 'step', step: 'Grep "retry"' }), T0 + 12, 'ws:w2', 'r2');
   ev('tool', 'Bash npm test -- --run', T0 + 13, 'ws:w2', 'r2');
   ev('progress', '137/215', T0 + 14, 'ws:w2', 'r2');
+  // A message of yours waits its turn behind that run.
+  ev('queued', 'Then update the **docs**', T0 + 16, 'ws:w2', 'r3');
+  // Claude Code watches w2's session: its sub-agent's live step, and a helper that sub-agent started.
+  run({
+    type: 'claude_code',
+    sessions: [
+      {
+        id: 'ccs1',
+        title: 'tests',
+        cwd: '/Users/k/landing/.worktrees/w2',
+        projectId: 'p1',
+        workspaceId: 'w2',
+        status: 'working',
+        lastAt: T0 + 14,
+        steps: 5,
+        own: true,
+        agents: [
+          { id: 'ag1', toolUseId: 'sa1', description: 'Check the webhooks', type: 'general-purpose', background: false, status: 'running', startedAt: T0 + 11, lastAt: T0 + 13, step: 'Reading src/hooks/retry-queue.ts', steps: 4 },
+          { id: 'ag2', description: 'Look at the retry queue', type: 'Explore', background: false, status: 'running', startedAt: T0 + 12, lastAt: T0 + 13, step: 'Running npx vitest run tests/retry.test.ts', steps: 2, parentAgentId: 'ag1' },
+        ],
+      },
+    ],
+  });
+  // The board: tasks in two states, one with a worktree, a brief and a comment.
+  run({ type: 'board_init', state: { enabled: true, autoTasks: false, projects: { p1: { prefix: 'LND', next: 3 } }, issues: [issue('i1', 'LND-1', 'Protect the payment routes', 'in_review', { worktrees: ['w1'] }), issue('i2', 'LND-2', 'Retry failed webhooks', 'todo', { priority: 'high', assignee: { kind: 'claude', owner: ME, ownerName: 'kayra' } })] } });
   // What waits for you.
   run({ type: 'approval_add', approval: { id: 'ap1', kind: 'tool', title: 'Run rm -rf dist?', detail: 'Bash rm -rf dist', askedAt: T0 + 15, timeoutMs: 60_000, channel: 'ws:w2' } });
   run({
@@ -146,6 +205,7 @@ function context(): ViewContext {
   return {
     refs,
     mac: { name: 'Kayra’s Mac', version: '0.6.2' },
+    icons: (id) => (id === 'p1' ? ICON : undefined),
     outputs: (channel) =>
       channel === 'ws:w2'
         ? [
@@ -158,7 +218,8 @@ function context(): ViewContext {
   };
 }
 
-const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`];
+const ICON = 'abcdef0123456789abcdef01';
+const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1'];
 
 describe('the views of a known Mac', () => {
   const state = demoState();
@@ -198,7 +259,10 @@ describe('the views of a known Mac', () => {
       ['conv:ws:w2', 'waiting', 1],
       ['conv:ws:w1', 'waiting', undefined],
     ]);
-    expect(home.outputs.map((o) => o.name)).toEqual(['run.log', 'shot.png']);
+    // Outputs stay with their conversation: Home only hints at the new ones, per worktree.
+    expect(home.outputs).toEqual([]);
+    expect(home.running.find((r) => r.topic === 'conv:ws:w2')).toMatchObject({ fresh: 2, projectId: 'p1', icon: ICON });
+    expect(home.review).toEqual({ count: 1, first: { topic: 'task:i1', key: 'LND-1', title: 'Protect the payment routes' } });
     expect(home.unread).toEqual({ work: expect.any(Number), chats: 2 });
   });
 
@@ -208,14 +272,57 @@ describe('the views of a known Mac', () => {
     expect(answer.prose).toEqual({ text: 'Add a middleware:\n\n[[code:0]]\n\nThen protect `/api/payments`.', code: [{ lang: 'ts', lines: 1 }] });
     expect(w1.turns[0]).toMatchObject({ who: 'you', name: 'kayra' });
     const w2 = ConvView.parse(viewOf(state, ctx, 'conv:ws:w2'));
-    const live = w2.turns.at(-1)!;
-    expect(live).toMatchObject({ status: 'working', step: 'Ran npm test · 137/215' });
+    const live = w2.turns.find((t) => t.status === 'working')!;
+    expect(live).toMatchObject({ status: 'working', step: 'Running the tests · 137/215' });
     expect(live.subagents?.[0]).toMatchObject({ id: 'sa1', title: 'Check the webhooks', status: 'running', steps: ['Searched for retry'] });
     expect(live.subagents?.[0]?.outputs.map((o) => o.name)).toEqual(['shot.png']);
     expect(live.outputs?.map((o) => o.name)).toEqual(['run.log']);
     expect(w2.needsYou.map((n) => n.id)).toEqual(['approval:ap1', 'question:q2']);
     expect(w2.working).toBe(true);
     expect(w2.canSend).toBe(true);
+  });
+
+  it('a running turn carries what it does now, its steps with their tools, and its sub-agents live', () => {
+    const w2 = ConvView.parse(viewOf(state, ctx, 'conv:ws:w2'));
+    const live = w2.turns.find((t) => t.status === 'working')!;
+    expect(live.live).toEqual({ phase: 'step', words: 'Running the tests', tool: 'test', progress: '137/215', since: T0 + 13, agents: 1 });
+    expect(live.trail).toEqual([{ tool: 'test', text: 'Ran the tests' }]);
+    // The sub-agent the run reported, with Claude Code's live words for it (no folders), its kind and start.
+    expect(live.subagents?.[0]).toMatchObject({ trail: [{ tool: 'search', text: 'Searched for retry' }], step: 'Reading retry-queue.ts', tool: 'read', type: 'general-purpose', startedAt: T0 + 11, count: 4 });
+    // The helper that sub-agent started (Claude Code saw it, no run event named it).
+    expect(live.subagents?.[1]).toMatchObject({ id: 'ag2', title: 'Look at the retry queue', status: 'running', step: 'Running the tests', tool: 'test', type: 'Explore' });
+    // Nothing of a command line or a path.
+    expect(JSON.stringify(live)).not.toMatch(/vitest|--run|src\/hooks/);
+  });
+
+  it('a conversation has its worktree’s outputs, its icon, and your queued messages', () => {
+    const w2 = ConvView.parse(viewOf(state, ctx, 'conv:ws:w2'));
+    expect(w2.outputs?.map((o) => o.name)).toEqual(['shot.png', 'run.log']);
+    expect(w2).toMatchObject({ projectId: 'p1', icon: ICON });
+    expect(w2.queue).toEqual([{ id: 'r3', text: 'Then update the docs' }]);
+    expect(WorkView.parse(viewOf(state, ctx, 'work')).projects.find((p) => p.id === 'p1')?.icon).toBe(ICON);
+  });
+
+  it('tasks: by project and status, and one task’s page with its brief, ticks and activity', () => {
+    const tasks = TasksView.parse(viewOf(state, ctx, 'tasks'));
+    expect(tasks.projects.map((p) => [p.id, p.icon, p.groups.map((g) => [g.status, g.tasks.map((t) => t.key)])])).toEqual([
+      ['p1', ICON, [['in_review', ['LND-1']], ['todo', ['LND-2']]]],
+    ]);
+    expect(tasks.projects[0]!.groups[1]!.tasks[0]).toMatchObject({ topic: 'task:i2', priority: 'high', assignee: 'your Claude', checks: { done: 1, total: 3 } });
+    const page = TaskPageView.parse(viewOf(state, ctx, 'task:i1'));
+    expect(page).toMatchObject({ key: 'LND-1', status: 'in_review', conv: 'conv:ws:w1', worktree: 'auth', project: 'landing' });
+    expect(page.goal).toEqual({ text: 'Only signed-in users pay:\n\n[[code:0]]', code: [{ lang: 'ts', lines: 1 }] });
+    expect(page.acceptance).toEqual([
+      { text: 'Logged-out users get 401', state: 'done' },
+      { text: 'The e2e passes', state: 'deferred', reason: 'suites run at the end' },
+      { text: 'Docs updated', state: 'open' },
+    ]);
+    expect(page.activity.map((a) => [a.who, a.text, a.body, a.comment])).toEqual([
+      ['You', 'created this', undefined, undefined],
+      ['Your Claude', 'commented', 'Done, see:\n(code)', true],
+    ]);
+    expect(page.moves.map((m) => m.status)).toEqual(['todo', 'in_progress', 'done', 'backlog', 'canceled']);
+    expect(viewOf(state, ctx, 'task:nope')).toBeUndefined();
   });
 
   it('a file written after the last answer ended shows with that answer (not nowhere)', () => {
