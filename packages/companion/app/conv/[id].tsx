@@ -79,6 +79,8 @@ export default function Conversation() {
         }
       />
       <KeyboardLift>
+        {/* Where a merge stands stays in view while the conversation scrolls under it. */}
+        {c?.merge ? <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}><MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} /></View> : null}
         <ScrollView
           ref={scroll}
           onContentSizeChange={follow}
@@ -102,7 +104,6 @@ export default function Conversation() {
             </Press>
           ) : null}
           {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
-          {c?.merge ? <MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} /> : null}
           {turns.map((t, i) => (
             <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
               {t.who === 'you' ? <YourTurn t={t} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} />}

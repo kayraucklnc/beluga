@@ -3,7 +3,7 @@ import { ArrowUp, Check, Circle, CircleDashed, CircleDot, Eye, type LucideIcon, 
 import { useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
-import { useView } from '../lib/hooks';
+import { useSupports, useView } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
 import type { TaskSummary, TasksView } from '../lib/link/protocol';
 import { store } from '../lib/store';
@@ -48,16 +48,15 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
           <T v="body" numberOfLines={2} style={{ fontWeight: '500' }}>
             {t.title}
           </T>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <T v="caption" numberOfLines={1}>
             <T v="caption" style={{ fontWeight: '700' }}>
               {t.key}
             </T>
-            {[t.assignee, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined].filter(Boolean).map((x) => (
-              <T key={x} v="caption" numberOfLines={1}>
-                · {x}
-              </T>
-            ))}
-          </View>
+            {[t.assignee, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined]
+              .filter(Boolean)
+              .map((x) => `  ·  ${x}`)
+              .join('')}
+          </T>
         </View>
         {pr && (t.priority === 'urgent' || t.priority === 'high') ? <Pill label={pr.label} tone={pr.tone} /> : null}
       </Press>
@@ -67,9 +66,11 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
 
 /** Every project's tasks by status (Work › Tasks, and /tasks). */
 export function TasksList() {
-  const tasks = useView<TasksView>(store.supports('tasks') ? 'tasks' : undefined);
-  const [adding, setAdding] = useState<{ id: string; name: string } | undefined>();
-  if (!store.supports('tasks')) {
+  const tasksOn = useSupports('tasks');
+  const drafts = useSupports('draftTask');
+  const tasks = useView<TasksView>(tasksOn ? 'tasks' : undefined);
+  const [adding, setAdding] = useState<{ id: string; name: string; icon?: string } | undefined>();
+  if (!tasksOn) {
     return (
       <Card style={{ marginHorizontal: 16, padding: 18 }}>
         <T v="heading">Tasks need a newer Beluga</T>
@@ -98,8 +99,8 @@ export function TasksList() {
             <T v="heading" style={{ flex: 1 }} numberOfLines={1}>
               {p.name}
             </T>
-            {store.supports('draftTask') ? (
-              <Press onPress={() => setAdding({ id: p.id, name: p.name })} accessibilityLabel={`New task in ${p.name}`} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, paddingHorizontal: 10, borderRadius: 15, backgroundColor: color.sunken }}>
+            {drafts ? (
+              <Press onPress={() => setAdding({ id: p.id, name: p.name, icon: p.icon })} accessibilityLabel={`New task in ${p.name}`} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, paddingHorizontal: 10, borderRadius: 15, backgroundColor: color.sunken }}>
                 <Plus color={color.text2} size={15} />
                 <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
                   New
@@ -136,7 +137,7 @@ export function TasksList() {
  * A new task by describing it: a sentence, then Claude's draft (title, goal, what done means,
  * labels), and Add. The draft is the Mac's own task drafter's; nothing is added until you say.
  */
-export function NewTaskSheet({ project, onClose }: { readonly project?: { id: string; name: string }; readonly onClose: () => void }) {
+export function NewTaskSheet({ project, onClose }: { readonly project?: { id: string; name: string; icon?: string }; readonly onClose: () => void }) {
   const [text, setText] = useState('');
   const [draft, setDraft] = useState<TaskDraftResult | undefined>();
   const [busy, setBusy] = useState<'draft' | 'add' | undefined>();
@@ -174,7 +175,7 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
     <Sheet visible={!!project} onDismiss={close} window>
       <View style={{ paddingHorizontal: 20, gap: 12, paddingBottom: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          {p ? <ProjectMark name={p.name} size={30} /> : null}
+          {p ? <ProjectMark name={p.name} icon={p.icon} size={30} /> : null}
           <T v="title" style={{ flex: 1, fontSize: 21 }}>
             New task
           </T>

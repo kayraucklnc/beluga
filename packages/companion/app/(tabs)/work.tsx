@@ -9,7 +9,7 @@ import { PlansList } from '../../components/Plans';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Segments } from '../../components/Segments';
 import { Card, Row, T } from '../../components/ui';
-import { ago, useView } from '../../lib/hooks';
+import { ago, useSupports, useView } from '../../lib/hooks';
 import type { PlansView, TasksView, WorkView } from '../../lib/link/protocol';
 import { store } from '../../lib/store';
 import { ProjectMark } from '../../components/ProjectMark';
@@ -25,7 +25,7 @@ export default function Work() {
   const { tab: wanted } = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<'convs' | 'plans' | 'tasks'>(wanted === 'tasks' || wanted === 'plans' ? wanted : 'convs');
   const runningPlans = plans?.data.plans.filter((p) => p.state === 'running').length ?? 0;
-  const tasks = useView<TasksView>(store.supports('tasks') ? 'tasks' : undefined);
+  const tasks = useView<TasksView>(useSupports('tasks') ? 'tasks' : undefined);
   const inReview = tasks?.data.projects.reduce((n, p) => n + (p.groups.find((g) => g.status === 'in_review')?.tasks.length ?? 0), 0) ?? 0;
 
   return (

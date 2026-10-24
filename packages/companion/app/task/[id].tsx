@@ -12,7 +12,7 @@ import { ProjectMark } from '../../components/ProjectMark';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { PRIORITY, statusOf } from '../../components/Tasks';
 import { Avatar, Button, Card, haptic, IconBadge, More, Pill, Press, T, toneBg, toneInk } from '../../components/ui';
-import { ago, useView } from '../../lib/hooks';
+import { ago, useSupports, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { TaskPageView, Topic } from '../../lib/link/protocol';
 import { openOnMac } from '../../lib/mac';
@@ -28,7 +28,8 @@ export default function Task() {
   const { scrolled, onScroll } = useScrolled();
   const { id } = useLocalSearchParams<{ id: string }>();
   const topic = `task:${decodeURIComponent(id ?? '')}` as Topic;
-  const view = useView<TaskPageView>(store.supports('tasks') ? topic : undefined);
+  const tasksOn = useSupports('tasks');
+  const view = useView<TaskPageView>(tasksOn ? topic : undefined);
   const t = view?.data;
   const insets = useSafeAreaInsets();
   const [menu, setMenu] = useState(false);
@@ -68,7 +69,7 @@ export default function Task() {
       />
       <KeyboardLift>
         <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 20, gap: 14 }} keyboardDismissMode="interactive">
-          {!t ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>{store.supports('tasks') ? 'Opening the task…' : 'Update Beluga on your Mac to see tasks here.'}</T> : null}
+          {!t ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>{tasksOn ? 'Opening the task…' : 'Update Beluga on your Mac to see tasks here.'}</T> : null}
           {t ? (
             <Animated.View entering={FadeIn.duration(220)} style={{ gap: 14 }}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>

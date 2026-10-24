@@ -11,6 +11,12 @@ export function useLink(): LinkState {
   );
 }
 
+/** Does the Mac have this (by its protocol's minor)? Re-renders when the link learns it. */
+export function useSupports(what: Parameters<typeof store.supports>[0]): boolean {
+  useLink();
+  return store.supports(what);
+}
+
 /** A topic's view; subscribes to it on the Mac while the screen is mounted. */
 export function useView<T>(topic: Topic | undefined): CachedView<T> | undefined {
   useEffect(() => (topic ? store.watch(topic) : undefined), [topic]);
