@@ -86,7 +86,8 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
   // Screenshots and other images sent with the message show as pictures, under its words.
   const { text, images } = useMemo(() => splitImages(item.text), [item.text]);
   const menu = useMenuContext();
-  const mentions = useMentionWorld(item.channel);
+  // "@BLG-24" in your own words is a task on your board (someone else's key may be theirs).
+  const mentions = useMentionWorld(item.channel, { tasks: mine });
   // The message you just sent flies in from the box (see flight.ts).
   const row = useRef<HTMLDivElement>(null);
   useFlightLanding(row, item.channel, 'chat', item.text, mine && !item.byAgent);
