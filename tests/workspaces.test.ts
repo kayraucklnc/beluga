@@ -238,6 +238,17 @@ describe('env files and safe merges', () => {
     expect(sh(repo, 'branch', '--list', 'beluga/gone').trim()).toBe('');
   });
 
+  it('deletes a worktree git already let go of, whatever was left in its folder', async () => {
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'husk');
+    // A delete that stopped halfway: git's link is gone, files are still there.
+    rmSync(path.join(repo, '.git', 'worktrees', path.basename(ws.path)), { recursive: true, force: true });
+    await mgr.remove(ws.id);
+    await mgr.refresh();
+    expect(existsSync(ws.path)).toBe(false);
+    expect(repos()[0]!.workspaces.some((w) => w.name === 'husk')).toBe(false);
+    expect(sh(repo, 'branch', '--list', 'beluga/husk').trim()).toBe('');
+  });
+
   it("reports why a merge failed when it isn't a conflict", async () => {
     const ws = await mgr.createWorktree(repos()[0]!.id, 'nobranch');
     commitIn(ws.path, 'x.txt', 'x', 'x');
