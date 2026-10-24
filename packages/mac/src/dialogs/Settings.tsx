@@ -14,6 +14,7 @@ import { ContextSettings } from './ContextSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
+import { MaintainerChip } from './SupportSheets.js';
 import s from './settings.module.css';
 import { TerminalSettings } from './TerminalSettings.js';
 import { NetworkSettings } from '../network/NetworkSettings.js';
@@ -350,7 +351,11 @@ function About() {
         </Row>
       </Group>
       <Group title="Support Beluga">
-        <Row label="Beluga is free, and a passion project" detail="Kayra builds and maintains it. A star helps others find it; a coffee keeps it going.">
+        <Row label="Beluga is free, and a passion project" detail={
+            <>
+              Built and maintained by <MaintainerChip />. A star helps others find it; a coffee keeps it going.
+            </>
+          }>
           <Button size="small" icon="star" onClick={() => void openExternal(GITHUB_URL)}>
             Star on GitHub
           </Button>
@@ -363,7 +368,7 @@ function About() {
               openSupport('coffee');
             }}
           >
-            Buy Kayra a Coffee…
+            Buy a Coffee…
           </Button>
         </Row>
       </Group>

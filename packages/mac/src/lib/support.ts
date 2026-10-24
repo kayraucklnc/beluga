@@ -9,9 +9,13 @@ import type { SupportAsk } from '@beluga/core/support-store.js';
 
 export const GITHUB_URL = 'https://github.com/kayraucklnc/beluga';
 
-/** The coffee amounts offered, in US dollars. */
+/** Who makes Beluga, shown as a GitHub chip (the avatar ships with the app: the window loads no remote images). */
+export const MAINTAINER = { login: 'kayraucklnc', url: 'https://github.com/kayraucklnc' } as const;
+
+/** The coffee amounts offered, in US dollars, with what each one buys. */
 export const COFFEE_AMOUNTS = [5, 10, 20, 50] as const;
 export type CoffeeAmount = (typeof COFFEE_AMOUNTS)[number];
+export const COFFEE_WORDS: Readonly<Record<CoffeeAmount, string>> = { 5: 'A coffee', 10: 'Coffee & cake', 20: 'Lunch', 50: 'A whole day' };
 
 /**
  * Stripe Payment Links, one per amount and one where you choose the amount (Stripe's "customers
