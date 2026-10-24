@@ -766,7 +766,7 @@ export class WorkspaceManager {
   async createStandaloneChat(title: string, inDir?: string): Promise<Workspace> {
     const id = `chat-${randomUUID().slice(0, 8)}`;
     // Runs in the folder you give it (e.g. where you started Beluga), or its own scratch folder.
-    const dir = inDir ?? path.join(this.chatsDir, id);
+    const dir = inDir || path.join(this.chatsDir, id);
     mkdirSync(dir, { recursive: true });
     const record: WorkspaceRecord = { id, projectRoot: '', name: title.trim().slice(0, 40) || 'chat', path: real(dir), kind: 'chat', createdAt: Date.now() };
     this.saveRecord(record);

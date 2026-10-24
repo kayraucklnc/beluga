@@ -181,6 +181,13 @@ describe('worktree lifecycle', () => {
     expect(existsSync(chat.path)).toBe(false);
   });
 
+  it('gives a stand-alone chat its own folder when the client has no launch folder', async () => {
+    // The Mac app connects without one, so it asks for the chat in ''.
+    const chat = await mgr.createChat('chats', 'Hello', '');
+    expect(chat.path).not.toBe('');
+    expect(existsSync(chat.path)).toBe(true);
+  });
+
   it('persists across restarts', async () => {
     const ws = await mgr.createWorktree(repos()[0]!.id, 'keep');
     mgr.rememberSession(ws.id, 's-9');
