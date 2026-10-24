@@ -18,7 +18,7 @@ const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merg
 /**
  * The top of a worktree: where its branch stands, as a pill you can read from across the room
  * (Merged in purple, Ready to merge in green, Conflicts in red…), and the step it needs next as
- * one button. Its chevron has the other steps: one-click ones (git or GitHub does them) and the
+ * one button (its pull request's number on the pill too). Its chevron has the other steps: one-click ones (git or GitHub does them) and the
  * ones Claude does, marked with Claude's icon. The pill opens the pull request when there is one.
  */
 export function BranchControl({ wsId, branch }: { wsId: string; branch: BranchState }) {
@@ -73,6 +73,7 @@ export function BranchControl({ wsId, branch }: { wsId: string; branch: BranchSt
     <span className={cx(s.pill, s[`pill_${branch.tone}`])} data-branch-state={branch.kind}>
       <Icon name={PILL_ICON[branch.tone]} size={11} />
       {branch.label}
+      {branch.pr ? <span className={s.pillPr}>#{branch.pr.number}</span> : null}
     </span>
   );
 

@@ -135,8 +135,10 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     expect(readGh().merges?.at(-1)).toEqual(['pr', 'merge', '7', '--squash']);
     await page.screenshot({ path: test.info().outputPath('pr-sheet-merged.png') });
     await sheet.getByRole('button', { name: 'Done' }).click();
-    await expect(toolbar(page).locator('[data-pr-state="MERGED"]')).toContainText('PR #7');
-    await expect(toolbar(page)).toContainText('Merged on GitHub');
+    // Said once, by the branch pill (with its PR's number): not again in the subtitle.
+    await expect(toolbar(page).locator('[data-branch-state="merged"]')).toContainText('#7');
+    await expect(toolbar(page)).not.toContainText('Merged on GitHub');
+    await expect(toolbar(page).locator('[data-pr-state]')).toHaveCount(0);
     await expect(toolbar(page).getByRole('button', { name: 'Archive Worktree' })).toBeVisible();
     // The local merge is named for what it is.
     await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();

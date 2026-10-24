@@ -20,6 +20,11 @@
   background: color-mix(in srgb, var(--pill) 13%, transparent);
   --pill: var(--text-3);
 }
+.pillPr {
+  font-weight: 500;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
 .pill_merged {
   --pill: var(--merged);
 }

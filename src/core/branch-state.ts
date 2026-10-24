@@ -126,11 +126,11 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   }
 
   if (pr?.state === 'MERGED') {
-    return at('merged', 'Merged', 'merged', `PR #${pr.number} merged into ${into} on GitHub${changed ? ` · ${plural(changed, 'change')} since` : ''}`, planned ? [] : finish);
+    return at('merged', 'Merged', 'merged', `PR #${pr.number} merged into ${into} on GitHub, so this worktree is done: archive it, or continue here with a new PR${changed ? ` (${plural(changed, 'change')} since)` : ''}`, planned ? [] : finish);
   }
   // Merged outside Beluga (on GitHub with no PR it knows of, squashed, or by hand).
   if (st?.landed && pr?.state !== 'OPEN' && !changed) {
-    return at('merged', 'Merged', 'merged', `Its commits are already in ${into}`, planned ? [] : finish);
+    return at('merged', 'Merged', 'merged', `Its commits are already in ${into}, so this worktree is done: archive it, or continue here`, planned ? [] : finish);
   }
 
   if (pr?.state === 'OPEN') {
