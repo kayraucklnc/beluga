@@ -29,6 +29,11 @@ export interface Transport {
   /** Close it now (the app went to the background past the grace, or you signed out). */
   close(reason: string): void;
   send(frame: PhoneFrame): void;
+  /**
+   * Is the open link still alive (a ping, answered within `ms`)? A link that isn't is dropped, and
+   * its `closed` phase follows. Without it (the demo), the link is taken as alive.
+   */
+  probe?(ms: number): Promise<boolean>;
   onFrame(listener: (frame: MacFrame) => void): () => void;
   onPhase(listener: (phase: LinkPhase, detail?: string, info?: PhaseInfo) => void): () => void;
   /** How the link got through (the real link only). */

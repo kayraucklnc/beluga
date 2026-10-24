@@ -1,4 +1,4 @@
-import { AppState, type AppStateStatus, Platform } from 'react-native';
+import { AppState, type AppStateStatus, Linking, Platform } from 'react-native';
 import { fromB64, fromUtf8, toB64 } from './b64';
 import { kv } from './kv';
 import { BareTransport } from './link/bare';
@@ -7,6 +7,7 @@ import { DemoTransport } from './link/demo/transport';
 import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
 import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
 import { checkOnline } from './link/online';
+import { graceExpired, onResume, PROBE_TIMEOUT_MS, retryDelay } from './link/resume';
 import type { Attempt, DeviceSecret, LinkHints, LinkPathName, LinkPhase, Pairing } from './link/rpc';
 import type { PairInput, PairStep, PathInfo, PhaseInfo, Transport } from './link/transport';
 import { secure } from './secure';
@@ -106,6 +107,15 @@ class Store {
   /** The Mac said welcome on this link (calls may go; they're answered). */
   private welcomed = false;
   private grace: ReturnType<typeof setTimeout> | undefined;
+  /** The app is in front (AppState), and since when it's been away (the wall clock: BLG-105). */
+  private active = false;
+  private awayAt: number | undefined;
+  /** When the dial in flight began; whether a check of the open link is out. */
+  private dialingSince: number | undefined;
+  private probing = false;
+  /** One automatic retry at a time, backing off (lib/link/resume.ts retryDelay). */
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryAttempt = 0;
   private listeners = new Map<string, Set<() => void>>();
   private snapshots = new Map<string, unknown>();
   /** What the image viewer shows, and where it opened from (for the transition back). */
@@ -150,7 +160,11 @@ class Store {
     }
     if (mode === 'demo' || (mode === 'bare' && pairing)) this.use(mode, pairing);
     this.setState({ ready: true });
+    this.active = AppState.currentState === 'active';
     AppState.addEventListener('change', (s) => this.onAppState(s));
+    // Opened by a link (or a notification's) while in the background: back in front, so link now.
+    // AppState says so too; whichever comes first dials, the other finds it dialing (single flight).
+    Linking.addEventListener('url', () => this.foreground());
     if (mode && AppState.currentState === 'active') this.foreground();
   }
 
@@ -172,6 +186,9 @@ class Store {
     this.unsubs = [];
     this.transport?.dispose();
     this.transport = undefined;
+    this.clearRetry();
+    this.probing = false;
+    this.dialingSince = undefined;
   }
 
   /** Pair with a Mac (or start the demo, `mode: 'demo'`). */
@@ -248,18 +265,76 @@ class Store {
     else if (s === 'background') this.background();
   }
 
+  /**
+   * The app is in front again (or you asked to try again): make sure the link is really there.
+   * Decided by lib/link/resume.ts: an open link is pinged and replaced if it doesn't answer; one
+   * left open past the grace (Android froze it instead of closing it) is replaced at once; a dial
+   * under way is left alone; anything else dials now, with the retries' backoff started afresh.
+   */
   foreground(): void {
+    this.active = true;
     if (this.grace) clearTimeout(this.grace);
     this.grace = undefined;
+    const awayAt = this.awayAt;
+    this.awayAt = undefined;
+    this.clearRetry();
+    this.retryAttempt = 0;
     const t = this.transport;
     if (!t) return;
-    if (this.state.phase === 'open') {
+    const next = onResume({ phase: this.state.phase, now: Date.now(), ...(awayAt !== undefined ? { awayAt } : {}), ...(this.dialingSince !== undefined ? { dialingSince: this.dialingSince } : {}), probing: this.probing });
+    if (next.do === 'none') return;
+    if (next.do === 'probe') {
       t.send({ t: 'focus', on: true });
       // The Mac stops a terminal's stream while the app is away: its screen draws afresh now.
       this.reattachTerms();
+      this.probe();
       return;
     }
+    this.dial(next.replace);
+  }
+
+  /** Dial now; `replace`: drop the link or dial there is first (it can't be trusted). */
+  private dial(replace: boolean): void {
+    const t = this.transport;
+    if (!t) return;
+    this.clearRetry();
+    if (replace && (this.state.phase === 'open' || this.state.phase === 'dialing')) t.close('stale');
+    this.dialingSince = Date.now();
     t.open({ t: 'hello', v: { ...COMPANION_PROTO }, app: APP, platform: PLATFORM, topics: this.topics() }, this.hints());
+  }
+
+  /** Ping the open link; if it doesn't answer in time it's half-open: dial a new one. */
+  private probe(): void {
+    const t = this.transport;
+    if (!t?.probe || this.probing) return;
+    this.probing = true;
+    void t.probe(PROBE_TIMEOUT_MS).then(
+      (ok) => {
+        this.probing = false;
+        if (ok || t !== this.transport || !this.active) return;
+        if (this.state.phase === 'open' || this.state.phase === 'closed') this.dial(true);
+      },
+      () => void (this.probing = false),
+    );
+  }
+
+  private clearRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+  }
+
+  /** The link dropped, or the Mac didn't answer, while you look: try again by itself, backing off. */
+  private scheduleRetry(): void {
+    this.clearRetry();
+    const delay = retryDelay({ phase: this.state.phase, active: this.active, attempt: this.retryAttempt }, Math.random());
+    if (delay === undefined) return;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      const p = this.state.phase;
+      if (!this.active || !this.transport || (p !== 'closed' && p !== 'asleep')) return;
+      this.retryAttempt++;
+      this.dial(false);
+    }, delay);
   }
 
   // ---- reaching the Mac on any network (docs/companion.md, "Any network")
@@ -285,13 +360,25 @@ class Store {
   }
 
   background(): void {
+    this.active = false;
+    this.clearRetry();
+    this.awayAt ??= Date.now();
     if (!this.transport || this.grace) return;
     if (this.state.phase === 'open') this.transport.send({ t: 'focus', on: false });
+    this.armGrace(BACKGROUND_GRACE_MS);
+  }
+
+  private armGrace(ms: number): void {
     this.grace = setTimeout(() => {
       this.grace = undefined;
+      // Android runs a timer paused in the background late, often just as the app comes back:
+      // close only if it's still away, and long enough by the clock.
+      if (this.active || this.awayAt === undefined) return;
+      const now = Date.now();
+      if (!graceExpired({ active: this.active, awayAt: this.awayAt, now })) return this.armGrace(this.awayAt + BACKGROUND_GRACE_MS - now);
       this.transport?.send({ t: 'bye' });
       this.transport?.close('background');
-    }, BACKGROUND_GRACE_MS);
+    }, ms);
   }
 
   /** Try again now (the "asleep" banner's button). */
@@ -300,7 +387,13 @@ class Store {
   }
 
   private onPhase(phase: LinkPhase, detail?: string, info?: PhaseInfo): void {
+    if (phase === 'dialing') {
+      if (this.state.phase !== 'dialing' || this.dialingSince === undefined) this.dialingSince = Date.now();
+      this.clearRetry();
+    } else this.dialingSince = undefined;
     if (phase === 'open') {
+      this.retryAttempt = 0;
+      this.clearRetry();
       this.setState({ phase, detail: undefined, diagnosis: undefined });
       // Screens may have changed while dialing: say what's on screen now.
       this.transport?.send({ t: 'sub', topics: this.topics() });
@@ -328,6 +421,7 @@ class Store {
       this.setState({ phase, detail, path: phase === 'closed' ? this.state.path : undefined, diagnosis: d && d.problem !== 'unknown' ? d : undefined });
     }
     this.welcomed = false;
+    if (phase === 'closed' || phase === 'unreachable') this.scheduleRetry();
     // Calls in flight won't be answered. Marked `lost`: the Mac may or may not have done it
     // (lib/sends.ts checks the Mac's view before it says either).
     for (const [, p] of this.pending) p.reject(Object.assign(new Error('The link closed.'), { lost: true }));
