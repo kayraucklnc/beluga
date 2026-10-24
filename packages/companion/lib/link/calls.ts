@@ -1,5 +1,5 @@
 import type { PhoneArgs, PhoneMethod } from '../../../../src/companion/calls';
-import type { NeedsYou, Topic } from './protocol';
+import type { NeedsYou, PhoneBranchStep, Topic } from './protocol';
 
 /**
  * Every call the phone makes, typed through the Mac's own list (src/companion/calls.ts:
@@ -72,6 +72,8 @@ export const calls = {
   mergeCheck: (topic: Topic): Call => make('companion.mergeCheck', [topic], 'Check the merge'),
   merge: (topic: Topic): Call => make('companion.merge', [topic], 'Merge'),
   resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask Claude to resolve'),
+  /** 1.8: one of a worktree's branch steps (Archive, Squash and Merge, Fix with Claude…), as the Mac's toolbar does it. */
+  branchStep: (topic: Topic, step: PhoneBranchStep, label: string): Call => make('companion.branchStep', [topic, step], label),
   /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
   steerNow: (request: string): Call => make('host.steerNow', [request], 'Send now'),
   /** 1.7: a worktree's files, read-only: a folder ('' is the top), names that match, a page of a file. */

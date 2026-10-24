@@ -359,6 +359,7 @@ export const PHONE: Record<Method, Side> = {
   'companion.mergeCheck': 'phone',
   'companion.merge': 'phone',
   'companion.resolve': 'phone',
+  'companion.branchStep': 'phone',
   // A live view's rows, run on the Mac with view.fetch's rules (only your own Claude's views, only sources they name).
   'companion.viewFetch': 'phone',
   // A task described in words: Claude's draft shown first, then added.

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_UPLOADS, UploadRef } from '../companion/protocol.js';
+import { MAX_UPLOADS, PHONE_BRANCH_STEPS, UploadRef } from '../companion/protocol.js';
 import { NEEDS } from '../core/gateway/protocol.js';
 import { SourceSchema, ViewQuerySchema } from '../shared/view-spec.js';
 
@@ -73,6 +73,8 @@ export const COMPANION_API = {
   'companion.mergeCheck': { args: z.tuple([wsTopic]) },
   'companion.merge': { args: z.tuple([wsTopic]) },
   'companion.resolve': { args: z.tuple([wsTopic]) },
+  // 1.8: one of a worktree's branch steps (BranchView.steps), the Mac's own way → { ok, message }.
+  'companion.branchStep': { args: z.tuple([wsTopic, z.enum(PHONE_BRANCH_STEPS)]) },
   // A live view's rows (BLG-68): the view is named by its conversation, turn and block (one in your
   // own Claude's answer); `source` is one that view names (an action's, a control's). The Mac runs
   // it as view.fetch does → ViewPage, or { needsApproval, what } for a command that hasn't run before.

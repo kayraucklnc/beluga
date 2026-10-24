@@ -1,12 +1,15 @@
-import { ArrowRight, Check, CircleAlert, Clock, FileWarning, GitBranch, GitMerge, Info, RefreshCw, Sparkles, TriangleAlert } from 'lucide-react-native';
+import { router } from 'expo-router';
+import { Archive as ArchiveIcon, ArrowRight, Check, CircleAlert, Clock, FileWarning, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, Info, type LucideIcon, RefreshCw, Sparkles, Trash2, TriangleAlert } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Linking, ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { calls } from '../lib/link/calls';
-import type { BranchView, MergeCheckView, MergeView, Topic } from '../lib/link/protocol';
+import type { BranchStepView, BranchView, MergeCheckView, MergeView, PhoneBranchStep, Topic } from '../lib/link/protocol';
+import { openOnMac } from '../lib/mac';
 import { store } from '../lib/store';
 import { color } from '../lib/theme';
 import { Breathe, TypingDots } from './Live';
+import { Options } from './Options';
 import { Sheet } from './Sheet';
 import { Button, Card, haptic, IconBadge, Pill, Press, T, type Tone, toneBg, toneInk } from './ui';
 
@@ -196,37 +199,86 @@ const BRANCH_TONE: Record<string, { tone: Tone; Icon: typeof Check }> = {
   muted: { tone: 'plain', Icon: GitBranch },
 };
 
+/** Each step's icon (Claude's steps get Claude's sparkle). */
+const STEP_ICON: Record<string, LucideIcon> = { merge_pr: GitMerge, merge_auto: Clock, merge_admin: GitMerge, merge: GitMerge, update_branch: RefreshCw, mark_ready: Check, open_pr: GitPullRequest, pr: GitPullRequest, commit: GitCommitHorizontal, continue_after_merge: GitBranch, archive: ArchiveIcon, delete: Trash2 };
+const iconOf = (s: BranchStepView): LucideIcon => (s.claude ? Sparkles : (STEP_ICON[s.id] ?? GitBranch));
+const toneOf = (s: BranchStepView): Tone => (s.danger ? 'rose' : s.claude ? 'peach' : s.id === 'archive' ? 'sky' : 'lavender');
+const bare = (label: string): string => label.replace(/…$/, '');
+
 /**
  * Where a worktree's branch stands, as the Mac's toolbar shows it: Merged (lavender), Ready to
- * merge, Conflicts, checks… with why, and its next step. Merging it into the main folder and
- * Claude resolving a conflict happen here; a pull request's steps are the Mac's.
+ * merge, Conflicts, checks… with why, and the one step it needs next as a button. Its other steps
+ * are under Other Steps, as the Mac's chevron has them. One place for all of it: the conversation's
+ * ••• doesn't repeat them. Steps Claude does, and the ones that can't be undone, ask first.
+ * An older Mac (before 1.8) only says the next step, besides merging and resolving here.
  */
 export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topic: Topic; readonly branch: BranchView; readonly canMerge: boolean; readonly onMerge: () => void }) {
   const t = BRANCH_TONE[branch.tone] ?? BRANCH_TONE.muted!;
+  const [more, setMore] = useState(false);
+  const [asking, setAsking] = useState<BranchStepView | undefined>();
+  const [busy, setBusy] = useState<string | undefined>();
   const resolve = () => {
     haptic.commit();
     void store.call(calls.resolve(topic), { queue: false }).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
   };
+  const steps = store.supports('branchSteps') ? (branch.steps ?? []).filter((s) => s.id !== 'merge' || canMerge) : [];
+  const run = (step: BranchStepView): void => {
+    if (busy) return;
+    if (step.id === 'merge') return onMerge();
+    if (step.id === 'open_pr') return void (branch.pr?.url ? Linking.openURL(branch.pr.url) : openOnMac({ topic }));
+    haptic.commit();
+    setBusy(step.id);
+    store
+      .call<{ ok: boolean; message: string }>(calls.branchStep(topic, step.id as PhoneBranchStep, bare(step.label)), { queue: false })
+      .then(
+        (r) => {
+          if (r) store.toast({ text: r.message, tone: r.ok ? 'ok' : 'error' });
+          // Archived or deleted: its conversation is gone from here too.
+          if (r?.ok && (step.id === 'archive' || step.id === 'delete') && router.canGoBack()) router.back();
+        },
+        (e: Error) => store.toast({ text: e.message, tone: 'error' }),
+      )
+      .finally(() => setBusy(undefined));
+  };
+  // What Claude does, and what can't be undone, asks first (as on the Mac).
+  const tap = (step: BranchStepView): void => (step.claude || step.danger ? setAsking(step) : run(step));
+  const [main, ...rest] = steps;
+  const openPr: BranchStepView | undefined = branch.pr?.url && !steps.some((s) => s.id === 'open_pr') ? { id: 'open_pr', label: `Open PR #${branch.pr.number}`, hint: 'On GitHub' } : undefined;
+  const others = [...rest, ...(openPr ? [openPr] : [])];
+  // An older Mac: its next step in words, and merging or resolving here.
   const next = branch.next;
-  const here = next?.id === 'merge' && canMerge ? 'merge' : next?.id === 'merge_claude' ? 'resolve' : undefined;
+  const here = steps.length ? undefined : next?.id === 'merge' && canMerge ? 'merge' : next?.id === 'merge_claude' ? 'resolve' : undefined;
   return (
     <Animated.View key={branch.kind} entering={FadeIn.duration(200)} layout={LinearTransition.springify()}>
       <Card style={{ paddingVertical: 10, paddingHorizontal: 12, gap: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pill label={branch.label} tone={t.tone} Icon={t.Icon} />
+          <Pill label={branch.pr ? `${branch.label} #${branch.pr.number}` : branch.label} tone={t.tone} Icon={t.Icon} />
           <T v="caption" numberOfLines={2} style={{ flex: 1 }}>
             {branch.detail}
           </T>
         </View>
+        {main ? (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Button flex={1} label={busy ? 'Working…' : bare(main.label)} Icon={iconOf(main)} disabled={Boolean(busy)} onPress={() => tap(main)} />
+            {others.length ? <Button label="Other Steps" quiet disabled={Boolean(busy)} onPress={() => setMore(true)} /> : null}
+          </View>
+        ) : null}
         {here === 'merge' ? <Button label={next!.label.replace(/…$/, '')} Icon={GitMerge} quiet onPress={onMerge} /> : null}
         {here === 'resolve' ? <Button label="Ask Claude to resolve" Icon={Sparkles} onPress={resolve} /> : null}
-        {next && !here ? (
+        {next && !here && !steps.length ? (
           <T v="caption" c={color.text3}>
             Next, on your Mac: {next.label.replace(/…$/, '')}
             {next.claude ? ' (Claude does it)' : ''}
           </T>
         ) : null}
       </Card>
+      <Options visible={more} onClose={() => setMore(false)} title={`${branch.label} · ${branch.branch}`} options={others.map((s) => ({ Icon: iconOf(s), label: bare(s.label), sub: s.claude ? `Claude · ${s.hint}` : s.hint, tone: toneOf(s), onPress: () => tap(s) }))} />
+      <Options
+        visible={Boolean(asking)}
+        onClose={() => setAsking(undefined)}
+        title={asking?.danger ? 'This can’t be undone' : 'Claude does this in the conversation'}
+        options={asking ? [{ Icon: iconOf(asking), label: bare(asking.label), sub: asking.hint, tone: toneOf(asking), onPress: () => run(asking) }] : []}
+      />
     </Animated.View>
   );
 }

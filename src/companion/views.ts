@@ -838,6 +838,7 @@ function branchViewOf(state: DomainState, ws: Workspace): BranchView | undefined
   const b = branchState(state, ws, { planned: Boolean(planOwnerOf(state.plans, state.board, ws.id)) });
   if (!b) return undefined;
   const next = b.steps[0];
+  const url = state.prs[ws.id]?.url;
   return {
     kind: b.kind,
     label: clip(b.label, 80),
@@ -845,8 +846,9 @@ function branchViewOf(state: DomainState, ws: Workspace): BranchView | undefined
     detail: clip(plainLine(b.detail, 300), 300),
     branch: clip(b.branch, 250),
     into: clip(b.into, 250),
-    ...(b.pr ? { pr: b.pr } : {}),
+    ...(b.pr ? { pr: { ...b.pr, ...(url ? { url: clip(url, 500) } : {}) } } : {}),
     ...(next ? { next: { id: next.id, label: clip(next.label, 80), ...(next.claude ? { claude: true } : {}) } } : {}),
+    ...(b.steps.length ? { steps: b.steps.slice(0, 20).map((s) => ({ id: s.id, label: clip(s.label, 80), hint: clip(plainLine(s.hint, 300), 300), ...(s.claude ? { claude: true } : {}), ...(s.danger ? { danger: true } : {}) })) } : {}),
   };
 }
 

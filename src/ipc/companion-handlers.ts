@@ -1,3 +1,4 @@
+import { branchStep } from '../companion/branch-steps.js';
 import { merge, mergeCheck, resolve } from '../companion/merge.js';
 import { macViewFor } from '../companion/open-on-mac.js';
 import { stripCode } from '../companion/strip.js';
@@ -38,6 +39,7 @@ export const COMPANION_HANDLERS = {
   'companion.mergeCheck': (s, topic) => mergeCheck(s, topic),
   'companion.merge': (s, topic) => merge(s, needCompanion(s).merges, topic),
   'companion.resolve': (s, topic) => resolve(s, needCompanion(s).merges, topic),
+  'companion.branchStep': (s, topic, step) => branchStep(s, topic, step),
   'companion.viewFetch': (s, a) => viewFetch(s.store.getState(), a as ViewFetchArgs),
   'companion.draftTask': async (s, a) => {
     const d = await needBoard(s).draft(a.projectId, a.text);
