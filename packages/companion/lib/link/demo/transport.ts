@@ -11,6 +11,7 @@ import {
   type OutputView,
   type PhoneFrame,
   type PlansView,
+  type TasksView,
   type Topic,
   type TurnView,
   VIEW_COALESCE_MS,
@@ -164,13 +165,18 @@ export class DemoTransport implements Transport {
   private view(topic: Topic): unknown {
     const w = this.world;
     if (topic === 'home') return this.home();
-    if (topic === 'work') return { projects: w.projects.map((p) => ({ id: p.id, name: p.name, conversations: p.convs.map((t) => this.summary(w.convs.get(t)!)) })) };
+    if (topic === 'work') return { projects: w.projects.map((p) => ({ id: p.id, name: p.name, conversations: p.convs.map((t) => this.summary(w.convs.get(t)!)), ...(w.icons[p.id] ? { icon: w.icons[p.id]!.sum } : {}) })) };
+    if (topic === 'tasks') return this.tasks();
+    if (topic.startsWith('task:')) return w.tasks.find((t) => t.topic === topic);
     if (topic === 'plans') return { plans: w.plans.map((p) => ({ id: p.id, title: p.title, state: p.state, topic: p.topic, ...count(p) })) } satisfies PlansView;
     if (topic === 'chats') return { chats: [...w.chats].map(([t, c]) => ({ topic: t, name: c.name, kind: c.kind, last: lastLine(c.messages.at(-1)), lastAt: c.messages.at(-1)?.ts, unread: c.unread })).sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0)) };
     if (topic === 'people') return { people: w.people };
     if (topic.startsWith('conv:')) {
       const c = w.convs.get(topic);
-      return c ? { ...c, needsYou: w.needs.filter((n) => n.topic === topic) } : undefined;
+      if (!c) return undefined;
+      const merge = w.merges.get(topic);
+      const outputs = c.turns.flatMap(allOutputs).sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic), ...this.projectOf(c), outputs, ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true } : {}), ...(merge ? { merge } : {}) };
     }
     if (topic.startsWith('plan:')) {
       const p = w.plans.find((x) => x.id === topic.slice(5));
@@ -185,18 +191,42 @@ export class DemoTransport implements Transport {
 
   private home(): HomeView {
     const w = this.world;
-    const outputs: HomeView['outputs'] = [];
-    for (const [topic, c] of w.convs) for (const t of c.turns) for (const o of allOutputs(t)) outputs.push({ ...o, topic });
-    for (const [topic, c] of w.chats) for (const m of c.messages) for (const o of m.files ?? []) if (o.kind === 'image') outputs.push({ ...o, topic });
-    outputs.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+    const review = w.tasks.filter((t) => t.status === 'in_review');
     return {
       mac: DEMO_MAC,
       me: DEMO_ME,
       usage: w.usage,
       needsYou: w.needs,
       running: [...w.convs.values()].filter((c) => c.working || w.needs.some((n) => n.topic === c.topic)).map((c) => this.summary(c)),
-      outputs: outputs.slice(0, 14),
+      // Outputs live with their conversation (1.3); Home hints at new ones per worktree.
+      outputs: [],
       unread: { work: 1, chats: [...w.chats.values()].reduce((n, c) => n + c.unread, 0) },
+      ...(review.length ? { review: { count: review.length, first: { topic: review[0]!.topic, key: review[0]!.key, title: review[0]!.title } } } : {}),
+    };
+  }
+
+  /** A conversation's project and its icon (the demo names its projects by id). */
+  private projectOf(c: ConvView): { projectId?: string; icon?: string } {
+    const p = this.world.projects.find((x) => x.convs.includes(c.topic));
+    if (!p || p.id === 'asked') return {};
+    const icon = this.world.icons[p.id]?.sum;
+    return { projectId: p.id, ...(icon ? { icon } : {}) };
+  }
+
+  /** The board by project and status, as views.ts groups it. */
+  private tasks(): TasksView {
+    const order = ['in_progress', 'in_review', 'todo', 'backlog', 'done'];
+    const label: Record<string, string> = { in_progress: 'In Progress', in_review: 'In Review', todo: 'Ready', backlog: 'Backlog', done: 'Done' };
+    const projects = this.world.projects.filter((p) => this.world.tasks.some((t) => t.projectId === p.id));
+    return {
+      projects: projects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        ...(this.world.icons[p.id] ? { icon: this.world.icons[p.id]!.sum } : {}),
+        groups: order
+          .map((status) => ({ status, label: label[status]!, tasks: this.world.tasks.filter((t) => t.projectId === p.id && t.status === status).map(({ id, topic, key, title, status: st, priority, assignee, checks, conv, pr, updatedAt }) => ({ id, topic, key, title, status: st, priority, updatedAt, ...(assignee ? { assignee } : {}), ...(checks ? { checks } : {}), ...(conv ? { conv } : {}), ...(pr ? { pr: { number: pr.number, state: pr.state } } : {}) })) }))
+          .filter((g) => g.tasks.length),
+      })),
     };
   }
 
@@ -204,7 +234,11 @@ export class DemoTransport implements Transport {
     const last = c.turns.at(-1);
     const waiting = this.world.needs.some((n) => n.topic === c.topic);
     const agents = last?.subagents?.filter((a) => a.status === 'running').length ?? 0;
+    const since = [...c.turns].reverse().find((t) => t.who === 'claude')?.ts ?? 0;
+    const fresh = c.turns.flatMap(allOutputs).filter((o) => (o.ts ?? 0) >= since).length;
     return {
+      ...this.projectOf(c),
+      ...(fresh ? { fresh } : {}),
       topic: c.topic,
       title: c.title,
       project: c.project,
@@ -374,6 +408,171 @@ export class DemoTransport implements Transport {
       }
       case 'companion.older':
         return ok({ turns: [], more: false });
+
+      // ---- steer and queue while Claude works (session.submit, as the Mac's composer)
+      case 'session.submit': {
+        const text = str(0);
+        const opts = (args[1] ?? {}) as { channel?: string; urgent?: boolean };
+        const c = w.convs.get(`conv:${opts.channel ?? ''}`);
+        if (!c) return ok();
+        if (c.working && !opts.urgent) {
+          c.queue = [...(c.queue ?? []), { id: `q${Date.now()}`, text }];
+          this.touch(c.topic);
+          return ok();
+        }
+        if (c.working && opts.urgent) this.steerInto(c, text);
+        else this.submit(text, { topic: c.topic });
+        return ok();
+      }
+      case 'host.promote': {
+        const c = [...w.convs.values()].find((x) => x.queue?.some((q) => q.id === str(0)));
+        const q = c?.queue?.find((x) => x.id === str(0));
+        if (!c || !q) return ok(false);
+        c.queue = c.queue!.filter((x) => x.id !== q.id);
+        this.steerInto(c, q.text);
+        return ok(true);
+      }
+      case 'host.cancelQueued': {
+        for (const c of w.convs.values())
+          if (c.queue?.some((q) => q.id === str(0))) {
+            c.queue = c.queue.filter((q) => q.id !== str(0));
+            this.touch(c.topic);
+          }
+        return ok(true);
+      }
+
+      // ---- open on your Mac, project icons
+      case 'companion.openOnMac':
+        return ok({ opened: true });
+      case 'companion.icon': {
+        const icon = Object.values(w.icons).find((i) => i.sum === str(0));
+        if (!icon) return this.frames.emit({ t: 'result', id, ok: false, error: 'That icon is no longer offered' });
+        return ok({ sum: icon.sum, mime: 'image/svg+xml', b64: toB64(utf8(icon.svg)) });
+      }
+
+      // ---- tasks
+      case 'board.comment': {
+        const t = w.tasks.find((x) => x.key === str(0));
+        if (t) {
+          t.activity = [...t.activity, { id: `c${Date.now()}`, at: Date.now(), who: 'You', text: 'commented', body: str(1), comment: true }];
+          this.touch(t.topic);
+        }
+        return ok();
+      }
+      case 'board.move': {
+        const t = w.tasks.find((x) => x.key === str(0));
+        if (t) {
+          const was = t.status;
+          t.status = str(1);
+          t.moves = ['todo', 'in_progress', 'in_review', 'done', 'backlog', 'canceled'].filter((s) => s !== t.status).map((s) => ({ status: s, label: STATUS_LABEL[s]! }));
+          t.activity = [...t.activity, { id: `m${Date.now()}`, at: Date.now(), who: 'You', text: `moved this from ${STATUS_LABEL[was] ?? was} to ${STATUS_LABEL[t.status] ?? t.status}` }];
+          t.updatedAt = Date.now();
+          this.touch(t.topic, 'tasks');
+        }
+        return ok();
+      }
+      case 'board.start': {
+        const t = w.tasks.find((x) => x.key === str(0) || x.id === str(0));
+        if (!t) return this.frames.emit({ t: 'result', id, ok: false, error: 'No such task' });
+        const topic = this.submit(`Work on ${t.key}: ${t.title}`, { project: t.projectId });
+        const c = w.convs.get(topic)!;
+        c.title = t.title;
+        t.status = 'in_progress';
+        t.conv = topic;
+        t.worktree = `${t.key.toLowerCase()}-${t.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24)}`;
+        t.assignee = 'your Claude';
+        t.activity = [...t.activity, { id: `s${Date.now()}`, at: Date.now(), who: 'Beluga', text: `its work is being done in worktree ${t.worktree}` }];
+        this.touch(t.topic, 'tasks', 'work');
+        return ok(topic.replace(/^conv:/, '').replace(/^ws:/, ''));
+      }
+      case 'companion.draftTask': {
+        const a = args[0] as { projectId: string; text: string };
+        const words = a.text.trim().replace(/\s+/g, ' ');
+        const title = words.length > 70 ? `${words.slice(0, 69)}…` : words.replace(/^./, (ch) => ch.toUpperCase()).replace(/[.!]$/, '');
+        // Claude takes a moment to write it, as the Mac's drafter does.
+        this.later(1400, () =>
+          ok({
+            title,
+            goal: `${words.replace(/^./, (ch) => ch.toUpperCase())}${/[.!?]$/.test(words) ? '' : '.'} Done means it works on the phone and the Mac alike, and nothing that worked before breaks.`,
+            acceptance: ['It works from the phone, in light and dark', 'The Mac shows the same', 'Tests cover it'],
+            labels: ['companion'],
+            priority: /urgent|asap|broken|crash/i.test(words) ? 'high' : 'medium',
+          }),
+        );
+        return;
+      }
+      case 'companion.addTask': {
+        const a = args[0] as { projectId: string; title: string; goal: string; acceptance: string[]; labels: string[]; priority?: string };
+        const n = 52 + w.tasks.length;
+        const key = `${a.projectId === 'pixel-weather' ? 'PXW' : 'BLG'}-${n}`;
+        const task: (typeof w.tasks)[number] = {
+          id: `iss-${n}`,
+          topic: `task:iss-${n}`,
+          key,
+          title: a.title,
+          status: 'todo',
+          priority: a.priority ?? 'none',
+          projectId: a.projectId,
+          project: w.projects.find((p) => p.id === a.projectId)?.name ?? a.projectId,
+          ...(w.icons[a.projectId] ? { icon: w.icons[a.projectId]!.sum } : {}),
+          goal: { text: a.goal, code: [] },
+          acceptance: a.acceptance.map((text) => ({ text, state: 'open' })),
+          checks: a.acceptance.length ? { done: 0, total: a.acceptance.length } : undefined,
+          activity: [{ id: `a${n}`, at: Date.now(), who: 'You', text: 'created this' }],
+          moves: ['in_progress', 'in_review', 'done', 'backlog', 'canceled'].map((s) => ({ status: s, label: STATUS_LABEL[s]! })),
+          updatedAt: Date.now(),
+        };
+        if (!task.checks) delete task.checks;
+        w.tasks = [...w.tasks, task];
+        this.touch('tasks');
+        return ok({ id: task.id, key });
+      }
+
+      // ---- merging a worktree (the Mac's checks, merge, Claude resolving)
+      case 'companion.mergeCheck': {
+        const topic = str(0) as Topic;
+        const resolved = w.merges.get(topic)?.phase === 'resolved';
+        const conflicts = resolved ? [] : ['relay.ts', 'push.test.ts'];
+        return ok({
+          from: 'beluga/push-relay',
+          into: 'main',
+          commits: 4,
+          files: 7,
+          subjects: ['Seal pushes to the phone’s box key', 'Sign requests with the relay key', 'Deploy to staging', 'Tests for the relay'],
+          checks: [
+            { id: 'folder', tone: 'ok', text: 'Your main folder is on main, with no uncommitted changes' },
+            ...(conflicts.length ? [{ id: 'conflicts', tone: 'block', text: `2 files would conflict: ${conflicts.join(', ')}. Claude can merge it and resolve them.`, fix: 'claude' }] : [{ id: 'conflicts', tone: 'ok', text: 'No conflicts' }]),
+            { id: 'newer', tone: 'info', text: 'main has 2 newer commits that beluga/push-relay doesn’t. The merge keeps both.' },
+          ],
+          canMerge: !conflicts.length,
+          confirm: 'Merge 4 Commits',
+          ...(conflicts.length ? { conflicts } : {}),
+        });
+      }
+      case 'companion.merge': {
+        const topic = str(0) as Topic;
+        const clean = w.merges.get(topic)?.phase === 'resolved';
+        w.merges.set(topic, { phase: 'merging', at: Date.now() });
+        this.touch(topic);
+        this.later(1600, () => {
+          w.merges.set(topic, clean ? { phase: 'merged', at: Date.now() } : { phase: 'conflicts', at: Date.now(), conflicts: ['relay.ts', 'push.test.ts'] });
+          this.touch(topic);
+        });
+        return ok({ phase: 'merging', at: Date.now() });
+      }
+      case 'companion.resolve': {
+        const topic = str(0) as Topic;
+        const conflicts = ['relay.ts', 'push.test.ts'];
+        w.merges.set(topic, { phase: 'resolving', at: Date.now(), conflicts });
+        const c = w.convs.get(topic);
+        if (c && !c.working) this.submit('Merge beluga/push-relay into main and resolve the conflicts in relay.ts and push.test.ts, then run the tests.', { topic });
+        this.touch(topic);
+        this.later(7000, () => {
+          w.merges.set(topic, { phase: 'merged', at: Date.now() });
+          this.touch(topic);
+        });
+        return ok({ phase: 'resolving', at: Date.now(), conflicts });
+      }
       case 'companion.signOut':
         ok({ signedOut: true });
         this.later(50, () => this.frames.emit({ t: 'bye', reason: 'signed out' }));
@@ -421,7 +620,7 @@ export class DemoTransport implements Transport {
     }
     const now = Date.now();
     const you: TurnView = { ...turn({ id: `y${now}`, who: 'you', name: 'You' }, text, now), ...(files.length ? { outputs: files } : {}) };
-    const claude: TurnView = turn({ id: `c${now}`, who: 'claude', name: 'Claude', status: 'working', step: 'Reading the conversation', steps: 1 }, '', now + 1);
+    const claude: TurnView = turn({ id: `c${now}`, who: 'claude', name: 'Claude', status: 'working', step: 'Thinking', steps: 0, live: { phase: 'thinking', since: now }, trail: [] }, '', now + 1);
     conv.turns = [...conv.turns, you, claude];
     conv.working = true;
     this.touch(topic, 'work');
@@ -461,7 +660,14 @@ export class DemoTransport implements Transport {
         const c = w.convs.get(topic);
         const last = c?.turns.at(-1);
         if (!c || !last || last.id !== turnId || last.status !== 'working') return;
-        c.turns = [...c.turns.slice(0, -1), { ...last, step: s, steps: i + 2 }];
+        // As views.ts sends it: what it does now, and the step before it done in the trail.
+        const [words, progress] = s.split(' · ');
+        const writing = /^Writing the answer/.test(s);
+        const live: TurnView['live'] = writing ? { phase: 'writing', since: Date.now() } : { phase: 'step', words, tool: toolGuess(s), since: Date.now(), ...(progress ? { progress } : {}) };
+        const was = last.live;
+        const prev = was?.phase === 'step' && was.words ? [...(last.trail ?? []).filter((x) => x.text !== pastOf(was.words!)), { tool: was.tool ?? 'tool', text: pastOf(was.words) }] : (last.trail ?? []);
+        const trail = writing ? prev : [...prev, { tool: toolGuess(s), text: pastOf(words!) }];
+        c.turns = [...c.turns.slice(0, -1), { ...last, step: s, steps: i + 2, live, trail }];
         this.touch(topic);
       }),
     );
@@ -469,11 +675,27 @@ export class DemoTransport implements Transport {
       const c = w.convs.get(topic);
       const last = c?.turns.at(-1);
       if (!c || !last || last.id !== turnId || last.status !== 'working') return;
-      c.turns = [...c.turns.slice(0, -1), { ...last, status: 'done', step: undefined, endTs: Date.now(), prose: { text: answer, code: [] }, ...(outputs ? { outputs } : {}) }];
+      const { live: _live, ...rest } = last;
+      c.turns = [...c.turns.slice(0, -1), { ...rest, status: 'done', step: undefined, endTs: Date.now(), prose: { text: answer, code: [] }, ...(outputs ? { outputs } : {}) }];
       c.working = false;
       this.touch(topic, 'work');
       if (!this.subs.has(topic)) this.frames.emit({ t: 'nudge', kind: 'done', title: c.title, body: answer.slice(0, 120), topic });
     });
+  }
+
+  /** Steer: your words reach the turn Claude is on (it reads them at its next step). */
+  private steerInto(c: ConvView, text: string): void {
+    const at = c.turns.findLastIndex((t) => t.status === 'working');
+    const now = Date.now();
+    const you = turn({ id: `y${now}`, who: 'you', name: 'You' }, text, now);
+    if (at < 0) {
+      c.turns = [...c.turns, you];
+    } else {
+      const live = c.turns[at]!;
+      const steered = { ...live, trail: [...(live.trail ?? []), { tool: 'plan', text: 'Read your message' }] };
+      c.turns = [...c.turns.slice(0, at), you, steered, ...c.turns.slice(at + 1)];
+    }
+    this.touch(c.topic);
   }
 
   private claudeSays(topic: Topic, text: string): void {
@@ -566,8 +788,24 @@ export class DemoTransport implements Transport {
       file.text = file.text ?? '';
       w.files.set(log.ref, { ...file, view: newLog });
       const done = this.e2e === 215;
-      const updated = { ...agent, status: done ? ('done' as const) : ('running' as const), steps: [...agent.steps.slice(0, -1), done ? 'Ran 215 tests · 211 passed, 4 flaky' : `Running 215 tests · ${this.e2e} done`], outputs: [newLog, ...agent.outputs.slice(1)] };
-      c.turns = [...c.turns.slice(0, -1), { ...last, step: done ? 'Writing the summary' : `Running the phone tests · ${this.e2e}/215`, steps: (last.steps ?? 0) + (this.e2e % 5 === 0 ? 1 : 0), subagents: last.subagents.map((a) => (a.id === agent.id ? updated : a)) }];
+      const updated = { ...agent, status: done ? ('done' as const) : ('running' as const), steps: [...agent.steps.slice(0, -1), done ? 'Ran 215 tests · 211 passed, 4 flaky' : `Running 215 tests · ${this.e2e} done`], step: done ? undefined : `Running the tests · ${this.e2e}/215`, ...(done ? { endTs: Date.now(), trail: [...(agent.trail ?? []), { tool: 'write', text: 'Wrote timings.json' }] } : {}), outputs: [newLog, ...agent.outputs.slice(1)] };
+      // The helper looking into the flaky test moves on every few seconds.
+      const FLAKY = [
+        { step: 'Reading needs-you.spec.ts', tool: 'read', done: 'Read needs-you.spec.ts' },
+        { step: 'Searching for swipeThreshold', tool: 'search', done: 'Searched for swipeThreshold' },
+        { step: 'Editing Needs.tsx', tool: 'edit', done: 'Edited Needs.tsx' },
+        { step: 'Running the tests', tool: 'test', done: 'Ran the tests' },
+      ];
+      const k = Math.floor(this.e2e / 12) % FLAKY.length;
+      const subs = last.subagents.map((a) => {
+        if (a.id === agent.id) return updated;
+        if (a.id !== 'a-flaky' || a.status !== 'running') return a;
+        if (a.step === FLAKY[k]!.step) return a;
+        const prev = FLAKY.find((f) => f.step === a.step);
+        return { ...a, step: FLAKY[k]!.step, tool: FLAKY[k]!.tool, count: (a.count ?? 0) + 1, trail: prev ? [...(a.trail ?? []), { tool: prev.tool, text: prev.done }].slice(-30) : a.trail };
+      });
+      const live: TurnView['live'] = done ? { phase: 'writing', since: Date.now() } : { ...(last.live ?? { phase: 'step', words: 'Running the tests', tool: 'test' }), progress: `${this.e2e}/215`, agents: subs.filter((a) => a.status === 'running').length };
+      c.turns = [...c.turns.slice(0, -1), { ...last, step: done ? 'Writing the summary' : `Running the tests · ${this.e2e}/215`, steps: (last.steps ?? 0) + (this.e2e % 5 === 0 ? 1 : 0), subagents: subs, live }];
       this.touch(topic, 'work');
       if (done) {
         this.later(4000, () => {
@@ -589,6 +827,23 @@ export class DemoTransport implements Transport {
     this.timers.add(t);
   }
 }
+
+/** A demo step's tool, from its words. */
+const toolGuess = (s: string): string => (/test/i.test(s) ? 'test' : /^Read|^Looking/i.test(s) ? 'read' : /^Edit|^Writ/i.test(s) ? 'edit' : /screenshot|Taking/i.test(s) ? 'tool' : /^Send|^Deploy/i.test(s) ? 'run' : 'tool');
+/** "Reading the code" → "Read the code" (what the trail says once a step is done). */
+const pastOf = (s: string): string =>
+  s
+    .replace(/ · .*$/, '')
+    .replace(/^Reading/, 'Read')
+    .replace(/^Running/, 'Ran')
+    .replace(/^Editing/, 'Edited')
+    .replace(/^Writing/, 'Wrote')
+    .replace(/^Taking/, 'Took')
+    .replace(/^Sending/, 'Sent')
+    .replace(/^Looking/, 'Looked')
+    .replace(/^Deploying/, 'Deployed');
+
+const STATUS_LABEL: Record<string, string> = { todo: 'Ready', in_progress: 'In Progress', in_review: 'In Review', done: 'Done', backlog: 'Backlog', canceled: 'Canceled' };
 
 const count = (p: { milestones: { tasks: { state: string }[] }[] }): { done: number; total: number } => {
   const tasks = p.milestones.flatMap((m) => m.tasks);

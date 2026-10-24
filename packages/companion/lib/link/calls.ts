@@ -35,6 +35,32 @@ export const calls = {
   /** Ask your Mac in a project: a new conversation there (its topic comes back). */
   ask: (project: string, text: string, files?: Files): Call => make('companion.ask', [{ target: { project }, text, ...withFiles(files) }], `Ask "${short(text)}"`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
+  /**
+   * While Claude works, as the Mac's composer: Steer gives it your words now (at its next step; a
+   * long command is interrupted for it), Queue lets it finish first. The same `session.submit` the
+   * Mac sends (`urgent` for Steer).
+   */
+  steer: (topic: Topic, text: string): Call => make('session.submit', [text, { channel: channelOf(topic), urgent: true }], `Steer "${short(text)}"`),
+  queue: (topic: Topic, text: string): Call => make('session.submit', [text, { channel: channelOf(topic) }], `Queue "${short(text)}"`),
+  /** A queued message of yours: steer with it now, or take it out of the queue. */
+  steerQueued: (id: string): Call => make('host.promote', [id], 'Steer now'),
+  unqueue: (id: string): Call => make('host.cancelQueued', [id], 'Remove from the queue'),
+  /** Bring Beluga on your Mac to the front on this (a topic, or a needs-you item without one). */
+  openOnMac: (target: { topic?: Topic; need?: string }): Call => make('companion.openOnMac', [{ ...(target.topic ? { topic: target.topic } : {}), ...(target.need ? { need: target.need } : {}) }], 'Open on your Mac'),
+  /** A project's icon, by the checksum its views carry. */
+  icon: (sum: string): Call => make('companion.icon', [sum], 'Icon'),
+  /** A task: a comment, or a new status (as dragging it on the Mac's board). */
+  comment: (key: string, text: string): Call => make('board.comment', [key, text], `Comment on ${key}`),
+  move: (key: string, status: string, label: string): Call => make('board.move', [key, status as never], `Move ${key} to ${label}`),
+  /** Start a task in a new worktree with Claude on it (the Mac's Start with Claude) → the worktree's id. */
+  start: (key: string): Call => make('board.start', [key, { claude: true }], `Start ${key}`),
+  /** A task described in words: Claude's draft first, then it's added. */
+  draftTask: (projectId: string, text: string): Call => make('companion.draftTask', [{ projectId, text }], 'Draft a task'),
+  addTask: (projectId: string, d: { title: string; goal: string; acceptance: string[]; labels: string[]; priority?: 'urgent' | 'high' | 'medium' | 'low' }): Call => make('companion.addTask', [{ projectId, ...d }], `Add "${short(d.title)}"`),
+  /** Merging a worktree (its conversation): look first, merge, Claude resolves the conflicts. */
+  mergeCheck: (topic: Topic): Call => make('companion.mergeCheck', [topic], 'Check the merge'),
+  merge: (topic: Topic): Call => make('companion.merge', [topic], 'Merge'),
+  resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask Claude to resolve'),
   older: (topic: Topic, before: string): Call => make('companion.older', [topic, { before }], 'Load older'),
   /** Write in a friends' chat (with photos, or asking Claude). */
   /** `ask`: whose Claude answers too: everyone's ('all') or the chosen people's (peer ids, you included). */

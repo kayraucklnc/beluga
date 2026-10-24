@@ -37,7 +37,7 @@ export function StatusShade({ scrolled }: { readonly scrolled?: boolean }) {
 }
 
 /** A screen's title, a back button when it isn't a tab, and what sits at the right ("•••"). */
-export function Header({ title, subtitle, back, right, eyebrow, at, scrolled }: { readonly title: string; readonly subtitle?: string; readonly back?: boolean; readonly right?: ReactNode; readonly eyebrow?: string; /** When the view shown arrived (for "as of"). */ readonly at?: number; /** Content has scrolled under it: a hairline divider shows. */ readonly scrolled?: boolean }) {
+export function Header({ title, subtitle, back, right, eyebrow, at, scrolled, lead }: { readonly title: string; readonly subtitle?: string; readonly back?: boolean; readonly right?: ReactNode; readonly eyebrow?: string; /** When the view shown arrived (for "as of"). */ readonly at?: number; /** Content has scrolled under it: a hairline divider shows. */ readonly scrolled?: boolean; /** Before the title (a project's mark). */ readonly lead?: ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 8, backgroundColor: color.bg, zIndex: 2 }}>
@@ -47,6 +47,7 @@ export function Header({ title, subtitle, back, right, eyebrow, at, scrolled }: 
             <ChevronLeft color={color.text} size={21} strokeWidth={2.2} />
           </Press>
         ) : null}
+        {lead}
         <View style={{ flex: 1 }}>
           {eyebrow ? (
             <T v="caption" numberOfLines={1}>

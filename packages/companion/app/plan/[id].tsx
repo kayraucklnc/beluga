@@ -1,5 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, ChevronRight, User } from 'lucide-react-native';
+import { Check, ChevronRight, Monitor, User } from 'lucide-react-native';
+import { Options } from '../../components/Options';
+import { openOnMac } from '../../lib/mac';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
@@ -7,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { convHref } from '../../components/Conv';
 import { NeedFace } from '../../components/Needs';
 import { Header, Screen, useScrolled } from '../../components/Screen';
-import { Card, Pill, Press, T, toneBg, toneInk, toneOf } from '../../components/ui';
+import { Card, More, Pill, Press, T, toneBg, toneInk, toneOf } from '../../components/ui';
 import { useView, useVisibleNeeds } from '../../lib/hooks';
 import type { PlanView, Topic } from '../../lib/link/protocol';
 import { color } from '../../lib/theme';
@@ -27,10 +29,17 @@ export default function Plan() {
   const insets = useSafeAreaInsets();
   const tasks = p?.milestones.flatMap((m) => m.tasks) ?? [];
   const done = tasks.filter((t) => t.state === 'done').length;
+  const [menu, setMenu] = useState(false);
 
   return (
     <Screen>
-      <Header scrolled={scrolled} back eyebrow="Plan" title={p?.title ?? 'Plan'} at={view?.at} right={p ? <Pill label={p.state === 'running' ? 'Running' : p.state} tone={toneOf(p.state)} /> : null} />
+      <Header scrolled={scrolled} back eyebrow="Plan" title={p?.title ?? 'Plan'} at={view?.at} right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {p ? <Pill label={p.state === 'running' ? 'Running' : p.state} tone={toneOf(p.state)} /> : null}
+            <More onPress={() => setMenu(true)} label="Plan options" />
+          </View>
+        } />
+      <Options visible={menu} onClose={() => setMenu(false)} title={p?.title} options={[{ Icon: Monitor, label: 'Open on your Mac', sub: 'Its graph, outline and conversation', tone: 'plain', onPress: () => void openOnMac({ topic }) }]} />
       <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
         {p ? (
           <>

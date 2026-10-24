@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { Bot, Check, ChevronRight, CircleAlert, Code, Hourglass, MessageSquare } from 'lucide-react-native';
+import { Bot, Check, ChevronRight, CircleAlert, Code, Hourglass, Images, MessageSquare } from 'lucide-react-native';
+import { ProjectMark } from './ProjectMark';
 import { Fragment, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
@@ -153,7 +154,17 @@ export function ConvCard({ c }: { readonly c: ConvSummary }) {
     <Press scaleTo={0.985} onPress={() => router.push(convHref(c.topic))} style={{ marginHorizontal: 16 }}>
       <Card style={{ padding: 14, gap: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <IconBadge Icon={st.Icon} tone={st.tone} size={36} />
+          {c.project && c.projectId ? (
+            <View>
+              <ProjectMark name={c.project} icon={c.icon} size={36} />
+              {/* What it's doing, as a small badge on the project's mark. */}
+              <View style={{ position: 'absolute', right: -4, bottom: -4, borderRadius: 10, borderWidth: 2, borderColor: color.card }}>
+                <IconBadge Icon={st.Icon} tone={st.tone} size={18} />
+              </View>
+            </View>
+          ) : (
+            <IconBadge Icon={st.Icon} tone={st.tone} size={36} />
+          )}
           <View style={{ flex: 1 }}>
             <T v="heading" numberOfLines={1}>
               {c.title}
@@ -162,6 +173,14 @@ export function ConvCard({ c }: { readonly c: ConvSummary }) {
               {[c.project, c.needsYou ? 'needs you' : undefined, ago(c.lastAt)].filter(Boolean).join(' · ')}
             </T>
           </View>
+          {c.fresh ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 24, paddingHorizontal: 8, borderRadius: 12, backgroundColor: tint.sky }}>
+              <Images color={color.info} size={12} />
+              <T v="caption" c={color.info} style={{ fontWeight: '700' }}>
+                {c.fresh}
+              </T>
+            </View>
+          ) : null}
           {c.agents ? <AgentDots count={c.agents} /> : null}
           <ChevronRight color={color.text3} size={18} />
         </View>

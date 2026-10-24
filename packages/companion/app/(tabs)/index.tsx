@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ChevronRight, Settings, Workflow } from 'lucide-react-native';
+import { ChevronRight, Eye, Settings, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
@@ -7,7 +7,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConvCard } from '../../components/Conv';
 import { Mark } from '../../components/Mark';
 import { NeedsStack } from '../../components/Needs';
-import { OutputStrip } from '../../components/Outputs';
 import { AwayBand, Screen, StatusShade, useScrolled } from '../../components/Screen';
 import { UsageCard, UsageSheet } from '../../components/Usage';
 import { Card, IconBadge, Pill, Press, Section, T } from '../../components/ui';
@@ -18,7 +17,7 @@ import { color, TAB_BAR_H } from '../../lib/theme';
 
 /**
  * Home: your Mac and its state at the top, then what needs you (a stack of cards), what's running,
- * the newest outputs, and your allowance.
+ * tasks waiting for your review, and your allowance (outputs live with their conversations).
  */
 export default function Home() {
   const insets = useSafeAreaInsets();
@@ -116,9 +115,22 @@ export default function Home() {
               </Section>
             ) : null}
 
-            {h.outputs.length ? (
-              <Section title="Outputs">
-                <OutputStrip items={h.outputs} />
+            {h.review?.count ? (
+              <Section title="For your review">
+                <Press scaleTo={0.985} onPress={() => router.push(h.review!.count === 1 && h.review!.first ? `/task/${encodeURIComponent(h.review!.first.topic.slice(5))}` : '/tasks')} style={{ marginHorizontal: 16 }}>
+                  <Card style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <IconBadge Icon={Eye} tone="sky" />
+                    <View style={{ flex: 1 }}>
+                      <T v="heading" numberOfLines={1}>
+                        {h.review.count === 1 && h.review.first ? h.review.first.title : `${h.review.count} tasks in review`}
+                      </T>
+                      <T v="caption" numberOfLines={1}>
+                        {h.review.count === 1 && h.review.first ? `${h.review.first.key} · in review` : h.review.first ? `${h.review.first.key} and ${h.review.count - 1} more` : 'Tasks'}
+                      </T>
+                    </View>
+                    <ChevronRight color={color.text3} size={18} />
+                  </Card>
+                </Press>
               </Section>
             ) : null}
 

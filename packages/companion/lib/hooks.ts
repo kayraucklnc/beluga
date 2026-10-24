@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { NeedsYou, OutputView, Topic } from './link/protocol';
 import { type CachedView, type FileState, type LinkState, type OutboxItem, store, type Toast } from './store';
 
@@ -47,6 +47,39 @@ export function useOutput(ref: string | undefined): OutputView | undefined {
     () => store.snapshot(`out:${ref}`, () => (ref ? store.output(ref) : undefined)),
   );
 }
+
+/** A project's icon (a data: URI) by its checksum: fetched once, then from the cache. */
+export function useIcon(sum: string | undefined): string | undefined {
+  const phase = useSyncExternalStore(
+    (fn) => store.subscribe('state', fn),
+    () => store.getState().phase,
+  );
+  useEffect(() => void store.icon(sum), [sum, phase]);
+  return useSyncExternalStore(
+    (fn) => (sum ? store.subscribe(`icon:${sum}`, fn) : () => {}),
+    () => store.cachedIcon(sum),
+  );
+}
+
+/** Seconds since `ts`, ticking once a second while shown (the phone counts; nothing streams). */
+export function useSince(ts: number | undefined): number | undefined {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (ts === undefined) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [ts]);
+  return ts === undefined ? undefined : Math.max(0, Math.round((now - ts) / 1000));
+}
+
+/** "42s", "3m 05s", "1h 02m". */
+export const elapsed = (s: number | undefined): string => {
+  if (s === undefined) return '';
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+};
 
 export function useOutbox(): OutboxItem[] {
   return useSyncExternalStore(
