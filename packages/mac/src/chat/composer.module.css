@@ -188,6 +188,47 @@
   color: var(--text-3);
   font-size: 0.9rem;
 }
+/* "@BLG-2": the Tasks section (status ring, key, title, status). */
+.sugSection {
+  padding: 6px 9px 3px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.sugSection:not(:first-child) {
+  margin-top: 3px;
+  border-top: 1px solid var(--hairline);
+}
+.sugTask {
+  align-items: center;
+  gap: 7px;
+}
+.sugTask svg {
+  flex: none;
+}
+.sugKey {
+  flex: none;
+  min-width: 52px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--info) 80%, var(--text));
+}
+.sugTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sugStatus {
+  flex: none;
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+.suggestionOn .sugKey,
+.suggestionOn .sugStatus {
+  color: rgba(255, 255, 255, 0.85);
+}
 
 .wrap:focus-within .legend,
 .legend {

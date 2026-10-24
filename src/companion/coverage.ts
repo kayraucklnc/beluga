@@ -46,6 +46,8 @@ export const PHONE: Record<Method, Side> = {
   'host.answerApproval': 'phone',
   'host.promote': 'phone',
   'host.sendNext': 'phone',
+  // Your steered message Claude hasn't read yet, answered now: like Stop, phone-sized.
+  'host.steerNow': 'phone',
   'host.stopRun': 'phone',
   'host.cancelQueued': 'phone',
   'host.reorderQueued': 'mac',
@@ -234,6 +236,9 @@ export const PHONE: Record<Method, Side> = {
   'stripe.connect': 'mac',
   'stripe.disconnect': 'mac',
   'stripe.refresh': 'mac',
+
+  // ---- supporting Beluga: the star and coffee asks are the Mac's (they open web pages there)
+  'support.answer': 'mac',
 
   // ---- Claude Code's sessions: what its agents made (outputs, background logs), not their steps' code
   'claudeCode.steps': 'mac',

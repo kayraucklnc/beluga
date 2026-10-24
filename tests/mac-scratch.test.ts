@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FRESH_MS, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, scratchState, timeAgo } from '../packages/mac/src/layout/panel/scratch-model.js';
+import { FRESH_MS, atEnd, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, scratchState, timeAgo } from '../packages/mac/src/layout/panel/scratch-model.js';
 
 /** The Scratch tab's small decisions: how long ago, what a file is, which one to show. */
 describe('Scratch tab model', () => {
@@ -31,6 +31,13 @@ describe('Scratch tab model', () => {
     expect(followed(files, false, 'a')).toBe('a');
     expect(followed(files, false, 'gone')).toBe('b');
     expect(followed([], true, undefined)).toBeUndefined();
+  });
+
+  it('follows a file’s end once scrolled to it, not while up the file or when it all fits', () => {
+    expect(atEnd({ scrollTop: 600, scrollHeight: 1000, clientHeight: 400 })).toBe(true);
+    expect(atEnd({ scrollTop: 595, scrollHeight: 1000, clientHeight: 400 })).toBe(true);
+    expect(atEnd({ scrollTop: 500, scrollHeight: 1000, clientHeight: 400 })).toBe(false);
+    expect(atEnd({ scrollTop: 0, scrollHeight: 300, clientHeight: 400 })).toBe(false);
   });
 
   const roots = ['.klaud/scratch', '.context'];

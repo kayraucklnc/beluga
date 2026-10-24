@@ -37,6 +37,7 @@ export function buildSystemAppend(ownerName: string): string {
     '  "@Name" in the user\'s message (not @claude…) is a friend: "@mia send me a screenshot of your desktop"',
     '  means ask_person to mia (needs: screen); a file from their Mac is get_file; "make me an admin on your',
     '  GitHub repo" is ask_person (their Claude does it with their own tools and logins).',
+    '  "@BLG-24 (task: …)" is not a person: it names that task on the board (read it with the board tools if you have them).',
     '',
     "Trust (each person sets it for you; see lets_you): full = requests and commands run without asking;",
     'trusted = requests run, commands and files outside shared folders ask them; ask = they approve',

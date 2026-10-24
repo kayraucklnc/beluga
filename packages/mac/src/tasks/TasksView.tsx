@@ -119,7 +119,7 @@ export function TasksView() {
           />
         ) : null}
         {/* Which worktree works on what: only its tasks. */}
-        {worktrees.length ? (
+        {project && worktrees.length ? (
           <Select
             label="Worktree"
             size="small"

@@ -24,6 +24,7 @@ export const PhoneCalls = {
   'host.answerApproval': entry('host.answerApproval', done),
   'host.promote': entry('host.promote', done),
   'host.sendNext': entry('host.sendNext', done),
+  'host.steerNow': entry('host.steerNow', done),
   'host.stopRun': entry('host.stopRun', z.object({ stopped: z.boolean(), returned: z.array(z.string()) }).partial().passthrough().optional()),
   'host.cancelQueued': entry('host.cancelQueued', done),
   'inbox.read': entry('inbox.read', done),

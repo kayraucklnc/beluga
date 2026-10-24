@@ -1,6 +1,8 @@
-import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import type { Suggestion } from '@beluga/ui/suggest.js';
+import { type IssueStatus, STATUS_INFO } from '@beluga/core/board/model.js';
 import { cx } from '../components/ui.js';
+import { StatusIcon } from '../tasks/marks.js';
 import s from './composer.module.css';
 
 /** Suggestions listed under / and @ at most. */
@@ -43,23 +45,47 @@ export function useSuggestions<T extends Suggestion>(items: readonly T[], text: 
   };
   const list = listed ? (
     <div ref={ref} className={s.suggestions} role="listbox" aria-label="Suggestions">
-      {shown.slice(0, MAX_LISTED).map((sug, i) => (
-        <div
-          key={`${sug.value}:${sug.label}:${i}`}
-          role="option"
-          aria-selected={i === pick}
-          className={cx(s.suggestion, i === pick && s.suggestionOn)}
-          onMouseEnter={() => {
-            byKeys.current = false;
-            setSelected(i);
-          }}
-          onMouseDown={(e) => (e.preventDefault(), accept(sug))}
-        >
-          <span className={s.sugLabel}>{sug.label}</span>
-          <span className={s.sugHint}>{sug.hint}</span>
-        </div>
+      {shown.slice(0, MAX_LISTED).map((sug, i, all) => (
+        <Fragment key={`${sug.value}:${sug.label}:${i}`}>
+          {/* Tasks ("@BLG-24") come as their own section, under a heading. */}
+          {sug.task && !all[i - 1]?.task ? (
+            <div className={s.sugSection} role="presentation">
+              Tasks
+            </div>
+          ) : null}
+          <div
+            role="option"
+            aria-selected={i === pick}
+            className={cx(s.suggestion, sug.task && s.sugTask, i === pick && s.suggestionOn)}
+            onMouseEnter={() => {
+              byKeys.current = false;
+              setSelected(i);
+            }}
+            onMouseDown={(e) => (e.preventDefault(), accept(sug))}
+          >
+            {sug.task ? <TaskOption task={sug.task} /> : (
+              <>
+                <span className={s.sugLabel}>{sug.label}</span>
+                <span className={s.sugHint}>{sug.hint}</span>
+              </>
+            )}
+          </div>
+        </Fragment>
       ))}
     </div>
   ) : null;
   return { shown, reset, onKeyDown, list };
+}
+
+/** A task in the list: its status ring, key and title, and its status in words at the end. */
+function TaskOption({ task }: { task: NonNullable<Suggestion['task']> }) {
+  const status = STATUS_INFO[task.status as IssueStatus];
+  return (
+    <>
+      {status ? <StatusIcon status={task.status as IssueStatus} size={12} /> : null}
+      <span className={s.sugKey}>{task.key}</span>
+      <span className={s.sugTitle}>{task.title}</span>
+      {status ? <span className={s.sugStatus}>{status.label}</span> : null}
+    </>
+  );
 }

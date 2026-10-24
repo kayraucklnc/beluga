@@ -15,6 +15,7 @@ import { launchBoard } from '../core/board/launch.js';
 import { launchChat } from '../core/chat/launch.js';
 import { launchGateway } from '../core/gateway/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
+import { launchSupport } from '../core/merge-counter.js';
 import { launchClaudeCode } from '../core/claude-code/launch.js';
 import { launchCompanion } from '../companion/launch.js';
 import { Store, initialState, prefsFrom } from '../core/store.js';
@@ -300,6 +301,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
 
   let stopNetwork = async (): Promise<void> => undefined;
   let stopEarnings = (): void => undefined;
+  let stopSupport = (): void => undefined;
   let stopClaudeCode = (): void => undefined;
   let stopGateway = (): void => undefined;
   let stopChat = (): void => undefined;
@@ -312,6 +314,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopNetwork = networkSwitch({ session, store, identity, name: config.name, dir: belugaHome(), demo: Boolean(demo), warn: (text) => session.system(text, 'warn') }, saved).stop;
     // Earnings from Stripe per project (the Mac app shows them): the daemon counts them in the background.
     if (opts.network) stopEarnings = launchEarnings({ session, store, demo: Boolean(demo) });
+    // Merged work made in Beluga, counted once per branch: the first and fifth merge ask for a star and a coffee.
+    if (opts.network) stopSupport = launchSupport({ session, store, demo: Boolean(demo), asks: belugaEnv('DEMO_ASKS') });
     // Claude Code sessions running outside Beluga (Conductor, a terminal): the Mac app shows them live, read-only.
     // Tasks between Claudes (the gateway): over this room now, and over the network whenever it's on.
     if (opts.network) stopGateway = launchGateway({ session, store, demo: Boolean(demo) });
@@ -355,6 +359,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     await stopCompanion();
     await stopNetwork();
     stopEarnings();
+    stopSupport();
     stopClaudeCode();
     await session.stop();
     terminals.closeAll();

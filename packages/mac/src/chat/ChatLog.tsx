@@ -14,6 +14,7 @@ import { CompactDivider } from './CompactDivider.js';
 import { isCompactItem } from './context-model.js';
 import { useClaudeStarting } from './flight.js';
 import { withLiveTails } from './live-tail.js';
+import { steeredMessages } from '@beluga/shared/claude-notices.js';
 import s from './chat.module.css';
 import f from './flight.module.css';
 
@@ -75,8 +76,11 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const selfId = useApp((st) => st.selfId);
   // A shared workspace's earlier messages arrive as system lines; drawn here as normal messages.
   const items = useMemo(() => mine.map(chatRowOf), [mine]);
+  // A message you steered in shows itself whether Claude has read it (BLG-54): its note card isn't drawn.
+  const steered = useMemo(() => steeredMessages(items), [items]);
+  const drawn = useMemo(() => (steered.notes.size ? items.filter((l) => !steered.notes.has(l.id)) : items), [items, steered]);
   const tasks = useApp((st) => tasksIn(st, channel), sameItems);
-  const placed = useMemo(() => placeTasks(items, tasks), [items, tasks]);
+  const placed = useMemo(() => placeTasks(drawn, tasks), [drawn, tasks]);
   // A card's tasks stay the same list while they're the same tasks, so its memo holds.
   const turnTasks = useRef<ReadonlyMap<string, readonly TaskView[]>>(undefined);
   const inTurn = useMemo(() => (turnTasks.current = keepSameLists(turnTasks.current, placed.inTurn)), [placed]);
@@ -189,9 +193,9 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
                 {item.type === 'task' ? (
                   <LogTaskCard task={item.task} />
                 ) : item.type === 'chat' ? (
-                  <ChatRow item={item} continued={continued(v.index)} mine={item.from === selfId} />
+                  <ChatRow item={item} continued={continued(v.index)} mine={item.from === selfId} steer={steered.waiting.get(item.id)} />
                 ) : item.type === 'agent' ? (
-                  <AgentCard item={item} tasks={part?.side === 'head' ? undefined : inTurn.get(item.id)} latest={item.id === latest} part={part} />
+                  <AgentCard item={item} tasks={part?.side === 'head' || part?.side === 'live' ? undefined : inTurn.get(item.id)} latest={item.id === latest} part={part} working={shown[v.index]?.working} subs={shown[v.index]?.subs} />
                 ) : item.type === 'shell' ? (
                   <ShellCard item={item} />
                 ) : isCompactItem(item) ? (

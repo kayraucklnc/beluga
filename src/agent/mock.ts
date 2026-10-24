@@ -20,6 +20,8 @@ interface Script {
   readonly after?: readonly string[];
   /** Takes what you say while it works into the turn at its next step, as Claude Code does (steering). */
   readonly steerable?: boolean;
+  /** One step that runs long: after it starts, the next step comes `ms` later (a steer waits; Send now stops it). */
+  readonly slowStep?: { readonly step: string; readonly ms: number };
 }
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
@@ -66,6 +68,15 @@ const SCRIPTS: readonly Script[] = [
     steerable: true,
     steps: ['Glob **/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Grep "TODO"', 'Read NOTES.md', 'Grep "session"', 'Read src/webhooks.ts', 'Bash npm test', 'Read package.json', 'Grep "retry"'],
     answer: 'Walked the codebase, with your notes in mind. **Webhook retries** are the weak spot (not idempotent); the rest is small and well tested.',
+  },
+  {
+    // A step that runs long while you steer: your message waits, sent but not read, until you Send it now (BLG-54).
+    match: /full test suite/i,
+    stepMs: 1200,
+    steerable: true,
+    slowStep: { step: 'Bash npm run test:all', ms: 45_000 },
+    steps: ['Read package.json', 'Glob tests/**/*.test.ts', 'Bash npm run test:all', 'Read test-results/summary.txt'],
+    answer: 'The full suite passes: **2,455 tests**, none flaky this run. The slowest are the webhook retry tests (about 40s).',
   },
   {
     // Background work with steps after it: once answered, it folds with the older steps (e2e/subagents.spec.ts).
@@ -277,7 +288,8 @@ async function mockPeerRun(input: AgentRunInput, bridge: RoomBridge, target: { p
 
 /** "ask bob to run the tests" / "ask mia's Claude whether …" / "@bob run the tests": whom to ask, and what. */
 export function gatewayTarget(prompt: string): { person: string; ask: string } | undefined {
-  const tagged = /(?:^|\s)@(?!claude)(\w[\w.-]*)[,:]?\s+([\s\S]+)/i.exec(prompt.trim());
+  // A task ("@BLG-24 (task: …)", see explainTaskMentions) is nobody to ask.
+  const tagged = /(?:^|\s)@(?!claude)(?![A-Za-z][A-Za-z0-9]*-\d+ \(task: )(\w[\w.-]*)[,:]?\s+([\s\S]+)/i.exec(prompt.trim());
   if (tagged) return { person: tagged[1]!, ask: tagged[2]!.trim().replace(/[.?!]+$/, '') };
   const m = /\bask (\w[\w.-]*?)(?:['’]s claude)?(?: to)?\s+([\s\S]+)/i.exec(prompt.trim());
   if (!m || /^(me|you|claude|it|them|him|her)$/i.test(m[1]!)) return undefined;
@@ -459,17 +471,53 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       return picked ? `Going with **${picked}**. I'll wire \`requireUser()\` to it next.` : "No preference, so I'll start with **signed cookies**: the simplest option.";
     }
     // What you said meanwhile: read at the next step, folded into this turn (its answer covers it).
+    // Sent now (Steer.force): the step it's on stops and your message is the next turn, its own.
     const said: FollowUp[] = [];
-    if (script.steerable) input.onSteer?.((followUp) => (said.push(followUp), true));
+    let forced: { followUp: FollowUp; note: string } | undefined;
+    let wake: (() => void) | undefined;
+    const pause = (ms: number): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        wake = resolve;
+        sleep(ms, input.signal).then(resolve, reject);
+      });
+    const force = async (followUp: FollowUp, note: string): Promise<boolean> => {
+      const i = said.indexOf(followUp);
+      if (i < 0 || forced) return false;
+      said.splice(i, 1);
+      forced = { followUp, note };
+      wake?.();
+      return true;
+    };
+    if (script.steerable) input.onSteer?.(Object.assign((followUp: FollowUp) => (said.push(followUp), true), { force }));
+    let last: string | undefined;
     try {
       for (const step of script.steps) {
-        await sleep((script.stepMs ?? 450) * pace, input.signal);
+        await pause((last && last === script.slowStep?.step ? script.slowStep.ms : (script.stepMs ?? 450)) * pace);
+        if (forced) break;
         for (const followUp of said.splice(0)) followUp.onFolded?.();
         input.onEvent('tool', step);
+        last = step;
       }
-      for (const followUp of said.splice(0)) followUp.onFolded?.();
+      if (!forced) for (const followUp of said.splice(0)) followUp.onFolded?.();
+      if (forced) {
+        // The interrupted turn ends saying so; the conversation goes on from your message.
+        input.onEvent('text', forced.note);
+        const { followUp } = forced;
+        followUp.onStart?.();
+        await sleep(700 * pace, input.signal);
+        followUp.onEvent('tool', 'Read src/webhooks.ts');
+        await sleep(900 * pace, input.signal);
+        followUp.onEvent('tool', 'Grep "retry"');
+        await sleep(700 * pace, input.signal);
+        for (const other of said.splice(0)) other.onFolded?.();
+        const asked = followUp.prompt.trim().replace(/\s+/g, ' ');
+        followUp.onDone(`Stopped the tests to look at that first (“${asked.length > 80 ? `${asked.slice(0, 80)}…` : asked}”). **Webhook retries** are the weak spot: they aren't idempotent. Say the word and I'll run the suite again.`);
+        return forced.note;
+      }
     } finally {
       if (script.steerable) input.onSteer?.(undefined);
+      // The run stopped before Claude read them: back to the queue (see AgentHost.followUp).
+      for (const followUp of said.splice(0)) followUp.onError('Claude finished before getting to this message');
     }
     const subs = (script.subagents ?? []).map((s, i) => ({ ...s, id: `sub-${Date.now()}-${i}` }));
     for (const s of subs) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'start', title: s.title, kind: s.kind ?? 'agent' }));
