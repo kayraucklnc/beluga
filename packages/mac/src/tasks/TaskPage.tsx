@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById, worktreeDoing } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById, worktreeDoing } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
@@ -460,6 +460,7 @@ function Properties({ issue }: { issue: Issue }) {
           </Tip>
         </Prop>
       ) : null}
+      {issue.link ? <TrackerLink link={issue.link} /> : null}
       <Prop label="Created" quiet>
         <span className={t.propStatic}>
           {ago(issue.createdAt)} by {actorName(issue.createdBy, selfId)}
@@ -494,6 +495,22 @@ function DuePicker({ issue, late, text }: { issue: Issue; late: boolean; text: s
       {issue.due ? <IconButton icon="x" label="Remove the Due Date" onClick={() => void act(() => api.update(issue.id, { due: null }))} /> : null}
       <input ref={input} type="date" className={t.dateHidden} tabIndex={-1} aria-hidden="true" value={issue.due ?? ''} onChange={(e) => void act(() => api.update(issue.id, { due: e.target.value || null }))} />
     </div>
+  );
+}
+
+/** The same task in Linear (kept in step by sync): its key, opening it there. */
+function TrackerLink({ link }: { link: NonNullable<Issue['link']> }) {
+  const actions = useActions();
+  const name = PROVIDER_INFO[link.provider].label;
+  return (
+    <Prop label={name} quiet>
+      <Tip label={`Open ${link.key} in ${name}`}>
+        <button type="button" className={t.propValue} onClick={() => actions.openLink({ kind: 'url', url: link.url })}>
+          <span className={t.mono}>{link.key}</span>
+          <Icon name="external" size={11} />
+        </button>
+      </Tip>
+    </Prop>
   );
 }
 

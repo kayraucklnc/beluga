@@ -1,4 +1,5 @@
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
+import { SyncSheet } from '../../tasks/SyncSheet.js';
 import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
 import { useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
@@ -175,6 +176,8 @@ export function NativeSheets() {
       return <DeleteProjectAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_task':
       return <NewTaskSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
+    case 'task_sync':
+      return <SyncSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_plan':
       return <NewPlanSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} close={close} />;
     case 'plan_style':

@@ -382,6 +382,11 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.emptyArchive` | ✓ Tasks › Archive › Empty Archive |
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
+| `board.syncTeams` | ✓ Tasks › ⋯ › Sync with Linear… (the sheet checks the key and lists its teams) |
+| `board.syncConnect` | ✓ the Sync with Linear sheet › Connect (a team, Autosync, Also Send Open Tasks) |
+| `board.syncDisconnect` | ✓ the Sync with Linear sheet › Disconnect… |
+| `board.syncNow` | ✓ Tasks › ⋯ › Sync Now, and the Sync with Linear sheet’s Sync Now (the Linear pill in the Tasks bar opens the sheet) |
+| `board.syncAuto` | ✓ the Sync with Linear sheet › Autosync |
 | `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (Claude plans in the conversation you're in) |
 | `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation |

@@ -20,6 +20,7 @@ const KIND_ICON: Partial<Record<ActivityKind, IconName>> = {
   labels: 'tag',
   brief: 'pencil',
   relation: 'link',
+  link: 'refresh',
   worktree: 'branch',
   pr: 'pr',
   proof: 'image',

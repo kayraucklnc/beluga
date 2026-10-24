@@ -3,6 +3,7 @@ import {
   type BoardState,
   type Issue,
   PRIORITY_INFO,
+  PROVIDER_INFO,
   SECTION_INFO,
   STATUS_INFO,
   actorName,
@@ -118,6 +119,7 @@ export function describeIssue(board: BoardState, issue: Issue, selfId: string): 
     waiting.length ? `Blocks: ${waiting.map(line).join('; ')}` : '',
     kids.length ? `Sub-tasks: ${kids.map(line).join('; ')}` : '',
     issue.branch ? `Branch: ${issue.branch}` : '',
+    issue.link ? `In ${PROVIDER_INFO[issue.link.provider].label}: ${issue.link.key} ${issue.link.url} (kept in step both ways: changes you make here reach it)` : '',
     issue.pr ? `Pull request: #${issue.pr.number} ${issue.pr.state.toLowerCase()}${issue.pr.draft ? ' (draft)' : ''}, checks ${issue.pr.checks}${issue.pr.review ? `, ${issue.pr.review.toLowerCase().replace('_', ' ')}` : ''} ${issue.pr.url}` : '',
     issue.proof.length ? `Proof: ${issue.proof.map((p) => `${p.title} (${p.path ?? p.url ?? p.kind})`).join('; ')}` : '',
   ].filter(Boolean);
