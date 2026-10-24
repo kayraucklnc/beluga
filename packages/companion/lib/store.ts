@@ -82,7 +82,7 @@ export interface Toast {
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number };
 
-const APP = 'beluga-companion/0.1.0';
+const APP = 'beluga-companion/0.15.0';
 const PLATFORM: 'android' | 'ios' = Platform.OS === 'ios' ? 'ios' : 'android';
 
 class Store {
