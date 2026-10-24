@@ -123,19 +123,19 @@ describe('links', () => {
   const key = encodeKey(Buffer.alloc(32, 7));
   const secret = 'tVh65bTGibnD1mD3ofr75-PD';
 
-  it('room invites are made as klaud:// (older Klauds read it), and both open', () => {
+  it('room invites are made as beluga://, and klaud:// ones still open', () => {
     const link = encodeInvite({ url: `p2p://${key}`, secret });
-    expect(link).toBe(`klaud://${key}#${secret}`);
+    expect(link).toBe(`beluga://${key}#${secret}`);
     expect(decodeInvite(link)).toEqual({ url: `p2p://${key}`, secret });
     expect(decodeInvite(`klaud://${key}#${secret}`)).toEqual({ url: `p2p://${key}`, secret });
     expect(findInvite(`klaud join klaud://${key}#${secret}`)).toBe(`klaud://${key}#${secret}`);
     expect(findInvite(`beluga join ${link}`)).toBe(link);
   });
 
-  it('friend and group invitations: klaud:// made, both read', () => {
+  it('friend and group invitations: beluga:// made, both read', () => {
     const s = 'AAAAAAAAAAAAAAAAAAAAAA';
-    expect(linkOf({ kind: 'friend', secret: s })).toBe(`klaud://add#${s}`);
-    expect(codeLinkOf({ kind: 'group', code: 'K7QM4XPAR2TD' })).toBe('klaud://join?code=K7QM-4XPA-R2TD');
+    expect(linkOf({ kind: 'friend', secret: s })).toBe(`beluga://add#${s}`);
+    expect(codeLinkOf({ kind: 'group', code: 'K7QM4XPAR2TD' })).toBe('beluga://join?code=K7QM-4XPA-R2TD');
     for (const scheme of ['beluga', 'klaud']) {
       expect(parseTicket(`${scheme}://add#${s}`)).toEqual({ via: 'link', secret: s });
       expect(parseTicket(`${scheme}://join?code=K7QM-4XPA-R2TD`)).toEqual({ via: 'code', code: 'K7QM4XPAR2TD' });

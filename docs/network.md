@@ -23,10 +23,9 @@ observers can tell when that address is online.
 
 ## Adding a friend
 
-An invitation is a one-time link (`klaud://add#<22 chars>`, 128 bits, works for 24 h) and a
+An invitation is a one-time link (`beluga://add#<22 chars>`, 128 bits, works for 24 h) and a
 short code (`K7QM-4XPA-R2TD`, 60 bits, works for 1 h). The code can also be sent as a link,
-`klaud://add?code=K7QM-4XPA-R2TD`. Links are made as `klaud://` so a Klaud from before the rename can
-open them; Beluga opens `beluga://` and `klaud://` alike. Codes are typed loosely: any case, dashes or spaces anywhere,
+`beluga://add?code=K7QM-4XPA-R2TD`. Old `klaud://` links from before the rename still open. Codes are typed loosely: any case, dashes or spaces anywhere,
 O for 0, I or L for 1. Neither form contains your address: the inviter listens on a temporary key
 pair made from the secret (HKDF for the link; scrypt for the code, see below), so only someone
 holding it can find you. On that connection:
