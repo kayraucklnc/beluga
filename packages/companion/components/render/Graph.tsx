@@ -1,4 +1,5 @@
-import { ChevronLeft, ChevronRight, ExternalLink, Footprints, Maximize2 } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Expand, ExternalLink, Footprints, Maximize2 } from 'lucide-react-native';
+import { openFull } from '../../lib/fullscreen';
 import { useEffect, useMemo, useState } from 'react';
 import { Linking, ScrollView, Text, View } from 'react-native';
 import { GestureDetector, usePanGesture, usePinchGesture, useSimultaneousGestures } from 'react-native-gesture-handler';
@@ -49,7 +50,7 @@ async function layoutFor(g: Graph): Promise<Laid> {
   return laid.sort((a, b) => fit(b) - fit(a))[0]!;
 }
 
-export function GraphCard({ graph }: { readonly graph: Graph }) {
+export function GraphCard({ graph, full }: { readonly graph: Graph; /** Full screen (BLG-71): taller, no Expand. */ readonly full?: boolean }) {
   const [laid, setLaid] = useState<Laid | undefined>();
   const [error, setError] = useState<string>();
   const [w, setW] = useState(0);
@@ -88,7 +89,7 @@ export function GraphCard({ graph }: { readonly graph: Graph }) {
 
   const focus = step !== undefined && graph.steps[step] ? stepFocus(graph, graph.steps[step]!) : open ? neighborhood(graph, open.id) : undefined;
   const fit = laid && w ? Math.min(1, (w - 16) / laid.width) : 1;
-  const frameH = laid ? Math.min(440, Math.max(180, laid.height * fit + 16)) : 220;
+  const frameH = laid ? Math.min(full ? 900 : 440, Math.max(180, laid.height * fit + 16)) : 220;
 
   // Pinch and pan, on the UI thread; Fit puts it back.
   const scale = useSharedValue(1);
@@ -228,6 +229,11 @@ export function GraphCard({ graph }: { readonly graph: Graph }) {
         {laid ? (
           <Press onPress={reset} accessibilityLabel="Fit the graph" style={{ position: 'absolute', right: 8, top: 8, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card, borderWidth: 1, borderColor: color.hairline }}>
             <Maximize2 color={color.text2} size={14} />
+          </Press>
+        ) : null}
+        {laid && !full ? (
+          <Press onPress={() => openFull({ kind: 'graph', graph })} accessibilityLabel="Full screen" style={{ position: 'absolute', right: 44, top: 8, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card, borderWidth: 1, borderColor: color.hairline }}>
+            <Expand color={color.text2} size={14} />
           </Press>
         ) : null}
       </View>

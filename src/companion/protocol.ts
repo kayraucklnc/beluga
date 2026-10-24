@@ -193,9 +193,11 @@ export const ProseView = z.object({
          * 1.3: what Claude drew for the screen rather than code (BLG-68): a `beluga-view` (table,
          * chart, stats, code, colors), a `beluga-graph` or `beluga-tasks`, its JSON as written. The
          * phone reads it with the Mac's own parsers (src/shared) and draws it; its source's rows
-         * come through the Mac (companion.viewFetch). A phone before 1.3 shows the chip.
+         * come through the Mac (companion.viewFetch). A phone before 1.3 shows the chip. A table
+         * Claude wrote as text is a `view` (a table) too; 1.5: one that only looks like a table
+         * is `text`, shown monospaced and never wrapped.
          */
-        block: z.object({ kind: z.union([z.enum(['view', 'graph', 'tasks']), z.string().max(20)]), text: z.string().max(200_000) }).optional(),
+        block: z.object({ kind: z.union([z.enum(['view', 'graph', 'tasks', 'text']), z.string().max(20)]), text: z.string().max(200_000) }).optional(),
       }),
     )
     .max(200),

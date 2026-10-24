@@ -1,6 +1,7 @@
 import { dashboardConv } from './render-demo';
 import type { ChatMessageView, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
 import { DEMO_IMAGES, type DemoImage } from './images.generated';
+import { stripCode } from '../../render';
 
 /**
  * The demo Mac's world: two projects, a conversation at work with sub-agents taking screenshots
@@ -321,7 +322,67 @@ export function makeWorld(now = Date.now()): DemoWorld {
     ],
   };
 
-  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now), loginBug, assistant].map((c) => [c.topic, c]));
+  // ---- tables Claude wrote as text, and an answer with many outputs (BLG-71)
+  const forecastAnswer = [
+    'October is tracking your Sept 30 forecast almost exactly: **$24,480** against **$24,500** (-0.1%). The first two weeks ran ahead; the third dipped when two annual plans renewed later than expected.',
+    '',
+    '┌──────────────┬────────────┬────────────┬──────────┐',
+    '│ Week         │ Forecast   │ Actual     │ Diff     │',
+    '├──────────────┼────────────┼────────────┼──────────┤',
+    '│ Oct 1–7      │ $6,900     │ $7,240     │ +4.9%    │',
+    '│ Oct 8–14     │ $7,100     │ $7,380     │ +3.9%    │',
+    '│ Oct 15–21    │ $7,300     │ $6,810     │ -6.7%    │',
+    '│ Oct 22–24    │ $3,200     │ $3,050     │ -4.7%    │',
+    '├──────────────┼────────────┼────────────┼──────────┤',
+    '│ October      │ $24,500    │ $24,480    │ -0.1%    │',
+    '└──────────────┴────────────┴────────────┴──────────┘',
+    '',
+    'By plan, from the Stripe export:',
+    '',
+    '```',
+    'Plan        Forecast   Actual    Customers   Churned   Net new',
+    '----------  ---------  --------  ----------  --------  --------',
+    'Starter     $5,320     $5,510    290         9         +14',
+    'Team        $13,680    $13,410   114         3         +5',
+    'Business    $5,500     $5,560    11          0         +1',
+    '```',
+    '',
+    'The charts, the export and my notes are below. November’s forecast holds if the two renewals land this week.',
+  ].join('\n');
+  const forecast: ConvView = {
+    topic: 'conv:shop.forecast',
+    title: 'revenue-forecast-from-stripe',
+    project: 'shop',
+    more: false,
+    canSend: true,
+    working: false,
+    needsYou: [],
+    turns: [
+      { id: 'rf1', who: 'you', name: 'You', ts: now - 50 * MIN, prose: { text: 'How does October compare with my Sept 30 forecast?', code: [] } },
+      {
+        id: 'rf2',
+        who: 'claude',
+        name: 'Claude',
+        ts: now - 50 * MIN,
+        endTs: now - 44 * MIN,
+        status: 'done',
+        steps: 9,
+        trail: [{ tool: 'run', text: 'Ran stripe' }, { tool: 'read', text: 'Read forecast-2026-09-30.csv' }, { tool: 'write', text: 'Wrote october-vs-forecast.md' }],
+        prose: stripCode(forecastAnswer),
+        outputs: [
+          img('october-by-week.png', 'timings', undefined, 45 * MIN),
+          img('forecast-vs-actual.png', 'radar', undefined, 45 * MIN),
+          img('mrr-by-plan.png', 'contrast', undefined, 45 * MIN),
+          txt('october-vs-forecast.md', 'markdown', '# October vs the Sept 30 forecast\n\n$24,480 against $24,500 (-0.1%).', undefined, 45 * MIN),
+          txt('stripe-charges-october.json', 'json', '{"count": 415, "total": 2448000}', undefined, 46 * MIN),
+          txt('forecast-2026-09-30.csv', 'text', 'week,forecast\nOct 1-7,6900\nOct 8-14,7100\nOct 15-21,7300\nOct 22-31,3200', undefined, 47 * MIN),
+          txt('stripe-export.log', 'text', 'Fetched 415 charges in 3 pages', undefined, 48 * MIN),
+        ],
+      },
+    ],
+  };
+
+  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now), loginBug, assistant, forecast].map((c) => [c.topic, c]));
 
   // ---- what needs you, one of each kind (and one this phone doesn't know)
   // Shaped exactly as src/companion/views.ts makes them (the same methods, args and templates).
@@ -607,7 +668,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     projects: [
       { id: 'beluga', name: 'beluga', convs: ['conv:beluga.onboarding', 'conv:beluga.push'] },
       { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:ws:wt-login-bug', 'conv:weather.radar', 'conv:weather.ci'] },
-      { id: 'shop', name: 'shop', convs: ['conv:shop.dashboard'] },
+      { id: 'shop', name: 'shop', convs: ['conv:shop.forecast', 'conv:shop.dashboard'] },
       { id: 'asked', name: 'Asked of friends', convs: [] },
     ],
     files,

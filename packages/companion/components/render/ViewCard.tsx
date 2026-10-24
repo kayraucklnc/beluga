@@ -1,11 +1,12 @@
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
-import { ArrowDown, ArrowUp, BarChart3, ChevronLeft, ChevronRight, Play, RefreshCw, Search, Table2, TriangleAlert } from 'lucide-react-native';
+import { ArrowDown, ArrowUp, BarChart3, ChevronLeft, ChevronRight, MoveHorizontal, Maximize2, Play, RefreshCw, Rows3, Search, Table2, TriangleAlert } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { type Column, type Control, type Row, type Stat, type View as ViewSpec, alignOf, columnChoices, contrast, formatCell, headingOf, inkOn, parseColor, toHex } from '../../lib/render';
 import { store } from '../../lib/store';
+import { openFull } from '../../lib/fullscreen';
 import { color, elevation, ink, radius, tint, type } from '../../lib/theme';
 import { haptic, Pill, Press, T, toneBg, toneInk } from '../ui';
 import { ChartView } from './Chart';
@@ -15,9 +16,11 @@ import { Spark, badgeTone } from './Inline';
 /**
  * A `beluga-view` on the phone (BLG-68): a card with its title, its controls, and the element
  * (table, chart, stats, code or colors), read by the Mac's own parser (src/shared/view-spec.ts).
- * Tables scroll sideways and sort, search and page; a source's rows come through the Mac.
+ * Tables scroll sideways and sort, search and page; a source's rows come through the Mac. Every
+ * view opens full screen (Expand, BLG-71), where the phone may turn sideways; a table too wide for
+ * the screen can read as cards instead, one per row.
  */
-export function ViewCard({ view, at, warnings = 0 }: { readonly view: ViewSpec; readonly at?: BlockAt; readonly warnings?: number }) {
+export function ViewCard({ view, at, warnings = 0, full }: { readonly view: ViewSpec; readonly at?: BlockAt; readonly warnings?: number; readonly full?: boolean }) {
   const [asChart, setAsChart] = useState(false);
   const chartable = view.type === 'table' && view.columns.some((c) => c.type === 'number' || c.type === 'percent' || c.type === 'currency');
   const chart = view.type === 'chart' || asChart;
@@ -35,6 +38,11 @@ export function ViewCard({ view, at, warnings = 0 }: { readonly view: ViewSpec; 
               {asChart ? <Table2 color={color.text2} size={15} /> : <BarChart3 color={color.text2} size={15} />}
             </Press>
           ) : null}
+          {full ? null : (
+            <Press onPress={() => openFull({ kind: 'view', view, ...(at ? { at } : {}) })} accessibilityLabel="Full screen" hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: color.sunken }}>
+              <Maximize2 color={color.text2} size={14} />
+            </Press>
+          )}
           {d.live ? (
             <Press onPress={d.refresh} accessibilityLabel="Fetch again on your Mac" hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: color.sunken }}>
               {d.loading ? <ActivityIndicator size="small" color={color.text3} /> : <RefreshCw color={color.text2} size={14} />}
@@ -69,7 +77,7 @@ export function ViewCard({ view, at, warnings = 0 }: { readonly view: ViewSpec; 
       <View style={{ paddingBottom: 12 }}>
         {chart ? (
           <View style={{ paddingHorizontal: 12 }}>
-            <ChartView view={view} columns={d.columns} rows={d.rows} />
+            <ChartView view={view} columns={d.columns} rows={d.rows} {...(full ? { tall: true } : {})} />
           </View>
         ) : view.type === 'stats' ? (
           <StatsView view={view} d={d} />
@@ -143,6 +151,10 @@ function TableView({ view, d }: { readonly view: ViewSpec; readonly d: ViewData 
     [cols, d.rows],
   );
   const [open, setOpen] = useState<number | undefined>();
+  // Wider than the screen: it scrolls sideways, or reads as cards (one per row, its columns as lines).
+  const [space, setSpace] = useState(0);
+  const [cards, setCards] = useState(false);
+  const wide = space > 0 && widths.reduce((a, b) => a + b, 0) + 24 > space;
   const searchable = view.search || d.live || view.rows.length > d.pageSize;
   const from = d.page * d.pageSize;
   const sortBy = (key: string) => {
@@ -159,7 +171,25 @@ function TableView({ view, d }: { readonly view: ViewSpec; readonly d: ViewData 
           <TextInput value={d.search} onChangeText={d.setSearch} placeholder="Search" placeholderTextColor={color.text3} style={{ flex: 1, color: color.text, fontSize: 14, ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }} />
         </View>
       ) : null}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12 }}>
+      {wide && cards ? (
+        <View style={{ gap: 8, paddingHorizontal: 12 }}>
+          {d.rows.map((r, ri) => (
+            <View key={`${from + ri}`} style={{ padding: 12, borderRadius: 12, backgroundColor: color.sunken, gap: 5 }}>
+              {cols.map((c) => (
+                <View key={c.key} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                  <T v="caption" numberOfLines={2} style={{ width: 112, fontWeight: '700' }}>
+                    {headingOf(c)}
+                  </T>
+                  <View style={{ flex: 1 }}>
+                    <CellView c={r[c.key]} col={{ ...c, align: 'left' } as Column} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      ) : (
+      <ScrollView onLayout={(e) => setSpace(e.nativeEvent.layout.width)} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12 }}>
         <View>
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: color.hairline }}>
             {cols.map((c, i) => {
@@ -192,7 +222,8 @@ function TableView({ view, d }: { readonly view: ViewSpec; readonly d: ViewData 
           ) : null}
         </View>
       </ScrollView>
-      {open !== undefined && d.rows[open] ? (
+      )}
+      {open !== undefined && d.rows[open] && !(wide && cards) ? (
         <View style={{ marginHorizontal: 12, padding: 12, borderRadius: 12, backgroundColor: color.sunken, gap: 6 }}>
           {d.columns.map((c) => (
             <View key={c.key} style={{ flexDirection: 'row', gap: 10 }}>
@@ -206,7 +237,20 @@ function TableView({ view, d }: { readonly view: ViewSpec; readonly d: ViewData 
           ))}
         </View>
       ) : null}
-      <Pager d={d} from={from} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Pager d={d} from={from} />
+        </View>
+        {wide ? (
+          <View style={{ flexDirection: 'row', marginRight: 12, padding: 2, gap: 2, borderRadius: 15, backgroundColor: color.sunken }}>
+            {([['Scroll sideways', MoveHorizontal, false], ['As cards', Rows3, true]] as const).map(([label, Icon, on]) => (
+              <Press key={label} haptics={false} onPress={() => (haptic.tap(), setCards(on))} accessibilityLabel={label} accessibilityState={{ selected: cards === on }} style={{ width: 34, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: cards === on ? color.card : 'transparent' }}>
+                <Icon color={cards === on ? color.text : color.text3} size={15} />
+              </Press>
+            ))}
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }

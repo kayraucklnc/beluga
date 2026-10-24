@@ -1,6 +1,8 @@
 import { isGraphFence } from '../shared/graph-spec.js';
 import { TASKS_FENCE } from '../shared/task-refs.js';
 import { isViewFence } from '../shared/view-spec.js';
+import { tableSpec } from '../shared/render/md-table.js';
+import { findTextTables, looksLikeTable, readTextTable } from '../shared/render/text-table.js';
 import type { ProseView, ToolKind } from './protocol.js';
 
 /**
@@ -30,17 +32,54 @@ export function blockKind(lang: string): 'view' | 'graph' | 'tasks' | undefined 
  */
 const ATTACHMENT_LINK = /\[([^\]\n]*)\]\((?:klaud|beluga)-attachment:[^)\s]*\)/g;
 
-/** Claude's markdown with its code blocks taken out. */
+/** Fences whose body may be a table Claude wrote as text (not a language: plain text, a table, Markdown). */
+const TEXT_FENCE = /^(|text|txt|plain|plaintext|table|md|markdown|console|output)$/;
+
+/**
+ * A table written as text (BLG-71, src/shared/render/text-table.ts): read, it goes as a view block
+ * (a table, drawn with the same table as Markdown tables and views, on any phone since 1.3); only
+ * looking like one, as a `text` block the phone shows monospaced, never wrapped (1.5).
+ */
+function tableBlock(body: string, n: number): ProseView['code'][number] | undefined {
+  const table = readTextTable(body);
+  if (table) {
+    const spec = JSON.stringify(tableSpec(table));
+    if (spec.length <= MAX_BLOCK) return { lang: 'table', lines: n, block: { kind: 'view', text: spec } };
+  }
+  if (looksLikeTable(body) && body.length <= MAX_BLOCK) return { lang: 'table', lines: n, block: { kind: 'text', text: body.replace(/\s+$/, '') } };
+  return undefined;
+}
+
+/** Claude's markdown with its code blocks taken out (and its tables written as text read as tables). */
 export function stripCode(markdown: string): ProseView {
   const lines = markdown.split('\n');
   const out: string[] = [];
   const code: ProseView['code'][number][] = [];
+  // Prose waits here until a code block or the end, so a table written in it is found whole.
+  let prose: string[] = [];
+  const flush = (): void => {
+    const tables = prose.length >= 3 ? findTextTables(prose) : [];
+    let at = 0;
+    for (const t of tables) {
+      out.push(...prose.slice(at, t.start));
+      const body = prose.slice(t.start, t.end + 1).join('\n');
+      const entry = code.length < MAX_CODE ? tableBlock(body, t.end - t.start + 1) : undefined;
+      if (entry) {
+        out.push(`[[code:${code.length}]]`);
+        code.push(entry);
+      } else out.push(...prose.slice(t.start, t.end + 1));
+      at = t.end + 1;
+    }
+    out.push(...prose.slice(at));
+    prose = [];
+  };
   for (let i = 0; i < lines.length; i++) {
     const open = FENCE.exec(lines[i]!);
     if (!open) {
-      out.push(lines[i]!.replace(ATTACHMENT_LINK, '$1'));
+      prose.push(lines[i]!.replace(ATTACHMENT_LINK, '$1'));
       continue;
     }
+    flush();
     const fence = open[1]!;
     const lang = (open[2] ?? '').toLowerCase().slice(0, 40);
     let n = 0;
@@ -54,13 +93,16 @@ export function stripCode(markdown: string): ProseView {
     if (code.length < MAX_CODE) {
       out.push(`[[code:${code.length}]]`);
       // What Claude drew for the screen (a view, a graph, tasks) goes along to be drawn there too
-      // (BLG-68); a phone before 1.3 still shows a chip. Any other code stays a chip.
+      // (BLG-68); a phone before 1.3 still shows a chip. A block that's only a table is a table
+      // (BLG-71). Any other code stays a chip.
       const kind = blockKind(lang);
-      const body = kind ? lines.slice(i + 1, i + 1 + n).join('\n') : '';
-      code.push({ ...(lang ? { lang } : {}), lines: n, ...(kind && body.length <= MAX_BLOCK ? { block: { kind, text: body } } : {}) });
+      const body = kind || TEXT_FENCE.test(lang) ? lines.slice(i + 1, i + 1 + n).join('\n') : '';
+      const table = !kind && body ? tableBlock(body, n) : undefined;
+      code.push(table ?? { ...(lang ? { lang } : {}), lines: n, ...(kind && body.length <= MAX_BLOCK ? { block: { kind, text: body } } : {}) });
     } else out.push('[[code]]');
     i = j;
   }
+  flush();
   return { text: out.join('\n').slice(0, 64_000), code };
 }
 

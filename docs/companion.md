@@ -142,6 +142,21 @@ source never runs on the phone: `companion.viewFetch` names the view (conversati
 the Mac runs its source as `view.fetch` does for the window, only for your own Claude's answers and
 only sources the view names. Any other code still never leaves the Mac.
 
+**Tables written as text (BLG-71).** Claude often draws a table as text: box characters
+(`┌─┬─┐ │ ├─┼─┤`), a `+---+---+` grid, pipes over a rule, or columns lined up over dashes. The Mac
+reads them (`src/shared/render/text-table.ts`, in `stripCode`), in the prose or as a fenced block
+that is only a table, and sends each as a table view block (the spec Markdown tables make,
+`md-table.ts` `tableSpec`), so the phone draws it with the same table as Markdown tables and views;
+any phone since 1.3 reads it. One that only looks like a table goes as a `text` block (1.5), shown
+monospaced and never wrapped, scrolling sideways. Changes keep their signs ("+4.9%").
+
+**Outputs and data on a small screen (BLG-71).** A turn's outputs are one strip that swipes
+sideways: pictures as ~110 px thumbnails, text and logs as small cards (icon, name, size); a tap
+opens the viewer, which swipes through that turn's outputs. Every table, chart, view and graph has
+Expand: full screen, the one page of the app that turns sideways (`expo-screen-orientation`; the app
+is otherwise kept upright). A table wider than the screen has a toggle by its row count: scroll
+sideways, or cards (one per row, its columns as label and value).
+
 **What came when.** A phone checks the Mac's minor (`welcome.v`, `SINCE` in protocol.ts) before it
 subscribes to a newer topic or makes a newer call: an older Mac drops a whole `sub` frame that names a
 topic it doesn't know.

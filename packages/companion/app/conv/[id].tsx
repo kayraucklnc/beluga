@@ -13,7 +13,7 @@ import { Composer, QueueTray } from '../../components/Composer';
 import { AgentChips, Prose, StepTicker } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace } from '../../components/Needs';
 import { Options } from '../../components/Options';
-import { OutputGrid, Thumb } from '../../components/Outputs';
+import { OutputGrid, TurnOutputs } from '../../components/Outputs';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
@@ -265,9 +265,7 @@ function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) 
 
 function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic }) {
   const working = t.status === 'working';
-  const { width } = useWindowDimensions();
   const outs = t.outputs ?? [];
-  const thumbW = Math.min(width, 520) - 28 - 32;
   const mins = t.endTs ? Math.max(1, Math.round((t.endTs - t.ts) / 60000)) : undefined;
   return (
     <Card style={{ padding: 16, gap: 12 }}>
@@ -297,8 +295,8 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
         )
       ) : null}
       {outs.length ? (
-        <Animated.View entering={FadeIn} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {outs.map((o) => (o.kind === 'image' ? <Thumb key={o.ref} o={o} group={all} w={outs.length === 1 ? thumbW : (thumbW - 8) / 2} h={outs.length === 1 ? thumbW * 0.6 : (thumbW - 8) / 2 * 0.75} /> : <Thumb key={o.ref} o={o} group={all} w={(thumbW - 8) / 2} h={96} />))}
+        <Animated.View entering={FadeIn}>
+          <TurnOutputs items={outs} />
         </Animated.View>
       ) : null}
       {t.status === 'failed' || t.status === 'stopped' ? (

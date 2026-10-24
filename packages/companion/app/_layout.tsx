@@ -11,6 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Toasts } from '../components/Screen';
 import { useScheme } from '../lib/appearance';
 import { store } from '../lib/store';
+import { allowTurning } from '../lib/fullscreen';
 import { color } from '../lib/theme';
 
 /** The app: one store (lib/store.ts), a stack of screens over the tabs, toasts on top. */
@@ -18,6 +19,8 @@ export default function Root() {
   const scheme = useScheme();
   useEffect(() => {
     void store.boot();
+    // Upright everywhere; only data full screen turns (lib/fullscreen.ts).
+    allowTurning(false);
   }, []);
   // A new theme remounts the screens (every color is read afresh); come back to where you were.
   const pathname = usePathname();
@@ -50,6 +53,7 @@ export default function Root() {
             <Stack.Screen name="viewer" options={{ presentation: 'transparentModal', animation: 'none', contentStyle: { backgroundColor: 'transparent' } }} />
             <Stack.Screen name="need/[id]" options={{ presentation: 'transparentModal', animation: 'none', contentStyle: { backgroundColor: 'transparent' } }} />
             <Stack.Screen name="reader" options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="data" options={{ animation: 'fade_from_bottom' }} />
           </Stack>
           <Toasts />
         </Animated.View>
