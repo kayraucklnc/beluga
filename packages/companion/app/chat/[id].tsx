@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '../../components/Composer';
 import { SendStatus } from '../../components/SendStatus';
 import { Thumb } from '../../components/Outputs';
+import { TaskWords } from '../../components/render/TaskChip';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Avatar, Press, T } from '../../components/ui';
 import { ago, useView } from '../../lib/hooks';
@@ -131,7 +132,8 @@ function Bubble({ m, first, group, pics }: { m: ChatMessageView; first: boolean;
             }}
           >
             <T v="body" c={mine ? ink.sky : m.claude ? ink.peach : color.text} style={{ fontSize: 15.5 }}>
-              {m.text}
+              {/* Task keys as chips in your own messages only: a friend's key may be on their board (BLG-109). */}
+              {mine ? <TaskWords text={m.text} /> : m.text}
             </T>
           </View>
         ) : null}

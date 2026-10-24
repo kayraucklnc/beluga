@@ -29,6 +29,7 @@ import {
   type PlanView,
   type StepView,
   type SubAgentView,
+  TASK_OTHERS,
   type TaskPageView,
   type TaskSummary,
   type TasksView,
@@ -1015,7 +1016,15 @@ export function tasksView(state: DomainState, ctx?: ViewContext): TasksView {
   });
   // The project with the latest change first.
   const latest = (id: string): number => Math.max(0, ...issues.filter((i) => i.projectId === id).map((i) => i.updatedAt));
-  return { projects: projects.sort((a, b) => latest(b.id) - latest(a.id)).slice(0, 100) };
+  const sorted = projects.sort((a, b) => latest(b.id) - latest(a.id)).slice(0, 100);
+  // Every other task by key, title and status (BLG-109): a key in Claude's words is a chip even when the list leaves it out.
+  const listed = new Set(sorted.flatMap((p) => p.groups.flatMap((g) => g.tasks.map((t) => t.id))));
+  const others = issues
+    .filter((i) => !listed.has(i.id) && taskTopic(i.id))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, TASK_OTHERS)
+    .map((i) => ({ id: clip(i.id, 200), key: clip(i.key, 40), title: clip(plainLine(i.title, 120) || i.key, 120), status: i.status }));
+  return { projects: sorted, ...(others.length ? { others } : {}) };
 }
 
 /** Where a task may be moved from the phone (board.move): the open statuses and Done, not where it is. */

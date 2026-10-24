@@ -437,6 +437,9 @@ export type PlansView = z.infer<typeof PlansView>;
 export const TaskStatus = z.union([z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled']), z.string().max(20)]);
 export const TaskPriority = z.union([z.enum(['urgent', 'high', 'medium', 'low', 'none']), z.string().max(20)]);
 
+/** At most this many of the board's other tasks in the Tasks view (`TasksView.others`). */
+export const TASK_OTHERS = 1500;
+
 /** A task in a list (1.3): its key, title, status, priority, who has it ("you", "your Claude", "Mia"). */
 export const TaskSummary = z.object({
   id,
@@ -467,6 +470,12 @@ export const TasksView = z.object({
       }),
     )
     .max(100),
+  /**
+   * The board's other tasks, the ones `groups` leave out (older done, canceled, past a group's
+   * 100), newest first: only what a task key in Claude's words needs to be a live chip (BLG-109).
+   * Optional: an older Mac leaves it out, and the phone then knows only the listed ones.
+   */
+  others: z.array(z.object({ id, key: z.string().max(40), title: z.string().max(300), status: TaskStatus })).max(TASK_OTHERS).optional(),
 });
 export type TasksView = z.infer<typeof TasksView>;
 

@@ -3,10 +3,8 @@ import { useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { Maximize2 } from 'lucide-react-native';
 import { openFull } from '../../lib/fullscreen';
-import { useView } from '../../lib/hooks';
-import type { ProseView, TasksView } from '../../lib/link/protocol';
+import type { ProseView } from '../../lib/link/protocol';
 import { parseGraph, parseView, readFileTree, readJson, readTaskKeys, viewFenceType } from '../../lib/render';
-import { store } from '../../lib/store';
 import { color, type } from '../../lib/theme';
 import { statusOf, taskHref } from '../Tasks';
 import { Card, Press, T, toneBg, toneInk } from '../ui';
@@ -16,6 +14,7 @@ import { FileTreeView } from './FileTree';
 import { GraphCard } from './Graph';
 import { JsonTree } from './JsonTree';
 import { MathBlock, type MathMap } from './MathBlock';
+import { useTaskIndex } from './TaskChip';
 import { TerminalView } from './Terminal';
 import { ViewCard } from './ViewCard';
 
@@ -76,12 +75,11 @@ function Problem({ incomplete, error, what }: { readonly incomplete: boolean; re
 
 /** A `beluga-tasks` block: each task's key, title and status, read live from the board. */
 function TaskCards({ keys }: { readonly keys: readonly string[] }) {
-  const tasks = useView<TasksView>(store.supports('tasks') ? 'tasks' : undefined);
-  const all = tasks?.data.projects.flatMap((p) => p.groups.flatMap((g) => g.tasks)) ?? [];
+  const index = useTaskIndex();
   return (
     <View style={{ gap: 6 }}>
       {keys.map((k) => {
-        const t = all.find((x) => x.key.toUpperCase() === k);
+        const t = index.get(k);
         const st = statusOf(t?.status ?? 'todo');
         return (
           <Press key={k} scaleTo={0.985} onPress={() => (t ? router.push(taskHref(t)) : undefined)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 14, backgroundColor: color.sunken }}>

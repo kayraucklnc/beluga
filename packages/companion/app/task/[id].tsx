@@ -11,6 +11,7 @@ import { Options } from '../../components/Options';
 import { ProjectMark } from '../../components/ProjectMark';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { PRIORITY, statusOf } from '../../components/Tasks';
+import { TaskWords } from '../../components/render/TaskChip';
 import { Avatar, Button, Card, haptic, IconBadge, More, Pill, Press, T, toneBg, toneInk } from '../../components/ui';
 import { ago, useSupports, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
@@ -84,7 +85,7 @@ export default function Task() {
               {t.goal?.text.trim() ? (
                 <Card style={{ padding: 16, gap: 8 }}>
                   <T v="eyebrow">Goal</T>
-                  <Prose prose={t.goal} size={15} />
+                  <Prose prose={t.goal} size={15} tasks />
                 </Card>
               ) : null}
 
@@ -163,7 +164,7 @@ export default function Task() {
                         {a.body ? (
                           <Card r={16} style={{ padding: 12 }}>
                             <T v="callout" c={color.text}>
-                              {a.body}
+                              <TaskWords text={a.body} />
                             </T>
                           </Card>
                         ) : null}
