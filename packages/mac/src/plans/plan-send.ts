@@ -7,7 +7,7 @@
  */
 
 export interface PlanSendApi {
-  readonly attachments: { expand(text: string, channel: string): Promise<string> };
+  readonly attachments: { expand(text: string, channel: string, only?: number[]): Promise<string> };
   /** False (or a rejection) when it didn't go. */
   readonly session: { submit(text: string, opts: { channel: string; id: string; urgent?: boolean }): Promise<boolean | void> };
 }
@@ -16,11 +16,13 @@ export interface PlanSendApi {
 export interface PlanMessage {
   readonly typed: string;
   readonly id: string;
+  /** The images that went with it (only their "[image N]" become links). */
+  readonly images?: readonly number[];
   /** What it says with its images expanded, once they were. */
   expanded?: string;
 }
 
-export const planMessage = (typed: string): PlanMessage => ({ typed, id: crypto.randomUUID() });
+export const planMessage = (typed: string, images?: readonly number[]): PlanMessage => ({ typed, id: crypto.randomUUID(), ...(images ? { images } : {}) });
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -36,7 +38,7 @@ export async function sendPlanMessage(api: PlanSendApi, message: PlanMessage, ch
     let full = message.typed;
     if (hasImageRefs(full)) {
       try {
-        full = await api.attachments.expand(full, channel);
+        full = await api.attachments.expand(full, channel, message.images && [...message.images]);
       } catch (err) {
         throw new Error(`Couldn't send the images: ${errorText(err)}`);
       }

@@ -63,3 +63,22 @@ export function splitImages(text: string): { text: string; images: LinkedImage[]
   const all = found.map((f) => f.image);
   return { text: out.trim(), images: all.filter((img, i) => all.findIndex((x) => x.href === img.href) === i) };
 }
+
+/** Where each image link sits in a message (for turning them back into "[image N]" in the box). */
+export function imageLinksIn(text: string): Array<LinkedImage & { readonly start: number; readonly end: number }> {
+  return [...text.matchAll(LINK)].flatMap((m) => {
+    const image = imageOf(m[1] ?? '', m[2] ?? '');
+    return image ? [{ ...image, start: m.index, end: m.index + m[0].length }] : [];
+  });
+}
+
+/** A message with each image link as its words ("📎 image 1"), for a one-line preview of it. */
+export const imageLinksAsWords = (text: string): string => {
+  let out = '';
+  let at = 0;
+  for (const link of imageLinksIn(text)) {
+    out += `${text.slice(at, link.start)}📎 ${link.label}`;
+    at = link.end;
+  }
+  return out + text.slice(at);
+};

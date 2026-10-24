@@ -102,7 +102,7 @@ export function createBoardToolDefs(board: BoardTools) {
     ),
     tool(
       'task_update',
-      'Change a task: its title, status, priority, estimate, labels (the full list), or who it’s for (me: the user; claude: their Claude; nobody). Only mark a task done or canceled when the user asked. in_review is refused while an acceptance criterion is neither ticked nor explained.',
+      'Change a task: its title, status, priority, estimate, labels (the full list), or who it’s for (me: the user; claude: their Claude; nobody). Mark a task done or canceled only when the user asked or said its work shipped (its sub-tasks still open go Done with it). in_review is refused while an acceptance criterion is neither ticked nor explained.',
       { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), estimate: ESTIMATE.optional(), labels: z.array(z.string().max(32)).max(12).optional(), assign: z.enum(['me', 'claude', 'nobody']).optional() },
       (a) =>
         guarded(() =>

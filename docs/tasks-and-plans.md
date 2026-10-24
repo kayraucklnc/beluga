@@ -83,10 +83,15 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
   | Changes are requested | back to In Progress, with a note |
   | The pull request merges, or the worktree merges into main here | Done |
   | Archived or deleted before it was done | a banner asks: Cancel Task, Back to Backlog, or Keep As Is |
+  | Its parent reaches Done | Done (every open sub-task, all the way down; Canceled ones stay) |
+
+- **Work carried by another worktree** (BLG-29). When Claude moves a task to In Progress or In Review from a worktree that isn't doing it (the sub-tasks of a list of asks, done in one worktree), that worktree *carries* it (`carriedBy`, and its branch). The carrying worktree's pull request and merge move the task like its own. Tasks whose worktree went before their PR merged aren't watched by the workbench any more: `BoardWork.sweepShipped` asks gh about their branch soon after start and every ten minutes, and a merged PR makes them Done.
+- **The Archive** (BLG-27, BLG-28). Archive Done (the button on Done, in the list and on the board, or Tasks › ⋯) moves every Done task to the Archive (`archivedAt`); a finished task's ⋯ › Archive moves one, with its finished sub-tasks. Archived tasks leave the board and Claude's `task_list` but keep their brief and history: Tasks › Archive lists them, a task's banner restores it, and Empty Archive (or Delete for Good) deletes them. Archiving lets go of their proof files in `~/.beluga/proof`: a screenshot becomes a 480 px JPEG (`thumb`, a few KB), any other file goes (`gone`); both keep how big they were (`bytes`). Files outside `~/.beluga/proof` are never touched.
 
 - **Claude knows its task.** Your own runs in a task's worktree get its brief, parent, blockers and sub-tasks in their instructions (`core/board/prompt.ts`), and the task tools (server `beluga_board`), built for each run from its conversation:
   - `task_get`, `task_list`, `task_create` (sub-tasks, follow-ups), `task_update`, `task_brief_edit` (a section, a reason, replace or append), `task_note`, `task_relate`, `task_attach_proof`.
-  - Claude is told to record decisions as it makes them, tick acceptance criteria, split off work as sub-tasks, attach proof, and rewrite the notes for the next agent before ending a turn that changed things. It doesn't mark tasks Done itself: the pull request does.
+  - Claude is told to record decisions as it makes them, tick acceptance criteria, split off work as sub-tasks, attach proof, and rewrite the notes for the next agent before ending a turn that changed things. It doesn't mark tasks Done itself unless you ask or say the work shipped: the pull request does.
+  - Every run hears how the board works, and to open tasks unasked when one message asks for two or more separate things (one per thing, under a parent when they belong together), move them along as it works, and show them in its answer as `task:KEY` chips or a `beluga-tasks` block. Not for questions or a single quick ask, and what you ask for instead wins (BLG-25).
   - Runs elsewhere get the tools and a short note that the board is there. Friends' runs, guests and main folders (questions only) get neither. The tools only touch your own board, so they never ask; files holding secrets are refused as proof.
 
 ### Sharing with friends — phase 3
@@ -103,13 +108,13 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 
 - **One project at a time.** Tasks from different projects never share a screen. Tasks opens on the project you're in (the worktree, project home or task you came from; else the last one; else the busiest), and a switcher at its top (the project's icon and name) changes it. Claude's `task_list` stays in its run's project too, unless it names another.
 - **Tasks** in the sidebar, and ⌘K › New Task… / Go to Tasks.
-- **The bar:** the project switcher, Active · Backlog · All (each with its count), **whose tasks** (Everyone, You, Your Claude, each person and their Claude, No one yet), a filter (⌘F), List · Board · What Waits on What, ⋯, and **New Task** (⌘N, or C).
+- **The bar:** the project switcher, Active · Backlog · All · Archive (each with its count), **whose tasks** (Everyone, You, Your Claude, each person and their Claude, No one yet), a filter (⌘F), List · Board · What Waits on What, ⋯, and **New Task** (⌘N, or C).
 - **Alone, no assignees.** On a project where you work alone (nobody else in the room, no friends, nothing assigned to anyone else), who a task is for isn't shown anywhere: not in rows, cards, a task's page or the New Task sheet. Every task is yours and your Claude's; Start with Claude is how it gets worked on.
 - **List:** grouped by status (groups fold; + adds a task there). A row's priority, status and assignee are menus of their own (1–9 pick); the rest of the row opens the task. ↑↓ and Return; right-click for Open, Start with Claude, Status ▸, Priority ▸, Add Sub-task…, Copy Key, Delete Task….
 - **Board:** a column per status; drag a card to another column or up and down (a line shows where it lands).
 - **What Waits on What:** the tasks tied to others as a graph (the graph engine): a task with sub-tasks is a box around them, blockers point at what they hold up, in the problem color until they're done. Double-click, or Open Task in its details, opens it.
 - **A task's page:** the title (renamed in place), the next step (Start with Claude / Start Worktree, or Open Worktree with its pull request), the brief, sub-tasks (add inline), Blocked by / Blocks / Related, proof (pictures open full size, graphs are drawn, links and files open), and the activity with a comment box (⌘↩). Its properties are down the right, each a menu.
-- **New Task:** title, goal, project, status, priority, assignee, labels; **Start with Claude** makes the worktree and puts Claude on it at once.
+- **New Task:** describe it (Claude writes the title, goal and criteria, and picks labels: the board's own first, up to two new ones when none fit), an optional priority, and the assignee when you work with others; or write the title and goal yourself. **Start with Claude** makes the worktree and puts Claude on it at once.
 - **Above a worktree's chat:** the task it's doing (status, key, title, criteria ticked), one click from its page.
 
 ---

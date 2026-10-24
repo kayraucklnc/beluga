@@ -1,5 +1,7 @@
-import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import jpeg from 'jpeg-js';
+import { decodeImage } from '../../image/decode.js';
 import type { Proof } from './model.js';
 
 /**
@@ -94,6 +96,41 @@ export function keepProofFiles(list: readonly Proof[], issueId: string, home: st
 export function dropKeptFile(home: string, file: string | undefined): void {
   if (!file || !isKept(home, file)) return;
   rmSync(file, { force: true });
+}
+
+/** An archived task's screenshots shrink to this longest side, as a JPEG of this quality: a few KB each. */
+export const THUMB_SIDE = 480;
+const THUMB_QUALITY = 55;
+
+/**
+ * Let go of a proof's kept file (its task went to the Archive): an image becomes a small JPEG
+ * beside where it was (`thumb`), any other file goes (`gone`); both keep how big it was. Files
+ * Beluga doesn't keep are never touched. Returns the same object when nothing changed.
+ */
+export function letGoProofFile(proof: Proof, home: string): Proof {
+  if (!hasFile(proof) || proof.thumb || proof.gone || !isKept(home, proof.path)) return proof;
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(proof.path);
+  } catch {
+    const { path: _, ...rest } = proof;
+    return { ...rest, gone: true };
+  }
+  const size = bytes.length;
+  if (proof.kind === 'image') {
+    try {
+      const small = decodeImage(new Uint8Array(bytes), proof.path, THUMB_SIDE);
+      const to = path.join(path.dirname(proof.path), `${path.parse(proof.path).name}-thumb.jpg`);
+      writeFileSync(to, jpeg.encode({ width: small.width, height: small.height, data: Buffer.from(small.data.buffer, small.data.byteOffset, small.data.byteLength) }, THUMB_QUALITY).data);
+      if (to !== proof.path) rmSync(proof.path, { force: true });
+      return { ...proof, path: to, thumb: true, bytes: size };
+    } catch {
+      // Not an image Beluga can read: let go of it like any other file.
+    }
+  }
+  rmSync(proof.path, { force: true });
+  const { path: _, ...rest } = proof;
+  return { ...rest, gone: true, bytes: size };
 }
 
 /** Throw away a task's kept files (the task was deleted). */

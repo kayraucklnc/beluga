@@ -10,7 +10,7 @@
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: var(--code-line, 1.6);
   tab-size: 4;
   -moz-tab-size: 4;
   background: transparent;
@@ -25,7 +25,7 @@
 }
 .line {
   display: block;
-  min-height: 1.6em;
+  min-height: var(--code-line, 1.6em);
 }
 .src {
   white-space: pre;

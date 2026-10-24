@@ -36,7 +36,7 @@ describe('store reducer', () => {
     s = reduce(s, ev('text', 'looking'));
     s = reduce(s, ev('text', 'found it'));
     expect(s.log).toHaveLength(1);
-    expect(s.log[0]).toMatchObject({ status: 'started', text: 'looking\nfound it', steps: ['Read a.ts'], ownerName: 'bob', requesterName: 'kay' });
+    expect(s.log[0]).toMatchObject({ status: 'started', text: 'looking\n\nfound it', steps: ['Read a.ts'], ownerName: 'bob', requesterName: 'kay' });
     s = reduce(s, { ...ev('done', 'final answer'), ts: 9 });
     expect(s.log[0]).toMatchObject({ status: 'done', text: 'final answer', endTs: 9 });
     expect(reduce(s, { type: 'dir_cache', key: 'b:api/', entries: [] }).dirCache).toEqual({ 'b:api/': [] });

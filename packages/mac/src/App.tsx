@@ -167,7 +167,9 @@ function useShortcuts() {
         actions.run({ type: 'view', view: { kind: 'search' } });
       } else if (state.approvals[0] && e.ctrlKey && !e.metaKey && ['y', 'n', 'a'].includes(e.key) && !typingIn(e.target)) {
         e.preventDefault();
-        void client.api.host.answerApproval(e.key === 'y' ? 'yes' : e.key === 'n' ? 'no' : 'always', state.approvals[0].id);
+        // A .env file's "always" stays in its project when it has one.
+        const always = state.approvals[0].kind === 'secret' && state.approvals[0].project ? 'project' : 'always';
+        void client.api.host.answerApproval(e.key === 'y' ? 'yes' : e.key === 'n' ? 'no' : always, state.approvals[0].id);
       }
     };
     window.addEventListener('keydown', onKey);

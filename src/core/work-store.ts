@@ -115,6 +115,8 @@ export interface WorkState {
   readonly termExits: Readonly<Record<string, number | null>>;
   /** Names you gave terminals (id → name), kept while the terminal is. */
   readonly termNames: Readonly<Record<string, string>>;
+  /** Running terminals that started before you changed their variables (Settings › Environment): a restart gives them the new ones. */
+  readonly termEnvStale: readonly string[];
   /** Shells installed on this computer, for picking the terminal's shell. */
   readonly shellChoices: readonly ShellChoice[];
   /** Names of the environment variables you set (never their values). */
@@ -147,6 +149,7 @@ export type WorkAction =
   | { type: 'terminal_exit'; id: string; code: number | null }
   /** Name a terminal (no name: back to Shell N). */
   | { type: 'terminal_name'; id: string; name?: string }
+  | { type: 'terminal_env_stale'; ids: readonly string[] }
   | { type: 'shell_choices'; shells: readonly ShellChoice[] }
   | { type: 'env_keys'; keys: EnvKeys }
   | { type: 'pr_custom'; custom: boolean }
@@ -172,6 +175,7 @@ export const initialWork: WorkState = {
   terminals: {},
   termExits: {},
   termNames: {},
+  termEnvStale: [],
   shellChoices: [],
   envKeys: NO_ENV_KEYS,
   prCustom: false,
@@ -233,6 +237,8 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
     case 'terminal_name':
       if (!(action.id in state.terminals)) return state;
       return { ...state, termNames: action.name ? { ...state.termNames, [action.id]: action.name } : without(state.termNames, action.id) };
+    case 'terminal_env_stale':
+      return action.ids.join('\0') === state.termEnvStale.join('\0') ? state : { ...state, termEnvStale: action.ids };
     case 'shell_choices':
       return { ...state, shellChoices: action.shells };
     case 'env_keys':

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isFinished, issueById } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
@@ -16,6 +16,7 @@ import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker 
 import { ProofList, Relations, SubTasks } from './TaskSections.js';
 import { unexplained } from '@beluga/core/board/criteria.js';
 import { ago, dueText } from './tasks-model.js';
+import { openSheet } from '../lib/sheets.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import { useSwipeBack } from './use-swipe-back.js';
 import { SwipeBackEdge } from './SwipeBackEdge.js';
@@ -100,9 +101,10 @@ function Header({ issue }: { issue: Issue }) {
       </nav>
       <header className={t.pageHead}>
         <Title issue={issue} />
+        <ArchivedBanner issue={issue} />
         <GoneBanner issue={issue} />
         <ChecksBanner issue={issue} />
-        <NextStep issue={issue} />
+        {isArchived(issue) ? null : <NextStep issue={issue} />}
       </header>
     </>
   );
@@ -158,6 +160,39 @@ function ChecksBanner({ issue }: { issue: Issue }) {
       <span className={t.bannerText}>
         <strong>Needs its checks.</strong> {open.length === 1 ? 'A criterion is' : `${open.length} criteria are`} neither ticked nor explained, so it stays out of review: tick each one, or add “— deferred: why” after it.
       </span>
+    </div>
+  );
+}
+
+/** In the Archive: off the board, its words kept, its proof files let go. Back out, or gone for good. */
+function ArchivedBanner({ issue }: { issue: Issue }) {
+  const { api, act, back } = useTaskActions();
+  if (!isArchived(issue)) return null;
+  return (
+    <div className={t.banner} role="status">
+      <Icon name="archive" size={14} />
+      <span className={t.bannerText}>
+        <strong>Archived {ago(issue.archivedAt!)}.</strong> Its words and history are kept{issue.proof.some((p) => p.thumb || p.bytes !== undefined) ? '; its screenshots were kept small and its other proof files let go' : ''}.
+      </span>
+      <Button size="small" onClick={() => void act(() => api.unarchive(issue.id), `${issue.key} is back on the board`)}>
+        Restore
+      </Button>
+      <Button
+        size="small"
+        variant="quiet"
+        onClick={() =>
+          openSheet({
+            kind: 'confirm',
+            title: `Delete ${issue.key} for good?`,
+            message: `“${issue.title}”, its brief, its history and what’s left of its proof go away. This can’t be undone.`,
+            confirm: 'Delete for Good',
+            destructive: true,
+            run: () => void act(() => api.remove(issue.id), `Deleted ${issue.key}`).then(() => back(issue.projectId)),
+          })
+        }
+      >
+        Delete for Good
+      </Button>
     </div>
   );
 }

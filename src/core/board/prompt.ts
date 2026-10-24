@@ -50,19 +50,39 @@ export function briefPrompt(board: BoardState, issue: Issue): string {
     'task_attach_proof. Before ending a turn that changed things, rewrite "handoff" (notes for the next agent:',
     'where things stand, what is left, gotchas). Don\'t mark it Done yourself unless asked: In Review and Done',
     'follow the pull request. The brief is the task\'s memory for the next agent and for people: keep it short and true.',
+    'New asks the user brings here that aren\'t this task\'s work: sub-tasks (parent: this task) or tasks of their own.',
+    ...HOW_TASKS_WORK,
   ]
     .filter((l, i, all) => l !== '' || all[i - 1] !== '')
     .join('\n');
 }
 
-/** For runs that aren't doing a task: that the board is there. */
+/**
+ * How the board works and when to use it unasked: every run gets it (doing a task or not). The
+ * user's own words win over all of it (no tasks, other statuses, a different way to work).
+ */
+const HOW_TASKS_WORK = [
+  'How tasks work: Backlog → Ready → In Progress → In Review → Done (or Canceled). A task moved along from a worktree',
+  'ships with it: that worktree\'s pull request merging (or the worktree merging into main) makes the task Done, so',
+  'never leave one behind. A parent reaching Done takes its open sub-tasks with it. The user archives Done tasks.',
+  'Use tasks unasked when one message asks for two or more separate things (fixes, features, changes): before',
+  'working, open one task per thing with task_create (under a parent task when they belong together), then work',
+  'through them: task_update to in_progress when you start one, in_review once it\'s built and checked (tick its',
+  'criteria first), proof with task_attach_proof. Mark Done yourself only when the user asks or says the work',
+  'shipped (merged, released). Not for questions, a single quick ask, or chat: no task for everything said.',
+  'Tell the user which tasks you opened or moved, in your answer: one `task:KEY` each (inline code, it shows as a',
+  'live card they can click), or a ```beluga-tasks block with one key per line for several.',
+  'Write tasks in your own words: never paste the user\'s message in as a goal. If the user wants it some other way, do that.',
+];
+
+/** For runs that aren't doing a task: that the board is there, and how to use it. */
 export function boardNote(): string {
   return [
     '',
     'Tasks: Beluga has a task board per project (mcp__beluga_board__*: task_list, task_get, task_create, task_update,',
     'task_brief_edit, task_note, task_relate, task_attach_proof). Use it when the user talks about tasks, issues,',
-    'a backlog or what to do next, or asks you to track or plan work. Don\'t make tasks for questions or quick asks.',
-    'When you do write one, write it in your own words: never paste the user\'s message in as its goal.',
+    'a backlog or what to do next, asks you to track or plan work, or asks for several things at once.',
+    ...HOW_TASKS_WORK,
   ].join('\n');
 }
 

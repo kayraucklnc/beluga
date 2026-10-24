@@ -21,6 +21,11 @@ import { agoText, homeModel, mainLineOf } from '../packages/mac/src/views/projec
 const main = { cwd: '/work/app', roots: ['/work/app'], autoEdit: false, askOnly: true, scope: 'full' as const };
 
 describe('isReadOnlyCommand', () => {
+  it('lets sed print, and env list names, but nothing that writes or runs', () => {
+    for (const c of ["sed -n '12,40p' supabase/migrations/001.sql", "sed -n '/create table/,/;/p' a.sql", 'sed 5q a.sql', "sed -n -e '$p' a", 'env | cut -d= -f1 | sort', 'printenv HOME']) expect(isReadOnlyCommand(c), c).toBe(true);
+    for (const c of ["sed -i 's/a/b/' a", "sed 's/a/b/w out' a", "sed -n '1p;w out' a", 'sed -f script a', "sed -n 'e rm -rf x' a", 'env FOO=1 node x.js', 'env rm a']) expect(isReadOnlyCommand(c), c).toBe(false);
+  });
+
   it('lets through commands that only look', () => {
     for (const c of [
       'ls -la',
@@ -109,6 +114,10 @@ describe('decideTool in a main folder (ask-only)', () => {
     expect(denyReason('Edit', { file_path: 'a.ts' }, main)).toBe(ASK_ONLY_REASON);
     expect(ASK_ONLY_REASON).toContain('continue_in_worktree');
     expect(denyReason('Read', { file_path: '/Users/me/.ssh/id_rsa' }, main)).toBe(DENY_REASON);
+    // A view whose command could change something says so, not "credential files".
+    const show = { view: { type: 'table', source: { kind: 'command', command: 'npm run report' } } };
+    expect(decideTool('mcp__beluga_view__show', show, main)).toBe('deny');
+    expect(denyReason('mcp__beluga_view__show', show, main)).toBe(ASK_ONLY_REASON);
     // Outside a main folder nothing changes.
     expect(decideTool('Edit', { file_path: 'src/a.ts' }, { ...main, askOnly: false, autoEdit: true })).toBe('allow');
   });

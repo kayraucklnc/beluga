@@ -20,6 +20,8 @@ import { isGraphFence } from '@beluga/shared/graph-spec.js';
 import { MarkdownTable, ViewBlock } from '../components/views/ViewBlock.js';
 import { InlineCode } from '../components/views/Inline.js';
 import { viewFenceType } from '@beluga/shared/view-spec.js';
+import { TASKS_FENCE } from '@beluga/shared/task-refs.js';
+import { TaskCards } from '../tasks/TaskRef.js';
 import s from './chat.module.css';
 
 /** Syntax colors load on demand (shiki is big), then stay. */
@@ -229,6 +231,8 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       if (!className && !code.includes('\n')) return <InlineCode text={code} fallback={<code className={s.inlineCode}>{children}</code>} />;
       // A diagram Claude drew (docs/graphs.md): only data, drawn with the window's own pieces.
       if (isGraphFence(lang)) return <MessageGraph code={code} localImages={localImages} />;
+      // Board tasks Claude shows (shared/task-refs.ts): live cards that open the task.
+      if (lang === TASKS_FENCE) return <TaskCards code={code} />;
       // Tables, charts, stats, code and colors (docs/views.md): data, drawn live.
       const view = viewFenceType(lang);
       if (view) return <MessageView code={code} type={view} local={localImages} />;

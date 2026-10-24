@@ -282,11 +282,15 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `terminals.shell` | ✓ |
 | `terminals.global` | ✓ |
 | `terminals.close` | ✓ |
+| `terminals.restart` | ✓ the terminal's "started before your variables changed · Restart" |
 | `terminals.rename` | ✓ double-click a shell tab, or right-click › Rename… (Return saves, Escape cancels, empty resets) |
 | `env.get` | ✓ Settings › Environment (values only go to the screen that asks) |
 | `env.set` | ✓ Settings › Environment |
+| `env.testDatabase` | ✓ Settings › Environment › Database (Test Connection) |
+| `env.claudeDotenv` | ✓ Settings › Environment › Your Claude (and a .env approval's Always) |
 | `attachments.add` | ✓ |
 | `attachments.addFile` | ✓ a pasted path of an image becomes a waiting thumbnail |
+| `attachments.reattach` | ✓ a queued message pulled back to edit gets its images back as thumbnails |
 | `attachments.expand` | ✓ |
 | `attachments.read` | ✓ images shown in messages |
 | `attachments.open` | ✓ image full size › Open (in Preview) |
@@ -362,6 +366,10 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.remove` | ✓ Delete Task… (an alert, with Cancel) |
 | `board.start` | ✓ Start Worktree / Start with Claude on a task |
 | `board.settleGone` | ✓ the banner on a task whose worktree was archived or deleted (Cancel Task / Back to Backlog / Keep) |
+| `board.archive` | ✓ a finished task's ⋯ › Archive |
+| `board.archiveDone` | ✓ the archive button on Done (list group, board column), Tasks ⋯ › Archive Done Tasks |
+| `board.unarchive` | ✓ an archived task's banner (Restore), ⋯ › Restore from Archive |
+| `board.emptyArchive` | ✓ Tasks › Archive › Empty Archive |
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
 | `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder) |

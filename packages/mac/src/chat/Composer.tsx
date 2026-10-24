@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type AppState, channelOf, peerName } from '@beluga/core/store.js';
+import { type AppState, type View, channelOf, peerName } from '@beluga/core/store.js';
 import { localDirKey } from '@beluga/core/local-key.js';
 import { workspaceMentions } from '@beluga/core/mentions.js';
 import { composeState, queueIn } from '@beluga/ui/compose.js';
 import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@beluga/ui/suggest.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
+import { secretIn } from '@beluga/shared/secret-text.js';
 import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -29,6 +30,19 @@ import s from './composer.module.css';
 import d from './draft.module.css';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * Whose unsent words the box holds: a chat's own channel; a new chat or a new worktree its
+ * project's page (they all share the channel "draft", so each needs its own).
+ */
+const draftKeyOf = (view: View): string => (view.kind === 'draft' ? `new-chat:${view.projectId}` : view.kind === 'draft_worktree' ? `new-worktree:${view.projectId}` : channelOf(view));
+
+/** What you left unsent in each chat and on each new chat or new worktree page (kept while the app runs, like the network's chats). */
+const drafts = new Map<string, string>();
+/** The branch and name picked on each project's new worktree page, kept with its words. */
+const worktreeChoices = new Map<string, WorktreeChoice>();
+/** Whose words are in the box now (the window keeps one box's words, `buffer`, for the chat on screen). */
+let boxOf: string | undefined;
 
 /** The words in the box, before you start typing: what it does here. */
 function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectId: string; peerId?: string } }): string {
@@ -71,12 +85,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const to = useUi((u) => u.to);
   const ref = useRef<HTMLTextAreaElement>(null);
   const channel = channelOf(state.view);
+  const draftKey = draftKeyOf(state.view);
   const shared = state.view.kind === 'shared';
   const compose = composeState(state, ui.get(), state.selfId, channel, shared);
   const queue = useMemo(() => queueIn(state, channel, state.selfId), [state.log, channel, state.selfId]);
   // Images pasted, dropped or named by their path wait as thumbnails above the text, with an
-  // "[image N]" where they go; other pasted files as chips (see use-attachments).
-  const att = useAttachments({ channel, box: ref, text: () => ui.get().buffer, setText: (buffer, cursor) => ui.patch({ buffer, cursor }) });
+  // "[image N]" where they go; other pasted files as chips (see use-attachments). They wait with
+  // the words, so a new chat or worktree page keeps its own too.
+  const att = useAttachments({ channel: draftKey, box: ref, text: () => ui.get().buffer, setText: (buffer, cursor) => ui.patch({ buffer, cursor }) });
   // While Claude works, sending queues the message; "Steer" gives it to Claude at its next step.
   const queueing = compose.busy && (compose.typing || !buffer.trim());
   const plan = state.planMode[channel] === true;
@@ -107,8 +123,12 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
   // A new worktree: the branch it starts from and its name (empty: named from the task).
   const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
-  const [worktree, setWorktree] = useState<WorktreeChoice>({ name: '' });
-  useEffect(() => setWorktree({ name: '' }), [draftProject]);
+  const [worktree, setWorktreeState] = useState<WorktreeChoice>(() => (draftProject && worktreeChoices.get(draftProject)) || { name: '' });
+  useEffect(() => setWorktreeState((draftProject && worktreeChoices.get(draftProject)) || { name: '' }), [draftProject]);
+  const setWorktree = (choice: WorktreeChoice): void => {
+    if (draftProject) worktreeChoices.set(draftProject, choice);
+    setWorktreeState(choice);
+  };
   const canCreate = Boolean(buffer.trim() && !buffer.trim().startsWith('/')) || Boolean(worktree.name.trim());
 
   // "@src/au" in a worktree: its folders and files (loaded as you type into a folder).
@@ -156,6 +176,20 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     el.style.height = '0px';
     el.style.height = `${Math.min(el.scrollHeight, 12 * 20 + 16)}px`;
   }, [buffer]);
+  // Each chat keeps its own unsent words: going to another puts its words in the box, never these.
+  useLayoutEffect(() => {
+    if (boxOf !== undefined && boxOf !== draftKey) {
+      const text = drafts.get(draftKey) ?? '';
+      ui.patch({ buffer: text, cursor: text.length, historyIndex: -1 });
+      sug.reset();
+    }
+    boxOf = draftKey;
+  }, [draftKey]);
+  useEffect(() => {
+    const text = ui.get().buffer;
+    if (text) drafts.set(draftKey, text);
+    else drafts.delete(draftKey);
+  }, [draftKey, buffer]);
   useEffect(() => {
     const focus = (): void => ref.current?.focus();
     document.addEventListener('beluga:focus-composer', focus);
@@ -165,6 +199,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     if (autoFocus) ref.current?.focus();
   }, [state.view, autoFocus]);
 
+  /** The message you were just warned holds a secret. */
+  const secretWarned = useRef<string | undefined>(undefined);
   const set = (text: string): void => {
     ui.patch({ buffer: text, cursor: text.length });
     sug.reset();
@@ -172,6 +208,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   /** The first message of a new worktree starts it (on the chosen branch, with the chosen name). */
   const createWorktree = (projectId: string, text: string): void => {
     const name = worktree.name.trim();
+    // Its words left the box when it was sent; its branch and name go with them.
+    worktreeChoices.delete(projectId);
+    setWorktreeState({ name: '' });
     void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
   };
   const deliver = (text: string, urgent: boolean): void => {
@@ -184,8 +223,16 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   };
   const send = (urgent = false): void => {
     const typed = buffer.trim();
+    // A password on its way to the whole room: stop once and say where it belongs (sending again sends it).
+    const secret = state.view.kind === 'room' && !typed.startsWith('/') ? secretIn(typed) : undefined;
+    if (secret && secretWarned.current !== typed) {
+      secretWarned.current = typed;
+      toast(client, `That looks like ${secret}, and everyone in the room would see it. Put it in Settings › Environment instead: your Claude uses it from there. Send again to share it anyway.`, 'warn');
+      return;
+    }
+    secretWarned.current = undefined;
     // Images stay where you referenced them in the words; any you took the reference out of go after them.
-    const { text, putBack } = att.take(typed);
+    const { text, images, putBack } = att.take(typed);
     if (!text && !(draftProject && worktree.name.trim())) {
       if (draftProject) toast(client, 'Describe the task, or give the worktree a name', 'info');
       return;
@@ -200,7 +247,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, typed].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (Beluga keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
-      api.attachments.expand(text, channel).then(
+      api.attachments.expand(text, channel, [...images]).then(
         (expanded) => deliver(expanded, urgent),
         (err: unknown) => {
           // Put the message and its images back so nothing is lost.
@@ -214,7 +261,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     deliver(text, urgent);
   };
   /** A queued message pulled back to edit: into the box, ahead of anything already there. */
-  const editQueued = (prompt: string): void => {
+  const editQueued = async (sent: string): Promise<void> => {
+    // Its images wait above the box again, each an "[image N]" in the words (not the link it went as).
+    const prompt = await att.restore(sent);
     const toClaude = channel === 'room' && state.peers.length > 1 && !prompt.startsWith('@') ? `@claude ${prompt}` : prompt;
     const current = ui.get().buffer.trim();
     set(current ? `${toClaude}\n${current}` : toClaude);
@@ -241,6 +290,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     const modKey = e.metaKey || e.ctrlKey;
     if (sug.onKeyDown(e)) return;
+    if (att.onRefKey(e)) return;
     if (e.key === 'Escape') {
       if (pending) ui.patch({ pending: undefined, buffer: '' });
       else if (to) ui.patch({ to: undefined });
@@ -283,7 +333,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     <div className={s.wrap}>
       {att.dropTarget}
       {sug.list}
-      <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={editQueued} />
+      <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={(prompt) => void editQueued(prompt)} />
       <div
         className={cx(s.box, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
         data-plan={plan || tasksMode || undefined}

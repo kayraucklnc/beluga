@@ -171,12 +171,18 @@
   font-size: 0.86rem;
 }
 .codeFile {
+  /*
+   * Whole pixels: a text box rounds its line height (18.4px draws as 18px), so the editor's caret
+   * would fall a little further behind the drawn lines on every line down.
+   */
+  --code-line: 19px;
   padding: 14px 0 40px;
 }
 .v_focus .codeFile {
   padding: 16px 0 30vh;
 }
 .v_panel .codeFile {
+  --code-line: 18px;
   padding: 8px 0 24px;
 }
 .v_panel .codeFile pre {
@@ -300,7 +306,7 @@
   caret-color: var(--text);
   font-family: var(--font-mono);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: var(--code-line);
   tab-size: 4;
   -moz-tab-size: 4;
   white-space: pre;

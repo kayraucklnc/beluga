@@ -4,12 +4,13 @@ import { copyText } from '../../lib/copy.js';
 import { useClock } from '../../lib/window-active.js';
 import { type InlineElement, readInline, relative } from './inline-model.js';
 import { parseColor, toHex, toHsl, toneOf } from './format.js';
+import { TaskChip } from '../../tasks/TaskRef.js';
 import v from './inline.module.css';
 
 /**
  * An inline code span that stands for something (inline-model.ts), drawn as it: a color as its
  * swatch, a status as a badge, keys as key caps, a progress bar, a change, a sparkline, a time
- * that says how long ago. Anything else is the code it was.
+ * that says how long ago, a board task you can open. Anything else is the code it was.
  */
 export function InlineCode({ text, fallback }: { text: string; fallback: ReactNode }) {
   const el = readInline(text);
@@ -65,6 +66,8 @@ function InlineView({ el, raw }: { el: InlineElement; raw: string }) {
       return <Spark values={el.values} label={raw} />;
     case 'time':
       return <Time at={el.at} dateOnly={el.dateOnly} />;
+    case 'task':
+      return <TaskChip taskKey={el.key} />;
   }
 }
 

@@ -2,8 +2,9 @@ import type { Session } from '../core/session.js';
 import type { WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
-import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, importImageFitting, mediaTypeOf, pathInfo, publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
+import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, importImageFitting, mediaTypeOf, pathInfo, publishForRoom, reattach, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
 import { fetchBytes } from '../core/downloads.js';
+import { testDatabase } from '../core/views/sources.js';
 import { statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -208,11 +209,14 @@ export const HANDLERS = {
   'terminals.shell': (s, wsId, size) => started(bench(s)?.shell(wsId, size)),
   'terminals.global': (s, key, dir, size) => started(bench(s)?.globalShell(key, dir, size)),
   'terminals.close': (s, key) => bench(s)?.closeTerminal(key),
+  'terminals.restart': (s, key) => started(bench(s)?.restartTerminal(key)),
   'terminals.rename': (s, key, name) => bench(s)?.renameTerminal(key, name),
 
   // The values go back only to the screen that asked (Settings), never into the shared state.
   'env.get': (s, projectId) => s.env.get(projectId),
   'env.set': (s, projectId, rows, dotenv) => s.env.set(projectId, rows, dotenv),
+  'env.claudeDotenv': (s, projectId, on) => s.env.setClaudeDotenv(projectId, on),
+  'env.testDatabase': (s, projectId) => testDatabase(s.env.viewEnvOf(projectId)),
 
   'attachments.add': async (_s, ext, base64) => {
     const bytes = Buffer.from(base64, 'base64');
@@ -227,13 +231,18 @@ export const HANDLERS = {
     const a = registerAttachment(saved, statSync(saved).size);
     return { n: a.n, chip: chipText(a.n), file: path.basename(saved) };
   },
-  'attachments.expand': (s, text, channel) => {
+  'attachments.reattach': (_s, file) => {
+    const a = reattach(file);
+    if (!a) throw new Error('That image is gone from this computer');
+    return { n: a.n, chip: chipText(a.n) };
+  },
+  'attachments.expand': (s, text, channel, only) => {
     if (!text.includes('[image ') || text.startsWith('/')) return text;
     const state = s.store.getState();
     const friends = state.peers.filter((p) => p.peerId !== s.selfId).map((p) => p.peerId);
     const toRoom = channel === 'room' && friends.length > 0;
     // Sent to the room with friends there, a copy goes where they (and only they) can fetch it.
-    const out = expandChips(text, s.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path));
+    const out = expandChips(text, s.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path), only);
     if (toRoom && out.attachments.length) s.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), friends);
     return out.text;
   },
