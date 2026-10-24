@@ -42,11 +42,28 @@ export const initialScreen: ScreenState = { view: { kind: 'room' }, tabs: [], aw
 
 const clamp = (n: number, max: number): number => Math.min(Math.max(0, max), Math.max(0, n));
 
+/**
+ * A project's main checkout is no conversation (BLG-70): going to it goes to the chat its old
+ * conversation became, else to the project's home. Anything else as it is.
+ */
+export function viewFor(view: View, domain: Pick<DomainState, 'projects'>): View {
+  if (view.kind !== 'workspace') return view;
+  for (const p of domain.projects) {
+    const ws = p.workspaces.find((w) => w.id === view.id);
+    if (!ws) continue;
+    if (ws.kind !== 'main') return view;
+    const chat = ws.movedTo ? p.workspaces.find((w) => w.id === ws.movedTo && !w.archived) : undefined;
+    return chat ? { ...view, id: chat.id } : { kind: 'project', id: p.id };
+  }
+  return view;
+}
+
 export function reduceScreen(screen: ScreenState, action: ScreenAction, domain: DomainState): ScreenState {
   switch (action.type) {
     case 'view': {
-      const tabs = action.view.kind === 'workspace' && !screen.tabs.includes(action.view.id) ? [...screen.tabs, action.view.id] : screen.tabs;
-      return { ...screen, view: action.view, tabs };
+      const view = viewFor(action.view, domain);
+      const tabs = view.kind === 'workspace' && !screen.tabs.includes(view.id) ? [...screen.tabs, view.id] : screen.tabs;
+      return { ...screen, view, tabs };
     }
     case 'close_tab': {
       const tabs = screen.tabs.filter((t) => t !== action.id);

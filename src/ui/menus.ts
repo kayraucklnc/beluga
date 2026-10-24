@@ -59,8 +59,7 @@ export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
     intro: [p.root, group ? `In group: ${group.name}` : 'Not in a group'],
     options: [
       { id: 'p-worktree', label: 'New worktree', hint: 'from the latest origin' },
-      { id: 'p-chat', label: 'New Claude chat here', hint: "in the project's main folder" },
-      { id: 'p-main', label: 'Open the main folder', hint: 'chat with Claude in the original checkout' },
+      { id: 'p-chat', label: 'New chat', hint: "a new one each time, in the project's main folder" },
       ...(p.root ? [{ id: 'p-invite', label: 'Invite someone to this project…', hint: 'a link: they watch, prompt or edit here' }] : []),
       { id: 'p-scripts', label: 'Setup and run commands…', hint: p.scripts?.setup ? `setup: ${p.scripts.setup.command}` : 'none yet' },
       { id: 'p-finder', label: 'Open in Finder', hint: '' },

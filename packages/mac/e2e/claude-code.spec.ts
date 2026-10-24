@@ -7,7 +7,7 @@ import { expect, test, type Page } from './fixtures.js';
  * is written where the demo daemon looks (BELUGA_CLAUDE_HOME, see playwright.config.ts), in the
  * demo's "landing" project. Activity lists it with its agents; an agent opens its own page, which
  * follows new lines as they're written, and turns Finished when the session hears it's done; the
- * session opens the landing chat, with itself live in a strip at the top.
+ * session, in the main folder (no conversation of its own, BLG-70), opens as its transcript.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -82,20 +82,16 @@ test('a Claude Code session and its agents show in Activity, live', async ({ pag
   await activity.click();
   await expect(session.getByRole('button', { name: /^Tighten the hero copy, Finished/ })).toBeVisible({ timeout: 15_000 });
 
-  // The session opens the chat of its folder, with the session live in a strip at the top; the strip opens its transcript.
-  await session.getByRole('button', { name: /^Polish the landing page.*Open Chat/ }).click();
-  const strip = page.getByRole('region', { name: 'Claude Code in this folder' });
-  await expect(strip).toContainText('Polish the landing page');
-  await strip.getByRole('button', { name: /Polish the landing page/ }).click();
+  // It runs in the project's main folder, which has no conversation of its own (BLG-70): it opens as its transcript.
+  await expect(session.getByRole('button', { name: /Open Chat/ })).toHaveCount(0);
+  await session.getByRole('button', { name: /^Polish the landing page.*Open/ }).click();
   await expect(page.getByRole('log', { name: 'Claude Code session Polish the landing page' })).toContainText('Polish the landing page, and review it');
 });
 
-test('the Inspector shows the session in the chat it opens, and Activity goes back to the list', async ({ page }) => {
+test('a main folder’s session opens its transcript, and Activity goes back to the list', async ({ page }) => {
   await sidebar(page).getByRole('button', { name: /^Activity/ }).click();
   await page.getByRole('region', { name: 'Claude Code session Polish the landing page' }).getByRole('button', { name: /^Polish the landing page/ }).click();
-  await expect(page.getByRole('region', { name: 'Claude Code in this folder' })).toBeVisible();
-  const inspector = page.getByRole('complementary', { name: 'Inspector' });
-  if (await inspector.isVisible()) await expect(inspector).toContainText('Claude Code');
+  await expect(page.getByRole('log', { name: 'Claude Code session Polish the landing page' })).toBeVisible();
   await sidebar(page).getByRole('button', { name: /^Activity/ }).click();
   await expect(page.getByRole('heading', { name: /agent.* running|working|Nothing running/ })).toBeVisible();
 });

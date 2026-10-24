@@ -56,11 +56,6 @@ export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
     case 'p-chat':
       if (project) runUiAction({ type: 'new_chat', projectId: project.id });
       return;
-    case 'p-main': {
-      const main = project?.workspaces.find((w) => w.kind === 'main');
-      if (main) void api.workspaces.open(main.id);
-      return;
-    }
     case 'p-finder':
       if (project) openFolder(project.root);
       return;

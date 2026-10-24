@@ -16,6 +16,7 @@ import { pastePlain } from '../chat/paste-paths.js';
 import type { PlaceKind } from './go.js';
 import { throttle } from './throttle.js';
 import { windowActive } from './window-active.js';
+import { newChatProject } from './project-home.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
@@ -53,7 +54,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'onboarding':
       return void document.dispatchEvent(new CustomEvent(SHOW_WELCOME));
     case 'new-chat':
-      return actions.run({ type: 'new_chat', projectId: 'chats' });
+      return actions.run({ type: 'new_chat', projectId: newChatProject(state) });
     case 'new-worktree':
       if (project?.root) actions.run({ type: 'new_worktree', projectId: project.id });
       else client.store.dispatch({ type: 'toast', text: 'Add a project first (File › Add Project…)', level: 'warn' });

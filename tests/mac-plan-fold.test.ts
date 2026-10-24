@@ -69,8 +69,8 @@ describe('a running plan in tallies and Overview', () => {
 
   it('Overview lists the plan once (where its conversation is) and leaves its tasks’ worktrees out', () => {
     const items = overviewItems(answered());
-    expect(items.map((i) => i.ws.id)).toEqual(['main', 'home', 'solo']);
-    expect(items[1]!.plan).toMatchObject({ title: 'Checkout', unread: 3 });
+    expect(items.map((i) => i.ws.id)).toEqual(['home', 'solo']);
+    expect(items[0]!.plan).toMatchObject({ title: 'Checkout', unread: 3 });
   });
 
   it('once the plan is done, its worktrees are plain again', () => {

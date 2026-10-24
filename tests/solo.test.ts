@@ -49,14 +49,14 @@ describe('@workspace from the main chat', () => {
     { id: 'p2', name: 'web', root: '/q', base: 'origin/main', workspaces: [ws({ id: 'm2', name: 'main', kind: 'main', projectId: 'p2' }), ws({ id: 'w2', name: 'Fix Header!', projectId: 'p2' })] },
   ];
 
-  it('names every workspace, disambiguating repeats, and skips agent worktrees', () => {
-    expect(workspaceMentions(projects).map((m) => m.label)).toEqual(['@api/main', '@add-auth', '@web/main', '@fix-header']);
+  it('names every workspace, disambiguating repeats, and skips agent worktrees and main checkouts (no conversation there, BLG-70)', () => {
+    expect(workspaceMentions(projects).map((m) => m.label)).toEqual(['@add-auth', '@fix-header']);
   });
 
   it('parses "@name message" only for real workspaces', () => {
     const m = workspaceMentions(projects);
     expect(parseWorkspaceMention('@add-auth   add a test', m)).toEqual({ id: 'w1', label: '@add-auth', prompt: 'add a test' });
-    expect(parseWorkspaceMention('@web/main deploy', m)?.id).toBe('m2');
+    expect(parseWorkspaceMention('@web/main deploy', m)).toBeUndefined();
     expect(parseWorkspaceMention('@claude hi', m)).toBeUndefined();
     expect(parseWorkspaceMention('@add-auth', m)).toBeUndefined();
   });

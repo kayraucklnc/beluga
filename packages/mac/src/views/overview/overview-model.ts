@@ -51,7 +51,8 @@ export interface OverviewGroup {
 }
 
 /** What the Overview shows: live worktrees and chats (not sub-agents' scratch worktrees), and everything archived. */
-const shown = (w: Workspace): boolean => w.archived === true || worktreeOrigin(w) !== 'agent';
+/** Not a project's main checkout: it's no conversation (BLG-70), its project's home is. */
+const shown = (w: Workspace): boolean => w.kind !== 'main' && (w.archived === true || worktreeOrigin(w) !== 'agent');
 
 /**
  * An archived worktree's folder is gone, so a size measured before it was archived is stale.
@@ -141,16 +142,14 @@ export function filterCounts(items: readonly OverviewItem[]): Record<OverviewFil
 const byName = (a: OverviewItem, b: OverviewItem): number => a.ws.name.localeCompare(b.ws.name, undefined, { numeric: true, sensitivity: 'base' });
 
 /**
- * Recent: what needs you first (the Overview's job), the main folder, then the latest. Name: A to Z.
+ * Recent: what needs you first (the Overview's job), then the latest. Name: A to Z.
  * Size: biggest first, unmeasured last.
  */
 export function sortItems(items: readonly OverviewItem[], sort: OverviewSort): OverviewItem[] {
   const list = [...items];
   if (sort === 'name') return list.sort(byName);
   if (sort === 'size') return list.sort((a, b) => (b.size ?? -1) - (a.size ?? -1) || byName(a, b));
-  // The main folder heads its project, unless something else needs you more.
-  const main = (i: OverviewItem): number => (i.ws.kind === 'main' ? 0 : 1);
-  return list.sort((a, b) => a.rank - b.rank || main(a) - main(b) || b.when - a.when || byName(a, b));
+  return list.sort((a, b) => a.rank - b.rank || b.when - a.when || byName(a, b));
 }
 
 /** By project (in the sidebar's order), live ones first, then the archived ones. */
