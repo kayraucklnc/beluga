@@ -413,8 +413,10 @@ Advanced at the bottom. Learn it once and it works everywhere.
   answer (code folded into chips; views and graphs drawn), and while it works a live panel: thinking
   or writing with a soft shimmer, the step it's on with its tool, time and progress, the steps
   before it sliding in. Sub-agents are rows with their own live step; tap one for a sheet with its
-  steps and its outputs. While Claude works the composer offers Steer (now) and Queue (after), and
-  what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
+  steps and its outputs. The composer's field takes the width and grows to seven lines; its photo
+  button is always there (photos go along as `companion.ask` files). While Claude works its one
+  round button queues (after) and a long-press offers Steer (now, words only); what's queued sits
+  above it. The header's outputs button (and ••• › Outputs) shows everything the
   worktree made; ••• › Merge… checks, merges and gets conflicts resolved; ••• › Files reads the
   worktree's files and ••• › Terminal is its terminal, shared with the Mac (BLG-42). Images open full screen from where they are (shared
   transition): pinch, swipe between them, swipe down to put back. Text files open in a reader with

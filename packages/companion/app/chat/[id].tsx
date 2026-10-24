@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { ImagePlus, Sparkles, X } from 'lucide-react-native';
+import { Sparkles, X } from 'lucide-react-native';
 import { AskClaudePicker, type AskTarget, askTargets } from '../../components/AskClaudePicker';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, View } from 'react-native';
@@ -14,7 +14,7 @@ import { Avatar, Press, T } from '../../components/ui';
 import { ago, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { ChatMessageView, ChatView, OutputView, Topic } from '../../lib/link/protocol';
-import { pickPhoto, upload } from '../../lib/pick';
+import { upload } from '../../lib/pick';
 import { sends, useSends } from '../../lib/sends';
 import { store } from '../../lib/store';
 import { color, ink, tint } from '../../lib/theme';
@@ -38,13 +38,6 @@ export default function Chat() {
   useEffect(() => {
     if (c) void store.call(calls.read(topic), { queue: false }).catch(() => undefined);
   }, [c?.messages.length]);
-
-  const sendPhoto = async () => {
-    const photo = await pickPhoto().catch(() => undefined);
-    if (!photo) return;
-    // Shown at once as yours; it goes up, then the message names it (lib/sends.ts).
-    sends.message(topic, '', async () => calls.chat(topic, '', { files: [await upload(photo)] }), { photo: true });
-  };
 
   return (
     <Screen>
@@ -87,21 +80,20 @@ export default function Chat() {
         <Composer
           placeholder={ask ? `Ask ${ask.label}…` : `Message ${c?.name ?? ''}`}
           bottom={insets.bottom}
-          onSend={(text) => {
-            sends.message(topic, text, calls.chat(topic, text, ask ? { ask: ask.ask } : {}));
+          photos
+          onSend={(text, photos) => {
+            const opts = ask ? { ask: ask.ask } : {};
+            // Photos go up first (`put`), then the message names them (lib/sends.ts); shown at once as yours.
+            if (photos.length) sends.message(topic, text, async () => calls.chat(topic, text, { ...opts, files: await Promise.all(photos.map(upload)) }), { photo: true });
+            else sends.message(topic, text, calls.chat(topic, text, opts));
             setAsk(undefined);
           }}
           left={
-            <View style={{ flexDirection: 'row', gap: 2 }}>
-              <Press onPress={() => void sendPhoto()} accessibilityLabel="Send a photo" style={{ width: 38, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                <ImagePlus color={color.text2} size={21} />
-              </Press>
-              <Press onPress={() => setPicking(true)} accessibilityLabel="Ask Claude" style={{ width: 38, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: ask ? tint.peach : 'transparent' }}>
-                  <Sparkles color={ask ? ink.peach : color.text2} size={20} />
-                </View>
-              </Press>
-            </View>
+            <Press onPress={() => setPicking(true)} accessibilityLabel="Ask Claude" style={{ width: 36, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: ask ? tint.peach : 'transparent' }}>
+                <Sparkles color={ask ? ink.peach : color.text2} size={20} />
+              </View>
+            </Press>
           }
         />
       </KeyboardLift>

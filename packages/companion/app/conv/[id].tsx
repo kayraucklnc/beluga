@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Sparkles, Square, SquareTerminal } from 'lucide-react-native';
+import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Square, SquareTerminal } from 'lucide-react-native';
 import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
 import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
@@ -23,6 +23,7 @@ import type { ConvView, OutputView, SubAgentView, Topic, TurnView } from '../../
 import { type Send as Pending, sends, useSends } from '../../lib/sends';
 import { SendStatus } from '../../components/SendStatus';
 import { store } from '../../lib/store';
+import { upload } from '../../lib/pick';
 import { color } from '../../lib/theme';
 import { router } from 'expo-router';
 
@@ -173,12 +174,16 @@ export default function Conversation() {
           ))}
         </ScrollView>
         <Composer
-          placeholder={c?.working ? 'Steer Claude, or queue what’s next…' : 'Reply to Claude…'}
+          placeholder={c?.working ? 'What’s next for Claude…' : 'Reply to Claude…'}
           working={c?.working}
           disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
-          onSend={(text) => {
+          photos
+          onSend={(text, photos) => {
             atEnd.current = true;
-            // While Claude works, Send queues (after), as on the Mac; Steer is beside it.
+            // Photos go up first (`put`), then the message names them; on the Mac it waits its
+            // turn while Claude works, as a queued message does.
+            if (photos.length) return sends.message(topic, text, async () => calls.send(topic, text, await Promise.all(photos.map(upload))), { photo: true });
+            // While Claude works, Send queues (after), as on the Mac; Steer is a long-press away.
             const call = c?.working && !topic.startsWith('conv:task:') ? calls.queue(topic, text) : calls.send(topic, text);
             sends.message(topic, text, call);
           }}
@@ -251,7 +256,6 @@ export default function Conversation() {
           { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
           { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
           { Icon: SquareTerminal, label: 'Terminal', sub: 'The same terminal as on your Mac', tone: 'lavender', hidden: !hasFolder || !store.supports('terminal'), onPress: () => router.push({ pathname: '/terminal', params: { topic, title: c?.title ?? '' } }) },
-          { Icon: Sparkles, label: 'Ask with a photo', sub: 'Opens Ask, aimed here', tone: 'peach', onPress: () => router.push({ pathname: '/ask', params: { topic } }) },
           { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
           { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
         ]}
@@ -288,7 +292,7 @@ function PendingTurn({ s }: { s: Pending }) {
     <View style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
       <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: s.state === 'failed' ? 1 : 0.6, borderWidth: s.state === 'failed' ? 1 : 0, borderColor: color.error }}>
         <T v="body" style={{ fontSize: 15 }}>
-          {s.text}
+          {s.text || 'Photo'}
         </T>
       </View>
       <SendStatus s={s} />
