@@ -78,11 +78,19 @@ function Pairing({ now }: { now: number }) {
     }
   };
   if (!pairing) {
+    // While it opens it stays the same button, the same size (both labels take the room): a spinner and "Opening…", readable.
     return (
       <div className={s.pairRow}>
         {error ? <div className={s.error}>{error}</div> : null}
-        <Button variant={devices.length ? 'plain' : 'primary'} icon="phone" disabled={busy || devices.length >= 4} onClick={() => void start()}>
-          {busy ? 'Opening…' : 'Pair a Phone…'}
+        <Button variant={devices.length ? 'plain' : 'primary'} className={cx(s.pairButton, busy && s.opening, busy && devices.length > 0 && s.openingPlain)} disabled={busy || devices.length >= 4} aria-busy={busy || undefined} onClick={() => void start()}>
+          <span className={s.pairFace} data-shown={busy ? undefined : 'true'}>
+            <Icon name="phone" size={14} />
+            Pair a Phone…
+          </span>
+          <span className={s.pairFace} data-shown={busy ? 'true' : undefined}>
+            <span className={s.spinner} aria-hidden="true" />
+            Opening…
+          </span>
         </Button>
       </div>
     );

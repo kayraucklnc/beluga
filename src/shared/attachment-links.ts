@@ -36,9 +36,11 @@ function imageOf(text: string, href: string): LinkedImage | undefined {
 }
 
 /**
- * The images a message links to (in order, once each) and its text to show with them: links at
- * the very start or end go (the pictures show below the text), ones mid-sentence become a short
- * "image N" link so the words still read.
+ * The images a message links to (in order, once each) and its text to show with them: the links
+ * that close the message go (the images the box sent without a place in the words: the pictures
+ * show below the text), and so do all of them when the message is only images. Every other one
+ * stays where it was written, as a short "image N" link (a chip), so the words still read, the
+ * first word included: "[image 1] we have this problem" keeps its image 1.
  */
 export function splitImages(text: string): { text: string; images: LinkedImage[] } {
   const found = [...text.matchAll(LINK)].flatMap((m) => {
@@ -47,16 +49,14 @@ export function splitImages(text: string): { text: string; images: LinkedImage[]
   });
   if (!found.length) return { text, images: [] };
   const blank = (s: string): boolean => !s.trim();
-  // How many links open and close the message (with only spaces between them).
-  let lead = 0;
-  while (lead < found.length && blank(text.slice(lead ? found[lead - 1]!.end : 0, found[lead]!.start))) lead++;
+  // How many links close the message (with only spaces between them).
   let trail = 0;
-  while (trail < found.length - lead && blank(text.slice(found[found.length - 1 - trail]!.end, trail ? found[found.length - trail]!.start : text.length))) trail++;
+  while (trail < found.length && blank(text.slice(found[found.length - 1 - trail]!.end, trail ? found[found.length - trail]!.start : text.length))) trail++;
   let out = '';
   let at = 0;
   found.forEach((f, i) => {
     out += text.slice(at, f.start);
-    if (i >= lead && i < found.length - trail) out += `[${f.image.label}](${f.image.href})`;
+    if (i < found.length - trail) out += `[${f.image.label}](${f.image.href})`;
     at = f.end;
   });
   out += text.slice(at);

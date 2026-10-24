@@ -40,11 +40,29 @@ describe('"[image N]" in the message box is one thing', () => {
 describe('an image\'s chip carries the end of its name', () => {
   const ref = boxRef(1, '20261024-142525-fpxw.png');
 
-  it('shows the last characters, without the extension, and never wraps', () => {
-    expect(nameTail('20261024-142525-fpxw.png')).toBe('42525-fpxw');
+  it('shows the last characters, without the extension, cut at the start, and never wraps', () => {
+    expect(nameTail('20261024-142525-fpxw.png')).toBe('…42525-fpxw');
+    expect(nameTail('Screenshot 2026-10-24 at 18.14.32@2x.png')).toBe('…8.14.32@2x');
+    // A name that fits shows whole.
     expect(nameTail('/Users/me/shot.jpeg')).toBe('shot');
-    expect(ref).toBe('[image\u00a01\u00a0·\u00a042525-fpxw]');
+    expect(nameTail('0123456789.png')).toBe('0123456789');
+    // Short: the brackets, the number and a figure space (it never breaks) pay for the chip's icon and padding.
+    expect(ref).toBe('[1\u2007…42525-fpxw]');
     expect(boxRef(3)).toBe('[image 3]');
+  });
+
+  it('still reads the longer reference an older box wrote', () => {
+    const old = 'see [image\u00a02\u00a0·\u00a042525-fpxw] here';
+    expect(referencedImages(old)).toEqual([2]);
+    expect(plainRefs(old)).toBe('see [image 2] here');
+  });
+
+  it('a reference at the very start is one too', () => {
+    const text = `${ref}  we have this problem`;
+    expect(referencedImages(text)).toEqual([1]);
+    expect(plainRefs(text)).toBe('[image 1]  we have this problem');
+    // With one space after it, so the words don't start with one.
+    expect(refKey(text, 0, 0, 'Delete')).toMatchObject({ kind: 'delete', start: 0, end: ref.length + 1, images: [1] });
   });
 
   it('is still one reference, and goes out as "[image N]"', () => {

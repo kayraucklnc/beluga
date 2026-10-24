@@ -69,7 +69,7 @@ test('the plan chat takes a dropped image, and shows a message’s screenshots a
     form.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }));
     form.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
   }, PNG.toString('base64'));
-  await expect(box).toHaveValue(/^this one: \[image \d+\] $/);
+  await expect(box).toHaveValue(/^this one: \[(?:image \d+|\d+\u2007[^\]\n]+)\] $/);
   const tray = chat.getByRole('group', { name: 'Images to send' });
   await expect(tray.locator('img')).toHaveCount(1);
   await expect(tray.locator('img')).toHaveJSProperty('complete', true);
