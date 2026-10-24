@@ -146,6 +146,52 @@ describe('the phone’s terminal page', () => {
     expect(scripts).toHaveLength(2);
     for (const s of scripts) expect(() => new Function(s)).not.toThrow();
     expect(scripts[1]).toContain('"cols":80');
+    // Its font is inline too (BLG-108): JetBrains Mono, regular and bold, no ligatures.
+    expect(html).toMatch(/@font-face\{font-family:'JetBrains Mono';font-style:normal;font-weight:400;[^}]*src:url\(data:font\/woff2;base64,/);
+    expect(html).toContain('font-weight:700');
+    expect(html).toContain('font-variant-ligatures:none');
+    expect(scripts[1]).toContain('"size":13');
+    expect(terminalPage({ scheme: 'light', cols: 80, rows: 24, font: 'fit' } as never)).toContain('"size":"fit"');
+  });
+});
+
+describe('the phone terminal’s text size (BLG-108)', () => {
+  type Zoom = typeof import('../packages/companion/lib/terminal/zoom.js');
+  const load = async () => (await import('../packages/companion/lib/terminal/zoom.ts' as string)) as Zoom;
+
+  it('keeps a pinch or A−/A+ between 8 and 24 px, to the half pixel', async () => {
+    const { clampFont, stepFont, FONT_MIN, FONT_MAX } = await load();
+    expect([FONT_MIN, FONT_MAX]).toEqual([8, 24]);
+    expect(clampFont(3)).toBe(8);
+    expect(clampFont(99)).toBe(24);
+    expect(clampFont(13.3)).toBe(13.5);
+    expect(clampFont(Number.NaN)).toBe(13);
+    expect(stepFont(13, 1)).toBe(14);
+    expect(stepFont(12.5, -1)).toBe(12);
+    expect(stepFont(8, -1)).toBe(8);
+    expect(stepFont(24, 1)).toBe(24);
+    // From a tiny fitted size, A+ goes to the smallest readable one.
+    expect(stepFont(4.5, 1)).toBe(8);
+  });
+
+  it('reads what was kept safely: a size, fit, or the readable default', async () => {
+    const { readFont } = await load();
+    expect(readFont(16)).toBe(16);
+    expect(readFont(40)).toBe(24);
+    expect(readFont('fit')).toBe('fit');
+    expect(readFont(undefined)).toBe(13);
+    expect(readFont('big')).toBe(13);
+  });
+
+  it('fits the Mac’s columns to the width, never past the largest size or below a floor', async () => {
+    const { fitFont, PAD } = await load();
+    // 80 columns of JetBrains Mono (0.6 em) in a 390 px phone: about 7.9 px.
+    const s = fitFont(390, 80, 0.6);
+    expect(s).toBeCloseTo(7.75, 2);
+    expect(80 * 0.6 * s).toBeLessThanOrEqual(390 - PAD * 2);
+    expect(fitFont(390, 20, 0.6)).toBe(24);
+    expect(fitFont(390, 400, 0.6)).toBe(4);
+    expect(fitFont(390, 80, 0)).toBe(s);
   });
 });
 

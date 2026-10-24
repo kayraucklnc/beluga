@@ -273,10 +273,13 @@ the same output live, and either can type.
 - **Size: the Mac's.** The session keeps the Mac's grid (`cols × rows`, told in `term_status`, again
   when the Mac resizes it). The phone never resizes it: with two screens on one PTY the last resize
   wins, and the Mac's terminal would reflow under you each time you looked from the phone. The phone
-  draws that grid fitted to its width; a pinch zooms in (then it pans sideways), one finger scrolls
-  back, and the zoom is remembered.
+  draws that grid at a readable text size (13 px by default, BLG-108) and pans over what's wider or
+  taller than the screen; a pinch or ••• › A−/A+ sets the size (8–24 px), ••• › Fit draws the whole
+  width instead, and the choice is remembered (`lib/terminal/zoom.ts`). One finger pans, then
+  scrolls back; output keeps the cursor in view.
 - **Drawn by xterm.js in a WebView** (`react-native-webview`, an iframe in the web build), bundled
-  with the app (`lib/terminal/xterm.generated.ts`, `npm run terminal:bundle`): no CDN, nothing
+  with the app (`lib/terminal/xterm.generated.ts`, `npm run terminal:bundle`), in JetBrains Mono
+  (OFL, Latin subsets inline as `lib/terminal/font.generated.ts`, no ligatures): no CDN, nothing
   fetched. Raw PTY bytes go in, so colours, cursor moves and full-screen programs draw as on the Mac.
   The page drops xterm's answers to the program's own queries (cursor position, device
   attributes): the Mac's screen answers those, once.
