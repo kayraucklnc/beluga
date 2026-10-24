@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react-native';
+import type { ReactNode } from 'react';
 import { View } from 'react-native';
 import { Sheet } from './Sheet';
 import { haptic, IconBadge, Press, T, type Tone } from './ui';
@@ -16,7 +17,7 @@ export interface Option {
   readonly hidden?: boolean;
 }
 
-export function Options({ visible, onClose, title, options }: { readonly visible: boolean; readonly onClose: () => void; readonly title?: string; readonly options: readonly Option[] }) {
+export function Options({ visible, onClose, title, options, head }: { readonly visible: boolean; readonly onClose: () => void; readonly title?: string; readonly options: readonly Option[]; /** A control that stays open while used (a stepper), above the rows. */ readonly head?: ReactNode }) {
   return (
     <Sheet visible={visible} onDismiss={onClose}>
       <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
@@ -25,6 +26,7 @@ export function Options({ visible, onClose, title, options }: { readonly visible
             {title}
           </T>
         ) : null}
+        {head}
         {options
           .filter((o) => !o.hidden)
           .map((o) => (

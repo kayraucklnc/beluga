@@ -1,30 +1,76 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ClipboardPaste, Ellipsis } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
-import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown, FadeOutDown, LinearTransition } from 'react-native-reanimated';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { color, ink, tint } from '../lib/theme';
-import { haptic, Press, T } from './ui';
+import { haptic, T } from './ui';
 
 /**
  * The terminal's keys above the keyboard (BLG-42), calm: the essentials on the surface (Esc, Tab,
- * Ctrl, one arrows cluster) and ••• for the rest (|, ~, /, paste), on a second row that slides up.
+ * Ctrl, one arrows cluster) and ••• for the rest (|, ~, /, paste), on a second row.
+ *
+ * Snappy, like a keyboard (BLG-108): a key fires the moment it's touched (not on release), with a
+ * light tick and a quiet pressed shade; nothing springs, scales or slides. Held, an arrow repeats.
+ * Ctrl is sticky: lit until the next key uses it.
  */
 
-const H = 44;
-const keyStyle = (on = false) => ({ height: H, borderRadius: 14, alignItems: 'center' as const, justifyContent: 'center' as const, backgroundColor: on ? tint.lavender : color.card, borderWidth: StyleSheet.hairlineWidth, borderColor: on ? 'transparent' : color.hairline });
+const H = 40;
+const R = 10;
+/** Held arrows repeat after this, then every REPEAT_MS. */
+const REPEAT_AFTER_MS = 380;
+const REPEAT_MS = 55;
 
-function Key({ label, Icon, a11y, on, onPress, flex = 1 }: { readonly label?: string; readonly Icon?: LucideIcon; readonly a11y: string; readonly on?: boolean; readonly onPress: () => void; readonly flex?: number }) {
+const face = (on: boolean, pressed: boolean): ViewStyle => ({
+  height: H,
+  borderRadius: R,
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: on ? tint.lavender : pressed ? color.sunken : color.card,
+  borderWidth: StyleSheet.hairlineWidth,
+  borderColor: on ? ink.lavender : color.hairline,
+});
+
+/** A key: fires on touch down (and repeats while held, when `repeat`). */
+function Key({ a11y, onFire, repeat, style, on = false, children }: { readonly a11y: string; readonly onFire: () => void; readonly repeat?: boolean; readonly style?: (pressed: boolean) => ViewStyle; readonly on?: boolean; readonly children: ReactNode }) {
+  const timers = useRef<{ wait?: ReturnType<typeof setTimeout>; every?: ReturnType<typeof setInterval> }>({});
+  const fire = useRef(onFire);
+  fire.current = onFire;
+  const stop = () => {
+    clearTimeout(timers.current.wait);
+    clearInterval(timers.current.every);
+    timers.current = {};
+  };
+  useEffect(() => stop, []);
   return (
-    <Press haptics={false} scaleTo={0.94} accessibilityLabel={a11y} onPress={() => (haptic.tap(), onPress())} style={[keyStyle(on), { flex }]}>
-      {Icon ? (
-        <Icon color={on ? ink.lavender : color.text2} size={18} />
-      ) : (
-        <T v="callout" c={on ? ink.lavender : color.text} style={{ fontWeight: '600', fontSize: label && label.length > 1 ? 14 : 17 }}>
-          {label}
-        </T>
-      )}
-    </Press>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+      accessibilityState={on ? { selected: true } : undefined}
+      // A screen reader activates (it never presses in).
+      accessibilityActions={[{ name: 'activate' }]}
+      onAccessibilityAction={() => fire.current()}
+      onPressIn={() => {
+        haptic.tap();
+        fire.current();
+        if (!repeat) return;
+        stop();
+        timers.current.wait = setTimeout(() => {
+          timers.current.every = setInterval(() => fire.current(), REPEAT_MS);
+        }, REPEAT_AFTER_MS);
+      }}
+      onPressOut={stop}
+      style={({ pressed }) => (style ? style(pressed) : [face(on, pressed), { flex: 1 }])}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+function Label({ text, on }: { readonly text: string; readonly on?: boolean }) {
+  return (
+    <T v="callout" c={on ? ink.lavender : color.text} style={{ fontWeight: on ? '700' : '600', fontSize: text.length > 1 ? 14 : 17 }}>
+      {text}
+    </T>
   );
 }
 
@@ -38,29 +84,32 @@ const ARROWS: ReadonlyArray<{ key: string; Icon: LucideIcon; a11y: string }> = [
 export function KeyBar({ ctrl, onKey, onCtrl, onPaste, bottom }: { readonly ctrl: boolean; readonly onKey: (key: string) => void; readonly onCtrl: () => void; readonly onPaste: () => void; readonly bottom: number }) {
   const [more, setMore] = useState(false);
   return (
-    <Animated.View layout={LinearTransition.springify().stiffness(260).damping(28)} style={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: Math.max(10, bottom), gap: 8 }}>
+    <View style={{ paddingHorizontal: 10, paddingTop: 8, paddingBottom: Math.max(8, bottom), gap: 6 }}>
       {more ? (
-        <Animated.View entering={FadeInDown.springify().stiffness(260).damping(26)} exiting={FadeOutDown.duration(140)} style={{ flexDirection: 'row', gap: 8 }}>
-          <Key label="|" a11y="Pipe" onPress={() => onKey('|')} />
-          <Key label="~" a11y="Tilde" onPress={() => onKey('~')} />
-          <Key label="/" a11y="Slash" onPress={() => onKey('/')} />
-          <Key Icon={ClipboardPaste} a11y="Paste" onPress={onPaste} />
-        </Animated.View>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <Key a11y="Pipe" onFire={() => onKey('|')}><Label text="|" /></Key>
+          <Key a11y="Tilde" onFire={() => onKey('~')}><Label text="~" /></Key>
+          <Key a11y="Slash" onFire={() => onKey('/')}><Label text="/" /></Key>
+          <Key a11y="Dash" onFire={() => onKey('-')}><Label text="-" /></Key>
+          <Key a11y="Paste" onFire={onPaste}><ClipboardPaste color={color.text2} size={18} /></Key>
+        </View>
       ) : null}
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Key label="Esc" a11y="Escape" onPress={() => onKey('esc')} />
-        <Key label="Tab" a11y="Tab" onPress={() => onKey('tab')} />
-        <Key label="Ctrl" a11y="Control" on={ctrl} onPress={onCtrl} />
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        <Key a11y="Escape" onFire={() => onKey('esc')}><Label text="Esc" /></Key>
+        <Key a11y="Tab" onFire={() => onKey('tab')}><Label text="Tab" /></Key>
+        <Key a11y="Control" on={ctrl} onFire={onCtrl}><Label text="Ctrl" on={ctrl} /></Key>
         {/* One control for the four arrows: a quiet segmented cluster. */}
-        <View style={[keyStyle(), { flex: 2.2, flexDirection: 'row', overflow: 'hidden' }]}>
+        <View style={[face(false, false), { flex: 2.4, flexDirection: 'row', overflow: 'hidden' }]}>
           {ARROWS.map((a, i) => (
-            <Press key={a.key} haptics={false} scaleTo={0.9} accessibilityLabel={a.a11y} onPress={() => (haptic.tap(), onKey(a.key))} style={{ flex: 1, height: H, alignItems: 'center', justifyContent: 'center', borderLeftWidth: i ? StyleSheet.hairlineWidth : 0, borderLeftColor: color.hairline }}>
+            <Key key={a.key} a11y={a.a11y} repeat onFire={() => onKey(a.key)} style={(pressed) => ({ flex: 1, height: H, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? color.sunken : 'transparent', borderLeftWidth: i ? StyleSheet.hairlineWidth : 0, borderLeftColor: color.hairline })}>
               <a.Icon color={color.text2} size={17} />
-            </Press>
+            </Key>
           ))}
         </View>
-        <Key Icon={Ellipsis} a11y={more ? 'Fewer keys' : 'More keys'} on={more} onPress={() => setMore((m) => !m)} flex={0.9} />
+        <Key a11y={more ? 'Fewer keys' : 'More keys'} on={more} onFire={() => setMore((m) => !m)} style={(pressed) => ({ ...face(more, pressed), flex: 0.9 })}>
+          <Ellipsis color={more ? ink.lavender : color.text2} size={18} />
+        </Key>
       </View>
-    </Animated.View>
+    </View>
   );
 }
