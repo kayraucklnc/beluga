@@ -48,7 +48,7 @@ export const CompactDivider = memo(function CompactDivider({ item }: { item: Com
             <strong>What Claude kept</strong>
             <span>It continues from this; everything above stays here for you.</span>
           </div>
-          {m.summary ? <Markdown text={m.summary} paths localImages /> : <div className={s.summaryEmpty}>Claude didn’t share its summary for this one.</div>}
+          {m.summary ? <Markdown text={m.summary} paths localImages tasks /> : <div className={s.summaryEmpty}>Claude didn’t share its summary for this one.</div>}
         </div>
       ) : null}
     </div>

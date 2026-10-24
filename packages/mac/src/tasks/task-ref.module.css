@@ -42,6 +42,13 @@
   font-weight: 650;
   color: var(--accent);
 }
+/* A bare key in the words: just the ring and the key, so the sentence reads as written. */
+.keyChip {
+  gap: 4px;
+  height: 1.5em;
+  padding: 0 6px 0 4px;
+  vertical-align: -0.25em;
+}
 .chipTitle {
   min-width: 0;
   overflow: hidden;

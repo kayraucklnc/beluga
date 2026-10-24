@@ -12,7 +12,7 @@ import { imageSource, localImage, messageImages } from './md-images.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
-import { useBeluga } from '../lib/beluga.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { MentionPill } from './Mention.js';
 import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
@@ -21,8 +21,8 @@ import { isGraphFence } from '@beluga/shared/graph-spec.js';
 import { MarkdownTable, ViewBlock } from '../components/views/ViewBlock.js';
 import { InlineCode } from '../components/views/Inline.js';
 import { viewFenceType } from '@beluga/shared/view-spec.js';
-import { TASKS_FENCE } from '@beluga/shared/task-refs.js';
-import { TaskCards } from '../tasks/TaskRef.js';
+import { TASKS_FENCE, TASK_LINK_SCHEME, linkTaskKeys } from '@beluga/shared/task-refs.js';
+import { TaskCards, TaskKeyChip } from '../tasks/TaskRef.js';
 import s from './chat.module.css';
 
 /** Syntax colors load on demand (shiki is big), then stay. */
@@ -172,10 +172,21 @@ const keepUrl = (u: string): string => u;
  * `localImages`: pictures named by a path on this Mac are shown (your own messages and your own
  * Claude's only; anyone else's stay a chip). `mentions`: draw "@mia", "@bob-api", "@src/auth.ts"…
  * as pills when they name someone or something here. `live`: the text is still being written (a
- * graph block that isn't finished yet says it's being drawn instead of failing).
+ * graph block that isn't finished yet says it's being drawn instead of failing). `tasks`: a bare
+ * key your board has ("BLG-72") is a small task chip (your own and your own Claude's words only:
+ * someone else's key may be on their board).
  */
-export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions, live = false }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld; live?: boolean }) {
+export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions, live = false, tasks = false }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld; live?: boolean; tasks?: boolean }) {
   const actions = useActions();
+  // The board's keys as one string, so a task changing doesn't draw every message again.
+  const keys = useApp((st) => (tasks ? st.board.issues.map((i) => i.key).join(' ') : ''));
+  const source = useMemo(() => {
+    // Tasks last: the other two leave a line with a link in it alone, and this one doesn't.
+    const withMentions = mentions ? linkMentions(text, mentions) : text;
+    const withPaths = paths ? linkifyPaths(withMentions) : withMentions;
+    const known = new Set(keys.split(' '));
+    return keys ? linkTaskKeys(withPaths, (k) => known.has(k)) : withPaths;
+  }, [text, keys, mentions, paths]);
   // Every local image in the message, so the lightbox steps from one to the next.
   const images = useMemo(() => (localImages ? messageImages(text) : []), [text, localImages]);
   // The same renderers from one render to the next: a new one would remount what it drew (a graph
@@ -196,6 +207,8 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
     a: ({ href = '', children }) => {
       const mention = parseMentionHref(href);
       if (mention) return <MentionPill mention={mention} />;
+      // A bare task key (shared/task-refs.ts linkTaskKeys): the board's small chip.
+      if (href.startsWith(TASK_LINK_SCHEME)) return <TaskKeyChip taskKey={href.slice(TASK_LINK_SCHEME.length)} />;
       // An image in the words: the chip the message box showed, a link that opens it full size.
       const image = parseAttachmentHref(href);
       if (image) {
@@ -252,7 +265,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       <MessageImages.Provider value={images}>
       <div className={`${s.markdown} selectable`}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={keepUrl}>
-          {((t: string) => (paths ? linkifyPaths(t) : t))(mentions ? linkMentions(text, mentions) : text)}
+          {source}
         </ReactMarkdown>
       </div>
       </MessageImages.Provider>

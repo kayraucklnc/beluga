@@ -129,10 +129,10 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: {
           )}
           {text ? (
             item.byAgent ? (
-              <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} />
+              <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} tasks={mine} />
             ) : (
               <Folding>
-                <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} />
+                <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} tasks={mine} />
               </Folding>
             )
           ) : null}
@@ -382,7 +382,7 @@ function TurnCard({
           ) : failure ? (
             <FailureNotice failure={failure} />
           ) : item.text ? (
-            <Markdown text={item.text} paths localImages={mine} live={running} />
+            <Markdown text={item.text} paths localImages={mine} live={running} tasks={mine} />
           ) : item.status === 'queued' ? (
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>

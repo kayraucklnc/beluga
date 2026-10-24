@@ -40,6 +40,37 @@ export function readTaskKeys(code: string): string[] {
   return found;
 }
 
+/** The link a bare task key in an answer becomes (the window draws it as a small chip). */
+export const TASK_LINK_SCHEME = 'beluga-task:';
+
+/**
+ * In one line: inline code and links (left as they are), or a bare upper-case key standing on its
+ * own (not part of a word, a path, a URL or "task:BLG-12").
+ */
+const LINE_PIECE = /(`+)[^`]*?\1|!?\[[^\]]*\]\([^)]*\)|<[^>\s]+>|https?:\/\/\S+|(^|[^\w/:@.#-])([A-Z][A-Z0-9]{0,11}-\d{1,6})(?![\w/-]|\.\w)/g;
+
+/**
+ * Markdown with each bare task key the board has ("BLG-72", as Claude often writes it instead of
+ * `task:BLG-72`) turned into a task link, so it shows as a chip too. Only exact, upper-case keys
+ * the board knows: anything else ("UTF-8", "ISO-8601", a key on someone else's board) stays
+ * text. Code blocks, inline code and existing links are left alone.
+ */
+export function linkTaskKeys(markdown: string, has: (key: string) => boolean): string {
+  if (!/[A-Z]-\d/.test(markdown)) return markdown;
+  let fenced = false;
+  return markdown
+    .split('\n')
+    .map((line) => {
+      const fence = /^\s*(```|~~~)/.test(line);
+      if (fence) fenced = !fenced;
+      if (fence || fenced) return line;
+      return line.replace(LINE_PIECE, (whole, _ticks: string | undefined, lead: string | undefined, key: string | undefined) =>
+        key && has(key) ? `${lead ?? ''}[${key}](${TASK_LINK_SCHEME}${key})` : whole,
+      );
+    })
+    .join('\n');
+}
+
 /**
  * Tasks named in a message (BLG-56): "@BLG-24" is a task the way "@mia" is a friend. Typing one
  * suggests tasks by key ("@BLG-2", and the near misses "@BLG24", "@blg-24", "@24") or by a word

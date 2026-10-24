@@ -50,6 +50,24 @@ export function TaskChip({ taskKey }: { taskKey: string }) {
   );
 }
 
+/**
+ * A bare key in the words ("BLG-72", not `task:BLG-72`): Claude wrote what it's about next to it,
+ * so only the status ring and the key, with the title on hover. A key that's gone stays text.
+ */
+export function TaskKeyChip({ taskKey }: { taskKey: string }) {
+  const issue = useIssue(taskKey);
+  const { open } = useTaskActions();
+  if (!issue) return <>{taskKey}</>;
+  return (
+    <Tip label={`${issue.title} · ${STATUS_INFO[issue.status].label}. Click to open`}>
+      <button type="button" className={`${r.chip} ${r.keyChip}`} onClick={() => open(issue)} aria-label={`${issue.key}: ${issue.title}, ${STATUS_INFO[issue.status].label}`}>
+        <StatusIcon status={issue.status} size={11} />
+        <span className={r.key}>{issue.key}</span>
+      </button>
+    </Tip>
+  );
+}
+
 /** A `beluga-tasks` block: one card per key, stacked. */
 export function TaskCards({ code }: { code: string }) {
   const keys = useMemo(() => readTaskKeys(code), [code]);

@@ -127,7 +127,7 @@ function Section({ issue, section, startEditing, onDone }: { issue: Issue; secti
           <Checklist text={text} onToggle={(i) => void act(() => api.editBrief(issue.id, section, toggleCheck(text, i), 'ticked a criterion'))} onEdit={() => setDraft(text)} />
         ) : (
           <div className={t.sectionBody} onDoubleClick={() => setDraft(text)}>
-            <Markdown text={text} paths />
+            <Markdown text={text} paths tasks />
           </div>
         )
       ) : (
@@ -161,7 +161,7 @@ function Checklist({ text, onToggle, onEdit }: { text: string; onToggle: (index:
               {done ? <Icon name="check" size={10} /> : deferred ? <Icon name="clock" size={10} /> : notDone ? <Icon name="minus" size={10} /> : null}
             </button>
             <span className={t.checkText}>
-              <Markdown text={c.text} />
+              <Markdown text={c.text} tasks />
               {c.reason ? (
                 <span className={t.checkReason}>
                   <span className={t.checkReasonLabel}>{deferred ? 'Deferred' : 'Not done'}</span> · {c.reason}
