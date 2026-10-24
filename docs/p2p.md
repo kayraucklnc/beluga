@@ -88,3 +88,9 @@ can't join. Use `auto`.
 - **Native code.** `sodium-native` and `udx-native` ship prebuilt binaries (prebuildify). They
   load without install scripts. If no binary exists for a platform, P2P is unavailable and
   `auto` falls back to the relay alone.
+
+## Your phone
+
+The phone companion uses the same DHT in its own way: hyperdht first (LAN, then hole-punching),
+and a Cloudflare quick-tunnel relay with Noise inside where that fails, found through a signed
+record on the DHT. See docs/companion.md, "Any network".

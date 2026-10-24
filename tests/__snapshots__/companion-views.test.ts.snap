@@ -58,6 +58,7 @@ here",
   },
   "conv:ws:w1": {
     "canSend": true,
+    "icon": "abcdef0123456789abcdef01",
     "more": false,
     "needsYou": [
       {
@@ -171,7 +172,9 @@ here",
         "topic": "conv:ws:w1",
       },
     ],
+    "outputs": [],
     "project": "landing",
+    "projectId": "p1",
     "title": "auth",
     "topic": "conv:ws:w1",
     "turns": [
@@ -204,6 +207,16 @@ Then protect \`/api/payments\`.",
         },
         "status": "done",
         "steps": 2,
+        "trail": [
+          {
+            "text": "Read server.ts",
+            "tool": "read",
+          },
+          {
+            "text": "Edited auth.ts",
+            "tool": "edit",
+          },
+        ],
         "ts": 1760000000002,
         "who": "claude",
       },
@@ -212,6 +225,7 @@ Then protect \`/api/payments\`.",
   },
   "conv:ws:w2": {
     "canSend": true,
+    "icon": "abcdef0123456789abcdef01",
     "more": false,
     "needsYou": [
       {
@@ -306,12 +320,44 @@ Then protect \`/api/payments\`.",
         "topic": "conv:ws:w2",
       },
     ],
+    "outputs": [
+      {
+        "by": "sa1",
+        "kind": "image",
+        "name": "shot.png",
+        "ref": "out:ref00000",
+        "size": 2048,
+        "ts": 1760000000012,
+      },
+      {
+        "kind": "text",
+        "name": "run.log",
+        "ref": "out:ref00001",
+        "size": 300,
+        "ts": 1760000000013,
+      },
+    ],
     "project": "landing",
+    "projectId": "p1",
+    "queue": [
+      {
+        "id": "r3",
+        "text": "Then update the docs",
+      },
+    ],
     "title": "tests",
     "topic": "conv:ws:w2",
     "turns": [
       {
         "id": "i-r2",
+        "live": {
+          "agents": 1,
+          "phase": "step",
+          "progress": "137/215",
+          "since": 1760000000013,
+          "tool": "test",
+          "words": "Running the tests",
+        },
         "name": "Claude",
         "outputs": [
           {
@@ -327,10 +373,11 @@ Then protect \`/api/payments\`.",
           "text": "",
         },
         "status": "working",
-        "step": "Ran npm test · 137/215",
+        "step": "Running the tests · 137/215",
         "steps": 1,
         "subagents": [
           {
+            "count": 4,
             "id": "sa1",
             "outputs": [
               {
@@ -342,14 +389,59 @@ Then protect \`/api/payments\`.",
                 "ts": 1760000000012,
               },
             ],
+            "startedAt": 1760000000011,
             "status": "running",
+            "step": "Reading retry-queue.ts",
             "steps": [
               "Searched for retry",
             ],
             "title": "Check the webhooks",
+            "tool": "read",
+            "trail": [
+              {
+                "text": "Searched for retry",
+                "tool": "search",
+              },
+            ],
+            "type": "general-purpose",
+          },
+          {
+            "count": 2,
+            "id": "ag2",
+            "outputs": [],
+            "startedAt": 1760000000012,
+            "status": "running",
+            "step": "Running the tests",
+            "steps": [],
+            "title": "Look at the retry queue",
+            "tool": "test",
+            "trail": [],
+            "type": "Explore",
+          },
+        ],
+        "trail": [
+          {
+            "text": "Ran the tests",
+            "tool": "test",
           },
         ],
         "ts": 1760000000010,
+        "who": "claude",
+      },
+      {
+        "id": "i-r3",
+        "live": {
+          "phase": "queued",
+        },
+        "name": "Claude",
+        "prose": {
+          "code": [],
+          "text": "",
+        },
+        "status": "queued",
+        "step": "Waiting its turn",
+        "steps": 0,
+        "ts": 1760000000016,
         "who": "claude",
       },
     ],
@@ -691,41 +783,37 @@ Then protect \`/api/payments\`.",
         "topic": "conv:ws:w2",
       },
     ],
-    "outputs": [
-      {
-        "kind": "text",
-        "name": "run.log",
-        "ref": "out:ref00001",
-        "size": 300,
-        "topic": "conv:ws:w2",
-        "ts": 1760000000013,
+    "outputs": [],
+    "review": {
+      "count": 1,
+      "first": {
+        "key": "LND-1",
+        "title": "Protect the payment routes",
+        "topic": "task:i1",
       },
-      {
-        "by": "sa1",
-        "kind": "image",
-        "name": "shot.png",
-        "ref": "out:ref00000",
-        "size": 2048,
-        "topic": "conv:ws:w2",
-        "ts": 1760000000012,
-      },
-    ],
+    },
     "running": [
       {
         "agents": 1,
-        "lastAt": 1760000000014,
+        "fresh": 2,
+        "icon": "abcdef0123456789abcdef01",
+        "last": "Then update the docs",
+        "lastAt": 1760000000016,
         "needsYou": true,
         "project": "landing",
+        "projectId": "p1",
         "status": "waiting",
         "title": "tests",
         "topic": "conv:ws:w2",
-        "unread": 1,
+        "unread": 2,
       },
       {
+        "icon": "abcdef0123456789abcdef01",
         "last": "Add a middleware: (code) Then protect /api/payments.",
         "lastAt": 1760000000005,
         "needsYou": true,
         "project": "landing",
+        "projectId": "p1",
         "status": "waiting",
         "title": "auth",
         "topic": "conv:ws:w1",
@@ -734,7 +822,7 @@ Then protect \`/api/payments\`.",
     ],
     "unread": {
       "chats": 2,
-      "work": 4,
+      "work": 5,
     },
     "usage": [
       {
@@ -946,6 +1034,140 @@ Then protect \`/api/payments\`.",
       },
     ],
   },
+  "task:i1": {
+    "acceptance": [
+      {
+        "state": "done",
+        "text": "Logged-out users get 401",
+      },
+      {
+        "reason": "suites run at the end",
+        "state": "deferred",
+        "text": "The e2e passes",
+      },
+      {
+        "state": "open",
+        "text": "Docs updated",
+      },
+    ],
+    "activity": [
+      {
+        "at": 1760000000001,
+        "id": "i1-a1",
+        "text": "created this",
+        "who": "You",
+      },
+      {
+        "at": 1760000000002,
+        "body": "Done, see:
+(code)",
+        "comment": true,
+        "id": "i1-a2",
+        "text": "commented",
+        "who": "Your Claude",
+      },
+    ],
+    "checks": {
+      "done": 1,
+      "total": 3,
+    },
+    "conv": "conv:ws:w1",
+    "goal": {
+      "code": [
+        {
+          "lang": "ts",
+          "lines": 1,
+        },
+      ],
+      "text": "Only signed-in users pay:
+
+[[code:0]]",
+    },
+    "icon": "abcdef0123456789abcdef01",
+    "id": "i1",
+    "key": "LND-1",
+    "moves": [
+      {
+        "label": "Ready",
+        "status": "todo",
+      },
+      {
+        "label": "In Progress",
+        "status": "in_progress",
+      },
+      {
+        "label": "Done",
+        "status": "done",
+      },
+      {
+        "label": "Backlog",
+        "status": "backlog",
+      },
+      {
+        "label": "Canceled",
+        "status": "canceled",
+      },
+    ],
+    "priority": "medium",
+    "project": "landing",
+    "projectId": "p1",
+    "status": "in_review",
+    "title": "Protect the payment routes",
+    "topic": "task:i1",
+    "updatedAt": 1760000000002,
+    "worktree": "auth",
+  },
+  "tasks": {
+    "projects": [
+      {
+        "groups": [
+          {
+            "label": "In Review",
+            "status": "in_review",
+            "tasks": [
+              {
+                "checks": {
+                  "done": 1,
+                  "total": 3,
+                },
+                "conv": "conv:ws:w1",
+                "id": "i1",
+                "key": "LND-1",
+                "priority": "medium",
+                "status": "in_review",
+                "title": "Protect the payment routes",
+                "topic": "task:i1",
+                "updatedAt": 1760000000002,
+              },
+            ],
+          },
+          {
+            "label": "Ready",
+            "status": "todo",
+            "tasks": [
+              {
+                "assignee": "your Claude",
+                "checks": {
+                  "done": 1,
+                  "total": 3,
+                },
+                "id": "i2",
+                "key": "LND-2",
+                "priority": "high",
+                "status": "todo",
+                "title": "Retry failed webhooks",
+                "topic": "task:i2",
+                "updatedAt": 1760000000002,
+              },
+            ],
+          },
+        ],
+        "icon": "abcdef0123456789abcdef01",
+        "id": "p1",
+        "name": "landing",
+      },
+    ],
+  },
   "work": {
     "projects": [
       {
@@ -966,25 +1188,32 @@ Then protect \`/api/payments\`.",
         "conversations": [
           {
             "agents": 1,
-            "lastAt": 1760000000014,
+            "fresh": 2,
+            "icon": "abcdef0123456789abcdef01",
+            "last": "Then update the docs",
+            "lastAt": 1760000000016,
             "needsYou": true,
             "project": "landing",
+            "projectId": "p1",
             "status": "waiting",
             "title": "tests",
             "topic": "conv:ws:w2",
-            "unread": 1,
+            "unread": 2,
           },
           {
+            "icon": "abcdef0123456789abcdef01",
             "last": "Add a middleware: (code) Then protect /api/payments.",
             "lastAt": 1760000000005,
             "needsYou": true,
             "project": "landing",
+            "projectId": "p1",
             "status": "waiting",
             "title": "auth",
             "topic": "conv:ws:w1",
             "unread": 3,
           },
         ],
+        "icon": "abcdef0123456789abcdef01",
         "id": "p1",
         "name": "landing",
       },

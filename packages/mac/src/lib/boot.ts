@@ -78,6 +78,13 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
       } else window.open(target, '_blank', 'noopener');
     },
     zoom: (dir: 'in' | 'out' | 'reset') => setZoom(dir),
+    // "Open on your Mac" from the phone: the window comes back (unminimized, shown, focused); where to go comes as a navigate intent.
+    raise: async () => {
+      if (inApp()) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('focus_window');
+      } else window.focus();
+    },
   };
 }
 

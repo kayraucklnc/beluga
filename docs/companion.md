@@ -115,12 +115,32 @@ One Noise stream (`@hyperswarm/secret-stream` over hyperdht's UDX), framed as to
 show. The phone never sees it: `src/companion/views.ts` turns it into small views per topic, each
 already cut down for the phone (code stripped, steps in words, paths as opaque refs):
 
-- `home`: the Mac (name, awake), your usage, what needs you, what's running now, recent outputs,
-  unread counts.
-- `work`: projects and their conversations (title, status, last line).
-- `conv:<channel>`: one conversation: turns (your messages, Claude's answers), live step, sub-agents
-  (title, status, steps, outputs), outputs, its pending question or approval.
+- `home`: the Mac (name, awake), your usage, what needs you, what's running now, unread counts, tasks
+  waiting for your review (1.3). Outputs aren't listed here any more (1.3: `outputs` is sent empty);
+  each running conversation says how many it made since its latest run began (`fresh`).
+- `work`: projects (with their icon's checksum, 1.3) and their conversations (title, status, last line).
+- `conv:<channel>`: one conversation: turns (your messages, Claude's answers), what a running turn
+  is doing now (`live`: thinking, writing, the step with its tool, time and count) and its steps in
+  words with their tools (`trail`), sub-agents (title, status, steps, their own live step, kind,
+  outputs), everything its worktree made (`outputs`: scratch files, reports, its Claude's and
+  sub-agents' outputs, newest first), your queued messages (`queue`), where a merge started from the
+  phone stands (`merge`), its pending question or approval.
 - `plans` and `plan:<id>`: milestones, tasks and their status, decisions waiting.
+- `tasks` and `task:<id>` (1.3): the board by project and status (key, title, priority, who has
+  it); a task's goal, acceptance with ticks, activity, worktree and pull request, and where it may
+  be moved.
+
+**Drawn blocks (1.3).** What Claude drew for the screen in an answer (a `beluga-view`: table,
+chart, stats, code, colors; a `beluga-graph`; `beluga-tasks`) goes along with its code chip entry
+(`code[n].block`, its JSON as written). The phone reads it with the Mac's own parsers and models
+(`src/shared/view-spec.ts`, `graph-spec.ts`, `src/shared/render/`) and draws it natively. A view's
+source never runs on the phone: `companion.viewFetch` names the view (conversation, turn, block) and
+the Mac runs its source as `view.fetch` does for the window, only for your own Claude's answers and
+only sources the view names. Any other code still never leaves the Mac.
+
+**What came when.** A phone checks the Mac's minor (`welcome.v`, `SINCE` in protocol.ts) before it
+subscribes to a newer topic or makes a newer call: an older Mac drops a whole `sub` frame that names a
+topic it doesn't know.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
@@ -152,6 +172,17 @@ parsed. The type is `Record<Method, …>`, so a new API method doesn't compile u
   from their card on the Mac (`gateway.ask`; their approval and trust rules apply). It reads as the
   conversation `conv:task:<id>`: what you asked, their Claude's steps and answer, its files.
 - `companion.signOut`: the calling phone's own certificate goes (never another's), its link closes.
+- `companion.openOnMac {topic | need}` (1.3): every screen is told where to go (a navigate intent)
+  and the Mac app's window comes to the front (its `raise` capability) → `{opened, why?}`.
+- `companion.icon(sum)` (1.3): a project's icon, a PNG of at most 128 px (or a small SVG), by the
+  checksum views carry; the phone keeps it by that checksum.
+- `companion.mergeCheck` / `merge` / `resolve` (1.3): a worktree's merge, the Mac's own way (the
+  Merge sheet's checks, the controller's merge, Solve merge conflict), followed in its `merge`.
+- `companion.draftTask` / `addTask` (1.3): a task described in words, Claude's draft shown first.
+- `companion.viewFetch` (1.3): a live view's rows (above).
+- Also `phone` since 1.3: `board.move` and `board.start` (a task moved along, or started in a new
+  worktree with Claude), and `session.submit` with `urgent` (Steer) next to `host.promote` and
+  `host.cancelQueued` for the queue.
 
 **Answering.** Every needs-you item carries its buttons as calls (`actions`), and, when it takes
 picks or words, an `answer` template: call `method` with `args` after putting the answer at
@@ -164,6 +195,60 @@ run: `network.groups.approve` / `decline`. Nothing appears without a way to answ
 **Typed calls.** `src/companion/calls.ts` `PhoneCalls`: every `phone` method with its argument
 tuple (the API's own zod) and its result; the app imports it rather than keeping a list.
 
+## Any network
+
+Kayra's dorm Wi-Fi put the phone and the Mac behind one public IP with client isolation: the DHT
+lookup worked, the peer connection didn't. So the phone tries every way, quickly, and remembers
+which one worked (`src/companion/dial.ts`):
+
+| Way | How | Path shown |
+|---|---|---|
+| hyperdht | LAN address first when both share a public IP, then hole-punching | `lan` or `direct` |
+| Relay | A WebSocket to the Mac's Cloudflare quick tunnel, Noise inside | `relay` |
+
+- **Raced, not queued.** The way that worked last time on this network (kept per local subnet,
+  `link-hints` in the app's storage) starts at once; the other starts 1.5 s later, or as soon as the
+  first one fails. The first Noise handshake that opens with the Mac's key wins; the other is dropped.
+- **The relay keeps end-to-end security.** The Mac's relay server (`src/companion/relay.ts`) listens
+  on 127.0.0.1 and takes WebSockets at `/companion/<key>`; cloudflared (as rooms use it) makes it
+  `wss://<name>.trycloudflare.com/companion`. Inside the socket runs the same Noise handshake as
+  over hyperdht (secret-stream over the socket), the Mac answering as the key the phone dialed (its
+  companion key, or an open pairing's). Both keys stay pinned, the frames, proofs and firewall are
+  the same, and Cloudflare carries ciphertext only (`tests/companion-relay.test.ts` checks a tapping
+  relay never sees plaintext). A removed phone is told 4010 inside the link, as over hyperdht.
+- **Finding the relay.** Its URL changes whenever cloudflared restarts, so the Mac publishes it as
+  a signed mutable record on the DHT (`RelayRecord`, hyperdht `mutablePut`) under its companion
+  key and under each open pairing's keys, again every 10 minutes (`src/companion/reach.ts`). Pairing
+  links carry it too (`beluga://device#<secret>?r=<url>`), so a QR works even where the DHT doesn't;
+  a typed code finds it through the record. Each welcome says the current one; the phone keeps the
+  last three.
+- **On the phone**, Bare has no WebSocket, so the worklet asks the app's (React Native's, with the
+  OS's TLS) through its IPC and passes ciphertext both ways in base64.
+- **Only while needed.** The relay server and its tunnel run only while a phone is paired or a
+  pairing is open, and not at all with Remote access set to direct only (`p2p`) or `none`, or in the demo.
+
+## When it can't connect
+
+The phone says what's wrong in plain words and what to do; a "Why?" sheet holds the detail (what
+was tried, how each went) and Try again (`src/companion/diagnose.ts`, shared with the Mac). Before
+blaming anything else it checks the phone is online at all (one look, only after a failure).
+
+| Problem | Said |
+|---|---|
+| `offline` | This phone is offline |
+| `dht-blocked` | This network blocks Beluga's connection (UDP blocked, and no relay) |
+| `no-path` | Your Mac is there, but this network won't connect you: try mobile data |
+| `mac-offline` | Your Mac isn't online: asleep, Beluga closed, or its network off |
+| `pairing-gone`, `pairing-wrong`, `pairing-busy`, `pairing-full` | The pairing closed, ran out, was used; the code was off; another phone is pairing; 4 phones already |
+| `update-mac`, `update-app` | Whose update would fix it |
+| `removed` | This phone was removed: pair it again |
+
+Pairing refusals carry a `why` for this (`dev_refused`), and the phone's `hello` says how it came
+(`via {path, tried}`), so the Mac's Settings › Phone and the footer popover can say "Your phone found
+this Mac but couldn't connect directly on its network, so it used the relay." The phone's
+Settings › Advanced shows "Connected directly · same network / over the internet" or "Connected
+through the relay (end-to-end encrypted)". Raw codes never reach the surface.
+
 ## Battery
 
 The phone holds no connection it isn't using.
@@ -173,6 +258,9 @@ The phone holds no connection it isn't using.
   destroyed: no UDP, no keepalives, no wakeups. Coming back is about one second (the DHT lookup and
   the handshake; the Mac's last direct address is tried first, and on the same Wi-Fi hyperdht
   connects over the LAN).
+- **The relay costs nothing extra.** It's one more way to open the same link, open only while the
+  app is in front and closed with it; the keepalives and views over it are the same. The phone
+  never holds a relay socket in the background.
 - **Quiet while open.** One keepalive every 20 s (UDP NAT mappings on mobile networks last about
   30 s). The Mac only sends the topics on screen, coalesced to one view per 500 ms; nothing is
   streamed character by character. Thumbnails before full images, cached by checksum.
@@ -223,11 +311,16 @@ Advanced at the bottom. Learn it once and it works everywhere.
 - **Home**: your Mac at the top (a small status dot: linked, away, asleep), and your allowance as
   two soft progress bars (5 hours and week, each with its percentage and reset time). Then **Needs you** as a
   stack of cards: swipe right to approve, left to decline, tap to read it whole, long-press for
-  Always. Then **Running now**: each live conversation as a card with its step ticking over and its
-  sub-agents as dots. Then **Outputs**: the newest images and files, a strip you swipe.
-- **Work**: projects, then conversations. A conversation reads as cards: your message, Claude's
-  answer (code folded into chips), the live step. Sub-agents are a row of chips; tap one for a sheet
-  with its steps and its outputs as a grid. Images open full screen from where they are (shared
+  Always. Then **Running now**: each live conversation as a card with its project's icon, its step
+  ticking over, its sub-agents as dots and a small count of new outputs. Then tasks **for your
+  review**.
+- **Work**: Conversations · Plans · Tasks. A conversation reads as cards: your message, Claude's
+  answer (code folded into chips; views and graphs drawn), and while it works a live panel: thinking
+  or writing with a soft shimmer, the step it's on with its tool, time and progress, the steps
+  before it sliding in. Sub-agents are rows with their own live step; tap one for a sheet with its
+  steps and its outputs. While Claude works the composer offers Steer (now) and Queue (after), and
+  what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
+  worktree made; ••• › Merge… checks, merges and gets conflicts resolved. Images open full screen from where they are (shared
   transition): pinch, swipe between them, swipe down to put back. Text files open in a reader with
   search, wrap and "follow" for logs.
 - **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes
@@ -287,9 +380,10 @@ The Mac app changes quickly; the phone must not fall behind silently.
 ## Risks
 
 - **Bare on Android.** The worklet runs Holepunch's Bare runtime (`react-native-bare-kit`, as Keet
-  does) so hyperdht and its native UDP run unchanged on the phone. If that fails on a device, the
-  fallback is the Mac's Cloudflare relay (already in `auto`): the phone dials it over WSS with the
-  same frames, sealed with the device keys.
+  does) so hyperdht and its native UDP run unchanged on the phone. Where UDP or hole-punching
+  fails, the relay (see "Any network") carries the same Noise link over a WebSocket.
+- **The relay is Cloudflare's quick tunnel.** It has no uptime promise; when it's down the record
+  says no relay and the phone explains. It only ever sees ciphertext.
 - **A sleeping Mac can't answer.** The phone shows the last views and queues actions. Keeping the
   Mac awake while plugged in and Claude is working is already the Mac's choice to make, not the
   phone's.

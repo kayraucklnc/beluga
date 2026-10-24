@@ -9,7 +9,16 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 3 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 4 } as const;
+
+/**
+ * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
+ * makes a call) only when the Mac's minor has it, since an older Mac drops a `sub` frame naming a
+ * topic it doesn't know. 1.3: the relay (any network). 1.4: the tasks topics, `companion.openOnMac`, `companion.icon`, merging
+ * from the phone (`companion.mergeCheck` / `merge` / `resolve`), describing a task
+ * (`companion.draftTask` / `addTask`) and starting one (`board.start`).
+ */
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -40,9 +49,13 @@ export const Topic = z.union([
   z.literal('plans'),
   z.literal('chats'),
   z.literal('people'),
+  /** The board's tasks, by project and status (1.3). */
+  z.literal('tasks'),
   z.string().regex(/^conv:[\w:.-]{1,200}$/),
   z.string().regex(/^plan:[\w.-]{1,200}$/),
   z.string().regex(/^chat:[\w:.-]{1,200}$/),
+  /** One task's page (1.3). */
+  z.string().regex(/^task:[\w.-]{1,200}$/),
 ]);
 export type Topic = z.infer<typeof Topic>;
 
@@ -117,6 +130,35 @@ export const NeedsYou = z.object({
 });
 export type NeedsYou = z.infer<typeof NeedsYou>;
 
+/**
+ * What kind of tool a step used, for its icon (1.3): reading, editing, writing a file, searching,
+ * running a command, the tests, the web, a sub-agent, its plan, another tool. A phone draws a kind
+ * it doesn't know as `tool`.
+ */
+export const ToolKind = z.union([z.enum(['read', 'edit', 'write', 'search', 'run', 'test', 'web', 'agent', 'plan', 'tool']), z.string().max(20)]);
+export type ToolKind = z.infer<typeof ToolKind>;
+
+/** One step in words, with its tool's kind ("Edited store.ts", edit). Never the code or the command line. */
+export const StepView = z.object({ tool: ToolKind, text: z.string().max(300) });
+export type StepView = z.infer<typeof StepView>;
+
+/**
+ * What a run is doing right now (1.3): thinking, writing its answer, on a step (its words, tool and
+ * how far it has got), starting, waiting for your approval, or waiting its turn. `since`: when that
+ * began (the phone counts the seconds itself; nothing streams per second).
+ */
+export const LiveView = z.object({
+  phase: z.union([z.enum(['thinking', 'writing', 'step', 'starting', 'approval', 'queued']), z.string().max(20)]),
+  since: ts.optional(),
+  /** The step it's on, present tense ("Running the tests"), with its tool and its count ("137/215"). */
+  words: z.string().max(300).optional(),
+  tool: ToolKind.optional(),
+  progress: z.string().max(40).optional(),
+  /** Sub-agents of this run at work now. */
+  agents: z.number().int().min(0).optional(),
+});
+export type LiveView = z.infer<typeof LiveView>;
+
 export const SubAgentView = z.object({
   id,
   title: z.string().max(300),
@@ -124,13 +166,36 @@ export const SubAgentView = z.object({
   /** Its steps in words, newest last (at most 30). */
   steps: z.array(z.string().max(300)).max(30),
   outputs: z.array(OutputView).max(50),
+  /** 1.3: the same steps with their tools' kinds (for icons), what it's doing now, its kind ("general-purpose"), when it started and ended. */
+  trail: z.array(StepView).max(30).optional(),
+  step: z.string().max(300).optional(),
+  tool: ToolKind.optional(),
+  type: z.string().max(60).optional(),
+  startedAt: ts.optional(),
+  endTs: ts.optional(),
+  /** Steps it has taken in all (the trail keeps the last 30). */
+  count: z.number().int().min(0).optional(),
 });
 export type SubAgentView = z.infer<typeof SubAgentView>;
 
 /** Claude's text, with code blocks taken out: each is a `[[code:n]]` marker and one entry in `code`. */
 export const ProseView = z.object({
   text,
-  code: z.array(z.object({ lang: z.string().max(40).optional(), lines: z.number().int().min(0) })).max(200),
+  code: z
+    .array(
+      z.object({
+        lang: z.string().max(40).optional(),
+        lines: z.number().int().min(0),
+        /**
+         * 1.3: what Claude drew for the screen rather than code (BLG-68): a `beluga-view` (table,
+         * chart, stats, code, colors), a `beluga-graph` or `beluga-tasks`, its JSON as written. The
+         * phone reads it with the Mac's own parsers (src/shared) and draws it; its source's rows
+         * come through the Mac (companion.viewFetch). A phone before 1.3 shows the chip.
+         */
+        block: z.object({ kind: z.union([z.enum(['view', 'graph', 'tasks']), z.string().max(20)]), text: z.string().max(200_000) }).optional(),
+      }),
+    )
+    .max(200),
 });
 export type ProseView = z.infer<typeof ProseView>;
 
@@ -147,6 +212,9 @@ export const TurnView = z.object({
   subagents: z.array(SubAgentView).max(40).optional(),
   outputs: z.array(OutputView).max(50).optional(),
   endTs: ts.optional(),
+  /** 1.3: what it's doing now (a running turn), and its steps in words with their tools, newest last. */
+  live: LiveView.optional(),
+  trail: z.array(StepView).max(40).optional(),
   /**
    * Your message, steered into Claude's running turn, that Claude hasn't read yet (1.3): it waits
    * for Claude's next step (Send now: host.steerNow with `request`), or for its step to stop.
@@ -166,6 +234,10 @@ export const ConvSummary = z.object({
   needsYou: z.boolean().optional(),
   /** Running sub-agents, for the dots. */
   agents: z.number().int().min(0).optional(),
+  /** 1.3: its project's id and icon (a checksum: companion.icon), and outputs made since you last wrote in it. */
+  projectId: z.string().max(200).optional(),
+  icon: z.string().regex(/^[0-9a-f]{16,64}$/).optional(),
+  fresh: z.number().int().min(0).optional(),
 });
 export type ConvSummary = z.infer<typeof ConvSummary>;
 
@@ -177,15 +249,47 @@ export const HomeView = z.object({
   usage: z.array(UsageView).max(8),
   needsYou: z.array(NeedsYou).max(50),
   running: z.array(ConvSummary).max(20),
+  /**
+   * Every conversation's newest outputs in one list, until 1.2. Since 1.3 it's empty: outputs live
+   * with their conversation (ConvView `outputs`), Home only hints at new ones (ConvSummary `fresh`).
+   * Kept, empty, so older phones still read Home.
+   */
   outputs: z.array(OutputView.extend({ topic: Topic.optional() })).max(30),
   unread: z.object({ work: z.number().int().min(0), chats: z.number().int().min(0) }),
+  /** 1.3: tasks waiting for your review (Home links to them). */
+  review: z.object({ count: z.number().int().min(0), first: z.object({ topic: Topic, key: z.string().max(40), title: z.string().max(300) }).optional() }).optional(),
 });
 export type HomeView = z.infer<typeof HomeView>;
 
 export const WorkView = z.object({
-  projects: z.array(z.object({ id, name: z.string().max(200), conversations: z.array(ConvSummary).max(200) })).max(200),
+  projects: z.array(z.object({ id, name: z.string().max(200), conversations: z.array(ConvSummary).max(200), /** 1.3: its icon's checksum (companion.icon). */ icon: z.string().regex(/^[0-9a-f]{16,64}$/).optional() })).max(200),
 });
 export type WorkView = z.infer<typeof WorkView>;
+
+/** A worktree's merge as the phone follows it (1.3). Files by name only, never their contents. */
+export const MergeView = z.object({
+  phase: z.union([z.enum(['merging', 'conflicts', 'resolving', 'resolved', 'merged', 'blocked']), z.string().max(20)]),
+  at: ts,
+  conflicts: z.array(z.string().max(300)).max(100).optional(),
+  why: z.string().max(500).optional(),
+});
+export type MergeView = z.infer<typeof MergeView>;
+
+/** What a merge would do and what stands in the way (companion.mergeCheck): the Mac's own checks, in words. */
+export const MergeCheckView = z.object({
+  from: z.string().max(200),
+  into: z.string().max(200),
+  commits: z.number().int().min(0),
+  files: z.number().int().min(0),
+  /** The newest commits' subjects (words, at most 5). */
+  subjects: z.array(z.string().max(300)).max(5),
+  checks: z.array(z.object({ id: z.string().max(40), tone: z.union([z.enum(['ok', 'info', 'block']), z.string().max(10)]), text: z.string().max(500), fix: z.union([z.enum(['commit', 'claude']), z.string().max(20)]).optional() })).max(12),
+  canMerge: z.boolean(),
+  /** The button: "Merge 3 Commits". */
+  confirm: z.string().max(60),
+  conflicts: z.array(z.string().max(300)).max(100).optional(),
+});
+export type MergeCheckView = z.infer<typeof MergeCheckView>;
 
 export const ConvView = z.object({
   topic: Topic,
@@ -198,6 +302,16 @@ export const ConvView = z.object({
   /** You may write here (it's yours, or shared with you to work in). */
   canSend: z.boolean(),
   working: z.boolean(),
+  /** 1.3: its project's id and icon, everything its worktree made (scratch files, reports, its Claude's and sub-agents' outputs, newest first), and what of yours waits its turn. */
+  projectId: z.string().max(200).optional(),
+  icon: z.string().regex(/^[0-9a-f]{16,64}$/).optional(),
+  outputs: z.array(OutputView).max(100).optional(),
+  /** Your messages waiting for Claude here, in run order: Steer one (host.promote) or remove it (host.cancelQueued) by `id`. */
+  queue: z.array(z.object({ id, text: z.string().max(300) })).max(20).optional(),
+  /** 1.3: a worktree of yours: it can be merged from the phone (companion.mergeCheck, companion.merge). */
+  mergeable: z.boolean().optional(),
+  /** 1.3: where its merge stands: merging, conflicts (files by name), Claude resolving them, Claude done (check again), merged, or blocked (why). */
+  merge: MergeView.optional(),
 });
 export type ConvView = z.infer<typeof ConvView>;
 
@@ -214,6 +328,59 @@ export const PlanView = z.object({
 export type PlanView = z.infer<typeof PlanView>;
 export const PlansView = z.object({ plans: z.array(PlanView.pick({ id: true, title: true, state: true, topic: true }).extend({ done: z.number().int(), total: z.number().int() })).max(100) });
 export type PlansView = z.infer<typeof PlansView>;
+
+/** The board's statuses and priorities (src/core/board/model.ts), as the phone shows them. */
+export const TaskStatus = z.union([z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled']), z.string().max(20)]);
+export const TaskPriority = z.union([z.enum(['urgent', 'high', 'medium', 'low', 'none']), z.string().max(20)]);
+
+/** A task in a list (1.3): its key, title, status, priority, who has it ("you", "your Claude", "Mia"). */
+export const TaskSummary = z.object({
+  id,
+  topic: Topic,
+  key: z.string().max(40),
+  title: z.string().max(300),
+  status: TaskStatus,
+  priority: TaskPriority,
+  assignee: z.string().max(80).optional(),
+  /** Acceptance criteria ticked, of all. */
+  checks: z.object({ done: z.number().int().min(0), total: z.number().int().min(0) }).optional(),
+  /** The conversation of the worktree doing it. */
+  conv: Topic.optional(),
+  pr: z.object({ number: z.number().int().min(0), state: z.string().max(20) }).optional(),
+  updatedAt: ts,
+});
+export type TaskSummary = z.infer<typeof TaskSummary>;
+
+export const TasksView = z.object({
+  projects: z
+    .array(
+      z.object({
+        id,
+        name: z.string().max(200),
+        icon: z.string().regex(/^[0-9a-f]{16,64}$/).optional(),
+        /** By status, in the board's order (in progress, in review, ready, backlog, then the latest done). */
+        groups: z.array(z.object({ status: TaskStatus, label: z.string().max(40), tasks: z.array(TaskSummary).max(100), more: z.number().int().min(0).optional() })).max(10),
+      }),
+    )
+    .max(100),
+});
+export type TasksView = z.infer<typeof TasksView>;
+
+/** One task's page (1.3): its brief's goal (code folded), acceptance with ticks, activity, worktree and pull request. */
+export const TaskPageView = TaskSummary.extend({
+  project: z.string().max(200),
+  projectId: z.string().max(200),
+  icon: z.string().regex(/^[0-9a-f]{16,64}$/).optional(),
+  goal: ProseView.optional(),
+  acceptance: z.array(z.object({ text: z.string().max(1000), state: z.union([z.enum(['done', 'deferred', 'not_done', 'open']), z.string().max(20)]), reason: z.string().max(1000).optional() })).max(60),
+  /** Newest last. */
+  activity: z.array(z.object({ id, at: ts, who: z.string().max(80), text: z.string().max(500), body: z.string().max(8000).optional(), comment: z.boolean().optional() })).max(60),
+  worktree: z.string().max(200).optional(),
+  pr: z.object({ number: z.number().int().min(0), state: z.string().max(20), title: z.string().max(300), checks: z.string().max(20).optional() }).optional(),
+  /** Where it may be moved from the phone (board.move), with their labels. */
+  moves: z.array(z.object({ status: TaskStatus, label: z.string().max(40) })).max(10),
+});
+export type TaskPageView = z.infer<typeof TaskPageView>;
 
 export const ChatMessageView = z.object({
   id,
@@ -262,10 +429,51 @@ export const PeopleView = z.object({
 });
 export type PeopleView = z.infer<typeof PeopleView>;
 
+// ---- paths (docs/companion.md, "Any network")
+
+/**
+ * How a link reached the Mac: `lan` (directly, on the same network), `direct` (directly over the
+ * internet: hyperdht's hole-punch), or `relay` (through the Mac's Cloudflare tunnel, with the same
+ * Noise handshake inside, so the relay sees only ciphertext).
+ */
+export const LinkPath = z.enum(['lan', 'direct', 'relay']);
+export type LinkPath = z.infer<typeof LinkPath>;
+
+/** One way the phone tried (`p2p`: hyperdht, LAN first then hole-punching; `relay`: the tunnel). */
+export const DialAttempt = z.object({
+  way: z.enum(['p2p', 'relay']),
+  outcome: z.enum(['ok', 'timeout', 'refused', 'unreachable', 'not-found', 'failed', 'skipped', 'lost']),
+  /** `lost`: still trying when another way connected (it was dropped). `code`: hyperdht's error code (HOLEPUNCH_ABORTED, PEER_NOT_FOUND…), or the relay's close code. */
+  code: z.string().max(60).optional(),
+  ms: z.number().int().min(0).optional(),
+});
+export type DialAttempt = z.infer<typeof DialAttempt>;
+
+/** A relay URL: wss:// (the tunnel), or ws:// (a local relay in tests). */
+export const RelayUrl = z.string().max(300).regex(/^wss?:\/\/[\w.:-]+(\/[\w./-]*)?$/);
+/** Where a key's relay is: the URL path ends with the key it reaches (hex). */
+export const relayUrlFor = (base: string, keyHex: string): string => `${base.replace(/\/+$/, '')}/${keyHex}`;
+
+/**
+ * What the Mac publishes on the DHT under its companion key (and each open pairing's key), signed
+ * with that key (hyperdht mutablePut): its current relay. The DHT lookup works on networks where
+ * peer connections don't, so a phone finds the relay there.
+ */
+export const RelayRecord = z.object({ v: z.literal(1), relay: RelayUrl.optional(), at: ts });
+export type RelayRecord = z.infer<typeof RelayRecord>;
+
 // ---- frames
 
 export const PhoneFrame = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('hello'), v: z.object({ major: z.number().int(), minor: z.number().int() }), app: z.string().max(40), platform: z.enum(['android', 'ios']), topics: z.array(Topic).max(16) }),
+  z.object({
+    t: z.literal('hello'),
+    v: z.object({ major: z.number().int(), minor: z.number().int() }),
+    app: z.string().max(40),
+    platform: z.enum(['android', 'ios']),
+    topics: z.array(Topic).max(16),
+    /** How this link got here, and what was tried first (the Mac's Settings › Phone says it in words). */
+    via: z.object({ path: LinkPath, tried: z.array(DialAttempt).max(8) }).optional(),
+  }),
   z.object({ t: z.literal('sub'), topics: z.array(Topic).max(16) }),
   z.object({ t: z.literal('call'), id: z.number().int().min(0), method: z.string().max(80), args: z.array(z.unknown()).max(16) }),
   z.object({ t: z.literal('get'), id: z.number().int().min(0), ref: OutputView.shape.ref, variant: z.enum(['thumb', 'full', 'text']), off: z.number().int().min(0) }),
@@ -290,6 +498,8 @@ export const MacFrame = z.discriminatedUnion('t', [
     min: z.object({ major: z.number().int(), minor: z.number().int() }),
     mac: z.object({ name: z.string().max(100), version: z.string().max(40) }),
     me: z.object({ name: z.string().max(64), peerId: id }),
+    /** The Mac's relay now (the phone keeps it for next time). */
+    relay: RelayUrl.optional(),
   }),
   z.object({ t: z.literal('view'), topic: Topic, rev: z.number().int().min(0), data: z.unknown() }),
   z.object({ t: z.literal('result'), id: z.number().int().min(0), ok: z.boolean(), value: z.unknown().optional(), error: z.string().max(2000).optional() }),
@@ -308,6 +518,8 @@ export function viewSchema(topic: Topic): z.ZodType {
   if (topic === 'people') return PeopleView;
   if (topic.startsWith('conv:')) return ConvView;
   if (topic.startsWith('plan:')) return PlanView;
+  if (topic === 'tasks') return TasksView;
+  if (topic.startsWith('task:')) return TaskPageView;
   return ChatView;
 }
 
@@ -328,7 +540,8 @@ export const parseMacFrame = (raw: string): MacFrame | undefined => parse(MacFra
 // ---- pairing (docs/companion.md, "Signing in")
 
 /** What the pairing QR holds: `beluga://device#<22 chars>`; a code is typed as for friends. */
-export const DEVICE_LINK = /^(?:beluga|klaud):\/\/device#([\w-]{22})$/;
+/** `?r=` (additive): the Mac's relay, URL-encoded, so pairing works where the DHT doesn't. */
+export const DEVICE_LINK = /^(?:beluga|klaud):\/\/device#([\w-]{22})(?:\?r=([\w%.-]+))?$/;
 
 export const DeviceCert = z.object({
   v: z.literal(1),
@@ -356,8 +569,9 @@ export const DevicePair = z.discriminatedUnion('t', [
   z.object({ t: z.literal('dev_hello'), proto: z.number().int(), mac: z.string().max(100), device: z.string().regex(/^[0-9a-f]{64}$/), box: z.string().regex(/^[0-9a-f]{64}$/), name: z.string().min(1).max(64), platform: z.enum(['android', 'ios']), app: z.string().max(40) }),
   /** The Mac is showing "Pair this phone?" with the fingerprint; waits for your click. */
   z.object({ t: z.literal('dev_wait'), fingerprint: z.string().max(40) }),
-  z.object({ t: z.literal('dev_ok'), mac: z.string().max(100), cert: DeviceCert, address: z.string().regex(/^[0-9a-f]{64}$/), macName: z.string().max(100) }),
-  z.object({ t: z.literal('dev_refused'), reason: z.string().max(200) }),
+  z.object({ t: z.literal('dev_ok'), mac: z.string().max(100), cert: DeviceCert, address: z.string().regex(/^[0-9a-f]{64}$/), macName: z.string().max(100), relay: RelayUrl.optional() }),
+  /** `why` (additive) says it for the phone's explanation (diagnose.ts); `reason` is the Mac's words. */
+  z.object({ t: z.literal('dev_refused'), reason: z.string().max(200), why: z.enum(['expired', 'used', 'cancelled', 'unverified', 'tries', 'busy', 'full', 'version-mac', 'version-app']).optional() }),
 ]);
 export type DevicePair = z.infer<typeof DevicePair>;
 export const parseDevicePair = (raw: string): DevicePair | undefined => parse(DevicePair, raw);
@@ -374,6 +588,10 @@ export interface DeviceView {
   readonly linked: boolean;
   /** It can be told things while closed (Beluga Push is set up for it). */
   readonly push: boolean;
+  /** How its last link came: on the same network, directly over the internet, or through the relay. */
+  readonly path?: LinkPath;
+  /** That in words, when it's worth saying ("couldn't connect directly on its network; it used the relay"). */
+  readonly note?: string;
 }
 
 export interface CompanionSlice {

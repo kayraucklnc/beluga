@@ -1,13 +1,14 @@
 /// <reference path="../net/mesh/modules.d.ts" />
 import { randomBytes, randomInt } from 'node:crypto';
 import type DHT from 'hyperdht';
-import type { NoiseSocket, Server } from 'hyperdht';
+import type { KeyPair, NoiseSocket, Server } from 'hyperdht';
 import type { Identity } from '../net/crypto.js';
 import { signText } from '../net/mesh/keys.js';
 import { type MessageSocket, fromStream } from '../net/transport.js';
 import { CERT_LABEL, CODE_ALPHABET, CODE_LENGTH, type DeviceTicket, PAIR_TTL_MS, canonical, checkDevProof, devProof, deviceLink, deviceSecrets, fingerprint, formatCode, signKeyPair } from './device-crypto.js';
 import { type DeviceBook, deviceId } from './devices.js';
-import { COMPANION_PROTO, type DeviceCert, type DevicePair, parseDevicePair } from './protocol.js';
+import type { RelayRoute } from './relay.js';
+import { MAX_DEVICES, COMPANION_PROTO, type DeviceCert, type DevicePair, parseDevicePair } from './protocol.js';
 
 /**
  * The Mac's side of pairing a phone (docs/companion.md, "Signing in"). Pair a Phone opens a
@@ -48,6 +49,11 @@ export interface DevicePairingOptions {
   /** A phone was paired (its device id). */
   readonly onPaired?: (id: string) => void;
   readonly ttlMs?: number;
+  /** The relay (relay.ts): each pairing key answers there too, and its URL goes in the link. */
+  readonly relay?: { add(route: RelayRoute): void; remove(publicKey: Buffer): void };
+  readonly relayUrl?: () => string | undefined;
+  /** Tests: turn away every direct (hyperdht) connection, as a network that can't connect would. */
+  readonly refuseDirect?: boolean;
 }
 
 interface Waiting {
@@ -64,6 +70,8 @@ interface Open {
   readonly code: string;
   readonly expiresAt: number;
   readonly servers: Server[];
+  /** The link's and the code's temporary key pairs (they get a relay record on the DHT too). */
+  readonly keyPairs: KeyPair[];
   readonly timer: NodeJS.Timeout;
   failures: number[];
   waiting?: Waiting;
@@ -80,11 +88,16 @@ export class DevicePairing {
   info(): PairingInfo | undefined {
     const o = this.open;
     if (!o) return undefined;
-    return { link: deviceLink(o.secret), code: formatCode(o.code), expiresAt: o.expiresAt, ...(o.waiting ? { waiting: { name: o.waiting.hello.name, fingerprint: o.waiting.fingerprint } } : {}) };
+    return { link: deviceLink(o.secret, this.opts.relayUrl?.()), code: formatCode(o.code), expiresAt: o.expiresAt, ...(o.waiting ? { waiting: { name: o.waiting.hello.name, fingerprint: o.waiting.fingerprint } } : {}) };
   }
 
   get isOpen(): boolean {
     return this.open !== undefined;
+  }
+
+  /** The open pairing's key pairs (the host publishes the relay under them). */
+  keyPairs(): readonly KeyPair[] {
+    return this.open?.keyPairs ?? [];
   }
 
   /** Open a new pairing (one at a time: an open one is closed first). */
@@ -101,15 +114,19 @@ export class DevicePairing {
     ];
     const timer = setTimeout(() => void this.cancel(), Math.max(0, expiresAt - Date.now()));
     timer.unref();
-    const open: Open = { secret, code, expiresAt, servers, timer, failures: [] };
+    const open: Open = { secret, code, expiresAt, servers, keyPairs: [], timer, failures: [] };
     this.open = open;
     try {
       for (const ticket of tickets) {
         const secrets = await deviceSecrets(ticket);
-        const keyPair = signKeyPair(secrets.seed);
-        const server = node.createServer({}, (stream: NoiseSocket) => this.serve(open, secrets.auth, Buffer.from(keyPair.publicKey), stream));
+        const raw = signKeyPair(secrets.seed);
+        const keyPair: KeyPair = { publicKey: Buffer.from(raw.publicKey), secretKey: Buffer.from(raw.secretKey) };
+        const accept = (stream: NoiseSocket): void => this.serve(open, secrets.auth, keyPair.publicKey, stream);
+        const server = node.createServer(this.opts.refuseDirect ? { firewall: () => true } : {}, accept);
         servers.push(server);
-        await server.listen({ publicKey: Buffer.from(keyPair.publicKey), secretKey: Buffer.from(keyPair.secretKey) });
+        open.keyPairs.push(keyPair);
+        this.opts.relay?.add({ keyPair, accept });
+        await server.listen(keyPair);
       }
     } catch (err) {
       if (this.open === open) await this.cancel();
@@ -140,11 +157,12 @@ export class DevicePairing {
     try {
       this.opts.devices.add(cert, w.hello.app);
     } catch (err) {
-      send(w.socket, { t: 'dev_refused', reason: err instanceof Error ? err.message.slice(0, 200) : 'Could not pair' });
+      send(w.socket, { t: 'dev_refused', reason: err instanceof Error ? err.message.slice(0, 200) : 'Could not pair', ...(this.opts.devices.size >= MAX_DEVICES ? { why: 'full' as const } : {}) });
       w.socket.close(1000);
       throw err;
     }
-    const ok = { t: 'dev_ok' as const, cert, address: this.opts.address(), macName: this.opts.macName().slice(0, 100) };
+    const relay = this.opts.relayUrl?.();
+    const ok = { t: 'dev_ok' as const, cert, address: this.opts.address(), macName: this.opts.macName().slice(0, 100), ...(relay ? { relay } : {}) };
     send(w.socket, { ...ok, mac: devProof(w.auth, 'mac', w.hh, canonical(ok)) });
     w.socket.close(1000);
     o.waiting = undefined;
@@ -160,8 +178,9 @@ export class DevicePairing {
     if (!o) return;
     this.open = undefined;
     clearTimeout(o.timer);
+    for (const kp of o.keyPairs) this.opts.relay?.remove(kp.publicKey);
     if (o.waiting) {
-      send(o.waiting.socket, { t: 'dev_refused', reason });
+      send(o.waiting.socket, { t: 'dev_refused', reason, why: 'cancelled' });
       o.waiting.socket.close(1000);
     }
     this.opts.onChange();
@@ -171,8 +190,8 @@ export class DevicePairing {
   private serve(open: Open, auth: Uint8Array, pairingKey: Buffer, stream: NoiseSocket): void {
     const socket = fromStream(stream, { maxBytes: MAX_PAIR_BYTES, open: true });
     socket.on('error', () => undefined);
-    const refuse = (reason: string): void => {
-      send(socket, { t: 'dev_refused', reason });
+    const refuse = (reason: string, why?: Extract<DevicePair, { t: 'dev_refused' }>['why']): void => {
+      send(socket, { t: 'dev_refused', reason, ...(why ? { why } : {}) });
       socket.close(1000);
     };
     // The phone has until the pairing ends: it waits for you to click Pair.
@@ -186,22 +205,22 @@ export class DevicePairing {
       }
     });
     socket.once('message', (text) => {
-      if (this.open !== open) return refuse('That pairing has closed; open a new one on your Mac');
+      if (this.open !== open) return refuse('That pairing has closed; open a new one on your Mac', 'expired');
       const msg = parseDevicePair(text);
       const hh = stream.handshakeHash;
       const recent = open.failures.filter((t) => Date.now() - t < FAILURE_WINDOW_MS);
-      if (recent.length >= MAX_FAILURES) return refuse('Too many tries; open a new pairing on your Mac');
+      if (recent.length >= MAX_FAILURES) return refuse('Too many tries; open a new pairing on your Mac', 'tries');
       if (msg?.t !== 'dev_hello' || !hh) {
         open.failures = [...recent, Date.now()];
-        return refuse("That pairing couldn't be verified");
+        return refuse("That pairing couldn't be verified", 'unverified');
       }
       const { mac, ...about } = msg;
       if (!checkDevProof(auth, 'phone', hh, canonical(about), mac)) {
         open.failures = [...recent, Date.now()];
-        return refuse("That pairing couldn't be verified");
+        return refuse("That pairing couldn't be verified", 'unverified');
       }
-      if (msg.proto !== COMPANION_PROTO.major) return refuse(msg.proto > COMPANION_PROTO.major ? 'Update Beluga on your Mac to pair this phone' : 'Update the Beluga app to pair with this Mac');
-      if (open.waiting) return refuse('Another phone is pairing right now; try again in a moment');
+      if (msg.proto !== COMPANION_PROTO.major) return refuse(msg.proto > COMPANION_PROTO.major ? 'Update Beluga on your Mac to pair this phone' : 'Update the Beluga app to pair with this Mac', msg.proto > COMPANION_PROTO.major ? 'version-mac' : 'version-app');
+      if (open.waiting) return refuse('Another phone is pairing right now; try again in a moment', 'busy');
       const link = stream.remotePublicKey.toString('hex');
       open.waiting = { socket, hello: msg, link, hh, auth, fingerprint: fingerprint(hh, stream.remotePublicKey, pairingKey) };
       send(socket, { t: 'dev_wait', fingerprint: open.waiting.fingerprint });

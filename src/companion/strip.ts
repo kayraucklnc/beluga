@@ -1,4 +1,7 @@
-import type { ProseView } from './protocol.js';
+import { isGraphFence } from '../shared/graph-spec.js';
+import { TASKS_FENCE } from '../shared/task-refs.js';
+import { isViewFence } from '../shared/view-spec.js';
+import type { ProseView, ToolKind } from './protocol.js';
 
 /**
  * What of Claude's words go to the phone: everything but code. Fenced blocks (``` or ~~~, any
@@ -10,6 +13,16 @@ import type { ProseView } from './protocol.js';
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)?.*$/;
 const MAX_CODE = 200;
+/** A drawn block's JSON, at most (a view with 500 rows of its own fits). */
+export const MAX_BLOCK = 200_000;
+
+/** The fences the screens draw (src/shared: view-spec, graph-spec, task-refs), by what they are. */
+export function blockKind(lang: string): 'view' | 'graph' | 'tasks' | undefined {
+  if (isViewFence(lang)) return 'view';
+  if (isGraphFence(lang)) return 'graph';
+  if (lang === TASKS_FENCE) return 'tasks';
+  return undefined;
+}
 /**
  * A picture linked in a chat message ("[📎 image 1 (png, 6K)](klaud-attachment:<owner>/<file>)",
  * src/core/attachment-share.ts ATTACHMENT_SCHEME): the phone can't open that link, so only its
@@ -21,7 +34,7 @@ const ATTACHMENT_LINK = /\[([^\]\n]*)\]\((?:klaud|beluga)-attachment:[^)\s]*\)/g
 export function stripCode(markdown: string): ProseView {
   const lines = markdown.split('\n');
   const out: string[] = [];
-  const code: Array<{ lang?: string; lines: number }> = [];
+  const code: ProseView['code'][number][] = [];
   for (let i = 0; i < lines.length; i++) {
     const open = FENCE.exec(lines[i]!);
     if (!open) {
@@ -40,7 +53,11 @@ export function stripCode(markdown: string): ProseView {
     }
     if (code.length < MAX_CODE) {
       out.push(`[[code:${code.length}]]`);
-      code.push({ ...(lang ? { lang } : {}), lines: n });
+      // What Claude drew for the screen (a view, a graph, tasks) goes along to be drawn there too
+      // (BLG-68); a phone before 1.3 still shows a chip. Any other code stays a chip.
+      const kind = blockKind(lang);
+      const body = kind ? lines.slice(i + 1, i + 1 + n).join('\n') : '';
+      code.push({ ...(lang ? { lang } : {}), lines: n, ...(kind && body.length <= MAX_BLOCK ? { block: { kind, text: body } } : {}) });
     } else out.push('[[code]]');
     i = j;
   }
@@ -61,43 +78,106 @@ export function plainLine(markdown: string, max = 300): string {
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').at(-1) ?? p;
 const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
+/** A step's words in both tenses: what it did ("Edited store.ts") and what it's doing ("Editing store.ts"), and its tool's kind. */
+export interface StepWords {
+  readonly did: string;
+  readonly doing: string;
+  readonly tool: ToolKind;
+}
+const w = (did: string, doing: string, tool: ToolKind): StepWords => ({ did, doing, tool });
+
+/** Programs whose first word alone says little ("npm run", "cargo check"): their second word goes along. */
+const TWO_WORDS = /^(npm|npx|pnpm|yarn|bun|git|cargo|go|make|python3?|node|deno|uv|poetry|bundle|rake|mix|dotnet|swift|xcodebuild|gradle|\.\/gradlew)$/;
+const TESTS = /(^|[\s/:-])(test|tests|vitest|jest|pytest|playwright|mocha|ava|rspec|phpunit|ctest|test:\w+|e2e)($|[\s:])/;
+
+/** A command in words: the tests, the types, a build, an install, else its program (and first word), never the whole line. */
+function command(a: string): StepWords {
+  const words = a.trim().split(/\s+/).filter((x) => x && !/^[A-Z_][A-Z0-9_]*=/.test(x));
+  const line = words.join(' ');
+  if (TESTS.test(line)) return w('Ran the tests', 'Running the tests', 'test');
+  if (/(^|\s)(tsc|typecheck|mypy|pyright)(\s|$)/.test(line)) return w('Checked the types', 'Checking the types', 'test');
+  if (/(^|\s)(eslint|lint|biome|ruff|clippy)(\s|$)/.test(line)) return w('Ran the linter', 'Running the linter', 'test');
+  if (/^(npm|pnpm|yarn|bun) (i|install|ci|add)\b|^pip3? install\b|^brew install\b/.test(line)) return w('Installed packages', 'Installing packages', 'run');
+  if (words[0] && TWO_WORDS.test(words[0]) && /(^|\s)(build|bundle|compile)(\s|$)/.test(line)) return w('Built it', 'Building it', 'run');
+  const what = words.slice(0, words[0] && TWO_WORDS.test(words[0]) ? 2 : 1).join(' ');
+  return what ? w(`Ran ${clip(what, 40)}`, `Running ${clip(what, 40)}`, 'run') : w('Ran a command', 'Running a command', 'run');
+}
+
+const file =
+  (did: string, doing: string, tool: ToolKind, none: string, noneDoing: string) =>
+  (a: string): StepWords =>
+    a ? w(`${did} ${base(a)}`, `${doing} ${base(a)}`, tool) : w(none, noneDoing, tool);
+const unquote = (a: string): string => clip(a.replace(/^"|"$/g, ''), 40);
+
 /** How a tool's step reads on the phone: a verb and a file name, never its code or diff. */
-const VERBS: Readonly<Record<string, (arg: string) => string>> = {
-  Read: (a) => (a ? `Read ${base(a)}` : 'Read a file'),
-  Edit: (a) => (a ? `Edited ${base(a)}` : 'Edited a file'),
-  MultiEdit: (a) => (a ? `Edited ${base(a)}` : 'Edited a file'),
-  Write: (a) => (a ? `Wrote ${base(a)}` : 'Wrote a file'),
-  NotebookEdit: (a) => (a ? `Edited ${base(a)}` : 'Edited a notebook'),
-  Grep: (a) => (a ? `Searched for ${clip(a.replace(/^"|"$/g, ''), 40)}` : 'Searched the code'),
-  Glob: () => 'Looked for files',
-  LS: () => 'Looked through a folder',
+const VERBS: Readonly<Record<string, (arg: string) => StepWords>> = {
+  Read: file('Read', 'Reading', 'read', 'Read a file', 'Reading a file'),
+  Edit: file('Edited', 'Editing', 'edit', 'Edited a file', 'Editing a file'),
+  MultiEdit: file('Edited', 'Editing', 'edit', 'Edited a file', 'Editing a file'),
+  Write: file('Wrote', 'Writing', 'write', 'Wrote a file', 'Writing a file'),
+  NotebookEdit: file('Edited', 'Editing', 'edit', 'Edited a notebook', 'Editing a notebook'),
+  Grep: (a) => (a ? w(`Searched for ${unquote(a)}`, `Searching for ${unquote(a)}`, 'search') : w('Searched the code', 'Searching the code', 'search')),
+  Glob: () => w('Looked for files', 'Looking for files', 'search'),
+  LS: () => w('Looked through a folder', 'Looking through a folder', 'search'),
   WebFetch: (a) => {
-    const host = /^https?:\/\/([^/]+)/.exec(a)?.[1];
-    return host ? `Read a page on ${host}` : 'Read a web page';
+    const host = /^https?:\/\/([^/\s]+)/.exec(a)?.[1];
+    return host ? w(`Read a page on ${host}`, `Reading a page on ${host}`, 'web') : w('Read a web page', 'Reading a web page', 'web');
   },
-  WebSearch: (a) => (a ? `Searched the web for ${clip(a, 40)}` : 'Searched the web'),
-  Task: (a) => (a ? `Started a sub-agent: ${clip(a, 60)}` : 'Started a sub-agent'),
-  Agent: (a) => (a ? `Started a sub-agent: ${clip(a, 60)}` : 'Started a sub-agent'),
-  TodoWrite: () => 'Updated its to-do list',
-  // A command: its program and first word ("Ran npm test"), never the whole line.
-  Bash: (a) => {
-    const words = a.trim().split(/\s+/).filter((w) => !/^[A-Z_]+=/.test(w));
-    const what = words.slice(0, words[0] && /^(npm|npx|pnpm|yarn|bun|git|cargo|go|make|python3?|node)$/.test(words[0]) ? 2 : 1).join(' ');
-    return what ? `Ran ${clip(what, 40)}` : 'Ran a command';
-  },
+  WebSearch: (a) => (a ? w(`Searched the web for ${clip(a, 40)}`, `Searching the web for ${clip(a, 40)}`, 'web') : w('Searched the web', 'Searching the web', 'web')),
+  Task: (a) => (a ? w(`Started a sub-agent: ${clip(a, 60)}`, `Starting a sub-agent: ${clip(a, 60)}`, 'agent') : w('Started a sub-agent', 'Starting a sub-agent', 'agent')),
+  Agent: (a) => (a ? w(`Started a sub-agent: ${clip(a, 60)}`, `Starting a sub-agent: ${clip(a, 60)}`, 'agent') : w('Started a sub-agent', 'Starting a sub-agent', 'agent')),
+  TodoWrite: () => w('Updated its to-do list', 'Updating its to-do list', 'plan'),
+  // A command: what it is ("Ran the tests"), or its program and first word ("Ran npm run"), never the whole line.
+  Bash: (a) => command(a),
 };
 
-/** A step of Claude's ("Edit src/store.ts", "Bash npm test", "mcp__beluga__show") in words. */
-export function humanizeStep(step: string): string {
+/** Steps the Mac's chat doesn't show either (src/ui/format.ts HIDDEN_STEPS): looking up tools, the to-do list. */
+export const HIDDEN_STEP = /^(ToolSearch|TodoWrite)\b/;
+
+/** A step of Claude's ("Edit src/store.ts", "Bash npm test", "mcp__beluga__show") in words, both tenses, with its tool. */
+export function stepWords(step: string): StepWords {
   const s = step.trim();
   const at = s.indexOf(' ');
   const tool = at < 0 ? s : s.slice(0, at);
   const arg = at < 0 ? '' : s.slice(at + 1).trim();
   const verb = VERBS[tool];
-  if (verb) return clip(verb(arg), 300);
+  if (verb) {
+    const v = verb(arg);
+    return w(clip(v.did, 300), clip(v.doing, 300), v.tool);
+  }
   // MCP tools and Beluga's own: their name in words ("task define" → "Used task define").
   const name = tool.replace(/^mcp__.+?__/, '').replace(/[_-]+/g, ' ').trim();
-  if (/^[a-z][\w ]*$/i.test(name) && name.length <= 40 && (tool.startsWith('mcp__') || /_/.test(tool))) return clip(`Used ${name}`, 300);
+  if (/^[a-z][\w ]*$/i.test(name) && name.length <= 40 && (tool.startsWith('mcp__') || /_/.test(tool))) return w(clip(`Used ${name}`, 300), clip(`Using ${name}`, 300), 'tool');
   // Anything else (a sub-agent's own words, a count): as it is, without code fences.
-  return clip(plainLine(s, 300) || 'Working', 300);
+  const words = clip(plainLine(s, 300) || 'Working', 300);
+  return w(words, words, 'tool');
+}
+
+/** A step of Claude's in words, as it did it ("Edited store.ts"). */
+export const humanizeStep = (step: string): string => stepWords(step).did;
+
+/**
+ * What Claude Code says an agent is doing (src/core/claude-code/transcript.ts describeTool:
+ * "Reading src/core/store.ts", "Running npm test -- --run", "Searching for retry in src") in the
+ * phone's words: file names without their folders, commands by what they are, no page paths.
+ */
+export function humanizeDoing(words: string): { text: string; tool: ToolKind } {
+  const s = plainLine(words, 400);
+  const m = /^(Reading|Editing|Writing|Listing) (.+)$/.exec(s);
+  if (m) return { text: clip(`${m[1]} ${base(m[2]!.replace(/^…/, ''))}`, 300), tool: m[1] === 'Reading' ? 'read' : m[1] === 'Listing' ? 'search' : m[1] === 'Writing' ? 'write' : 'edit' };
+  const run = /^Running (.+)$/.exec(s);
+  if (run) {
+    const c = command(run[1]!);
+    return { text: c.doing, tool: c.tool };
+  }
+  const find = /^(Searching for|Finding) (.+?)(?: in .+)?$/.exec(s);
+  if (find) return { text: clip(`${find[1]} ${clip(find[2]!, 40)}`, 300), tool: 'search' };
+  const page = /^Fetching https?:\/\/([^/\s]+)/.exec(s);
+  if (page) return { text: `Reading a page on ${page[1]}`, tool: 'web' };
+  if (/^Searching the web/.test(s)) return { text: clip(s, 100), tool: 'web' };
+  const agent = /^Agent: (.+)$/.exec(s);
+  if (agent) return { text: clip(`Starting a sub-agent: ${agent[1]}`, 300), tool: 'agent' };
+  if (s === 'Updating the plan') return { text: 'Updating its to-do list', tool: 'plan' };
+  // A command's own description ("Run the unit tests"), or another tool's name: words, kept short.
+  return { text: clip(s || 'Working', 120), tool: TESTS.test(s.toLowerCase()) ? 'test' : 'tool' };
 }

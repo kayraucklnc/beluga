@@ -1,4 +1,5 @@
-import type { ChatMessageView, ConvView, NeedsYou, OutputView, PeopleView, PlanView, TurnView, UsageView } from '../protocol';
+import { dashboardConv } from './render-demo';
+import type { ChatMessageView, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
 import { DEMO_IMAGES, type DemoImage } from './images.generated';
 
 /**
@@ -32,7 +33,25 @@ export interface DemoWorld {
   plans: PlanView[];
   chats: Map<string, { name: string; kind: 'dm' | 'group'; messages: ChatMessageView[]; unread: number; peer?: string }>;
   people: PeopleView['people'];
+  /** The board's tasks, as views.ts sends a task's page. */
+  tasks: TaskPageView[];
+  /** Projects' icons (small SVGs), by project id, with their checksums. */
+  icons: Record<string, { sum: string; svg: string }>;
+  /** Merges started from the phone, by conversation. */
+  merges: Map<string, MergeView>;
 }
+
+/** The demo projects' icons: small SVG marks (what companion.icon hands out, by checksum). */
+const ICONS: DemoWorld['icons'] = {
+  beluga: {
+    sum: 'b0e1a9a0d1e2f3a4b5c6d7e8f9a0b1c2',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A2C31"/><stop offset="1" stop-color="#0F1013"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#g)"/><path d="M14 38c0-10 9-17 20-17 8 0 14 4 16 9 3-1 5 0 6 2-2 1-4 1-6 1-1 8-9 13-18 13-10 0-18-3-18-8z" fill="#F5F5F7"/><circle cx="41" cy="31" r="1.8" fill="#2A2C31"/></svg>',
+  },
+  'pixel-weather': {
+    sum: 'a7c3e5f1b2d4c6e8a0b2c4d6e8f0a1b3',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#CFE3FA"/><circle cx="25" cy="25" r="9" fill="#F6C453"/><path d="M20 46h26a8 8 0 0 0 0-16 11 11 0 0 0-21 3 7 7 0 0 0-5 13z" fill="#FFFFFF"/></svg>',
+  },
+};
 
 let seq = 0;
 export const ref = (slug: string): string => `out:${slug.replace(/[^\w-]/g, '-').slice(0, 40)}-${(++seq).toString(36).padStart(4, '0')}`;
@@ -153,6 +172,17 @@ export function makeWorld(now = Date.now()): DemoWorld {
         endTs: now - 15 * MIN,
         status: 'done',
         steps: 23,
+        trail: [
+          { tool: 'read', text: 'Read pair.tsx' },
+          { tool: 'read', text: 'Read onboarding.tsx' },
+          { tool: 'search', text: 'Searched for spring' },
+          { tool: 'edit', text: 'Edited theme.ts' },
+          { tool: 'edit', text: 'Edited pair.tsx' },
+          { tool: 'write', text: 'Wrote Mark.tsx' },
+          { tool: 'edit', text: 'Edited CodeBoxes.tsx' },
+          { tool: 'test', text: 'Checked the types' },
+          { tool: 'test', text: 'Ran the tests' },
+        ],
         prose: {
           text: 'Done with the first pass. The pairing screen now rises out of the dark like the Mac\'s welcome: the tile comes up, the beluga leaps in, and the glow settles.\n\n**What changed**\n- The backdrop is the same silk shader, ported to Skia\n- Every press springs (320 / 32), and commits tick a haptic\n- The fingerprint step shows four emoji, big, with the Mac\'s name\n\nThe spring settings live in one place:\n\n[[code:0]]\n\nAnd the scanner now accepts both `beluga://` and `klaud://` links:\n\n[[code:1]]\n\nI ran the unit tests too: 104 passed.',
           code: [{ lang: 'ts', lines: 24 }, { lang: 'ts', lines: 9 }],
@@ -172,18 +202,33 @@ export function makeWorld(now = Date.now()): DemoWorld {
         name: 'Claude',
         ts: now - 11 * MIN,
         status: 'working',
-        step: 'Running the phone tests · 137/215',
+        step: 'Running the tests · 137/215',
         steps: 31,
         prose: { text: 'On it. I\'ve split it three ways so it goes faster: one agent checks the contrast, one takes the screenshots, one runs the e2e suite.', code: [] },
+        // What views.ts sends since 1.3: the step it's on, and its steps in words with their tools.
+        live: { phase: 'step', words: 'Running the tests', tool: 'test', progress: '137/215', since: now - 95_000, agents: 1 },
+        trail: [
+          { tool: 'read', text: 'Read theme.ts' },
+          { tool: 'search', text: 'Searched for glass' },
+          { tool: 'agent', text: 'Started a sub-agent: Check the contrast on glass' },
+          { tool: 'agent', text: 'Started a sub-agent: Screenshot each pairing step' },
+          { tool: 'edit', text: 'Edited pair.tsx' },
+          { tool: 'edit', text: 'Edited onboarding.tsx' },
+          { tool: 'agent', text: 'Started a sub-agent: Run the phone e2e suite' },
+          { tool: 'test', text: 'Ran the tests' },
+        ],
         subagents: [
-          { id: 'a-contrast', title: 'Check the contrast on glass', status: 'done', steps: ['Read the theme tokens', 'Rendered every text style on the brightest fold', 'Measured 14 pairs', 'Raised the captions to #75757c', 'Wrote contrast-report.md'], outputs: [contrastPng, contrastMd] },
-          { id: 'a-shots', title: 'Screenshot each pairing step', status: 'done', steps: ['Started the app in the emulator', 'Opened Pair', 'Took pair-screen.png', 'Scanned the test code', 'Took pair-confirm.png'], outputs: [shotPair, shotConfirm] },
-          { id: 'a-e2e', title: 'Run the phone e2e suite', status: 'running', steps: ['Built the web bundle', 'Started 4 workers', 'Running 215 tests · 137 done'], outputs: [e2eLog, timings] },
+          { id: 'a-contrast', title: 'Check the contrast on glass', status: 'done', type: 'general-purpose', count: 5, startedAt: now - 10 * MIN, endTs: now - 9 * MIN, steps: ['Read the theme tokens', 'Rendered every text style on the brightest fold', 'Measured 14 pairs', 'Raised the captions to #75757c', 'Wrote contrast-report.md'], trail: [{ tool: 'read', text: 'Read theme.ts' }, { tool: 'run', text: 'Ran node scripts/contrast.mjs' }, { tool: 'tool', text: 'Measured 14 pairs' }, { tool: 'edit', text: 'Edited theme.ts' }, { tool: 'write', text: 'Wrote contrast-report.md' }], outputs: [contrastPng, contrastMd] },
+          { id: 'a-shots', title: 'Screenshot each pairing step', status: 'done', type: 'general-purpose', count: 5, startedAt: now - 10 * MIN, endTs: now - 5 * MIN, steps: ['Started the app in the emulator', 'Opened Pair', 'Took pair-screen.png', 'Scanned the test code', 'Took pair-confirm.png'], trail: [{ tool: 'run', text: 'Ran npm run web' }, { tool: 'web', text: 'Read a page on localhost:8081' }, { tool: 'tool', text: 'Used screenshot' }, { tool: 'tool', text: 'Used screenshot' }, { tool: 'write', text: 'Wrote pair-confirm.png' }], outputs: [shotPair, shotConfirm] },
+          { id: 'a-e2e', title: 'Run the phone e2e suite', status: 'running', type: 'test-runner', count: 3, startedAt: now - 8 * MIN, step: 'Running the tests', tool: 'test', steps: ['Built the web bundle', 'Started 4 workers', 'Running 215 tests · 137 done'], trail: [{ tool: 'run', text: 'Built it' }, { tool: 'run', text: 'Ran npx playwright' }, { tool: 'test', text: 'Ran the tests' }], outputs: [e2eLog, timings] },
+          { id: 'a-flaky', title: 'Look into the flaky swipe test', status: 'running', type: 'Explore', count: 2, startedAt: now - 3 * MIN, step: 'Reading needs-you.spec.ts', tool: 'read', steps: ['Searched for swipes', 'Read Needs.tsx'], trail: [{ tool: 'search', text: 'Searched for swipes' }, { tool: 'read', text: 'Read Needs.tsx' }], outputs: [] },
         ],
         outputs: [timingsPng],
       },
     ],
   };
+
+  onboarding.queue = [{ id: 'q-notes', text: 'Then write the release notes for the phone build' }];
 
   const push: ConvView = {
     topic: 'conv:beluga.push',
@@ -246,7 +291,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     ],
   };
 
-  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky].map((c) => [c.topic, c]));
+  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now)].map((c) => [c.topic, c]));
 
   // ---- what needs you, one of each kind (and one this phone doesn't know)
   // Shaped exactly as src/companion/views.ts makes them (the same methods, args and templates).
@@ -529,13 +574,86 @@ export function makeWorld(now = Date.now()): DemoWorld {
     projects: [
       { id: 'beluga', name: 'beluga', convs: ['conv:beluga.onboarding', 'conv:beluga.push'] },
       { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:weather.radar', 'conv:weather.ci'] },
+      { id: 'shop', name: 'shop', convs: ['conv:shop.dashboard'] },
       { id: 'asked', name: 'Asked of friends', convs: [] },
     ],
     files,
     plans: [plan, radarPlan, docsPlan],
     chats,
     people,
+    tasks: demoTasks(now),
+    icons: ICONS,
+    merges: new Map(),
   };
+}
+
+/** The board: a few tasks in each state, shaped as views.ts sends a task's page. */
+function demoTasks(now: number): TaskPageView[] {
+  const moves = (status: string) => ['todo', 'in_progress', 'in_review', 'done', 'backlog', 'canceled'].filter((s) => s !== status).map((s) => ({ status: s, label: ({ todo: 'Ready', in_progress: 'In Progress', in_review: 'In Review', done: 'Done', backlog: 'Backlog', canceled: 'Canceled' } as Record<string, string>)[s]! }));
+  const task = (t: Partial<TaskPageView> & Pick<TaskPageView, 'id' | 'key' | 'title' | 'status' | 'projectId' | 'project'>): TaskPageView => ({
+    topic: `task:${t.id}`,
+    priority: 'medium',
+    updatedAt: now - 20 * MIN,
+    acceptance: [],
+    activity: [{ id: `${t.id}-a1`, at: now - 3 * HOUR, who: 'You', text: 'created this' }],
+    moves: moves(t.status),
+    ...(t.projectId === 'beluga' || t.projectId === 'pixel-weather' ? { icon: ICONS[t.projectId]!.sum } : {}),
+    ...t,
+  });
+  const goal = (text: string) => ({ text, code: [] });
+  return [
+    task({
+      id: 'iss-pair',
+      key: 'BLG-38',
+      title: 'Make pairing feel like the Mac',
+      status: 'in_progress',
+      priority: 'high',
+      assignee: 'your Claude',
+      projectId: 'beluga',
+      project: 'beluga',
+      conv: 'conv:beluga.onboarding',
+      worktree: 'beluga-pairing',
+      checks: { done: 2, total: 4 },
+      goal: goal('The phone’s pairing screen should feel like the Mac’s onboarding: the mark, the springs, the fingerprint step big and calm.'),
+      acceptance: [
+        { text: 'The pairing screen uses the Mac’s mark and springs', state: 'done' },
+        { text: 'Captions pass AA contrast on the glass cards', state: 'done' },
+        { text: 'Screenshots of each step', state: 'open' },
+        { text: 'The phone e2e suite passes', state: 'deferred', reason: 'it runs at the end of the plan' },
+      ],
+      activity: [
+        { id: 'p1', at: now - 3 * HOUR, who: 'You', text: 'created this' },
+        { id: 'p2', at: now - 31 * MIN, who: 'Beluga', text: 'its work is being done in worktree beluga-pairing' },
+        { id: 'p3', at: now - 30 * MIN, who: 'Your Claude', text: 'moved this from Ready to In Progress' },
+        { id: 'p4', at: now - 9 * MIN, who: 'Your Claude', text: 'commented', body: 'Contrast is fixed: captions went to 4.1 : 1. Screenshots and the e2e run are next.', comment: true },
+      ],
+    }),
+    task({
+      id: 'iss-push',
+      key: 'BLG-39',
+      title: 'Beluga Push relay on Cloudflare',
+      status: 'in_review',
+      priority: 'urgent',
+      assignee: 'your Claude',
+      projectId: 'beluga',
+      project: 'beluga',
+      conv: 'conv:beluga.push',
+      worktree: 'beluga-push-relay',
+      checks: { done: 3, total: 3 },
+      pr: { number: 142, state: 'OPEN', title: 'Beluga Push: a blind relay for phone notifications', checks: 'passing' },
+      goal: goal('A stateless relay so the Mac can wake the phone: it sees a token and ciphertext, nothing else.'),
+      acceptance: [
+        { text: 'Seals to the phone’s box key', state: 'done' },
+        { text: 'Signed with the relay key', state: 'done' },
+        { text: 'Deployed to staging', state: 'done' },
+      ],
+    }),
+    task({ id: 'iss-ios', key: 'BLG-47', title: 'Port the link worklet to iOS', status: 'todo', priority: 'medium', projectId: 'beluga', project: 'beluga', goal: goal('The same app on iOS: Keychain, APNs and the service extension.') }),
+    task({ id: 'iss-widget', key: 'BLG-51', title: 'A home-screen widget for usage', status: 'backlog', priority: 'low', projectId: 'beluga', project: 'beluga' }),
+    task({ id: 'iss-docs', key: 'BLG-30', title: 'Docs for the companion protocol', status: 'done', priority: 'medium', assignee: 'you', projectId: 'beluga', project: 'beluga', updatedAt: now - 26 * HOUR }),
+    task({ id: 'iss-radar', key: 'PXW-12', title: 'Radar tiles flicker on zoom', status: 'in_review', priority: 'high', assignee: 'your Claude', projectId: 'pixel-weather', project: 'pixel-weather', conv: 'conv:weather.radar', checks: { done: 1, total: 1 }, acceptance: [{ text: 'No flicker while pinching', state: 'done' }] }),
+    task({ id: 'iss-offline', key: 'PXW-14', title: 'Offline maps for a region', status: 'todo', priority: 'high', assignee: 'Mia', projectId: 'pixel-weather', project: 'pixel-weather' }),
+  ];
 }
 
 /** A new turn helper for the live parts. */

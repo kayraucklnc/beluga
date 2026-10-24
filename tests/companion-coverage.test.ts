@@ -61,7 +61,7 @@ describe('what the phone may call', () => {
 
 const NODE = new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`)]);
 /** What runs in the phone's Bare worklet may use only these (hyperdht brings the rest). */
-const PHONE_PACKAGES = new Set(['zod', 'hyperdht', '@hyperswarm/secret-stream', 'sodium-universal', 'b4a']);
+const PHONE_PACKAGES = new Set(['zod', 'hyperdht', '@hyperswarm/secret-stream', 'sodium-universal', 'b4a', 'streamx']);
 
 function runtimeImports(file: string): string[] {
   const src = readFileSync(file, 'utf8');
@@ -99,8 +99,9 @@ describe('the phone side runs in Bare', () => {
     const g = new Map<string, string[]>();
     graph('src/companion/client.ts', g);
     graph('src/companion/protocol.ts', g);
+    graph('src/companion/diagnose.ts', g);
     const files = [...g.keys()].map((f) => path.relative(process.cwd(), f)).sort();
-    expect(files).toEqual(['src/companion/client.ts', 'src/companion/device-crypto.ts', 'src/companion/protocol.ts']);
+    expect(files).toEqual(['src/companion/client.ts', 'src/companion/device-crypto.ts', 'src/companion/diagnose.ts', 'src/companion/dial.ts', 'src/companion/protocol.ts']);
     const offenders = [...g.entries()].flatMap(([file, imports]) => imports.filter((s) => !s.startsWith('.') && (NODE.has(s) || !PHONE_PACKAGES.has(s))).map((s) => `${file} → ${s}`));
     expect(offenders).toEqual([]);
     // Bare has no global Buffer or process: b4a and plain timers only.

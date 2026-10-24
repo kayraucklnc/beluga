@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { KeyboardLift } from '../components/KeyboardLift';
+import { ProjectMark } from '../components/ProjectMark';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowUp, ChevronDown, Folder, ImagePlus, MessageSquare, Sparkles, X } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
@@ -20,7 +20,7 @@ import { color } from '../lib/theme';
  * pick a project, an open conversation, or a friend's Claude. The answer comes back into that
  * conversation, which opens.
  */
-type Target = { kind: 'project'; id: string; label: string } | { kind: 'conv'; topic: Topic; label: string } | { kind: 'friend'; id: string; name: string; label: string };
+type Target = { kind: 'project'; id: string; label: string; icon?: string } | { kind: 'conv'; topic: Topic; label: string; project?: string; icon?: string } | { kind: 'friend'; id: string; name: string; label: string };
 const ICON: Record<Target['kind'], { Icon: typeof Folder; tone: Tone }> = { project: { Icon: Folder, tone: 'butter' }, conv: { Icon: MessageSquare, tone: 'sky' }, friend: { Icon: Sparkles, tone: 'lavender' } };
 
 export default function Ask() {
@@ -38,8 +38,8 @@ export default function Ask() {
     const t: Target[] = [];
     // Only your own projects take a new chat: not the room, a friend's shared project or "Asked of
     // friends" (views.ts groups those under 'room', 'shared:…' and 'asked').
-    for (const p of work?.data.projects ?? []) if (p.id !== 'room' && p.id !== 'asked' && !p.id.startsWith('shared:')) t.push({ kind: 'project', id: p.id, label: p.name });
-    for (const c of home?.data.running ?? []) t.push({ kind: 'conv', topic: c.topic, label: c.title });
+    for (const p of work?.data.projects ?? []) if (p.id !== 'room' && p.id !== 'asked' && !p.id.startsWith('shared:')) t.push({ kind: 'project', id: p.id, label: p.name, ...(p.icon ? { icon: p.icon } : {}) });
+    for (const c of home?.data.running ?? []) t.push({ kind: 'conv', topic: c.topic, label: c.title, ...(c.project ? { project: c.project } : {}), ...(c.icon ? { icon: c.icon } : {}) });
     for (const p of people?.data.people ?? []) if (p.presence !== 'offline') t.push({ kind: 'friend', id: p.peerId, name: p.name, label: `${p.name}'s Claude` });
     return t;
   }, [work, home, people]);
@@ -83,7 +83,7 @@ export default function Ask() {
     }, 220);
   };
 
-  const mark = (t: Target, size: number) => (t.kind === 'friend' ? <Avatar name={t.name} size={size} /> : <IconBadge Icon={ICON[t.kind].Icon} tone={ICON[t.kind].tone} size={size} />);
+  const mark = (t: Target, size: number) => (t.kind === 'friend' ? <Avatar name={t.name} size={size} /> : t.kind === 'project' ? <ProjectMark name={t.label} icon={t.icon} size={size} /> : t.project ? <ProjectMark name={t.project} icon={t.icon} size={size} /> : <IconBadge Icon={ICON[t.kind].Icon} tone={ICON[t.kind].tone} size={size} />);
   const groups: { title: string; kind: Target['kind'] }[] = [
     { title: 'New in a project', kind: 'project' },
     { title: 'Add to a conversation', kind: 'conv' },
@@ -91,7 +91,7 @@ export default function Ask() {
   ];
 
   return (
-    <KeyboardLift>
+    <>
       <Sheet visible={visible} onDismiss={close}>
         <View style={{ paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <T v="title" style={{ flex: 1, fontSize: 22 }}>
@@ -176,6 +176,6 @@ export default function Ask() {
           </View>
         )}
       </Sheet>
-    </KeyboardLift>
+    </>
   );
 }

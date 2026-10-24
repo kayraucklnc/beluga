@@ -156,8 +156,10 @@ class StreamSocket extends EventEmitter<SocketEvents> implements MessageSocket {
     this.emit('close', this.code);
   }
 
-  private onData(chunk: Buffer): void {
+  private onData(raw: Buffer | Uint8Array): void {
     if (this.closed) return;
+    // A stream over a WebSocket may hand plain Uint8Arrays (the companion relay).
+    const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
     this.pending = this.pending.length ? Buffer.concat([this.pending, chunk]) : chunk;
     while (this.pending.length >= HEADER && !this.closed) {
       const length = this.pending.readUInt32BE(0);

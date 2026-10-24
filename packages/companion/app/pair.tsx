@@ -9,8 +9,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CODE_LENGTH, CodeBoxes } from '../components/CodeBoxes';
 import { KeyboardLift } from '../components/KeyboardLift';
 import { Mark } from '../components/Mark';
+import { WhySheet } from '../components/WhySheet';
 import { Burst, Dots, Finding, Illustration, MacPairing, Step, Wash } from '../components/onboarding';
 import { Button, Card, haptic, IconBadge, Press, T } from '../components/ui';
+import type { Diagnosis } from '../lib/link/diagnose';
 import { DEVICE_LINK } from '../lib/link/protocol';
 import type { PairStep } from '../lib/link/transport';
 import { type Mode, store } from '../lib/store';
@@ -37,6 +39,9 @@ export default function Pair() {
   const [stage, setStage] = useState<Stage>('intro');
   const [fingerprint, setFingerprint] = useState('');
   const [reason, setReason] = useState('');
+  const [diagnosis, setDiagnosis] = useState<Diagnosis | undefined>(undefined);
+  const [why, setWhy] = useState(false);
+  const last = useRef<{ mode: Mode; input: { link?: string; code?: string } } | undefined>(undefined);
   const [macName, setMacName] = useState('');
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState(false);
@@ -47,6 +52,7 @@ export default function Pair() {
 
   const start = (mode: Mode, input: { link?: string; code?: string }) => {
     run.current?.cancel();
+    last.current = { mode, input };
     haptic.commit();
     const name = Device.deviceName ?? Device.modelName ?? (Platform.OS === 'web' ? 'This browser' : 'Phone');
     run.current = store.pair(mode, { ...input, name }, (s: PairStep) => {
@@ -61,9 +67,12 @@ export default function Pair() {
         haptic.success();
         setTimeout(() => router.replace('/(tabs)'), 2200);
       } else {
-        setReason(s.reason);
-        setStage(input.code ? 'code' : 'failed');
-        if (input.code) setCodeError(true);
+        setReason(s.diagnosis?.title ?? s.reason);
+        setDiagnosis(s.diagnosis);
+        // A wrong code is said under the boxes; anything else (the network, the Mac) gets the full explanation.
+        const codeProblem = input.code && (!s.diagnosis || s.diagnosis.problem === 'pairing-wrong' || s.diagnosis.problem === 'pairing-gone');
+        setStage(codeProblem ? 'code' : 'failed');
+        if (codeProblem) setCodeError(true);
         haptic.warn();
       }
     });
@@ -171,7 +180,7 @@ export default function Pair() {
                   <Finding />
                   <View style={{ alignItems: 'center', gap: 6 }}>
                     <T v="title">Finding your Mac</T>
-                    <T v="callout">Straight to it, encrypted end to end.</T>
+                    <T v="callout">Encrypted end to end, whichever way it gets there.</T>
                   </View>
                 </>
               ) : (
@@ -229,11 +238,24 @@ export default function Pair() {
         <Animated.View key="fail" entering={FadeInDown.duration(300)} style={{ flex: 1, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16, paddingHorizontal: 24 }}>
           <Back onPress={() => back('connect')} />
           <View style={{ flex: 1, justifyContent: 'center', gap: 10 }}>
-            <IconBadge Icon={ScanLine} tone="rose" size={52} square />
-            <T v="title">That didn't work</T>
-            <T v="callout">{reason}</T>
+            <IconBadge Icon={ScanLine} tone="peach" size={52} square />
+            <T v="title">{diagnosis?.title ?? "That didn't work"}</T>
+            <T v="callout">{diagnosis ? diagnosis.body : reason}</T>
+            {diagnosis?.tryThis ? (
+              <T v="callout" c={color.text}>
+                {diagnosis.tryThis}
+              </T>
+            ) : null}
+            {diagnosis ? (
+              <Press onPress={() => setWhy(true)} hitSlop={8} style={{ alignSelf: 'flex-start', paddingVertical: 6 }}>
+                <T v="callout" c={ink.sky} style={{ fontWeight: '600' }}>
+                  Why?
+                </T>
+              </Press>
+            ) : null}
           </View>
-          <Button label="Try again" onPress={() => back('connect')} />
+          <Button label="Try again" onPress={() => (diagnosis?.retry && last.current ? start(last.current.mode, last.current.input) : back('connect'))} />
+          <WhySheet diagnosis={diagnosis} visible={why} onDismiss={() => setWhy(false)} onRetry={() => last.current && start(last.current.mode, last.current.input)} />
         </Animated.View>
       ) : null}
     </View>

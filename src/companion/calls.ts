@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { API, type Method } from '../ipc/api.js';
-import { ChatMessageView, TurnView } from './protocol.js';
+import { ChatMessageView, MergeCheckView, MergeView, TurnView } from './protocol.js';
 
 /**
  * Every call the phone may make, typed: each `phone` method of coverage.ts with its arguments
@@ -16,6 +16,13 @@ const done = z.unknown();
 export const AskResult = z.object({ topic: z.string() });
 export const AskPersonResult = z.object({ topic: z.string(), task: z.string() });
 export const OlderResult = z.union([z.object({ turns: z.array(TurnView), more: z.boolean() }), z.object({ messages: z.array(ChatMessageView), more: z.boolean() })]);
+/** Open on your Mac: it came to the front, or why not. */
+export const OpenOnMacResult = z.object({ opened: z.boolean(), why: z.string().optional() });
+/** A project's small icon (PNG, or a small SVG), by checksum. */
+export const IconResult = z.object({ sum: z.string(), mime: z.string(), b64: z.string() });
+/** Your Claude's draft of a task described in words (companion.draftTask), before it's added. */
+export const TaskDraftResult = z.object({ title: z.string(), goal: z.string(), acceptance: z.array(z.string()), labels: z.array(z.string()), priority: z.enum(['urgent', 'high', 'medium', 'low']).optional() });
+export type TaskDraftResult = z.infer<typeof TaskDraftResult>;
 /** What `put` answers: a piece taken, then the file's ref. */
 export const PutResult = z.union([z.object({ received: z.number().int().min(0) }), z.object({ ref: z.string() })]);
 
@@ -67,6 +74,7 @@ export const PhoneCalls = {
   'gateway.answer': entry('gateway.answer', done),
   'gateway.image': entry('gateway.image', z.string()),
   'board.comment': entry('board.comment', done),
+  'board.move': entry('board.move', done),
   'plans.approve': entry('plans.approve', done),
   'plans.discard': entry('plans.discard', done),
   'plans.pass': entry('plans.pass', done),
@@ -77,6 +85,15 @@ export const PhoneCalls = {
   'companion.post': entry('companion.post', done),
   'companion.askPerson': entry('companion.askPerson', AskPersonResult),
   'companion.signOut': entry('companion.signOut', z.object({ signedOut: z.literal(true) })),
+  'companion.openOnMac': entry('companion.openOnMac', OpenOnMacResult),
+  'companion.icon': entry('companion.icon', IconResult),
+  'companion.mergeCheck': entry('companion.mergeCheck', MergeCheckView),
+  'companion.merge': entry('companion.merge', MergeView),
+  'companion.resolve': entry('companion.resolve', MergeView),
+  'companion.viewFetch': entry('companion.viewFetch', done),
+  'companion.draftTask': entry('companion.draftTask', TaskDraftResult),
+  'companion.addTask': entry('companion.addTask', z.object({ id: z.string(), key: z.string() })),
+  'board.start': entry('board.start', z.string()),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;

@@ -1,8 +1,9 @@
 import { Worklet } from 'react-native-bare-kit';
 import bundle from '../../worklet/dist/link.bundle.mjs';
 import { type MacFrame, type PhoneFrame, parseMacFrame } from './protocol';
-import { type DeviceSecret, encodeLine, type LinkPhase, lineDecoder, type Pairing, type UiToWorklet, type WorkletToUi } from './rpc';
-import { Emitter, type PairInput, type PairStep, type Transport } from './transport';
+import { fromB64, toB64 } from '../b64';
+import { type DeviceSecret, encodeLine, type LinkHints, type LinkPhase, lineDecoder, type Pairing, type UiToWorklet, type WorkletToUi } from './rpc';
+import { Emitter, type PairInput, type PairStep, type PathInfo, type PhaseInfo, type Transport } from './transport';
 
 /**
  * The real link: a Bare worklet (react-native-bare-kit) running worklet/link.ts, which dials your
@@ -17,7 +18,10 @@ export class BareTransport implements Transport {
   readonly kind = 'bare' as const;
   private worklet: Worklet | undefined;
   private readonly frames = new Emitter<[MacFrame]>();
-  private readonly phases = new Emitter<[LinkPhase, string?]>();
+  private readonly phases = new Emitter<[LinkPhase, string?, PhaseInfo?]>();
+  private readonly paths = new Emitter<[PathInfo]>();
+  /** The relay's WebSockets the worklet asked for (React Native's; Bare has none). */
+  private readonly sockets = new Map<number, WebSocket>();
   private readonly pairs = new Map<number, (step: PairStep) => void>();
   private pairSeq = 0;
 
@@ -56,7 +60,7 @@ export class BareTransport implements Transport {
     }
     switch (msg.ev) {
       case 'phase':
-        this.phases.emit(msg.phase, msg.detail);
+        this.phases.emit(msg.phase, msg.detail, { ...(msg.report ? { report: msg.report } : {}), ...(msg.code !== undefined ? { code: msg.code } : {}) });
         if (msg.phase === 'closed' || msg.phase === 'unreachable' || msg.phase === 'refused') this.stopWorklet();
         return;
       case 'frame': {
@@ -72,9 +76,25 @@ export class BareTransport implements Transport {
         this.pairs.delete(msg.id);
         return;
       case 'pair.fail':
-        this.pairs.get(msg.id)?.({ step: 'failed', reason: msg.reason });
+        this.pairs.get(msg.id)?.({ step: 'failed', reason: msg.reason, ...(msg.report ? { report: msg.report } : {}), ...(msg.refusal ? { refusal: msg.refusal } : {}) });
         this.pairs.delete(msg.id);
         return;
+      case 'path':
+        this.paths.emit({ path: msg.path, way: msg.way, tried: msg.tried, ...(msg.relay ? { relay: msg.relay } : {}), ...(msg.network ? { network: msg.network } : {}) });
+        return;
+      case 'ws.open':
+        return this.openSocket(msg.id, msg.url);
+      case 'ws.send': {
+        const ws = this.sockets.get(msg.id);
+        if (ws?.readyState === WebSocket.OPEN) ws.send(fromB64(msg.b64).buffer as ArrayBuffer);
+        return;
+      }
+      case 'ws.close': {
+        const ws = this.sockets.get(msg.id);
+        this.sockets.delete(msg.id);
+        ws?.close();
+        return;
+      }
       case 'log':
         if (__DEV__) console.log('[link]', msg.line);
         return;
@@ -83,12 +103,39 @@ export class BareTransport implements Transport {
     }
   }
 
-  open(hello: PhoneFrame & { t: 'hello' }): void {
+  /**
+   * A WebSocket to the relay for the worklet: Noise ciphertext both ways, base64 over the IPC. The
+   * relay's TLS is the OS's, and the keys inside are pinned by Noise either way.
+   */
+  private openSocket(id: number, url: string): void {
+    const event = (e: Omit<Extract<UiToWorklet, { op: 'ws.event' }>, 'op' | 'id'>): void => {
+      if (this.worklet) this.post({ op: 'ws.event', id, ...e });
+    };
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      return event({ kind: 'close' });
+    }
+    ws.binaryType = 'arraybuffer';
+    this.sockets.set(id, ws);
+    ws.onopen = () => event({ kind: 'open' });
+    ws.onmessage = (m) => {
+      if (m.data instanceof ArrayBuffer) event({ kind: 'message', b64: toB64(new Uint8Array(m.data)) });
+    };
+    ws.onclose = (c) => {
+      this.sockets.delete(id);
+      event({ kind: 'close', code: c.code });
+    };
+    ws.onerror = () => undefined;
+  }
+
+  open(hello: PhoneFrame & { t: 'hello' }, hints?: LinkHints): void {
     this.phases.emit('dialing');
     void this.creds().then((c) => {
       if (!c) return this.phases.emit('refused', 'This phone is not paired.');
       try {
-        this.post({ op: 'open', pairing: c.pairing, secret: c.secret, hello: JSON.stringify(hello) });
+        this.post({ op: 'open', pairing: c.pairing, secret: c.secret, hello: JSON.stringify(hello), ...(hints ? { hints } : {}) });
       } catch (e) {
         this.phases.emit('unreachable', (e as Error).message);
       }
@@ -107,8 +154,11 @@ export class BareTransport implements Transport {
   onFrame(listener: (frame: MacFrame) => void): () => void {
     return this.frames.on(listener);
   }
-  onPhase(listener: (phase: LinkPhase, detail?: string) => void): () => void {
+  onPhase(listener: (phase: LinkPhase, detail?: string, info?: PhaseInfo) => void): () => void {
     return this.phases.on(listener);
+  }
+  onPath(listener: (info: PathInfo) => void): () => void {
+    return this.paths.on(listener);
   }
 
   pair(input: PairInput, onStep: (step: PairStep) => void): { cancel(): void } {
@@ -131,11 +181,15 @@ export class BareTransport implements Transport {
   /** The worklet goes entirely when the link is down: the battery rule. */
   private stopWorklet(): void {
     if (this.pairs.size > 0) return;
+    for (const ws of this.sockets.values()) ws.close();
+    this.sockets.clear();
     this.worklet?.terminate();
     this.worklet = undefined;
   }
 
   dispose(): void {
+    for (const ws of this.sockets.values()) ws.close();
+    this.sockets.clear();
     this.worklet?.terminate();
     this.worklet = undefined;
     this.frames.clear();

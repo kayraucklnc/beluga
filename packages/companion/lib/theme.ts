@@ -140,6 +140,9 @@ export const radius = { s: 10, m: 16, l: 22, xl: 28, pill: 999 } as const;
 const sans = Platform.select({ ios: 'System', android: undefined, default: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Roboto", "Helvetica Neue", sans-serif' });
 const mono = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'ui-monospace, "SF Mono", Menlo, monospace' });
 
+/** The system font for text drawn in SVG (charts, graphs): SVG's own default is a serif on the web. */
+export const svgFont = Platform.select({ ios: 'System', android: 'sans-serif', default: sans }) as string;
+
 /** Type: friendly weights, the system font; colors come from `color` at render time. */
 export const type = {
   hero: { fontFamily: sans, fontSize: 30, lineHeight: 36, fontWeight: '700' as const, letterSpacing: -0.6 },
