@@ -1,3 +1,6 @@
+import { isGraphFence } from '../shared/graph-spec.js';
+import { TASKS_FENCE } from '../shared/task-refs.js';
+import { isViewFence } from '../shared/view-spec.js';
 import type { ProseView, ToolKind } from './protocol.js';
 
 /**
@@ -10,6 +13,16 @@ import type { ProseView, ToolKind } from './protocol.js';
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)?.*$/;
 const MAX_CODE = 200;
+/** A drawn block's JSON, at most (a view with 500 rows of its own fits). */
+export const MAX_BLOCK = 200_000;
+
+/** The fences the screens draw (src/shared: view-spec, graph-spec, task-refs), by what they are. */
+export function blockKind(lang: string): 'view' | 'graph' | 'tasks' | undefined {
+  if (isViewFence(lang)) return 'view';
+  if (isGraphFence(lang)) return 'graph';
+  if (lang === TASKS_FENCE) return 'tasks';
+  return undefined;
+}
 /**
  * A picture linked in a chat message ("[📎 image 1 (png, 6K)](klaud-attachment:<owner>/<file>)",
  * src/core/attachment-share.ts ATTACHMENT_SCHEME): the phone can't open that link, so only its
@@ -21,7 +34,7 @@ const ATTACHMENT_LINK = /\[([^\]\n]*)\]\((?:klaud|beluga)-attachment:[^)\s]*\)/g
 export function stripCode(markdown: string): ProseView {
   const lines = markdown.split('\n');
   const out: string[] = [];
-  const code: Array<{ lang?: string; lines: number }> = [];
+  const code: ProseView['code'][number][] = [];
   for (let i = 0; i < lines.length; i++) {
     const open = FENCE.exec(lines[i]!);
     if (!open) {
@@ -40,7 +53,11 @@ export function stripCode(markdown: string): ProseView {
     }
     if (code.length < MAX_CODE) {
       out.push(`[[code:${code.length}]]`);
-      code.push({ ...(lang ? { lang } : {}), lines: n });
+      // What Claude drew for the screen (a view, a graph, tasks) goes along to be drawn there too
+      // (BLG-68); a phone before 1.3 still shows a chip. Any other code stays a chip.
+      const kind = blockKind(lang);
+      const body = kind ? lines.slice(i + 1, i + 1 + n).join('\n') : '';
+      code.push({ ...(lang ? { lang } : {}), lines: n, ...(kind && body.length <= MAX_BLOCK ? { block: { kind, text: body } } : {}) });
     } else out.push('[[code]]');
     i = j;
   }

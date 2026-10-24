@@ -221,6 +221,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.mergeCheck` | – the phone only: the Merge sheet's checks (the Mac's own: `git.mergePreview` and its review) |
 | `companion.merge` | – the phone only: Merge from a worktree's •••, the Mac's own merge (`workspaces.merge`), its progress in the conversation |
 | `companion.resolve` | – the phone only: Ask Claude to resolve, as the Mac's Solve merge conflict (`workspaces.askClaudeToMerge`) |
+| `companion.viewFetch` | – the phone only: a live view's rows in a conversation, run here as `view.fetch` runs them for the window |
 | `companion.draftTask` | – the phone only: New task by describing it, Claude's draft shown before it's added (the Mac's describe-to-create is `board.create`) |
 | `companion.addTask` | – the phone only: the draft added as a task |
 | `workspaces.open` | ✓ |

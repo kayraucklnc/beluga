@@ -1,6 +1,7 @@
 import { merge, mergeCheck, resolve } from '../companion/merge.js';
 import { macViewFor } from '../companion/open-on-mac.js';
 import { stripCode } from '../companion/strip.js';
+import { type ViewFetchArgs, viewFetch } from '../companion/view-fetch.js';
 import { needBoard } from '../core/board/registry.js';
 import { needCompanion } from '../companion/registry.js';
 import { currentClient } from '../core/client-context.js';
@@ -37,6 +38,7 @@ export const COMPANION_HANDLERS = {
   'companion.mergeCheck': (s, topic) => mergeCheck(s, topic),
   'companion.merge': (s, topic) => merge(s, needCompanion(s).merges, topic),
   'companion.resolve': (s, topic) => resolve(s, needCompanion(s).merges, topic),
+  'companion.viewFetch': (s, a) => viewFetch(s.store.getState(), a as ViewFetchArgs),
   'companion.draftTask': async (s, a) => {
     const d = await needBoard(s).draft(a.projectId, a.text);
     // Words only: a code block in the goal (rare in a draft) reads "(code)" on the phone.

@@ -18,7 +18,7 @@ export const COMPANION_PROTO = { major: 1, minor: 3 } as const;
  * from the phone (`companion.mergeCheck` / `merge` / `resolve`), describing a task
  * (`companion.draftTask` / `addTask`) and starting one (`board.start`).
  */
-export const SINCE = { tasks: 3, openOnMac: 3, icon: 3, merge: 3, draftTask: 3 } as const;
+export const SINCE = { tasks: 3, openOnMac: 3, icon: 3, merge: 3, draftTask: 3, viewFetch: 3 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -181,7 +181,21 @@ export type SubAgentView = z.infer<typeof SubAgentView>;
 /** Claude's text, with code blocks taken out: each is a `[[code:n]]` marker and one entry in `code`. */
 export const ProseView = z.object({
   text,
-  code: z.array(z.object({ lang: z.string().max(40).optional(), lines: z.number().int().min(0) })).max(200),
+  code: z
+    .array(
+      z.object({
+        lang: z.string().max(40).optional(),
+        lines: z.number().int().min(0),
+        /**
+         * 1.3: what Claude drew for the screen rather than code (BLG-68): a `beluga-view` (table,
+         * chart, stats, code, colors), a `beluga-graph` or `beluga-tasks`, its JSON as written. The
+         * phone reads it with the Mac's own parsers (src/shared) and draws it; its source's rows
+         * come through the Mac (companion.viewFetch). A phone before 1.3 shows the chip.
+         */
+        block: z.object({ kind: z.union([z.enum(['view', 'graph', 'tasks']), z.string().max(20)]), text: z.string().max(200_000) }).optional(),
+      }),
+    )
+    .max(200),
 });
 export type ProseView = z.infer<typeof ProseView>;
 

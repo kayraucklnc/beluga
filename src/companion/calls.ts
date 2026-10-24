@@ -89,6 +89,7 @@ export const PhoneCalls = {
   'companion.mergeCheck': entry('companion.mergeCheck', MergeCheckView),
   'companion.merge': entry('companion.merge', MergeView),
   'companion.resolve': entry('companion.resolve', MergeView),
+  'companion.viewFetch': entry('companion.viewFetch', done),
   'companion.draftTask': entry('companion.draftTask', TaskDraftResult),
   'companion.addTask': entry('companion.addTask', z.object({ id: z.string(), key: z.string() })),
   'board.start': entry('board.start', z.string()),

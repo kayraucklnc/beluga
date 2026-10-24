@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_UPLOADS, UploadRef } from '../companion/protocol.js';
 import { NEEDS } from '../core/gateway/protocol.js';
+import { SourceSchema, ViewQuerySchema } from '../shared/view-spec.js';
 
 /**
  * Your phone (the companion, docs/companion.md) in the API (see api.ts): pairing one from the Mac,
@@ -69,6 +70,25 @@ export const COMPANION_API = {
   'companion.mergeCheck': { args: z.tuple([wsTopic]) },
   'companion.merge': { args: z.tuple([wsTopic]) },
   'companion.resolve': { args: z.tuple([wsTopic]) },
+  // A live view's rows (BLG-68): the view is named by its conversation, turn and block (one in your
+  // own Claude's answer); `source` is one that view names (an action's, a control's). The Mac runs
+  // it as view.fetch does → ViewPage, or { needsApproval, what } for a command that hasn't run before.
+  'companion.viewFetch': {
+    args: z.tuple([
+      z
+        .object({
+          topic: z.string().regex(/^conv:[\w:.-]{1,200}$/),
+          turn: z.string().min(1).max(200),
+          block: z.number().int().min(0).max(199),
+          source: SourceSchema.optional(),
+          query: ViewQuerySchema,
+          confirm: z.boolean().optional(),
+          fresh: z.boolean().optional(),
+          text: z.boolean().optional(),
+        })
+        .strict(),
+    ]),
+  },
   // A task described in words: your Claude's draft of it (title, goal, criteria, labels), not added yet → the draft.
   'companion.draftTask': { args: z.tuple([z.object({ projectId: z.string().min(1).max(200), text: z.string().min(1).max(8000) }).strict()]) },
   // Add a draft (maybe changed on the phone) as a task in a project → the task ({ id, key }).
