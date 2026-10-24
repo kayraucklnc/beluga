@@ -78,7 +78,7 @@ const MessageStep = memo(function MessageStep({ step, open }: { step: CcStep; op
       </button>
       {isOpen ? (
         <div className={s.messageBody}>
-          <Markdown text={step.text} localImages />
+          <Markdown text={step.text} localImages tasks />
         </div>
       ) : null}
     </div>
@@ -102,7 +102,7 @@ const StepView = memo(function StepView({ step, who }: { step: CcStep; who: 'ses
         <span className={s.when}>{time(step.ts)}</span>
       </div>
       <div className={s.turnBody}>
-        <Markdown text={step.text} localImages />
+        <Markdown text={step.text} localImages tasks />
       </div>
     </div>
   );

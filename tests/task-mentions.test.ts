@@ -7,7 +7,7 @@ import { AgentHost } from '../src/core/agent-host.js';
 import type { Issue } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import { waitFor } from './helpers.js';
-import { type TaskMention, explainTaskMentions, matchTasks, taskByKey } from '../src/shared/task-refs.js';
+import { type TaskMention, explainTaskMentions, linkTaskKeys, matchTasks, taskByKey } from '../src/shared/task-refs.js';
 import { suggest } from '../src/ui/suggest.js';
 import { gatewayTarget } from '../src/agent/mock.js';
 import { linkMentions, parseMentionHref, resolveMention, splitMentions, tasksIn, type MentionWorld } from '../packages/mac/src/chat/mentions.js';
@@ -166,5 +166,29 @@ describe('your Claude, asked about a task', () => {
     await host.onAgentRequest('me', { kind: 'agent_request', requestId: 'r1', prompt: 'finish @BLG-24 today', viaAgent: false, channel: 'ws:w1', urgent: false, plan: false });
     await waitFor(() => runs.length === 1);
     expect(runs[0]!.prompt).toBe('finish @BLG-24 (task: Fix the login redirect) today');
+  });
+});
+
+describe('bare task keys in an answer', () => {
+  const board = new Set(['BLG-72', 'BLG-73']);
+  const has = (k: string): boolean => board.has(k);
+  const link = (k: string): string => `[${k}](beluga-task:${k})`;
+
+  it('turns a key the board has into a chip, in bold and in a list', () => {
+    expect(linkTaskKeys('**BLG-72: image chips**', has)).toBe(`**${link('BLG-72')}: image chips**`);
+    expect(linkTaskKeys('- fixed (BLG-73), and BLG-72.', has)).toBe(`- fixed (${link('BLG-73')}), and ${link('BLG-72')}.`);
+  });
+
+  it('leaves unknown keys, look-alikes and lower case alone', () => {
+    expect(linkTaskKeys('BLG-99, UTF-8, blg-72, XBLG-72, BLG-720', has)).toBe('BLG-99, UTF-8, blg-72, XBLG-72, BLG-720');
+  });
+
+  it('leaves code, links, paths, URLs and task: alone', () => {
+    const md = ['`BLG-72` and `task:BLG-72`', '[see BLG-72](https://x.dev/BLG-72)', 'docs/BLG-72.md and BLG-72.ts', 'https://x.dev/issues/BLG-72', '```', 'BLG-72', '```', '@BLG-72 and #BLG-72'].join('\n');
+    expect(linkTaskKeys(md, has)).toBe(md);
+  });
+
+  it('links outside the code on a line that has some', () => {
+    expect(linkTaskKeys('BLG-72 fixed in `chat.ts`', has)).toBe(`${link('BLG-72')} fixed in \`chat.ts\``);
   });
 });

@@ -61,7 +61,7 @@ export function ActivityFeed({ issue }: { issue: Issue }) {
                   <span className={t.activityWhen}>{ago(e.at)}</span>
                 </div>
                 <div className={t.commentBody}>
-                  <Markdown text={e.body} paths />
+                  <Markdown text={e.body} paths tasks />
                 </div>
               </div>
             </li>
