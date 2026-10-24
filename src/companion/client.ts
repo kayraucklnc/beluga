@@ -538,6 +538,32 @@ export class CompanionClient extends Emitter<ClientEvents> {
     this.sock?.close(1000, 'bye');
   }
 
+  /**
+   * Is the link still alive? One ping: true as soon as anything comes back within `ms`. A link
+   * that doesn't answer is half-open (the phone was frozen in the background and the Mac dropped
+   * its end): it's terminated, so `close` fires now rather than after the keepalive's minute.
+   */
+  probe(ms = 3_000): Promise<boolean> {
+    const sock = this.sock;
+    if (!sock?.isOpen || !this.welcome) return Promise.resolve(false);
+    const since = this.heard;
+    return new Promise((resolve) => {
+      const done = (ok: boolean): void => {
+        clearTimeout(timer);
+        offPong();
+        offText();
+        offClose();
+        if (!ok && this.sock === sock) sock.terminate();
+        resolve(ok);
+      };
+      const offPong = sock.on('pong', () => done(true));
+      const offText = sock.on('text', () => done(true));
+      const offClose = sock.on('close', () => done(false));
+      const timer = setTimeout(() => done(this.heard > since), ms);
+      sock.ping();
+    });
+  }
+
   /** Dial again (only when the app asks: coming to the front, a push, a retry). */
   reconnect(): Promise<Welcome> {
     return this.connect();

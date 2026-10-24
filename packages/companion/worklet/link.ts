@@ -103,6 +103,9 @@ function open(msg: Extract<UiToWorklet, { op: 'open' }>): void {
   const { net, hints } = dialHints(n, msg.hints, msg.pairing.relay);
   const c = new CompanionClient({ node: n, address: msg.pairing.address, link: keys.link, app: APP, platform: hello.platform, topics: hello.topics, keepAliveMs: KEEPALIVE_MS, hints });
   client = c;
+  // The screens' number for this open (rpc.ts `gen`), echoed in its phases.
+  const gen = msg.gen;
+  const tag = gen !== undefined ? { gen } : {};
   c.on('view', (topic, data, rev) => frame({ t: 'view', topic, rev, data }));
   c.on('nudge', (f) => frame(f));
   c.on('term', (f) => frame(f));
@@ -110,20 +113,23 @@ function open(msg: Extract<UiToWorklet, { op: 'open' }>): void {
     if (client !== c) return;
     client = undefined;
     // 4010: this phone was removed on the Mac. 4002: versions don't match.
-    post({ ev: 'phase', phase: code === 4010 || code === 4002 ? 'refused' : 'closed', detail: reason || undefined, code });
+    post({ ev: 'phase', phase: code === 4010 || code === 4002 ? 'refused' : 'closed', detail: reason || undefined, code, ...tag });
     void quiet();
   });
-  post({ ev: 'phase', phase: 'dialing' });
+  post({ ev: 'phase', phase: 'dialing', ...tag });
   c.connect().then(
     (w) => {
+      // A newer open replaced this one while it dialed: only the newest speaks.
+      if (client !== c) return;
       if (c.path) post({ ev: 'path', path: c.path, way: wayOf(c.path), tried: c.tried, ...(c.relay ? { relay: c.relay } : {}), network: net });
-      post({ ev: 'phase', phase: 'open' });
+      post({ ev: 'phase', phase: 'open', ...tag });
       frame({ t: 'welcome', v: { ...w.v }, min: { ...w.v }, mac: w.mac, me: w.me, ...(w.relay ? { relay: w.relay } : {}) });
     },
     (e: Error) => {
-      if (client === c) client = undefined;
+      if (client !== c) return;
+      client = undefined;
       const update = /^Update /.test(e.message);
-      post({ ev: 'phase', phase: update ? 'refused' : 'unreachable', detail: e.message, ...(e instanceof DialError ? { report: e.report } : {}), ...(update ? { code: 4002 } : {}) });
+      post({ ev: 'phase', phase: update ? 'refused' : 'unreachable', detail: e.message, ...(e instanceof DialError ? { report: e.report } : {}), ...(update ? { code: 4002 } : {}), ...tag });
       void quiet();
     },
   );
@@ -227,9 +233,16 @@ ipc.on(
             s.close?.(1000);
             post({ ev: 'ws.close', id });
           }
-          post({ ev: 'phase', phase: 'closed', detail: msg.reason });
+          post({ ev: 'phase', phase: 'closed', detail: msg.reason, ...(msg.gen !== undefined ? { gen: msg.gen } : {}) });
           void quiet();
           return;
+        case 'probe': {
+          const c = client;
+          const id = msg.id;
+          if (!c) return post({ ev: 'probe', id, ok: false });
+          void c.probe(msg.ms).then((ok) => post({ ev: 'probe', id, ok }));
+          return;
+        }
         case 'pair':
           return pair(msg);
         case 'ws.event':

@@ -353,6 +353,13 @@ The phone holds no connection it isn't using.
   destroyed: no UDP, no keepalives, no wakeups. Coming back is about one second (the DHT lookup and
   the handshake; the Mac's last direct address is tried first, and on the same Wi-Fi hyperdht
   connects over the LAN).
+- **Coming back checks the link (BLG-105).** Android stops the app's timers in the background, so
+  the grace may never fire there and the process is frozen with the link "open". Back in front
+  (AppState, or a link or notification opening it), the phone goes by the clock
+  (`packages/companion/lib/link/resume.ts`): away past the grace, the link is replaced at once;
+  otherwise one ping (3 s) checks it, and a link that doesn't answer is replaced. A dial under way
+  is left alone (one at a time). A link that drops while you look is dialed again by itself, after
+  1, 2, 4… up to 30 s, six times, then it waits for Try again or the next time the app comes back.
 - **The relay costs nothing extra.** It's one more way to open the same link, open only while the
   app is in front and closed with it; the keepalives and views over it are the same. The phone
   never holds a relay socket in the background.
