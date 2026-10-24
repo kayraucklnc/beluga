@@ -309,6 +309,19 @@ export function findIssue(board: BoardState, ref: string): Issue | undefined {
 /** The task a workspace (worktree) is doing, if any. */
 export const issueForWorkspace = (board: BoardState, workspaceId: string): Issue | undefined => board.issues.find((i) => i.worktrees.includes(workspaceId));
 
+/**
+ * The worktree doing a task right now: its own (the last one, unless it went away), else one that
+ * carries its work (BLG-29). `live`: whether a workspace is still here and not archived.
+ */
+export function worktreeDoing(issue: Pick<Issue, 'worktrees' | 'worktreeGone' | 'carriedBy'>, live: (workspaceId: string) => boolean): string | undefined {
+  const own = issue.worktrees.at(-1);
+  if (own && !issue.worktreeGone && live(own)) return own;
+  return issue.carriedBy && live(issue.carriedBy) ? issue.carriedBy : undefined;
+}
+
+/** Whether Start can start it: not finished (in review, merged into its plan, done) or canceled, and not in the Archive. */
+export const isStartable = (issue: Pick<Issue, 'status' | 'archivedAt'>): boolean => isOpen(issue.status) && !isFinished(issue.status) && !isArchived(issue);
+
 /** Tasks this one waits on that aren't finished. */
 export const openBlockers = (board: BoardState, issue: Issue): Issue[] => issue.blockedBy.map((id) => issueById(board, id)).filter((i): i is Issue => Boolean(i && isOpen(i.status)));
 
