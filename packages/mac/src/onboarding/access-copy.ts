@@ -28,7 +28,7 @@ export const ACCESS_COPY: Readonly<Record<AccessStep, AccessCopy>> = {
     title: 'Let Claude see your screen.',
     why: 'Claude can take a screenshot of your screen or one app’s window when it needs to see what you see, like a page it just changed.',
     without: 'Without it, screenshots don’t work. Everything else does.',
-    how: 'Turn on Beluga in the list. macOS may ask you to reopen Beluga.',
+    how: 'Turn on Beluga in the list. If macOS asks to quit and reopen Beluga, go ahead: you’ll be back on this step.',
   },
   accessibility: {
     pane: 'accessibility',
