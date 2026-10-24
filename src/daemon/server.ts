@@ -1,13 +1,11 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { runAsClient } from '../core/client-context.js';
 import type { Session } from '../core/session.js';
-import { isMethod, parseArgs } from '../ipc/api.js';
-import { HANDLERS } from '../ipc/handlers.js';
 import { type Cap, type DaemonFrame, IPC_VERSION, encodeFrame, parseClientFrame } from '../ipc/protocol.js';
 import type { PtyProcess, TerminalManager } from '../terminal/index.js';
 import { ClientRegistry, type ConnectedClient } from './clients.js';
+import { dispatchCall } from './dispatch.js';
 
 export interface DaemonServerOptions {
   readonly session: Session;
@@ -279,16 +277,7 @@ export class DaemonServer {
   }
 
   private async call(client: ConnectedClient, id: string, method: string, raw: readonly unknown[]): Promise<DaemonFrame> {
-    if (!isMethod(method)) return { t: 'result', id, ok: false, error: `Unknown method ${method}` };
-    try {
-      // JSON has no undefined: a left-out argument arrives as null.
-      const args = parseArgs(method, raw.map((v) => (v === null ? undefined : v)));
-      const handler = HANDLERS[method] as (s: Session, ...a: unknown[]) => unknown;
-      const value = await runAsClient(client.id, () => handler(this.session, ...(args as unknown[])));
-      return { t: 'result', id, ok: true, ...(value === undefined ? {} : { value }) };
-    } catch (err) {
-      return { t: 'result', id, ok: false, error: errorText(err) };
-    }
+    return { t: 'result', id, ...(await dispatchCall(this.session, client.id, method, raw)) };
   }
 
   private tokenOk(token: string): boolean {

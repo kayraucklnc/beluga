@@ -16,6 +16,7 @@ import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
+import type { CompanionSlice } from '../companion/protocol.js';
 
 export type { CompactMark, ContextInfo } from './context-log.js';
 
@@ -344,7 +345,7 @@ export interface MyShare {
  * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -490,6 +491,8 @@ export type Action =
   | { type: 'attention'; attention: Attention }
   | { type: 'my_shares'; shares: readonly MyShare[] }
   | { type: 'identity'; selfId: string; isHost: boolean; home?: string }
+  /** Your paired phones (never keys) and the pairing open now (src/companion/host.ts). */
+  | { type: 'companion'; companion: CompanionSlice['companion'] }
   | CollabAction
   | WorkAction
   | NetworkAction
@@ -571,6 +574,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialGateway,
     ...initialBoard,
     ...initialPlans,
+    companion: { devices: [] },
   };
 }
 
@@ -812,6 +816,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return attend(state, action.attention);
     case 'my_shares':
       return { ...state, myShares: action.shares };
+    case 'companion':
+      return { ...state, companion: action.companion };
     case 'identity':
       return state.selfId === action.selfId && state.isHost === action.isHost && state.home === (action.home ?? state.home) ? state : { ...state, selfId: action.selfId, isHost: action.isHost, home: action.home ?? state.home };
     case 'review':

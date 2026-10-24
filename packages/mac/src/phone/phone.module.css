@@ -1,0 +1,142 @@
+/* Your phone: the sidebar footer's mark, its popover, and Settings › Phone (Phone.tsx). */
+
+.mark {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-3);
+}
+.mark:hover,
+.mark[data-state='open'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+/* Linked: the mark lights up in the accent, with a dot. */
+.mark.lit {
+  color: var(--accent);
+}
+.markDot {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--bg-sidebar, var(--bg));
+  border-radius: 50%;
+  background: var(--ok, #34c759);
+}
+
+.card.card {
+  width: 300px;
+  padding-bottom: 12px;
+}
+.head {
+  padding-bottom: 8px;
+  border-bottom: 0.5px solid var(--hairline);
+  font-size: 1.08rem;
+  font-weight: 650;
+}
+.dim {
+  color: var(--text-3);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+.empty {
+  padding: 10px 0;
+  color: var(--text-3);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.error {
+  color: var(--error);
+  font-size: 0.86rem;
+}
+
+.devices {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+.device {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.deviceMark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-3);
+}
+.deviceMark.lit {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.deviceText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.deviceName {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pairRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-top: 12px;
+}
+.pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 12px;
+  text-align: center;
+}
+.qr {
+  padding: 8px;
+  border-radius: 10px;
+  background: #fff;
+}
+.code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+.pairTitle {
+  font-size: 1.02rem;
+  font-weight: 650;
+}
+.fingerprint {
+  font-size: 1.9rem;
+  letter-spacing: 0.15em;
+}
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-self: stretch;
+  padding-top: 6px;
+}
+
+.inSettings {
+  padding: 4px 12px 12px;
+}

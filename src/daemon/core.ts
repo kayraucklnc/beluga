@@ -16,6 +16,7 @@ import { launchChat } from '../core/chat/launch.js';
 import { launchGateway } from '../core/gateway/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
 import { launchClaudeCode } from '../core/claude-code/launch.js';
+import { launchCompanion } from '../companion/launch.js';
 import { Store, initialState, prefsFrom } from '../core/store.js';
 import { createDemoFolders, createDemoWorkspaces, seedDemoContext, startDemoFriend, startDemoGuest } from '../demo.js';
 import { type Identity, deriveKeys, generateSecret, loadIdentity } from '../net/crypto.js';
@@ -303,6 +304,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopGateway = (): void => undefined;
   let stopChat = (): void => undefined;
   let stopBoard = (): void => undefined;
+  let stopCompanion = async (): Promise<void> => undefined;
   const start = (): void => {
     session.start();
     // The Beluga network (friends, groups, presence): only the daemon runs it, and only when it's turned on.
@@ -318,6 +320,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     // Tasks (the board): opened by worktrees, moved by pull requests, kept true by Claude.
     if (opts.network) stopBoard = launchBoard({ session, store, demo: Boolean(demo) });
     if (opts.network) stopClaudeCode = launchClaudeCode({ session, store, demo: Boolean(demo), notify: (e) => session.notifier.notify(e) });
+    // Your phone (docs/companion.md): pairing it, and its link. Its DHT node runs only while a phone is paired or a pairing is open.
+    if (opts.network) stopCompanion = launchCompanion({ session, store, identity, demo: Boolean(demo), log: (line) => console.warn(line) });
     if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => closing);
     if (!demo) return;
     // A pretend friend and a fake invite so every part of the UI has something to show.
@@ -348,6 +352,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     stopGateway();
     stopChat();
     stopBoard();
+    await stopCompanion();
     await stopNetwork();
     stopEarnings();
     stopClaudeCode();

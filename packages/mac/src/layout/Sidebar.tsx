@@ -14,6 +14,7 @@ import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
 import { PersonContextMenu } from '../dialogs/native/PersonMenu.js';
 import { RoomStatus } from '../dialogs/native/RoomPopover.js';
+import { PhoneMark } from '../phone/Phone.js';
 import { Projects, ProjectsAddMenu } from './ProjectTree.js';
 import { WorkspaceRow } from './workspace-row.js';
 import { UnreadSection } from './UnreadSection.js';
@@ -264,6 +265,7 @@ function SidebarFooter() {
   return (
     <div className={s.footer}>
       <RoomStatus label={label} tone={tone} />
+      <PhoneMark />
       <button type="button" className={s.invite} onClick={() => document.dispatchEvent(new CustomEvent('beluga:invite'))}>
         Invite
       </button>

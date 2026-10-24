@@ -17,6 +17,7 @@ import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import { TerminalSettings } from './TerminalSettings.js';
 import { NetworkSettings } from '../network/NetworkSettings.js';
+import { PhoneSettings } from '../phone/Phone.js';
 import { AccessSettings } from '../gateway/AccessSettings.js';
 import { UpdateAboutRow, UpdateSettingsGroup } from './UpdateSettings.js';
 
@@ -29,6 +30,7 @@ const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> 
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
   { id: 'environment', label: 'Environment', icon: 'lock' },
   { id: 'people', label: 'People & access', icon: 'people' },
+  { id: 'phone', label: 'Phone', icon: 'phone' },
   { id: 'about', label: 'About', icon: 'globe' },
 ];
 
@@ -347,7 +349,7 @@ function About() {
   );
 }
 
-const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, environment: EnvironmentSettings, people: People, about: About };
+const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, about: About };
 
 /** Beluga's settings: this window's look on the left panes, Beluga's shared settings on the rest. */
 export function Settings() {

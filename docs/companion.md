@@ -1,0 +1,296 @@
+# Beluga for phones (the companion)
+
+A phone app for one person: you. It shows what your Mac's Beluga is doing and lets you answer,
+ask and chat from it. It has no daemon, no Claude and no projects of its own: every screen is a
+view of your Mac, and every button is a call to your Mac. Android first; iOS from the same code.
+
+Code: `src/companion/` (the Mac side: pairing, the device link, views, what the phone may call),
+`packages/companion/` (the app). This page is the design; `CLAUDE.md` has the rules that keep the
+two in step.
+
+## What it is for
+
+| On the phone | Not on the phone |
+|---|---|
+| What needs you: approvals, Claude's questions, friends' requests, plan decisions, with a push notification | Code: no source files, no diffs, no code blocks (they show as a "code · 24 lines" chip) |
+| Live work: conversations, Claude's answers, sub-agents and their steps | Changes, review, merge, commit, terminals |
+| Outputs: screenshots, images, logs, test output, reports, PDFs (anything `isArtifact` calls an output) | The file browser of a project |
+| Plans as they're designed and run: milestones, tasks, decisions | Editing plans' structure (approve, decide and comment only) |
+| Asking your Mac to do anything (a new chat in a project, or a message in one), and getting the answer, images and files back | Settings beyond the phone's own (notifications, sign out) |
+| Chats with friends (DMs, channels, files, Ask Claude); asking a friend's Claude (`ask_person`) | Hosting rooms, invites |
+| Your Claude allowance (5-hour and weekly windows), and your friends' | Billing |
+
+Text is never blocked: a `.log`, `.txt`, `.json`, `.md`, `.csv` an agent wrote or a test produced
+opens in the text viewer. Only source code is held back, with the same rule the Mac's Outputs tab
+already uses (`src/core/claude-code/outputs.ts` `isArtifact`: pictures anywhere; text outside the
+project or in the folders outputs go to, like `.beluga/scratch`, `test-results`, `coverage`).
+Secrets (`isSecretPath`) are never sent, whatever the file.
+
+```beluga-graph
+{"title": "How the phone reaches your Mac", "summary": "One encrypted link, opened only while you look", "direction": "right",
+ "nodes": [
+  {"id": "ui", "type": "client", "label": "App screens", "sublabel": "React Native · packages/companion/app", "group": "phone"},
+  {"id": "worklet", "type": "service", "label": "Link worklet", "sublabel": "Bare · hyperdht + Noise", "group": "phone", "emphasis": true},
+  {"id": "phone", "type": "group", "label": "Your phone"},
+  {"id": "dht", "type": "external", "label": "Hyperswarm DHT", "sublabel": "finds your Mac, punches the hole"},
+  {"id": "host", "type": "service", "label": "CompanionHost", "sublabel": "src/companion/host.ts", "group": "mac", "emphasis": true},
+  {"id": "views", "type": "function", "label": "Views", "sublabel": "src/companion/views.ts", "group": "mac"},
+  {"id": "api", "type": "service", "label": "Daemon API", "sublabel": "src/ipc/api.ts, phone allowlist", "group": "mac"},
+  {"id": "mac", "type": "group", "label": "Your Mac"},
+  {"id": "push", "type": "external", "label": "Beluga Push", "sublabel": "blind relay → FCM / APNs"}
+ ],
+ "edges": [
+  {"from": "ui", "to": "worklet", "label": "RPC", "kind": "call"},
+  {"from": "worklet", "to": "dht", "label": "lookup", "kind": "flow"},
+  {"from": "worklet", "to": "host", "label": "Noise stream (pinned keys)", "kind": "data"},
+  {"from": "host", "to": "views", "label": "subscribed topics", "kind": "call"},
+  {"from": "host", "to": "api", "label": "allowed calls", "kind": "call"},
+  {"from": "host", "to": "push", "label": "sealed nudge", "kind": "async"},
+  {"from": "push", "to": "ui", "label": "notification", "kind": "async"}
+ ],
+ "steps": [
+  {"title": "1. You open the app", "text": "The worklet starts, looks your Mac up on the DHT and opens one Noise stream to it. Only your phone's key gets through the Mac's firewall.", "focus": ["worklet", "dht", "host"]},
+  {"title": "2. The screen subscribes", "text": "The phone names the topics on screen (home, one conversation). The Mac sends each as a small, finished view, and again when it changes.", "focus": ["host", "views"]},
+  {"title": "3. You act", "text": "Approve, answer, send: a call to the same API the Mac app uses, if it's on the phone's allowlist.", "focus": ["ui", "api"]},
+  {"title": "4. You put it away", "text": "Fifteen seconds in the background and the link closes and the DHT node stops: no radio, no battery.", "focus": ["worklet"]},
+  {"title": "5. Something needs you", "text": "The Mac seals a nudge to the phone's key and sends it through Beluga Push. The phone shows it; acting on it opens the link for a second.", "focus": ["host", "push", "ui"]}
+ ]}
+```
+
+## Signing in: your phone is a device of you
+
+Beluga has no accounts: you are your Ed25519 identity (`~/.beluga/identity.json`). The identity's
+private key never leaves the Mac. The phone gets its own key and a **device certificate** your
+identity signs, so it can prove it speaks for you without being able to sign as you.
+
+1. **Mac › Settings › Phone › Pair a Phone** opens a one-time pairing (`beluga://device#<secret>`,
+   128 bits, 10 minutes, one use) as a QR code, plus a short code to type (`K7QM-4XPA-R2TD`, as
+   friend codes, but stretched with Argon2id at 64 MiB so the phone can do it with sodium; works
+   for 10 minutes).
+2. The phone makes its device key (Ed25519, kept in the Android Keystore-wrapped encrypted store;
+   the iOS Keychain later), its link key pair (Noise) and its box key (X25519), all from one seed
+   it keeps (keyed BLAKE2b, `device-crypto.ts` `deviceKeys`).
+3. The phone dials the temporary key the secret derives (the technique of friend invitations,
+   `invitations.ts` `pairingSecrets`, with keyed BLAKE2b and labels `beluga-device-*` so the phone
+   needs only sodium), and the two sides trade proofs bound to that Noise handshake (`devProof`):
+   nobody without the secret can sit in the middle. Everything the phone does here is in
+   `src/companion/device-crypto.ts`, shared by both sides, sodium-universal and b4a only.
+4. The Mac shows "Pair Kayra's Pixel 9?" with the phone's name and a 4-emoji fingerprint the phone
+   shows too. You click Pair.
+5. The Mac answers with the **device certificate**
+   `{ v:1, owner: peerId, ownerKey, device: deviceKey, link: linkPublicKey, box: x25519, name, platform, issuedAt }`
+   signed by the identity (`signText('beluga-device-v1', canonical(cert))`; the phone checks it with
+   sodium's `crypto_sign_verify_detached`, the raw key being the SPKI's last 32 bytes), the Mac's companion
+   address, your name and profile. Both keep it: the Mac in `~/.beluga/devices.json` (0600), the
+   phone in its store.
+
+From then on the phone dials your Mac's **companion address** (stable, HKDF of your identity,
+`'companion-v1'`, separate from the mesh address so it works whether or not the network is on), and
+the Mac's firewall lets in only link keys of certificates it issued and hasn't revoked. The Noise IK
+handshake pins both ends: the phone knows it reached your Mac, the Mac knows which phone it is.
+
+**Removing a phone** (Settings › Phone, or Sign Out on the phone) deletes the certificate: the link
+drops at once and the key is refused from then on. A lost phone is cut off from the Mac in one click.
+Up to 4 phones.
+
+Friends never see the phone. To them it is still you on your Mac; a chat message you send from the
+phone is sent by your Mac, signed by your identity.
+
+## The link
+
+One Noise stream (`@hyperswarm/secret-stream` over hyperdht's UDX), framed as today's transport
+(`[u32 length][u8 kind][payload]`), JSON messages validated by `src/companion/protocol.ts`:
+
+| Phone → Mac | Mac → Phone |
+|---|---|
+| `hello {v, app, platform, topics}` | `welcome {v, min, mac, me}` (or close 4002 "update") |
+| `sub {topics}`: what's on screen now | `view {topic, rev, data}`: a finished view, replacing the last |
+| `call {id, method, args}`: an API call on the allowlist | `result {id, ok, value \| error}` |
+| `get {id, ref, variant: thumb \| full \| text, off}` | `chunk {id, off, b64, eof, size, mime}` |
+| `push {platform, token, relayKey}` (register for notifications) | `nudge {kind, title, body, topic}` (while linked, in place of a push) |
+| `put {id, name, mime, size, off, b64, eof}`: a photo or file for the Mac, in pieces | `result {id, value: {received} \| {ref}}`: the last piece's `up:` ref |
+| `bye` | `bye {reason}` |
+
+**Views, not state.** The Mac's shared state is several MB and full of things the phone mustn't
+show. The phone never sees it: `src/companion/views.ts` turns it into small views per topic, each
+already cut down for the phone (code stripped, steps in words, paths as opaque refs):
+
+- `home`: the Mac (name, awake), your usage, what needs you, what's running now, recent outputs,
+  unread counts.
+- `work`: projects and their conversations (title, status, last line).
+- `conv:<channel>`: one conversation: turns (your messages, Claude's answers), live step, sub-agents
+  (title, status, steps, outputs), outputs, its pending question or approval.
+- `plans` and `plan:<id>`: milestones, tasks and their status, decisions waiting.
+- `chats` and `chat:<conversation>`: friends' DMs and channels.
+- `people`: friends, presence, their usage and what they let your Claude do.
+
+A view is sent whole when it changes (by a hash), at most every 500 ms per topic: whole views are
+simpler than patches and can't drift. A conversation view carries its last 40 turns; older ones come
+with `call companion.older`.
+
+**Files** travel only as refs the Mac handed out in a view (`out:<random>`), resolved on the Mac,
+checked again with `isArtifact` and `isSecretPath` before a byte is read. Images come first as a
+thumbnail (longest side 640 px, JPEG, made with `sips` and cached), the full image only when you open
+it. Text comes as text (the first 256 KB, then more as you scroll; logs that grow follow their tail).
+Everything is cached on the phone by checksum, so nothing is fetched twice.
+
+**Calls.** The phone calls the daemon's own API (`src/ipc/api.ts`), validated by the same zod
+schemas, through one allowlist: `src/companion/coverage.ts` classifies **every** API method as
+`phone` or `mac`. Anything `mac` (git, terminals, files editing, settings…) is refused before it is
+parsed. The type is `Record<Method, …>`, so a new API method doesn't compile until someone decides.
+
+**Asking from the phone** (`src/ipc/companion-api.ts`, all `phone`):
+
+- `companion.ask {target: {project} | {topic}, text, files?}` → `{topic}`: a new chat in a project
+  (what New Chat does on the Mac, then `session.submit`) or a message in a conversation you can
+  write in. `files` are `up:` refs from `put` (25 MB a file, 10 a message): pictures go where
+  pasted images go (`attachments.ts`, made smaller if they're too big for Claude), other files are
+  named by their path in `~/.beluga/attachments/phone`. A ref works only for the phone that sent it.
+- `companion.post {conversation, text, files?, ask?}`: a friends' chat message, files taken in as
+  chat files.
+- `companion.askPerson {peerId, text, needs?, project?}` → `{topic, task}`: a friend's Claude, as
+  from their card on the Mac (`gateway.ask`; their approval and trust rules apply). It reads as the
+  conversation `conv:task:<id>`: what you asked, their Claude's steps and answer, its files.
+- `companion.signOut`: the calling phone's own certificate goes (never another's), its link closes.
+
+**Answering.** Every needs-you item carries its buttons as calls (`actions`), and, when it takes
+picks or words, an `answer` template: call `method` with `args` after putting the answer at
+`slot` (a path into the args; several picks joined with `join`). Claude's questions use
+`questions.pick` for the earlier questions of a prompt and `questions.answer` for the last; a
+friend's Claude's question `gateway.answer`; a milestone sent back `plans.sendBack`. Someone at the
+door with your link: `invites.letIn` / `invites.decline`; someone asking to join a channel you
+run: `network.groups.approve` / `decline`. Nothing appears without a way to answer it.
+
+**Typed calls.** `src/companion/calls.ts` `PhoneCalls`: every `phone` method with its argument
+tuple (the API's own zod) and its result; the app imports it rather than keeping a list.
+
+## Battery
+
+The phone holds no connection it isn't using.
+
+- **Open only while you look.** The worklet dials when the app comes to the front and closes 15 s
+  after it goes to the background (the grace covers a quick app switch). Then the DHT node is
+  destroyed: no UDP, no keepalives, no wakeups. Coming back is about one second (the DHT lookup and
+  the handshake; the Mac's last direct address is tried first, and on the same Wi-Fi hyperdht
+  connects over the LAN).
+- **Quiet while open.** One keepalive every 20 s (UDP NAT mappings on mobile networks last about
+  30 s). The Mac only sends the topics on screen, coalesced to one view per 500 ms; nothing is
+  streamed character by character. Thumbnails before full images, cached by checksum.
+- **No polling, ever.** When the app is closed it learns things only from push.
+- **Push wakes it, briefly.** Something that needs you is a high-priority push; anything else is
+  normal priority with a collapse key, so Android batches it and never wakes the radio for it.
+  Approve or reply from the notification opens the link headless, makes one call and closes it again
+  (a few seconds of radio).
+- **The Mac decides when to push.** Only when you're not at the Mac (its idle time over 2 minutes,
+  or the screen locked or asleep), and never for what you're already looking at on the phone. While
+  linked, the Mac sends a `nudge` in-band instead.
+
+## Notifications: Beluga Push
+
+Android needs Firebase Cloud Messaging (and iOS needs APNs) to wake an app; both need a server
+holding credentials. Beluga Push is that server and nothing more: a stateless relay (a Cloudflare
+Worker), so the peer-to-peer design holds.
+
+- The phone registers its FCM token with the relay and gets a `relayKey`; it gives the Mac
+  `{token, relayKey}` over the link. Only someone holding the key can push to that phone.
+- The Mac seals each notification to the phone's box key (`sealTo`, X25519 + AES-256-GCM) and posts
+  `{token, sealed, priority, collapse}` signed with the relay key. The relay sees a token and
+  ciphertext; FCM sees ciphertext; the phone opens it (an FCM data message, decoded in the app; on
+  iOS a Notification Service Extension).
+- Without the relay (not set up, or you turn it off), the app works the same while open; it just
+  can't tell you anything while closed.
+
+What notifies (each can be turned off on the phone): **Needs you** (approvals, Claude's questions,
+friends' requests, plan decisions: with Approve / Decline or a reply right on the notification),
+**Done** (a conversation you asked from the phone finished), **Mentions** (friends' chats).
+
+## Using it: the screens
+
+Small screen, thumbs, one hand. Friendly and calm: soft pastels (sky, mint, peach, lavender,
+butter; rose for danger) as tinted backgrounds behind icons and chips, never glows or neon. Light
+and dark themes follow the phone's own setting, or what you pick in Settings › Appearance
+(System, Light or Dark). Dark is the Mac app's own dark grey (`#1e1e21`, cards `#2a2a2e`), not black, with the same
+pastels toned down. Both themes take their neutrals from `packages/mac/src/styles/tokens.css`. Rounded cards, generous space, and icons everywhere (one rounded
+set, an icon in a tinted circle for every row, tab and kind), with one word rather than a sentence.
+Motion is smooth and purposeful: springs, shared transitions and haptics when something is
+committed, and no decorative loops.
+
+**The surface stays simple.** Each screen shows only its main action. Everything else is one tap
+away, always in the same place: the ••• button or a long press opens a sheet (Always allow,
+details, Open on your Mac, the model and project in Ask). Settings has the basics on top and
+Advanced at the bottom. Learn it once and it works everywhere.
+
+- **Home**: your Mac at the top (a small status dot: linked, away, asleep), and your allowance as
+  two soft progress bars (5 hours and week, each with its percentage and reset time). Then **Needs you** as a
+  stack of cards: swipe right to approve, left to decline, tap to read it whole, long-press for
+  Always. Then **Running now**: each live conversation as a card with its step ticking over and its
+  sub-agents as dots. Then **Outputs**: the newest images and files, a strip you swipe.
+- **Work**: projects, then conversations. A conversation reads as cards: your message, Claude's
+  answer (code folded into chips), the live step. Sub-agents are a row of chips; tap one for a sheet
+  with its steps and its outputs as a grid. Images open full screen from where they are (shared
+  transition): pinch, swipe between them, swipe down to put back. Text files open in a reader with
+  search, wrap and "follow" for logs.
+- **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes
+  (a project, an open conversation, or a friend's Claude) as chips above the keyboard. Attach a photo
+  or a file from the phone. The answer comes back into that conversation, with a notification if you
+  left.
+- **Plans** (in Work and on Home when one runs): milestones as a vertical timeline, tasks as rows
+  with their state, decisions as cards like Needs you.
+- **Chats**: your friends' DMs and channels, as on the Mac, with photos and files both ways and
+  Ask Claude.
+- **People**: friends, their presence and allowance; tap one for Message, Ask their Claude, Take a
+  screenshot of their desktop.
+
+Everything has a state for "your Mac is asleep": the last views stay (cached on the phone, marked
+"as of 10:42"), actions wait in a small outbox and go when the Mac answers (or you discard them).
+
+## On the Mac
+
+- **The sidebar's footer** shows a phone mark when a phone is paired: lit with a dot while it's
+  linked, outlined when it's away ("Pixel 9 · last seen 12 min ago" on hover). Click: the Phone
+  popover (the devices, Pair a Phone…, Remove).
+- **Settings › Phone**: pair (QR and code), the devices (name, platform, app version, last seen,
+  notifications on or off), Remove, and Beluga Push (on by default once set up).
+- **Shared state**: `companion: { devices: DeviceView[] }` (`linked`, `lastSeen`, `push`), never keys.
+
+## Staying in step with the Mac app
+
+The Mac app changes quickly; the phone must not fall behind silently.
+
+1. **One API.** The phone calls `src/ipc/api.ts`, through `coverage.ts` (every method is `phone` or
+   `mac`; a missing one is a compile error and a failing test). Renaming or changing a method's
+   arguments changes it for both.
+2. **Views are code next to the state.** `views.ts` reads `DomainState` directly: a change to the
+   state that breaks a view breaks the typecheck. `tests/companion-views.test.ts` snapshots the views
+   of the demo state, so a change that alters what the phone shows shows up in review.
+3. **One protocol file, imported by both.** The app imports `src/companion/protocol.ts` from this
+   repo (Metro `watchFolders`): within one commit the two can't disagree.
+4. **Versions across releases.** `COMPANION_PROTO = { major, minor }`. Within a major, only additive
+   changes: new topics, new fields, new needs-you kinds. The phone ignores what it doesn't know, and
+   draws an unknown needs-you item as a generic card with "Open on your Mac". A breaking change bumps
+   the major; the Mac keeps answering the previous major for one release, and the phone says "Update
+   Beluga on your Mac" (or "Update the app") rather than misbehaving.
+5. **CLAUDE.md** says it in words for every change (Claude reads it before working here).
+
+## Phases
+
+1. **This branch**: the contract (`protocol.ts`, `coverage.ts`), the Mac side (pairing, devices,
+   `CompanionHost`, views, the footer mark, Settings › Phone), the app with Home, Work, a
+   conversation, outputs, Needs you, Ask, Chats and People against a demo Mac, and the link worklet.
+2. **Notifications**: Beluga Push (the Worker, a Firebase project), notification actions, Done and
+   Mentions.
+3. **iOS**: the same app; Keychain, APNs, the Notification Service Extension.
+4. **Later**: screen sharing (ScreenCaptureKit → H.264 over the same link, on demand only), voice
+   asks, a home-screen widget for usage and Needs you, other agents' allowance next to Claude's
+   (the usage view is a list of providers, not one).
+
+## Risks
+
+- **Bare on Android.** The worklet runs Holepunch's Bare runtime (`react-native-bare-kit`, as Keet
+  does) so hyperdht and its native UDP run unchanged on the phone. If that fails on a device, the
+  fallback is the Mac's Cloudflare relay (already in `auto`): the phone dials it over WSS with the
+  same frames, sealed with the device keys.
+- **A sleeping Mac can't answer.** The phone shows the last views and queues actions. Keeping the
+  Mac awake while plugged in and Claude is working is already the Mac's choice to make, not the
+  phone's.
+- **Push needs a server.** Beluga Push sees which phone tokens get pushed, and when; never what.

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "paths": { "zod": ["../node_modules/zod"], "zod/*": ["../node_modules/zod/*"] }
+  },
+  "files": ["link.ts", "../../../src/net/hyperdht.d.ts", "../../../src/companion/modules.d.ts"]
+}

@@ -13,6 +13,7 @@ import { PLANS_API } from './plans-api.js';
 import { GIT_API } from './git-api.js';
 import { VIEWS_API } from './views-api.js';
 import { FILES_EDIT_API } from './files-api.js';
+import { COMPANION_API } from './companion-api.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -316,6 +317,8 @@ export const API = {
   ...VIEWS_API,
   // ---- your workspace's files: searching their contents, editing, formatting (files-api.ts)
   ...FILES_EDIT_API,
+  // ---- your phone: pairing it, removing it, what it asks for (companion-api.ts)
+  ...COMPANION_API,
 } as const;
 
 export type Api = typeof API;
