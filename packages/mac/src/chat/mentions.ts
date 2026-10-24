@@ -1,20 +1,21 @@
 import type { FsEntry } from '../../../../src/protocol.js';
 import { friendMention } from '../../../../src/ui/suggest.js';
+import { type TaskMention, taskByKey } from '../../../../src/shared/task-refs.js';
 
 /**
- * "@mia", "@bob-api", "@add-auth", "@src/", "@src/auth.ts": who or what a mention in a message
+ * "@mia", "@bob-api", "@add-auth", "@src/", "@src/auth.ts", "@BLG-24": who or what a mention in a message
  * names. A mention that names something real is drawn as a pill (in the message box and in the
  * conversation) and does something when clicked; anything else stays text. Plain data.
  */
 
 /** 'image' only marks "[image N]" in the message box (an image waiting to be sent). */
-export type MentionKind = 'friend' | 'claude' | 'project' | 'workspace' | 'folder' | 'file' | 'image';
+export type MentionKind = 'friend' | 'claude' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'image';
 
 export interface MentionRef {
   readonly kind: MentionKind;
   /** What the pill says (without the @). */
   readonly label: string;
-  /** The friend's peer id, the project's or the workspace's id. */
+  /** The friend's peer id, the project's or the workspace's id, the task's key. */
   readonly id?: string;
   /** A folder or file, relative to the worktree it was written in. */
   readonly path?: string;
@@ -30,6 +31,8 @@ export interface MentionWorld {
   readonly workspaces: ReadonlyArray<{ readonly label: string; readonly id: string }>;
   /** A folder's entries in the worktree this message is about (undefined: not known yet). */
   readonly entries?: (dir: string) => readonly FsEntry[] | undefined;
+  /** Tasks on your board ("@BLG-24"); left out where a key might be someone else's. */
+  readonly tasks?: readonly TaskMention[];
 }
 
 /** "@" then a name or a path; it ends at a space (trailing punctuation isn't part of it). */
@@ -67,6 +70,8 @@ export function resolveMention(token: string, world: MentionWorld): MentionRef |
   if (ws) return { kind: 'workspace', label: token, id: ws.id };
   const project = world.projects.find((p) => lower(p.name) === t);
   if (project) return { kind: 'project', label: project.name, id: project.id };
+  const task = world.tasks ? taskByKey(token, world.tasks) : undefined;
+  if (task) return { kind: 'task', label: task.key, id: task.key };
   return pathRef(token, world);
 }
 
@@ -88,6 +93,13 @@ export function splitMentions(text: string, world: MentionWorld): MentionPiece[]
   }
   if (last < text.length) out.push({ text: text.slice(last) });
   return out;
+}
+
+/** The tasks the words name ("@BLG-24"), each once, in order. */
+export function tasksIn(text: string, world: MentionWorld): string[] {
+  if (!world.tasks?.length || !text.includes('@')) return [];
+  const keys = splitMentions(text, world).flatMap((p) => ('ref' in p && p.ref.kind === 'task' ? [p.ref.label] : []));
+  return [...new Set(keys)];
 }
 
 /** The link a mention becomes in a message's Markdown (the renderer draws it as a pill). */

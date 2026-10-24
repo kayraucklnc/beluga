@@ -22,6 +22,8 @@ import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, keepsRunning, mayLeaveProcesses } from '../workspaces/test-procs.js';
 import { belugaEnvBoth } from './beluga-env.js';
 import { planForHome } from './plans/model.js';
+import { findIssue } from './board/model.js';
+import { explainTaskMentions } from '../shared/task-refs.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -754,7 +756,7 @@ export class AgentHost {
     if (!lane.followUps || lane.runFrom !== from || body.plan || body.project) return false;
     const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
     const sent = lane.followUps({
-      prompt: body.prompt,
+      prompt: this.promptOf(body),
       requesterName: peerName(this.store.getState(), from),
       viaAgent: body.viaAgent,
       context: this.recentChat(body.channel),
@@ -783,7 +785,7 @@ export class AgentHost {
     const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
     let read = false;
     return {
-      prompt: body.prompt,
+      prompt: this.promptOf(body),
       requesterName: peerName(this.store.getState(), from),
       viaAgent: body.viaAgent,
       // The conversation is the run's own: what's said in the chat it has already.
@@ -981,7 +983,7 @@ export class AgentHost {
         ...(board?.needsDefinition && board.planApproved ? { planTask: { needsDefinition: board.needsDefinition, approved: board.planApproved } } : {}),
         ...(plans?.tools ? { planTools: plans.tools } : {}),
         ...(plans?.brief ? { planBrief: plans.brief } : {}),
-        prompt: body.prompt,
+        prompt: this.promptOf(body),
         requesterName,
         viaAgent: body.viaAgent,
         context: this.recentChat(body.channel),
@@ -1111,6 +1113,12 @@ export class AgentHost {
   private announceAgentFocus(absPath: string): void {
     const hit = this.deps.shares.locate(absPath);
     if (hit) this.send({ kind: 'focus', owner: this.selfId, share: hit.share, path: hit.path, actor: 'agent' }, this.deps.shares.isPrivate(hit.share) ? { to: this.selfId } : {});
+  }
+
+  /** The words Claude reads: each "@BLG-24" this board has says it's a task, and which ("@BLG-24 (task: Fix the login)"). */
+  private promptOf(body: BodyOf<'agent_request'>): string {
+    const board = this.store.getState().board;
+    return board.issues.length ? explainTaskMentions(body.prompt, (key) => findIssue(board, key)) : body.prompt;
   }
 
   private recentChat(channel = 'room'): string[] {

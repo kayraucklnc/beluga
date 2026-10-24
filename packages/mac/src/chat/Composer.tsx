@@ -22,6 +22,7 @@ import { useAttachments } from './use-attachments.js';
 import { MentionHighlighter } from './MentionHighlighter.js';
 import { useSuggestions } from './Suggestions.js';
 import { useMentionWorld, worktreeOf } from './Mention.js';
+import { MentionedTasks } from './MentionedTasks.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
@@ -137,9 +138,10 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   useEffect(() => {
     if (wsId && atDir !== undefined) void api.files.loadDir({ owner: state.selfId, share: shareNameOf(wsId), path: atDir });
   }, [wsId, atDir, state.selfId]);
-  const mentionWorld = useMentionWorld(channel);
+  // "@BLG-24": a task on your board (not in a workspace someone shared with you: their Claude has its own).
+  const mentionWorld = useMentionWorld(channel, { tasks: !shared });
 
-  // Suggestions as you type: commands, people and Claudes, workspaces, folders.
+  // Suggestions as you type: commands, people and Claudes, workspaces, folders, tasks.
   const suggestions: Suggestion[] = useMemo(
     () =>
       !buffer
@@ -153,8 +155,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             friends: state.network.friends,
             projects: state.projects.filter((p) => p.root),
             ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
+            ...(mentionWorld.tasks ? { tasks: mentionWorld.tasks } : {}),
           }),
-    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId, mentionWorld.tasks],
   );
   const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 
@@ -372,6 +375,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           </div>
         ) : null}
         {att.waiting}
+        <MentionedTasks text={buffer} world={mentionWorld} />
         <div className={s.inputWrap}>
           <MentionHighlighter text={buffer} world={mentionWorld} input={ref} className={s.input ?? ""} />
           <textarea
