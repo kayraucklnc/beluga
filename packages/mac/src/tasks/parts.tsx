@@ -1,7 +1,7 @@
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { liveFrom } from '@beluga/core/plans/progress.js';
 import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isArchived, isOpen, isStartable, openBlockers, progressOf, worktreeDoing } from '@beluga/core/board/model.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isArchived, isOpen, isStartable, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, IconButton, Tip, cx } from '../components/ui.js';
@@ -35,7 +35,7 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
   const blocked = useApp((s) => openBlockers(s.board, issue).length);
   const waitsOn = useApp((s) => openBlockers(s.board, issue).map((b) => `${b.key} ${b.title}`).join(', '));
   const blockedBy = useApp((s) => openBlockers(s.board, issue).map((b) => b.key).join(', '));
-  const last = issue.worktrees.at(-1);
+  const last = worktreeOf(issue);
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
   // What its Claude is doing right now, and the messages waiting for it (the head Claude's, yours).

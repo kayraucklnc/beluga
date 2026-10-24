@@ -322,6 +322,15 @@ export function worktreeDoing(issue: Pick<Issue, 'worktrees' | 'worktreeGone' | 
 /** Whether Start can start it: not finished (in review, merged into its plan, done) or canceled, and not in the Archive. */
 export const isStartable = (issue: Pick<Issue, 'status' | 'archivedAt'>): boolean => isOpen(issue.status) && !isFinished(issue.status) && !isArchived(issue);
 
+/** Where a task's work is: the worktree carrying it (Claude moved it along from there), else its own last one. */
+export const worktreeOf = (issue: Issue): string | undefined => issue.carriedBy ?? issue.worktrees.at(-1);
+
+/** The worktree does this task (it was made for it, or a milestone's shared one) or carries it. */
+export const worksOn = (issue: Issue, workspaceId: string): boolean => issue.carriedBy === workspaceId || issue.worktrees.at(-1) === workspaceId;
+
+/** Every task a worktree is linked to: the one it was made for, those it carries, a milestone's shared ones. */
+export const issuesOfWorkspace = (board: BoardState, workspaceId: string): Issue[] => board.issues.filter((i) => !isArchived(i) && worksOn(i, workspaceId));
+
 /** Tasks this one waits on that aren't finished. */
 export const openBlockers = (board: BoardState, issue: Issue): Issue[] => issue.blockedBy.map((id) => issueById(board, id)).filter((i): i is Issue => Boolean(i && isOpen(i.status)));
 

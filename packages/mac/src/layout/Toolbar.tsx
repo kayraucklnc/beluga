@@ -75,7 +75,7 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
         <NotificationBell />
         <IconButton
           icon="panelRight"
-          label={!fits ? 'No panel on a plan’s page: its chat is beside the plan' : prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'}
+          label={!fits ? (view.kind === 'plan' ? 'No panel on a plan’s page: its chat is beside the plan' : 'No panel here: this page has the whole window') : prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'}
           {...(fits ? { keys: `⌥${mod()}0` } : {})}
           active={fits && prefs.inspector}
           disabled={!fits}
