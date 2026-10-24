@@ -309,6 +309,13 @@ export function findIssue(board: BoardState, ref: string): Issue | undefined {
 /** The task a workspace (worktree) is doing, if any. */
 export const issueForWorkspace = (board: BoardState, workspaceId: string): Issue | undefined => board.issues.find((i) => i.worktrees.includes(workspaceId));
 
+/** Where a task's work is: the worktree carrying it (Claude moved it along from there), else its own last one. */
+export const worktreeOf = (issue: Issue): string | undefined => issue.carriedBy ?? issue.worktrees.at(-1);
+
+/** Every task a worktree is linked to: the one it was made for, those it carries, a milestone's shared ones. */
+export const issuesOfWorkspace = (board: BoardState, workspaceId: string): Issue[] =>
+  board.issues.filter((i) => !isArchived(i) && (i.carriedBy === workspaceId || i.worktrees.at(-1) === workspaceId));
+
 /** Tasks this one waits on that aren't finished. */
 export const openBlockers = (board: BoardState, issue: Issue): Issue[] => issue.blockedBy.map((id) => issueById(board, id)).filter((i): i is Issue => Boolean(i && isOpen(i.status)));
 

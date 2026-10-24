@@ -133,7 +133,8 @@ export const forgetChangeAsk = (): void => void (changeAsk = undefined);
 export const PLAN_CHAT_TOGGLE = 'beluga:plan-chat';
 
 export const togglePanel = (view: View): void => {
-  if (!panelFits(view)) return void document.dispatchEvent(new CustomEvent(PLAN_CHAT_TOGGLE));
+  if (view.kind === 'plan') return void document.dispatchEvent(new CustomEvent(PLAN_CHAT_TOGGLE));
+  if (!panelFits(view)) return;
   panelChosen();
   setPrefs({ inspector: !getPrefs().inspector });
 };

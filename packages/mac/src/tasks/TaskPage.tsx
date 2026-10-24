@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById, worktreeOf } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
@@ -224,7 +224,7 @@ function GoneBanner({ issue }: { issue: Issue }) {
  * so the page offers no Start (starting afresh is ⋯ › Start).
  */
 function useTaskWorktree(issue: Issue): { readonly ws: Workspace | undefined; readonly live: Workspace | undefined; readonly had: boolean } {
-  const last = issue.worktrees.at(-1);
+  const last = worktreeOf(issue);
   const ws = useApp((s) => (last ? findWorkspace(s.projects, last) : undefined));
   const live = ws && !ws.archived ? ws : undefined;
   const had = Boolean(ws) || issue.worktrees.length > 0 || issue.activity.some((a) => a.kind === 'worktree');
