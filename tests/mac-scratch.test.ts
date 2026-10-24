@@ -15,6 +15,8 @@ describe('Scratch tab model', () => {
   it('knows a picture, a PDF, JSON, Markdown and the rest', () => {
     expect(fileKind('.context/a.PNG')).toBe('image');
     expect(fileKind('.context/b.pdf')).toBe('pdf');
+    expect(fileKind('.beluga/scratch/run.MP4')).toBe('video');
+    expect(fileKind('.beluga/scratch/clip.webm')).toBe('video');
     expect(fileKind('.context/r.json')).toBe('json');
     expect(fileKind('.context/notes.md')).toBe('markdown');
     expect(fileKind('.context/log.txt')).toBe('text');

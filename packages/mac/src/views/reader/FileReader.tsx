@@ -154,7 +154,7 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
     </Button>
   ) : undefined;
   if (viewer.content === BINARY_TEXT) {
-    return <Empty icon="file" title="No preview for this kind of file" detail="It isn’t text, a picture or a PDF." action={escape ? <EmptyActions>{escape}</EmptyActions> : undefined} />;
+    return <Empty icon="file" title="No preview for this kind of file" detail="It isn’t text, a picture, a PDF or a video. Open it with its app instead." action={escape ? <EmptyActions>{escape}</EmptyActions> : undefined} />;
   }
   const large = markdown && viewer.content.length > LARGE_MARKDOWN;
   const json = mode === 'rendered' ? prettyJson(viewer.path, viewer.content) : undefined;
