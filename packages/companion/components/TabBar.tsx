@@ -42,8 +42,9 @@ export function TabBar({ state, navigateToTab, insets }: BottomTabBarProps) {
         <View>
           <Icon color={on ? color.text : color.text3} size={22} strokeWidth={on ? 2.3 : 2} />
           {badge > 0 ? (
-            <View style={{ position: 'absolute', top: -5, right: -11, minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: name === 'index' ? tint.peach : tint.sky, borderWidth: 2, borderColor: color.bar }}>
-              <Text style={{ color: name === 'index' ? ink.peach : ink.sky, fontSize: 10, fontWeight: '800' }}>{badge > 9 ? '9+' : badge}</Text>
+            <View style={{ position: 'absolute', top: -5, right: -11, minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: name === 'index' ? ink.peach : ink.sky, borderWidth: 2, borderColor: color.bar }}>
+              {/* Solid in both themes: dark's tints are see-through, and a count over an icon must read at a glance. */}
+              <Text style={{ color: color.bar, fontSize: 10, fontWeight: '800' }}>{badge > 9 ? '9+' : badge}</Text>
             </View>
           ) : null}
         </View>
