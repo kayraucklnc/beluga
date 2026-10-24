@@ -75,7 +75,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
     case 'notify':
       return {
         title: 'Settings › Notifications',
-        intro: ['Beluga tells you when something needs you, on the desktop and in the inbox (top right).', 'Nothing is announced about the conversation you are looking at.', ''],
+        intro: ['Beluga tells you when something needs you, on the desktop and in the inbox (top right).', 'In the conversation you are looking at, only a long run of yours finishing is announced.', ''],
         options: [
           { id: 'n-desktop', label: 'Desktop notifications', hint: `${onOff(p.notify.desktop)}${sw}` },
           { id: 'n-sound', label: 'Sound', hint: `${onOff(soundOn(p.notify))}${sw}` },

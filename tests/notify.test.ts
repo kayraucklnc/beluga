@@ -56,6 +56,7 @@ describe('placeName', () => {
     const s = apply(base(), { type: 'shared_add', ws: sharedWs('view') });
     expect(placeName(s, 'ws:sw1')).toBe('api-fix');
     expect(placeName(base(), 'ws:nope')).toBe('a workspace');
+    expect(placeName(base(), 'mac:assistant')).toBe('Your Mac');
   });
 });
 
@@ -262,6 +263,47 @@ describe('Notifier', () => {
     vi.runAllTimers();
     expect(store.getState().inbox).toHaveLength(1);
     expect(desktop).toHaveBeenCalledTimes(1);
+  });
+
+  describe('a long run ending in the conversation you are looking at', () => {
+    const at = (requestId: string, event: 'queued' | 'started' | 'done', ts: number, text = 'ok'): void =>
+      store.dispatch({ type: 'agent_event', owner: 'me', requestId, requester: 'me', event, text, ts, channel: 'ws:w1' });
+    const watching = (state?: DomainState): void => {
+      start(state);
+      screen.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    };
+
+    it('reaches the desktop, not the bell', () => {
+      watching();
+      at('r1', 'started', 1_000);
+      at('r1', 'done', 1_000 + 25_000, 'shipped');
+      vi.runAllTimers();
+      expect(store.getState().inbox).toEqual([]);
+      expect(desktop).toHaveBeenCalledTimes(1);
+      expect(desktop.mock.calls[0]![0]).toMatchObject({ title: 'Claude finished in add-auth', body: 'shipped', channel: 'ws:w1' });
+    });
+
+    it('stays quiet for a quick one, while more waits its turn, and when switched off', () => {
+      watching();
+      at('r1', 'started', 1_000);
+      at('r1', 'done', 5_000);
+      at('r2', 'started', 10_000);
+      at('r3', 'queued', 11_000);
+      at('r2', 'done', 40_000);
+      vi.runAllTimers();
+      expect(desktop).not.toHaveBeenCalled();
+
+      at('r3', 'started', 41_000);
+      at('r3', 'done', 70_000);
+      vi.runAllTimers();
+      expect(desktop).toHaveBeenCalledTimes(1);
+
+      store.dispatch({ type: 'prefs', prefs: { notify: { ...store.getState().prefs.notify, doneHere: false } } });
+      at('r4', 'started', 80_000);
+      at('r4', 'done', 120_000);
+      vi.runAllTimers();
+      expect(desktop).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('respects per-kind toggles and the desktop switch', () => {

@@ -31,6 +31,8 @@ export const NotifySettings = z.object({
   madeSounds: z.array(z.number().int().min(0).max(0xffffffff)).max(12).default([]),
   /** Claude finished (or stopped) in a workspace you're not looking at. */
   done: z.boolean().default(true),
+  /** Also when it's the conversation you're looking at: a run of yours that took a while, once nothing else runs there. */
+  doneHere: z.boolean().default(true),
   /** Claude asks a question, proposes a plan, or needs an approval. */
   needsYou: z.boolean().default(true),
   /** Errors, merge conflicts, failed setup scripts. */
