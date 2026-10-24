@@ -24,6 +24,11 @@ export class BareTransport implements Transport {
   private readonly sockets = new Map<number, WebSocket>();
   private readonly pairs = new Map<number, (step: PairStep) => void>();
   private pairSeq = 0;
+  /** Asks for the media server's base URL, by id (the worklet answers `media`). */
+  private readonly medias = new Map<number, { resolve: (base: string) => void; reject: (e: Error) => void }>();
+  private mediaSeq = 0;
+  /** The base URL while this worklet runs (a new worklet has a new server). */
+  private media: Promise<string> | undefined;
 
   constructor(
     private readonly creds: () => Promise<{ pairing: Pairing; secret: DeviceSecret } | undefined>,
@@ -98,6 +103,13 @@ export class BareTransport implements Transport {
       case 'log':
         if (__DEV__) console.log('[link]', msg.line);
         return;
+      case 'media': {
+        const m = this.medias.get(msg.id);
+        this.medias.delete(msg.id);
+        if (msg.base) m?.resolve(msg.base);
+        else m?.reject(new Error(msg.error ?? 'Videos can’t play right now'));
+        return;
+      }
       default:
         return;
     }
@@ -161,6 +173,19 @@ export class BareTransport implements Transport {
     return this.paths.on(listener);
   }
 
+  mediaBase(): Promise<string> {
+    if (!this.worklet) return Promise.reject(new Error('Your Mac is away'));
+    this.media ??= new Promise<string>((resolve, reject) => {
+      const id = ++this.mediaSeq;
+      this.medias.set(id, { resolve, reject });
+      this.post({ op: 'media', id });
+    }).catch((e: Error) => {
+      this.media = undefined;
+      throw e;
+    });
+    return this.media;
+  }
+
   pair(input: PairInput, onStep: (step: PairStep) => void): { cancel(): void } {
     const id = ++this.pairSeq;
     this.pairs.set(id, onStep);
@@ -185,9 +210,17 @@ export class BareTransport implements Transport {
     this.sockets.clear();
     this.worklet?.terminate();
     this.worklet = undefined;
+    this.dropMedia();
+  }
+
+  private dropMedia(): void {
+    this.media = undefined;
+    for (const m of this.medias.values()) m.reject(new Error('Your Mac is away'));
+    this.medias.clear();
   }
 
   dispose(): void {
+    this.dropMedia();
     for (const ws of this.sockets.values()) ws.close();
     this.sockets.clear();
     this.worklet?.terminate();

@@ -10,6 +10,9 @@ import { checkOnline } from './link/online';
 import type { Attempt, DeviceSecret, LinkHints, LinkPathName, LinkPhase, Pairing } from './link/rpc';
 import type { PairInput, PairStep, PathInfo, PhaseInfo, Transport } from './link/transport';
 import { secure } from './secure';
+import { Assembly, PIECE_TIMEOUT_MS } from './pieces';
+import { fileSink, memorySink, type Sink } from './sink';
+import { mediaPath } from './media';
 
 /**
  * The phone's one store: which Mac, the link's state, the views on screen (and the last ones,
@@ -61,7 +64,7 @@ export interface OutboxItem {
 
 export interface FileState {
   readonly status: 'loading' | 'ready' | 'error';
-  /** Pictures: a data: URI. */
+  /** Pictures: a file:// URI in the cache (full pictures on the phone) or a data: URI. */
   readonly uri?: string;
   /** Text files: what has come so far. */
   readonly text?: string;
@@ -82,7 +85,8 @@ export interface Toast {
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 /** A terminal's output or status, as the Mac sends it (1.7). */
 export type TermFrame = Extract<MacFrame, { t: 'term_data' | 'term_status' }>;
-type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number };
+/** A fetch in flight. Pictures come piece by piece (`asm` asks for the next), into `sink`; `timer` fails it if a piece doesn't come. */
+type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number; asm?: Assembly; sink?: Sink; timer?: ReturnType<typeof setTimeout> };
 
 const APP = 'beluga-companion/0.16.0';
 const PLATFORM: 'android' | 'ios' = Platform.OS === 'ios' ? 'ios' : 'android';
@@ -334,6 +338,7 @@ class Store {
     this.pending.clear();
     for (const [id, f] of this.fetches) {
       this.fetches.delete(id);
+      this.endFetch(f);
       if (this.files.get(f.key)?.status === 'loading') {
         this.deferred.set(f.key, { ref: f.ref, variant: f.variant, more: false });
         this.setFile(f.key, { status: 'error', got: 0, error: 'Your Mac is away' });
@@ -381,6 +386,7 @@ class Store {
         const fetch = this.fetches.get(f.id);
         if (fetch && !f.ok) {
           this.fetches.delete(f.id);
+          this.endFetch(fetch);
           this.setFile(fetch.key, { status: 'error', got: 0, error: f.error ?? 'Not available' });
         }
         return;
@@ -623,24 +629,79 @@ class Store {
     }
     const off = more ? (have?.got ?? 0) : 0;
     const id = this.seq++;
-    this.fetches.set(id, { key, ref, variant, parts: [], base: more ? (have?.text ?? '') : '', got: off });
-    this.setFile(key, { ...(have ?? { got: 0 }), status: 'loading' });
-    this.transport.send({ t: 'get', id, ref: ref as OutputView['ref'], variant, off });
+    const fetch: Fetch = { key, ref, variant, parts: [], base: more ? (have?.text ?? '') : '', got: off, ...(variant === 'text' ? {} : { asm: new Assembly() }) };
+    this.fetches.set(id, fetch);
+    this.setFile(key, { ...(have ?? { got: 0 }), status: 'loading', error: undefined });
+    this.ask(id, fetch, off);
+  }
+
+  /** Ask for a piece, and fail the fetch (with Retry on screen) if it doesn't come in time. */
+  private ask(id: number, fetch: Fetch, off: number): void {
+    if (fetch.timer) clearTimeout(fetch.timer);
+    fetch.timer = setTimeout(() => {
+      if (this.fetches.get(id) !== fetch) return;
+      this.fetches.delete(id);
+      this.endFetch(fetch);
+      this.setFile(fetch.key, { status: 'error', got: 0, error: 'Your Mac took too long to send it.' });
+    }, PIECE_TIMEOUT_MS);
+    this.transport?.send({ t: 'get', id, ref: fetch.ref as OutputView['ref'], variant: fetch.variant, off });
+  }
+
+  private endFetch(fetch: Fetch, keep = false): void {
+    if (fetch.timer) clearTimeout(fetch.timer);
+    fetch.timer = undefined;
+    if (!keep) fetch.sink?.drop();
   }
 
   private onChunk(f: MacFrame & { t: 'chunk' }): void {
     const fetch = this.fetches.get(f.id);
     if (!fetch) return;
+    if (fetch.asm) return this.onPicturePiece(f.id, fetch, fetch.asm, f);
     fetch.parts.push(f.b64);
     if (!f.eof) return;
     this.fetches.delete(f.id);
-    if (fetch.variant === 'text') {
-      const bytes = fromB64(fetch.parts.join(''));
-      const text = fetch.base + fromUtf8(bytes);
-      this.setFile(fetch.key, { status: 'ready', text, got: fetch.got + bytes.length, size: f.size, mime: f.mime });
-    } else {
-      this.setFile(fetch.key, { status: 'ready', uri: `data:${f.mime};base64,${fetch.parts.join('')}`, got: f.size, size: f.size, mime: f.mime });
+    this.endFetch(fetch);
+    const bytes = fromB64(fetch.parts.join(''));
+    const text = fetch.base + fromUtf8(bytes);
+    this.setFile(fetch.key, { status: 'ready', text, got: fetch.got + bytes.length, size: f.size, mime: f.mime });
+  }
+
+  /**
+   * A piece of a picture (BLG-106): kept, then the next asked for until the last, so a Retina
+   * screenshot or a big GIF comes whole (it used to stop at the first 192 KB, for ever).
+   */
+  private onPicturePiece(id: number, fetch: Fetch, asm: Assembly, f: MacFrame & { t: 'chunk' }): void {
+    const step = asm.add(f);
+    const fail = (error: string): void => {
+      this.fetches.delete(id);
+      this.endFetch(fetch);
+      this.setFile(fetch.key, { status: 'error', got: 0, error });
+    };
+    if (step.t === 'fail') return fail(step.error);
+    // Full pictures go to a file as they come; thumbnails are small.
+    fetch.sink ??= fetch.variant === 'full' ? fileSink(fetch.ref, f.mime) : memorySink();
+    fetch.sink.add(f.b64);
+    if (step.t === 'next') {
+      this.setFile(fetch.key, { status: 'loading', got: step.got, size: step.size, mime: f.mime });
+      return this.ask(id, fetch, step.off);
     }
+    this.fetches.delete(id);
+    this.endFetch(fetch, true);
+    try {
+      this.setFile(fetch.key, { status: 'ready', uri: fetch.sink.finish(f.mime), got: step.got, size: step.size, mime: f.mime });
+    } catch (e) {
+      fail((e as Error).message);
+    }
+  }
+
+  // ---- videos (BLG-100, BLG-103): streamed by the link worklet's loopback server
+
+  /** A URL the video player streams this output from, or why it can't (the demo, the Mac away). */
+  async mediaUrl(o: Pick<OutputView, 'ref' | 'name'>): Promise<string> {
+    const t = this.transport;
+    if (!t?.mediaBase) throw new Error('Videos play when the phone is linked to your Mac.');
+    if (this.state.phase !== 'open') throw new Error('Your Mac is away.');
+    return `${await t.mediaBase()}${mediaPath(o.ref, o.name)}`;
   }
 
   private setFile(key: string, s: FileState): void {

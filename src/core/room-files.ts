@@ -27,12 +27,27 @@ const DIR_CACHE_MS = 5_000;
 
 /**
  * Files the Mac app shows as themselves, by extension: images a document shows inline (SVG goes
- * in an <img>, where scripts never run) and PDFs its reader draws page by page.
+ * in an <img>, where scripts never run), PDFs its reader draws page by page, and videos it plays
+ * (BLG-100).
  */
-const DOC_IMAGE_TYPES: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf' };
+const DOC_IMAGE_TYPES: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+};
 export const MAX_DOC_IMAGE_BYTES = 10 * 1024 * 1024;
 /** PDFs are often bigger than a diagram (scans, slides). */
 export const MAX_DOC_PDF_BYTES = 40 * 1024 * 1024;
+/** A video plays from memory in the reader (a screen recording, a demo). */
+export const MAX_DOC_VIDEO_BYTES = 64 * 1024 * 1024;
 
 export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
@@ -245,7 +260,7 @@ export class RoomFiles {
   async readImageFile(at: Location): Promise<{ mediaType: string; bytes: Buffer }> {
     const mediaType = DOC_IMAGE_TYPES[path.extname(at.path).toLowerCase()];
     if (!mediaType) throw new Error('Not an image');
-    const max = mediaType === 'application/pdf' ? MAX_DOC_PDF_BYTES : MAX_DOC_IMAGE_BYTES;
+    const max = mediaType === 'application/pdf' ? MAX_DOC_PDF_BYTES : mediaType.startsWith('video/') ? MAX_DOC_VIDEO_BYTES : MAX_DOC_IMAGE_BYTES;
     return { mediaType, bytes: await fetchBytes(at, (to, b) => this.request(to, b), max) };
   }
 

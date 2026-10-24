@@ -33,6 +33,11 @@ export interface Transport {
   onPhase(listener: (phase: LinkPhase, detail?: string, info?: PhaseInfo) => void): () => void;
   /** How the link got through (the real link only). */
   onPath?(listener: (info: PathInfo) => void): () => void;
+  /**
+   * Where the video player streams outputs from (the real link only): the worklet's loopback server,
+   * http://127.0.0.1:<port>/<token> (src/companion/media-stream.ts). Rejects when it can't.
+   */
+  mediaBase?(): Promise<string>;
   /** Pair with a Mac (from a QR link or a typed code). */
   pair(input: PairInput, onStep: (step: PairStep) => void): { cancel(): void };
   dispose(): void;

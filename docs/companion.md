@@ -116,6 +116,24 @@ One Noise stream (`@hyperswarm/secret-stream` over hyperdht's UDX), framed as to
 | `term_input {term, data}` (1.7): keys typed on the phone | (the session's own echo, in `term_data`) |
 | `bye` | `bye {reason}` |
 
+**Files come in pieces, the phone asking for each.** One `get` is answered by one `chunk` of at most
+`COMPANION_PIECE` (192 KB) from `off`; the phone asks for the next offset until `eof`
+(`packages/companion/lib/pieces.ts`, BLG-106), writing a full picture to its cache as it comes
+(`lib/sink.ts`) and showing the thumbnail meanwhile, with how far it is. A piece that doesn't come
+in 20 s fails the fetch with words and Retry, never an endless spinner.
+
+**Videos stream** (BLG-100, BLG-103). The link worklet runs a small HTTP server on the phone's
+loopback (`127.0.0.1`, a random port and a random token in every URL;
+`src/companion/media-stream.ts`), and the player (expo-video) plays from it. Each range request is
+answered with pieces fetched over the link with the same `get {ref, 'full', off}`, so no protocol
+change: only what the player reads is fetched, two pieces ahead and no faster than it takes them,
+and what came is kept in a 48 MB cache (seeking back costs nothing). Nothing autoplays or loops; a
+video plays only when tapped and pauses when you swipe away, leave or put the app away. MP4, M4V and
+MOV play on both platforms, WebM on Android (iPhone says so); a codec the player lacks shows why.
+Nothing is transcoded. The Mac makes a video's thumbnail from its first frame (Quick Look). Android
+allows plain http only to 127.0.0.1 (`plugins/loopback-cleartext.js`), iOS only to local addresses
+(`NSAllowsLocalNetworking`).
+
 **Views, not state.** The Mac's shared state is several MB and full of things the phone mustn't
 show. The phone never sees it: `src/companion/views.ts` turns it into small views per topic, each
 already cut down for the phone (code stripped, steps in words, paths as opaque refs):
@@ -417,7 +435,9 @@ Advanced at the bottom. Learn it once and it works everywhere.
   what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
   worktree made; ••• › Merge… checks, merges and gets conflicts resolved; ••• › Files reads the
   worktree's files and ••• › Terminal is its terminal, shared with the Mac (BLG-42). Images open full screen from where they are (shared
-  transition): pinch, swipe between them, swipe down to put back. Text files open in a reader with
+  transition): pinch, swipe between them, swipe down to put back; GIFs animate. Videos show their
+  first frame with a play mark and stream when tapped, with the platform's controls (play, pause,
+  seek, full screen); Done gives the swipes back. Text files open in a reader with
   search, wrap and "follow" for logs.
 - **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes
   as one pill: **Your Mac** first and by default (a laptop), then a project, an open conversation,

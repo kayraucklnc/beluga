@@ -31,7 +31,12 @@
     },
     "ios": {
       "bundleIdentifier": "sh.ratel.beluga",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "web": {
       "bundler": "metro",
@@ -47,6 +52,13 @@
       "expo-secure-store",
       "expo-status-bar",
       "expo-font",
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": false,
+          "supportsPictureInPicture": false
+        }
+      ],
       [
         "expo-camera",
         {
@@ -73,7 +85,8 @@
             "minSdkVersion": 29
           }
         }
-      ]
+      ],
+      "./plugins/loopback-cleartext"
     ]
   }
 }

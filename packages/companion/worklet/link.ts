@@ -11,9 +11,11 @@
  * Bundled with bare-pack (npm run worklet:bundle); typechecked by npm run typecheck:worklet.
  */
 import b4a from 'b4a';
+import tcp from 'bare-tcp';
 import DHT from 'hyperdht';
 import { CompanionClient, DialError, PairRefused, pairDevice } from '../../../src/companion/client';
 import { type MessagePipe, dhtHealth } from '../../../src/companion/dial';
+import { type MediaSocket, PieceCache, serveMediaSocket, tokenOf } from '../../../src/companion/media-stream';
 import { deviceKeys, fromHex, hex, newSeed } from '../../../src/companion/device-crypto';
 import { KEEPALIVE_MS, type MacFrame, type PhoneFrame } from '../../../src/companion/protocol';
 import { encodeLine, type LinkHints, lineDecoder, type UiToWorklet, type Way, type WorkletToUi } from '../lib/link/rpc';
@@ -33,6 +35,35 @@ const pairings = new Set<number>();
 const puts = new Map<number, Uint8Array[]>();
 
 const dht = (): DHT => (node ??= new DHT());
+
+// ---- videos, streamed to the phone's player (src/companion/media-stream.ts)
+
+/** Pieces come over the link that's open now; what came is kept for seeking back and playing again. */
+const mediaCache = new PieceCache(async (ref, off) => {
+  const c = client;
+  if (!c) throw new Error('Your Mac is away');
+  const piece = await c.get(ref, 'full', off);
+  return { bytes: piece.bytes, size: piece.size, mime: piece.mime };
+});
+let media: Promise<string> | undefined;
+
+/** The loopback server, started on the first video and gone with the worklet: http://127.0.0.1:<port>/<token>. */
+function mediaBase(): Promise<string> {
+  media ??= new Promise<string>((resolve, reject) => {
+    const token = tokenOf(newSeed());
+    const server = tcp.createServer((socket) => serveMediaSocket(socket as unknown as MediaSocket, { token, cache: mediaCache }));
+    server.on('error', (e: Error) => reject(e));
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address()?.port;
+      if (port) resolve(`http://127.0.0.1:${port}/${token}`);
+      else reject(new Error('No port for videos'));
+    });
+  }).catch((e: Error) => {
+    media = undefined;
+    throw e;
+  });
+  return media;
+}
 
 // ---- the relay's WebSocket, opened by the screens' side (React Native has one, Bare has none)
 
@@ -219,6 +250,7 @@ ipc.on(
           return onFrame(msg.json);
         case 'close':
           puts.clear();
+          mediaCache.clear();
           client?.bye();
           client?.close();
           client = undefined;
@@ -234,6 +266,12 @@ ipc.on(
           return pair(msg);
         case 'ws.event':
           return onSocket(msg);
+        case 'media':
+          mediaBase().then(
+            (base) => post({ ev: 'media', id: msg.id, base }),
+            (e: Error) => post({ ev: 'media', id: msg.id, error: e.message }),
+          );
+          return;
         case 'pair.cancel':
           pairings.delete(msg.id);
           void quiet();
