@@ -433,7 +433,12 @@
   color: var(--text);
 }
 
-/* An image mentioned mid-sentence (it shows below the message). */
+/* An image someone sent, in the words: the message box's chip (ImageChip.tsx), not an underlined link. */
+.markdown a[data-image-chip] {
+  border-bottom: 0;
+}
+
+/* A Markdown image that can't show here (a web one, someone else's local path). */
 .markdown .imageRef {
   display: inline-flex;
   align-items: center;

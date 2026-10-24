@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useMemo, useRef } from "react";
-import { Icon } from "../components/Icon.js";
-import { IMAGE_REF } from "./image-refs.js";
+import { ImageChip } from "./ImageChip.js";
+import { IMAGE_REF, refOf } from "./image-refs.js";
 import {
   type MentionPiece,
   type MentionWorld,
@@ -15,11 +15,9 @@ function withImages(piece: MentionPiece): MentionPiece[] {
   for (const m of piece.text.matchAll(IMAGE_REF)) {
     const at = m.index ?? 0;
     if (at > last) out.push({ text: piece.text.slice(last, at) });
-    // "[image 2 · 142525-fpxw]": the pasted image it points at, a chip with the end of its name.
-    out.push({
-      raw: m[0],
-      ref: { kind: "image", label: m[2] ?? `image ${m[1]}` },
-    });
+    // "[2 …142525-fpxw]": the pasted image it points at, a chip with the end of its name.
+    const { n, name } = refOf(m);
+    out.push({ raw: m[0], ref: { kind: "image", label: name ?? `image ${n}` } });
     last = at + m[0].length;
   }
   if (last < piece.text.length) out.push({ text: piece.text.slice(last) });
@@ -89,10 +87,7 @@ export function MentionHighlighter({
         "ref" in p && p.ref.kind === "image" ? (
           <mark key={i} className={m.imageChip} data-mention={p.raw}>
             <span className={m.chipRoom}>{p.raw}</span>
-            <span className={m.chipFace}>
-              <Icon name="image" size={11} />
-              <span>{p.ref.label}</span>
-            </span>
+            <ImageChip className={m.chipFace} label={p.ref.label} />
           </mark>
         ) : "ref" in p ? (
           <mark

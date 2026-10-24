@@ -7,6 +7,7 @@ import { parseAttachmentHref } from '@beluga/shared/attachment-links.js';
 import { Icon } from '../components/Icon.js';
 import { type ChatImage, openLightbox } from './images.js';
 import { Thumb } from './ChatImages.js';
+import { ImageChip } from './ImageChip.js';
 import { imageSource, localImage, messageImages } from './md-images.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
@@ -195,16 +196,11 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
     a: ({ href = '', children }) => {
       const mention = parseMentionHref(href);
       if (mention) return <MentionPill mention={mention} />;
-      // An image mentioned mid-sentence: a small link that opens it full size.
+      // An image in the words: the chip the message box showed, a link that opens it full size.
       const image = parseAttachmentHref(href);
       if (image) {
         const label = /image \d+/.exec(String(children))?.[0] ?? 'image';
-        return (
-          <a href={href} className={s.imageRef} onClick={(e) => (e.preventDefault(), openLightbox([{ href, ...image, label }]))}>
-            <Icon name="image" size={11} />
-            {label}
-          </a>
-        );
+        return <ImageChip href={href} label={label} title={`Open ${label}`} onClick={(e) => (e.preventDefault(), openLightbox([{ href, ...image, label }]))} />;
       }
       return (
       <a
