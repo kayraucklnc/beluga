@@ -484,6 +484,9 @@ export function makeWorld(now = Date.now()): DemoWorld {
     state: 'running',
     topic: 'conv:beluga.onboarding',
     needsYou: [],
+    autonomy: 'gated',
+    parallel: 3,
+    running: 2,
     milestones: [
       { id: 'm1', title: 'The contract', state: 'done', criteria: ['protocol.ts with frames, topics and views', 'coverage.ts classifies every API method'], tasks: [
         { id: 'k1', title: 'Frames and topics', state: 'done' },
@@ -493,19 +496,19 @@ export function makeWorld(now = Date.now()): DemoWorld {
       { id: 'm2', title: 'The Mac side', state: 'running', criteria: ['Pair a phone from Settings', 'Only paired link keys get through'], tasks: [
         { id: 'k4', title: 'Pairing and the device certificate', state: 'done' },
         { id: 'k5', title: 'CompanionHost and the firewall', state: 'running', topic: 'conv:beluga.push' },
-        { id: 'k6', title: 'The footer\'s phone mark', state: 'todo' },
-      ] },
+        { id: 'k6', title: 'The footer\'s phone mark', state: 'blocked', blockedBy: ['k5'], why: 'Waits on CompanionHost and the firewall' },
+      ], dependsOn: ['m1'] },
       { id: 'm3', title: 'The app', state: 'running', criteria: ['Every screen against a demo Mac', 'Pairing feels like the Mac\'s onboarding'], tasks: [
         { id: 'k7', title: 'Home, Work and a conversation', state: 'done' },
         { id: 'k8', title: 'Make pairing feel like the Mac', state: 'running', mine: true, topic: 'conv:beluga.onboarding' },
         { id: 'k9', title: 'Outputs viewer', state: 'review' },
-        { id: 'k10', title: 'The link worklet', state: 'todo' },
-      ] },
+        { id: 'k10', title: 'The link worklet', state: 'ready', goal: 'hyperdht and the Noise link in a Bare worklet, so the app reaches the Mac on any network.', acceptance: ['Links over the LAN and over the internet', 'Closes 15 s after the app goes to the background'] },
+      ], dependsOn: ['m1'] },
       { id: 'm4', title: 'Notifications', state: 'waiting', criteria: ['Beluga Push relay', 'Approve from the notification'], tasks: [
-        { id: 'k11', title: 'The Worker', state: 'blocked' },
-        { id: 'k12', title: 'Notification actions', state: 'todo' },
-      ] },
-      { id: 'm5', title: 'iOS', state: 'todo', criteria: ['Keychain, APNs, the service extension'], tasks: [{ id: 'k13', title: 'Port the link to iOS', state: 'todo' }] },
+        { id: 'k11', title: 'The Worker', state: 'blocked', blockedBy: ['k5'] },
+        { id: 'k12', title: 'Notification actions', state: 'blocked', blockedBy: ['k11', 'k10'] },
+      ], dependsOn: ['m2', 'm3'] },
+      { id: 'm5', title: 'iOS', state: 'todo', criteria: ['Keychain, APNs, the service extension'], tasks: [{ id: 'k13', title: 'Port the link to iOS', state: 'later', blockedBy: ['k10'] }], dependsOn: ['m3'] },
     ],
   };
   const docsPlan: PlanView = {

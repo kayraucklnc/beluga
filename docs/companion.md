@@ -127,7 +127,9 @@ already cut down for the phone (code stripped, steps in words, paths as opaque r
   outputs), everything its worktree made (`outputs`: scratch files, reports, its Claude's and
   sub-agents' outputs, newest first), your queued messages (`queue`), where a merge started from the
   phone stands (`merge`), its pending question or approval.
-- `plans` and `plan:<id>`: milestones, tasks and their status, decisions waiting.
+- `plans` and `plan:<id>`: milestones, tasks and their status, decisions waiting. Since 1.5 a plan
+  carries how it runs (`autonomy`, `paused`, `parallel`, `running`), each milestone what it waits on
+  (`dependsOn`), each task its goal, acceptance, the tasks it waits on (`blockedBy`) and why.
 - `tasks` and `task:<id>` (1.3): the board by project and status (key, title, priority, who has
   it); a task's goal, acceptance with ticks, activity, worktree and pull request, and where it may
   be moved.
@@ -332,13 +334,17 @@ Advanced at the bottom. Learn it once and it works everywhere.
 - **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes
   as one pill: **Your Mac** first and by default (a laptop), then a project, an open conversation,
   or a friend's Claude. A project offers three icon chips, as the Mac's project home: **Worktree**
-  (the default: a new worktree with Claude on your words, then it opens), **Plan** (Claude drafts
-  milestones and tasks; the draft opens to approve) and **Question** (a read-only chat in its main
-  folder), with a small **Plan first** toggle beside Worktree (its Claude plans before it acts). Attach a photo
+  (the default: a new worktree with Claude on your words, then it opens), **Advanced plan**
+  (Beluga's Plans, `plans.create`: Claude drafts milestones, tasks and what waits on what; the draft
+  opens to approve) and **Question** (a read-only chat in its main folder). **Plan first** beside
+  Worktree is Claude Code's plan mode (it proposes before it acts), nothing to do with Advanced plans. Attach a photo
   or a file from the phone. The answer comes back into that conversation, with a notification if you
   left.
-- **Plans** (in Work and on Home when one runs): milestones as a vertical timeline, tasks as rows
-  with their state, decisions as cards like Needs you.
+- **Plans** (in Work and on Home when one runs): milestones as a vertical timeline (each says what it
+  runs after), tasks as rows with their state and what they wait on (tap one for its goal and what
+  done means), decisions as cards with their buttons (Approve or Discard a draft, pass a milestone's
+  gate), how many run side by side, and how it runs as one chip (Step by Step, Check-ins, Autopilot:
+  `plans.setAutonomy`).
 - **Chats**: your friends' DMs and channels, as on the Mac, with photos and files both ways and
   Ask Claude.
 - **People**: friends, their presence and allowance; tap one for Message, Ask their Claude, Take a

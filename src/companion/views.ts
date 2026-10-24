@@ -868,9 +868,28 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
       criteria: m.milestone.criteria.slice(0, 40).map((c) => clip(c, 1000)),
       tasks: m.tasks.slice(0, 100).map((t) => {
         const conv = t.worktree ? convTopic(`ws:${t.worktree}`) : undefined;
-        return { id: clip(t.task.id, 200), title: clip(t.issue?.key ? `${t.issue.key} ${t.task.title}` : t.task.title, 300), state: t.state, ...(t.forYou ? { mine: true } : {}), ...(conv ? { topic: conv } : {}) };
+        const goal = t.task.goal ? plainLine(t.task.goal, 1000) : '';
+        // What it still waits on while it can't start; the plan's wiring while it's a draft.
+        const waits = t.state === 'draft' || t.state === 'later' ? t.task.blockedBy : t.waitsOn;
+        return {
+          id: clip(t.task.id, 200),
+          title: clip(t.issue?.key ? `${t.issue.key} ${t.task.title}` : t.task.title, 300),
+          state: t.state,
+          ...(t.forYou ? { mine: true } : {}),
+          ...(conv ? { topic: conv } : {}),
+          ...(goal ? { goal } : {}),
+          ...(t.task.acceptance.length ? { acceptance: t.task.acceptance.slice(0, 20).map((a) => clip(plainLine(a, 400), 400)) } : {}),
+          ...(waits.length ? { blockedBy: waits.slice(0, 20).map((b) => clip(b, 200)) } : {}),
+          ...(t.why ? { why: clip(plainLine(t.why, 300), 300) } : {}),
+        };
       }),
+      ...(m.dependsOn.length ? { dependsOn: m.dependsOn.slice(0, 20).map((d) => clip(d, 200)) } : {}),
+      ...(m.autonomy !== plan.autonomy ? { autonomy: m.autonomy } : {}),
     })),
+    autonomy: plan.autonomy,
+    ...(plan.paused ? { paused: true } : {}),
+    parallel: plan.maxParallel,
+    running: progress.active.length,
     needsYou: needsYou(state)
       .filter((n) => n.topic === topic || (home && n.topic === home))
       .slice(0, 20),

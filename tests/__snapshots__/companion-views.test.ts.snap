@@ -926,6 +926,7 @@ Then protect \`/api/payments\`.",
     ],
   },
   "plan:pl_auth": {
+    "autonomy": "gated",
     "goal": "Protect the payment routes",
     "id": "pl_auth",
     "milestones": [
@@ -937,6 +938,9 @@ Then protect \`/api/payments\`.",
         "state": "draft",
         "tasks": [
           {
+            "acceptance": [
+              "tests pass",
+            ],
             "id": "t1",
             "state": "draft",
             "title": "requireUser middleware",
@@ -1084,6 +1088,8 @@ Then protect \`/api/payments\`.",
         "topic": "conv:ws:w1",
       },
     ],
+    "parallel": 2,
+    "running": 0,
     "state": "draft",
     "title": "Add auth",
     "topic": "conv:ws:w1",

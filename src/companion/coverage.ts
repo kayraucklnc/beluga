@@ -291,7 +291,7 @@ export const PHONE: Record<Method, Side> = {
   'plans.approve': 'phone',
   'plans.discard': 'phone',
   'plans.edit': 'mac',
-  'plans.setAutonomy': 'mac',
+  'plans.setAutonomy': 'phone',
   'plans.setPaused': 'mac',
   'plans.setParallel': 'mac',
   'plans.setTestsAt': 'mac',

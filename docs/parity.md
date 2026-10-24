@@ -387,7 +387,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation |
 | `plans.discard` | ✓ Discard Draft / Discard Changes on a plan's page |
 | `plans.edit` | ✓ editing a plan's outline (rename, criteria, move, remove, what waits on what) |
-| `plans.setAutonomy` | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu) |
+| `plans.setAutonomy` | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu); the phone plan page's autonomy chip (1.5) |
 | `plans.setPaused` | ✓ Pause / Resume on a plan's page |
 | `plans.setParallel` | ✓ a plan's ⋯ › Run at Once ▸ |
 | `plans.setTestsAt` | ✓ a plan's ⋯ › When to Run Tests ▸ (each milestone, or once at the end) |

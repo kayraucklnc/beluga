@@ -21,8 +21,9 @@ import { color } from '../lib/theme';
  * conversation, or a friend's Claude. The answer comes back into that conversation, which opens.
  *
  * In a project (1.5) it's what the Mac's project home offers, as three icon chips: a new worktree
- * with Claude on your words (the default; Plan mode beside it makes Claude plan first), a plan
- * Claude drafts for you to approve, or a question (a read-only chat in its main folder).
+ * with Claude on your words (the default; Plan first beside it is Claude Code's plan mode: it
+ * proposes a plan before it acts), an Advanced plan (Beluga's Plans: milestones, tasks and what
+ * waits on what, drafted for you to approve, then run on the board), or a question (read-only).
  */
 type Target = { kind: 'mac'; topic: Topic; label: string } | { kind: 'project'; id: string; label: string; icon?: string } | { kind: 'conv'; topic: Topic; label: string; project?: string; icon?: string } | { kind: 'friend'; id: string; name: string; label: string };
 const ICON: Record<Target['kind'], { Icon: typeof Folder; tone: Tone }> = { mac: { Icon: Laptop, tone: 'sky' }, project: { Icon: Folder, tone: 'butter' }, conv: { Icon: MessageSquare, tone: 'sky' }, friend: { Icon: Sparkles, tone: 'lavender' } };
@@ -32,7 +33,7 @@ const ASSISTANT: Topic = 'conv:mac:assistant';
 type Mode = 'worktree' | 'plan' | 'question';
 const MODES: ReadonlyArray<{ mode: Mode; label: string; Icon: typeof Folder; tone: Tone; hint: string }> = [
   { mode: 'worktree', label: 'Worktree', Icon: GitBranch, tone: 'mint', hint: 'Fix the login redirect and add a test' },
-  { mode: 'plan', label: 'Plan', Icon: Workflow, tone: 'butter', hint: 'Add sign-in with passkeys, in milestones' },
+  { mode: 'plan', label: 'Advanced plan', Icon: Workflow, tone: 'butter', hint: 'Add sign-in with passkeys: milestones and tasks to approve' },
   { mode: 'question', label: 'Question', Icon: MessageCircleQuestion, tone: 'sky', hint: 'How does the payment flow work?' },
 ];
 
@@ -81,7 +82,7 @@ export default function Ask() {
 
   const close = () => {
     setVisible(false);
-    setTimeout(() => router.back(), 230);
+    setTimeout(() => (router.canGoBack() ? router.back() : router.replace('/')), 230);
   };
 
   const send = async () => {
@@ -122,7 +123,7 @@ export default function Ask() {
             ? convHref((typeof back === 'object' && back?.topic) || (target as { topic: Topic }).topic)
             : undefined;
     setTimeout(() => {
-      router.back();
+      (router.canGoBack() ? router.back() : router.replace('/'));
       if (href) setTimeout(() => router.push(href as never), 60);
     }, 220);
   };
@@ -243,7 +244,7 @@ function ModeChips({ mode, onMode }: { readonly mode: Mode; readonly onMode: (m:
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
             accessibilityLabel={m.label}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 17, backgroundColor: on ? toneBg(m.tone) : color.sunken }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: on ? toneBg(m.tone) : color.sunken }}
           >
             <m.Icon color={on ? toneInk(m.tone) : color.text2} size={15} strokeWidth={2.3} />
             <T v="caption" c={on ? toneInk(m.tone) : color.text2} style={{ fontWeight: '700' }}>

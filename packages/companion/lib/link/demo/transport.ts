@@ -328,7 +328,25 @@ export class DemoTransport implements Transport {
       case 'network.groups.approve':
       case 'network.groups.decline':
       case 'plans.approve':
-      case 'plans.discard':
+      case 'plans.discard': {
+        this.resolve(item);
+        const p = w.plans.find((x) => x.id === str(0));
+        if (p && method === 'plans.discard' && p.state === 'draft') w.plans = w.plans.filter((x) => x !== p);
+        else if (p && p.state === 'draft') {
+          // Approved: its tasks go on the board and the ones that can start run side by side.
+          p.state = 'running';
+          p.running = 0;
+          p.milestones.forEach((m, mi) => {
+            m.state = mi === 0 ? 'running' : 'later';
+            for (const t of m.tasks) {
+              t.state = mi > 0 ? 'later' : t.blockedBy?.length ? 'blocked' : 'running';
+              if (t.state === 'running') p.running = (p.running ?? 0) + 1;
+            }
+          });
+        }
+        this.touch(`plan:${str(0)}` as Topic, 'plans');
+        return ok();
+      }
       case 'plans.recheck':
         this.resolve(item);
         return ok();
@@ -500,19 +518,46 @@ export class DemoTransport implements Transport {
         const a = args[0] as { projectId: string; goal: string };
         const id = `pl-${++this.convSeq}`;
         const title = a.goal.length > 48 ? `${a.goal.slice(0, 47)}…` : a.goal;
-        const plan: PlanView = { id, title, goal: a.goal, state: 'draft', milestones: [], needsYou: [] };
+        const plan: PlanView = { id, title, goal: a.goal, state: 'draft', milestones: [], needsYou: [], autonomy: 'gated', parallel: 3 };
         w.plans = [plan, ...w.plans];
         this.touch(`plan:${id}` as Topic, 'plans');
         // Claude drafts it: milestones and tasks arrive, then it waits for your approval.
         this.later(2600, () => {
           plan.milestones = [
-            { id: `${id}-m1`, title: 'Groundwork', state: 'todo', criteria: ['The tests pass'], tasks: [{ id: `${id}-t1`, title: 'Read how it works today', state: 'todo' }, { id: `${id}-t2`, title: 'The data model', state: 'todo' }] },
-            { id: `${id}-m2`, title: 'Ship it', state: 'todo', criteria: ['Works on a Pixel 7'], tasks: [{ id: `${id}-t3`, title: 'The screen', state: 'todo' }] },
+            {
+              id: `${id}-m1`,
+              title: 'Passkeys on the server',
+              state: 'draft',
+              criteria: ['Registering and signing in with a passkey work end to end', 'Old password sign-in still works'],
+              tasks: [
+                { id: `${id}-t1`, title: 'WebAuthn registration API', state: 'draft', goal: 'Endpoints to register a passkey for a signed-in user.', acceptance: ['A challenge per attempt, expiring in 5 minutes', 'Tests for a replayed challenge'] },
+                { id: `${id}-t2`, title: 'Credentials table and migration', state: 'draft', acceptance: ['Migration runs forward and back'] },
+                { id: `${id}-t3`, title: 'Sign-in with a passkey', state: 'draft', blockedBy: [`${id}-t1`, `${id}-t2`] },
+              ],
+              dependsOn: [],
+            },
+            {
+              id: `${id}-m2`,
+              title: 'Passkeys in the app',
+              state: 'draft',
+              criteria: ['Sign in with a passkey on a Pixel 7', 'Falls back to a password when there is none'],
+              tasks: [
+                { id: `${id}-t4`, title: 'The "Use a passkey" button', state: 'draft', blockedBy: [`${id}-t3`] },
+                { id: `${id}-t5`, title: 'Settings › Passkeys list', state: 'draft', blockedBy: [`${id}-t1`] },
+              ],
+              dependsOn: [`${id}-m1`],
+            },
           ];
-          w.needs = [{ id: `plan:${id}:approve:1`, kind: 'plan', title: `Approve the plan “${title}”?`, detail: a.goal, topic: `plan:${id}` as Topic, actions: [{ label: 'Approve', tone: 'main', method: 'plans.approve', args: [id] }, { label: 'Discard', tone: 'danger', method: 'plans.discard', args: [id] }] } as NeedsYou, ...w.needs];
+          w.needs = [{ id: `plan:${id}:approve:1`, kind: 'decision', from: 'your plan', askedAt: Date.now(), title: `Approve the plan “${title}”?`, detail: a.goal, topic: `plan:${id}` as Topic, actions: [{ label: 'Approve', tone: 'main', method: 'plans.approve', args: [id] }, { label: 'Discard', tone: 'danger', method: 'plans.discard', args: [id] }] } as NeedsYou, ...w.needs];
           this.touch(`plan:${id}` as Topic, 'plans');
         });
         return ok({ id, home: `ws:${id}-home`, projectId: a.projectId, status: 'draft' });
+      }
+      case 'plans.setAutonomy': {
+        const p = w.plans.find((x) => x.id === str(0));
+        if (p) p.autonomy = str(1);
+        this.touch(`plan:${str(0)}` as Topic, 'plans');
+        return ok();
       }
       case 'board.start': {
         const t = w.tasks.find((x) => x.key === str(0) || x.id === str(0));

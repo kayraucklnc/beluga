@@ -4,7 +4,9 @@ import { macViewFor } from '../src/companion/open-on-mac.js';
 import { COMPANION_PROTO, ConvView, HomeView, SINCE, Topic, WorkView } from '../src/companion/protocol.js';
 import { PHONE } from '../src/companion/coverage.js';
 import { PhoneCalls } from '../src/companion/calls.js';
-import { type ViewContext, convTopic, homeView, viewOf, workView } from '../src/companion/views.js';
+import { type ViewContext, convTopic, homeView, planPageView, viewOf, workView } from '../src/companion/views.js';
+import type { Plan } from '../src/core/plans/model.js';
+import { PlanView } from '../src/companion/protocol.js';
 import { type Action, Store, channelOf, initialState, shownChannel } from '../src/core/store.js';
 import { API } from '../src/ipc/api.js';
 import { ASSISTANT_CHANNEL } from '../src/shared/assistant.js';
@@ -93,5 +95,45 @@ describe('asking in a project from the phone (BLG-69)', () => {
     expect(API['workspaces.startWorktree'].args.safeParse(['p1', 'Fix the login bug', { plan: true, quiet: true }]).success).toBe(true);
     expect(API['plans.create'].args.safeParse([{ projectId: 'p1', goal: 'Auth' }]).success).toBe(true);
     expect(SINCE.askModes).toBe(5);
+  });
+});
+
+describe('Advanced Planning on the phone (BLG-69)', () => {
+  it('a draft reads whole: milestones with what they wait on, tasks with their blockers and acceptance, and how it runs', () => {
+    const store = state();
+    const plan = {
+      id: 'pl_pk',
+      projectId: 'p1',
+      home: 'ws:w1',
+      status: 'draft',
+      draft: {
+        title: 'Passkeys',
+        goal: 'Sign in with a passkey',
+        milestones: [
+          { id: 'm1', title: 'Server', criteria: ['End to end'], tasks: [{ id: 'api', title: 'Registration API', goal: 'Endpoints', acceptance: ['Challenges expire'], blockedBy: [] }, { id: 'signin', title: 'Sign-in', acceptance: [], blockedBy: ['api'] }] },
+          { id: 'm2', title: 'App', criteria: [], dependsOn: ['m1'], tasks: [{ id: 'btn', title: 'The button', acceptance: [], blockedBy: ['signin'] }] },
+        ],
+      },
+      draftRev: 1,
+      autonomy: 'gated',
+      maxParallel: 3,
+      testsAt: 'milestone',
+      paused: false,
+      runs: {},
+      activity: [],
+      createdAt: T0,
+      updatedAt: T0,
+    } as unknown as Plan;
+    store.dispatch({ type: 'plans_init', state: { enabled: true, style: '', plans: [plan] } });
+    const view = planPageView(store.getState(), 'pl_pk')!;
+    expect(PlanView.safeParse(view).success).toBe(true);
+    expect(view).toMatchObject({ autonomy: 'gated', parallel: 3, running: 0 });
+    expect(view.milestones[0]!.tasks[0]).toMatchObject({ id: 'api', goal: 'Endpoints', acceptance: ['Challenges expire'] });
+    expect(view.milestones[0]!.tasks[1]!.blockedBy).toEqual(['api']);
+    expect(view.milestones[1]!.dependsOn).toEqual(['m1']);
+    // Approve and Discard wait on its page (and Home) as a needs-you item.
+    expect(view.needsYou.map((n) => n.actions.map((a) => a.method))).toEqual([['plans.approve', 'plans.discard']]);
+    expect(PHONE['plans.setAutonomy']).toBe('phone');
+    expect(Object.keys(PhoneCalls)).toContain('plans.setAutonomy');
   });
 });
