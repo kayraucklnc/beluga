@@ -54,11 +54,11 @@ export type PeerInfo = z.infer<typeof PeerInfo>;
 // ---------------------------------------------------------------------------
 
 /**
- * Which conversation a message belongs to: the room, a workspace ("ws:<id>"), or "Your Mac"
- * ("mac:assistant", core/assistant). Your own messages to your Claude are parsed by this too
+ * Which conversation a message belongs to: the room, a workspace ("ws:<id>"), or one of "Your
+ * Mac"'s chats ("mac:assistant", "mac:assistant:<id>", core/assistant). Your own messages to your Claude are parsed by this too
  * (session's loopback), so a channel it refuses never reaches Claude.
  */
-export const Channel = z.string().regex(/^(room|mac:assistant|ws:[\w:.-]{1,80})$/).default('room');
+export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|ws:[\w:.-]{1,80})$/).default('room');
 
 export const ChatBody = z.object({
   kind: z.literal('chat'),

@@ -1,7 +1,9 @@
-import { mkdirSync, promises as fs, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, promises as fs, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { claudeConfigDir, encodeProjectDir, pathVariants } from '../../agent/claude-sessions.js';
 import type { AgentPlace, MacTools } from '../../agent/types.js';
-import { ASSISTANT_CHANNEL, ASSISTANT_TITLE } from '../../shared/assistant.js';
+import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, type AssistantChats, CHAT_ID, FIRST_CHAT, assistantChannel, assistantChatOf } from '../../shared/assistant.js';
 import { SCRATCH_DIR, listScratch } from '../../workspaces/scratch.js';
 import { type SystemPort, captureScreen, describeDevice, deviceInfo, realSystem } from '../gateway/device.js';
 import { HistorySaver } from '../history-saver.js';
@@ -18,8 +20,9 @@ import type { Workspace } from '../../workspaces/types.js';
  * "what's using my CPU?", "start a worktree in beluga for the login bug".
  *
  * Where it lives: ~/.beluga/assistant/. Its Claude works in `work/` (its scratch folder is
- * `work/.beluga/scratch/`, where screenshots and files it sends you go); its Claude session and
- * its history are beside it (`state.json`, `history.json`). Everything in Beluga's home is secret
+ * `work/.beluga/scratch/`, where screenshots and files it sends you go); its chats (BLG-102, see
+ * below) each keep their Claude session and history beside it (`chats/<id>/state.json`,
+ * `history.json`, listed in `chats.json`). Everything in Beluga's home is secret
  * to the phone (isSecretPath) except a few folders Claude works in; `assistant/work` is one of
  * them now, exactly as `tasks/work` (friends' tasks' scratch folders) is, and nothing beside it:
  * the session id and the history stay secret.
@@ -41,20 +44,43 @@ export interface AssistantDeps {
   readonly startTask?: (key: string) => Promise<string>;
   /** A plan drafted in its own conversation (plans' create) → its id. */
   readonly startPlan?: (projectId: string, goal: string) => Promise<{ readonly id: string }>;
+  /** Claude Code's own folder (~/.claude): a deleted chat's transcript goes from there too. */
+  readonly claudeDir?: string;
+  readonly now?: () => number;
 }
 
 interface Saved {
   readonly sessionId?: string;
 }
 
+/** What chats.json holds: the chats in tab order, and the one open. */
+interface ChatsFile {
+  readonly chats: ReadonlyArray<{ readonly id: string; readonly createdAt: number }>;
+  readonly active: string;
+}
+
 /** The most items kept of its history (as a worktree's). */
 const KEEP = 500;
+/** The most chats at once (each a tab). */
+export const MAX_CHATS = 30;
 
+/**
+ * Your Mac's chats (BLG-102): several conversations at once, tabs on the Mac. Each has its own
+ * channel (shared/assistant.ts: the first keeps `mac:assistant`), its own Claude session and its
+ * own history, in `chats/<id>/`; `chats.json` lists them in tab order with the one open. They
+ * share the folder Claude works in (`work/`). Deleting one removes it for good: its folder, its
+ * messages and its Claude transcript; there is no archive. Deleting the last one leaves a fresh
+ * empty chat (that's starting over).
+ *
+ * Before BLG-102 there was one chat, its state.json and history.json right in the folder: the
+ * first start moves them into `chats/main/` (the first chat, same channel), nothing lost.
+ */
 export class MacAssistant {
   readonly channel = ASSISTANT_CHANNEL;
   /** Where its Claude works. */
   readonly workDir: string;
-  private saved: Saved;
+  private list: ChatsFile;
+  private readonly saved = new Map<string, Saved>();
   private readonly saver: HistorySaver;
   private readonly unsubscribe: () => void;
   private lastLog: readonly LogItem[] | undefined;
@@ -62,22 +88,30 @@ export class MacAssistant {
   constructor(private readonly deps: AssistantDeps) {
     this.workDir = path.join(deps.dir, 'work');
     mkdirSync(this.workDir, { recursive: true, mode: 0o700 });
-    this.saved = readJson<Saved>(this.file('state.json'), {});
+    this.list = this.migrate();
+    for (const c of this.list.chats) this.saved.set(c.id, readJson<Saved>(this.chatFile(c.id, 'state.json'), {}));
     this.saver = new HistorySaver({
       log: () => deps.store.getState().log,
-      channels: () => new Set([ASSISTANT_CHANNEL]),
-      idOf: (channel) => (channel === ASSISTANT_CHANNEL ? 'assistant' : undefined),
-      write: async (_id, items, current) => {
-        const file = this.file('history.json');
+      channels: () => new Set(this.list.chats.map((c) => assistantChannel(c.id))),
+      idOf: (channel) => {
+        const id = assistantChatOf(channel);
+        return id && this.has(id) ? id : undefined;
+      },
+      write: async (id, items, current) => {
+        if (!this.has(id)) return;
+        const file = this.chatFile(id, 'history.json');
         const tmp = `${file}.${process.pid}.tmp`;
         await fs.writeFile(tmp, `${JSON.stringify(items)}\n`, { mode: 0o600 });
-        if (current()) renameSync(tmp, file);
+        if (current() && this.has(id)) renameSync(tmp, file);
         else await fs.rm(tmp, { force: true });
       },
-      writeSync: (_id, items) => writeJson(this.file('history.json'), items),
+      writeSync: (id, items) => {
+        if (this.has(id)) writeJson(this.chatFile(id, 'history.json'), items);
+      },
       keep: KEEP,
     });
-    this.load();
+    for (const c of this.list.chats) this.load(c.id);
+    this.publish();
     this.lastLog = deps.store.getState().log;
     this.unsubscribe = deps.store.subscribe(() => {
       const log = deps.store.getState().log;
@@ -92,45 +126,169 @@ export class MacAssistant {
     this.saver.stop();
   }
 
+  private get now(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
   private file(name: string): string {
     return path.join(this.deps.dir, name);
   }
 
-  /** What was said here before (a run cut off by a quit reads as interrupted), with anything said since. */
-  private load(): void {
-    const saved = readJson<LogItem[]>(this.file('history.json'), []);
-    const live = this.deps.store.getState().log.filter((l) => l.channel === ASSISTANT_CHANNEL);
-    const known = new Set(saved.map((l) => l.id));
-    if (saved.length || live.length) this.deps.store.dispatch({ type: 'history', channel: ASSISTANT_CHANNEL, items: [...saved.map(settleRun), ...live.filter((l) => !known.has(l.id))] });
-    this.saver.loaded(ASSISTANT_CHANNEL);
+  private chatDir(id: string): string {
+    return path.join(this.deps.dir, 'chats', id);
   }
 
-  /** Where its Claude runs: its own folder, its own resumable session. */
-  place(): AgentPlace {
+  private chatFile(id: string, name: string): string {
+    return path.join(this.chatDir(id), name);
+  }
+
+  private has(id: string): boolean {
+    return this.list.chats.some((c) => c.id === id);
+  }
+
+  /**
+   * The chats there are (chats.json). The first start after BLG-102 makes it: the one chat there
+   * was becomes the first tab, its files moved into chats/main/ (each a rename; a quit halfway
+   * moves the rest next time, and a file already moved is never overwritten).
+   */
+  private migrate(): ChatsFile {
+    const listed = readJson<Partial<ChatsFile> | undefined>(this.file('chats.json'), undefined);
+    const raw = Array.isArray(listed?.chats) ? listed.chats : [];
+    const chats = raw.filter((c, i) => typeof c?.id === 'string' && CHAT_ID.test(c.id) && raw.findIndex((x) => x?.id === c.id) === i).map((c) => ({ id: c.id, createdAt: typeof c.createdAt === 'number' ? c.createdAt : 0 }));
+    if (chats.length) return { chats, active: chats.some((c) => c.id === listed?.active) ? listed!.active! : chats[0]!.id };
+    mkdirSync(this.chatDir(FIRST_CHAT), { recursive: true, mode: 0o700 });
+    for (const name of ['state.json', 'history.json']) {
+      const from = this.file(name);
+      if (existsSync(from) && !existsSync(this.chatFile(FIRST_CHAT, name))) renameSync(from, this.chatFile(FIRST_CHAT, name));
+    }
+    const first: ChatsFile = { chats: [{ id: FIRST_CHAT, createdAt: this.now }], active: FIRST_CHAT };
+    writeJson(this.file('chats.json'), first);
+    return first;
+  }
+
+  /** What one chat said before (a run cut off by a quit reads as interrupted), with anything said since. */
+  private load(id: string): void {
+    const channel = assistantChannel(id);
+    const saved = readJson<LogItem[]>(this.chatFile(id, 'history.json'), []);
+    const live = this.deps.store.getState().log.filter((l) => l.channel === channel);
+    const known = new Set(saved.map((l) => l.id));
+    if (saved.length || live.length) this.deps.store.dispatch({ type: 'history', channel, items: [...saved.map(settleRun), ...live.filter((l) => !known.has(l.id))] });
+    this.saver.loaded(channel);
+  }
+
+  /** The chats, as the screens see them (the shared state's `assistant`). */
+  chats(): AssistantChats {
+    return { chats: this.list.chats.map((c) => ({ id: c.id, channel: assistantChannel(c.id), createdAt: c.createdAt })), active: this.list.active };
+  }
+
+  private save(list: ChatsFile): void {
+    this.list = list;
+    writeJson(this.file('chats.json'), list);
+    this.publish();
+  }
+
+  private publish(): void {
+    this.deps.store.dispatch({ type: 'assistant_chats', assistant: this.chats() });
+  }
+
+  /** A chat that's new: its folder, no session yet, nothing to save. */
+  private fresh(id: string): void {
+    mkdirSync(this.chatDir(id), { recursive: true, mode: 0o700 });
+    this.saved.set(id, {});
+  }
+
+  /** A new chat, after the others, open now → its id. */
+  newChat(): string {
+    if (this.list.chats.length >= MAX_CHATS) throw new Error(`Up to ${MAX_CHATS} chats at once: delete one you’re done with first`);
+    let id = '';
+    do id = randomBytes(5).toString('hex');
+    while (this.has(id) || id === FIRST_CHAT);
+    this.fresh(id);
+    this.save({ chats: [...this.list.chats, { id, createdAt: this.now }], active: id });
+    this.saver.loaded(assistantChannel(id));
+    return id;
+  }
+
+  /** Open a chat (which one is open is kept across restarts). */
+  openChat(id: string): void {
+    if (!this.has(id)) throw new Error('That chat was deleted');
+    if (this.list.active !== id) this.save({ ...this.list, active: id });
+  }
+
+  /**
+   * Delete a chat for good: its tab, its messages (here and on the phone), its folder, and its
+   * Claude transcript. The tab beside it opens if it was the open one; deleting the last one
+   * leaves a fresh empty chat. Stopping its run first is the caller's (the session's).
+   */
+  async deleteChat(id: string): Promise<void> {
+    const at = this.list.chats.findIndex((c) => c.id === id);
+    if (at < 0) return;
+    const channel = assistantChannel(id);
+    const sessionId = this.saved.get(id)?.sessionId;
+    const rest = this.list.chats.filter((c) => c.id !== id);
+    // The last one: a fresh first chat in its place (its channel is the phone's Ask your Mac).
+    const chats = rest.length ? rest : [{ id: FIRST_CHAT, createdAt: this.now }];
+    const active = this.list.active !== id && rest.length ? this.list.active : chats[Math.min(at, chats.length - 1)]!.id;
+    this.saved.delete(id);
+    this.list = { chats, active };
+    this.deps.store.dispatch({ type: 'clear', channel });
+    this.deps.store.dispatch({ type: 'context_reset', channel });
+    await fs.rm(this.chatDir(id), { recursive: true, force: true });
+    if (sessionId) await this.dropTranscript(sessionId);
+    for (const c of chats) if (!this.saved.has(c.id)) this.fresh(c.id);
+    this.save(this.list);
+    for (const c of chats) this.saver.loaded(assistantChannel(c.id));
+  }
+
+  /** Claude Code's own record of a deleted chat's conversation (~/.claude/projects/<its folder>/<session>.jsonl). */
+  private async dropTranscript(sessionId: string): Promise<void> {
+    if (!/^[\w-]{1,100}$/.test(sessionId)) return;
+    const root = path.join(this.deps.claudeDir ?? claudeConfigDir(), 'projects');
+    for (const dir of new Set(pathVariants(this.workDir))) await fs.rm(path.join(root, encodeProjectDir(dir), `${sessionId}.jsonl`), { force: true }).catch(() => undefined);
+  }
+
+  /** Where a chat's Claude runs: the shared folder, the chat's own resumable session. */
+  place(channel: string = ASSISTANT_CHANNEL): AgentPlace {
+    const id = assistantChatOf(channel) ?? FIRST_CHAT;
+    const sessionId = this.saved.get(id)?.sessionId;
     return {
       cwd: this.workDir,
       additionalDirectories: [],
       // Its own folder only: files it makes there (a screenshot, a report to send) need no approval.
       autoEdit: true,
-      ...(this.saved.sessionId ? { resume: this.saved.sessionId } : {}),
-      onSession: (sessionId) => {
-        if (sessionId === this.saved.sessionId) return;
-        this.saved = { ...this.saved, sessionId };
-        writeJson(this.file('state.json'), this.saved);
+      ...(sessionId ? { resume: sessionId } : {}),
+      onSession: (next) => {
+        // A chat deleted while it ran keeps nothing.
+        if (!this.has(id) || next === this.saved.get(id)?.sessionId) return;
+        const saved = { ...this.saved.get(id), sessionId: next };
+        this.saved.set(id, saved);
+        writeJson(this.chatFile(id, 'state.json'), saved);
       },
     };
   }
 
-  /** Starting over (Clear chat, fresh): a new Claude conversation next time. */
-  forget(): void {
-    this.saved = {};
-    writeJson(this.file('state.json'), this.saved);
+  /** Starting over in one chat (Clear chat, fresh): a new Claude conversation there next time. */
+  forget(channel: string = ASSISTANT_CHANNEL): void {
+    const id = assistantChatOf(channel);
+    if (!id || !this.has(id)) return;
+    this.saved.set(id, {});
+    writeJson(this.chatFile(id, 'state.json'), {});
   }
 
-  /** What a run here gets: your runs only (nobody else can write in it). */
+  /**
+   * What a run here gets: your runs only (nobody else can write in it), in a chat there is. A
+   * message to the first chat after it was deleted (an older phone's Ask your Mac) brings it back
+   * as the first tab rather than going nowhere.
+   */
   forRun(channel: string, from: string): { readonly place: AgentPlace; readonly tools: MacTools; readonly brief: string } | undefined {
-    if (channel !== ASSISTANT_CHANNEL || from !== this.deps.selfId()) return undefined;
-    return { place: this.place(), tools: this.tools(), brief: assistantBrief() };
+    const id = assistantChatOf(channel);
+    if (!id || from !== this.deps.selfId()) return undefined;
+    if (!this.has(id)) {
+      if (id !== FIRST_CHAT) return undefined;
+      this.fresh(id);
+      this.save({ ...this.list, chats: [{ id, createdAt: this.now }, ...this.list.chats] });
+    }
+    return { place: this.place(channel), tools: this.tools(), brief: assistantBrief() };
   }
 
   /** Its outputs (what's in its scratch folder), newest first: what the phone shows with it. */

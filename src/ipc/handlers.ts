@@ -23,6 +23,7 @@ import { GIT_HANDLERS } from './git-handlers.js';
 import { VIEWS_HANDLERS } from './views-handlers.js';
 import { FILES_EDIT_HANDLERS } from './files-handlers.js';
 import { COMPANION_HANDLERS } from './companion-handlers.js';
+import { ASSISTANT_HANDLERS } from './assistant-handlers.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
@@ -297,6 +298,7 @@ export const HANDLERS = {
   ...VIEWS_HANDLERS,
   ...FILES_EDIT_HANDLERS,
   ...COMPANION_HANDLERS,
+  ...ASSISTANT_HANDLERS,
 } satisfies Handlers;
 
 export type Result<M extends Method> = Awaited<ReturnType<(typeof HANDLERS)[M]>>;

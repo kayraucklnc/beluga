@@ -44,9 +44,15 @@ const clamp = (n: number, max: number): number => Math.min(Math.max(0, max), Mat
 
 /**
  * A project's main checkout is no conversation (BLG-70): going to it goes to the chat its old
- * conversation became, else to the project's home. Anything else as it is.
+ * conversation became, else to the project's home. Your Mac without a chat named goes to the one
+ * open (its tabs, BLG-102), and a chat that was deleted to that one too. Anything else as it is.
  */
-export function viewFor(view: View, domain: Pick<DomainState, 'projects'>): View {
+export function viewFor(view: View, domain: Pick<DomainState, 'projects'> & Partial<Pick<DomainState, 'assistant'>>): View {
+  if (view.kind === 'assistant') {
+    const chats = domain.assistant?.chats ?? [];
+    if (!chats.length || (view.chat && chats.some((c) => c.id === view.chat))) return view;
+    return { kind: 'assistant', chat: chats.some((c) => c.id === domain.assistant?.active) ? domain.assistant!.active : chats[0]!.id };
+  }
   if (view.kind !== 'workspace') return view;
   for (const p of domain.projects) {
     const ws = p.workspaces.find((w) => w.id === view.id);
@@ -107,6 +113,13 @@ export function reconcileScreen(prev: DomainState, next: DomainState, screen: Sc
   if (!sameLoc(prev.viewer, next.viewer)) out = { ...out, viewerScroll: 0 };
   if (prev.review?.workspaceId !== next.review?.workspaceId || prev.review?.selected !== next.review?.selected) out = { ...out, diffScroll: 0 };
   if (prev.search.hits !== next.search.hits) out = { ...out, searchCursor: 0 };
+  // Your Mac's tabs: another chat opened (a new one, one picked on another window) shows here too; a deleted one leaves.
+  const v = out.view;
+  if (v.kind === 'assistant' && prev.assistant !== next.assistant && next.assistant.chats.length) {
+    const moved = prev.assistant.active !== next.assistant.active;
+    const gone = !next.assistant.chats.some((c) => c.id === v.chat);
+    if ((moved || gone) && v.chat !== next.assistant.active) out = { ...out, view: viewFor({ kind: 'assistant', chat: next.assistant.active }, next) };
+  }
   return out;
 }
 

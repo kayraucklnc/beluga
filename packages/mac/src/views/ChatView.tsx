@@ -17,6 +17,7 @@ import { PlanStrip } from '../plans/PlanStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
 import { ConnectionStatus } from './room/ConnectionStatus.js';
+import { AssistantTabs } from '../chat/AssistantTabs.js';
 
 /** A conversation and the box to add to it: the room, a workspace, a shared workspace, a draft. */
 /** One-click ways to begin, under an empty conversation. */
@@ -112,7 +113,7 @@ export function ChatView() {
     ) : view.kind === 'draft_worktree' ? (
       <Empty icon="branch" title="A new worktree" detail="Describe the task below. Beluga makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
     ) : view.kind === 'assistant' ? (
-      <Empty icon="laptop" title="Ask your Mac" detail="Your Claude for this whole Mac, not one project: screenshots, what’s using the CPU, starting a worktree or a task. The same conversation as on your phone." action={<AssistantStarters />} />
+      <Empty icon="laptop" title="Ask your Mac" detail="Your Claude for this whole Mac, not one project: screenshots, what’s using the CPU, starting a worktree or a task. Keep several chats as tabs above; the open one is the one on your phone." action={<AssistantStarters />} />
     ) : view.kind === 'room' ? (
       <Empty icon="claude" title={solo ? 'Talk to your Claude' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give Claude a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your Claude.'} action={<Starters />} />
     ) : (
@@ -133,6 +134,7 @@ export function ChatView() {
     <div className={s.chat} data-drop-zone>
       {other ? <OtherWorktreeBanner ws={other} /> : null}
       {view.kind === 'room' ? <ConnectionStatus /> : null}
+      {view.kind === 'assistant' ? <AssistantTabs /> : null}
       {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <PrStrip workspaceId={view.id} /> : null}
