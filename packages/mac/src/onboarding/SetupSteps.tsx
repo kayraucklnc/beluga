@@ -1,10 +1,11 @@
 import { motion } from 'motion/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { Select, Switch } from '../dialogs/settings-controls.js';
 import { previewRequestPopup } from '../gateway/request-native.js';
 import { useApi, useApp } from '../lib/beluga.js';
-import { askNotificationPermission } from '../lib/sounds/access.js';
+import { askNotificationPermission, openNotificationSettings, useNotificationAccess } from '../lib/sounds/access.js';
 import { ACCENTS, type Accent, type UiPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EASE_OUT, Rise, SPRING, Words } from './fx.js';
 import { Glass } from './Glass.js';
@@ -141,11 +142,17 @@ export function Popups() {
   const api = useApi();
   const notify = useApp((st) => st.prefs.notify);
   const [asked, setAsked] = useState<'no' | 'asking' | 'done'>('no');
+  // What macOS says (checked again as you come back from System Settings).
+  const { access, recheck } = useNotificationAccess();
+  const state = access?.state;
   const ask = (): void => {
     setAsked('asking');
     void askNotificationPermission()
       .catch(() => undefined)
-      .then(() => setAsked('done'));
+      .then((a) => {
+        setAsked('done');
+        recheck(a);
+      });
   };
   return (
     <div className={s.setup}>
@@ -164,10 +171,32 @@ export function Popups() {
             Show Me a Sample
           </button>
         </SetupRow>
-        <SetupRow index={2} label="Notifications too" detail={asked === 'done' ? 'Asked. You can change it in System Settings › Notifications.' : 'macOS asks once. They reach you when popups are off, and stay in Notification Center.'}>
-          <button type="button" className={cx(s.input, s.rowButton)} disabled={asked !== 'no'} onClick={ask}>
-            {asked === 'done' ? 'Asked' : asked === 'asking' ? 'Asking…' : 'Allow Notifications'}
-          </button>
+        <SetupRow
+          index={2}
+          label="Notifications too"
+          detail={
+            state === 'allowed'
+              ? 'Allowed. They reach you when popups are off, and stay in Notification Center.'
+              : state === 'off'
+                ? 'Turned off for Beluga in System Settings › Notifications.'
+                : asked === 'done'
+                  ? 'Asked. You can change it in System Settings › Notifications.'
+                  : 'Optional. macOS asks once. They reach you when popups are off, and stay in Notification Center.'
+          }
+        >
+          {state === 'allowed' ? (
+            <span className={s.grant} data-grant="granted">
+              <Icon name="check" size={11} /> Allowed
+            </span>
+          ) : state === 'off' ? (
+            <button type="button" className={cx(s.input, s.rowButton)} onClick={() => void openNotificationSettings()}>
+              Open System Settings
+            </button>
+          ) : (
+            <button type="button" className={cx(s.input, s.rowButton)} disabled={asked !== 'no'} onClick={ask}>
+              {asked === 'done' ? 'Asked' : asked === 'asking' ? 'Asking…' : 'Allow Notifications'}
+            </button>
+          )}
         </SetupRow>
       </Glass>
     </div>

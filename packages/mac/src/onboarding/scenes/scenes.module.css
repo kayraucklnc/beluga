@@ -740,3 +740,108 @@
 .saved[data-on='true'] {
   color: var(--ok);
 }
+
+/* ── Tables: the table weave ──────────────────────────────── */
+
+.tables {
+  composes: glass;
+  width: min(100%, 540px);
+  overflow: hidden;
+}
+.tablesChat {
+  padding: 14px;
+  min-height: 396px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.protocols {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding-left: 19px;
+  font-size: 11px;
+}
+.protocol {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+/* Chosen: a soft pastel blue (Postgres's own), never a glow. */
+.protocol[data-on] {
+  color: #3d6fb4;
+  background: color-mix(in srgb, #8fb4e8 26%, var(--bg-raised));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, #8fb4e8 60%, transparent);
+}
+:global(html[data-theme='dark']) .protocol[data-on] {
+  color: #b4cdf2;
+}
+.folded {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+}
+.weave {
+  min-height: 0;
+  font-size: 12px;
+}
+.weave figure {
+  margin: 0;
+}
+/* The rows weave in: odd ones from the left, even ones from the right, one after another. */
+.weave tbody tr {
+  animation: weave-in 0.5s var(--ease-out) backwards;
+}
+.weave tbody tr:nth-child(odd) {
+  --from: -14px;
+}
+.weave tbody tr:nth-child(even) {
+  --from: 14px;
+}
+.weave tbody tr:nth-child(1) {
+  animation-delay: 0.15s;
+}
+.weave tbody tr:nth-child(2) {
+  animation-delay: 0.22s;
+}
+.weave tbody tr:nth-child(3) {
+  animation-delay: 0.29s;
+}
+.weave tbody tr:nth-child(4) {
+  animation-delay: 0.36s;
+}
+.weave tbody tr:nth-child(5) {
+  animation-delay: 0.43s;
+}
+@keyframes weave-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--from));
+  }
+}
+.weaveTry {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .weave tbody tr {
+    animation: none;
+  }
+}
+:global(html[data-motion='reduce']) .weave tbody tr {
+  animation: none;
+}
