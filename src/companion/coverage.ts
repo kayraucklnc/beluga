@@ -235,6 +235,9 @@ export const PHONE: Record<Method, Side> = {
   'stripe.disconnect': 'mac',
   'stripe.refresh': 'mac',
 
+  // ---- supporting Beluga: the star and coffee asks are the Mac's (they open web pages there)
+  'support.answer': 'mac',
+
   // ---- Claude Code's sessions: what its agents made (outputs, background logs), not their steps' code
   'claudeCode.steps': 'mac',
   'claudeCode.step': 'mac',
