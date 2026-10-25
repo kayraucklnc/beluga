@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, Switch, View } from 'react-native';
+import { AppState, Platform, ScrollView, Switch, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header, Screen, useScrolled } from '../components/Screen';
@@ -42,6 +42,15 @@ export default function Settings() {
   const [stay, setStayOn] = useState(stayOn());
   const [unrestricted, setUnrestricted] = useState(true);
   useEffect(() => setUnrestricted(batteryUnrestricted()), [stay]);
+  // Back from Android's settings (notifications, battery): show what's true now.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return;
+      void permission(false).then(setPerm);
+      setUnrestricted(batteryUnrestricted());
+    });
+    return () => sub.remove();
+  }, []);
   const toggleStay = () => {
     haptic.tap();
     const next = !stay;
@@ -88,7 +97,16 @@ export default function Settings() {
         <Animated.View entering={FadeInDown.duration(300)}>
           <Card>
             <Row first Icon={Monitor} tone="mint" label={link.mac?.name ?? link.pairing?.macName ?? 'Your Mac'} sub={link.mode === 'demo' ? 'Demo Mac' : `Beluga ${link.mac?.version ?? ''}`} right={<Pill label={link.phase === 'open' ? 'Linked' : link.phase === 'asleep' ? 'Asleep' : 'Away'} tone={link.phase === 'open' ? 'mint' : 'sky'} />} />
-            <Row Icon={Bell} tone="butter" label="Notifications" sub={perm === 'denied' ? 'Off in Android settings' : undefined} right={toggle(all, () => {})} onPress={() => save({ needsYou: !all, done: !all, mentions: !all })} chevron={false} />
+            <Row
+              Icon={Bell}
+              tone="butter"
+              label="Notifications"
+              sub={perm === 'denied' ? 'Off in Android settings: tap to turn them on' : undefined}
+              right={toggle(all && perm !== 'denied', () => {})}
+              // Off in Android: the switch takes you there (lib/notifications.ts), whatever the app's own choice.
+              onPress={() => (perm === 'denied' ? void permission(true).then(setPerm) : save({ needsYou: !all, done: !all, mentions: !all }))}
+              chevron={false}
+            />
             {link.mode === 'bare' && stayAvailable() ? (
               <Row
                 Icon={Cable}
@@ -106,10 +124,7 @@ export default function Settings() {
                 tone="butter"
                 label="Let it run in the background"
                 sub="Android’s battery saver may cut the link off. Allow Beluga to fix it."
-                onPress={() => {
-                  askBatteryUnrestricted();
-                  setTimeout(() => setUnrestricted(batteryUnrestricted()), 4_000);
-                }}
+                onPress={askBatteryUnrestricted}
               />
             ) : null}
             <Row Icon={HardDrive} tone="sky" label="Storage" sub={saved.length ? `${saved.length} saved · ${sizeOf(totalBytes(saved))}` : 'What Beluga keeps on this phone'} onPress={() => router.push('/storage')} />
