@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_UPLOADS, PHONE_BRANCH_STEPS, PHONE_USE, UploadRef } from '../companion/protocol.js';
+import { MAX_UPLOADS, PHONE_BRANCH_STEPS, PHONE_USE, PhoneOp, UploadRef } from '../companion/protocol.js';
 import { NEEDS } from '../core/gateway/protocol.js';
 import { KEEP_AWAKE } from '../shared/settings-schema.js';
 import { SourceSchema, ViewQuerySchema } from '../shared/view-spec.js';
@@ -32,6 +32,8 @@ export const COMPANION_API = {
   'companion.phone.use': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), z.enum(PHONE_USE)]) },
   // Pair this Mac's adb with the phone, using the code it sent (Wireless debugging › Pair with code).
   'companion.phone.pairAdb': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/)]) },
+  // One action on the phone from the Mac UI (the live mirror's tap/type, a button): op + its args.
+  'companion.phone.act': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), PhoneOp, z.record(z.string(), z.unknown())]) },
   // A conversation's (or chat's) turns before one the phone has: → { turns | messages, more }.
   'companion.older': { args: z.tuple([topic, z.object({ before: z.string().min(1).max(200), limit: z.number().int().min(1).max(100).optional() }).strict()]) },
   // Ask your Mac from the phone: a new chat in a project (or, 1.12, a new worktree there: `worktree`,

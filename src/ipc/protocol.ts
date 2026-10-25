@@ -39,6 +39,9 @@ export const ClientFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('term_detach'), term }),
   z.object({ t: z.literal('term_input'), term, data: z.string().max(1_000_000), reply: z.boolean().optional() }),
   z.object({ t: z.literal('term_resize'), term, cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(500) }),
+  // Watch a phone's screen live (BLG-173): the daemon streams `phone_frame`s until unwatch or close.
+  z.object({ t: z.literal('phone_watch'), device: id, fps: z.number().int().min(1).max(30).optional(), max: z.number().int().min(240).max(2000).optional() }),
+  z.object({ t: z.literal('phone_unwatch'), device: id }),
   z.object({ t: z.literal('resync') }),
   z.object({ t: z.literal('ping') }),
 ]);
@@ -54,6 +57,10 @@ export type DaemonFrame =
   | { readonly t: 'cap_call'; readonly id: string; readonly cap: Cap; readonly args: readonly unknown[] }
   | { readonly t: 'term_data'; readonly term: string; readonly data: string }
   | { readonly t: 'term_status'; readonly term: string; readonly running: boolean; readonly exited?: { readonly code: number | null; readonly signal?: number } }
+  // A live frame of a phone's screen (BLG-173): a base64 image of `mime`, and the device's logical size.
+  | { readonly t: 'phone_frame'; readonly device: string; readonly b64: string; readonly mime: string; readonly w: number; readonly h: number }
+  // How the mirror is doing: streaming (with its route), or stopped with a reason.
+  | { readonly t: 'phone_mirror'; readonly device: string; readonly on: boolean; readonly route?: string; readonly error?: string }
   | { readonly t: 'clients'; readonly count: number }
   | { readonly t: 'pong' }
   | { readonly t: 'bye'; readonly reason: string };

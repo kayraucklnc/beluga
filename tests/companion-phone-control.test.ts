@@ -167,6 +167,40 @@ describe('PhoneControl operations', () => {
   });
 });
 
+describe('mirror and action (BLG-171)', () => {
+  const id = 'cc'.padEnd(16, '0');
+  const device: DeviceRecord = { cert: cert('cc'), pairedAt: 1, use: 'use' };
+  // A 1×1 PNG (valid IHDR: 1×1), so pngSize reads 1×1.
+  const onePng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCA', 'base64');
+
+  it('action() taps over adb', async () => {
+    const { sys, calls } = fakeSys([{ match: /devices -l/, out: 'List\nR5 device usb:1\n' }]);
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/fake/adb' });
+    await ctl.action(id, 'tap', { x: 5, y: 9 });
+    expect(calls.some((c) => /shell input tap 5 9/.test(c))).toBe(true);
+  });
+
+  it('startMirror streams frames over adb and stops cleanly', async () => {
+    const { sys } = fakeSys([
+      { match: /devices -l/, out: 'List\nR5 device usb:1\n' },
+      { match: /exec-out screencap/, bytes: onePng },
+    ]);
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/fake/adb' });
+    const frames: Array<{ mime: string }> = [];
+    let route: string | undefined;
+    const stop = ctl.startMirror(id, { fps: 30 }, (f) => frames.push(f), (srv) => { if (srv.route) route = srv.route; });
+    await new Promise((r) => setTimeout(r, 120));
+    stop();
+    const got = frames.length;
+    expect(got).toBeGreaterThan(0);
+    expect(frames[0]!.mime).toBe('image/png');
+    expect(route).toBe('usb');
+    // After stop, no more frames arrive.
+    await new Promise((r) => setTimeout(r, 80));
+    expect(frames.length).toBe(got);
+  });
+});
+
 describe('screen descriptions', () => {
   it('turns an Accessibility tree into tappable lines', () => {
     const view: ScreenView = {

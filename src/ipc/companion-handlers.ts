@@ -27,6 +27,7 @@ export const COMPANION_HANDLERS = {
   'companion.devices.remove': (s, id) => needCompanion(s).removeDevice(id),
   'companion.phone.use': (s, id, use) => needCompanion(s).setPhoneUse(id, use),
   'companion.phone.pairAdb': (s, id) => needCompanion(s).pairPhoneAdb(id),
+  'companion.phone.act': (s, id, op, args) => needCompanion(s).phoneAction(id, op, args),
   'companion.older': (s, topic, page) => needCompanion(s).older(topic, page.before, page.limit),
   'companion.ask': (s, a) => needCompanion(s).ask(callerOf(), a),
   'companion.post': (s, a) => needCompanion(s).post(callerOf(), a),

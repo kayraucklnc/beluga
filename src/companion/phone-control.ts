@@ -365,6 +365,83 @@ export class PhoneControl {
     return r?.adb ? { serial: r.adb.serial, adbPath: r.adb.adbPath } : undefined;
   }
 
+  /**
+   * A live mirror of the phone's screen (BLG-173): repeatedly grabs a frame and hands it to
+   * `onFrame`, at about `fps`, until the returned stop() is called. Over adb it's a full-resolution
+   * `screencap` PNG (crisp, the webview decodes it straight); over the Accessibility link it's a
+   * downscaled JPEG at a gentler rate. One grab is in flight at a time, so a slow phone just lowers
+   * the frame rate rather than piling up.
+   */
+  startMirror(
+    deviceId: string,
+    opts: { fps?: number; max?: number },
+    onFrame: (f: { b64: string; mime: string; w: number; h: number }) => void,
+    onStatus: (s: { on: boolean; route?: PhoneRoute; error?: string }) => void,
+  ): () => void {
+    let stopped = false;
+    const fps = Math.min(opts.fps ?? 6, 30);
+    const interval = 1000 / fps;
+    const loop = async (): Promise<void> => {
+      let lastRoute: PhoneRoute | undefined;
+      while (!stopped) {
+        const started = Date.now();
+        try {
+          const r = await this.reach(deviceId);
+          if (!r) throw new Error(this.noteFor(this.deps.link(deviceId)?.control, [], this.howUsed(deviceId)) ?? 'The phone isn’t reachable');
+          if (r.route !== lastRoute) {
+            lastRoute = r.route;
+            onStatus({ on: true, route: r.route });
+          }
+          if (r.adb) {
+            const png = await r.adb.execOutBytes(['screencap', '-p'], 8_000);
+            if (png.length) {
+              const dim = pngSize(png);
+              onFrame({ b64: png.toString('base64'), mime: 'image/png', w: dim?.w ?? 0, h: dim?.h ?? 0 });
+            }
+          } else if (r.link) {
+            const shot = (await r.link.request('screenshot', { max: opts.max ?? 900, quality: 55 }, 8_000)) as { b64: string; mime: 'image/jpeg' | 'image/png'; w: number; h: number };
+            onFrame({ b64: shot.b64, mime: shot.mime, w: shot.w, h: shot.h });
+          }
+        } catch (err) {
+          if (stopped) break;
+          onStatus({ on: false, error: err instanceof Error ? err.message : String(err) });
+          // Back off a little before trying again (the phone slept, the route dropped).
+          await delay(1200);
+          continue;
+        }
+        const wait = interval - (Date.now() - started);
+        if (wait > 0) await delay(wait);
+      }
+    };
+    void loop();
+    return () => {
+      stopped = true;
+      onStatus({ on: false });
+    };
+  }
+
+  /** One action for the Mac UI (the mirror's tap/type/scroll, or a button), by op. */
+  async action(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
+    switch (op) {
+      case 'tap':
+        return this.tap(deviceId, args as { x: number; y: number; node?: number });
+      case 'long_press':
+        return this.longPress(deviceId, args as { x: number; y: number; ms?: number });
+      case 'swipe':
+        return this.swipe(deviceId, args as { x1: number; y1: number; x2: number; y2: number; ms?: number });
+      case 'type':
+        return this.type(deviceId, args as { text: string; replace?: boolean; enter?: boolean });
+      case 'key':
+        return this.key(deviceId, String((args as { key: string }).key));
+      case 'scroll':
+        return this.scroll(deviceId, args as { dir: 'up' | 'down' | 'left' | 'right' });
+      case 'open':
+        return this.open(deviceId, args as { package?: string; url?: string });
+      default:
+        throw new Error(`Can’t do ${op} from here`);
+    }
+  }
+
   // ---- helpers
 
   /** The reach for an action of this kind, after the use level has allowed it. */
@@ -575,6 +652,14 @@ export class PhoneControl {
     };
     return { tools, brief: phoneBrief(`- Now: ${this.summaryLine(deviceId)}`), deviceId };
   }
+}
+
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms).unref());
+
+/** A PNG's pixel size from its IHDR (bytes 16–23, big-endian); undefined if it isn't a PNG. */
+function pngSize(png: Buffer): { w: number; h: number } | undefined {
+  if (png.length < 24 || png.readUInt32BE(0) !== 0x89504e47) return undefined;
+  return { w: png.readUInt32BE(16), h: png.readUInt32BE(20) };
 }
 
 /** Android key codes for the buttons a phone has (adb `input keyevent`). */

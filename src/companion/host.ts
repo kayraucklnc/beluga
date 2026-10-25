@@ -947,6 +947,19 @@ export class CompanionHost {
   pairPhoneAdb(deviceId: string): Promise<string> {
     return this.control.pairAdb(deviceId);
   }
+  /** One phone action from the Mac UI (the mirror's tap/type, a button). */
+  phoneAction(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
+    return this.control.action(deviceId, op, args);
+  }
+  /** Stream a phone's screen to a screen that's watching (the Mac app's mirror). */
+  mirrorPhone(
+    deviceId: string,
+    opts: { fps?: number; max?: number },
+    onFrame: (f: { b64: string; mime: string; w: number; h: number }) => void,
+    onStatus: (s: { on: boolean; route?: string; error?: string }) => void,
+  ): () => void {
+    return this.control.startMirror(deviceId, opts, onFrame, onStatus);
+  }
 
   // ---- the DHT node
 

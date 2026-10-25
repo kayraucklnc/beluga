@@ -6,6 +6,7 @@ import { type Cap, type DaemonFrame, IPC_VERSION, encodeFrame, parseClientFrame 
 import type { PtyProcess, TerminalManager } from '../terminal/index.js';
 import { ClientRegistry, type ConnectedClient } from './clients.js';
 import { dispatchCall } from './dispatch.js';
+import { companionOf } from '../companion/registry.js';
 
 export interface DaemonServerOptions {
   readonly session: Session;
@@ -146,11 +147,15 @@ export class DaemonServer {
       }
       ws.send(encodeFrame(frame));
     };
+    // Phone mirrors this screen is watching (BLG-173), by device id → stop().
+    const mirrors = new Map<string, () => void>();
     const helloTimer = setTimeout(() => ws.close(4001, 'No hello'), this.opts.helloTimeoutMs ?? 5000);
     helloTimer.unref?.();
     const detachAll = (): void => {
       for (const off of attached.values()) off();
       attached.clear();
+      for (const off of mirrors.values()) off();
+      mirrors.clear();
     };
 
     ws.on('message', (raw, isBinary) => {
@@ -233,6 +238,26 @@ export class DaemonServer {
           if (!pty) return;
           this.termOwner.set(frame.term, me.id);
           pty.resize(frame.cols, frame.rows);
+          return;
+        }
+        case 'phone_watch': {
+          mirrors.get(frame.device)?.();
+          const host = companionOf(this.session);
+          if (!host) return send({ t: 'phone_mirror', device: frame.device, on: false, error: 'No phone support' });
+          mirrors.set(
+            frame.device,
+            host.mirrorPhone(
+              frame.device,
+              { ...(frame.fps ? { fps: frame.fps } : {}), ...(frame.max ? { max: frame.max } : {}) },
+              (f: { b64: string; mime: string; w: number; h: number }) => send({ t: 'phone_frame', device: frame.device, b64: f.b64, mime: f.mime, w: f.w, h: f.h }),
+              (s: { on: boolean; route?: string; error?: string }) => send({ t: 'phone_mirror', device: frame.device, on: s.on, ...(s.route ? { route: s.route } : {}), ...(s.error ? { error: s.error } : {}) }),
+            ),
+          );
+          return;
+        }
+        case 'phone_unwatch': {
+          mirrors.get(frame.device)?.();
+          mirrors.delete(frame.device);
           return;
         }
       }

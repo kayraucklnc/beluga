@@ -276,6 +276,8 @@ export type View =
   | { readonly kind: 'room' }
   /** "Your Mac" (core/assistant): your Claude for the whole Mac, the same as on the phone; one of its chats (tabs, BLG-102), the open one when unset. */
   | { readonly kind: 'assistant'; readonly chat?: string }
+  /** "Your phone" (BLG-171): the live mirror of your paired Android phone and what Claude's done on it. Only when one is paired. */
+  | { readonly kind: 'phone' }
   | { readonly kind: 'files' }
   | { readonly kind: 'overview' }
   | { readonly kind: 'workspace'; readonly id: string; readonly tab: WorkspaceTab }
