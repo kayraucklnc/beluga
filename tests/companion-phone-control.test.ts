@@ -2,7 +2,7 @@ import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { ExecBytesResult, ExecResult, SystemPort } from '../src/core/gateway/device.js';
 import { adbCandidates, parseDevices } from '../src/companion/phone-adb.js';
-import { PhoneControl, type PhoneLinkHandle, describeScreen, describeUiautomator } from '../src/companion/phone-control.js';
+import { PhoneControl, type PhoneLinkHandle, describeScreen, describeUiautomator, parseNotifications } from '../src/companion/phone-control.js';
 import { DeviceBook, type DeviceRecord } from '../src/companion/devices.js';
 import type { DeviceCert, PhoneControl as PhoneControlState, PhoneOp, ScreenView } from '../src/companion/protocol.js';
 import { mkdtempSync } from 'node:fs';
@@ -205,6 +205,24 @@ describe('mirror and action (BLG-171)', () => {
     // After stop, no more frames arrive.
     await new Promise((r) => setTimeout(r, 80));
     expect(frames.length).toBe(got);
+  });
+});
+
+describe('notifications (BLG-176)', () => {
+  it('parses dumpsys notification records', () => {
+    const dump = [
+      'NotificationRecord(0x1 pkg=com.whatsapp user=0',
+      '      android.title=String (Mum)',
+      '      android.text=String (Call me when you land)',
+      'NotificationRecord(0x2 pkg=com.google.android.gm user=0',
+      '      android.title=String (3 new emails)',
+      '      android.text=String (Receipts and more)',
+    ].join('\n');
+    const list = parseNotifications(dump);
+    expect(list).toEqual([
+      { app: 'com.whatsapp', title: 'Mum', text: 'Call me when you land' },
+      { app: 'com.google.android.gm', title: '3 new emails', text: 'Receipts and more' },
+    ]);
   });
 });
 

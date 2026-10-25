@@ -197,6 +197,12 @@ export interface PhoneTools {
   shell(command: string): Promise<string>;
   /** Recent logs (needs Wireless debugging). */
   logcat(filter?: string): Promise<string>;
+  /** Send a file from this Mac to the phone (needs Wireless debugging); returns where it landed. */
+  push(localPath: string, dest?: string): Promise<string>;
+  /** Get a file from the phone to this Mac's scratch folder (needs Wireless debugging). */
+  pull(remotePath: string): Promise<string>;
+  /** The phone's current notifications (needs Wireless debugging). */
+  notifications(): Promise<string>;
 }
 
 /** "Your Mac"'s tools (agent/mac-tools.ts, server `beluga_mac`): each answers in words for Claude. */

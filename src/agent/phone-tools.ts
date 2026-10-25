@@ -13,11 +13,11 @@ import type { PhoneTools } from './types.js';
  * which the owner approves through Beluga.
  */
 
-export const PHONE_TOOL_NAMES = ['phone_status', 'phone_screenshot', 'phone_screen', 'phone_tap', 'phone_swipe', 'phone_type', 'phone_key', 'phone_scroll', 'phone_open', 'phone_apps', 'phone_info', 'phone_install', 'phone_shell', 'phone_logcat'].map(
-  (n) => `mcp__beluga_phone__${n}`,
-);
+export const PHONE_TOOL_NAMES = [
+  'phone_status', 'phone_screenshot', 'phone_screen', 'phone_tap', 'phone_swipe', 'phone_type', 'phone_key', 'phone_scroll', 'phone_open', 'phone_apps', 'phone_info', 'phone_install', 'phone_shell', 'phone_logcat', 'phone_push', 'phone_pull', 'phone_notifications',
+].map((n) => `mcp__beluga_phone__${n}`);
 /** The tools that only look (never change the phone): always allowed, like the Mac's screenshot. */
-export const PHONE_LOOK_TOOLS = ['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info'].map((n) => `mcp__beluga_phone__${n}`);
+export const PHONE_LOOK_TOOLS = ['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info', 'phone_pull', 'phone_notifications'].map((n) => `mcp__beluga_phone__${n}`);
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 
@@ -99,6 +99,16 @@ export function createPhoneToolDefs(phone: PhoneTools) {
     tool('phone_logcat', 'Recent lines from the phone’s log (logcat). Needs Wireless debugging. `filter` is an optional logcat filter like "ReactNative:V *:S".', { filter: z.string().max(200).optional() }, (a) =>
       guarded(async () => words(await phone.logcat(a.filter))),
     ),
+    tool(
+      'phone_push',
+      'Send a file from this Mac to the phone (needs Wireless debugging). Lands in Downloads unless you give `dest`.',
+      { path: z.string().min(1).max(4096).describe('Absolute path on this Mac'), dest: z.string().max(4096).optional().describe('Folder (or path) on the phone, e.g. /sdcard/Download/') },
+      (a) => guarded(async () => words(await phone.push(a.path, a.dest))),
+    ),
+    tool('phone_pull', 'Get a file from the phone to this Mac (needs Wireless debugging); it’s saved as an output.', { path: z.string().min(1).max(4096).describe('Path on the phone, e.g. /sdcard/Download/report.pdf') }, (a) =>
+      guarded(async () => words(await phone.pull(a.path))),
+    ),
+    tool('phone_notifications', 'The phone’s current notifications (needs Wireless debugging): app, title and text.', {}, () => guarded(async () => words(await phone.notifications()))),
   ];
 }
 

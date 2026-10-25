@@ -359,6 +359,34 @@ export class PhoneControl {
     return (await r.adb.run(['logcat', ...safe], 20_000)).stdout;
   }
 
+  /** Send a file from this Mac to the phone (adb push); returns the on-device path (BLG-176). */
+  async push(deviceId: string, localPath: string, dest = '/sdcard/Download/'): Promise<string> {
+    const r = await this.need(deviceId, 'act');
+    if (!r.adb) throw new Error('Sending a file to the phone needs Wireless debugging.');
+    const res = await r.adb.run(['push', localPath, dest], 120_000);
+    if (res.code !== 0) throw new Error(res.stderr.trim().slice(0, 200) || 'The push failed.');
+    return dest.endsWith('/') ? dest + path.basename(localPath) : dest;
+  }
+
+  /** Get a file from the phone to a folder on this Mac (adb pull); returns the local path (BLG-176). */
+  async pull(deviceId: string, remotePath: string, intoDir: string): Promise<string> {
+    const r = await this.need(deviceId, 'look');
+    if (!r.adb) throw new Error('Getting a file from the phone needs Wireless debugging.');
+    await fs.mkdir(intoDir, { recursive: true, mode: 0o700 }).catch(() => undefined);
+    const local = path.join(intoDir, path.basename(remotePath) || 'file');
+    const res = await r.adb.run(['pull', remotePath, local], 120_000);
+    if (res.code !== 0) throw new Error(res.stderr.trim().slice(0, 200) || 'The pull failed.');
+    return local;
+  }
+
+  /** The phone's current notifications (adb dumpsys, best-effort parse; BLG-176). */
+  async notifications(deviceId: string): Promise<Array<{ app: string; title: string; text: string }>> {
+    const r = await this.need(deviceId, 'look');
+    if (!r.adb) throw new Error('Reading notifications needs Wireless debugging.');
+    const out = await r.adb.shell('dumpsys notification --noredact', 15_000);
+    return parseNotifications(out.stdout);
+  }
+
   /** The adb serial for this phone's Bash, so `adb -s <serial>` and scrcpy work; or undefined. */
   async serialFor(deviceId: string): Promise<{ serial: string; adbPath: string } | undefined> {
     const r = await this.reach(deviceId);
@@ -675,12 +703,37 @@ export class PhoneControl {
         return `${res.stdout}${res.stderr ? `\n[stderr]\n${res.stderr}` : ''}`.trim() || `(no output, exit ${res.code})`;
       },
       logcat: async (filter) => ctl.logcat(deviceId, filter ? filter.split(/\s+/) : undefined),
+      push: async (localPath, dest) => `Sent to the phone at ${await ctl.push(deviceId, localPath, dest)}`,
+      pull: async (remotePath) => {
+        if (!scratchDir) throw new Error('No scratch folder to save into');
+        const local = await ctl.pull(deviceId, remotePath, scratchDir);
+        return `Saved from the phone as ${path.basename(local)} (an output).`;
+      },
+      notifications: async () => {
+        const list = await ctl.notifications(deviceId);
+        return list.length ? list.map((n) => `• ${n.title || n.app}${n.text ? ` — ${n.text}` : ''}  [${n.app}]`).join('\n') : 'No notifications right now.';
+      },
     };
     return { tools, brief: phoneBrief(`- Now: ${this.summaryLine(deviceId)}`), deviceId, env: this.runEnv() };
   }
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms).unref());
+
+/** `dumpsys notification --noredact` → the active notifications (best-effort: pkg, title, text). */
+export function parseNotifications(dump: string): Array<{ app: string; title: string; text: string }> {
+  const out: Array<{ app: string; title: string; text: string }> = [];
+  // Each record block starts with `NotificationRecord(... pkg=<pkg> ...)`; titles/texts are `android.title=String (...)`.
+  const blocks = dump.split(/NotificationRecord\(/).slice(1);
+  for (const block of blocks.slice(0, 60)) {
+    const app = /pkg=([\w.]+)/.exec(block)?.[1];
+    if (!app) continue;
+    const title = /android\.title=String \(([^)]*)\)/.exec(block)?.[1] ?? /tickerText=([^\n]+)/.exec(block)?.[1];
+    const text = /android\.text=String \(([^)]*)\)/.exec(block)?.[1] ?? /android\.text=CharSequence \(([^)]*)\)/.exec(block)?.[1];
+    if (title || text) out.push({ app, title: (title ?? '').trim().slice(0, 200), text: (text ?? '').trim().slice(0, 500) });
+  }
+  return out;
+}
 
 /** A PNG's pixel size from its IHDR (bytes 16–23, big-endian); undefined if it isn't a PNG. */
 function pngSize(png: Buffer): { w: number; h: number } | undefined {
