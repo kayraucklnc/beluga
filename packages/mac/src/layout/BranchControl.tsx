@@ -13,6 +13,8 @@ import s from './BranchControl.module.css';
 
 const PILL_ICON: Record<BranchTone, IconName> = { merged: 'merge', ok: 'check', error: 'alert', warn: 'alert', wait: 'clock', info: 'branch', muted: 'branch' };
 
+export type BranchFold = 'none' | 'pill' | 'all';
+
 const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merge', merge: 'merge', merge_auto: 'clock', update_branch: 'refresh', mark_ready: 'check', open_pr: 'pr', continue_after_merge: 'branch', archive: 'archive', delete: 'x', commit: 'commit', pr: 'pr' };
 
 /**
@@ -20,8 +22,10 @@ const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merg
  * (Merged in purple, Ready to merge in green, Conflicts in red…), and the step it needs next as
  * one button (its pull request's number on the pill too). Its chevron has the other steps: one-click ones (git or GitHub does them) and the
  * ones Claude does, marked with Claude's icon. The pill opens the pull request when there is one.
+ * In a narrow toolbar it folds: `pill` keeps the pill's icon and number, `all` the step's icon too
+ * (the words move to their tips).
  */
-export function BranchControl({ wsId, branch }: { wsId: string; branch: BranchState }) {
+export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; branch: BranchState; fold?: BranchFold }) {
   const api = useApi();
   const actions = useActions();
   const [method, setMethod] = useState<MergeMethod>(lastMethod);
@@ -72,14 +76,14 @@ export function BranchControl({ wsId, branch }: { wsId: string; branch: BranchSt
   const pill = (
     <span className={cx(s.pill, s[`pill_${branch.tone}`])} data-branch-state={branch.kind}>
       <Icon name={PILL_ICON[branch.tone]} size={11} />
-      {branch.label}
+      {fold === 'none' ? branch.label : null}
       {branch.pr ? <span className={s.pillPr}>#{branch.pr.number}</span> : null}
     </span>
   );
 
   return (
     <span className={s.wrap} role="group" aria-label={`Branch: ${branch.label}`}>
-      <Tip label={branch.pr ? `${branch.detail} · open the pull request` : branch.detail}>
+      <Tip label={`${fold === 'none' ? '' : `${branch.label}: `}${branch.detail}${branch.pr ? ' · open the pull request' : ''}`}>
         {branch.pr ? (
           <button type="button" className={s.pillButton} onClick={() => actions.run({ type: 'ws', id: wsId, action: 'pr' })}>
             {pill}
@@ -90,9 +94,9 @@ export function BranchControl({ wsId, branch }: { wsId: string; branch: BranchSt
       </Tip>
       {main ? (
         <span className={s.split}>
-          <Tip label={main.claude ? `Claude · ${main.hint}` : main.hint}>
-            <Button variant={variant} icon={iconOf(main)} className={cx(s.main, items.length > 0 && s.mainSplit, branch.tone === 'error' && s.mainError, branch.tone === 'merged' && s.mainMerged)} disabled={busy} data-branch-step={main.id} data-tool-ws={wsId} onClick={() => run(main)}>
-              {busy ? 'Working…' : labelOf(main)}
+          <Tip label={`${fold === 'all' ? `${labelOf(main)}: ` : ''}${main.claude ? `Claude · ${main.hint}` : main.hint}`}>
+            <Button variant={variant} icon={iconOf(main)} aria-label={fold === 'all' ? labelOf(main) : undefined} className={cx(s.main, fold === 'all' && s.mainIcon, items.length > 0 && s.mainSplit, branch.tone === 'error' && s.mainError, branch.tone === 'merged' && s.mainMerged)} disabled={busy} data-branch-step={main.id} data-tool-ws={wsId} onClick={() => run(main)}>
+              {fold === 'all' ? null : busy ? 'Working…' : labelOf(main)}
             </Button>
           </Tip>
           {items.length ? (
