@@ -85,8 +85,8 @@ export default function Ask() {
   const target = targets.find((t) => keyOf(t) === sel);
   /** What a project does with your words: a worktree, a plan, a question (only a question before 1.5). */
   const how: Mode = target?.kind === 'project' && modes ? mode : 'question';
-  // Photos go with a question or a message; a new worktree or plan starts from your words.
-  const photos = target?.kind !== 'friend' && !(target?.kind === 'project' && how !== 'question');
+  // Photos go with a question, a message or (1.12) a new worktree; a plan starts from your words.
+  const photos = target?.kind !== 'friend' && !(target?.kind === 'project' && (how === 'plan' || (how === 'worktree' && !store.supports('worktreePhotos'))));
 
   const close = () => {
     setVisible(false);
@@ -112,7 +112,7 @@ export default function Ask() {
         target.kind === 'friend'
           ? make(() => calls.askPerson(target.id, target.name, words))
           : how === 'worktree'
-            ? make(() => calls.startWorktree(target.id, words, planFirst))
+            ? make((files) => (files.length ? calls.startWorktreeWith(target.id, words, planFirst, files) : calls.startWorktree(target.id, words, planFirst)))
             : how === 'plan'
               ? make(() => calls.createPlan(target.id, words))
               : make((files) => calls.ask(target.id, words, files));

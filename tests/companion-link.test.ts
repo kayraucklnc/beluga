@@ -57,6 +57,7 @@ function mac(callLog: Array<{ client: string; method: string; args: readonly unk
       callLog.push({ client, method, args });
       // What the daemon's handlers would answer, as far as the host relies on it.
       if (method === 'workspaces.newChat') return { ok: true, value: 'w9' };
+      if (method === 'workspaces.startWorktree') return { ok: true, value: 'w10' };
       if (method === 'attachments.expand') return { ok: true, value: `expanded: ${String(args[0])}` };
       if (method === 'gateway.ask') return { ok: true, value: { id: 't_asked0000001', peerId: args[0] } };
       if (method === 'network.files.add') return { ok: true, value: (args[0] as string[]).map((p) => ({ sha: 'a'.repeat(64), name: path.basename(p), size: 3 })) };
@@ -202,6 +203,15 @@ describe('pairing a phone and its link', () => {
     expect(sent[0]).toMatch(/^expanded: What is in this photo\?\n\n\[image \d+\]\n\nFiles from my phone:\n- .*notes\.pdf$/);
     // A ref that isn't this phone's is refused.
     await expect(client.call('companion.ask', [{ target: { project: 'p1' }, text: 'x', files: ['up:not-a-real-one'] }])).rejects.toThrow(/gone/);
+
+    // A new worktree with a photo (1.12): the photo is linked in its first message, plan mode goes along.
+    calls.length = 0;
+    await expect(client.call('companion.ask', [{ target: { project: 'p1', worktree: true, plan: true }, text: 'Fix this screen', files: [photo] }])).resolves.toEqual({ topic: 'conv:ws:w10' });
+    expect(calls.map((c) => c.method)).toEqual(['attachments.expand', 'workspaces.startWorktree']);
+    const started = calls[1]!.args as [string, string, unknown];
+    expect(started[0]).toBe('p1');
+    expect(started[1]).toMatch(/^expanded: Fix this screen\n\n\[image \d+\]$/);
+    expect(started[2]).toEqual({ quiet: true, plan: true });
 
     // A chat message with a file.
     calls.length = 0;

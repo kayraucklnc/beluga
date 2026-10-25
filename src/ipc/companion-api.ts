@@ -29,12 +29,16 @@ export const COMPANION_API = {
   'companion.devices.remove': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/)]) },
   // A conversation's (or chat's) turns before one the phone has: → { turns | messages, more }.
   'companion.older': { args: z.tuple([topic, z.object({ before: z.string().min(1).max(200), limit: z.number().int().min(1).max(100).optional() }).strict()]) },
-  // Ask your Mac from the phone: a new chat in a project, or a message in a conversation; files the phone `put` go along → { topic }.
+  // Ask your Mac from the phone: a new chat in a project (or, 1.12, a new worktree there: `worktree`,
+  // with `plan` mode), or a message in a conversation; files the phone `put` go along → { topic }.
   'companion.ask': {
     args: z.tuple([
       z
         .object({
-          target: z.union([z.object({ project: z.string().min(1).max(200) }).strict(), z.object({ topic: z.string().regex(/^conv:[\w:.-]{1,200}$/) }).strict()]),
+          target: z.union([
+            z.object({ project: z.string().min(1).max(200), worktree: z.literal(true).optional(), plan: z.boolean().optional() }).strict(),
+            z.object({ topic: z.string().regex(/^conv:[\w:.-]{1,200}$/) }).strict(),
+          ]),
           text: z.string().max(64_000),
           files: files.optional(),
         })

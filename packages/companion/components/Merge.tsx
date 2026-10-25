@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Archive as ArchiveIcon, ArrowRight, Check, CircleAlert, Clock, FileWarning, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, Info, type LucideIcon, RefreshCw, Sparkles, Trash2, TriangleAlert } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { calls } from '../lib/link/calls';
 import type { BranchStepView, BranchView, MergeCheckView, MergeView, PhoneBranchStep, Topic } from '../lib/link/protocol';
 import { openOnMac } from '../lib/mac';
@@ -156,7 +156,7 @@ export function MergeBand({ topic, merge, onCheck }: { readonly topic: Topic; re
     void store.call(calls.resolve(topic), { queue: false }).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
   };
   return (
-    <Animated.View key={merge.phase} entering={FadeInDown.duration(260)} layout={LinearTransition.springify()}>
+    <Animated.View key={merge.phase} entering={FadeInDown.duration(260)}>
       <Card tone={b.tone} style={{ padding: 14, gap: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Breathe on={live}>
@@ -261,9 +261,10 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
   // The row itself opens every step (the next one too), under the branch's state.
   const all = [...(main ? [main] : []), ...others];
   return (
-    <Animated.View key={branch.kind} entering={FadeIn.duration(200)} layout={LinearTransition.springify()}>
+    // No layout animation: on Android its snapshot drew as a black box, and a ghost of the old band under the chat.
+    <Animated.View key={branch.kind} entering={FadeIn.duration(200)}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 }}>
-        <Press scaleTo={0.99} disabled={!all.length} onPress={() => setMore(true)} accessibilityLabel={`${branch.label}. ${line}`} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Press scaleTo={0.99} disabled={!all.length} onPress={() => setMore(true)} accessibilityLabel={`${branch.label}. ${line}`} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Pill label={branch.pr ? `${branch.label} #${branch.pr.number}` : branch.label} tone={t.tone} Icon={t.Icon} />
           <T v="caption" c={color.text3} numberOfLines={1} style={{ flex: 1 }}>
             {line}
@@ -275,7 +276,7 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
             onPress={chip.onPress}
             accessibilityLabel={chip.label}
             hitSlop={6}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 30, maxWidth: 180, paddingHorizontal: 12, borderRadius: 15, backgroundColor: toneBg(chip.tone), opacity: busy ? 0.6 : 1 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 30, maxWidth: 180, flexShrink: 1, paddingHorizontal: 12, borderRadius: 15, backgroundColor: toneBg(chip.tone), opacity: busy ? 0.6 : 1 }}
           >
             {busy ? <ActivityIndicator size="small" color={toneInk(chip.tone)} /> : <chip.Icon color={toneInk(chip.tone)} size={14} strokeWidth={2.3} />}
             <T v="caption" c={toneInk(chip.tone)} numberOfLines={1} style={{ fontWeight: '700', flexShrink: 1 }}>
@@ -283,7 +284,12 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
             </T>
           </Press>
         ) : null}
-        {others.length ? <More onPress={() => setMore(true)} label="Other steps" size={30} /> : null}
+        {/* ••• always fits: the chip and the line give way to it. */}
+        {others.length ? (
+          <View style={{ flexShrink: 0 }}>
+            <More onPress={() => setMore(true)} label="Other steps" size={30} />
+          </View>
+        ) : null}
       </View>
       <Options visible={more} onClose={() => setMore(false)} title={`${branch.label} · ${branch.branch}`} options={all.map((s) => ({ Icon: iconOf(s), label: bare(s.label), sub: s.claude ? `Claude · ${s.hint}` : s.hint, tone: toneOf(s), onPress: () => tap(s) }))} />
       <Options

@@ -40,6 +40,8 @@ export const calls = {
    * Claude drafts for you to approve, → the plan.
    */
   startWorktree: (project: string, text: string, plan = false): Call => make('workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}) }], `Start "${short(text)}"`),
+  /** 1.12: a new worktree with photos: its words and photos go the way a question's do → its topic. */
+  startWorktreeWith: (project: string, text: string, plan: boolean, files: Files): Call => make('companion.ask', [{ target: { project, worktree: true, ...(plan ? { plan: true } : {}) }, text, ...withFiles(files) }], `Start "${short(text)}"`),
   createPlan: (project: string, goal: string): Call => make('plans.create', [{ projectId: project, goal }], `Plan "${short(goal)}"`),
   /** How a plan runs (1.5): Step by Step, Check-ins or Autopilot. */
   setAutonomy: (plan: string, autonomy: 'step' | 'gated' | 'autopilot', label: string): Call => make('plans.setAutonomy', [plan, autonomy], `Run as ${label}`),
