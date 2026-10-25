@@ -36,6 +36,8 @@ export interface AgentRunInput {
   readonly scratchDir?: string;
   /** Where to run: a workspace folder with its own Claude conversation. Defaults to the room's folder. */
   readonly place?: AgentPlace;
+  /** The conversation this run answers in: its room tools (send_chat, asks) post there. */
+  readonly channel?: string;
   /** Called with absolute paths the agent wrote to, so the room can follow along. */
   readonly onFileTouched: (absPath: string) => void;
   /**
@@ -323,4 +325,6 @@ export interface RoomBridge {
   sendFile(peerName: string, path: string, note?: string): Promise<string>;
   /** Tasks between Claudes (the Beluga app only; see agent/gateway-tools.ts). */
   readonly gateway?: import('./gateway-tools.js').GatewayBridge;
+  /** The same tools bound to one conversation (a run's: chat, asks and their answers go there). */
+  inChannel?(channel: string): RoomBridge;
 }

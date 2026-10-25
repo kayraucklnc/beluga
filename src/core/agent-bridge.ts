@@ -25,8 +25,13 @@ export async function writeReport(session: Session, cwd: string, title: string, 
   return hit ? `${hit.share}/${hit.path}` : file;
 }
 
-/** What your Claude may do to the room, exposed to it as MCP tools (see agent/tools.ts). */
-export function createRoomBridge(session: Session, cwd: () => string): RoomBridge {
+/**
+ * What your Claude may do to the room, exposed to it as MCP tools (see agent/tools.ts).
+ * `channel`: the conversation a run works in. Several run at once, so each run's tools are bound
+ * to its own (inChannel): its updates and questions never land in another conversation.
+ */
+export function createRoomBridge(session: Session, cwd: () => string, channel?: string): RoomBridge {
+  const conversation = (): string => channel ?? session.host.currentChannel;
   const requirePeer = (name: string): PeerInfo => {
     const peer = session.findPeer(name);
     if (!peer) throw new Error(`No peer named "${name}". Call list_peers first.`);
@@ -34,16 +39,16 @@ export function createRoomBridge(session: Session, cwd: () => string): RoomBridg
   };
   return {
     selfName: () => session.store.getState().self?.name ?? 'me',
-    sendChat: (text) => session.sendChat(text, true, session.host.currentChannel),
+    sendChat: (text) => session.sendChat(text, true, conversation()),
     listPeers: () => session.store.getState().peers,
     askAgent: (name, prompt, project) => {
       const peer = requirePeer(name);
       if (!peer.agent) return Promise.reject(new Error(`${peer.name} has no agent online`));
       // Their Claude may send files back for you: accept them without asking.
       session.remote.expectFrom(peer.peerId);
-      return session.askPeerAgent(peer.peerId, peer.name, prompt, { ...(project ? { project } : {}), mirror: session.host.currentChannel });
+      return session.askPeerAgent(peer.peerId, peer.name, prompt, { ...(project ? { project } : {}), mirror: conversation() });
     },
-    runOnPeer: (name, command, opts = {}) => session.runOnPeer(name, command, { ...opts, viaAgent: true, channel: session.host.currentChannel }),
+    runOnPeer: (name, command, opts = {}) => session.runOnPeer(name, command, { ...opts, viaAgent: true, channel: conversation() }),
     describePeers: () => describePeers(session),
     listPeerFiles: (name, share, p) => session.files.listFiles({ owner: requirePeer(name).peerId, share, path: p }),
     readPeerFile: async (name, share, p) => (await session.files.readFile({ owner: requirePeer(name).peerId, share, path: p })).content,
@@ -51,12 +56,14 @@ export function createRoomBridge(session: Session, cwd: () => string): RoomBridg
     reportUsage: (usage) => session.updateUsage(usage),
     getPeerFile: (name, file, saveTo, why) => session.remote.getFile(requirePeer(name).peerId, file, saveTo, why),
     sendFile: (name, file, note) => session.remote.sendFile(requirePeer(name).peerId, file, note),
-    gateway: gatewayBridge(session),
+    gateway: gatewayBridge(session, channel),
+    inChannel: (c) => createRoomBridge(session, cwd, c),
   };
 }
 
 /** Tasks between Claudes for your Claude's tools (agent/gateway-tools.ts), through the session's gateway. */
-export function gatewayBridge(session: Session): GatewayBridge {
+export function gatewayBridge(session: Session, channel?: string): GatewayBridge {
+  const conversation = (): string => channel ?? session.host.currentChannel;
   const gw = () => needGateway(session);
   const told = (t: TaskView): string => {
     const target = t.kind === 'ask' ? `${t.peerName}'s Claude` : `${t.peerName}'s Mac`;
@@ -68,7 +75,7 @@ export function gatewayBridge(session: Session): GatewayBridge {
   return {
     available: () => Boolean(gatewayOf(session)),
     whoCan: (need) => gw().whoCan(need),
-    askPerson: (input) => told(gw().ask({ ...input, by: 'agent', conversation: session.host.currentChannel })),
+    askPerson: (input) => told(gw().ask({ ...input, by: 'agent', conversation: conversation() })),
     runOn: (input) =>
       told(
         gw().ask({
@@ -79,7 +86,7 @@ export function gatewayBridge(session: Session): GatewayBridge {
           command: input.command,
           needs: ['shell'],
           by: 'agent',
-          conversation: session.host.currentChannel,
+          conversation: conversation(),
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.project ? { project: input.project } : {}),
           ...(input.timeoutSec ? { timeoutSec: input.timeoutSec } : {}),
@@ -94,7 +101,7 @@ export function gatewayBridge(session: Session): GatewayBridge {
           ...(input.why ? { summary: input.why } : {}),
           path: input.path,
           by: 'agent',
-          conversation: session.host.currentChannel,
+          conversation: conversation(),
         }),
       ),
     answerQuestion: (task, answers) => {

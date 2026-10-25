@@ -210,7 +210,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
  * reporting what it does to everyone who should see it.
  */
 export class AgentHost {
-  /** Conversation the agent is currently working in (for its send_chat tool). */
+  /** The conversation whose run started last: only a fallback, each run's tools post to their own (agent-bridge.ts). */
   currentChannel = 'room';
   private readonly approvals = new Map<string, (answer: ApprovalAnswer) => void>();
   private readonly alwaysTools = new Set<string>();
@@ -1048,6 +1048,7 @@ export class AgentHost {
         viaAgent: body.viaAgent,
         context: this.recentChat(body.channel),
         ...(runPlace ? { place: runPlace } : {}),
+        channel: body.channel,
         scope: from === this.selfId ? 'full' : reachOf(this.store.getState(), from),
         ...(from !== this.selfId && this.deps.isGuest?.(from) ? { guest: true } : {}),
         signal: controller.signal,
