@@ -17,13 +17,18 @@ export type BranchFold = 'none' | 'pill' | 'all';
 
 const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merge', merge: 'merge', merge_auto: 'clock', cancel_auto: 'x', update_branch: 'refresh', mark_ready: 'check', open_pr: 'pr', continue_after_merge: 'branch', archive: 'archive', delete: 'x', commit: 'commit', pr: 'pr', pr_draft: 'pr' };
 
+const STEP_SHORT: Partial<Record<BranchStep['id'], string>> = { pr: 'PR', open_pr: 'PR', pr_draft: 'Draft', pr_claude: 'PR', pr_custom: 'PR', merge_pr: 'Merge', merge: 'Merge', merge_auto: 'Auto-merge', merge_admin: 'Merge', cancel_auto: 'Cancel', update_branch: 'Update', mark_ready: 'Ready', review_claude: 'Review', fix_checks: 'Fix', resolve_pr: 'Resolve', merge_claude: 'Resolve' };
+
+/** A step in one word, for the folded toolbar: the icon alone didn't say enough. */
+export const shortLabel = (step: BranchStep): string => STEP_SHORT[step.id] ?? step.label.replace(/…$/, '').split(' ')[0]!;
+
 /**
  * The top of a worktree: where its branch stands, as a pill you can read from across the room
  * (Merged in purple, Ready to merge in green, Conflicts in red…), and the step it needs next as
  * one button (its pull request's number on the pill too). Its chevron has the other steps: one-click ones (git or GitHub does them) and the
  * ones Claude does, marked with Claude's icon. The pill opens the pull request when there is one.
- * In a narrow toolbar it folds: `pill` keeps the pill's icon and number, `all` the step's icon too
- * (the words move to their tips).
+ * In a narrow toolbar it folds: `pill` keeps the pill's icon and number, `all` the step's icon and
+ * one short word ("PR", "Merge"), the full words moving to their tips.
  */
 export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; branch: BranchState; fold?: BranchFold }) {
   const api = useApi();
@@ -106,8 +111,8 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
       {main ? (
         <span className={s.split}>
           <Tip label={`${fold === 'all' ? `${labelOf(main)}: ` : ''}${main.claude ? `Claude · ${main.hint}` : main.hint}`}>
-            <Button variant={variant} icon={iconOf(main)} aria-label={fold === 'all' ? labelOf(main) : undefined} className={cx(s.main, fold === 'all' && s.mainIcon, items.length > 0 && s.mainSplit, branch.tone === 'error' && s.mainError, branch.tone === 'merged' && s.mainMerged)} disabled={busy} data-branch-step={main.id} data-tool-ws={wsId} onClick={() => run(main)}>
-              {fold === 'all' ? null : busy ? 'Working…' : labelOf(main)}
+            <Button variant={variant} icon={iconOf(main)} aria-label={fold === 'all' ? labelOf(main) : undefined} className={cx(s.main, items.length > 0 && s.mainSplit, branch.tone === 'error' && s.mainError, branch.tone === 'merged' && s.mainMerged)} disabled={busy} data-branch-step={main.id} data-tool-ws={wsId} onClick={() => run(main)}>
+              {busy ? (fold === 'all' ? '…' : 'Working…') : fold === 'all' ? shortLabel(main) : labelOf(main)}
             </Button>
           </Tip>
           {items.length ? (
