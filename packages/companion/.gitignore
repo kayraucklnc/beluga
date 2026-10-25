@@ -2,8 +2,8 @@ node_modules/
 .expo/
 dist/
 web-build/
-android/
-ios/
+/android/
+/ios/
 worklet/dist/
 *.bundle
 expo-env.d.ts
