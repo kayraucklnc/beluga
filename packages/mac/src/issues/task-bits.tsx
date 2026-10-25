@@ -34,8 +34,8 @@ export function IssueMark({ issue, compact }: { issue: Issue; compact?: boolean 
   );
 }
 
-/** Whether the task's Claude has investigated its issue and stopped (Fix It continues there). */
-function useInvestigated(issue: Issue): boolean {
+/** Whether the task's Claude has investigated its issue and stopped (Fix It continues there): then Fix It is the one main action. */
+export function useInvestigated(issue: Issue): boolean {
   const places = [issue.carriedBy, issue.worktrees.at(-1)].filter((w): w is string => Boolean(w));
   const live = useApp((st) => places.filter((id) => st.projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived))).join(' '));
   const working = useApp((st) => places.filter((id) => activityOf(st.log, `ws:${id}`).running).join(' '));
