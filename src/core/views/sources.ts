@@ -143,7 +143,7 @@ export async function fetchSource(source: Source, query: ViewQuery, opts: FetchO
   if (opts.confirm) approve(source, opts.cwd);
   const bound = bind(source, query.params);
   if (refusal(bound, opts.cwd)) throw new Error(refusal(bound, opts.cwd));
-  const keys = keysOfFetch(bound, query, opts);
+  const keys = keysOfFetch(source, bound, query, opts);
   // What it brought before (it ran with its owner's yes then): shown again without running it.
   if (opts.cache && !opts.fresh) {
     const was = recallFetch(bound, query, keys, opts);
@@ -156,7 +156,7 @@ export async function fetchSource(source: Source, query: ViewQuery, opts: FetchO
   source = bound;
   if (keys.page) {
     const pushed = (await pushedDown(source, query, opts))!;
-    keep(keys.page, pushed.at, pushed);
+    keep(keys.group, keys.page, pushed.at, pushed);
     return pushed;
   }
   const key = keys.whole;
@@ -166,7 +166,7 @@ export async function fetchSource(source: Source, query: ViewQuery, opts: FetchO
     let running = inFlight.get(key);
     if (!running) {
       running = fetchWhole(source, opts)
-        .then((w) => (keep(key, w.at, w), w))
+        .then((w) => (keep(keys.group, key, w.at, w), w))
         .finally(() => inFlight.delete(key));
       inFlight.set(key, running);
     }
@@ -188,15 +188,20 @@ function pageOfWhole(whole: Whole, query: ViewQuery, opts: FetchOptions): ViewPa
  * Where a fetch is kept (kept.ts): a source that pages itself, per page asked for; anything else
  * whole, and paged from that.
  */
-function keysOfFetch(source: Source, query: ViewQuery, opts: FetchOptions): { whole: string; page?: string } {
-  const whole = `${sourceKey(source)}\u0000${opts.cwd ?? ''}\u0000${opts.text ? 't' : 'r'}`;
-  if (opts.text || !pagesItself(source)) return { whole };
+function keysOfFetch(named: Source, source: Source, query: ViewQuery, opts: FetchOptions): Keys {
+  // Grouped by the source as the view names it (before its controls fill it in), so it can be forgotten with its view.
+  const group = sourceKey(named);
+  // Where it ran only matters to a source that doesn't say (the show tool makes paths whole, so its first fetch is the window's too).
+  const place = ('path' in source && !path.isAbsolute(source.path)) || ((source.kind === 'command' || source.kind === 'postgres') && !source.cwd) ? (opts.cwd ?? '') : '';
+  const whole = `${sourceKey(source)}\u0000${place}\u0000${opts.text ? 't' : 'r'}`;
+  if (opts.text || !pagesItself(source)) return { group, whole };
   const { params: _p, ...q } = query;
-  return { whole, page: `${whole}\u0000${JSON.stringify(q)}` };
+  return { group, whole, page: `${whole}\u0000${JSON.stringify(q)}` };
 }
+type Keys = { readonly group: string; readonly whole: string; readonly page?: string };
 
-function recallFetch(source: Source, query: ViewQuery, keys: { whole: string; page?: string }, opts: FetchOptions): ViewPage | undefined {
-  const was = keys.page ? recall<ViewPage>(keys.page) : recall<Whole>(keys.whole);
+function recallFetch(source: Source, query: ViewQuery, keys: Keys, opts: FetchOptions): ViewPage | undefined {
+  const was = keys.page ? recall<ViewPage>(keys.group, keys.page) : recall<Whole>(keys.group, keys.whole);
   // A source that refreshes itself keeps its rows only that long.
   if (!was || (source.refresh && Date.now() - was.at > source.refresh * 1000)) return undefined;
   return keys.page ? { ...(was.value as ViewPage), at: was.at } : pageOfWhole({ ...(was.value as Whole), at: was.at }, query, opts);

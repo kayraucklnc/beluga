@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Source, ViewPage } from '../src/shared/view-spec.js';
 import { bind, fetchSource, needsYes } from '../src/core/views/sources.js';
 import { forgetKept } from '../src/core/views/kept.js';
+import { forgetViews } from '../src/core/views/forget.js';
 import { ViewShelf, showView } from '../src/agent/view-tools.js';
 import { decideTool } from '../src/agent/policy.js';
 
@@ -214,5 +215,31 @@ describe('the show tool', () => {
     expect((await page(json.source, { params: { count: 4 } }, { cwd: dir })).rows).toHaveLength(4);
     await expect(showView(shelf, dir, { type: 'table', source: { kind: 'script', code: 'cat .env' } })).rejects.toThrow('credential files');
     await expect(showView(shelf, dir, { type: 'table', source: { kind: 'script', language: 'cobol', code: 'x' } })).rejects.toThrow('Scripts run as');
+  });
+
+  it('archiving a conversation forgets its views’ rows, keeping what brings them; deleting it removes that too', async () => {
+    const shelf = new ViewShelf();
+    await showView(shelf, dir, { type: 'table', source: { kind: 'script', language: 'sh', code: 'echo "a,b"; echo "1,{{n}}"', args: '', format: 'csv' } });
+    await showView(shelf, dir, { type: 'table', data: Array.from({ length: 250 }, (_, i) => ({ i })) });
+    const answer = shelf.finish('[[view:1]]\n\n[[view:2]]');
+    const [script, dumped] = [...answer.matchAll(/```beluga-view\n(.*)\n```/g)].map((m) => (JSON.parse(m[1]!) as { source: Source }).source);
+    const file = /'([^']+)'/.exec((script as Extract<Source, { kind: 'command' }>).command)![1]!;
+    const data = (dumped as Extract<Source, { kind: 'file' }>).path;
+    const kept = async (s: Source): Promise<boolean> => 'rows' in (await fetchSource(s, { offset: 0, limit: 10 }, { cache: 'only' }));
+    await page(dumped!, {}, { cache: 'prefer' });
+    expect(await kept(script!)).toBe(true);
+    expect(await kept(dumped!)).toBe(true);
+
+    expect(forgetViews([answer], 'archived')).toEqual({ rows: 2, files: 0 });
+    expect(await kept(script!)).toBe(false);
+    expect(await kept(dumped!)).toBe(false);
+    expect(existsSync(file) && existsSync(data)).toBe(true);
+
+    // Another conversation still shows the script: only the handed-over rows go.
+    expect(forgetViews([answer], 'deleted', () => [`elsewhere: ${file}`])).toEqual({ rows: 0, files: 1 });
+    expect(existsSync(file)).toBe(true);
+    expect(existsSync(data)).toBe(false);
+    expect(forgetViews([answer], 'deleted')).toMatchObject({ files: 1 });
+    expect(existsSync(file)).toBe(false);
   });
 });

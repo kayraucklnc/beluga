@@ -1,6 +1,9 @@
 import type { DomainState } from '../core/store.js';
 import { fetchSource } from '../core/views/sources.js';
-import { type Source, type ViewFetchResult, type ViewQuery, parseView, sourceKey, viewFenceType } from '../shared/view-spec.js';
+import { sourcesOf } from '../core/views/forget.js';
+import { type Source, type ViewFetchResult, type ViewQuery, sourceKey } from '../shared/view-spec.js';
+
+export { sourcesOf };
 import { stripCode } from './strip.js';
 import { phoneChannel } from './views.js';
 
@@ -28,15 +31,6 @@ export interface ViewFetchArgs {
 }
 
 const me = (state: DomainState): string => state.selfId || state.self?.peerId || state.network.self?.peerId || 'me';
-
-/** The sources a view's block names: its own, its actions', its controls' options'. */
-export function sourcesOf(blockText: string, lang?: string): Source[] {
-  const type = viewFenceType(lang);
-  const parsed = parseView(blockText, type && type !== 'any' ? type : undefined);
-  if (!parsed.ok) return [];
-  const v = parsed.view;
-  return [v.source, ...v.actions.map((a) => a.source), v.initial?.source, ...v.controls.flatMap((c) => [c.source, ...(c.options ?? []).map((o) => o.source)])].filter((s): s is Source => Boolean(s));
-}
 
 /** The view a phone points at, if it's in your own Claude's answer: its fence and JSON. */
 export function blockOf(state: DomainState, a: Pick<ViewFetchArgs, 'topic' | 'turn' | 'block'>): { lang?: string; text: string } {

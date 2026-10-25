@@ -118,6 +118,7 @@ A view with a `source` is live: the window asks for each page as you need it.
 - **`"refresh": 10`** fetches it again every 10 seconds while you can see it. The card says **Live**.
 - **Refresh** (⟳) fetches it again now. The card says when the rows are from.
 - **What was fetched is kept** (BLG-120). Opening a conversation or a report again shows the rows this Mac fetched last time, and how old they are, without running the source. A view still on the rows it came with switches to newer ones when you refreshed it since. Each page of a database (or a templated command) is kept as it was asked for; anything else is kept whole (up to 4 MB) and paged from that. A source with `refresh` keeps its rows only that long. They're in `~/Library/Caches/Beluga/views/fetched` (the newest 400), `src/core/views/kept.ts`. The phone gets the same through the Mac.
+- **They go with their conversation.** Archiving a workspace forgets the rows its views fetched (restored, they're fetched again) but keeps what brings them: Claude's scripts and the rows it handed over that were too many for the answer. Deleting it removes those too, unless another conversation still shows them (`src/core/views/forget.ts`).
 
 ### Who it runs for
 
