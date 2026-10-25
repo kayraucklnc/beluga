@@ -4,8 +4,12 @@
  */
 
 export type FlameStyle = 'toon' | 'pixel';
-/** When it burns on Max: whenever the box is showing, only while you type, or never. */
+/** When it burns: whenever the box is showing, only while you type, or never. */
 export type FireShow = 'always' | 'typing' | 'off';
+/** Where the effects are on: only on Max effort (so they say you're on Max), or with every model and effort. */
+export type FireWhere = 'max' | 'everywhere';
+/** What typing throws from the caret. */
+export type TypingFx = 'off' | 'confetti' | 'pixels';
 
 export interface FirePalette {
   readonly id: string;
@@ -15,6 +19,7 @@ export interface FirePalette {
 }
 
 export interface FireLook {
+  readonly where: FireWhere;
   readonly show: FireShow;
   readonly style: FlameStyle;
   /** 0–1 each. Fuel: how many flames; height: how tall they climb; thickness: how fat; wildness: how much they lick and dance. */
@@ -26,8 +31,8 @@ export interface FireLook {
   readonly palette: string;
   /** Typing fast makes it flare orange, like Hades losing his temper. */
   readonly temper: boolean;
-  /** Confetti from the caret as you type. */
-  readonly confetti: boolean;
+  /** What typing throws from the caret: nothing, confetti, or pixels. */
+  readonly typing: TypingFx;
   /** What you delete pops into pixels. */
   readonly popDelete: boolean;
   /** The preset it matches, or 'custom' once you've changed something. */
@@ -59,7 +64,7 @@ export const PRESETS: ReadonlyArray<{ readonly id: string; readonly name: string
   { id: 'arcade', name: 'Arcade', blurb: 'Pixel fire, like an old game', look: { style: 'pixel', fuel: 0.6, height: 0.55, thickness: 0.55, wildness: 0.5, palette: 'red', temper: true } },
 ];
 
-export const DEFAULT_FIRE: FireLook = { show: 'always', ...PRESETS[0]!.look, confetti: true, popDelete: true, preset: 'hades', palettes: [] };
+export const DEFAULT_FIRE: FireLook = { where: 'max', show: 'always', ...PRESETS[0]!.look, typing: 'confetti', popDelete: true, preset: 'hades', palettes: [] };
 
 /** A palette by id: yours first, then the built-in ones (Blue if it's gone). */
 export const paletteOf = (look: Pick<FireLook, 'palette' | 'palettes'>): FirePalette => look.palettes.find((p) => p.id === look.palette) ?? PALETTES.find((p) => p.id === look.palette) ?? PALETTES[0]!;
@@ -75,6 +80,7 @@ export function fireLookOf(saved: unknown): FireLook {
   const s = (saved && typeof saved === 'object' ? saved : {}) as Partial<FireLook>;
   const unit = (v: unknown, d: number): number => (typeof v === 'number' && v >= 0 && v <= 1 ? v : d);
   return {
+    where: s.where === 'everywhere' ? 'everywhere' : 'max',
     show: s.show === 'typing' || s.show === 'off' ? s.show : 'always',
     style: s.style === 'pixel' ? 'pixel' : 'toon',
     fuel: unit(s.fuel, DEFAULT_FIRE.fuel),
@@ -83,7 +89,8 @@ export function fireLookOf(saved: unknown): FireLook {
     wildness: unit(s.wildness, DEFAULT_FIRE.wildness),
     palette: typeof s.palette === 'string' ? s.palette : DEFAULT_FIRE.palette,
     temper: typeof s.temper === 'boolean' ? s.temper : DEFAULT_FIRE.temper,
-    confetti: typeof s.confetti === 'boolean' ? s.confetti : DEFAULT_FIRE.confetti,
+    // (Before there were pixels, typing's confetti was a switch.)
+    typing: s.typing === 'off' || s.typing === 'confetti' || s.typing === 'pixels' ? s.typing : (s as { confetti?: unknown }).confetti === false ? 'off' : DEFAULT_FIRE.typing,
     popDelete: typeof s.popDelete === 'boolean' ? s.popDelete : DEFAULT_FIRE.popDelete,
     preset: typeof s.preset === 'string' ? s.preset : DEFAULT_FIRE.preset,
     palettes: Array.isArray(s.palettes) ? s.palettes.filter((p): p is FirePalette => Boolean(p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.colors) && p.colors.length === 3)) : [],
@@ -98,3 +105,19 @@ export const fireVars = (look: Pick<FireLook, 'palette' | 'palettes'>): Record<s
   const [f0, f1, f2] = paletteOf(look).colors;
   return { '--f0': f0, '--f1': f1, '--f2': f2 };
 };
+
+/** One tap for what's on: the fire, what typing throws, deleting's pops (the look itself stays). */
+export const SETUPS: ReadonlyArray<{ readonly id: string; readonly name: string; readonly blurb: string; readonly set: Pick<FireLook, 'show' | 'typing' | 'popDelete'> }> = [
+  { id: 'full', name: 'Full Fire', blurb: 'Flames, confetti and pops', set: { show: 'always', typing: 'confetti', popDelete: true } },
+  { id: 'pixels', name: 'Just Pixels', blurb: 'No flames: pixels as you type and delete', set: { show: 'off', typing: 'pixels', popDelete: true } },
+  { id: 'pops', name: 'Pops Only', blurb: 'Only what you delete pops', set: { show: 'off', typing: 'off', popDelete: true } },
+  { id: 'off', name: 'Off', blurb: 'Nothing at all', set: { show: 'off', typing: 'off', popDelete: false } },
+];
+
+export const setupOf = (look: FireLook): string | undefined => SETUPS.find((x) => x.set.show === look.show && x.set.typing === look.typing && x.set.popDelete === look.popDelete)?.id;
+
+/** Anything to show at all. */
+export const anyEffect = (look: FireLook): boolean => look.show !== 'off' || look.typing !== 'off' || look.popDelete;
+
+/** The effects are on here: on Max effort, or everywhere if you said so. */
+export const effectsOn = (look: FireLook, effort: string | undefined): boolean => anyEffect(look) && (look.where === 'everywhere' || effort === 'max');

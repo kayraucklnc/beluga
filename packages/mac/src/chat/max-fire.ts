@@ -285,8 +285,9 @@ export class MaxFire {
     this.typedAt = this.time;
   }
 
-  /** Confetti from the caret. */
-  burst({ x, y }: { x: number; y: number }, n = 9): void {
+  /** Confetti from the caret (or, `pixels`, little squares in the fire's colours). */
+  burst({ x, y }: { x: number; y: number }, n = 9, pixels = false): void {
+    const colors = [...this.palette, '#ffffff'];
     for (let i = 0; i < n; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.95;
       const speed = 1.6 + Math.random() * 2.6;
@@ -298,9 +299,9 @@ export class MaxFire {
         spin: Math.random() * Math.PI,
         turn: (Math.random() - 0.5) * 0.4,
         life: 1,
-        color: CONFETTI[(Math.random() * CONFETTI.length) | 0]!,
-        shape: (Math.random() * 3) as 0 | 1 | 2,
-        size: 0,
+        color: pixels ? colors[(Math.random() * colors.length) | 0]! : CONFETTI[(Math.random() * CONFETTI.length) | 0]!,
+        shape: pixels ? 3 : ((Math.random() * 3) as 0 | 1 | 2),
+        size: pixels ? 3 : 0,
       });
     }
     if (this.bits.length > 400) this.bits.splice(0, this.bits.length - 400);
@@ -379,7 +380,7 @@ export class MaxFire {
     const target = this.focused ? 0.55 : 0.4;
     this.heat += (target - this.heat) * 0.02 * dt;
     // Only while typing: it catches at the first key and dies down a couple of seconds after the last.
-    const goal = this.tune.show === 'typing' ? (this.time - this.typedAt < 2.2 ? 1 : 0) : 1;
+    const goal = this.tune.show === 'off' ? 0 : this.tune.show === 'typing' ? (this.time - this.typedAt < 2.2 ? 1 : 0) : 1;
     this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.12 : 0.03) * dt);
     // Keep the fire fed: one blob per 12–30px of edge (the fuel), more the hotter it burns.
     const want = Math.min(MAX_BLOBS, Math.round(((this.box.w + this.box.h) / (30 - this.cur.fuel * 18)) * (0.7 + this.heat * 0.6) * this.amount));

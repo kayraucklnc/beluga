@@ -1,4 +1,4 @@
-/* Settings › Max Fire: a live preview, preset cards, plain sliders, colour cards. */
+/* Settings › Fire & Confetti: a live preview, preset cards, plain sliders, colour cards. */
 
 /* The preview: a box like the message box, with room above it for the flames. */
 .stage {
@@ -12,6 +12,11 @@
 }
 .fakeBox {
   border-radius: var(--radius-l);
+}
+.plainBox {
+  position: relative;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
 }
 .fakeInput {
   display: block;

@@ -53,10 +53,10 @@ export function MaxFire({ box, input, look: given }: { box: RefObject<HTMLDivEle
       const kind = (e as InputEvent).inputType ?? '';
       const gone = Math.max(0, length - field.value.length);
       length = field.value.length;
-      const { confetti, popDelete } = now.current.look;
+      const { typing, popDelete } = now.current.look;
       if (kind.startsWith('insert')) {
         f.stoke();
-        if (confetti) f.burst(caret(), kind === 'insertFromPaste' ? 24 : 9);
+        if (typing !== 'off') f.burst(caret(), kind === 'insertFromPaste' ? 24 : typing === 'pixels' ? 7 : 9, typing === 'pixels');
       } else if (kind.startsWith('delete') && popDelete && gone) {
         f.pop(caret(), gone);
       }

@@ -29,7 +29,7 @@ import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
 import { isPlanHome, planForHome } from '@beluga/core/plans/model.js';
 import { MaxFire } from './MaxFire.js';
-import { fireVars } from './fire-look.js';
+import { effectsOn, fireVars } from './fire-look.js';
 import s from './composer.module.css';
 import m from './max.module.css';
 import d from './draft.module.css';
@@ -143,8 +143,10 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     leave();
   };
-  // Max effort: the box burns (MaxFire), and typing throws confetti.
-  const onMax = state.prefs.effort === 'max' && !shared && prefs.maxFire.show !== 'off';
+  // The box's effects (Settings › Fire & Confetti): on Max effort by default, or everywhere.
+  // `burning` is the fire itself; without it, only the confetti and pixels fly.
+  const effects = !shared && effectsOn(prefs.maxFire, state.prefs.effort);
+  const burning = effects && prefs.maxFire.show !== 'off';
   const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
   // A new worktree: the branch it starts from and its name (empty: named from the task).
   const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
@@ -380,13 +382,13 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={(prompt) => void editQueued(prompt)} />
       <div
         ref={boxRef}
-        style={onMax ? (fireVars(prefs.maxFire) as React.CSSProperties) : undefined}
-        className={cx(s.box, onMax && m.max, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
+        style={effects ? (fireVars(prefs.maxFire) as React.CSSProperties) : undefined}
+        className={cx(s.box, burning ? m.max : effects && m.fxOnly, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
         data-plan={plan || tasksMode || undefined}
         data-mode={mode}
         {...att.dropProps}
       >
-        {onMax ? <MaxFire box={boxRef} input={ref} /> : null}
+        {effects ? <MaxFire box={boxRef} input={ref} /> : null}
         {mode !== 'act' ? (
           <div className={s.planBanner} role="status">
             <span className={s.planTag}>
@@ -471,7 +473,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </ActionsDropdown>
           ) : null}
           {!shared ? <ModelPicker channel={channel} /> : null}
-          {onMax ? (
+          {burning && state.prefs.effort === 'max' ? (
             <Tip label="Max effort: Claude thinks as hard as it can">
               <span className={m.tag}>
                 <Icon name="flame" size={11} className={m.flicker} />
@@ -512,7 +514,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </div>
           ) : (
             <Tip label={prefs.sendWith === 'enter' ? 'Send · Shift+Return for a new line' : `Send · ${mod()}Return`} keys={prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`}>
-              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady, onMax && buffer.trim() && m.hot)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
+              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady, burning && buffer.trim() && m.hot)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
                 <Icon name="send" size={14} />
               </button>
             </Tip>

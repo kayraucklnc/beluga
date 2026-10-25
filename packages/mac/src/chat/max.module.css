@@ -29,6 +29,10 @@
     var(--bg-raised);
   pointer-events: none;
 }
+/* Only confetti and pixels (no fire): the box just holds their canvas. */
+.fxOnly {
+  position: relative;
+}
 /* The rim: a turning ring of ember colours, masked to its edge. */
 .max::before {
   content: '';

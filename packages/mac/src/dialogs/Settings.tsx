@@ -32,7 +32,7 @@ const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> 
   { id: 'notifications', label: 'Notifications', icon: 'bell' },
   { id: 'workspaces', label: 'Workspaces', icon: 'branch' },
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
-  { id: 'fire', label: 'Max Fire', icon: 'flame' },
+  { id: 'fire', label: 'Fire & Confetti', icon: 'flame' },
   { id: 'environment', label: 'Environment', icon: 'lock' },
   { id: 'people', label: 'People & access', icon: 'people' },
   { id: 'phone', label: 'Phone', icon: 'phone' },

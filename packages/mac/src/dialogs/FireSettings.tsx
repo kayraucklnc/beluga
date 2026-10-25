@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { fireVars, DEFAULT_FIRE, type FireLook, type FirePalette, PALETTES, PRESETS, paletteOf, presetOf } from '../chat/fire-look.js';
+import { fireVars, SETUPS, setupOf, DEFAULT_FIRE, type FireLook, type FirePalette, PALETTES, PRESETS, paletteOf, presetOf } from '../chat/fire-look.js';
 import { MaxFire } from '../chat/MaxFire.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Segmented, cx } from '../components/ui.js';
@@ -40,7 +40,7 @@ function Swatch({ colors }: { colors: readonly string[] }) {
 }
 
 /**
- * Settings › Max Fire: how the message box burns on Max effort. A preset sets everything; the
+ * Settings › Fire & Confetti: the message box's effects (on Max effort by default, or everywhere). A preset sets everything; the
  * sliders, colours and switches fine-tune it. The preview at the top burns as you change it: type
  * or delete there to try it.
  */
@@ -54,6 +54,28 @@ export function FireSettings() {
   return (
     <>
       <Preview look={look} />
+      <Group title="What’s on">
+        <div className={f.presets} role="radiogroup" aria-label="What’s on">
+          {SETUPS.map((x) => (
+            <button key={x.id} type="button" role="radio" aria-checked={setupOf(look) === x.id} className={cx(f.preset, setupOf(look) === x.id && f.on)} onClick={() => set(x.set)}>
+              <span className={f.presetName}>{x.name}</span>
+              <span className={f.presetBlurb}>{x.blurb}</span>
+            </button>
+          ))}
+        </div>
+        <Row label="Where" detail={look.where === 'max' ? 'Only on Max effort, so it tells you you’re on Max.' : 'With every model and effort.'}>
+          <Segmented
+            label="Where"
+            radio
+            value={look.where}
+            onChange={(where) => set({ where })}
+            options={[
+              { value: 'max', label: 'On Max Only' },
+              { value: 'everywhere', label: 'Everywhere' },
+            ]}
+          />
+        </Row>
+      </Group>
       <Group title="Start from">
         <div className={f.presets} role="radiogroup" aria-label="Fire presets">
           {PRESETS.map((p) => (
@@ -73,7 +95,7 @@ export function FireSettings() {
         </div>
       </Group>
       <Group title="When and how">
-        <Row label="When it burns" detail="On Max effort.">
+        <Row label="When it burns">
           <Segmented
             label="When it burns"
             radio
@@ -124,14 +146,24 @@ export function FireSettings() {
         <Row label="Flare when you type fast" detail="It loses its temper and burns orange for a moment.">
           <Switch label="Flare when you type fast" on={look.temper} onChange={(temper) => set({ temper })} />
         </Row>
-        <Row label="Confetti as you type">
-          <Switch label="Confetti as you type" on={look.confetti} onChange={(confetti) => set({ confetti })} />
+        <Row label="As you type" detail="What flies from the caret.">
+          <Segmented
+            label="As you type"
+            radio
+            value={look.typing}
+            onChange={(typing) => set({ typing })}
+            options={[
+              { value: 'off', label: 'Nothing' },
+              { value: 'confetti', label: 'Confetti' },
+              { value: 'pixels', label: 'Pixels' },
+            ]}
+          />
         </Row>
         <Row label="Deleting pops into pixels" detail="What you delete bursts into little pixels that fall away.">
           <Switch label="Deleting pops into pixels" on={look.popDelete} onChange={(popDelete) => set({ popDelete })} />
         </Row>
       </Group>
-      {look.preset !== DEFAULT_FIRE.preset || look.show !== DEFAULT_FIRE.show ? (
+      {(['preset', 'show', 'where', 'typing', 'popDelete'] as const).some((k) => look[k] !== DEFAULT_FIRE[k]) ? (
         <div className={f.reset}>
           <Button size="small" onClick={() => setPrefs({ maxFire: { ...DEFAULT_FIRE, palettes: look.palettes } })}>
             Back to the Default
@@ -147,12 +179,11 @@ function Preview({ look }: { look: FireLook }) {
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState('');
-  // Never shown as off here: it's what it would look like.
-  const shown = look.show === 'off' ? { ...look, show: 'always' as const } : look;
+  // As it will be: no flames when the fire is off (the pixels and confetti still fly).
   return (
     <div className={f.stage} style={{ paddingTop: 200 }}>
-      <div ref={box} className={cx(f.fakeBox, m.max)} style={fireVars(look) as React.CSSProperties}>
-        <MaxFire box={box} input={input} look={shown} />
+      <div ref={box} className={cx(f.fakeBox, look.show !== 'off' ? m.max : f.plainBox)} style={fireVars(look) as React.CSSProperties}>
+        <MaxFire box={box} input={input} look={look} />
         <textarea ref={input} className={f.fakeInput} rows={2} value={text} placeholder="Type or delete here to try it" aria-label="Try the fire" onChange={(e) => setText(e.target.value)} />
       </div>
     </div>
