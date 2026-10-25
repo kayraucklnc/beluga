@@ -469,7 +469,10 @@ class Store {
       // In words, once we know whether the phone itself is online.
       void checkOnline().then((online) => {
         if (this.state.phase !== 'asleep') return;
-        this.setState({ diagnosis: diagnose({ stage: 'link', online, ...(info?.report ? { report: info.report } : {}), ...(detail ? { reason: detail } : {}) }) });
+        const d = diagnose({ stage: 'link', online, ...(info?.report ? { report: info.report } : {}), ...(detail ? { reason: detail } : {}) });
+        // Removed on the Mac: trying again won't help, pairing again will (the banner says so).
+        if (!d.retry) this.clearRetry();
+        this.setState({ diagnosis: d });
       });
     } else {
       // Dialing again keeps saying what was wrong (the banner stays put while it retries by itself).

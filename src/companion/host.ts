@@ -315,6 +315,8 @@ export class CompanionHost {
       ...(opts.log ? { log: opts.log } : {}),
       // The relay's URL goes in the pairing link (its QR redraws) and in each welcome.
       onChange: () => this.publish(),
+      // The companion key's record names the phones still paired (a removed one learns it's removed).
+      phones: (key) => (this.keyPair && key.equals(this.keyPair.publicKey) ? opts.devices.all().map((r) => r.cert.link.slice(0, 16)) : undefined),
     });
     this.coalesceMs = opts.coalesceMs ?? VIEW_COALESCE_MS;
     this.refs = opts.refs ?? new RefTable();
@@ -799,7 +801,11 @@ export class CompanionHost {
       await this.ensureNode().catch((err: unknown) => this.logLine(`could not start: ${String(err)}`));
       // A pairing that just opened gets its relay record too.
       void this.reach.publish();
-    } else if (this.node) await this.shutdownNode();
+    } else if (this.node) {
+      // The last phone went: say so on the DHT once more (phones: none), so it hears it's removed.
+      await this.reach.publish().catch(() => undefined);
+      await this.shutdownNode();
+    }
   }
 
   /** The DHT node as soon as it's up, while the companion's own server and the relay still start. */

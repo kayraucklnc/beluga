@@ -63,6 +63,7 @@ export interface DiagnoseInput {
     readonly dht: 'ok' | 'unreachable' | 'unknown';
     readonly found: 'yes' | 'no' | 'unknown';
     readonly recordAge?: number;
+    readonly removed?: boolean;
   };
   /** The link closed with this code (4002 version, 4010 removed). */
   readonly closeCode?: number;
@@ -139,6 +140,7 @@ export function diagnose(input: DiagnoseInput): Diagnosis {
   if (input.online === false) return make({ problem: 'offline', title: 'This phone is offline', body: 'It can’t reach the internet right now, so it can’t reach your Mac either.', tryThis: 'Turn on Wi-Fi or mobile data, then try again.', retry: true, action: 'open-settings' });
 
   const r = input.report;
+  if (r?.removed) return make({ problem: 'removed', title: 'Your Mac doesn’t know this phone any more', body: 'It was removed on the Mac (Settings › Phone › Remove), or signed out.', tryThis: 'On your Mac, open Settings › Phone › Pair a Phone…, then pair again here.', retry: false, action: 'pair-again' });
   if (r) {
     const relayTried = r.tried.some((t) => t.way === 'relay' && t.outcome !== 'skipped');
     // A pairing key nobody listens on: the pairing is closed (or the code is wrong).

@@ -164,9 +164,12 @@ describe('pairing a phone and its link', () => {
     // A closed link fails the check at once, without waiting out the timeout.
     expect(await client.probe(60_000)).toBe(false);
     expect(store.getState().companion.devices).toEqual([]);
-    await expect(client.connect()).rejects.toThrow();
     // No phone and no pairing: the node stops.
     await waitFor(() => !host.running, 5_000);
+    // Dialing again, it learns it was removed (the Mac's record names no phone), not "Mac offline" (BLG-126).
+    const err = await client.connect().then(() => undefined, (e: unknown) => e as { report?: { removed?: boolean } });
+    expect(err).toBeDefined();
+    expect(err?.report?.removed).toBe(true);
   }, 60_000);
 
   it('tells a phone that stays connected in the background what finished, and keeps the Mac awake when it asks (BLG-127, BLG-128)', async () => {

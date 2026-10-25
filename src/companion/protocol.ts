@@ -648,7 +648,9 @@ export const relayUrlFor = (base: string, keyHex: string): string => `${base.rep
  * with that key (hyperdht mutablePut): its current relay. The DHT lookup works on networks where
  * peer connections don't, so a phone finds the relay there.
  */
-export const RelayRecord = z.object({ v: z.literal(1), relay: RelayUrl.optional(), at: ts });
+// `phones` (BLG-126, under the companion key only): the first 16 hex of each paired phone's link key, so
+// a phone the Mac no longer knows hears it (and is told to pair again) instead of "Mac offline" forever.
+export const RelayRecord = z.object({ v: z.literal(1), relay: RelayUrl.optional(), at: ts, phones: z.array(z.string().regex(/^[0-9a-f]{16}$/)).max(8).optional() });
 export type RelayRecord = z.infer<typeof RelayRecord>;
 
 // ---- frames

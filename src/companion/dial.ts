@@ -107,13 +107,13 @@ export function noiseResponder(pipe: MessagePipe, keyPair: { publicKey: Bytes; s
 }
 
 /** The Mac's relay from its signed record on the DHT (its key, or an open pairing's), if it has one. */
-export async function lookupRelay(node: Partial<Pick<DHT, 'mutableGet'>> | undefined, key: Bytes, timeoutMs = 6_000): Promise<{ relay?: string; at?: number; found: boolean }> {
+export async function lookupRelay(node: Partial<Pick<DHT, 'mutableGet'>> | undefined, key: Bytes, timeoutMs = 6_000): Promise<{ relay?: string; at?: number; phones?: readonly string[]; found: boolean }> {
   if (!node?.mutableGet) return { found: false };
   try {
     const got = await Promise.race([node.mutableGet(b4a.from(key) as never, { latest: true }), new Promise<null>((r) => setTimeout(() => r(null), timeoutMs))]);
     if (!got) return { found: false };
     const rec = RelayRecord.safeParse(JSON.parse(b4a.toString(got.value as Bytes, 'utf8')));
-    return rec.success ? { found: true, at: rec.data.at, ...(rec.data.relay ? { relay: rec.data.relay } : {}) } : { found: false };
+    return rec.success ? { found: true, at: rec.data.at, ...(rec.data.relay ? { relay: rec.data.relay } : {}), ...(rec.data.phones ? { phones: rec.data.phones } : {}) } : { found: false };
   } catch {
     return { found: false };
   }
@@ -166,6 +166,8 @@ export interface DialReport {
   readonly found: 'yes' | 'no' | 'unknown';
   /** How old the Mac's relay record is (ms), when there is one. */
   readonly recordAge?: number;
+  /** The Mac's record names its phones, and this one isn't among them: it was removed (BLG-126). */
+  readonly removed?: boolean;
 }
 
 export class DialError extends Error {
@@ -205,6 +207,7 @@ export function dialMac(opts: DialOptions): Promise<Dialed> {
   let found: DialReport['found'] = 'unknown';
   let dht: DialReport['dht'] = 'unknown';
   let recordAge: number | undefined;
+  let removed = false;
   let relays = [...new Set(opts.relays ?? [])];
   const live = new Set<NoiseStream>();
 
@@ -218,7 +221,7 @@ export function dialMac(opts: DialOptions): Promise<Dialed> {
       const d = dht === 'ok' ? 'ok' : (opts.probeDht?.() ?? dht);
       // "Not found" means nothing when the DHT can't be reached at all.
       const f = d === 'unreachable' && found === 'no' ? 'unknown' : found;
-      return { tried, dht: d, found: f, ...(recordAge !== undefined ? { recordAge } : {}) };
+      return { tried, dht: d, found: f, ...(recordAge !== undefined ? { recordAge } : {}), ...(removed ? { removed } : {}) };
     };
     const finish = (fn: () => void): void => {
       if (settled) return;
@@ -300,12 +303,13 @@ export function dialMac(opts: DialOptions): Promise<Dialed> {
     };
 
     const relay = async (): Promise<void> => {
-      if (!opts.openRelay) {
+      if (!opts.openRelay && !opts.node?.mutableGet) {
         record({ way: 'relay', outcome: 'skipped' });
         return void (kick(), fail());
       }
       pending++;
-      // Known URLs first; then what the Mac's record on the DHT says now.
+      // Known URLs first; then what the Mac's record on the DHT says now (read even without a relay
+      // to open: it also says whether the Mac still knows this phone).
       if (opts.node?.mutableGet) {
         const rec = await lookupRelay(opts.node, target);
         if (rec.found) {
@@ -314,9 +318,16 @@ export function dialMac(opts: DialOptions): Promise<Dialed> {
           // A record from the last half hour: the Mac was there recently.
           if (recordAge !== undefined && recordAge < 30 * 60_000 && found === 'unknown') found = 'yes';
           if (rec.relay && !relays.includes(rec.relay)) relays = [rec.relay, ...relays];
+          // Named phones, and not this one: the Mac turns it away whatever way it tries.
+          if (rec.phones && !rec.phones.includes(b4a.toString(opts.keyPair.publicKey, 'hex').slice(0, 16))) removed = true;
         }
       }
       if (settled) return void pending--;
+      if (!opts.openRelay) {
+        pending--;
+        record({ way: 'relay', outcome: 'skipped' });
+        return void (kick(), fail());
+      }
       if (!relays.length) {
         pending--;
         record({ way: 'relay', outcome: 'skipped', code: 'NO_RELAY' });

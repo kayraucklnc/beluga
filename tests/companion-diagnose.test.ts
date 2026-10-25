@@ -51,6 +51,10 @@ describe('what went wrong, in words', () => {
     expect(diagnose({ stage: 'link', closeCode: 4010 })).toMatchObject({ problem: 'removed', action: 'pair-again', retry: false });
   });
 
+  it('tells a phone the Mac no longer knows to pair again', () => {
+    expect(diagnose({ stage: 'link', online: true, report: { ...report([p2p('refused'), relay('skipped', 'NO_RELAY')], 'ok', 'yes')!, removed: true } })).toMatchObject({ problem: 'removed', action: 'pair-again', retry: false });
+  });
+
   it('falls back to a plain "didn’t answer"', () => {
     expect(problem({ stage: 'link' })).toBe('unknown');
   });

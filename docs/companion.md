@@ -373,7 +373,7 @@ blaming anything else it checks the phone is online at all (one look, only after
 | `mac-offline` | Your Mac isn't online: asleep, Beluga closed, or its network off |
 | `pairing-gone`, `pairing-wrong`, `pairing-busy`, `pairing-full` | The pairing closed, ran out, was used; the code was off; another phone is pairing; 4 phones already |
 | `update-mac`, `update-app` | Whose update would fix it |
-| `removed` | This phone was removed: pair it again |
+| `removed` | This phone was removed: pair it again. Learned from the close code (4010) while linked, or, once the Mac has let it go, from its relay record: under the companion key it names its phones (`RelayRecord.phones`, each link key's first 16 hex) and is put once more, naming none, when the last one goes. The banner's button becomes Pair again |
 
 Pairing refusals carry a `why` for this (`dev_refused`), and the phone's `hello` says how it came
 (`via {path, tried}`), so the Mac's Settings › Phone and the footer popover can say "Your phone found

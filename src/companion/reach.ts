@@ -28,6 +28,8 @@ export interface ReachOptions {
   /** The relay's URL changed (it's in pairing links and welcomes). */
   readonly onChange: () => void;
   readonly log?: (line: string) => void;
+  /** The phones this key's record names (its link keys' first 16 hex), or undefined: none named (a pairing's key). */
+  readonly phones?: (publicKey: Buffer) => readonly string[] | undefined;
 }
 
 export class Reach {
@@ -89,10 +91,13 @@ export class Reach {
     const p = this.publishing;
     if (!p || !this.running) return;
     const record: RelayRecord = { v: 1, at: Date.now(), ...(this.url ? { relay: this.url } : {}) };
-    const value = Buffer.from(JSON.stringify(record));
     // Each put must outnumber the last one stored: seconds since the epoch, always rising.
     const seq = Math.floor(Date.now() / 1000);
-    await Promise.all(p.keyPairs().map((kp) => p.node.mutablePut(kp, value, { seq }).catch((err: unknown) => this.opts.log?.(`companion: relay record not stored: ${String(err)}`))));
+    const valueFor = (kp: KeyPair): Buffer => {
+      const phones = this.opts.phones?.(kp.publicKey);
+      return Buffer.from(JSON.stringify(phones ? { ...record, phones: phones.slice(0, 8) } : record));
+    };
+    await Promise.all(p.keyPairs().map((kp) => p.node.mutablePut(kp, valueFor(kp), { seq }).catch((err: unknown) => this.opts.log?.(`companion: relay record not stored: ${String(err)}`))));
   }
 
   private async openTunnel(): Promise<void> {
