@@ -16,6 +16,11 @@
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-read-image",
-    "window-state:default"
+    "window-state:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize"
   ]
 }

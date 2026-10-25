@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { VoiceModelId } from '../src/companion/protocol.js';
-import { MacVoice } from '../src/companion/voice.js';
+import { MacVoice } from '../src/core/voice.js';
 import { coerceVoice, resolveVoice, suggestVoice, VOICE_MODEL_IDS, VOICE_MODELS, voiceKnows, voiceSize } from '../src/shared/voice-models.js';
 
 /** Speaking instead of typing (BLG-139): the suggestion, and the Mac writing down the phone's recording. */
@@ -105,5 +105,14 @@ describe('voice: the Mac writes it down', () => {
     const after = await voice.status();
     expect(after.models.find((m) => m.model === 'parakeet')).toMatchObject({ ready: false, error: expect.stringMatching(/incomplete/) });
     expect(after.models.map((m) => m.model)).toEqual(['whisper-turbo', 'parakeet']);
+  });
+});
+
+describe('voice: the Mac app’s own microphone (voice.*)', () => {
+  it('takes only a WAV, and is the Mac app’s (not the phone’s)', async () => {
+    const { VOICE_HANDLERS } = await import('../src/ipc/voice-handlers.js');
+    const { PHONE } = await import('../src/companion/coverage.js');
+    await expect(VOICE_HANDLERS['voice.transcribe']({} as never, Buffer.from('not audio').toString('base64'), { model: 'parakeet', language: 'en' })).rejects.toThrow(/isn’t a recording/);
+    expect([PHONE['voice.models'], PHONE['voice.prepare'], PHONE['voice.transcribe']]).toEqual(['mac', 'mac', 'mac']);
   });
 });

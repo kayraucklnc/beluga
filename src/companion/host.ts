@@ -16,8 +16,7 @@ import { ProjectIcons, type SmallIcon } from './icons.js';
 import type { MergeBook } from './merge.js';
 import { DevicePairing, type PairingInfo } from './pair.js';
 import { Uploads } from './uploads.js';
-import { MacVoice } from './voice.js';
-import { belugaHome } from '../core/home.js';
+import { type MacVoice, sharedVoice } from '../core/voice.js';
 import type { VoiceModelId } from '../shared/voice-models.js';
 import type { TerminalManager } from '../terminal/pty-host.js';
 import { TermRelay, isWorkspaceTerminal, keysOf, nextShellKey, terminalView, workspaceOf } from './terminals.js';
@@ -329,7 +328,7 @@ export class CompanionHost {
     this.coalesceMs = opts.coalesceMs ?? VIEW_COALESCE_MS;
     this.refs = opts.refs ?? new RefTable();
     this.uploads = new Uploads(opts.uploadsDir ?? path.join(attachmentsDir(), 'phone'));
-    this.voice = opts.voice ?? new MacVoice(() => path.join(belugaHome(), 'voice'));
+    this.voice = opts.voice ?? sharedVoice();
     this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}) });
     this.icons = opts.icons ?? new ProjectIcons({ dir: path.join(path.dirname(opts.thumbsDir), 'icons'), root: (id) => this.state().projects.find((p) => p.id === id)?.root, changed: () => this.refreshViews() });
     this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };

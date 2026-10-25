@@ -392,6 +392,10 @@ export const PHONE: Record<Method, Side> = {
   'companion.voice': 'phone',
   'companion.voicePrepare': 'phone',
   'companion.transcribe': 'phone',
+  // The Mac app's own microphone; the phone has companion.transcribe.
+  'voice.models': 'mac',
+  'voice.prepare': 'mac',
+  'voice.transcribe': 'mac',
 };
 
 /** A method the phone may call (unknown names are not). */

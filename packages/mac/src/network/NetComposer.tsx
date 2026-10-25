@@ -8,6 +8,8 @@ import { useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { quoted } from '../chat/message-menu.js';
+import { DictationStrip, MicButton } from '../chat/Dictation.js';
+import { useDictationTarget } from '../lib/dictation.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
 import { useSuggestions } from '../chat/Suggestions.js';
 import { usePastePaths } from '../chat/paste-paths.js';
@@ -166,6 +168,8 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople }: { 
       client.store.dispatch({ type: 'toast', text: 'Your message wasn’t sent. It’s back in the box.', level: 'warn' });
     });
   };
+  // Speaking instead of typing (Settings › Voice): the words come here when this is the box you're in.
+  useDictationTarget(ref, submit);
   const sendKeys = prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`;
   const label = ask ? `${askLabel(ask)} · ` : '';
   return (
@@ -182,6 +186,7 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople }: { 
           </span>
         ) : null}
         <PendingTray id={id} items={pending} />
+        <DictationStrip box={ref} />
         <div className={c.inputWrap}>
           <MentionHighlighter text={text} world={world} input={ref} className={c.input ?? ''} />
           <textarea
@@ -234,6 +239,7 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople }: { 
           <AskButton ask={ask} setAsk={setAsk} people={people} {...(me ? { me } : {})} />
           <span className={c.flex} />
           {text.length > MAX - 500 ? <span className={cx(s.counter, over && s.counterOver)}>{MAX - text.length}</span> : null}
+          <MicButton box={ref} />
           <Tip label={`${label}${prefs.sendWith === 'enter' ? 'Send · Shift+Return for a new line' : `Send · ${mod()}Return`}`} keys={sendKeys}>
             <button type="button" className={cx(c.send, canSend && c.sendReady)} onClick={submit} aria-label={ask ? `Send and ${askLabel(ask).toLowerCase()}` : 'Send'} disabled={!canSend}>
               <Icon name="send" size={14} />

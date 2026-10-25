@@ -238,6 +238,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.voice` | – the phone only: Settings › Voice, which of the Mac's voice models are here or coming (the Mac app has no microphone) |
 | `companion.voicePrepare` | – the phone only: Settings › Voice, get a model on the Mac now |
 | `companion.transcribe` | – the phone only: the Ask sheet's microphone, On your Mac: the recording written down here and deleted |
+| `voice.models` | Settings › Voice: the models on this Mac, here or coming |
+| `voice.prepare` | Settings › Voice › Get now |
+| `voice.transcribe` | The composer's microphone beside Send, and the talk shortcut (Settings › Voice) |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |

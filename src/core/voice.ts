@@ -4,11 +4,12 @@ import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { type VoiceModelId, VOICE_MODEL_IDS, VOICE_MODELS, voiceKnows } from '../shared/voice-models.js';
-import type { VoiceMacView } from './protocol.js';
+import type { VoiceMacView } from '../companion/protocol.js';
+import { belugaHome } from './home.js';
 
 /**
- * Your Mac writes down what you said on the phone (BLG-140): the phone records, `put`s the WAV and
- * calls companion.transcribe; the Mac runs Whisper Turbo or Parakeet on its GPU (whisper.cpp
+ * Your Mac writes down what you said (BLG-140, BLG-144): on the phone (it `put`s the WAV and calls
+ * companion.transcribe) or in the Mac app (voice.transcribe); the Mac runs Whisper Turbo or Parakeet on its GPU (whisper.cpp
  * through @fugood/whisper.node) and gives the words back. The audio is deleted once it's written
  * down, and goes nowhere else. A model comes the first time the phone asks for it, into
  * ~/.beluga/voice (part file first, so one cut short never looks ready).
@@ -177,4 +178,10 @@ async function fetchTo(url: string, to: string, onBytes: (n: number) => void): P
     },
   });
   await pipeline(Readable.fromWeb(res.body as never), count, createWriteStream(to, { mode: 0o600 }));
+}
+
+let shared: MacVoice | undefined;
+/** The one MacVoice of this daemon: the phone and the Mac app share its loaded model and its queue. */
+export function sharedVoice(): MacVoice {
+  return (shared ??= new MacVoice(() => path.join(belugaHome(), 'voice')));
 }
