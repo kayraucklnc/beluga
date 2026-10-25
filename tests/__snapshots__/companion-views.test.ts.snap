@@ -132,6 +132,17 @@ here",
           {
             "args": [
               "t_confirm000001",
+              true,
+              "",
+              true,
+            ],
+            "label": "Always",
+            "method": "gateway.confirm",
+            "tone": "plain",
+          },
+          {
+            "args": [
+              "t_confirm000001",
               false,
             ],
             "label": "Not now",
@@ -576,6 +587,17 @@ Then protect \`/api/payments\`.",
           {
             "args": [
               "t_confirm000001",
+              true,
+              "",
+              true,
+            ],
+            "label": "Always",
+            "method": "gateway.confirm",
+            "tone": "plain",
+          },
+          {
+            "args": [
+              "t_confirm000001",
               false,
             ],
             "label": "Not now",
@@ -960,6 +982,17 @@ Then protect \`/api/payments\`.",
             "label": "Ask",
             "method": "gateway.confirm",
             "tone": "main",
+          },
+          {
+            "args": [
+              "t_confirm000001",
+              true,
+              "",
+              true,
+            ],
+            "label": "Always",
+            "method": "gateway.confirm",
+            "tone": "plain",
           },
           {
             "args": [

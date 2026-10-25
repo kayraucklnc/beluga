@@ -28,6 +28,7 @@ import { brandText } from './lib/brand.js';
 import { NativeSheets } from './dialogs/native/WorkSheets.js';
 import { JoinSheet } from './dialogs/JoinSheet.js';
 import { NetworkSheets } from './network/NetworkSheets.js';
+import { MessageBanner } from './network/MessageBanner.js';
 import { RequestSheet } from './gateway/RequestSheet.js';
 import { useRequestNative } from './gateway/request-native.js';
 import { StripeSheet } from './dialogs/StripeSheet.js';
@@ -258,6 +259,7 @@ export function App() {
       {/* One per window, over whatever opened it (a chat, a sub-agent's activity, a graph). */}
       <Lightbox />
       <Toasts />
+      <MessageBanner />
       <UndoToast />
       {welcome.open ? <Onboarding start={welcome.start} onClose={welcome.close} onArrive={welcome.arrive} /> : null}
     </Tooltip.Provider>

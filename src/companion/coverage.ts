@@ -265,6 +265,7 @@ export const PHONE: Record<Method, Side> = {
   // ---- tasks between Claudes: answering and asking, not your rules or capabilities
   'gateway.list': 'phone',
   'gateway.confirm': 'phone',
+  'gateway.setAskFreely': 'mac',
   'gateway.cancel': 'phone',
   'gateway.ask': 'phone',
   'gateway.setNote': 'mac',

@@ -2,7 +2,7 @@ import type { Capabilities } from '@beluga/ipc/socket-client.js';
 import { SocketClient } from '@beluga/ipc/socket-client.js';
 import { brandNotice, isTestNotice } from './brand.js';
 import type { SoundChoice } from '@beluga/shared/notify-sound.js';
-import { NOTIFICATION_TAP } from './notices.js';
+import { MESSAGE_BANNER, NOTIFICATION_TAP } from './notices.js';
 import { REQUEST_NOTIFICATION, notificationActions } from '../gateway/request-actions.js';
 import { version } from '../../src-tauri/tauri.conf.json';
 
@@ -36,8 +36,16 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
       } else await navigator.clipboard.writeText(text);
     },
     // Clicking one comes back as a tap (the app shell's "notification-tap" event, or NOTIFICATION_TAP here).
-    notify: async (raw: { title: string; body: string; sound: boolean; tone?: SoundChoice; volume?: number; channel?: string; approval?: string; task?: string; popup?: boolean }) => {
+    notify: async (raw: { title: string; body: string; sound: boolean; tone?: SoundChoice; volume?: number; channel?: string; approval?: string; task?: string; popup?: boolean; banner?: boolean }) => {
       const n = brandNotice(raw);
+      // A friend's message while you're in Beluga: a banner in the window (network/MessageBanner.tsx), and its ding.
+      if (raw.banner) {
+        document.dispatchEvent(new CustomEvent(MESSAGE_BANNER, { detail: { title: n.title, body: n.body, channel: n.channel } }));
+        const { playSound } = await import('./sounds/player.js');
+        const { DEFAULT_SOUND, DEFAULT_VOLUME, NO_SOUND } = await import('@beluga/shared/notify-sound.js');
+        void playSound(n.tone ?? (n.sound ? DEFAULT_SOUND : NO_SOUND), n.volume ?? DEFAULT_VOLUME).catch(() => undefined);
+        return;
+      }
       // The test's sound is the window's own, so you hear it whatever macOS does with the banner.
       const test = isTestNotice(n);
       const { notificationSound, playTestSound } = await import('./sounds/native.js');

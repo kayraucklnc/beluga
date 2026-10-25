@@ -108,6 +108,8 @@ export const Settings = z.object({
   network: z.boolean().optional(),
   /** "Ask me for…": a short note friends' Claudes see on your card (the gateway, Mac app). */
   askMeFor: z.string().max(280).optional(),
+  /** Friends your Claude may ask without checking with you first ("Always" on its "Ask X's Claude?" card), by peer id. */
+  askFreely: z.array(z.string().max(80)).max(500).optional(),
   /** What friends' Claudes may do here, by trust level (checked fully in core/gateway/access.ts). */
   capabilities: z.object({ levels: z.record(z.string(), z.record(z.string(), z.string())).optional(), folders: z.array(z.string().max(4096)).max(20).optional() }).optional(),
 });

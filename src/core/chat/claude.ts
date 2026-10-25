@@ -4,7 +4,7 @@ import type { Mesh } from '../../net/mesh/mesh.js';
 import { asks } from '../../net/mesh/extras.js';
 import type { ChatFile, MessageView } from '../../net/mesh/views.js';
 import type { TrustLevel } from '../trust.js';
-import { type ChatAnswerRequest, type ChatImage, IMAGE_BYTES, MAX_IMAGES, type PromptFile, TEXT_FILE_BYTES, fitTexts, historyLines, isImageFile, isTextFile, sizeLabel, speaker, splitAnswer, systemPrompt, userPrompt } from './claude-prompt.js';
+import { type ChatAnswerRequest, type ChatImage, IMAGE_BYTES, MAX_IMAGES, type PromptFile, TEXT_FILE_BYTES, fitTexts, historyLines, isImageFile, isTextFile, parseRequest, sizeLabel, speaker, splitAnswer, systemPrompt, userPrompt } from './claude-prompt.js';
 import type { ChatFiles } from './files.js';
 
 /**
@@ -162,7 +162,10 @@ export class ChatClaude {
       if (this.stopped || job.abort.signal.aborted) return;
       // Still in the conversation? (you may have left the group, or they unfriended you, meanwhile)
       if (!mesh.conversations().includes(conversation)) return;
-      for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: m.id } });
+      // What needs this Mac comes back as a request the asker's Mac offers to send (gateway), on the last part.
+      const { text, request: offer } = parseRequest(answer);
+      const parts = splitAnswer(text);
+      parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
     } catch (err) {
       if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

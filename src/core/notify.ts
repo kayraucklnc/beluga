@@ -52,7 +52,12 @@ export interface DesktopNote {
   readonly task?: string;
   /** Only what Claude needs from you, and the Mac's on-screen pop-up shows it: a banner would say it twice (its sound still plays). */
   readonly popup?: boolean;
+  /** A friend's message while Beluga is in front: the window shows it as a banner, with its sound (macOS hides banners of the app in front). */
+  readonly banner?: boolean;
 }
+
+/** A message from a friend or a group (the Beluga network), not the room's chat. */
+const isNetworkMessage = (e: NoticeEvent): boolean => e.kind === 'mentions' && e.channel !== undefined && /^(dm|group):/.test(e.channel);
 
 /** Your network status says not now (Do Not Disturb, or appearing offline): notices still arrive, silently. */
 export function presenceQuiet(state: Pick<DomainState, 'network'>): boolean {
@@ -353,6 +358,9 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
   return next.plans.plans.length ? out.map((e) => scopeToPlan(next, e)) : out;
 }
 
+/** Friends' messages arriving within this long show as one banner. */
+const BANNER_MS = 400;
+
 export interface NotifierDeps {
   readonly store: Store;
   /** Show a desktop notification. */
@@ -384,6 +392,8 @@ export class Notifier {
   private lastSent = 0;
   /** Keys of what was already announced (a plan's milestone passing…): never twice. */
   private readonly told = new Set<string>();
+  private banners: NoticeEvent[] = [];
+  private bannerTimer?: NodeJS.Timeout;
 
   constructor(private readonly deps: NotifierDeps) {
     this.prev = deps.store.getState();
@@ -393,6 +403,7 @@ export class Notifier {
   stop(): void {
     this.unsubscribe();
     clearTimeout(this.timer);
+    clearTimeout(this.bannerTimer);
   }
 
   /** Raise a notification directly (pull requests, setup scripts, handoffs). */
@@ -452,9 +463,28 @@ export class Notifier {
       // A plan's task speaking quietly: it's in the inbox under the plan, already read.
       const read = Boolean(e.quiet && plan);
       this.deps.store.dispatch({ type: 'notice_add', notice: { kind, ...(tag ? { tag } : {}), ...(ref ? { ref } : {}), title, body, channel, ...(plan ? { plan } : {}), ...(planTask ? { planTask } : {}), ...(key ? { key } : {}) }, ...(read ? { read } : {}) });
-      if (desktop && !e.quiet) this.queue.push(e);
+      // You're in Beluga, looking at another conversation: a friend's message shows in the window.
+      if (state.attention.front && isNetworkMessage(e) && !e.quiet && !dndActive(prefs, this.now())) this.banners.push(e);
+      else if (desktop && !e.quiet) this.queue.push(e);
     }
     this.flush();
+    this.flushBanners();
+  }
+
+  /** Friends' messages shown in the window, a burst as one banner. */
+  private flushBanners(): void {
+    if (!this.banners.length || this.bannerTimer) return;
+    this.bannerTimer = setTimeout(() => {
+      this.bannerTimer = undefined;
+      const batch = this.banners;
+      this.banners = [];
+      if (!batch.length) return;
+      const prefs = this.deps.store.getState().prefs.notify;
+      const note = combine(batch, prefs);
+      const many = batch.length > 1 ? { title: `${batch.length} new messages`, body: batch.map((e) => e.title).slice(0, 4).join(' · ') } : {};
+      this.deps.desktop({ ...note, ...many, banner: true });
+    }, BANNER_MS);
+    this.bannerTimer.unref?.();
   }
 
   private now(): number {

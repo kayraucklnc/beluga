@@ -249,11 +249,12 @@ function Confirm({ task }: { task: TaskView }) {
   return (
     <>
       {editing ? <textarea className={s.edit} aria-label="What to ask" value={text} onChange={(e) => setText(e.target.value)} autoFocus /> : <div className={`${s.ask} selectable`}>{task.ask}</div>}
-      <div className={s.hint}>Your Claude wants to send this. You haven’t marked {task.peerName} as trusted, so it asks you first.</div>
+      <div className={s.hint}>Your Claude wants to send this, so it asks you first. Always lets it ask {task.peerName} without checking from now on (it doesn’t change what they may do on your Mac).</div>
       <div className={s.actions}>
         <Button variant="primary" onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined))}>
           Ask {task.peerName}
         </Button>
+        <Button onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined, true))}>Always</Button>
         {editing ? null : (
           <Button icon="pencil" onClick={() => setEditing(true)}>
             Edit

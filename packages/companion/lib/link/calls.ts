@@ -88,6 +88,8 @@ export const calls = {
   /** 1.10: one sub-agent of a turn, opened: its activity in words and the report it gave back. */
   subAgent: (topic: Topic, turn: string, id: string): Call => make('companion.subAgent', [topic, turn, id], 'Sub-agent'),
   /** Write in a friends' chat (with photos, or asking Claude). */
+  /** Ask a friend's Claude to do it on their Mac (their chat answer offered it): a request, as from their card. */
+  request: (to: string, ask: string, needs?: readonly ('project' | 'shell' | 'files' | 'screen' | 'device')[]): Call => make('gateway.ask', [to, ask, needs?.length ? { needs: [...needs] } : undefined], `Ask "${short(ask)}"`),
   /** `ask`: whose Claude answers too: everyone's ('all') or the chosen people's (peer ids, you included). */
   chat: (topic: Topic, text: string, opts: { files?: Files; ask?: 'all' | readonly string[] } = {}): Call =>
     make('companion.post', [{ conversation: conversationOf(topic), text, ...withFiles(opts.files), ...(opts.ask ? { ask: opts.ask === 'all' ? ('all' as const) : [...opts.ask] } : {}) }], opts.files?.length ? 'Send a photo' : `Message "${short(text)}"`),

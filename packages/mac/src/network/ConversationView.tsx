@@ -5,7 +5,8 @@ import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { Avatar, Button, Empty, claudeColor, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useBeluga } from '../lib/beluga.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
+import { LogTaskCard } from '../gateway/TaskCard.js';
 import { usePrefs } from '../lib/prefs.js';
 import { Markdown } from '../chat/Markdown.js';
 import { plainText } from '../chat/message-menu.js';
@@ -54,12 +55,52 @@ function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: 
 }
 
 /** One message: the room chat's look; your own say whether they're waiting to be delivered. */
-const Message = memo(function Message({ m, continued, dm, last, resend, me, nameOf, world }: { m: MessageView; continued: boolean; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string }; nameOf: (peerId: string) => string; world: MentionWorld }) {
+const Message = memo(function Message({ m, continued, dm, last, resend, me, nameOf, world, offer }: { m: MessageView; continued: boolean; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string }; nameOf: (peerId: string) => string; world: MentionWorld; offer?: boolean }) {
   const prefs = usePrefs();
   const say = useSay();
   const locked = m.status === 'locked';
   const expired = m.mine && m.status === 'expired';
   const asked = askedLine(m, nameOf, me?.peerId);
+  const deliveryState =
+    m.mine && m.status === 'waiting' ? (
+      <div className={s.state}>
+        <Icon name="clock" size={11} />
+        Waiting to be delivered
+      </div>
+    ) : expired ? (
+      <div className={cx(s.state, s.stateExpired)}>
+        <Icon name="alert" size={11} />
+        Not delivered.
+        <button type="button" onClick={() => resend(m)}>
+          Send Again
+        </button>
+      </div>
+    ) : dm && last && m.mine && m.status === 'delivered' ? (
+      <div className={s.state}>Delivered</div>
+    ) : null;
+  // Your own words (not your Claude's): a tinted bubble on the right, no name or picture, as in the room's chat.
+  if (m.mine && !m.claude && !locked)
+    return (
+      <ActionsContext items={() => messageItems(m, { say, ...(expired ? { resend: () => resend(m) } : {}) })}>
+        <div className={cx(chat.message, chat.own, continued && chat.continued, m.status === 'waiting' && s.waiting)} data-message={m.id} data-mine="true">
+          <div className={chat.body} title={fullTime(m.ts)}>
+            {m.text.trim() ? (
+              <div className={chat.bubble}>
+                <Markdown text={m.text} mentions={world} />
+              </div>
+            ) : null}
+            {m.files?.length ? <MessageFiles files={m.files} conversation={m.conversation} mine /> : null}
+            {asked ? (
+              <div className={s.asked}>
+                <Icon name="claude" size={11} />
+                {asked}
+              </div>
+            ) : null}
+            {deliveryState}
+          </div>
+        </div>
+      </ActionsContext>
+    );
   return (
     <ActionsContext items={() => messageItems(m, { say, ...(expired ? { resend: () => resend(m) } : {}) })}>
       <div className={cx(chat.message, continued && chat.continued, m.mine && s.mine, m.claude && s.claudeMsg, m.status === 'waiting' && s.waiting)} data-message={m.id} data-claude={m.claude ? 'true' : undefined}>
@@ -89,29 +130,68 @@ const Message = memo(function Message({ m, continued, dm, last, resend, me, name
                   {asked}
                 </div>
               ) : null}
+              {offer ? <RequestOffer m={m} /> : null}
             </>
           )}
-          {m.mine && m.status === 'waiting' ? (
-            <div className={s.state}>
-              <Icon name="clock" size={11} />
-              Waiting to be delivered
-            </div>
-          ) : expired ? (
-            <div className={cx(s.state, s.stateExpired)}>
-              <Icon name="alert" size={11} />
-              Not delivered.
-              <button type="button" onClick={() => resend(m)}>
-                Send Again
-              </button>
-            </div>
-          ) : dm && last && m.mine && m.status === 'delivered' ? (
-            <div className={s.state}>Delivered</div>
-          ) : null}
+          {deliveryState}
         </div>
       </div>
     </ActionsContext>
   );
 });
+
+/** Which answers you sent as requests (message id → task id), so the card stays under the answer. */
+const SENT_KEY = 'beluga.chat-requests';
+const sentRequests = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(SENT_KEY) ?? '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
+const rememberSent = (message: string, task: string): void => {
+  const all = Object.entries({ ...sentRequests(), [message]: task }).slice(-200);
+  localStorage.setItem(SENT_KEY, JSON.stringify(Object.fromEntries(all)));
+};
+
+/**
+ * A friend's Claude can't touch their Mac from a chat; when what you asked needs it, its answer
+ * offers the real thing: a request to their Claude on their Mac (the gateway), which their trust
+ * settings let in or they approve. Once sent, the request's card follows it here.
+ */
+function RequestOffer({ m }: { m: MessageView }) {
+  const { client } = useBeluga();
+  const say = useSay();
+  const [sending, setSending] = useState(false);
+  const [taskId, setTaskId] = useState<string | undefined>(() => sentRequests()[m.id]);
+  const task = useApp((st) => (taskId ? st.gateway.tasks.find((t) => t.id === taskId) : undefined));
+  const request = m.claude?.request;
+  if (!request) return null;
+  if (task) return <LogTaskCard task={task} />;
+  if (taskId) return <div className={s.asked}>Sent as a request to {m.name}’s Mac</div>;
+  const send = (): void => {
+    setSending(true);
+    void client.api.gateway
+      .ask(m.from, request.ask, request.needs?.length ? { needs: [...request.needs] } : undefined)
+      .then((t) => {
+        rememberSent(m.id, t.id);
+        setTaskId(t.id);
+      })
+      .catch((err: unknown) => say(`Couldn’t send it: ${errorText(err)}`))
+      .finally(() => setSending(false));
+  };
+  return (
+    <div className={s.requestOffer}>
+      <span className={s.requestAsk}>
+        <Icon name="send" size={11} />
+        {request.ask}
+      </span>
+      <Button size="small" variant="primary" disabled={sending} onClick={send}>
+        {sending ? 'Sending…' : `Ask on ${m.name}’s Mac`}
+      </Button>
+    </div>
+  );
+}
 
 /** The start of a conversation: who it's with, and that it stays between you. */
 function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
@@ -317,6 +397,8 @@ function Conversation({ id }: { id: string }) {
   const send = (out: Outgoing): Promise<unknown> => client.api.network.post(id, { text: out.text, ...(out.files.length ? { files: [...out.files] } : {}), ...(out.ask ? { ask: out.ask === 'all' ? 'all' : [...out.ask] } : {}) });
   const resend = (m: MessageView): void => void send({ text: m.text, files: m.files ?? [] }).catch(() => undefined);
   const lastMine = [...messages].reverse().find((m) => m.mine)?.id;
+  // A friend's Claude answering you can offer to do it on their Mac (RequestOffer).
+  const mineIds = new Set(messages.filter((m) => m.mine).map((m) => m.id));
   const nameOf = (peerId: string): string => net.friends.find((f) => f.peerId === peerId)?.name ?? group?.members.find((m) => m.peerId === peerId)?.name ?? 'someone';
   const title = group ? channelName(net, group) : (friend?.name ?? '');
 
@@ -338,7 +420,7 @@ function Conversation({ id }: { id: string }) {
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} {...(me ? { me } : {})} />
+              <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} offer={Boolean(m.claude?.request && !m.mine && mineIds.has(m.claude.for))} {...(me ? { me } : {})} />
             </div>
           );
         })}
