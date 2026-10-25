@@ -1,7 +1,6 @@
 import { forwardRef, useRef, useState } from 'react';
 import { type Issue, STATUS_INFO } from '@beluga/core/board/model.js';
 import { type GhIssueFull, type IssueStage, repoSlug } from '@beluga/core/issues/model.js';
-import { issueBrief } from '@beluga/core/issues/prompts.js';
 import type { GitHubRepo } from '@beluga/workspaces/github.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Markdown } from '../chat/Markdown.js';
@@ -65,7 +64,7 @@ function Page({ projectId, repo, issue, loading, refresh }: { projectId: string;
   const a = useIssueActions();
   const state = stateOf(issue);
   // What Claude found can go on GitHub as your comment (⋯), after you've seen what it says.
-  const found = useFindings(stage, issue);
+  const found = useFindings(stage);
   const post: ActionItem[] = found
     ? [
         {
@@ -135,21 +134,25 @@ function Page({ projectId, repo, issue, loading, refresh }: { projectId: string;
   );
 }
 
-/** What Claude found: the task's context, once it's more than the report it started from. */
-function findingsOf(task: Issue, issue: GhIssueFull): string | undefined {
+/**
+ * What Claude found: the task's context, once Claude was asked to investigate and wrote it (not the
+ * report the task started from, nor what a quick look noted while writing the task).
+ */
+function findingsOf(task: Issue): string | undefined {
   const context = task.brief.context?.trim();
-  return context && context !== issueBrief(issue).context.trim() ? context : undefined;
+  if (!context || !task.github?.investigated) return undefined;
+  return task.revisions.some((r) => r.section === 'context' && r.by.kind === 'claude') ? context : undefined;
 }
 
 /**
  * What Claude found, to show and to post: its report in the conversation (what happens, why, how
  * to fix it, a verdict), else what it wrote in the task's brief. Only once it has investigated.
  */
-function useFindings(stage: IssueStage, issue: GhIssueFull): string | undefined {
+function useFindings(stage: IssueStage): string | undefined {
   const ws = stage.kind === 'investigated' || stage.kind === 'investigating' || stage.kind === 'fixing' ? stage.ws : undefined;
   const report = useApp((st) => (ws && stage.kind === 'investigated' ? lastReport(st.log, `ws:${ws}`) : undefined));
   if (stage.kind === 'new' || stage.kind === 'investigating') return undefined;
-  return report ?? findingsOf(stage.task, issue);
+  return report ?? findingsOf(stage.task);
 }
 
 /** What to do next, or how it's going: the one place on the page that changes as Claude works. */
@@ -163,21 +166,23 @@ function NextStep({ projectId, issue, stage }: { projectId: string; issue: GhIss
   };
   const n = issue.number;
   const ws = useApp((st) => (stage.kind === 'investigating' || stage.kind === 'investigated' || stage.kind === 'fixing' ? findWorkspace(st.projects, stage.ws) : undefined));
-  const found = useFindings(stage, issue);
+  const found = useFindings(stage);
   // Stopped while fixing: what it said (why there's no pull request).
   const said = useApp((st) => (stage.kind === 'fixing' && !stage.working ? lastReport(st.log, `ws:${stage.ws}`) : undefined));
 
   if (stage.kind === 'new' || stage.kind === 'task') {
     const task = stage.kind === 'task' ? stage.task : undefined;
+    // Claude still writing the task (Make a Task): working on it waits for its words, so not yet.
+    const writing = Boolean(task?.drafting);
     return (
       <section className={s.next} aria-label="What should Claude do?">
         <h2 className={s.nextTitle}>{task ? `${task.key} is on the board · what should Claude do?` : 'What should Claude do?'}</h2>
         <div className={s.choices}>
-          <Choice icon="search" tone="info" title="Investigate" busy={busy === 'investigate'} disabled={Boolean(busy)} onClick={() => void run('investigate', () => a.investigate(projectId, n))}>
-            Find out why it happens and reproduce it, in a worktree. Nothing is fixed yet.
+          <Choice icon="search" tone="info" title="Investigate" busy={busy === 'investigate'} disabled={Boolean(busy) || writing} onClick={() => void run('investigate', () => a.investigate(projectId, n))}>
+            {writing ? 'Once Claude has written the task up.' : 'Find out why it happens and reproduce it, in a worktree. Nothing is fixed yet.'}
           </Choice>
-          <Choice icon="wrench" tone="claude" title="Fix It" busy={busy === 'fix'} disabled={Boolean(busy)} onClick={() => void run('fix', () => a.fix(projectId, n))}>
-            Fix it in a new worktree, then open a pull request that closes #{n}.
+          <Choice icon="wrench" tone="claude" title="Fix It" busy={busy === 'fix'} disabled={Boolean(busy) || writing} onClick={() => void run('fix', () => a.fix(projectId, n))}>
+            {writing ? 'Once Claude has written the task up.' : `Fix it in a new worktree, then open a pull request that closes #${n}.`}
           </Choice>
           {task ? (
             <Choice icon="task" tone="merged" title={`Open ${task.key}`} onClick={() => a.openTask(task.id)}>
@@ -306,7 +311,7 @@ interface ChoiceProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>
 /** One of the three choices: an icon in a soft tint, what it does, and its words. (A menu's trigger too: it forwards its ref.) */
 const Choice = forwardRef<HTMLButtonElement, ChoiceProps>(function Choice({ icon, tone, title, children, busy, disabled, menu, className, ...rest }, ref) {
   return (
-    <button ref={ref} type="button" {...rest} className={cx(s.choice, s[`tone_${tone}`], className)} disabled={disabled && !busy} aria-busy={busy || undefined} data-choice={title}>
+    <button ref={ref} type="button" {...rest} className={cx(s.choice, s[`tone_${tone}`], className)} disabled={disabled} aria-busy={busy || undefined} data-choice={title}>
       <span className={s.choiceIcon}>
         <Icon name={icon} size={15} />
       </span>

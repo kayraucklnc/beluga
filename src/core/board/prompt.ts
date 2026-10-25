@@ -30,7 +30,8 @@ export function briefPrompt(board: BoardState, issue: Issue): string {
   const waiting = blocking(board, issue).filter((i) => STATUS_INFO[i.status].open);
   const kids = childrenOf(board, issue);
   // The brief is text people and Claudes wrote: it can't close its own tag.
-  const brief = BRIEF_SECTIONS.flatMap((s) => (issue.brief[s] ? [`### ${SECTION_INFO[s].label}`, issue.brief[s]!.replace(/<\/?task_brief>/gi, ''), ''] : []));
+  // (Its tag's name never appears in it, so no nesting or splitting makes a closing tag.)
+  const brief = BRIEF_SECTIONS.flatMap((s) => (issue.brief[s] ? [`### ${SECTION_INFO[s].label}`, issue.brief[s]!.replace(/task_brief/gi, (m) => m.replace('_', '\u2011')), ''] : []));
   return [
     '',
     `This worktree is doing task ${issue.key} in Beluga's Tasks: "${issue.title}" (${STATUS_INFO[issue.status].label}${issue.priority !== 'none' ? `, ${PRIORITY_INFO[issue.priority].label} priority` : ''}).`,

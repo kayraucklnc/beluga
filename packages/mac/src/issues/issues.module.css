@@ -258,8 +258,10 @@
   cursor: default;
   opacity: 0.55;
 }
+/* The one being set up stays in full color (the others dim). */
 .choice[aria-busy='true'] {
   cursor: progress;
+  opacity: 1;
 }
 .choiceIcon {
   grid-row: 1;

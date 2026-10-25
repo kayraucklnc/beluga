@@ -129,6 +129,18 @@ export function parseGraphIssues(json: string): { readonly issues: GhIssue[]; re
 /** GitHub's search words for a repository's issues: `repo:o/r is:issue is:open <words>`. */
 export const searchQuery = (repo: GitHubRepo, state: GhIssueState, words: string): string => `repo:${repo.owner}/${repo.repo} is:issue is:${state} ${words.replace(/\s+/g, ' ').trim()}`;
 
+/**
+ * An issue's latest comments, oldest of them first: REST lists them oldest first, so the last page
+ * (and the one before, when the last is short). Nothing when GitHub won't say.
+ */
+async function latestComments(run: GhRunner, repo: GitHubRepo, path: string, count: number): Promise<GhComment[]> {
+  const page = (n: number): Promise<GhComment[]> => run(['api', ...hostArgs(repo), '-X', 'GET', `${path}/comments`, '-f', `per_page=${COMMENTS_PAGE}`, '-f', `page=${n}`]).then(parseComments, () => []);
+  const last = Math.max(1, Math.ceil(count / COMMENTS_PAGE));
+  const tail = await page(last);
+  if (last === 1 || tail.length >= COMMENTS_PAGE / 2) return tail;
+  return [...(await page(last - 1)), ...tail];
+}
+
 /** The real thing: `gh api` against the repository's host. */
 export function ghIssueSource(run: GhRunner = runGhCli): IssueSource {
   return {
@@ -150,7 +162,7 @@ export function ghIssueSource(run: GhRunner = runGhCli): IssueSource {
       if (raw?.pull_request) throw new Error(`#${number} is a pull request, not an issue`);
       const issue = parseIssue(raw);
       if (!issue) throw new Error(`Couldn’t read issue #${number}`);
-      const thread = issue.comments ? await run(['api', ...hostArgs(repo), '-X', 'GET', `${path}/comments`, '-f', `per_page=${COMMENTS_PAGE}`]).then(parseComments, () => []) : [];
+      const thread = issue.comments ? await latestComments(run, repo, path, issue.comments) : [];
       return { ...issue, body: typeof raw.body === 'string' ? raw.body : '', thread, ...(issue.comments > thread.length ? { moreComments: true } : {}) };
     },
     async comment(repo, number, body) {

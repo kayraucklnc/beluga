@@ -198,7 +198,7 @@ export class GitHubIssues {
   private async workOn(task: Issue, step: NonNullable<IssueGitHub['step']>, prompt: (task: Issue, ws: Workspace, here: boolean) => string, note: string, shown: (here: boolean) => string): Promise<string> {
     const work = this.deps.work;
     const live = this.liveWorktree(task);
-    work.board.setGitHub(task.id, { ...task.github!, step }, work.me(), note);
+    work.board.setGitHub(task.id, { ...task.github!, step, ...(step === 'investigate' ? { investigated: true } : {}) }, work.me(), note);
     if (live) {
       const now = work.board.need(task.id);
       if (now.status === 'backlog' || now.status === 'todo') work.board.update(now.id, { status: 'in_progress' }, work.me());

@@ -388,7 +388,7 @@ export class Board {
   setGitHub(ref: string, github: IssueGitHub | undefined, by: Actor, note?: string): Issue {
     const issue = this.need(ref);
     const was = issue.github;
-    if (was?.repo === github?.repo && was?.number === github?.number && was?.url === github?.url && was?.step === github?.step && was?.host === github?.host) return issue;
+    if (was?.repo === github?.repo && was?.number === github?.number && was?.url === github?.url && was?.step === github?.step && was?.host === github?.host && was?.investigated === github?.investigated) return issue;
     return this.change(issue, { github }, note ? [this.entry(by, 'link', note)] : [], Boolean(note));
   }
 

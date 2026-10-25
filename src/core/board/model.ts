@@ -218,6 +218,8 @@ export interface IssueGitHub {
   readonly number: number;
   readonly url: string;
   readonly step?: GitHubStep;
+  /** Claude was asked to investigate it (once is enough): what it found is worth showing, and posting. */
+  readonly investigated?: boolean;
 }
 
 /** "#12", or "acme/api#12" when it's another repository's. */
