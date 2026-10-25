@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_UPLOADS, PHONE_BRANCH_STEPS, UploadRef } from '../companion/protocol.js';
+import { MAX_UPLOADS, PHONE_BRANCH_STEPS, UploadRef, VoiceModelId } from '../companion/protocol.js';
 import { NEEDS } from '../core/gateway/protocol.js';
 import { KEEP_AWAKE } from '../shared/settings-schema.js';
 import { SourceSchema, ViewQuerySchema } from '../shared/view-spec.js';
@@ -137,4 +137,11 @@ export const COMPANION_API = {
   // 1.11 (BLG-124): which of these conversations (ones the phone saved files from) are no longer on
   // the Mac: archived or deleted worktrees and chat folders, deleted chats of Your Mac → { gone }.
   'companion.gone': { args: z.tuple([z.array(z.string().regex(/^conv:[\w:.-]{1,200}$/)).max(500)]) },
+  // 1.14 (BLG-140): the Mac writes down what you said on the phone. Its models, here or coming →
+  // VoiceMacView; get one now (it comes in the background) → VoiceMacView; the words in a WAV the
+  // phone `put` (16 kHz mono; deleted once written down) → TranscriptView. A model that isn't here
+  // yet starts coming, and the call says how far it is.
+  'companion.voice': { args: z.tuple([]) },
+  'companion.voicePrepare': { args: z.tuple([VoiceModelId]) },
+  'companion.transcribe': { args: z.tuple([z.object({ audio: UploadRef, model: VoiceModelId, language: z.string().regex(/^(auto|[a-z]{2,3})$/) }).strict()]) },
 } as const;

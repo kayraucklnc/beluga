@@ -16,6 +16,9 @@ import { ProjectIcons, type SmallIcon } from './icons.js';
 import type { MergeBook } from './merge.js';
 import { DevicePairing, type PairingInfo } from './pair.js';
 import { Uploads } from './uploads.js';
+import { MacVoice } from './voice.js';
+import { belugaHome } from '../core/home.js';
+import type { VoiceModelId } from '../shared/voice-models.js';
 import type { TerminalManager } from '../terminal/pty-host.js';
 import { TermRelay, isWorkspaceTerminal, keysOf, nextShellKey, terminalView, workspaceOf } from './terminals.js';
 import { findByName, listFolder, readPage } from './worktree-files.js';
@@ -79,6 +82,8 @@ export interface CompanionHostOptions {
   readonly thumbsDir: string;
   /** Where photos and files from the phone land (~/.beluga/attachments/phone). */
   readonly uploadsDir?: string;
+  /** Where the models that write down the phone's speech go (~/.beluga/voice), or the voice itself (tests). */
+  readonly voice?: MacVoice;
   readonly thumbnail?: Thumbnailer;
   /** Outputs on disk per conversation (sub-agents', the scratch folder's), newest first. */
   readonly outputs?: (channel: string) => readonly ConvOutput[];
@@ -287,6 +292,7 @@ class PhoneLink {
 export class CompanionHost {
   readonly files: FileServer;
   readonly uploads: Uploads;
+  readonly voice: MacVoice;
   readonly coalesceMs: number;
   readonly icons: ProjectIcons;
   private readonly refs: RefTable;
@@ -323,6 +329,7 @@ export class CompanionHost {
     this.coalesceMs = opts.coalesceMs ?? VIEW_COALESCE_MS;
     this.refs = opts.refs ?? new RefTable();
     this.uploads = new Uploads(opts.uploadsDir ?? path.join(attachmentsDir(), 'phone'));
+    this.voice = opts.voice ?? new MacVoice(() => path.join(belugaHome(), 'voice'));
     this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}) });
     this.icons = opts.icons ?? new ProjectIcons({ dir: path.join(path.dirname(opts.thumbsDir), 'icons'), root: (id) => this.state().projects.find((p) => p.id === id)?.root, changed: () => this.refreshViews() });
     this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };
@@ -374,6 +381,7 @@ export class CompanionHost {
   async stop(): Promise<void> {
     this.stopped = true;
     for (const off of this.offs.splice(0)) off();
+    void this.voice.close();
     clearTimeout(this.changeTimer);
     this.awake.release();
     await this.pairing.cancel('Beluga on your Mac is shutting down');
@@ -536,6 +544,15 @@ export class CompanionHost {
     const { chips, images, paths } = await this.attach(caller, files);
     const text = [words.trim(), chips.join(' '), paths.length ? `Files from my phone:\n${paths.map((p) => `- ${p}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
     return chips.length ? String(await this.must(caller, 'attachments.expand', [text, channel, images, images.map((_, i) => i + 1)])) : text;
+  }
+
+  /** What you said on the phone, written down here (BLG-140): only the phone that sent the audio, which then goes. */
+  async transcribe(caller: string, a: { audio: string; model: VoiceModelId; language: string }): Promise<{ text: string; language?: string; ms: number }> {
+    const device = this.deviceOf(caller);
+    if (!device) throw new Error('Only the phone that sent the recording can have it written down');
+    const [up] = await this.uploads.resolve(device, [a.audio]);
+    if (!up || !/^audio\/(wav|x-wav|wave)$/.test(up.mime)) throw new Error('That isn’t a recording');
+    return this.voice.transcribe(up.path, { model: a.model, language: a.language });
   }
 
   /** Write in a friends' chat, with files from the phone (taken in as chat files are on the Mac). */

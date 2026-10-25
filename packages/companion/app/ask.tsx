@@ -16,7 +16,8 @@ import { sends } from '../lib/sends';
 import { store } from '../lib/store';
 import { appendSpoken } from '../lib/dictate';
 import { color, spring } from '../lib/theme';
-import { MODEL_MB, useVoice, type VoiceState, voiceAvailable } from '../lib/voice';
+import { useVoice, type VoiceState, voiceAvailable } from '../lib/voice';
+import { VOICE_MODELS, voiceSize } from '../../../src/shared/voice-models';
 
 /**
  * The Ask button's sheet: write, (attach a photo), send. Where it goes is one pill: tap it to
@@ -207,7 +208,7 @@ export default function Ask() {
                   </Press>
                 </Animated.View>
               ) : null}
-              <VoiceLine state={voice.state} error={voice.error} />
+              <VoiceLine state={voice.state} error={voice.error} note={voice.note} />
             </View>
             {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 10 }}>
@@ -249,7 +250,7 @@ function MicButton({ state, onStart, onStop }: { readonly state: VoiceState; rea
         onPress={listening ? onStop : onStart}
         disabled={busy}
         accessibilityLabel={listening ? 'Stop and write it down' : 'Speak instead of typing'}
-        accessibilityHint={listening ? undefined : 'Written down on this phone; nothing you say leaves it'}
+        accessibilityHint={listening ? undefined : 'Written down on this phone or your Mac (Settings › Voice)'}
         style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: listening ? toneBg('rose') : busy ? toneBg('sky') : color.sunken }}
       >
         {busy ? <ActivityIndicator size="small" color={toneInk('sky')} /> : listening ? <Square color={toneInk('rose')} fill={toneInk('rose')} size={13} /> : <Mic color={color.text2} size={20} />}
@@ -259,15 +260,17 @@ function MicButton({ state, onStart, onStop }: { readonly state: VoiceState; rea
 }
 
 /** One quiet line under the field while the microphone does something (or couldn't). */
-function VoiceLine({ state, error }: { readonly state: VoiceState; readonly error?: string }) {
+function VoiceLine({ state, error, note }: { readonly state: VoiceState; readonly error?: string; readonly note?: string }) {
   const line =
     state.kind === 'getting'
-      ? `Getting the voice model · ${Math.round(state.progress * 100)}% of ${MODEL_MB} MB, once`
+      ? `Getting ${VOICE_MODELS[state.model].label} · ${Math.round(state.progress * 100)}% of ${voiceSize(VOICE_MODELS[state.model].files.phone?.bytes ?? 0)}, once`
       : state.kind === 'listening'
         ? 'Listening… tap ■ to write it down'
         : state.kind === 'writing'
-          ? 'Writing it down on this phone…'
-          : error;
+          ? state.where === 'mac'
+            ? 'Your Mac is writing it down…'
+            : 'Writing it down on this phone…'
+          : (error ?? note);
   if (!line) return null;
   return (
     <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 6 }}>

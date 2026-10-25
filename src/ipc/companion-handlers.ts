@@ -40,6 +40,9 @@ export const COMPANION_HANDLERS = {
     return raised ? { opened: true } : { opened: false, why: 'Beluga isn’t open on your Mac' };
   },
   'companion.icon': (s, sum) => needCompanion(s).icon(sum),
+  'companion.voice': (s) => needCompanion(s).voice.status(),
+  'companion.voicePrepare': (s, model) => needCompanion(s).voice.prepare(model),
+  'companion.transcribe': (s, a) => needCompanion(s).transcribe(callerOf(), a),
   'companion.mergeCheck': (s, topic) => mergeCheck(s, topic),
   'companion.merge': (s, topic) => merge(s, needCompanion(s).merges, topic),
   'companion.resolve': (s, topic) => resolve(s, needCompanion(s).merges, topic),

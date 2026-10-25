@@ -235,6 +235,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.termClose` | – the phone only: ends a worktree's terminal for every screen, as the dock's × (`terminals.close`) |
 | `companion.subAgent` | – the phone only: a sub-agent's sheet, its activity in words and the report it gave back (the Mac's sub-agent page reads its transcript itself) |
 | `companion.gone` | – the phone only: which conversations it saved files from were archived or deleted on the Mac, so it removes those files (the Mac archives and deletes them itself) |
+| `companion.voice` | – the phone only: Settings › Voice, which of the Mac's voice models are here or coming (the Mac app has no microphone) |
+| `companion.voicePrepare` | – the phone only: Settings › Voice, get a model on the Mac now |
+| `companion.transcribe` | – the phone only: the Ask sheet's microphone, On your Mac: the recording written down here and deleted |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |

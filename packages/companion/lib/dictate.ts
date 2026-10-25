@@ -56,3 +56,27 @@ export function pcmLevel(chunk: Uint8Array): number {
   // Speech sits around an RMS of 0.02 to 0.2; a square root spreads that over the range.
   return Math.min(1, Math.sqrt(Math.sqrt(sum / samples) / 0.2));
 }
+
+/** The recording as a WAV file (16 kHz mono 16-bit), as the Mac takes it (companion.transcribe). */
+export function wavOf(pcm: Uint8Array): Uint8Array {
+  const out = new Uint8Array(44 + pcm.length);
+  const v = new DataView(out.buffer);
+  const text = (at: number, s: string) => {
+    for (let i = 0; i < s.length; i++) out[at + i] = s.charCodeAt(i);
+  };
+  text(0, 'RIFF');
+  v.setUint32(4, 36 + pcm.length, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, SAMPLE_RATE, true);
+  v.setUint32(28, SAMPLE_RATE * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  text(36, 'data');
+  v.setUint32(40, pcm.length, true);
+  out.set(pcm, 44);
+  return out;
+}

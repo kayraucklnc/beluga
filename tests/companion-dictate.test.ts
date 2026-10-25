@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendSpoken, cleanTranscript, joinPcm, MAX_BYTES, pcmLevel } from '../packages/companion/lib/dictate.js';
+import { appendSpoken, cleanTranscript, joinPcm, MAX_BYTES, pcmLevel, wavOf } from '../packages/companion/lib/dictate.js';
 
 /** The Ask sheet's microphone: what the on-device Whisper writes, into the field (packages/companion/lib/dictate.ts). */
 describe('phone dictation', () => {
@@ -31,5 +31,14 @@ describe('phone dictation', () => {
     const l = pcmLevel(new Uint8Array(loud.buffer));
     expect(l).toBeGreaterThan(pcmLevel(new Uint8Array(soft.buffer)));
     expect(l).toBeLessThanOrEqual(1);
+  });
+
+  it('wraps the recording as the WAV the Mac reads (16 kHz mono 16-bit)', () => {
+    const w = wavOf(new Uint8Array([1, 2, 3, 4]));
+    const v = new DataView(w.buffer);
+    expect(new TextDecoder().decode(w.subarray(0, 4))).toBe('RIFF');
+    expect(new TextDecoder().decode(w.subarray(36, 40))).toBe('data');
+    expect([v.getUint32(4, true), v.getUint16(22, true), v.getUint32(24, true), v.getUint16(34, true), v.getUint32(40, true)]).toEqual([40, 1, 16000, 16, 4]);
+    expect([...w.subarray(44)]).toEqual([1, 2, 3, 4]);
   });
 });
