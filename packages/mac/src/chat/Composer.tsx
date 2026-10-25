@@ -383,7 +383,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       <div
         ref={boxRef}
         style={effects ? (fireVars(prefs.maxFire) as React.CSSProperties) : undefined}
-        className={cx(s.box, burning ? m.max : effects && m.fxOnly, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
+        className={cx(s.box, burning ? (prefs.maxFire.border ? m.max : m.maxPlain) : effects && m.fxOnly, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
         data-plan={plan || tasksMode || undefined}
         data-mode={mode}
         {...att.dropProps}
@@ -514,7 +514,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </div>
           ) : (
             <Tip label={prefs.sendWith === 'enter' ? 'Send · Shift+Return for a new line' : `Send · ${mod()}Return`} keys={prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`}>
-              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady, burning && buffer.trim() && m.hot)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
+              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady, burning && prefs.maxFire.border && buffer.trim() && m.hot)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
                 <Icon name="send" size={14} />
               </button>
             </Tip>

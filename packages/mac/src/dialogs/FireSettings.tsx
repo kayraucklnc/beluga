@@ -108,6 +108,9 @@ export function FireSettings() {
             ]}
           />
         </Row>
+        <Row label="Color the box" detail={look.border ? 'A rim and glow in the fire’s colours, fading with the fire.' : 'The box keeps its usual look; only the fire burns around it.'}>
+          <Switch label="Color the box" on={look.border} onChange={(border) => set({ border })} />
+        </Row>
         <Row label="Style">
           <Segmented
             label="Style"
@@ -182,7 +185,7 @@ function Preview({ look }: { look: FireLook }) {
   // As it will be: no flames when the fire is off (the pixels and confetti still fly).
   return (
     <div className={f.stage} style={{ paddingTop: 200 }}>
-      <div ref={box} className={cx(f.fakeBox, look.show !== 'off' ? m.max : f.plainBox)} style={fireVars(look) as React.CSSProperties}>
+      <div ref={box} className={cx(f.fakeBox, look.show !== 'off' && look.border ? m.max : cx(f.plainBox, m.maxPlain))} style={fireVars(look) as React.CSSProperties}>
         <MaxFire box={box} input={input} look={look} />
         <textarea ref={input} className={f.fakeInput} rows={2} value={text} placeholder="Type or delete here to try it" aria-label="Try the fire" onChange={(e) => setText(e.target.value)} />
       </div>

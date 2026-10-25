@@ -13,10 +13,17 @@
   isolation: isolate;
   /* The box's own face is ::after, so the flames (under it) only show past its edges. */
   background: transparent;
-  box-shadow: 0 2px 14px color-mix(in srgb, var(--f1, #3fa2ff) 14%, transparent);
+  /* The glow and the rim fade with the fire (--burn, 0–1, set as it burns). */
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--f1, #3fa2ff) calc(var(--burn, 1) * 14%), transparent);
+  transition: box-shadow var(--dur);
 }
 .max:focus-within {
-  box-shadow: 0 4px 22px color-mix(in srgb, var(--f1, #3fa2ff) 22%, transparent);
+  box-shadow: 0 4px 22px color-mix(in srgb, var(--f1, #3fa2ff) calc(var(--burn, 1) * 22%), transparent);
+}
+/* Burning, but the box keeps its usual look (Settings: Color the Box off). */
+.maxPlain {
+  position: relative;
+  isolation: isolate;
 }
 .max::after {
   content: '';
@@ -25,7 +32,7 @@
   z-index: -1;
   border-radius: inherit;
   background:
-    radial-gradient(120% 90% at 50% 125%, color-mix(in srgb, var(--f1, #3fa2ff) 12%, transparent), transparent 70%),
+    radial-gradient(120% 90% at 50% 125%, color-mix(in srgb, var(--f1, #3fa2ff) calc(var(--burn, 1) * 12%), transparent), transparent 70%),
     var(--bg-raised);
   pointer-events: none;
 }
@@ -46,6 +53,7 @@
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   animation: ember-turn 5s linear infinite;
+  opacity: var(--burn, 1);
   pointer-events: none;
 }
 @keyframes ember-turn {
