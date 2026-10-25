@@ -81,5 +81,8 @@ export function controlNote(on: boolean, text = 'Your Mac is using this phone'):
   else phoneControl.stopControlNote();
 }
 
+export const accessibilityOn = (): boolean => phoneControlAvailable() && phoneControl.accessibilityEnabled();
 export const openAccessibilitySettings = (): void => phoneControl.openAccessibilitySettings();
 export const onAccessibilityChange = (fn: () => void): (() => void) => (phoneControlAvailable() ? phoneControl.onAccessibilityChange(fn) : () => {});
+/** The Stop button on the phone's notification: cut control at once. */
+export const onControlStop = (fn: () => void): (() => void) => (phoneControlAvailable() ? phoneControl.onStop(fn) : () => {});

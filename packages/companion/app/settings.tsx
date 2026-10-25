@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, MonitorSmartphone, Moon, MoonStar, Network, ShieldCheck, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useEffect, useState } from 'react';
 import { AppState, Platform, ScrollView, Switch, View } from 'react-native';
@@ -19,6 +19,7 @@ import { useSaved } from '../lib/saved';
 import { totalBytes } from '../lib/saved-list';
 import { store } from '../lib/store';
 import { askBatteryUnrestricted, batteryUnrestricted, setStay, stayAvailable, stayOn } from '../lib/stay';
+import { accessibilityOn, openAccessibilitySettings, phoneAllowed, phoneControlAvailable, setPhoneAllowed } from '../lib/phone';
 import { color, ink } from '../lib/theme';
 
 /**
@@ -42,15 +43,36 @@ export default function Settings() {
   const [stay, setStayOn] = useState(stayOn());
   const [unrestricted, setUnrestricted] = useState(true);
   useEffect(() => setUnrestricted(batteryUnrestricted()), [stay]);
-  // Back from Android's settings (notifications, battery): show what's true now.
+  // Let your Mac use this phone (BLG-150): the phone's own switch, and whether Accessibility is on.
+  const canControl = link.mode === 'bare' && phoneControlAvailable();
+  const [control, setControl] = useState(phoneAllowed());
+  const [acc, setAcc] = useState(accessibilityOn());
+  // Back from Android's settings (notifications, battery, accessibility): show what's true now.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
       if (s !== 'active') return;
       void permission(false).then(setPerm);
       setUnrestricted(batteryUnrestricted());
+      setAcc(accessibilityOn());
     });
     return () => sub.remove();
   }, []);
+  const toggleControl = () => {
+    haptic.tap();
+    const next = !control;
+    setPhoneAllowed(next);
+    setControl(next);
+    // Control needs the link up in the background, so turn Stay connected on with it.
+    if (next && !stay) {
+      setStay(true);
+      setStayOn(true);
+      if (perm !== 'granted') void permission(true).then(setPerm);
+      if (!batteryUnrestricted()) askBatteryUnrestricted();
+    }
+    store.staySet();
+    store.controlSet(next);
+    if (next && !accessibilityOn()) openAccessibilitySettings();
+  };
   const toggleStay = () => {
     haptic.tap();
     const next = !stay;
@@ -125,6 +147,26 @@ export default function Settings() {
                 label="Let it run in the background"
                 sub="Android’s battery saver may cut the link off. Allow Beluga to fix it."
                 onPress={askBatteryUnrestricted}
+              />
+            ) : null}
+            {canControl ? (
+              <Row
+                Icon={MonitorSmartphone}
+                tone="sky"
+                label="Let your Mac use this phone"
+                sub={control ? 'Your Mac’s Claude can look at this phone and tap, type and open apps when you ask' : 'Ask Claude on your Mac to do things here: screenshots, taps, open apps, install a build'}
+                right={toggle(control, () => {})}
+                onPress={toggleControl}
+                chevron={false}
+              />
+            ) : null}
+            {canControl && control && !acc ? (
+              <Row
+                Icon={ShieldCheck}
+                tone="peach"
+                label="Turn on Accessibility for Beluga"
+                sub="Android › Accessibility › Beluga. A sideloaded app first needs “Allow restricted settings” from the app’s ⋮ menu."
+                onPress={openAccessibilitySettings}
               />
             ) : null}
             <Row Icon={HardDrive} tone="sky" label="Storage" sub={saved.length ? `${saved.length} saved · ${sizeOf(totalBytes(saved))}` : 'What Beluga keeps on this phone'} onPress={() => router.push('/storage')} />

@@ -69,4 +69,9 @@ export const phoneControl = {
     const sub = native?.addListener('accessibility', () => fn());
     return () => sub?.remove();
   },
+  /** The user pressed Stop on the "Your Mac is using this phone" notification. */
+  onStop: (fn: () => void): (() => void) => {
+    const sub = native?.addListener('stopped', () => fn());
+    return () => sub?.remove();
+  },
 };

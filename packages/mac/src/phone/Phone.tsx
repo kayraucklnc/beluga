@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useState } from 'react';
-import type { DeviceView } from '../../../../src/companion/protocol.js';
+import type { DeviceView, PhoneUse } from '../../../../src/companion/protocol.js';
 import { Icon } from '../components/Icon.js';
 import { Button, cx } from '../components/ui.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
@@ -27,6 +27,37 @@ const useMinute = (): number => useClock(true, 30_000);
 const useDevices = (): readonly DeviceView[] => useApp((st) => st.companion.devices, sameDeep);
 const usePairing = () => useApp((st) => st.companion.pairing, sameDeep);
 const useRelay = () => useApp((st) => st.companion.relay);
+const useAdb = () => useApp((st) => st.companion.adb, sameDeep);
+
+/** How Claude may use this phone (BLG-150): the preset, the route it's reached by, and adb pairing. */
+const USE_OPTIONS: ReadonlyArray<{ value: PhoneUse; label: string }> = [
+  { value: 'off', label: 'Off' },
+  { value: 'ask', label: 'Ask each time' },
+  { value: 'use', label: 'Use' },
+  { value: 'full', label: 'Full (shell too)' },
+];
+const ROUTE_WORDS: Record<string, string> = { usb: 'over USB', wifi: 'Wireless debugging (same Wi‑Fi)', link: 'Wireless debugging (through Beluga)', accessibility: 'the Accessibility service' };
+
+function PhoneClaude({ d }: { d: DeviceView }) {
+  const { client } = useBeluga();
+  const c = d.control;
+  if (!c || d.platform === 'ios') return null;
+  const route = c.routes[0];
+  return (
+    <div className={s.control}>
+      <Row label="Let Claude use this phone" detail={route ? `Reached by ${ROUTE_WORDS[route] ?? route}.` : (c.note ?? 'Not reachable right now.')}>
+        <Select label="Let Claude use this phone" value={c.use} onChange={(v) => void client.api.companion['phone.use'](d.id, v as PhoneUse)} options={USE_OPTIONS.map((o) => ({ ...o }))} />
+      </Row>
+      {c.use !== 'off' && c.adb === 'unpaired' ? (
+        <Row label="Wireless debugging" detail="On the phone, open Wireless debugging › Pair device with pairing code, then type the six digits into Beluga’s notification.">
+          <Button size="small" onClick={() => void quietly(client, client.api.companion['phone.pairAdb'](d.id))}>
+            Connect
+          </Button>
+        </Row>
+      ) : null}
+    </div>
+  );
+}
 
 /** How phones on other networks (a dorm's or a café's Wi-Fi, mobile data) reach this Mac, in a line (BLG-126). */
 export function relayText(relay: 'ready' | 'starting' | 'off' | undefined): { readonly text: string; readonly ok: boolean } | undefined {
@@ -61,8 +92,8 @@ function Reaching() {
   );
 }
 
-/** The phones you paired: each with how it is now, and Remove. */
-function DeviceList({ now }: { now: number }) {
+/** The phones you paired: each with how it is now, Remove, and (in Settings) how Claude may use it. */
+function DeviceList({ now, control = false }: { now: number; control?: boolean }) {
   const { client } = useBeluga();
   const devices = useDevices();
   if (!devices.length) return <div className={s.empty}>No phone yet. Pair one to see what Claude is doing, answer and ask from anywhere.</div>;
@@ -70,24 +101,27 @@ function DeviceList({ now }: { now: number }) {
     <ul className={s.devices} aria-label="Your phones">
       {devices.map((d) => (
         <li key={d.id} className={s.device}>
-          <span className={cx(s.deviceMark, d.linked && s.lit)} aria-hidden="true">
-            <Icon name="phone" size={16} />
-          </span>
-          <span className={s.deviceText}>
-            <span className={s.deviceName}>{d.name}</span>
-            <span className={s.dim}>
-              {d.platform === 'ios' ? 'iPhone' : 'Android'}
-              {d.app ? ` · app ${d.app}` : ''} · {seenText(d, now)}
+          <div className={s.deviceHead}>
+            <span className={cx(s.deviceMark, d.linked && s.lit)} aria-hidden="true">
+              <Icon name="phone" size={16} />
             </span>
-            {d.path ? (
-              <span className={s.path} title={d.note}>
-                {d.path === 'relay' ? (d.note ?? pathLabel(d.path)) : pathLabel(d.path)}
+            <span className={s.deviceText}>
+              <span className={s.deviceName}>{d.name}</span>
+              <span className={s.dim}>
+                {d.platform === 'ios' ? 'iPhone' : 'Android'}
+                {d.app ? ` · app ${d.app}` : ''} · {seenText(d, now)}
               </span>
-            ) : null}
-          </span>
-          <Button size="small" variant="quiet" onClick={() => void client.api.companion['devices.remove'](d.id)}>
-            Remove
-          </Button>
+              {d.path ? (
+                <span className={s.path} title={d.note}>
+                  {d.path === 'relay' ? (d.note ?? pathLabel(d.path)) : pathLabel(d.path)}
+                </span>
+              ) : null}
+            </span>
+            <Button size="small" variant="quiet" onClick={() => void client.api.companion['devices.remove'](d.id)}>
+              Remove
+            </Button>
+          </div>
+          {control ? <PhoneClaude d={d} /> : null}
         </li>
       ))}
     </ul>
@@ -196,6 +230,22 @@ export function PhoneMark() {
   );
 }
 
+/** Whether adb (Android platform-tools) is on this Mac — needed for Wireless debugging, screenshots and shell. */
+function AdbLine() {
+  const adb = useAdb();
+  if (!adb) return null;
+  const detail = adb.path
+    ? `Found adb ${adb.version ?? ''} on this Mac.`
+    : adb.fetching
+      ? 'Getting Android platform-tools…'
+      : 'adb (Android platform-tools) isn’t installed. The Accessibility route still works without it; for Wireless debugging, shell and logs, install it.';
+  return (
+    <Row label="adb on this Mac" detail={detail}>
+      {adb.path ? <span className={cx(s.relayDot, s.relayOk)} aria-label="Found" /> : <span className={s.relayDot} aria-label="Not found" />}
+    </Row>
+  );
+}
+
 /** Settings › Phone. */
 export function PhoneSettings() {
   const now = useMinute();
@@ -206,6 +256,17 @@ export function PhoneSettings() {
           <DeviceList now={now} />
         </div>
       </Group>
+      {useDevices().some((d) => d.platform !== 'ios') ? (
+        <Group title="Let Claude use your phone">
+          <Row label="How it works" detail="Ask Claude on this Mac to do something on your phone — look at the screen, tap, type, open apps, install a build. It uses Wireless debugging when it can, or the phone’s Accessibility service. Off until you choose a level below; set it up on the phone in Beluga › Settings.">
+            <span />
+          </Row>
+          <AdbLine />
+          <div className={s.inSettings}>
+            <DeviceList now={now} control />
+          </div>
+        </Group>
+      ) : null}
       {useDevices().length ? (
         <Group title="Reaching your Mac">
           <Reaching />

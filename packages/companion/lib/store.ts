@@ -5,7 +5,7 @@ import { BareTransport } from './link/bare';
 import { type Call, calls } from './link/calls';
 import { DemoTransport } from './link/demo/transport';
 import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, isMacTopic, type MacFrame, type NeedsYou, type OutputView, type PhoneOp, type Topic, viewSchema } from './link/protocol';
-import { controlState, onAccessibilityChange, phoneAllowed, phoneControlAvailable, runOp, watchAdb } from './phone';
+import { controlNote, controlState, onAccessibilityChange, onControlStop, phoneAllowed, phoneControlAvailable, runOp, setPhoneAllowed, watchAdb } from './phone';
 import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
 import { checkOnline } from './link/online';
 import { graceExpired, onResume, PROBE_TIMEOUT_MS, RETRY_LIMIT, retryDelay } from './link/resume';
@@ -594,6 +594,7 @@ class Store {
 
   private offAcc?: () => void;
   private offAdb?: () => void;
+  private offStop?: () => void;
 
   /** Tell the Mac what this phone allows and how it can be reached (only to a Mac that supports it). */
   private reportControl(): void {
@@ -608,8 +609,14 @@ class Store {
   controlSet(allowed: boolean): void {
     if (!phoneControlAvailable()) return;
     this.offAcc ??= onAccessibilityChange(() => this.reportControl());
+    this.offStop ??= onControlStop(() => {
+      setPhoneAllowed(false);
+      this.controlSet(false);
+    });
     this.offAdb?.();
     this.offAdb = watchAdb(allowed, () => this.reportControl());
+    // The ongoing "Your Mac is using this phone" notice (with Stop) shows while control is allowed.
+    controlNote(allowed, 'Claude can act on this phone');
     this.reportControl();
   }
 
