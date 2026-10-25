@@ -26,6 +26,8 @@ const PATHS = {
   branch: 'M5 3v10 M5 10c0-3 6-2 6-5 M11 2.5v2.5 M5 13a1.25 1.25 0 1 0 0-.01 M5 3a1.25 1.25 0 1 0 0-.01 M11 5a1.25 1.25 0 1 0 0-.01',
   /** Claude in Beluga: the logo's prompt and cursor, at the logo's proportions. */
   claude: 'M3 4.5L6.7 8 3 11.5 M9.15 10.8h3.9',
+  /** Max effort: a flame. */
+  flame: 'M8 14c-2.5 0-4.5-1.8-4.5-4.3C3.5 7 6 5.8 6.5 2.5c1.6 1 2.4 2.6 2.3 4.3.6-.4 1-1.1 1.1-1.9 1.4 1.1 2.6 2.8 2.6 4.8C12.5 12.2 10.5 14 8 14z M8 14c-1 0-1.8-.8-1.8-1.8 0-1.2 1-1.7 1.4-2.8.9.6 2.2 1.5 2.2 2.8 0 1-.8 1.8-1.8 1.8z',
   /** The old name for Claude's mark (kept so every use shows the same one). */
   spark: 'M3 4.5L6.7 8 3 11.5 M9.15 10.8h3.9',
   check: 'M3.5 8.5l3 3 6-7',
