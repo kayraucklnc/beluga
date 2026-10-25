@@ -24,6 +24,7 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const { scrolled, onScroll } = useScrolled();
   const [usageOpen, setUsageOpen] = useState(false);
+  const [chatsOpen, setChatsOpen] = useState(false);
   const link = useLink();
   const home = useView<HomeView>('home');
   const plans = useView<PlansView>('plans');
@@ -74,7 +75,7 @@ export default function Home() {
           </Card>
         ) : (
           <>
-            {h.assistant ? <AskYourMac c={h.assistant} chats={h.macChats?.length ?? 0} /> : null}
+            {h.assistant ? <AskYourMac c={h.assistant} chats={h.macChats?.length ?? 0} onChats={() => setChatsOpen(true)} /> : null}
 
             <Section
               title="Needs you"
@@ -146,6 +147,7 @@ export default function Home() {
         )}
       </ScrollView>
       <UsageSheet usage={h?.usage ?? []} visible={usageOpen} onClose={() => setUsageOpen(false)} />
+      <MacChatsSheet window visible={chatsOpen} onClose={() => setChatsOpen(false)} />
     </Screen>
   );
 }
@@ -155,43 +157,39 @@ export default function Home() {
  * line (or what it's doing now); a tap opens the chat open on the Mac, with its composer ready.
  * Since 1.14 its chats button lists them all, with New chat (a long-press opens it too).
  */
-function AskYourMac({ c, chats }: { readonly c: ConvSummary; readonly chats: number }) {
+function AskYourMac({ c, chats, onChats }: { readonly c: ConvSummary; readonly chats: number; readonly onChats: () => void }) {
   const working = c.status === 'working' || c.status === 'waiting';
   const many = useSupports('macChats');
-  const [open, setOpen] = useState(false);
   return (
-    <>
-      <Press scaleTo={0.985} onPress={() => router.push(convHref(c.topic) as never)} onLongPress={many ? () => setOpen(true) : undefined} accessibilityLabel="Ask your Mac" style={{ marginHorizontal: 16, marginTop: 18 }}>
-        <Card style={{ paddingVertical: 12, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <IconBadge Icon={Laptop} tone="sky" size={34} />
-          <View style={{ flex: 1 }}>
-            <T v="heading" numberOfLines={1} style={{ fontSize: 16 }}>
-              Ask your Mac
-            </T>
-            {working ? (
-              <StepTicker step={c.last ?? 'Working'} size={12.5} />
-            ) : (
-              <T v="caption" numberOfLines={1}>
-                {c.last ?? 'Screenshots, what’s running, start a worktree'}
-              </T>
-            )}
-          </View>
-          {c.unread ? <Pill label={String(c.unread)} tone="sky" /> : null}
-          {many ? (
-            <Press onPress={() => setOpen(true)} accessibilityLabel={`Your Mac’s chats, ${chats}`} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, paddingHorizontal: 10, borderRadius: 16, backgroundColor: color.sunken }}>
-              <MessagesSquare color={color.text2} size={15} />
-              {chats > 1 ? (
-                <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
-                  {chats}
-                </T>
-              ) : null}
-            </Press>
+    <Press scaleTo={0.985} onPress={() => router.push(convHref(c.topic) as never)} onLongPress={many ? onChats : undefined} accessibilityLabel="Ask your Mac" style={{ marginHorizontal: 16, marginTop: 18 }}>
+      <Card style={{ paddingVertical: 12, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <IconBadge Icon={Laptop} tone="sky" size={34} />
+        <View style={{ flex: 1 }}>
+          <T v="heading" numberOfLines={1} style={{ fontSize: 16 }}>
+            Ask your Mac
+          </T>
+          {working ? (
+            <StepTicker step={c.last ?? 'Working'} size={12.5} />
           ) : (
-            <ChevronRight color={color.text3} size={18} />
+            <T v="caption" numberOfLines={1}>
+              {c.last ?? 'Screenshots, what’s running, start a worktree'}
+            </T>
           )}
-        </Card>
-      </Press>
-      {many ? <MacChatsSheet visible={open} onClose={() => setOpen(false)} /> : null}
-    </>
+        </View>
+        {c.unread ? <Pill label={String(c.unread)} tone="sky" /> : null}
+        {many ? (
+          <Press onPress={onChats} accessibilityLabel={`Your Mac’s chats, ${chats}`} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, paddingHorizontal: 10, borderRadius: 16, backgroundColor: color.sunken }}>
+            <MessagesSquare color={color.text2} size={15} />
+            {chats > 1 ? (
+              <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
+                {chats}
+              </T>
+            ) : null}
+          </Press>
+        ) : (
+          <ChevronRight color={color.text3} size={18} />
+        )}
+      </Card>
+    </Press>
   );
 }

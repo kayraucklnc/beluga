@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Check, Laptop, Plus, Trash2 } from 'lucide-react-native';
+import { Check, Laptop, Plus, Trash2, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useView } from '../lib/hooks';
@@ -49,7 +49,11 @@ export function DeleteMacChat({ topic, title, onClose, after }: { readonly topic
   );
 }
 
-export function MacChatsSheet({ visible, onClose, current }: { readonly visible: boolean; readonly onClose: () => void; /** The chat on screen now: ticked, and another one replaces it rather than stacks. */ readonly current?: Topic }) {
+/**
+ * The list in a sheet. Deleting asks in the same sheet (a window of its own on a tab, `window`,
+ * where a second sheet would come up under it).
+ */
+export function MacChatsSheet({ visible, onClose, current, window = false }: { readonly visible: boolean; readonly onClose: () => void; /** The chat on screen now: ticked, and another one replaces it rather than stacks. */ readonly current?: Topic; readonly window?: boolean }) {
   const home = useView<HomeView>('home');
   const chats = home?.data.macChats ?? [];
   const [deleting, setDeleting] = useState<ConvSummary | undefined>();
@@ -58,28 +62,58 @@ export function MacChatsSheet({ visible, onClose, current }: { readonly visible:
     onClose();
     if (c.topic !== current) setTimeout(() => open(convHref(c.topic)), 180);
   };
+  const close = () => {
+    setDeleting(undefined);
+    onClose();
+  };
+  const remove = (c: ConvSummary) => {
+    close();
+    deleteMacChat(c.topic, c.topic === current ? () => (router.canGoBack() ? router.back() : router.replace('/' as never)) : undefined);
+  };
   return (
-    <>
-      <Sheet
-        visible={visible}
-        onDismiss={onClose}
-        header={
-          <View style={{ paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <IconBadge Icon={Laptop} tone="sky" size={32} />
-            <View style={{ flex: 1 }}>
-              <T v="title" style={{ fontSize: 20 }}>
-                Your Mac’s chats
-              </T>
-              <T v="caption">The same chats as the tabs on your Mac</T>
-            </View>
+    <Sheet
+      visible={visible}
+      onDismiss={close}
+      window={window}
+      header={
+        <View style={{ paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <IconBadge Icon={Laptop} tone="sky" size={32} />
+          <View style={{ flex: 1 }}>
+            <T v="title" style={{ fontSize: 20 }}>
+              Your Mac’s chats
+            </T>
+            <T v="caption">The same chats as the tabs on your Mac</T>
           </View>
-        }
-      >
+        </View>
+      }
+    >
+      {deleting ? (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 20 }}>
+          <T v="eyebrow" style={{ paddingHorizontal: 10, paddingBottom: 8 }}>
+            This can’t be undone
+          </T>
+          <Press scaleTo={0.98} onPress={() => remove(deleting)} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 11, paddingHorizontal: 10, borderRadius: 16 }}>
+            <IconBadge Icon={Trash2} tone="rose" size={38} />
+            <View style={{ flex: 1 }}>
+              <T v="body" numberOfLines={1} style={{ fontWeight: '500' }}>
+                Delete “{deleting.title}”
+              </T>
+              <T v="caption">Its messages and files go for good, here and on your Mac</T>
+            </View>
+          </Press>
+          <Press scaleTo={0.98} onPress={() => setDeleting(undefined)} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 11, paddingHorizontal: 10, borderRadius: 16 }}>
+            <IconBadge Icon={X} tone="plain" size={38} />
+            <T v="body" style={{ fontWeight: '500' }}>
+              Keep it
+            </T>
+          </Press>
+        </View>
+      ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 20 }}>
           <Press
             scaleTo={0.98}
             onPress={() => {
-              onClose();
+              close();
               setTimeout(() => newMacChat(open), 180);
             }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 11, paddingHorizontal: 10, borderRadius: 16 }}
@@ -98,9 +132,8 @@ export function MacChatsSheet({ visible, onClose, current }: { readonly visible:
             </T>
           ) : null}
         </ScrollView>
-      </Sheet>
-      <DeleteMacChat topic={deleting?.topic} title={deleting?.title} onClose={() => setDeleting(undefined)} after={deleting && deleting.topic === current ? () => (router.canGoBack() ? router.back() : router.replace('/' as never)) : undefined} />
-    </>
+      )}
+    </Sheet>
   );
 }
 
