@@ -15,6 +15,7 @@ import { StepBook, importedKey, runKey } from './step-book.js';
 import { Compactor } from './compactor.js';
 import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
+import { PHONE_LOOK_TOOLS } from '../agent/phone-tools.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
 import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR } from '../shared/claude-notices.js';
 import { span } from '../shared/clock.js';
@@ -61,6 +62,10 @@ export interface AgentHostDeps {
   readonly plans?: (channel: string, from: string) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string } | undefined;
   /** "Your Mac" (core/assistant), your own runs in its conversation: where it runs, its tools, what Claude is told. */
   readonly assistant?: (channel: string, from: string) => { readonly place: AgentPlace; readonly tools: MacTools; readonly brief: string } | undefined;
+  /** Your phone (core/phone, BLG-150), your own runs: tools to act on it, saving screenshots in `scratchDir`. `env` lets Bash use adb/scrcpy (BLG-174). */
+  readonly phone?: (scratchDir?: string) => { readonly tools: import('../agent/types.js').PhoneTools; readonly brief: string; readonly env?: Record<string, string> } | undefined;
+  /** How freely Claude may use the phone now (off · ask · use · full), for the owner-approval gate. */
+  readonly phoneUse?: () => 'off' | 'ask' | 'use' | 'full';
 }
 
 /** File tools an Edit guest may use without asking, and the input naming their file. */
@@ -1026,6 +1031,8 @@ export class AgentHost {
     try {
       // A workspace (not a main folder, where nothing may change) gets its scratch folder.
       const scratch = place && !place.askOnly && this.store.getState().prefs.scratchFolder && (await ensureScratch(place.cwd)) ? SCRATCH_DIR : undefined;
+      // Your phone (core/phone): your own runs can drive it; a screenshot lands in this run's scratch.
+      const phone = from === this.selfId ? this.deps.phone?.(scratch && place ? path.join(place.cwd, scratch) : undefined) : undefined;
       // A plan's home conversation (a main folder's chat, often): the plan's tools.
       const plans = from !== this.selfId || place?.syncMain ? undefined : this.deps.plans?.(body.channel, from);
       // Not for guests, nor in a main folder (questions only) unless planning there: a run doing a task gets it, and the tools to keep it true.
@@ -1074,6 +1081,7 @@ export class AgentHost {
         ...(plans?.tools ? { planTools: plans.tools } : {}),
         ...(plans?.brief ? { planBrief: plans.brief } : {}),
         ...(mac ? { macTools: mac.tools, macBrief: mac.brief } : {}),
+        ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
         prompt: this.promptOf(body),
         requesterName,
         viaAgent: body.viaAgent,
@@ -1120,7 +1128,8 @@ export class AgentHost {
         },
         ...this.modelFor(place?.model),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
-        ...(from === this.selfId && this.deps.envFor ? { env: { ...this.deps.envFor(body.channel, place?.cwd), ...tag } } : worktree ? { env: tag } : {}),
+        // Your own runs also get adb on PATH (and ANDROID_SERIAL) when a phone is set up, so Bash can drive it (BLG-174).
+        ...(from === this.selfId && (this.deps.envFor || phone?.env) ? { env: { ...this.deps.envFor?.(body.channel, place?.cwd), ...(phone?.env ?? {}), ...tag } } : worktree ? { env: tag } : {}),
         ...this.compactor.threshold(),
       })]);
       if (controller.signal.aborted) throw new Error('aborted');
@@ -1170,8 +1179,16 @@ export class AgentHost {
   }
 
   private async authorizeTool(requester: string, requesterName: string, toolName: string, input: Record<string, unknown>, channel = 'room', cwd?: string): Promise<boolean> {
-    // Your own Claude doesn't nag you (unless you asked it to); fully trusted friends don't either.
     const state = this.store.getState();
+    // Acting on your phone follows its own setting (Off · Ask · Use · Full), not the global one: at
+    // 'ask' you're asked each time even if your Claude normally doesn't ask; looking never asks.
+    if (requester === this.selfId && toolName.startsWith('mcp__beluga_phone__') && !PHONE_LOOK_TOOLS.includes(toolName)) {
+      const use = this.deps.phoneUse?.() ?? 'off';
+      if (use !== 'ask') return true; // 'off'/unreachable: the tool itself explains; 'use'/'full': just run
+      const answer = await this.ask('tool', `Claude wants to use your phone (${toolName.replace('mcp__beluga_phone__', '')})`, JSON.stringify(input).slice(0, 2000), requester, channel);
+      return answer !== 'no';
+    }
+    // Your own Claude doesn't nag you (unless you asked it to); fully trusted friends don't either.
     if (requester === this.selfId && state.prefs.selfApproval === 'never') return true;
     if (requester !== this.selfId && trustOf(state, requester) === 'full') return true;
     // Invited by link to edit this project: as if you prompted, inside its folder (secrets were already refused).

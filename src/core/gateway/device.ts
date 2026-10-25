@@ -17,8 +17,16 @@ export interface ExecResult {
   readonly stderr: string;
 }
 
+export interface ExecBytesResult {
+  readonly code: number;
+  readonly stdout: Buffer;
+  readonly stderr: Buffer;
+}
+
 export interface SystemPort {
   exec(cmd: string, args: readonly string[], timeoutMs?: number): Promise<ExecResult>;
+  /** Like exec, but stdout/stderr are raw bytes (a screenshot, a file): used by adb exec-out (phone-adb.ts). */
+  execBytes?(cmd: string, args: readonly string[], timeoutMs?: number): Promise<ExecBytesResult>;
   readdir(dir: string): Promise<readonly string[]>;
   readonly os: Pick<typeof os, 'platform' | 'release' | 'cpus' | 'totalmem' | 'freemem' | 'networkInterfaces' | 'uptime' | 'arch' | 'homedir'>;
 }
@@ -29,6 +37,13 @@ export const realSystem: SystemPort = {
       execFile(cmd, [...args], { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
         const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? ((err as { code: number }).code) : 1) : 0;
         resolve({ code, stdout: stdout ?? '', stderr: stderr ?? (err ? err.message : '') });
+      });
+    }),
+  execBytes: (cmd, args, timeoutMs = 20_000) =>
+    new Promise((resolve) => {
+      execFile(cmd, [...args], { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
+        const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? ((err as { code: number }).code) : 1) : 0;
+        resolve({ code, stdout: (stdout as Buffer) ?? Buffer.alloc(0), stderr: (stderr as Buffer) ?? Buffer.from(err ? err.message : '') });
       });
     }),
   readdir: (dir) => fs.readdir(dir).catch(() => []),

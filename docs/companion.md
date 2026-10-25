@@ -114,6 +114,10 @@ One Noise stream (`@hyperswarm/secret-stream` over hyperdht's UDX), framed as to
 | `put {id, name, mime, size, off, b64, eof}`: a photo or file for the Mac, in pieces | `result {id, value: {received} \| {ref}}`: the last piece's `up:` ref |
 | `term_attach {term}` / `term_detach {term}` (1.7): a terminal on screen | `term_status {term, running, exit?, cols, rows, gone?}`, then `term_data {term, data, reset?}` as it comes (~30 a second) |
 | `term_input {term, data}` (1.7): keys typed on the phone | (the session's own echo, in `term_data`) |
+| `control {state}` (1.16): what this phone lets its Mac do, and how it's reached | `req {id, op, args}` (1.16): do something on the phone (the Accessibility service) |
+| `reply {id, ok, value \| error}` (1.16): the answer to a `req` | |
+| `adb_code {code}` (1.16): the Wireless-debugging pairing code the user typed | |
+| `tun_ok / tun_data / tun_ack / tun_close {id, …}` (1.16): the adb tunnel, phone side | `tun_open {id, to}` then `tun_data / tun_ack / tun_close` (1.16): the adb tunnel, Mac side |
 | `bye` | `bye {reason}` |
 
 **Files come in pieces, the phone asking for each.** One `get` is answered by one `chunk` of at most
@@ -600,11 +604,54 @@ Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `ass
 - **Versions.** 1.5 (`SINCE.assistant`): an older Mac never gets the topic subscribed, and the Ask
   sheet doesn't offer Your Mac.
 
+## Your phone, from your Mac (BLG-150)
+
+The other direction: ask Claude on the Mac to do something on your *own* paired Android phone —
+look at the screen, tap, type, open apps, install a build, read logs, debug. Only your own phone,
+only your own runs; never a friend's Claude, never a guest. Off by default.
+
+- **Routes, best first** (`src/companion/phone-control.ts`, `PhoneControl.reach`). USB; Wireless
+  debugging on the same Wi‑Fi; Wireless debugging carried through the Beluga link from any network;
+  or, when debugging is off, the app's **Accessibility service**. Each tool picks the best route it
+  has; the ones that need adb (shell, logs, install) say so plainly when only Accessibility is there.
+- **adb** (`src/companion/phone-adb.ts`). Found at `~/Library/Android/sdk/platform-tools/adb`, on
+  `PATH`, or in Homebrew; Settings › Phone says whether it's there. Taps and typing become
+  `input tap`/`input text`, a screenshot `screencap -p`, the screen `uiautomator dump`.
+- **From anywhere (the tunnel).** The Mac's adb connects to `127.0.0.1:<port>` on the Mac; a byte
+  tunnel (`tun_open`/`tun_data`/`tun_ack`/`tun_close`, 1.16) carries it through the link, and the
+  worklet dials the phone's own adbd over `bare-tcp`. adb's TLS stays end to end between adb and
+  adbd; the link carries only ciphertext. Pairing: the phone shows a six-digit code, you type it
+  into Beluga's notification, and the Mac runs `adb pair` over a tunnel to the pairing port.
+- **The Accessibility service** (`packages/companion/modules/phone-control`, Kotlin). Reads the
+  screen as a labelled tree (never a password field), taps/swipes/types (`dispatchGesture`,
+  `ACTION_SET_TEXT`), presses back/home/recents (global actions), opens apps and links, and takes a
+  screenshot (`takeScreenshot`, API 30+, no MediaProjection prompt). The Mac asks with `req`, the
+  app answers with `reply`. `FLAG_SECURE` screens capture black; the tool says so rather than lying.
+- **What the phone says** (`control`, 1.16): `allowed` (its own switch), `accessibility`,
+  `screenshots`, `adb {on, port, pairing}` (found over mDNS, `_adb-tls-connect._tcp`), `wifi {ip}`,
+  and the device. Samsung turns debugging off on network changes and the port changes each toggle,
+  so the phone re-finds it and re-sends `control`.
+- **Claude's tools** (`src/agent/phone-tools.ts`, server `beluga_phone`): `phone_status`,
+  `phone_screenshot` (an image, saved as an output), `phone_screen`, `phone_tap`, `phone_swipe`,
+  `phone_type`, `phone_key`, `phone_scroll`, `phone_open`, `phone_apps`, `phone_info`,
+  `phone_install`, `phone_shell`, `phone_logcat`. Given only to the owner's own runs (like
+  `beluga_mac`). Looking is always allowed; acting follows the phone's level.
+- **The level, per phone** (Settings › Phone on the Mac): **Off**, **Ask each time**, **Use** (taps,
+  typing, opening, installs without asking), **Full** (shell too). Kept on the device record
+  (`DeviceRecord.use`); the owner-approval gate honours it (`agent-host.ts` `authorizeTool`).
+- **On the phone**: one switch, **Let your Mac use this phone**, which turns on Stay connected and
+  walks you through Accessibility (and, for a sideloaded app, Android 13+'s "Allow restricted
+  settings"). While the Mac is acting, an ongoing notification says so and has **Stop**, which cuts
+  every route at once. iPhone can't do any of this.
+
 ## On the Mac
 
 - **The sidebar's footer** shows a phone mark when a phone is paired: lit with a dot while it's
   linked, outlined when it's away ("Pixel 9 · last seen 12 min ago" on hover). Click: the Phone
   popover (the devices, Pair a Phone…, Remove).
+- **Settings › Phone › Let Claude use your phone** (BLG-150): the adb line, and each phone with its
+  route and an **Off · Ask · Use · Full** preset, plus **Connect** when Wireless debugging needs the
+  pairing code. Nothing shows here when no phone is paired.
 - **Settings › Phone**: pair (QR and code), the devices (name, platform, app version, last seen,
   notifications on or off), Remove, and Beluga Push (on by default once set up).
 - **Shared state**: `companion: { devices: DeviceView[] }` (`linked`, `lastSeen`, `push`), never keys.

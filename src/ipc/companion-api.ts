@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_UPLOADS, PHONE_BRANCH_STEPS, UploadRef, VoiceModelId } from '../companion/protocol.js';
+import { MAX_UPLOADS, PHONE_BRANCH_STEPS, PHONE_USE, PhoneOp, UploadRef, VoiceModelId } from '../companion/protocol.js';
 import { NEEDS } from '../core/gateway/protocol.js';
 import { KEEP_AWAKE } from '../shared/settings-schema.js';
 import { SourceSchema, ViewQuerySchema } from '../shared/view-spec.js';
@@ -28,6 +28,16 @@ export const COMPANION_API = {
   'companion.pair.cancel': { args: z.tuple([]) },
   // Remove a phone: its certificate goes, its link drops at once and its key is refused from then on.
   'companion.devices.remove': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/)]) },
+  // How freely your Claude may use a phone (BLG-150, Settings › Phone): off · ask · use · full.
+  'companion.phone.use': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), z.enum(PHONE_USE)]) },
+  // Pair this Mac's adb with the phone, using the code it sent (Wireless debugging › Pair with code).
+  'companion.phone.pairAdb': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/)]) },
+  // One action on the phone from the Mac UI (the live mirror's tap/type, a button): op + its args.
+  'companion.phone.act': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), PhoneOp, z.record(z.string(), z.unknown())]) },
+  // Saved phone flows (BLG-175): the list, run one by name, delete one.
+  'companion.phone.macros': { args: z.tuple([]) },
+  'companion.phone.macroRun': { args: z.tuple([z.string().min(1).max(60)]) },
+  'companion.phone.macroDelete': { args: z.tuple([z.string().min(1).max(60)]) },
   // A conversation's (or chat's) turns before one the phone has: → { turns | messages, more }.
   'companion.older': { args: z.tuple([topic, z.object({ before: z.string().min(1).max(200), limit: z.number().int().min(1).max(100).optional() }).strict()]) },
   // Ask your Mac from the phone: a new chat in a project (or, 1.12, a new worktree there: `worktree`,

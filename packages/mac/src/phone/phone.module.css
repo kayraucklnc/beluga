@@ -62,10 +62,19 @@
 }
 .device {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
   padding: 7px 0;
   border-bottom: 0.5px solid var(--hairline);
+}
+.deviceHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* Claude's control of one phone (BLG-150), under its name in Settings. */
+.control {
+  margin-top: 6px;
+  padding-top: 2px;
 }
 .deviceMark {
   display: inline-grid;

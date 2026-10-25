@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="beluga_a11y_description">With this on, you can ask Claude on your Mac to do things on this phone: look at the screen, tap, type, open apps and install builds. It only acts while you allow it in Beluga, and a notification shows the whole time your Mac is using the phone. Turn it off any time.</string>
+</resources>

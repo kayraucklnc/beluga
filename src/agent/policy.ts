@@ -39,6 +39,9 @@ const ALWAYS_OK = new Set([
   // "Your Mac": only its own conversation has these, in your own runs (core/assistant). They look at
   // this Mac or start work you asked for (a worktree, a task, a plan), the way the board's tools do.
   ...['screenshot', 'device_info', 'list_work', 'start_worktree', 'start_task', 'start_plan'].map((n) => `mcp__beluga_mac__${n}`),
+  // Your phone (BLG-150): looking at it never asks (like the Mac's screenshot). Acting on it falls
+  // to 'ask', then the owner-approval gate honours the phone's own setting (Off · Ask · Use · Full).
+  ...['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info', 'phone_pull', 'phone_notifications', 'phone_macro_list'].map((n) => `mcp__beluga_phone__${n}`),
 ]);
 
 /**

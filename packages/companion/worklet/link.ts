@@ -140,6 +140,10 @@ function open(msg: Extract<UiToWorklet, { op: 'open' }>): void {
   c.on('view', (topic, data, rev) => frame({ t: 'view', topic, rev, data }));
   c.on('nudge', (f) => frame(f));
   c.on('term', (f) => frame(f));
+  // 1.16 (BLG-150): the Mac wants the phone to act — hand it to the screens (the native side is there).
+  c.on('req', (f) => frame(f));
+  // 1.16: a byte tunnel to the phone's own debugging port (adb over the link). The worklet has bare-tcp.
+  c.on('tun', (f) => onTunnel(c, f));
   c.on('close', (code, reason) => {
     if (client !== c) return;
     client = undefined;
@@ -166,6 +170,47 @@ function open(msg: Extract<UiToWorklet, { op: 'open' }>): void {
   );
 }
 
+/**
+ * The adb-over-link tunnel (BLG-150): the Mac opened a tunnel to the phone's Wireless-debugging
+ * port, so the worklet dials 127.0.0.1:<that port> here and pumps bytes both ways. adb's own TLS
+ * stays end to end between the Mac's adb and the phone's adbd; the link carries only the ciphertext.
+ */
+const tunnels = new Map<number, { socket: InstanceType<typeof tcp.Socket> }>();
+/** The phone's debugging ports, from the last `control` the screens sent (NSD found them). */
+let adbPort: number | undefined;
+let adbPairPort: number | undefined;
+
+function onTunnel(c: CompanionClient, f: Extract<MacFrame, { t: 'tun_open' | 'tun_data' | 'tun_ack' | 'tun_close' }>): void {
+  if (f.t === 'tun_open') {
+    const port = f.to === 'adb-pair' ? adbPairPort : adbPort;
+    if (!port) return c.tunClose(f.id, 'Wireless debugging isn’t listening');
+    const socket = new tcp.Socket();
+    tunnels.set(f.id, { socket });
+    socket.on('connect', () => c.tunOk(f.id));
+    socket.on('data', (d: unknown) => c.tunData(f.id, d as Uint8Array));
+    socket.on('error', () => {
+      if (tunnels.delete(f.id)) c.tunClose(f.id, 'connection failed');
+    });
+    socket.on('close', () => {
+      if (tunnels.delete(f.id)) c.tunClose(f.id);
+    });
+    socket.connect(port, '127.0.0.1');
+    return;
+  }
+  const t = tunnels.get(f.id);
+  if (f.t === 'tun_data') {
+    if (t) {
+      t.socket.write(b4a.from(f.b64, 'base64'));
+      c.tunAck(f.id, 1);
+    }
+    return;
+  }
+  if (f.t === 'tun_close') {
+    if (tunnels.delete(f.id)) t?.socket.destroy();
+  }
+  // tun_ack: the Mac took our bytes; bare-tcp handles its own backpressure, so nothing to do.
+}
+
 function onFrame(json: string): void {
   const c = client;
   if (!c) return;
@@ -173,6 +218,14 @@ function onFrame(json: string): void {
   switch (f.t) {
     case 'sub':
       return c.sub(f.topics);
+    case 'control':
+      adbPort = f.state.adb.port;
+      adbPairPort = f.state.adb.pairing;
+      return c.sendControl(f.state);
+    case 'adb_code':
+      return c.sendAdbCode(f.code);
+    case 'reply':
+      return c.reply(f.id, f.ok, f.value, f.error);
     case 'call':
       c.call(f.method, f.args).then(
         (value) => frame({ t: 'result', id: f.id, ok: true, value }),
@@ -257,6 +310,9 @@ ipc.on(
         case 'close':
           puts.clear();
           mediaCache.clear();
+          for (const [, t] of tunnels) t.socket.destroy();
+          tunnels.clear();
+          adbPort = adbPairPort = undefined;
           client?.bye();
           client?.close();
           client = undefined;

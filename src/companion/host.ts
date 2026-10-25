@@ -36,14 +36,21 @@ import {
   MAX_COMPANION_FRAME,
   type MergeView,
   type NeedsYou,
+  type PhoneControl as PhoneControlState,
   type PhoneFrame,
+  type PhoneOp,
+  SINCE,
   type TerminalView,
   type TerminalsView,
   type Topic,
+  TUN_PIECE,
   VIEW_COALESCE_MS,
   VIEW_TURNS,
   parsePhoneFrame,
 } from './protocol.js';
+import { PhoneControl, type PhoneLinkHandle, type TunnelEnd, type TunnelSide } from './phone-control.js';
+import { type Macro, PhoneMacros } from './phone-macros.js';
+import { type SystemPort, realSystem } from '../core/gateway/device.js';
 import { type Delivery, NO_PUSH, type Nudge, type Pusher, deliver } from './push.js';
 import { type ConvOutput, type ViewContext, channelOf, chatMessages, convTopic, convTurns, needsYou, phoneChannel, viewOf } from './views.js';
 
@@ -108,6 +115,13 @@ export interface CompanionHostOptions {
   readonly terminals?: TerminalManager;
   /** Tests: how long terminal output is coalesced. */
   readonly termCoalesceMs?: number;
+  /** Running adb and reading the device, for driving the phone (BLG-150); tests pass a fake. */
+  readonly system?: SystemPort;
+  /** Tests: adb's path straight away, and a fake home for finding it. */
+  readonly adbPath?: string;
+  readonly home?: string;
+  /** Where saved phone flows live (BLG-175); default ~/.beluga/phone-macros.json via launch. */
+  readonly macrosFile?: string;
 }
 
 /** The companion address's key pair: HKDF of your identity's seed, 'companion-v1'. */
@@ -127,7 +141,7 @@ interface TopicState {
 }
 
 /** One linked phone. */
-class PhoneLink {
+class PhoneLink implements PhoneLinkHandle {
   readonly clientId: string;
   hello?: Extract<PhoneFrame, { t: 'hello' }>;
   topics = new Map<Topic, TopicState>();
@@ -137,6 +151,14 @@ class PhoneLink {
   overRelay = false;
   /** The terminals on its screen (BLG-42). */
   readonly terms: TermRelay;
+  /** What this phone last said it lets the Mac do (BLG-150, the `control` frame). */
+  control?: PhoneControlState;
+  /** The Wireless-debugging pairing code it last sent, for `adb pair`. */
+  adbCode?: { code: string; at: number };
+  private reqId = 0;
+  private readonly reqs = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+  private tunId = 0;
+  private readonly tuns = new Map<number, TunnelSide>();
   private readonly beat: NodeJS.Timeout;
   private readonly helloTimer: NodeJS.Timeout;
   private closed = false;
@@ -193,8 +215,54 @@ class PhoneLink {
     clearTimeout(this.helloTimer);
     clearInterval(this.beat);
     for (const t of this.topics.values()) clearTimeout(t.timer);
+    for (const r of this.reqs.values()) {
+      clearTimeout(r.timer);
+      r.reject(new Error('The phone link closed'));
+    }
+    this.reqs.clear();
+    for (const t of this.tuns.values()) t.onClose('link closed');
+    this.tuns.clear();
     this.terms.closeAll();
     this.host.unlinked(this);
+  }
+
+  /** Does this phone speak the control protocol (1.16+)? Older apps never get a `req` or `tun_open`. */
+  get supportsControl(): boolean {
+    const v = this.hello?.v;
+    return Boolean(v && (v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE.control)));
+  }
+
+  // ---- PhoneControl's handle on this phone (src/companion/phone-control.ts)
+
+  /** Ask the phone to do something through its Accessibility service (`req` → `reply`). */
+  request(op: PhoneOp, args: Record<string, unknown>, timeoutMs = 20_000): Promise<unknown> {
+    if (!this.supportsControl) return Promise.reject(new Error('Update the Beluga app on your phone to use it from the Mac'));
+    if (!this.control?.allowed) return Promise.reject(new Error('This phone hasn’t allowed its Mac to use it'));
+    const id = ++this.reqId;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (this.reqs.delete(id)) reject(new Error('The phone didn’t answer in time'));
+      }, timeoutMs);
+      timer.unref();
+      this.reqs.set(id, { resolve, reject, timer });
+      this.send({ t: 'req', id, op, args });
+    });
+  }
+
+  /** A byte tunnel to the phone's debugging port (or pairing port); the worklet dials its own adbd. */
+  openTunnel(to: 'adb' | 'adb-pair', side: TunnelSide): TunnelEnd {
+    const id = ++this.tunId;
+    this.tuns.set(id, side);
+    this.send({ t: 'tun_open', id, to });
+    return {
+      send: (bytes) => {
+        for (let off = 0; off < bytes.length; off += TUN_PIECE) this.send({ t: 'tun_data', id, b64: bytes.subarray(off, off + TUN_PIECE).toString('base64') });
+      },
+      ack: (n) => this.send({ t: 'tun_ack', id, n: Math.min(n, 512 * 1024) }),
+      close: (error) => {
+        if (this.tuns.delete(id)) this.send({ t: 'tun_close', id, ...(error ? { error: error.slice(0, 300) } : {}) });
+      },
+    };
   }
 
   private onFrame(text: string): void {
@@ -244,6 +312,41 @@ class PhoneLink {
         return this.terms.detach(frame.term);
       case 'term_input':
         return this.terms.input(frame.term, frame.data);
+      case 'control':
+        this.control = frame.state;
+        return this.host.onControl(this);
+      case 'adb_code':
+        this.adbCode = { code: frame.code, at: Date.now() };
+        return this.host.onControl(this);
+      case 'reply': {
+        const r = this.reqs.get(frame.id);
+        if (!r) return;
+        this.reqs.delete(frame.id);
+        clearTimeout(r.timer);
+        if (frame.ok) r.resolve(frame.value);
+        else r.reject(new Error(frame.error ?? 'The phone couldn’t do that'));
+        return;
+      }
+      case 'tun_ok':
+        return this.tuns.get(frame.id)?.onOpen();
+      case 'tun_data': {
+        const side = this.tuns.get(frame.id);
+        if (!side) return;
+        const bytes = Buffer.from(frame.b64, 'base64');
+        side.onData(bytes);
+        // Tell the phone it may send that much more (the socket's own backpressure gates our reads).
+        this.send({ t: 'tun_ack', id: frame.id, n: Math.min(bytes.length || 1, 512 * 1024) });
+        return;
+      }
+      case 'tun_ack':
+        return this.tuns.get(frame.id)?.onAck(frame.n);
+      case 'tun_close': {
+        const side = this.tuns.get(frame.id);
+        if (!side) return;
+        this.tuns.delete(frame.id);
+        side.onClose(frame.error);
+        return;
+      }
       case 'bye':
         this.socket.close(1000, 'bye');
         return;
@@ -311,6 +414,8 @@ export class CompanionHost {
   private phoneRuns = new Map<string, boolean>();
   private changeTimer?: NodeJS.Timeout;
   readonly reach: Reach;
+  /** Driving the phone from the Mac (BLG-150): routes, adb, and the agent's tools. */
+  readonly control: PhoneControl;
   private readonly awake: Awake;
   /** The state at the last notice: what finished since is told to phones away from the app (BLG-128). */
   private lastState?: DomainState;
@@ -332,6 +437,16 @@ export class CompanionHost {
     this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}) });
     this.icons = opts.icons ?? new ProjectIcons({ dir: path.join(path.dirname(opts.thumbsDir), 'icons'), root: (id) => this.state().projects.find((p) => p.id === id)?.root, changed: () => this.refreshViews() });
     this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };
+    this.control = new PhoneControl({
+      sys: opts.system ?? realSystem,
+      devices: opts.devices,
+      link: (id) => this.linkFor(id),
+      onChange: () => this.publish(),
+      ...(opts.macrosFile ? { macros: new PhoneMacros(opts.macrosFile) } : {}),
+      ...(opts.adbPath ? { adbPath: opts.adbPath } : {}),
+      ...(opts.home ? { home: opts.home } : {}),
+      ...(opts.log ? { log: opts.log } : {}),
+    });
     this.pairing = new DevicePairing({
       // A pairing listens as soon as the node is up: not after the companion's own server or the relay.
       node: () => this.readyNode(),
@@ -383,6 +498,7 @@ export class CompanionHost {
     void this.voice.close();
     clearTimeout(this.changeTimer);
     this.awake.release();
+    this.control.stop();
     await this.pairing.cancel('Beluga on your Mac is shutting down');
     for (const link of [...this.links]) link.close(COMPANION_CLOSE.quiet, 'Beluga on your Mac is shutting down');
     await this.shutdownNode();
@@ -434,6 +550,7 @@ export class CompanionHost {
   removeDevice(id: string, reason = 'This phone was removed on your Mac'): boolean {
     const gone = this.opts.devices.remove(id);
     for (const link of [...this.links]) if (link.deviceId === id) link.close(COMPANION_CLOSE.removed, reason);
+    this.control.forget(id);
     return Boolean(gone);
   }
 
@@ -708,9 +825,21 @@ export class CompanionHost {
     this.publish();
   }
 
+  /** The open link for a phone (its handle for PhoneControl), if any. */
+  linkFor(deviceId: string): PhoneLink | undefined {
+    return [...this.links].find((l) => l.deviceId === deviceId && l.isOpen && l.supportsControl);
+  }
+
+  /** A phone said what it allows (or sent a pairing code): recompute routes and tell the screens. */
+  onControl(link: PhoneLink): void {
+    this.control.touched(link.deviceId);
+    this.publish();
+  }
+
   unlinked(link: PhoneLink): void {
     this.links.delete(link);
     if (this.opts.devices.get(link.deviceId)) this.opts.devices.update(link.deviceId, { lastSeen: Date.now() });
+    this.control.touched(link.deviceId);
     this.publish();
     this.watched();
   }
@@ -826,7 +955,40 @@ export class CompanionHost {
     if (this.stopped) return;
     const linked = new Set([...this.links].filter((l) => l.isOpen).map((l) => l.deviceId));
     const pairing = this.pairing.info();
-    this.opts.store.dispatch({ type: 'companion', companion: { devices: this.opts.devices.views(linked), relay: this.reach.state(), ...(pairing ? { pairing } : {}) } });
+    // Each phone carries how Claude can use it now (BLG-150); the adb line is for Settings › Phone.
+    const devices = this.opts.devices.views(linked).map((d) => ({ ...d, control: this.control.controlView(d.id) }));
+    this.opts.store.dispatch({ type: 'companion', companion: { devices, relay: this.reach.state(), ...(pairing ? { pairing } : {}), adb: this.control.adbView() } });
+  }
+
+  /** Set how freely Claude may use a phone, and pair the Mac's adb with it (the Mac's Settings › Phone). */
+  setPhoneUse(deviceId: string, use: import('./protocol.js').PhoneUse): void {
+    this.control.setUse(deviceId, use);
+  }
+  pairPhoneAdb(deviceId: string): Promise<string> {
+    return this.control.pairAdb(deviceId);
+  }
+  /** One phone action from the Mac UI (the mirror's tap/type, a button). */
+  phoneAction(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
+    return this.control.action(deviceId, op, args);
+  }
+  /** Saved phone flows (BLG-175), for the Mac UI. */
+  listPhoneMacros(): readonly Macro[] {
+    return this.control.listMacros();
+  }
+  runPhoneMacro(name: string): Promise<string> {
+    return this.control.runNamedMacro(name);
+  }
+  deletePhoneMacro(name: string): { deleted: boolean } {
+    return { deleted: this.control.deleteMacro(name) };
+  }
+  /** Stream a phone's screen to a screen that's watching (the Mac app's mirror). */
+  mirrorPhone(
+    deviceId: string,
+    opts: { fps?: number; max?: number },
+    onFrame: (f: { b64: string; mime: string; w: number; h: number }) => void,
+    onStatus: (s: { on: boolean; route?: string; error?: string }) => void,
+  ): () => void {
+    return this.control.startMirror(deviceId, opts, onFrame, onStatus);
   }
 
   // ---- the DHT node

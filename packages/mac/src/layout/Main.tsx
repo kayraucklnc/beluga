@@ -26,6 +26,7 @@ const TasksView = lazy(() => import('../tasks/TasksView.js').then((m) => ({ defa
 const TaskPage = lazy(() => import('../tasks/TaskPage.js').then((m) => ({ default: m.TaskPage })));
 const PlansView = lazy(() => import('../plans/PlansView.js').then((m) => ({ default: m.PlansView })));
 const PlanPage = lazy(() => import('../plans/PlanPage.js').then((m) => ({ default: m.PlanPage })));
+const PhoneView = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhoneView })));
 
 /** A worktree being made: its page shows at once, and becomes its conversation when git is done. */
 function MakingWorktree() {
@@ -67,6 +68,8 @@ function Route() {
       return <FilesView />;
     case 'terminal':
       return <TerminalView />;
+    case 'phone':
+      return <PhoneView />;
     case 'conversation':
       return <ConversationView id={view.id} />;
     case 'claude_code':

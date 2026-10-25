@@ -91,6 +91,9 @@ export interface AgentRunInput {
   /** "Your Mac" (core/assistant): its tools (the screen, device info, starting work) and what Claude is told it is. */
   readonly macTools?: MacTools;
   readonly macBrief?: string;
+  /** Your phone (core/phone): tools to act on your own paired phone, and what Claude is told about it. */
+  readonly phoneTools?: PhoneTools;
+  readonly phoneBrief?: string;
 }
 
 /** What Claude writes down about a piece of work: the task in its own words, never the request pasted in. */
@@ -168,6 +171,46 @@ export interface BoardTools {
 export interface TaskTools {
   readonly screenshot?: (app?: string) => Promise<{ readonly text: string; readonly image?: { readonly data: string; readonly mimeType: string } }>;
   readonly deviceInfo?: () => Promise<string>;
+}
+
+/**
+ * Your phone's tools (agent/phone-tools.ts, server `beluga_phone`): your own runs, your own paired
+ * phone (core/phone). Each answers in words (a screenshot also as an image). The controller picks
+ * the route — Wireless debugging or the app's Accessibility service — so these don't say how.
+ */
+export interface PhoneTools {
+  /** Which phone, how it's reached now, and what can be done; undefined when no phone is usable. */
+  status(): Promise<string | undefined>;
+  screenshot(): Promise<{ readonly text: string; readonly image?: { readonly data: string; readonly mimeType: string } }>;
+  screen(): Promise<string>;
+  tap(a: { readonly x: number; readonly y: number; readonly node?: number }): Promise<string>;
+  swipe(a: { readonly x1: number; readonly y1: number; readonly x2: number; readonly y2: number; readonly ms?: number }): Promise<string>;
+  type(a: { readonly text: string; readonly replace?: boolean; readonly enter?: boolean; readonly node?: number }): Promise<string>;
+  key(key: string): Promise<string>;
+  scroll(a: { readonly dir: 'up' | 'down' | 'left' | 'right'; readonly node?: number }): Promise<string>;
+  open(a: { readonly package?: string; readonly url?: string }): Promise<string>;
+  apps(): Promise<string>;
+  info(): Promise<string>;
+  /** Install an APK (a path on this Mac); the phone shows its own Install button. */
+  install(apkPath: string): Promise<string>;
+  /** A shell command on the phone (needs Wireless debugging). */
+  shell(command: string): Promise<string>;
+  /** Recent logs (needs Wireless debugging). */
+  logcat(filter?: string): Promise<string>;
+  /** Send a file from this Mac to the phone (needs Wireless debugging); returns where it landed. */
+  push(localPath: string, dest?: string): Promise<string>;
+  /** Get a file from the phone to this Mac's scratch folder (needs Wireless debugging). */
+  pull(remotePath: string): Promise<string>;
+  /** The phone's current notifications (needs Wireless debugging). */
+  notifications(): Promise<string>;
+  /** Save a flow you just did as a named, repeatable macro (BLG-175). */
+  macroSave(name: string, steps: readonly unknown[]): Promise<string>;
+  /** The saved macros. */
+  macroList(): Promise<string>;
+  /** Run a saved macro on the phone. */
+  macroRun(name: string): Promise<string>;
+  /** Delete a saved macro. */
+  macroDelete(name: string): Promise<string>;
 }
 
 /** "Your Mac"'s tools (agent/mac-tools.ts, server `beluga_mac`): each answers in words for Claude. */
