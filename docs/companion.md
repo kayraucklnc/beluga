@@ -533,8 +533,9 @@ Advanced at the bottom. Learn it once and it works everywhere.
   written down at once while you go on (up to two minutes), so the words are ready when you stop.
   **■** puts them in the field to edit; **↑** sends them as you said them once the last phrase is
   written (the conversation opens with it). The stage over the controls (`components/Voice.tsx`):
-  three pastel blobs breathing with your voice, the words arriving phrase by phrase, a shimmering
-  pill where one is still being written, a light tick at each pause. Where and by which model is
+  a liquid pastel blob (metaballs, `components/Metaballs.tsx`, drawn on the UI thread) that swells
+  and stretches with your voice and pinches a droplet off at each pause, the words arriving phrase
+  by phrase, a shimmering pill where one is still being written, a light tick at each pause. Where and by which model is
   **Settings › Voice** (BLG-142): four presets (Quick or Best on this phone: Whisper Base 57 MB,
   Whisper Turbo 547 MB; Best or Fastest on your Mac: Whisper Turbo, Parakeet), the one Beluga
   suggests marked and chosen until you pick another (your Mac when it can; Parakeet there only for

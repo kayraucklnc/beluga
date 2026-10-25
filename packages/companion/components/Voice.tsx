@@ -27,13 +27,14 @@ import Animated, {
 import { VOICE_MODELS, voiceSize } from '../../../src/shared/voice-models';
 import type { Phrase, VoiceSession, VoiceView } from '../lib/voice-session';
 import { alpha, color, ink, scheme, spring, tint } from '../lib/theme';
+import { Metaballs } from './Metaballs';
 import { haptic, Press, T } from './ui';
 
 /**
  * Speaking on the phone, drawn (BLG-162): calm and alive, pastel, no glow.
  * - The mic button morphs into a soft rose square while it listens, a ring breathing with your voice.
- * - The stage over the controls: three pastel blobs that drift and swell with your voice (still
- *   when you're quiet, a little restless when you speak), and beside them the words arriving phrase
+ * - The stage over the controls: a liquid pastel blob (metaballs, components/Metaballs.tsx) that
+ *   breathes with your voice and buds a droplet off at each pause, and beside it the words arriving phrase
  *   by phrase as they're written down (each word rising in), a shimmering pill where a phrase is
  *   still being written, a caret while it listens. A light tick each time a pause cuts a phrase.
  */
@@ -99,42 +100,6 @@ function Hop({ delay, c }: { readonly delay: number; readonly c: string }) {
   }, []);
   const st = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }], opacity: 0.55 + (-y.value / 3) * 0.45 }));
   return <Animated.View style={[{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: c }, st]} />;
-}
-
-/** Three pastel blobs that drift around each other and swell with your voice. */
-function Orb({ voice, size = 60, writing }: { readonly voice: VoiceSession; readonly size?: number; readonly writing: boolean }) {
-  const t = useSharedValue(0);
-  const still = useReducedMotion();
-  useEffect(() => {
-    if (still) return;
-    t.value = withRepeat(withTiming(Math.PI * 2, { duration: 7000, easing: Easing.linear }), -1);
-    return () => cancelAnimation(t);
-  }, [still]);
-  const level = useDerivedValue(() => withSpring(writing ? 0.15 : voice.level.value, { stiffness: 220, damping: 16 }));
-  const speak = useDerivedValue(() => withTiming(voice.speaking.value, { duration: 220 }));
-  const blobs = [
-    { c: 'peach' as const, k: 0, w: 1 },
-    { c: 'lavender' as const, k: (Math.PI * 2) / 3, w: 0.8 },
-    { c: 'sky' as const, k: (Math.PI * 4) / 3, w: 0.65 },
-  ];
-  return (
-    <View style={{ width: size, height: size }}>
-      {blobs.map((b, i) => (
-        <Blob key={b.c} t={t} level={level} speak={speak} size={size} phase={b.k} weight={b.w} color={scheme === 'dark' ? alpha(ink[b.c], 0.38) : tint[b.c]} index={i} />
-      ))}
-    </View>
-  );
-}
-function Blob({ t, level, speak, size, phase, weight, color: c, index }: { readonly t: SharedValue<number>; readonly level: SharedValue<number>; readonly speak: SharedValue<number>; readonly size: number; readonly phase: number; readonly weight: number; readonly color: string; readonly index: number }) {
-  const d = size * 0.62;
-  const st = useAnimatedStyle(() => {
-    // Quiet: a slow drift. Speaking: they spread a little and swell with the voice.
-    const a = t.value * (index === 1 ? -1 : 1) + phase;
-    const orbit = size * (0.08 + 0.1 * speak.value + 0.06 * level.value);
-    const scale = 0.82 + level.value * 0.42 * weight + Math.sin(t.value * 2 + phase) * 0.03;
-    return { transform: [{ translateX: Math.cos(a) * orbit }, { translateY: Math.sin(a) * orbit }, { scale }] };
-  });
-  return <Animated.View style={[{ position: 'absolute', left: (size - d) / 2, top: (size - d) / 2, width: d, height: d, borderRadius: d / 2, backgroundColor: c, opacity: 0.92 }, st]} />;
 }
 
 /** A word rising into place, after the ones before it (a mount animation, not a layout one: words flow inline). */
@@ -259,9 +224,9 @@ export function VoiceStage({ voice }: { readonly voice: VoiceSession }) {
   const listening = v.phase === 'listening';
   return (
     <Animated.View entering={FadeInDown.springify().damping(17)} exiting={FadeOutDown.duration(180)} layout={LinearTransition.springify().damping(20)} style={{ paddingTop: 10 }}>
-      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
-        <Orb voice={voice} writing={!listening} />
-        <View style={{ flex: 1, minHeight: 60, justifyContent: 'center' }}>
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', marginLeft: -8 }}>
+        <Metaballs level={voice.level} speaking={voice.speaking} writing={!listening} pulses={count} size={88} />
+        <View style={{ flex: 1, minHeight: 88, justifyContent: 'center' }}>
           {v.phrases.length ? (
             <Words phrases={v.phrases} listening={listening} />
           ) : (
