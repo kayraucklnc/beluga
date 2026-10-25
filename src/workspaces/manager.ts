@@ -990,6 +990,12 @@ export class WorkspaceManager {
     return resolveScripts(project.root, this.config.scripts?.[project.root]);
   }
 
+  /** The commands (and what was learned) you have for a project, without the project's own files or guesses. */
+  yourScripts(projectId: string): ProjectScripts {
+    const project = this.projects.find((p) => p.id === projectId);
+    return (project?.root && this.config.scripts?.[project.root]) || {};
+  }
+
   /** Set a project's commands just for you, or in its beluga.json so the whole team gets them. */
   setScripts(projectId: string, scripts: ProjectScripts, opts: { inRepo?: boolean } = {}): void {
     const project = this.projects.find((p) => p.id === projectId);

@@ -192,6 +192,21 @@
   padding-right: 24px;
 }
 
+/* ---- a web page, drawn in its sandbox (it scrolls on its own); pages expect a white sheet */
+
+.html {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 420px;
+  border: 0;
+  background: #fff;
+  color-scheme: light;
+}
+.v_panel .html {
+  min-height: 320px;
+}
+
 /* ---- images: fitted, or zoomed (the page scrolls) */
 
 .imageView {

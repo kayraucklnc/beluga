@@ -9,13 +9,17 @@ export interface ProjectScripts {
   readonly run?: string;
   /** Yours only: this project needs no setup (learned when nothing fit), so new worktrees skip it. */
   readonly skipSetup?: boolean;
+  /** Claude already worked out this project's commands (it does that once, for its first new worktree). */
+  readonly looked?: boolean;
+  /** Which of your commands Claude worked out (setting one yourself takes it off). */
+  readonly byClaude?: ReadonlyArray<'setup' | 'run'>;
 }
 
 /** The project's own file: beluga.json, or klaud.json from before the rename (read, and kept up to date, where it's the one there). */
 export const PROJECT_FILES = ['beluga.json', 'klaud.json'] as const;
 export type ProjectFileName = (typeof PROJECT_FILES)[number];
 
-export type ScriptSource = 'yours' | ProjectFileName | 'conductor.json' | 'detected';
+export type ScriptSource = 'yours' | 'claude' | ProjectFileName | 'conductor.json' | 'detected';
 
 export interface ResolvedScripts {
   readonly setup?: { readonly command: string; readonly source: ScriptSource };
@@ -66,8 +70,46 @@ const LOCKFILES: ReadonlyArray<readonly [string, string]> = [
   ['composer.lock', 'composer install'],
 ];
 
-/** A sensible setup command from the files in the project (e.g. package-lock.json → npm install). */
+const MAKEFILES = ['GNUmakefile', 'makefile', 'Makefile'];
+const JUSTFILES = ['justfile', 'Justfile', '.justfile'];
+// Not `install`: in many Makefiles that copies the program into the system.
+const SETUP_TARGETS = ['setup', 'bootstrap', 'deps'];
+const RUN_TARGETS = ['dev', 'run', 'start', 'serve'];
+
+function readText(file: string): string | undefined {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+/** The targets a Makefile (or the recipes a justfile) names at the start of a line, e.g. `dev:`. */
+export function toolTargets(root: string): { make: Set<string>; just: Set<string> } {
+  const names = (files: readonly string[], line: RegExp): Set<string> => {
+    const text = files.map((f) => readText(path.join(root, f))).find((t) => t !== undefined) ?? '';
+    return new Set([...text.matchAll(line)].map((m) => m[1]!));
+  };
+  return {
+    // `name:` but not `name := value`; several on one line (`run dev:`) count too.
+    make: new Set([...names(MAKEFILES, /^([A-Za-z][\w.-]*(?:[ \t]+[A-Za-z][\w.-]*)*)[ \t]*:(?!=)/gm)].flatMap((t) => t.split(/[ \t]+/))),
+    // `name:` or `name arg='x':`, maybe quiet (`@name:`), not `name := value`.
+    just: names(JUSTFILES, /^@?([A-Za-z_][\w-]*)(?:[ \t]+[^:\n]*)?[ \t]*:(?!=)/gm),
+  };
+}
+
+/** The project's own tooling for something (a Makefile's `make dev`, a justfile's `just setup`), which knows better than a guess. */
+function toolCommand(root: string, targets: readonly string[]): string | undefined {
+  const { make, just } = toolTargets(root);
+  for (const t of targets) if (make.has(t)) return `make ${t}`;
+  for (const t of targets) if (just.has(t)) return `just ${t}`;
+  return undefined;
+}
+
+/** A sensible setup command from the files in the project (its Makefile's `setup`, else e.g. package-lock.json → npm install). */
 export function detectSetup(root: string): string | undefined {
+  const tool = toolCommand(root, SETUP_TARGETS);
+  if (tool) return tool;
   for (const [file, command] of LOCKFILES) if (existsSync(path.join(root, file))) return command;
   if (existsSync(path.join(root, 'package.json'))) return 'npm install';
   if (existsSync(path.join(root, 'requirements.txt'))) return 'python3 -m venv .venv && .venv/bin/pip install -r requirements.txt';
@@ -101,8 +143,10 @@ export function checkSetup(dir: string, command: string): SetupCheck {
   return { kind: 'swap', command: `${owner} install`, reason: `it uses ${owner} (${lock}), not ${tool}` };
 }
 
-/** The usual way to start the project (package.json "dev" or "start"). */
+/** The usual way to start the project (its Makefile's `dev` or `run`, else package.json "dev" or "start"). */
 export function detectRun(root: string): string | undefined {
+  const tool = toolCommand(root, RUN_TARGETS);
+  if (tool) return tool;
   const pkg = readJson(path.join(root, 'package.json')) as { scripts?: Record<string, unknown> } | undefined;
   const runner = existsSync(path.join(root, 'pnpm-lock.yaml')) ? 'pnpm' : existsSync(path.join(root, 'yarn.lock')) ? 'yarn' : existsSync(path.join(root, 'bun.lockb')) || existsSync(path.join(root, 'bun.lock')) ? 'bun' : 'npm';
   for (const name of ['dev', 'start']) {
@@ -114,13 +158,13 @@ export function detectRun(root: string): string | undefined {
 }
 
 /**
- * The scripts that apply to a project, in order of preference: what you set in Beluga,
- * then beluga.json (or klaud.json), then conductor.json, then a guess from its files.
+ * The scripts that apply to a project, in order of preference: what you set in Beluga (or Claude
+ * worked out for you), then beluga.json (or klaud.json), then conductor.json, then a guess from its files.
  */
 export function resolveScripts(root: string, yours: ProjectScripts = {}): ResolvedScripts {
   const { file, name, conductor } = readProjectFile(root);
   const pick = (key: 'setup' | 'run', detect: (r: string) => string | undefined) => {
-    if (yours[key]) return { command: yours[key]!, source: 'yours' as const };
+    if (yours[key]) return { command: yours[key]!, source: yours.byClaude?.includes(key) ? ('claude' as const) : ('yours' as const) };
     if (file?.scripts[key]) return { command: file.scripts[key]!, source: name };
     if (conductor?.[key]) return { command: conductor[key]!, source: 'conductor.json' as const };
     const guess = detect(root);

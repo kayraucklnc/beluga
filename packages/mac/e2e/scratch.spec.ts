@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { demoPdf } from '../../../src/demo-pdf.js';
 import { expect, test, type Page } from './fixtures.js';
@@ -20,6 +20,9 @@ const RED = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR
 const CLIP = Buffer.from('GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAIAEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggElTbuMU6uEHFO7a1OsggHq7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNjIuMTIuMTAxV0GNTGF2ZjYyLjEyLjEwMUSJiEBpAAAAAAAAFlSua8iuAQAAAAAAAD/XgQFzxYjuQWijPPoC35yBACK1nIN1bmSIgQCGhVZfVlA4g4EBI+ODhAvrwgDgkLCBELqBEJqBAlWwhFW5gQESVMNn/HNzoGPAgGfImkWjh0VOQ09ERVJEh41MYXZmNjIuMTIuMTAxc3PWY8CLY8WI7kFoozz6At9nyKFFo4dFTkNPREVSRIeUTGF2YzYyLjI4LjEwMSBsaWJ2cHhnyKFFo4hEVVJBVElPTkSHkzAwOjAwOjAwLjIwMDAwMDAwMAAfQ7Z1v+eBAKO6gQAAgPACAJ0BKhAAEAAARwiFhYiFhIgCAgJ1qgP4A/gCDU0YAP7+Rer/2Dpgy5/ivf+1oDg1X+jcABxTu2uRu4+zgQC3iveBAfGCAabwgQM=', 'base64');
 const BLUE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGNkYPjPwMDAxMAAAA0GAQOqgnhHAAAAAElFTkSuQmCC', 'base64');
 
+/** webhook-retries' scratch folder, as the first test found it (its Show in Finder names it only while the folder is empty). */
+let retriesDir: string | undefined;
+
 test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
@@ -35,6 +38,7 @@ test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', as
   await expect(finder).toBeVisible();
   const dir = (await finder.getAttribute('title'))!;
   expect(dir).toMatch(/\/\.beluga\/scratch$/);
+  retriesDir = dir;
 
   // Claude writes a JSON response: it shows up, laid out.
   writeFileSync(path.join(dir, 'api-response.json'), '{"ok":true,"items":[1,2]}');
@@ -146,4 +150,59 @@ test('Scratch: a calm empty state before anything lands, saying when Claude work
   await page.keyboard.press('Enter');
   await expect(panel(page).getByRole('status').filter({ hasText: 'Claude is working' })).toBeVisible();
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-list-working.png') });
+});
+
+test('Scratch: viewable files first, a web page drawn in a sandbox, and ← → through what can be looked at, full size (BLG-111)', async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page).getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
+  const row = sidebar(page).getByRole('button', { name: 'webhook-retries', exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
+  await row.click();
+  await page.keyboard.press('Meta+Alt+6');
+  test.skip(!retriesDir, 'needs the first test’s folder (run the whole file)');
+  const sub = path.join(retriesDir!, 'blg111');
+  mkdirSync(sub, { recursive: true });
+  // Newer than anything else here (the files above are in this folder too), oldest first: a picture, notes, a web page (whose script must not run), JSON, a picture, a log (the newest).
+  const files: [string, string | Buffer][] = [
+    ['b111-first.png', RED],
+    ['b111-notes.md', '# Notes'],
+    ['b111-report.html', '<!doctype html><h1 id="t">Report OK</h1><script>document.getElementById("t").textContent = "script ran"</script>'],
+    ['b111-data.json', '{"a":1}'],
+    ['b111-last.png', BLUE],
+    ['b111-run.log', 'hello'],
+  ];
+  const t0 = Date.now() / 1000 + 60;
+  files.forEach(([name, body], i) => {
+    writeFileSync(path.join(sub, name), body);
+    utimesSync(path.join(sub, name), t0 + i, t0 + i);
+  });
+  const list = panel(page).getByRole('listbox', { name: 'Scratch files' });
+  await expect(list.getByRole('option').first()).toContainText('b111-run.log');
+  const order = async () => (await list.getByRole('option').allTextContents()).map((t) => /^b111-([\w.]+?\.(?:png|md|html|json|log))/.exec(t)?.[1]).filter(Boolean);
+  expect(await order()).toEqual(['run.log', 'last.png', 'data.json', 'report.html', 'notes.md', 'first.png']);
+
+  // The sort menu: what can be looked at first, each part still newest first.
+  await panel(page).getByRole('button', { name: 'Sorted: newest first' }).click();
+  await page.getByRole('menuitem', { name: /Viewable First/ }).click();
+  await expect(panel(page).getByRole('button', { name: 'Sorted: viewable first' })).toBeVisible();
+  await expect(list.getByRole('option').first()).toContainText('b111-last.png');
+  expect(await order()).toEqual(['last.png', 'report.html', 'first.png', 'run.log', 'data.json', 'notes.md']);
+
+  // A web page is drawn, sandboxed with nothing allowed: its script didn't run.
+  await list.getByRole('option', { name: /b111-report\.html/ }).click();
+  const frame = panel(page).getByRole('region', { name: 'b111-report.html' }).locator('iframe');
+  await expect(frame).toHaveAttribute('sandbox', '');
+  await expect(frame.contentFrame().locator('h1')).toHaveText('Report OK');
+
+  // Full size from the newest picture (the top of the list): → goes down this order, ← back up, and
+  // stops at the top (no wrapping round to the bottom).
+  await list.getByRole('option', { name: /b111-last\.png/ }).click();
+  await panel(page).getByRole('region', { name: 'b111-last.png' }).getByRole('button', { name: 'Open in full' }).click();
+  const where = page.getByRole('main').getByRole('navigation', { name: 'Path' });
+  await expect(where).toContainText('b111-last.png');
+  for (const [key, name] of [['ArrowRight', 'b111-report.html'], ['ArrowRight', 'b111-first.png'], ['ArrowLeft', 'b111-report.html'], ['ArrowLeft', 'b111-last.png'], ['ArrowLeft', 'b111-last.png']] as const) {
+    await page.keyboard.press(key);
+    await expect(where).toContainText(name);
+    if (name === 'b111-report.html') await expect(page.getByRole('main').locator('iframe')).toBeVisible();
+  }
 });

@@ -20,7 +20,7 @@ import { resultText } from '../shared/steps.js';
 import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { answerChat } from './chat-answer.js';
 import { nameTask, titlePlan } from './namer.js';
-import { fixSetup } from './setup-fixer.js';
+import { fixRun, fixSetup, workOutScripts } from './setup-fixer.js';
 import { draftTask } from './task-drafter.js';
 import { createRoomTools } from './tools.js';
 import { ViewShelf, createViewTools } from './view-tools.js';
@@ -507,6 +507,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     answerChat: (req) => answerChat(req, { cwd: opts.cwd, ...(opts.claudePath ? { claudePath: opts.claudePath } : {}), ...(opts.model ? { model: opts.model } : {}) }),
 
     fixSetup: (dir: string, failed: string, output: string) => fixSetup(dir, failed, output, { claudePath: opts.claudePath }),
+    fixRun: (dir: string, failed: string, output: string) => fixRun(dir, failed, output, { claudePath: opts.claudePath }),
+    workOutScripts: (dir: string, want: { setup: boolean; run: boolean }) => workOutScripts(dir, want, { claudePath: opts.claudePath }),
     draftTask: (text, ctx) => draftTask(text, ctx, { cwd: opts.cwd, ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
 
     /** Ask Claude Code which models it offers (no prompt is sent). */

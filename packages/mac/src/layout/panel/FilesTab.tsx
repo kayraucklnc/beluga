@@ -15,7 +15,7 @@ import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
 import { STATE } from '../../views/DiffView.js';
 import { useRowItems } from '../../views/FilesView.js';
-import { type ReaderMode, initialMode, isMarkdownFile, isPdfFile } from '../../views/reader/reader-model.js';
+import { type ReaderMode, hasRenderedLook, initialMode, isPdfFile } from '../../views/reader/reader-model.js';
 import { EditTools } from '../../views/reader/EditTools.js';
 import { pendingLine, revealLine } from '../../views/reader/reveal.js';
 import { ContentResultsList, FlagToggles, type SearchFlags, useContentSearch } from './ContentSearch.js';
@@ -65,7 +65,7 @@ function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: 
   const name = viewer.path.split('/').pop() || viewer.path;
   const dir = viewer.path.slice(0, viewer.path.length - name.length).replace(/\/$/, '');
   const editing = Boolean(useEditSession(viewer));
-  const markdown = isMarkdownFile(viewer.path) && !viewer.image && !editing;
+  const markdown = hasRenderedLook(viewer.path) && !viewer.image && !editing;
   return (
     <section className={s.preview} aria-label={name}>
       <div className={s.previewHead}>

@@ -15,6 +15,20 @@ export const isMarkdownFile = (path: string): boolean => isMarkdownPath(path);
 
 export const isPdfFile = (path: string): boolean => /\.pdf$/i.test(path);
 
+/** A web page: shown as the page it draws (in a sandbox), or as its source. */
+export const isHtmlFile = (path: string): boolean => /\.html?$/i.test(path);
+
+/** Has a look of its own besides its source (Rendered ⇄ Source): Markdown, and web pages. */
+export const hasRenderedLook = (path: string): boolean => isMarkdownFile(path) || isHtmlFile(path);
+
+/**
+ * How a web page is shown: in an iframe with every sandbox permission off. No scripts (the app's
+ * own window runs Beluga's bridge to the Mac; a page's scripts get nowhere near it), no forms,
+ * popups or navigating the window, and an origin of its own (nothing of the app's storage).
+ * Styles and inline pictures draw; anything it would fetch from the web the window's policy keeps out.
+ */
+export const HTML_SANDBOX = '';
+
 /** Shown as itself (a picture, pages, a video), never as text. */
 export const isVisualFile = (path: string): boolean => isImageFile(path) || isPdfFile(path) || isVideoFile(path);
 

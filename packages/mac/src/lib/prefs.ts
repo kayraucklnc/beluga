@@ -63,6 +63,8 @@ export interface UiPrefs {
   readonly changeLook: 'diff' | 'file';
   /** The panel has a Scratch tab: the workspace's .beluga/scratch/ folder, live. */
   readonly scratchTab: boolean;
+  /** How Scratch lists its files: newest first, or pictures, videos, PDFs and web pages first (BLG-111). */
+  readonly scratchSort: 'newest' | 'viewable';
   /** The icon you picked for each sidebar group (by name; unset: a folder). */
   readonly groupIcons: Readonly<Record<string, string>>;
   /** Plans (by id) whose task chats you asked to see in the sidebar under them (a plan is one row otherwise). */
@@ -117,6 +119,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   chatTabs: [],
   changeLook: 'diff',
   scratchTab: true,
+  scratchSort: 'newest',
   groupIcons: {},
   planTaskChats: [],
 };

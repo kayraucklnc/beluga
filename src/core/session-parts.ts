@@ -90,6 +90,9 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         hasGh: opts.hasGh,
         envFor: (where) => env.envFor(where),
         fixSetup: (dir, failed, output) => session.fixSetup(dir, failed, output),
+        fixRun: (dir, failed, output) => session.fixRun(dir, failed, output),
+        workOutScripts: (dir, want) => (session.worksOutScripts ? session.workOutScripts(dir, want) : undefined),
+        hasClaude: () => session.hasAgent,
       });
     }
     const questions = new QuestionBroker({

@@ -15,7 +15,7 @@ import { QuestionBroker } from './questions.js';
 import { isPlanHome } from './plans/model.js';
 import type { Conversation } from '../agent/transcript.js';
 import { slugify } from '../agent/namer.js';
-import type { SetupFix } from '../agent/setup-fixer.js';
+import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { DraftContext, TaskDraft } from '../agent/task-drafter.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
@@ -591,6 +591,21 @@ export class Session {
   /** What a project's setup should be after it failed in a worktree (undefined without your Claude). */
   async fixSetup(dir: string, failed: string, output: string): Promise<SetupFix | undefined> {
     return this.agent?.fixSetup ? this.agent.fixSetup(dir, failed, output).catch(() => undefined) : undefined;
+  }
+
+  /** What a project's run command should be after it failed in a worktree (undefined without your Claude). */
+  async fixRun(dir: string, failed: string, output: string): Promise<ScriptFix | undefined> {
+    return this.agent?.fixRun ? this.agent.fixRun(dir, failed, output).catch(() => undefined) : undefined;
+  }
+
+  /** Whether your Claude can work out a project's setup and run commands. */
+  get worksOutScripts(): boolean {
+    return Boolean(this.agent?.workOutScripts);
+  }
+
+  /** A project's setup and/or run command from its files (undefined without your Claude, or on trouble). */
+  async workOutScripts(dir: string, want: { setup: boolean; run: boolean }): Promise<WorkedOutScripts | undefined> {
+    return this.agent?.workOutScripts ? this.agent.workOutScripts(dir, want).catch(() => undefined) : undefined;
   }
 
   /** Your Claude can write a task from a description (Tasks' New Task). */

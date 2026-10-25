@@ -18,3 +18,6 @@ export function pinchStep(zoom: number, deltaY: number): number {
 
 /** Where to scroll (one axis) so what was `offset` px into the view at `scroll` stays there after zooming by `ratio`. */
 export const anchorScroll = (scroll: number, offset: number, ratio: number): number => Math.max(0, (scroll + offset) * ratio - offset);
+
+/** Where to scroll (one axis) so a point now drawn at `nowAt` (px on screen) comes back to `wantAt`, under the fingers. */
+export const settleScroll = (scroll: number, nowAt: number, wantAt: number): number => Math.max(0, scroll + nowAt - wantAt);

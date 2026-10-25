@@ -37,6 +37,10 @@ test('a message’s local screenshots show as thumbnails that open full size', a
   await expect(box).toContainText('1 of 2');
   // A pinch zooms the picture in the lightbox (as WebKit reports it).
   const shown = box.locator('img');
+  // Centered both ways in the space it has (BLG-112).
+  await expect
+    .poll(() => shown.evaluate((el) => { const s = el.parentElement!.getBoundingClientRect(); const b = el.getBoundingClientRect(); return Math.round(Math.abs(b.left + b.width / 2 - (s.left + s.width / 2)) + Math.abs(b.top + b.height / 2 - (s.top + s.height / 2))); }))
+    .toBeLessThanOrEqual(1);
   const before = (await shown.boundingBox())!.width;
   await shown.evaluate((el) => {
     const fire = (type: string, scale: number) => el.dispatchEvent(Object.assign(new Event(type, { bubbles: true, cancelable: true }), { scale, clientX: 400, clientY: 300 }));
