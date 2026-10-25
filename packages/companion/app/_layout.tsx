@@ -10,6 +10,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Toasts } from '../components/Screen';
 import { useScheme } from '../lib/appearance';
+import { startSaved } from '../lib/saved';
 import { store } from '../lib/store';
 // Loaded at once: sends that waited while your Mac was away go when it answers, whatever is on screen.
 import '../lib/sends';
@@ -20,6 +21,8 @@ import { color } from '../lib/theme';
 export default function Root() {
   const scheme = useScheme();
   useEffect(() => {
+    // The cache holds nothing a new launch uses; saved files are checked when the link opens.
+    startSaved();
     void store.boot();
     // Upright everywhere; only data full screen turns (lib/fullscreen.ts).
     allowTurning(false);

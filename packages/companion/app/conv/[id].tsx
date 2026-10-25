@@ -13,7 +13,7 @@ import { Composer, QueueTray } from '../../components/Composer';
 import { AgentChips, Prose, StepTicker } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace } from '../../components/Needs';
 import { Options } from '../../components/Options';
-import { OutputGrid, TurnOutputs } from '../../components/Outputs';
+import { OutputGrid, OutputsTopic, TurnOutputs } from '../../components/Outputs';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
@@ -101,167 +101,169 @@ export default function Conversation() {
   const hasFolder = topic.startsWith('conv:ws:') || Boolean(c?.mergeable);
 
   return (
-    <Screen>
-      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={isMacTopic(topic) ? <IconBadge Icon={Laptop} tone="sky" size={30} /> : c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {c?.working && !all.length ? <Pill label="Working" tone="peach" /> : null}
-            {all.length ? (
-              <Press onPress={() => setOutputsOpen(true)} accessibilityLabel={`Outputs, ${all.length}`} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: color.sunken }}>
-                <Images color={color.text2} size={16} />
-                <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
-                  {all.length}
+    <OutputsTopic.Provider value={topic}>
+      <Screen>
+        <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={isMacTopic(topic) ? <IconBadge Icon={Laptop} tone="sky" size={30} /> : c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {c?.working && !all.length ? <Pill label="Working" tone="peach" /> : null}
+              {all.length ? (
+                <Press onPress={() => setOutputsOpen(true)} accessibilityLabel={`Outputs, ${all.length}`} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: color.sunken }}>
+                  <Images color={color.text2} size={16} />
+                  <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
+                    {all.length}
+                  </T>
+                </Press>
+              ) : null}
+              <More onPress={() => setMenu(true)} label="Conversation options" />
+            </View>
+          }
+        />
+        <KeyboardLift>
+          {/* Where a merge stands stays in view while the conversation scrolls under it. */}
+          {c?.merge ? (
+            <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}>
+              <MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} />
+            </View>
+          ) : c?.branch ? (
+            // Where its branch stands (the Mac toolbar's state), unless a merge from here is under way.
+            <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}>
+              <BranchBand topic={topic} branch={c.branch} canMerge={Boolean(c.mergeable) && store.supports('merge')} onMerge={() => setMergeOpen(true)} />
+            </View>
+          ) : null}
+          {/* Its sub-agents at work stay in view, wherever their turn is (BLG-110). */}
+          <AgentStrip turns={turns} onOpen={setAgent} />
+          <ScrollView
+            ref={scroll}
+            onContentSizeChange={follow}
+            onScroll={(e) => {
+              onScroll(e);
+              const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+              atEnd.current = contentOffset.y + layoutMeasurement.height > contentSize.height - 80;
+            }}
+            scrollEventThrottle={64}
+            contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 8, paddingBottom: 18, gap: 14 }}
+            keyboardDismissMode="interactive"
+          >
+            {c?.more ? (
+              <Press
+                onPress={() => void older()}
+                style={{ alignSelf: 'center', paddingHorizontal: 14, height: 30, borderRadius: 15, justifyContent: 'center', backgroundColor: color.sunken }}
+              >
+                <T v="caption" c={color.text2}>
+                  {olderBusy ? 'Loading…' : 'Earlier messages'}
                 </T>
               </Press>
             ) : null}
-            <More onPress={() => setMenu(true)} label="Conversation options" />
-          </View>
-        }
-      />
-      <KeyboardLift>
-        {/* Where a merge stands stays in view while the conversation scrolls under it. */}
-        {c?.merge ? (
-          <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}>
-            <MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} />
-          </View>
-        ) : c?.branch ? (
-          // Where its branch stands (the Mac toolbar's state), unless a merge from here is under way.
-          <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}>
-            <BranchBand topic={topic} branch={c.branch} canMerge={Boolean(c.mergeable) && store.supports('merge')} onMerge={() => setMergeOpen(true)} />
-          </View>
-        ) : null}
-        {/* Its sub-agents at work stay in view, wherever their turn is (BLG-110). */}
-        <AgentStrip turns={turns} onOpen={setAgent} />
-        <ScrollView
-          ref={scroll}
-          onContentSizeChange={follow}
-          onScroll={(e) => {
-            onScroll(e);
-            const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
-            atEnd.current = contentOffset.y + layoutMeasurement.height > contentSize.height - 80;
-          }}
-          scrollEventThrottle={64}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 8, paddingBottom: 18, gap: 14 }}
-          keyboardDismissMode="interactive"
-        >
-          {c?.more ? (
-            <Press
-              onPress={() => void older()}
-              style={{ alignSelf: 'center', paddingHorizontal: 14, height: 30, borderRadius: 15, justifyContent: 'center', backgroundColor: color.sunken }}
-            >
-              <T v="caption" c={color.text2}>
-                {olderBusy ? 'Loading…' : 'Earlier messages'}
-              </T>
-            </Press>
-          ) : null}
-          {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
-          {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
-          {turns.map((t, i) => (
-            <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
-              {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
-            </Animated.View>
-          ))}
-          {pending.map((p) => (
-            <Animated.View key={p.id} entering={FadeInUp.springify().stiffness(220).damping(22)} layout={LinearTransition.springify().stiffness(220).damping(26)}>
-              <PendingTurn s={p} />
-            </Animated.View>
-          ))}
-          {needs.map((n) => (
-            <Animated.View key={n.id} entering={FadeInDown.springify()} layout={LinearTransition.springify()}>
-              <Card style={{ padding: 16, gap: 14 }}>
-                <NeedFace item={n} more  />
-                <NeedButtons item={n} onAnswer={(t) => answer(n, t)} />
-              </Card>
-            </Animated.View>
-          ))}
-        </ScrollView>
-        <Composer
-          placeholder={c?.working ? 'What’s next for Claude…' : 'Reply to Claude…'}
-          working={c?.working}
-          disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
-          photos
-          onSend={(text, photos) => {
-            atEnd.current = true;
-            // Photos go up first (`put`), then the message names them; on the Mac it waits its
-            // turn while Claude works, as a queued message does.
-            if (photos.length) return sends.message(topic, text, async () => calls.send(topic, text, await Promise.all(photos.map(upload))), { photo: true });
-            // While Claude works, Send queues (after), as on the Mac; Steer is a long-press away.
-            const call = c?.working && !topic.startsWith('conv:task:') ? calls.queue(topic, text) : calls.send(topic, text);
-            sends.message(topic, text, call);
-          }}
-          onSteer={
-            topic.startsWith('conv:task:')
-              ? undefined
-              : (text) => {
-                  atEnd.current = true;
-                  sends.message(topic, text, calls.steer(topic, text));
-                }
-          }
-          onStop={() => void store.call(calls.stop(topic))}
-          bottom={insets.bottom}
-          above={
-            c?.queue?.length ? (
-              <QueueTray
-                queue={c.queue}
-                onSteer={(qid) => void store.call(calls.steerQueued(qid)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}
-                onRemove={(qid) => void store.call(calls.unqueue(qid)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}
-              />
-            ) : null
-          }
-        />
-      </KeyboardLift>
-      <SubAgentSheet topic={topic} turn={agent ? c?.turns.find((t) => t.subagents?.some((a) => a.id === agent.id))?.id : undefined} agent={liveAgent} onClose={() => setAgent(undefined)} />
-      <Sheet
-        visible={outputsOpen}
-        onDismiss={() => setOutputsOpen(false)}
-        header={
-          <View style={{ paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <IconBadge Icon={Images} tone="sky" size={32} />
-            <View style={{ flex: 1 }}>
-              <T v="title" style={{ fontSize: 20 }}>
-                Outputs
-              </T>
-              <T v="caption">Screenshots, logs, reports and scratch files from this worktree</T>
+            {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
+            {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
+            {turns.map((t, i) => (
+              <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
+                {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
+              </Animated.View>
+            ))}
+            {pending.map((p) => (
+              <Animated.View key={p.id} entering={FadeInUp.springify().stiffness(220).damping(22)} layout={LinearTransition.springify().stiffness(220).damping(26)}>
+                <PendingTurn s={p} />
+              </Animated.View>
+            ))}
+            {needs.map((n) => (
+              <Animated.View key={n.id} entering={FadeInDown.springify()} layout={LinearTransition.springify()}>
+                <Card style={{ padding: 16, gap: 14 }}>
+                  <NeedFace item={n} more  />
+                  <NeedButtons item={n} onAnswer={(t) => answer(n, t)} />
+                </Card>
+              </Animated.View>
+            ))}
+          </ScrollView>
+          <Composer
+            placeholder={c?.working ? 'What’s next for Claude…' : 'Reply to Claude…'}
+            working={c?.working}
+            disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
+            photos
+            onSend={(text, photos) => {
+              atEnd.current = true;
+              // Photos go up first (`put`), then the message names them; on the Mac it waits its
+              // turn while Claude works, as a queued message does.
+              if (photos.length) return sends.message(topic, text, async () => calls.send(topic, text, await Promise.all(photos.map(upload))), { photo: true });
+              // While Claude works, Send queues (after), as on the Mac; Steer is a long-press away.
+              const call = c?.working && !topic.startsWith('conv:task:') ? calls.queue(topic, text) : calls.send(topic, text);
+              sends.message(topic, text, call);
+            }}
+            onSteer={
+              topic.startsWith('conv:task:')
+                ? undefined
+                : (text) => {
+                    atEnd.current = true;
+                    sends.message(topic, text, calls.steer(topic, text));
+                  }
+            }
+            onStop={() => void store.call(calls.stop(topic))}
+            bottom={insets.bottom}
+            above={
+              c?.queue?.length ? (
+                <QueueTray
+                  queue={c.queue}
+                  onSteer={(qid) => void store.call(calls.steerQueued(qid)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}
+                  onRemove={(qid) => void store.call(calls.unqueue(qid)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}
+                />
+              ) : null
+            }
+          />
+        </KeyboardLift>
+        <SubAgentSheet topic={topic} turn={agent ? c?.turns.find((t) => t.subagents?.some((a) => a.id === agent.id))?.id : undefined} agent={liveAgent} onClose={() => setAgent(undefined)} />
+        <Sheet
+          visible={outputsOpen}
+          onDismiss={() => setOutputsOpen(false)}
+          header={
+            <View style={{ paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <IconBadge Icon={Images} tone="sky" size={32} />
+              <View style={{ flex: 1 }}>
+                <T v="title" style={{ fontSize: 20 }}>
+                  Outputs
+                </T>
+                <T v="caption">Screenshots, logs, reports and scratch files from this worktree</T>
+              </View>
             </View>
-          </View>
-        }
-      >
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
-          <OutputGrid items={all} cols={3} />
-        </ScrollView>
-      </Sheet>
-      {c?.mergeable ? <MergeSheet topic={topic} visible={mergeOpen} onClose={() => setMergeOpen(false)} /> : null}
-      <Options
-        visible={Boolean(unread)}
-        onClose={() => setUnread(undefined)}
-        title="Claude hasn't read this yet"
-        options={[
-          {
-            Icon: Send,
-            label: 'Send now',
-            sub: 'Stops Claude’s current step so it reads this next',
-            tone: 'peach',
-            onPress: () => {
-              const request = unread?.steer?.request;
-              if (request) void store.call(calls.steerNow(request)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+          }
+        >
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+            <OutputGrid items={all} cols={3} />
+          </ScrollView>
+        </Sheet>
+        {c?.mergeable ? <MergeSheet topic={topic} visible={mergeOpen} onClose={() => setMergeOpen(false)} /> : null}
+        <Options
+          visible={Boolean(unread)}
+          onClose={() => setUnread(undefined)}
+          title="Claude hasn't read this yet"
+          options={[
+            {
+              Icon: Send,
+              label: 'Send now',
+              sub: 'Stops Claude’s current step so it reads this next',
+              tone: 'peach',
+              onPress: () => {
+                const request = unread?.steer?.request;
+                if (request) void store.call(calls.steerNow(request)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+              },
             },
-          },
-        ]}
-      />
-      <Options
-        visible={menu}
-        onClose={() => setMenu(false)}
-        title={c?.title}
-        options={[
-          { Icon: Square, label: 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(calls.stop(topic)) },
-          { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
-          { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
-          { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
-          { Icon: SquareTerminal, label: 'Terminal', sub: 'The same terminal as on your Mac', tone: 'lavender', hidden: !hasFolder || !store.supports('terminal'), onPress: () => router.push({ pathname: '/terminal', params: { topic, title: c?.title ?? '' } }) },
-          { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
-          { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
-        ]}
-      />
-    </Screen>
+          ]}
+        />
+        <Options
+          visible={menu}
+          onClose={() => setMenu(false)}
+          title={c?.title}
+          options={[
+            { Icon: Square, label: 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(calls.stop(topic)) },
+            { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
+            { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
+            { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
+            { Icon: SquareTerminal, label: 'Terminal', sub: 'The same terminal as on your Mac', tone: 'lavender', hidden: !hasFolder || !store.supports('terminal'), onPress: () => router.push({ pathname: '/terminal', params: { topic, title: c?.title ?? '' } }) },
+            { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
+            { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
+          ]}
+        />
+      </Screen>
+    </OutputsTopic.Provider>
   );
 }
 

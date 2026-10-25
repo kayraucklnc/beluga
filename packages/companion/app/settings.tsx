@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { AtSign, Bell, ChevronDown, ChevronUp, CircleCheck, Hand, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { AtSign, Bell, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useEffect, useState } from 'react';
 import { Platform, ScrollView, Switch, View } from 'react-native';
@@ -12,11 +12,14 @@ import { useLink } from '../lib/hooks';
 import { COMPANION_PROTO } from '../lib/link/protocol';
 import { type NotifyPrefs, permission, prefs, setPrefs } from '../lib/notifications';
 import { pathLabel } from '../lib/link/diagnose';
+import { sizeOf } from '../components/Outputs';
+import { useSaved } from '../lib/saved';
+import { totalBytes } from '../lib/saved-list';
 import { store } from '../lib/store';
 import { color, ink } from '../lib/theme';
 
 /**
- * The phone's own settings. On top: your Mac, notifications on or off, sign out. Everything else
+ * The phone's own settings. On top: your Mac, notifications on or off, Storage, sign out. Everything else
  * (each kind of notification, the demo's switches, versions). Appearance sits with the basics under Advanced.
  */
 export default function Settings() {
@@ -29,6 +32,7 @@ export default function Settings() {
   const [confirm, setConfirm] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [look, setLook] = useState<Choice>(appearance.get());
+  const saved = useSaved();
   useEffect(() => {
     void permission(false).then(setPerm);
   }, []);
@@ -54,6 +58,7 @@ export default function Settings() {
           <Card>
             <Row first Icon={Monitor} tone="mint" label={link.mac?.name ?? link.pairing?.macName ?? 'Your Mac'} sub={link.mode === 'demo' ? 'Demo Mac' : `Beluga ${link.mac?.version ?? ''}`} right={<Pill label={link.phase === 'open' ? 'Linked' : link.phase === 'asleep' ? 'Asleep' : 'Away'} tone={link.phase === 'open' ? 'mint' : 'sky'} />} />
             <Row Icon={Bell} tone="butter" label="Notifications" sub={perm === 'denied' ? 'Off in Android settings' : undefined} right={toggle(all, () => {})} onPress={() => save({ needsYou: !all, done: !all, mentions: !all })} chevron={false} />
+            <Row Icon={HardDrive} tone="sky" label="Storage" sub={saved.length ? `${saved.length} saved · ${sizeOf(totalBytes(saved))}` : 'What Beluga keeps on this phone'} onPress={() => router.push('/storage')} />
             <Row
               Icon={LogOut}
               tone="rose"

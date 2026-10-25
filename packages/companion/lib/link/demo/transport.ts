@@ -738,6 +738,9 @@ export class DemoTransport implements Transport {
         const report = a.status === 'running' ? undefined : a.status === 'failed' ? 'It stopped before it finished: the emulator went away.' : `**Done.** ${a.steps.at(-1) ?? 'Finished'}.\n\n- ${a.steps.slice(0, 3).join('\n- ')}\n\n[[code:0]]`;
         return ok({ id: a.id, timeline, count: a.count ?? timeline.length, ...(report ? { result: { text: report, code: report.includes('[[code:0]]') ? [{ lang: 'ts', lines: 4 }] : [] } } : {}) });
       }
+      // ---- saved files (BLG-124): the demo's conversations are never archived
+      case 'companion.gone':
+        return ok({ gone: [] });
       case 'companion.signOut':
         ok({ signedOut: true });
         this.later(50, () => this.frames.emit({ t: 'bye', reason: 'signed out' }));

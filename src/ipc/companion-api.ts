@@ -127,4 +127,7 @@ export const COMPANION_API = {
   // its activity in words and, once it ended, the report it gave back with code stripped →
   // SubAgentDetailView. Reads only; never its prompt, its tools' input or output, or a file.
   'companion.subAgent': { args: z.tuple([z.string().regex(/^conv:[\w:.-]{1,200}$/), z.string().min(1).max(200), z.string().min(1).max(200)]) },
+  // 1.11 (BLG-124): which of these conversations (ones the phone saved files from) are no longer on
+  // the Mac: archived or deleted worktrees and chat folders, deleted chats of Your Mac → { gone }.
+  'companion.gone': { args: z.tuple([z.array(z.string().regex(/^conv:[\w:.-]{1,200}$/)).max(500)]) },
 } as const;

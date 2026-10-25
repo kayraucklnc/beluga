@@ -110,6 +110,8 @@ export const PhoneCalls = {
   'companion.termClose': entry('companion.termClose', z.object({ closed: z.boolean() })),
   // 1.10 (BLG-110): a sub-agent's activity and report.
   'companion.subAgent': entry('companion.subAgent', SubAgentDetailView),
+  // 1.11 (BLG-124): the conversations no longer on the Mac, of those asked about.
+  'companion.gone': entry('companion.gone', z.object({ gone: z.array(z.string()) })),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;

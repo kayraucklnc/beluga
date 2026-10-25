@@ -11,7 +11,7 @@ import { graceExpired, onResume, PROBE_TIMEOUT_MS, retryDelay } from './link/res
 import type { Attempt, DeviceSecret, LinkHints, LinkPathName, LinkPhase, Pairing } from './link/rpc';
 import type { PairInput, PairStep, PathInfo, PhaseInfo, Transport } from './link/transport';
 import { secure } from './secure';
-import { Assembly, PIECE_TIMEOUT_MS } from './pieces';
+import { Assembly, MAX_SAVE_BYTES, PIECE_TIMEOUT_MS } from './pieces';
 import { fileSink, memorySink, type Sink } from './sink';
 import { mediaPath } from './media';
 
@@ -87,7 +87,9 @@ type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 /** A terminal's output or status, as the Mac sends it (1.7). */
 export type TermFrame = Extract<MacFrame, { t: 'term_data' | 'term_status' }>;
 /** A fetch in flight. Pictures come piece by piece (`asm` asks for the next), into `sink`; `timer` fails it if a piece doesn't come. */
-type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number; asm?: Assembly; sink?: Sink; timer?: ReturnType<typeof setTimeout> };
+type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number; asm?: Assembly; sink?: Sink; timer?: ReturnType<typeof setTimeout>; save?: Saving };
+/** A copy being fetched to save on the phone (lib/saved.ts): it ends one way or the other. */
+type Saving = { resolve: (uri: string) => void; reject: (e: Error) => void };
 
 const APP = 'beluga-companion/0.16.0';
 const PLATFORM: 'android' | 'ios' = Platform.OS === 'ios' ? 'ios' : 'android';
@@ -123,7 +125,7 @@ class Store {
   private listeners = new Map<string, Set<() => void>>();
   private snapshots = new Map<string, unknown>();
   /** What the image viewer shows, and where it opened from (for the transition back). */
-  gallery: { items: OutputView[]; index: number; origin?: { x: number; y: number; w: number; h: number } } = { items: [], index: 0 };
+  gallery: { items: OutputView[]; index: number; origin?: { x: number; y: number; w: number; h: number }; topic?: Topic } = { items: [], index: 0 };
 
   // ---- subscribe (for useSyncExternalStore)
 
@@ -433,6 +435,10 @@ class Store {
     for (const [id, f] of this.fetches) {
       this.fetches.delete(id);
       this.endFetch(f);
+      if (f.save) {
+        this.failSave(f, 'Your Mac went away. Try again.');
+        continue;
+      }
       if (this.files.get(f.key)?.status === 'loading') {
         this.deferred.set(f.key, { ref: f.ref, variant: f.variant, more: false });
         this.setFile(f.key, { status: 'error', got: 0, error: 'Your Mac is away' });
@@ -478,7 +484,11 @@ class Store {
           return;
         }
         const fetch = this.fetches.get(f.id);
-        if (fetch && !f.ok) {
+        if (fetch?.save && !f.ok) {
+          this.fetches.delete(f.id);
+          this.endFetch(fetch);
+          this.failSave(fetch, f.error ?? 'Not available');
+        } else if (fetch && !f.ok) {
           this.fetches.delete(f.id);
           this.endFetch(fetch);
           this.setFile(fetch.key, { status: 'error', got: 0, error: f.error ?? 'Not available' });
@@ -703,7 +713,7 @@ class Store {
 
   // ---- files
 
-  file(ref: string, variant: 'thumb' | 'full' | 'text'): FileState | undefined {
+  file(ref: string, variant: 'thumb' | 'full' | 'text' | 'save'): FileState | undefined {
     return this.files.get(`${ref}#${variant}`);
   }
 
@@ -736,6 +746,7 @@ class Store {
       if (this.fetches.get(id) !== fetch) return;
       this.fetches.delete(id);
       this.endFetch(fetch);
+      if (fetch.save) return this.failSave(fetch, 'Your Mac took too long to send it.');
       this.setFile(fetch.key, { status: 'error', got: 0, error: 'Your Mac took too long to send it.' });
     }, PIECE_TIMEOUT_MS);
     this.transport?.send({ t: 'get', id, ref: fetch.ref as OutputView['ref'], variant: fetch.variant, off });
@@ -769,11 +780,12 @@ class Store {
     const fail = (error: string): void => {
       this.fetches.delete(id);
       this.endFetch(fetch);
+      if (fetch.save) return this.failSave(fetch, error);
       this.setFile(fetch.key, { status: 'error', got: 0, error });
     };
     if (step.t === 'fail') return fail(step.error);
     // Full pictures go to a file as they come; thumbnails are small.
-    fetch.sink ??= fetch.variant === 'full' ? fileSink(fetch.ref, f.mime) : memorySink();
+    fetch.sink ??= fetch.variant === 'full' ? fileSink(fetch.ref, f.mime, fetch.save ? 'save' : 'picture') : memorySink();
     fetch.sink.add(f.b64);
     if (step.t === 'next') {
       this.setFile(fetch.key, { status: 'loading', got: step.got, size: step.size, mime: f.mime });
@@ -782,10 +794,50 @@ class Store {
     this.fetches.delete(id);
     this.endFetch(fetch, true);
     try {
-      this.setFile(fetch.key, { status: 'ready', uri: fetch.sink.finish(f.mime), got: step.got, size: step.size, mime: f.mime });
+      const uri = fetch.sink.finish(f.mime);
+      this.setFile(fetch.key, { status: 'ready', uri, got: step.got, size: step.size, mime: f.mime });
+      fetch.save?.resolve(uri);
     } catch (e) {
       fail((e as Error).message);
     }
+  }
+
+  /**
+   * The whole of an output in a file on the phone, to save it (BLG-123): a video or a file that
+   * isn't on the phone yet, piece by piece like a full picture (bigger ones allowed: MAX_SAVE_BYTES).
+   * How far it got is `file(ref, 'save')`; the copy is the caller's to delete.
+   */
+  saveCopy(ref: string): Promise<string> {
+    const key = `${ref}#save`;
+    if ([...this.fetches.values()].some((f) => f.key === key)) return Promise.reject(new Error('Already saving it.'));
+    if (this.state.phase !== 'open' || !this.transport) return Promise.reject(new Error('Saving needs your Mac: it’s away.'));
+    return new Promise<string>((resolve, reject) => {
+      const id = this.seq++;
+      const fetch: Fetch = { key, ref, variant: 'full', parts: [], base: '', got: 0, asm: new Assembly(MAX_SAVE_BYTES), save: { resolve, reject } };
+      this.fetches.set(id, fetch);
+      this.setFile(key, { status: 'loading', got: 0 });
+      this.ask(id, fetch, 0);
+    });
+  }
+
+  /** What `file(ref, 'save')` says goes, once the copy is saved (or it failed and was said). */
+  doneSaving(ref: string): void {
+    this.files.delete(`${ref}#save`);
+    this.emit(`file:${ref}#save`);
+  }
+
+  /** The cache was emptied (Settings › Storage): full pictures are fetched again when next shown. */
+  forgetPictures(): void {
+    for (const [key, f] of [...this.files]) {
+      if (!key.endsWith('#full') || f.status === 'loading') continue;
+      this.files.delete(key);
+      this.emit(`file:${key}`);
+    }
+  }
+
+  private failSave(fetch: Fetch, error: string): void {
+    this.setFile(fetch.key, { status: 'error', got: 0, error });
+    fetch.save?.reject(new Error(error));
   }
 
   // ---- videos (BLG-100, BLG-103): streamed by the link worklet's loopback server

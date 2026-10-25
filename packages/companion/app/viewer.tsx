@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { router, useFocusEffect } from 'expo-router';
-import { ArrowUpRight, FileJson, FileText, FileType, Film, Monitor, RotateCw, ScrollText, X } from 'lucide-react-native';
+import { ArrowUpRight, Download, FileJson, FileText, FileType, Film, Monitor, RotateCw, ScrollText, X } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { GestureDetector, usePanGesture, usePinchGesture, useSimultaneousGestures, useTapGesture } from 'react-native-gesture-handler';
@@ -11,8 +11,9 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { isText, sizeOf } from '../components/Outputs';
 import { VideoPage } from '../components/VideoPage';
 import { haptic, Press, T } from '../components/ui';
-import { useFile } from '../lib/hooks';
-import { progressText } from '../lib/pieces';
+import { useFile, useSaving } from '../lib/hooks';
+import { progressOf, progressText } from '../lib/pieces';
+import { saveOutput } from '../lib/saved';
 import type { OutputView } from '../lib/link/protocol';
 import { store } from '../lib/store';
 import { color, type } from '../lib/theme';
@@ -28,6 +29,8 @@ import { color, type } from '../lib/theme';
  * (sideways pages, down dismisses); zoomed, it pans the picture, and only what goes past the
  * picture's edge moves the pages. The taps fail as soon as a finger moves, so they never hold
  * the pan back. All of it runs on the UI thread.
+ *
+ * Save (top right, BLG-123) puts the page's picture, video or file on the phone (lib/saved.ts).
  */
 const SPRING = { stiffness: 260, damping: 28, mass: 0.9 };
 /** Pages kept rendered either side of the one shown (full images load only for these). */
@@ -37,7 +40,7 @@ const MAX_DOTS = 9;
 export default function Viewer() {
   const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { items, index: start, origin } = store.gallery;
+  const { items, index: start, origin, topic } = store.gallery;
   const n = items.length;
   const [index, setIndex] = useState(start);
   const [chrome, setChrome] = useState(true);
@@ -195,6 +198,15 @@ export default function Viewer() {
     },
   });
 
+  const shown = items[index];
+  const saving = useSaving(shown?.ref);
+  const busy = saving?.status === 'loading';
+  const save = () => {
+    if (!shown || busy) return;
+    haptic.tap();
+    void saveOutput(shown, topic);
+  };
+
   const toggle = () => setChrome((c) => !c);
   const doubleTap = useTapGesture({
     enabled: free,
@@ -290,7 +302,18 @@ export default function Viewer() {
               </T>
             ) : null}
           </View>
+          <View style={{ flex: 1 }} />
+          <Press onPress={save} disabled={busy} accessibilityLabel={`Save ${shown?.name ?? ''} to the phone`} style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: color.onStageChip }}>
+            {busy ? <ActivityIndicator color={color.onStage} size="small" /> : <Download color={color.onStage} size={19} />}
+          </Press>
         </Animated.View>
+      ) : null}
+      {busy && (saving?.size ?? 0) > 1024 * 1024 ? (
+        <View pointerEvents="none" style={{ position: 'absolute', top: insets.top + 60, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: color.onStageChip }}>
+          <T v="caption" c={color.onStage} style={{ fontVariant: ['tabular-nums'] }}>
+            {progressOf('Saving', saving?.got ?? 0, saving?.size)}
+          </T>
+        </View>
       ) : null}
       {n > 1 && n <= MAX_DOTS && chrome ? (
         <Animated.View pointerEvents="none" style={[{ position: 'absolute', bottom: insets.bottom + 22, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 }, top]}>
