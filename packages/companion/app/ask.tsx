@@ -1,10 +1,10 @@
 import { Image } from 'expo-image';
 import { ProjectMark } from '../components/ProjectMark';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowUp, ChevronDown, Folder, GitBranch, ImagePlus, Laptop, ListChecks, MessageCircleQuestion, MessageSquare, Sparkles, Workflow, X } from 'lucide-react-native';
+import { ArrowUp, ChevronDown, Folder, GitBranch, ImagePlus, Laptop, ListChecks, MessageCircleQuestion, MessageSquare, Mic, Sparkles, Square, Workflow, X } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { Platform, ScrollView, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut } from 'react-native-reanimated';
+import { ActivityIndicator, Platform, ScrollView, TextInput, View } from 'react-native';
+import Animated, { FadeIn, FadeOut, useAnimatedStyle, withSpring, ZoomIn, ZoomOut } from 'react-native-reanimated';
 import { convHref } from '../components/Conv';
 import { Sheet } from '../components/Sheet';
 import { Avatar, haptic, IconBadge, Press, T, type Tone, toneBg, toneInk } from '../components/ui';
@@ -14,7 +14,9 @@ import { type HomeView, type PeopleView, type Topic, type WorkView, isMacTopic }
 import { pickPhoto, upload } from '../lib/pick';
 import { sends } from '../lib/sends';
 import { store } from '../lib/store';
-import { color } from '../lib/theme';
+import { appendSpoken } from '../lib/dictate';
+import { color, spring } from '../lib/theme';
+import { MODEL_MB, useVoice, type VoiceState, voiceAvailable } from '../lib/voice';
 
 /**
  * The Ask button's sheet: write, (attach a photo), send. Where it goes is one pill: tap it to
@@ -25,6 +27,9 @@ import { color } from '../lib/theme';
  * with Claude on your words (the default; Plan first beside it is Claude Code's plan mode: it
  * proposes a plan before it acts), an Advanced plan (Beluga's Plans: milestones, tasks and what
  * waits on what, drafted for you to approve, then run on the board), or a question (read-only).
+ *
+ * The microphone beside Send writes down what you say, on the phone (lib/voice.ts): tap, speak,
+ * tap again, and the words go into the field to read over before you send.
  */
 type Target = { kind: 'mac'; topic: Topic; label: string } | { kind: 'project'; id: string; label: string; icon?: string } | { kind: 'conv'; topic: Topic; label: string; project?: string; icon?: string } | { kind: 'friend'; id: string; name: string; label: string };
 const ICON: Record<Target['kind'], { Icon: typeof Folder; tone: Tone }> = { mac: { Icon: Laptop, tone: 'sky' }, project: { Icon: Folder, tone: 'butter' }, conv: { Icon: MessageSquare, tone: 'sky' }, friend: { Icon: Sparkles, tone: 'lavender' } };
@@ -54,6 +59,7 @@ export default function Ask() {
   const [planFirst, setPlanFirst] = useState(false);
   // An older Mac (before 1.5) has neither Your Mac nor worktrees and plans from here.
   const modes = store.supports('askModes');
+  const voice = useVoice((words) => setText((t) => appendSpoken(t, words)));
 
   const targets = useMemo<Target[]>(() => {
     const t: Target[] = [];
@@ -201,6 +207,7 @@ export default function Ask() {
                   </Press>
                 </Animated.View>
               ) : null}
+              <VoiceLine state={voice.state} error={voice.error} />
             </View>
             {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 10 }}>
@@ -218,6 +225,7 @@ export default function Ask() {
               </Press>
               )}
               <View style={{ flex: 1 }} />
+              {voiceAvailable() ? <MicButton state={voice.state} onStart={() => (haptic.tap(), void voice.start())} onStop={() => (haptic.commit(), voice.stop())} /> : null}
               <Press disabled={!text.trim()} onPress={send} accessibilityLabel="Send" style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() ? color.primary : color.sunken }}>
                 <ArrowUp color={text.trim() ? color.onPrimary : color.text3} size={22} strokeWidth={2.6} />
               </Press>
@@ -226,6 +234,48 @@ export default function Ask() {
         )}
       </Sheet>
     </>
+  );
+}
+
+/** The microphone: tap to listen, tap again to write it down; it swells with your voice. */
+function MicButton({ state, onStart, onStop }: { readonly state: VoiceState; readonly onStart: () => void; readonly onStop: () => void }) {
+  const level = state.kind === 'listening' ? state.level : 0;
+  const pulse = useAnimatedStyle(() => ({ transform: [{ scale: withSpring(1 + level * 0.18, spring.bouncy) }] }));
+  const listening = state.kind === 'listening';
+  const busy = state.kind === 'getting' || state.kind === 'writing';
+  return (
+    <Animated.View style={pulse}>
+      <Press
+        onPress={listening ? onStop : onStart}
+        disabled={busy}
+        accessibilityLabel={listening ? 'Stop and write it down' : 'Speak instead of typing'}
+        accessibilityHint={listening ? undefined : 'Written down on this phone; nothing you say leaves it'}
+        style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: listening ? toneBg('rose') : busy ? toneBg('sky') : color.sunken }}
+      >
+        {busy ? <ActivityIndicator size="small" color={toneInk('sky')} /> : listening ? <Square color={toneInk('rose')} fill={toneInk('rose')} size={13} /> : <Mic color={color.text2} size={20} />}
+      </Press>
+    </Animated.View>
+  );
+}
+
+/** One quiet line under the field while the microphone does something (or couldn't). */
+function VoiceLine({ state, error }: { readonly state: VoiceState; readonly error?: string }) {
+  const line =
+    state.kind === 'getting'
+      ? `Getting the voice model · ${Math.round(state.progress * 100)}% of ${MODEL_MB} MB, once`
+      : state.kind === 'listening'
+        ? 'Listening… tap ■ to write it down'
+        : state.kind === 'writing'
+          ? 'Writing it down on this phone…'
+          : error;
+  if (!line) return null;
+  return (
+    <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 6 }}>
+      <Mic color={error && state.kind === 'off' ? toneInk('rose') : color.text3} size={12} />
+      <T v="caption" numberOfLines={2} style={{ flex: 1 }}>
+        {line}
+      </T>
+    </Animated.View>
   );
 }
 

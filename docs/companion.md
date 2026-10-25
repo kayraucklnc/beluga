@@ -515,7 +515,10 @@ Advanced at the bottom. Learn it once and it works everywhere.
   opens to approve) and **Question** (a read-only chat in its main folder). **Plan first** beside
   Worktree is Claude Code's plan mode (it proposes before it acts), nothing to do with Advanced plans. Attach a photo
   or a file from the phone. The answer comes back into that conversation, with a notification if you
-  left.
+  left. The **microphone** beside Send speaks instead of typing, on the phone (`lib/voice.ts`):
+  Whisper base (multilingual, 57 MB, whisper.cpp through whisper.rn) comes once on the first tap
+  and stays in the app's documents; tap to listen (up to two minutes), tap ■ and the words go into
+  the field to read over. The sound never leaves the phone, nor reaches the Mac. Not on the web.
 - **Plans** (in Work and on Home when one runs): milestones as a vertical timeline (each says what it
   runs after), tasks as rows with their state and what they wait on (tap one for its goal and what
   done means), decisions as cards with their buttons (Approve or Discard a draft, pass a milestone's
