@@ -28,6 +28,7 @@ import {
   type CompanionSlice,
   type DialAttempt,
   type LinkPath,
+  KEEPALIVE_AWAY_MS,
   KEEPALIVE_MS,
   type MacFrame,
   MAX_COMPANION_FRAME,
@@ -157,9 +158,10 @@ class PhoneLink {
     socket.on('close', () => this.finish());
     this.helloTimer = setTimeout(() => this.close(COMPANION_CLOSE.hello, 'no hello'), HELLO_TIMEOUT_MS);
     this.helloTimer.unref();
-    // The phone pings every KEEPALIVE_MS; three missed and it's gone (a phone that slept without a bye).
+    // The phone pings every KEEPALIVE_MS (KEEPALIVE_AWAY_MS while away, BLG-128); three missed and
+    // it's gone (a phone that slept without a bye).
     this.beat = setInterval(() => {
-      if (Date.now() - this.heard > KEEPALIVE_MS * 3) socket.terminate();
+      if (Date.now() - this.heard > (this.inFront ? KEEPALIVE_MS : KEEPALIVE_AWAY_MS) * 3) socket.terminate();
     }, KEEPALIVE_MS);
     this.beat.unref();
   }

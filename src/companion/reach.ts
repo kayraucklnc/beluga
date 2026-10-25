@@ -40,6 +40,7 @@ export class Reach {
   private retry?: NodeJS.Timeout;
   private republish?: NodeJS.Timeout;
   private publishing?: { node: DHT; keyPairs: () => readonly KeyPair[] };
+  private seq = 0;
 
   constructor(private readonly opts: ReachOptions) {
     this.server = new RelayServer(opts.log);
@@ -91,8 +92,10 @@ export class Reach {
     const p = this.publishing;
     if (!p || !this.running) return;
     const record: RelayRecord = { v: 1, at: Date.now(), ...(this.url ? { relay: this.url } : {}) };
-    // Each put must outnumber the last one stored: seconds since the epoch, always rising.
-    const seq = Math.floor(Date.now() / 1000);
+    // Each put must outnumber the last one stored: seconds since the epoch, and never the same twice
+    // (a put in the same second as the last would be refused, and the older record would stay).
+    const seq = Math.max(Math.floor(Date.now() / 1000), this.seq + 1);
+    this.seq = seq;
     const valueFor = (kp: KeyPair): Buffer => {
       const phones = this.opts.phones?.(kp.publicKey);
       return Buffer.from(JSON.stringify(phones ? { ...record, phones: phones.slice(0, 8) } : record));

@@ -442,6 +442,10 @@ Beluga Push isn't built yet, so with the app closed nothing can reach the phone.
   link open, every run of yours that finishes or stops (the Mac's own "Claude finished in …"
   notices, `Nudge.away`, never pushed). Each nudge becomes a notification in its channel, as set in
   Notify me about; tapping it opens its conversation.
+- **A slower heartbeat while away.** Over the relay (TCP; Cloudflare drops a socket idle for 100 s)
+  or the same Wi-Fi (no NAT) the phone pings every 50 s instead of 20 (`KEEPALIVE_AWAY_MS`), and a
+  Mac with `SINCE.awayBeat` (1.12) waits three of those before it calls the phone gone. A
+  hole-punched link keeps 20 s: mobile NATs forget a UDP mapping in about 30.
 - **Dropped links come back by themselves:** quickly at first, then every two minutes while away.
 - **Battery.** Asking Android to leave Beluga unrestricted (Settings shows a row until it is),
   since its battery saver may otherwise cut the link off.
