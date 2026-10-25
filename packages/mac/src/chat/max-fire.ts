@@ -34,6 +34,8 @@ export interface FireBox {
   readonly y: number;
   readonly w: number;
   readonly h: number;
+  /** Its corner radius (the fire never draws inside the box: its text stays clean). */
+  readonly r?: number;
 }
 
 const CONFETTI = ['#ffe35a', '#ff8a1f', '#3fa2ff', '#d4f6ff', '#ff6fae', '#8fe3b0'] as const;
@@ -87,6 +89,7 @@ uniform float u_tall;
 uniform float u_reach;
 uniform float u_rimk;
 uniform float u_alpha;
+uniform float u_round;
 uniform vec3 u_c0;
 uniform vec3 u_c1;
 uniform vec3 u_c2;
@@ -104,6 +107,7 @@ float noise(vec2 p) {
 void main() {
   // CSS pixels, y down (as the page).
   vec2 p = vec2(gl_FragCoord.x, u_size.y * u_dpr - gl_FragCoord.y) / u_dpr;
+  vec2 raw = p;
   if (u_cell > 0.0) p = (floor(p / u_cell) + 0.5) * u_cell;
   vec2 lo = u_box.xy;
   vec2 hi = u_box.xy + u_box.zw;
@@ -141,6 +145,12 @@ void main() {
   vec3 c = mix(u_c0, u_c1, smoothstep(1.9 - soft, 1.9 + soft, f));
   c = mix(c, u_c2, smoothstep(3.6 - soft, 3.6 + soft, f));
   a *= u_alpha;
+  // Never inside the box (a rounded rectangle): the fire is around it, its text stays clean
+  // (whatever order the browser stacks the canvas and the box in).
+  vec2 mid = (lo + hi) * 0.5;
+  vec2 corner = abs(raw - mid) - (hi - lo) * 0.5 + u_round;
+  float inside = length(max(corner, 0.0)) + min(max(corner.x, corner.y), 0.0) - u_round;
+  a *= smoothstep(-0.5, 0.75, inside);
   gl_FragColor = vec4(c * a, a);
 }
 `;
@@ -183,7 +193,7 @@ class FlameGL {
     const a = gl.getAttribLocation(program, 'a');
     gl.enableVertexAttribArray(a);
     gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
-    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_wild', 'u_tall', 'u_reach', 'u_rimk', 'u_alpha', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
+    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_wild', 'u_tall', 'u_reach', 'u_rimk', 'u_alpha', 'u_round', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
   }
 
   draw(o: { width: number; height: number; dpr: number; box: FireBox; time: number; cell: number; heat: number; wild: number; tall: number; reach: number; rim: number; alpha: number; colors: readonly Rgb[]; blobs: readonly Blob[] }): void {
@@ -202,6 +212,7 @@ class FlameGL {
     gl.uniform1f(this.at.u_reach!, o.reach);
     gl.uniform1f(this.at.u_rimk!, o.rim);
     gl.uniform1f(this.at.u_alpha!, o.alpha);
+    gl.uniform1f(this.at.u_round!, o.box.r ?? 12);
     o.colors.forEach((c, i) => gl.uniform3f(this.at[`u_c${i}`]!, ...c));
     const n = Math.min(MAX_BLOBS, o.blobs.length);
     for (let i = 0; i < n; i++) {

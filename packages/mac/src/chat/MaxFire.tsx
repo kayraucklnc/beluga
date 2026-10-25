@@ -36,7 +36,7 @@ export function MaxFire({ box, input, look: given }: { box: RefObject<HTMLDivEle
     fire.current = f;
     const fit = (): void => {
       const { width, height } = host.getBoundingClientRect();
-      f.resize(width + SIDE * 2, height + now.current.top + BOTTOM, { x: SIDE, y: now.current.top, w: width, h: height });
+      f.resize(width + SIDE * 2, height + now.current.top + BOTTOM, { x: SIDE, y: now.current.top, w: width, h: height, r: parseFloat(getComputedStyle(host).borderTopLeftRadius) || 12 });
     };
     fit();
     const sizes = new ResizeObserver(fit);
