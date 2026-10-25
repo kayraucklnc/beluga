@@ -376,6 +376,18 @@ export async function commitSubjects(dir: string, base: string): Promise<string[
   return out.split('\n').filter((l) => l.trim());
 }
 
+/**
+ * How many commits on HEAD the branch on origin doesn't have (what a merge on GitHub would leave
+ * behind). 0 when git can't tell, so a hiccup never stands in the way of a merge.
+ */
+export async function unpushedCommits(dir: string, branch: string, remote = 'origin'): Promise<number> {
+  try {
+    return Number((await run('git', ['rev-list', '--count', `refs/remotes/${remote}/${branch}..HEAD`], dir)).trim()) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Push `head` and open a pull request for it into `base` (a plan's branch → main) → the pull request. */
 export async function createPr(dir: string, pr: { readonly base: string; readonly head: string; readonly title: string; readonly body: string; readonly draft?: boolean }): Promise<PullRequest> {
   if (!(await hasGh())) throw new Error('Opening a pull request needs the GitHub CLI (gh), signed in');

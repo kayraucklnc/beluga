@@ -8,7 +8,7 @@ import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
-import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, prStep, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, prStep, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
 import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -43,6 +43,8 @@ export interface WorkbenchDeps {
   readonly listPrs?: (dir: string) => Promise<{ prs: ReadonlyMap<string, PullRequest>; full: boolean }>;
   /** Merge a PR on GitHub (injected in tests; throws gh's error). */
   readonly mergePr?: (dir: string, number: number, opts: MergeOptions) => Promise<void>;
+  /** How many commits here the branch on GitHub doesn't have yet (injected in tests). */
+  readonly unpushedCommits?: (dir: string, branch: string) => Promise<number>;
   /** Delete a merged branch on GitHub (injected in tests). */
   readonly deleteRemoteBranch?: (dir: string, branch: string) => Promise<void>;
   /** A PR's one-click step on GitHub (injected in tests; throws gh's error). */
@@ -140,7 +142,7 @@ export function prCadence(pr: PullRequest | undefined, pushedAt: number | undefi
  * How a merge on GitHub went: `merged` now, or `queued` (auto-merge is on, or the repository's
  * merge queue took it); else why not, in words you can act on.
  */
-export type MergeOutcome = { readonly ok: true; readonly result: 'merged' | 'queued'; readonly message: string } | { readonly ok: false; readonly reason: MergeProblem | 'no_pr' | 'busy'; readonly message: string };
+export type MergeOutcome = { readonly ok: true; readonly result: 'merged' | 'queued'; readonly message: string } | { readonly ok: false; readonly reason: MergeProblem | 'no_pr' | 'busy' | 'unpushed'; readonly message: string };
 
 /** Run `tasks`, at most `limit` at a time. */
 async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number): Promise<void> {
@@ -395,6 +397,9 @@ export class Workbench {
     };
     if (!ws?.branch || !pr) return fail('no_pr', 'This worktree has no pull request to merge yet');
     if (pr.state !== 'OPEN') return fail('closed', pr.state === 'MERGED' ? `PR #${pr.number} is already merged` : `PR #${pr.number} is closed`);
+    // GitHub merges what it has: commits made here since the last push would be left behind, and lost with the worktree.
+    const unpushed = await (this.deps.unpushedCommits ?? unpushedCommits)(ws.path, ws.branch);
+    if (unpushed > 0) return fail('unpushed', `${unpushed === 1 ? '1 commit' : `${unpushed} commits`} in ${ws.name} ${unpushed === 1 ? 'isn’t' : 'aren’t'} on GitHub yet: push ${ws.branch} first, or PR #${pr.number} merges without ${unpushed === 1 ? 'it' : 'them'}`);
     if (this.merging.has(id)) return fail('busy', `PR #${pr.number} is already being merged`);
     if (opts.auto) return this.mergeWhenReady(ws, pr, opts);
     this.merging.add(id);
