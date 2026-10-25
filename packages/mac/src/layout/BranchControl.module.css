@@ -89,3 +89,6 @@
 .mainMerged:hover:not(:disabled) {
   background: color-mix(in srgb, var(--merged) 88%, black);
 }
+.mainIcon {
+  padding-inline: 8px;
+}

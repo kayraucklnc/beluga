@@ -10,7 +10,7 @@ import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { type ToolAction, isPrStep, toolbarActions } from './toolbar-actions.js';
-import { BranchControl } from './BranchControl.js';
+import { type BranchFold, BranchControl } from './BranchControl.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
@@ -26,6 +26,7 @@ import s from './Toolbar.module.css';
 /** Room the title keeps, and the window buttons on the right (search, bell, panel). */
 const TITLE_MIN = 210;
 const RIGHT_FIXED = 3 * 30 + 16;
+const FOLDS: BranchFold[] = ['none', 'pill', 'all'];
 
 const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree', claude_code: 'Activity', requests: 'Requests', tasks: 'Tasks', worktrees: 'Worktrees' };
 
@@ -72,7 +73,8 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
         {center}
       </div>
       <div className={s.right}>
-        {right}
+        {/* Whatever still doesn't fit is cut here, never the window buttons: the panel's toggle always shows. */}
+        {right ? <div className={s.extra}>{right}</div> : null}
         <SearchButton />
         <NotificationBell />
         <IconButton
@@ -118,10 +120,14 @@ export function Toolbar() {
     }
     const st = stateOf(state, ws, 0);
     const { branch, primary, icons, more } = toolbarActions(state, ws);
-    // A narrow window: the icons that don't fit move under ⋯ (the everyday action and the branch keep their place).
-    const lead = branch ? branch.label.length * 6.6 + 40 + (branch.pr ? 28 : 0) + (branch.steps[0] ? branch.steps[0].label.length * 7.4 + 76 : 0) : 0;
-    const fixed = TITLE_MIN + RIGHT_FIXED + lead + (primary ? primary.label.length * 7.4 + 48 : 0) + 34;
-    const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixed) / 30)));
+    // A narrow window: the icons that don't fit move under ⋯ first, then the branch pill keeps only
+    // its icon and number, then its step and the everyday action only their icons (words in their tips).
+    const pillW = (fold: BranchFold): number => (branch ? (fold === 'none' ? branch.label.length * 6.6 + 40 : 38) + (branch.pr ? 28 : 0) : 0);
+    const stepW = (fold: BranchFold): number => (branch?.steps[0] ? (fold === 'all' ? 34 : branch.steps[0].label.length * 7.4 + 42) + 34 : 0);
+    const primaryW = (fold: BranchFold): number => (primary ? (fold === 'all' ? 40 : primary.label.length * 7.4 + 48) : 0);
+    const fixedAt = (fold: BranchFold): number => TITLE_MIN + RIGHT_FIXED + pillW(fold) + stepW(fold) + primaryW(fold) + 34;
+    const fold = FOLDS.find((f) => fixedAt(f) <= width) ?? 'all';
+    const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixedAt(fold)) / 30)));
     // Icons that don't fit lead ⋯ as a section of their own.
     const overflow = [...(fit < icons.length ? [icons.slice(fit)] : []), ...more];
     const menu = overflow.flatMap((section, k) => section.map((a, i) => ({ a, separate: k > 0 && i === 0 })));
@@ -173,17 +179,17 @@ export function Toolbar() {
         }
         right={
           <>
-            {branch ? <BranchControl wsId={ws.id} branch={branch} /> : null}
+            {branch ? <BranchControl wsId={ws.id} branch={branch} fold={fold} /> : null}
             {/* A main folder is questions only: what it needs next is a worktree to work in. */}
             {ws.askOnly && !planForHome(state.plans, `ws:${ws.id}`) ? (
               <span className={s.primaryWrap}>
                 <ContinueButton wsId={ws.id} className={s.primary} />
               </span>
             ) : primary ? (
-              <Tip label={primary.hint} keys={primary.keys}>
+              <Tip label={fold === 'all' ? `${primary.label}: ${primary.hint}` : primary.hint} keys={primary.keys}>
                 <span className={s.primaryWrap}>
-                  <Button variant={primary.action === 'merge' ? 'merge' : 'primary'} icon={primary.icon} className={cx(s.primary, primary.tone === 'error' && s.primaryError)} aria-disabled={primary.disabled} data-tool={primary.action} data-tool-ws={ws.id} onClick={() => run(primary)}>
-                    {primary.label}
+                  <Button variant={primary.action === 'merge' ? 'merge' : 'primary'} icon={primary.icon} aria-label={fold === 'all' ? primary.label : undefined} className={cx(s.primary, fold === 'all' && s.primaryIcon, primary.tone === 'error' && s.primaryError)} aria-disabled={primary.disabled} data-tool={primary.action} data-tool-ws={ws.id} onClick={() => run(primary)}>
+                    {fold === 'all' ? null : primary.label}
                   </Button>
                 </span>
               </Tip>
