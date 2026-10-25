@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { AtSign, Bell, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useEffect, useState } from 'react';
 import { Platform, ScrollView, Switch, View } from 'react-native';
@@ -18,6 +18,7 @@ import { sizeOf } from '../components/Outputs';
 import { useSaved } from '../lib/saved';
 import { totalBytes } from '../lib/saved-list';
 import { store } from '../lib/store';
+import { askBatteryUnrestricted, batteryUnrestricted, setStay, stayAvailable, stayOn } from '../lib/stay';
 import { color, ink } from '../lib/theme';
 
 /**
@@ -38,6 +39,20 @@ export default function Settings() {
   const [look, setLook] = useState<Choice>(appearance.get());
   const saved = useSaved();
   const home = useView<HomeView>('home');
+  const [stay, setStayOn] = useState(stayOn());
+  const [unrestricted, setUnrestricted] = useState(true);
+  useEffect(() => setUnrestricted(batteryUnrestricted()), [stay]);
+  const toggleStay = () => {
+    haptic.tap();
+    const next = !stay;
+    setStay(next);
+    setStayOn(next);
+    store.staySet();
+    if (!next) return;
+    if (perm !== 'granted') void permission(true).then(setPerm);
+    // Without it, Android's battery saver may still cut the link off after a while.
+    if (!batteryUnrestricted()) askBatteryUnrestricted();
+  };
   const canKeepAwake = useSupports('keepAwake');
   const [awake, setAwake] = useState<KeepAwake | undefined>(undefined);
   const keepAwake = awake ?? home?.data.mac.keepAwake ?? 'off';
@@ -74,6 +89,29 @@ export default function Settings() {
           <Card>
             <Row first Icon={Monitor} tone="mint" label={link.mac?.name ?? link.pairing?.macName ?? 'Your Mac'} sub={link.mode === 'demo' ? 'Demo Mac' : `Beluga ${link.mac?.version ?? ''}`} right={<Pill label={link.phase === 'open' ? 'Linked' : link.phase === 'asleep' ? 'Asleep' : 'Away'} tone={link.phase === 'open' ? 'mint' : 'sky'} />} />
             <Row Icon={Bell} tone="butter" label="Notifications" sub={perm === 'denied' ? 'Off in Android settings' : undefined} right={toggle(all, () => {})} onPress={() => save({ needsYou: !all, done: !all, mentions: !all })} chevron={false} />
+            {link.mode === 'bare' && stayAvailable() ? (
+              <Row
+                Icon={Cable}
+                tone="lavender"
+                label="Stay connected"
+                sub={stay ? 'Tells you when Claude finishes or needs you, screen off too' : 'Notifications with the app closed. Uses a little battery'}
+                right={toggle(stay, () => {})}
+                onPress={toggleStay}
+                chevron={false}
+              />
+            ) : null}
+            {stay && !unrestricted ? (
+              <Row
+                Icon={TriangleAlert}
+                tone="butter"
+                label="Let it run in the background"
+                sub="Android’s battery saver may cut the link off. Allow Beluga to fix it."
+                onPress={() => {
+                  askBatteryUnrestricted();
+                  setTimeout(() => setUnrestricted(batteryUnrestricted()), 4_000);
+                }}
+              />
+            ) : null}
             <Row Icon={HardDrive} tone="sky" label="Storage" sub={saved.length ? `${saved.length} saved · ${sizeOf(totalBytes(saved))}` : 'What Beluga keeps on this phone'} onPress={() => router.push('/storage')} />
             <Row
               Icon={LogOut}
@@ -160,7 +198,7 @@ export default function Settings() {
               </T>
               <Card>
                 <Row first Icon={Hand} tone="peach" label="Needs you" right={toggle(p.needsYou, () => {})} onPress={() => save({ ...p, needsYou: !p.needsYou })} chevron={false} />
-                <Row Icon={CircleCheck} tone="mint" label="Done" sub="Things you asked from the phone" right={toggle(p.done, () => {})} onPress={() => save({ ...p, done: !p.done })} chevron={false} />
+                <Row Icon={CircleCheck} tone="mint" label="Done" sub={stay ? 'When Claude finishes' : 'Things you asked from the phone'} right={toggle(p.done, () => {})} onPress={() => save({ ...p, done: !p.done })} chevron={false} />
                 <Row Icon={AtSign} tone="sky" label="Mentions" right={toggle(p.mentions, () => {})} onPress={() => save({ ...p, mentions: !p.mentions })} chevron={false} />
               </Card>
             </View>

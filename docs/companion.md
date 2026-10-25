@@ -394,7 +394,7 @@ from sleeping while a phone is paired: `caffeinate -s` (on power) or `-i`, tied 
 
 ## Battery
 
-The phone holds no connection it isn't using.
+The phone holds no connection it isn't using (unless you turn on Stay connected, below).
 
 - **Open only while you look.** The worklet dials when the app comes to the front and closes 15 s
   after it goes to the background (the grace covers a quick app switch). Then the DHT node is
@@ -423,6 +423,28 @@ The phone holds no connection it isn't using.
 - **The Mac decides when to push.** Only when you're not at the Mac (its idle time over 2 minutes,
   or the screen locked or asleep), and never for what you're already looking at on the phone. While
   linked, the Mac sends a `nudge` in-band instead.
+
+## Staying connected
+
+Beluga Push isn't built yet, so with the app closed nothing can reach the phone. Stay connected
+(Settings, Android only, off by default; BLG-128) is the way that needs no server:
+
+- **A foreground service** (`packages/companion/modules/stay-connected`, a local Expo module, type
+  `remoteMessaging`) keeps the app's process, and with it the worklet's link, running with the
+  screen off. A partial wake lock keeps the 20 s heartbeat beating (as ntfy does). Its notification
+  is quiet and ongoing ("Connected to your Mac" / "Reconnecting to your Mac…"), since Android
+  requires one. It starts only while the app is in front (Android refuses it otherwise) and stops
+  when the app is swiped away, you turn it off, or you sign out.
+- **Away, the link carries almost nothing.** The phone sends `focus: false` and subscribes to no
+  topic, so the Mac sends no views; only pings and `nudge`s. Back in front, the link is checked
+  with one ping (not replaced for having been away) and the screen's topics come back.
+- **What notifies.** Needs you, the runs you asked from the phone, and, for a phone away with the
+  link open, every run of yours that finishes or stops (the Mac's own "Claude finished in …"
+  notices, `Nudge.away`, never pushed). Each nudge becomes a notification in its channel, as set in
+  Notify me about; tapping it opens its conversation.
+- **Dropped links come back by themselves:** quickly at first, then every two minutes while away.
+- **Battery.** Asking Android to leave Beluga unrestricted (Settings shows a row until it is),
+  since its battery saver may otherwise cut the link off.
 
 ## Notifications: Beluga Push
 
