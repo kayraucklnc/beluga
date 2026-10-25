@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 14 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 15 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -31,7 +31,8 @@ export const COMPANION_PROTO = { major: 1, minor: 14 } as const;
  * photos with a new worktree (`companion.ask`'s `worktree` target). 1.13 (BLG-127): whether the Mac
  * stays awake for the phone (`HomeView.mac.keepAwake`, `companion.keepAwake`), and (BLG-128) a phone
  * away pinging every KEEPALIVE_AWAY_MS on a relay or LAN link. 1.14: Your Mac's chats on the phone
- * (`HomeView.macChats`), started and deleted there (`assistant.newChat` / `deleteChat`).
+ * (`HomeView.macChats`), started and deleted there (`assistant.newChat` / `deleteChat`). 1.15: the
+ * plan a conversation is the home of (`ConvView.plan`), so its chat links back to the plan.
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14 } as const;
 
@@ -420,6 +421,8 @@ export const ConvView = z.object({
   merge: MergeView.optional(),
   /** 1.6: a worktree's branch: merged, ready to merge, conflicts, checks… (BranchView). */
   branch: BranchView.optional(),
+  /** 1.15: the plan this conversation writes and runs (its home): its page, name, state and progress. */
+  plan: z.object({ topic: Topic, title: z.string().max(300), state: z.string().max(20), done: z.number().int(), total: z.number().int(), milestones: z.number().int() }).optional(),
 });
 export type ConvView = z.infer<typeof ConvView>;
 
