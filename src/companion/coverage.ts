@@ -247,11 +247,11 @@ export const PHONE: Record<Method, Side> = {
   // ---- supporting Beluga: the star and coffee asks are the Mac's (they open web pages there)
   'support.answer': 'mac',
 
-  // ---- Your Mac's chats as tabs (BLG-102): arranging them is the Mac's. The phone talks to the
-  // open one (Home's Ask your Mac follows it) and reaches any of them from what needs you there.
-  'assistant.newChat': 'mac',
+  // ---- Your Mac's chats (BLG-102): since 1.14 the phone lists them, starts one and deletes one
+  // (it's chatting). Which tab is open is the Mac's: the phone opens any chat without moving it.
+  'assistant.newChat': 'phone',
   'assistant.openChat': 'mac',
-  'assistant.deleteChat': 'mac',
+  'assistant.deleteChat': 'phone',
 
   // ---- Claude Code's sessions: what its agents made (outputs, background logs), not their steps' code
   'claudeCode.steps': 'mac',

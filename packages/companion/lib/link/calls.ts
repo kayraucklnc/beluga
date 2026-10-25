@@ -19,6 +19,8 @@ export interface Call<M extends PhoneMethod = PhoneMethod> {
 
 const make = <M extends PhoneMethod>(method: M, args: PhoneArgs<M>, label: string): Call => ({ method, args, label }) as unknown as Call;
 
+/** One of Your Mac's chats' topics → its id (`main` is the first, `conv:mac:assistant`). */
+const macChatOf = (topic: Topic): string => (topic === 'conv:mac:assistant' ? 'main' : topic.slice('conv:mac:assistant:'.length));
 /** `conv:<channel>` → the channel the daemon's session methods take. */
 export const channelOf = (topic: Topic): string => topic.replace(/^conv:/, '');
 /** `chat:dm:<peerId>` → `dm:<peerId>` (what the network methods call a conversation). */
@@ -32,6 +34,11 @@ const withFiles = (files: Files) => (files?.length ? { files: [...files] } : {})
 export const calls = {
   /** Since 1.13 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
   keepAwake: (mode: 'off' | 'power' | 'always'): Call => make('companion.keepAwake', [mode], 'Keep your Mac awake'),
+  /** 1.14: a new empty chat on Your Mac (open on the Mac now) → its id; one deleted for good. */
+  newMacChat: (): Call => make('assistant.newChat', [], 'New chat'),
+  deleteMacChat: (topic: Topic): Call => make('assistant.deleteChat', [macChatOf(topic)], 'Delete the chat'),
+  /** A chat's id → its topic: the first (`main`) keeps `conv:mac:assistant`. */
+  macChatTopic: (id: string): Topic => (id === 'main' ? 'conv:mac:assistant' : `conv:mac:assistant:${id}`) as Topic,
   /** A message in a conversation (yours, or shared with you to work in), with photos. */
   send: (topic: Topic, text: string, files?: Files): Call => make('companion.ask', [{ target: { topic }, text, ...withFiles(files) }], `Send "${short(text)}"`),
   /** Ask your Mac in a project: a new conversation there (its topic comes back). */
@@ -93,7 +100,7 @@ export const calls = {
   subAgent: (topic: Topic, turn: string, id: string): Call => make('companion.subAgent', [topic, turn, id], 'Sub-agent'),
   /** 1.11: which conversations files were saved from are archived or deleted on the Mac. */
   gone: (topics: readonly string[]): Call => make('companion.gone', [[...topics]], 'Check saved files'),
-  /** 1.14 (BLG-140): the Mac's voice models, getting one there now, and a recording it writes down. */
+  /** 1.15 (BLG-140): the Mac's voice models, getting one there now, and a recording it writes down. */
   voice: (): Call => make('companion.voice', [], 'Voice on your Mac'),
   voicePrepare: (model: VoiceModelId): Call => make('companion.voicePrepare', [model], 'Get a voice model on your Mac'),
   transcribe: (audio: string, model: VoiceModelId, language: string): Call => make('companion.transcribe', [{ audio, model, language }], 'Write down what you said'),

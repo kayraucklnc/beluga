@@ -372,9 +372,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `stripe.disconnect` | ✓ the Connect Stripe sheet › Disconnect |
 | `stripe.refresh` | ✓ Refresh in the sheet and the Overview's Earnings card (the daemon also refreshes once a day by itself) |
 | `support.answer` | ✓ the Star sheet after your first merge (Star on GitHub / Maybe Later) and the coffee sheet after your fifth (an amount, Not Now, Don't Ask Again) |
-| `assistant.newChat` | ✓ Your Mac's tab strip › + (a new empty chat, open now) |
+| `assistant.newChat` | ✓ Your Mac's tab strip › + (a new empty chat, open now); on the phone, New chat in Your Mac's chats list or ••• |
 | `assistant.openChat` | ✓ clicking one of Your Mac's tabs (or a notification from one of its chats); kept across restarts, and the phone's Ask your Mac follows it |
-| `assistant.deleteChat` | ✓ a tab's × › Delete Chat (asks first; its run stops, its messages, folder and Claude transcript go for good, no archive; the last one leaves a fresh chat) |
+| `assistant.deleteChat` | ✓ a tab's × › Delete Chat (asks first; its run stops, its messages, folder and Claude transcript go for good, no archive; the last one leaves a fresh chat); on the phone, long-press in Your Mac's chats list or ••• › Delete this chat |
 | `gateway.list` | ✓ the shared state's `gateway` (task cards in conversations, Requests) |
 | `gateway.confirm` | ✓ the “Ask bob's Claude?” card in a conversation: Ask / Always / Not now |
 | `gateway.cancel` | ✓ Cancel on a task card and in Requests (sent), Stop in Requests (received) |

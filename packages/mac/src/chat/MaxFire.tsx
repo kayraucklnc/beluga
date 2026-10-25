@@ -73,7 +73,7 @@ export function MaxFire({ box, input, look: given }: { box: RefObject<HTMLDivEle
       length = field.value.length;
       const { typing, popDelete } = now.current.look;
       if (kind.startsWith('insert')) {
-        f.stoke();
+        f.stoke(caret());
         if (typing !== 'off') f.burst(caret(), kind === 'insertFromPaste' ? 24 : typing === 'pixels' ? 7 : 9, typing === 'pixels');
       } else if (kind.startsWith('delete') && popDelete && gone) {
         f.pop(caret(), gone);

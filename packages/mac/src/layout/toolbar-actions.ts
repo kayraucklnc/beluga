@@ -35,6 +35,11 @@ export interface ToolAction {
   readonly action: WorkspaceAction | PrStep | PlanAction;
 }
 
+const SHORT: Partial<Record<ToolAction['action'], string>> = { merge_claude: 'Solve', resolve_pr: 'Resolve', fix_checks: 'Fix', pr: 'PR', open_plan: 'Plan', open_task: 'Task', stop_run: 'Stop', merge_anyway: 'Merge', review_claude: 'Review', continue_after_merge: 'Continue' };
+
+/** An action in one word, for the folded toolbar ("PR", "Fix", "Merge"): its icon alone didn't say enough. */
+export const shortOf = (a: ToolAction): string => (a.label.startsWith('PR #') ? a.label : SHORT[a.action] ?? a.label.replace(/…$/, '').split(' ')[0]!);
+
 /** A pull request's next steps that ask before Claude or git does them (see work-confirm.ts). */
 export type PrStep = 'fix_checks' | 'resolve_pr' | 'continue_after_merge';
 export const isPrStep = (a: string): a is PrStep => a === 'fix_checks' || a === 'resolve_pr' || a === 'continue_after_merge';

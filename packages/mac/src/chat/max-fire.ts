@@ -7,7 +7,7 @@
  * them sideways the higher they climb, so the flames lick. The field is cut into three flat colours,
  * outer to core (Hades' blue; it flares orange, like his temper, while you type fast), drawn one of
  * two ways (Settings › Writing):
- *   - flame: smooth edges;
+ *   - flame: soft edges, the colours melting into each other, tips that thin out as they climb;
  *   - pixel: big square pixels, moving in steps like an old game.
  * Two canvases: the fire under the box (it hides the roots), the confetti over it.
  */
@@ -41,6 +41,21 @@ export interface FireBox {
 }
 
 const CONFETTI = ['#ffe35a', '#ff8a1f', '#3fa2ff', '#d4f6ff', '#ff6fae', '#8fe3b0'] as const;
+
+/** Only while typing: it catches after this many keys in a run, at least this long (s) into it; a pause this long (s) ends the run. */
+const WARM_KEYS = 4;
+const WARM_UP = 0.6;
+const RUN_GAP = 0.7;
+/** How it spreads round the box from the caret: it takes this long (s) plus a bit per px to go, eased in and out. */
+const SPREAD_TIME = 0.7;
+const SPREAD_PER_PX = 1 / 700;
+/** How wide the spreading front is (CSS px): the flames grow from nothing across it. */
+const SPREAD_FRONT = 90;
+
+/** Smooth in and out (0–1). */
+const ease = (t: number): number => t * t * (3 - 2 * t);
+/** Slow start, fast middle, gentle landing (0–1). */
+const easeInOut = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 /** Blobs of heat the shader adds up (the most it takes). */
 const MAX_BLOBS = 96;
@@ -96,6 +111,8 @@ uniform float u_rimk;
 uniform float u_alpha;
 uniform float u_round;
 uniform vec4 u_clip;
+uniform vec3 u_spread;
+#define SPREAD_FRONT ${SPREAD_FRONT.toFixed(1)}
 uniform vec3 u_c0;
 uniform vec3 u_c1;
 uniform vec3 u_c2;
@@ -139,21 +156,34 @@ void main() {
   float rim = (0.85 + 0.75 * noise(vec2(q.x * 0.06 + u_time * 0.8, q.y * 0.05 - u_time * 1.5))) * (0.8 + u_heat * 0.4) * u_rimk;
   if (q.y > hi.y) rim *= 0.4;
   f += rim * 16.0 / (dist * dist + 16.0);
+  // Only while typing it catches at the caret and spreads out from there: past its front nothing
+  // burns yet, and towards the front the flames are still small (they grow as it passes).
+  float front = 1.0 - smoothstep(u_spread.z - SPREAD_FRONT, u_spread.z, length(q - u_spread.xy));
+  f *= front * front * (3.0 - 2.0 * front);
 
-  // Three flat colours by how hot it is; smooth edges, or hard ones for pixel art.
-  float soft = u_cell > 0.0 ? 0.0001 : 0.06;
+  bool pixel = u_cell > 0.0;
+  // Smooth edges with the colours melting into each other (Flame), or hard ones and three flat
+  // colours (Pixel Art).
+  float soft = pixel ? 0.0001 : 0.22;
   // The outer shell comes to points: it needs more heat the higher it reaches (so every flame
-  // closes to a tip), and sharp-crested streaks racing up it pull it into thin licks.
+  // closes to a tip), and crested streaks racing up it pull it into licks (Flame: broader, calmer
+  // tongues, not thin spikes).
   float rise = clamp(above / 12.0, 0.0, 1.0);
-  float ridge = 1.0 - abs(noise(vec2(q.x * 0.24, q.y * 0.07 + u_time * 5.0)) * 2.0 - 1.0);
+  float ridge = pixel
+    ? 1.0 - abs(noise(vec2(q.x * 0.24, q.y * 0.07 + u_time * 5.0)) * 2.0 - 1.0)
+    : 1.0 - abs(noise(vec2(q.x * 0.13, q.y * 0.05 + u_time * 3.2)) * 2.0 - 1.0);
+  ridge = pixel ? ridge : mix(0.55, ridge, 0.6);
   // Near the edge of what can be seen, the flames need far more heat to show: they narrow into
   // tips before it, instead of being sliced off by it.
   float edge = min(min(raw.x - u_clip.x, u_clip.z - raw.x), min(raw.y - u_clip.y, u_clip.w - raw.y));
   float taper = 1.0 - smoothstep(0.0, 34.0, edge);
   float shell = f + (ridge - 0.55) * (0.45 + u_wild * 0.9) * rise - above * (0.02 - u_tall * 0.015) - taper * taper * 3.5;
   float a = smoothstep(1.0 - soft, 1.0 + soft, shell);
-  vec3 c = mix(u_c0, u_c1, smoothstep(1.9 - soft, 1.9 + soft, f));
-  c = mix(c, u_c2, smoothstep(3.6 - soft, 3.6 + soft, f));
+  float blend = pixel ? soft : 0.7;
+  vec3 c = mix(u_c0, u_c1, smoothstep(1.9 - blend, 1.9 + blend, f));
+  c = mix(c, u_c2, smoothstep(3.6 - blend * 1.4, 3.6 + blend * 1.4, f));
+  // Real flames thin out as they climb: the tips go see-through (Flame).
+  if (!pixel) a *= 1.0 - 0.45 * smoothstep(8.0, 70.0, above);
   a *= u_alpha;
   // Never inside the box (a rounded rectangle): the fire is around it, its text stays clean
   // (whatever order the browser stacks the canvas and the box in).
@@ -203,10 +233,10 @@ class FlameGL {
     const a = gl.getAttribLocation(program, 'a');
     gl.enableVertexAttribArray(a);
     gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
-    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_wild', 'u_tall', 'u_reach', 'u_rimk', 'u_alpha', 'u_round', 'u_clip', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
+    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_wild', 'u_tall', 'u_reach', 'u_rimk', 'u_alpha', 'u_round', 'u_clip', 'u_spread', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
   }
 
-  draw(o: { width: number; height: number; dpr: number; box: FireBox; time: number; cell: number; heat: number; wild: number; tall: number; reach: number; rim: number; alpha: number; colors: readonly Rgb[]; blobs: readonly Blob[] }): void {
+  draw(o: { width: number; height: number; dpr: number; box: FireBox; time: number; cell: number; heat: number; wild: number; tall: number; reach: number; rim: number; spread: { x: number; y: number; r: number }; alpha: number; colors: readonly Rgb[]; blobs: readonly Blob[] }): void {
     const gl = this.gl;
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.clearColor(0, 0, 0, 0);
@@ -225,12 +255,13 @@ class FlameGL {
     gl.uniform1f(this.at.u_round!, o.box.r ?? 12);
     const clip = o.box.clip ?? { x0: 0, y0: 0, x1: o.width, y1: o.height };
     gl.uniform4f(this.at.u_clip!, clip.x0, clip.y0, clip.x1, clip.y1);
+    gl.uniform3f(this.at.u_spread!, o.spread.x, o.spread.y, o.spread.r);
     o.colors.forEach((c, i) => gl.uniform3f(this.at[`u_c${i}`]!, ...c));
     const n = Math.min(MAX_BLOBS, o.blobs.length);
     for (let i = 0; i < n; i++) {
       const b = o.blobs[i]!;
       // Each swells in as it's born, then shrinks away as it cools.
-      this.packed.set([b.x, b.y, b.r * Math.min(1, (1 - b.life) * 6) * Math.min(1, b.life * 2.5), 0], i * 4);
+      this.packed.set([b.x, b.y, b.r * ease(Math.min(1, (1 - b.life) * 4)) * ease(Math.min(1, b.life * 2.5)), 0], i * 4);
     }
     gl.uniform4fv(this.at.u_blobs!, this.packed);
     gl.uniform1i(this.at.u_count!, n);
@@ -251,6 +282,20 @@ export class MaxFire {
   /** How much is burning (0–1): all the time, or (only while typing) since the last key. */
   private amount = 1;
   private typedAt = -Infinity;
+  /**
+   * Only while typing, it takes a run of keys to catch (one key never sets it off): when this run
+   * of typing began, and how many keys it has had.
+   */
+  private runAt = -Infinity;
+  private runKeys = 0;
+  private lit = false;
+  /** Where it caught (the caret then), and how far round the box it has spread from there (CSS px). */
+  private origin = { x: 0, y: 0 };
+  private spread = Infinity;
+  /** How far the spread has got (0–1), and how far it has to go (to the farthest corner of the box). */
+  private spreadT = 1;
+  private spreadTo = 0;
+  private caretAt = { x: 0, y: 0 };
   /** Told how much is burning as it changes (the box's coloured rim fades with it). */
   onBurn: ((amount: number) => void) | undefined;
   private box: FireBox = { x: 0, y: 0, w: 0, h: 0 };
@@ -315,10 +360,17 @@ export class MaxFire {
     this.focused = on;
   }
 
-  /** A key typed: the fire flares (and, only while typing, catches). */
-  stoke(): void {
+  /** A key typed at `caret`: the fire flares (and, only while typing, catches there once you keep on typing). */
+  stoke(caret?: { x: number; y: number }): void {
     this.heat = Math.min(1, this.heat + 0.045);
+    // A pause ends the run: the next key starts a new one, which has to warm up again.
+    if (this.time - this.typedAt > RUN_GAP) {
+      this.runAt = this.time;
+      this.runKeys = 0;
+    }
+    this.runKeys++;
     this.typedAt = this.time;
+    if (caret) this.caretAt = caret;
   }
 
   /** Confetti from the caret (or, `pixels`, little squares in the fire's colours). */
@@ -391,13 +443,25 @@ export class MaxFire {
     return this.tune.temper && this.heat > 0.9 ? TEMPER : this.tune.colors;
   }
 
-  /** Where a new blob of heat starts: mostly along the top edge, some up the sides. */
-  private spawn(): Blob {
+  /** Where a new blob of heat starts: mostly along the top edge, some up the sides (only as far as the fire has spread). */
+  private spawn(): Blob | undefined {
     const { x, y, w, h } = this.box;
-    const r = Math.random();
-    const side = r < 0.8 ? 0 : r < 0.9 ? -1 : 1;
-    const px = side === 0 ? x + 6 + Math.random() * (w - 12) : side < 0 ? x - 2 : x + w + 2;
-    const py = side === 0 ? y + 4 : y + 8 + Math.random() * (h - 12);
+    let side = 0;
+    let px = 0;
+    let py = 0;
+    for (let tries = 0; ; tries++) {
+      const r = Math.random();
+      side = r < 0.8 ? 0 : r < 0.9 ? -1 : 1;
+      px = side === 0 ? x + 6 + Math.random() * (w - 12) : side < 0 ? x - 2 : x + w + 2;
+      py = side === 0 ? y + 4 : y + 8 + Math.random() * (h - 12);
+      if (Math.hypot(px - this.origin.x, py - this.origin.y) <= this.spread + SPREAD_FRONT) break;
+      // Just caught: the first flames are above the caret.
+      if (tries < 6) continue;
+      side = 0;
+      px = Math.min(x + w - 6, Math.max(x + 6, this.origin.x + (Math.random() - 0.5) * Math.min(Math.max(this.spread + SPREAD_FRONT, 10), 40)));
+      py = y + 4;
+      break;
+    }
     const { thickness, height, wildness } = this.cur;
     const size = (side === 0 ? 5 + Math.random() * 6 : 4 + Math.random() * 3) * (0.6 + thickness * 0.9);
     const lift = 0.6 + height * 1.0;
@@ -415,19 +479,36 @@ export class MaxFire {
     cur.alpha += (1 - cur.alpha) * Math.min(1, 0.07 * dt);
     const target = this.focused ? 0.55 : 0.4;
     this.heat += (target - this.heat) * 0.02 * dt;
-    // Only while typing: it catches at the first key and dies down a couple of seconds after the last.
-    // (It catches at once; 0.4s after you stop, the fuel runs out: no new flames, the base goes
-    // out quickly, and the last flames lift off the box and burn out as they rise, like a real fire.)
-    const goal = this.tune.show === 'off' ? 0 : this.tune.show === 'typing' ? (this.time - this.typedAt < 0.4 ? 1 : 0) : 1;
+    // Only while typing: it catches only once you keep on typing (a few keys, for a moment; a single
+    // key does nothing), at the caret, and spreads from there round the box. 0.4s after you stop,
+    // the fuel runs out: no new flames, the base goes out quickly, and the last flames lift off the
+    // box and burn out as they rise, like a real fire.
+    const typing = this.tune.show === 'typing';
+    if (typing && !this.lit && this.time - this.typedAt < RUN_GAP && this.runKeys >= WARM_KEYS && this.time - this.runAt >= WARM_UP) {
+      this.lit = true;
+      // Still burning from before: it keeps its spread. Out: it starts again at the caret.
+      if (this.amount < 0.05) {
+        this.origin = { ...this.caretAt };
+        const { x, y, w, h } = this.box;
+        this.spreadTo = Math.max(Math.hypot(this.origin.x - x, this.origin.y - y), Math.hypot(x + w - this.origin.x, this.origin.y - y), Math.hypot(this.origin.x - x, y + h - this.origin.y), Math.hypot(x + w - this.origin.x, y + h - this.origin.y));
+        this.spreadT = 0;
+      }
+    }
+    if (this.lit && this.time - this.typedAt >= RUN_GAP) this.lit = false;
+    if (this.lit && this.spreadT < 1) this.spreadT = Math.min(1, this.spreadT + dt / 60 / (SPREAD_TIME + this.spreadTo * SPREAD_PER_PX));
+    // The front starts just behind the caret (nothing yet) and ends past the farthest corner (all of it).
+    this.spread = !typing || this.spreadT >= 1 ? Infinity : easeInOut(this.spreadT) * (this.spreadTo + SPREAD_FRONT * 2) - SPREAD_FRONT * 0.4;
+    const goal = this.tune.show === 'off' ? 0 : typing ? (this.lit && this.time - this.typedAt < 0.4 ? 1 : 0) : 1;
     const was = this.amount;
-    this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.18 : 0.12) * dt);
+    this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.07 : 0.12) * dt);
     if (Math.abs(this.amount - was) > 0.004 || (goal !== was && Math.abs(goal - this.amount) < 0.004)) this.onBurn?.(this.amount);
     // Keep the fire fed: one blob per 12–30px of edge (the fuel), more the hotter it burns.
     const want = Math.min(MAX_BLOBS, Math.round(((this.box.w + this.box.h) / (30 - this.cur.fuel * 18)) * (0.7 + this.heat * 0.6) * this.amount));
     // Out of fuel, nothing new catches.
     for (let born = goal ? (want / 60) * dt * 1.4 : 0; born > 0 && this.blobs.length < want; born--) {
       if (born < 1 && Math.random() > born) break;
-      this.blobs.push(this.spawn());
+      const b = this.spawn();
+      if (b) this.blobs.push(b);
     }
     for (const b of this.blobs) {
       // Rising faster as it goes (hot air), drifting, shrinking as it cools.
@@ -464,7 +545,7 @@ export class MaxFire {
   private drawn() {
     const { style } = this.tune;
     const { fuel, height, wildness, colors, alpha } = this.cur;
-    return { width: this.width, height: this.height, dpr: this.fireScale, box: this.box, time: this.time, cell: style === 'pixel' ? CELL : 0, heat: this.heat, wild: wildness, tall: height, reach: this.box.y, rim: (0.55 + fuel * 0.8) * this.amount, alpha, colors };
+    return { width: this.width, height: this.height, dpr: this.fireScale, box: this.box, time: this.time, cell: style === 'pixel' ? CELL : 0, heat: this.heat, wild: wildness, tall: height, reach: this.box.y, rim: (0.55 + fuel * 0.8) * this.amount, spread: { ...this.origin, r: Number.isFinite(this.spread) ? this.spread + SPREAD_FRONT : 1e6 }, alpha, colors };
   }
 
   private drawConfetti(pixel: boolean): void {

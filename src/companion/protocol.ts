@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 14 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 15 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -30,10 +30,12 @@ export const COMPANION_PROTO = { major: 1, minor: 14 } as const;
  * which conversations the phone saved files from are archived or deleted (`companion.gone`). 1.12:
  * photos with a new worktree (`companion.ask`'s `worktree` target). 1.13 (BLG-127): whether the Mac
  * stays awake for the phone (`HomeView.mac.keepAwake`, `companion.keepAwake`), and (BLG-128) a phone
- * away pinging every KEEPALIVE_AWAY_MS on a relay or LAN link. 1.14 (BLG-140): the Mac writes down
- * what you said on the phone (`companion.voice` / `voicePrepare` / `transcribe`).
+ * away pinging every KEEPALIVE_AWAY_MS on a relay or LAN link. 1.14: Your Mac's chats on the phone
+ * (`HomeView.macChats`), started and deleted there (`assistant.newChat` / `deleteChat`). 1.15
+ * (BLG-140): the Mac writes down what you said on the phone (`companion.voice` / `voicePrepare` /
+ * `transcribe`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, voice: 14 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 15 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -321,6 +323,8 @@ export const HomeView = z.object({
   unread: z.object({ work: z.number().int().min(0), chats: z.number().int().min(0) }),
   /** 1.5: "Your Mac" (`conv:mac:assistant`): its last line and whether it works, for Home's "Ask your Mac". Since BLG-102 the chat open on the Mac (its topic may be `conv:mac:assistant:<id>`, see isMacTopic). */
   assistant: ConvSummary.optional(),
+  /** 1.14: every one of Your Mac's chats in the Mac's tab order, each titled by its tab ("New chat" until you write), for the phone's chat list. */
+  macChats: z.array(ConvSummary).max(40).optional(),
   /** 1.3: tasks waiting for your review (Home links to them). */
   review: z.object({ count: z.number().int().min(0), first: z.object({ topic: Topic, key: z.string().max(40), title: z.string().max(300) }).optional() }).optional(),
 });
@@ -627,14 +631,14 @@ export type TerminalView = z.infer<typeof TerminalView>;
 /** The models that write down speech (src/shared/voice-models.ts VOICE_MODEL_IDS, kept equal by a test). */
 export const VoiceModelId = z.enum(['whisper-base', 'whisper-turbo', 'parakeet']);
 export type VoiceModelId = z.infer<typeof VoiceModelId>;
-/** 1.14: the Mac's voice models, here or coming (companion.voice). */
+/** 1.15: the Mac's voice models, here or coming (companion.voice). */
 export const VoiceMacView = z.object({
   models: z
     .array(z.object({ model: VoiceModelId, bytes: z.number().int().min(0), ready: z.boolean(), progress: z.number().min(0).max(1).optional(), error: z.string().max(300).optional() }))
     .max(10),
 });
 export type VoiceMacView = z.infer<typeof VoiceMacView>;
-/** 1.14: what the Mac wrote down (companion.transcribe). */
+/** 1.15: what the Mac wrote down (companion.transcribe). */
 export const TranscriptView = z.object({ text: z.string().max(64_000), language: z.string().max(16).optional(), ms: z.number().int().min(0) });
 export type TranscriptView = z.infer<typeof TranscriptView>;
 

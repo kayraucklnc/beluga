@@ -157,6 +157,21 @@ export function makeWorld(now = Date.now()): DemoWorld {
     canSend: true,
     working: true,
     needsYou: [],
+    // Its branch, as a real Mac's views.ts sends it: shipped nowhere yet, Create PR next.
+    branch: {
+      kind: 'unshipped',
+      label: '2 commits · no PR',
+      tone: 'info',
+      detail: '2 commits on beluga/pairing-feel not in main yet',
+      branch: 'beluga/pairing-feel',
+      into: 'main',
+      next: { id: 'pr', label: 'Create PR' },
+      steps: [
+        { id: 'pr', label: 'Create PR', hint: 'Pushes beluga/pairing-feel and opens a pull request into main, titled from its commits' },
+        { id: 'pr_claude', label: 'Create PR with Claude', hint: 'Claude commits what belongs, then writes the title and description: what, why, how to test', claude: true },
+        { id: 'pr_draft', label: 'Create Draft PR', hint: 'Like Create PR, as a draft: it can’t merge until it’s marked ready' },
+      ],
+    },
     turns: [
       {
         id: 't1',

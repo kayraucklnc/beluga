@@ -256,7 +256,7 @@ through `companion.files.*` and `companion.terminals` / `termOpen` / `termClose`
 - Also `phone` since 1.3: `board.move` and `board.start` (a task moved along, or started in a new
   worktree with Claude), and `session.submit` with `urgent` (Steer) next to `host.promote` and
   `host.cancelQueued` for the queue.
-- `companion.voice` / `voicePrepare(model)` / `transcribe {audio, model, language}` (1.14,
+- `companion.voice` / `voicePrepare(model)` / `transcribe {audio, model, language}` (1.15,
   BLG-140): the Mac writes down what you said on the phone. The phone `put`s a 16 kHz mono WAV
   (`audio/wav`, only that phone's ref); the Mac runs Whisper Turbo or Parakeet v3 on its GPU
   (whisper.cpp through `@fugood/whisper.node`, `src/companion/voice.ts`), deletes the recording and
@@ -571,6 +571,12 @@ Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `ass
   by name ("Your Mac · …") wherever conversations are (working now, what needs you). An older
   phone, knowing only `conv:mac:assistant`, reaches the open chat once the first one is deleted
   (`phoneChannel`), and a message it sends there brings the first chat back as a tab.
+- **Its chats on the phone (1.14, `SINCE.macChats`).** Home's `macChats` lists every chat in tab
+  order, each titled by its tab. Ask your Mac's chats button (or a long-press) and the chats button
+  in a Your Mac conversation open the list: New chat on top (`assistant.newChat`, a new tab on the
+  Mac too, opened on the phone), a chat to switch to, a long-press to delete one for good after
+  asking (`assistant.deleteChat`; also under •••). Opening a chat on the phone doesn't move the
+  Mac's open tab (`assistant.openChat` stays the Mac's).
 - **Where it runs.** `~/.beluga/assistant/work/` is its Claude's folder, shared by its chats; its
   scratch folder is `work/.beluga/scratch/`. Each chat's Claude session id and history sit beside
   it (`chats/<id>/state.json`, `history.json`; `chats.json` lists them in tab order with the one
