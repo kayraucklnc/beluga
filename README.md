@@ -18,6 +18,29 @@
 
 ---
 
+## 📊 Claude shows you, not just tells you
+
+Ask about data and the answer comes with live charts, stat tiles and tables. Ask how something works and Claude draws it. Ask what's left and your tasks show up as cards. All of it sits right in the conversation, and you can click, sort and explore it without asking Claude again.
+
+<p align="center">
+  <img src="assets/mac/views.gif" alt="Asking 'show me the payments dashboard': Claude answers with stat tiles (revenue, payments, failed rate, p95), an area chart of payments per day whose legend turns series off and on, and a table of the latest orders paged straight from the source" width="900">
+</p>
+<p align="center"><sub>📈 <b>Charts, stats and tables</b>: line, area, bar, pie, scatter, gantt, heatmap, calendar. A table pages, sorts and searches by itself, straight from a file, a database, a URL or a command. <a href="docs/views.md">More</a></sub></p>
+
+<p align="center">
+  <img src="assets/mac/graph.gif" alt="Asking Claude to visualize how a payment flows: an interactive diagram from the web app through the Express server, Stripe and the webhook handler to the orders table, then a step-by-step walkthrough that highlights each part" width="900">
+</p>
+<p align="center"><sub>🗺️ <b>Diagrams</b> of how your code fits together: hover a part to see what it touches, click it for details, or let Claude walk you through it step by step (<code>/visualize</code>). <a href="docs/graphs.md">More</a></sub></p>
+
+<p align="center">
+  <img src="assets/mac/tasks.gif" alt="Asking 'where do my tasks stand?': the answer shows live task cards with their status, then the project's task board as a list, a board with a column per status, and a graph of which task waits on which" width="900">
+</p>
+<p align="center"><sub>✅ <b>Tasks</b>: a board for every project, shared with friends. Claude opens tasks when you ask for several things at once, moves them along as it works, and shows them in its answers as live cards. A task is done when its worktree merges. <a href="docs/tasks-and-plans.md">More</a></sub></p>
+
+Plain Markdown gets the same treatment: tables sort and turn into charts, JSON folds, terminal output keeps its colors, math is typeset and Mermaid becomes a real diagram.
+
+---
+
 ## 🤝 Your Claude, talking to your friends' Claudes
 
 Tag a friend in a message, say what you need, and your Claude asks **their** Claude to do it **on their Mac**. They get a small pop-up, click **Allow**, and the answer comes back into your conversation. No server in between, no shared accounts: every Claude runs on its owner's Mac, with its owner's subscription and logins.
@@ -101,6 +124,18 @@ Say what you want done and Beluga makes a fresh worktree for it (its own folder,
 - ⚡ **Many Claudes at once**, each with sub-agents you can watch. The sidebar shows who's working, what's ready to merge and what needs you.
 - 🧩 **Everything beside the chat**: changes and diffs, files, terminals and details in the right panel. Commit, open a pull request or merge in one click.
 - 💬 **Questions stay safe**: in the main folder Claude only reads; asking for a change moves you to a new worktree.
+
+### 🔬 Watch what Claude is making: the Scratch tab
+
+While Claude and its sub-agents work, they save what they produce along the way to the worktree's `.beluga/scratch/` folder: screenshots of the page they just checked, test runs, logs, the JSON an API sent back, notes. The **Scratch** tab in the right panel (⌥⌘6) shows that folder live, newest first, and previews each file as it lands. Pictures show as pictures, JSON is laid out, and a log keeps scrolling while it's written. So you can see what Claude is seeing, not just what it says about it.
+
+<p align="center">
+  <img src="assets/mac/scratch.gif" alt="Asking Claude to review the changes and screenshot the login page: three reviewer sub-agents start, and the Scratch tab fills up live with a test log that grows to 27 passed, a screenshot of the login page and the session response as JSON" width="900">
+</p>
+
+- 🖼️ **Proof, not promises**: screenshots and test results land here, and Claude attaches them to the task as proof.
+- 🤖 **Per sub-agent**: each sub-agent's page has an **Outputs** tab with the screenshots, test output and files it made.
+- 🙈 **Out of git**: the folder is ignored, so nothing in it ends up in a commit. **Show in Finder** opens it.
 
 ---
 
