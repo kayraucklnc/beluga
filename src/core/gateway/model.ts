@@ -121,6 +121,8 @@ export interface GatewayState {
   readonly rules: readonly Rule[];
   /** What friends' Claudes may do here, by trust level. */
   readonly capabilities: Capabilities;
+  /** Friends your Claude asks without the "Ask X's Claude?" card (you said Always), by peer id. */
+  readonly askFreely?: readonly string[];
 }
 
 export interface GatewaySlice {
@@ -141,6 +143,7 @@ export type GatewayAction =
   | { type: 'gw_note'; note: string }
   | { type: 'gw_rules'; rules: readonly Rule[] }
   | { type: 'gw_caps'; capabilities: Capabilities }
+  | { type: 'gw_freely'; peers: readonly string[] }
   | { type: 'gw_off' };
 
 function withTask(list: readonly TaskView[], task: TaskView): readonly TaskView[] {
@@ -163,6 +166,8 @@ export function reduceGateway(state: GatewaySlice, action: GatewayAction): Gatew
       return { gateway: { ...state.gateway, rules: action.rules } };
     case 'gw_caps':
       return { gateway: { ...state.gateway, capabilities: action.capabilities } };
+    case 'gw_freely':
+      return { gateway: { ...state.gateway, askFreely: action.peers } };
     case 'gw_off':
       return { gateway: NO_GATEWAY };
     default:

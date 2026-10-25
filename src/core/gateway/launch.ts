@@ -61,6 +61,7 @@ export function launchGateway(host: GatewayHost): () => void {
   const dir = host.demo ? mkdtempSync(path.join(os.tmpdir(), 'beluga-demo-tasks-')) : path.join(belugaHome(), 'tasks');
   let note = host.demo ? 'a review of the landing page, or anything in my projects' : (loadSettings().askMeFor ?? '');
   let caps: unknown;
+  let freely: readonly string[] = host.demo ? [] : (loadSettings().askFreely ?? []);
   const projects = (): Array<{ name: string; root: string }> => (session.workspaces?.manager.list ?? []).filter((p) => p.root && !p.error).map((p) => ({ name: p.name, root: p.root }));
   const gateway = new Gateway({
     store,
@@ -91,6 +92,11 @@ export function launchGateway(host: GatewayHost): () => void {
     saveNote: (text) => {
       note = text;
       if (!host.demo) saveSettings({ askMeFor: text || undefined });
+    },
+    loadAskFreely: () => freely,
+    saveAskFreely: (peers) => {
+      freely = peers;
+      if (!host.demo) saveSettings({ askFreely: peers.length ? [...peers] : undefined });
     },
     notify: (e) => session.notifier.notify(e),
     room: () => ({

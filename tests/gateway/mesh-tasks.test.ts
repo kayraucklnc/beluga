@@ -146,6 +146,20 @@ describe('your side: ask first, cancel, offline', () => {
     expect(mine.state).toBe('sent');
   }, 60_000);
 
+  it('Always sends it and lets your Claude ask them without checking from now on, until you take it back', async () => {
+    const [ned, oli] = await pair('ned', 'oli');
+    oli.trust(ned.id, 'trusted');
+    const t = ned.gw.ask({ person: 'oli', ask: 'make kay an admin of the repo', by: 'agent' });
+    expect(t.state).toBe('confirm');
+    ned.gw.confirm(t.id, true, undefined, undefined, true);
+    expect(task(ned, t.id)?.state).not.toBe('confirm');
+    expect(ned.store.getState().gateway.askFreely).toEqual([oli.id]);
+    // Later asks to them go straight out.
+    expect(ned.gw.ask({ person: 'oli', ask: 'and the wiki', by: 'agent' }).state).toBe('sent');
+    ned.gw.setAskFreely(oli.id, false);
+    expect(ned.gw.ask({ person: 'oli', ask: 'and the CI', by: 'agent' }).state).toBe('confirm');
+  }, 60_000);
+
   it('cancels: their Claude stops and both sides say cancelled', async () => {
     const [jay, kim] = await pair('jay', 'kim');
     jay.trust(kim.id, 'trusted');

@@ -1022,6 +1022,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'gw_note':
     case 'gw_rules':
     case 'gw_caps':
+    case 'gw_freely':
     case 'gw_off':
       return { ...state, ...reduceGateway(state, action) };
     case 'board_init':

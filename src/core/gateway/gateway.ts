@@ -59,6 +59,9 @@ export interface GatewayDeps {
   /** Your "Ask me for…" note, and saving it. */
   readonly loadNote: () => string;
   readonly saveNote: (note: string) => void;
+  /** Friends your Claude may ask without checking with you (Always), and saving them. */
+  readonly loadAskFreely?: () => readonly string[];
+  readonly saveAskFreely?: (peers: readonly string[]) => void;
   readonly notify?: (e: NoticeEvent) => void;
   readonly room?: () => RoomPort | undefined;
   /** How long a "Ask Alice's Claude?" card waits for you (default 10 minutes). */
@@ -312,7 +315,8 @@ export class Gateway {
     if (!ask) throw new Error('Say what to ask');
     if (input.expects && input.expects !== 'files' && validateSchema(input.expects)) throw new Error(`The expects schema isn't usable: ${validateSchema(input.expects)}`);
     const level = this.trustFor(peer.peerId);
-    const confirm = input.by === 'agent' && level !== 'trusted' && level !== 'full';
+    // Your Claude asks first, unless you trust them or said Always for them (asking them, not what they may do here).
+    const confirm = input.by === 'agent' && level !== 'trusted' && level !== 'full' && !this.freely().includes(peer.peerId);
     const now = this.now();
     const task = this.put({
       id: taskId(),
@@ -347,10 +351,11 @@ export class Gateway {
     return this.book.get(task.id) ?? task;
   }
 
-  /** Your answer on the "Ask Alice's Claude?" card: send it (maybe reworded), or not now. */
-  confirm(id: string, yes: boolean, edited?: string, why?: string): TaskView {
+  /** Your answer on the "Ask Alice's Claude?" card: send it (maybe reworded; `always`: and don't ask about them again), or not now. */
+  confirm(id: string, yes: boolean, edited?: string, why?: string, always = false): TaskView {
     const task = this.need(id);
     if (task.direction !== 'sent' || task.state !== 'confirm') throw new Error('That request is not waiting for you');
+    if (yes && always) this.setAskFreely(task.peerId, true);
     clearTimeout(this.confirmTimers.get(id));
     this.confirmTimers.delete(id);
     if (!yes) return this.finishLocal(task, 'cancelled', why ?? `Not sent: ${this.deps.selfName()} said not now`);
@@ -500,6 +505,22 @@ export class Gateway {
     });
   }
 
+  /** Friends your Claude asks without checking with you first (loaded once, then kept here). */
+  private freelyList?: readonly string[];
+  private freely(): readonly string[] {
+    this.freelyList ??= this.deps.loadAskFreely?.() ?? [];
+    return this.freelyList;
+  }
+
+  /** Let your Claude ask this friend without the card (Always), or take that back. */
+  setAskFreely(peerId: string, on: boolean): void {
+    const now = this.freely().filter((p) => p !== peerId);
+    const next = on ? [...now, peerId] : now;
+    this.freelyList = next;
+    this.deps.saveAskFreely?.(next);
+    this.deps.store.dispatch({ type: 'gw_freely', peers: next });
+  }
+
   /** Your "Ask me for…" note (what other Claudes see on your card). */
   setNote(note: string): void {
     const clean = note.replace(/\s+/g, ' ').trim().slice(0, 280);
@@ -522,7 +543,7 @@ export class Gateway {
   }
 
   private view(): GatewayState {
-    return { enabled: true, tasks: this.book.all(), cards: this.book.allCards(), note: this.deps.loadNote(), rules: this.rules.rules(), capabilities: this.rules.capabilities() };
+    return { enabled: true, tasks: this.book.all(), cards: this.book.allCards(), note: this.deps.loadNote(), rules: this.rules.rules(), capabilities: this.rules.capabilities(), askFreely: this.freely() };
   }
 
   /** Save a task, show it, and wake whoever waits on it. */

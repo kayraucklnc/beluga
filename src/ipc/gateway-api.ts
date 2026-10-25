@@ -26,7 +26,10 @@ export const GATEWAY_API = {
   // Your tasks (sent and received) and what people's Belugas offer you.
   'gateway.list': { args: z.tuple([]) },
   // Your answer on an "Ask Alice's Claude?" card: send it (maybe reworded), or not now.
-  'gateway.confirm': { args: z.tuple([taskId, z.boolean(), z.string().max(16_000).optional()]) },
+  // `always`: send it, and let your Claude ask them without checking from now on.
+  'gateway.confirm': { args: z.tuple([taskId, z.boolean(), z.string().max(16_000).optional(), z.boolean().optional()]) },
+  // Let your Claude ask this friend without checking with you first, or take that back.
+  'gateway.setAskFreely': { args: z.tuple([z.string().min(1).max(80), z.boolean()]) },
   // Cancel a task you sent, or stop one someone sent you.
   'gateway.cancel': { args: z.tuple([taskId]) },
   // Ask someone's Claude yourself (from their card): → the task.

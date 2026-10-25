@@ -85,6 +85,31 @@ function AskMeFor() {
   );
 }
 
+/** Friends your Claude asks without checking with you first (you said Always on its "Ask X's Claude?" card). */
+function AskFreely() {
+  const api = useApi();
+  const say = useSay();
+  const peers = useApp((st) => st.gateway.askFreely ?? []);
+  const friends = useApp((st) => st.network.friends);
+  const roomPeers = useApp((st) => st.peers);
+  const nameOf = (id: string): string => friends.find((f) => f.peerId === id)?.name ?? roomPeers.find((p) => p.peerId === id)?.name ?? 'Someone';
+  if (!peers.length) return null;
+  return (
+    <div className={s.folders} role="group" aria-label="Friends your Claude asks without checking">
+      <div className={s.capName}>Your Claude asks them without checking</div>
+      <div className={s.capDetail}>You said Always when your Claude wanted to ask them. Others still get “Can I ask them?” first.</div>
+      {peers.map((id) => (
+        <div key={id} className={s.folder}>
+          <span>{nameOf(id)}</span>
+          <Button size="small" variant="quiet" aria-label={`Ask me first about ${nameOf(id)}`} onClick={() => say('change it', api.gateway.setAskFreely(id, false), 'Your Claude asks you first again')}>
+            Ask Me First
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** What friends' Claudes may do here: each capability by trust level (Allow / Ask me / Off). */
 export function CapabilitySettings() {
   const api = useApi();
@@ -129,6 +154,7 @@ export function CapabilitySettings() {
       </table>
       <Folders />
       <AskMeFor />
+      <AskFreely />
     </Group>
   );
 }

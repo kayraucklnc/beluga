@@ -366,9 +366,10 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `assistant.openChat` | ✓ clicking one of Your Mac's tabs (or a notification from one of its chats); kept across restarts, and the phone's Ask your Mac follows it |
 | `assistant.deleteChat` | ✓ a tab's × › Delete Chat (asks first; its run stops, its messages, folder and Claude transcript go for good, no archive; the last one leaves a fresh chat) |
 | `gateway.list` | ✓ the shared state's `gateway` (task cards in conversations, Requests) |
-| `gateway.confirm` | ✓ the “Ask bob's Claude?” card in a conversation: Ask / Not now |
+| `gateway.confirm` | ✓ the “Ask bob's Claude?” card in a conversation: Ask / Always / Not now |
 | `gateway.cancel` | ✓ Cancel on a task card and in Requests (sent), Stop in Requests (received) |
 | `gateway.ask` | ✓ Requests › Ask someone's Claude… |
+| `gateway.setAskFreely` | ✓ Settings › Access: “Your Claude asks them without checking” › Ask Me First (Always on the card turns it on) |
 | `gateway.setNote` | ✓ Requests › your “Ask me for…” note |
 | `gateway.decide` | ✓ the request sheet (Approve once / Always, with its scope and expiry / Decline with a reason), the notification's and the menu bar's Approve / Always / Decline |
 | `gateway.answer` | ✓ a sent task's card when their Claude asks something: pick an answer or write one, or Let them decide |

@@ -202,6 +202,8 @@ function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
         askedAt: t.createdAt,
         actions: [
           { label: 'Ask', tone: 'main', method: 'gateway.confirm', args: [t.id, true] },
+          // Send it, and let your Claude ask them without checking from now on.
+          { label: 'Always', tone: 'plain', method: 'gateway.confirm', args: [t.id, true, '', true] },
           { label: 'Not now', tone: 'danger', method: 'gateway.confirm', args: [t.id, false] },
         ],
       },
