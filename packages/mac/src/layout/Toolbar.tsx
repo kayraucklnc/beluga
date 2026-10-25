@@ -10,7 +10,7 @@ import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { type ToolAction, isPrStep, toolbarActions } from './toolbar-actions.js';
-import { type BranchFold, BranchControl } from './BranchControl.js';
+import { type BranchFold, BranchControl, shortLabel } from './BranchControl.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
@@ -123,7 +123,7 @@ export function Toolbar() {
     // A narrow window: the icons that don't fit move under ⋯ first, then the branch pill keeps only
     // its icon and number, then its step and the everyday action only their icons (words in their tips).
     const pillW = (fold: BranchFold): number => (branch ? (fold === 'none' ? branch.label.length * 6.6 + 40 : 38) + (branch.pr ? 28 : 0) : 0);
-    const stepW = (fold: BranchFold): number => (branch?.steps[0] ? (fold === 'all' ? 34 : branch.steps[0].label.length * 7.4 + 42) + 34 : 0);
+    const stepW = (fold: BranchFold): number => (branch?.steps[0] ? (fold === 'all' ? shortLabel(branch.steps[0]).length * 7.4 + 42 : branch.steps[0].label.length * 7.4 + 42) + 34 : 0);
     const primaryW = (fold: BranchFold): number => (primary ? (fold === 'all' ? 40 : primary.label.length * 7.4 + 48) : 0);
     const fixedAt = (fold: BranchFold): number => TITLE_MIN + RIGHT_FIXED + pillW(fold) + stepW(fold) + primaryW(fold) + 34;
     const fold = FOLDS.find((f) => fixedAt(f) <= width) ?? 'all';
