@@ -16,6 +16,7 @@ import {
   type Topic,
   type TurnView,
   VIEW_COALESCE_MS,
+  isMacTopic,
 } from '../protocol';
 import type { DeviceSecret, LinkPhase } from '../rpc';
 import { Emitter, type PairInput, type PairStep, type Transport } from '../transport';
@@ -235,6 +236,8 @@ export class DemoTransport implements Transport {
       mac: DEMO_MAC,
       me: DEMO_ME,
       ...(assistant ? { assistant: this.summary(assistant) } : {}),
+      // 1.14: Your Mac's chats, each titled by its first line, as the Mac's tabs are.
+      macChats: [...w.convs.values()].filter((c) => isMacTopic(c.topic)).map((c) => ({ ...this.summary(c), title: c.turns.find((t) => t.who === 'you')?.prose.text.split('\n')[0]?.slice(0, 60) || 'New chat' })),
       usage: w.usage,
       needsYou: w.needs,
       running: [...w.convs.values()].filter((c) => c.working || w.needs.some((n) => n.topic === c.topic)).map((c) => this.summary(c)),
@@ -415,6 +418,23 @@ export class DemoTransport implements Transport {
         const a = args[0] as { target: { project?: string; topic?: string }; text: string; files?: string[] };
         const files = (a.files ?? []).map((r) => this.uploads.get(r)).filter((v): v is OutputView => !!v);
         return ok({ topic: this.submit(a.text, a.target, files) });
+      }
+      // 1.14: Your Mac's chats, started and deleted from the phone.
+      case 'assistant.newChat': {
+        const id = Math.random().toString(36).slice(2, 12);
+        const topic = `conv:mac:assistant:${id}` as Topic;
+        w.convs.set(topic, { topic, title: 'Your Mac', more: false, canSend: true, working: false, needsYou: [], turns: [] });
+        this.touch(topic);
+        return ok(id);
+      }
+      case 'assistant.deleteChat': {
+        const topic = (str(0) === 'main' ? 'conv:mac:assistant' : `conv:mac:assistant:${str(0)}`) as Topic;
+        const c = w.convs.get(topic);
+        // The first chat stays, emptied (as the Mac leaves a fresh one); the others go.
+        if (c && topic === 'conv:mac:assistant') w.convs.set(topic, { ...c, turns: [], working: false });
+        else w.convs.delete(topic);
+        this.touch(topic);
+        return ok();
       }
       case 'companion.askPerson': {
         const a = args[0] as { peerId: string; text: string; needs?: string[] };
@@ -792,10 +812,10 @@ export class DemoTransport implements Transport {
     conv.turns = [...conv.turns, you, claude];
     conv.working = true;
     this.touch(topic, 'work');
-    const shot = topic === 'conv:mac:assistant' && /screenshot|screen/i.test(text);
+    const shot = isMacTopic(topic) && /screenshot|screen/i.test(text);
     const answer = said ?? (shot
       ? 'Here’s your screen now: the radar build in the Simulator, and the login fix’s tests running in Terminal.'
-      : topic === 'conv:mac:assistant'
+      : isMacTopic(topic)
         ? 'Nothing heavy: Xcode at 34% CPU, the Simulator at 12%, Beluga under 2%. 9.5 GB of 24 GB memory free.'
         : files.length
       ? `Got your photo (${files[0]!.name}). It matches what I see in the radar build; nothing to change.`
@@ -806,7 +826,7 @@ export class DemoTransport implements Transport {
       w.files.set(view.ref, { view, mime: 'image/jpeg', image: 'desktop' });
       outputs = [view];
     }
-    const steps = topic === 'conv:mac:assistant' ? (shot ? ['Taking a screenshot', 'Writing the answer'] : ['Running ps -Ao pid,pcpu,pmem,comm', 'Writing the answer']) : ['Reading the code', 'Running the tests · 12/40', 'Running the tests · 40/40', 'Writing the answer'];
+    const steps = isMacTopic(topic) ? (shot ? ['Taking a screenshot', 'Writing the answer'] : ['Running ps -Ao pid,pcpu,pmem,comm', 'Writing the answer']) : ['Reading the code', 'Running the tests · 12/40', 'Running the tests · 40/40', 'Writing the answer'];
     this.work(topic, claude.id, 'Claude', steps, answer, outputs);
     return topic;
   }

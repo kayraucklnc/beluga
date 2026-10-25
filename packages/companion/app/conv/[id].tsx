@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Square, SquareTerminal } from 'lucide-react-native';
+import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, MessagesSquare, Monitor, OctagonX, Plus, Send, Square, SquareTerminal, Trash2 } from 'lucide-react-native';
 import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
 import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
@@ -14,12 +14,13 @@ import { AgentChips, Prose, StepTicker } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace } from '../../components/Needs';
 import { Options } from '../../components/Options';
 import { OutputGrid, OutputsTopic, TurnOutputs } from '../../components/Outputs';
+import { DeleteMacChat, MacChatsSheet, newMacChat } from '../../components/MacChats';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
-import { ago, elapsed, useSince, useView, useVisibleNeeds } from '../../lib/hooks';
+import { ago, elapsed, useSince, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
-import { type ConvView, type OutputView, type SubAgentView, type Topic, type TurnView, isMacTopic } from '../../lib/link/protocol';
+import { type ConvView, type HomeView, type OutputView, type SubAgentView, type Topic, type TurnView, isMacTopic } from '../../lib/link/protocol';
 import { type Send as Pending, sends, useSends } from '../../lib/sends';
 import { SendStatus } from '../../components/SendStatus';
 import { AgentStrip, SubAgentSheet } from '../../components/SubAgents';
@@ -99,6 +100,13 @@ export default function Conversation() {
   const turns = c ? c.turns.filter((t) => !(c.queue && t.who === 'claude' && t.status === 'queued')) : [];
   // A worktree (or chat folder) of yours has files to read and terminals to share with the Mac (1.7).
   const hasFolder = topic.startsWith('conv:ws:') || Boolean(c?.mergeable);
+  // Your Mac's chats (1.14): a list to switch between in the header, New chat and Delete under •••.
+  const canChats = useSupports('macChats');
+  const macChats = isMacTopic(topic) && canChats;
+  const home = useView<HomeView>(macChats ? 'home' : undefined);
+  const chatCount = home?.data.macChats?.length ?? 0;
+  const [chatsOpen, setChatsOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   return (
     <OutputsTopic.Provider value={topic}>
@@ -112,6 +120,16 @@ export default function Conversation() {
                   <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
                     {all.length}
                   </T>
+                </Press>
+              ) : null}
+              {macChats ? (
+                <Press onPress={() => setChatsOpen(true)} accessibilityLabel={`Your Mac’s chats, ${chatCount}`} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: color.sunken }}>
+                  <MessagesSquare color={color.text2} size={16} />
+                  {chatCount > 1 ? (
+                    <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
+                      {chatCount}
+                    </T>
+                  ) : null}
                 </Press>
               ) : null}
               <More onPress={() => setMenu(true)} label="Conversation options" />
@@ -253,6 +271,7 @@ export default function Conversation() {
           onClose={() => setMenu(false)}
           title={c?.title}
           options={[
+            { Icon: Plus, label: 'New chat', sub: 'A fresh chat with your Mac, a new tab there too', tone: 'sky', hidden: !macChats, onPress: () => newMacChat((h) => router.replace(h as never)) },
             { Icon: Square, label: 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(calls.stop(topic)) },
             { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
             { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
@@ -260,8 +279,15 @@ export default function Conversation() {
             { Icon: SquareTerminal, label: 'Terminal', sub: 'The same terminal as on your Mac', tone: 'lavender', hidden: !hasFolder || !store.supports('terminal'), onPress: () => router.push({ pathname: '/terminal', params: { topic, title: c?.title ?? '' } }) },
             { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
             { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
+            { Icon: Trash2, label: 'Delete this chat', sub: 'For good, here and on your Mac', tone: 'rose', hidden: !macChats, onPress: () => setDeleting(true) },
           ]}
         />
+        {macChats ? (
+          <>
+            <MacChatsSheet visible={chatsOpen} onClose={() => setChatsOpen(false)} current={topic} />
+            <DeleteMacChat topic={deleting ? topic : undefined} onClose={() => setDeleting(false)} after={() => (router.canGoBack() ? router.back() : router.replace('/' as never))} />
+          </>
+        ) : null}
       </Screen>
     </OutputsTopic.Provider>
   );
