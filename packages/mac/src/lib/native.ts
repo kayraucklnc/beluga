@@ -36,6 +36,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
   const state = client.store.getState();
   const project = state.view.kind === 'workspace' ? state.projects.find((p) => p.workspaces.some((w) => w.id === (state.view as { id: string }).id)) : state.projects.find((p) => p.root);
   if (GO[id]) return actions.run({ type: 'view', view: { kind: GO[id]! } });
+  // Go › Issues: the GitHub issues of the project you're in.
+  if (id === 'go-issues') return actions.run({ type: 'view', view: { kind: 'issues' } });
   // Friends, groups and your status (Add a Friend…, the menu bar's status items).
   if (runNetworkMenuItem(id, client)) return;
   // A friend's request in the menu-bar menu: Approve / Always / Decline / Review….

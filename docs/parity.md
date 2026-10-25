@@ -404,7 +404,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.syncDisconnect` | ✓ the Sync with Linear sheet › Disconnect… |
 | `board.syncNow` | ✓ Tasks › ⋯ › Sync Now, and the Sync with Linear sheet’s Sync Now (the Linear pill in the Tasks bar opens the sheet) |
 | `board.syncAuto` | ✓ the Sync with Linear sheet › Autosync |
-| `issues.list` | ✓ Issues (the sidebar row under Tasks, ⌘K › Go to Issues): a project's open or closed GitHub issues, newest activity first, through gh (GraphQL, so pull requests never take up the page); the search box asks GitHub; each shows what Beluga is doing about it; a project's home lists the latest four |
+| `issues.list` | ✓ Issues (the sidebar row under Tasks, Go › Issues, ⌘K › Go to Issues): a project's open or closed GitHub issues, newest activity first, through gh (GraphQL, so pull requests never take up the page); the search box asks GitHub; each shows what Beluga is doing about it; a project's home lists the latest four |
 | `issues.get` | ✓ an issue's page: the report and its comments in Markdown, its labels, assignees and dates, its task, and what to do next |
 | `issues.investigate` | ✓ Investigate (an issue's page, its ⋯ and right-click menu): a task for it (or the one it has), a worktree, and your Claude finding out why and reproducing it, writing what it found into the task's brief, without fixing it; the page shows it at work, then its report with Fix It |
 | `issues.fix` | ✓ Fix It (an issue's page and menus; after an investigation also the task's page and the strip above its conversation): your Claude fixes it, in the investigation's worktree when there is one, and opens a pull request with your PR instructions and "Fixes #n" |
