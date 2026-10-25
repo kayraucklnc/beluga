@@ -1,5 +1,5 @@
-import { useMemo, useSyncExternalStore } from 'react';
-import { type FxRates, type MoneyTotal, type ProjectEarnings, convertParts, currencyChoices, earningsCurrency, mainCurrency } from '@beluga/core/earnings-store.js';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { type FxRates, type MoneyTotal, type ProjectEarnings, type RecentPayment, convertParts, currencyChoices, earningsCurrency, mainCurrency, sumTotals } from '@beluga/core/earnings-store.js';
 import type { Project } from '@beluga/workspaces/types.js';
 import { type ConvertedSummary, convertSummary, currencyName } from './money.js';
 import { useApi, useApp } from './beluga.js';
@@ -11,8 +11,8 @@ import { useApi, useApp } from './beluga.js';
  * counting is the core's (core/stripe-earnings.ts); the keys never come here.
  */
 
-export type { MoneyTotal, ProjectEarnings };
-export { mainCurrency };
+export type { MoneyTotal, ProjectEarnings, RecentPayment };
+export { mainCurrency, sumTotals };
 export { formatGlance, formatMoney, missingNote, ratesWhen } from './money.js';
 
 /** The currency earnings are shown in, today's rates, and whether you chose it (undefined: automatic). */
@@ -90,13 +90,6 @@ export interface EarningsSummary {
   readonly updatedAt?: number;
 }
 
-/** Add up totals per currency (biggest first). */
-export function sumTotals(lists: ReadonlyArray<readonly MoneyTotal[] | undefined>): MoneyTotal[] {
-  const by = new Map<string, number>();
-  for (const list of lists) for (const t of list ?? []) by.set(t.currency, (by.get(t.currency) ?? 0) + t.amount);
-  return [...by].map(([currency, amount]) => ({ currency, amount })).sort((a, b) => b.amount - a.amount);
-}
-
 export function summarize(projects: readonly Project[], earnings: Readonly<Record<string, ProjectEarnings>>, fx?: FxRates): EarningsSummary {
   const connected = projects.flatMap((project) => (project.root && earnings[project.root] ? [{ project, earnings: earnings[project.root]! }] : []));
   // Compared in dollars, so lira and yen don't outweigh dollars by their size.
@@ -129,6 +122,39 @@ export function useConvertedEarnings(): EarningsSummary & { converted: Converted
   const converted = useMemo(() => convertSummary(summary.projects, (c) => c.earnings.totals, currency, fx), [summary.projects, currency, fx]);
   return { ...summary, converted, fx };
 }
+
+// ---- new payments
+
+/** The newest payment that went through (a new one arriving changes it). */
+export const newestPaid = (e: ProjectEarnings | undefined): RecentPayment | undefined => e?.activity?.latest.find((p) => p.status === 'paid' || p.status === 'partly_refunded');
+
+/**
+ * Counts up each time a new payment arrives while this is shown: never on first show, when
+ * Stripe is first connected, or when the currency or the rates change (only the payments do).
+ */
+export function usePaymentArrivals(earnings: ProjectEarnings | undefined): number {
+  const newest = newestPaid(earnings);
+  const last = useRef(newest);
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    const was = last.current;
+    if (newest?.id === was?.id) return;
+    last.current = newest;
+    // A refund can make an older payment the newest: that's no new payment.
+    if (was && newest && newest.at > was.at) setCount((n) => n + 1);
+  }, [newest?.id]);
+  return count;
+}
+
+/** The ids of the payments that arrived while this was shown (marked New). */
+export function useArrived(latest: readonly RecentPayment[] | undefined): ReadonlySet<string> {
+  const first = useRef<ReadonlySet<string> | undefined>(undefined);
+  if (!first.current && latest) first.current = new Set(latest.map((p) => p.id));
+  return useMemo(() => new Set((latest ?? []).filter((p) => first.current && !first.current.has(p.id)).map((p) => p.id)), [latest]);
+}
+
+/** Stripe's own list of payments (test mode has its own). */
+export const stripePaymentsUrl = (mode: 'test' | 'live'): string => `https://dashboard.stripe.com/${mode === 'test' ? 'test/' : ''}payments`;
 
 // ---- the Connect Stripe sheet (one at a time; projectId unset: pick the project in the sheet)
 

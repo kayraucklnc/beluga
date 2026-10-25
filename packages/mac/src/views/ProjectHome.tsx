@@ -35,6 +35,7 @@ import { useBoxSuggestions } from "../chat/BoxSuggestions.js";
 import { useAttachments } from "../chat/use-attachments.js";
 import { MentionHighlighter } from "../chat/MentionHighlighter.js";
 import { HomeHistory } from "./history/HomeHistory.js";
+import { EarningsSection } from "./project/EarningsSection.js";
 import { GitHubRow } from "./project/GitHubRow.js";
 import { IssueRow } from "../issues/parts.js";
 import { useIssueActions, useIssueList } from "../issues/use-issues.js";
@@ -52,7 +53,7 @@ import s from "./project-home.module.css";
  * A project's home: what you see when you click a project. Its main folder is never worked in,
  * so the big box starts work in a new worktree (or just asks a question about the project, or
  * plans big work with Claude), and below are its plans, worktrees, the questions asked in main,
- * and what was put away.
+ * what was put away, and (with Stripe connected) a folded row of how it's earning.
  */
 export function ProjectHome({ id }: { id: string }) {
   const project = useApp((st) =>
@@ -162,7 +163,7 @@ function Header({ model }: { model: HomeModel }) {
           >
             <strong>{stats.archived}</strong> archived
           </button>
-          <EarningsPill root={project.root} projectId={project.id} />
+          <EarningsPill key={project.id} root={project.root} projectId={project.id} />
           <GitHubRow projectId={project.id} />
         </div>
       </div>
@@ -601,6 +602,8 @@ function Lists({ model }: { model: HomeModel }) {
           ))}
         </Section>
       ) : null}
+      {/* Last and folded: a glance, not the page's point. Its own per project (what's new is what arrived while it was shown). */}
+      <EarningsSection key={project.id} project={project} />
     </div>
   );
 }
