@@ -17,7 +17,7 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
   await expect(toolbar(page)).toContainText('add-auth');
 
   // On GitHub, the next step is the pull request; merging locally is under ⋯, named for what it is.
-  await expect(toolbar(page).getByRole('button', { name: 'Create PR…' })).toBeVisible();
+  await expect(toolbar(page).getByRole('button', { name: 'Create PR', exact: true })).toBeVisible();
   await expect(toolbar(page).getByRole('button', { name: /Merge Locally into/ })).toHaveCount(0);
   const openMerge = async (): Promise<void> => {
     await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
@@ -95,7 +95,13 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     await expect(toolbar(page)).toContainText('add-auth');
 
     // The PR item opens the sheet and looks the PR up at once (the toolbar's own button once the PR is known).
-    await toolbar(page).getByRole('button', { name: /^PR #7|^Create PR…$/ }).click();
+    // (Create PR itself opens one straight away: the sheet is its chevron's “with Instructions”.)
+    const known = toolbar(page).getByRole('button', { name: /^PR #7/ });
+    if (await known.isVisible()) await known.click();
+    else {
+      await toolbar(page).getByRole('button', { name: 'Other steps for this branch' }).click();
+      await page.getByRole('menuitem', { name: /Create PR with Instructions/ }).click();
+    }
     const sheet = page.getByRole('dialog', { name: /Pull Request/ });
     await expect(sheet).toContainText('#7');
     await expect(sheet).toContainText('Protect the payments routes');

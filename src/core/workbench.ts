@@ -8,7 +8,7 @@ import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
-import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, prStep, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, prStep, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
 import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -47,6 +47,9 @@ export interface WorkbenchDeps {
   readonly deleteRemoteBranch?: (dir: string, branch: string) => Promise<void>;
   /** A PR's one-click step on GitHub (injected in tests; throws gh's error). */
   readonly prStep?: (dir: string, number: number, step: PrStepKind) => Promise<void>;
+  /** Push and open a pull request without Claude (tests stand in for gh). */
+  readonly createPr?: typeof createPr;
+  readonly disableAutoMerge?: (dir: string, number: number) => Promise<void>;
   /** Where a branch was last pushed to (its remote-tracking ref), to notice pushes. */
   readonly remoteRef?: (dir: string, branch: string) => string | undefined;
   /** The clock (injected in tests). */
@@ -74,6 +77,8 @@ const PR_TICK_MS = 5_000;
 export const PR_FAST_MS = 15_000;
 /** Other open PRs, and worktrees with commits but no PR yet. */
 export const PR_SLOW_MS = 60_000;
+/** Checks can take a moment to show up after a push: with none at all, Merge When Ready merges only after this long. */
+export const NO_CHECKS_GRACE_MS = 90_000;
 /** A push keeps its PR on the fast cadence this long (CI starts, a PR gets opened). */
 const PR_PUSHED_FOR_MS = 3 * 60_000;
 /** Coming back to the window refreshes PRs not looked at in this long. */
@@ -147,6 +152,9 @@ async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number):
 }
 
 const samePr = (a: PullRequest | undefined, b: PullRequest | undefined): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** An error's first line ("no reason given" when it has none). */
+const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split('\n').find((l) => l.trim())?.trim() ?? 'no reason given';
 /** Variables as text in one order, to tell whether they changed (kept only in memory, on this Mac). */
 const envText = (vars: Readonly<Record<string, string>>): string => JSON.stringify(Object.entries(vars).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 
@@ -168,6 +176,8 @@ export class Workbench {
   private prsSeeded = false;
   /** Worktrees you asked Claude to open a PR for: their PR appearing is worth a notification. */
   private readonly prAsked = new Set<string>();
+  /** Worktrees whose PR Create PR is opening right now (pressed twice opens one). */
+  private readonly creatingPr = new Set<string>();
   /** When each worktree's PR was last asked about. */
   private readonly prChecked = new Map<string, number>();
   /** When each worktree's branch was last seen pushed, and the remote ref it was at. */
@@ -265,6 +275,51 @@ export class Workbench {
     this.deps.toast('Claude is preparing the pull request…');
   }
 
+  /**
+   * Create PR, straight away and without Claude: commits anything left (as the branch's name),
+   * pushes, and opens a pull request titled from the commits (`gh pr create`).
+   */
+  async quickPr(id: string, opts: { readonly draft?: boolean } = {}): Promise<{ ok: boolean; message: string }> {
+    const fail = (message: string): { ok: false; message: string } => {
+      this.deps.toast(message, 'error');
+      return { ok: false, message };
+    };
+    const ws = this.worktree(id);
+    if (!ws?.branch) return { ok: false, message: 'Pull requests are for worktrees (a branch of their own)' };
+    if (this.deps.store.getState().gh === false) {
+      this.deps.toast('Install the GitHub CLI first: brew install gh, then gh auth login', 'warn');
+      return { ok: false, message: 'Install the GitHub CLI first: brew install gh, then gh auth login' };
+    }
+    if (this.creatingPr.has(id)) return { ok: false, message: 'The pull request is already being opened' };
+    this.creatingPr.add(id);
+    const branch = ws.branch;
+    try {
+      this.deps.toast(`Opening a pull request for ${branch}…`);
+      try {
+        if ((ws.status?.changed ?? 0) > 0) await this.manager.commitAll(id, titleOfBranch(branch));
+      } catch (err) {
+        return fail(`Couldn’t commit what’s left: ${firstLine(err)}`);
+      }
+      const base = this.prBase(ws);
+      const subjects = await commitSubjects(ws.path, `origin/${base}`).catch(() => []);
+      const text = prFromCommits(branch, subjects);
+      let pr: PullRequest;
+      try {
+        pr = await (this.deps.createPr ?? createPr)(ws.path, { base, head: branch, ...text, ...(opts.draft ? { draft: true } : {}) });
+      } catch (err) {
+        return fail(`GitHub didn’t open the pull request: ${firstLine(err)}`);
+      }
+      this.pushedAt.set(id, this.now());
+      this.deps.store.dispatch({ type: 'pr', id, pr });
+      void this.deps.controller.refresh();
+      const message = `Opened PR #${pr.number}${opts.draft ? ' as a draft' : ''}: ${pr.title || text.title}`;
+      this.deps.toast(message, 'success');
+      return { ok: true, message };
+    } finally {
+      this.creatingPr.delete(id);
+    }
+  }
+
   /** The branch a worktree's PRs go into ("main"). */
   private prBase(ws: Workspace): string {
     const project = this.manager.list.find((p) => p.id === ws.projectId);
@@ -341,6 +396,7 @@ export class Workbench {
     if (!ws?.branch || !pr) return fail('no_pr', 'This worktree has no pull request to merge yet');
     if (pr.state !== 'OPEN') return fail('closed', pr.state === 'MERGED' ? `PR #${pr.number} is already merged` : `PR #${pr.number} is closed`);
     if (this.merging.has(id)) return fail('busy', `PR #${pr.number} is already being merged`);
+    if (opts.auto) return this.mergeWhenReady(ws, pr, opts);
     this.merging.add(id);
     try {
       try {
@@ -355,7 +411,6 @@ export class Workbench {
       }
       // You merged it: no "was merged" notification on top.
       this.prEnded.add(`${id}#${pr.number}:MERGED`);
-      if (opts.auto) this.pushedAt.set(id, this.now());
       await this.refreshPrs(id);
       const merged = this.deps.store.getState().prs[id]?.state === 'MERGED';
       if (merged && opts.deleteBranch) {
@@ -367,6 +422,77 @@ export class Workbench {
     } finally {
       this.merging.delete(id);
     }
+  }
+
+  /**
+   * Merge When Ready: Beluga waits for the PR's checks itself and merges once they pass (see
+   * settleMergeWait). Not GitHub's `--auto`, which merges at once when the repository requires no check.
+   */
+  private async mergeWhenReady(ws: Workspace, pr: PullRequest, opts: MergeOptions): Promise<MergeOutcome> {
+    this.manager.setMergeWait(ws.id, { number: pr.number, method: opts.method, since: this.now(), ...(opts.deleteBranch ? { deleteBranch: true } : {}) });
+    await this.deps.controller.refresh();
+    const message = `PR #${pr.number} merges once its checks pass`;
+    this.deps.toast(message, 'success');
+    // Maybe they already have: look now.
+    await this.refreshPrs(ws.id);
+    return { ok: true, result: 'queued', message };
+  }
+
+  /** Stop waiting to merge (and turn off GitHub's own auto-merge if it's on). */
+  async cancelMergeWhenReady(id: string): Promise<{ ok: boolean; message: string }> {
+    const ws = this.worktree(id);
+    const pr = this.deps.store.getState().prs[id];
+    if (!ws) return { ok: false, message: 'Pull requests are for worktrees' };
+    const waiting = Boolean(ws.mergeWhenReady);
+    if (waiting) this.manager.setMergeWait(id, undefined);
+    if (pr?.state === 'OPEN' && pr.autoMerge) {
+      try {
+        await (this.deps.disableAutoMerge ?? disableAutoMerge)(ws.path, pr.number);
+      } catch (err) {
+        const message = `GitHub didn’t turn off auto-merge: ${firstLine(err)}`;
+        this.deps.toast(message, 'error');
+        return { ok: false, message };
+      }
+      await this.refreshPrs(id);
+    }
+    await this.deps.controller.refresh();
+    const message = pr ? `PR #${pr.number} won’t merge by itself` : 'Not waiting to merge anymore';
+    this.deps.toast(message, 'success');
+    return { ok: true, message };
+  }
+
+  /**
+   * What Merge When Ready does with a PR's latest state: merge once its checks pass (none at all:
+   * after they've had a moment to show up), keep waiting while they run or a review is due, and stop
+   * with a notice when they fail, it conflicts, or it was closed.
+   */
+  private async settleMergeWait(ws: Workspace, pr: PullRequest | undefined): Promise<void> {
+    const wait = this.manager.find(ws.id)?.mergeWhenReady;
+    if (!wait || this.merging.has(ws.id)) return;
+    const channel = `ws:${ws.id}`;
+    const done = async (): Promise<void> => {
+      this.manager.setMergeWait(ws.id, undefined);
+      await this.deps.controller.refresh();
+    };
+    const stop = async (title: string): Promise<void> => {
+      await done();
+      this.deps.notify({ kind: 'problems', title, body: `${ws.name} · Merge When Ready stopped`, channel });
+      this.deps.toast(title, 'warn');
+    };
+    // Merged or closed some other way (GitHub says so on its own), or a newer PR: nothing to wait for.
+    if (!pr || pr.number !== wait.number || pr.state !== 'OPEN') return done();
+    if (pr.conflicts) return stop(`PR #${pr.number} conflicts with its base: not merging it`);
+    if (pr.checks === 'failing') return stop(`Checks failed on PR #${pr.number}: not merging it`);
+    if (pr.review === 'CHANGES_REQUESTED') return stop(`Changes were requested on PR #${pr.number}: not merging it`);
+    if (pr.draft) return stop(`PR #${pr.number} is a draft: mark it ready, then merge`);
+    if (pr.checks === 'pending') return;
+    if (pr.checks === 'none' && this.now() - wait.since < NO_CHECKS_GRACE_MS) return;
+    // Waiting on a review, or the branch's rules: those can pass later.
+    if (pr.review === 'REVIEW_REQUIRED' || pr.mergeState === 'blocked' || pr.mergeState === 'behind') return;
+    await done();
+    const out = await this.mergePr(ws.id, { method: wait.method, ...(wait.deleteBranch ? { deleteBranch: true } : {}) });
+    if (out.ok) this.deps.notify({ kind: 'pr', title: `PR #${pr.number} merged: its checks passed`, body: ws.name, channel });
+    else this.deps.notify({ kind: 'problems', title: `PR #${pr.number} didn’t merge`, body: out.message, channel });
   }
 
   /** A PR's one-click step on GitHub (update its branch from the base, or mark a draft ready), then its state again. */
@@ -435,7 +561,8 @@ export class Workbench {
       const due = this.prWorktrees().filter((ws) => {
         const pushed = this.pushed(ws) || (reason === 'push' && ws.id === id);
         if (pushed) this.pushedAt.set(ws.id, now);
-        const every = prCadence(prs[ws.id], this.pushedAt.get(ws.id), now);
+        // Merge When Ready waits on it: looked at often, so it merges soon after its checks pass.
+        const every = ws.mergeWhenReady && prs[ws.id]?.state === 'OPEN' ? PR_FAST_MS : prCadence(prs[ws.id], this.pushedAt.get(ws.id), now);
         if (every === undefined) return false;
         return pushed || now - (this.prChecked.get(ws.id) ?? 0) >= (reason === 'focus' ? PR_FOCUS_FRESH_MS : every);
       });
@@ -522,6 +649,7 @@ export class Workbench {
     const pr = found && ws.prDone !== undefined && found.number <= ws.prDone ? undefined : found;
     const before = this.deps.store.getState().prs[ws.id];
     if (!samePr(before, pr)) this.deps.store.dispatch({ type: 'pr', id: ws.id, pr });
+    void this.settleMergeWait(ws, pr);
     if (!pr || quiet) return;
     const asked = this.prAsked.delete(ws.id);
     // Merged or closed is said once, even if gh's answers flicker.

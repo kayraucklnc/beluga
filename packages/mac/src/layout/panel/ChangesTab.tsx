@@ -100,6 +100,8 @@ function Summary({ data, loading, onReload }: { data: Review; loading: boolean; 
 /** Commit, a pull request, Claude's review: what you do with changes, right under them. */
 function Actions({ wsId }: { wsId: string }) {
   const actions = useActions();
+  const api = useApi();
+  const [opening, setOpening] = useState(false);
   const ws = useApp((st) => findWorkspace(st.projects, wsId));
   const pr = useApp((st) => st.prs[wsId]);
   if (!ws) return null;
@@ -107,6 +109,10 @@ function Actions({ wsId }: { wsId: string }) {
   const ahead = ws.status?.ahead ?? 0;
   const worktree = ws.kind === 'worktree';
   const run = (action: 'commit' | 'pr' | 'review_claude'): void => actions.run({ type: 'ws', id: wsId, action });
+  const quick = (draft = false): void => {
+    setOpening(true);
+    void api.workbench.quickPr(wsId, draft ? { draft: true } : {}).catch(() => undefined).finally(() => setOpening(false));
+  };
   return (
     <div className={s.actions}>
       {worktree && changed ? (
@@ -116,12 +122,31 @@ function Actions({ wsId }: { wsId: string }) {
           </Button>
         </Tip>
       ) : null}
-      {worktree && (ahead || changed || pr) ? (
-        <Tip label={pr ? 'Open it, fix checks, or update it' : 'Claude pushes and opens a pull request'} keys={`⇧${mod()}P`}>
+      {worktree && pr ? (
+        <Tip label="Open it, fix checks, or update it" keys={`⇧${mod()}P`}>
           <Button size="small" icon="pr" onClick={() => run('pr')}>
-            {pr ? `PR #${pr.number}` : 'Create PR…'}
+            {`PR #${pr.number}`}
           </Button>
         </Tip>
+      ) : worktree && (ahead || changed) ? (
+        <>
+          <Tip label="Pushes and opens a pull request, titled from its commits">
+            <Button size="small" icon="pr" disabled={opening} onClick={() => quick()}>
+              {opening ? 'Opening…' : 'Create PR'}
+            </Button>
+          </Tip>
+          <ActionsDropdown
+            items={[
+              { label: 'Create PR with Claude', hint: 'Claude writes the title and description: what, why, how to test', icon: 'claude', onSelect: () => void api.workbench.createPr(wsId) },
+              { label: 'Create PR with Instructions…', hint: 'Tell Claude anything extra for this one', icon: 'claude', onSelect: () => requestAnimationFrame(() => run('pr')) },
+              { label: 'Create Draft PR', hint: 'It can’t merge until it’s marked ready', icon: 'pr', onSelect: () => quick(true) },
+            ]}
+          >
+            <Button size="small" variant="quiet" disabled={opening} aria-label="Other ways to create the pull request">
+              <Icon name="chevronDown" size={11} />
+            </Button>
+          </ActionsDropdown>
+        </>
       ) : null}
       <Tip label="Ask Claude to check everything: bugs, security, tests and quality" keys={`⇧${mod()}R`}>
         <Button size="small" variant="quiet" icon="claude" onClick={() => run('review_claude')}>

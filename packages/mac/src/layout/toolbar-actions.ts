@@ -150,7 +150,7 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   // On GitHub, a branch's next step is its pull request (Claude commits anything left as it opens it):
   // there its checks run live and it merges into origin. Merge Locally stays under ⋯.
   const create = !pr && onGitHub(state, ws) ? by('pr') : undefined;
-  if (create) return { ...create, label: 'Create PR…', hint: `Claude commits what’s left, pushes ${ws.branch ?? 'this branch'} and opens a pull request into ${mergeTargetOf(state, ws)}; its checks show here as they run` };
+  if (create) return { ...create, label: 'Create Pull Request…', hint: `Pushes ${ws.branch ?? 'this branch'} and opens a pull request into ${mergeTargetOf(state, ws)}, with Claude or straight away; its checks show here as they run` };
   const commit = by('commit');
   if (commit) return commit;
   if (pr?.state === 'OPEN') {
