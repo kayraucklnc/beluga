@@ -72,6 +72,11 @@
   cursor: crosshair;
   object-fit: contain;
 }
+/* The video's canvas before its first picture (it stays in the page so pieces have somewhere to go). */
+.hidden {
+  display: none;
+}
+
 .waiting {
   display: flex;
   flex-direction: column;

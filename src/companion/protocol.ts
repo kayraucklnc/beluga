@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 17 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 18 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -36,9 +36,10 @@ export const COMPANION_PROTO = { major: 1, minor: 17 } as const;
  * (BLG-140): the Mac writes down what you said on the phone (`companion.voice` / `voicePrepare` /
  * `transcribe`). 1.17 (BLG-150): your Mac uses your phone. The phone says what it lets the Mac do
  * (`control`), the Mac asks it to act (`req` / `reply`), and the Mac's adb reaches the phone's
- * Wireless debugging through the link (`tun_*`).
+ * Wireless debugging through the link (`tun_*`). 1.18 (BLG-184): the Mac's mirror of the phone as
+ * live H.264 video (the `mirror` op, `vid` / `vid_end`, and the Mac's `vid_ack`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -658,7 +659,7 @@ const termKey = z.string().min(1).max(200);
  * What the Mac may ask the phone to do (the `req` frame's `op`), through the app's Accessibility
  * service. Positions are the screen's pixels, as the phone's `screen` gives them.
  */
-export const PHONE_OPS = ['screen', 'screenshot', 'tap', 'long_press', 'swipe', 'type', 'key', 'scroll', 'open', 'apps', 'info', 'install'] as const;
+export const PHONE_OPS = ['screen', 'screenshot', 'tap', 'long_press', 'swipe', 'type', 'key', 'scroll', 'open', 'apps', 'info', 'install', 'mirror'] as const;
 export const PhoneOp = z.enum(PHONE_OPS);
 export type PhoneOp = z.infer<typeof PhoneOp>;
 
@@ -691,7 +692,19 @@ export const PHONE_ARGS = {
   info: z.object({}),
   /** An APK the Mac offers (`out:` ref, fetched in pieces like any output), installed with the phone's own Install button. */
   install: z.object({ ref: z.string().regex(/^out:[\w-]{1,200}$/), name: z.string().min(1).max(200), size: z.number().int().min(0).max(1024 * 1024 * 1024) }),
+  /**
+   * 1.18: stream the screen as H.264 video (`vid` frames) or stop. `max`: the video's longest side;
+   * `fps` and `kbps`: its rate. The first time, the phone asks its user (Android's "Start now").
+   */
+  mirror: z.object({ on: z.boolean(), max: z.number().int().min(320).max(1920).optional(), fps: z.number().int().min(5).max(60).optional(), kbps: z.number().int().min(200).max(12_000).optional() }),
 } as const satisfies Record<PhoneOp, z.ZodType>;
+
+/** `mirror`'s answer: streaming now, asking the phone's user first, or stopped. */
+export const MirrorView = z.object({ state: z.enum(['streaming', 'asking', 'off']) });
+export type MirrorView = z.infer<typeof MirrorView>;
+
+/** The biggest piece of video one `vid` frame carries (a key frame with its SPS/PPS). */
+export const VID_MAX = 600 * 1024;
 
 /**
  * One thing on the phone's screen (`screen`): its class, short ("Button", "EditText"), what it
@@ -762,6 +775,8 @@ export const PhoneControl = z.object({
   screenshots: z.boolean(),
   /** It may ask to install apps (Install unknown apps is on for Beluga). */
   installs: z.boolean().optional(),
+  /** 1.18: it can stream its screen as video (`mirror`). */
+  video: z.boolean().optional(),
   adb: z.object({ on: z.boolean(), port: z.number().int().min(1).max(65_535).optional(), pairing: z.number().int().min(1).max(65_535).optional() }),
   wifi: z.object({ ip: z.string().max(45) }).optional(),
   device: z.object({ model: z.string().max(100), manufacturer: z.string().max(100), android: z.string().max(40), sdk: z.number().int(), w: z.number().int().min(1), h: z.number().int().min(1) }),
@@ -853,6 +868,15 @@ export const PhoneFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('tun_data'), id: tunId, b64: tunB64 }),
   z.object({ t: z.literal('tun_ack'), id: tunId, n: z.number().int().min(1).max(TUN_WINDOW) }),
   z.object({ t: z.literal('tun_close'), id: tunId, error: z.string().max(300).optional() }),
+  /**
+   * 1.18: a piece of the screen's video (after `mirror {on: true}`): H.264 Annex B, a key frame
+   * carrying its SPS/PPS first; `ts` its time (µs); `w`×`h` the video, `sw`×`sh` the screen it
+   * shows (taps map to those). The Mac answers each with `vid_ack`; a phone with too many
+   * unanswered skips to the next key frame instead of falling behind.
+   */
+  z.object({ t: z.literal('vid'), seq: z.number().int().min(0), b64: z.string().max(Math.ceil(VID_MAX / 3) * 4 + 4), key: z.boolean().optional(), ts: z.number().int().min(0), w: z.number().int().min(1).max(8192), h: z.number().int().min(1).max(8192), sw: z.number().int().min(1).max(20_000), sh: z.number().int().min(1).max(20_000) }),
+  /** 1.18: the video stopped (the user said no, pressed Stop, or Android ended it). */
+  z.object({ t: z.literal('vid_end'), reason: z.string().max(300).optional() }),
   z.object({ t: z.literal('bye') }),
 ]);
 export type PhoneFrame = z.infer<typeof PhoneFrame>;
@@ -883,6 +907,8 @@ export const MacFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('tun_data'), id: tunId, b64: tunB64 }),
   z.object({ t: z.literal('tun_ack'), id: tunId, n: z.number().int().min(1).max(TUN_WINDOW) }),
   z.object({ t: z.literal('tun_close'), id: tunId, error: z.string().max(300).optional() }),
+  /** 1.18: the Mac took the screen video's piece `seq` (the phone paces itself by these). */
+  z.object({ t: z.literal('vid_ack'), seq: z.number().int().min(0) }),
   z.object({ t: z.literal('bye'), reason: z.string().max(200) }),
 ]);
 export type MacFrame = z.infer<typeof MacFrame>;

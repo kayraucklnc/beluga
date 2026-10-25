@@ -36,10 +36,13 @@ class PhoneControlModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("PhoneControl")
-    Events("adb", "accessibility", "stopped")
+    Events("adb", "accessibility", "stopped", "mirror", "mirrorEnd")
     current = this@PhoneControlModule
 
     AsyncFunction("perform") { op: String, args: String ->
+      // Live video is Android's screen capture, not the Accessibility service's (it only lends its
+      // right to open the "Start now" sheet from the background).
+      if (op == "mirror") return@AsyncFunction MirrorService.control(BelugaAccessibilityService.instance ?: context, if (args.isBlank()) JSONObject() else JSONObject(args))
       val service = BelugaAccessibilityService.instance ?: throw IllegalStateException("Turn on Accessibility for Beluga on the phone")
       service.perform(op, if (args.isBlank()) JSONObject() else JSONObject(args))
     }
@@ -47,6 +50,8 @@ class PhoneControlModule : Module() {
     Function("accessibilityEnabled") { BelugaAccessibilityService.instance != null }
     Function("canScreenshot") { Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && BelugaAccessibilityService.instance != null }
     Function("deviceInfo") { deviceInfoJson(context).toString() }
+    Function("canMirror") { MirrorService.supported }
+    Function("mirrorAck") { seq: Int -> MirrorService.ack(seq) }
 
     Function("openAccessibilitySettings") {
       context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -117,6 +122,16 @@ class PhoneControlModule : Module() {
     /** The service connected or went away: tell the JS so it re-reports control to the Mac. */
     fun onAccessibilityChanged() {
       current?.sendEvent("accessibility", mapOf("on" to (BelugaAccessibilityService.instance != null)))
+    }
+
+    /** A piece of the screen's video for the Mac (MirrorService), as the `vid` frame carries it. */
+    fun emitMirror(seq: Int, b64: String, key: Boolean, ts: Long, w: Int, h: Int, sw: Int, sh: Int) {
+      current?.sendEvent("mirror", mapOf("seq" to seq, "b64" to b64, "key" to key, "ts" to ts.toDouble(), "w" to w, "h" to h, "sw" to sw, "sh" to sh))
+    }
+
+    /** The video stopped (the user said no or pressed Stop, or Android ended it). */
+    fun emitMirrorEnd(reason: String?) {
+      current?.sendEvent("mirrorEnd", mapOf("reason" to reason))
     }
 
     /** The Stop button on the "Your Mac is using this phone" notification: the JS turns control off. */

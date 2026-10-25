@@ -2,9 +2,9 @@ import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { ExecBytesResult, ExecResult, SystemPort } from '../src/core/gateway/device.js';
 import { adbCandidates, parseDevices } from '../src/companion/phone-adb.js';
-import { PhoneControl, type PhoneLinkHandle, describeScreen, describeUiautomator, parseNotifications } from '../src/companion/phone-control.js';
+import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type VideoPiece, describeScreen, describeUiautomator, parseNotifications, phoneErrorText } from '../src/companion/phone-control.js';
 import { DeviceBook, type DeviceRecord } from '../src/companion/devices.js';
-import type { DeviceCert, PhoneControl as PhoneControlState, PhoneOp, ScreenView } from '../src/companion/protocol.js';
+import { type DeviceCert, MacFrame, PhoneFrame, type PhoneControl as PhoneControlState, type PhoneOp, type ScreenView } from '../src/companion/protocol.js';
 import { mkdtempSync } from 'node:fs';
 import path from 'node:path';
 
@@ -205,6 +205,103 @@ describe('mirror and action (BLG-171)', () => {
     // After stop, no more frames arrive.
     await new Promise((r) => setTimeout(r, 80));
     expect(frames.length).toBe(got);
+  });
+});
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+describe('a smooth mirror (BLG-184)', () => {
+  const id = 'ee'.padEnd(16, '0');
+  const device: DeviceRecord = { cert: cert('ee'), pairedAt: 1, use: 'use' };
+  const shot = { b64: 'AAAA', mime: 'image/jpeg', w: 1080, h: 2400 };
+
+  it('waits out Android’s screenshot gap instead of showing an error, and finds the route once', async () => {
+    const { sys, calls } = fakeSys([{ match: /devices -l/, out: 'List\n' }]);
+    let n = 0;
+    const link = fakeLink(id, control(), (op) => {
+      if (op !== 'screenshot') return {};
+      // Every other one comes too soon after the last (Android's 333 ms rule): code 3.
+      if (++n % 2 === 0) throw new Error("Call to function 'PhoneControl.perform' has been rejected.\n\u00e2\u0086\u0092 Caused by: java.lang.IllegalStateException: The screenshot failed (code 3); the screen may be protected");
+      return shot;
+    });
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => link, onChange: () => {}, adbPath: '/fake/adb' });
+    const frames: unknown[] = [];
+    const statuses: MirrorStatus[] = [];
+    const stop = ctl.startMirror(id, { fps: 30 }, (f) => frames.push(f), (st) => statuses.push(st));
+    await sleep(1300);
+    stop();
+    expect(frames.length).toBeGreaterThanOrEqual(2);
+    expect(statuses.filter((st) => st.error)).toEqual([]);
+    expect(statuses[0]).toMatchObject({ on: true, route: 'accessibility' });
+    expect(calls.filter((c) => /devices -l/.test(c))).toHaveLength(1);
+    // An app without video is never asked for it.
+    expect(link.reqs.some((r) => r.op === 'mirror')).toBe(false);
+  });
+
+  it('plays live video once the phone streams, and shows pictures again when it stops', async () => {
+    const { sys } = fakeSys([{ match: /devices -l/, out: 'List\n' }]);
+    let piece: ((p: VideoPiece) => void) | undefined;
+    let end: ((reason?: string) => void) | undefined;
+    const asked: Array<Record<string, unknown>> = [];
+    const base = fakeLink(id, control({ video: true }), (op, args) => {
+      if (op === 'mirror') {
+        asked.push(args);
+        return { state: args.on ? 'asking' : 'off' };
+      }
+      return op === 'screenshot' ? shot : {};
+    });
+    const link: PhoneLinkHandle = {
+      ...base,
+      video: true,
+      watchVideo: (onPiece, onEnd) => {
+        piece = onPiece;
+        end = onEnd;
+        return () => (piece = undefined);
+      },
+    };
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => link, onChange: () => {}, adbPath: '/fake/adb' });
+    const frames: unknown[] = [];
+    const pieces: VideoPiece[] = [];
+    const statuses: MirrorStatus[] = [];
+    const stop = ctl.startMirror(id, { fps: 30, video: true }, (f) => frames.push(f), (st) => statuses.push(st), (p) => pieces.push(p));
+    await sleep(60);
+    expect(asked[0]).toMatchObject({ on: true, max: 1280, fps: 30 });
+    expect(statuses.some((st) => st.video === 'asking')).toBe(true);
+    expect(frames.length).toBeGreaterThan(0); // pictures while the phone asks "Start now"
+
+    // "Start now": pieces flow (a still screen still sends a few a second), and pictures stop.
+    const flow = setInterval(() => piece?.({ seq: pieces.length, b64: 'AAAB', key: pieces.length === 0, ts: 0, w: 592, h: 1280, sw: 1440, sh: 3120 }), 50);
+    await sleep(500);
+    const shown = frames.length;
+    await sleep(700);
+    expect(pieces.length).toBeGreaterThan(10);
+    expect(statuses.at(-1)).toMatchObject({ on: true, video: 'on' });
+    expect(frames.length).toBe(shown);
+
+    // The phone stops it (said no, or pressed Stop): pictures again, with a word why.
+    clearInterval(flow);
+    end?.('Not allowed on the phone');
+    await sleep(700);
+    expect(frames.length).toBeGreaterThan(shown);
+    expect(statuses.at(-1)?.video).toBeUndefined();
+    expect(statuses.some((st) => st.note === 'Not allowed on the phone')).toBe(true);
+    stop();
+    await sleep(10);
+    expect(asked.at(-1)).toEqual({ on: false });
+  });
+
+  it('keeps only the cause’s own words from the app’s native errors', () => {
+    expect(phoneErrorText("Call to function 'PhoneControl.perform' has been rejected.\n\u00e2\u0086\u0092 Caused by: java.lang.IllegalStateException: No text field has the focus")).toBe('No text field has the focus');
+    expect(phoneErrorText("Call to function 'PhoneControl.perform' has been rejected.\n→ Caused by: java.util.concurrent.ExecutionException: java.lang.IllegalStateException: The screenshot failed (code 3); x")).toBe('The screenshot failed (code 3); x');
+    expect(phoneErrorText('sh.ratel.beluga.control.BelugaAccessibilityService$TooSoon: The screenshot failed (code 3): asked too soon')).toBe('The screenshot failed (code 3): asked too soon');
+    expect(phoneErrorText('Turn on Accessibility for Beluga on the phone')).toBe('Turn on Accessibility for Beluga on the phone');
+  });
+
+  it('has the video frames in the protocol', () => {
+    expect(PhoneFrame.safeParse({ t: 'vid', seq: 3, b64: 'AAAB', key: true, ts: 1000, w: 592, h: 1280, sw: 1440, sh: 3120 }).success).toBe(true);
+    expect(PhoneFrame.safeParse({ t: 'vid_end', reason: 'Not allowed on the phone' }).success).toBe(true);
+    expect(MacFrame.safeParse({ t: 'vid_ack', seq: 3 }).success).toBe(true);
+    expect(MacFrame.safeParse({ t: 'req', id: 1, op: 'mirror', args: { on: true } }).success).toBe(true);
   });
 });
 

@@ -6,6 +6,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
@@ -184,13 +185,33 @@ class BelugaAccessibilityService : AccessibilityService() {
   }
 
   private fun type(args: JSONObject) {
-    val field = nodeFor(args) ?: findFocusedEditable(rootInActiveWindow) ?: throw IllegalStateException("No text field has the focus")
+    val field = nodeFor(args) ?: focusedField() ?: onlyField() ?: throw IllegalStateException("Tap a text field on the phone first, then type")
     val text = args.getString("text")
-    val value = if (args.optBoolean("replace", false)) text else "${field.text ?: ""}$text"
-    field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+    // An empty field reports its hint as its text ("Search…"): that isn't there to keep.
+    val showingHint = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && field.isShowingHintText
+    val now = if (showingHint) "" else field.text?.toString() ?: ""
+    val value = if (args.optBoolean("replace", false)) text else "$now$text"
+    val took = field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
       putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
     })
+    if (!took) throw IllegalStateException("That field didn’t take the text")
     if (args.optBoolean("enter", false)) field.performAction(imeEnterAction())
+  }
+
+  /** The field the keyboard types into: the input focus in any window, else a focused one on screen. */
+  private fun focusedField(): AccessibilityNodeInfo? =
+    findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable } ?: findFocusedEditable(rootInActiveWindow)
+
+  /** Nothing has the focus, but there's just one text field on screen (a search box): that one, focused. */
+  private fun onlyField(): AccessibilityNodeInfo? {
+    val fields = ArrayList<AccessibilityNodeInfo>()
+    fun walk(n: AccessibilityNodeInfo?) {
+      if (n == null || fields.size > 1) return
+      if (n.isEditable && n.isVisibleToUser && n.isEnabled) fields.add(n)
+      for (i in 0 until n.childCount) walk(n.getChild(i))
+    }
+    walk(rootInActiveWindow)
+    return fields.singleOrNull()?.also { it.performAction(AccessibilityNodeInfo.ACTION_FOCUS) }
   }
 
   /** The "press the keyboard's action" action (API 30+); a click elsewhere. */
@@ -214,7 +235,7 @@ class BelugaAccessibilityService : AccessibilityService() {
       "lock" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) GLOBAL_ACTION_LOCK_SCREEN else GLOBAL_ACTION_HOME
       "power_dialog" -> GLOBAL_ACTION_POWER_DIALOG
       "enter" -> { // no global "enter"; press the keyboard's action on the focused field instead
-        findFocusedEditable(rootInActiveWindow)?.performAction(imeEnterAction()); return
+        focusedField()?.performAction(imeEnterAction()); return
       }
       else -> throw IllegalArgumentException("No such key: $key")
     }
@@ -223,8 +244,25 @@ class BelugaAccessibilityService : AccessibilityService() {
 
   // ---- a screenshot without MediaProjection (API 30+)
 
+  /** When the last screenshot was asked for: Android allows one per 333 ms. */
+  @Volatile private var lastShotAt = 0L
+
   private fun screenshot(max: Int, quality: Int): JSONObject {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) throw IllegalStateException("Screenshots need Android 11 or newer (or turn on Wireless debugging)")
+    return try {
+      shoot(max, quality)
+    } catch (e: TooSoon) {
+      shoot(max, quality) // the wait was a little short: once more
+    }
+  }
+
+  private class TooSoon : IllegalStateException("The screenshot failed (code 3): asked too soon after the last one")
+
+  private fun shoot(max: Int, quality: Int): JSONObject {
+    // Wait out Android's gap instead of failing (the perform call is on a background thread).
+    val wait = lastShotAt + SHOT_GAP_MS - SystemClock.uptimeMillis()
+    if (wait > 0) Thread.sleep(wait)
+    lastShotAt = SystemClock.uptimeMillis()
     val future = CompletableFuture<JSONObject>()
     takeScreenshot(android.view.Display.DEFAULT_DISPLAY, { it.run() }, object : TakeScreenshotCallback {
       override fun onSuccess(result: ScreenshotResult) {
@@ -241,10 +279,21 @@ class BelugaAccessibilityService : AccessibilityService() {
         }
       }
       override fun onFailure(errorCode: Int) {
-        future.completeExceptionally(IllegalStateException("The screenshot failed (code $errorCode); the screen may be protected"))
+        future.completeExceptionally(if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) TooSoon() else IllegalStateException(shotError(errorCode)))
       }
     })
-    return future.get(8, TimeUnit.SECONDS)
+    return try {
+      future.get(8, TimeUnit.SECONDS)
+    } catch (e: java.util.concurrent.ExecutionException) {
+      throw e.cause ?: e
+    }
+  }
+
+  private fun shotError(code: Int): String = when (code) {
+    ERROR_TAKE_SCREENSHOT_SECURE_WINDOW -> "The screen is protected (the app in front blocks screenshots)"
+    ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "Android didn’t allow the screenshot (turn Beluga’s Accessibility off and on again)"
+    ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "There’s no screen to take a picture of right now"
+    else -> "The screenshot failed (code $code)"
   }
 
   private fun dispatch(gesture: GestureDescription) {
@@ -259,5 +308,7 @@ class BelugaAccessibilityService : AccessibilityService() {
 
   companion object {
     @Volatile var instance: BelugaAccessibilityService? = null
+    /** Android's minimum gap between an Accessibility service's screenshots is 333 ms. */
+    private const val SHOT_GAP_MS = 340L
   }
 }

@@ -48,7 +48,7 @@ import {
   VIEW_TURNS,
   parsePhoneFrame,
 } from './protocol.js';
-import { PhoneControl, type PhoneLinkHandle, type TunnelEnd, type TunnelSide } from './phone-control.js';
+import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type TunnelEnd, type TunnelSide, type VideoPiece, phoneErrorText } from './phone-control.js';
 import { type Macro, PhoneMacros } from './phone-macros.js';
 import { type SystemPort, realSystem } from '../core/gateway/device.js';
 import { type Delivery, NO_PUSH, type Nudge, type Pusher, deliver } from './push.js';
@@ -159,6 +159,8 @@ class PhoneLink implements PhoneLinkHandle {
   private readonly reqs = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   private tunId = 0;
   private readonly tuns = new Map<number, TunnelSide>();
+  /** 1.18: who takes the screen's video now (the Mac's mirror); without one, pieces go unanswered and the phone stops. */
+  private videoTaker?: { readonly piece: (p: VideoPiece) => void; readonly end: (reason?: string) => void };
   private readonly beat: NodeJS.Timeout;
   private readonly helloTimer: NodeJS.Timeout;
   private closed = false;
@@ -233,6 +235,22 @@ class PhoneLink implements PhoneLinkHandle {
   }
 
   // ---- PhoneControl's handle on this phone (src/companion/phone-control.ts)
+
+  /** Does this phone stream its screen as video (1.18, and its app says it can)? */
+  get video(): boolean {
+    const v = this.hello?.v;
+    const speaks = Boolean(v && (v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE.video)));
+    return speaks && this.control?.video === true;
+  }
+
+  /** Take the screen's video until the returned stop(); the last taker wins. */
+  watchVideo(onPiece: (p: VideoPiece) => void, onEnd: (reason?: string) => void): () => void {
+    const taker = { piece: onPiece, end: onEnd };
+    this.videoTaker = taker;
+    return () => {
+      if (this.videoTaker === taker) this.videoTaker = undefined;
+    };
+  }
 
   /** Ask the phone to do something through its Accessibility service (`req` → `reply`). */
   request(op: PhoneOp, args: Record<string, unknown>, timeoutMs = 20_000): Promise<unknown> {
@@ -324,9 +342,19 @@ class PhoneLink implements PhoneLinkHandle {
         this.reqs.delete(frame.id);
         clearTimeout(r.timer);
         if (frame.ok) r.resolve(frame.value);
-        else r.reject(new Error(frame.error ?? 'The phone couldn’t do that'));
+        else r.reject(new Error(frame.error ? phoneErrorText(frame.error) : 'The phone couldn’t do that'));
         return;
       }
+      case 'vid': {
+        const taker = this.videoTaker;
+        if (!taker) return;
+        // Answer each piece: the phone paces itself by these (and stops when they stop coming).
+        this.send({ t: 'vid_ack', seq: frame.seq });
+        taker.piece({ seq: frame.seq, b64: frame.b64, key: frame.key === true, ts: frame.ts, w: frame.w, h: frame.h, sw: frame.sw, sh: frame.sh });
+        return;
+      }
+      case 'vid_end':
+        return this.videoTaker?.end(frame.reason);
       case 'tun_ok':
         return this.tuns.get(frame.id)?.onOpen();
       case 'tun_data': {
@@ -984,11 +1012,12 @@ export class CompanionHost {
   /** Stream a phone's screen to a screen that's watching (the Mac app's mirror). */
   mirrorPhone(
     deviceId: string,
-    opts: { fps?: number; max?: number },
+    opts: { fps?: number; max?: number; video?: boolean },
     onFrame: (f: { b64: string; mime: string; w: number; h: number }) => void,
-    onStatus: (s: { on: boolean; route?: string; error?: string }) => void,
+    onStatus: (s: MirrorStatus) => void,
+    onVideo?: (p: VideoPiece) => void,
   ): () => void {
-    return this.control.startMirror(deviceId, opts, onFrame, onStatus);
+    return this.control.startMirror(deviceId, opts, onFrame, onStatus, onVideo);
   }
 
   // ---- the DHT node

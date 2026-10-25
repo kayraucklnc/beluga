@@ -28,10 +28,26 @@ interface Native {
   /** Watch for this phone's own Wireless-debugging service over mDNS → 'adb' events { port, pairing }. */
   startAdbDiscovery(): void;
   stopAdbDiscovery(): void;
+  /** The screen can stream as video (MediaProjection + the hardware encoder, Android 10+). */
+  canMirror?(): boolean;
+  /** The Mac took the video's piece `seq` (the encoder paces itself by these). */
+  mirrorAck?(seq: number): void;
   addListener(event: string, listener: (payload: unknown) => void): { remove(): void };
 }
 
 const native = requireOptionalNativeModule<Native>('PhoneControl');
+
+/** One piece of the screen's video, as the `vid` frame carries it. */
+export interface MirrorPiece {
+  readonly seq: number;
+  readonly b64: string;
+  readonly key: boolean;
+  readonly ts: number;
+  readonly w: number;
+  readonly h: number;
+  readonly sw: number;
+  readonly sh: number;
+}
 
 export interface AdbPorts {
   readonly port?: number;
@@ -59,6 +75,18 @@ export const phoneControl = {
   stopControlNote: (): void => native?.stopControlNote(),
   startAdbDiscovery: (): void => native?.startAdbDiscovery(),
   stopAdbDiscovery: (): void => native?.stopAdbDiscovery(),
+  canMirror: (): boolean => native?.canMirror?.() ?? false,
+  mirrorAck: (seq: number): void => native?.mirrorAck?.(seq),
+  /** A piece of the screen's video (H.264 Annex B in base64), for the Mac's mirror. */
+  onMirror: (fn: (piece: MirrorPiece) => void): (() => void) => {
+    const sub = native?.addListener('mirror', (p) => fn(p as MirrorPiece));
+    return () => sub?.remove();
+  },
+  /** The video stopped: the user said no or pressed Stop, or Android ended it. */
+  onMirrorEnd: (fn: (reason: string | undefined) => void): (() => void) => {
+    const sub = native?.addListener('mirrorEnd', (p) => fn((p as { reason?: string } | undefined)?.reason));
+    return () => sub?.remove();
+  },
   /** mDNS found (or lost) this phone's debugging ports. */
   onAdbPorts: (fn: (ports: AdbPorts) => void): (() => void) => {
     const sub = native?.addListener('adb', (p) => fn((p ?? {}) as AdbPorts));

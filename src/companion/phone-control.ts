@@ -10,6 +10,7 @@ import type { DeviceBook } from './devices.js';
 import { type Macro, MacroStep, type PhoneMacros } from './phone-macros.js';
 import {
   type AdbView,
+  type MirrorView,
   type PhoneControl as PhoneControlState,
   type PhoneControlView,
   type PhoneOp,
@@ -41,6 +42,33 @@ export interface PhoneLinkHandle {
   request(op: PhoneOp, args: Record<string, unknown>, timeoutMs?: number): Promise<unknown>;
   /** Open a byte tunnel to the phone's debugging port (or pairing port) and pump bytes both ways. */
   openTunnel(to: 'adb' | 'adb-pair', side: TunnelSide): TunnelEnd;
+  /** 1.18: the phone can stream its screen as video (`mirror`); false or missing on an older app. */
+  readonly video?: boolean;
+  /** Take the screen's video (`vid`, each acked while taken) and hear when it ends (`vid_end`). */
+  watchVideo?(onPiece: (p: VideoPiece) => void, onEnd: (reason?: string) => void): () => void;
+}
+
+/** A piece of the phone's screen video (the `vid` frame): H.264 Annex B, `w`×`h` of a `sw`×`sh` screen. */
+export interface VideoPiece {
+  readonly seq: number;
+  readonly b64: string;
+  readonly key: boolean;
+  readonly ts: number;
+  readonly w: number;
+  readonly h: number;
+  readonly sw: number;
+  readonly sh: number;
+}
+
+/** How the mirror is doing: live by a route, with video asked for or flowing, or stopped with why. */
+export interface MirrorStatus {
+  readonly on: boolean;
+  readonly route?: PhoneRoute;
+  readonly error?: string;
+  /** Live video: waiting for "Start now" on the phone, or flowing. */
+  readonly video?: 'asking' | 'on';
+  /** A word about the video (the phone said no, or stopped it). */
+  readonly note?: string;
 }
 
 /** The Mac's end of a tunnel: what the socket wants done, with the phone. */
@@ -80,6 +108,32 @@ interface Reach {
 }
 
 const OP_NEEDS_ADB: ReadonlySet<string> = new Set(['shell', 'logcat']);
+
+/** Android allows an Accessibility service one screenshot per 333 ms; the mirror asks a little slower. */
+const SHOT_GAP_MS = 360;
+/** How often a running mirror re-checks its route (a cable plugged in, debugging turned on). */
+const ROUTE_RECHECK_MS = 5_000;
+/** The mirror's live video: smooth over sharp (the longest side, and its bitrate). */
+const VIDEO_MAX = 1280;
+const VIDEO_FPS = 30;
+const VIDEO_KBPS = 2500;
+/** Video this quiet (the phone sends even a still screen a few times a second) has stalled: pictures again. */
+const VIDEO_STALL_MS = 2_000;
+
+/**
+ * A phone's error as a sentence. The app's native side fails through Expo, which wraps the cause:
+ * "Call to function 'PhoneControl.perform' has been rejected.\n→ Caused by: java.lang.IllegalStateException: No text field…"
+ * (the arrow often arrives as "â"). Keep only the cause's own words.
+ */
+export function phoneErrorText(message: string): string {
+  const cause = message.includes('Caused by:') ? message.slice(message.lastIndexOf('Caused by:') + 'Caused by:'.length) : message;
+  // Drop the Java class names in front ("java.util.concurrent.ExecutionException: java.lang.IllegalStateException: ").
+  const words = cause.trim().replace(/^(?:(?:[a-z_$][\w$]*\.)+[A-Z][\w$]*:\s*)+/, '');
+  return words || message.trim();
+}
+
+/** The phone refused a screenshot only because the last one was under 333 ms ago (Android's code 3). */
+const tooSoon = (err: unknown): boolean => err instanceof Error && /\(code 3\)/.test(err.message);
 
 /** How a `use` level answers a kind of action: looking is always fine; the rest follow the level. */
 export function allowsWithoutAsking(use: PhoneUse, kind: 'look' | 'act' | 'shell'): boolean {
@@ -422,56 +476,129 @@ export class PhoneControl {
   }
 
   /**
-   * A live mirror of the phone's screen (BLG-173): repeatedly grabs a frame and hands it to
-   * `onFrame`, at about `fps`, until the returned stop() is called. Over adb it's a full-resolution
-   * `screencap` PNG (crisp, the webview decodes it straight); over the Accessibility link it's a
-   * downscaled JPEG at a gentler rate. One grab is in flight at a time, so a slow phone just lowers
-   * the frame rate rather than piling up.
+   * A live mirror of the phone's screen (BLG-173). With `video` (the screen can decode H.264) and a
+   * phone that streams (1.18, BLG-184), it asks for live video: the phone's own screen capture and
+   * hardware encoder, the pieces to `onVideo`. Until that flows (the user taps "Start now" on the
+   * phone), or if it stops, it shows pictures instead, at about `fps`, to `onFrame`: over adb a
+   * full-resolution `screencap` PNG; over the Accessibility link a downscaled JPEG, at most one per
+   * SHOT_GAP_MS (Android refuses faster). One picture is in flight at a time, so a slow phone just
+   * lowers the rate rather than piling up. The route is found once and re-checked every few
+   * seconds, not per picture (finding it runs adb).
    */
   startMirror(
     deviceId: string,
-    opts: { fps?: number; max?: number },
+    opts: { fps?: number; max?: number; video?: boolean },
     onFrame: (f: { b64: string; mime: string; w: number; h: number }) => void,
-    onStatus: (s: { on: boolean; route?: PhoneRoute; error?: string }) => void,
+    onStatus: (s: MirrorStatus) => void,
+    onVideo?: (p: VideoPiece) => void,
   ): () => void {
     let stopped = false;
     const fps = Math.min(opts.fps ?? 6, 30);
     const interval = 1000 / fps;
+    let route: PhoneRoute | undefined;
+    let video: MirrorStatus['video'];
+    let note: string | undefined;
+    const say = (on: boolean, error?: string): void => onStatus({ on, ...(route ? { route } : {}), ...(video ? { video } : {}), ...(note ? { note } : {}), ...(error ? { error } : {}) });
+
+    // ---- live video, when both ends can
+    let videoLink: PhoneLinkHandle | undefined;
+    let unwatch: (() => void) | undefined;
+    let pieceAt = 0;
+    const flowing = (): boolean => video === 'on' && Date.now() - pieceAt < VIDEO_STALL_MS;
+    const startVideo = async (link: PhoneLinkHandle): Promise<void> => {
+      if (!link.watchVideo || !onVideo) return;
+      unwatch?.();
+      videoLink = link;
+      unwatch = link.watchVideo(
+        (p) => {
+          if (stopped) return;
+          pieceAt = Date.now();
+          if (video !== 'on') {
+            video = 'on';
+            note = undefined;
+            say(true);
+          }
+          onVideo(p);
+        },
+        (reason) => {
+          if (stopped) return;
+          video = undefined;
+          note = reason ? phoneErrorText(reason) : undefined;
+          say(true);
+        },
+      );
+      try {
+        const res = (await link.request('mirror', { on: true, max: VIDEO_MAX, fps: VIDEO_FPS, kbps: VIDEO_KBPS }, 10_000)) as MirrorView;
+        if (!stopped && res.state === 'asking' && video !== 'on') {
+          video = 'asking';
+          say(true);
+        }
+      } catch (err) {
+        this.logLine(`mirror video: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    /** Ask for video from a link that can (again after the phone reconnects; never again after a no). */
+    const armVideo = (): void => {
+      const link = this.deps.link(deviceId);
+      if (!opts.video || !onVideo || !link?.video || link === videoLink || this.howUsed(deviceId) === 'off') return;
+      void startVideo(link);
+    };
+
+    // ---- pictures, until the video flows (and whenever it doesn't)
     const loop = async (): Promise<void> => {
-      let lastRoute: PhoneRoute | undefined;
+      let r: Reach | undefined;
+      let checkedAt = 0;
       while (!stopped) {
+        armVideo();
+        if (flowing()) {
+          await delay(250);
+          continue;
+        }
         const started = Date.now();
         try {
-          const r = await this.reach(deviceId);
+          if (!r || started - checkedAt > ROUTE_RECHECK_MS) {
+            r = await this.reach(deviceId);
+            checkedAt = started;
+          }
           if (!r) throw new Error(this.noteFor(this.deps.link(deviceId)?.control, [], this.howUsed(deviceId)) ?? 'The phone isn’t reachable');
-          if (r.route !== lastRoute) {
-            lastRoute = r.route;
-            onStatus({ on: true, route: r.route });
+          if (r.route !== route) {
+            route = r.route;
+            say(true);
           }
           if (r.adb) {
             const png = await r.adb.execOutBytes(['screencap', '-p'], 8_000);
-            if (png.length) {
+            if (png.length && !flowing()) {
               const dim = pngSize(png);
               onFrame({ b64: png.toString('base64'), mime: 'image/png', w: dim?.w ?? 0, h: dim?.h ?? 0 });
             }
           } else if (r.link) {
             const shot = (await r.link.request('screenshot', { max: opts.max ?? 900, quality: 55 }, 8_000)) as { b64: string; mime: 'image/jpeg' | 'image/png'; w: number; h: number };
-            onFrame({ b64: shot.b64, mime: shot.mime, w: shot.w, h: shot.h });
+            if (!flowing()) onFrame({ b64: shot.b64, mime: shot.mime, w: shot.w, h: shot.h });
           }
         } catch (err) {
           if (stopped) break;
-          onStatus({ on: false, error: err instanceof Error ? err.message : String(err) });
-          // Back off a little before trying again (the phone slept, the route dropped).
+          // Asked a moment too soon (the link's timing wobbles): not an error, just go again.
+          if (tooSoon(err)) {
+            await delay(SHOT_GAP_MS);
+            continue;
+          }
+          // Find the route again, say "Live" again once pictures come back, and back off a little
+          // first (the phone slept, the route dropped).
+          r = undefined;
+          route = undefined;
+          if (!flowing()) say(false, err instanceof Error ? phoneErrorText(err.message) : String(err));
           await delay(1200);
           continue;
         }
-        const wait = interval - (Date.now() - started);
+        const wait = (r.adb ? interval : Math.max(interval, SHOT_GAP_MS)) - (Date.now() - started);
         if (wait > 0) await delay(wait);
       }
     };
     void loop();
     return () => {
       stopped = true;
+      unwatch?.();
+      if (videoLink) void videoLink.request('mirror', { on: false }, 5_000).catch(() => undefined);
       onStatus({ on: false });
     };
   }
