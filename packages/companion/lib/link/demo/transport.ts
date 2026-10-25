@@ -215,7 +215,10 @@ export class DemoTransport implements Transport {
       if (!c) return undefined;
       const merge = w.merges.get(topic);
       const outputs = c.turns.flatMap(allOutputs).sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
-      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic), ...this.projectOf(c), outputs, ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true } : {}), ...(merge ? { merge } : {}) };
+      // 1.15: the plan this chat writes and runs, and its decisions asked here too (views.ts).
+      const plan = w.plans.find((p) => p.topic === topic);
+      const planT = plan ? (`plan:${plan.id}` as Topic) : undefined;
+      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic || (planT && n.topic === planT)), ...this.projectOf(c), outputs, ...(plan && planT ? { plan: { topic: planT, title: plan.title, state: plan.state, ...count(plan), milestones: plan.milestones.length } } : {}), ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true } : {}), ...(merge ? { merge } : {}) };
     }
     if (topic.startsWith('plan:')) {
       const p = w.plans.find((x) => x.id === topic.slice(5));

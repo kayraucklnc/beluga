@@ -114,6 +114,15 @@ export default function Plan() {
               {p.topic ? <PlanChat topic={p.topic} drafting={drafting} /> : null}
             </View>
 
+            {/* The plan as a small graph, first thing under its chat: what runs after what, at a glance. */}
+            {!drafting && p.milestones.length > 1 ? (
+              <View style={{ marginTop: 24, gap: 12 }}>
+                <T v="eyebrow" style={{ paddingHorizontal: 20 }}>
+                  Map
+                </T>
+                <MilestoneMap milestones={p.milestones} onPick={pick} />
+              </View>
+            ) : null}
             {needs.length ? (
               <View style={{ marginTop: 20, gap: 10 }}>
                 <T v="eyebrow" style={{ paddingHorizontal: 20 }}>
@@ -136,14 +145,6 @@ export default function Plan() {
               </View>
             ) : (
               <>
-                {p.milestones.length > 1 ? (
-                  <View style={{ marginTop: 24, gap: 12 }}>
-                    <T v="eyebrow" style={{ paddingHorizontal: 20 }}>
-                      Map
-                    </T>
-                    <MilestoneMap milestones={p.milestones} onPick={pick} />
-                  </View>
-                ) : null}
                 <View style={{ marginTop: 26, paddingHorizontal: 16 }} onLayout={(e) => (listTop.current = e.nativeEvent.layout.y)}>
                   <T v="eyebrow" style={{ paddingHorizontal: 4, marginBottom: 14 }}>
                     Milestones
