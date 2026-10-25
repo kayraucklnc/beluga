@@ -13,8 +13,8 @@ import s from './main-sync.module.css';
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 const compact = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
-/** The GitHub CLI isn't set up (or can't see this repository): how to set it up, then check again. */
-function ConnectGitHub({ onCheck, onClose }: { onCheck: () => Promise<boolean>; onClose: () => void }) {
+/** The GitHub CLI isn't set up (or can't see this repository): how to set it up, then check again (also Issues'). */
+export function ConnectGitHub({ onCheck, onClose }: { onCheck: () => Promise<boolean>; onClose: () => void }) {
   return (
     <FormSheet
       title="Connect GitHub"

@@ -24,6 +24,8 @@ const WorktreesView = lazy(() => import('../views/worktrees/WorktreesView.js').t
 const RequestsView = lazy(() => import('../gateway/RequestsView.js').then((m) => ({ default: m.RequestsView })));
 const TasksView = lazy(() => import('../tasks/TasksView.js').then((m) => ({ default: m.TasksView })));
 const TaskPage = lazy(() => import('../tasks/TaskPage.js').then((m) => ({ default: m.TaskPage })));
+const IssuesView = lazy(() => import('../issues/IssuesView.js').then((m) => ({ default: m.IssuesView })));
+const IssuePage = lazy(() => import('../issues/IssuePage.js').then((m) => ({ default: m.IssuePage })));
 const PlansView = lazy(() => import('../plans/PlansView.js').then((m) => ({ default: m.PlansView })));
 const PlanPage = lazy(() => import('../plans/PlanPage.js').then((m) => ({ default: m.PlanPage })));
 
@@ -77,6 +79,10 @@ function Route() {
       return <TasksView />;
     case 'task':
       return <TaskPage key={view.id} id={view.id} />;
+    case 'issues':
+      return <IssuesView />;
+    case 'gh_issue':
+      return <IssuePage key={`${view.projectId}#${view.number}`} projectId={view.projectId} number={view.number} />;
     case 'plans':
       return <PlansView />;
     case 'plan':

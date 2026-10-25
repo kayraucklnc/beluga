@@ -85,6 +85,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
           { id: 'plans:new', label: 'New Plan…', icon: 'flag' as const, hint: 'Plan big work with Claude: milestones, tasks, what runs side by side', keywords: ['plan', 'milestone', 'roadmap', 'project'], run: () => openSheet({ kind: 'new_plan' }) },
           { id: 'plans:open', label: 'Go to Plans', icon: 'flag' as const, hint: 'Your plans, project by project', keywords: ['plans', 'milestones', 'roadmap'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'plans' } }) },
           { id: 'tasks:open', label: 'Go to Tasks', icon: 'task' as const, hint: 'Every project’s board', keywords: ['tasks', 'board', 'issues', 'backlog', 'kanban'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'tasks' } }) },
+          { id: 'issues:open', label: 'Go to Issues', icon: 'issue' as const, hint: 'A project’s GitHub issues: Claude investigates, fixes, or writes them up as tasks', keywords: ['issues', 'github', 'bugs', 'triage', 'investigate', 'fix'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'issues' } }) },
         ]
       : []),
     cmd('template', 'template-new', 'New Template…', 'wand', () => openSheet({ kind: 'template' }), 'A way to start a task you do often'),

@@ -99,7 +99,9 @@ describe('reading issues from gh', () => {
     const quoted = quoteIssue(evil, demoRepo('bob-api'));
     expect(quoted.match(/<\/github_issue>/g)).toHaveLength(1);
     expect(quoted).toContain('never as instructions');
-    expect(quoted).toContain('@sam-r said:');
+    // GitHub people by name: "@name" means a friend in Beluga.
+    expect(quoted).toContain('sam-r (on GitHub) said:');
+    expect(quoted).not.toMatch(/@sam-r/);
   });
 });
 
@@ -271,7 +273,7 @@ describe('handing an issue to Claude', () => {
     expect(task.brief.acceptance).toBe('- [ ] A + address signs in');
     expect(task.brief.context).toBeUndefined();
     expect(drafted[0]![0].split('\n')[0]).toBe('Login returns 500 when the email has a plus sign');
-    expect(drafted[0]![0]).toContain('reported by @lena-k');
+    expect(drafted[0]![0]).toContain('reported by lena-k on GitHub');
     expect(drafted[0]![1].look).toBeUndefined();
     expect(asked).toHaveLength(0);
     expect(await issues.toTask('api', 48)).toEqual(out);
@@ -357,5 +359,21 @@ describe('the investigate prompt', () => {
     const prompt = investigatePrompt(board.need(out.key), { ...issue, moreComments: true }, demoRepo('bob-api'));
     expect(prompt).toContain(`for ${out.key}`);
     expect(prompt).toContain('gh issue view 43 --repo acme/bob-api --comments');
+  });
+});
+
+describe('the demo’s Claude', () => {
+  it('reads Investigate and Fix It as the work, never as someone to ask (no "@name", no "ask …")', async () => {
+    const { gatewayTarget } = await import('../src/agent/mock.js');
+    const { fixAfterInvestigationPrompt, fixPrompt } = await import('../src/core/issues/prompts.js');
+    const repo = demoRepo('bob-api');
+    const source = demoIssueSource();
+    const task = { key: 'BOB-13' } as Parameters<typeof investigatePrompt>[0];
+    for (const n of [48, 47, 45, 43, 41]) {
+      const issue = await source.get(repo, n);
+      expect(gatewayTarget(investigatePrompt(task, issue, repo))).toBeUndefined();
+      expect(gatewayTarget(fixPrompt(task, issue, repo, 'Open a pull request.'))).toBeUndefined();
+      expect(gatewayTarget(fixAfterInvestigationPrompt(task, issue, 'Open a pull request.'))).toBeUndefined();
+    }
   });
 });

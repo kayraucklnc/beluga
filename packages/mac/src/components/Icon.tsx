@@ -92,6 +92,10 @@ const PATHS = {
   bot: 'M4.5 6.5h7A1.5 1.5 0 0 1 13 8v3.5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5V8a1.5 1.5 0 0 1 1.5-1.5z M8 6.5V4.2 M8 2.8v.01 M6.2 9.4v.8 M9.8 9.4v.8 M1.5 9.2v1.4 M14.5 9.2v1.4',
   /** Tasks: a ring with a check (the board). */
   task: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M5.75 8.1l1.55 1.55 2.95-3.2',
+  /** A GitHub issue: a ring with a dot, as GitHub draws one (Issues). */
+  issue: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M8 7.25a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5z',
+  /** Fix It: a wrench. */
+  wrench: 'M9.8 4.2a.67.67 0 0 0 0 .93l1.07 1.07a.67.67 0 0 0 .93 0l2.51-2.51a4 4 0 0 1-5.29 5.29l-4.61 4.61a1.41 1.41 0 0 1-2-2l4.61-4.61a4 4 0 0 1 5.29-5.29z',
   /** A board's columns. */
   columns: 'M2.5 3.5h3v9h-3z M6.5 3.5h3v6h-3z M10.5 3.5h3v7.5h-3z',
   /** A list's rows. */

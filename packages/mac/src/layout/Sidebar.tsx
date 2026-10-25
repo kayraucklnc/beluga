@@ -27,6 +27,7 @@ import { RequestsNav } from '../gateway/RequestsNav.js';
 import { TasksNav } from '../tasks/TasksNav.js';
 import { AssistantNav } from './AssistantNav.js';
 import { PlansNav } from '../plans/PlansNav.js';
+import { IssuesNav } from '../issues/IssuesNav.js';
 import { footerStatus } from '../views/room/connection-model.js';
 import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
 import { SelfBar } from '../network/StatusMenu.js';
@@ -175,8 +176,8 @@ export function Sidebar() {
                 trailing={b?.count ? <Badge count={b.count} urgent={b.urgent} /> : null}
               />
             );
-            // Overview, Tasks, then Chat.
-            return n.kind === 'overview' ? [row, <TasksNav key="tasks" />, <PlansNav key="plans" />] : row;
+            // Overview, Tasks (and GitHub's issues), Plans, then Chat.
+            return n.kind === 'overview' ? [row, <TasksNav key="tasks" />, <IssuesNav key="issues" />, <PlansNav key="plans" />] : row;
           })}
           <ActivityRow whenLive />
           <RequestsNav whenAny />
