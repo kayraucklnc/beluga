@@ -48,7 +48,7 @@ describe('a live view’s rows, through the Mac', () => {
     expect(fetch).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'sqlite', query: 'select * from orders' }), query, { fresh: true });
     // An action's source is one the view names.
     await viewFetch(st, { topic: 'conv:ws:w1', turn: 'i-r1', block: 0, query, source: { kind: 'sqlite', path: '/Users/k/shop.db', query: 'select * from refunds' } }, fetch);
-    expect(fetch).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'select * from refunds' }), query, {});
+    expect(fetch).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'select * from refunds' }), query, { cache: 'prefer' });
   });
 
   it('never runs a source of the phone’s own, a graph, or a friend’s Claude’s view', async () => {

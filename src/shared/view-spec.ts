@@ -766,7 +766,11 @@ export interface ViewNeedsApproval {
   readonly needsApproval: true;
   readonly what: string;
 }
-export type ViewFetchResult = ViewPage | ViewNeedsApproval;
+/** Asked only for what was kept (`cache: 'only'`), and nothing was. */
+export interface ViewNotKept {
+  readonly notKept: true;
+}
+export type ViewFetchResult = ViewPage | ViewNeedsApproval | ViewNotKept;
 
 export const compareCells = (a: Cell, b: Cell): number => {
   if (a === b) return 0;

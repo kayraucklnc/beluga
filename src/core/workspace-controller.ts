@@ -19,6 +19,7 @@ import { MainSync } from './main-sync.js';
 import { agentWorktreesFrom, cleanupText, removeAgentWorktrees } from './agent-worktree-cleanup.js';
 import { claudeHome } from './claude-code/launch.js';
 import { HistorySaver } from './history-saver.js';
+import { forgetViews } from './views/forget.js';
 import { nothingAhead, pendingWorktree, withAhead } from './optimistic.js';
 
 export interface ControllerDeps {
@@ -599,6 +600,7 @@ export class WorkspaceController {
     const settle = ws && !ws.archived && ws.kind !== 'main' ? this.leaveNow(id, 'archive') : () => undefined;
     const phase = (p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
     let manifest: ArchiveManifest | undefined;
+    const answers = this.answersIn(id);
     const done = await this.inLane(ws?.projectRoot || ws?.path || id, () =>
       this.act(
         "Couldn't archive",
@@ -616,11 +618,35 @@ export class WorkspaceController {
     settle();
     if (done) {
       this.deps.intend({ type: 'close_tab', id });
+      // The rows its views fetched go (they're fetched again if it comes back); their scripts stay.
+      forgetViews(answers, 'archived');
       const also = await this.removeAgentWorktrees(agents);
       if (!opts.quiet) this.deps.toast([archivedText(manifest), also].filter(Boolean).join(' '), 'success');
       this.emit({ kind: 'archived', id });
     }
     return Boolean(done);
+  }
+
+  /** Claude's answers in a workspace's conversation (saved, and said this session): where its views are. */
+  private answersIn(id: string): string[] {
+    try {
+      const channel = `${WS_PREFIX}${id}`;
+      const items = [...this.deps.manager.loadHistory<LogItem>(id), ...this.deps.store.getState().log.filter((l) => l.channel === channel)];
+      return items.flatMap((l) => (l.type === 'agent' ? [l.text] : []));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Claude's answers in every other conversation (only asked for when there are files to delete). */
+  private answersElsewhere(id: string): string[] {
+    const channel = `${WS_PREFIX}${id}`;
+    const live = this.deps.store.getState().log.flatMap((l) => (l.type === 'agent' && l.channel !== channel ? [l.text] : []));
+    const saved = this.deps.manager.list
+      .flatMap((p) => p.workspaces)
+      .filter((w) => w.id !== id && !this.loaded.has(`${WS_PREFIX}${w.id}`))
+      .flatMap((w) => this.answersIn(w.id));
+    return [...live, ...saved];
   }
 
   /** The worktrees sub-agents of a workspace's conversations made (they go with it). */
@@ -710,6 +736,7 @@ export class WorkspaceController {
     // Gone from the sidebar now; the folder, its branch and the conversation follow.
     this.going(id);
     const settle = ws && ws.kind !== 'main' ? this.leaveNow(id, 'delete') : () => undefined;
+    const answers = this.answersIn(id);
     const done = await this.inLane(ws?.projectRoot || ws?.path || id, () =>
       this.act(
         "Couldn't delete",
@@ -724,6 +751,8 @@ export class WorkspaceController {
     if (done) {
       this.loaded.delete(`${WS_PREFIX}${id}`);
       this.deps.intend({ type: 'close_tab', id });
+      // Its views' rows go, and their scripts and handed-over rows unless another conversation shows them.
+      forgetViews(answers, 'deleted', () => this.answersElsewhere(id));
       const also = await this.removeAgentWorktrees(agents);
       this.deps.toast(['Deleted.', also].filter(Boolean).join(' '), 'success');
       this.emit({ kind: 'removed', id });

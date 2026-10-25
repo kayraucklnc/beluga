@@ -2,6 +2,7 @@ import path from 'node:path';
 import { isDotenvPath, isSecretPath } from '../core/shares.js';
 import { isReadOnlyCommand } from './read-only.js';
 import { SourceSchema } from '../shared/view-spec.js';
+import { type ScriptPlan, planScript } from '../core/views/scripts.js';
 import { SYNC_MAIN_REASON, type SyncScope, isSyncMainCommand } from './sync-main.js';
 
 /** Read-only tools and the input field that names their target path. */
@@ -173,6 +174,9 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
 function decideShow(input: Record<string, unknown>, ctx: PolicyContext): Decision {
   const view = input.view && typeof input.view === 'object' ? (input.view as Record<string, unknown>) : {};
   if (view.source === undefined) return 'allow';
+  // A script Claude wrote for the view runs like a command it wrote.
+  const script = scriptIn(view.source, ctx.cwd);
+  if (script) return mentionsSecret(script.code) ? 'deny' : ctx.askOnly ? 'deny' : 'ask';
   const parsed = SourceSchema.safeParse(view.source);
   if (!parsed.success) return 'allow'; // the tool says what's wrong; nothing runs
   const source = parsed.data;
@@ -185,6 +189,14 @@ function decideShow(input: Record<string, unknown>, ctx: PolicyContext): Decisio
   return ctx.scope === 'full' ? 'allow' : 'ask';
 }
 
+const scriptIn = (source: unknown, cwd: string): ScriptPlan | undefined => {
+  try {
+    return planScript(source, cwd);
+  } catch {
+    return undefined; // the tool says what's wrong; nothing runs
+  }
+};
+
 /** In a main folder (ask-only): would this tool change something there? */
 function changesMain(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): boolean {
   const writeField = WRITE_TOOLS[toolName];
@@ -196,6 +208,7 @@ function changesMain(toolName: string, input: Record<string, unknown>, ctx: Poli
   // A view whose command could change something (so the refusal says why, not "credential files").
   if (toolName === 'mcp__beluga_view__show') {
     const view = input.view && typeof input.view === 'object' ? (input.view as Record<string, unknown>) : {};
+    if (scriptIn(view.source, ctx.cwd)) return true;
     const source = SourceSchema.safeParse(view.source);
     return source.success && source.data.kind === 'command' && !mentionsSecret(source.data.command) && !isReadOnlyCommand(source.data.command);
   }
