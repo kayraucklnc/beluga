@@ -1,5 +1,5 @@
 import type { ChatAnswerRequest } from '../core/chat/claude-prompt.js';
-import type { SetupFix } from './setup-fixer.js';
+import type { ScriptFix, SetupFix, WorkedOutScripts } from './setup-fixer.js';
 import type { DraftContext, TaskDraft } from './task-drafter.js';
 import type { ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
 import type { StepRecord } from '../shared/steps.js';
@@ -277,6 +277,10 @@ export interface AgentBackend {
   answerChat?(req: ChatAnswerRequest): Promise<string>;
   /** What a project's setup should be after `failed` failed in `dir` (a small model looks). */
   fixSetup?(dir: string, failed: string, output: string): Promise<SetupFix | undefined>;
+  /** What a project's run command should be after `failed` failed in `dir` (a model looks). */
+  fixRun?(dir: string, failed: string, output: string): Promise<ScriptFix | undefined>;
+  /** A project's setup and/or run command, worked out from its files in `dir` (a model looks). */
+  workOutScripts?(dir: string, want: { setup: boolean; run: boolean }): Promise<WorkedOutScripts | undefined>;
   /** A task written from a description: title, goal, criteria, labels from the board's own (Sonnet). */
   draftTask?(text: string, ctx: DraftContext): Promise<TaskDraft | undefined>;
   /** Models this Claude Code offers, for the model picker. */

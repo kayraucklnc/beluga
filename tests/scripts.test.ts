@@ -49,6 +49,33 @@ describe('detectSetup', () => {
   });
 });
 
+describe("the project's own tooling", () => {
+  const tmp = (files: Record<string, string>): string => {
+    const d = mkdtempSync(path.join(os.tmpdir(), 'beluga-tooling-'));
+    for (const [name, content] of Object.entries(files)) writeFileSync(path.join(d, name), content);
+    return d;
+  };
+  it('uses Makefile and justfile targets before guessing from files', () => {
+    const dir = tmp({ Makefile: 'VERSION := 1\n.PHONY: deps run\ndeps:\n\tnpm ci\nrun build: deps\n\tnode .\n', 'package-lock.json': '{}', 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    expect(detectSetup(dir)).toBe('make deps');
+    expect(detectRun(dir)).toBe('make run');
+    const just = tmp({ justfile: 'set shell := ["bash", "-c"]\n@setup:\n    uv sync\nserve port="8000":\n    uv run app\n' });
+    expect(detectSetup(just)).toBe('just setup');
+    expect(detectRun(just)).toBe('just serve');
+  });
+
+  it("never runs `make install` (it often installs into the system), and falls back to the files", () => {
+    const dir = tmp({ Makefile: 'install:\n\tcp app /usr/local/bin\n', 'package-lock.json': '{}', 'package.json': '{}' });
+    expect(detectSetup(dir)).toBe('npm install');
+    expect(detectRun(dir)).toBeUndefined();
+  });
+
+  it("shows commands Claude worked out as Claude's", () => {
+    const dir = tmp({});
+    expect(resolveScripts(dir, { run: 'make it', setup: 'mine', byClaude: ['run'] })).toEqual({ setup: { command: 'mine', source: 'yours' }, run: { command: 'make it', source: 'claude' } });
+  });
+});
+
 describe('detectRun', () => {
   it('uses npm run dev by default', () => {
     pkg({ dev: 'vite', start: 'node .' });

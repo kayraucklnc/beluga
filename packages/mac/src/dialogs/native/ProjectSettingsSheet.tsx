@@ -9,6 +9,7 @@ type Source = NonNullable<ResolvedScripts['setup']>['source'];
 
 const SOURCE: Record<Source, { label: string; tone: 'team' | 'mine' | 'guess'; detail: string }> = {
   yours: { label: 'Your settings', tone: 'mine', detail: 'Only you have it' },
+  claude: { label: 'By Claude', tone: 'guess', detail: 'Claude worked it out from the project (only you have it). Change it if it’s wrong' },
   'beluga.json': { label: 'beluga.json', tone: 'team', detail: 'Shared with everyone on the project' },
   'klaud.json': { label: 'klaud.json', tone: 'team', detail: 'Shared with everyone on the project' },
   'conductor.json': { label: 'conductor.json', tone: 'team', detail: 'A setup file in the project, shared with everyone on it' },
@@ -50,7 +51,7 @@ export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>
     );
   };
   // Guessed values say so (once), so you check them.
-  const hint = (kind: Kind, what: string) => (scripts[kind]?.source === 'detected' && !edited(kind) ? `${what} Guessed from the project: check it.` : what);
+  const hint = (kind: Kind, what: string) => (!edited(kind) && scripts[kind]?.source === 'detected' ? `${what} Guessed from the project: check it.` : !edited(kind) && scripts[kind]?.source === 'claude' ? `${what} Claude worked it out from the project: check it.` : what);
   const changed = edited('setup') || edited('run') || team || auto !== autoSetup;
 
   const save = (): void => {

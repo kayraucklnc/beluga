@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSetupFix } from '../src/agent/setup-fixer.js';
+import { parseScriptLine, parseSetupFix } from '../src/agent/setup-fixer.js';
 
 describe('parseSetupFix', () => {
   it('reads the last SETUP line', () => {
@@ -15,5 +15,15 @@ describe('parseSetupFix', () => {
   it('has no answer without a SETUP line', () => {
     expect(parseSetupFix('pnpm install')).toBeUndefined();
     expect(parseSetupFix('SETUP:')).toBeUndefined();
+  });
+});
+
+describe('parseScriptLine', () => {
+  it('reads RUN and SETUP lines apart', () => {
+    const said = 'It has a Makefile.\nSETUP: make deps\nRUN: `make dev`';
+    expect(parseScriptLine(said, 'SETUP')).toEqual({ command: 'make deps' });
+    expect(parseScriptLine(said, 'RUN')).toEqual({ command: 'make dev' });
+    expect(parseScriptLine('A library.\nRUN: none', 'RUN')).toEqual({ none: true });
+    expect(parseScriptLine('SETUP: npm ci', 'RUN')).toBeUndefined();
   });
 });

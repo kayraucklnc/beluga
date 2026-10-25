@@ -9,8 +9,8 @@ import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
 import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, prStep, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
-import { PROJECT_FILES, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
-import type { SetupFix } from '../agent/setup-fixer.js';
+import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
+import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store } from './store.js';
@@ -59,6 +59,12 @@ export interface WorkbenchDeps {
   readonly listShells?: () => ShellChoice[];
   /** What a project's setup should be after it failed in `dir` (a small model looks). */
   readonly fixSetup?: (dir: string, failed: string, output: string) => Promise<SetupFix | undefined>;
+  /** What a project's run command should be after it failed in `dir` (a model looks). */
+  readonly fixRun?: (dir: string, failed: string, output: string) => Promise<ScriptFix | undefined>;
+  /** A project's setup and/or run worked out from its files (a model looks); undefined when no Claude can. */
+  readonly workOutScripts?: (dir: string, want: { setup: boolean; run: boolean }) => Promise<WorkedOutScripts | undefined> | undefined;
+  /** Whether your Claude is on (it can be asked to fix a setup or run that failed). */
+  readonly hasClaude?: () => boolean;
 }
 
 const DISK_EVERY_MS = 5 * 60_000;
@@ -76,6 +82,25 @@ const PR_FOCUS_FRESH_MS = 5_000;
 const PR_CONCURRENCY = 3;
 /** Terminal size until the Terminal tab is shown (it resizes to fit). */
 const START_SIZE = { cols: 120, rows: 30 };
+/** How much of a failed setup or run's output the "fix it?" question shows, and Claude gets. */
+const FAIL_TAIL_CHARS = 1200;
+const FIX_OUTPUT_CHARS = 6000;
+/** Exit codes of a process stopped by a signal (^C, kill, a closed terminal): you stopped it, it didn't fail. */
+const STOPPED_CODES = new Set([129, 130, 137, 143]);
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
+
+/** What your Claude gets when you say yes to "Do you want me to fix it?". */
+export function fixFailedPrompt(kind: 'setup' | 'run', command: string, code: number | null, output: string): string {
+  const what = kind === 'run' ? "This worktree's Run command (what Beluga's Run button starts)" : "This worktree's setup (what Beluga runs once in every new worktree)";
+  const tail = output.replace(ANSI, '').trimEnd().slice(-FIX_OUTPUT_CHARS);
+  return [
+    `${what} didn't work: \`${command}\` stopped with exit code ${code ?? '?'}.`,
+    tail ? `The end of its output:\n\n\`\`\`\n${tail}\n\`\`\`` : '',
+    `Find out why and fix it, so \`${command}\` works here. If the command itself is wrong, say which one is right: it can be set in the project's ⋯ menu (Setup and run commands), or in its beluga.json under "scripts" for everyone.`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 export { shellId, setupId, runId, globalShellId, isGlobalShell, globalShellNumber, globalShellDir } from '../shared/terminal-keys.js';
 import { runId, setupId, shellId, isGlobalShell, globalShellNumber, cleanTerminalName } from '../shared/terminal-keys.js';
@@ -155,6 +180,14 @@ export class Workbench {
   private pollQueue: Array<{ reason: 'focus' | 'push'; id?: string }> = [];
   /** Worktrees whose PR is being merged right now. */
   private readonly merging = new Set<string>();
+  /** Projects Claude is working out the commands of right now (one look each, shared by the worktrees waiting on it). */
+  private readonly workingOut = new Map<string, Promise<void>>();
+  /** "Run this setup by itself?" questions waiting, by project and command. */
+  private readonly askingSetup = new Map<string, Promise<'yes' | 'no' | 'always'>>();
+  /** Runs you stopped (so their ending isn't a failure). */
+  private readonly stopping = new Set<string>();
+  /** Worktrees asked "do you want me to fix it?" right now, by `<ws>:<setup|run>` (one question at a time). */
+  private readonly offered = new Set<string>();
 
   constructor(private readonly deps: WorkbenchDeps) {}
 
@@ -654,7 +687,8 @@ export class Workbench {
   runSetup(wsId: string, auto = false): void {
     const ws = this.manager.find(wsId);
     const project = ws ? this.manager.list.find((p) => p.id === ws.projectId) : undefined;
-    const setup = project?.scripts?.setup;
+    // Read now, not from the last refresh: what Claude just worked out counts.
+    const setup = project ? this.manager.scripts(project.id).setup : undefined;
     const command = setup?.command;
     if (!ws || !project || !command) {
       if (!auto) this.deps.toast('This project has no setup command. Set one in its ⋯ menu', 'warn');
@@ -671,9 +705,19 @@ export class Workbench {
       return this.startSetup(ws, fit.command);
     }
     const fromRepo = setup.source === 'beluga.json' || setup.source === 'klaud.json' || setup.source === 'conductor.json';
-    if (auto && fromRepo && !this.manager.isScriptApproved(project.id, command)) {
+    // Claude worked it out from what's in the repository, so it asks the same way.
+    const byClaude = setup.source === 'claude';
+    if (auto && (fromRepo || byClaude) && !this.manager.isScriptApproved(project.id, command)) {
       if (!this.deps.confirm) return;
-      void this.deps.confirm(`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, `${command}\n\nThis comes from the repository. Allow it if you trust what's in it. "Always" remembers this exact command.`).then((answer) => {
+      const [title, from] = byClaude ? [`Claude worked out ${project.name}'s setup for new worktrees`, 'Claude read it from the repository'] : [`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, 'This comes from the repository'];
+      // Worktrees made together share one question.
+      const key = `${project.id}\n${command}`;
+      let asking = this.askingSetup.get(key);
+      if (!asking) {
+        asking = this.deps.confirm(title, `${command}\n\n${from}. Allow it if you trust what's in it. "Always" remembers this exact command.`).finally(() => this.askingSetup.delete(key));
+        this.askingSetup.set(key, asking);
+      }
+      void asking.then((answer) => {
         if (answer === 'no') return void this.deps.toast('Setup skipped. Run it any time from the Terminal tab');
         if (answer === 'always') this.manager.approveScript(project.id, command);
         this.startSetup(ws, command);
@@ -709,13 +753,62 @@ export class Workbench {
         return;
       }
       if (learn && this.deps.fixSetup) return void this.retrySetup(ws, command, code, session.backlog());
-      this.setupFailed(ws, command, code);
+      this.setupFailed(ws, command, code, session.backlog());
     });
   }
 
-  private setupFailed(ws: Workspace, command: string, code: number | null): void {
+  private setupFailed(ws: Workspace, command: string, code: number | null, output = ''): void {
     this.deps.store.dispatch({ type: 'setup', id: ws.id, run: { status: 'failed', command, detail: `exit code ${code ?? '?'}` } });
     this.deps.notify({ kind: 'problems', title: `Setup failed in ${ws.name}`, body: `${command} (exit code ${code ?? '?'}). See its Terminal tab`, channel: `ws:${ws.id}` });
+    this.offerFix(ws, 'setup', command, code, output);
+  }
+
+  /**
+   * Setup or Run failed: "The run didn't work. Do you want me to fix it?" Yes: for a run, a model
+   * first sees whether the command is wrong (a better one is remembered and started); otherwise
+   * (and for a setup, whose command a model already had a go at) your Claude in that worktree
+   * gets the failure and fixes the project.
+   */
+  private offerFix(ws: Workspace, kind: 'setup' | 'run', command: string, code: number | null, output: string): void {
+    const key = `${ws.id}:${kind}`;
+    if (!this.deps.confirm || !this.deps.hasClaude?.() || this.offered.has(key)) return;
+    this.offered.add(key);
+    const what = kind === 'run' ? 'The run' : 'The setup';
+    const tail = output.replace(ANSI, '').trimEnd().slice(-FAIL_TAIL_CHARS);
+    void this.deps
+      .confirm(`${what} didn't work in ${ws.name}. Do you want me to fix it?`, `${command}\nstopped with exit code ${code ?? '?'}.${tail ? `\n\n${tail}` : ''}`)
+      .then((answer) => {
+        this.offered.delete(key);
+        if (answer !== 'no') return this.fixFailed(ws, kind, command, code, output);
+      })
+      .catch(() => this.offered.delete(key));
+  }
+
+  private async fixFailed(ws: Workspace, kind: 'setup' | 'run', command: string, code: number | null, output: string): Promise<void> {
+    if (!this.manager.find(ws.id)) return;
+    if (kind === 'run' && this.deps.fixRun) {
+      this.deps.toast(`Looking at why the run failed in ${ws.name}…`);
+      const fix = await this.deps.fixRun(ws.path, command, output);
+      const project = this.manager.find(ws.id) && this.manager.list.find((p) => p.id === ws.projectId);
+      if (!project) return;
+      if (fix && 'command' in fix && fix.command !== command) {
+        this.remember(project.id, { run: fix.command }, ['run']);
+        this.deps.toast(`Run for ${project.name} is now \`${fix.command}\` (\`${command}\` failed)`, 'success');
+        this.closeTerminal(runId(ws.id));
+        this.run(ws.id);
+        return;
+      }
+    }
+    // The command is right; what it runs is broken: Claude fixes it, right there.
+    this.deps.askClaude(fixFailedPrompt(kind, command, code, output), `ws:${ws.id}`);
+  }
+
+  /** Keep commands for you, marked as Claude's (`byClaude`), and show them. */
+  private remember(projectId: string, scripts: ProjectScripts, byClaude: ReadonlyArray<'setup' | 'run'>): void {
+    const had = this.manager.yourScripts(projectId).byClaude ?? [];
+    const marked = [...new Set([...had, ...byClaude])];
+    this.manager.setScripts(projectId, { ...scripts, ...(marked.length ? { byClaude: marked } : {}) });
+    void this.deps.controller.refresh();
   }
 
   /** Setup failed: ask what it should be, remember the answer, and run that (once). */
@@ -723,7 +816,7 @@ export class Workbench {
     this.deps.toast(`Setup failed in ${ws.name}. Looking for the right one…`);
     const fix = await this.deps.fixSetup!(ws.path, command, output);
     const project = this.manager.find(ws.id) && this.manager.list.find((p) => p.id === ws.projectId);
-    if (!project || !fix || ('command' in fix && fix.command === command)) return this.setupFailed(ws, command, code);
+    if (!project || !fix || ('command' in fix && fix.command === command)) return this.setupFailed(ws, command, code, output);
     if ('none' in fix) {
       this.deps.store.dispatch({ type: 'setup', id: ws.id });
       return this.learnSetup(project.id, fix, `${project.name} needs no setup. New worktrees skip it from now on`);
@@ -732,9 +825,65 @@ export class Workbench {
     this.startSetup(ws, fix.command, false);
   }
 
-  /** New worktrees (and forks, handoffs) get the project's setup when that's switched on. */
+  /**
+   * New worktrees (and forks, handoffs) get the project's setup when that's switched on. The first
+   * one of a project whose files and tooling don't say how to set it up or run it has Claude work
+   * that out first (once: it's remembered for the next ones).
+   */
   onWorktreeCreated(ws: Workspace): void {
-    if (this.deps.store.getState().prefs.autoSetup) this.runSetup(ws.id, true);
+    const setup = (): void => {
+      if (this.deps.store.getState().prefs.autoSetup && this.manager.find(ws.id)) this.runSetup(ws.id, true);
+    };
+    const looking = this.workOut(ws);
+    if (looking) void looking.then(setup);
+    else setup();
+  }
+
+  /**
+   * Claude looks at a project once, in a worktree of it, for what its own files and tooling
+   * (beluga.json, a Makefile, a lockfile, package.json…) don't say: its setup, its run command.
+   * What it says is kept as yours, marked as Claude's. Undefined when there's nothing to look at.
+   */
+  private workOut(ws: Workspace): Promise<void> | undefined {
+    const project = this.manager.list.find((p) => p.id === ws.projectId);
+    if (!project?.root || !this.deps.workOutScripts) return undefined;
+    const pending = this.workingOut.get(project.id);
+    if (pending) return pending;
+    const yours = this.manager.yourScripts(project.id);
+    if (yours.looked) return undefined;
+    const now = this.manager.scripts(project.id);
+    const want = { setup: !now.setup && !yours.skipSetup, run: !now.run };
+    if (!want.setup && !want.run) return undefined;
+    const asked = this.deps.workOutScripts(ws.path, want);
+    if (!asked) return undefined;
+    this.deps.toast(`Working out how to ${want.setup && want.run ? 'set up and run' : want.setup ? 'set up' : 'run'} ${project.name}…`);
+    const done = asked
+      .then((found) => {
+        // No answer (Claude couldn't): the next new worktree tries again.
+        if (!found || !this.manager.list.some((p) => p.id === project.id)) return;
+        const learned: { -readonly [K in keyof ProjectScripts]: ProjectScripts[K] } = { looked: true };
+        const mine: Array<'setup' | 'run'> = [];
+        const said: string[] = [];
+        if (found.setup && 'none' in found.setup) {
+          learned.skipSetup = true;
+          said.push('no setup needed');
+        } else if (found.setup) {
+          learned.setup = found.setup.command;
+          mine.push('setup');
+          said.push(`setup \`${found.setup.command}\``);
+        }
+        if (found.run && 'command' in found.run) {
+          learned.run = found.run.command;
+          mine.push('run');
+          said.push(`run \`${found.run.command}\``);
+        } else if (found.run) said.push('nothing to run');
+        this.remember(project.id, learned, mine);
+        if (said.length) this.deps.toast(`${project.name}: ${said.join(', ')}. Change them in its ⋯ menu (Setup and run commands)`, 'success');
+      })
+      .catch(() => undefined)
+      .finally(() => this.workingOut.delete(project.id));
+    this.workingOut.set(project.id, done);
+    return done;
   }
 
   /**
@@ -747,23 +896,45 @@ export class Workbench {
     if (remake.length) this.deps.toast(`Restored. Its dependencies and builds were cleared when it was archived: run ${remake.map((r) => `\`${r}\``).join(', then ')} to make them again`, 'info');
   }
 
-  /** Start (or restart) the project's run command, e.g. its dev server. */
+  /**
+   * Start (or restart) the project's run command, e.g. its dev server. With none yet, Claude works
+   * one out first (when it hasn't already). If it stops with an error, you're asked whether Claude
+   * should fix it.
+   */
   run(wsId: string): PtyProcess | undefined {
     const ws = this.manager.find(wsId);
     const project = ws ? this.manager.list.find((p) => p.id === ws.projectId) : undefined;
-    const command = project?.scripts?.run?.command;
+    const command = project ? this.manager.scripts(project.id).run?.command : undefined;
     if (!ws || !command) {
+      const looking = ws ? this.workOut(ws) : undefined;
+      if (looking && ws) {
+        void looking.then(() => {
+          if (this.manager.find(wsId) && project && this.manager.scripts(project.id).run) this.run(wsId);
+          else this.deps.toast("Claude couldn't find a way to run this project. Set one in its ⋯ menu (Setup and run commands)", 'warn');
+        });
+        return undefined;
+      }
       this.deps.toast("This project has no run command. Set one in its ⋯ menu (Setup and run commands)", 'warn');
       return undefined;
     }
     const current = this.deps.terminals?.get(runId(wsId));
     if (current?.running) return current;
     this.closeTerminal(runId(wsId));
-    return this.openSession(runId(wsId), ws, command);
+    this.stopping.delete(wsId);
+    const session = this.openSession(runId(wsId), ws, command);
+    if (session)
+      this.watchExit(runId(wsId), session, (code) => {
+        // Stopped by you (Stop, ^C, closing it) or ended fine: not a failure.
+        if (this.stopping.delete(wsId) || code === null || code === 0 || STOPPED_CODES.has(code)) return;
+        this.offerFix(ws, 'run', command, code, session.backlog());
+      });
+    return session;
   }
 
   stopRun(wsId: string): void {
-    this.deps.terminals?.get(runId(wsId))?.kill();
+    const session = this.deps.terminals?.get(runId(wsId));
+    if (session?.running) this.stopping.add(wsId);
+    session?.kill();
   }
 
   /**
@@ -773,8 +944,9 @@ export class Workbench {
   setScript(projectId: string, kind: 'setup' | 'run', command: string, team = false): void {
     try {
       const value = command.trim() || undefined;
-      // Choosing a setup yourself overrides one learned as unneeded.
-      const learned = kind === 'setup' ? { skipSetup: undefined } : {};
+      // Choosing a setup yourself overrides one learned as unneeded; either one is no longer Claude's.
+      const claudes = (this.manager.yourScripts(projectId).byClaude ?? []).filter((k) => k !== kind);
+      const learned = { ...(kind === 'setup' ? { skipSetup: undefined } : {}), byClaude: claudes.length ? claudes : undefined };
       if (team) {
         this.manager.setScripts(projectId, { [kind]: value }, { inRepo: true });
         this.manager.setScripts(projectId, { [kind]: undefined, ...learned });
