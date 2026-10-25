@@ -118,25 +118,29 @@ test('Connect Stripe… is in every project’s right-click menu, and the amount
   await expect(page.getByRole('dialog', { name: 'bob-api earnings' })).toContainText('Bob API, Inc.');
 });
 
-test('a project’s home shows how it’s doing lately: a range, its figures, each day, the latest payments', async ({ page }) => {
+test('a project’s home shows how it’s doing lately: one folded row, then the range, each day, the latest payments', async ({ page }) => {
   await sidebar(page).getByText('bob-api', { exact: true }).first().click();
   const section = page.getByRole('main').getByRole('region', { name: 'Earnings' });
   await expect(section).toBeVisible();
-  await expect(section.getByText('Bob API, Inc.')).toBeVisible();
+  await expect(section.getByText(/^Bob API, Inc\./)).toBeVisible();
 
-  // 30 days at first; each figure against the 30 days before.
+  // Folded at first: the last 30 days in one row, against the 30 days before.
+  const summary = section.locator('[data-earnings-summary]');
+  await expect(summary).toHaveAttribute('aria-expanded', 'false');
+  await expect(summary).toHaveAccessibleName(/^(≈ )?\$[\d,.]+K? in the last 30 days$/);
+  await expect(summary).toContainText(/\d+ payments/);
+  await expect(summary).toContainText(/\d+ paying customers/);
+  await expect(summary.locator('[data-change]').first()).toBeVisible();
+  await expect(section.getByRole('tablist', { name: 'Range' })).toBeHidden();
+
+  // Unfolded: the range, a bar per day, the latest payments.
+  await summary.click();
+  await expect(summary).toHaveAttribute('aria-expanded', 'true');
   const range = section.getByRole('tablist', { name: 'Range' });
   await expect(range.getByRole('tab', { name: '30 days' })).toHaveAttribute('aria-selected', 'true');
-  const figures = section.getByRole('group', { name: 'The last 30 days' });
-  await expect(figures.getByRole('group', { name: /^Earned: (≈ )?\$[\d,.]+K?$/ })).toBeVisible();
-  await expect(figures.getByRole('group', { name: /^Payments: \d+$/ })).toBeVisible();
-  await expect(figures.getByRole('group', { name: /^Paying customers: \d+$/ })).toBeVisible();
-  await expect(figures.locator('[data-change]').first()).toBeVisible();
   await expect(section.getByRole('img', { name: 'Earned each day, the last 30 days' }).locator(':scope > *')).toHaveCount(30);
-
-  // Another range: every figure and the chart follow (and it's kept).
   await range.getByRole('tab', { name: '7 days' }).click();
-  await expect(section.getByRole('group', { name: 'The last 7 days' })).toBeVisible();
+  await expect(summary).toHaveAccessibleName(/in the last 7 days$/);
   await expect(section.getByRole('img', { name: 'Earned each day, the last 7 days' }).locator(':scope > *')).toHaveCount(7);
 
   // The latest payments: a first name and an initial, never more; a few, then all of them.
@@ -151,12 +155,17 @@ test('a project’s home shows how it’s doing lately: a range, its figures, ea
     await expect(rows.first()).toHaveAttribute('data-payment', /refunded/);
   }
 
-  // ••• opens the Stripe sheet, which says the last 30 days too.
+  // Both kept: another project's home opens the same way.
+  await sidebar(page).getByText('landing', { exact: true }).first().click();
+  await sidebar(page).getByText('bob-api', { exact: true }).first().click();
+  await expect(section.locator('[data-earnings-summary]')).toHaveAttribute('aria-expanded', 'true');
+  await expect(section.locator('[data-earnings-summary]')).toHaveAccessibleName(/in the last 7 days$/);
+
+  // Stripe Earnings… opens the sheet, which says the last 30 days too.
   await section.getByRole('button', { name: 'Stripe Earnings…' }).click();
   const sheet = page.getByRole('dialog', { name: 'bob-api earnings' });
   await expect(sheet.locator('[data-last-30]')).toHaveText(/^Last 30 days: (≈ )?\$[\d,]+\.\d\d from \d+ payments by \d+ customers$/);
   await page.keyboard.press('Escape');
-  await range.getByRole('tab', { name: '30 days' }).click();
 });
 
 test('every total shows in one currency you choose, in Settings or the Stripe sheet', async ({ page }) => {

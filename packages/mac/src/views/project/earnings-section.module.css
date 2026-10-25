@@ -1,174 +1,74 @@
-/* A project home's Earnings (EarningsSection.tsx): pastel tints behind icons, a status in words, no glow. */
-.card {
+/* A project home's Earnings (EarningsSection.tsx): a section like the others (project-home.module.css's
+   head, rows and row); colour only in small marks. */
+
+/* ---- the folded row */
+.range {
+  color: var(--text-3);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.last {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+.fold {
+  flex-shrink: 0;
+  color: var(--text-3);
+  transform: rotate(-90deg);
+  transition: transform var(--dur-fast);
+}
+.folded {
+  transform: none;
+}
+.change {
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 7px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.up {
+  color: color-mix(in srgb, var(--ok) 88%, var(--text));
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.down {
+  color: color-mix(in srgb, var(--warn) 88%, var(--text));
+  background: color-mix(in srgb, var(--warn) 11%, transparent);
+}
+.flat {
+  color: var(--text-3);
+  background: var(--bg-hover);
+}
+.problem {
+  color: var(--warn);
+}
+
+/* ---- unfolded */
+.details {
   --money: var(--ok);
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px 16px 12px;
-  border-radius: var(--radius-l);
-  background: var(--bg-raised);
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  gap: 12px;
+  padding: 10px 12px 12px;
+  border-top: 0.5px solid var(--hairline);
 }
-
-.head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.headIcon {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: color-mix(in srgb, var(--money) 85%, var(--text));
-  background: color-mix(in srgb, var(--money) 14%, transparent);
-}
-.headText {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.title {
-  margin: 0;
-  font-size: 0.98rem;
-  font-weight: 600;
-}
-.sub {
-  color: var(--text-2);
-  font-size: 0.86rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dim {
-  color: var(--text-3);
-}
-.testBadge {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  color: var(--text-2);
-  font-size: 0.76rem;
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
-}
-
 .bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
 }
-.flex {
-  flex: 1;
-}
-.allTime {
+.dim {
+  margin: 0;
   color: var(--text-3);
   font-size: 0.86rem;
   white-space: nowrap;
 }
-.allTime strong {
-  color: var(--text-2);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
 
-/* ---- the three figures */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-.stat {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  background: var(--bg-sunken);
-  box-shadow: inset 0 0 0 0.5px var(--hairline);
-  cursor: default;
-}
-.statIcon {
-  width: 30px;
-  height: 30px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-}
-.statText {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.statLabel {
-  color: var(--text-2);
-  font-size: 0.84rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.statValue {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-  font-size: 1.28rem;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.25;
-}
-.change {
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
-.up {
-  color: color-mix(in srgb, var(--ok) 88%, var(--text));
-  background: color-mix(in srgb, var(--ok) 13%, transparent);
-}
-.down {
-  color: color-mix(in srgb, var(--warn) 88%, var(--text));
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
-}
-.flat {
-  color: var(--text-3);
-  background: var(--bg-hover);
-}
-
-/* Pastel tints behind icons and initials. */
-.tone_ok {
-  color: color-mix(in srgb, var(--ok) 85%, var(--text));
-  background: color-mix(in srgb, var(--ok) 15%, transparent);
-}
-.tone_info {
-  color: color-mix(in srgb, var(--info) 85%, var(--text));
-  background: color-mix(in srgb, var(--info) 14%, transparent);
-}
-.tone_merged {
-  color: color-mix(in srgb, var(--merged) 85%, var(--text));
-  background: color-mix(in srgb, var(--merged) 15%, transparent);
-}
-.tone_warn {
-  color: color-mix(in srgb, var(--warn) 85%, var(--text));
-  background: color-mix(in srgb, var(--warn) 14%, transparent);
-}
-.tone_muted {
-  color: var(--text-3);
-  background: var(--bg-hover);
-}
-
-/* ---- each day */
 .chartWrap {
   display: flex;
   flex-direction: column;
@@ -178,7 +78,7 @@
   display: flex;
   align-items: flex-end;
   gap: 3px;
-  height: 64px;
+  height: 44px;
 }
 .dense {
   gap: 1px;
@@ -192,12 +92,12 @@
 }
 .fill {
   width: 100%;
-  border-radius: 3px 3px 1px 1px;
-  background: color-mix(in srgb, var(--money) 34%, transparent);
+  border-radius: 2px 2px 1px 1px;
+  background: color-mix(in srgb, var(--money) 32%, transparent);
   transition: background var(--dur-fast);
 }
 .dense .fill {
-  border-radius: 2px 2px 0 0;
+  border-radius: 1px 1px 0 0;
 }
 .zero {
   height: 2px;
@@ -205,10 +105,10 @@
   background: var(--hairline-strong);
 }
 .today .fill:not(.zero) {
-  background: color-mix(in srgb, var(--money) 62%, transparent);
+  background: color-mix(in srgb, var(--money) 58%, transparent);
 }
 .col:hover .fill:not(.zero) {
-  background: color-mix(in srgb, var(--money) 75%, transparent);
+  background: color-mix(in srgb, var(--money) 72%, transparent);
 }
 .col:hover .zero {
   background: var(--text-3);
@@ -224,7 +124,7 @@
 .latest {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .latestHead {
   display: flex;
@@ -246,45 +146,40 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 11px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
   color: var(--text-2);
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
   transition: background var(--dur-fast), color var(--dur-fast);
 }
 .filter:hover {
   background: var(--bg-hover);
 }
-.filterOn {
+.filterOn,
+.filterOn:hover {
   color: var(--text);
   background: var(--bg-selected);
   box-shadow: none;
-}
-.filterOn:hover {
-  background: var(--bg-selected);
 }
 .filterCount {
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
-.rows {
+.payments {
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius);
-  box-shadow: inset 0 0 0 0.5px var(--hairline);
-  overflow: hidden;
 }
-.rows > [role='listitem'] + [role='listitem'] {
+.payments > [role='listitem'] + [role='listitem'] {
   border-top: 0.5px solid var(--hairline);
 }
 .pay {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 5px 12px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 0.92rem;
 }
 /* Arrived while you were looking: a faint money tint that settles. */
 .fresh {
@@ -292,51 +187,35 @@
 }
 @keyframes fresh {
   from {
-    background: color-mix(in srgb, var(--money) 16%, transparent);
+    background: color-mix(in srgb, var(--money) 14%, transparent);
   }
 }
 :global([data-motion='reduce']) .fresh {
   animation: none;
-}
-.avatar {
-  width: 24px;
-  height: 24px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  font-size: 0.8rem;
-  font-weight: 650;
-}
-.payMain {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
 }
 .payWho {
   font-weight: 600;
   white-space: nowrap;
 }
 .payWhat {
+  flex: 1;
+  min-width: 0;
   color: var(--text-3);
-  font-size: 0.88rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .badge {
   flex: none;
-  padding: 1px 7px;
-  border-radius: 9px;
+  padding: 0 6px;
+  border-radius: 8px;
   font-size: 0.76rem;
   font-weight: 600;
   white-space: nowrap;
 }
 .badgeNew {
   color: color-mix(in srgb, var(--money) 88%, var(--text));
-  background: color-mix(in srgb, var(--money) 15%, transparent);
+  background: color-mix(in srgb, var(--money) 14%, transparent);
 }
 .badge_muted {
   color: var(--text-2);
@@ -344,11 +223,11 @@
 }
 .badge_info {
   color: color-mix(in srgb, var(--info) 88%, var(--text));
-  background: color-mix(in srgb, var(--info) 13%, transparent);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
 }
 .badge_warn {
   color: color-mix(in srgb, var(--warn) 88%, var(--text));
-  background: color-mix(in srgb, var(--warn) 13%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
 .payAmount {
   flex: none;
@@ -384,34 +263,17 @@
 }
 .more {
   align-self: flex-start;
-  padding: 0 4px;
-}
-.quiet {
-  margin: 0;
-  color: var(--text-3);
-  font-size: 0.88rem;
-}
-.reading {
-  padding: 4px 0 6px;
-}
-.problem {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--warn);
-  font-size: 0.9rem;
 }
 
-/* Narrow (a wide right panel beside the page): the figures stack, the rows keep the amount. */
+/* Narrow (a wide right panel beside the page): the rows keep the amount. */
 @container (max-width: 640px) {
-  .stats {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  .last,
   .payWhat {
     display: none;
   }
 }
 @container (max-width: 460px) {
+  .range,
   .payWhen {
     display: none;
   }
