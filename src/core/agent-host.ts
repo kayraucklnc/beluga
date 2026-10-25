@@ -25,6 +25,7 @@ import { planForHome } from './plans/model.js';
 import { findIssue } from './board/model.js';
 import { explainTaskMentions } from '../shared/task-refs.js';
 import { isAssistant } from '../shared/assistant.js';
+import { type SlotWait, clampParallelRuns } from '../shared/run-slots.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -152,6 +153,8 @@ interface Lane {
    * you go on (Continue, or any message of yours) or Beluga resumes it (see shared/run-failure.ts).
    */
   held?: boolean;
+  /** The slot wait its first message's card shows now ("requestId running/limit"), so it's said once (see pump). */
+  slotNoted?: string;
 }
 
 /** A tool running at least this long: a steer interrupts it instead of waiting for Claude's next step. */
@@ -199,8 +202,6 @@ function withoutAskOnly<T extends { readonly askOnly?: unknown }>(place: T): T {
   return rest as T;
 }
 
-/** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
-const MAX_PARALLEL_RUNS = 4;
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -223,6 +224,7 @@ export class AgentHost {
   private readonly lanes = new Map<string, Lane>();
   /** Worktrees whose Claude ran something that may have started test processes since they were last stopped. */
   private readonly testRuns = new Set<string>();
+  /** Runs holding one of the slots for working at once (prefs.parallelRuns; see pump). */
   private running = 0;
   /** klaud is quitting (see abort): nothing waiting starts. */
   private quitting = false;
@@ -686,9 +688,9 @@ export class AgentHost {
     return false;
   }
 
-  private emitAgent(requestId: string, requester: string, event: BodyOf<'agent_event'>['event'], text = '', channel = 'room'): void {
+  private emitAgent(requestId: string, requester: string, event: BodyOf<'agent_event'>['event'], text = '', channel = 'room', slotWait?: SlotWait): void {
     const final = event === 'done' || event === 'error' || event === 'denied';
-    const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel };
+    const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel, ...(slotWait ? { slotWait } : {}) };
     // Workspace conversations are private: events go to you and the people you invited, never to the room.
     const targets = channel === 'room' ? [{ keep: final }] : [this.selfId, ...this.deps.sharing.recipients(channel)].map((to) => ({ to }));
     for (const opts of targets) if (!this.send(body, opts) && final) this.outbox = [...this.outbox, { body, opts }].slice(-50);
@@ -875,23 +877,51 @@ export class AgentHost {
       for (;;) {
         const auto = this.compactor.due(lane.channel);
         if (this.quitting) break;
-        const next = auto || lane.held ? undefined : lane.waiting.shift();
-        if (!auto && !next) break;
+        const head = auto || lane.held ? undefined : lane.waiting[0];
+        if (!auto && !head) break;
         // A plan's own conversation (its head Claude, the orchestrator) never waits for a slot behind
         // the task runs it started: you can always talk to it, and stop or redirect them from there.
-        const free = this.isPlanHome(lane.channel);
-        while (!free && this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
-        if (!free) this.running++;
+        // Nor does a message you steer: you asked for it now.
+        const free = this.isPlanHome(lane.channel) || Boolean(head?.urgent);
+        if (!free && this.running >= this.slotLimit()) {
+          // It stays in line meanwhile (so you can still steer, edit or drop it), and its card says why it waits.
+          if (head && !head.compact) this.noteSlotWait(lane, head);
+          await new Promise((r) => setTimeout(r, 200));
+          continue;
+        }
+        lane.slotNoted = undefined;
+        const next = head ? lane.waiting.shift() : undefined;
+        let holds = !free;
+        if (holds) this.running++;
+        // A run that answered and only waits on its background agents gives its slot back (see runAgent).
+        const release = (): void => {
+          if (holds) this.running--;
+          holds = false;
+        };
         try {
           if (!next || next.compact) await this.runCompaction(lane, auto, next?.body.prompt);
-          else await this.runAgent(next.from, next.body, lane, next.askTo).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
+          else await this.runAgent(next.from, next.body, lane, next.askTo, release).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
         } finally {
-          if (!free) this.running--;
+          release();
         }
       }
     } finally {
       lane.pumping = false;
     }
+  }
+
+  /** How many conversations your Claude may work in at once (Settings › Claude). */
+  private slotLimit(): number {
+    return clampParallelRuns(this.store.getState().prefs.parallelRuns);
+  }
+
+  /** A message waiting for a free Claude: its card says so (once, and again when the count changes). */
+  private noteSlotWait(lane: Lane, item: Waiting): void {
+    const slotWait = { running: this.running, limit: this.slotLimit() };
+    const key = `${item.body.requestId} ${slotWait.running}/${slotWait.limit}`;
+    if (lane.slotNoted === key) return;
+    lane.slotNoted = key;
+    this.emitAgent(item.body.requestId, item.from, 'queued', item.body.prompt, item.body.channel, slotWait);
   }
 
   /** A running (or drafting) plan's own conversation: its head Claude. */
@@ -956,7 +986,8 @@ export class AgentHost {
     });
   }
 
-  private async runAgent(from: string, body: BodyOf<'agent_request'>, lane: Lane, askTo = from): Promise<void> {
+  /** `release`: gives back this run's slot for working at once, when it only waits on background agents. */
+  private async runAgent(from: string, body: BodyOf<'agent_request'>, lane: Lane, askTo = from, release?: () => void): Promise<void> {
     const agent = this.agent as AgentBackend;
     const controller = new AbortController();
     lane.current = controller;
@@ -1083,6 +1114,7 @@ export class AgentHost {
         onFollowUps: (send) => {
           if (lane.current !== controller) return;
           lane.followUps = send;
+          if (send) release?.();
           // Anything that queued up behind this run from the same person can go in now.
           if (send) lane.waiting = lane.waiting.filter((w) => !this.sendFollowUp(lane, w.from, w.body));
         },

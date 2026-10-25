@@ -409,7 +409,8 @@ export const ConvView = z.object({
   icon: z.string().regex(/^[0-9a-f]{16,64}$/).optional(),
   outputs: z.array(OutputView).max(100).optional(),
   /** Your messages waiting for Claude here, in run order: Steer one (host.promote) or remove it (host.cancelQueued) by `id`. */
-  queue: z.array(z.object({ id, text: z.string().max(300) })).max(20).optional(),
+  /** `waiting`: why it hasn't started though nothing runs here (your Claude works in as many conversations as it may at once). */
+  queue: z.array(z.object({ id, text: z.string().max(300), waiting: z.string().max(300).optional() })).max(20).optional(),
   /** 1.3: a worktree of yours: it can be merged from the phone (companion.mergeCheck, companion.merge). */
   mergeable: z.boolean().optional(),
   /** 1.3: where its merge stands: merging, conflicts (files by name), Claude resolving them, Claude done (check again), merged, or blocked (why). */

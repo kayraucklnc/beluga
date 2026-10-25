@@ -28,6 +28,7 @@ import { Shimmer } from './steps/StepRow.js';
 import { useMentionWorld } from './Mention.js';
 import type { TaskView } from '@beluga/core/gateway/model.js';
 import { TaskCard } from '../gateway/TaskCard.js';
+import { SlotWaitNotice } from './SlotWait.js';
 import s from './chat.module.css';
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
@@ -185,7 +186,7 @@ function statusOf(item: AgentItem): { label: string; tone: 'claude' | 'ok' | 'er
     case 'awaiting_approval':
       return { label: `Waiting for ${item.ownerName} to approve`, tone: 'warn' };
     case 'queued':
-      return { label: 'Queued', tone: 'muted' };
+      return { label: item.slotWait ? 'Waiting for a free Claude' : 'Queued', tone: 'muted' };
     case 'done':
       // The answer itself says it's done: no "Done in 3m" on every message.
       return { label: '', tone: 'ok' };
@@ -403,6 +404,9 @@ function TurnCard({
             <FailureNotice failure={failure} />
           ) : item.text ? (
             <Markdown text={item.text} paths localImages={mine} live={running} tasks={mine} />
+          ) : item.status === 'queued' && item.slotWait ? (
+            // Nothing runs here: your Claude works in as many other conversations as it may at once.
+            <SlotWaitNotice wait={item.slotWait} requestId={mine && item.requester === selfId ? item.requestId : undefined} />
           ) : item.status === 'queued' ? (
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>
