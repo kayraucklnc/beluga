@@ -430,6 +430,8 @@ export class TaskServer {
         viaAgent: req.by === 'agent',
         context: [],
         place,
+        // None of your conversations is this task's: what its Claude posts goes to the group chat.
+        channel: 'room',
         scope: full ? 'full' : 'folder',
         signal: controller.signal,
         onEvent: (kind, text) => {
