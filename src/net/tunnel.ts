@@ -89,8 +89,100 @@ async function startNgrok(port: number, opts: TunnelOptions): Promise<Tunnel> {
 
 async function startCloudflaredWith(bin: string, port: number, opts: TunnelOptions): Promise<Tunnel> {
   const child = launch(bin, ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${port}`]);
-  const publicUrl = await waitForUrl(child, CLOUDFLARE_URL, 'cloudflared', opts.onDied);
-  return { kind: 'cloudflared', publicUrl, close: () => child.kill() };
+  let why: string | undefined;
+  const publicUrl = await waitForUrl(child, CLOUDFLARE_URL, 'cloudflared', opts.onDied && ((reason) => opts.onDied?.(why ?? reason)));
+  // A quick tunnel's name can vanish while cloudflared keeps running (Cloudflare drops it after
+  // the Mac sleeps): kill it then, so onDied fires and whoever opened it opens a fresh one.
+  const watch = watchTunnel(publicUrl, () => {
+    why = 'cloudflared’s public name stopped answering';
+    child.kill();
+  });
+  child.once('exit', () => watch.stop());
+  return {
+    kind: 'cloudflared',
+    publicUrl,
+    close: () => {
+      watch.stop();
+      child.kill();
+    },
+  };
+}
+
+/** Whether a URL answers at all: a page, a redirect, or a WebSocket server's 426. Cloudflare's 530 (no tunnel) doesn't count. */
+async function answers(url: string, timeoutMs = 8_000): Promise<boolean> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' });
+    return res.status < 500 || res.status === 426;
+  } catch {
+    return false;
+  }
+}
+
+/** What a tunnel's own name is checked against: when this doesn't answer either, the Mac is offline, not the tunnel dead. */
+const CONTROL_URL = 'https://www.cloudflare.com/cdn-cgi/trace';
+
+export interface WatchOptions {
+  /** How often the name is checked (and the clock watched for a sleep). */
+  readonly intervalMs?: number;
+  /** Misses in a row, while the internet answers, before the tunnel counts as dead. */
+  readonly misses?: number;
+  /** How long a fresh name may take to resolve before misses count. */
+  readonly graceMs?: number;
+  readonly answers?: (url: string) => Promise<boolean>;
+}
+
+/**
+ * Keep checking a tunnel's public URL; `onDead` once it stops answering while the internet still
+ * does. Checked every minute, and at once after the clock jumps (the Mac woke up from sleep).
+ */
+export function watchTunnel(publicUrl: string, onDead: () => void, opts: WatchOptions = {}): { stop(): void } {
+  const interval = opts.intervalMs ?? 60_000;
+  const needed = opts.misses ?? 2;
+  const graceMs = opts.graceMs ?? 3 * 60_000;
+  const check = opts.answers ?? answers;
+  const started = Date.now();
+  let seen = false;
+  let missed = 0;
+  let busy = false;
+  let stopped = false;
+  let last = Date.now();
+  const tick = async (): Promise<void> => {
+    if (busy || stopped) return;
+    busy = true;
+    try {
+      if (await check(publicUrl)) {
+        seen = true;
+        missed = 0;
+        return;
+      }
+      if (!seen && Date.now() - started < graceMs) return;
+      // Offline isn't dead: a new tunnel couldn't do better.
+      if (!(await check(CONTROL_URL))) return;
+      if (++missed >= needed && !stopped) {
+        stopped = true;
+        clearInterval(timer);
+        onDead();
+      }
+    } finally {
+      busy = false;
+    }
+  };
+  const timer = setInterval(() => {
+    const now = Date.now();
+    const slept = now - last > interval * 2;
+    last = now;
+    void tick().then(() => {
+      // Just woke: look again soon instead of a minute later, cloudflared needs a moment to reconnect.
+      if (slept && missed > 0 && !stopped) setTimeout(() => void tick(), Math.min(interval, 15_000)).unref?.();
+    });
+  }, interval);
+  timer.unref?.();
+  return {
+    stop: () => {
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
 }
 
 /** Use the cloudflared binary bundled via npm, downloading it on first use if missing. */

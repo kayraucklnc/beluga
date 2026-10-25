@@ -348,6 +348,11 @@ which one worked (`src/companion/dial.ts`):
   links carry it too (`beluga://device#<secret>?r=<url>`), so a QR works even where the DHT doesn't;
   a typed code finds it through the record. Each welcome says the current one; the phone keeps the
   last three.
+- **A tunnel that's gone is replaced.** Cloudflare drops a quick tunnel's name when the Mac sleeps
+  long enough, while cloudflared keeps running, so the Mac would keep handing out a dead URL (BLG-126).
+  Every tunnel's public URL is checked each minute and right after a wake (the clock jumped); two
+  misses while Cloudflare itself answers kill it, and a fresh one (a new name, a new record) opens
+  30 s later. Offline isn't counted. Rooms' fallback relays come back the same way.
 - **On the phone**, Bare has no WebSocket, so the worklet asks the app's (React Native's, with the
   OS's TLS) through its IPC and passes ciphertext both ways in base64.
 - **Only while needed.** The relay server and its tunnel run only while a phone is paired or a
