@@ -293,6 +293,17 @@ describe('handing an issue to Claude', () => {
     expect(prompt).toContain('Open a pull request for beluga/');
   });
 
+  it('what you add goes to Claude after its instructions, in your words, and shows in the conversation', async () => {
+    const { issues, asked, shown, drafted } = setup();
+    await issues.investigate('api', 48, { note: '  It only fails behind the proxy ' });
+    expect(asked[0]![0].endsWith('\n\nAlso, from me: It only fails behind the proxy')).toBe(true);
+    expect(shown[0]).toMatch(/without fixing it yet\.\n\nIt only fails behind the proxy$/);
+    await issues.fix('api', 48, { note: 'Keep the public API as it is' });
+    expect(asked[1]![0]).toMatch(/Fixes #48[\s\S]*Also, from me: Keep the public API as it is$/);
+    await issues.toTask('api', 47, { note: 'Only for the EU region' });
+    expect(drafted[0]![0]).toMatch(/Also, from the person making the task: Only for the EU region$/);
+  });
+
   it('a double click is one: one task, one worktree, one ask; Fix It right after waits for Investigate', async () => {
     const { issues, board, asked, newOpts } = setup();
     const [a, b] = await Promise.all([issues.investigate('api', 48), issues.investigate('api', 48)]);

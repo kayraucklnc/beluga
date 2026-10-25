@@ -1,10 +1,10 @@
-import { forwardRef, useRef, useState } from 'react';
-import { type Issue, STATUS_INFO } from '@beluga/core/board/model.js';
+import { useRef, useState } from 'react';
+import type { Issue } from '@beluga/core/board/model.js';
 import { type GhIssueFull, type IssueStage, repoSlug } from '@beluga/core/issues/model.js';
 import type { GitHubRepo } from '@beluga/workspaces/github.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Markdown } from '../chat/Markdown.js';
-import { Icon, type IconName } from '../components/Icon.js';
+import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { Avatar, Button, Empty, EmptyActions, IconButton, Tip, cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
@@ -16,6 +16,7 @@ import { useSwipeBack } from '../tasks/use-swipe-back.js';
 import { SwipeBackEdge } from '../tasks/SwipeBackEdge.js';
 import { agoWords, comments, lastReport, stateOf } from './issues-model.js';
 import { GhLabelChip, IssueStateIcon, useIssueMenu } from './parts.js';
+import { IssueComposer } from './IssueComposer.js';
 import { useIssue, useIssueActions, useIssueStage } from './use-issues.js';
 import { useActions } from '../lib/actions.js';
 import t from '../tasks/tasks.module.css';
@@ -23,9 +24,10 @@ import s from './issues.module.css';
 
 /**
  * One GitHub issue: what it says and what people said since, and what Claude should do about it.
- * Nothing done yet: three choices (Investigate, Fix It, Make a Task). Once Claude is on it, the
- * same place shows how it's going: investigating, what it found (with Fix It, in the same
- * worktree), fixing, its pull request, done. Everything goes through the issue's task.
+ * Nothing done yet: a composer like a project's home (Investigate, Fix It or Make a Task, and
+ * anything Claude should know). Once Claude is on it, the same place shows how it's going:
+ * investigating, what it found (with Fix It, in the same worktree), fixing, its pull request,
+ * done. Everything goes through the issue's task.
  */
 export function IssuePage({ projectId, number }: { projectId: string; number: number }) {
   const { data, error, loading, refresh } = useIssue(projectId, number);
@@ -158,11 +160,11 @@ function useFindings(stage: IssueStage): string | undefined {
 /** What to do next, or how it's going: the one place on the page that changes as Claude works. */
 function NextStep({ projectId, issue, stage }: { projectId: string; issue: GhIssueFull; stage: IssueStage }) {
   const a = useIssueActions();
-  const [busy, setBusy] = useState<'investigate' | 'fix' | 'task' | 'look'>();
-  const run = async (what: NonNullable<typeof busy>, job: () => Promise<unknown>): Promise<void> => {
-    setBusy(what);
-    await job();
-    setBusy(undefined);
+  const [fixing, setFixing] = useState(false);
+  const fix = async (): Promise<void> => {
+    setFixing(true);
+    await a.fix(projectId, n);
+    setFixing(false);
   };
   const n = issue.number;
   const ws = useApp((st) => (stage.kind === 'investigating' || stage.kind === 'investigated' || stage.kind === 'fixing' ? findWorkspace(st.projects, stage.ws) : undefined));
@@ -170,41 +172,8 @@ function NextStep({ projectId, issue, stage }: { projectId: string; issue: GhIss
   // Stopped while fixing: what it said (why there's no pull request).
   const said = useApp((st) => (stage.kind === 'fixing' && !stage.working ? lastReport(st.log, `ws:${stage.ws}`) : undefined));
 
-  if (stage.kind === 'new' || stage.kind === 'task') {
-    const task = stage.kind === 'task' ? stage.task : undefined;
-    // Claude still writing the task (Make a Task): working on it waits for its words, so not yet.
-    const writing = Boolean(task?.drafting);
-    return (
-      <section className={s.next} aria-label="What should Claude do?">
-        <h2 className={s.nextTitle}>{task ? `${task.key} is on the board · what should Claude do?` : 'What should Claude do?'}</h2>
-        <div className={s.choices}>
-          <Choice icon="search" tone="info" title="Investigate" busy={busy === 'investigate'} disabled={Boolean(busy) || writing} onClick={() => void run('investigate', () => a.investigate(projectId, n))}>
-            {writing ? 'Once Claude has written the task up.' : 'Find out why it happens and reproduce it, in a worktree. Nothing is fixed yet.'}
-          </Choice>
-          <Choice icon="wrench" tone="claude" title="Fix It" busy={busy === 'fix'} disabled={Boolean(busy) || writing} onClick={() => void run('fix', () => a.fix(projectId, n))}>
-            {writing ? 'Once Claude has written the task up.' : `Fix it in a new worktree, then open a pull request that closes #${n}.`}
-          </Choice>
-          {task ? (
-            <Choice icon="task" tone="merged" title={`Open ${task.key}`} onClick={() => a.openTask(task.id)}>
-              {task.drafting ? 'Claude is still writing it up.' : `${STATUS_INFO[task.status].label}: its brief, and everything that happens to it.`}
-            </Choice>
-          ) : (
-            <ActionsDropdown
-              align="end"
-              items={[
-                { label: 'From the Issue', icon: 'task', hint: 'Claude writes the title, goal and criteria from what it says', onSelect: () => void run('task', () => a.toTask(projectId, n)) },
-                { label: 'After a Quick Look at the Code', icon: 'search', hint: 'Claude reads the code first (read-only), and adds where it is and the likely cause', onSelect: () => void run('look', () => a.toTask(projectId, n, true)) },
-              ]}
-            >
-              <Choice icon="task" tone="merged" title="Make a Task" menu busy={busy === 'task' || busy === 'look'} disabled={Boolean(busy)}>
-                Put it on the board, written up by Claude, to do later.
-              </Choice>
-            </ActionsDropdown>
-          )}
-        </div>
-      </section>
-    );
-  }
+  // Nothing under way yet: hand it to Claude (the composer), the way a project's home starts work.
+  if (stage.kind === 'new' || stage.kind === 'task') return <IssueComposer projectId={projectId} number={n} {...(stage.kind === 'task' ? { task: stage.task } : {})} />;
 
   const task = stage.task;
   const taskButton = (
@@ -240,11 +209,12 @@ function NextStep({ projectId, issue, stage }: { projectId: string; issue: GhIss
       <Status icon={<Icon name="search" size={13} />} title="Claude investigated" where={where} tone="info" text={found ? undefined : 'Its report is in the conversation.'}>
         {found ? <Report text={found} /> : null}
         <div className={s.statusActions}>
-          <Button variant="primary" size="small" icon="wrench" disabled={busy === 'fix'} onClick={() => void run('fix', () => a.fix(projectId, n))}>
-            {busy === 'fix' ? 'Asking Claude…' : 'Fix It'}
+          <Button variant="primary" size="small" icon="wrench" disabled={fixing} onClick={() => void fix()}>
+            {fixing ? 'Asking Claude…' : 'Fix It'}
           </Button>
-          <span className={t.nextInfo}>In the same worktree, with a pull request that closes #{n}</span>
-          <span className={t.grow} />
+          <Tip label={`In the same worktree, with a pull request that closes #${n}`}>
+            <span className={s.statusHint}>In the same worktree, with a pull request that closes #{n}</span>
+          </Tip>
           {chatButton(false)}
           {taskButton}
         </div>
@@ -298,31 +268,6 @@ function NextStep({ projectId, issue, stage }: { projectId: string; issue: GhIss
     </Status>
   );
 }
-
-interface ChoiceProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'title'> {
-  readonly icon: IconName;
-  readonly tone: 'info' | 'claude' | 'merged';
-  readonly title: string;
-  readonly busy?: boolean;
-  /** It opens a menu (Make a Task's two ways). */
-  readonly menu?: boolean;
-}
-
-/** One of the three choices: an icon in a soft tint, what it does, and its words. (A menu's trigger too: it forwards its ref.) */
-const Choice = forwardRef<HTMLButtonElement, ChoiceProps>(function Choice({ icon, tone, title, children, busy, disabled, menu, className, ...rest }, ref) {
-  return (
-    <button ref={ref} type="button" {...rest} className={cx(s.choice, s[`tone_${tone}`], className)} disabled={disabled} aria-busy={busy || undefined} data-choice={title}>
-      <span className={s.choiceIcon}>
-        <Icon name={icon} size={15} />
-      </span>
-      <span className={s.choiceTitle}>
-        {busy ? 'Asking Claude…' : title}
-        {menu ? <Icon name="chevronDown" size={10} /> : null}
-      </span>
-      <span className={s.choiceText}>{children}</span>
-    </button>
-  );
-});
 
 /** How it's going, in a soft card: what Claude is at, where, and what you can do. */
 function Status({ icon, title, where, tone, text, children }: { icon: React.ReactNode; title: string; where?: React.ReactNode; tone: 'claude' | 'info' | 'ok' | 'muted'; text?: string; children: React.ReactNode }) {

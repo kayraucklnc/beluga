@@ -124,11 +124,15 @@ export function useIssueActions() {
     };
     return {
       /** Claude finds out why and reproduces it, in a worktree of the issue's task. */
-      investigate: (projectId: string, number: number) => act(() => api.issues.investigate(projectId, number), (w) => `Claude is investigating #${number} (${w.key})`),
+      investigate: (projectId: string, number: number, note?: string) => act(() => api.issues.investigate(projectId, number, note?.trim() ? { note: note.trim() } : undefined), (w) => `Claude is investigating #${number} (${w.key})`),
       /** Claude fixes it and opens a pull request that closes it. */
-      fix: (projectId: string, number: number) => act(() => api.issues.fix(projectId, number), (w) => `Claude is fixing #${number} (${w.key})`),
+      fix: (projectId: string, number: number, note?: string) => act(() => api.issues.fix(projectId, number, note?.trim() ? { note: note.trim() } : undefined), (w) => `Claude is fixing #${number} (${w.key})`),
       /** On the board, written by Claude (`look`: after a quick look at the code). */
-      toTask: (projectId: string, number: number, look = false) => act(() => api.issues.toTask(projectId, number, look ? { look: true } : undefined), (w) => (look ? `${w.key}: Claude is looking at the code to write it` : `#${number} is on the board as ${w.key}`)),
+      toTask: (projectId: string, number: number, look = false, note?: string) =>
+        act(
+          () => api.issues.toTask(projectId, number, look || note?.trim() ? { ...(look ? { look: true } : {}), ...(note?.trim() ? { note: note.trim() } : {}) } : undefined),
+          (w) => (look ? `${w.key}: Claude is looking at the code to write it` : `#${number} is on the board as ${w.key}`),
+        ),
       comment: (projectId: string, number: number, body: string) =>
         act(
           async () => {

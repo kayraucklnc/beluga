@@ -40,6 +40,11 @@ export interface GitHubIssuesDeps {
   readonly now?: () => number;
 }
 
+/** What you add when handing an issue to Claude ("it only fails behind the proxy"). */
+export interface Asked {
+  readonly note?: string;
+}
+
 /** What starting work on an issue gives: its task, and the worktree Claude works in. */
 export interface IssueWork {
   readonly task: string;
@@ -107,14 +112,14 @@ export class GitHubIssues {
   }
 
   /** Investigate: Claude finds out why it happens and reproduces it, in the task's worktree, without fixing it. */
-  investigate(projectId: string, number: number): Promise<IssueWork> {
-    return this.one(projectId, number, 'investigate', () => this.investigateNow(projectId, number));
+  investigate(projectId: string, number: number, opts: Asked = {}): Promise<IssueWork> {
+    return this.one(projectId, number, 'investigate', () => this.investigateNow(projectId, number, opts));
   }
 
-  private async investigateNow(projectId: string, number: number): Promise<IssueWork> {
+  private async investigateNow(projectId: string, number: number, opts: Asked): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
-    const ws = await this.workOn(task, 'investigate', (t) => investigatePrompt(t, issue, repo), `asked Claude to investigate #${number}`, () => `Investigate #${number} “${issue.title}”: find out why it happens and reproduce it, without fixing it yet.`);
+    const ws = await this.workOn(task, 'investigate', (t) => investigatePrompt(t, issue, repo), `asked Claude to investigate #${number}`, () => `Investigate #${number} “${issue.title}”: find out why it happens and reproduce it, without fixing it yet.`, opts.note);
     return { task: task.id, key: task.key, ws };
   }
 
@@ -122,11 +127,11 @@ export class GitHubIssues {
    * Fix It: Claude fixes it and opens a pull request that closes the issue. After an investigation
    * that's in the same worktree, with what it found; otherwise in a new one.
    */
-  fix(projectId: string, number: number): Promise<IssueWork> {
-    return this.one(projectId, number, 'fix', () => this.fixNow(projectId, number));
+  fix(projectId: string, number: number, opts: Asked = {}): Promise<IssueWork> {
+    return this.one(projectId, number, 'fix', () => this.fixNow(projectId, number, opts));
   }
 
-  private async fixNow(projectId: string, number: number): Promise<IssueWork> {
+  private async fixNow(projectId: string, number: number, opts: Asked): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
     const ws = await this.workOn(
@@ -135,6 +140,7 @@ export class GitHubIssues {
       (t, w, here) => (here ? fixAfterInvestigationPrompt(t, issue, this.deps.prPrompt(w)) : fixPrompt(t, issue, repo, this.deps.prPrompt(w))),
       `asked Claude to fix #${number}`,
       (here) => (here ? `Now fix #${number} the way the investigation points to, and open a pull request that closes it.` : `Fix #${number} “${issue.title}”, and open a pull request that closes it.`),
+      opts.note,
     );
     return { task: task.id, key: task.key, ws };
   }
@@ -143,16 +149,18 @@ export class GitHubIssues {
    * Make a Task: on the board as Ready, written by your Claude from the issue (`look`: after a
    * quick read-only look at the code, so it also says where the code is and what's likely behind it).
    */
-  toTask(projectId: string, number: number, opts: { readonly look?: boolean } = {}): Promise<IssueWork> {
+  toTask(projectId: string, number: number, opts: Asked & { readonly look?: boolean } = {}): Promise<IssueWork> {
     return this.one(projectId, number, 'task', () => this.toTaskNow(projectId, number, opts));
   }
 
-  private async toTaskNow(projectId: string, number: number, opts: { readonly look?: boolean }): Promise<IssueWork> {
+  private async toTaskNow(projectId: string, number: number, opts: Asked & { readonly look?: boolean }): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const there = taskForIssue(this.deps.work.board.state(), projectId, repo, number);
     if (there) return { task: there.id, key: there.key };
     const root = this.deps.store.getState().projects.find((p) => p.id === projectId)?.root;
-    const task = this.deps.work.createDescribed({ projectId, status: 'todo', labels: boardLabels(issue.labels), github: link(repo, issue) }, issueAsRequest(issue), { origin: 'github', ...(opts.look && root ? { look: root } : {}) });
+    const said = opts.note?.trim();
+    const text = said ? `${issueAsRequest(issue)}\n\nAlso, from the person making the task: ${said}` : issueAsRequest(issue);
+    const task = this.deps.work.createDescribed({ projectId, status: 'todo', labels: boardLabels(issue.labels), github: link(repo, issue) }, text, { origin: 'github', ...(opts.look && root ? { look: root } : {}) });
     return { task: task.id, key: task.key };
   }
 
@@ -193,10 +201,14 @@ export class GitHubIssues {
 
   /**
    * Claude on the task: in its worktree when it has one still there (`here`: Claude knows the issue
-   * already), else in a new one started for it. The task says what Claude was asked last.
+   * already), else in a new one started for it. The task says what Claude was asked last. What you
+   * add (`said`) comes after the instructions, in your words, and shows in the conversation too.
    */
-  private async workOn(task: Issue, step: NonNullable<IssueGitHub['step']>, prompt: (task: Issue, ws: Workspace, here: boolean) => string, note: string, shown: (here: boolean) => string): Promise<string> {
+  private async workOn(task: Issue, step: NonNullable<IssueGitHub['step']>, ask: (task: Issue, ws: Workspace, here: boolean) => string, note: string, line: (here: boolean) => string, said?: string): Promise<string> {
     const work = this.deps.work;
+    const yours = said?.trim();
+    const prompt = (t: Issue, ws: Workspace, here: boolean): string => (yours ? `${ask(t, ws, here)}\n\nAlso, from me: ${yours}` : ask(t, ws, here));
+    const shown = (here: boolean): string => (yours ? `${line(here)}\n\n${yours}` : line(here));
     const live = this.liveWorktree(task);
     work.board.setGitHub(task.id, { ...task.github!, step, ...(step === 'investigate' ? { investigated: true } : {}) }, work.me(), note);
     if (live) {

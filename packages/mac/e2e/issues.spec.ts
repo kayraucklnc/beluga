@@ -42,8 +42,12 @@ test('Investigate: a task and a worktree, Claude’s report, then Fix It in the 
   await main(page).locator('[data-issue="48"]').click();
   await expect(main(page).getByRole('heading', { name: 'Login returns 500 when the email has a plus sign' })).toBeVisible();
   await expect(main(page).getByText('Same here with')).toBeVisible();
+  // Hand it to Claude the way a project's home starts work: Investigate (the first way), a word for Claude, Return.
   await expect(main(page).getByText('What should Claude do?')).toBeVisible();
-  await main(page).locator('[data-choice="Investigate"]').click();
+  await expect(main(page).getByRole('tab', { name: 'Investigate' })).toHaveAttribute('aria-selected', 'true');
+  const note = main(page).getByRole('textbox', { name: /Anything Claude should know/ });
+  await note.fill('It only fails for addresses with a plus');
+  await note.press('Enter');
   // A task for it, and Claude's report once it's done (what happens, why) with Fix It.
   const status = main(page).getByTestId('issue-status');
   await expect(status).toContainText('Claude investigated', { timeout: 30_000 });
@@ -69,11 +73,13 @@ test('Investigate: a task and a worktree, Claude’s report, then Fix It in the 
 test('Make a Task from an issue: on the board, with its issue mark, once', async ({ page }) => {
   await openIssues(page);
   await main(page).locator('[data-issue="47"]').click();
-  await main(page).locator('[data-choice="Make a Task"]').click();
-  await page.getByRole('menuitem', { name: /From the Issue/ }).click();
-  // The page now offers the task (one per issue), and the board has it with its mark.
-  const open = main(page).locator('[data-choice^="Open BOB-"]');
-  await expect(open).toBeVisible();
+  await main(page).getByRole('tab', { name: 'Make a Task' }).click();
+  await expect(main(page).getByText('Look at the code first')).toBeVisible();
+  await main(page).getByTestId('issue-go').click();
+  // The page now says the task is on the board (one per issue: no Make a Task any more), and the board has it with its mark.
+  await expect(main(page).getByText(/BOB-\d+ is on the board/)).toBeVisible();
+  await expect(main(page).getByRole('tab', { name: 'Make a Task' })).toHaveCount(0);
+  const open = page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: /BOB-\d+/ });
   await open.click();
   await expect(page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: /acme\/bob-api#47/ })).toBeVisible();
   await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();

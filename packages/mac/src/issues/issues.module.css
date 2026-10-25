@@ -1,7 +1,7 @@
 /*
  * Issues: the Tasks screens' calm greys (tasks.module.css does the bar, the page and its right column).
  * Color only means something: an issue's state (open green, done purple, grey otherwise), GitHub's own
- * label colors as soft tints, and three pastel choices for what Claude should do. No glows.
+ * label colors as soft tints, and Claude's work in the project home's quiet composer style. No glows.
  */
 
 /* ---------- Tones ---------- */
@@ -204,104 +204,34 @@
   color: inherit;
 }
 
-/* What should Claude do: three choices, each an icon in a soft tint. */
-.next {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 6px;
-}
-.nextTitle {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-.choices {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+/* What should Claude do: the project home's composer (project-home.module.css), a little smaller. */
+.composer {
   max-width: 920px;
+  margin-top: 8px;
 }
-@container (max-width: 640px) {
-  .choices {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.composerPrompt {
+  font-size: 1rem;
 }
-.choice {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
-  column-gap: 10px;
-  row-gap: 3px;
-  align-items: center;
-  padding: 12px 14px 13px;
-  border: 0;
-  border-radius: var(--radius-l);
-  background: color-mix(in srgb, var(--tone) 5%, var(--bg));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 16%, var(--hairline));
-  text-align: left;
-  font: inherit;
-  color: var(--text);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+.composerInput {
+  min-height: 44px;
+  font-size: 0.98rem;
 }
-.choice:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--tone) 10%, var(--bg));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 30%, var(--hairline));
-}
-.choice:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent), inset 0 0 0 1px var(--accent);
-}
-.choice:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-/* The one being set up stays in full color (the others dim). */
-.choice[aria-busy='true'] {
-  cursor: progress;
-  opacity: 1;
-}
-.choiceIcon {
-  grid-row: 1;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-  color: var(--tone);
-  background: color-mix(in srgb, var(--tone) 14%, transparent);
-}
-.choiceTitle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 13.5px;
-  font-weight: 600;
-}
-.choiceTitle svg {
-  color: var(--text-3);
-}
-.choiceText {
-  grid-column: 1 / -1;
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.45;
+.composerCheck {
+  font-size: 0.9rem;
   color: var(--text-2);
 }
 
-/* How it's going: a soft card in the stage's tint. */
+/* How it's going: the composer's quiet surface; color only in the small mark that says what's on. */
 .status {
   display: flex;
   flex-direction: column;
   gap: 8px;
   max-width: 920px;
-  margin-top: 6px;
-  padding: 12px 14px;
+  margin-top: 8px;
+  padding: 12px 14px 10px;
   border-radius: var(--radius-l);
-  background: color-mix(in srgb, var(--tone) 6%, var(--bg));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 20%, var(--hairline));
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 .statusHead {
   display: flex;
@@ -332,11 +262,19 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* What the main action does: it gives way (an ellipsis) before the buttons wrap. */
+.statusHint {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-3);
+}
 .findings {
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--hairline);
+  padding: 8px 0 2px;
+  border-top: 0.5px solid var(--hairline);
   font-size: 13px;
 }
 .findingsFolded {
