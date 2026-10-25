@@ -195,8 +195,9 @@ describe('setup and run scripts', () => {
     });
     const id = projectOf(kay.workspaces).id;
     expect(projectOf(kay.workspaces).scripts).toEqual({});
-    // Two at once still make one look.
-    const [one, two] = await Promise.all([kay.session.workspaces!.newWorktree(id, 'one'), kay.session.workspaces!.newWorktree(id, 'two')]);
+    // Two while Claude is still looking still make one look.
+    const one = await kay.session.workspaces!.newWorktree(id, 'one');
+    const two = await kay.session.workspaces!.newWorktree(id, 'two');
     await waitFor(() => looked.length === 1, 4000);
     expect(looked).toEqual([{ setup: true, run: true }]);
     answer();
