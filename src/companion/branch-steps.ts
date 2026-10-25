@@ -33,6 +33,8 @@ export async function branchStep(s: Session, topic: string, step: PhoneBranchSte
       const r = await needBench().mergePr(id, { method: 'squash', ...(step === 'merge_auto' ? { auto: true } : step === 'merge_admin' ? { admin: true } : {}) });
       return { ok: r.ok, message: r.message };
     }
+    case 'cancel_auto':
+      return needBench().cancelMergeWhenReady(id);
     case 'update_branch':
     case 'mark_ready':
       return needBench().prStep(id, step === 'mark_ready' ? 'ready' : 'update_branch');
@@ -52,6 +54,9 @@ export async function branchStep(s: Session, topic: string, step: PhoneBranchSte
       await ws.commit(id);
       return { ok: true, message: 'Committed' };
     case 'pr':
+    case 'pr_draft':
+      return needBench().quickPr(id, step === 'pr_draft' ? { draft: true } : {});
+    case 'pr_claude':
       needBench().createPr(id);
       return claude('opening the pull request');
     case 'continue_after_merge':

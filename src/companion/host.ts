@@ -494,8 +494,12 @@ export class CompanionHost {
     return { chips, images, paths };
   }
 
-  /** Ask your Mac: a new chat in a project (as New Chat there), or a message in a conversation you can write in → its topic. */
-  async ask(caller: string, a: { target: { project: string } | { topic: string }; text: string; files?: readonly string[] | undefined }): Promise<{ topic: string }> {
+  /**
+   * Ask your Mac: a new chat in a project (as New Chat there), a new worktree there with its photos
+   * (1.12), or a message in a conversation you can write in → its topic.
+   */
+  async ask(caller: string, a: { target: { project: string; worktree?: true | undefined; plan?: boolean | undefined } | { topic: string }; text: string; files?: readonly string[] | undefined }): Promise<{ topic: string }> {
+    if ('project' in a.target && a.target.worktree) return this.startWorktree(caller, a.target.project, a.text, a.files, a.target.plan);
     let channel: string;
     if ('project' in a.target) {
       const title = a.text.replace(/\s+/g, ' ').trim().slice(0, 40) || 'From my phone';
@@ -508,14 +512,30 @@ export class CompanionHost {
       const conv = viewOf(this.state(), this.ctx, a.target.topic as Topic) as { canSend?: boolean } | undefined;
       if (!conv?.canSend) throw new Error('You can’t write in that conversation');
     }
-    const { chips, images, paths } = await this.attach(caller, a.files);
-    let text = [a.text.trim(), chips.join(' '), paths.length ? `Files from my phone:\n${paths.map((p) => `- ${p}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
-    if (chips.length) text = String(await this.must(caller, 'attachments.expand', [text, channel, images, images.map((_, i) => i + 1)]));
+    const text = await this.withFiles(caller, a.text, a.files, channel);
     await this.must(caller, 'session.submit', [text, { channel }]);
     this.phoneRuns.set(channel, false);
     const topic = convTopic(channel);
     if (!topic) throw new Error('That conversation can’t be shown on the phone');
     return { topic };
+  }
+
+  /** A new worktree with Claude on your words and the photos with them, as the Mac's project home starts one. */
+  private async startWorktree(caller: string, project: string, words: string, files: readonly string[] | undefined, plan: boolean | undefined): Promise<{ topic: string }> {
+    // Its channel doesn't exist yet; any but the room's links the photos the same way.
+    const text = await this.withFiles(caller, words, files, 'ws:new');
+    const id = await this.must(caller, 'workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}) }]);
+    if (typeof id !== 'string') throw new Error('Your Mac couldn’t make the worktree');
+    const channel = `ws:${id}`;
+    this.phoneRuns.set(channel, false);
+    return { topic: convTopic(channel) ?? `conv:${channel}` };
+  }
+
+  /** Your words with the phone's files: pictures linked as pasted images are, other files by their path here. */
+  private async withFiles(caller: string, words: string, files: readonly string[] | undefined, channel: string): Promise<string> {
+    const { chips, images, paths } = await this.attach(caller, files);
+    const text = [words.trim(), chips.join(' '), paths.length ? `Files from my phone:\n${paths.map((p) => `- ${p}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
+    return chips.length ? String(await this.must(caller, 'attachments.expand', [text, channel, images, images.map((_, i) => i + 1)])) : text;
   }
 
   /** Write in a friends' chat, with files from the phone (taken in as chat files are on the Mac). */

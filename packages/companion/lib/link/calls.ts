@@ -30,7 +30,7 @@ type Files = readonly string[] | undefined;
 const withFiles = (files: Files) => (files?.length ? { files: [...files] } : {});
 
 export const calls = {
-  /** Since 1.12 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
+  /** Since 1.13 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
   keepAwake: (mode: 'off' | 'power' | 'always'): Call => make('companion.keepAwake', [mode], 'Keep your Mac awake'),
   /** A message in a conversation (yours, or shared with you to work in), with photos. */
   send: (topic: Topic, text: string, files?: Files): Call => make('companion.ask', [{ target: { topic }, text, ...withFiles(files) }], `Send "${short(text)}"`),
@@ -42,6 +42,8 @@ export const calls = {
    * Claude drafts for you to approve, → the plan.
    */
   startWorktree: (project: string, text: string, plan = false): Call => make('workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}) }], `Start "${short(text)}"`),
+  /** 1.12: a new worktree with photos: its words and photos go the way a question's do → its topic. */
+  startWorktreeWith: (project: string, text: string, plan: boolean, files: Files): Call => make('companion.ask', [{ target: { project, worktree: true, ...(plan ? { plan: true } : {}) }, text, ...withFiles(files) }], `Start "${short(text)}"`),
   createPlan: (project: string, goal: string): Call => make('plans.create', [{ projectId: project, goal }], `Plan "${short(goal)}"`),
   /** How a plan runs (1.5): Step by Step, Check-ins or Autopilot. */
   setAutonomy: (plan: string, autonomy: 'step' | 'gated' | 'autopilot', label: string): Call => make('plans.setAutonomy', [plan, autonomy], `Run as ${label}`),

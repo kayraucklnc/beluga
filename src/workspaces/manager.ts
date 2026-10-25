@@ -15,7 +15,7 @@ import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWo
 import { worktreeOrigin } from './origin.js';
 import { moveToTrash } from './trash.js';
 import { addDay, dayKey } from './usage-days.js';
-import type { Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
+import type { MergeWait, Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
 import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, groupKey, groupOfKey, isGroupKey, keyOf, move, settle } from './arrange.js';
 
 /** A project (by id) or a group (by name), for arranging the sidebar. */
@@ -937,6 +937,12 @@ export class WorkspaceManager {
   setPrDone(id: string, number: number): void {
     this.require(id);
     this.patchRecord(id, { prDone: number });
+  }
+
+  /** Merge When Ready is waiting on this worktree's PR (undefined: not anymore). See Workbench.mergeWhenReady. */
+  setMergeWait(id: string, wait: MergeWait | undefined): void {
+    this.require(id);
+    this.patchRecord(id, { mergeWhenReady: wait });
   }
 
   setModel(id: string, model: string | undefined): void {

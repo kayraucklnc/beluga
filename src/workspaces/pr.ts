@@ -304,6 +304,11 @@ export async function mergePr(dir: string, number: number, opts: MergeOptions): 
   await run(gh(), ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.admin ? ['--admin'] : opts.auto ? ['--auto'] : [])], dir, 60_000);
 }
 
+/** Turn off GitHub's auto-merge on a pull request (`gh pr merge --disable-auto`). Throws gh's error. */
+export async function disableAutoMerge(dir: string, number: number): Promise<void> {
+  await run(gh(), ['pr', 'merge', String(number), '--disable-auto'], dir, 60_000);
+}
+
 /** A PR's one-click steps on GitHub: merge its base in (`gh pr update-branch`), or mark a draft ready for review. */
 export type PrStepKind = 'update_branch' | 'ready';
 
@@ -349,13 +354,35 @@ export function remoteRef(dir: string, branch: string, remote = 'origin'): strin
   return undefined;
 }
 
+/** "beluga/fix-login-redirect" → "Fix login redirect". */
+export function titleOfBranch(branch: string): string {
+  const words = (branch.split('/').pop() ?? branch).replace(/[-_]+/g, ' ').trim();
+  return words ? `${words[0]!.toUpperCase()}${words.slice(1)}` : branch;
+}
+
+/**
+ * A pull request's title and description without Claude, from the branch's commits (newest first,
+ * as `git log` gives them): one commit is its subject, several are the branch's name with each listed.
+ */
+export function prFromCommits(branch: string, subjects: readonly string[]): { title: string; body: string } {
+  const list = subjects.map((s) => s.trim()).filter(Boolean);
+  if (list.length === 1) return { title: list[0]!, body: '' };
+  return { title: titleOfBranch(branch), body: list.length ? list.reverse().map((s) => `- ${s}`).join('\n') : '' };
+}
+
+/** The subjects of the commits on HEAD that aren't in `base`, newest first. */
+export async function commitSubjects(dir: string, base: string): Promise<string[]> {
+  const out = await run('git', ['log', '--format=%s', `${base}..HEAD`], dir);
+  return out.split('\n').filter((l) => l.trim());
+}
+
 /** Push `head` and open a pull request for it into `base` (a plan's branch → main) → the pull request. */
-export async function createPr(dir: string, pr: { readonly base: string; readonly head: string; readonly title: string; readonly body: string }): Promise<PullRequest> {
+export async function createPr(dir: string, pr: { readonly base: string; readonly head: string; readonly title: string; readonly body: string; readonly draft?: boolean }): Promise<PullRequest> {
   if (!(await hasGh())) throw new Error('Opening a pull request needs the GitHub CLI (gh), signed in');
   await run('git', ['push', '-u', 'origin', `${pr.head}:${pr.head}`], dir, 120_000);
   const existing = await findPr(dir, pr.head).catch(() => undefined);
   if (existing?.state === 'OPEN') return existing;
-  await run(gh(), ['pr', 'create', '--base', pr.base, '--head', pr.head, '--title', pr.title, '--body', pr.body], dir, 60_000);
+  await run(gh(), ['pr', 'create', '--base', pr.base, '--head', pr.head, '--title', pr.title, '--body', pr.body, ...(pr.draft ? ['--draft'] : [])], dir, 60_000);
   const made = await findPr(dir, pr.head);
   if (!made) throw new Error('GitHub didn’t show the new pull request');
   return made;

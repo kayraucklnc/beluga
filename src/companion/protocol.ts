@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 12 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 13 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -27,11 +27,12 @@ export const COMPANION_PROTO = { major: 1, minor: 12 } as const;
  * 1.9 (BLG-87): more of Claude's blocks drawn (`tree`, `json`, `terminal`, `math` blocks, mermaid as
  * a graph or view) and its math typeset (`ProseView.math`). 1.10 (BLG-110): a sub-agent opened on
  * the phone, its whole activity and the report it gave back (`companion.subAgent`). 1.11 (BLG-124):
- * which conversations the phone saved files from are archived or deleted (`companion.gone`). 1.12
- * (BLG-127): whether the Mac stays awake for the phone (`HomeView.mac.keepAwake`, `companion.keepAwake`),
- * and (BLG-128) a phone away pinging every KEEPALIVE_AWAY_MS on a relay or LAN link.
+ * which conversations the phone saved files from are archived or deleted (`companion.gone`). 1.12:
+ * photos with a new worktree (`companion.ask`'s `worktree` target). 1.13 (BLG-127): whether the Mac
+ * stays awake for the phone (`HomeView.mac.keepAwake`, `companion.keepAwake`), and (BLG-128) a phone
+ * away pinging every KEEPALIVE_AWAY_MS on a relay or LAN link.
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, keepAwake: 12, awayBeat: 12 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -304,7 +305,7 @@ export type ConvSummary = z.infer<typeof ConvSummary>;
 // ---- views, one per topic
 
 export const HomeView = z.object({
-  // 1.12: keepAwake, whether the Mac stays awake for the phone (companion.keepAwake).
+  // 1.13: keepAwake, whether the Mac stays awake for the phone (companion.keepAwake).
   mac: z.object({ name: z.string().max(100), version: z.string().max(40), keepAwake: z.enum(['off', 'power', 'always']).optional() }),
   me: z.object({ name: z.string().max(64), peerId: id }),
   usage: z.array(UsageView).max(8),
@@ -343,7 +344,7 @@ export type MergeView = z.infer<typeof MergeView>;
  * (core/branch-state.ts) but Merge into the main folder (its own sheet, companion.merge) and Open
  * PR (the phone's browser).
  */
-export const PHONE_BRANCH_STEPS = ['merge_pr', 'merge_auto', 'merge_admin', 'update_branch', 'mark_ready', 'resolve_pr', 'fix_checks', 'merge_claude', 'review_claude', 'commit', 'pr', 'continue_after_merge', 'archive', 'delete'] as const;
+export const PHONE_BRANCH_STEPS = ['merge_pr', 'merge_auto', 'merge_admin', 'cancel_auto', 'update_branch', 'mark_ready', 'resolve_pr', 'fix_checks', 'merge_claude', 'review_claude', 'commit', 'pr', 'pr_claude', 'pr_draft', 'continue_after_merge', 'archive', 'delete'] as const;
 export type PhoneBranchStep = (typeof PHONE_BRANCH_STEPS)[number];
 
 /** 1.8: one of a branch's steps (core/branch-state.ts BranchStep). */

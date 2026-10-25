@@ -34,6 +34,7 @@ export type BranchStepId =
   | 'merge_pr'
   | 'merge_auto'
   | 'merge_admin'
+  | 'cancel_auto'
   | 'update_branch'
   | 'mark_ready'
   | 'open_pr'
@@ -43,6 +44,9 @@ export type BranchStepId =
   | 'review_claude'
   | 'commit'
   | 'pr'
+  | 'pr_claude'
+  | 'pr_custom'
+  | 'pr_draft'
   | 'merge'
   | 'continue_after_merge'
   | 'archive'
@@ -114,7 +118,7 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   const archive: BranchStep = { id: 'archive', label: 'Archive Worktree', hint: 'It’s done: put it away (the branch and the conversation are kept)' };
   const remove: BranchStep = { id: 'delete', label: 'Delete Worktree…', hint: 'Remove the folder and its branch for good', danger: true };
   const finish: BranchStep[] = [archive, { id: 'continue_after_merge', label: 'Continue After Merge…', hint: `Keep working here instead: start ${ws.branch} again from the latest ${into}, keeping the conversation; the next change gets a new PR` }, remove];
-  const auto: BranchStep = { id: 'merge_auto', label: 'Merge When Ready', hint: `GitHub merges PR #${pr?.number} as soon as its checks and reviews pass` };
+  const auto: BranchStep = { id: 'merge_auto', label: 'Merge When Ready', hint: `Beluga merges PR #${pr?.number} once its checks pass, and tells you if they fail` };
   const admin: BranchStep = { id: 'merge_admin', label: 'Merge Now, Skipping Checks', hint: 'Past its checks and reviews (needs admin rights on the repository)', danger: true };
   const openPr: BranchStep | false = Boolean(pr) && { id: 'open_pr', label: `Open PR #${pr?.number}`, hint: 'Its checks, review and every way to merge' };
 
@@ -151,6 +155,16 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
     if (pr.draft) {
       return at('draft', 'Draft', 'muted', `${n} is a draft: mark it ready for review to merge it`, [{ id: 'mark_ready', label: 'Mark Ready for Review', hint: `${n} leaves draft on GitHub` }, openPr, commit]);
     }
+    // Merge When Ready: Beluga (or GitHub's auto-merge) merges it once its checks pass; it can be called off.
+    if (ws.mergeWhenReady?.number === pr.number || pr.autoMerge) {
+      const waitingFor = pr.checks === 'pending' || pr.checks === 'none' ? 'its checks pass' : pr.review === 'REVIEW_REQUIRED' ? 'it’s approved' : pr.mergeState === 'behind' ? `it has the latest ${into}` : `${into}’s rules let it`;
+      return at('auto_merge', 'Merging when ready', 'wait', `${n} merges as soon as ${waitingFor}`, [
+        { id: 'cancel_auto', label: 'Cancel Auto-Merge', hint: `${n} stays open: nothing merges by itself` },
+        pr.mergeState === 'behind' && { id: 'update_branch', label: 'Update Branch', hint: `GitHub merges the latest ${into} into ${ws.branch}` },
+        openPr,
+        commit,
+      ]);
+    }
     if (pr.mergeState === 'behind') {
       return at('behind', `Behind ${into}`, 'warn', `${n} needs the latest ${into} before it can merge`, [
         { id: 'update_branch', label: 'Update Branch', hint: `GitHub merges the latest ${into} into ${ws.branch}` },
@@ -160,9 +174,6 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
     }
     if (pr.review === 'CHANGES_REQUESTED') {
       return at('changes_requested', 'Changes requested', 'warn', `A reviewer asked for changes on ${n}`, [openPr, { id: 'review_claude', label: 'Ask Claude to Review…', hint: 'Claude reviews the branch and suggests what to change', claude: true }, commit, admin]);
-    }
-    if (pr.autoMerge) {
-      return at('auto_merge', 'Merging when ready', 'wait', `GitHub merges ${n} once its checks and reviews pass`, [openPr, commit]);
     }
     if (pr.checks === 'pending') return at('checks_running', 'Checks running', 'wait', `${n}’s checks are running`, [auto, admin, openPr, commit]);
     if (pr.review === 'REVIEW_REQUIRED') return at('review', 'Waiting for review', 'wait', `${n} needs an approving review`, [auto, admin, openPr, commit]);
@@ -177,10 +188,19 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
 
   const ahead = st?.ahead ?? 0;
   const ship: BranchStep | false = !planned && (github
-    ? { id: 'pr', label: 'Create PR…', hint: `Claude commits what’s left, pushes ${ws.branch} and opens a pull request into ${into}`, claude: true }
+    ? { id: 'pr', label: 'Create PR', hint: `${changed ? 'Commits what’s left, pushes' : 'Pushes'} ${ws.branch} and opens a pull request into ${into}, titled from its commits` }
     : { id: 'merge', label: `Merge into ${into}…`, hint: `Shows what would merge into ${into} on this Mac and checks it first` });
+  // Create PR's other ways, under its chevron.
+  const prWays: BranchStep[] =
+    !planned && github
+      ? [
+          { id: 'pr_claude', label: 'Create PR with Claude', hint: 'Claude commits what belongs, then writes the title and description: what, why, how to test', claude: true },
+          { id: 'pr_custom', label: 'Create PR with Instructions…', hint: 'Tell Claude anything extra for this one (a draft, an issue to mention…)', claude: true },
+          { id: 'pr_draft', label: 'Create Draft PR', hint: `Like Create PR, as a draft: it can’t merge until it’s marked ready` },
+        ]
+      : [];
   if (pr?.state === 'CLOSED' && !changed && !ahead) return at('closed', 'PR closed', 'muted', `PR #${pr.number} was closed without merging`, planned ? [] : [archive, remove]);
-  if (changed) return at('uncommitted', plural(changed, 'change'), 'warn', `${plural(changed, 'uncommitted change')}${ahead ? ` and ${plural(ahead, 'commit')}` : ''} not in ${into} yet`, [github ? ship : commit, github ? commit : ship]);
-  if (ahead) return at('unshipped', github ? `${plural(ahead, 'commit')} · no PR` : 'Ready to merge', github ? 'info' : 'ok', `${plural(ahead, 'commit')} on ${ws.branch} not in ${into} yet`, [ship]);
+  if (changed) return at('uncommitted', plural(changed, 'change'), 'warn', `${plural(changed, 'uncommitted change')}${ahead ? ` and ${plural(ahead, 'commit')}` : ''} not in ${into} yet`, github ? [ship, ...prWays, commit] : [commit, ship]);
+  if (ahead) return at('unshipped', github ? `${plural(ahead, 'commit')} · no PR` : 'Ready to merge', github ? 'info' : 'ok', `${plural(ahead, 'commit')} on ${ws.branch} not in ${into} yet`, [ship, ...prWays]);
   return at('clean', 'No changes', 'muted', `Nothing on ${ws.branch} that isn’t in ${into}`, []);
 }

@@ -15,12 +15,21 @@ describe('zoom view', () => {
     expect(fitScale({ w: 0, h: 0 }, frame)).toBe(1);
   });
 
-  // Where the picture is drawn on screen, the frame's center being (0, 0).
-  const drawn = (v: { scale: number; x: number; y: number }, img: { w: number; h: number }) => {
-    const m = /translate3d\((-?\d+)px, (-?\d+)px, 0\) scale\(([\d.]+)\)/.exec(transformOf(v, img))!;
-    const [left, top, s] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  // Where the picture is drawn on screen, the frame's center being (0, 0): laid out at `base` times its size, then transformed.
+  const drawn = (v: { scale: number; x: number; y: number }, img: { w: number; h: number }, base = v.scale) => {
+    const m = /^translate\((-?\d+)px, (-?\d+)px\) scale\(([\d.e-]+)\)$/.exec(transformOf(v, img, base))!;
+    const [left, top, s] = [Number(m[1]), Number(m[2]), Number(m[3]) * base];
     return { left, top, right: left + img.w * s, bottom: top + img.h * s };
   };
+
+  it('lays the picture out no bigger than fitted, and scales it from there', () => {
+    const img = { w: 1179, h: 2556 };
+    const fit = fitScale(img, frame, 24);
+    // At rest it's its laid-out size (no scale), its box inside the frame.
+    expect(transformOf(fitView(img, frame, 24), img, fit)).toMatch(/scale\(1\)$/);
+    // Zoomed to its own size: scaled up from the fitted box.
+    expect(drawn({ scale: 1, x: 0, y: 0 }, img, fit).bottom - drawn({ scale: 1, x: 0, y: 0 }, img, fit).top).toBeCloseTo(img.h, 6);
+  });
 
   it('opens centered both ways, whatever its size and shape', () => {
     for (const img of [{ w: 2400, h: 1600 }, { w: 600, h: 3200 }, { w: 4800, h: 400 }, { w: 301, h: 199 }, { w: 1, h: 1 }]) {

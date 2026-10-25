@@ -176,9 +176,9 @@ class Sends {
       setTimeout(() => this.get(id)?.state === 'sent' && this.remove(id), SHOWN_WITHIN_MS);
       return;
     }
-    // Where the start went: a worktree by its id, a plan, or the conversation a question opened.
+    // Where the start went: a worktree by its id (with photos, by its topic), a plan, or the conversation a question opened.
     const back = value as { topic?: Topic; id?: string } | string | undefined;
-    const topic = s.start.kind === 'worktree' ? (typeof back === 'string' ? (`conv:ws:${back}` as Topic) : undefined) : typeof back === 'object' && back?.topic ? back.topic : undefined;
+    const topic = s.start.kind === 'worktree' && typeof back === 'string' ? (`conv:ws:${back}` as Topic) : typeof back === 'object' && back?.topic ? back.topic : undefined;
     const plan = s.start.kind === 'plan' && typeof back === 'object' && back?.id ? back.id : undefined;
     if (!topic && !plan) return this.fail(id, s.start.kind === 'worktree' ? "Your Mac couldn't make the worktree." : "Your Mac didn't start it.");
     this.patch(id, { state: 'sent', ...(topic ? { topic } : {}), ...(plan ? { plan } : {}) });

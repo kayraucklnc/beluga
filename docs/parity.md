@@ -285,6 +285,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.shareScripts` | ✓ |
 | `workbench.setModel` | ✓ |
 | `workbench.createPr` | ✓ |
+| `workbench.quickPr` | ✓ the toolbar's Create PR (and Create Draft PR under its chevron), the Changes panel's Create PR |
 | `workbench.fixChecks` | ✓ |
 | `workbench.resolvePrConflicts` | ✓ Resolve Merge Conflicts… (toolbar, PR sheet, the PR strip above the chat) when GitHub says the PR conflicts |
 | `workbench.continueAfterMerge` | ✓ Continue After Merge… (⋯, PR sheet, the PR strip) once the PR merged |
@@ -292,6 +293,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.refreshPrs` | ✓ |
 | `workbench.mergePr` | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass; Merge Now, Skipping Checks), also in the PR strip above the chat |
 | `workbench.prStep` | ✓ the toolbar's branch state › Update Branch (the PR is behind its base), Mark Ready for Review (a draft) |
+| `workbench.cancelMergeWhenReady` | ✓ the toolbar's branch state › Cancel Auto-Merge (while Merge When Ready waits) |
 | `workbench.editPrPrompt` | ✓ |
 | `workbench.resetPrPrompt` | ✓ |
 | `workbench.measureDisk` | ✓ |

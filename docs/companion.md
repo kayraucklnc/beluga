@@ -388,7 +388,7 @@ On the Mac, Settings › Phone › Reaching your Mac says whether phones on othe
 
 A sleeping Mac can't be reached, and it can't be woken over the internet (Wake-on-LAN needs the same
 network, and isolating Wi-Fi drops it). So Settings › Phone › Keep this Mac awake (Never, On power,
-Always; the phone's Settings › Advanced has the same, `companion.keepAwake`, since 1.12) keeps it
+Always; the phone's Settings › Advanced has the same, `companion.keepAwake`, since 1.13) keeps it
 from sleeping while a phone is paired: `caffeinate -s` (on power) or `-i`, tied to the daemon's pid
 (`src/companion/awake.ts`). The display still sleeps, and closing a laptop's lid still sleeps it.
 
@@ -444,7 +444,7 @@ Beluga Push isn't built yet, so with the app closed nothing can reach the phone.
   Notify me about; tapping it opens its conversation.
 - **A slower heartbeat while away.** Over the relay (TCP; Cloudflare drops a socket idle for 100 s)
   or the same Wi-Fi (no NAT) the phone pings every 50 s instead of 20 (`KEEPALIVE_AWAY_MS`), and a
-  Mac with `SINCE.awayBeat` (1.12) waits three of those before it calls the phone gone. A
+  Mac with `SINCE.awayBeat` (1.13) waits three of those before it calls the phone gone. A
   hole-punched link keeps 20 s: mobile NATs forget a UDP mapping in about 30.
 - **Dropped links come back by themselves:** quickly at first, then every two minutes while away.
 - **Battery.** Asking Android to leave Beluga unrestricted (Settings shows a row until it is),
