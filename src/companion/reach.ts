@@ -16,14 +16,20 @@ export type RelayTunnel = 'cloudflared' | 'off' | ((localPort: number) => Promis
 
 /** How often the DHT record is put again (records fade from the DHT after a while). */
 const REPUBLISH_MS = 10 * 60_000;
-/** A tunnel that died is opened again after this long. */
+/** A tunnel that died is opened again after this long (one whose name Cloudflare dropped: at once, it's known dead). */
 const RETRY_MS = 30_000;
+const RETRY_DEAD_MS = 2_000;
+
+/** How the relay is, for Settings › Phone: ready (its URL answers), starting (or restarting), off (not used here). */
+export type RelayState = 'ready' | 'starting' | 'off';
 
 export interface ReachOptions {
   readonly tunnel: RelayTunnel;
   /** The relay's URL changed (it's in pairing links and welcomes). */
   readonly onChange: () => void;
   readonly log?: (line: string) => void;
+  /** The phones this key's record names (its link keys' first 16 hex), or undefined: none named (a pairing's key). */
+  readonly phones?: (publicKey: Buffer) => readonly string[] | undefined;
 }
 
 export class Reach {
@@ -34,6 +40,7 @@ export class Reach {
   private retry?: NodeJS.Timeout;
   private republish?: NodeJS.Timeout;
   private publishing?: { node: DHT; keyPairs: () => readonly KeyPair[] };
+  private seq = 0;
 
   constructor(private readonly opts: ReachOptions) {
     this.server = new RelayServer(opts.log);
@@ -44,9 +51,16 @@ export class Reach {
     return this.url;
   }
 
+  state(): RelayState {
+    if (this.opts.tunnel === 'off') return 'off';
+    if (!this.running) return 'off';
+    return this.url ? 'ready' : 'starting';
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.opts.onChange();
     await this.server.listen();
     void this.openTunnel();
   }
@@ -78,10 +92,15 @@ export class Reach {
     const p = this.publishing;
     if (!p || !this.running) return;
     const record: RelayRecord = { v: 1, at: Date.now(), ...(this.url ? { relay: this.url } : {}) };
-    const value = Buffer.from(JSON.stringify(record));
-    // Each put must outnumber the last one stored: seconds since the epoch, always rising.
-    const seq = Math.floor(Date.now() / 1000);
-    await Promise.all(p.keyPairs().map((kp) => p.node.mutablePut(kp, value, { seq }).catch((err: unknown) => this.opts.log?.(`companion: relay record not stored: ${String(err)}`))));
+    // Each put must outnumber the last one stored: seconds since the epoch, and never the same twice
+    // (a put in the same second as the last would be refused, and the older record would stay).
+    const seq = Math.max(Math.floor(Date.now() / 1000), this.seq + 1);
+    this.seq = seq;
+    const valueFor = (kp: KeyPair): Buffer => {
+      const phones = this.opts.phones?.(kp.publicKey);
+      return Buffer.from(JSON.stringify(phones ? { ...record, phones: phones.slice(0, 8) } : record));
+    };
+    await Promise.all(p.keyPairs().map((kp) => p.node.mutablePut(kp, valueFor(kp), { seq }).catch((err: unknown) => this.opts.log?.(`companion: relay record not stored: ${String(err)}`))));
   }
 
   private async openTunnel(): Promise<void> {
@@ -97,7 +116,7 @@ export class Reach {
         const t = await openTunnel('cloudflared', this.server.localPort, {
           onDied: (reason) => {
             this.opts.log?.(`companion: relay tunnel stopped: ${reason}`);
-            this.lost();
+            this.lost(/stopped answering/.test(reason) ? RETRY_DEAD_MS : RETRY_MS);
           },
         });
         if (!t) return;
@@ -116,7 +135,7 @@ export class Reach {
     }
   }
 
-  private lost(): void {
+  private lost(after = RETRY_MS): void {
     this.tunnel?.close();
     this.tunnel = undefined;
     if (this.url) {
@@ -126,7 +145,7 @@ export class Reach {
     }
     if (!this.running) return;
     clearTimeout(this.retry);
-    this.retry = setTimeout(() => void this.openTunnel(), RETRY_MS);
+    this.retry = setTimeout(() => void this.openTunnel(), after);
     this.retry.unref();
   }
 }

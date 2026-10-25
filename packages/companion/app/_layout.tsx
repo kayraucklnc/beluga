@@ -1,5 +1,6 @@
 import { router, Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect, useRef } from 'react';
@@ -26,6 +27,15 @@ export default function Root() {
     void store.boot();
     // Upright everywhere; only data full screen turns (lib/fullscreen.ts).
     allowTurning(false);
+    // A notification from Stay connected (lib/stay.ts) opens what it's about.
+    if (Platform.OS === 'web') return;
+    const open = (topic: unknown): void => {
+      if (typeof topic !== 'string') return;
+      if (topic.startsWith('conv:')) router.push(`/conv/${encodeURIComponent(topic.slice(5))}`);
+      else if (topic.startsWith('chat:')) router.push(`/chat/${encodeURIComponent(topic.slice(5))}`);
+    };
+    const sub = Notifications.addNotificationResponseReceivedListener((r) => open(r.notification.request.content.data?.topic));
+    return () => sub.remove();
   }, []);
   // A new theme remounts the screens (every color is read afresh); come back to where you were.
   const pathname = usePathname();

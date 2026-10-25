@@ -1,14 +1,16 @@
 import { router } from 'expo-router';
-import { AtSign, Bell, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, Switch, View } from 'react-native';
+import { AppState, Platform, ScrollView, Switch, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header, Screen, useScrolled } from '../components/Screen';
 import { Card, haptic, Pill, Row, T } from '../components/ui';
 import { appearance, type Choice } from '../lib/appearance';
-import { useLink } from '../lib/hooks';
+import { useLink, useSupports, useView } from '../lib/hooks';
+import { calls } from '../lib/link/calls';
+import type { HomeView } from '../lib/link/protocol';
 import { COMPANION_PROTO } from '../lib/link/protocol';
 import { type NotifyPrefs, permission, prefs, setPrefs } from '../lib/notifications';
 import { pathLabel } from '../lib/link/diagnose';
@@ -16,12 +18,15 @@ import { sizeOf } from '../components/Outputs';
 import { useSaved } from '../lib/saved';
 import { totalBytes } from '../lib/saved-list';
 import { store } from '../lib/store';
+import { askBatteryUnrestricted, batteryUnrestricted, setStay, stayAvailable, stayOn } from '../lib/stay';
 import { color, ink } from '../lib/theme';
 
 /**
  * The phone's own settings. On top: your Mac, notifications on or off, Storage, sign out. Everything else
  * (each kind of notification, the demo's switches, versions). Appearance sits with the basics under Advanced.
  */
+type KeepAwake = NonNullable<HomeView['mac']['keepAwake']>;
+
 export default function Settings() {
   const { scrolled, onScroll } = useScrolled();
   const insets = useSafeAreaInsets();
@@ -33,6 +38,41 @@ export default function Settings() {
   const [advanced, setAdvanced] = useState(false);
   const [look, setLook] = useState<Choice>(appearance.get());
   const saved = useSaved();
+  const home = useView<HomeView>('home');
+  const [stay, setStayOn] = useState(stayOn());
+  const [unrestricted, setUnrestricted] = useState(true);
+  useEffect(() => setUnrestricted(batteryUnrestricted()), [stay]);
+  // Back from Android's settings (notifications, battery): show what's true now.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return;
+      void permission(false).then(setPerm);
+      setUnrestricted(batteryUnrestricted());
+    });
+    return () => sub.remove();
+  }, []);
+  const toggleStay = () => {
+    haptic.tap();
+    const next = !stay;
+    setStay(next);
+    setStayOn(next);
+    store.staySet();
+    if (!next) return;
+    if (perm !== 'granted') void permission(true).then(setPerm);
+    // Without it, Android's battery saver may still cut the link off after a while.
+    if (!batteryUnrestricted()) askBatteryUnrestricted();
+  };
+  const canKeepAwake = useSupports('keepAwake');
+  const [awake, setAwake] = useState<KeepAwake | undefined>(undefined);
+  const keepAwake = awake ?? home?.data.mac.keepAwake ?? 'off';
+  const chooseAwake = (mode: KeepAwake) => {
+    haptic.tap();
+    setAwake(mode);
+    void store.call(calls.keepAwake(mode), { queue: false }).catch(() => {
+      setAwake(undefined);
+      store.toast({ text: 'Your Mac is away: change this when it’s linked.', tone: 'warn' });
+    });
+  };
   useEffect(() => {
     void permission(false).then(setPerm);
   }, []);
@@ -57,7 +97,36 @@ export default function Settings() {
         <Animated.View entering={FadeInDown.duration(300)}>
           <Card>
             <Row first Icon={Monitor} tone="mint" label={link.mac?.name ?? link.pairing?.macName ?? 'Your Mac'} sub={link.mode === 'demo' ? 'Demo Mac' : `Beluga ${link.mac?.version ?? ''}`} right={<Pill label={link.phase === 'open' ? 'Linked' : link.phase === 'asleep' ? 'Asleep' : 'Away'} tone={link.phase === 'open' ? 'mint' : 'sky'} />} />
-            <Row Icon={Bell} tone="butter" label="Notifications" sub={perm === 'denied' ? 'Off in Android settings' : undefined} right={toggle(all, () => {})} onPress={() => save({ needsYou: !all, done: !all, mentions: !all })} chevron={false} />
+            <Row
+              Icon={Bell}
+              tone="butter"
+              label="Notifications"
+              sub={perm === 'denied' ? 'Off in Android settings: tap to turn them on' : undefined}
+              right={toggle(all && perm !== 'denied', () => {})}
+              // Off in Android: the switch takes you there (lib/notifications.ts), whatever the app's own choice.
+              onPress={() => (perm === 'denied' ? void permission(true).then(setPerm) : save({ needsYou: !all, done: !all, mentions: !all }))}
+              chevron={false}
+            />
+            {link.mode === 'bare' && stayAvailable() ? (
+              <Row
+                Icon={Cable}
+                tone="lavender"
+                label="Stay connected"
+                sub={stay ? 'Tells you when Claude finishes or needs you, screen off too' : 'Notifications with the app closed. Uses a little battery'}
+                right={toggle(stay, () => {})}
+                onPress={toggleStay}
+                chevron={false}
+              />
+            ) : null}
+            {stay && !unrestricted ? (
+              <Row
+                Icon={TriangleAlert}
+                tone="butter"
+                label="Let it run in the background"
+                sub="Android’s battery saver may cut the link off. Allow Beluga to fix it."
+                onPress={askBatteryUnrestricted}
+              />
+            ) : null}
             <Row Icon={HardDrive} tone="sky" label="Storage" sub={saved.length ? `${saved.length} saved · ${sizeOf(totalBytes(saved))}` : 'What Beluga keeps on this phone'} onPress={() => router.push('/storage')} />
             <Row
               Icon={LogOut}
@@ -119,13 +188,32 @@ export default function Settings() {
                 </Card>
               </View>
             ) : null}
+            {link.mode !== 'demo' && canKeepAwake ? (
+              <View style={{ gap: 8 }}>
+                <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
+                  Keep your Mac awake
+                </T>
+                <Segments
+                  value={keepAwake}
+                  onChange={chooseAwake}
+                  options={[
+                    { key: 'off', label: 'Never' },
+                    { key: 'power', label: 'On power' },
+                    { key: 'always', label: 'Always' },
+                  ]}
+                />
+                <T v="caption" c={color.text3} style={{ paddingHorizontal: 6 }}>
+                  A sleeping Mac can’t be reached or woken from here, so Beluga keeps it from sleeping. Its display still sleeps; closing the lid still sleeps it.
+                </T>
+              </View>
+            ) : null}
             <View style={{ gap: 8 }}>
               <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
                 Notify me about
               </T>
               <Card>
                 <Row first Icon={Hand} tone="peach" label="Needs you" right={toggle(p.needsYou, () => {})} onPress={() => save({ ...p, needsYou: !p.needsYou })} chevron={false} />
-                <Row Icon={CircleCheck} tone="mint" label="Done" sub="Things you asked from the phone" right={toggle(p.done, () => {})} onPress={() => save({ ...p, done: !p.done })} chevron={false} />
+                <Row Icon={CircleCheck} tone="mint" label="Done" sub={stay ? 'When Claude finishes' : 'Things you asked from the phone'} right={toggle(p.done, () => {})} onPress={() => save({ ...p, done: !p.done })} chevron={false} />
                 <Row Icon={AtSign} tone="sky" label="Mentions" right={toggle(p.mentions, () => {})} onPress={() => save({ ...p, mentions: !p.mentions })} chevron={false} />
               </Card>
             </View>

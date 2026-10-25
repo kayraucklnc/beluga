@@ -90,6 +90,8 @@ export const PhoneCalls = {
   'companion.post': entry('companion.post', done),
   'companion.askPerson': entry('companion.askPerson', AskPersonResult),
   'companion.signOut': entry('companion.signOut', z.object({ signedOut: z.literal(true) })),
+  // 1.13: whether the Mac stays awake for the phone (BLG-127).
+  'companion.keepAwake': entry('companion.keepAwake', done),
   'companion.openOnMac': entry('companion.openOnMac', OpenOnMacResult),
   'companion.icon': entry('companion.icon', IconResult),
   'companion.mergeCheck': entry('companion.mergeCheck', MergeCheckView),

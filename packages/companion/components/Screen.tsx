@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Bell, ChevronLeft, CircleCheck, CircleX, Info, MoonStar, RefreshCw, Trash2, TriangleAlert } from 'lucide-react-native';
+import { Bell, ChevronLeft, CircleCheck, CircleX, Info, MoonStar, RefreshCw, Smartphone, Trash2, TriangleAlert } from 'lucide-react-native';
 import { type ReactNode, useState } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeInUp, FadeOut, FadeOutUp, LinearTransition } from 'react-native-reanimated';
@@ -93,7 +93,8 @@ export function AwayBand({ at }: { readonly at?: number }) {
       </Animated.View>
     );
   }
-  const away = link.phase === 'asleep' || (link.phase === 'closed' && outbox.length > 0) || (link.phase === 'refused' && link.diagnosis !== undefined);
+  const retrying = link.phase === 'dialing' && link.diagnosis?.auto === true;
+  const away = link.phase === 'asleep' || retrying || (link.phase === 'closed' && outbox.length > 0) || (link.phase === 'refused' && link.diagnosis !== undefined);
   if (!away) return null;
   // Said in words when we know why (no internet, a network that won't connect, the Mac away…).
   const d = link.phase === 'closed' ? undefined : link.diagnosis;
@@ -107,7 +108,7 @@ export function AwayBand({ at }: { readonly at?: number }) {
               {d?.title ?? 'Mac asleep'}
             </T>
             <T v="caption" c={color.info} style={{ opacity: 0.8 }}>
-              {[at ? asOf(at) : undefined, outbox.length ? `${outbox.length} waiting` : undefined].filter(Boolean).join(' · ') || 'Last views'}
+              {[d?.auto ? (retrying ? 'Connecting…' : 'Trying again by itself') : undefined, at ? asOf(at) : undefined, outbox.length ? `${outbox.length} waiting` : undefined].filter(Boolean).join(' · ') || 'Last views'}
             </T>
           </View>
           {d ? (
@@ -117,12 +118,29 @@ export function AwayBand({ at }: { readonly at?: number }) {
               </T>
             </Press>
           ) : null}
+          {d?.action === 'pair-again' ? (
+            <Press
+              onPress={async () => {
+                await store.signOut();
+                router.replace('/pair');
+              }}
+              accessibilityLabel="Pair again"
+              hitSlop={8}
+              style={{ height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: color.card, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            >
+              <Smartphone color={color.info} size={14} />
+              <T v="caption" c={color.info} style={{ fontWeight: '600' }}>
+                Pair again
+              </T>
+            </Press>
+          ) : (
           <Press onPress={() => store.retry()} accessibilityLabel="Try again" hitSlop={8} style={{ height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: color.card, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <RefreshCw color={color.info} size={14} />
             <T v="caption" c={color.info} style={{ fontWeight: '600' }}>
               Retry
             </T>
           </Press>
+          )}
         </Press>
         {open && outbox.length ? (
           <Animated.View entering={FadeInUp} style={{ marginTop: 10, gap: 6 }}>

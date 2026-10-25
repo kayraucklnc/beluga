@@ -17,6 +17,10 @@ export type TrustLevel = (typeof TRUST_LEVELS)[number];
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORTS)[number];
 
+/** Keep the Mac awake for your phone: never, only on power, or always (the display may still sleep). */
+export const KEEP_AWAKE = ['off', 'power', 'always'] as const;
+export type KeepAwake = (typeof KEEP_AWAKE)[number];
+
 /** Which events can notify you (desktop notification + the in-app inbox). */
 export const NotifySettings = z.object({
   /** Show a desktop notification (macOS Notification Center, notify-send on Linux). */
@@ -66,6 +70,8 @@ export const Settings = z.object({
   policy: z.enum(['ask', 'auto', 'deny']).optional(),
   mouse: z.boolean().default(true),
   tunnel: z.enum(['auto', 'p2p', 'cloudflared', 'ngrok', 'none']).default('auto'),
+  /** Keep the Mac from sleeping while a phone is paired, so it stays reachable (companion/awake.ts): never, on power only, or always. */
+  keepAwake: z.enum(KEEP_AWAKE).default('off'),
   /** Whether your own Claude asks before shell commands and other risky actions. */
   selfApproval: z.enum(['never', 'ask']).default('never'),
   notify: NotifySettings.default(NotifySettings.parse({})),

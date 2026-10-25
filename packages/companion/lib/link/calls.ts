@@ -30,6 +30,8 @@ type Files = readonly string[] | undefined;
 const withFiles = (files: Files) => (files?.length ? { files: [...files] } : {});
 
 export const calls = {
+  /** Since 1.13 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
+  keepAwake: (mode: 'off' | 'power' | 'always'): Call => make('companion.keepAwake', [mode], 'Keep your Mac awake'),
   /** A message in a conversation (yours, or shared with you to work in), with photos. */
   send: (topic: Topic, text: string, files?: Files): Call => make('companion.ask', [{ target: { topic }, text, ...withFiles(files) }], `Send "${short(text)}"`),
   /** Ask your Mac in a project: a new conversation there (its topic comes back). */

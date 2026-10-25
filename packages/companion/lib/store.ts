@@ -7,7 +7,8 @@ import { DemoTransport } from './link/demo/transport';
 import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, isMacTopic, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
 import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
 import { checkOnline } from './link/online';
-import { graceExpired, onResume, PROBE_TIMEOUT_MS, retryDelay } from './link/resume';
+import { graceExpired, onResume, PROBE_TIMEOUT_MS, RETRY_LIMIT, retryDelay } from './link/resume';
+import { notifyNudge, stayOn, stayService } from './stay';
 import type { Attempt, DeviceSecret, LinkHints, LinkPathName, LinkPhase, Pairing } from './link/rpc';
 import type { PairInput, PairStep, PathInfo, PhaseInfo, Transport } from './link/transport';
 import { secure } from './secure';
@@ -122,6 +123,8 @@ class Store {
   /** One automatic retry at a time, backing off (lib/link/resume.ts retryDelay). */
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private retryAttempt = 0;
+  /** Away with Stay connected on (BLG-128): the link stays open, the views are off, nudges notify. */
+  private stayingAway = false;
   private listeners = new Map<string, Set<() => void>>();
   private snapshots = new Map<string, unknown>();
   /** What the image viewer shows, and where it opened from (for the transition back). */
@@ -149,7 +152,9 @@ class Store {
     return this.state;
   }
   private setState(patch: Partial<LinkState>): void {
+    const was = this.state.phase;
     this.state = { ...this.state, ...patch };
+    if (this.state.phase !== was) this.stayNote();
     this.emit('state');
   }
 
@@ -172,6 +177,7 @@ class Store {
     // AppState says so too; whichever comes first dials, the other finds it dialing (single flight).
     Linking.addEventListener('url', () => this.foreground());
     if (mode && AppState.currentState === 'active') this.foreground();
+    else if (mode === 'bare' && stayOn()) this.stayAway();
   }
 
   private use(mode: Mode, pairing?: Pairing): void {
@@ -240,6 +246,8 @@ class Store {
     if (this.state.phase === 'open') onMac = await this.call(calls.signOut(), { queue: false }).then(() => true, () => false);
     this.transport?.send({ t: 'bye' });
     this.dropTransport();
+    this.stayingAway = false;
+    stayService(undefined);
     await secure.remove('pairing');
     await secure.remove('device-secret');
     kv.clear();
@@ -281,7 +289,12 @@ class Store {
     this.active = true;
     if (this.grace) clearTimeout(this.grace);
     this.grace = undefined;
-    const awayAt = this.awayAt;
+    const stayed = this.stayingAway;
+    this.stayingAway = false;
+    // In front is the only time Android lets the service start.
+    this.stayNote(true);
+    // Kept open on purpose while away: it isn't stale for having been away, only checked.
+    const awayAt = stayed ? undefined : this.awayAt;
     this.awayAt = undefined;
     this.clearRetry();
     this.retryAttempt = 0;
@@ -291,6 +304,7 @@ class Store {
     if (next.do === 'none') return;
     if (next.do === 'probe') {
       t.send({ t: 'focus', on: true });
+      if (stayed) t.send({ t: 'sub', topics: this.topics() });
       // The Mac stops a terminal's stream while the app is away: its screen draws afresh now.
       this.reattachTerms();
       this.probe();
@@ -332,12 +346,15 @@ class Store {
   /** The link dropped, or the Mac didn't answer, while you look: try again by itself, backing off. */
   private scheduleRetry(): void {
     this.clearRetry();
-    const delay = retryDelay({ phase: this.state.phase, active: this.active, attempt: this.retryAttempt }, Math.random());
+    const staying = this.stayingAway && !this.active;
+    const fast = retryDelay({ phase: this.state.phase, active: this.active || staying, attempt: this.retryAttempt }, Math.random());
+    // Away, after the quick ones: every two minutes (the Mac may be asleep for the night).
+    const delay = fast !== undefined && staying && this.retryAttempt >= RETRY_LIMIT ? 120_000 : fast;
     if (delay === undefined) return;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
       const p = this.state.phase;
-      if (!this.active || !this.transport || (p !== 'closed' && p !== 'asleep')) return;
+      if (!(this.active || this.stayingAway) || !this.transport || (p !== 'closed' && p !== 'asleep')) return;
       this.retryAttempt++;
       this.dial(false);
     }, delay);
@@ -370,8 +387,40 @@ class Store {
     this.clearRetry();
     this.awayAt ??= Date.now();
     if (!this.transport || this.grace) return;
+    if (this.state.mode === 'bare' && stayOn()) return this.stayAway();
     if (this.state.phase === 'open') this.transport.send({ t: 'focus', on: false });
     this.armGrace(BACKGROUND_GRACE_MS);
+  }
+
+  /**
+   * Stay connected (BLG-128): away, the link stays open with nothing on screen, so the Mac sends
+   * only nudges (and pings come and go); a link that drops is dialed again, slowly.
+   */
+  private stayAway(): void {
+    this.stayingAway = true;
+    this.active = false;
+    this.awayAt ??= Date.now();
+    if (this.state.phase === 'open') {
+      this.transport?.send({ t: 'focus', on: false });
+      this.transport?.send({ t: 'sub', topics: [] });
+    } else if (this.state.phase !== 'dialing') this.dial(false);
+    this.stayNote();
+  }
+
+  /** Turned on or off in Settings: the service follows, and so does the link if the app is away. */
+  staySet(): void {
+    if (!stayOn()) {
+      this.stayingAway = false;
+      stayService(undefined);
+      return;
+    }
+    this.stayNote(true);
+  }
+
+  /** The service's quiet line says how the link is. */
+  private stayNote(force = false): void {
+    if (this.state.mode !== 'bare' || !stayOn()) return stayService(undefined);
+    stayService(this.state.phase === 'open' ? 'Connected to your Mac' : 'Reconnecting to your Mac…', force);
   }
 
   private armGrace(ms: number): void {
@@ -420,11 +469,15 @@ class Store {
       // In words, once we know whether the phone itself is online.
       void checkOnline().then((online) => {
         if (this.state.phase !== 'asleep') return;
-        this.setState({ diagnosis: diagnose({ stage: 'link', online, ...(info?.report ? { report: info.report } : {}), ...(detail ? { reason: detail } : {}) }) });
+        const d = diagnose({ stage: 'link', online, ...(info?.report ? { report: info.report } : {}), ...(detail ? { reason: detail } : {}) });
+        // Removed on the Mac: trying again won't help, pairing again will (the banner says so).
+        if (!d.retry) this.clearRetry();
+        this.setState({ diagnosis: d });
       });
     } else {
-      const d = phase === 'refused' ? diagnose({ stage: 'link', ...(info?.code !== undefined ? { closeCode: info.code } : {}), ...(detail ? { reason: detail } : {}) }) : undefined;
-      this.setState({ phase, detail, path: phase === 'closed' ? this.state.path : undefined, diagnosis: d && d.problem !== 'unknown' ? d : undefined });
+      // Dialing again keeps saying what was wrong (the banner stays put while it retries by itself).
+      const d = phase === 'dialing' && this.state.diagnosis?.auto ? this.state.diagnosis : phase === 'refused' ? diagnose({ stage: 'link', ...(info?.code !== undefined ? { closeCode: info.code } : {}), ...(detail ? { reason: detail } : {}) }) : undefined;
+      this.setState({ phase, detail, path: phase === 'closed' ? this.state.path : undefined, diagnosis: d && (d.problem !== 'unknown' || phase === 'dialing') ? d : undefined });
     }
     this.welcomed = false;
     if (phase === 'closed' || phase === 'unreachable') this.scheduleRetry();
@@ -503,6 +556,10 @@ class Store {
         for (const fn of [...(this.termListeners.get(f.term) ?? [])]) fn(f);
         return;
       case 'nudge':
+        if (!this.active) {
+          void notifyNudge(f);
+          return;
+        }
         this.toast({ text: `${f.title} · ${f.body}`, tone: f.kind === 'needsYou' ? 'warn' : 'info', topic: f.topic });
         return;
       case 'bye':
@@ -520,6 +577,7 @@ class Store {
 
   /** The topics on screen right now (what the Mac should send). */
   private topics(): Topic[] {
+    if (this.stayingAway) return [];
     return [...this.subCounts.keys()].filter((t) => this.knows(t)).slice(0, 16);
   }
 

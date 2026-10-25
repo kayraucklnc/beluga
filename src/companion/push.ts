@@ -18,6 +18,8 @@ export interface Nudge {
   /** Something that needs you is high priority (it wakes the phone); the rest batches under a collapse key. */
   readonly priority: 'high' | 'normal';
   readonly collapse?: string;
+  /** Only for a phone linked with the app in the background (Stay connected), never pushed: the Mac's own "finished" notices. */
+  readonly away?: boolean;
 }
 
 /** A phone that can be pushed to (its token and relay key, from its `push` frame). */

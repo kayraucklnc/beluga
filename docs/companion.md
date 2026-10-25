@@ -348,6 +348,11 @@ which one worked (`src/companion/dial.ts`):
   links carry it too (`beluga://device#<secret>?r=<url>`), so a QR works even where the DHT doesn't;
   a typed code finds it through the record. Each welcome says the current one; the phone keeps the
   last three.
+- **A tunnel that's gone is replaced.** Cloudflare drops a quick tunnel's name when the Mac sleeps
+  long enough, while cloudflared keeps running, so the Mac would keep handing out a dead URL (BLG-126).
+  Every tunnel's public URL is checked each minute and right after a wake (the clock jumped); two
+  misses while Cloudflare itself answers kill it, and a fresh one (a new name, a new record) opens
+  30 s later. Offline isn't counted. Rooms' fallback relays come back the same way.
 - **On the phone**, Bare has no WebSocket, so the worklet asks the app's (React Native's, with the
   OS's TLS) through its IPC and passes ciphertext both ways in base64.
 - **Only while needed.** The relay server and its tunnel run only while a phone is paired or a
@@ -363,11 +368,12 @@ blaming anything else it checks the phone is online at all (one look, only after
 |---|---|
 | `offline` | This phone is offline |
 | `dht-blocked` | This network blocks Beluga's connection (UDP blocked, and no relay) |
+| `relay-down` | Reconnecting to your Mac…: it's online, this network blocks a direct connection, and its relay is restarting. The banner stays and says "Trying again by itself" |
 | `no-path` | Your Mac is there, but this network won't connect you: try mobile data |
 | `mac-offline` | Your Mac isn't online: asleep, Beluga closed, or its network off |
 | `pairing-gone`, `pairing-wrong`, `pairing-busy`, `pairing-full` | The pairing closed, ran out, was used; the code was off; another phone is pairing; 4 phones already |
 | `update-mac`, `update-app` | Whose update would fix it |
-| `removed` | This phone was removed: pair it again |
+| `removed` | This phone was removed: pair it again. Learned from the close code (4010) while linked, or, once the Mac has let it go, from its relay record: under the companion key it names its phones (`RelayRecord.phones`, each link key's first 16 hex) and is put once more, naming none, when the last one goes. The banner's button becomes Pair again |
 
 Pairing refusals carry a `why` for this (`dev_refused`), and the phone's `hello` says how it came
 (`via {path, tried}`), so the Mac's Settings › Phone and the footer popover can say "Your phone found
@@ -375,9 +381,20 @@ this Mac but couldn't connect directly on its network, so it used the relay." Th
 Settings › Advanced shows "Connected directly · same network / over the internet" or "Connected
 through the relay (end-to-end encrypted)". Raw codes never reach the surface.
 
+On the Mac, Settings › Phone › Reaching your Mac says whether phones on other networks get through
+(`companion.relay`: ready, starting, off), and the footer popover says so when it isn't ready.
+
+## Keeping your Mac awake
+
+A sleeping Mac can't be reached, and it can't be woken over the internet (Wake-on-LAN needs the same
+network, and isolating Wi-Fi drops it). So Settings › Phone › Keep this Mac awake (Never, On power,
+Always; the phone's Settings › Advanced has the same, `companion.keepAwake`, since 1.13) keeps it
+from sleeping while a phone is paired: `caffeinate -s` (on power) or `-i`, tied to the daemon's pid
+(`src/companion/awake.ts`). The display still sleeps, and closing a laptop's lid still sleeps it.
+
 ## Battery
 
-The phone holds no connection it isn't using.
+The phone holds no connection it isn't using (unless you turn on Stay connected, below).
 
 - **Open only while you look.** The worklet dials when the app comes to the front and closes 15 s
   after it goes to the background (the grace covers a quick app switch). Then the DHT node is
@@ -390,7 +407,8 @@ The phone holds no connection it isn't using.
   (`packages/companion/lib/link/resume.ts`): away past the grace, the link is replaced at once;
   otherwise one ping (3 s) checks it, and a link that doesn't answer is replaced. A dial under way
   is left alone (one at a time). A link that drops while you look is dialed again by itself, after
-  1, 2, 4… up to 30 s, six times, then it waits for Try again or the next time the app comes back.
+  1, 2, 4… up to 30 s, then every 30 s for as long as the app is in front (BLG-126: the Mac may be
+  restarting its relay, and it should just come back); never in the background.
 - **The relay costs nothing extra.** It's one more way to open the same link, open only while the
   app is in front and closed with it; the keepalives and views over it are the same. The phone
   never holds a relay socket in the background.
@@ -405,6 +423,32 @@ The phone holds no connection it isn't using.
 - **The Mac decides when to push.** Only when you're not at the Mac (its idle time over 2 minutes,
   or the screen locked or asleep), and never for what you're already looking at on the phone. While
   linked, the Mac sends a `nudge` in-band instead.
+
+## Staying connected
+
+Beluga Push isn't built yet, so with the app closed nothing can reach the phone. Stay connected
+(Settings, Android only, off by default; BLG-128) is the way that needs no server:
+
+- **A foreground service** (`packages/companion/modules/stay-connected`, a local Expo module, type
+  `remoteMessaging`) keeps the app's process, and with it the worklet's link, running with the
+  screen off. A partial wake lock keeps the 20 s heartbeat beating (as ntfy does). Its notification
+  is quiet and ongoing ("Connected to your Mac" / "Reconnecting to your Mac…"), since Android
+  requires one. It starts only while the app is in front (Android refuses it otherwise) and stops
+  when the app is swiped away, you turn it off, or you sign out.
+- **Away, the link carries almost nothing.** The phone sends `focus: false` and subscribes to no
+  topic, so the Mac sends no views; only pings and `nudge`s. Back in front, the link is checked
+  with one ping (not replaced for having been away) and the screen's topics come back.
+- **What notifies.** Needs you, the runs you asked from the phone, and, for a phone away with the
+  link open, every run of yours that finishes or stops (the Mac's own "Claude finished in …"
+  notices, `Nudge.away`, never pushed). Each nudge becomes a notification in its channel, as set in
+  Notify me about; tapping it opens its conversation.
+- **A slower heartbeat while away.** Over the relay (TCP; Cloudflare drops a socket idle for 100 s)
+  or the same Wi-Fi (no NAT) the phone pings every 50 s instead of 20 (`KEEPALIVE_AWAY_MS`), and a
+  Mac with `SINCE.awayBeat` (1.13) waits three of those before it calls the phone gone. A
+  hole-punched link keeps 20 s: mobile NATs forget a UDP mapping in about 30.
+- **Dropped links come back by themselves:** quickly at first, then every two minutes while away.
+- **Battery.** Asking Android to leave Beluga unrestricted (Settings shows a row until it is),
+  since its battery saver may otherwise cut the link off.
 
 ## Notifications: Beluga Push
 

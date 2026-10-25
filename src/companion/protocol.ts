@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 12 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 13 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -28,15 +28,24 @@ export const COMPANION_PROTO = { major: 1, minor: 12 } as const;
  * a graph or view) and its math typeset (`ProseView.math`). 1.10 (BLG-110): a sub-agent opened on
  * the phone, its whole activity and the report it gave back (`companion.subAgent`). 1.11 (BLG-124):
  * which conversations the phone saved files from are archived or deleted (`companion.gone`). 1.12:
- * photos with a new worktree (`companion.ask`'s `worktree` target).
+ * photos with a new worktree (`companion.ask`'s `worktree` target). 1.13 (BLG-127): whether the Mac
+ * stays awake for the phone (`HomeView.mac.keepAwake`, `companion.keepAwake`), and (BLG-128) a phone
+ * away pinging every KEEPALIVE_AWAY_MS on a relay or LAN link.
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
 export const COMPANION_PIECE = 192 * 1024;
 /** How often the phone's link pings while open, and how long it stays after the app goes to the background. */
 export const KEEPALIVE_MS = 20_000;
+/**
+ * Away with the link kept open (Stay connected, BLG-128), over the relay (TCP: Cloudflare drops a
+ * socket idle 100 s) or the same Wi-Fi (no NAT): a ping this often. A hole-punched link keeps
+ * KEEPALIVE_MS (mobile NATs forget a UDP mapping in about 30 s). Only with a Mac that has
+ * SINCE.awayBeat, which then waits three of these before it calls the phone gone.
+ */
+export const KEEPALIVE_AWAY_MS = 50_000;
 export const BACKGROUND_GRACE_MS = 15_000;
 /** Views of one topic are sent at most this often. */
 export const VIEW_COALESCE_MS = 500;
@@ -296,7 +305,8 @@ export type ConvSummary = z.infer<typeof ConvSummary>;
 // ---- views, one per topic
 
 export const HomeView = z.object({
-  mac: z.object({ name: z.string().max(100), version: z.string().max(40) }),
+  // 1.13: keepAwake, whether the Mac stays awake for the phone (companion.keepAwake).
+  mac: z.object({ name: z.string().max(100), version: z.string().max(40), keepAwake: z.enum(['off', 'power', 'always']).optional() }),
   me: z.object({ name: z.string().max(64), peerId: id }),
   usage: z.array(UsageView).max(8),
   needsYou: z.array(NeedsYou).max(50),
@@ -647,7 +657,9 @@ export const relayUrlFor = (base: string, keyHex: string): string => `${base.rep
  * with that key (hyperdht mutablePut): its current relay. The DHT lookup works on networks where
  * peer connections don't, so a phone finds the relay there.
  */
-export const RelayRecord = z.object({ v: z.literal(1), relay: RelayUrl.optional(), at: ts });
+// `phones` (BLG-126, under the companion key only): the first 16 hex of each paired phone's link key, so
+// a phone the Mac no longer knows hears it (and is told to pair again) instead of "Mac offline" forever.
+export const RelayRecord = z.object({ v: z.literal(1), relay: RelayUrl.optional(), at: ts, phones: z.array(z.string().regex(/^[0-9a-f]{16}$/)).max(8).optional() });
 export type RelayRecord = z.infer<typeof RelayRecord>;
 
 // ---- frames
@@ -796,5 +808,6 @@ export interface DeviceView {
 }
 
 export interface CompanionSlice {
-  readonly companion: { readonly devices: readonly DeviceView[]; readonly pairing?: { readonly link: string; readonly code: string; readonly expiresAt: number; readonly waiting?: { readonly name: string; readonly fingerprint: string } } };
+  /** `relay`: how phones on other networks reach this Mac now (reach.ts), for Settings › Phone (BLG-126). */
+  readonly companion: { readonly devices: readonly DeviceView[]; readonly relay?: 'ready' | 'starting' | 'off'; readonly pairing?: { readonly link: string; readonly code: string; readonly expiresAt: number; readonly waiting?: { readonly name: string; readonly fingerprint: string } } };
 }

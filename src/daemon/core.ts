@@ -115,7 +115,10 @@ async function addFallbackRelay(room: Room, session: Session, isClosing: () => b
   try {
     const tunnel = await openTunnel('auto', room.hub?.port ?? 0, {
       onDied: () => {
-        if (!isClosing() && room.reach) void update({ url: room.reach.url });
+        if (isClosing() || !room.reach) return;
+        void update({ url: room.reach.url });
+        // A fresh tunnel (a new name) in a moment, added to the invite once it answers.
+        setTimeout(() => void addFallbackRelay(room, session, isClosing), 30_000).unref();
       },
     });
     if (!tunnel || isClosing() || !(await waitUntilReachable(tunnel.publicUrl)) || !room.reach) return;

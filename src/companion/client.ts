@@ -9,7 +9,9 @@ import {
   COMPANION_PROTO,
   type DeviceCert,
   type DevicePair,
+  KEEPALIVE_AWAY_MS,
   KEEPALIVE_MS,
+  SINCE,
   type MacFrame,
   MAX_COMPANION_FRAME,
   MAX_UPLOAD_BYTES,
@@ -402,11 +404,7 @@ export class CompanionClient extends Emitter<ClientEvents> {
         }
         this.heard = Date.now();
         this.send({ t: 'hello', v: { ...COMPANION_PROTO }, app: this.opts.app.slice(0, 40), platform: this.opts.platform, topics: this.topics, via: { path: dialed.path, tried: dialed.tried.slice(-8) } });
-        const every = this.opts.keepAliveMs ?? KEEPALIVE_MS;
-        this.beat = setInterval(() => {
-          if (Date.now() - this.heard > every * 3) sock.terminate();
-          else sock.ping();
-        }, every);
+        this.beatEvery(this.opts.keepAliveMs ?? KEEPALIVE_MS);
       }
       sock.on('pong', () => (this.heard = Date.now()));
       sock.on('text', (text) => {
@@ -512,6 +510,21 @@ export class CompanionClient extends Emitter<ClientEvents> {
   /** The app went to the background (the link closes after the grace) or came back. */
   focus(on: boolean): void {
     this.send({ t: 'focus', on });
+    // Kept open while away (Stay connected, BLG-128): ping less, where the link allows and the Mac waits that long.
+    const v = this.welcome?.v;
+    const slow = !on && v !== undefined && v.major === COMPANION_PROTO.major && v.minor >= SINCE.awayBeat && (this.path === 'relay' || this.path === 'lan');
+    this.beatEvery(this.opts.keepAliveMs ?? (slow ? KEEPALIVE_AWAY_MS : KEEPALIVE_MS));
+  }
+
+  /** Ping every `every` ms; a link silent for three of them is gone. */
+  private beatEvery(every: number): void {
+    const sock = this.sock;
+    if (!sock) return;
+    clearInterval(this.beat);
+    this.beat = setInterval(() => {
+      if (Date.now() - this.heard > every * 3) sock.terminate();
+      else sock.ping();
+    }, every);
   }
 
   /** 1.7: stream a worktree's terminal (a key companion.terminals or termOpen gave), type into it, stop. */

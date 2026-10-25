@@ -30,6 +30,7 @@ export const COMPANION_HANDLERS = {
   'companion.post': (s, a) => needCompanion(s).post(callerOf(), a),
   'companion.askPerson': (s, a) => needCompanion(s).askPerson(callerOf(), a),
   'companion.signOut': (s) => needCompanion(s).signOut(callerOf()),
+  'companion.keepAwake': (s, mode) => s.setPrefs({ keepAwake: mode }),
   'companion.openOnMac': async (s, target) => {
     const view = macViewFor(s.store.getState(), target);
     if (!view) return { opened: false, why: 'That isn’t on your Mac any more' };

@@ -526,6 +526,7 @@ Then protect \`/api/payments\`.",
       "unread": 2,
     },
     "mac": {
+      "keepAwake": "off",
       "name": "Kayra’s Mac",
       "version": "0.6.2",
     },
