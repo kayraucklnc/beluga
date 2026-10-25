@@ -117,7 +117,26 @@ export function ViewCard({ view, at, warnings = 0, full }: { readonly view: View
 const MIN_COL = 84;
 const MAX_COL = 220;
 
-function CellView({ c, col }: { readonly c: Row[string] | undefined; readonly col: Column }) {
+/**
+ * One of a row's cells as a line of a card (or of a row opened to read it): its heading, then all
+ * of it. A blank heading (the row's name, under a comparison's empty corner) is the card's title.
+ */
+function Field({ c, cell }: { readonly c: Column; readonly cell: Row[string] | undefined }) {
+  const heading = headingOf(c);
+  if (!heading) return cell === null || cell === undefined || cell === '' ? null : <T v="callout" style={{ fontWeight: '700' }}>{formatCell(cell, c)}</T>;
+  return (
+    <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+      <T v="caption" numberOfLines={2} style={{ width: 112, fontWeight: '700' }}>
+        {heading}
+      </T>
+      <View style={{ flex: 1 }}>
+        <CellView c={cell} col={{ ...c, align: 'left' } as Column} whole />
+      </View>
+    </View>
+  );
+}
+
+function CellView({ c, col, whole }: { readonly c: Row[string] | undefined; readonly col: Column; readonly whole?: boolean }) {
   const v = c ?? null;
   if (v === null || v === '') return <T v="callout" c={color.text3}>–</T>;
   if (col.type === 'badge' && typeof v === 'string') {
@@ -142,7 +161,7 @@ function CellView({ c, col }: { readonly c: Row[string] | undefined; readonly co
   }
   const text = formatCell(v, col);
   return (
-    <Text numberOfLines={2} style={[col.type === 'code' || col.type === 'path' ? type.mono : type.callout, { color: color.text, textAlign: alignOf(col), fontVariant: ['tabular-nums'] }]}>
+    <Text numberOfLines={whole ? undefined : 2} style={[col.type === 'code' || col.type === 'path' ? type.mono : type.callout, { color: color.text, textAlign: alignOf(col), fontVariant: ['tabular-nums'] }]}>
       {text}
     </Text>
   );
@@ -185,14 +204,7 @@ function TableView({ view, d }: { readonly view: ViewSpec; readonly d: ViewData 
           {d.rows.map((r, ri) => (
             <View key={`${from + ri}`} style={{ padding: 12, borderRadius: 12, backgroundColor: color.sunken, gap: 5 }}>
               {cols.map((c) => (
-                <View key={c.key} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-                  <T v="caption" numberOfLines={2} style={{ width: 112, fontWeight: '700' }}>
-                    {headingOf(c)}
-                  </T>
-                  <View style={{ flex: 1 }}>
-                    <CellView c={r[c.key]} col={{ ...c, align: 'left' } as Column} />
-                  </View>
-                </View>
+                <Field key={c.key} c={c} cell={r[c.key]} />
               ))}
             </View>
           ))}
@@ -235,14 +247,7 @@ function TableView({ view, d }: { readonly view: ViewSpec; readonly d: ViewData 
       {open !== undefined && d.rows[open] && !(wide && cards) ? (
         <View style={{ marginHorizontal: 12, padding: 12, borderRadius: 12, backgroundColor: color.sunken, gap: 6 }}>
           {d.columns.map((c) => (
-            <View key={c.key} style={{ flexDirection: 'row', gap: 10 }}>
-              <T v="caption" style={{ width: 110, fontWeight: '700' }} numberOfLines={1}>
-                {headingOf(c)}
-              </T>
-              <View style={{ flex: 1 }}>
-                <CellView c={d.rows[open]![c.key]} col={c} />
-              </View>
-            </View>
+            <Field key={c.key} c={c} cell={d.rows[open]![c.key]} />
           ))}
         </View>
       ) : null}

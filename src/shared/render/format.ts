@@ -89,9 +89,9 @@ export const numericTypes: ReadonlySet<ColumnType> = new Set(['number', 'percent
 export const isNumeric = (c: Column): boolean => numericTypes.has(c.type);
 export const alignOf = (c: Column): 'left' | 'right' | 'center' => c.align ?? (isNumeric(c) ? 'right' : c.type === 'bool' || c.type === 'color' ? 'center' : 'left');
 
-/** A column's heading: its label, else its key in words ("created_at" → "Created at"). */
+/** A column's heading: its label (a blank one stays blank), else its key in words ("created_at" → "Created at"). */
 export function headingOf(c: Pick<Column, 'key' | 'label'>): string {
-  if (c.label) return c.label;
+  if (c.label !== undefined) return c.label;
   const words = c.key
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/[_-]+/g, ' ')

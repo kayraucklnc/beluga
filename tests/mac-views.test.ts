@@ -113,4 +113,21 @@ describe('a plain Markdown table', () => {
     expect(tableRows(linked as never)).toBeUndefined();
     expect(tableRows(el('table', [el('thead', [tr('th', ['a', 'b'])]), el('tbody', [tr('td', ['1', '2'])])]) as never)).toBeUndefined();
   });
+
+  // A comparison as Claude wrote it in wt-voice-dictation: the phone showed its pipes, as no view took the empty corner.
+  it('a comparison with an empty corner is a view, its corner left blank', () => {
+    const view = tableView({
+      columns: ['', 'Phone (Settings › Voice)', 'Mac app (Settings › Voice)'],
+      rows: [
+        ['Applies to', "The microphone in the phone's Ask sheet", "The Mac's mic button and talk shortcut"],
+        ["Where it's saved", 'On the phone', 'In the Mac app, on that Mac'],
+      ],
+    })!;
+    expect(view.columns.map((c) => c.key)).toEqual(['Column 1', 'Phone (Settings › Voice)', 'Mac app (Settings › Voice)']);
+    expect(view.columns.map(headingOf)).toEqual(['', 'Phone (Settings › Voice)', 'Mac app (Settings › Voice)']);
+    expect(view.rows[1]).toMatchObject({ 'Column 1': "Where it's saved", 'Phone (Settings › Voice)': 'On the phone' });
+    // Two blank headings stay apart; a heading never given still reads from its key.
+    expect(tableView({ columns: ['', '', 'n'], rows: [['a', 'b', '1']] })!.columns.map((c) => c.key)).toEqual(['Column 1', 'Column 2', 'n']);
+    expect(headingOf({ key: 'created_at' })).toBe('Created at');
+  });
 });
