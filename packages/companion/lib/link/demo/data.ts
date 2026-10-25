@@ -408,6 +408,30 @@ export function makeWorld(now = Date.now()): DemoWorld {
           txt('stripe-export.log', 'text', 'Fetched 415 charges in 3 pages', undefined, 48 * MIN),
         ],
       },
+      { id: 'rf3', who: 'you', name: 'You', ts: now - 30 * MIN, prose: { text: 'What does Team get that Starter doesn’t?', code: [] } },
+      {
+        // A comparison with an empty corner, as Claude writes one: a table, never its pipes.
+        id: 'rf4',
+        who: 'claude',
+        name: 'Claude',
+        ts: now - 30 * MIN,
+        endTs: now - 29 * MIN,
+        status: 'done',
+        steps: 1,
+        trail: [{ tool: 'read', text: 'Read plans.ts' }],
+        prose: stripCode(
+          [
+            'Team is Starter with room for a whole company, plus the reports your finance people ask for.',
+            '',
+            '| | Starter | Team |',
+            '|---|---|---|',
+            '| **Seats** | Up to 5 | Unlimited, billed per seat after 10 |',
+            '| **Reports** | Monthly revenue only | Revenue, churn and cohorts, exported to CSV or Sheets every Monday |',
+            '| **Support** | Email, within two days | Chat and email, within four hours on weekdays |',
+            '| **Price** | $19 a month | $120 a month |',
+          ].join('\n'),
+        ),
+      },
     ],
   };
 

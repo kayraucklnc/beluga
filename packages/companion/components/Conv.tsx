@@ -87,14 +87,16 @@ function pieces(s: string, base: Base, math: MathMap | undefined, tasks: Readonl
 
 export { CodeChip };
 
-/** A Markdown table's cells (`| a | b |`). */
-const cells = (line: string): string[] =>
+/** A Markdown table row's cells as written (`| a | b |`). */
+const rowCells = (line: string): string[] =>
   line
     .trim()
     .replace(/^\|/, '')
     .replace(/\|$/, '')
     .split('|')
-    .map((c) => c.trim().replace(/\*\*/g, '').replace(/`/g, ''));
+    .map((c) => c.trim());
+/** Its cells' words (no emphasis or code ticks): what a table view shows. */
+const cells = (line: string): string[] => rowCells(line).map((c) => c.replace(/\*\*/g, '').replace(/`/g, ''));
 const isRule = (line: string): boolean => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
 
 /**
@@ -146,7 +148,18 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at, tasks:
         if (b.kind === 'table') {
           const [head, ...rows] = b.lines;
           const view = tableView({ columns: cells(head!), rows: rows.map(cells) });
-          return view ? <ViewCard key={bi} view={view} /> : <Text key={bi} style={base}>{b.lines.join('\n')}</Text>;
+          if (view) return <ViewCard key={bi} view={view} />;
+          // One no view takes (too many columns): a line per row, its cells apart, never the pipes.
+          return (
+            <Text key={bi} style={base}>
+              {b.lines.map((l, li) => (
+                <Fragment key={li}>
+                  {li > 0 ? '\n' : ''}
+                  {inline(rowCells(l).filter(Boolean).join('  ·  '), base, prose.math, tasks)}
+                </Fragment>
+              ))}
+            </Text>
+          );
         }
         if (b.kind === 'img') return <WebImage key={bi} src={b.src} alt={b.alt} />;
         if (b.kind === 'h') {
