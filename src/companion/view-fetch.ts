@@ -54,5 +54,6 @@ export async function viewFetch(state: DomainState, a: ViewFetchArgs, fetch: typ
   const named = sourcesOf(block.text, block.lang);
   const source = a.source ? named.find((s) => sourceKey(s) === sourceKey(a.source!)) : named[0];
   if (!source) throw new Error(a.source ? 'That view doesn’t name this source' : 'That view has no source');
-  return fetch(source, a.query, { ...(a.confirm ? { confirm: true } : {}), ...(a.fresh ? { fresh: true } : {}), ...(a.text ? { text: true } : {}) });
+  // What the Mac fetched before is shown again (the window does the same); Refresh fetches anew.
+  return fetch(source, a.query, { ...(a.confirm ? { confirm: true } : {}), ...(a.fresh ? { fresh: true } : { cache: 'prefer' }), ...(a.text ? { text: true } : {}) });
 }

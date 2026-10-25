@@ -25,6 +25,7 @@ import { isSecretPath } from '../shares.js';
 import { loadEnvFile } from '../env-vars.js';
 import { type DatabaseUrl, databaseUrl, scrubbed, unreachable } from './database-url.js';
 import { belugaHome } from '../home.js';
+import { keep, recall } from './kept.js';
 
 /**
  * Running a view's source (shared/view-spec.ts) on this computer: a file, a folder, a SQLite or
@@ -51,6 +52,12 @@ export interface FetchOptions {
   readonly fresh?: boolean;
   /** A code view: the text itself, not rows. */
   readonly text?: boolean;
+  /**
+   * What was fetched before, if anything, however old (kept.ts): 'prefer' runs the source when
+   * nothing was kept; 'only' never runs it ({ notKept } instead). A source with `refresh` keeps
+   * its rows only that long. `fresh` wins.
+   */
+  readonly cache?: 'prefer' | 'only';
 }
 
 const expandHome = (p: string): string => p.replace(/^~(?=$|\/)/, os.homedir());
@@ -134,22 +141,33 @@ export async function fetchSource(source: Source, query: ViewQuery, opts: FetchO
   const why = refusal(source, opts.cwd);
   if (why) throw new Error(why);
   if (opts.confirm) approve(source, opts.cwd);
+  const bound = bind(source, query.params);
+  if (refusal(bound, opts.cwd)) throw new Error(refusal(bound, opts.cwd));
+  const keys = keysOfFetch(bound, query, opts);
+  // What it brought before (it ran with its owner's yes then): shown again without running it.
+  if (opts.cache && !opts.fresh) {
+    const was = recallFetch(bound, query, keys, opts);
+    if (was) return was;
+    if (opts.cache === 'only') return { notKept: true };
+  }
   // Asked once per command as Claude wrote it: the values its controls fill in don't ask again.
   const ask = needsYes(source, opts.cwd);
   if (ask) return { needsApproval: true, what: ask };
-  source = bind(source, query.params);
-  if (refusal(source, opts.cwd)) throw new Error(refusal(source, opts.cwd));
-  if (!opts.text) {
-    const pushed = await pushedDown(source, query, opts);
-    if (pushed) return pushed;
+  source = bound;
+  if (keys.page) {
+    const pushed = (await pushedDown(source, query, opts))!;
+    keep(keys.page, pushed.at, pushed);
+    return pushed;
   }
-  const key = `${sourceKey(source)}\u0000${opts.cwd ?? ''}\u0000${opts.text ? 't' : 'r'}`;
+  const key = keys.whole;
   const maxAge = source.refresh ? Math.max(1000, source.refresh * 1000 - 250) : KEEP_MS;
   let whole = opts.fresh ? undefined : kept.get(key);
   if (!whole || Date.now() - whole.at > maxAge) {
     let running = inFlight.get(key);
     if (!running) {
-      running = fetchWhole(source, opts).finally(() => inFlight.delete(key));
+      running = fetchWhole(source, opts)
+        .then((w) => (keep(key, w.at, w), w))
+        .finally(() => inFlight.delete(key));
       inFlight.set(key, running);
     }
     whole = await running;
@@ -157,10 +175,33 @@ export async function fetchSource(source: Source, query: ViewQuery, opts: FetchO
     // Keep the newest few.
     if (kept.size > 40) kept.delete(kept.keys().next().value!);
   }
+  return pageOfWhole(whole, query, opts);
+}
+
+function pageOfWhole(whole: Whole, query: ViewQuery, opts: FetchOptions): ViewPage {
   if (opts.text) return { rows: [], columns: [], at: whole.at, hasMore: false, text: whole.text ?? '' };
   const page = pageOf(whole.rows, query);
   return { ...page, columns: whole.columns, at: whole.at, ...(whole.truncated ? { truncated: true } : {}) };
 }
+
+/**
+ * Where a fetch is kept (kept.ts): a source that pages itself, per page asked for; anything else
+ * whole, and paged from that.
+ */
+function keysOfFetch(source: Source, query: ViewQuery, opts: FetchOptions): { whole: string; page?: string } {
+  const whole = `${sourceKey(source)}\u0000${opts.cwd ?? ''}\u0000${opts.text ? 't' : 'r'}`;
+  if (opts.text || !pagesItself(source)) return { whole };
+  const { params: _p, ...q } = query;
+  return { whole, page: `${whole}\u0000${JSON.stringify(q)}` };
+}
+
+function recallFetch(source: Source, query: ViewQuery, keys: { whole: string; page?: string }, opts: FetchOptions): ViewPage | undefined {
+  const was = keys.page ? recall<ViewPage>(keys.page) : recall<Whole>(keys.whole);
+  // A source that refreshes itself keeps its rows only that long.
+  if (!was || (source.refresh && Date.now() - was.at > source.refresh * 1000)) return undefined;
+  return keys.page ? { ...(was.value as ViewPage), at: was.at } : pageOfWhole({ ...(was.value as Whole), at: was.at }, query, opts);
+}
+
 
 async function fetchWhole(source: Source, opts: FetchOptions): Promise<Whole> {
   const at = Date.now();
@@ -294,6 +335,9 @@ async function folderRows(source: Extract<Source, { kind: 'folder' }>, opts: Fet
 
 const quoteIdent = (k: string): string => `"${k.replace(/"/g, '""')}"`;
 const quoteText = (s: string): string => `'${s.replace(/'/g, "''")}'`;
+
+/** A database, or a command or address that says where a page goes ({{limit}}, {{offset}}…). */
+const pagesItself = (source: Source): boolean => source.kind === 'sqlite' || source.kind === 'postgres' || (source.kind === 'command' && TEMPLATE.test(source.command)) || (source.kind === 'http' && TEMPLATE.test(source.url + (source.body ?? '')));
 
 /** A database (or a command or address that says where a page goes) pages, sorts and searches itself. */
 async function pushedDown(source: Source, q: ViewQuery, opts: FetchOptions): Promise<ViewPage | undefined> {

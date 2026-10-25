@@ -8,6 +8,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { MAX_SOURCE_ROWS, type Row, type Source, SourceSchema, VIEW_FENCE, type ViewPage, readView, toRows, viewBlock } from '../shared/view-spec.js';
 import { initialState, resolveControls } from '../shared/view-controls.js';
 import { fetchSource } from '../core/views/sources.js';
+import { viewDataDir } from '../core/views/kept.js';
+import { planScript, writeScript } from '../core/views/scripts.js';
+import { mentionsSecret } from './policy.js';
 
 /**
  * Claude's `show` tool (mcp__beluga_view__show): a table, chart, stat tiles, code, colors, gantt, heatmap, calendar or a
@@ -86,7 +89,7 @@ export function createViewTools(shelf: ViewShelf, cwd: string) {
     tools: [
       tool(
         'show',
-        'Show data to the user as a live element in your answer: a table, chart (line, area, bar, pie, donut, scatter), stat tiles, code, a color palette (or picker), a gantt (bars over time), a heatmap (x by y by value), a calendar (values by day), or a graph. Pass the element as JSON (the beluga-view format; for a graph, type "graph" with the beluga-graph fields). Give rows in "data", or a "source" the app fetches more from on its own (file, folder, sqlite, postgres, http, command): it runs once now and the first rows come back to you. Returns a token like [[view:1]]: put it on its own line in your answer where the element goes (else it is added at the end).',
+        'Show data to the user as a live element in your answer: a table, chart (line, area, bar, pie, donut, scatter), stat tiles, code, a color palette (or picker), a gantt (bars over time), a heatmap (x by y by value), a calendar (values by day), or a graph. Pass the element as JSON (the beluga-view format; for a graph, type "graph" with the beluga-graph fields). Give rows in "data", or a "source" the app fetches more from on its own (file, folder, sqlite, postgres, http, command, or script: code you write for it): it runs once now and the first rows come back to you. Returns a token like [[view:1]]: put it on its own line in your answer where the element goes (else it is added at the end).',
         { view: z.record(z.string(), z.unknown()).describe('The element: {"type": "table"|"chart"|"stats"|"code"|"colors"|"graph", "title", ...}') },
         async (a) => {
           try {
@@ -100,9 +103,16 @@ export function createViewTools(shelf: ViewShelf, cwd: string) {
   });
 }
 
-/** Every source in a view (its own, its actions', its controls' and their options') with whole paths. */
+/** Every source in a view (its own, its actions', its controls' and their options') with whole paths, scripts written down. */
 function anchorAll(raw: Record<string, unknown>, cwd: string): Record<string, unknown> {
   const fix = (s: unknown): unknown => {
+    // A script Claude wrote for the view: kept as a file, run as a command (core/views/scripts.ts).
+    const script = planScript(s, cwd);
+    if (script) {
+      if (mentionsSecret(script.code)) throw new Error('Beluga never runs scripts that touch credential files');
+      writeScript(script);
+      return script.source;
+    }
     const parsed = SourceSchema.safeParse(s);
     return parsed.success ? anchorSource(parsed.data as Source, cwd) : s;
   };
@@ -114,8 +124,6 @@ function anchorAll(raw: Record<string, unknown>, cwd: string): Record<string, un
   return out;
 }
 
-/** Where a view's whole data is kept when there's too much for the answer (a cache: it's only data). */
-export const viewDataDir = (): string => path.join(os.homedir(), process.platform === 'darwin' ? 'Library/Caches/Beluga/views' : '.cache/beluga/views');
 const DUMP_OVER = 200;
 
 /** Lots of rows in `data`: write them to a file and make that the view's source. → how many, or 0. */
@@ -158,7 +166,7 @@ export async function showView(shelf: ViewShelf, cwd: string, raw: Record<string
     const query = { offset: 0, limit, ...(patch.sort ? { sort: patch.sort } : {}), ...(patch.search ? { search: patch.search } : {}), ...(patch.where ? { where: patch.where } : {}), ...(patch.top ? { top: patch.top } : {}), ...(patch.params ? { params: patch.params } : {}) };
     // This tool call was allowed (a command asks like Bash does), so the source may run from now on.
     const page = await fetchSource(source, query, { confirm: true, fresh: true, text: view.type === 'code', cwd });
-    if ('needsApproval' in page) throw new Error('The source needs approval first');
+    if (!('rows' in page)) throw new Error('The source needs approval first');
     if (view.type === 'code') {
       if (raw.code === undefined) out.code = page.text ?? '';
     } else {

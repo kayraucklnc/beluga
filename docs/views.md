@@ -117,6 +117,7 @@ A view with a `source` is live: the window asks for each page as you need it.
 - **Everything else** (a file, a folder, a command without those) is fetched whole (up to 50,000 rows), kept for a minute, and sorted, searched and paged here.
 - **`"refresh": 10`** fetches it again every 10 seconds while you can see it. The card says **Live**.
 - **Refresh** (⟳) fetches it again now. The card says when the rows are from.
+- **What was fetched is kept** (BLG-120). Opening a conversation or a report again shows the rows this Mac fetched last time, and how old they are, without running the source. A view still on the rows it came with switches to newer ones when you refreshed it since. Each page of a database (or a templated command) is kept as it was asked for; anything else is kept whole (up to 4 MB) and paged from that. A source with `refresh` keeps its rows only that long. They're in `~/Library/Caches/Beluga/views/fetched` (the newest 400), `src/core/views/kept.ts`. The phone gets the same through the Mac.
 
 ### Who it runs for
 
@@ -183,6 +184,7 @@ Without the tool, the same JSON works in a fenced `beluga-view` block (or `belug
 | `postgres` | `query`; optionally `env` (a variable holding the connection string) or `url` | `psql` in a read-only transaction. With neither, the project's own database: `DATABASE_URL`, `POSTGRES_URL`, `DIRECT_URL` and the like, or one made from a Supabase project's variables (`…SUPABASE_URL` and `SUPABASE_DB_PASSWORD`; with `SUPABASE_REGION`, its session poolers on `aws-0` and `aws-1`), from Settings › Environment or the project's `.env`. Supabase's direct address (IPv6 only) falls back to those poolers when it can't be reached, and a leftover `[YOUR-PASSWORD]` is caught. Settings › Environment › Database tests the connection. The string only goes to `psql`: errors never show it, and Claude never sees it |
 | `http` | `url`, `method?`, `headers?`, `body?`, `rows?`, `format?` | JSON (finds the one array in it, or `rows`: `"data.items"`), CSV or text; `$NAME` in a header is one of your variables |
 | `command` | `command`, `cwd?`, `format?`, `rows?` | `/bin/sh -c`; JSON, JSON lines, CSV, TSV, a table lined up with spaces (`ps`, `docker ps`), or one row per line |
+| `script` | `code`, `language?`, `args?`, `cwd?`, `format?`, `rows?` | A script Claude writes for the view (BLG-121), in `sh` (the default, or its `#!` line), `bash`, `zsh`, `python`, `node`, `ruby` or `perl`. The `show` tool keeps it in `~/.beluga/view-scripts` under a name made from its code and turns it into a `command` source (`python3 '…/3f2a….py' {{args}}`), so it still runs tomorrow and the yes it got covers exactly that code: a changed script is a new command and asks again. `args` can hold `{{slots}}` for controls and pages. Asks like Bash; one that mentions credential files is refused. Only through the tool (`src/core/views/scripts.ts`) |
 
 Every source can have `refresh` (seconds) and `timeout` (seconds, up to 120; 30 by default). A string instead of an object is a command.
 
@@ -232,7 +234,7 @@ Only data: Claude gives the rows, the window draws them. Columns are found by na
 
 - **Format:** `src/shared/view-spec.ts` (zod, browser-safe): the schema, reading rows from text, inferring columns, sorting and paging.
 - **Controls:** `src/shared/view-controls.ts` turns what's chosen into one query (the window, and the `show` tool for the first rows).
-- **Sources:** `src/core/views/sources.ts` runs them in the daemon. The window asks through `view.fetch` (`src/ipc/views-api.ts`).
+- **Sources:** `src/core/views/sources.ts` runs them in the daemon; `kept.ts` keeps what they brought; `scripts.ts` turns Claude's scripts into commands. The window asks through `view.fetch` (`src/ipc/views-api.ts`).
 - **The tool:** `src/agent/view-tools.ts` (`show`, and `ViewShelf`, which puts views in the answer). It's allowed or asked by `decideShow` in `src/agent/policy.ts`.
 - **Teaching Claude:** `src/agent/view-prompt.ts` is added to every run's system prompt.
 - **Drawing:** `packages/mac/src/components/views/`:
