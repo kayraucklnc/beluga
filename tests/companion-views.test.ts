@@ -394,6 +394,10 @@ describe('the views of a known Mac', () => {
     expect(PlansView.parse(viewOf(state, ctx, 'plans')).plans).toEqual([{ id: 'pl_auth', title: 'Add auth', state: 'draft', topic: 'plan:pl_auth', done: 0, total: 1 }]);
     const page = PlanView.parse(viewOf(state, ctx, 'plan:pl_auth'));
     expect(page.needsYou.find((n) => n.kind === 'decision')?.actions.map((a) => a.method)).toEqual(['plans.approve', 'plans.discard']);
+    // While Claude still writes it (no milestones yet), there's nothing to approve or discard.
+    const writing = { ...state, plans: { ...state.plans, plans: [{ ...plan, draft: { title: 'Add auth', goal: '', milestones: [] } } as unknown as Plan] } };
+    expect(PlanView.parse(viewOf(writing, ctx, 'plan:pl_auth')).needsYou.filter((n) => n.kind === 'decision')).toEqual([]);
+    expect(needsYou(writing).some((n) => n.id.startsWith('plan:pl_auth:approve'))).toBe(false);
     const chat = ChatView.parse(viewOf(state, ctx, `chat:dm:${BOB}`));
     // Whose Claude a message can ask: you, then them.
     expect(chat.members).toEqual([{ peerId: ME, name: 'kayra', me: true }, { peerId: BOB, name: 'bob' }]);

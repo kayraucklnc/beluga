@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, MessagesSquare, Monitor, OctagonX, Plus, Send, Square, SquareTerminal, Trash2 } from 'lucide-react-native';
+import { Activity, Bot, Camera, ChevronRight, Map as MapIcon, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, MessagesSquare, Monitor, OctagonX, Plus, Send, Square, SquareTerminal, Trash2 } from 'lucide-react-native';
 import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
 import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
@@ -17,7 +17,7 @@ import { OutputGrid, OutputsTopic, TurnOutputs } from '../../components/Outputs'
 import { DeleteMacChat, MacChatsSheet, newMacChat } from '../../components/MacChats';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
-import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
+import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone, toneOf } from '../../components/ui';
 import { ago, elapsed, useSince, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import { type ConvView, type HomeView, type OutputView, type SubAgentView, type Topic, type TurnView, isMacTopic } from '../../lib/link/protocol';
@@ -146,6 +146,26 @@ export default function Conversation() {
             // Where its branch stands (the Mac toolbar's state), unless a merge from here is under way.
             <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 }}>
               <BranchBand topic={topic} branch={c.branch} canMerge={Boolean(c.mergeable) && store.supports('merge')} onMerge={() => setMergeOpen(true)} />
+            </View>
+          ) : null}
+          {/* The plan this chat writes and runs (1.15): its milestones and map are a tap away. */}
+          {c?.plan ? (
+            <View style={{ paddingHorizontal: 14, paddingBottom: 10, paddingTop: c.merge || c.branch ? 0 : 10 }}>
+              <Press scaleTo={0.985} onPress={() => router.push(`/plan/${c.plan!.topic.slice('plan:'.length)}`)} accessibilityLabel={`Open the plan ${c.plan.title}`}>
+                <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12 }}>
+                  <IconBadge Icon={MapIcon} tone="lavender" size={28} />
+                  <View style={{ flex: 1 }}>
+                    <T v="callout" c={color.text} numberOfLines={1} style={{ fontWeight: '700' }}>
+                      {c.plan.title}
+                    </T>
+                    <T v="caption" numberOfLines={1}>
+                      {c.plan.milestones ? `${c.plan.milestones} ${c.plan.milestones === 1 ? 'milestone' : 'milestones'} · ${c.plan.done} of ${c.plan.total} tasks` : 'Claude is writing the plan'}
+                    </T>
+                  </View>
+                  <Pill label={c.plan.state} tone={toneOf(c.plan.state)} />
+                  <ChevronRight color={color.text3} size={16} />
+                </Card>
+              </Press>
             </View>
           ) : null}
           {/* Its sub-agents at work stay in view, wherever their turn is (BLG-110). */}

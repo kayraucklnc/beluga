@@ -5,7 +5,7 @@ import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
 import { type TaskView as GwTask, isFinal } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
-import { type Plan, planTitle } from '../core/plans/model.js';
+import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
 import type { Workspace } from '../workspaces/types.js';
@@ -262,6 +262,8 @@ function planItems(plan: Plan, progress: PlanProgress): NeedsYou[] {
   const topic = planTopic(plan.id);
   const at = { ...(topic ? { topic } : {}), from: 'your plan' };
   const next = progress.next;
+  // Claude is still writing the first plan: nothing to approve yet (the Mac's Approve Plan waits too).
+  if (next.kind === 'approve' && !progress.body?.milestones.length) return [];
   if (next.kind === 'approve' || next.kind === 'review_changes') {
     return [
       {
@@ -832,7 +834,10 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
   const conv = conversations(state).find((c) => c.channel === channel);
   const { turns, more } = convTurns(state, ctx, channel);
   const real = convTopic(channel);
-  const items = needsYou(state).filter((n) => n.topic === topic || (real && n.topic === real));
+  // The plan it's the home of: its decisions (approve, pass a milestone) are asked here too, as on the Mac.
+  const plan = planForHome(state.plans, channel);
+  const planT = plan ? planTopic(plan.id) : undefined;
+  const items = needsYou(state).filter((n) => n.topic === topic || (real && n.topic === real) || (planT && n.topic === planT));
   const task = taskOf(state, channel);
   const working = task ? !isFinal(task.state) : itemsOf(state, channel).some((l) => l.type === 'agent' && isRunning(l.status));
   // Everything this worktree made, newest first: what the viewer swipes through from here.
@@ -851,7 +856,13 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     outputs: outputs.slice(0, 100),
     ...(queue.length ? { queue } : {}),
     ...mergeOf(state, ctx, channel),
+    ...(plan && planT ? { plan: planBand(state, plan, planT) } : {}),
   };
+}
+
+function planBand(state: DomainState, plan: Plan, topic: Topic): NonNullable<ConvView['plan']> {
+  const progress = progressOf(state, plan);
+  return { topic, title: clip(planTitle(plan), 300), state: planState(plan, progress), done: progress.done, total: progress.total, milestones: progress.milestones.length };
 }
 
 const base = (p: string): string => p.split('/').at(-1) ?? p;

@@ -137,7 +137,7 @@ export const COMPANION_API = {
   // 1.11 (BLG-124): which of these conversations (ones the phone saved files from) are no longer on
   // the Mac: archived or deleted worktrees and chat folders, deleted chats of Your Mac → { gone }.
   'companion.gone': { args: z.tuple([z.array(z.string().regex(/^conv:[\w:.-]{1,200}$/)).max(500)]) },
-  // 1.15 (BLG-140): the Mac writes down what you said on the phone. Its models, here or coming →
+  // 1.16 (BLG-140): the Mac writes down what you said on the phone. Its models, here or coming →
   // VoiceMacView; get one now (it comes in the background) → VoiceMacView; the words in a WAV the
   // phone `put` (16 kHz mono; deleted once written down) → TranscriptView. A model that isn't here
   // yet starts coming, and the call says how far it is.

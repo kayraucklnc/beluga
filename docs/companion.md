@@ -256,7 +256,7 @@ through `companion.files.*` and `companion.terminals` / `termOpen` / `termClose`
 - Also `phone` since 1.3: `board.move` and `board.start` (a task moved along, or started in a new
   worktree with Claude), and `session.submit` with `urgent` (Steer) next to `host.promote` and
   `host.cancelQueued` for the queue.
-- `companion.voice` / `voicePrepare(model)` / `transcribe {audio, model, language}` (1.15,
+- `companion.voice` / `voicePrepare(model)` / `transcribe {audio, model, language}` (1.16,
   BLG-140): the Mac writes down what you said on the phone. The phone `put`s a 16 kHz mono WAV
   (`audio/wav`, only that phone's ref); the Mac runs Whisper Turbo or Parakeet v3 on its GPU
   (whisper.cpp through `@fugood/whisper.node`, `src/companion/voice.ts`), deletes the recording and

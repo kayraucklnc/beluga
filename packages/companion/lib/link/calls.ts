@@ -100,7 +100,7 @@ export const calls = {
   subAgent: (topic: Topic, turn: string, id: string): Call => make('companion.subAgent', [topic, turn, id], 'Sub-agent'),
   /** 1.11: which conversations files were saved from are archived or deleted on the Mac. */
   gone: (topics: readonly string[]): Call => make('companion.gone', [[...topics]], 'Check saved files'),
-  /** 1.15 (BLG-140): the Mac's voice models, getting one there now, and a recording it writes down. */
+  /** 1.16 (BLG-140): the Mac's voice models, getting one there now, and a recording it writes down. */
   voice: (): Call => make('companion.voice', [], 'Voice on your Mac'),
   voicePrepare: (model: VoiceModelId): Call => make('companion.voicePrepare', [model], 'Get a voice model on your Mac'),
   transcribe: (audio: string, model: VoiceModelId, language: string): Call => make('companion.transcribe', [{ audio, model, language }], 'Write down what you said'),
