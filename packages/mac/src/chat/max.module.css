@@ -20,6 +20,10 @@
 .max:focus-within {
   box-shadow: 0 4px 22px color-mix(in srgb, var(--f1, #3fa2ff) calc(var(--burn, 1) * 22%), transparent);
 }
+/* Only while typing, the colours start out: the fire sets --burn on the box as it catches and dies down. */
+.max[data-fire='typing'] {
+  --burn: 0;
+}
 /* Burning, but the box keeps its usual look (Settings: Color the Box off). */
 .maxPlain {
   position: relative;

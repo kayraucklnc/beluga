@@ -383,6 +383,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       <div
         ref={boxRef}
         style={effects ? (fireVars(prefs.maxFire) as React.CSSProperties) : undefined}
+        data-fire={burning ? prefs.maxFire.show : undefined}
         className={cx(s.box, burning ? (prefs.maxFire.border ? m.max : m.maxPlain) : effects && m.fxOnly, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
         data-plan={plan || tasksMode || undefined}
         data-mode={mode}

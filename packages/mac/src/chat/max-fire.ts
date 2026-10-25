@@ -285,6 +285,8 @@ export class MaxFire {
     // The first look is taken as it is; later ones are glided to.
     if (this.fresh) {
       this.fresh = false;
+      // Only while typing: nothing burns until the first key.
+      this.amount = tune.show === 'always' ? 1 : 0;
       this.cur = { fuel: tune.fuel, height: tune.height, thickness: tune.thickness, wildness: tune.wildness, colors: this.palette.map(rgb), alpha: 1 };
     }
   }
@@ -414,25 +416,27 @@ export class MaxFire {
     const target = this.focused ? 0.55 : 0.4;
     this.heat += (target - this.heat) * 0.02 * dt;
     // Only while typing: it catches at the first key and dies down a couple of seconds after the last.
-    // (It catches at once, and starts dying down soon after you stop, out in about a second.)
-    const goal = this.tune.show === 'off' ? 0 : this.tune.show === 'typing' ? (this.time - this.typedAt < 0.8 ? 1 : 0) : 1;
+    // (It catches at once; 0.4s after you stop, the fuel runs out: no new flames, the base goes
+    // out quickly, and the last flames lift off the box and burn out as they rise, like a real fire.)
+    const goal = this.tune.show === 'off' ? 0 : this.tune.show === 'typing' ? (this.time - this.typedAt < 0.4 ? 1 : 0) : 1;
     const was = this.amount;
-    this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.15 : 0.075) * dt);
+    this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.18 : 0.12) * dt);
     if (Math.abs(this.amount - was) > 0.004 || (goal !== was && Math.abs(goal - this.amount) < 0.004)) this.onBurn?.(this.amount);
     // Keep the fire fed: one blob per 12–30px of edge (the fuel), more the hotter it burns.
     const want = Math.min(MAX_BLOBS, Math.round(((this.box.w + this.box.h) / (30 - this.cur.fuel * 18)) * (0.7 + this.heat * 0.6) * this.amount));
-    for (let born = (want / 60) * dt * 1.4; born > 0 && this.blobs.length < want; born--) {
+    // Out of fuel, nothing new catches.
+    for (let born = goal ? (want / 60) * dt * 1.4 : 0; born > 0 && this.blobs.length < want; born--) {
       if (born < 1 && Math.random() > born) break;
       this.blobs.push(this.spawn());
     }
     for (const b of this.blobs) {
       // Rising faster as it goes (hot air), drifting, shrinking as it cools.
-      b.vy -= 0.018 * dt;
+      // Out of fuel, the last flames lift off and rise away.
+      b.vy -= (0.018 + (goal ? 0 : 0.05)) * dt;
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.vx *= 0.99;
-      // Dying down, the flames already burning go out faster too.
-      b.life -= b.decay * dt * (1 + (1 - this.amount) * 2.5);
+      b.life -= b.decay * dt * (goal ? 1 : 1.6);
       b.r *= 1 - 0.006 * dt;
     }
     // Flames that drift near the edge of what can be seen burn out there.
