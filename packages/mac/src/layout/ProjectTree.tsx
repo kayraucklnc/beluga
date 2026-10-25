@@ -240,7 +240,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
           }}
           trailing={
             <>
-              <EarningsPill root={p.root} projectId={p.id} />
+              <EarningsPill root={p.root} projectId={p.id} celebrate />
               <span className={side.hoverTools}>
                 <IconButton icon="branch" label={`New worktree in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_worktree', projectId: p.id }))} />
                 <IconButton icon="plus" label={`New chat in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_chat', projectId: p.id }))} />

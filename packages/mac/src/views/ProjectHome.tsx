@@ -35,6 +35,7 @@ import { useBoxSuggestions } from "../chat/BoxSuggestions.js";
 import { useAttachments } from "../chat/use-attachments.js";
 import { MentionHighlighter } from "../chat/MentionHighlighter.js";
 import { HomeHistory } from "./history/HomeHistory.js";
+import { EarningsSection } from "./project/EarningsSection.js";
 import { GitHubRow } from "./project/GitHubRow.js";
 import { IssueRow } from "../issues/parts.js";
 import { useIssueActions, useIssueList } from "../issues/use-issues.js";
@@ -51,8 +52,8 @@ import s from "./project-home.module.css";
 /**
  * A project's home: what you see when you click a project. Its main folder is never worked in,
  * so the big box starts work in a new worktree (or just asks a question about the project, or
- * plans big work with Claude), and below are its plans, worktrees, the questions asked in main,
- * and what was put away.
+ * plans big work with Claude), and below are how it's earning (with Stripe connected), its
+ * plans, worktrees, the questions asked in main, and what was put away.
  */
 export function ProjectHome({ id }: { id: string }) {
   const project = useApp((st) =>
@@ -162,7 +163,7 @@ function Header({ model }: { model: HomeModel }) {
           >
             <strong>{stats.archived}</strong> archived
           </button>
-          <EarningsPill root={project.root} projectId={project.id} />
+          <EarningsPill key={project.id} root={project.root} projectId={project.id} />
           <GitHubRow projectId={project.id} />
         </div>
       </div>
@@ -540,6 +541,8 @@ function Lists({ model }: { model: HomeModel }) {
   const asks = model.asks.filter((w) => !planHomes.has(`ws:${w.id}`));
   return (
     <div className={s.lists}>
+      {/* Its own per project: what's new is what arrived while this project was shown. */}
+      <EarningsSection key={project.id} project={project} />
       <HomePlans projectId={project.id} />
       <Section
         title="Worktrees"

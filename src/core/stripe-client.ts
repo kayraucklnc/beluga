@@ -125,6 +125,12 @@ export interface Charge {
   readonly amount: number;
   readonly amount_captured?: number;
   readonly amount_refunded?: number;
+  /** Who paid, for counting paying customers and the latest payments (all optional in Stripe). */
+  readonly customer?: string | { readonly id: string } | null;
+  readonly billing_details?: { readonly name?: string | null; readonly email?: string | null } | null;
+  readonly receipt_email?: string | null;
+  readonly description?: string | null;
+  readonly payment_method_details?: { readonly card?: { readonly fingerprint?: string | null } | null } | null;
 }
 
 export interface Refund {
@@ -212,6 +218,23 @@ export async function catchUp(key: string, prev: Tally, opts: StripeOptions = {}
   }
   for (const [currency, amount] of Object.entries(totals)) if (amount < 0) totals[currency] = 0;
   return { totals, newest: newestOf(prev.newest, fresh), syncedAt, seenRefunds: seen, fullAt: prev.fullAt };
+}
+
+/** How many recent charges a look at the last months reads at most (50 pages). */
+export const RECENT_MAX = 5000;
+
+/**
+ * Every charge since `since` (seconds), newest first, for what the project did lately. A busy
+ * account stops at `max` charges: `partial` says the oldest days are missing some.
+ */
+export async function recentCharges(key: string, since: number, opts: StripeOptions & { readonly max?: number } = {}): Promise<{ charges: Charge[]; partial: boolean }> {
+  const max = opts.max ?? RECENT_MAX;
+  const charges: Charge[] = [];
+  for await (const c of list<Charge>(key, '/v1/charges', { 'created[gte]': since }, opts)) {
+    if (charges.length >= max) return { charges, partial: true };
+    charges.push(c);
+  }
+  return { charges, partial: false };
 }
 
 /** The key may read charges (the one permission Beluga needs): throws a StripeError if not. */

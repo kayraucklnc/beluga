@@ -118,6 +118,47 @@ test('Connect Stripe… is in every project’s right-click menu, and the amount
   await expect(page.getByRole('dialog', { name: 'bob-api earnings' })).toContainText('Bob API, Inc.');
 });
 
+test('a project’s home shows how it’s doing lately: a range, its figures, each day, the latest payments', async ({ page }) => {
+  await sidebar(page).getByText('bob-api', { exact: true }).first().click();
+  const section = page.getByRole('main').getByRole('region', { name: 'Earnings' });
+  await expect(section).toBeVisible();
+  await expect(section.getByText('Bob API, Inc.')).toBeVisible();
+
+  // 30 days at first; each figure against the 30 days before.
+  const range = section.getByRole('tablist', { name: 'Range' });
+  await expect(range.getByRole('tab', { name: '30 days' })).toHaveAttribute('aria-selected', 'true');
+  const figures = section.getByRole('group', { name: 'The last 30 days' });
+  await expect(figures.getByRole('group', { name: /^Earned: (≈ )?\$[\d,.]+K?$/ })).toBeVisible();
+  await expect(figures.getByRole('group', { name: /^Payments: \d+$/ })).toBeVisible();
+  await expect(figures.getByRole('group', { name: /^Paying customers: \d+$/ })).toBeVisible();
+  await expect(figures.locator('[data-change]').first()).toBeVisible();
+  await expect(section.getByRole('img', { name: 'Earned each day, the last 30 days' }).locator(':scope > *')).toHaveCount(30);
+
+  // Another range: every figure and the chart follow (and it's kept).
+  await range.getByRole('tab', { name: '7 days' }).click();
+  await expect(section.getByRole('group', { name: 'The last 7 days' })).toBeVisible();
+  await expect(section.getByRole('img', { name: 'Earned each day, the last 7 days' }).locator(':scope > *')).toHaveCount(7);
+
+  // The latest payments: a first name and an initial, never more; a few, then all of them.
+  const rows = section.getByRole('list', { name: 'Latest payments' }).getByRole('listitem');
+  await expect(rows).toHaveCount(5);
+  await expect(rows.first()).toContainText(/^[A-Z]\w+ [A-Z]\./);
+  await section.getByRole('button', { name: /^Show All \d+$/ }).click();
+  await expect(rows).toHaveCount(25);
+  const refunds = section.getByRole('radio', { name: /^Refunds/ });
+  if (await refunds.count()) {
+    await refunds.click();
+    await expect(rows.first()).toHaveAttribute('data-payment', /refunded/);
+  }
+
+  // ••• opens the Stripe sheet, which says the last 30 days too.
+  await section.getByRole('button', { name: 'Stripe Earnings…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'bob-api earnings' });
+  await expect(sheet.locator('[data-last-30]')).toHaveText(/^Last 30 days: (≈ )?\$[\d,]+\.\d\d from \d+ payments by \d+ customers$/);
+  await page.keyboard.press('Escape');
+  await range.getByRole('tab', { name: '30 days' }).click();
+});
+
 test('every total shows in one currency you choose, in Settings or the Stripe sheet', async ({ page }) => {
   // landing sells in lira and rupees, bob-api in dollars and euros.
   const sheet = await openConnectSheet(page);
@@ -125,7 +166,7 @@ test('every total shows in one currency you choose, in Settings or the Stripe sh
   await paste(sheet.getByLabel('Restricted key'), ['rk', 'live', 'landingLiraShop000000'].join('_'));
   await sheet.getByRole('button', { name: 'Connect', exact: true }).click();
   const done = page.getByRole('dialog', { name: 'landing earnings' });
-  await expect(done.getByText(/≈ \$[\d,]+\.\d\d/)).toBeVisible();
+  await expect(done.getByText(/^≈ \$[\d,]+\.\d\d$/)).toBeVisible();
   await expect(done.getByText('In Stripe')).toBeVisible();
   await done.getByRole('button', { name: 'Done' }).last().click();
 
@@ -134,7 +175,7 @@ test('every total shows in one currency you choose, in Settings or the Stripe sh
   const card = page.getByRole('region', { name: 'Earnings' });
   const total = card.locator('[data-earnings-total]');
   await expect(total).toHaveAttribute('data-earnings-total', 'usd');
-  await expect(total).toHaveText(/^\$[\d.,]+K?$/);
+  await expect(total).toHaveText(/^\$[\d.,]+[KM]?$/);
   await expect(card.getByText(/All time · 2 projects · ECB rates, updated today/)).toBeVisible();
   await expect(card.getByText('+', { exact: false })).toHaveCount(0);
   const rows = card.getByRole('list', { name: 'Earnings by project' });
@@ -149,7 +190,7 @@ test('every total shows in one currency you choose, in Settings or the Stripe sh
   await expectPicked(popup(settings, 'Show earnings in'), 'eur');
   await page.keyboard.press('Escape');
   await expect(total).toHaveAttribute('data-earnings-total', 'eur');
-  await expect(total).toHaveText(/^€[\d.,]+K?$/);
+  await expect(total).toHaveText(/^€[\d.,]+[KM]?$/);
   await expect(rows.getByRole('button', { name: /^bob-api: €[\d,]+\.\d\d/ })).toBeVisible();
   await expect(rows.getByRole('button', { name: /^landing: €[\d,]+\.\d\d/ })).toBeVisible();
   await expect(page.locator('[data-earnings-pill]').first()).toHaveText(/€/);
@@ -160,7 +201,7 @@ test('every total shows in one currency you choose, in Settings or the Stripe sh
   await pick(landing, 'Show earnings in', /^TRY/);
   await expect(landing.getByText(/^≈ ₺[\d,]+\.\d\d$/)).toBeVisible();
   await landing.getByRole('button', { name: 'Done' }).last().click();
-  await expect(total).toHaveText(/^₺[\d.,]+K?$/);
+  await expect(total).toHaveText(/^₺[\d.,]+[KM]?$/);
 
   // Back to automatic, and landing disconnected (the daemon is shared by every test).
   await page.keyboard.press('Meta+,');

@@ -1,25 +1,29 @@
 /**
  * Each project's earnings from Stripe: you connect a key per project, Beluga counts what the
- * account earned (see stripe-client.ts for exactly what counts) in the background, once a
- * day, and keeps the running count so the next look only reads what's new. The keys live in
+ * account earned (see stripe-client.ts for exactly what counts) in the background, looking for
+ * new payments every few minutes, and keeps the running count so each look only reads what's
+ * new. When something came in (and at least once a day) it also reads the last months of
+ * charges for what the project did lately (stripe-activity.ts). The keys live in
  * ~/.beluga/stripe.json, readable only by you, and never leave this computer: screens get
- * "connected", the account's name and the totals (core/earnings-store.ts), nothing more.
+ * "connected", the account's name, the totals and that recent activity (core/earnings-store.ts),
+ * nothing more.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import type { EarningsError, MoneyTotal, ProjectEarnings } from './earnings-store.js';
+import { type EarningsActivity, type EarningsError, type MoneyTotal, type ProjectEarnings, dayKey } from './earnings-store.js';
 import { STRIPE_KEY, stripeKeyProblem } from '../shared/stripe-keys.js';
 import { belugaHome } from './home.js';
 import type { Store } from './store.js';
-import { type StripeOptions, type Tally, StripeError, accountName, catchUp, checkKey, fullCount } from './stripe-client.js';
+import { activitySince, summarizeActivity } from './stripe-activity.js';
+import { type StripeOptions, type Tally, StripeError, accountName, catchUp, checkKey, fullCount, recentCharges } from './stripe-client.js';
 
-/** Refresh when the last count is older than this (about once a day, whenever Beluga is open). */
+/** Read the last months again when they're older than this, even if nothing new came in. */
 export const STALE_MS = 20 * 3600_000;
 /** Count everything again this often, to correct anything the quick looks missed. */
 export const FULL_RECOUNT_MS = 7 * 24 * 3600_000;
-/** How often Beluga checks whether a refresh is due. */
-const CHECK_MS = 3600_000;
+/** How often Beluga looks for new payments (two small requests per project when nothing's new). */
+export const WATCH_MS = 10 * 60_000;
 /** The first check waits a little, so it doesn't compete with Beluga starting. */
 const FIRST_CHECK_MS = 8_000;
 
@@ -33,10 +37,33 @@ const TallySchema = z.object({
 
 const ErrorSchema = z.object({ code: z.enum(['revoked', 'permission', 'offline', 'rate_limited', 'stripe', 'unknown']), message: z.string(), at: z.number() });
 
+const Money = z.object({ currency: z.string(), amount: z.number() });
+const ActivitySchema = z.object({
+  days: z.array(z.object({ day: z.string(), totals: z.array(Money), payments: z.number() })),
+  payers: z.array(z.object({ days: z.union([z.literal(7), z.literal(30), z.literal(90)]), now: z.number(), before: z.number() })),
+  latest: z.array(
+    z.object({
+      id: z.string(),
+      at: z.number(),
+      amount: z.number(),
+      currency: z.string(),
+      refunded: z.number().optional(),
+      status: z.enum(['paid', 'partly_refunded', 'refunded', 'pending', 'failed']),
+      who: z.string().optional(),
+      description: z.string().optional(),
+    }),
+  ),
+  from: z.string(),
+  at: z.number(),
+  partial: z.boolean().optional(),
+});
+
 const EntrySchema = z.object({
   key: z.string().regex(STRIPE_KEY),
   account: z.string().optional(),
   tally: TallySchema.optional(),
+  // A file from before activity was read, or one this can't read: read it again.
+  activity: ActivitySchema.optional().catch(undefined),
   updatedAt: z.number().optional(),
   error: ErrorSchema.optional(),
 });
@@ -44,6 +71,7 @@ interface Entry {
   readonly key: string;
   readonly account?: string;
   readonly tally?: Tally;
+  readonly activity?: EarningsActivity;
   readonly updatedAt?: number;
   readonly error?: EarningsError;
 }
@@ -90,6 +118,8 @@ export interface StripeEarningsDeps {
   readonly file?: string | null;
   readonly stripe?: StripeOptions;
   readonly now?: () => number;
+  /** How often to look for new payments (WATCH_MS; the demo looks more often). */
+  readonly watchMs?: number;
 }
 
 const CONNECT_ERRORS: Record<string, string> = {
@@ -151,6 +181,7 @@ export class StripeEarnings {
       ...(e.key.startsWith('sk_') ? { secretKey: true } : {}),
       ...(e.account ? { account: e.account } : {}),
       ...(totals ? { totals } : {}),
+      ...(e.activity ? { activity: e.activity } : {}),
       ...(e.updatedAt ? { updatedAt: e.updatedAt } : {}),
       ...(refreshing ? { refreshing } : {}),
       ...(e.error ? { error: e.error } : {}),
@@ -190,50 +221,82 @@ export class StripeEarnings {
     for (const root of Object.keys(this.data.projects)) await this.refreshRoot(root, opts.full);
   }
 
-  /** Refresh the projects whose count is older than a day (skipping keys Stripe refused: they need you). */
-  async refreshIfStale(maxAgeMs: number = STALE_MS): Promise<void> {
+  /**
+   * Refresh the projects whose count is older than `maxAgeMs` (skipping keys Stripe refused: they
+   * need you). `quiet`: the background look for new payments, which screens don't show as counting.
+   */
+  async refreshIfStale(maxAgeMs: number = STALE_MS, opts: { readonly quiet?: boolean } = {}): Promise<void> {
     const now = this.now();
     for (const [root, e] of Object.entries(this.data.projects)) {
       const needsYou = e.error && (e.error.code === 'revoked' || e.error.code === 'permission');
       if (needsYou || (e.updatedAt && now - e.updatedAt < maxAgeMs)) continue;
-      await this.refreshRoot(root);
+      await this.refreshRoot(root, false, opts.quiet);
     }
   }
 
-  private refreshRoot(root: string, full = false): Promise<void> {
+  private refreshRoot(root: string, full = false, quiet = false): Promise<void> {
     const busy = this.running.get(root);
     if (busy) return busy;
-    const run = this.count(root, full).finally(() => this.running.delete(root));
+    const run = this.count(root, full, quiet).finally(() => this.running.delete(root));
     this.running.set(root, run);
     return run;
   }
 
-  private async count(root: string, forceFull: boolean): Promise<void> {
+  /** The last months need reading again: asked for, the last look failed, something came in, or they're from another day. */
+  private activityDue(start: Entry, tally: Tally, force: boolean): boolean {
+    const a = start.activity;
+    if (force || !a || !start.tally || start.error) return true;
+    const now = this.now();
+    if (now - a.at > STALE_MS || dayKey(a.at) !== dayKey(now)) return true;
+    const same = (x: unknown, y: unknown): boolean => JSON.stringify(x) === JSON.stringify(y);
+    return !same(start.tally.newest, tally.newest) || !same(start.tally.totals, tally.totals);
+  }
+
+  private async count(root: string, forceFull: boolean, quiet = false): Promise<void> {
     const start = this.data.projects[root];
     if (!start) return;
-    this.publish(root, true);
     const full = forceFull || !start.tally || this.now() - start.tally.fullAt > FULL_RECOUNT_MS;
+    // A quick look in the background doesn't show as counting (a full count does).
+    if (!quiet || full) this.publish(root, true);
     let tally: Tally | undefined;
+    let activity = start.activity;
     let error: EarningsError | undefined;
+    const failed = (err: unknown): EarningsError => {
+      const e = err instanceof StripeError ? err : new StripeError('unknown');
+      return { code: e.code, message: e.message, at: this.now() };
+    };
     try {
       tally = full || !start.tally ? await fullCount(start.key, this.stripe) : await catchUp(start.key, start.tally, this.stripe);
     } catch (err) {
-      const e = err instanceof StripeError ? err : new StripeError('unknown');
-      error = { code: e.code, message: e.message, at: this.now() };
+      error = failed(err);
+    }
+    // Refresh Now (or connecting) reads everything; a quick look only when something changed.
+    if (tally && this.activityDue(start, tally, full || !quiet)) {
+      try {
+        const now = this.now();
+        const recent = await recentCharges(start.key, activitySince(now), this.stripe);
+        activity = summarizeActivity(recent.charges, now, recent.partial);
+      } catch (err) {
+        // The totals are counted; what it did lately stays as last read until next time.
+        error = failed(err);
+      }
     }
     // Disconnected, or connected with another key, while counting: this count is for nothing.
     const now = this.data.projects[root];
     if (!now || now.key !== start.key) return this.publish(root);
     const { error: _old, ...rest } = now;
-    this.put(root, tally ? { ...rest, tally, updatedAt: this.now() } : { ...rest, ...(error ? { error } : {}) });
+    this.put(root, tally ? { ...rest, tally, ...(activity ? { activity } : {}), updatedAt: this.now(), ...(error ? { error } : {}) } : { ...rest, ...(error ? { error } : {}) });
     this.publish(root);
   }
 
-  /** Refresh in the background: soon after starting, then whenever a day has gone by. */
+  /** Refresh in the background: soon after starting, then look for new payments every few minutes. */
   start(): void {
-    this.first = setTimeout(() => void this.refreshIfStale(), FIRST_CHECK_MS);
+    const every = this.deps.watchMs ?? WATCH_MS;
+    // Half the interval: a look that ran a little late still counts as recent.
+    const watch = (): void => void this.refreshIfStale(every / 2, { quiet: true });
+    this.first = setTimeout(watch, FIRST_CHECK_MS);
     this.first.unref();
-    this.timer = setInterval(() => void this.refreshIfStale(), CHECK_MS);
+    this.timer = setInterval(watch, every);
     this.timer.unref();
   }
 

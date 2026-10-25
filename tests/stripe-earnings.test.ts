@@ -2,12 +2,13 @@ import { mkdtempSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { initialEarnings, reduceEarnings } from '../src/core/earnings-store.js';
+import { ACTIVITY_DAYS, dayKey, initialEarnings, lastDays, rangeFigures, rangeStart, reduceEarnings } from '../src/core/earnings-store.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { Session } from '../src/core/session.js';
+import { activitySince, maskEmail, shortName, summarizeActivity } from '../src/core/stripe-activity.js';
 import { type Charge, type FetchLike, type Refund, StripeError, catchUp, chargeNet, fullCount } from '../src/core/stripe-client.js';
-import { demoStripe } from '../src/core/stripe-demo.js';
-import { FULL_RECOUNT_MS, STALE_MS, StripeEarnings, attachEarnings, earningsOf, loadStripeFile } from '../src/core/stripe-earnings.js';
+import { DEMO_PAYMENT_EVERY, demoStripe } from '../src/core/stripe-demo.js';
+import { FULL_RECOUNT_MS, STALE_MS, StripeEarnings, WATCH_MS, attachEarnings, earningsOf, loadStripeFile } from '../src/core/stripe-earnings.js';
 import { stripeKeyKind, stripeKeyProblem } from '../src/shared/stripe-keys.js';
 import { HANDLERS } from '../src/ipc/handlers.js';
 import { parseArgs } from '../src/ipc/api.js';
@@ -281,7 +282,9 @@ describe('the earnings service', () => {
     now += FULL_RECOUNT_MS + 1;
     stripe.requests.length = 0;
     await service.refresh('p1');
-    expect(stripe.requests.some((u) => u.includes('created'))).toBe(false);
+    // Every charge from the start (then the last months, for what it did lately), and no refunds to look up.
+    expect(stripe.requests.some((u) => u.includes('/v1/charges') && !u.includes('created'))).toBe(true);
+    expect(stripe.requests.some((u) => u.includes('/v1/refunds'))).toBe(false);
     expect(store.getState().earnings['/code/shop']?.totals).toEqual([{ currency: 'usd', amount: 3000 }]);
   });
 
@@ -318,7 +321,156 @@ describe('the earnings service', () => {
   });
 });
 
+describe('what a project did lately', () => {
+  // Noon on a Wednesday, on this computer's calendar.
+  const NOW = new Date(2026, 9, 21, 12).getTime();
+  const at = (daysAgo: number, hour = 10): number => Math.floor(new Date(2026, 9, 21 - daysAgo, hour).getTime() / 1000);
+  const charge = (id: string, daysAgo: number, amount: number, extra: Partial<Charge> = {}): Charge => ({ id, created: at(daysAgo), currency: 'usd', status: 'succeeded', paid: true, captured: true, amount, amount_captured: amount, amount_refunded: 0, ...extra });
+
+  it('adds up each day, counts each paying customer once per range, and keeps the latest payments', () => {
+    const charges = [
+      charge('ch_7', 0, 2000, { customer: 'cus_a', billing_details: { name: 'Maya Kaya', email: 'maya@example.com' }, description: '  Pro   plan ' }),
+      charge('ch_6', 0, 900, { currency: 'EUR', billing_details: { email: 'leo@example.com' } }),
+      charge('ch_5', 1, 1500, { status: 'failed', paid: false, amount_captured: 0, customer: 'cus_z' }),
+      charge('ch_4', 3, 1000, { customer: { id: 'cus_a' }, amount_refunded: 1000 }),
+      charge('ch_3', 5, 3000, { customer: 'cus_b', amount_refunded: 500 }),
+      charge('ch_2', 10, 4000, { customer: 'cus_c' }),
+      charge('ch_1', 40, 500, { receipt_email: 'ann@example.com' }),
+    ];
+    const a = summarizeActivity(charges, NOW);
+    expect(a.days).toEqual([
+      { day: '2026-09-11', totals: [{ currency: 'usd', amount: 500 }], payments: 1 },
+      { day: '2026-10-11', totals: [{ currency: 'usd', amount: 4000 }], payments: 1 },
+      { day: '2026-10-16', totals: [{ currency: 'usd', amount: 2500 }], payments: 1 },
+      { day: '2026-10-21', totals: [{ currency: 'usd', amount: 2000 }, { currency: 'eur', amount: 900 }], payments: 2 },
+    ]);
+    // A failed attempt and a fully refunded charge aren't paying.
+    expect(a.payers).toEqual([
+      { days: 7, now: 3, before: 1 },
+      { days: 30, now: 4, before: 1 },
+      { days: 90, now: 5, before: 0 },
+    ]);
+    expect(a.latest.map((p) => [p.id, p.status])).toEqual([
+      ['ch_7', 'paid'],
+      ['ch_6', 'paid'],
+      ['ch_5', 'failed'],
+      ['ch_4', 'refunded'],
+      ['ch_3', 'partly_refunded'],
+      ['ch_2', 'paid'],
+      ['ch_1', 'paid'],
+    ]);
+    // Never more of who paid than a first name and an initial, or a masked email.
+    expect(a.latest[0]).toMatchObject({ who: 'Maya K.', description: 'Pro plan', at: at(0) * 1000, amount: 2000, currency: 'usd' });
+    expect(a.latest[1]).toMatchObject({ who: 'l•••@example.com', currency: 'eur' });
+    expect(a.latest[4]).toMatchObject({ refunded: 500 });
+    expect(JSON.stringify(a)).not.toMatch(/Kaya|maya@|cus_/);
+    expect(a.from).toBe(dayKey(rangeStart(ACTIVITY_DAYS, NOW)));
+    expect(a.partial).toBeUndefined();
+    expect(shortName('Cher')).toBe('Cher');
+    expect(maskEmail('nope')).toBeUndefined();
+  });
+
+  it('gives each range its days, totals and the span before, when that was read', () => {
+    const charges = [charge('ch_3', 0, 2000, { customer: 'cus_a' }), charge('ch_2', 8, 1000, { customer: 'cus_b' }), charge('ch_1', 100, 700)];
+    const a = summarizeActivity(charges, NOW);
+    const week = rangeFigures(a, 7, NOW);
+    expect(week.days).toHaveLength(7);
+    expect(week.days[6]).toEqual({ day: '2026-10-21', totals: [{ currency: 'usd', amount: 2000 }], payments: 1 });
+    expect(week.days[0]!.day).toBe('2026-10-15');
+    expect(week).toMatchObject({ totals: [{ currency: 'usd', amount: 2000 }], payments: 1, payers: 1, before: { totals: [{ currency: 'usd', amount: 1000 }], payments: 1, payers: 1 } });
+    const quarter = rangeFigures(a, 90, NOW);
+    expect(quarter.days).toHaveLength(90);
+    expect(quarter.before).toMatchObject({ totals: [{ currency: 'usd', amount: 700 }], payments: 1 });
+
+    // Read only in part (a busy account): no comparing with days it didn't reach.
+    const partial = summarizeActivity([charges[0]!, charge('ch_x', 15, 100)], NOW, true);
+    expect(partial.from).toBe('2026-10-07');
+    expect(rangeFigures(partial, 7, NOW).before).toBeDefined();
+    expect(rangeFigures(partial, 30, NOW).before).toBeUndefined();
+    expect(lastDays(3, NOW, 1)).toEqual(['2026-10-18', '2026-10-19', '2026-10-20']);
+  });
+
+  it('reads the last months once connected, and looks for new payments without showing it', async () => {
+    let now = new Date(2026, 9, 21, 12).getTime();
+    const store = new Store(initialState('room'));
+    store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'shop', root: '/code/shop', base: 'main', workspaces: [] }] });
+    const stripe = new FakeStripe();
+    stripe.charge(Math.floor(now / 1000) - 3 * 86_400, 2500, { billing_details: { name: 'Maya Kaya' } });
+    stripe.charge(Math.floor(now / 1000) - 400 * 86_400, 9900);
+    const service = new StripeEarnings({ store, file: null, stripe: { fetch: stripe.fetch, ...noWait }, now: () => now });
+    const seen: boolean[] = [];
+    store.subscribe(() => seen.push(Boolean(store.getState().earnings['/code/shop']?.refreshing)));
+    await service.connect('p1', KEY);
+    await service.settled();
+    const first = store.getState().earnings['/code/shop']!.activity!;
+    expect(first.latest.map((p) => p.who)).toEqual(['Maya K.']);
+    expect(first.days).toHaveLength(1);
+    expect(stripe.requests.some((u) => u.includes('/v1/charges') && new URL(u).searchParams.get('created[gte]') === String(activitySince(now)))).toBe(true);
+
+    // Nothing new: two small requests (charges and refunds), and the last months aren't read again.
+    now += WATCH_MS;
+    stripe.requests.length = 0;
+    seen.length = 0;
+    await service.refreshIfStale(WATCH_MS / 2, { quiet: true });
+    expect(stripe.requests).toHaveLength(2);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((r) => !r)).toBe(true);
+    expect(store.getState().earnings['/code/shop']!.activity).toEqual(first);
+
+    // A new payment: read again, and it's first.
+    stripe.charge(Math.floor(now / 1000) - 60, 4900, { billing_details: { email: 'leo@example.com' } });
+    now += WATCH_MS;
+    stripe.requests.length = 0;
+    await service.refreshIfStale(WATCH_MS / 2, { quiet: true });
+    expect(stripe.requests.length).toBeGreaterThan(2);
+    const next = store.getState().earnings['/code/shop']!;
+    expect(next.activity!.latest[0]).toMatchObject({ amount: 4900, who: 'l•••@example.com', status: 'paid' });
+    expect(next.totals).toEqual([{ currency: 'usd', amount: 2500 + 9900 + 4900 }]);
+
+    // Recently looked at: nothing asked of Stripe.
+    stripe.requests.length = 0;
+    await service.refreshIfStale(WATCH_MS / 2, { quiet: true });
+    expect(stripe.requests).toEqual([]);
+
+    // Reading the last months fails after a new payment is counted (the look's third request, every
+    // retry): the totals move on, and the next look reads the months again though nothing else came in.
+    stripe.charge(Math.floor(now / 1000) - 30, 1200);
+    stripe.fail = [0, 0, 500, 500, 500, 500, 500];
+    now += WATCH_MS;
+    await service.refreshIfStale(WATCH_MS / 2, { quiet: true });
+    const failed = store.getState().earnings['/code/shop']!;
+    expect(failed.error).toMatchObject({ code: 'stripe' });
+    expect(failed.totals).toEqual([{ currency: 'usd', amount: 2500 + 9900 + 4900 + 1200 }]);
+    expect(failed.activity!.latest[0]).toMatchObject({ amount: 4900 });
+    now += WATCH_MS;
+    await service.refreshIfStale(WATCH_MS / 2, { quiet: true });
+    expect(store.getState().earnings['/code/shop']!.error).toBeUndefined();
+    expect(store.getState().earnings['/code/shop']!.activity!.latest[0]).toMatchObject({ amount: 1200 });
+  });
+});
+
 describe('the demo’s pretend Stripe', () => {
+  it('sells more lately, and a new payment arrives every few minutes', async () => {
+    let now = 1_700_000_000_000;
+    const store = new Store(initialState('room'));
+    store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'shop', root: '/code/shop', base: 'main', workspaces: [] }] });
+    const service = new StripeEarnings({ store, file: null, stripe: { fetch: demoStripe(() => now), ...noWait }, now: () => now });
+    await service.connect('p1', ['rk', 'live', 'demoBobApi00000000000000'].join('_'));
+    await service.settled();
+    const before = store.getState().earnings['/code/shop']!;
+    const month = rangeFigures(before.activity!, 30, now);
+    expect(month.payments).toBeGreaterThan(month.before!.payments);
+    expect(month.payers).toBeGreaterThan(5);
+    expect(before.activity!.latest[0]!.who).toMatch(/^\w+ \w\.$/);
+    now += DEMO_PAYMENT_EVERY * 1000;
+    await service.refreshIfStale(0, { quiet: true });
+    const after = store.getState().earnings['/code/shop']!;
+    const sum = (e: typeof before): number => (e.totals ?? []).reduce((n, t) => n + t.amount, 0);
+    expect(sum(after)).toBeGreaterThan(sum(before));
+    expect(after.activity!.latest[0]!.id).not.toBe(before.activity!.latest[0]!.id);
+  });
+
+
   it('earns something for a valid key and refuses the others', async () => {
     const store = new Store(initialState('room'));
     store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'shop', root: '/code/shop', base: 'main', workspaces: [] }] });

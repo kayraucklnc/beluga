@@ -6,6 +6,7 @@ import { Alert } from '../components/Alert.js';
 import { Field, FormSheet, Popup, TextInput, formStyles as f } from '../components/FormSheet.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
+import { rangeFigures } from '@beluga/core/earnings-store.js';
 import { STRIPE_KEY_URL, closeStripe, formatMoney, missingNote, updatedAgo, useConverted, useProjectEarnings, useStripeSheet } from '../lib/earnings.js';
 import { CurrencySelect } from './EarningsSettings.js';
 import { brandText } from '../lib/brand.js';
@@ -55,7 +56,7 @@ function ConnectForm({ project, projects, onProject, replacing, onBack }: { proj
       icon="coin"
       intro={
         <p>
-          See {project.name}’s all-time earnings beside it in the sidebar. Beluga reads your charges once a day; the key stays on this Mac.
+          See {project.name}’s earnings beside it in the sidebar, and how it’s doing lately on its home. Beluga looks for new payments every few minutes; the key stays on this Mac.
         </p>
       }
       submitLabel="Connect"
@@ -160,6 +161,8 @@ function Connected({ project, earnings, onReplace }: { project: Project; earning
   const breakdown = money.converted || money.missing.length > 0;
   const note = missingNote(money.missing);
   const needsKey = earnings.error?.code === 'revoked' || earnings.error?.code === 'permission';
+  const month = earnings.activity ? rangeFigures(earnings.activity, 30) : undefined;
+  const monthMoney = useConverted(month?.totals);
   if (confirm) {
     return (
       <Alert
@@ -217,6 +220,13 @@ function Connected({ project, earnings, onReplace }: { project: Project; earning
           </span>
         ) : null}
         {note ? <span className={s.note}>{note}</span> : null}
+        {month ? (
+          <span className={s.lately} data-last-30>
+            Last 30 days: {monthMoney.converted ? '≈ ' : ''}
+            {formatMoney(monthMoney.amount, monthMoney.currency)} from {month.payments} {month.payments === 1 ? 'payment' : 'payments'}
+            {month.payers !== undefined ? ` by ${month.payers} ${month.payers === 1 ? 'customer' : 'customers'}` : ''}
+          </span>
+        ) : null}
         <span className={s.meta}>
           {earnings.refreshing ? 'Counting…' : `Updated ${updatedAgo(earnings.updatedAt)}`}
           <button type="button" className={f.linkButton} disabled={earnings.refreshing} onClick={() => void api.stripe.refresh(project.id)}>
@@ -244,7 +254,7 @@ function Connected({ project, earnings, onReplace }: { project: Project; earning
           This is a full secret key. A restricted key that only reads charges is safer: Replace Key… to switch.
         </div>
       ) : null}
-      <div className={s.counted}>Successful charges, captured minus refunds, before Stripe’s fees. Beluga refreshes once a day by itself.</div>
+      <div className={s.counted}>Successful charges, captured minus refunds, before Stripe’s fees. Beluga looks for new payments every few minutes by itself.</div>
     </FormSheet>
   );
 }
