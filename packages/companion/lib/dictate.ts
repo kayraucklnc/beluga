@@ -80,3 +80,23 @@ export function wavOf(pcm: Uint8Array): Uint8Array {
   out.set(pcm, 44);
   return out;
 }
+
+/** Floats in [-1, 1] → 16-bit PCM, little-endian (what whisper.rn and wavOf take). */
+export function pcm16(samples: ArrayLike<number>): Uint8Array {
+  const out = new Uint8Array(samples.length * 2);
+  const v = new DataView(out.buffer);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]!));
+    v.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return out;
+}
+
+/** 16-bit PCM bytes → floats (what the phrase cutter takes). */
+export function floatsOf(pcm: Uint8Array): Float32Array {
+  const n = pcm.length >> 1;
+  const v = new DataView(pcm.buffer, pcm.byteOffset, n * 2);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = v.getInt16(i * 2, true) / 32768;
+  return out;
+}

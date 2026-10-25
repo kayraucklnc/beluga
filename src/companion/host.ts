@@ -663,12 +663,12 @@ export class CompanionHost {
   }
 
   /** What you said on the phone, written down here (BLG-140): only the phone that sent the audio, which then goes. */
-  async transcribe(caller: string, a: { audio: string; model: VoiceModelId; language: string }): Promise<{ text: string; language?: string; ms: number }> {
+  async transcribe(caller: string, a: { audio: string; model: VoiceModelId; language: string; prompt?: string | undefined }): Promise<{ text: string; language?: string; ms: number }> {
     const device = this.deviceOf(caller);
     if (!device) throw new Error('Only the phone that sent the recording can have it written down');
     const [up] = await this.uploads.resolve(device, [a.audio]);
     if (!up || !/^audio\/(wav|x-wav|wave)$/.test(up.mime)) throw new Error('That isn’t a recording');
-    return this.voice.transcribe(up.path, { model: a.model, language: a.language });
+    return this.voice.transcribe(up.path, { model: a.model, language: a.language, prompt: a.prompt });
   }
 
   /** Write in a friends' chat, with files from the phone (taken in as chat files are on the Mac). */

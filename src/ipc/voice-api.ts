@@ -16,6 +16,6 @@ export const VOICE_API = {
   // Get one now (it comes in the background) → VoiceMacView.
   'voice.prepare': { args: z.tuple([VoiceModelId]) },
   // The words in a recording (a 16 kHz mono WAV, base64; written to a temporary file, deleted once
-  // written down) → TranscriptView. A model that isn't here yet starts coming, and this says how far.
-  'voice.transcribe': { args: z.tuple([z.string().min(1).max(MAX_WAV_B64), z.object({ model: VoiceModelId, language: z.string().regex(/^(auto|[a-z]{2,3})$/) }).strict()]) },
+  // written down; `prompt`: the words before it, BLG-160) → TranscriptView. A model that isn't here yet starts coming, and this says how far.
+  'voice.transcribe': { args: z.tuple([z.string().min(1).max(MAX_WAV_B64), z.object({ model: VoiceModelId, language: z.string().regex(/^(auto|[a-z]{2,3})$/), prompt: z.string().max(400).optional() }).strict()]) },
 } as const;

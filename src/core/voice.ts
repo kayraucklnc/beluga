@@ -16,7 +16,7 @@ import { belugaHome } from './home.js';
  */
 
 interface Context {
-  transcribe(file: string, o: { language?: string }): { promise: Promise<{ result: string; language?: string }> };
+  transcribe(file: string, o: { language?: string; prompt?: string }): { promise: Promise<{ result: string; language?: string }> };
   release(): Promise<void>;
 }
 interface Engine {
@@ -128,7 +128,7 @@ export class MacVoice {
    * The words in a WAV the phone sent (deleted after, whatever happens) → { text, language? }.
    * A model that isn't here yet starts coming, and this says how far it is.
    */
-  async transcribe(audio: string, a: { model: VoiceModelId; language: string }): Promise<{ text: string; language?: string; ms: number }> {
+  async transcribe(audio: string, a: { model: VoiceModelId; language: string; prompt?: string | undefined }): Promise<{ text: string; language?: string; ms: number }> {
     try {
       const m = VOICE_MODELS[a.model];
       if (!m.files.mac) throw new Error(`${m.label} doesn’t run on the Mac`);
@@ -143,8 +143,9 @@ export class MacVoice {
         const t = Date.now();
         const ctx = await this.context(a.model);
         try {
-          // Parakeet tells the language itself; Whisper takes one ('auto': it tells).
-          const r = await ctx.transcribe(audio, m.kind === 'whisper' ? { language: a.language } : {}).promise;
+          // Parakeet tells the language itself; Whisper takes one ('auto': it tells), and the words
+          // before this phrase as its prompt (BLG-160), so names and style carry across phrases.
+          const r = await ctx.transcribe(audio, m.kind === 'whisper' ? { language: a.language, ...(a.prompt ? { prompt: a.prompt } : {}) } : {}).promise;
           return { text: r.result.trim(), ...(r.language ? { language: r.language } : {}), ms: Date.now() - t };
         } finally {
           this.letGoLater(a.model);

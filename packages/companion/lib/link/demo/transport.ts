@@ -26,6 +26,9 @@ import type { ViewQuery } from '../../render';
 import { DEMO_IMAGES } from './images.generated';
 import { DemoShell, demoAttach, demoFind, demoFolder, demoRead } from './worktree';
 
+
+/** What the demo Mac "hears", phrase by phrase (it has no model; the phone's voice UI shows it arriving). */
+const DEMO_SPOKEN = ['Fix the login redirect on the settings page.', 'Then add a test for the expired session,', 'and the one where the cookie is missing.', 'When you’re done, send me a screenshot.'];
 /**
  * A Mac inside the app, for exploring without one: it answers the protocol exactly as
  * src/companion/host.ts does (welcome, views of the subscribed topics coalesced to one per 500 ms,
@@ -50,6 +53,8 @@ export class DemoTransport implements Transport {
   private world: DemoWorld = makeWorld();
   /** When the demo's Parakeet started coming (Settings › Voice › Get it on your Mac). */
   private demoParakeet: number | undefined;
+  /** Which line of DEMO_SPOKEN the next phrase spoken to the demo Mac writes down as. */
+  private demoSpoken = 0;
   private readonly frames = new Emitter<[MacFrame]>();
   private readonly phases = new Emitter<[LinkPhase, string?]>();
   private open_ = false;
@@ -538,9 +543,12 @@ export class DemoTransport implements Transport {
         const p = this.demoParakeet ? Math.min(1, (Date.now() - this.demoParakeet) / 20_000) : undefined;
         return ok({ models: [{ model: 'whisper-turbo', bytes: 874_188_075, ready: true }, { model: 'parakeet', bytes: 668_757_119, ready: p === 1, ...(p !== undefined && p < 1 ? { progress: p } : {}) }] });
       }
-      case 'companion.transcribe':
-        this.later(900, () => ok({ text: 'Run the tests and send me a screenshot of the login page.', language: 'en', ms: 640 }));
+      case 'companion.transcribe': {
+        // The demo has no model: each phrase comes back as the next line of a plausible ask.
+        const text = DEMO_SPOKEN[this.demoSpoken++ % DEMO_SPOKEN.length]!;
+        this.later(420 + Math.round(Math.random() * 300), () => ok({ text, language: 'en', ms: 380 }));
         return;
+      }
 
       // ---- open on your Mac, project icons
       case 'companion.openOnMac':

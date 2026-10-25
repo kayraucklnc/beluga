@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { ProjectMark } from '../components/ProjectMark';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowUp, ChevronDown, Folder, GitBranch, ImagePlus, Laptop, ListChecks, MessageCircleQuestion, MessageSquare, Mic, Sparkles, Square, Workflow, X } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, withSpring, ZoomIn, ZoomOut } from 'react-native-reanimated';
 import { convHref } from '../components/Conv';
@@ -16,8 +16,8 @@ import { sends } from '../lib/sends';
 import { store } from '../lib/store';
 import { appendSpoken } from '../lib/dictate';
 import { color, spring } from '../lib/theme';
-import { useVoice, type VoiceState, voiceAvailable } from '../lib/voice';
-import { VOICE_MODELS, voiceSize } from '../../../src/shared/voice-models';
+import { useVoice, voiceAvailable } from '../lib/voice';
+import { VoiceButton, VoiceStage } from '../components/Voice';
 
 /**
  * The Ask button's sheet: write, (attach a photo), send. Where it goes is one pill: tap it to
@@ -29,8 +29,8 @@ import { VOICE_MODELS, voiceSize } from '../../../src/shared/voice-models';
  * proposes a plan before it acts), an Advanced plan (Beluga's Plans: milestones, tasks and what
  * waits on what, drafted for you to approve, then run on the board), or a question (read-only).
  *
- * The microphone beside Send writes down what you say, on the phone (lib/voice.ts): tap, speak,
- * tap again, and the words go into the field to read over before you send.
+ * The microphone beside Send writes down what you say while you say it (lib/voice.ts): each pause
+ * is written down at once. ■ puts the words in the field to edit; ↑ sends them as you said them.
  */
 type Target = { kind: 'mac'; topic: Topic; label: string } | { kind: 'project'; id: string; label: string; icon?: string } | { kind: 'conv'; topic: Topic; label: string; project?: string; icon?: string } | { kind: 'friend'; id: string; name: string; label: string };
 const ICON: Record<Target['kind'], { Icon: typeof Folder; tone: Tone }> = { mac: { Icon: Laptop, tone: 'sky' }, project: { Icon: Folder, tone: 'butter' }, conv: { Icon: MessageSquare, tone: 'sky' }, friend: { Icon: Sparkles, tone: 'lavender' } };
@@ -60,7 +60,10 @@ export default function Ask() {
   const [planFirst, setPlanFirst] = useState(false);
   // An older Mac (before 1.5) has neither Your Mac nor worktrees and plans from here.
   const modes = store.supports('askModes');
-  const voice = useVoice((words) => setText((t) => appendSpoken(t, words)));
+  // Speaking (BLG-161): ■ puts the words in the box to edit; ↑ sends them as you said them, once written down.
+  const said = useRef<(words: string) => void>(() => {});
+  const voice = useVoice({ text: (words) => setText((t) => appendSpoken(t, words)), send: (words) => said.current(words) });
+  const speaking = voice.view.phase === 'listening' || voice.view.phase === 'writing';
 
   const targets = useMemo<Target[]>(() => {
     const t: Target[] = [];
@@ -100,10 +103,10 @@ export default function Ask() {
     setTimeout(() => (router.canGoBack() ? router.back() : router.replace('/')), 230);
   };
 
-  const send = () => {
-    if (!text.trim() || !target) return;
+  const send = (spoken?: string) => {
+    const words = (spoken !== undefined ? appendSpoken(text, spoken) : text).trim();
+    if (!words || !target) return;
     haptic.commit();
-    const words = text.trim();
     const pic = photo && photos ? photo : undefined;
     // The photo goes first (`put`), then the message names it: both after the sheet has closed.
     const make = (c: (files: string[]) => Call): Call | (() => Promise<Call>) => (pic ? async () => c([await upload(pic)]) : c([]));
@@ -132,6 +135,8 @@ export default function Ask() {
       setTimeout(() => router.push(href as never), 60);
     }, 200);
   };
+
+  said.current = (words) => send(words);
 
   const mark = (t: Target, size: number) => (t.kind === 'friend' ? <Avatar name={t.name} size={size} /> : t.kind === 'project' ? <ProjectMark name={t.label} icon={t.icon} size={size} /> : t.kind === 'conv' && t.project ? <ProjectMark name={t.project} icon={t.icon} size={size} /> : <IconBadge Icon={ICON[t.kind].Icon} tone={ICON[t.kind].tone} size={size} />);
   const groups: { title: string; kind: Target['kind'] }[] = [
@@ -208,7 +213,7 @@ export default function Ask() {
                   </Press>
                 </Animated.View>
               ) : null}
-              <VoiceLine state={voice.state} error={voice.error} note={voice.note} />
+              <VoiceStage voice={voice} />
             </View>
             {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 10 }}>
@@ -226,59 +231,31 @@ export default function Ask() {
               </Press>
               )}
               <View style={{ flex: 1 }} />
-              {voiceAvailable() ? <MicButton state={voice.state} onStart={() => (haptic.tap(), void voice.start())} onStop={() => (haptic.commit(), voice.stop())} /> : null}
-              <Press disabled={!text.trim()} onPress={send} accessibilityLabel="Send" style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() ? color.primary : color.sunken }}>
-                <ArrowUp color={text.trim() ? color.onPrimary : color.text3} size={22} strokeWidth={2.6} />
+              {voiceAvailable() ? (
+                <VoiceButton
+                  voice={voice}
+                  onPress={() => {
+                    const p = voice.view.phase;
+                    if (p === 'off') return void (haptic.tap(), voice.start());
+                    haptic.commit();
+                    if (p === 'listening') voice.finish('edit');
+                    else voice.cancel();
+                  }}
+                />
+              ) : null}
+              <Press
+                disabled={!text.trim() && !speaking}
+                onPress={() => (speaking ? (haptic.commit(), voice.finish('send')) : send())}
+                accessibilityLabel={speaking ? 'Send it as you said it' : 'Send'}
+                style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() || speaking ? color.primary : color.sunken }}
+              >
+                <ArrowUp color={text.trim() || speaking ? color.onPrimary : color.text3} size={22} strokeWidth={2.6} />
               </Press>
             </View>
           </View>
         )}
       </Sheet>
     </>
-  );
-}
-
-/** The microphone: tap to listen, tap again to write it down; it swells with your voice. */
-function MicButton({ state, onStart, onStop }: { readonly state: VoiceState; readonly onStart: () => void; readonly onStop: () => void }) {
-  const level = state.kind === 'listening' ? state.level : 0;
-  const pulse = useAnimatedStyle(() => ({ transform: [{ scale: withSpring(1 + level * 0.18, spring.bouncy) }] }));
-  const listening = state.kind === 'listening';
-  const busy = state.kind === 'getting' || state.kind === 'writing';
-  return (
-    <Animated.View style={pulse}>
-      <Press
-        onPress={listening ? onStop : onStart}
-        disabled={busy}
-        accessibilityLabel={listening ? 'Stop and write it down' : 'Speak instead of typing'}
-        accessibilityHint={listening ? undefined : 'Written down on this phone or your Mac (Settings › Voice)'}
-        style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: listening ? toneBg('rose') : busy ? toneBg('sky') : color.sunken }}
-      >
-        {busy ? <ActivityIndicator size="small" color={toneInk('sky')} /> : listening ? <Square color={toneInk('rose')} fill={toneInk('rose')} size={13} /> : <Mic color={color.text2} size={20} />}
-      </Press>
-    </Animated.View>
-  );
-}
-
-/** One quiet line under the field while the microphone does something (or couldn't). */
-function VoiceLine({ state, error, note }: { readonly state: VoiceState; readonly error?: string; readonly note?: string }) {
-  const line =
-    state.kind === 'getting'
-      ? `Getting ${VOICE_MODELS[state.model].label} · ${Math.round(state.progress * 100)}% of ${voiceSize(VOICE_MODELS[state.model].files.phone?.bytes ?? 0)}, once`
-      : state.kind === 'listening'
-        ? 'Listening… tap ■ to write it down'
-        : state.kind === 'writing'
-          ? state.where === 'mac'
-            ? 'Your Mac is writing it down…'
-            : 'Writing it down on this phone…'
-          : (error ?? note);
-  if (!line) return null;
-  return (
-    <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 6 }}>
-      <Mic color={error && state.kind === 'off' ? toneInk('rose') : color.text3} size={12} />
-      <T v="caption" numberOfLines={2} style={{ flex: 1 }}>
-        {line}
-      </T>
-    </Animated.View>
   );
 }
 
