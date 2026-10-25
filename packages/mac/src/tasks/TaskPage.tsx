@@ -20,6 +20,7 @@ import { openSheet } from '../lib/sheets.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import { useSwipeBack } from './use-swipe-back.js';
 import { SwipeBackEdge } from './SwipeBackEdge.js';
+import { FixItButton, GitHubIssueProp, useInvestigated } from '../issues/task-bits.js';
 import t from './tasks.module.css';
 
 /**
@@ -235,14 +236,14 @@ function useTaskWorktree(issue: Issue): { readonly ws: Workspace | undefined; re
   return { ws, live, had };
 }
 
-/** Where a task's work is: its worktree (open it, reveal its folder in Finder), or what became of it. */
-function WorktreeLinks({ issue, ws, live }: { issue: Issue; ws: Workspace | undefined; live: Workspace | undefined }) {
+/** Where a task's work is: its worktree (open it, reveal its folder in Finder), or what became of it. `secondary`: something else is the main action (Fix It). */
+function WorktreeLinks({ issue, ws, live, secondary }: { issue: Issue; ws: Workspace | undefined; live: Workspace | undefined; secondary?: boolean }) {
   const { openWorktree } = useTaskActions();
   const api = useApi();
   if (live) {
     return (
       <>
-        <Button variant="primary" size="small" icon="branch" onClick={() => openWorktree(live.id)}>
+        <Button variant={secondary ? 'plain' : 'primary'} size="small" icon="branch" onClick={() => openWorktree(live.id)}>
           Open Worktree
         </Button>
         <Button size="small" variant="quiet" icon="folder" onClick={() => void api.workspaces.openInFinder(live.id)}>
@@ -282,6 +283,8 @@ function NextStep({ issue }: { issue: Issue }) {
   const { api, act } = useTaskActions();
   const { ws, live, had } = useTaskWorktree(issue);
   const [starting, setStarting] = useState(false);
+  // Its GitHub issue investigated: Fix It (there) is the one main action.
+  const fixFirst = useInvestigated(issue);
   // One click: a new worktree named after it, In Progress, your Claude on it with its brief, and you there (BLG-55).
   const start = async (): Promise<void> => {
     setStarting(true);
@@ -293,7 +296,10 @@ function NextStep({ issue }: { issue: Issue }) {
   return (
     <div className={t.nextStep}>
       {had || live ? (
-        <WorktreeLinks issue={issue} ws={ws} live={live} />
+        <>
+          <FixItButton issue={issue} />
+          <WorktreeLinks issue={issue} ws={ws} live={live} secondary={fixFirst} />
+        </>
       ) : (
         <>
           <Button variant="primary" size="small" icon="play" disabled={starting} onClick={() => void start()}>
@@ -461,6 +467,7 @@ function Properties({ issue }: { issue: Issue }) {
         </Prop>
       ) : null}
       {issue.link ? <TrackerLink link={issue.link} /> : null}
+      <GitHubIssueProp issue={issue} Prop={Prop} />
       <Prop label="Created" quiet>
         <span className={t.propStatic}>
           {ago(issue.createdAt)} by {actorName(issue.createdBy, selfId)}

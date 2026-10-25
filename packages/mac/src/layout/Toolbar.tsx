@@ -272,6 +272,23 @@ export function Toolbar() {
 
   if (view.kind === 'plans') return <Shell headerRef={headerRef} title={<span className={s.name}>Plans</span>} />;
 
+  if (view.kind === 'issues') return <Shell headerRef={headerRef} title={<span className={s.name}>Issues</span>} subtitle={<span className={s.meta}>From GitHub · Claude investigates, fixes, or writes them up as tasks</span>} />;
+
+  if (view.kind === 'gh_issue') {
+    const project = state.projects.find((p) => p.id === view.projectId);
+    return (
+      <Shell
+        headerRef={headerRef}
+        title={
+          <>
+            <span className={s.crumb}>{project?.name ?? 'Issues'}</span>
+            <span className={s.name}>Issue #{view.number}</span>
+          </>
+        }
+      />
+    );
+  }
+
   if (view.kind === 'plan') {
     const plan = state.plans.plans.find((x) => x.id === view.id);
     const project = plan ? state.projects.find((p) => p.id === plan.projectId) : undefined;

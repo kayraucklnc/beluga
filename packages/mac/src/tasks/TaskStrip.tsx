@@ -6,6 +6,7 @@ import { useApp } from '../lib/beluga.js';
 import { PrChip, StatusIcon } from './marks.js';
 import { checklist } from './tasks-model.js';
 import { useTaskActions } from './use-tasks.js';
+import { FixItButton, IssueMark } from '../issues/task-bits.js';
 import t from './tasks.module.css';
 
 /** Above a worktree's conversation: the task it's doing (click to open it), and how far along it is. */
@@ -30,7 +31,9 @@ export function TaskStrip({ workspaceId }: { workspaceId: string }) {
           {issue.needsChecks ? <span className={t.needsChecks}>Needs its checks</span> : null}
         </button>
       </Tip>
+      <IssueMark issue={issue} />
       {issue.pr ? <PrChip pr={issue.pr} /> : null}
+      <FixItButton issue={issue} />
     </div>
   );
 }

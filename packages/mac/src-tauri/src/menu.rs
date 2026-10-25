@@ -163,6 +163,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             // The places' order (⌥1…7 in the window too; see lib/go.ts).
             &item(app, "go-overview", "Overview", Some("Alt+1"))?,
             &item(app, "go-tasks", "Tasks", Some("Alt+2"))?,
+            // A project's GitHub issues (no ⌥ key: the places keep theirs).
+            &item(app, "go-issues", "Issues", None)?,
             &item(app, "go-room", "Chat", Some("Alt+3"))?,
             &item(app, "go-search", "Search", Some("Alt+4"))?,
             &item(app, "go-usage", "Usage", Some("Alt+5"))?,

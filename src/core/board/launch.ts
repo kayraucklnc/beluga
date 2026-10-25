@@ -5,7 +5,12 @@ import { belugaHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import type { DraftContext } from '../../agent/task-drafter.js';
-import { findPr } from '../../workspaces/pr.js';
+import { buildPrPrompt, findPr } from '../../workspaces/pr.js';
+import { ghHosts } from '../../workspaces/github.js';
+import { GitHubIssues } from '../issues/issues.js';
+import { ghIssueSource, runGhCli } from '../issues/gh.js';
+import { demoIssueSource, demoRepo } from '../issues/demo.js';
+import { attachIssues, detachIssues } from '../issues/registry.js';
 import { Board } from './board.js';
 import { seedDemoBoard } from './demo.js';
 import { TaskSync, attachSync, detachSync } from './sync/sync.js';
@@ -48,7 +53,7 @@ export function launchBoard(host: BoardHost): () => void {
     ...(session.workspaces ? { controller: session.workspaces } : {}),
     selfId: () => session.selfId,
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
-    askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
+    askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
     ...(session.draftsTasks ? { draftTask: (text: string, ctx: DraftContext) => session.draftTask(text, ctx) } : {}),
     // Tasks whose worktree went before their pull request merged still go Done (the demo has no GitHub).
     ...(host.demo
@@ -61,6 +66,22 @@ export function launchBoard(host: BoardHost): () => void {
         }),
   });
   attachBoard(session, work);
+  // A project's GitHub issues, handed to Claude through tasks. The demo has a pretend GitHub (acme/<project>).
+  const projectOf = (id: string) => store.getState().projects.find((p) => p.id === id);
+  const issues = new GitHubIssues({
+    store,
+    work,
+    repoOf: async (id) => (host.demo ? (projectOf(id) ? demoRepo(projectOf(id)!.name) : undefined) : session.workspaces?.mainSync.githubRepo(id)),
+    ...(host.demo ? {} : { knownHost: (h: string) => h === 'github.com' || ghHosts().includes(h) }),
+    ghReady: async (h) => host.demo || runGhCli(['auth', 'status', '--hostname', h]).then(() => true, () => false),
+    source: host.demo ? demoIssueSource() : ghIssueSource(),
+    askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
+    prPrompt: (ws) => {
+      const project = projectOf(ws.projectId);
+      return buildPrPrompt({ branch: ws.branch ?? ws.name, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', ...(project?.scripts?.prPrompt ? { projectPrompt: project.scripts.prPrompt } : {}) });
+    },
+  });
+  attachIssues(session, issues);
   // Two-way sync with Linear, per project. The demo has a pretend Linear and keeps keys in memory only;
   // BELUGA_LINEAR_API points the real one at a fake Linear.
   const linearBase = belugaEnv('LINEAR_API');
@@ -111,6 +132,7 @@ export function launchBoard(host: BoardHost): () => void {
     decisions?.stop();
     detachPlans(session);
     planWork.stop();
+    detachIssues(session);
     detachSync(session);
     sync.stop();
     detachBoard(session);

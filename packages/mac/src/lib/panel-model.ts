@@ -110,7 +110,7 @@ export function panelTabsFor(view: View, wsKind?: WsKind): PanelTab[] {
  * The right panel shows beside this view: not on a plan's page (its right side is its chat), nor
  * on a task's page or the plans: nothing in it is about them, so they get the whole window.
  */
-export const panelFits = (view: View): boolean => view.kind !== 'plan' && view.kind !== 'plans' && view.kind !== 'task';
+export const panelFits = (view: View): boolean => view.kind !== 'plan' && view.kind !== 'plans' && view.kind !== 'task' && view.kind !== 'gh_issue';
 
 /** Where a view's last tab is remembered: per workspace, one for everything else. */
 export const panelKey = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : 'app');

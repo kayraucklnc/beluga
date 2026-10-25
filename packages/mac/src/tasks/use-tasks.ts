@@ -57,7 +57,7 @@ export function projectOfView(state: AppState): string | undefined {
           : view.projectId
         : view.kind === 'task'
           ? state.board.issues.find((i) => i.id === view.id)?.projectId
-          : view.kind === 'tasks' || view.kind === 'plans'
+          : view.kind === 'tasks' || view.kind === 'plans' || view.kind === 'issues' || view.kind === 'gh_issue'
             ? view.projectId
             : view.kind === 'plan'
               ? state.plans.plans.find((p) => p.id === view.id)?.projectId
@@ -81,7 +81,10 @@ export function useRememberProject(): void {
 let cameFrom: View | undefined;
 
 /** Places a task's Back returns to; anything else (a dialog-like view, a draft) goes to the Tasks list. */
-const RETURNABLE: ReadonlySet<View['kind']> = new Set(['tasks', 'plans', 'plan', 'workspace', 'overview', 'project', 'requests']);
+const RETURNABLE: ReadonlySet<View['kind']> = new Set(['tasks', 'plans', 'plan', 'workspace', 'overview', 'project', 'requests', 'issues', 'gh_issue']);
+
+/** Where you were before the GitHub issue you're on (Issues, a project's home, a task, a conversation). */
+let issueCameFrom: View | undefined;
 
 function useRememberWayBack(): void {
   const view = useApp((s) => s.view);
@@ -89,12 +92,25 @@ function useRememberWayBack(): void {
   useEffect(() => {
     const prev = last.current;
     last.current = view;
-    if (view.kind === 'task' && prev.kind !== 'task') cameFrom = RETURNABLE.has(prev.kind) ? prev : undefined;
+    // Between an issue and its task, back and forth, each keeps the way it came: Back never bounces between the two.
+    if (view.kind === 'task' && prev.kind !== 'task' && !(prev.kind === 'gh_issue' && sameView(issueCameFrom, view))) cameFrom = RETURNABLE.has(prev.kind) ? prev : undefined;
+    if (view.kind === 'gh_issue' && prev.kind !== 'gh_issue' && !(prev.kind === 'task' && sameView(cameFrom, view))) issueCameFrom = RETURNABLE.has(prev.kind) || prev.kind === 'task' ? prev : undefined;
   }, [view]);
+}
+
+/** The same place: a task by its id, an issue by its project and number. */
+function sameView(a: View | undefined, b: View): boolean {
+  if (!a || a.kind !== b.kind) return false;
+  if (a.kind === 'task' && b.kind === 'task') return a.id === b.id;
+  if (a.kind === 'gh_issue' && b.kind === 'gh_issue') return a.projectId === b.projectId && a.number === b.number;
+  return false;
 }
 
 /** Where Back on a task goes: where you came from, else its project's Tasks. */
 export const wayBack = (projectId: string): View => cameFrom ?? { kind: 'tasks', projectId };
+
+/** Where Back on a GitHub issue goes: where you came from, else its project's Issues. */
+export const issueWayBack = (projectId: string): View => issueCameFrom ?? { kind: 'issues', projectId };
 
 // ---- the view's prefs, per window
 

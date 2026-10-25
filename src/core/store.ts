@@ -304,6 +304,9 @@ export type View =
   /** Tasks (Mac app): one project's board (the one you were last in when unset), and one task's page. */
   | { readonly kind: 'tasks'; readonly projectId?: string; /** Only the tasks this worktree does or carries. */ readonly worktree?: string }
   | { readonly kind: 'task'; readonly id: string }
+  /** GitHub issues (Mac app): one project's issues (the one you were last in when unset), and one issue's page. */
+  | { readonly kind: 'issues'; readonly projectId?: string }
+  | { readonly kind: 'gh_issue'; readonly projectId: string; readonly number: number }
   /** Plans (Mac app): one project's plans, and one plan's page (its graph, outline and conversation). */
   | { readonly kind: 'plans'; readonly projectId?: string }
   | { readonly kind: 'plan'; readonly id: string; readonly task?: string }

@@ -20,12 +20,64 @@ interface Script {
   readonly after?: readonly string[];
   /** Takes what you say while it works into the turn at its next step, as Claude Code does (steering). */
   readonly steerable?: boolean;
+  /** Doing a task: sections of its brief it writes (what an investigation found, say). */
+  readonly brief?: ReadonlyArray<readonly ['context' | 'acceptance', string]>;
   /** One step that runs long: after it starts, the next step comes `ms` later (a steer waits; Send now stops it). */
   readonly slowStep?: { readonly step: string; readonly ms: number };
 }
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
 const SCRIPTS: readonly Script[] = [
+  {
+    // Issues › Investigate on the demo's headline bug (core/issues/prompts.ts): why, a reproduction, and the brief written.
+    match: /^Investigate GitHub issue #48\b/,
+    stepMs: 900,
+    steps: ['Bash gh issue view 48 --repo acme/bob-api --comments', 'Grep "decodeURIComponent" src', 'Read src/users.ts', 'Read src/routes/login.ts', 'Write tests/login-plus-email.test.ts', 'Bash npm test -- login-plus-email'],
+    brief: [
+      [
+        'context',
+        [
+          '**What happens:** `POST /login` with an address that has a `+` in it answers 500.',
+          '',
+          '**Why:** `findUser()` in `src/users.ts` runs `decodeURIComponent` on an email that was already decoded, so `+` becomes a space. No user is `lena test@acme.dev`, and `login()` in `src/routes/login.ts` reads `user.id` without checking, which throws.',
+          '',
+          '**How to reproduce:** `tests/login-plus-email.test.ts` signs in as `lena+test@acme.dev`; it fails with the 500 today.',
+          '',
+          '**Where the fix goes:** `findUser()` takes the email as it comes (no second decode), and `login()` answers 401 when there is no such user instead of throwing.',
+        ].join('\n'),
+      ],
+      ['acceptance', '- [ ] An address with a `+` signs in (the new test passes)\n- [ ] An unknown address gets a 401, not a 500\n- [ ] The other login tests still pass'],
+    ],
+    answer: [
+      '**What happens:** signing in with an address that has a `+` answers 500.',
+      '',
+      '**Why:** `findUser()` decodes the email a second time (`decodeURIComponent`), so `+` turns into a space and no user matches; `login()` then reads `user.id` of nothing and throws.',
+      '',
+      '**How to reproduce:** `npm test -- login-plus-email` (a new failing test, kept for the fix).',
+      '',
+      '**How to fix:** drop the second decode in `findUser()`, and answer 401 for an unknown user. Small and low risk: two lines and a test.',
+      '',
+      'Verdict: a real bug. It’s all in the task’s brief; say **Fix It** when you want it fixed.',
+    ].join('\n'),
+  },
+  {
+    // Investigate on any other demo issue.
+    match: /^Investigate GitHub issue #\d+/,
+    stepMs: 900,
+    steps: ['Bash gh issue view --comments', 'Grep -n "TODO|FIXME" src', 'Read src/server.ts', 'Write tests/issue-repro.test.ts', 'Bash npm test -- issue-repro'],
+    brief: [
+      ['context', '**What happens:** as the report says; `tests/issue-repro.test.ts` shows it.\n\n**Why:** the code path in `src/server.ts` doesn’t handle the case the report describes.\n\n**Where the fix goes:** `src/server.ts`, with the new test kept.'],
+      ['acceptance', '- [ ] The reproduction passes\n- [ ] Nothing else changes'],
+    ],
+    answer: '**What happens:** what the report says, reproduced by a new failing test.\n\n**Why:** `src/server.ts` doesn’t handle that case.\n\n**How to fix:** handle it there and keep the test. Small.\n\nVerdict: a real bug; it’s in the task’s brief.',
+  },
+  {
+    // Fix It (after investigating, or straight away): the fix, its test, a commit. The demo has no GitHub, so no pull request.
+    match: /^(Now fix|Fix) GitHub issue #\d+/,
+    stepMs: 900,
+    steps: ['Read tests/login-plus-email.test.ts', 'Edit src/users.ts', 'Edit src/routes/login.ts', 'Bash npm test', 'Bash git commit -am "Fix sign-in with a + in the email"'],
+    answer: 'Fixed: `findUser()` no longer decodes the email twice, and an unknown user gets a 401. The new test passes, and so does the rest of the suite.\n\nThis is the demo, with no GitHub to push to, so there’s no pull request; on a real repository I’d open one that says “Fixes #48”.',
+  },
   {
     // /visualize, or asking for a diagram: an interactive graph (docs/graphs.md).
     match: /visuali[sz]e|diagram|\bdraw (it|this|me)\b|map (it|this) out/i,
@@ -364,6 +416,17 @@ export function mockDraft(text: string, ctx: DraftContext): TaskDraft {
   return {
     title,
     goal: `${title}, so it works the way it was described. Done when it does, and nothing around it changes.`,
+    // After a look at the code (the demo reads none): where it is and what's likely behind it.
+    ...(ctx.look
+      ? {
+          context: [
+            'Looked at the code before writing this:',
+            '- **Where it happens:** `src/routes/` and the handler it calls, the first place to check.',
+            '- **How it works today:** the request goes straight through, without the step this needs.',
+            '- **Likely fix:** add that step where the request comes in, with a test that reproduces the report first.',
+          ].join('\n'),
+        }
+      : {}),
     acceptance: [`${title}: works as described`, 'Nothing else changes', 'Tests cover it'],
     labels,
     ...(priority ? { priority } : {}),
@@ -396,7 +459,7 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       return slugify(prompt);
     },
     draftTask: async (text, ctx) => {
-      await new Promise((r) => setTimeout(r, 1500 * pace));
+      await new Promise((r) => setTimeout(r, (ctx.look ? 6000 : 1500) * pace));
       return mockDraft(text, ctx);
     },
     // A short name a moment later, as Haiku would give it.
@@ -550,6 +613,10 @@ function keepTaskTrue(input: AgentRunInput, script: Script): void {
   const key = board.current!;
   const first = script.answer.replace(/\*\*/g, '').split(/(?<=\.)\s/)[0] ?? script.answer;
   try {
+    for (const [section, text] of script.brief ?? []) {
+      input.onEvent('tool', `task_brief_edit ${key} ${section}`);
+      board.editBrief(undefined, section, text, 'what the investigation found');
+    }
     input.onEvent('tool', `task_note ${key}`);
     board.note(undefined, first);
     if (script.match.test('implement')) {
