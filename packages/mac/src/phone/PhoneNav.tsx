@@ -1,6 +1,7 @@
 import { Icon } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/beluga.js';
+import { sameDeep } from '../lib/stable.js';
 import { Row } from '../layout/sidebar-parts.js';
 
 /**
@@ -16,7 +17,8 @@ export function PhoneNav() {
     const linked = android.some((d) => d.linked);
     const usable = android.some((d) => d.control && d.control.routes.length > 0);
     return { name: android.length === 1 ? android[0]!.name : `${android.length} phones`, linked, usable };
-  });
+    // A new object each time: without sameDeep the window re-renders forever and goes blank (1.1.0).
+  }, sameDeep);
   const selected = useApp((st) => st.view.kind === 'phone');
   if (!phone) return null;
   return (
