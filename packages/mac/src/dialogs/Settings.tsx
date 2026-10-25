@@ -17,6 +17,7 @@ import { Group, Row, Select, Switch } from './settings-controls.js';
 import { MaintainerChip } from './SupportSheets.js';
 import s from './settings.module.css';
 import { TerminalSettings } from './TerminalSettings.js';
+import { FireSettings } from './FireSettings.js';
 import { NetworkSettings } from '../network/NetworkSettings.js';
 import { PhoneSettings } from '../phone/Phone.js';
 import { AccessSettings } from '../gateway/AccessSettings.js';
@@ -31,6 +32,7 @@ const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> 
   { id: 'notifications', label: 'Notifications', icon: 'bell' },
   { id: 'workspaces', label: 'Workspaces', icon: 'branch' },
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
+  { id: 'fire', label: 'Fire & Confetti', icon: 'flame' },
   { id: 'environment', label: 'Environment', icon: 'lock' },
   { id: 'people', label: 'People & access', icon: 'people' },
   { id: 'phone', label: 'Phone', icon: 'phone' },
@@ -376,7 +378,7 @@ function About() {
   );
 }
 
-const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, about: About };
+const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, fire: FireSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, about: About };
 
 /** Beluga's settings: this window's look on the left panes, Beluga's shared settings on the rest. */
 export function Settings() {

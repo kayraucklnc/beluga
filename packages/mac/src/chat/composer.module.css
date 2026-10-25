@@ -342,41 +342,70 @@
   background: currentColor;
 }
 
-/* Plan mode: the whole box turns to the plan colour, with a faint stripe, and says so. */
+/*
+ * Planning (Plan First, Plan with Tasks): the same box, quieter than a warning. A hairline in the
+ * mode's pastel, a wash of it under the top edge, and a small tag that names the mode. No stripes, no glow.
+ */
 .planning {
-  --plan: #2bb3a3;
-  background:
-    repeating-linear-gradient(135deg, color-mix(in srgb, var(--plan) 5%, transparent) 0 6px, transparent 6px 12px),
-    color-mix(in srgb, var(--plan) 7%, var(--bg-raised));
+  --plan: #3fae9f;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--plan) 7%, var(--bg-raised)), var(--bg-raised) 64px);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--plan) 65%, transparent),
-    0 0 0 4px color-mix(in srgb, var(--plan) 14%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--plan) 38%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.planning[data-mode='tasks'] {
+  --plan: #8a7ce8;
 }
 .planning:focus-within {
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--plan) 85%, transparent),
-    0 0 0 4px color-mix(in srgb, var(--plan) 20%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--plan) 62%, transparent),
+    0 4px 14px rgba(0, 0, 0, 0.07);
 }
 .planning .chipOn {
-  background: color-mix(in srgb, var(--plan) 22%, transparent);
-  color: color-mix(in srgb, var(--plan) 80%, var(--text));
+  background: color-mix(in srgb, var(--plan) 15%, transparent);
+  color: color-mix(in srgb, var(--plan) 72%, var(--text));
+}
+.planning .sendReady {
+  background: color-mix(in srgb, var(--plan) 88%, var(--text));
 }
 .planBanner {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px 0;
-  color: color-mix(in srgb, var(--plan) 75%, var(--text));
-  font-size: 0.82rem;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px 0;
+  font-size: 0.8rem;
 }
-.planBanner span {
+.planTag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--plan) 13%, transparent);
+  color: color-mix(in srgb, var(--plan) 70%, var(--text));
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.planHint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-3);
 }
-.planBanner strong {
-  font-weight: 650;
-}
 .planKeys {
-  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+}
+.planKeys kbd {
+  font-size: 0.74rem;
+  line-height: 14px;
 }
 
 /* The message box over its mention pills (MentionHighlighter): the field is see-through. */
@@ -394,7 +423,7 @@
   padding: 0 2px;
   font: inherit;
   font-weight: 600;
-  color: var(--accent);
+  color: color-mix(in srgb, var(--plan, var(--accent)) 75%, var(--text));
   cursor: pointer;
 }
 .planLink:hover {

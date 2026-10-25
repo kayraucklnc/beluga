@@ -1,0 +1,114 @@
+/*
+ * Max effort: the message box burns. A rim of embers that slowly turns round it, a warm wash from
+ * below, the flames and confetti on a canvas over it all (MaxFire.tsx).
+ */
+@property --ember-turn {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.max {
+  position: relative;
+  isolation: isolate;
+  /* The box's own face is ::after, so the flames (under it) only show past its edges. */
+  background: transparent;
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--f1, #3fa2ff) 14%, transparent);
+}
+.max:focus-within {
+  box-shadow: 0 4px 22px color-mix(in srgb, var(--f1, #3fa2ff) 22%, transparent);
+}
+.max::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 90% at 50% 125%, color-mix(in srgb, var(--f1, #3fa2ff) 12%, transparent), transparent 70%),
+    var(--bg-raised);
+  pointer-events: none;
+}
+/* Only confetti and pixels (no fire): the box just holds their canvas. */
+.fxOnly {
+  position: relative;
+}
+/* The rim: a turning ring of ember colours, masked to its edge. */
+.max::before {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  z-index: -1;
+  padding: 1.5px;
+  border-radius: calc(var(--radius-l) + 1.5px);
+  background: conic-gradient(from var(--ember-turn), var(--f2, #d4f6ff), var(--f1, #3fa2ff), var(--f0, #2346c8), var(--f1, #3fa2ff), var(--f2, #d4f6ff));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: ember-turn 5s linear infinite;
+  pointer-events: none;
+}
+@keyframes ember-turn {
+  to {
+    --ember-turn: 360deg;
+  }
+}
+
+/* The flames burn behind the box (it hides their roots); the confetti flies over everything. */
+.flames,
+.confetti {
+  position: absolute;
+  pointer-events: none;
+}
+.flames {
+  z-index: -2;
+}
+.confetti {
+  z-index: 3;
+}
+
+/* The send button takes the heat too. */
+.max .hot {
+  background: linear-gradient(135deg, var(--f1, #3fa2ff), var(--f0, #2346c8));
+  color: white;
+}
+
+/* A small flame by the box's tools: you're on Max. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--f1, #3fa2ff) 16%, transparent);
+  color: color-mix(in srgb, var(--f0, #2346c8) 80%, var(--text));
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.flicker {
+  display: inline-block;
+  animation: flicker 1.3s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+@keyframes flicker {
+  0%,
+  100% {
+    transform: scale(1) rotate(-3deg);
+  }
+  35% {
+    transform: scale(1.12, 0.94) rotate(3deg);
+  }
+  70% {
+    transform: scale(0.94, 1.08) rotate(-1deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .max::before,
+  .flicker {
+    animation: none;
+  }
+}

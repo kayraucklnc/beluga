@@ -321,7 +321,7 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   await expect(page.getByRole('grid', { name: 'Tasks' })).toContainText('Data model and migration');
 });
 
-test('the composer: Plan with Tasks makes the conversation a plan', async ({ page }) => {
+test('the composer: Plan with Tasks makes the conversation a plan once you send', async ({ page }) => {
   await page.goto('/');
   // The demo's chat in bob-api (unfold the project when it's folded).
   const chat = sidebar(page).getByRole('button', { name: 'How do deploys work?' });
@@ -331,13 +331,26 @@ test('the composer: Plan with Tasks makes the conversation a plan', async ({ pag
   await page.getByRole('menuitem', { name: /Plan with Tasks/ }).click();
   await expect(page.getByRole('button', { name: 'Mode: Plan with Tasks' })).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'nothing reaches the board until you approve' })).toBeVisible();
-  // A plan's own conversation has no modes to pick (KLD-54): the chip opens the plan, or throws the draft away.
+  // Nothing sent, nothing made: still an ordinary chat in the sidebar, and every mode a click away.
+  await expect(chat).toBeVisible();
   await page.getByRole('button', { name: /^Mode: / }).click();
-  await expect(page.getByRole('menuitem', { name: /^Act/ })).toHaveCount(0);
-  await expect(page.getByRole('menuitem', { name: 'Open the Plan' })).toBeVisible();
-  // Discarding the empty draft: the conversation is an ordinary one again.
-  await page.getByRole('menuitem', { name: 'Discard the Draft' }).click();
+  await page.getByRole('menuitem', { name: /^Act/ }).click();
   await expect(page.getByRole('button', { name: 'Mode: Act' })).toBeVisible();
+  // ⇧⇥ goes to Plan First and back.
+  const box = page.locator('main textarea:not(.xterm-helper-textarea)').last();
+  await box.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Mode: Plan First' })).toBeVisible();
+  await box.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Mode: Act' })).toBeVisible();
+  // Sent: now it's the plan's own conversation (the chip opens the plan, or throws the draft away).
+  await page.getByRole('button', { name: /^Mode: / }).click();
+  await page.getByRole('menuitem', { name: /Plan with Tasks/ }).click();
+  await box.fill('Export orders to accounting');
+  await box.press('Enter');
+  await page.getByRole('button', { name: /^Mode: / }).click();
+  await expect(page.getByRole('menuitem', { name: 'Open the Plan' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /^Act/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
 });
 
 test('a running plan sits under Plans in the sidebar: progress, what it waits for, one click to it', async ({ page }) => {

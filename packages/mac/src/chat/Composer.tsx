@@ -28,7 +28,10 @@ import { ActionsDropdown } from '../components/SpecMenu.js';
 import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
 import { isPlanHome, planForHome } from '@beluga/core/plans/model.js';
+import { MaxFire } from './MaxFire.js';
+import { effectsOn, fireVars } from './fire-look.js';
 import s from './composer.module.css';
+import m from './max.module.css';
 import d from './draft.module.css';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -43,6 +46,8 @@ const draftKeyOf = (view: View): string => (view.kind === 'draft' ? `new-chat:${
 const drafts = new Map<string, string>();
 /** The branch and name picked on each project's new worktree page, kept with its words. */
 const worktreeChoices = new Map<string, WorktreeChoice>();
+/** Conversations where Plan with Tasks is picked but nothing was sent yet (no plan is made until it is). */
+const tasksPicked = new Set<string>();
 /** Whose words are in the box now (the window keeps one box's words, `buffer`, for the chat on screen). */
 let boxOf: string | undefined;
 
@@ -87,6 +92,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   // Addressed to someone (a person's card › Message / Ask Claude): the chip says who; sending says it to them.
   const to = useUi((u) => u.to);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const channel = channelOf(state.view);
   const draftKey = draftKeyOf(state.view);
   const shared = state.view.kind === 'shared';
@@ -103,28 +109,44 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const plan = state.planMode[channel] === true;
   // Plan with Tasks: this conversation is a plan's home (milestones and tasks, approved onto the board).
   const homePlan = planForHome(state.plans, channel);
+  // Picked but nothing sent yet: only the box knows. The plan is made with the first message, so
+  // until then the conversation stays an ordinary one everywhere else (sidebar, Overview, its page).
+  const [, redraw] = useState(0);
+  const armed = !homePlan && tasksPicked.has(channel);
+  const arm = (on: boolean): void => {
+    if (on === tasksPicked.has(channel)) return;
+    if (on) tasksPicked.add(channel);
+    else tasksPicked.delete(channel);
+    redraw((n) => n + 1);
+  };
   // While it's being planned (once approved, the conversation is the plan's head and the box is as usual).
-  const tasksMode = Boolean(homePlan && !homePlan.body);
+  const drafting = Boolean(homePlan && !homePlan.body);
+  const tasksMode = drafting || armed;
+  // A draft nobody has asked Claude for yet (nothing in it, nothing said): still just a mode you can leave.
+  const untouched = drafting && !homePlan?.draft?.milestones.length && !state.log.some((l) => l.type === 'agent' && l.channel === channel);
   // A plan's own conversation (its head Claude plans and runs it here): no modes to pick, the plan is what it's for.
-  const planHome = isPlanHome(state.plans, channel);
+  const planHome = isPlanHome(state.plans, channel) && !untouched;
   const canPlanTasks = state.plans.enabled && channel.startsWith('ws:') && state.projects.some((p) => p.root && p.workspaces.some((w) => `ws:${w.id}` === channel));
   const mode: ComposeMode = tasksMode ? 'tasks' : plan ? 'plan' : 'act';
   const setMode = (next: ComposeMode): void => {
     const leave = (): void => {
       if ((next === 'plan') !== plan) void api.session.setPlanMode(channel, next === 'plan');
     };
+    arm(next === 'tasks' && !homePlan);
     // Leaving a draft plan: an empty one just goes; one with something in it is thrown away only if you say so.
-    if (next !== 'tasks' && tasksMode && homePlan) {
-      if (!homePlan.draft?.milestones.length) {
-        void api.plans.discard(homePlan.id);
-        return leave();
-      }
-      openSheet({ kind: 'confirm', title: 'Throw away the draft plan?', message: 'Nothing of it is on the board. To keep it, approve it on its page instead.', confirm: 'Throw Away', destructive: true, run: () => (void api.plans.discard(homePlan.id), leave()) });
+    // (Plan mode waits for it to go: a plan's own conversation has none.)
+    if (next !== 'tasks' && drafting && homePlan) {
+      const discard = (): void => void api.plans.discard(homePlan.id).then(leave, (err: unknown) => toast(client, errorText(err), 'error'));
+      if (!homePlan.draft?.milestones.length) return discard();
+      openSheet({ kind: 'confirm', title: 'Throw away the draft plan?', message: 'Nothing of it is on the board. To keep it, approve it on its page instead.', confirm: 'Throw Away', destructive: true, run: discard });
       return;
     }
     leave();
-    if (next === 'tasks' && !tasksMode) void api.plans.here(channel).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
   };
+  // The box's effects (Settings › Fire & Confetti): on Max effort by default, or everywhere.
+  // `burning` is the fire itself; without it, only the confetti and pixels fly.
+  const effects = !shared && effectsOn(prefs.maxFire, state.prefs.effort);
+  const burning = effects && prefs.maxFire.show !== 'off';
   const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
   // A new worktree: the branch it starts from and its name (empty: named from the task).
   const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
@@ -225,6 +247,17 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     if (to && !text.startsWith('/')) {
       ui.patch({ to: undefined });
       return actions.submit(`${recipientPrefix(to)}${text}`, urgent);
+    }
+    // Plan with Tasks, first message: the plan is made now, and this is what Claude plans from.
+    if (armed && !text.startsWith('/')) {
+      api.plans.here(channel).then(
+        () => (arm(false), actions.submit(text, urgent)),
+        (err: unknown) => {
+          if (!ui.get().buffer) ui.patch({ buffer: text, cursor: text.length });
+          toast(client, errorText(err), 'error');
+        },
+      );
+      return;
     }
     actions.submit(text, urgent);
   };
@@ -348,22 +381,30 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       {sug.list}
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={(prompt) => void editQueued(prompt)} />
       <div
-        className={cx(s.box, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
+        ref={boxRef}
+        style={effects ? (fireVars(prefs.maxFire) as React.CSSProperties) : undefined}
+        className={cx(s.box, burning ? m.max : effects && m.fxOnly, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
         data-plan={plan || tasksMode || undefined}
+        data-mode={mode}
         {...att.dropProps}
       >
+        {effects ? <MaxFire box={boxRef} input={ref} /> : null}
         {mode !== 'act' ? (
           <div className={s.planBanner} role="status">
-            <Icon name={mode === 'tasks' ? 'graph' : 'wand'} size={11} />
-            <strong>{mode === 'plan' ? 'Plan mode' : MODE_INFO[mode].label}</strong>
-            <span>{MODE_INFO[mode].banner}</span>
+            <span className={s.planTag}>
+              <Icon name={mode === 'tasks' ? 'graph' : 'wand'} size={11} />
+              {mode === 'plan' ? 'Planning' : MODE_INFO[mode].label}
+            </span>
+            <span className={s.planHint}>{MODE_INFO[mode].banner}</span>
             <span className={s.flex} />
             {mode === 'tasks' && homePlan ? (
               <button type="button" className={s.planLink} onClick={() => actions.run({ type: 'view', view: { kind: 'plan', id: homePlan.id } })}>
                 Open Plan
               </button>
             ) : planHome ? null : (
-              <span className={s.planKeys}>⇧⇥ to act</span>
+              <span className={s.planKeys}>
+                <Kbd>⇧⇥</Kbd> to act
+              </span>
             )}
           </div>
         ) : null}
@@ -394,7 +435,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             rows={1}
             value={buffer}
             disabled={readOnly}
-            placeholder={to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && homePlan && !homePlan.body && !homePlan.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : placeholderOf(state, pending ? { pending } : {})}
+            placeholder={to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : placeholderOf(state, pending ? { pending } : {})}
             onChange={(e) => set(e.target.value)}
             onKeyDown={onKey}
             onPaste={att.onPaste}
@@ -432,6 +473,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </ActionsDropdown>
           ) : null}
           {!shared ? <ModelPicker channel={channel} /> : null}
+          {burning && state.prefs.effort === 'max' ? (
+            <Tip label="Max effort: Claude thinks as hard as it can">
+              <span className={m.tag}>
+                <Icon name="flame" size={11} className={m.flicker} />
+                Max
+              </span>
+            </Tip>
+          ) : null}
           <span className={s.flex} />
           {channel !== 'draft' ? <ContextMeter channel={channel} /> : null}
           {compose.busy ? (
@@ -465,7 +514,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </div>
           ) : (
             <Tip label={prefs.sendWith === 'enter' ? 'Send · Shift+Return for a new line' : `Send · ${mod()}Return`} keys={prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`}>
-              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
+              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady, burning && buffer.trim() && m.hot)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
                 <Icon name="send" size={14} />
               </button>
             </Tip>
