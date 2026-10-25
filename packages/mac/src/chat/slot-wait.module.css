@@ -1,0 +1,67 @@
+/* A message waiting for a free Claude (see SlotWait.tsx): a soft info panel, never an alarm. */
+
+.wait {
+  display: flex;
+  gap: 10px;
+  max-width: 520px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--info) 8%, transparent);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--info) 22%, transparent);
+  animation: settle var(--dur) var(--ease-out);
+}
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  color: var(--info);
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.title {
+  color: var(--text);
+  font-weight: 600;
+}
+.detail {
+  color: var(--text-2);
+  font-size: 0.92em;
+  line-height: 1.45;
+}
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 3px 0 1px;
+}
+.pill {
+  width: 10px;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--info) 45%, transparent);
+}
+.actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wait {
+    animation: none;
+  }
+}

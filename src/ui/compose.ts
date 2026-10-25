@@ -1,4 +1,5 @@
 import type { AppState } from '../core/store.js';
+import type { SlotWait } from '../shared/run-slots.js';
 import { isRunning } from './format.js';
 import type { UiState } from './keymap.js';
 import type { ComposeState } from './actions.js';
@@ -25,6 +26,8 @@ export interface QueuedMessage {
   readonly claude: string;
   /** You asked your own Claude: you can run it now, edit it, drop it or move it. */
   readonly yours: boolean;
+  /** It waits for a free Claude (its Claude works in as many conversations as it may), not for a run here. */
+  readonly slotWait?: SlotWait;
 }
 
 /** What waits in this conversation for your Claude, and what you asked others' Claudes, in run order. */
@@ -33,6 +36,6 @@ export function queueIn(state: Pick<AppState, 'log'>, channel: string, selfId: s
     if (l.type !== 'agent' || l.channel !== channel || l.status !== 'queued') return [];
     const askedBySelf = l.requester !== undefined ? l.requester === selfId : l.owner === selfId && l.requesterName === l.ownerName;
     if (l.owner !== selfId && !askedBySelf) return [];
-    return [{ requestId: l.requestId, prompt: l.prompt ?? '', by: l.requesterName, claude: l.ownerName, yours: l.owner === selfId && askedBySelf }];
+    return [{ requestId: l.requestId, prompt: l.prompt ?? '', by: l.requesterName, claude: l.ownerName, yours: l.owner === selfId && askedBySelf, ...(l.slotWait ? { slotWait: l.slotWait } : {}) }];
   });
 }

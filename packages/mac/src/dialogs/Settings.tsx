@@ -11,6 +11,7 @@ import { type SettingsPane, useApi, useApp, useBeluga, useUi } from '../lib/belu
 import { ACCENTS, type Accent, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EnvironmentSettings } from './EnvironmentSettings.js';
 import { ContextSettings } from './ContextSettings.js';
+import { ParallelSettings } from './ParallelSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
@@ -203,6 +204,7 @@ function ClaudePane() {
         </Row>
       </Group>
       <ContextSettings />
+      <ParallelSettings />
       <Group title="Scratch folder">
         <Row label="Give Claude a scratch folder" detail="Screenshots, JSON, logs and notes Claude makes while it works go to the workspace’s .beluga/scratch/ folder (kept out of git; never touches other tools’ .context/).">
           <Switch label="Scratch folder" on={p.scratchFolder} onChange={(v) => void api.session.setPrefs({ scratchFolder: v })} />

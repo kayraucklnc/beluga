@@ -2,6 +2,7 @@ import { type LogItem, isRunning } from '../core/store.js';
 import { renderMarkdown } from './markdown.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate, wrapText } from './text.js';
 import { SPINNER, colorFor, glyph, theme } from './theme.js';
+import { SLOT_WAIT_TITLE, slotWaitDetail } from '../shared/run-slots.js';
 
 export interface RenderOptions {
   readonly selfId?: string;
@@ -47,7 +48,7 @@ function statusOf(item: AgentItem, opts: RenderOptions): StatusStyle {
     case 'awaiting_approval':
       return { label: `${glyph.wait} waiting for ${item.ownerName} to approve`, color: theme.warn };
     case 'queued':
-      return { label: `${glyph.wait} queued`, color: theme.muted };
+      return { label: `${glyph.wait} ${item.slotWait ? 'waiting for a free Claude' : 'queued'}`, color: theme.muted };
     case 'done':
       return { label: `${glyph.ok} done${item.endTs ? ` · ${formatDuration(item.endTs - item.ts)}` : ''}`, color: theme.ok };
     case 'error':
@@ -121,7 +122,9 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
     const idle =
       item.status === 'awaiting_approval'
         ? `${item.ownerName} needs to approve this before their Claude starts.`
-        : item.status === 'queued'
+        : item.status === 'queued' && item.slotWait
+          ? `${SLOT_WAIT_TITLE}. ${slotWaitDetail(item.slotWait)}`
+          : item.status === 'queued'
           ? item.owner === opts.selfId
             ? 'Starts when the current task finishes. Run it now or cancel it with the buttons below the box.'
             : 'Starts when the current task finishes.'

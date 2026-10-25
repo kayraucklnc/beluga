@@ -1102,7 +1102,7 @@ export class Session {
     }
     // Your Claude asked from a workspace: follow the friend's Claude there (only from the one you asked).
     const channel = waiter?.mirror && waiter.peer === from && body.requester === this.selfId ? waiter.mirror : body.channel;
-    this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel });
+    this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel, ...(body.slotWait ? { slotWait: body.slotWait } : {}) });
     if (!waiter || waiter.peer !== from || !['done', 'error', 'denied'].includes(body.event)) return;
     clearTimeout(waiter.timer);
     this.agentWaiters.delete(body.requestId);

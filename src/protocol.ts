@@ -120,6 +120,8 @@ export const AgentEventBody = z.object({
   event: AgentEventKind,
   text: z.string().max(MAX_TEXT).default(''),
   channel: Channel,
+  /** With `queued`: it waits because its Claude works in as many conversations as it may at once (see shared/run-slots.ts). */
+  slotWait: z.object({ running: z.number().int().min(0).max(1000), limit: z.number().int().min(0).max(1000) }).optional(),
 });
 
 export const FsListBody = z.object({

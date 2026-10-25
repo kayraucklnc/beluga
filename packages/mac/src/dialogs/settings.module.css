@@ -206,3 +206,11 @@
 .swatchOn {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--text-2);
 }
+/* A slider with plain words at each end ("Fewer ↔ More"). */
+.sliderEnds {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 0.82rem;
+}

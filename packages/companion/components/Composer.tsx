@@ -21,7 +21,7 @@ import { Card, haptic, Press, T } from './ui';
 export type Photo = NonNullable<Awaited<ReturnType<typeof pickPhoto>>>;
 
 /** Your messages waiting for Claude here: steer with one now, or take it out. */
-export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readonly { id: string; text: string }[]; readonly onSteer: (id: string) => void; readonly onRemove: (id: string) => void }) {
+export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readonly { id: string; text: string; waiting?: string }[]; readonly onSteer: (id: string) => void; readonly onRemove: (id: string) => void }) {
   if (!queue.length) return null;
   return (
     <Animated.View entering={FadeInDown.duration(240)} exiting={FadeOutUp.duration(160)} layout={LinearTransition.springify()}>
@@ -31,8 +31,15 @@ export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readon
           <T v="caption" style={{ fontWeight: '600', flex: 1 }}>
             Queued · {queue.length}
           </T>
-          <T v="caption">after what Claude is doing</T>
+          <T v="caption">{queue[0]?.waiting ? 'waiting for a free Claude' : 'after what Claude is doing'}</T>
         </View>
+        {queue[0]?.waiting ? (
+          <View style={{ marginHorizontal: 6, marginBottom: 2, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: tint.sky }}>
+            <T v="caption" c={ink.sky}>
+              {queue[0].waiting}
+            </T>
+          </View>
+        ) : null}
         {queue.map((q, i) => (
           <Animated.View key={q.id} entering={FadeInDown.duration(220)} exiting={FadeOutUp.duration(140)} layout={LinearTransition.springify()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 8, paddingVertical: 2 }}>
             <View style={{ width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: color.sunken }}>

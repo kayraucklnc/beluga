@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EFFORTS, KEEP_AWAKE, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
+import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
 import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
 import { NETWORK_API } from './network-api.js';
 import { STRIPE_API } from './stripe-api.js';
@@ -55,6 +56,7 @@ export const PrefsPatch = z
     contextMeter: bool,
     autoCompact: bool,
     autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX),
+    parallelRuns: z.number().int().min(PARALLEL_RUNS_MIN).max(PARALLEL_RUNS_MAX),
     scratchFolder: bool,
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),

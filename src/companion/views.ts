@@ -43,6 +43,7 @@ import { HIDDEN_STEP, humanizeDoing, humanizeStep, plainLine, stepWords, stripCo
 import { withMath } from './math-svg.js';
 import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, activeAssistantChannel, assistantChatTitle, isAssistant } from '../shared/assistant.js';
 import { STEERED_IN, type SteeredMessage, steeredMessages, steerWaiting } from '../shared/claude-notices.js';
+import { slotWaitDetail } from '../shared/run-slots.js';
 
 /** Words for a turn: code taken out (strip.ts), math typeset (math-svg.ts). */
 const proseOf = (markdown: string) => withMath(stripCode(markdown));
@@ -895,7 +896,7 @@ function queueOf(state: DomainState, channel: string): NonNullable<ConvView['que
   return state.log
     .filter((l): l is AgentItem => l.type === 'agent' && l.channel === channel && l.status === 'queued' && l.owner === me && (l.requester !== undefined ? l.requester === me : l.requesterName === l.ownerName))
     .slice(0, 20)
-    .map((l) => ({ id: clip(l.requestId, 200), text: plainLine(l.prompt ?? '', 300) || 'A message' }));
+    .map((l) => ({ id: clip(l.requestId, 200), text: plainLine(l.prompt ?? '', 300) || 'A message', ...(l.slotWait ? { waiting: clip(slotWaitDetail(l.slotWait), 300) } : {}) }));
 }
 
 const planState = (plan: Plan, progress: PlanProgress): string => (plan.status === 'active' && plan.paused ? 'paused' : plan.status === 'active' && progress.next.kind === 'done' ? 'done' : plan.status);

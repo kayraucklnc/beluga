@@ -18,6 +18,7 @@ import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
+import { PARALLEL_RUNS_DEFAULT, type SlotWait } from '../shared/run-slots.js';
 import { READS_AFTER_STEP, STOPPING_FOR } from '../shared/claude-notices.js';
 import type { CompanionSlice } from '../companion/protocol.js';
 
@@ -81,6 +82,8 @@ export type LogItem =
       readonly requester?: string;
       /** What was asked, once known (sent with the "queued" event, for the queue). */
       readonly prompt?: string;
+      /** Queued only because your Claude works in as many other conversations as it may at once. */
+      readonly slotWait?: SlotWait;
       readonly status: AgentItemStatus;
       readonly text: string;
       readonly steps: readonly string[];
@@ -239,6 +242,8 @@ export interface Prefs {
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
   readonly autoCompact: boolean;
   readonly autoCompactAt: number;
+  /** How many conversations your Claude works in at once (see shared/run-slots.ts). */
+  readonly parallelRuns: number;
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder (watched live in the Mac app). */
   readonly scratchFolder: boolean;
   readonly subagents: Settings['subagents'];
@@ -476,7 +481,7 @@ export type Action =
   | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy }
   | { type: 'shell'; item: ShellItem }
   /** `itemId` (stamped before reducing) names the chat item a new run creates. */
-  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string }
+  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string; slotWait?: SlotWait }
   /** One owner's waiting requests in a conversation, in their new order (see orderQueued). */
   | { type: 'queue_order'; owner: string; ids: readonly string[] }
   | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[]; order?: readonly string[]; hidden?: readonly string[] }
@@ -547,6 +552,7 @@ export const DEFAULT_PREFS: Prefs = {
   contextMeter: true,
   autoCompact: false,
   autoCompactAt: AUTO_COMPACT_DEFAULT,
+  parallelRuns: PARALLEL_RUNS_DEFAULT,
   scratchFolder: true,
   subagents: 'full',
   hiddenButtons: [],
@@ -702,7 +708,8 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ts: a.ts,
   };
   // A new step starts with no count; a count says how far the step it's on has got.
-  const { progress: was, between: wasBetween, betweenAt: wasAt, ...rest } = base as typeof base & { progress?: string; between?: 'thinking' | 'writing'; betweenAt?: number };
+  // Waiting for a free Claude lasts until anything else is said about it (it starts, goes back in line, is dropped).
+  const { progress: was, between: wasBetween, betweenAt: wasAt, slotWait: _slot, ...rest } = base as typeof base & { progress?: string; between?: 'thinking' | 'writing'; betweenAt?: number; slotWait?: SlotWait };
   const progress = a.event === 'progress' ? a.text.slice(0, 40) : a.event === 'tool' || a.event === 'done' || a.event === 'error' ? undefined : was;
   // What it does after its step: a turn starting or an empty progress (the step's tools returned) is thinking, words are writing; a step (or its count) ends that.
   // A sub-agent it launched still at work keeps it in its step (an older runner says its tools returned while one runs).
@@ -731,6 +738,7 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(a.event === 'started' || a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? { lastAt: a.ts } : {}),
     ...(a.event === 'tool' ? { stepAt: a.ts } : {}),
     ...(a.event === 'queued' && a.text ? { prompt: a.text } : {}),
+    ...(a.event === 'queued' && a.slotWait ? { slotWait: a.slotWait } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
   // A new message, or a run in a workspace finishing while no screen shows it (Claude's answer is news).

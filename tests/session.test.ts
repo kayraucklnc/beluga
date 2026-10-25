@@ -650,6 +650,52 @@ describe('Session hardening', () => {
     expect(kay.session.host.promote('nope')).toBe(false);
   });
 
+  it('a message past the limit of conversations at once says it waits for a free Claude, and stays yours to drop or start', async () => {
+    hub = await startHub({ keys });
+    const hang = (input: AgentRunInput) => new Promise<string>((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('aborted'))));
+    const kay = peer('kay', { script: (input) => (input.prompt === 'slow' ? hang(input) : Promise.resolve(`did ${input.prompt}`)) });
+    await room(kay);
+    (kay.session.host as unknown as { deps: { workspaces: unknown } }).deps.workspaces = { place: () => ({ cwd: kay.root, additionalDirectories: [], autoEdit: false, onSession: () => undefined }), refresh: async () => undefined };
+    (kay.session as unknown as { opts: { store: Store } }).opts.store.dispatch({ type: 'prefs', prefs: { parallelRuns: 1 } });
+    kay.session.submit('slow', { channel: 'ws:a' });
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('drop', { channel: 'ws:b' });
+    const waiting = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.channel === 'ws:b' && a.status === 'queued') as Array<{ requestId: string; prompt?: string; slotWait?: unknown }>;
+    await waitFor(() => waiting().length === 1);
+    // Nothing runs in ws:b: its card says what it waits for, not "the current task".
+    expect(waiting()[0]!.slotWait).toEqual({ running: 1, limit: 1 });
+    // Still in line while it waits: it can be dropped.
+    expect(kay.session.host.cancelQueued(waiting()[0]!.requestId)).toBe(true);
+    kay.session.submit('now', { channel: 'ws:b' });
+    await waitFor(() => waiting().length === 1 && waiting()[0]!.prompt === 'now');
+    // Start now: past the limit, at once.
+    expect(kay.session.host.promote(waiting()[0]!.requestId)).toBe(true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did now'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'now']);
+    expect(agentItems(kay.state()).find((a) => a.type === 'agent' && a.text === 'did now')).not.toHaveProperty('slotWait');
+  });
+
+  it('a run that only waits on its background agents gives its slot back', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'answer then wait'
+          ? new Promise<string>((_resolve, reject) => {
+              // Answered; its background agents still work (the runner offers follow-ups then).
+              input.onFollowUps?.(() => false);
+              input.signal.addEventListener('abort', () => reject(new Error('aborted')));
+            })
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    await room(kay);
+    (kay.session.host as unknown as { deps: { workspaces: unknown } }).deps.workspaces = { place: () => ({ cwd: kay.root, additionalDirectories: [], autoEdit: false, onSession: () => undefined }), refresh: async () => undefined };
+    (kay.session as unknown as { opts: { store: Store } }).opts.store.dispatch({ type: 'prefs', prefs: { parallelRuns: 1 } });
+    kay.session.submit('answer then wait', { channel: 'ws:a' });
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('other', { channel: 'ws:b' });
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did other'));
+  });
+
   it('says what waits in the queue, and moves your waiting messages around', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay', {
