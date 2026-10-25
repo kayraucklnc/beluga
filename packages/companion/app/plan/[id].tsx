@@ -2,16 +2,17 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Check, ChevronDown, ChevronRight, Gauge, Hand, Monitor, Rocket, User } from 'lucide-react-native';
 import { Options } from '../../components/Options';
 import { openOnMac } from '../../lib/mac';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { convHref } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace } from '../../components/Needs';
+import { MilestoneMap, PlanChat, PlanDrafting } from '../../components/PlanParts';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Card, More, Pill, Press, T, toneBg, toneInk, toneOf } from '../../components/ui';
 import { useView, useVisibleNeeds } from '../../lib/hooks';
-import type { PlanView, Topic } from '../../lib/link/protocol';
+import type { ConvView, PlanView, Topic } from '../../lib/link/protocol';
 import { color } from '../../lib/theme';
 import { calls } from '../../lib/link/calls';
 import { store } from '../../lib/store';
@@ -47,6 +48,19 @@ export default function Plan() {
   const titles = new Map(tasks.map((t) => [t.id, t.title]));
   const milestoneTitles = new Map((p?.milestones ?? []).map((m) => [m.id, m.title]));
   const blocked = tasks.filter((t) => t.state === 'blocked').length;
+  // Claude is still writing the first plan: its chat and one placeholder, nothing to run or approve yet.
+  const drafting = p?.state === 'draft' && !p.milestones.length;
+  const writing = Boolean(useView<ConvView>(drafting ? p?.topic : undefined)?.data.working);
+  // The map's tap: scroll the timeline to that milestone and open it.
+  const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const tops = useRef(new Map<string, number>());
+  const listTop = useRef(0);
+  const [picked, setPicked] = useState<{ id: string; n: number } | undefined>();
+  const pick = (mid: string) => {
+    setPicked((was) => ({ id: mid, n: (was?.n ?? 0) + 1 }));
+    const y = tops.current.get(mid);
+    if (y !== undefined) scroll.current?.scrollTo({ y: Math.max(0, listTop.current + y - 80), animated: true });
+  };
 
   return (
     <Screen>
@@ -69,25 +83,25 @@ export default function Plan() {
           onPress: () => void store.call(calls.setAutonomy(id ?? '', a, AUTONOMY[a].label)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' })),
         }))}
       />
-      <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
+      <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
         {p ? (
           <>
             <View style={{ paddingHorizontal: 20, paddingTop: 6, gap: 12 }}>
               {p.goal ? <T v="callout" style={{ fontSize: 15, lineHeight: 21 }}>{p.goal}</T> : null}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {drafting ? null : <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: color.sunken, overflow: 'hidden' }}>
                   <View style={{ width: `${tasks.length ? (done / tasks.length) * 100 : 0}%`, height: 6, borderRadius: 3, backgroundColor: color.ok, opacity: 0.5 }} />
                 </View>
                 <T v="caption" c={color.text2}>
                   {done} of {tasks.length} tasks
                 </T>
-              </View>
+              </View>}
               {p.running || blocked ? (
                 <T v="caption" c={color.text2}>
                   {[p.running ? `${p.running} running side by side${p.parallel ? ` (up to ${p.parallel})` : ''}` : '', blocked ? `${blocked} waiting on others` : ''].filter(Boolean).join(' · ')}
                 </T>
               ) : null}
-              {how ? (
+              {how && !drafting ? (
                 <Press onPress={() => setHowOpen(true)} accessibilityLabel={`How it runs: ${how.label}`} style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, height: 34, paddingHorizontal: 12, borderRadius: 17, backgroundColor: toneBg('lavender') }}>
                   <how.Icon color={toneInk('lavender')} size={15} strokeWidth={2.3} />
                   <T v="caption" c={toneInk('lavender')} style={{ fontWeight: '700' }}>
@@ -97,13 +111,7 @@ export default function Plan() {
                   <ChevronDown color={toneInk('lavender')} size={14} />
                 </Press>
               ) : null}
-              {p.topic ? (
-                <Press onPress={() => router.push(convHref(p.topic!))} style={{ alignSelf: 'flex-start' }}>
-                  <T v="callout" c={color.info} style={{ fontWeight: '600' }}>
-                    Open conversation
-                  </T>
-                </Press>
-              ) : null}
+              {p.topic ? <PlanChat topic={p.topic} drafting={drafting} /> : null}
             </View>
 
             {needs.length ? (
@@ -122,14 +130,32 @@ export default function Plan() {
               </View>
             ) : null}
 
-            <View style={{ marginTop: 26, paddingHorizontal: 16 }}>
-              <T v="eyebrow" style={{ paddingHorizontal: 4, marginBottom: 14 }}>
-                Milestones
-              </T>
-              {p.milestones.map((m, i) => (
-                <Milestone key={m.id} m={m} last={i === p.milestones.length - 1} i={i} draft={p.state === 'draft'} titles={titles} after={(m.dependsOn ?? []).map((d) => milestoneTitles.get(d) ?? d)} />
-              ))}
-            </View>
+            {drafting ? (
+              <View style={{ marginTop: 26, paddingHorizontal: 16 }}>
+                <PlanDrafting working={writing} />
+              </View>
+            ) : (
+              <>
+                {p.milestones.length > 1 ? (
+                  <View style={{ marginTop: 24, gap: 12 }}>
+                    <T v="eyebrow" style={{ paddingHorizontal: 20 }}>
+                      Map
+                    </T>
+                    <MilestoneMap milestones={p.milestones} onPick={pick} />
+                  </View>
+                ) : null}
+                <View style={{ marginTop: 26, paddingHorizontal: 16 }} onLayout={(e) => (listTop.current = e.nativeEvent.layout.y)}>
+                  <T v="eyebrow" style={{ paddingHorizontal: 4, marginBottom: 14 }}>
+                    Milestones
+                  </T>
+                  {p.milestones.map((m, i) => (
+                    <View key={m.id} onLayout={(e) => tops.current.set(m.id, e.nativeEvent.layout.y)}>
+                      <Milestone m={m} last={i === p.milestones.length - 1} i={i} draft={p.state === 'draft'} titles={titles} after={(m.dependsOn ?? []).map((d) => milestoneTitles.get(d) ?? d)} picked={picked?.id === m.id ? picked.n : 0} />
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
           </>
         ) : (
           <T v="callout" style={{ padding: 20 }}>
@@ -141,9 +167,13 @@ export default function Plan() {
   );
 }
 
-function Milestone({ m, last, i, draft, titles, after }: { m: PlanView['milestones'][number]; last: boolean; i: number; draft: boolean; titles: ReadonlyMap<string, string>; after: readonly string[] }) {
+function Milestone({ m, last, i, draft, titles, after, picked }: { m: PlanView['milestones'][number]; last: boolean; i: number; draft: boolean; titles: ReadonlyMap<string, string>; after: readonly string[]; picked: number }) {
   // A draft reads whole (you approve it from here); a running plan opens where the work is.
   const [open, setOpen] = useState(draft || m.state === 'running' || m.state === 'waiting' || m.state === 'gate');
+  // Tapped on the map: open (each tap, though you closed it since).
+  useEffect(() => {
+    if (picked) setOpen(true);
+  }, [picked]);
   const [task, setTask] = useState<string | undefined>();
   const tone = toneOf(m.state);
   const running = m.state === 'running';

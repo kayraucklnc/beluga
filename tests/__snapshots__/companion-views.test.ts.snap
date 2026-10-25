@@ -162,6 +162,33 @@ here",
         "actions": [
           {
             "args": [
+              "pl_auth",
+            ],
+            "label": "Approve",
+            "method": "plans.approve",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "pl_auth",
+            ],
+            "label": "Discard",
+            "method": "plans.discard",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000050,
+        "detail": "Protect the payment routes",
+        "from": "your plan",
+        "id": "plan:pl_auth:approve:3",
+        "kind": "decision",
+        "title": "Approve the plan “Add auth”?",
+        "topic": "plan:pl_auth",
+      },
+      {
+        "actions": [
+          {
+            "args": [
               "q1",
               {
                 "answers": {
@@ -241,6 +268,14 @@ here",
       },
     ],
     "outputs": [],
+    "plan": {
+      "done": 0,
+      "milestones": 1,
+      "state": "draft",
+      "title": "Add auth",
+      "topic": "plan:pl_auth",
+      "total": 1,
+    },
     "project": "landing",
     "projectId": "p1",
     "title": "auth",
