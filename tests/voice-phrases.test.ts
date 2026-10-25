@@ -10,29 +10,38 @@ const quiet = (s: number, noise = 0.004) => Float32Array.from({ length: sec(s) }
 const feed = (c: PhraseCutter, ...parts: Float32Array[]) => parts.flatMap((p) => c.push(p));
 
 describe('cutting phrases at pauses', () => {
-  it('cuts after a pause that follows enough speech, inside the pause', () => {
+  it('cuts after three seconds of quiet that follow enough speech, a breath after the words', () => {
     const c = new PhraseCutter();
-    const cuts = feed(c, quiet(0.3), talk(1.5), quiet(1));
+    const cuts = feed(c, quiet(0.3), talk(1.5), quiet(3.4));
     expect(cuts).toHaveLength(1);
     const [cut] = cuts;
     expect(cut!.start).toBe(0);
-    // It ends in the quiet after the talking, not in it.
+    // It ends just after the talking (a breath of quiet), not in it and not long after.
     expect(cut!.end).toBeGreaterThan(sec(1.8));
-    expect(cut!.end).toBeLessThan(sec(2.8));
+    expect(cut!.end).toBeLessThan(sec(2.4));
     expect(cut!.speechMs).toBeGreaterThan(1300);
   });
 
-  it('keeps going through short breaths, and cuts each sentence once', () => {
+  it('waits for someone thinking aloud: pauses under three seconds keep one phrase', () => {
     const c = new PhraseCutter();
-    const cuts = feed(c, talk(1), quiet(0.25), talk(1), quiet(0.9), talk(1.2), quiet(0.9));
+    const cuts = feed(c, talk(0.8), quiet(1.2), talk(0.6), quiet(2.6), talk(1), quiet(0.4), talk(0.7), quiet(3.3));
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0]!.speechMs).toBeGreaterThan(2400);
+  });
+
+  it('cuts each thought once; only the silence between them is left out', () => {
+    const c = new PhraseCutter();
+    const cuts = feed(c, talk(1), quiet(0.5), talk(1), quiet(3.3), talk(1.2), quiet(3.3));
     expect(cuts).toHaveLength(2);
-    // The second starts where the first ended: nothing is lost between them.
-    expect(cuts[1]!.start).toBe(cuts[0]!.end);
+    // The second starts after the first, within the quiet between them (no words skipped).
+    expect(cuts[1]!.start).toBeGreaterThanOrEqual(cuts[0]!.end);
+    expect(cuts[1]!.start).toBeLessThanOrEqual(sec(2.5 + 3.3));
+    expect(cuts[1]!.speechMs).toBeGreaterThan(900);
   });
 
   it('leaves a cough for the next phrase rather than writing it down alone', () => {
     const c = new PhraseCutter();
-    const cuts = feed(c, talk(0.1), quiet(1), talk(1), quiet(1));
+    const cuts = feed(c, talk(0.1), quiet(3.4), talk(1), quiet(3.4));
     expect(cuts).toHaveLength(1);
     expect(cuts[0]!.speechMs).toBeGreaterThan(900);
   });
@@ -48,7 +57,7 @@ describe('cutting phrases at pauses', () => {
 
   it('hears speech over a noisy room (the floor rises with the noise)', () => {
     const c = new PhraseCutter();
-    const cuts = feed(c, quiet(2, 0.04), talk(1.5, 0.25), quiet(1, 0.04));
+    const cuts = feed(c, quiet(2, 0.04), talk(1.5, 0.25), quiet(3.4, 0.04));
     expect(cuts).toHaveLength(1);
   });
 

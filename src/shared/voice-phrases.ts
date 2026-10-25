@@ -25,7 +25,12 @@ export interface PhraseTuning {
   readonly minLevel: number;
 }
 
-export const DEFAULT_PHRASES: PhraseTuning = { pauseMs: 650, minSpeechMs: 450, maxPhraseMs: 20_000, overFloor: 2.6, minLevel: 0.012 };
+/**
+ * Three seconds of quiet ends a phrase: someone thinking aloud ("I want to… fix the login") keeps one
+ * phrase, so it's written down as one sentence. A pause never stops the recording; it only sends
+ * what came before it to be written down while you go on.
+ */
+export const DEFAULT_PHRASES: PhraseTuning = { pauseMs: 3000, minSpeechMs: 450, maxPhraseMs: 30_000, overFloor: 2.6, minLevel: 0.012 };
 
 /** A phrase cut out of the recording: samples [start, end) of everything heard so far. */
 export interface Cut {
@@ -37,6 +42,8 @@ export interface Cut {
 
 /** The noise floor is the quietest frame of the last 3 s. */
 const FLOOR_FRAMES = 100;
+/** A phrase keeps this much of the quiet after it (0.36 s): a breath, not a silence. */
+const BREATH_FRAMES = 12;
 const ms = (frames: number): number => (frames * FRAME * 1000) / PHRASE_RATE;
 
 export class PhraseCutter {
@@ -104,9 +111,10 @@ export class PhraseCutter {
     } else this.quietFrames++;
 
     const length = ms(this.levels.length);
-    // A pause after enough speech: the phrase ends where the quiet began (plus a breath).
+    // A pause after enough speech: the phrase ends a breath after the quiet began (a long tail of
+    // silence makes the models guess at words that weren't said).
     if (!speech && ms(this.quietFrames) >= this.t.pauseMs && ms(this.speechFrames) >= this.t.minSpeechMs) {
-      const keep = Math.min(this.quietFrames, Math.round(this.quietFrames / 2));
+      const keep = Math.max(0, this.quietFrames - BREATH_FRAMES);
       return this.cutAt(this.heard - keep * FRAME);
     }
     // Quiet with too little speech for a phrase of its own (a cough, a click): drop it from the start.

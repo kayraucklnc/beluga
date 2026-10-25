@@ -529,8 +529,8 @@ Advanced at the bottom. Learn it once and it works everywhere.
   Worktree is Claude Code's plan mode (it proposes before it acts), nothing to do with Advanced plans. Attach a photo
   or a file from the phone. The answer comes back into that conversation, with a notification if you
   left. The **microphone** beside Send (here and in a conversation's box)
-  speaks instead of typing (`lib/voice.ts`, `lib/voice-session.ts`): each pause cuts a phrase that's
-  written down at once while you go on (up to two minutes), so the words are ready when you stop.
+  speaks instead of typing (`lib/voice.ts`, `lib/voice-session.ts`): each pause of three seconds cuts
+  a phrase that's written down at once while you go on (a pause never stops the recording) (up to two minutes), so the words are ready when you stop.
   **■** puts them in the field to edit; **↑** sends them as you said them once the last phrase is
   written (the conversation opens with it). While it records, the stage takes the field's place (`components/Voice.tsx`), in the field's own type:
   a liquid pastel blob (metaballs, `components/Metaballs.tsx`, drawn on the UI thread) that swells
