@@ -64,12 +64,14 @@ export const isZoomed = (v: ZoomView, fit: number): boolean => v.scale > fit + 0
 export const doubleClickScale = (v: ZoomView, fit: number): number => (isZoomed(v, fit) ? fit : fit < 0.999 ? 1 : Math.min(VIEW_MAX, fit * 2));
 
 /**
- * The CSS transform for the picture, drawn at its own size with its top-left at the frame's center
- * (`left: 50%; top: 50%`, `transform-origin: 0 0`). Rounded to whole device pixels' worth of
- * offset so it stays sharp at rest.
+ * The CSS transform for the picture, laid out at `base` times its own size (the fitted scale, so its
+ * box never reaches past the frame) with its top-left at the frame's center (`left: 50%; top: 50%`,
+ * `transform-origin: 0 0`). Rounded to whole pixels' worth of offset so it stays sharp at rest. A
+ * plain 2D transform: it only gets its own layer while it moves (WKWebView sometimes drew a huge
+ * always-on layer far off-center, past the frame's edge).
  */
-export function transformOf(v: ZoomView, img: Size): string {
+export function transformOf(v: ZoomView, img: Size, base = 1): string {
   const tx = Math.round(v.x - (img.w * v.scale) / 2);
   const ty = Math.round(v.y - (img.h * v.scale) / 2);
-  return `translate3d(${tx}px, ${ty}px, 0) scale(${v.scale})`;
+  return `translate(${tx}px, ${ty}px) scale(${v.scale / base})`;
 }

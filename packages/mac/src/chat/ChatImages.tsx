@@ -68,7 +68,14 @@ function Full({ image }: { image: ChatImage }) {
   const draw = (): void => {
     const z = live.current;
     z.frameId = 0;
-    if (picture.current) picture.current.style.transform = transformOf(z.view, z.size);
+    const el = picture.current;
+    if (!el) return;
+    // Laid out at the fitted size (a box inside the frame), and only scaled past it while zoomed.
+    // (A picture with no size of its own, like a broken one, keeps whatever size it draws at.)
+    const w = z.size.w ? `${z.size.w * z.fit}px` : '';
+    const h = z.size.h ? `${z.size.h * z.fit}px` : '';
+    if (el.style.width !== w || el.style.height !== h) Object.assign(el.style, { width: w, height: h });
+    el.style.transform = transformOf(z.view, z.size, z.fit);
   };
   /** Shown as `v` on the next frame (many events in one frame draw once); `moving` keeps it on its own layer meanwhile. */
   const show = (v: ZoomView, how: 'moving' | 'glide' | 'still' = 'moving'): void => {
@@ -218,7 +225,6 @@ function Full({ image }: { image: ChatImage }) {
           src={pic.url}
           alt={image.label}
           draggable={false}
-          style={{ width: pic.w || undefined, height: pic.h || undefined }}
           onDoubleClick={(e) => {
             e.stopPropagation();
             const z = live.current;
