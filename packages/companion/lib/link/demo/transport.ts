@@ -719,6 +719,9 @@ export class DemoTransport implements Transport {
         });
         return ok({ phase: 'resolving', at: Date.now(), conflicts });
       }
+      // ---- a branch's steps (BLG-104): the demo Mac has no GitHub, so it only says what it would do
+      case 'companion.branchStep':
+        return ok({ ok: true, message: `The demo Mac has no GitHub: a real one does ${str(1)} there.` });
       // ---- a worktree's files (read-only) and terminals (shared with the Mac), BLG-42
       case 'companion.files.list':
       case 'companion.files.find':

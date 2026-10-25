@@ -265,10 +265,13 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
     <Animated.View key={branch.kind} entering={FadeIn.duration(200)}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 }}>
         <Press scaleTo={0.99} disabled={!all.length} onPress={() => setMore(true)} accessibilityLabel={`${branch.label}. ${line}`} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pill label={branch.pr ? `${branch.label} #${branch.pr.number}` : branch.label} tone={t.tone} Icon={t.Icon} />
-          <T v="caption" c={color.text3} numberOfLines={1} style={{ flex: 1 }}>
-            {line}
-          </T>
+          <Pill label={branch.pr ? `${branch.label} #${branch.pr.number}` : branch.label} tone={t.tone} Icon={t.Icon} style={{ height: 32, borderRadius: 16, paddingHorizontal: 12, flexShrink: 1 }} />
+          {/* With a step beside it there's no room for the line: it's at the top of the ••• sheet. */}
+          {chip ? null : (
+            <T v="caption" c={color.text3} numberOfLines={1} style={{ flex: 1 }}>
+              {line}
+            </T>
+          )}
         </Press>
         {chip ? (
           <Press
@@ -276,7 +279,7 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
             onPress={chip.onPress}
             accessibilityLabel={chip.label}
             hitSlop={6}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 30, maxWidth: 180, flexShrink: 1, paddingHorizontal: 12, borderRadius: 15, backgroundColor: toneBg(chip.tone), opacity: busy ? 0.6 : 1 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, maxWidth: 180, flexShrink: 1, paddingHorizontal: 14, borderRadius: 16, backgroundColor: toneBg(chip.tone), opacity: busy ? 0.6 : 1 }}
           >
             {busy ? <ActivityIndicator size="small" color={toneInk(chip.tone)} /> : <chip.Icon color={toneInk(chip.tone)} size={14} strokeWidth={2.3} />}
             <T v="caption" c={toneInk(chip.tone)} numberOfLines={1} style={{ fontWeight: '700', flexShrink: 1 }}>
@@ -287,12 +290,27 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
         {/* ••• always fits: the chip and the line give way to it. */}
         {others.length ? (
           <View style={{ flexShrink: 0 }}>
-            <More onPress={() => setMore(true)} label="Other steps" size={30} />
+            <More onPress={() => setMore(true)} label="Other steps" size={32} />
           </View>
         ) : null}
       </View>
-      <Options visible={more} onClose={() => setMore(false)} title={`${branch.label} · ${branch.branch}`} options={all.map((s) => ({ Icon: iconOf(s), label: bare(s.label), sub: s.claude ? `Claude · ${s.hint}` : s.hint, tone: toneOf(s), onPress: () => tap(s) }))} />
+      {/* The sheets open from inside the band, so in a window of their own: in the band's box they showed as a clipped sliver. */}
       <Options
+        window
+        visible={more}
+        onClose={() => setMore(false)}
+        title={`${branch.label} · ${branch.branch}`}
+        head={
+          line ? (
+            <T v="callout" style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
+              {line}
+            </T>
+          ) : undefined
+        }
+        options={all.map((s) => ({ Icon: iconOf(s), label: bare(s.label), sub: s.claude ? `Claude · ${s.hint}` : s.hint, tone: toneOf(s), onPress: () => tap(s) }))}
+      />
+      <Options
+        window
         visible={Boolean(asking)}
         onClose={() => setAsking(undefined)}
         title={asking?.danger ? 'This can’t be undone' : 'Claude does this in the conversation'}

@@ -139,12 +139,12 @@ export default function Conversation() {
         <KeyboardLift>
           {/* Where a merge stands stays in view while the conversation scrolls under it. */}
           {c?.merge ? (
-            <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}>
+            <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 }}>
               <MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} />
             </View>
           ) : c?.branch ? (
             // Where its branch stands (the Mac toolbar's state), unless a merge from here is under way.
-            <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}>
+            <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 }}>
               <BranchBand topic={topic} branch={c.branch} canMerge={Boolean(c.mergeable) && store.supports('merge')} onMerge={() => setMergeOpen(true)} />
             </View>
           ) : null}
