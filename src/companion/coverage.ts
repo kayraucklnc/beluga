@@ -354,6 +354,8 @@ export const PHONE: Record<Method, Side> = {
   'companion.pair.approve': 'mac',
   'companion.pair.cancel': 'mac',
   'companion.devices.remove': 'mac',
+  'companion.phone.use': 'mac',
+  'companion.phone.pairAdb': 'mac',
   'companion.older': 'phone',
   'companion.ask': 'phone',
   'companion.post': 'phone',

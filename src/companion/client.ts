@@ -17,6 +17,7 @@ import {
   MAX_UPLOAD_BYTES,
   type PhoneFrame,
   type Topic,
+  TUN_PIECE,
   compatible,
   parseDevicePair,
   parseMacFrame,
@@ -326,6 +327,10 @@ interface ClientEvents extends Record<string, unknown[]> {
   nudge: [Extract<MacFrame, { t: 'nudge' }>];
   /** 1.7: a terminal's output or status (BLG-42). */
   term: [Extract<MacFrame, { t: 'term_data' | 'term_status' }>];
+  /** 1.16: the Mac wants the phone to do something (BLG-150); answer with reply(). */
+  req: [Extract<MacFrame, { t: 'req' }>];
+  /** 1.16: a byte tunnel to the phone's debugging port (adb over the link). */
+  tun: [Extract<MacFrame, { t: 'tun_open' | 'tun_data' | 'tun_ack' | 'tun_close' }>];
   /** The link closed: its code (4002: a version this Mac or app doesn't answer; 4010: this phone was removed) and why. */
   close: [number, string];
 }
@@ -545,6 +550,34 @@ export class CompanionClient extends Emitter<ClientEvents> {
     this.send({ t: 'push', platform, token, relayKey });
   }
 
+  // ---- 1.16: your Mac using the phone (BLG-150)
+
+  /** Tell the Mac what this phone lets it do, and how it can be reached (adb port, Wi-Fi IP). */
+  sendControl(state: import('./protocol.js').PhoneControl): void {
+    this.send({ t: 'control', state });
+  }
+  /** The Wireless-debugging pairing code the user typed, for the Mac's `adb pair`. */
+  sendAdbCode(code: string): void {
+    this.send({ t: 'adb_code', code });
+  }
+  /** Answer a `req` from the Mac. */
+  reply(id: number, ok: boolean, value?: unknown, error?: string): void {
+    this.send({ t: 'reply', id, ok, ...(value !== undefined ? { value } : {}), ...(error ? { error: error.slice(0, 2000) } : {}) });
+  }
+  /** The tunnel is connected to the phone's own debugging port. */
+  tunOk(id: number): void {
+    this.send({ t: 'tun_ok', id });
+  }
+  tunData(id: number, bytes: Bytes): void {
+    for (let off = 0; off < bytes.length; off += TUN_PIECE) this.send({ t: 'tun_data', id, b64: b4a.toString(bytes.subarray(off, off + TUN_PIECE), 'base64') });
+  }
+  tunAck(id: number, n: number): void {
+    this.send({ t: 'tun_ack', id, n: Math.min(n, 512 * 1024) });
+  }
+  tunClose(id: number, error?: string): void {
+    this.send({ t: 'tun_close', id, ...(error ? { error: error.slice(0, 300) } : {}) });
+  }
+
   /** Say goodbye and close (the app went away). */
   bye(): void {
     this.send({ t: 'bye' });
@@ -603,6 +636,13 @@ export class CompanionClient extends Emitter<ClientEvents> {
       case 'term_data':
       case 'term_status':
         return this.emit('term', f);
+      case 'req':
+        return this.emit('req', f);
+      case 'tun_open':
+      case 'tun_data':
+      case 'tun_ack':
+      case 'tun_close':
+        return this.emit('tun', f);
       case 'result': {
         const c = this.calls.get(f.id);
         if (!c) return;

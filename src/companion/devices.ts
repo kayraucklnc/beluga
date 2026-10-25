@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { readJson, writeJson } from '../net/mesh/files.js';
-import { DeviceCert, type DeviceView, LinkPath, MAX_DEVICES } from './protocol.js';
+import { DeviceCert, type DeviceView, LinkPath, MAX_DEVICES, PHONE_USE } from './protocol.js';
 
 /**
  * Your paired phones, kept in ~/.beluga/devices.json (0600): each one's certificate (public keys
@@ -18,6 +18,8 @@ export const DeviceRecord = z.object({
   path: LinkPath.optional(),
   note: z.string().max(300).optional(),
   push: z.object({ platform: z.enum(['fcm', 'apns']), token: z.string().max(4096), relayKey: z.string().max(200) }).optional(),
+  /** How freely your Claude may use this phone (BLG-150, Settings › Phone); off by default. */
+  use: z.enum(PHONE_USE).optional(),
 });
 export type DeviceRecord = z.infer<typeof DeviceRecord>;
 
@@ -59,7 +61,7 @@ export class DeviceBook {
     return gone;
   }
 
-  update(id: string, patch: Partial<Pick<DeviceRecord, 'lastSeen' | 'app' | 'push' | 'path' | 'note'>>): void {
+  update(id: string, patch: Partial<Pick<DeviceRecord, 'lastSeen' | 'app' | 'push' | 'path' | 'note' | 'use'>>): void {
     const current = this.get(id);
     if (!current) return;
     this.save(this.list.map((r) => (r === current ? { ...r, ...patch } : r)));

@@ -4,7 +4,8 @@ import { kv } from './kv';
 import { BareTransport } from './link/bare';
 import { type Call, calls } from './link/calls';
 import { DemoTransport } from './link/demo/transport';
-import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, isMacTopic, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
+import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, isMacTopic, type MacFrame, type NeedsYou, type OutputView, type PhoneOp, type Topic, viewSchema } from './link/protocol';
+import { controlState, onAccessibilityChange, phoneAllowed, phoneControlAvailable, runOp, watchAdb } from './phone';
 import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
 import { checkOnline } from './link/online';
 import { graceExpired, onResume, PROBE_TIMEOUT_MS, RETRY_LIMIT, retryDelay } from './link/resume';
@@ -178,6 +179,8 @@ class Store {
     Linking.addEventListener('url', () => this.foreground());
     if (mode && AppState.currentState === 'active') this.foreground();
     else if (mode === 'bare' && stayOn()) this.stayAway();
+    // Your Mac using this phone (BLG-150): start watching the service and debugging port if allowed.
+    if (mode === 'bare' && phoneControlAvailable()) this.controlSet(phoneAllowed());
   }
 
   private use(mode: Mode, pairing?: Pairing): void {
@@ -511,6 +514,7 @@ class Store {
         if (older) this.transport?.send({ t: 'sub', topics: this.topics() });
         this.welcomed = !outdated;
         if (!outdated) this.flushOutbox();
+        if (!outdated) this.reportControl();
         this.emit('linked');
         return;
       }
@@ -555,6 +559,19 @@ class Store {
       case 'term_status':
         for (const fn of [...(this.termListeners.get(f.term) ?? [])]) fn(f);
         return;
+      case 'req':
+        // The Mac wants the phone to act (BLG-150): the native side does it, the reply goes back.
+        void runOp(f.op as PhoneOp, f.args as Record<string, unknown>).then(
+          (value) => this.transport?.send({ t: 'reply', id: f.id, ok: true, value }),
+          (err: unknown) => this.transport?.send({ t: 'reply', id: f.id, ok: false, error: err instanceof Error ? err.message : String(err) }),
+        );
+        return;
+      case 'tun_open':
+      case 'tun_data':
+      case 'tun_ack':
+      case 'tun_close':
+        // The adb tunnel lives in the worklet (it has bare-tcp); nothing for the screens to do.
+        return;
       case 'nudge':
         if (!this.active) {
           void notifyNudge(f);
@@ -571,6 +588,34 @@ class Store {
   /** Linked and welcomed: a call now goes, and is answered (unless the link drops). */
   get linked(): boolean {
     return this.welcomed && this.state.phase === 'open' && Boolean(this.transport);
+  }
+
+  // ---- your Mac using this phone (BLG-150)
+
+  private offAcc?: () => void;
+  private offAdb?: () => void;
+
+  /** Tell the Mac what this phone allows and how it can be reached (only to a Mac that supports it). */
+  private reportControl(): void {
+    if (!phoneControlAvailable() || !this.supports('control') || this.state.phase !== 'open') return;
+    this.transport?.send({ t: 'control', state: controlState() });
+  }
+
+  /**
+   * The user turned "Let your Mac use this phone" on or off (Settings): watch the Accessibility
+   * service and this phone's Wireless-debugging port while on, and tell the Mac the new state.
+   */
+  controlSet(allowed: boolean): void {
+    if (!phoneControlAvailable()) return;
+    this.offAcc ??= onAccessibilityChange(() => this.reportControl());
+    this.offAdb?.();
+    this.offAdb = watchAdb(allowed, () => this.reportControl());
+    this.reportControl();
+  }
+
+  /** The Wireless-debugging pairing code the user typed, sent to the Mac for `adb pair`. */
+  sendAdbCode(code: string): void {
+    this.transport?.send({ t: 'adb_code', code });
   }
 
   // ---- views

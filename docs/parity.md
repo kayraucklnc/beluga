@@ -212,6 +212,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.pair.approve` | ✓ the Phone popover's “Pair Kayra's Pixel 9?” with the four-picture fingerprint › Pair |
 | `companion.pair.cancel` | ✓ the Phone popover's Cancel while a pairing is open (a waiting phone hears no) |
 | `companion.devices.remove` | ✓ the Phone popover › a phone › Remove (its link drops at once, its key is refused from then on) |
+| `companion.phone.use` | ✓ Settings › Phone › Let Claude use this phone: Off · Ask each time · Use · Full (BLG-150) |
+| `companion.phone.pairAdb` | ✓ Settings › Phone › Connect, once the phone shows a Wireless-debugging pairing code (runs `adb pair`) |
 | `companion.older` | – the phone only: older turns of a conversation (or messages of a chat) as you scroll up (docs/companion.md) |
 | `companion.ask` | – the phone only: Ask your Mac (a question in a project, as New Chat does, or a message in a conversation, Your Mac's `conv:mac:assistant` included), with photos and files the phone sent (`put`) |
 | `companion.post` | – the phone only: a message in a friends' chat with files from the phone |

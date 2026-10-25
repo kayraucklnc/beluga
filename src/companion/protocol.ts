@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 15 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 16 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -32,9 +32,12 @@ export const COMPANION_PROTO = { major: 1, minor: 15 } as const;
  * stays awake for the phone (`HomeView.mac.keepAwake`, `companion.keepAwake`), and (BLG-128) a phone
  * away pinging every KEEPALIVE_AWAY_MS on a relay or LAN link. 1.14: Your Mac's chats on the phone
  * (`HomeView.macChats`), started and deleted there (`assistant.newChat` / `deleteChat`). 1.15: the
- * plan a conversation is the home of (`ConvView.plan`), so its chat links back to the plan.
+ * plan a conversation is the home of (`ConvView.plan`), so its chat links back to the plan. 1.16
+ * (BLG-150): your Mac uses your phone. The phone says what it lets the Mac do (`control`), the Mac
+ * asks it to act (`req` / `reply`), and the Mac's adb reaches the phone's Wireless debugging through
+ * the link (`tun_*`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, control: 16 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -634,6 +637,128 @@ export type TerminalsView = z.infer<typeof TerminalsView>;
 
 const termKey = z.string().min(1).max(200);
 
+// ---- your phone, used by your Mac (1.16, BLG-150; docs/companion.md, "Your phone, from your Mac")
+
+/**
+ * What the Mac may ask the phone to do (the `req` frame's `op`), through the app's Accessibility
+ * service. Positions are the screen's pixels, as the phone's `screen` gives them.
+ */
+export const PHONE_OPS = ['screen', 'screenshot', 'tap', 'long_press', 'swipe', 'type', 'key', 'scroll', 'open', 'apps', 'info', 'install'] as const;
+export const PhoneOp = z.enum(PHONE_OPS);
+export type PhoneOp = z.infer<typeof PhoneOp>;
+
+/** The buttons a phone has without a finger on the screen (`key`). */
+export const PHONE_KEYS = ['back', 'home', 'recents', 'notifications', 'quick_settings', 'lock', 'power_dialog', 'enter'] as const;
+export const PhoneKey = z.enum(PHONE_KEYS);
+export type PhoneKey = z.infer<typeof PhoneKey>;
+
+const px = z.number().int().min(0).max(20_000);
+/** A node of the last `screen` (its `gen` and the node's `i`): tapped as itself, not by where it was. */
+const nodeRef = { node: z.number().int().min(0).max(5000).optional(), gen: z.number().int().min(0).optional() };
+
+/** Each op's arguments, checked on the phone before anything happens. */
+export const PHONE_ARGS = {
+  screen: z.object({}),
+  /** `max`: the picture's longest side (it's made smaller, never bigger); JPEG at `quality`. */
+  screenshot: z.object({ max: z.number().int().min(256).max(4096).optional(), quality: z.number().int().min(30).max(95).optional() }),
+  /** A node of the last screen when given (its click action), else a tap at x, y. */
+  tap: z.object({ x: px, y: px, ...nodeRef }),
+  long_press: z.object({ x: px, y: px, ms: z.number().int().min(300).max(5000).optional(), ...nodeRef }),
+  swipe: z.object({ x1: px, y1: px, x2: px, y2: px, ms: z.number().int().min(50).max(5000).optional() }),
+  /** Into a node of the last screen, or the field that has the focus; `replace` clears it first; `enter` presses the keyboard's action after. */
+  type: z.object({ text: z.string().max(8000), replace: z.boolean().optional(), enter: z.boolean().optional(), ...nodeRef }),
+  key: z.object({ key: PhoneKey }),
+  /** Scroll a node of the last screen (or the biggest scrollable one) a page that way. */
+  scroll: z.object({ dir: z.enum(['up', 'down', 'left', 'right']), ...nodeRef }),
+  /** An app by its package name, or a link (https:, tel:, a deep link) in whatever app opens it. */
+  open: z.object({ package: z.string().min(1).max(200).regex(/^[A-Za-z][\w.]*$/).optional(), url: z.string().min(1).max(4000).optional() }),
+  apps: z.object({}),
+  info: z.object({}),
+  /** An APK the Mac offers (`out:` ref, fetched in pieces like any output), installed with the phone's own Install button. */
+  install: z.object({ ref: z.string().regex(/^out:[\w-]{1,200}$/), name: z.string().min(1).max(200), size: z.number().int().min(0).max(1024 * 1024 * 1024) }),
+} as const satisfies Record<PhoneOp, z.ZodType>;
+
+/**
+ * One thing on the phone's screen (`screen`): its class, short ("Button", "EditText"), what it
+ * says (`t`; a password field never says it), its hint (`h`), description (`s`), resource id
+ * (`r`), where it is in screen pixels (`b`: left, top, right, bottom) and what it can do (`f`):
+ * c clickable, l long-clickable, e editable, s scrollable, k checkable, K checked, F focused,
+ * x selected, d disabled, p password.
+ */
+export const ScreenNode = z.object({
+  i: z.number().int().min(0),
+  d: z.number().int().min(0).max(100),
+  c: z.string().max(60),
+  t: z.string().max(2000).optional(),
+  h: z.string().max(400).optional(),
+  s: z.string().max(2000).optional(),
+  r: z.string().max(200).optional(),
+  b: z.tuple([z.number().int(), z.number().int(), z.number().int(), z.number().int()]),
+  f: z.string().max(16).optional(),
+});
+export type ScreenNode = z.infer<typeof ScreenNode>;
+
+/** What's on the phone's screen now, from the Accessibility service: the app in front and its nodes, in order. */
+export const ScreenView = z.object({
+  gen: z.number().int().min(0),
+  app: z.string().max(200),
+  w: z.number().int().min(1),
+  h: z.number().int().min(1),
+  nodes: z.array(ScreenNode).max(1500),
+  /** The keyboard is up. */
+  keyboard: z.boolean().optional(),
+  /** Other windows on top (a dialog, the notification shade), by their app. */
+  windows: z.array(z.object({ app: z.string().max(200), title: z.string().max(200).optional(), type: z.string().max(40) })).max(20).optional(),
+});
+export type ScreenView = z.infer<typeof ScreenView>;
+
+/** A screenshot (`screenshot`): the picture (`iw` × `ih`) of a screen of `w` × `h` pixels. */
+export const ShotView = z.object({ mime: z.enum(['image/jpeg', 'image/png']), b64: z.string().max(MAX_COMPANION_FRAME), w: z.number().int().min(1), h: z.number().int().min(1), iw: z.number().int().min(1), ih: z.number().int().min(1) });
+export type ShotView = z.infer<typeof ShotView>;
+
+/** The phone in a few facts (`info`). */
+export const PhoneInfoView = z.object({
+  model: z.string().max(100),
+  manufacturer: z.string().max(100),
+  android: z.string().max(40),
+  sdk: z.number().int(),
+  w: z.number().int(),
+  h: z.number().int(),
+  battery: z.object({ pct: z.number().min(0).max(100), charging: z.boolean() }).optional(),
+  network: z.enum(['wifi', 'cellular', 'ethernet', 'other', 'none']).optional(),
+  locked: z.boolean().optional(),
+  screenOn: z.boolean().optional(),
+  app: z.string().max(200).optional(),
+});
+export type PhoneInfoView = z.infer<typeof PhoneInfoView>;
+
+export const AppsView = z.object({ apps: z.array(z.object({ pkg: z.string().max(200), label: z.string().max(200) })).max(1000) });
+
+/**
+ * What the phone lets its Mac do, and how the Mac can reach it (the `control` frame: after hello
+ * and whenever it changes). `allowed`: its own switch, Settings › Let your Mac use this phone.
+ * `adb`: Android's Wireless debugging, the port it listens on (mDNS) and, while Pair with code is
+ * open, the pairing port. `wifi`: its address on Wi-Fi, for the Mac's adb on the same network.
+ */
+export const PhoneControl = z.object({
+  allowed: z.boolean(),
+  accessibility: z.boolean(),
+  /** Screenshots without adb (the Accessibility service on Android 11 and later). */
+  screenshots: z.boolean(),
+  /** It may ask to install apps (Install unknown apps is on for Beluga). */
+  installs: z.boolean().optional(),
+  adb: z.object({ on: z.boolean(), port: z.number().int().min(1).max(65_535).optional(), pairing: z.number().int().min(1).max(65_535).optional() }),
+  wifi: z.object({ ip: z.string().max(45) }).optional(),
+  device: z.object({ model: z.string().max(100), manufacturer: z.string().max(100), android: z.string().max(40), sdk: z.number().int(), w: z.number().int().min(1), h: z.number().int().min(1) }),
+});
+export type PhoneControl = z.infer<typeof PhoneControl>;
+
+/** A tunnel's piece of bytes (`tun_data`), and how much may be in flight before the sender waits for `tun_ack`. */
+export const TUN_PIECE = 48 * 1024;
+export const TUN_WINDOW = 512 * 1024;
+const tunId = z.number().int().min(1).max(2 ** 31);
+const tunB64 = z.string().max(Math.ceil(TUN_PIECE / 3) * 4 + 4);
+
 // ---- paths (docs/companion.md, "Any network")
 
 /**
@@ -702,6 +827,17 @@ export const PhoneFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('term_attach'), term: termKey }),
   z.object({ t: z.literal('term_detach'), term: termKey }),
   z.object({ t: z.literal('term_input'), term: termKey, data: z.string().min(1).max(64_000) }),
+  /** 1.16: what this phone lets its Mac do now (only to a Mac with SINCE.control). */
+  z.object({ t: z.literal('control'), state: PhoneControl }),
+  /** 1.16: the answer to the Mac's `req` (its value is the op's view: ScreenView, ShotView…). */
+  z.object({ t: z.literal('reply'), id: z.number().int().min(0), ok: z.boolean(), value: z.unknown().optional(), error: z.string().max(2000).optional() }),
+  /** 1.16: the six digits Wireless debugging's Pair with code shows, typed into Beluga's notification: the Mac's adb pairs with them. */
+  z.object({ t: z.literal('adb_code'), code: z.string().regex(/^\d{6}$/) }),
+  /** 1.16: a tunnel the Mac opened is connected to the phone's own port (`tun_ok`), its bytes, how much was taken, and its end. */
+  z.object({ t: z.literal('tun_ok'), id: tunId }),
+  z.object({ t: z.literal('tun_data'), id: tunId, b64: tunB64 }),
+  z.object({ t: z.literal('tun_ack'), id: tunId, n: z.number().int().min(1).max(TUN_WINDOW) }),
+  z.object({ t: z.literal('tun_close'), id: tunId, error: z.string().max(300).optional() }),
   z.object({ t: z.literal('bye') }),
 ]);
 export type PhoneFrame = z.infer<typeof PhoneFrame>;
@@ -725,6 +861,13 @@ export const MacFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('term_data'), term: termKey, data: z.string().max(TERM_PIECE), reset: z.boolean().optional() }),
   /** 1.7: whether it runs, how it ended, and its size (the Mac's: when the Mac resizes it, this comes again). */
   z.object({ t: z.literal('term_status'), term: termKey, running: z.boolean(), exit: z.number().int().nullable().optional(), cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(500), gone: z.boolean().optional() }),
+  /** 1.16: do something on the phone (only to a phone that sent `control` with `allowed`); answered by `reply`. `args`: PHONE_ARGS[op]. */
+  z.object({ t: z.literal('req'), id: z.number().int().min(0), op: PhoneOp, args: z.record(z.string(), z.unknown()) }),
+  /** 1.16: a tunnel to the phone's Wireless debugging port (`adb`) or its pairing port (`adb-pair`), then its bytes both ways. */
+  z.object({ t: z.literal('tun_open'), id: tunId, to: z.enum(['adb', 'adb-pair']) }),
+  z.object({ t: z.literal('tun_data'), id: tunId, b64: tunB64 }),
+  z.object({ t: z.literal('tun_ack'), id: tunId, n: z.number().int().min(1).max(TUN_WINDOW) }),
+  z.object({ t: z.literal('tun_close'), id: tunId, error: z.string().max(300).optional() }),
   z.object({ t: z.literal('bye'), reason: z.string().max(200) }),
 ]);
 export type MacFrame = z.infer<typeof MacFrame>;
@@ -812,9 +955,54 @@ export interface DeviceView {
   readonly path?: LinkPath;
   /** That in words, when it's worth saying ("couldn't connect directly on its network; it used the relay"). */
   readonly note?: string;
+  /** Claude using it (BLG-150): what you allow on the Mac, what the phone allows, and how it's reached now (the host fills this in; an older slice won't have it). */
+  readonly control?: PhoneControlView;
+}
+
+/**
+ * How freely your Claude uses a phone (Settings › Phone, per phone): `off`; `ask` before each
+ * action (looking at it never asks); `use`: taps, typing, opening apps and installs without asking,
+ * its shell asks; `full`: its shell too.
+ */
+export const PHONE_USE = ['off', 'ask', 'use', 'full'] as const;
+export type PhoneUse = (typeof PHONE_USE)[number];
+
+/** How the Mac reaches a phone for Claude now, best first (src/companion/phone-control.ts). */
+export type PhoneRoute = 'usb' | 'wifi' | 'link' | 'accessibility';
+
+/** A phone's control, for the Mac's screens. */
+export interface PhoneControlView {
+  readonly use: PhoneUse;
+  /** The phone said (its own switch is on), and when it last told; undefined: an older app, or not heard yet. */
+  readonly allowed?: boolean;
+  readonly accessibility?: boolean;
+  readonly screenshots?: boolean;
+  /**
+   * Wireless debugging: `off` on the phone, `unpaired` (on, but this Mac's adb isn't paired with
+   * it: type the pairing code), `ready` (it can connect), `connected` (adb is on it now).
+   */
+  readonly adb?: 'off' | 'unpaired' | 'ready' | 'connected';
+  /** adb sees it on USB. */
+  readonly usb?: boolean;
+  /** The ways Claude reaches it now, best first (empty: none). */
+  readonly routes: readonly PhoneRoute[];
+  /** adb's name for it while connected ("R5CX…", "192.168.1.20:41235", "127.0.0.1:50123"). */
+  readonly serial?: string;
+  /** The phone's model, as it said. */
+  readonly model?: string;
+  /** What's wrong or what's next, in words, when there's something to say. */
+  readonly note?: string;
+}
+
+/** adb on this Mac (Settings › Phone): where it is, or that it isn't, and a download under way. */
+export interface AdbView {
+  readonly path?: string;
+  readonly version?: string;
+  readonly fetching?: boolean;
+  readonly error?: string;
 }
 
 export interface CompanionSlice {
   /** `relay`: how phones on other networks reach this Mac now (reach.ts), for Settings › Phone (BLG-126). */
-  readonly companion: { readonly devices: readonly DeviceView[]; readonly relay?: 'ready' | 'starting' | 'off'; readonly pairing?: { readonly link: string; readonly code: string; readonly expiresAt: number; readonly waiting?: { readonly name: string; readonly fingerprint: string } } };
+  readonly companion: { readonly devices: readonly DeviceView[]; readonly relay?: 'ready' | 'starting' | 'off'; readonly pairing?: { readonly link: string; readonly code: string; readonly expiresAt: number; readonly waiting?: { readonly name: string; readonly fingerprint: string } }; readonly adb?: AdbView };
 }
