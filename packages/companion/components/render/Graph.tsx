@@ -27,7 +27,18 @@ let elk: Promise<Elk> | undefined;
 const getElk = (): Promise<Elk> =>
   (elk ??= import('elkjs/lib/elk.bundled.js').then((m) => {
     const C = ((m as { default?: unknown }).default ?? m) as new () => Elk;
-    return new C();
+    // ELK's in-process worker (loaded inside `new C()`) checks "no `document` but a `self`" to decide it
+    // is running in a web worker, and then exports nothing: React Native has exactly that, so the
+    // constructor failed with "undefined cannot be used as a constructor". Hide `self` while it loads.
+    const g = globalThis as { self?: unknown };
+    const had = 'self' in g;
+    const self = g.self;
+    delete g.self;
+    try {
+      return new C();
+    } finally {
+      if (had) g.self = self;
+    }
   }));
 
 const sizeOf = (n: GraphNode) => ({ width: Math.round(Math.max(128, Math.min(210, Math.max(n.label.length, (n.sublabel ?? '').length * 0.85) * 7.2 + 52))), height: n.sublabel ? 58 : 46 });
