@@ -29,6 +29,8 @@ export interface FireLook {
   readonly wildness: number;
   /** A palette's id (one of PALETTES or of `palettes`, your own). */
   readonly palette: string;
+  /** The box's own rim and glow in the fire's colours (off: the box keeps its usual look). */
+  readonly border: boolean;
   /** Typing fast makes it flare orange, like Hades losing his temper. */
   readonly temper: boolean;
   /** What typing throws from the caret: nothing, confetti, or pixels. */
@@ -64,7 +66,7 @@ export const PRESETS: ReadonlyArray<{ readonly id: string; readonly name: string
   { id: 'arcade', name: 'Arcade', blurb: 'Pixel fire, like an old game', look: { style: 'pixel', fuel: 0.6, height: 0.55, thickness: 0.55, wildness: 0.5, palette: 'red', temper: true } },
 ];
 
-export const DEFAULT_FIRE: FireLook = { where: 'max', show: 'always', ...PRESETS[0]!.look, typing: 'confetti', popDelete: true, preset: 'hades', palettes: [] };
+export const DEFAULT_FIRE: FireLook = { where: 'max', show: 'always', ...PRESETS[0]!.look, typing: 'confetti', border: true, popDelete: true, preset: 'hades', palettes: [] };
 
 /** A palette by id: yours first, then the built-in ones (Blue if it's gone). */
 export const paletteOf = (look: Pick<FireLook, 'palette' | 'palettes'>): FirePalette => look.palettes.find((p) => p.id === look.palette) ?? PALETTES.find((p) => p.id === look.palette) ?? PALETTES[0]!;
@@ -88,6 +90,7 @@ export function fireLookOf(saved: unknown): FireLook {
     thickness: unit(s.thickness, DEFAULT_FIRE.thickness),
     wildness: unit(s.wildness, DEFAULT_FIRE.wildness),
     palette: typeof s.palette === 'string' ? s.palette : DEFAULT_FIRE.palette,
+    border: typeof s.border === 'boolean' ? s.border : DEFAULT_FIRE.border,
     temper: typeof s.temper === 'boolean' ? s.temper : DEFAULT_FIRE.temper,
     // (Before there were pixels, typing's confetti was a switch.)
     typing: s.typing === 'off' || s.typing === 'confetti' || s.typing === 'pixels' ? s.typing : (s as { confetti?: unknown }).confetti === false ? 'off' : DEFAULT_FIRE.typing,

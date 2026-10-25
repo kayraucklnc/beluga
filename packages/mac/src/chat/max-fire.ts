@@ -34,15 +34,22 @@ export interface FireBox {
   readonly y: number;
   readonly w: number;
   readonly h: number;
+  /** Its corner radius (the fire never draws inside the box: its text stays clean). */
+  readonly r?: number;
+  /** What of the canvas can be seen (its containers clip the rest): the fire tapers to tips before it, never cut. */
+  readonly clip?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
 }
 
 const CONFETTI = ['#ffe35a', '#ff8a1f', '#3fa2ff', '#d4f6ff', '#ff6fae', '#8fe3b0'] as const;
 
 /** Blobs of heat the shader adds up (the most it takes). */
 const MAX_BLOBS = 96;
-/** Pixel art: one pixel of the fire is this many CSS pixels, and it moves this many frames a second. */
+/**
+ * Pixel art: one pixel of the fire is this many CSS pixels. The fire is drawn at that size (one
+ * shader run per pixel of it, a sixteenth of the screen's) and scaled up crisp by the canvas, so
+ * it runs every frame, smoothly, for less than the smooth style costs.
+ */
 const CELL = 4;
-const PIXEL_FPS = 12;
 
 interface Blob {
   x: number;
@@ -87,6 +94,8 @@ uniform float u_tall;
 uniform float u_reach;
 uniform float u_rimk;
 uniform float u_alpha;
+uniform float u_round;
+uniform vec4 u_clip;
 uniform vec3 u_c0;
 uniform vec3 u_c1;
 uniform vec3 u_c2;
@@ -104,6 +113,7 @@ float noise(vec2 p) {
 void main() {
   // CSS pixels, y down (as the page).
   vec2 p = vec2(gl_FragCoord.x, u_size.y * u_dpr - gl_FragCoord.y) / u_dpr;
+  vec2 raw = p;
   if (u_cell > 0.0) p = (floor(p / u_cell) + 0.5) * u_cell;
   vec2 lo = u_box.xy;
   vec2 hi = u_box.xy + u_box.zw;
@@ -136,11 +146,21 @@ void main() {
   // closes to a tip), and sharp-crested streaks racing up it pull it into thin licks.
   float rise = clamp(above / 12.0, 0.0, 1.0);
   float ridge = 1.0 - abs(noise(vec2(q.x * 0.24, q.y * 0.07 + u_time * 5.0)) * 2.0 - 1.0);
-  float shell = f + (ridge - 0.55) * (0.45 + u_wild * 0.9) * rise - above * (0.02 - u_tall * 0.015);
+  // Near the edge of what can be seen, the flames need far more heat to show: they narrow into
+  // tips before it, instead of being sliced off by it.
+  float edge = min(min(raw.x - u_clip.x, u_clip.z - raw.x), min(raw.y - u_clip.y, u_clip.w - raw.y));
+  float taper = 1.0 - smoothstep(0.0, 34.0, edge);
+  float shell = f + (ridge - 0.55) * (0.45 + u_wild * 0.9) * rise - above * (0.02 - u_tall * 0.015) - taper * taper * 3.5;
   float a = smoothstep(1.0 - soft, 1.0 + soft, shell);
   vec3 c = mix(u_c0, u_c1, smoothstep(1.9 - soft, 1.9 + soft, f));
   c = mix(c, u_c2, smoothstep(3.6 - soft, 3.6 + soft, f));
   a *= u_alpha;
+  // Never inside the box (a rounded rectangle): the fire is around it, its text stays clean
+  // (whatever order the browser stacks the canvas and the box in).
+  vec2 mid = (lo + hi) * 0.5;
+  vec2 corner = abs(raw - mid) - (hi - lo) * 0.5 + u_round;
+  float inside = length(max(corner, 0.0)) + min(max(corner.x, corner.y), 0.0) - u_round;
+  a *= smoothstep(-0.5, 0.75, inside) * smoothstep(0.0, 2.0, edge);
   gl_FragColor = vec4(c * a, a);
 }
 `;
@@ -183,7 +203,7 @@ class FlameGL {
     const a = gl.getAttribLocation(program, 'a');
     gl.enableVertexAttribArray(a);
     gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
-    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_wild', 'u_tall', 'u_reach', 'u_rimk', 'u_alpha', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
+    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_wild', 'u_tall', 'u_reach', 'u_rimk', 'u_alpha', 'u_round', 'u_clip', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
   }
 
   draw(o: { width: number; height: number; dpr: number; box: FireBox; time: number; cell: number; heat: number; wild: number; tall: number; reach: number; rim: number; alpha: number; colors: readonly Rgb[]; blobs: readonly Blob[] }): void {
@@ -202,6 +222,9 @@ class FlameGL {
     gl.uniform1f(this.at.u_reach!, o.reach);
     gl.uniform1f(this.at.u_rimk!, o.rim);
     gl.uniform1f(this.at.u_alpha!, o.alpha);
+    gl.uniform1f(this.at.u_round!, o.box.r ?? 12);
+    const clip = o.box.clip ?? { x0: 0, y0: 0, x1: o.width, y1: o.height };
+    gl.uniform4f(this.at.u_clip!, clip.x0, clip.y0, clip.x1, clip.y1);
     o.colors.forEach((c, i) => gl.uniform3f(this.at[`u_c${i}`]!, ...c));
     const n = Math.min(MAX_BLOBS, o.blobs.length);
     for (let i = 0; i < n; i++) {
@@ -228,6 +251,8 @@ export class MaxFire {
   /** How much is burning (0–1): all the time, or (only while typing) since the last key. */
   private amount = 1;
   private typedAt = -Infinity;
+  /** Told how much is burning as it changes (the box's coloured rim fades with it). */
+  onBurn: ((amount: number) => void) | undefined;
   private box: FireBox = { x: 0, y: 0, w: 0, h: 0 };
   private width = 0;
   private height = 0;
@@ -237,7 +262,8 @@ export class MaxFire {
   private raf = 0;
   private last = 0;
   private time = 0;
-  private pixelAt = -1;
+  /** The fire canvas's pixels per CSS pixel: the screen's, or one per CELL for pixel art. */
+  private fireScale = 1;
   /** How fierce it burns (typing stokes it; it settles back on its own). */
   private heat = 0.4;
   private focused = false;
@@ -253,26 +279,36 @@ export class MaxFire {
 
   setTune(tune: FireTune): void {
     if (!this.fresh && tune.style !== this.tune.style) this.cur.alpha = 0;
+    const restyled = tune.style !== this.tune.style;
     this.tune = tune;
-    this.pixelAt = -1;
+    if (restyled) this.sizeFire();
     // The first look is taken as it is; later ones are glided to.
     if (this.fresh) {
       this.fresh = false;
+      // Only while typing: nothing burns until the first key.
+      this.amount = tune.show === 'always' ? 1 : 0;
       this.cur = { fuel: tune.fuel, height: tune.height, thickness: tune.thickness, wildness: tune.wildness, colors: this.palette.map(rgb), alpha: 1 };
     }
   }
 
   resize(width: number, height: number, box: FireBox): void {
     this.dpr = window.devicePixelRatio || 1;
-    for (const c of [this.behind, this.over]) {
-      c.width = Math.round(width * this.dpr);
-      c.height = Math.round(height * this.dpr);
-    }
+    this.over.width = Math.round(width * this.dpr);
+    this.over.height = Math.round(height * this.dpr);
     this.front.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.width = width;
     this.height = height;
     this.box = box;
-    this.pixelAt = -1;
+    this.sizeFire();
+  }
+
+  /** The fire canvas at the screen's resolution, or (pixel art) at one pixel per CELL, scaled up without smoothing. */
+  private sizeFire(): void {
+    const pixel = this.tune.style === 'pixel';
+    this.fireScale = pixel ? 1 / CELL : this.dpr;
+    this.behind.width = Math.max(1, Math.ceil(this.width * this.fireScale));
+    this.behind.height = Math.max(1, Math.ceil(this.height * this.fireScale));
+    this.behind.style.imageRendering = pixel ? 'pixelated' : '';
   }
 
   focus(on: boolean): void {
@@ -380,23 +416,32 @@ export class MaxFire {
     const target = this.focused ? 0.55 : 0.4;
     this.heat += (target - this.heat) * 0.02 * dt;
     // Only while typing: it catches at the first key and dies down a couple of seconds after the last.
-    const goal = this.tune.show === 'off' ? 0 : this.tune.show === 'typing' ? (this.time - this.typedAt < 2.2 ? 1 : 0) : 1;
-    this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.12 : 0.03) * dt);
+    // (It catches at once; 0.4s after you stop, the fuel runs out: no new flames, the base goes
+    // out quickly, and the last flames lift off the box and burn out as they rise, like a real fire.)
+    const goal = this.tune.show === 'off' ? 0 : this.tune.show === 'typing' ? (this.time - this.typedAt < 0.4 ? 1 : 0) : 1;
+    const was = this.amount;
+    this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.18 : 0.12) * dt);
+    if (Math.abs(this.amount - was) > 0.004 || (goal !== was && Math.abs(goal - this.amount) < 0.004)) this.onBurn?.(this.amount);
     // Keep the fire fed: one blob per 12–30px of edge (the fuel), more the hotter it burns.
     const want = Math.min(MAX_BLOBS, Math.round(((this.box.w + this.box.h) / (30 - this.cur.fuel * 18)) * (0.7 + this.heat * 0.6) * this.amount));
-    for (let born = (want / 60) * dt * 1.4; born > 0 && this.blobs.length < want; born--) {
+    // Out of fuel, nothing new catches.
+    for (let born = goal ? (want / 60) * dt * 1.4 : 0; born > 0 && this.blobs.length < want; born--) {
       if (born < 1 && Math.random() > born) break;
       this.blobs.push(this.spawn());
     }
     for (const b of this.blobs) {
       // Rising faster as it goes (hot air), drifting, shrinking as it cools.
-      b.vy -= 0.018 * dt;
+      // Out of fuel, the last flames lift off and rise away.
+      b.vy -= (0.018 + (goal ? 0 : 0.05)) * dt;
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.vx *= 0.99;
-      b.life -= b.decay * dt;
+      b.life -= b.decay * dt * (goal ? 1 : 1.6);
       b.r *= 1 - 0.006 * dt;
     }
+    // Flames that drift near the edge of what can be seen burn out there.
+    const clip = this.box.clip;
+    if (clip) for (const b of this.blobs) if (Math.min(b.x - clip.x0, clip.x1 - b.x, b.y - clip.y0, clip.y1 - b.y) < 22) b.life -= 0.06 * dt;
     this.blobs = this.blobs.filter((b) => b.life > 0);
     for (const b of this.bits) {
       b.x += b.vx * dt;
@@ -411,12 +456,7 @@ export class MaxFire {
 
   private draw(): void {
     const pixel = this.tune.style === 'pixel';
-    // Pixel art moves in steps: a new picture only on the next one.
-    const frame = Math.floor(this.time * PIXEL_FPS);
-    if (this.flame && (!pixel || frame !== this.pixelAt)) {
-      this.pixelAt = frame;
-      this.flame.draw({ ...this.drawn(), time: pixel ? frame / PIXEL_FPS : this.time, blobs: this.blobs });
-    }
+    this.flame?.draw({ ...this.drawn(), blobs: this.blobs });
     this.drawConfetti(pixel);
   }
 
@@ -424,7 +464,7 @@ export class MaxFire {
   private drawn() {
     const { style } = this.tune;
     const { fuel, height, wildness, colors, alpha } = this.cur;
-    return { width: this.width, height: this.height, dpr: this.dpr, box: this.box, time: this.time, cell: style === 'pixel' ? CELL : 0, heat: this.heat, wild: wildness, tall: height, reach: this.box.y, rim: (0.55 + fuel * 0.8) * this.amount, alpha, colors };
+    return { width: this.width, height: this.height, dpr: this.fireScale, box: this.box, time: this.time, cell: style === 'pixel' ? CELL : 0, heat: this.heat, wild: wildness, tall: height, reach: this.box.y, rim: (0.55 + fuel * 0.8) * this.amount, alpha, colors };
   }
 
   private drawConfetti(pixel: boolean): void {
