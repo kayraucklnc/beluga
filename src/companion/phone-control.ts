@@ -1,10 +1,10 @@
 import net from 'node:net';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { SystemPort } from '../core/gateway/device.js';
 import type { PhoneTools } from '../agent/types.js';
 import { phoneBrief } from '../agent/phone-tools.js';
-import { Adb, findAdb, parseDevices } from './phone-adb.js';
+import { Adb, adbCandidates, findAdb, parseDevices } from './phone-adb.js';
 import type { DeviceBook } from './devices.js';
 import {
   type AdbView,
@@ -366,6 +366,30 @@ export class PhoneControl {
   }
 
   /**
+   * Environment for the owner's runs (BLG-174) so Claude's Bash can use adb and scrcpy against the
+   * phone with no setup: adb on PATH, and ANDROID_SERIAL when this phone's serial is already known
+   * (with one phone attached, adb needs no serial anyway). Synchronous and best-effort — it never
+   * blocks a run; a `phone_status` or any phone tool first will have cached the serial.
+   */
+  runEnv(): Record<string, string> {
+    const dir = this.adbDirSync();
+    if (!dir) return {};
+    const env: Record<string, string> = { PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}` };
+    const id = this.targetDevice();
+    const serial = id ? this.serials.get(id) : undefined;
+    if (serial) env.ANDROID_SERIAL = serial;
+    return env;
+  }
+
+  /** adb's folder, found without the async probe (the cached one, or the first that exists on disk). */
+  private adbDirSync(): string | undefined {
+    if (this.adb) return path.dirname(this.adb.path);
+    if (this.deps.adbPath) return path.dirname(this.deps.adbPath);
+    const hit = adbCandidates(this.deps.home).find((p) => existsSync(p));
+    return hit ? path.dirname(hit) : undefined;
+  }
+
+  /**
    * A live mirror of the phone's screen (BLG-173): repeatedly grabs a frame and hands it to
    * `onFrame`, at about `fps`, until the returned stop() is called. Over adb it's a full-resolution
    * `screencap` PNG (crisp, the webview decodes it straight); over the Accessibility link it's a
@@ -602,9 +626,11 @@ export class PhoneControl {
    * phone is turned on. `scratchDir` (absolute): where a screenshot is saved so it shows as an
    * output on both screens.
    */
-  toolsFor(scratchDir?: string): { tools: PhoneTools; brief: string; deviceId: string } | undefined {
+  toolsFor(scratchDir?: string): { tools: PhoneTools; brief: string; deviceId: string; env: Record<string, string> } | undefined {
     const deviceId = this.targetDevice();
     if (!deviceId) return undefined;
+    // Warm the route so the serial is cached for this run's Bash adb (fire-and-forget).
+    void this.reach(deviceId).catch(() => undefined);
     const ctl = this;
     const ok = (text: string): string => text;
     const tools: PhoneTools = {
@@ -650,7 +676,7 @@ export class PhoneControl {
       },
       logcat: async (filter) => ctl.logcat(deviceId, filter ? filter.split(/\s+/) : undefined),
     };
-    return { tools, brief: phoneBrief(`- Now: ${this.summaryLine(deviceId)}`), deviceId };
+    return { tools, brief: phoneBrief(`- Now: ${this.summaryLine(deviceId)}`), deviceId, env: this.runEnv() };
   }
 }
 

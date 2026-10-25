@@ -62,8 +62,8 @@ export interface AgentHostDeps {
   readonly plans?: (channel: string, from: string) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string } | undefined;
   /** "Your Mac" (core/assistant), your own runs in its conversation: where it runs, its tools, what Claude is told. */
   readonly assistant?: (channel: string, from: string) => { readonly place: AgentPlace; readonly tools: MacTools; readonly brief: string } | undefined;
-  /** Your phone (core/phone, BLG-150), your own runs: tools to act on it, saving screenshots in `scratchDir`. */
-  readonly phone?: (scratchDir?: string) => { readonly tools: import('../agent/types.js').PhoneTools; readonly brief: string } | undefined;
+  /** Your phone (core/phone, BLG-150), your own runs: tools to act on it, saving screenshots in `scratchDir`. `env` lets Bash use adb/scrcpy (BLG-174). */
+  readonly phone?: (scratchDir?: string) => { readonly tools: import('../agent/types.js').PhoneTools; readonly brief: string; readonly env?: Record<string, string> } | undefined;
   /** How freely Claude may use the phone now (off · ask · use · full), for the owner-approval gate. */
   readonly phoneUse?: () => 'off' | 'ask' | 'use' | 'full';
 }
@@ -1128,7 +1128,8 @@ export class AgentHost {
         },
         ...this.modelFor(place?.model),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
-        ...(from === this.selfId && this.deps.envFor ? { env: { ...this.deps.envFor(body.channel, place?.cwd), ...tag } } : worktree ? { env: tag } : {}),
+        // Your own runs also get adb on PATH (and ANDROID_SERIAL) when a phone is set up, so Bash can drive it (BLG-174).
+        ...(from === this.selfId && (this.deps.envFor || phone?.env) ? { env: { ...this.deps.envFor?.(body.channel, place?.cwd), ...(phone?.env ?? {}), ...tag } } : worktree ? { env: tag } : {}),
         ...this.compactor.threshold(),
       })]);
       if (controller.signal.aborted) throw new Error('aborted');

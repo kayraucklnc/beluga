@@ -118,5 +118,10 @@ export function phoneBrief(summary: string): string {
     '- phone_install puts an APK on the phone (the phone confirms). phone_shell and phone_logcat need Wireless debugging.',
     '- After acting, take another screenshot to check what happened before the next step. Work in small, checked steps.',
     '- If a tool says the phone can’t be reached, say so plainly and what would fix it (turn on debugging or Accessibility); don’t keep retrying.',
+    '',
+    'Running an app on the phone (the dev loop): adb is on your PATH and points at this phone, so in Bash you can',
+    'build and install directly — e.g. `./gradlew assembleDebug` then `adb install -r <apk>`, or `adb shell am start -n <pkg>/<activity>`,',
+    '`adb logcat -d` for recent logs, `scrcpy` to mirror. Then phone_screenshot to see the result. Prefer phone_install / phone_open',
+    'for the simple cases. Call phone_status once first so adb is connected to the phone.',
   ].join('\n');
 }

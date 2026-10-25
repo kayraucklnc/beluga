@@ -180,6 +180,13 @@ describe('mirror and action (BLG-171)', () => {
     expect(calls.some((c) => /shell input tap 5 9/.test(c))).toBe(true);
   });
 
+  it('runEnv puts adb on PATH for the owner’s Bash', () => {
+    const { sys } = fakeSys([]);
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/opt/sdk/platform-tools/adb' });
+    const env = ctl.runEnv();
+    expect(env.PATH?.startsWith('/opt/sdk/platform-tools')).toBe(true);
+  });
+
   it('startMirror streams frames over adb and stops cleanly', async () => {
     const { sys } = fakeSys([
       { match: /devices -l/, out: 'List\nR5 device usb:1\n' },
