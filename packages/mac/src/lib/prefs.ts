@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { DEFAULT_FIRE, type FireLook, fireLookOf } from '../chat/fire-look.js';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
 /**
@@ -69,8 +70,8 @@ export interface UiPrefs {
   readonly groupIcons: Readonly<Record<string, string>>;
   /** Plans (by id) whose task chats you asked to see in the sidebar under them (a plan is one row otherwise). */
   readonly planTaskChats: readonly string[];
-  /** How the message box burns on Max effort: smooth flames, or pixel art. */
-  readonly maxFlames: 'toon' | 'pixel';
+  /** How the message box burns on Max effort (Settings › Max Fire). */
+  readonly maxFire: FireLook;
 }
 
 export const ACCENTS = {
@@ -124,7 +125,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   scratchSort: 'newest',
   groupIcons: {},
   planTaskChats: [],
-  maxFlames: 'toon',
+  maxFire: DEFAULT_FIRE,
 };
 
 const KEY = 'beluga.prefs.v1';
@@ -134,7 +135,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout) };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire) };
   } catch {
     return DEFAULT_PREFS;
   }

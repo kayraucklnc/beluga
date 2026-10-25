@@ -29,6 +29,7 @@ import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
 import { isPlanHome, planForHome } from '@beluga/core/plans/model.js';
 import { MaxFire } from './MaxFire.js';
+import { fireVars } from './fire-look.js';
 import s from './composer.module.css';
 import m from './max.module.css';
 import d from './draft.module.css';
@@ -143,7 +144,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     leave();
   };
   // Max effort: the box burns (MaxFire), and typing throws confetti.
-  const onMax = state.prefs.effort === 'max' && !shared;
+  const onMax = state.prefs.effort === 'max' && !shared && prefs.maxFire.show !== 'off';
   const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
   // A new worktree: the branch it starts from and its name (empty: named from the task).
   const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
@@ -379,6 +380,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={(prompt) => void editQueued(prompt)} />
       <div
         ref={boxRef}
+        style={onMax ? (fireVars(prefs.maxFire) as React.CSSProperties) : undefined}
         className={cx(s.box, onMax && m.max, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
         data-plan={plan || tasksMode || undefined}
         data-mode={mode}

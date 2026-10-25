@@ -13,10 +13,10 @@
   isolation: isolate;
   /* The box's own face is ::after, so the flames (under it) only show past its edges. */
   background: transparent;
-  box-shadow: 0 2px 14px color-mix(in srgb, #2f6bff 14%, transparent);
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--f1, #3fa2ff) 14%, transparent);
 }
 .max:focus-within {
-  box-shadow: 0 4px 22px color-mix(in srgb, #2f6bff 22%, transparent);
+  box-shadow: 0 4px 22px color-mix(in srgb, var(--f1, #3fa2ff) 22%, transparent);
 }
 .max::after {
   content: '';
@@ -25,7 +25,7 @@
   z-index: -1;
   border-radius: inherit;
   background:
-    radial-gradient(120% 90% at 50% 125%, color-mix(in srgb, #3fa2ff 12%, transparent), transparent 70%),
+    radial-gradient(120% 90% at 50% 125%, color-mix(in srgb, var(--f1, #3fa2ff) 12%, transparent), transparent 70%),
     var(--bg-raised);
   pointer-events: none;
 }
@@ -37,7 +37,7 @@
   z-index: -1;
   padding: 1.5px;
   border-radius: calc(var(--radius-l) + 1.5px);
-  background: conic-gradient(from var(--ember-turn), #c9f3ff, #3fa2ff, #2346c8, #3fa2ff, #c9f3ff);
+  background: conic-gradient(from var(--ember-turn), var(--f2, #d4f6ff), var(--f1, #3fa2ff), var(--f0, #2346c8), var(--f1, #3fa2ff), var(--f2, #d4f6ff));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -65,7 +65,7 @@
 
 /* The send button takes the heat too. */
 .max .hot {
-  background: linear-gradient(135deg, #3fa2ff, #2346c8);
+  background: linear-gradient(135deg, var(--f1, #3fa2ff), var(--f0, #2346c8));
   color: white;
 }
 
@@ -77,8 +77,8 @@
   height: 20px;
   padding: 0 8px;
   border-radius: 10px;
-  background: color-mix(in srgb, #3fa2ff 16%, transparent);
-  color: color-mix(in srgb, #2f6bff 80%, var(--text));
+  background: color-mix(in srgb, var(--f1, #3fa2ff) 16%, transparent);
+  color: color-mix(in srgb, var(--f0, #2346c8) 80%, var(--text));
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.06em;

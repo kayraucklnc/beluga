@@ -1,47 +1,66 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import { usePrefs } from '../lib/prefs.js';
-import { type FlameStyle, MaxFire as Fire, caretPoint } from './max-fire.js';
+import { type FireLook, paletteOf, reachOf } from './fire-look.js';
+import { type FireTune, MaxFire as Fire, caretPoint } from './max-fire.js';
 import s from './max.module.css';
 
-/** How far the canvas reaches past the box: room above for the flames, a little round the sides. */
-const PAD = { top: 52, side: 24, bottom: 14 } as const;
+/** Room round the box for the fire (above it, as tall as it can burn: never cut off). */
+const SIDE = 40;
+const BOTTOM = 16;
+
+const tuneOf = (look: FireLook): FireTune => ({ style: look.style, show: look.show, fuel: look.fuel, height: look.height, thickness: look.thickness, wildness: look.wildness, colors: paletteOf(look).colors, temper: look.temper });
 
 /**
- * Max effort: the box is on fire, and every character you type throws a little confetti from the
- * caret. With reduced motion only the ember rim stays (see max.module.css).
+ * Max effort: the box is on fire; typing throws confetti from the caret, and deleting pops what
+ * you took out into pixels. How it all looks is Settings › Max Fire (`look` overrides it, for that
+ * page's preview). With reduced motion only the rim stays (see max.module.css).
  */
-export function MaxFire({ box, input }: { box: RefObject<HTMLDivElement | null>; input: RefObject<HTMLTextAreaElement | null> }) {
+export function MaxFire({ box, input, look: given }: { box: RefObject<HTMLDivElement | null>; input: RefObject<HTMLTextAreaElement | null>; look?: FireLook }) {
   const behind = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
-  const fireRef = useRef<Fire | undefined>(undefined);
-  const { maxFlames, reduceMotion } = usePrefs();
-  const styleNow = useRef<FlameStyle>(maxFlames);
-  styleNow.current = maxFlames;
-  useEffect(() => fireRef.current?.setStyle(maxFlames), [maxFlames]);
+  const fire = useRef<Fire | undefined>(undefined);
+  const prefs = usePrefs();
+  const look = given ?? prefs.maxFire;
+  const top = reachOf(look);
+  const now = useRef({ look, top });
+  now.current = { look, top };
+  useEffect(() => fire.current?.setTune(tuneOf(look)), [look]);
   useEffect(() => {
     const host = box.current;
     const field = input.current;
-    if (!behind.current || !over.current || !host || !field || reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const fire = new Fire(behind.current, over.current);
-    fire.setStyle(styleNow.current);
-    fireRef.current = fire;
+    if (!behind.current || !over.current || !host || !field || prefs.reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const f = new Fire(behind.current, over.current);
+    f.setTune(tuneOf(now.current.look));
+    fire.current = f;
     const fit = (): void => {
       const { width, height } = host.getBoundingClientRect();
-      fire.resize(width + PAD.side * 2, height + PAD.top + PAD.bottom, { x: PAD.side, y: PAD.top, w: width, h: height });
+      f.resize(width + SIDE * 2, height + now.current.top + BOTTOM, { x: SIDE, y: now.current.top, w: width, h: height });
     };
     fit();
     const sizes = new ResizeObserver(fit);
     sizes.observe(host);
-    const typed = (e: Event): void => {
-      const kind = (e as InputEvent).inputType ?? '';
-      if (!kind.startsWith('insert')) return;
+    /** The caret, in the canvas. */
+    const caret = (): { x: number; y: number } => {
       const at = caretPoint(field);
       const from = field.getBoundingClientRect();
       const origin = host.getBoundingClientRect();
-      fire.burst(from.left - origin.left + at.x + PAD.side, from.top - origin.top + at.y + PAD.top, kind === 'insertFromPaste' ? 24 : 9);
+      return { x: from.left - origin.left + at.x + SIDE, y: from.top - origin.top + at.y + now.current.top };
     };
-    const focus = (): void => fire.focus(host.contains(document.activeElement));
-    const shown = (): void => (document.hidden ? fire.stop() : fire.start());
+    let length = field.value.length;
+    const typed = (e: Event): void => {
+      const kind = (e as InputEvent).inputType ?? '';
+      const gone = Math.max(0, length - field.value.length);
+      length = field.value.length;
+      const { confetti, popDelete } = now.current.look;
+      if (kind.startsWith('insert')) {
+        f.stoke();
+        if (confetti) f.burst(caret(), kind === 'insertFromPaste' ? 24 : 9);
+      } else if (kind.startsWith('delete') && popDelete && gone) {
+        f.pop(caret(), gone);
+      }
+    };
+    const focus = (): void => f.focus(host.contains(document.activeElement));
+    const shown = (): void => (document.hidden ? f.stop() : f.start());
     field.addEventListener('input', typed);
     host.addEventListener('focusin', focus);
     host.addEventListener('focusout', focus);
@@ -49,16 +68,17 @@ export function MaxFire({ box, input }: { box: RefObject<HTMLDivElement | null>;
     focus();
     shown();
     return () => {
-      fire.stop();
-      fireRef.current = undefined;
+      f.stop();
+      fire.current = undefined;
       sizes.disconnect();
       field.removeEventListener('input', typed);
       host.removeEventListener('focusin', focus);
       host.removeEventListener('focusout', focus);
       document.removeEventListener('visibilitychange', shown);
     };
-  }, [box, input, reduceMotion]);
-  const place = { top: -PAD.top, left: -PAD.side, width: `calc(100% + ${PAD.side * 2}px)`, height: `calc(100% + ${PAD.top + PAD.bottom}px)` };
+    // A taller fire needs a taller canvas: start again at the new size.
+  }, [box, input, prefs.reduceMotion, top]);
+  const place = { top: -top, left: -SIDE, width: `calc(100% + ${SIDE * 2}px)`, height: `calc(100% + ${top + BOTTOM}px)` };
   return (
     <>
       <canvas ref={behind} className={s.flames} style={place} aria-hidden />
