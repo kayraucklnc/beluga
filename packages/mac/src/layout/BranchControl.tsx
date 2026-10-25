@@ -15,7 +15,7 @@ const PILL_ICON: Record<BranchTone, IconName> = { merged: 'merge', ok: 'check', 
 
 export type BranchFold = 'none' | 'pill' | 'all';
 
-const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merge', merge: 'merge', merge_auto: 'clock', update_branch: 'refresh', mark_ready: 'check', open_pr: 'pr', continue_after_merge: 'branch', archive: 'archive', delete: 'x', commit: 'commit', pr: 'pr' };
+const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merge', merge: 'merge', merge_auto: 'clock', cancel_auto: 'x', update_branch: 'refresh', mark_ready: 'check', open_pr: 'pr', continue_after_merge: 'branch', archive: 'archive', delete: 'x', commit: 'commit', pr: 'pr', pr_draft: 'pr' };
 
 /**
  * The top of a worktree: where its branch stands, as a pill you can read from across the room
@@ -49,6 +49,9 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
         return void merge(method, 'auto');
       case 'merge_admin':
         return void merge(method, 'admin');
+      case 'cancel_auto':
+        setBusy(true);
+        return void api.workbench.cancelMergeWhenReady(wsId).catch(() => undefined).finally(() => setBusy(false));
       case 'update_branch':
       case 'mark_ready':
         setBusy(true);
@@ -58,7 +61,15 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
       case 'continue_after_merge':
         return askBeforeWork(wsId, step.id);
       case 'open_pr':
+      case 'pr_custom':
         return actions.run({ type: 'ws', id: wsId, action: 'pr' });
+      case 'pr':
+      case 'pr_draft':
+        // Straight to GitHub, no Claude in between (Workbench toasts how it went).
+        setBusy(true);
+        return void api.workbench.quickPr(wsId, step.id === 'pr_draft' ? { draft: true } : {}).catch(() => undefined).finally(() => setBusy(false));
+      case 'pr_claude':
+        return void api.workbench.createPr(wsId);
       default:
         return actions.run({ type: 'ws', id: wsId, action: step.id });
     }

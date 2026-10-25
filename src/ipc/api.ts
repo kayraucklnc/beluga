@@ -243,6 +243,8 @@ export const API = {
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
   'workbench.createPr': args(id, opt(str)),
+  // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message }.
+  'workbench.quickPr': args(id, opt(z.object({ draft: opt(bool) }).strict())),
   'workbench.fixChecks': args(id),
   'workbench.resolvePrConflicts': args(id),
   'workbench.continueAfterMerge': args(id),
@@ -251,6 +253,8 @@ export const API = {
   'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool), admin: opt(bool) }).strict()),
   // A PR's one-click step on GitHub: bring its base in ('update_branch') or mark a draft ready ('ready') → { ok, message }.
   'workbench.prStep': args(id, z.enum(['update_branch', 'ready'])),
+  // Stop Merge When Ready from merging it (GitHub's auto-merge too) → { ok, message }.
+  'workbench.cancelMergeWhenReady': args(id),
   // A worktree's PR now (or all of them; true: check gh again), or { reason } to look at what's due:
   // 'focus' (the window came forward) or 'push' (a branch was pushed; id: which worktree).
   'workbench.refreshPrs': args(opt(z.union([id, z.object({ reason: z.enum(['focus', 'push']), id: opt(id) }).strict()])), opt(bool)),

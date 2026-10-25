@@ -60,10 +60,23 @@ export interface WorkspaceRecord {
   /** You carried on after this PR merged (Continue After Merge): it and older ones are done, so the branch can have a new one. */
   readonly prDone?: number;
   /**
+   * Merge When Ready: Beluga merges PR `number` itself once its checks pass (and stops, saying why,
+   * if they fail or it conflicts). Not GitHub's auto-merge: that merges at once when no check is required.
+   */
+  readonly mergeWhenReady?: MergeWait;
+  /**
    * A project's main checkout only: the chat its conversation from before became (BLG-70). The main
    * checkout is no conversation of its own; opening it opens that chat, or the project's home.
    */
   readonly movedTo?: string;
+}
+
+export interface MergeWait {
+  readonly number: number;
+  readonly method: 'squash' | 'merge' | 'rebase';
+  /** When you asked (a PR with no checks yet gets a moment for them to show up). */
+  readonly since: number;
+  readonly deleteBranch?: boolean;
 }
 
 /** A workspace as shown in the UI: record + live git status. */
