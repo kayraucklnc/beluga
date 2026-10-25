@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 10 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 11 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -26,9 +26,10 @@ export const COMPANION_PROTO = { major: 1, minor: 10 } as const;
  * step from the phone, as the Mac's toolbar has them (`BranchView.steps`, `companion.branchStep`).
  * 1.9 (BLG-87): more of Claude's blocks drawn (`tree`, `json`, `terminal`, `math` blocks, mermaid as
  * a graph or view) and its math typeset (`ProseView.math`). 1.10 (BLG-110): a sub-agent opened on
- * the phone, its whole activity and the report it gave back (`companion.subAgent`).
+ * the phone, its whole activity and the report it gave back (`companion.subAgent`). 1.11 (BLG-124):
+ * which conversations the phone saved files from are archived or deleted (`companion.gone`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;

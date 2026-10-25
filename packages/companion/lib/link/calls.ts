@@ -87,6 +87,8 @@ export const calls = {
   older: (topic: Topic, before: string): Call => make('companion.older', [topic, { before }], 'Load older'),
   /** 1.10: one sub-agent of a turn, opened: its activity in words and the report it gave back. */
   subAgent: (topic: Topic, turn: string, id: string): Call => make('companion.subAgent', [topic, turn, id], 'Sub-agent'),
+  /** 1.11: which conversations files were saved from are archived or deleted on the Mac. */
+  gone: (topics: readonly string[]): Call => make('companion.gone', [[...topics]], 'Check saved files'),
   /** Write in a friends' chat (with photos, or asking Claude). */
   /** `ask`: whose Claude answers too: everyone's ('all') or the chosen people's (peer ids, you included). */
   chat: (topic: Topic, text: string, opts: { files?: Files; ask?: 'all' | readonly string[] } = {}): Call =>

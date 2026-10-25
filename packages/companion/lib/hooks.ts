@@ -46,6 +46,15 @@ export function useFile(ref: string | undefined, variant: 'thumb' | 'full' | 'te
   );
 }
 
+/** How saving an output on the phone goes (lib/saved.ts): only watched, never started here. */
+export function useSaving(ref: string | undefined): FileState | undefined {
+  const key = `${ref}#save`;
+  return useSyncExternalStore(
+    (fn) => (ref ? store.subscribe(`file:${key}`, fn) : () => {}),
+    () => (ref ? store.file(ref, 'save') : undefined),
+  );
+}
+
 /** The newest we know of an output (a growing log's size). */
 export function useOutput(ref: string | undefined): OutputView | undefined {
   return useSyncExternalStore(

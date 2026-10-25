@@ -382,6 +382,8 @@ export const PHONE: Record<Method, Side> = {
   'companion.termClose': 'phone',
   // A sub-agent opened on the phone (BLG-110): its steps in words and its report, code stripped.
   'companion.subAgent': 'phone',
+  // Which conversations the phone saved files from are archived or deleted (BLG-124): names only.
+  'companion.gone': 'phone',
 };
 
 /** A method the phone may call (unknown names are not). */

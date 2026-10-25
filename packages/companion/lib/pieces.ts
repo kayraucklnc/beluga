@@ -10,6 +10,8 @@
 export const PIECE_TIMEOUT_MS = 20_000;
 /** A full picture bigger than this stays the preview (its thumbnail): open it on your Mac. */
 export const MAX_FULL_BYTES = 64 * 1024 * 1024;
+/** What may be saved on the phone (a video, a big PDF): bigger stays on your Mac. */
+export const MAX_SAVE_BYTES = 1024 * 1024 * 1024;
 
 /** Bytes a base64 string holds. */
 export function b64Bytes(b64: string): number {
@@ -60,7 +62,12 @@ export class Assembly {
 
 /** "Getting the full picture · 2.1 of 8.4 MB" */
 export function progressText(got: number, size: number | undefined): string {
-  if (!size) return 'Getting the full picture';
+  return progressOf('Getting the full picture', got, size);
+}
+
+/** "Saving · 2.1 of 8.4 MB", and the like. */
+export function progressOf(what: string, got: number, size: number | undefined): string {
+  if (!size) return what;
   const mb = (n: number): string => (n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0);
-  return size < 1024 * 1024 ? `Getting the full picture · ${Math.round((got / size) * 100)}%` : `Getting the full picture · ${mb(got)} of ${mb(size)} MB`;
+  return size < 1024 * 1024 ? `${what} · ${Math.round((got / size) * 100)}%` : `${what} · ${mb(got)} of ${mb(size)} MB`;
 }

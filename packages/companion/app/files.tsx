@@ -104,7 +104,7 @@ export default function Files() {
     if (entry?.ref) {
       // Pictures and videos come with a ref (the Mac's file gate decides); the name says which.
       const o: OutputView = { ref: entry.ref, name: entry.name, kind: videoFormat(entry.name) ? 'video' : 'image', ...(entry.size !== undefined ? { size: entry.size } : {}) };
-      return openOutput(o, [o]);
+      return openOutput(o, [o], undefined, t);
     }
     router.push({ pathname: '/source', params: { topic: t, path: rel } });
   };

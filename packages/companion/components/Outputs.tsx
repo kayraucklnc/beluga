@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { FileJson, FileText, FileType, Film, ImageIcon, Play, ScrollText } from 'lucide-react-native';
-import { useRef, useState } from 'react';
+import { createContext, useContext, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useFile } from '../lib/hooks';
 import type { OutputView } from '../lib/link/protocol';
@@ -18,6 +18,9 @@ import { IconBadge, Press, T } from './ui';
 
 export type Origin = { x: number; y: number; w: number; h: number };
 
+/** The conversation the outputs on screen are from: what's saved from them goes with it (BLG-124). */
+export const OutputsTopic = createContext<string | undefined>(undefined);
+
 export const isText = (o: OutputView): boolean => o.kind === 'text' || o.kind === 'json' || o.kind === 'markdown';
 
 /**
@@ -25,10 +28,10 @@ export const isText = (o: OutputView): boolean => o.kind === 'text' || o.kind ==
  * in (pictures, and text files as previews with Open), starting at it and growing from its place.
  * A text file on its own goes straight to the reader.
  */
-export function openOutput(o: OutputView, group: readonly OutputView[], origin?: Origin): void {
+export function openOutput(o: OutputView, group: readonly OutputView[], origin?: Origin, topic?: string): void {
   const items = group.some((g) => g.ref === o.ref) ? [...group] : [o];
   if (o.kind === 'image' || o.kind === 'video' || items.length > 1) {
-    store.gallery = { items, index: Math.max(0, items.findIndex((g) => g.ref === o.ref)), origin };
+    store.gallery = { items, index: Math.max(0, items.findIndex((g) => g.ref === o.ref)), origin, ...(topic ? { topic: topic as never } : {}) };
     router.push('/viewer');
     return;
   }
@@ -49,9 +52,10 @@ export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; reado
   // A video's thumbnail is its first frame (a Mac that can't make one says so: then it's a tile).
   const file = useFile(image || video ? o.ref : undefined, 'thumb');
   const Icon = iconOf(o);
+  const topic = useContext(OutputsTopic);
   const open = () => {
-    if (!ref.current) return openOutput(o, group);
-    ref.current.measureInWindow((x: number, y: number, mw: number, mh: number) => openOutput(o, group, { x, y, w: mw, h: mh }));
+    if (!ref.current) return openOutput(o, group, undefined, topic);
+    ref.current.measureInWindow((x: number, y: number, mw: number, mh: number) => openOutput(o, group, { x, y, w: mw, h: mh }, topic));
   };
   return (
     <Press onPress={open} accessibilityLabel={o.name} style={[{ width: w, height: h, borderRadius: radius.m, overflow: 'hidden', backgroundColor: elevation.raised.surface, borderWidth: 1, borderColor: elevation.raised.border }, style]}>
@@ -142,8 +146,9 @@ export function TurnOutputs({ items }: { readonly items: readonly OutputView[] }
 /** A text output in a turn's strip: its icon, name and size on one small card. */
 function FileCard({ o, group }: { readonly o: OutputView; readonly group: readonly OutputView[] }) {
   const Icon = iconOf(o);
+  const topic = useContext(OutputsTopic);
   return (
-    <Press onPress={() => openOutput(o, group)} accessibilityLabel={o.name} style={{ width: 156, height: TURN_H, borderRadius: radius.m, padding: 10, justifyContent: 'space-between', backgroundColor: elevation.raised.surface, borderWidth: 1, borderColor: elevation.raised.border }}>
+    <Press onPress={() => openOutput(o, group, undefined, topic)} accessibilityLabel={o.name} style={{ width: 156, height: TURN_H, borderRadius: radius.m, padding: 10, justifyContent: 'space-between', backgroundColor: elevation.raised.surface, borderWidth: 1, borderColor: elevation.raised.border }}>
       <IconBadge Icon={Icon} tone={o.kind === 'json' ? 'butter' : o.kind === 'markdown' ? 'lavender' : 'sky'} size={28} square />
       <View>
         <T v="caption" c={color.text} numberOfLines={1} ellipsizeMode="middle" style={{ fontWeight: '600' }}>

@@ -1,4 +1,5 @@
 import { branchStep } from '../companion/branch-steps.js';
+import { goneTopics } from '../companion/gone.js';
 import { merge, mergeCheck, resolve } from '../companion/merge.js';
 import { macViewFor } from '../companion/open-on-mac.js';
 import { stripCode } from '../companion/strip.js';
@@ -64,4 +65,5 @@ export const COMPANION_HANDLERS = {
       step: (channel, itemId, stepId) => s.host.stepFor(channel, itemId, stepId),
       ccSteps: (sessionId, agentId) => claudeCodeOf(s).steps(sessionId, agentId, { limit: 200 }),
     }, topic, turn, id),
+  'companion.gone': (s, topics) => ({ gone: goneTopics(s.store.getState(), topics) }),
 } satisfies CompanionHandlers;
