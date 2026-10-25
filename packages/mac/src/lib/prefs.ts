@@ -69,6 +69,8 @@ export interface UiPrefs {
   readonly groupIcons: Readonly<Record<string, string>>;
   /** Plans (by id) whose task chats you asked to see in the sidebar under them (a plan is one row otherwise). */
   readonly planTaskChats: readonly string[];
+  /** How the message box burns on Max effort: smooth flames, or pixel art. */
+  readonly maxFlames: 'toon' | 'pixel';
 }
 
 export const ACCENTS = {
@@ -122,6 +124,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   scratchSort: 'newest',
   groupIcons: {},
   planTaskChats: [],
+  maxFlames: 'toon',
 };
 
 const KEY = 'beluga.prefs.v1';

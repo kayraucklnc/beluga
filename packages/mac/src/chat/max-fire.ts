@@ -1,8 +1,18 @@
 /**
- * Max effort's message box: flames licking up around it and a pinch of confetti from the caret
- * with every character you type. One canvas over the box (a little larger, for the flames to rise
- * into), drawn only while Max is on and the window is showing. Pure drawing, no React.
+ * Max effort's message box: it burns, and every character you type throws a pinch of confetti from
+ * the caret.
+ *
+ * The fire is metaballs on the GPU: blobs of heat rise off the box's edges, and where their fields
+ * add up they melt into one flame, then pinch off into wisps as they cool and shrink. Noise bends
+ * them sideways the higher they climb, so the flames lick. The field is cut into three flat colours,
+ * outer to core (Hades' blue; it flares orange, like his temper, while you type fast), drawn one of
+ * two ways (Settings › Writing):
+ *   - flame: smooth edges;
+ *   - pixel: big square pixels, moving in steps like an old game.
+ * Two canvases: the fire under the box (it hides the roots), the confetti over it.
  */
+
+export type FlameStyle = 'toon' | 'pixel';
 
 export interface FireBox {
   /** The box's place in the canvas (CSS pixels). */
@@ -12,14 +22,25 @@ export interface FireBox {
   readonly h: number;
 }
 
-interface Flame {
+/** Three colours each, outer to core. */
+const CALM = ['#2346c8', '#3fa2ff', '#d4f6ff'] as const;
+const TEMPER = ['#d8361c', '#ff8a1f', '#ffe35a'] as const;
+const CONFETTI = ['#ffe35a', '#ff8a1f', '#3fa2ff', '#d4f6ff', '#ff6fae', '#8fe3b0'] as const;
+
+/** Blobs of heat the shader adds up (the most it takes). */
+const MAX_BLOBS = 96;
+/** Pixel art: one pixel of the fire is this many CSS pixels, and it moves this many frames a second. */
+const CELL = 4;
+const PIXEL_FPS = 12;
+
+interface Blob {
   x: number;
   y: number;
   vx: number;
   vy: number;
+  r: number;
   life: number;
   decay: number;
-  size: number;
 }
 
 interface Bit {
@@ -34,66 +55,183 @@ interface Bit {
   shape: 0 | 1 | 2;
 }
 
-/** Hot to cool: what a flame is at each age (as it rises it cools and fades). */
-const HEAT = ['#ffe08a', '#ffbe55', '#ff8f45', '#f4563a', '#c9407a'] as const;
-/** The confetti: ember colours with a few cool pastels for contrast. */
-const CONFETTI = ['#ffd166', '#ff9f68', '#ff6b6b', '#b8a4ff', '#7fd6f5', '#8fe3b0', '#ffc2e2'] as const;
+const VERTEX = `
+attribute vec2 a;
+void main() { gl_Position = vec4(a, 0.0, 1.0); }
+`;
 
-/** A tongue of flame in one colour (a teardrop, point up), drawn once and stamped many times. */
-function sprite(color: string): HTMLCanvasElement {
-  const c = document.createElement('canvas');
-  c.width = 48;
-  c.height = 80;
-  const g = c.getContext('2d')!;
-  g.beginPath();
-  g.moveTo(24, 2);
-  g.bezierCurveTo(30, 22, 44, 36, 44, 54);
-  g.bezierCurveTo(44, 68, 35, 78, 24, 78);
-  g.bezierCurveTo(13, 78, 4, 68, 4, 54);
-  g.bezierCurveTo(4, 36, 18, 22, 24, 2);
-  const grad = g.createRadialGradient(24, 58, 2, 24, 50, 34);
-  grad.addColorStop(0, color);
-  grad.addColorStop(0.55, `${color}b0`);
-  grad.addColorStop(1, `${color}00`);
-  g.fillStyle = grad;
-  g.filter = 'blur(2px)';
-  g.fill();
-  return c;
+const FRAGMENT = `
+precision highp float;
+uniform vec2 u_size;
+uniform float u_dpr;
+uniform vec4 u_box;
+uniform float u_time;
+uniform float u_cell;
+uniform float u_heat;
+uniform vec3 u_c0;
+uniform vec3 u_c1;
+uniform vec3 u_c2;
+uniform vec4 u_blobs[${MAX_BLOBS}];
+uniform int u_count;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+void main() {
+  // CSS pixels, y down (as the page).
+  vec2 p = vec2(gl_FragCoord.x, u_size.y * u_dpr - gl_FragCoord.y) / u_dpr;
+  if (u_cell > 0.0) p = (floor(p / u_cell) + 0.5) * u_cell;
+  vec2 lo = u_box.xy;
+  vec2 hi = u_box.xy + u_box.zw;
+  // Flames lick: the higher above the box, the more the noise bends them sideways.
+  float above = clamp(lo.y - p.y, 0.0, 48.0);
+  float bend = noise(vec2(p.x * 0.045, p.y * 0.06 + u_time * 2.2)) - 0.5;
+  vec2 q = p + vec2(bend * above * 0.7, (noise(vec2(p.x * 0.08 - u_time, u_time * 1.7)) - 0.5) * 6.0);
+
+  // The blobs (metaballs): each adds r^2 / d^2, so neighbours melt together.
+  float f = 0.0;
+  for (int i = 0; i < ${MAX_BLOBS}; i++) {
+    if (i >= u_count) break;
+    vec4 b = u_blobs[i];
+    // A teardrop, point up: taller than wide, and narrower the higher above its middle.
+    vec2 d = q - b.xy;
+    d.y *= 0.45;
+    d.x *= 1.0 + max(0.0, -d.y) / max(b.z, 1.0) * 2.4;
+    f += b.z * b.z / (dot(d, d) + 1.0);
+  }
+  // The box's edge burns too: a rim that breathes along its length (less underneath: fire rises).
+  vec2 outside = max(max(lo - q, q - hi), 0.0);
+  float dist = length(outside);
+  float rim = (0.85 + 0.75 * noise(vec2(q.x * 0.06 + u_time * 0.8, q.y * 0.05 - u_time * 1.5))) * (0.8 + u_heat * 0.4);
+  if (q.y > hi.y) rim *= 0.4;
+  f += rim * 16.0 / (dist * dist + 16.0);
+
+  // Three flat colours by how hot it is; smooth edges, or hard ones for pixel art.
+  float soft = u_cell > 0.0 ? 0.0001 : 0.06;
+  // The outer shell comes to points: it needs more heat the higher it reaches (so every flame
+  // closes to a tip), and sharp-crested streaks racing up it pull it into thin licks.
+  float rise = clamp(above / 12.0, 0.0, 1.0);
+  float ridge = 1.0 - abs(noise(vec2(q.x * 0.24, q.y * 0.07 + u_time * 5.0)) * 2.0 - 1.0);
+  float shell = f + (ridge - 0.55) * 0.9 * rise - above * 0.012;
+  float a = smoothstep(1.0 - soft, 1.0 + soft, shell);
+  vec3 c = mix(u_c0, u_c1, smoothstep(1.9 - soft, 1.9 + soft, f));
+  c = mix(c, u_c2, smoothstep(3.6 - soft, 3.6 + soft, f));
+  gl_FragColor = vec4(c * a, a);
+}
+`;
+
+const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
+
+/** The fire's GPU half: a full-canvas quad and the metaball shader. */
+class FlameGL {
+  private readonly at: Record<string, WebGLUniformLocation | null> = {};
+  private readonly packed = new Float32Array(MAX_BLOBS * 4);
+
+  static make(canvas: HTMLCanvasElement): FlameGL | undefined {
+    const gl = canvas.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
+    if (!gl) return undefined;
+    const shader = (kind: number, src: string): WebGLShader | undefined => {
+      const s = gl.createShader(kind)!;
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : undefined;
+    };
+    const vs = shader(gl.VERTEX_SHADER, VERTEX);
+    const fs = shader(gl.FRAGMENT_SHADER, FRAGMENT);
+    if (!vs || !fs) return undefined;
+    const program = gl.createProgram()!;
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return undefined;
+    return new FlameGL(gl, program);
+  }
+
+  private constructor(
+    private readonly gl: WebGLRenderingContext,
+    program: WebGLProgram,
+  ) {
+    gl.useProgram(program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+    const a = gl.getAttribLocation(program, 'a');
+    gl.enableVertexAttribArray(a);
+    gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
+  }
+
+  draw(o: { width: number; height: number; dpr: number; box: FireBox; time: number; cell: number; heat: number; colors: readonly string[]; blobs: readonly Blob[] }): void {
+    const gl = this.gl;
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform2f(this.at.u_size!, o.width, o.height);
+    gl.uniform1f(this.at.u_dpr!, o.dpr);
+    gl.uniform4f(this.at.u_box!, o.box.x, o.box.y, o.box.w, o.box.h);
+    gl.uniform1f(this.at.u_time!, o.time);
+    gl.uniform1f(this.at.u_cell!, o.cell);
+    gl.uniform1f(this.at.u_heat!, o.heat);
+    o.colors.forEach((c, i) => gl.uniform3f(this.at[`u_c${i}`]!, ...rgb(c)));
+    const n = Math.min(MAX_BLOBS, o.blobs.length);
+    for (let i = 0; i < n; i++) {
+      const b = o.blobs[i]!;
+      // Each swells in as it's born, then shrinks away as it cools.
+      this.packed.set([b.x, b.y, b.r * Math.min(1, (1 - b.life) * 6) * Math.min(1, b.life * 2.5), 0], i * 4);
+    }
+    gl.uniform4fv(this.at.u_blobs!, this.packed);
+    gl.uniform1i(this.at.u_count!, n);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
 }
 
 export class MaxFire {
-  private readonly back: CanvasRenderingContext2D;
+  private readonly flame: FlameGL | undefined;
   private readonly front: CanvasRenderingContext2D;
-  /** On a dark box flames add light; on a light one they're painted (adding would wash out to white). */
-  private dark = true;
-  private readonly sprites = HEAT.map(sprite);
-  private flames: Flame[] = [];
-  private bits: Bit[] = [];
+  private style: FlameStyle = 'toon';
   private box: FireBox = { x: 0, y: 0, w: 0, h: 0 };
+  private width = 0;
+  private height = 0;
+  private dpr = 1;
+  private blobs: Blob[] = [];
+  private bits: Bit[] = [];
   private raf = 0;
   private last = 0;
+  private time = 0;
+  private pixelAt = -1;
   /** How fierce it burns (typing stokes it; it settles back on its own). */
-  private heat = 0.35;
+  private heat = 0.4;
   private focused = false;
 
-  /** Flames go on `behind` (under the box, so they lick out from its edges); confetti on `over`. */
+  /** The fire goes on `behind` (under the box, so it comes out from its edges); confetti on `over`. */
   constructor(
     private readonly behind: HTMLCanvasElement,
     private readonly over: HTMLCanvasElement,
   ) {
-    this.back = behind.getContext('2d')!;
+    this.flame = FlameGL.make(behind);
     this.front = over.getContext('2d')!;
   }
 
-  resize(width: number, height: number, box: FireBox, dark: boolean): void {
-    const dpr = window.devicePixelRatio || 1;
-    for (const [c, g] of [[this.behind, this.back], [this.over, this.front]] as const) {
-      c.width = Math.round(width * dpr);
-      c.height = Math.round(height * dpr);
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  setStyle(style: FlameStyle): void {
+    this.style = style;
+    this.pixelAt = -1;
+  }
+
+  resize(width: number, height: number, box: FireBox): void {
+    this.dpr = window.devicePixelRatio || 1;
+    for (const c of [this.behind, this.over]) {
+      c.width = Math.round(width * this.dpr);
+      c.height = Math.round(height * this.dpr);
     }
+    this.front.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.width = width;
+    this.height = height;
     this.box = box;
-    this.dark = dark;
+    this.pixelAt = -1;
   }
 
   focus(on: boolean): void {
@@ -102,7 +240,7 @@ export class MaxFire {
 
   /** A character typed at (x, y): a burst of confetti there, and the fire flares. */
   burst(x: number, y: number, n = 9): void {
-    this.heat = Math.min(1, this.heat + 0.12);
+    this.heat = Math.min(1, this.heat + 0.045);
     for (let i = 0; i < n; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.95;
       const speed = 1.6 + Math.random() * 2.6;
@@ -137,44 +275,45 @@ export class MaxFire {
   stop(): void {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
-    this.back.clearRect(0, 0, this.behind.width, this.behind.height);
-    this.front.clearRect(0, 0, this.over.width, this.over.height);
+    this.front.clearRect(0, 0, this.width, this.height);
   }
 
-  /** A point on the box's edge, mostly along the top and up the sides (flames rise). */
-  private edge(): { x: number; y: number; side: number } {
+  /** Typing fast makes it lose its temper: orange instead of blue, until it calms down. */
+  private get palette(): readonly [string, string, string] {
+    return this.heat > 0.9 ? TEMPER : CALM;
+  }
+
+  /** Where a new blob of heat starts: mostly along the top edge, some up the sides. */
+  private spawn(): Blob {
     const { x, y, w, h } = this.box;
     const r = Math.random();
-    // Born just inside the edge, so each flame comes out from behind the box.
-    if (r < 0.7) return { x: x + 8 + Math.random() * (w - 16), y: y + 10, side: 0 };
-    if (r < 0.85) return { x: x + 6, y: y + 10 + Math.random() * (h - 14), side: -1 };
-    return { x: x + w - 6, y: y + 10 + Math.random() * (h - 14), side: 1 };
+    const side = r < 0.8 ? 0 : r < 0.9 ? -1 : 1;
+    const px = side === 0 ? x + 6 + Math.random() * (w - 12) : side < 0 ? x - 2 : x + w + 2;
+    const py = side === 0 ? y + 4 : y + 8 + Math.random() * (h - 12);
+    const size = side === 0 ? 5 + Math.random() * 6 : 4 + Math.random() * 3;
+    return { x: px, y: py, vx: side * (0.25 + Math.random() * 0.3) + (Math.random() - 0.5) * 0.2, vy: -(0.35 + Math.random() * 0.5), r: size * (0.8 + this.heat * 0.5), life: 1, decay: 0.012 + Math.random() * 0.012 };
   }
 
   private step(dt: number): void {
-    const target = this.focused ? 0.55 : 0.35;
+    this.time += dt / 60;
+    const target = this.focused ? 0.55 : 0.4;
     this.heat += (target - this.heat) * 0.02 * dt;
-    // New flames: more the hotter it burns, and more along a wider box.
-    for (let born = (this.box.w / 9) * this.heat * dt * 0.35; born > 0; born--) {
+    // Keep the fire fed: about one blob per 18px of edge, more the hotter it burns.
+    const want = Math.min(MAX_BLOBS, Math.round(((this.box.w + this.box.h) / 18) * (0.7 + this.heat * 0.6)));
+    for (let born = (want / 60) * dt * 1.4; born > 0 && this.blobs.length < want; born--) {
       if (born < 1 && Math.random() > born) break;
-      const p = this.edge();
-      this.flames.push({
-        x: p.x,
-        y: p.y,
-        vx: p.side * (0.35 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.25,
-        vy: -(0.45 + Math.random() * 0.9) * (0.7 + this.heat * 0.6),
-        life: 1,
-        decay: 0.022 + Math.random() * 0.022,
-        size: 7 + Math.random() * 9 * (0.6 + this.heat),
-      });
+      this.blobs.push(this.spawn());
     }
-    for (const f of this.flames) {
-      f.x += (f.vx + Math.sin((f.y + f.life * 40) * 0.08) * 0.25) * dt;
-      f.y += f.vy * dt;
-      f.vy -= 0.015 * dt;
-      f.life -= f.decay * dt;
+    for (const b of this.blobs) {
+      // Rising faster as it goes (hot air), drifting, shrinking as it cools.
+      b.vy -= 0.018 * dt;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.vx *= 0.99;
+      b.life -= b.decay * dt;
+      b.r *= 1 - 0.006 * dt;
     }
-    this.flames = this.flames.filter((f) => f.life > 0);
+    this.blobs = this.blobs.filter((b) => b.life > 0);
     for (const b of this.bits) {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
@@ -187,23 +326,27 @@ export class MaxFire {
   }
 
   private draw(): void {
-    const b0 = this.back;
-    b0.clearRect(0, 0, this.behind.width, this.behind.height);
-    b0.globalCompositeOperation = this.dark ? 'lighter' : 'source-over';
-    for (const f of this.flames) {
-      const age = 1 - f.life;
-      const s = this.sprites[Math.min(HEAT.length - 1, (age * HEAT.length) | 0)]!;
-      const w = f.size * (0.5 + f.life * 0.7);
-      const h = w * 1.7;
-      b0.globalAlpha = Math.min(1, f.life * 1.6) * (this.dark ? 0.42 : 0.5);
-      b0.drawImage(s, f.x - w / 2, f.y - h * 0.75, w, h);
+    const pixel = this.style === 'pixel';
+    // Pixel art moves in steps: a new picture only on the next one.
+    const frame = Math.floor(this.time * PIXEL_FPS);
+    if (this.flame && (!pixel || frame !== this.pixelAt)) {
+      this.pixelAt = frame;
+      this.flame.draw({ width: this.width, height: this.height, dpr: this.dpr, box: this.box, time: pixel ? frame / PIXEL_FPS : this.time, cell: pixel ? CELL : 0, heat: this.heat, colors: this.palette, blobs: this.blobs });
     }
-    b0.globalAlpha = 1;
+    this.drawConfetti(pixel);
+  }
+
+  private drawConfetti(pixel: boolean): void {
     const g = this.front;
-    g.clearRect(0, 0, this.over.width, this.over.height);
+    g.clearRect(0, 0, this.width, this.height);
     for (const b of this.bits) {
       g.globalAlpha = Math.min(1, b.life * 2);
       g.fillStyle = b.color;
+      // Pixel art: square bits on the fire's grid.
+      if (pixel) {
+        g.fillRect(Math.round(b.x / CELL) * CELL, Math.round(b.y / CELL) * CELL, CELL, CELL);
+        continue;
+      }
       g.save();
       g.translate(b.x, b.y);
       g.rotate(b.spin);

@@ -1,9 +1,10 @@
 import { type RefObject, useEffect, useRef } from 'react';
-import { MaxFire as Fire, caretPoint } from './max-fire.js';
+import { usePrefs } from '../lib/prefs.js';
+import { type FlameStyle, MaxFire as Fire, caretPoint } from './max-fire.js';
 import s from './max.module.css';
 
 /** How far the canvas reaches past the box: room above for the flames, a little round the sides. */
-const PAD = { top: 40, side: 22, bottom: 14 } as const;
+const PAD = { top: 52, side: 24, bottom: 14 } as const;
 
 /**
  * Max effort: the box is on fire, and every character you type throws a little confetti from the
@@ -12,14 +13,21 @@ const PAD = { top: 40, side: 22, bottom: 14 } as const;
 export function MaxFire({ box, input }: { box: RefObject<HTMLDivElement | null>; input: RefObject<HTMLTextAreaElement | null> }) {
   const behind = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
+  const fireRef = useRef<Fire | undefined>(undefined);
+  const { maxFlames, reduceMotion } = usePrefs();
+  const styleNow = useRef<FlameStyle>(maxFlames);
+  styleNow.current = maxFlames;
+  useEffect(() => fireRef.current?.setStyle(maxFlames), [maxFlames]);
   useEffect(() => {
     const host = box.current;
     const field = input.current;
-    if (!behind.current || !over.current || !host || !field || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!behind.current || !over.current || !host || !field || reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const fire = new Fire(behind.current, over.current);
+    fire.setStyle(styleNow.current);
+    fireRef.current = fire;
     const fit = (): void => {
       const { width, height } = host.getBoundingClientRect();
-      fire.resize(width + PAD.side * 2, height + PAD.top + PAD.bottom, { x: PAD.side, y: PAD.top, w: width, h: height }, isDark(getComputedStyle(host).backgroundColor));
+      fire.resize(width + PAD.side * 2, height + PAD.top + PAD.bottom, { x: PAD.side, y: PAD.top, w: width, h: height });
     };
     fit();
     const sizes = new ResizeObserver(fit);
@@ -42,13 +50,14 @@ export function MaxFire({ box, input }: { box: RefObject<HTMLDivElement | null>;
     shown();
     return () => {
       fire.stop();
+      fireRef.current = undefined;
       sizes.disconnect();
       field.removeEventListener('input', typed);
       host.removeEventListener('focusin', focus);
       host.removeEventListener('focusout', focus);
       document.removeEventListener('visibilitychange', shown);
     };
-  }, [box, input]);
+  }, [box, input, reduceMotion]);
   const place = { top: -PAD.top, left: -PAD.side, width: `calc(100% + ${PAD.side * 2}px)`, height: `calc(100% + ${PAD.top + PAD.bottom}px)` };
   return (
     <>
@@ -56,10 +65,4 @@ export function MaxFire({ box, input }: { box: RefObject<HTMLDivElement | null>;
       <canvas ref={over} className={s.confetti} style={place} aria-hidden />
     </>
   );
-}
-
-/** A dark box (its background's lightness, from "rgb(r, g, b)"). */
-function isDark(color: string): boolean {
-  const [r = 255, g = 255, b = 255] = (color.match(/[\d.]+/g) ?? []).map(Number);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
 }

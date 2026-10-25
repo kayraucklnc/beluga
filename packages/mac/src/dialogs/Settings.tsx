@@ -81,6 +81,17 @@ function General() {
             ]}
           />
         </Row>
+        <Row label="Flames on Max effort" detail={prefs.maxFlames === 'pixel' ? 'Chunky pixel fire that moves in steps, like an old game.' : 'Smooth, living flames that melt into each other.'}>
+          <Select
+            label="Flames on Max effort"
+            value={prefs.maxFlames}
+            onChange={(v) => setPrefs({ maxFlames: v })}
+            options={[
+              { value: 'toon', label: 'Flame' },
+              { value: 'pixel', label: 'Pixel Art' },
+            ]}
+          />
+        </Row>
         <Row label="Show times next to messages">
           <Switch label="Times" on={prefs.timestamps} onChange={(v) => setPrefs({ timestamps: v })} />
         </Row>
