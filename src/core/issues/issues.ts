@@ -50,6 +50,8 @@ export interface IssueWork {
 export class GitHubIssues {
   private readonly lists = new Map<string, { readonly at: number; readonly list: IssuesList }>();
   private readonly full = new Map<string, { readonly at: number; readonly issue: GhIssueFull }>();
+  /** Work being set up on an issue: the same ask twice is one, another waits for it (no two worktrees for a double click). */
+  private readonly setting = new Map<string, { readonly action: string; readonly job: Promise<IssueWork> }>();
 
   constructor(private readonly deps: GitHubIssuesDeps) {}
 
@@ -105,7 +107,11 @@ export class GitHubIssues {
   }
 
   /** Investigate: Claude finds out why it happens and reproduces it, in the task's worktree, without fixing it. */
-  async investigate(projectId: string, number: number): Promise<IssueWork> {
+  investigate(projectId: string, number: number): Promise<IssueWork> {
+    return this.one(projectId, number, 'investigate', () => this.investigateNow(projectId, number));
+  }
+
+  private async investigateNow(projectId: string, number: number): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
     const ws = await this.workOn(task, 'investigate', (t) => investigatePrompt(t, issue, repo), `asked Claude to investigate #${number}`, () => `Investigate #${number} “${issue.title}”: find out why it happens and reproduce it, without fixing it yet.`);
@@ -116,7 +122,11 @@ export class GitHubIssues {
    * Fix It: Claude fixes it and opens a pull request that closes the issue. After an investigation
    * that's in the same worktree, with what it found; otherwise in a new one.
    */
-  async fix(projectId: string, number: number): Promise<IssueWork> {
+  fix(projectId: string, number: number): Promise<IssueWork> {
+    return this.one(projectId, number, 'fix', () => this.fixNow(projectId, number));
+  }
+
+  private async fixNow(projectId: string, number: number): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
     const ws = await this.workOn(
@@ -133,7 +143,11 @@ export class GitHubIssues {
    * Make a Task: on the board as Ready, written by your Claude from the issue (`look`: after a
    * quick read-only look at the code, so it also says where the code is and what's likely behind it).
    */
-  async toTask(projectId: string, number: number, opts: { readonly look?: boolean } = {}): Promise<IssueWork> {
+  toTask(projectId: string, number: number, opts: { readonly look?: boolean } = {}): Promise<IssueWork> {
+    return this.one(projectId, number, 'task', () => this.toTaskNow(projectId, number, opts));
+  }
+
+  private async toTaskNow(projectId: string, number: number, opts: { readonly look?: boolean }): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const there = taskForIssue(this.deps.work.board.state(), projectId, repo, number);
     if (there) return { task: there.id, key: there.key };
@@ -152,6 +166,18 @@ export class GitHubIssues {
     } catch (err) {
       throw new Error(ghWords(err, repo));
     }
+  }
+
+  /** One thing at a time per issue: the same ask while it's being set up is that one; another waits for it. */
+  private one(projectId: string, number: number, action: string, run: () => Promise<IssueWork>): Promise<IssueWork> {
+    const key = `${projectId}#${number}`;
+    const now = this.setting.get(key);
+    if (now?.action === action) return now.job;
+    const job: Promise<IssueWork> = (now ? now.job.catch(() => undefined) : Promise.resolve(undefined)).then(run).finally(() => {
+      if (this.setting.get(key)?.job === job) this.setting.delete(key);
+    });
+    this.setting.set(key, { action, job });
+    return job;
   }
 
   /** The issue's task: the one on the board, else a new one (Ready, its report as context, to be worked on now). */

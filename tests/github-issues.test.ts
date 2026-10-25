@@ -263,6 +263,20 @@ describe('handing an issue to Claude', () => {
     expect(prompt).toContain('Open a pull request for beluga/');
   });
 
+  it('a double click is one: one task, one worktree, one ask; Fix It right after waits for Investigate', async () => {
+    const { issues, board, asked, newOpts } = setup();
+    const [a, b] = await Promise.all([issues.investigate('api', 48), issues.investigate('api', 48)]);
+    expect(a).toEqual(b);
+    expect(board.list()).toHaveLength(1);
+    expect(newOpts).toHaveLength(1);
+    expect(asked).toHaveLength(1);
+    const [c, d] = await Promise.all([issues.investigate('api', 47), issues.fix('api', 47)]);
+    expect(d.ws).toBe(c.ws);
+    expect(newOpts).toHaveLength(2);
+    expect(asked.at(-1)![0]).toMatch(/^Now fix GitHub issue #47/);
+    expect(board.list()).toHaveLength(2);
+  });
+
   it('a task that’s done isn’t worked on again until it’s reopened', async () => {
     const { issues, board } = setup();
     const out = await issues.fix('api', 47);
