@@ -15,14 +15,18 @@ import { mentionsSecret } from './policy.js';
 /**
  * Claude's `show` tool (mcp__beluga_view__show): a table, chart, stat tiles, code, colors, gantt, heatmap, calendar or a
  * graph from JSON, checked, with its source run once here so it comes with its first rows. It
- * goes into the answer where Claude writes its token ([[view:1]]), or at the end. The window
+ * goes into the answer where Claude writes its token ([[view:1]]), or at the end; a token Claude
+ * made up (no view behind it) is dropped, never shown as text. The window
  * fetches more pages, sorts, searches and refreshes it from then on (shared/view-spec.ts).
  */
 
 export const SHOW_TOOL = 'mcp__beluga_view__show';
-const TOKEN = /\[\[view:(\d+)\]\]/g;
-/** A token with the spaces around it: its block goes on lines of its own (a fence mid-sentence isn't one). */
-const PLACED = /[ \t]*\[\[view:(\d+)\]\][ \t]*:?/g;
+/**
+ * What an answer's tokens are read from: code (a fenced block, an inline span) is Claude writing
+ * about a token, left as it is; else a token, with the blank lines and spaces around it (its block
+ * goes on lines of its own: a fence mid-sentence isn't one) and backticks if Claude quoted it.
+ */
+const PIECES = /^[ \t]*(?<fence>`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\k<fence>[`~]*[ \t]*$|(?![\s\S]))|(?<before>\n*)[ \t]*(?<tick>`?)\[\[view:(?<n>\d+)\]\]\k<tick>[ \t]*:?(?<after>\n*)|(?<span>`+)(?!`)[^\n]*?(?<!`)\k<span>(?!`)/gm;
 /** Rows a view carries in the answer (what everyone sees before, or without, fetching). */
 const SNAPSHOT_ROWS = { table: 50, chart: 500, stats: 50, colors: 64, code: 0, gantt: 200, heatmap: 500, calendar: 500 } as const;
 
@@ -38,22 +42,42 @@ export class ViewShelf {
     return `[[view:${n}]]`;
   }
 
-  /** Text as it's being written: tokens become their views. */
+  /** The views the text places, and the tokens it means as text (in code, or quoted and for no view) left out. */
+  private tokens(text: string): { m: RegExpMatchArray; block?: string }[] {
+    const out: { m: RegExpMatchArray; block?: string }[] = [];
+    for (const m of text.includes('[[view:') ? text.matchAll(PIECES) : []) {
+      const { n, tick } = m.groups!;
+      if (n === undefined) continue;
+      const block = this.blocks.get(Number(n));
+      if (block || !tick) out.push({ m, block });
+    }
+    return out;
+  }
+
+  /**
+   * Text as it's being written: tokens become their views. One with no view (Claude wrote it by
+   * hand) goes, and its line with it when it stood alone.
+   */
   expand(text: string): string {
-    if (!this.blocks.size) return text;
-    return text
-      .replace(PLACED, (m, n: string) => {
-        const block = this.blocks.get(Number(n));
-        return block ? `\n\n${block}\n\n` : m;
-      })
-      .replace(/^\n+|\n+$/g, '')
-      .replace(/\n{3,}(?=```beluga-)|(?<=```)\n{3,}/g, '\n\n');
+    const found = this.tokens(text);
+    if (!found.length && !this.blocks.size) return text;
+    let out = '';
+    let at = 0;
+    for (const { m, block } of found) {
+      const { before = '', after = '' } = m.groups!;
+      const end = m.index! + m[0].length;
+      const next = text[end];
+      // Gone mid-sentence, one space stays between the words around it.
+      const gap = before || after ? (before.length >= after.length ? before : after) : m.index && next !== undefined && !/[\s.,;:!?)]/.test(next) ? ' ' : '';
+      out += text.slice(at, m.index) + (block ? `\n\n${block}\n\n` : gap);
+      at = end;
+    }
+    return (out + text.slice(at)).replace(/^\n+|\n+$/g, '').replace(/\n{3,}(?=```beluga-)|(?<=```)\n{3,}/g, '\n\n');
   }
 
   /** A turn's answer: its tokens filled in, and views it didn't place added at the end. */
   finish(text: string): string {
-    if (!this.blocks.size) return text;
-    for (const m of text.matchAll(TOKEN)) this.placed.add(Number(m[1]));
+    for (const { m, block } of this.tokens(text)) if (block) this.placed.add(Number(m.groups!.n));
     const rest = [...this.blocks.keys()].filter((n) => !this.placed.has(n));
     rest.forEach((n) => this.placed.add(n));
     const body = this.expand(text);
@@ -89,7 +113,7 @@ export function createViewTools(shelf: ViewShelf, cwd: string) {
     tools: [
       tool(
         'show',
-        'Show data to the user as a live element in your answer: a table, chart (line, area, bar, pie, donut, scatter), stat tiles, code, a color palette (or picker), a gantt (bars over time), a heatmap (x by y by value), a calendar (values by day), or a graph. Pass the element as JSON (the beluga-view format; for a graph, type "graph" with the beluga-graph fields). Give rows in "data", or a "source" the app fetches more from on its own (file, folder, sqlite, postgres, http, command, or script: code you write for it): it runs once now and the first rows come back to you. Returns a token like [[view:1]]: put it on its own line in your answer where the element goes (else it is added at the end).',
+        'Show data to the user as a live element in your answer: a table, chart (line, area, bar, pie, donut, scatter), stat tiles, code, a color palette (or picker), a gantt (bars over time), a heatmap (x by y by value), a calendar (values by day), or a graph. Pass the element as JSON (the beluga-view format; for a graph, type "graph" with the beluga-graph fields). Give rows in "data", or a "source" the app fetches more from on its own (file, folder, sqlite, postgres, http, command, or script: code you write for it): it runs once now and the first rows come back to you. Returns the element\'s token: put that exact token on its own line in your answer where the element goes (else it is added at the end). Only tokens this tool returned mean anything: never write one by hand (one with no element is dropped), and show a picture you made as a Markdown image with its absolute path, not with this tool.',
         { view: z.record(z.string(), z.unknown()).describe('The element: {"type": "table"|"chart"|"stats"|"code"|"colors"|"graph", "title", ...}') },
         async (a) => {
           try {
