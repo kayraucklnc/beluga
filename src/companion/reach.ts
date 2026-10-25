@@ -16,8 +16,12 @@ export type RelayTunnel = 'cloudflared' | 'off' | ((localPort: number) => Promis
 
 /** How often the DHT record is put again (records fade from the DHT after a while). */
 const REPUBLISH_MS = 10 * 60_000;
-/** A tunnel that died is opened again after this long. */
+/** A tunnel that died is opened again after this long (one whose name Cloudflare dropped: at once, it's known dead). */
 const RETRY_MS = 30_000;
+const RETRY_DEAD_MS = 2_000;
+
+/** How the relay is, for Settings › Phone: ready (its URL answers), starting (or restarting), off (not used here). */
+export type RelayState = 'ready' | 'starting' | 'off';
 
 export interface ReachOptions {
   readonly tunnel: RelayTunnel;
@@ -44,9 +48,16 @@ export class Reach {
     return this.url;
   }
 
+  state(): RelayState {
+    if (this.opts.tunnel === 'off') return 'off';
+    if (!this.running) return 'off';
+    return this.url ? 'ready' : 'starting';
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.opts.onChange();
     await this.server.listen();
     void this.openTunnel();
   }
@@ -97,7 +108,7 @@ export class Reach {
         const t = await openTunnel('cloudflared', this.server.localPort, {
           onDied: (reason) => {
             this.opts.log?.(`companion: relay tunnel stopped: ${reason}`);
-            this.lost();
+            this.lost(/stopped answering/.test(reason) ? RETRY_DEAD_MS : RETRY_MS);
           },
         });
         if (!t) return;
@@ -116,7 +127,7 @@ export class Reach {
     }
   }
 
-  private lost(): void {
+  private lost(after = RETRY_MS): void {
     this.tunnel?.close();
     this.tunnel = undefined;
     if (this.url) {
@@ -126,7 +137,7 @@ export class Reach {
     }
     if (!this.running) return;
     clearTimeout(this.retry);
-    this.retry = setTimeout(() => void this.openTunnel(), RETRY_MS);
+    this.retry = setTimeout(() => void this.openTunnel(), after);
     this.retry.unref();
   }
 }

@@ -8,7 +8,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header, Screen, useScrolled } from '../components/Screen';
 import { Card, haptic, Pill, Row, T } from '../components/ui';
 import { appearance, type Choice } from '../lib/appearance';
-import { useLink } from '../lib/hooks';
+import { useLink, useSupports, useView } from '../lib/hooks';
+import { calls } from '../lib/link/calls';
+import type { HomeView } from '../lib/link/protocol';
 import { COMPANION_PROTO } from '../lib/link/protocol';
 import { type NotifyPrefs, permission, prefs, setPrefs } from '../lib/notifications';
 import { pathLabel } from '../lib/link/diagnose';
@@ -22,6 +24,8 @@ import { color, ink } from '../lib/theme';
  * The phone's own settings. On top: your Mac, notifications on or off, Storage, sign out. Everything else
  * (each kind of notification, the demo's switches, versions). Appearance sits with the basics under Advanced.
  */
+type KeepAwake = NonNullable<HomeView['mac']['keepAwake']>;
+
 export default function Settings() {
   const { scrolled, onScroll } = useScrolled();
   const insets = useSafeAreaInsets();
@@ -33,6 +37,18 @@ export default function Settings() {
   const [advanced, setAdvanced] = useState(false);
   const [look, setLook] = useState<Choice>(appearance.get());
   const saved = useSaved();
+  const home = useView<HomeView>('home');
+  const canKeepAwake = useSupports('keepAwake');
+  const [awake, setAwake] = useState<KeepAwake | undefined>(undefined);
+  const keepAwake = awake ?? home?.data.mac.keepAwake ?? 'off';
+  const chooseAwake = (mode: KeepAwake) => {
+    haptic.tap();
+    setAwake(mode);
+    void store.call(calls.keepAwake(mode), { queue: false }).catch(() => {
+      setAwake(undefined);
+      store.toast({ text: 'Your Mac is away: change this when it’s linked.', tone: 'warn' });
+    });
+  };
   useEffect(() => {
     void permission(false).then(setPerm);
   }, []);
@@ -117,6 +133,25 @@ export default function Settings() {
                     chevron={false}
                   />
                 </Card>
+              </View>
+            ) : null}
+            {link.mode !== 'demo' && canKeepAwake ? (
+              <View style={{ gap: 8 }}>
+                <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
+                  Keep your Mac awake
+                </T>
+                <Segments
+                  value={keepAwake}
+                  onChange={chooseAwake}
+                  options={[
+                    { key: 'off', label: 'Never' },
+                    { key: 'power', label: 'On power' },
+                    { key: 'always', label: 'Always' },
+                  ]}
+                />
+                <T v="caption" c={color.text3} style={{ paddingHorizontal: 6 }}>
+                  A sleeping Mac can’t be reached or woken from here, so Beluga keeps it from sleeping. Its display still sleeps; closing the lid still sleeps it.
+                </T>
               </View>
             ) : null}
             <View style={{ gap: 8 }}>

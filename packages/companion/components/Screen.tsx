@@ -93,7 +93,8 @@ export function AwayBand({ at }: { readonly at?: number }) {
       </Animated.View>
     );
   }
-  const away = link.phase === 'asleep' || (link.phase === 'closed' && outbox.length > 0) || (link.phase === 'refused' && link.diagnosis !== undefined);
+  const retrying = link.phase === 'dialing' && link.diagnosis?.auto === true;
+  const away = link.phase === 'asleep' || retrying || (link.phase === 'closed' && outbox.length > 0) || (link.phase === 'refused' && link.diagnosis !== undefined);
   if (!away) return null;
   // Said in words when we know why (no internet, a network that won't connect, the Mac away…).
   const d = link.phase === 'closed' ? undefined : link.diagnosis;
@@ -107,7 +108,7 @@ export function AwayBand({ at }: { readonly at?: number }) {
               {d?.title ?? 'Mac asleep'}
             </T>
             <T v="caption" c={color.info} style={{ opacity: 0.8 }}>
-              {[at ? asOf(at) : undefined, outbox.length ? `${outbox.length} waiting` : undefined].filter(Boolean).join(' · ') || 'Last views'}
+              {[d?.auto ? (retrying ? 'Connecting…' : 'Trying again by itself') : undefined, at ? asOf(at) : undefined, outbox.length ? `${outbox.length} waiting` : undefined].filter(Boolean).join(' · ') || 'Last views'}
             </T>
           </View>
           {d ? (

@@ -14,6 +14,11 @@ export type Problem =
   | 'dht-blocked'
   /** The Mac was found, but this network won't let them connect, and the relay failed too. */
   | 'no-path'
+  /**
+   * The Mac was found but couldn't be reached directly, and its relay didn't answer (or it had none
+   * yet): it's restarting it by itself (BLG-126), so the phone keeps trying without being asked.
+   */
+  | 'relay-down'
   /** The Mac isn't online: asleep, Beluga closed, or its network is off. */
   | 'mac-offline'
   /** The pairing isn't open any more (10 minutes, one phone) or was closed on the Mac. */
@@ -40,6 +45,8 @@ export interface Diagnosis {
   readonly detail: readonly string[];
   /** Try again makes sense (no point for "update the app"). */
   readonly retry: boolean;
+  /** It should fix itself: the phone keeps trying by itself while you look, and says so. */
+  readonly auto?: boolean;
   readonly action?: 'pair-again' | 'update-app' | 'update-mac' | 'open-settings';
 }
 
@@ -137,12 +144,23 @@ export function diagnose(input: DiagnoseInput): Diagnosis {
     // A pairing key nobody listens on: the pairing is closed (or the code is wrong).
     if (input.stage === 'pair' && r.found === 'no')
       return make({ problem: 'pairing-gone', title: 'Your Mac isn’t offering that pairing', body: 'Pairings work for 10 minutes and for one phone. This one may have run out, been used, or the code may be off.', tryThis: 'On your Mac, open Settings › Phone › Pair a Phone… and scan the new code.', retry: true, action: 'pair-again' });
+    const p2pFailed = r.tried.some((t) => t.way === 'p2p' && (t.outcome === 'unreachable' || t.outcome === 'refused' || t.outcome === 'timeout'));
+    const relayDown = r.tried.some((t) => t.way === 'relay' && (t.outcome === 'unreachable' || t.outcome === 'not-found' || (t.outcome === 'skipped' && t.code === 'NO_RELAY')));
+    if (r.found === 'yes' && p2pFailed && relayDown)
+      return make({
+        problem: 'relay-down',
+        title: 'Reconnecting to your Mac…',
+        body: 'Your Mac is online, but this network won’t let them connect directly, and the Mac’s relay isn’t answering yet. Beluga on your Mac restarts it by itself, and this phone keeps trying.',
+        tryThis: 'Nothing to do. If it takes more than a few minutes, use mobile data, or check Beluga on your Mac is up to date.',
+        retry: true,
+        auto: true,
+      });
     if (r.found === 'yes')
       return make({ problem: 'no-path', title: 'Your Mac is there, but this network won’t connect you', body: `This network doesn’t let your phone and your Mac connect directly${relayTried ? ', and the relay didn’t get through either' : ''}.`, tryThis: MOBILE, retry: true });
     if (r.dht === 'unreachable')
       return make({ problem: 'dht-blocked', title: 'This network blocks Beluga’s connection', body: `It doesn’t let your phone reach the peer-to-peer network Beluga uses${relayTried ? ', and the relay didn’t answer either' : ''}.`, tryThis: MOBILE, retry: true });
     if (r.found === 'no' || (r.recordAge !== undefined && r.recordAge > 30 * 60_000))
-      return make({ problem: 'mac-offline', title: 'Your Mac isn’t online', body: 'It may be asleep, Beluga may be closed, or its network is off.', tryThis: 'Wake your Mac and open Beluga, then try again.', retry: true });
+      return make({ problem: 'mac-offline', title: 'Your Mac isn’t online', body: 'It may be asleep, Beluga may be closed, or its network is off. This phone connects by itself as soon as it’s back.', tryThis: 'Wake your Mac and open Beluga. To keep it from sleeping, turn on Keep this Mac awake in Settings.', retry: true, auto: true });
   }
-  return make({ problem: 'unknown', title: 'Your Mac didn’t answer', body: 'It may be asleep or offline, or this network may not let you connect.', tryThis: 'Make sure Beluga is open on your Mac. If it is, try mobile data.', retry: true });
+  return make({ problem: 'unknown', title: 'Your Mac didn’t answer', body: 'It may be asleep or offline, or this network may not let you connect.', tryThis: 'Make sure Beluga is open on your Mac. If it is, try mobile data.', retry: true, auto: true });
 }

@@ -19,8 +19,14 @@ describe('what went wrong, in words', () => {
     expect(problem({ stage: 'link', online: true, report: report([p2p('timeout'), relay('not-found', '530')], 'ok', 'unknown', 3 * 3600_000) })).toBe('mac-offline');
   });
 
-  it('says the Mac is there but this network won’t connect them (Kayra’s dorm Wi-Fi)', () => {
-    const d = diagnose({ stage: 'pair', online: true, report: report([p2p('unreachable', 'HOLEPUNCH_ABORTED'), relay('unreachable')], 'ok', 'yes') });
+  it('keeps trying by itself when the Mac is there but its relay is restarting (Kayra’s dorm Wi-Fi, BLG-126)', () => {
+    const d = diagnose({ stage: 'link', online: true, report: report([p2p('unreachable', 'HOLEPUNCH_ABORTED'), relay('unreachable')], 'ok', 'yes') });
+    expect(d).toMatchObject({ problem: 'relay-down', auto: true, retry: true });
+    expect(problem({ stage: 'link', online: true, report: report([p2p('timeout'), relay('skipped', 'NO_RELAY')], 'ok', 'yes') })).toBe('relay-down');
+  });
+
+  it('says the Mac is there but this network won’t connect them', () => {
+    const d = diagnose({ stage: 'pair', online: true, report: report([p2p('unreachable', 'HOLEPUNCH_ABORTED'), relay('failed')], 'ok', 'yes') });
     expect(d.problem).toBe('no-path');
     expect(d.tryThis).toMatch(/mobile data/);
     expect(d.retry).toBe(true);

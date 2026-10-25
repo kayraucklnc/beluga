@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DIAL_STALE_MS, graceExpired, onResume, RETRY_LIMIT, RETRY_MAX_MS, retryDelay } from '../packages/companion/lib/link/resume.js';
+import { DIAL_STALE_MS, graceExpired, onResume, RETRY_LIMIT, RETRY_MAX_MS, RETRY_SLOW_MS, retryDelay } from '../packages/companion/lib/link/resume.js';
 import { BACKGROUND_GRACE_MS } from '../src/companion/protocol.js';
 
 /**
@@ -45,9 +45,9 @@ describe('coming back to the front', () => {
 });
 
 describe('trying again by itself while you look', () => {
-  it('backs off from a second to half a minute, then waits for you', () => {
-    const delays = Array.from({ length: RETRY_LIMIT + 1 }, (_, attempt) => retryDelay({ phase: 'asleep', active: true, attempt }));
-    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, RETRY_MAX_MS, undefined]);
+  it('backs off from a second to half a minute, then keeps trying every half minute while you look', () => {
+    const delays = Array.from({ length: RETRY_LIMIT + 2 }, (_, attempt) => retryDelay({ phase: 'asleep', active: true, attempt }));
+    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, RETRY_MAX_MS, RETRY_SLOW_MS, RETRY_SLOW_MS]);
     expect(retryDelay({ phase: 'closed', active: true, attempt: 0 })).toBe(1_000);
     // A little jitter, never more than a quarter.
     expect(retryDelay({ phase: 'closed', active: true, attempt: 2 }, 1)).toBe(5_000);

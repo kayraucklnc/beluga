@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
-import { EFFORTS, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
+import { EFFORTS, KEEP_AWAKE, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
 import { NETWORK_API } from './network-api.js';
@@ -45,6 +45,7 @@ export const PrefsPatch = z
     theme: z.enum(THEMES),
     mouse: bool,
     tunnel: z.enum(['auto', 'p2p', 'cloudflared', 'ngrok', 'none']),
+    keepAwake: z.enum(KEEP_AWAKE),
     selfApproval: z.enum(['never', 'ask']),
     notify: NotifySettings,
     // null: back to the default (JSON can't carry undefined, so "unset" travels as null).

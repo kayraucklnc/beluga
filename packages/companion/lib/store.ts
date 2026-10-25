@@ -423,8 +423,9 @@ class Store {
         this.setState({ diagnosis: diagnose({ stage: 'link', online, ...(info?.report ? { report: info.report } : {}), ...(detail ? { reason: detail } : {}) }) });
       });
     } else {
-      const d = phase === 'refused' ? diagnose({ stage: 'link', ...(info?.code !== undefined ? { closeCode: info.code } : {}), ...(detail ? { reason: detail } : {}) }) : undefined;
-      this.setState({ phase, detail, path: phase === 'closed' ? this.state.path : undefined, diagnosis: d && d.problem !== 'unknown' ? d : undefined });
+      // Dialing again keeps saying what was wrong (the banner stays put while it retries by itself).
+      const d = phase === 'dialing' && this.state.diagnosis?.auto ? this.state.diagnosis : phase === 'refused' ? diagnose({ stage: 'link', ...(info?.code !== undefined ? { closeCode: info.code } : {}), ...(detail ? { reason: detail } : {}) }) : undefined;
+      this.setState({ phase, detail, path: phase === 'closed' ? this.state.path : undefined, diagnosis: d && (d.problem !== 'unknown' || phase === 'dialing') ? d : undefined });
     }
     this.welcomed = false;
     if (phase === 'closed' || phase === 'unreachable') this.scheduleRetry();

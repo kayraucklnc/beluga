@@ -20,6 +20,8 @@ import type { TerminalManager } from '../terminal/pty-host.js';
 import { TermRelay, isWorkspaceTerminal, keysOf, nextShellKey, terminalView, workspaceOf } from './terminals.js';
 import { findByName, listFolder, readPage } from './worktree-files.js';
 import { Reach, type RelayTunnel } from './reach.js';
+import { Awake } from './awake.js';
+import { detectNotices } from '../core/notify.js';
 import { pathNote } from './diagnose.js';
 import {
   COMPANION_PROTO,
@@ -88,6 +90,8 @@ export interface CompanionHostOptions {
   readonly dht?: { readonly bootstrap?: readonly BootstrapNode[]; readonly host?: string; /** Tests: turn away every direct connection (as a network with client isolation does). */ readonly refuseDirect?: boolean };
   /** The relay's tunnel (reach.ts): 'cloudflared' (the daemon's), a function (tests), or 'off' (the default). */
   readonly relay?: RelayTunnel;
+  /** Keeps the Mac awake while a phone is paired and Settings says so (awake.ts); tests pass their own. */
+  readonly awake?: Awake;
   readonly coalesceMs?: number;
   readonly pairTtlMs?: number;
   readonly log?: (line: string) => void;
@@ -300,8 +304,12 @@ export class CompanionHost {
   private phoneRuns = new Map<string, boolean>();
   private changeTimer?: NodeJS.Timeout;
   readonly reach: Reach;
+  private readonly awake: Awake;
+  /** The state at the last notice: what finished since is told to phones away from the app (BLG-128). */
+  private lastState?: DomainState;
 
   constructor(private readonly opts: CompanionHostOptions) {
+    this.awake = opts.awake ?? new Awake(opts.log ? { log: opts.log } : {});
     this.reach = new Reach({
       tunnel: opts.relay ?? 'off',
       ...(opts.log ? { log: opts.log } : {}),
@@ -342,13 +350,18 @@ export class CompanionHost {
   async start(): Promise<void> {
     this.keyPair = await companionKeyPair(this.opts.identity);
     this.offs.push(
-      this.opts.store.subscribe(() => this.changed()),
+      this.opts.store.subscribe(() => {
+        this.keepAwake();
+        this.changed();
+      }),
       this.opts.devices.onChange(() => {
         this.publish();
+        this.keepAwake();
         void this.sync();
       }),
     );
     this.publish();
+    this.keepAwake();
     // What waits for you now is the baseline: phones hear about what comes after.
     await this.notice();
     await this.sync();
@@ -358,9 +371,16 @@ export class CompanionHost {
     this.stopped = true;
     for (const off of this.offs.splice(0)) off();
     clearTimeout(this.changeTimer);
+    this.awake.release();
     await this.pairing.cancel('Beluga on your Mac is shutting down');
     for (const link of [...this.links]) link.close(COMPANION_CLOSE.quiet, 'Beluga on your Mac is shutting down');
     await this.shutdownNode();
+  }
+
+  /** Hold the Mac awake (or let it sleep) as Settings › Phone says, while a phone is paired. */
+  private keepAwake(): void {
+    if (this.stopped) return;
+    this.awake.set(this.state().prefs.keepAwake ?? 'off', this.opts.devices.size > 0);
   }
 
   /** The companion address (hex): where paired phones dial. */
@@ -703,9 +723,12 @@ export class CompanionHost {
   private async notice(): Promise<void> {
     if (!this.opts.devices.size) {
       this.seenNeeds = undefined;
+      this.lastState = undefined;
       return;
     }
     const state = this.state();
+    const prev = this.lastState;
+    this.lastState = state;
     const items = needsYou(state);
     // What was already waiting when the first phone was paired (or Beluga started) isn't news.
     const seen = this.seenNeeds;
@@ -722,6 +745,16 @@ export class CompanionHost {
         nudges.push({ kind: 'done', title: last.status === 'done' || last.status === 'answered' ? 'Claude answered' : 'Claude stopped', body: last.text.replace(/```[\s\S]*?(```|$)/g, '(code)').slice(0, 300), ...(topic ? { topic } : {}), priority: 'normal', collapse: `done:${channel}` });
       }
     }
+    // Every other run that finished (the Mac's own "Claude finished" notices): only for a phone that
+    // stays connected in the background (BLG-128), since one in front sees it already.
+    if (prev && prev !== state) {
+      const told = new Set(nudges.flatMap((n) => (n.collapse?.startsWith('done:') ? [n.collapse] : [])));
+      for (const e of detectNotices(prev, state)) {
+        if ((e.kind !== 'done' && e.kind !== 'problems') || e.tag === 'test' || !e.channel || told.has(`done:${e.channel}`)) continue;
+        const topic = convTopic(e.channel);
+        nudges.push({ kind: 'done', title: e.title.slice(0, 200), body: e.body.replace(/```[\s\S]*?(```|$)/g, '(code)').slice(0, 300), ...(topic ? { topic } : {}), priority: 'normal', collapse: `done:${e.channel}`, away: true });
+      }
+    }
     if (!nudges.length) return;
     let idle: number | undefined;
     let idleAsked = false;
@@ -730,6 +763,7 @@ export class CompanionHost {
       const linked = [...this.links].filter((l) => l.deviceId === id && l.hello);
       for (const nudge of nudges) {
         const onScreen = new Set<string>(linked.flatMap((l) => [...l.topics.keys()]));
+        if (nudge.away && (!linked.length || linked.some((l) => l.inFront))) continue;
         const pre: Delivery = deliver(nudge, { linked: linked.length > 0, onScreen, inFront: linked.some((l) => l.inFront), macFront: state.attention.front, canPush: Boolean(record.push), macIdleMs: 0 });
         if (pre === 'nudge') {
           for (const l of linked) l.send({ t: 'nudge', kind: nudge.kind, title: nudge.title, body: nudge.body, ...(nudge.topic ? { topic: nudge.topic } : {}) });
@@ -752,7 +786,7 @@ export class CompanionHost {
     if (this.stopped) return;
     const linked = new Set([...this.links].filter((l) => l.isOpen).map((l) => l.deviceId));
     const pairing = this.pairing.info();
-    this.opts.store.dispatch({ type: 'companion', companion: { devices: this.opts.devices.views(linked), ...(pairing ? { pairing } : {}) } });
+    this.opts.store.dispatch({ type: 'companion', companion: { devices: this.opts.devices.views(linked), relay: this.reach.state(), ...(pairing ? { pairing } : {}) } });
   }
 
   // ---- the DHT node

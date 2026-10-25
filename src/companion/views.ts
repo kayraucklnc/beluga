@@ -766,7 +766,7 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
   const first = review[0] ? taskTopic(review[0].id) : undefined;
   const assistant = summaryOf(state, openAssistant(state), waiting, ctx);
   return {
-    mac: { name: clip(ctx.mac.name, 100), version: clip(ctx.mac.version, 40) },
+    mac: { name: clip(ctx.mac.name, 100), version: clip(ctx.mac.version, 40), keepAwake: state.prefs.keepAwake ?? 'off' },
     // 1.5: Your Mac, for Home's "Ask your Mac" (its last line, whether it works).
     ...(assistant ? { assistant } : {}),
     me: { name: clip(myName(state), 64), peerId: myId(state) },

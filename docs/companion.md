@@ -368,6 +368,7 @@ blaming anything else it checks the phone is online at all (one look, only after
 |---|---|
 | `offline` | This phone is offline |
 | `dht-blocked` | This network blocks Beluga's connection (UDP blocked, and no relay) |
+| `relay-down` | Reconnecting to your Mac…: it's online, this network blocks a direct connection, and its relay is restarting. The banner stays and says "Trying again by itself" |
 | `no-path` | Your Mac is there, but this network won't connect you: try mobile data |
 | `mac-offline` | Your Mac isn't online: asleep, Beluga closed, or its network off |
 | `pairing-gone`, `pairing-wrong`, `pairing-busy`, `pairing-full` | The pairing closed, ran out, was used; the code was off; another phone is pairing; 4 phones already |
@@ -379,6 +380,17 @@ Pairing refusals carry a `why` for this (`dev_refused`), and the phone's `hello`
 this Mac but couldn't connect directly on its network, so it used the relay." The phone's
 Settings › Advanced shows "Connected directly · same network / over the internet" or "Connected
 through the relay (end-to-end encrypted)". Raw codes never reach the surface.
+
+On the Mac, Settings › Phone › Reaching your Mac says whether phones on other networks get through
+(`companion.relay`: ready, starting, off), and the footer popover says so when it isn't ready.
+
+## Keeping your Mac awake
+
+A sleeping Mac can't be reached, and it can't be woken over the internet (Wake-on-LAN needs the same
+network, and isolating Wi-Fi drops it). So Settings › Phone › Keep this Mac awake (Never, On power,
+Always; the phone's Settings › Advanced has the same, `companion.keepAwake`, since 1.12) keeps it
+from sleeping while a phone is paired: `caffeinate -s` (on power) or `-i`, tied to the daemon's pid
+(`src/companion/awake.ts`). The display still sleeps, and closing a laptop's lid still sleeps it.
 
 ## Battery
 
@@ -395,7 +407,8 @@ The phone holds no connection it isn't using.
   (`packages/companion/lib/link/resume.ts`): away past the grace, the link is replaced at once;
   otherwise one ping (3 s) checks it, and a link that doesn't answer is replaced. A dial under way
   is left alone (one at a time). A link that drops while you look is dialed again by itself, after
-  1, 2, 4… up to 30 s, six times, then it waits for Try again or the next time the app comes back.
+  1, 2, 4… up to 30 s, then every 30 s for as long as the app is in front (BLG-126: the Mac may be
+  restarting its relay, and it should just come back); never in the background.
 - **The relay costs nothing extra.** It's one more way to open the same link, open only while the
   app is in front and closed with it; the keepalives and views over it are the same. The phone
   never holds a relay socket in the background.

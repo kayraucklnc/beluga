@@ -226,6 +226,8 @@ export interface Prefs {
   readonly theme: ThemeName;
   readonly mouse: boolean;
   readonly tunnel: Settings['tunnel'];
+  /** Keep the Mac awake while a phone is paired (companion/awake.ts). */
+  readonly keepAwake: Settings['keepAwake'];
   /** 'never': your own Claude just works; 'ask': it asks before risky actions. */
   readonly selfApproval: 'never' | 'ask';
   readonly notify: NotifySettings;
@@ -538,6 +540,7 @@ export const DEFAULT_PREFS: Prefs = {
   theme: 'calm',
   mouse: true,
   tunnel: 'auto',
+  keepAwake: 'off',
   selfApproval: 'never',
   notify: NotifySchema.parse({}),
   autoSetup: true,

@@ -8,7 +8,8 @@ import { sameDeep } from '../lib/stable.js';
 import { useClock } from '../lib/window-active.js';
 import { QrCode } from '../network/QrCode.js';
 import { errorText, quietly } from '../network/use-net.js';
-import { Group, Row } from '../dialogs/settings-controls.js';
+import { Group, Row, Select } from '../dialogs/settings-controls.js';
+import type { KeepAwake } from '@beluga/shared/settings-schema.js';
 import { pathLabel } from '../../../../src/companion/diagnose.js';
 import { leftText, markOf, seenText } from './phone-model.js';
 import p from '../dialogs/native/person.module.css';
@@ -25,6 +26,40 @@ const useMinute = (): number => useClock(true, 30_000);
 
 const useDevices = (): readonly DeviceView[] => useApp((st) => st.companion.devices, sameDeep);
 const usePairing = () => useApp((st) => st.companion.pairing, sameDeep);
+const useRelay = () => useApp((st) => st.companion.relay);
+
+/** How phones on other networks (a dorm's or a café's Wi-Fi, mobile data) reach this Mac, in a line (BLG-126). */
+export function relayText(relay: 'ready' | 'starting' | 'off' | undefined): { readonly text: string; readonly ok: boolean } | undefined {
+  if (relay === 'ready') return { text: 'Ready: your phone reaches this Mac from any network, end-to-end encrypted.', ok: true };
+  if (relay === 'starting') return { text: 'Starting the relay… Phones on a network that blocks direct connections connect in a moment, by themselves.', ok: false };
+  if (relay === 'off') return { text: 'Off: Remote access is set to direct only, so a phone on a network that blocks direct connections can’t reach this Mac.', ok: false };
+  return undefined;
+}
+
+const KEEP_AWAKE_OPTIONS: ReadonlyArray<{ value: KeepAwake; label: string }> = [
+  { value: 'off', label: 'Never' },
+  { value: 'power', label: 'On power' },
+  { value: 'always', label: 'Always' },
+];
+
+/** Whether phones reach this Mac from anywhere now, and keeping it awake for them. */
+function Reaching() {
+  const { client } = useBeluga();
+  const relay = relayText(useRelay());
+  const keepAwake = useApp((st) => st.prefs.keepAwake ?? 'off');
+  return (
+    <>
+      {relay ? (
+        <Row label="From other networks" detail={relay.text}>
+          <span className={cx(s.relayDot, relay.ok && s.relayOk)} aria-label={relay.ok ? 'Ready' : 'Not ready'} />
+        </Row>
+      ) : null}
+      <Row label="Keep this Mac awake" detail="A sleeping Mac can’t be reached or woken from your phone, so Beluga keeps it from sleeping while a phone is paired. The display still sleeps; closing the lid still sleeps it. Your phone can change this too.">
+        <Select label="Keep this Mac awake" value={keepAwake} onChange={(v) => void client.api.session.setPrefs({ keepAwake: v })} options={KEEP_AWAKE_OPTIONS.map((o) => ({ ...o }))} />
+      </Row>
+    </>
+  );
+}
 
 /** The phones you paired: each with how it is now, and Remove. */
 function DeviceList({ now }: { now: number }) {
@@ -127,6 +162,13 @@ export function Pairing({ now }: { now: number }) {
   );
 }
 
+/** The popover's line about the relay, only when it isn't ready (that's the news). */
+function RelayLine() {
+  const relay = useRelay();
+  const said = relay === 'ready' ? undefined : relayText(relay);
+  return said ? <div className={s.relayLine}>{said.text}</div> : null;
+}
+
 /** The sidebar footer's phone mark (only once a phone is paired, or while pairing one). */
 export function PhoneMark() {
   const devices = useDevices();
@@ -146,6 +188,7 @@ export function PhoneMark() {
         <Popover.Content className={cx(p.card, s.card)} side="top" align="end" sideOffset={8} collisionPadding={10} aria-label="Your phone">
           <div className={s.head}>Phone</div>
           <DeviceList now={now} />
+          <RelayLine />
           <Pairing now={now} />
         </Popover.Content>
       </Popover.Portal>
@@ -163,6 +206,11 @@ export function PhoneSettings() {
           <DeviceList now={now} />
         </div>
       </Group>
+      {useDevices().length ? (
+        <Group title="Reaching your Mac">
+          <Reaching />
+        </Group>
+      ) : null}
       <Group title="Pair a phone">
         <Row label="The Beluga app" detail="Your phone gets its own key, signed by your Mac: it shows what Claude is doing and lets you answer, ask and chat. It never sees code. Up to 4 phones; Remove cuts one off at once.">
           <span />

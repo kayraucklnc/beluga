@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_UPLOADS, PHONE_BRANCH_STEPS, UploadRef } from '../companion/protocol.js';
 import { NEEDS } from '../core/gateway/protocol.js';
+import { KEEP_AWAKE } from '../shared/settings-schema.js';
 import { SourceSchema, ViewQuerySchema } from '../shared/view-spec.js';
 
 /**
@@ -55,6 +56,8 @@ export const COMPANION_API = {
   'companion.askPerson': { args: z.tuple([z.object({ peerId: z.string().regex(/^[\w-]{8,64}$/), text: z.string().min(1).max(16_000), needs: z.array(z.enum(NEEDS)).max(5).optional(), project: z.string().min(1).max(80).optional() }).strict()]) },
   // The phone signs out: its own certificate goes (only the calling phone's), and the link closes.
   'companion.signOut': { args: z.tuple([]) },
+  // Keep the Mac awake for the phone (Settings › Phone's own switch, from the phone): off, on power, always (BLG-127).
+  'companion.keepAwake': { args: z.tuple([z.enum(KEEP_AWAKE)]) },
   // Open on your Mac: the Mac app's window comes to the front showing what the phone has open (a
   // topic, or a needs-you item without one) → { opened, why? } (why not: the Mac app isn't open).
   'companion.openOnMac': {

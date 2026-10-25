@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 11 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 12 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -27,9 +27,10 @@ export const COMPANION_PROTO = { major: 1, minor: 11 } as const;
  * 1.9 (BLG-87): more of Claude's blocks drawn (`tree`, `json`, `terminal`, `math` blocks, mermaid as
  * a graph or view) and its math typeset (`ProseView.math`). 1.10 (BLG-110): a sub-agent opened on
  * the phone, its whole activity and the report it gave back (`companion.subAgent`). 1.11 (BLG-124):
- * which conversations the phone saved files from are archived or deleted (`companion.gone`).
+ * which conversations the phone saved files from are archived or deleted (`companion.gone`). 1.12
+ * (BLG-127): whether the Mac stays awake for the phone (`HomeView.mac.keepAwake`, `companion.keepAwake`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, keepAwake: 12 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -295,7 +296,8 @@ export type ConvSummary = z.infer<typeof ConvSummary>;
 // ---- views, one per topic
 
 export const HomeView = z.object({
-  mac: z.object({ name: z.string().max(100), version: z.string().max(40) }),
+  // 1.12: keepAwake, whether the Mac stays awake for the phone (companion.keepAwake).
+  mac: z.object({ name: z.string().max(100), version: z.string().max(40), keepAwake: z.enum(['off', 'power', 'always']).optional() }),
   me: z.object({ name: z.string().max(64), peerId: id }),
   usage: z.array(UsageView).max(8),
   needsYou: z.array(NeedsYou).max(50),
@@ -795,5 +797,6 @@ export interface DeviceView {
 }
 
 export interface CompanionSlice {
-  readonly companion: { readonly devices: readonly DeviceView[]; readonly pairing?: { readonly link: string; readonly code: string; readonly expiresAt: number; readonly waiting?: { readonly name: string; readonly fingerprint: string } } };
+  /** `relay`: how phones on other networks reach this Mac now (reach.ts), for Settings › Phone (BLG-126). */
+  readonly companion: { readonly devices: readonly DeviceView[]; readonly relay?: 'ready' | 'starting' | 'off'; readonly pairing?: { readonly link: string; readonly code: string; readonly expiresAt: number; readonly waiting?: { readonly name: string; readonly fingerprint: string } } };
 }

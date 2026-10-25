@@ -216,6 +216,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.ask` | – the phone only: Ask your Mac (a question in a project, as New Chat does, or a message in a conversation, Your Mac's `conv:mac:assistant` included), with photos and files the phone sent (`put`) |
 | `companion.post` | – the phone only: a message in a friends' chat with files from the phone |
 | `companion.askPerson` | – the phone only: ask a friend's Claude yourself, as from their card in Requests (their approval and trust rules apply) |
+| `companion.keepAwake` | Settings › Phone › Keep this Mac awake (the phone's Settings has the same switch) |
 | `companion.signOut` | – the phone only: Sign Out removes that phone's own certificate (the Mac's Remove is `companion.devices.remove`) |
 | `companion.openOnMac` | – the phone only: ••• › Open on your Mac brings this window to the front on that conversation, plan or task (the window's `raise` capability and a navigate intent) |
 | `companion.icon` | – the phone only: a project's icon, small, by the checksum its views carry (the Mac shows `projects.icon`) |

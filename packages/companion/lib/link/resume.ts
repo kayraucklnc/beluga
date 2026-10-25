@@ -68,8 +68,9 @@ export function onResume(s: ResumeInput): ResumeAction {
 /** Automatic retries while the app is in front and the link dropped or the Mac didn't answer. */
 export const RETRY_BASE_MS = 1_000;
 export const RETRY_MAX_MS = 30_000;
-/** Then it waits for you (Try again) or the next time the app comes to the front: no polling. */
+/** After this many, it keeps trying every RETRY_SLOW_MS while you look (BLG-126: the Mac may be fixing its relay); never in the background. */
 export const RETRY_LIMIT = 6;
+export const RETRY_SLOW_MS = 30_000;
 
 /**
  * Should the link be dialed again by itself, and when? `attempt` counts retries since the link was
@@ -78,8 +79,7 @@ export const RETRY_LIMIT = 6;
 export function retryDelay(s: { readonly phase: ResumePhase; readonly active: boolean; readonly attempt: number }, jitter = 0): number | undefined {
   if (!s.active) return undefined;
   if (s.phase !== 'closed' && s.phase !== 'asleep' && s.phase !== 'unreachable') return undefined;
-  if (s.attempt >= RETRY_LIMIT) return undefined;
-  const base = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** s.attempt);
+  const base = s.attempt >= RETRY_LIMIT ? RETRY_SLOW_MS : Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** s.attempt);
   // Up to a quarter more, so phones don't all knock at the same moment.
   return Math.round(base * (1 + Math.max(0, Math.min(1, jitter)) / 4));
 }

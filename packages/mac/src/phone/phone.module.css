@@ -188,3 +188,21 @@
 .inSettings {
   padding: 4px 12px 12px;
 }
+
+/* Settings › Phone: whether phones on other networks reach this Mac (BLG-126). */
+.relayDot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.relayOk {
+  background: var(--ok);
+}
+.relayLine {
+  margin: 6px 0 2px;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
