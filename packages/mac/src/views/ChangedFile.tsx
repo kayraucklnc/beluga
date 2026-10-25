@@ -4,11 +4,11 @@ import type { ChangedFile as Change } from '@beluga/workspaces/git.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import type { DocVariant } from '../components/markdown/MarkdownDoc.js';
-import { isMarkdownFile, isVisualFile } from './reader/reader-model.js';
+import { hasRenderedLook, isVisualFile } from './reader/reader-model.js';
 import r from './reader/reader.module.css';
 
 /**
- * A changed file as itself, next to its diff: Markdown formatted, pictures and PDFs as they look,
+ * A changed file as itself, next to its diff: Markdown formatted, web pages drawn, pictures and PDFs as they look,
  * code as it is now. Read on its own, so the Files tab's open file stays where it is.
  */
 
@@ -24,7 +24,7 @@ export const onlyAsFile = (path: string): boolean => isVisualFile(path);
 export const canShowFile = (f: Pick<Change, 'state'>): boolean => f.state !== 'deleted';
 
 /** The name of the "as itself" look: formatted Markdown is a preview, anything else the file. */
-export const fileLookLabel = (path: string): string => (isMarkdownFile(path) ? 'Preview' : 'File');
+export const fileLookLabel = (path: string): string => (hasRenderedLook(path) ? 'Preview' : 'File');
 
 /** Where a changed file is, for the workspace (or the one shared with you) on screen. */
 export function changeLocation(state: Pick<AppState, 'view' | 'selfId' | 'shared'>, path: string): Location | undefined {

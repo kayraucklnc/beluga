@@ -3,8 +3,10 @@ import { Icon } from '../components/Icon.js';
 import { Button, Kbd, Tip, cx } from '../components/ui.js';
 import { toast, useApi, useBeluga } from '../lib/beluga.js';
 import { mod } from '../lib/system.js';
-import { usePinchZoom } from '../components/usePinchZoom.js';
-import { useEffect, useRef, useState } from 'react';
+import { pinchStep } from '../components/pinch-model.js';
+import { useDecoded } from '../components/use-decoded.js';
+import { type Size, type ZoomView, clampView, doubleClickScale, fitScale, fitView, isZoomed, panBy, transformOf, zoomAt } from '../components/zoom-model.js';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { openWithDefaultApp } from '../lib/files.js';
 import { type ChatImage, closeLightbox, copyImage, loadImage, openLightbox, stepLightbox, useImage, useLightbox } from './images.js';
 import s from './images.module.css';
@@ -44,32 +46,184 @@ export function ImageGrid({ images }: { images: readonly ChatImage[] }) {
   );
 }
 
-/** The picture, fitted; pinch (or double-click) to zoom in, and it scrolls. */
+/** Room left around a fitted picture (px, each side). */
+const FIT_PAD = 24;
+
+/**
+ * The picture, fitted and centered (any size, any shape); pinch, Ctrl+scroll or double-click to
+ * zoom around the cursor, then drag or scroll to look around. It's drawn at its own size and only
+ * moved with a transform, a frame at a time, so zooming never lays the window out again.
+ */
 function Full({ image }: { image: ChatImage }) {
   const api = useApi();
   const state = useImage(api, image);
-  const box = useRef<HTMLDivElement>(null);
+  // A new picture is decoded before it replaces the one on screen.
+  const pic = useDecoded(state.status === 'ready' ? state.url : undefined);
+  const frame = useRef<HTMLDivElement>(null);
   const picture = useRef<HTMLImageElement>(null);
-  const [zoom, setZoom] = useState<'fit' | number>('fit');
-  const [natural, setNatural] = useState<{ w: number; h: number }>();
-  // Another image: fitted again.
-  useEffect(() => setZoom('fit'), [image.href]);
-  const fitted = (): number => (picture.current && natural ? picture.current.clientWidth / natural.w : 1);
-  usePinchZoom(box, zoom === 'fit' ? fitted() : zoom, setZoom);
-  const sized = zoom !== 'fit' && natural ? { width: natural.w * zoom, height: natural.h * zoom } : undefined;
+  const live = useRef({ view: { scale: 1, x: 0, y: 0 } as ZoomView, fit: 1, size: { w: 0, h: 0 } as Size, frame: { w: 0, h: 0 } as Size, frameId: 0, idle: 0, dragged: false });
+  const fittedFor = useRef<string | undefined>(undefined);
+  const [zoomed, setZoomed] = useState(false);
+
+  const draw = (): void => {
+    const z = live.current;
+    z.frameId = 0;
+    if (picture.current) picture.current.style.transform = transformOf(z.view, z.size);
+  };
+  /** Shown as `v` on the next frame (many events in one frame draw once); `moving` keeps it on its own layer meanwhile. */
+  const show = (v: ZoomView, how: 'moving' | 'glide' | 'still' = 'moving'): void => {
+    const z = live.current;
+    z.view = v;
+    const el = picture.current;
+    if (el) {
+      el.style.transition = how === 'glide' ? 'transform 160ms var(--ease-out, ease-out)' : '';
+      if (how !== 'still') {
+        // On its own layer while it moves; let go once it rests, so it's drawn sharp at the new size.
+        el.style.willChange = 'transform';
+        window.clearTimeout(z.idle);
+        z.idle = window.setTimeout(() => {
+          if (picture.current) picture.current.style.willChange = '';
+        }, 220);
+      }
+    }
+    if (how === 'still') draw();
+    else if (!z.frameId) z.frameId = requestAnimationFrame(draw);
+    setZoomed(isZoomed(v, z.fit));
+  };
+  const measure = (): Size => {
+    const el = frame.current;
+    return (live.current.frame = el ? { w: el.clientWidth, h: el.clientHeight } : { w: 0, h: 0 });
+  };
+  /** Where the cursor is, from the frame's center. */
+  const from = (clientX: number, clientY: number): { x: number; y: number } => {
+    const r = frame.current?.getBoundingClientRect();
+    return r ? { x: clientX - r.left - r.width / 2, y: clientY - r.top - r.height / 2 } : { x: 0, y: 0 };
+  };
+  const zoomTo = (scale: number, clientX: number, clientY: number, how: 'moving' | 'glide' = 'moving'): void => {
+    const z = live.current;
+    show(zoomAt(z.view, scale, from(clientX, clientY), z.size, z.frame, z.fit), how);
+  };
+
+  // A picture is on screen (or a newer version of it): fitted and centered the first time, kept where it is after.
+  useLayoutEffect(() => {
+    if (!pic) return;
+    const z = live.current;
+    const frameSize = measure();
+    const same = fittedFor.current === image.href && z.size.w === pic.w && z.size.h === pic.h;
+    z.size = { w: pic.w, h: pic.h };
+    z.fit = fitScale(z.size, frameSize, FIT_PAD);
+    show(same ? clampView(z.view, z.size, frameSize) : fitView(z.size, frameSize, FIT_PAD), 'still');
+    fittedFor.current = image.href;
+  }, [pic?.url, image.href]);
+
+  // The window is resized: still fitted (and centered) if it was, else kept in the frame.
+  useEffect(() => {
+    const el = frame.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const z = live.current;
+      if (!z.size.w) return;
+      const wasZoomed = isZoomed(z.view, z.fit);
+      const frameSize = measure();
+      z.fit = fitScale(z.size, frameSize, FIT_PAD);
+      show(wasZoomed ? clampView(z.view, z.size, frameSize) : fitView(z.size, frameSize, FIT_PAD), 'still');
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Pinches (WebKit's gesture events, Chromium's Ctrl+wheel), two-finger scrolls and drags, all off React's renders.
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return;
+    const z = live.current;
+    let start = 1;
+    let drag: { id: number; x: number; y: number } | undefined;
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 16 : 1;
+      if (e.ctrlKey) zoomTo(pinchStep(z.view.scale, e.deltaY * unit), e.clientX, e.clientY);
+      else if (isZoomed(z.view, z.fit)) show(panBy(z.view, -e.deltaX * unit, -e.deltaY * unit, z.size, z.frame));
+    };
+    const onGestureStart = (e: Event): void => {
+      e.preventDefault();
+      start = z.view.scale;
+    };
+    const onGesture = (e: Event): void => {
+      e.preventDefault();
+      const g = e as Event & { scale: number; clientX: number; clientY: number };
+      zoomTo(start * g.scale, g.clientX, g.clientY);
+    };
+    const stop = (e: Event): void => e.preventDefault();
+    const onDown = (e: PointerEvent): void => {
+      z.dragged = false;
+      if (e.button !== 0 || !isZoomed(z.view, z.fit)) return;
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      el.setPointerCapture(e.pointerId);
+      el.classList.add(s.dragging!);
+    };
+    const onMove = (e: PointerEvent): void => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 0) {
+        if (Math.abs(dx) + Math.abs(dy) > 2) z.dragged = true;
+        drag = { ...drag, x: e.clientX, y: e.clientY };
+        show(panBy(z.view, dx, dy, z.size, z.frame));
+      }
+    };
+    const onUp = (e: PointerEvent): void => {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag = undefined;
+      el.classList.remove(s.dragging!);
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('gesturestart', onGestureStart, { passive: false } as AddEventListenerOptions);
+    el.addEventListener('gesturechange', onGesture, { passive: false } as AddEventListenerOptions);
+    el.addEventListener('gestureend', stop, { passive: false } as AddEventListenerOptions);
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', onGestureStart);
+      el.removeEventListener('gesturechange', onGesture);
+      el.removeEventListener('gestureend', stop);
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+      cancelAnimationFrame(z.frameId);
+      z.frameId = 0;
+      window.clearTimeout(z.idle);
+    };
+  }, []);
+
   return (
-    <div ref={box} className={cx(s.stage, sized && s.stageZoom)}>
-      {state.status === 'ready' ? (
+    <div
+      ref={frame}
+      className={cx(s.stage, zoomed && s.stageZoom)}
+      // A click on the picture (or the end of a drag) keeps the lightbox open; one beside it closes it.
+      onClick={(e) => {
+        if (live.current.dragged || e.target === picture.current) e.stopPropagation();
+        live.current.dragged = false;
+      }}
+    >
+      {pic ? (
         <img
           ref={picture}
           className={s.full}
-          src={state.url}
+          src={pic.url}
           alt={image.label}
           draggable={false}
-          style={sized}
-          onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-          onClick={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => (e.stopPropagation(), setZoom(zoom === 'fit' ? 1 : 'fit'))}
+          style={{ width: pic.w || undefined, height: pic.h || undefined }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            const z = live.current;
+            zoomTo(doubleClickScale(z.view, z.fit), e.clientX, e.clientY, 'glide');
+          }}
         />
       ) : (
         <div className={cx(s.fullPending, state.status === 'error' && s.failed)}>{state.status === 'error' ? `Image unavailable: ${state.error}` : null}</div>

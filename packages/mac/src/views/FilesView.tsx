@@ -10,7 +10,7 @@ import { useActions } from '../lib/actions.js';
 import { copyText } from '../lib/copy.js';
 import { localPathOf, mentionOf, openWithDefaultApp, revealInFinder, saveFile } from '../lib/files.js';
 import { SCROLL_ROOT } from '../components/markdown/md-dom.js';
-import { type ReaderMode, initialMode, isMarkdownFile } from './reader/reader-model.js';
+import { type ReaderMode, hasRenderedLook, initialMode } from './reader/reader-model.js';
 import { SearchField, SearchResults } from './SharedSearch.js';
 import s from './files.module.css';
 
@@ -44,7 +44,7 @@ export function Viewer({ viewer }: { viewer: ViewerState }) {
     body.current?.scrollTo({ top: 0 });
   }, [viewer.path]);
   const name = viewer.path.split('/').pop() || viewer.path;
-  const markdown = isMarkdownFile(viewer.path) && !viewer.image;
+  const markdown = hasRenderedLook(viewer.path) && !viewer.image;
   const local = useApp((st) => localPathOf(st, viewer));
   return (
     <section className={s.viewer} aria-label={name}>
