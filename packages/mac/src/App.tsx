@@ -1,4 +1,5 @@
 import type { SettingsSection } from '@beluga/ui/settings-menus.js';
+import { useDictationSetup } from './lib/dictation.js';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useEffect } from 'react';
 import { channelOf } from '@beluga/core/store.js';
@@ -226,6 +227,8 @@ export function App() {
   const welcome = useOnboarding();
   useOverlays();
   useShortcuts();
+  // Speaking instead of typing: the talk shortcut, ↩ and esc while listening (Settings › Voice).
+  useDictationSetup(client);
   useRememberProject();
   useSettingsWindow();
   useNative(client, ui, actions, setJoining);

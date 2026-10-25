@@ -14,6 +14,7 @@ import { ContextSettings } from './ContextSettings.js';
 import { ParallelSettings } from './ParallelSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
+import { VoiceSettings } from './VoiceSettings.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import { MaintainerChip } from './SupportSheets.js';
 import s from './settings.module.css';
@@ -37,6 +38,7 @@ const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> 
   { id: 'environment', label: 'Environment', icon: 'lock' },
   { id: 'people', label: 'People & access', icon: 'people' },
   { id: 'phone', label: 'Phone', icon: 'phone' },
+  { id: 'voice', label: 'Voice', icon: 'mic' },
   { id: 'about', label: 'About', icon: 'globe' },
 ];
 
@@ -380,7 +382,7 @@ function About() {
   );
 }
 
-const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, fire: FireSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, about: About };
+const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, fire: FireSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, voice: VoiceSettings, about: About };
 
 /** Beluga's settings: this window's look on the left panes, Beluga's shared settings on the rest. */
 export function Settings() {

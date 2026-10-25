@@ -29,7 +29,10 @@ export function Sheet({ visible, onDismiss, children, header, maxHeight = 0.86, 
       drag.value = 0;
       y.value = withSpring(0, { stiffness: 300, damping: 32, mass: 0.9 });
     } else if (mounted) {
-      y.value = withTiming(height, { duration: 240 }, () => scheduleOnRN(setMounted, false));
+      // Only once it's fully down: opened again on its way down, the spring up cancels this, and the sheet stays.
+      y.value = withTiming(height, { duration: 240 }, (done) => {
+        if (done) scheduleOnRN(setMounted, false);
+      });
     }
   }, [visible]);
 

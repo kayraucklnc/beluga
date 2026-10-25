@@ -120,6 +120,8 @@ export class WorkspaceController {
   private readonly ahead = nothingAhead();
   /** Archiving and deleting in one repo, one at a time (git locks its worktrees): the last job queued, by repo. */
   private readonly lanes = new Map<string, Promise<unknown>>();
+  /** Archives running now, by workspace id: it shows as archived already, so Restore can come before it's done. */
+  private readonly archiving = new Map<string, Promise<boolean>>();
 
   /** Hear about worktrees opening, merging, going and coming back. */
   onWorktree(listener: (event: WorktreeEvent) => void): () => void {
@@ -593,6 +595,18 @@ export class WorkspaceController {
    * `quiet`: a plan clearing away merged work (no toast).
    */
   async archive(id: string, _force = false, opts: { readonly quiet?: boolean } = {}): Promise<boolean> {
+    const running = this.archiving.get(id);
+    if (running) return running;
+    const job = this.archiveNow(id, opts);
+    this.archiving.set(id, job);
+    try {
+      return await job;
+    } finally {
+      this.archiving.delete(id);
+    }
+  }
+
+  private async archiveNow(id: string, opts: { readonly quiet?: boolean }): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
     const ws = this.deps.manager.find(id);
     // Out of the sidebar now (it can't be archived: the manager says why); saving and removing the folder follow.
@@ -718,16 +732,26 @@ export class WorkspaceController {
 
   /** Bring it back as it was; what was thrown away is made again by the project's setup. */
   async restore(id: string): Promise<void> {
+    // Still being archived (it shows as archived already): restoring now would find nothing to bring back.
+    const archiving = this.archiving.get(id);
+    if (archiving) {
+      this.deps.toast(`Restoring ${this.deps.manager.find(id)?.name ?? 'it'} once it’s done archiving…`, 'info');
+      if (!(await archiving)) return; // it never went: nothing to restore
+    }
+    const ws = this.deps.manager.find(id);
     let manifest: ArchiveManifest | undefined;
-    const done = await this.act("Couldn't restore", async () => {
-      manifest = await this.deps.manager.restore(id);
-      return true;
-    });
+    // In the repo's lane, like archiving and deleting (git locks its worktrees).
+    const done = await this.inLane(ws?.projectRoot || ws?.path || id, () =>
+      this.act("Couldn't restore", async () => {
+        manifest = await this.deps.manager.restore(id);
+        return true;
+      }),
+    );
     if (!done) return;
     this.open(id);
     this.emit({ kind: 'restored', id });
-    const ws = this.deps.manager.find(id);
-    if (ws && manifest?.dropped.length) this.deps.onWorktreeRestored?.(ws, manifest.remake);
+    const back = this.deps.manager.find(id);
+    if (back && manifest?.dropped.length) this.deps.onWorktreeRestored?.(back, manifest.remake);
   }
 
   async remove(id: string): Promise<void> {

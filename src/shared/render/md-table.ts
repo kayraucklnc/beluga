@@ -47,7 +47,8 @@ export function tableView(t: { readonly columns: readonly string[]; readonly row
  * the phone as this (src/companion/strip.ts), and the phone reads it with the views' own parser.
  */
 export function tableSpec(t: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[] }): { type: 'table'; data: Row[]; columns: Array<{ key: string; label: string; type?: string; unit?: string }>; pageSize: number; search: boolean } {
-  const keys = uniqueKeys(t.columns);
+  // A blank heading (the empty corner over a comparison's row names) needs a key; its label stays blank.
+  const keys = uniqueKeys(t.columns.map((c, i) => c.trim() || `Column ${i + 1}`));
   // A column of numbers with one unit ("388 ms", "12 GB") is numbers, the unit said once.
   const units = keys.map((_, i) => {
     const found = t.rows.map((r) => /^[-+]?\d[\d,]*(\.\d+)?\s*([a-zA-Zµ]{1,4})$/.exec((r[i] ?? '').trim())?.[2]);

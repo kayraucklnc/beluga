@@ -1,0 +1,123 @@
+/* The composer's microphone and its listening strip (Dictation.tsx): quiet, pastel, no glow. */
+.mic {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 4px;
+  border-radius: 13px;
+  color: var(--text-3);
+  transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
+}
+.mic:hover:not(:disabled) {
+  background: var(--bg-press);
+  color: var(--text-2);
+}
+.mic:disabled {
+  opacity: 0.45;
+}
+.micOn {
+  background: color-mix(in srgb, var(--error) 16%, var(--bg));
+  color: var(--error);
+}
+.micOn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 22%, var(--bg));
+  color: var(--error);
+}
+.micBusy {
+  background: color-mix(in srgb, var(--info) 12%, var(--bg));
+}
+.stopMark {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--info) 30%, transparent);
+  border-top-color: var(--info);
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px 0;
+  padding: 5px 6px 5px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--info) 9%, var(--bg));
+  color: var(--text-2);
+  font-size: 0.86rem;
+}
+.live {
+  background: color-mix(in srgb, var(--error) 8%, var(--bg));
+}
+.error {
+  background: color-mix(in srgb, var(--warn) 11%, var(--bg));
+  padding-right: 10px;
+}
+.text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.time {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.flex {
+  flex: 1;
+}
+.keys {
+  color: var(--text-3);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.keys kbd {
+  font-size: 0.76rem;
+}
+.done {
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 500;
+  box-shadow: 0 0 0 0.5px var(--hairline-strong, var(--hairline));
+}
+.bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+.bars span {
+  width: 2.5px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--error);
+  opacity: 0.75;
+  transform-origin: center;
+  transition: transform 90ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+  .bars span {
+    transition: none;
+  }
+}

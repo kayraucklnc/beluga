@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { ArrowUp, Clock, ImagePlus, ListPlus, Navigation, Square, X } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { Platform, ScrollView, TextInput, View } from 'react-native';
+import { Keyboard, Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp, LinearTransition, useAnimatedStyle, withSpring, ZoomIn, ZoomOut } from 'react-native-reanimated';
 import { composerPlan, FIELD_LINE_HEIGHT, FIELD_PAD, fieldHeight, MAX_PHOTOS } from '../lib/composer';
 import { pickPhoto } from '../lib/pick';
@@ -215,7 +215,7 @@ export function Composer({
               <Animated.View key="send" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
                 <Press
                   onPress={() => send('send')}
-                  onLongPress={plan.more.length ? () => (haptic.commit(), setMenu(true)) : undefined}
+                  onLongPress={plan.more.length ? () => (haptic.commit(), Keyboard.dismiss(), setMenu(true)) : undefined}
                   delayLongPress={320}
                   disabled={!live}
                   accessibilityLabel={plan.tap === 'queue' ? 'Queue: after what Claude is doing' : 'Send'}
@@ -229,7 +229,9 @@ export function Composer({
           </Animated.View>
         </View>
       </Card>
+      {/* Opened from the composer, not the screen: in a window of its own, with the keyboard put away (in the composer's box it showed as a sliver, under the keyboard). */}
       <Options
+        window
         visible={menu}
         onClose={() => setMenu(false)}
         title="While Claude works"

@@ -72,6 +72,16 @@ export interface UiPrefs {
   readonly planTaskChats: readonly string[];
   /** How the message box burns on Max effort (Settings › Max Fire). */
   readonly maxFire: FireLook;
+  /** Settings › Voice (BLG-146): the model that writes down what you say ('suggested': Beluga picks for the language). */
+  readonly voiceModel: 'suggested' | 'whisper-turbo' | 'parakeet';
+  /** The language you speak ('auto': the model tells). */
+  readonly voiceLanguage: string;
+  /** The talk shortcut, as an accelerator ('Alt+Space'; '' : none). */
+  readonly voiceShortcut: string;
+  /** Written down, it's sent at once (⌘↩ always sends; otherwise it waits in the box to read over). */
+  readonly voiceSend: boolean;
+  /** The shortcut works from any app: Beluga comes forward and listens. */
+  readonly voiceAnyApp: boolean;
 }
 
 export const ACCENTS = {
@@ -126,6 +136,11 @@ export const DEFAULT_PREFS: UiPrefs = {
   groupIcons: {},
   planTaskChats: [],
   maxFire: DEFAULT_FIRE,
+  voiceModel: 'suggested',
+  voiceLanguage: 'auto',
+  voiceShortcut: 'Alt+Space',
+  voiceSend: false,
+  voiceAnyApp: false,
 };
 
 const KEY = 'beluga.prefs.v1';

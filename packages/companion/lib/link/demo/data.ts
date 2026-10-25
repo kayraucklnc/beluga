@@ -322,6 +322,20 @@ export function makeWorld(now = Date.now()): DemoWorld {
       { id: 'lb2', who: 'claude', name: 'Claude', ts: now - 2 * MIN, status: 'working', step: 'Reading src/auth/redirect.ts', steps: 3, live: { phase: 'step', words: 'Reading src/auth/redirect.ts', tool: 'read', since: now - 20_000 }, trail: [{ tool: 'search', text: 'Searched for "returnTo"' }, { tool: 'read', text: 'Read src/widget/open.ts' }], prose: { text: '', code: [] } },
     ],
   };
+  // A plan Claude is still writing: its chat works, the plan has no milestones yet (nothing to approve).
+  const widgetPlanning: ConvView = {
+    topic: 'conv:weather.widget',
+    title: 'Plan: Home screen widget',
+    project: 'pixel-weather',
+    more: false,
+    canSend: true,
+    working: true,
+    needsYou: [],
+    turns: [
+      { id: 'wp1', who: 'you', name: 'You', ts: now - 3 * MIN, prose: { text: 'Plan a home screen widget: today’s forecast, the radar thumbnail, tap opens the app at that city.', code: [] } },
+      { id: 'wp2', who: 'claude', name: 'Claude', ts: now - 3 * MIN, status: 'working', step: 'Reading src/forecast/store.ts', steps: 7, live: { phase: 'step', words: 'Reading src/forecast/store.ts', tool: 'read', since: now - 15_000 }, trail: [{ tool: 'search', text: 'Searched for "WidgetKit"' }, { tool: 'read', text: 'Read src/radar/tiles.ts' }], prose: { text: 'Looking at how the forecast is cached and how radar tiles are made, so the widget can reuse both. I’ll split it into milestones next.', code: [] } },
+    ],
+  };
   const assistant: ConvView = {
     topic: 'conv:mac:assistant',
     title: 'Your Mac',
@@ -394,10 +408,34 @@ export function makeWorld(now = Date.now()): DemoWorld {
           txt('stripe-export.log', 'text', 'Fetched 415 charges in 3 pages', undefined, 48 * MIN),
         ],
       },
+      { id: 'rf3', who: 'you', name: 'You', ts: now - 30 * MIN, prose: { text: 'What does Team get that Starter doesn’t?', code: [] } },
+      {
+        // A comparison with an empty corner, as Claude writes one: a table, never its pipes.
+        id: 'rf4',
+        who: 'claude',
+        name: 'Claude',
+        ts: now - 30 * MIN,
+        endTs: now - 29 * MIN,
+        status: 'done',
+        steps: 1,
+        trail: [{ tool: 'read', text: 'Read plans.ts' }],
+        prose: stripCode(
+          [
+            'Team is Starter with room for a whole company, plus the reports your finance people ask for.',
+            '',
+            '| | Starter | Team |',
+            '|---|---|---|',
+            '| **Seats** | Up to 5 | Unlimited, billed per seat after 10 |',
+            '| **Reports** | Monthly revenue only | Revenue, churn and cohorts, exported to CSV or Sheets every Monday |',
+            '| **Support** | Email, within two days | Chat and email, within four hours on weekdays |',
+            '| **Price** | $19 a month | $120 a month |',
+          ].join('\n'),
+        ),
+      },
     ],
   };
 
-  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now), loginBug, assistant, forecast].map((c) => [c.topic, c]));
+  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now), loginBug, widgetPlanning, assistant, forecast].map((c) => [c.topic, c]));
 
   // ---- what needs you, one of each kind (and one this phone doesn't know)
   // Shaped exactly as src/companion/views.ts makes them (the same methods, args and templates).
@@ -587,6 +625,14 @@ export function makeWorld(now = Date.now()): DemoWorld {
       { id: 'm5', title: 'iOS', state: 'todo', criteria: ['Keychain, APNs, the service extension'], tasks: [{ id: 'k13', title: 'Port the link to iOS', state: 'later', blockedBy: ['k10'] }], dependsOn: ['m3'] },
     ],
   };
+  const widgetPlan: PlanView = {
+    id: 'widget',
+    title: 'Home screen widget',
+    state: 'draft',
+    topic: 'conv:weather.widget',
+    milestones: [],
+    needsYou: [],
+  };
   const docsPlan: PlanView = {
     id: 'docs',
     title: 'Docs for the network',
@@ -682,12 +728,12 @@ export function makeWorld(now = Date.now()): DemoWorld {
     convs,
     projects: [
       { id: 'beluga', name: 'beluga', convs: ['conv:beluga.onboarding', 'conv:beluga.push'] },
-      { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:ws:wt-login-bug', 'conv:weather.radar', 'conv:weather.ci'] },
+      { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:ws:wt-login-bug', 'conv:weather.widget', 'conv:weather.radar', 'conv:weather.ci'] },
       { id: 'shop', name: 'shop', convs: ['conv:shop.forecast', 'conv:shop.dashboard'] },
       { id: 'asked', name: 'Asked of friends', convs: [] },
     ],
     files,
-    plans: [plan, radarPlan, docsPlan],
+    plans: [plan, widgetPlan, radarPlan, docsPlan],
     chats,
     people,
     tasks: demoTasks(now),

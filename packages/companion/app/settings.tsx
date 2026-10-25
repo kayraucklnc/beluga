@@ -1,7 +1,7 @@
-import { router } from 'expo-router';
-import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Monitor, MonitorSmartphone, Moon, MoonStar, Network, ShieldCheck, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Mic, Monitor, MonitorSmartphone, Moon, MoonStar, Network, ShieldCheck, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform, ScrollView, Switch, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,10 +21,13 @@ import { store } from '../lib/store';
 import { askBatteryUnrestricted, batteryUnrestricted, setStay, stayAvailable, stayOn } from '../lib/stay';
 import { accessibilityOn, openAccessibilitySettings, phoneAllowed, phoneControlAvailable, setPhoneAllowed } from '../lib/phone';
 import { color, ink } from '../lib/theme';
+import { voiceAvailable, voiceChoice, voiceSetting } from '../lib/voice';
+import { VOICE_MODELS } from '../../../src/shared/voice-models';
 
 /**
  * The phone's own settings. On top: your Mac, notifications on or off, Storage, sign out. Everything else
  * (each kind of notification, the demo's switches, versions). Appearance sits with the basics under Advanced.
+ * Voice (BLG-142) opens its own page: where the microphone's words are written down, and by which model.
  */
 type KeepAwake = NonNullable<HomeView['mac']['keepAwake']>;
 
@@ -149,6 +152,7 @@ export default function Settings() {
                 onPress={askBatteryUnrestricted}
               />
             ) : null}
+            {voiceAvailable() ? <VoiceRow /> : null}
             {canControl ? (
               <Row
                 Icon={MonitorSmartphone}
@@ -291,4 +295,15 @@ export default function Settings() {
       </ScrollView>
     </Screen>
   );
+}
+
+/** Settings' Voice row: what the microphone does now (it changes on the Voice page). */
+function VoiceRow() {
+  useSupports('voice');
+  // Back from the Voice page: what was chosen there.
+  const [, again] = useState(0);
+  useFocusEffect(useCallback(() => again((n) => n + 1), []));
+  const c = voiceChoice();
+  const suggested = voiceSetting().preset === 'suggested';
+  return <Row Icon={Mic} tone="peach" label="Voice" sub={`${c.where === 'mac' ? 'On your Mac' : 'On this phone'} · ${VOICE_MODELS[c.model].label}${suggested ? ' (suggested)' : ''}`} onPress={() => router.push('/voice')} />;
 }

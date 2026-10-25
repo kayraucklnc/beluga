@@ -395,6 +395,13 @@ export const PHONE: Record<Method, Side> = {
   'companion.subAgent': 'phone',
   // Which conversations the phone saved files from are archived or deleted (BLG-124): names only.
   'companion.gone': 'phone',
+  'companion.voice': 'phone',
+  'companion.voicePrepare': 'phone',
+  'companion.transcribe': 'phone',
+  // The Mac app's own microphone; the phone has companion.transcribe.
+  'voice.models': 'mac',
+  'voice.prepare': 'mac',
+  'voice.transcribe': 'mac',
 };
 
 /** A method the phone may call (unknown names are not). */
