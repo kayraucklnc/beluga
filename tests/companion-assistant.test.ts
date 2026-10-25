@@ -66,6 +66,21 @@ describe('Your Mac on the phone', () => {
     expect(work.projects.flatMap((p) => p.conversations.map((c) => c.topic))).not.toContain('conv:mac:assistant');
   });
 
+  it('Home lists all its chats in tab order (1.14); the phone starts and deletes one, the Mac keeps which tab is open', () => {
+    const store = state();
+    store.dispatch({ type: 'assistant_chats', assistant: { chats: [{ id: 'main', channel: ASSISTANT_CHANNEL, createdAt: T0 }, { id: 'b2', channel: `${ASSISTANT_CHANNEL}:b2`, createdAt: T0 + 5 }], active: 'b2' } });
+    const home = homeView(store.getState(), ctx());
+    expect(HomeView.safeParse(home).success).toBe(true);
+    expect(home.macChats?.map((c) => [c.topic, c.title])).toEqual([
+      ['conv:mac:assistant', 'What is using my CPU?'],
+      ['conv:mac:assistant:b2', 'New chat'],
+    ]);
+    expect(home.assistant?.topic).toBe('conv:mac:assistant:b2');
+    expect(SINCE.macChats).toBeLessThanOrEqual(COMPANION_PROTO.minor);
+    expect([PHONE['assistant.newChat'], PHONE['assistant.deleteChat'], PHONE['assistant.openChat']]).toEqual(['phone', 'phone', 'mac']);
+    expect(Object.keys(PhoneCalls)).toEqual(expect.arrayContaining(['assistant.newChat', 'assistant.deleteChat']));
+  });
+
   it('opens on the Mac as its sidebar row', () => {
     const s = state().getState();
     expect(macViewFor(s, { topic: 'conv:mac:assistant' })).toEqual({ kind: 'assistant' });

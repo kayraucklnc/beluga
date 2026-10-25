@@ -391,6 +391,11 @@ const openAssistant = (state: DomainState): Conversation => {
   return assistantConversations(state).find((c) => c.channel === channel) ?? { channel, title: ASSISTANT_TITLE, mine: true };
 };
 
+/** Your Mac's chats for the phone's list (1.14): in tab order, each titled by its tab. */
+function macChatSummaries(state: DomainState, waiting: ReadonlySet<string>, ctx?: ViewContext): ConvSummary[] {
+  return state.assistant.chats.slice(0, 40).flatMap((c) => summaryOf(state, { channel: c.channel, title: assistantChatTitle(c.channel, state.log, 60), mine: true }, waiting, ctx) ?? []);
+}
+
 /**
  * The conversation a channel the phone names is: an older phone knows only `mac:assistant`, so
  * once that first chat is deleted it means the chat open on the Mac. Anything else as it is.
@@ -766,10 +771,13 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
   const review = boardIssues(state).filter((i) => i.status === 'in_review');
   const first = review[0] ? taskTopic(review[0].id) : undefined;
   const assistant = summaryOf(state, openAssistant(state), waiting, ctx);
+  const macChats = macChatSummaries(state, waiting, ctx);
   return {
     mac: { name: clip(ctx.mac.name, 100), version: clip(ctx.mac.version, 40), keepAwake: state.prefs.keepAwake ?? 'off' },
     // 1.5: Your Mac, for Home's "Ask your Mac" (its last line, whether it works).
     ...(assistant ? { assistant } : {}),
+    // 1.14: all of Your Mac's chats, for the phone's chat list.
+    ...(macChats.length ? { macChats } : {}),
     me: { name: clip(myName(state), 64), peerId: myId(state) },
     usage: usageViews(state.self?.usage),
     needsYou: items,
