@@ -48,6 +48,8 @@ export function ownerName(deviceName: string | null | undefined): string {
 export class DemoTransport implements Transport {
   readonly kind = 'demo' as const;
   private world: DemoWorld = makeWorld();
+  /** When the demo's Parakeet started coming (Settings › Voice › Get it on your Mac). */
+  private demoParakeet: number | undefined;
   private readonly frames = new Emitter<[MacFrame]>();
   private readonly phases = new Emitter<[LinkPhase, string?]>();
   private open_ = false;
@@ -528,6 +530,17 @@ export class DemoTransport implements Transport {
         this.later(260, () => ok(demoRows(a.source?.query ?? '', a.query)));
         return;
       }
+
+      // ---- the Mac writing down what you said (1.16): Whisper Turbo is there, Parakeet comes when asked
+      case 'companion.voice':
+      case 'companion.voicePrepare': {
+        if (method === 'companion.voicePrepare' && str(0) === 'parakeet') this.demoParakeet ??= Date.now();
+        const p = this.demoParakeet ? Math.min(1, (Date.now() - this.demoParakeet) / 20_000) : undefined;
+        return ok({ models: [{ model: 'whisper-turbo', bytes: 874_188_075, ready: true }, { model: 'parakeet', bytes: 668_757_119, ready: p === 1, ...(p !== undefined && p < 1 ? { progress: p } : {}) }] });
+      }
+      case 'companion.transcribe':
+        this.later(900, () => ok({ text: 'Run the tests and send me a screenshot of the login page.', language: 'en', ms: 640 }));
+        return;
 
       // ---- open on your Mac, project icons
       case 'companion.openOnMac':
