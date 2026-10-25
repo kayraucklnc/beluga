@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { fireVars, DEFAULT_FIRE, type FireLook, type FirePalette, PALETTES, PRESETS, paletteOf, presetOf, reachOf } from '../chat/fire-look.js';
+import { fireVars, DEFAULT_FIRE, type FireLook, type FirePalette, PALETTES, PRESETS, paletteOf, presetOf } from '../chat/fire-look.js';
 import { MaxFire } from '../chat/MaxFire.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Segmented, cx } from '../components/ui.js';
@@ -150,7 +150,7 @@ function Preview({ look }: { look: FireLook }) {
   // Never shown as off here: it's what it would look like.
   const shown = look.show === 'off' ? { ...look, show: 'always' as const } : look;
   return (
-    <div className={f.stage} style={{ paddingTop: Math.min(reachOf(look), 200) + 8 }}>
+    <div className={f.stage} style={{ paddingTop: 200 }}>
       <div ref={box} className={cx(f.fakeBox, m.max)} style={fireVars(look) as React.CSSProperties}>
         <MaxFire box={box} input={input} look={shown} />
         <textarea ref={input} className={f.fakeInput} rows={2} value={text} placeholder="Type or delete here to try it" aria-label="Try the fire" onChange={(e) => setText(e.target.value)} />

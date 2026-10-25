@@ -7,6 +7,7 @@ import s from './max.module.css';
 /** Room round the box for the fire (above it, as tall as it can burn: never cut off). */
 const SIDE = 40;
 const BOTTOM = 16;
+const TOP = reachOf({ height: 1, thickness: 1 });
 
 const tuneOf = (look: FireLook): FireTune => ({ style: look.style, show: look.show, fuel: look.fuel, height: look.height, thickness: look.thickness, wildness: look.wildness, colors: paletteOf(look).colors, temper: look.temper });
 
@@ -21,7 +22,8 @@ export function MaxFire({ box, input, look: given }: { box: RefObject<HTMLDivEle
   const fire = useRef<Fire | undefined>(undefined);
   const prefs = usePrefs();
   const look = given ?? prefs.maxFire;
-  const top = reachOf(look);
+  // Room for the tallest fire, always: a taller look never resizes (and restarts) it.
+  const top = TOP;
   const now = useRef({ look, top });
   now.current = { look, top };
   useEffect(() => fire.current?.setTune(tuneOf(look)), [look]);

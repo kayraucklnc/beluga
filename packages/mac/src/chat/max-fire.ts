@@ -86,6 +86,7 @@ uniform float u_wild;
 uniform float u_tall;
 uniform float u_reach;
 uniform float u_rimk;
+uniform float u_alpha;
 uniform vec3 u_c0;
 uniform vec3 u_c1;
 uniform vec3 u_c2;
@@ -139,11 +140,13 @@ void main() {
   float a = smoothstep(1.0 - soft, 1.0 + soft, shell);
   vec3 c = mix(u_c0, u_c1, smoothstep(1.9 - soft, 1.9 + soft, f));
   c = mix(c, u_c2, smoothstep(3.6 - soft, 3.6 + soft, f));
+  a *= u_alpha;
   gl_FragColor = vec4(c * a, a);
 }
 `;
 
-const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
+type Rgb = [number, number, number];
+const rgb = (hex: string): Rgb => [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
 
 /** The fire's GPU half: a full-canvas quad and the metaball shader. */
 class FlameGL {
@@ -180,10 +183,10 @@ class FlameGL {
     const a = gl.getAttribLocation(program, 'a');
     gl.enableVertexAttribArray(a);
     gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
-    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_wild', 'u_tall', 'u_reach', 'u_rimk', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
+    for (const name of ['u_size', 'u_dpr', 'u_box', 'u_time', 'u_cell', 'u_heat', 'u_wild', 'u_tall', 'u_reach', 'u_rimk', 'u_alpha', 'u_c0', 'u_c1', 'u_c2', 'u_blobs', 'u_count']) this.at[name] = gl.getUniformLocation(program, name);
   }
 
-  draw(o: { width: number; height: number; dpr: number; box: FireBox; time: number; cell: number; heat: number; wild: number; tall: number; reach: number; rim: number; colors: readonly string[]; blobs: readonly Blob[] }): void {
+  draw(o: { width: number; height: number; dpr: number; box: FireBox; time: number; cell: number; heat: number; wild: number; tall: number; reach: number; rim: number; alpha: number; colors: readonly Rgb[]; blobs: readonly Blob[] }): void {
     const gl = this.gl;
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.clearColor(0, 0, 0, 0);
@@ -198,7 +201,8 @@ class FlameGL {
     gl.uniform1f(this.at.u_tall!, o.tall);
     gl.uniform1f(this.at.u_reach!, o.reach);
     gl.uniform1f(this.at.u_rimk!, o.rim);
-    o.colors.forEach((c, i) => gl.uniform3f(this.at[`u_c${i}`]!, ...rgb(c)));
+    gl.uniform1f(this.at.u_alpha!, o.alpha);
+    o.colors.forEach((c, i) => gl.uniform3f(this.at[`u_c${i}`]!, ...c));
     const n = Math.min(MAX_BLOBS, o.blobs.length);
     for (let i = 0; i < n; i++) {
       const b = o.blobs[i]!;
@@ -215,6 +219,12 @@ export class MaxFire {
   private readonly flame: FlameGL | undefined;
   private readonly front: CanvasRenderingContext2D;
   private tune: FireTune = { style: 'toon', show: 'always', fuel: 0.5, height: 0.5, thickness: 0.5, wildness: 0.5, colors: TEMPER, temper: true };
+  /**
+   * What's drawn now, gliding toward `tune` (about half a second), so a new preset or slider
+   * changes the fire smoothly instead of all at once; a new style fades in.
+   */
+  private cur = { fuel: 0.5, height: 0.5, thickness: 0.5, wildness: 0.5, colors: TEMPER.map(rgb) as Rgb[], alpha: 1 };
+  private fresh = true;
   /** How much is burning (0–1): all the time, or (only while typing) since the last key. */
   private amount = 1;
   private typedAt = -Infinity;
@@ -242,8 +252,14 @@ export class MaxFire {
   }
 
   setTune(tune: FireTune): void {
+    if (!this.fresh && tune.style !== this.tune.style) this.cur.alpha = 0;
     this.tune = tune;
     this.pixelAt = -1;
+    // The first look is taken as it is; later ones are glided to.
+    if (this.fresh) {
+      this.fresh = false;
+      this.cur = { fuel: tune.fuel, height: tune.height, thickness: tune.thickness, wildness: tune.wildness, colors: this.palette.map(rgb), alpha: 1 };
+    }
   }
 
   resize(width: number, height: number, box: FireBox): void {
@@ -345,7 +361,7 @@ export class MaxFire {
     const side = r < 0.8 ? 0 : r < 0.9 ? -1 : 1;
     const px = side === 0 ? x + 6 + Math.random() * (w - 12) : side < 0 ? x - 2 : x + w + 2;
     const py = side === 0 ? y + 4 : y + 8 + Math.random() * (h - 12);
-    const { thickness, height, wildness } = this.tune;
+    const { thickness, height, wildness } = this.cur;
     const size = (side === 0 ? 5 + Math.random() * 6 : 4 + Math.random() * 3) * (0.6 + thickness * 0.9);
     const lift = 0.6 + height * 1.0;
     return { x: px, y: py, vx: side * (0.25 + Math.random() * 0.3) + (Math.random() - 0.5) * (0.1 + wildness * 0.5), vy: -(0.35 + Math.random() * 0.5) * lift, r: size * (0.8 + this.heat * 0.5), life: 1, decay: (0.012 + Math.random() * 0.012) * (1.5 - height * 0.9) };
@@ -353,13 +369,20 @@ export class MaxFire {
 
   private step(dt: number): void {
     this.time += dt / 60;
+    // Glide toward the chosen look.
+    const k = Math.min(1, 0.09 * dt);
+    const cur = this.cur;
+    for (const key of ['fuel', 'height', 'thickness', 'wildness'] as const) cur[key] += (this.tune[key] - cur[key]) * k;
+    const toward = this.palette.map(rgb);
+    cur.colors = cur.colors.map((c, i) => c.map((v, j) => v + (toward[i]![j]! - v) * k) as Rgb);
+    cur.alpha += (1 - cur.alpha) * Math.min(1, 0.07 * dt);
     const target = this.focused ? 0.55 : 0.4;
     this.heat += (target - this.heat) * 0.02 * dt;
     // Only while typing: it catches at the first key and dies down a couple of seconds after the last.
     const goal = this.tune.show === 'typing' ? (this.time - this.typedAt < 2.2 ? 1 : 0) : 1;
     this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.12 : 0.03) * dt);
     // Keep the fire fed: one blob per 12–30px of edge (the fuel), more the hotter it burns.
-    const want = Math.min(MAX_BLOBS, Math.round(((this.box.w + this.box.h) / (30 - this.tune.fuel * 18)) * (0.7 + this.heat * 0.6) * this.amount));
+    const want = Math.min(MAX_BLOBS, Math.round(((this.box.w + this.box.h) / (30 - this.cur.fuel * 18)) * (0.7 + this.heat * 0.6) * this.amount));
     for (let born = (want / 60) * dt * 1.4; born > 0 && this.blobs.length < want; born--) {
       if (born < 1 && Math.random() > born) break;
       this.blobs.push(this.spawn());
@@ -398,8 +421,9 @@ export class MaxFire {
 
   /** What the shader is given, from the dials. */
   private drawn() {
-    const { style, fuel, height, wildness } = this.tune;
-    return { width: this.width, height: this.height, dpr: this.dpr, box: this.box, time: this.time, cell: style === 'pixel' ? CELL : 0, heat: this.heat, wild: wildness, tall: height, reach: this.box.y, rim: (0.55 + fuel * 0.8) * this.amount, colors: this.palette };
+    const { style } = this.tune;
+    const { fuel, height, wildness, colors, alpha } = this.cur;
+    return { width: this.width, height: this.height, dpr: this.dpr, box: this.box, time: this.time, cell: style === 'pixel' ? CELL : 0, heat: this.heat, wild: wildness, tall: height, reach: this.box.y, rim: (0.55 + fuel * 0.8) * this.amount, alpha, colors };
   }
 
   private drawConfetti(pixel: boolean): void {
