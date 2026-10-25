@@ -143,11 +143,12 @@ function showThinking(q: unknown): void {
  */
 export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
   let sessionId: string | undefined;
-  const roomTools = createRoomTools(opts.bridge);
 
   return {
     async run(input: AgentRunInput): Promise<string> {
       const abortController = new AbortController();
+      // Several conversations run at once: this run's room tools post to its own.
+      const bridge = input.channel && opts.bridge.inChannel ? opts.bridge.inChannel(input.channel) : opts.bridge;
       input.signal.addEventListener('abort', () => abortController.abort(), { once: true });
       // A workspace brings its own folder and conversation; otherwise use the room's.
       const place = input.place;
@@ -190,7 +191,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { beluga: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input), ...planServer(input), ...macServer(input), beluga_view: createViewTools(shelf, cwd) },
+        mcpServers: { beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...planServer(input), ...macServer(input), beluga_view: createViewTools(shelf, cwd) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
