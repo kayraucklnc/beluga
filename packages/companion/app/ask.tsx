@@ -17,7 +17,7 @@ import { store } from '../lib/store';
 import { appendSpoken } from '../lib/dictate';
 import { color, spring } from '../lib/theme';
 import { useVoice, voiceAvailable } from '../lib/voice';
-import { VoiceButton, VoiceStage } from '../components/Voice';
+import { VoiceButton, VoiceNote, VoiceStage, voiceActive } from '../components/Voice';
 
 /**
  * The Ask button's sheet: write, (attach a photo), send. Where it goes is one pill: tap it to
@@ -196,15 +196,20 @@ export default function Ask() {
         ) : (
           <View>
             <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
-              <TextInput
-                autoFocus
-                value={text}
-                onChangeText={setText}
-                multiline
-                placeholder={target?.kind === 'friend' ? `What should ${target.name}'s Claude do?` : target?.kind === 'project' && modes ? MODES.find((m) => m.mode === how)!.hint : target?.kind === 'mac' ? 'Take a screenshot and send it to me' : 'Run the tests and send me a screenshot'}
-                placeholderTextColor={color.text3}
-                style={{ color: color.text, fontSize: 19, lineHeight: 26, minHeight: 92, maxHeight: 200, textAlignVertical: 'top', ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }}
-              />
+              {voiceActive(voice.view) ? (
+                // While it records, the stage is the field: the blob, and the words landing where they'll stay.
+                <VoiceStage voice={voice} before={text} minHeight={92} />
+              ) : (
+                <TextInput
+                  autoFocus
+                  value={text}
+                  onChangeText={setText}
+                  multiline
+                  placeholder={target?.kind === 'friend' ? `What should ${target.name}'s Claude do?` : target?.kind === 'project' && modes ? MODES.find((m) => m.mode === how)!.hint : target?.kind === 'mac' ? 'Take a screenshot and send it to me' : 'Run the tests and send me a screenshot'}
+                  placeholderTextColor={color.text3}
+                  style={{ color: color.text, fontSize: 19, lineHeight: 26, minHeight: 92, maxHeight: 200, textAlignVertical: 'top', ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }}
+                />
+              )}
               {photo ? (
                 <Animated.View entering={ZoomIn.duration(220)} exiting={ZoomOut.duration(150)} style={{ width: 80, height: 80, borderRadius: 16, overflow: 'hidden', marginTop: 6 }}>
                   <Image source={{ uri: photo.uri }} style={{ flex: 1 }} contentFit="cover" />
@@ -213,7 +218,7 @@ export default function Ask() {
                   </Press>
                 </Animated.View>
               ) : null}
-              <VoiceStage voice={voice} />
+              <VoiceNote voice={voice} />
             </View>
             {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 10 }}>

@@ -10,7 +10,7 @@ import { appendSpoken } from '../lib/dictate';
 import { useVoice, voiceAvailable } from '../lib/voice';
 import { Options } from './Options';
 import { Card, haptic, Press, T } from './ui';
-import { VoiceButton, VoiceStage } from './Voice';
+import { VoiceButton, VoiceNote, VoiceStage, voiceActive } from './Voice';
 
 /**
  * Write to your Mac: a field that takes the width and grows with what you write (up to seven
@@ -182,7 +182,7 @@ export function Composer({
       <Card r={24} style={{ paddingHorizontal: 4, paddingVertical: 4, gap: 2 }}>
         {voiceAvailable() ? (
           <View style={{ paddingHorizontal: 10 }}>
-            <VoiceStage voice={voice} />
+            <VoiceNote voice={voice} />
           </View>
         ) : null}
         <PhotoStrip photos={pics} onRemove={(uri) => setPics((l) => l.filter((p) => p.uri !== uri))} />
@@ -193,40 +193,47 @@ export function Composer({
             </Press>
           ) : null}
           {left}
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            placeholder={placeholder}
-            placeholderTextColor={color.text3}
-            multiline
-            scrollEnabled
-            onContentSizeChange={(e) => setH(fieldHeight(e.nativeEvent.contentSize.height))}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              color: color.text,
-              fontSize: 16.5,
-              lineHeight: FIELD_LINE_HEIGHT,
-              paddingTop: FIELD_PAD,
-              paddingBottom: FIELD_PAD,
-              paddingLeft: canAttach || left ? 4 : 12,
-              paddingRight: 6,
-              minHeight: fieldHeight(0),
-              maxHeight: fieldHeight(Number.POSITIVE_INFINITY),
-              height: Platform.OS === 'web' ? h : undefined,
-              textAlignVertical: 'top',
-              ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}),
-            }}
-            onKeyPress={(e) => {
-              // On the web, Enter sends (Shift+Enter is a new line); ⌥↩ steers, as on the Mac.
-              const ne = e.nativeEvent as unknown as { key: string; shiftKey?: boolean; altKey?: boolean };
-              if (Platform.OS === 'web' && ne.key === 'Enter' && !ne.shiftKey) {
-                (e as unknown as { preventDefault(): void }).preventDefault();
-                if (plan.tap === 'stop' || plan.tap === 'idle') return;
-                send(ne.altKey === true && plan.more.includes('steer') ? 'steer' : 'send');
-              }
-            }}
-          />
+          {voiceActive(voice.view) ? (
+            // While it records, the stage is the field: the blob, and the words landing where they'll stay.
+            <View style={{ flex: 1, minWidth: 0, paddingLeft: canAttach || left ? 4 : 10 }}>
+              <VoiceStage voice={voice} before={text} box minHeight={fieldHeight(0)} />
+            </View>
+          ) : (
+            <TextInput
+              value={text}
+              onChangeText={setText}
+              placeholder={placeholder}
+              placeholderTextColor={color.text3}
+              multiline
+              scrollEnabled
+              onContentSizeChange={(e) => setH(fieldHeight(e.nativeEvent.contentSize.height))}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                color: color.text,
+                fontSize: 16.5,
+                lineHeight: FIELD_LINE_HEIGHT,
+                paddingTop: FIELD_PAD,
+                paddingBottom: FIELD_PAD,
+                paddingLeft: canAttach || left ? 4 : 12,
+                paddingRight: 6,
+                minHeight: fieldHeight(0),
+                maxHeight: fieldHeight(Number.POSITIVE_INFINITY),
+                height: Platform.OS === 'web' ? h : undefined,
+                textAlignVertical: 'top',
+                ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}),
+              }}
+              onKeyPress={(e) => {
+                // On the web, Enter sends (Shift+Enter is a new line); ⌥↩ steers, as on the Mac.
+                const ne = e.nativeEvent as unknown as { key: string; shiftKey?: boolean; altKey?: boolean };
+                if (Platform.OS === 'web' && ne.key === 'Enter' && !ne.shiftKey) {
+                  (e as unknown as { preventDefault(): void }).preventDefault();
+                  if (plan.tap === 'stop' || plan.tap === 'idle') return;
+                  send(ne.altKey === true && plan.more.includes('steer') ? 'steer' : 'send');
+                }
+              }}
+            />
+          )}
           {voiceAvailable() ? (
             <VoiceButton
               voice={voice}

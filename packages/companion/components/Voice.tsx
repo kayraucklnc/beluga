@@ -5,9 +5,9 @@ import Animated, {
   cancelAnimation,
   Easing,
   FadeIn,
-  FadeInDown,
+
   FadeOut,
-  FadeOutDown,
+
   interpolate,
   interpolateColor,
   LinearTransition,
@@ -103,7 +103,10 @@ function Hop({ delay, c }: { readonly delay: number; readonly c: string }) {
 }
 
 /** A word rising into place, after the ones before it (a mount animation, not a layout one: words flow inline). */
-function Word({ w, i }: { readonly w: string; readonly i: number }) {
+/** The type of the field the stage stands in for: the Ask sheet's big one, or a conversation's box. */
+type Type = { readonly fontSize: number; readonly lineHeight: number };
+
+function Word({ w, i, type }: { readonly w: string; readonly i: number; readonly type: Type }) {
   const v = useSharedValue(0);
   const still = useReducedMotion();
   useEffect(() => {
@@ -112,7 +115,7 @@ function Word({ w, i }: { readonly w: string; readonly i: number }) {
   const st = useAnimatedStyle(() => ({ opacity: v.value, transform: [{ translateY: (1 - v.value) * 7 }, { scale: 0.96 + v.value * 0.04 }] }));
   return (
     <Animated.View style={st}>
-      <T v="callout" c={color.text} style={{ fontSize: 15.5, lineHeight: 21 }}>
+      <T v="callout" c={color.text} style={type}>
         {w}
       </T>
     </Animated.View>
@@ -120,9 +123,16 @@ function Word({ w, i }: { readonly w: string; readonly i: number }) {
 }
 
 /** The words so far: written phrases word by word, a shimmering pill where one is being written, a caret while it listens. */
-function Words({ phrases, listening }: { readonly phrases: readonly Phrase[]; readonly listening: boolean }) {
+function Words({ before, phrases, listening, type }: { readonly before: string; readonly phrases: readonly Phrase[]; readonly listening: boolean; readonly type: Type }) {
+  // What you'd typed stays first, as it was; the spoken words arrive after it.
+  const typed = before.trim() ? before.trim().split(/\s+/) : [];
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 4.5, rowGap: 2 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: type.fontSize * 0.28, rowGap: 0 }}>
+      {typed.map((w, i) => (
+        <T key={`t${i}`} v="callout" c={color.text} style={type}>
+          {w}
+        </T>
+      ))}
       {phrases.map((p) =>
         p.status === 'writing' ? (
           <Shimmer key={`w${p.id}`} />
@@ -131,10 +141,10 @@ function Words({ phrases, listening }: { readonly phrases: readonly Phrase[]; re
             …
           </T>
         ) : (
-          (p.text ?? '').split(/\s+/).filter(Boolean).map((w, i) => <Word key={`${p.id}:${i}`} w={w} i={i} />)
+          (p.text ?? '').split(/\s+/).filter(Boolean).map((w, i) => <Word key={`${p.id}:${i}`} w={w} i={i} type={type} />)
         ),
       )}
-      {listening ? <Caret /> : null}
+      {listening ? <Caret height={type.lineHeight * 0.8} /> : null}
     </View>
   );
 }
@@ -147,18 +157,18 @@ function Shimmer() {
   const st = useAnimatedStyle(() => ({ opacity: o.value }));
   return <Animated.View style={[{ width: 54, height: 13, borderRadius: 7, backgroundColor: scheme === 'dark' ? alpha(ink.lavender, 0.4) : tint.lavender }, st]} />;
 }
-function Caret() {
+function Caret({ height }: { readonly height: number }) {
   const o = useSharedValue(1);
   useEffect(() => {
     o.value = withRepeat(withSequence(withTiming(0.15, { duration: 520 }), withTiming(1, { duration: 520 })), -1);
     return () => cancelAnimation(o);
   }, []);
   const st = useAnimatedStyle(() => ({ opacity: o.value }));
-  return <Animated.View style={[{ width: 2, height: 17, borderRadius: 1, backgroundColor: ink.rose }, st]} />;
+  return <Animated.View style={[{ width: 2, height, borderRadius: 1, backgroundColor: ink.rose }, st]} />;
 }
 
 /** One quiet line: how long, and what the two buttons do. */
-function Line({ view }: { readonly view: Extract<VoiceView, { phase: 'listening' | 'writing' }> }) {
+function Line({ view, compact }: { readonly view: Extract<VoiceView, { phase: 'listening' | 'writing' }>; readonly compact?: boolean }) {
   // The time, twice a second while it listens.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -168,14 +178,14 @@ function Line({ view }: { readonly view: Extract<VoiceView, { phase: 'listening'
   }, [view.phase]);
   const secs = view.phase === 'listening' ? Math.max(0, Math.floor((now - view.since) / 1000)) : 0;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: compact ? 2 : 6 }}>
       {view.phase === 'listening' ? (
         <T v="caption" c={ink.rose} style={{ fontVariant: ['tabular-nums'] }}>
           {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')}
         </T>
       ) : null}
       <T v="caption" numberOfLines={1} style={{ flex: 1 }}>
-        {view.phase === 'listening' ? '■ edit it first · ↑ send it as you said it' : view.send ? 'Sending as soon as it’s written down…' : 'Writing down the last of it…'}
+        {view.phase === 'listening' ? (compact ? '■ edit · ↑ send' : '■ edit it first · ↑ send it as you said it') : view.send ? 'Sending as soon as it’s written down…' : 'Writing down the last of it…'}
       </T>
       {view.note ? (
         <T v="caption" c={color.text3} numberOfLines={1} style={{ maxWidth: '45%' }}>
@@ -185,8 +195,31 @@ function Line({ view }: { readonly view: Extract<VoiceView, { phase: 'listening'
     </View>
   );
 }
-/** Over the controls while it gets ready, listens or writes; a quiet line after (an error, or where it was written). */
-export function VoiceStage({ voice }: { readonly voice: VoiceSession }) {
+/** It's getting ready, listening or writing down: the stage stands in for the text field. */
+export const voiceActive = (v: VoiceView): boolean => v.phase === 'getting' || v.phase === 'listening' || v.phase === 'writing';
+
+/** After it: one quiet line under the field (an error, or where it was written). */
+export function VoiceNote({ voice }: { readonly voice: VoiceSession }) {
+  const v = voice.view;
+  if (v.phase !== 'off') return null;
+  const line = v.error ?? v.note;
+  if (!line) return null;
+  return (
+    <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 6 }}>
+      <Mic color={v.error ? ink.rose : color.text3} size={12} />
+      <T v="caption" numberOfLines={2} style={{ flex: 1 }}>
+        {line}
+      </T>
+    </Animated.View>
+  );
+}
+
+/**
+ * In place of the text field while it gets ready, listens or writes: the blob, and beside it what
+ * you'd typed followed by the words arriving, in the field's own type, so the words land where
+ * they'll stay. `box`: a conversation's box (a smaller blob, one quiet line); else the Ask sheet's.
+ */
+export function VoiceStage({ voice, before = '', box, minHeight }: { readonly voice: VoiceSession; readonly before?: string; readonly box?: boolean; readonly minHeight?: number }) {
   const v = voice.view;
   // A light tick each time a pause cuts a phrase: you feel it hearing you.
   const count = v.phase === 'listening' || v.phase === 'writing' ? v.phrases.length : 0;
@@ -195,22 +228,12 @@ export function VoiceStage({ voice }: { readonly voice: VoiceSession }) {
     if (count > last.current) haptic.tap();
     last.current = count;
   }, [count]);
-  if (v.phase === 'off') {
-    const line = v.error ?? v.note;
-    if (!line) return null;
-    return (
-      <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 6 }}>
-        <Mic color={v.error ? ink.rose : color.text3} size={12} />
-        <T v="caption" numberOfLines={2} style={{ flex: 1 }}>
-          {line}
-        </T>
-      </Animated.View>
-    );
-  }
+  const type: Type = box ? { fontSize: 16.5, lineHeight: 22 } : { fontSize: 19, lineHeight: 26 };
+  const blob = box ? 44 : 76;
   if (v.phase === 'getting') {
     const f = VOICE_MODELS[v.model].files.phone;
     return (
-      <Animated.View entering={FadeInDown.springify().damping(18)} exiting={FadeOutDown.duration(160)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 10 }}>
+      <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(140)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight, paddingVertical: box ? 4 : 8 }}>
         <Dots />
         <View style={{ flex: 1, gap: 6 }}>
           <T v="caption">{`Getting ${VOICE_MODELS[v.model].label}${f ? ` · ${voiceSize(f.bytes)}, once` : ''}`}</T>
@@ -221,24 +244,26 @@ export function VoiceStage({ voice }: { readonly voice: VoiceSession }) {
       </Animated.View>
     );
   }
+  if (v.phase !== 'listening' && v.phase !== 'writing') return null;
   const listening = v.phase === 'listening';
   return (
-    <Animated.View entering={FadeInDown.springify().damping(17)} exiting={FadeOutDown.duration(180)} layout={LinearTransition.springify().damping(20)} style={{ paddingTop: 10 }}>
-      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', marginLeft: -8 }}>
-        <Metaballs level={voice.level} speaking={voice.speaking} writing={!listening} pulses={count} size={88} />
-        <View style={{ flex: 1, minHeight: 88, justifyContent: 'center' }}>
-          {v.phrases.length ? (
-            <Words phrases={v.phrases} listening={listening} />
+    <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)} layout={LinearTransition.springify().damping(20)} style={{ minHeight, justifyContent: 'center' }}>
+      <View style={{ flexDirection: 'row', gap: box ? 6 : 8, alignItems: 'center', marginLeft: box ? -4 : -10 }}>
+        <Metaballs level={voice.level} speaking={voice.speaking} writing={!listening} pulses={count} size={blob} />
+        <View style={{ flex: 1, minHeight: blob, justifyContent: 'center', paddingVertical: box ? 4 : 0 }}>
+          {v.phrases.length || before.trim() ? (
+            <Words before={before} phrases={v.phrases} listening={listening} type={type} />
           ) : (
-            <Animated.View entering={FadeIn.delay(250).duration(400)}>
-              <T v="callout" c={color.text3}>
-                {listening ? 'Listening… pauses are fine: each one is written down while you go on.' : 'Writing it down…'}
+            <Animated.View entering={FadeIn.delay(200).duration(400)}>
+              <T v="callout" c={color.text3} style={type}>
+                {listening ? (box ? 'Listening…' : 'Listening… say it the way you’d tell a colleague.') : 'Writing it down…'}
               </T>
             </Animated.View>
           )}
+          {box ? <Line view={v} compact /> : null}
         </View>
       </View>
-      <Line view={v} />
+      {box ? null : <Line view={v} />}
     </Animated.View>
   );
 }

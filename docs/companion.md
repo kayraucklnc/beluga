@@ -532,7 +532,7 @@ Advanced at the bottom. Learn it once and it works everywhere.
   speaks instead of typing (`lib/voice.ts`, `lib/voice-session.ts`): each pause cuts a phrase that's
   written down at once while you go on (up to two minutes), so the words are ready when you stop.
   **■** puts them in the field to edit; **↑** sends them as you said them once the last phrase is
-  written (the conversation opens with it). The stage over the controls (`components/Voice.tsx`):
+  written (the conversation opens with it). While it records, the stage takes the field's place (`components/Voice.tsx`), in the field's own type:
   a liquid pastel blob (metaballs, `components/Metaballs.tsx`, drawn on the UI thread) that swells
   and stretches with your voice and pinches a droplet off at each pause, the words arriving phrase
   by phrase, a shimmering pill where one is still being written, a light tick at each pause. Where and by which model is
