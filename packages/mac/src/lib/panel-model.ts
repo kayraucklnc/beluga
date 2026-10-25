@@ -99,7 +99,7 @@ export function panelTabsFor(view: View, wsKind?: WsKind): PanelTab[] {
   if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : [...PANEL_TABS];
   // A project's home (and its History page): the project's history too.
   if (view.kind === 'project') return ['terminal', 'info', 'history'];
-  // A plan's page is the plan and its chat, side by side; a task's page and the plans have the whole window.
+  // A plan's page is the plan and its chat, side by side; the Tasks board, a task's page and the plans have the whole window.
   if (!panelFits(view)) return [];
   // A shared workspace's shell is its owner's; the Terminal view is already all shells.
   if (view.kind === 'shared' || view.kind === 'terminal') return ['info'];
@@ -108,9 +108,9 @@ export function panelTabsFor(view: View, wsKind?: WsKind): PanelTab[] {
 
 /**
  * The right panel shows beside this view: not on a plan's page (its right side is its chat), nor
- * on a task's page or the plans: nothing in it is about them, so they get the whole window.
+ * on the Tasks board, a task's page or the plans: nothing in it is about them, so they get the whole window.
  */
-export const panelFits = (view: View): boolean => view.kind !== 'plan' && view.kind !== 'plans' && view.kind !== 'task' && view.kind !== 'gh_issue';
+export const panelFits = (view: View): boolean => view.kind !== 'plan' && view.kind !== 'plans' && view.kind !== 'tasks' && view.kind !== 'task' && view.kind !== 'gh_issue';
 
 /** Where a view's last tab is remembered: per workspace, one for everything else. */
 export const panelKey = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : 'app');

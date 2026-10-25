@@ -61,11 +61,12 @@ describe('the right panel’s tabs', () => {
     expect(panelTabsFor({ kind: 'plan', id: 'p1' })).toEqual([]);
     expect(panelFits(ws)).toBe(true);
   });
-  it('a task’s page and the plans have the whole window', () => {
+  it('the Tasks board, a task’s page and the plans have the whole window', () => {
     expect(panelFits({ kind: 'task', id: 't1' })).toBe(false);
     expect(panelFits({ kind: 'plans' })).toBe(false);
     expect(panelTabsFor({ kind: 'task', id: 't1' })).toEqual([]);
-    expect(panelFits({ kind: 'tasks' })).toBe(true);
+    expect(panelFits({ kind: 'tasks' })).toBe(false);
+    expect(panelTabsFor({ kind: 'tasks' })).toEqual([]);
   });
   it('a workspace has every tab; a chat has no Changes; a friend’s workspace and the Terminal view only Info', () => {
     expect(panelTabsFor(ws, 'worktree')).toEqual(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background']);
