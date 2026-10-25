@@ -261,6 +261,22 @@ describe('WorkspaceController', () => {
     ctl.manager.archive = real;
   });
 
+  it('a Restore while it’s still being archived waits for the archive, then brings it back', async () => {
+    const ws = (await ctl.newWorktree(projectId(), 'back'))!;
+    writeFileSync(path.join(ws.path, 'mine.txt'), 'uncommitted\n');
+    const archiving = ctl.archive(ws.id);
+    // It shows as archived already, so Restore is there to click.
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === ws.id)?.archived).toBe(true);
+    const restoring = ctl.restore(ws.id);
+    expect(await archiving).toBe(true);
+    await restoring;
+    expect(ctl.manager.find(ws.id)?.archived).toBe(false);
+    expect(readFileSync(path.join(ws.path, 'mine.txt'), 'utf8')).toBe('uncommitted\n');
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === ws.id)?.archived).toBeFalsy();
+    expect(screen.getState().view).toMatchObject({ kind: 'workspace', id: ws.id });
+    expect(toasts.some((t) => t.startsWith("Couldn't restore"))).toBe(false);
+  });
+
   it('archives several in one repo one after another, each out of the sidebar at once', async () => {
     const a = (await ctl.newWorktree(projectId(), 'one'))!;
     const b = (await ctl.newWorktree(projectId(), 'two'))!;
