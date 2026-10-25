@@ -364,6 +364,17 @@ export function mockDraft(text: string, ctx: DraftContext): TaskDraft {
   return {
     title,
     goal: `${title}, so it works the way it was described. Done when it does, and nothing around it changes.`,
+    // After a look at the code (the demo reads none): where it is and what's likely behind it.
+    ...(ctx.look
+      ? {
+          context: [
+            'Looked at the code before writing this:',
+            '- **Where it happens:** `src/routes/` and the handler it calls, the first place to check.',
+            '- **How it works today:** the request goes straight through, without the step this needs.',
+            '- **Likely fix:** add that step where the request comes in, with a test that reproduces the report first.',
+          ].join('\n'),
+        }
+      : {}),
     acceptance: [`${title}: works as described`, 'Nothing else changes', 'Tests cover it'],
     labels,
     ...(priority ? { priority } : {}),
@@ -396,7 +407,7 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       return slugify(prompt);
     },
     draftTask: async (text, ctx) => {
-      await new Promise((r) => setTimeout(r, 1500 * pace));
+      await new Promise((r) => setTimeout(r, (ctx.look ? 6000 : 1500) * pace));
       return mockDraft(text, ctx);
     },
     // A short name a moment later, as Haiku would give it.

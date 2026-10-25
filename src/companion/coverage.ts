@@ -328,6 +328,15 @@ export const PHONE: Record<Method, Side> = {
   'plans.remove': 'mac',
   'plans.setStyle': 'mac',
 
+  // ---- GitHub issues: the Mac's Issues view for now. Reading them and handing one to Claude fits the
+  // phone too (BLG-170): until its screen exists, a task made from one shows on the phone's board.
+  'issues.list': 'mac',
+  'issues.get': 'mac',
+  'issues.investigate': 'mac',
+  'issues.fix': 'mac',
+  'issues.toTask': 'mac',
+  'issues.comment': 'mac',
+
   // ---- git, live views' sources, editing files: the Mac's
   'git.fetch': 'mac',
   'git.fetchIfStale': 'mac',

@@ -2,6 +2,7 @@ import {
   BRIEF_SECTIONS,
   type BoardState,
   type Issue,
+  type IssueGitHub,
   PRIORITY_INFO,
   PROVIDER_INFO,
   SECTION_INFO,
@@ -34,6 +35,7 @@ export function briefPrompt(board: BoardState, issue: Issue): string {
     '',
     `This worktree is doing task ${issue.key} in Beluga's Tasks: "${issue.title}" (${STATUS_INFO[issue.status].label}${issue.priority !== 'none' ? `, ${PRIORITY_INFO[issue.priority].label} priority` : ''}).`,
     parent ? `It's a sub-task of ${line(parent)}.` : '',
+    issue.github ? gitHubLine(issue.github) : '',
     blockers.length ? `It waits on: ${blockers.map(line).join('; ')}.` : '',
     waiting.length ? `Waiting on it: ${waiting.map(line).join('; ')}.` : '',
     kids.length ? `Its sub-tasks: ${kids.map(line).join('; ')}.` : '',
@@ -120,12 +122,22 @@ export function describeIssue(board: BoardState, issue: Issue, selfId: string): 
     kids.length ? `Sub-tasks: ${kids.map(line).join('; ')}` : '',
     issue.branch ? `Branch: ${issue.branch}` : '',
     issue.link ? `In ${PROVIDER_INFO[issue.link.provider].label}: ${issue.link.key} ${issue.link.url} (kept in step both ways: changes you make here reach it)` : '',
+    issue.github ? `From GitHub issue ${issue.github.repo}#${issue.github.number} ${issue.github.url}` : '',
     issue.pr ? `Pull request: #${issue.pr.number} ${issue.pr.state.toLowerCase()}${issue.pr.draft ? ' (draft)' : ''}, checks ${issue.pr.checks}${issue.pr.review ? `, ${issue.pr.review.toLowerCase().replace('_', ' ')}` : ''} ${issue.pr.url}` : '',
     issue.proof.length ? `Proof: ${issue.proof.map((p) => `${p.title} (${p.path ?? p.url ?? p.kind})`).join('; ')}` : '',
   ].filter(Boolean);
   const brief = BRIEF_SECTIONS.flatMap((s) => (issue.brief[s] ? ['', `## ${SECTION_INFO[s].label}`, issue.brief[s]!] : []));
   const recent = issue.activity.slice(-8).map((a) => `- ${new Date(a.at).toISOString().slice(0, 16).replace('T', ' ')} ${actorName(a.by, selfId)} ${activityText(a, selfId)}${a.body ? `: ${a.body.replace(/\s+/g, ' ').slice(0, 300)}` : ''}`);
   return [...facts, ...brief, ...(recent.length ? ['', '## Recent activity', ...recent] : [])].join('\n');
+}
+
+/**
+ * A task made from a GitHub issue: where the report is, and that its pull request closes it.
+ * (gh reads the issue: its comments say more than the brief.)
+ */
+export function gitHubLine(gh: IssueGitHub): string {
+  const where = `${gh.host ? `--hostname ${gh.host} ` : ''}--repo ${gh.repo}`;
+  return `It's for GitHub issue ${gh.repo}#${gh.number} (${gh.url}): read it and its comments with \`gh issue view ${gh.number} ${where} --comments\`. Its pull request says "Fixes #${gh.number}" in the description, so merging it closes the issue.`;
 }
 
 /** Tasks one per line, for task_list. */

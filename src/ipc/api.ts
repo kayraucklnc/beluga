@@ -12,6 +12,7 @@ import { STEPS_API } from './steps-api.js';
 import { GATEWAY_API } from './gateway-api.js';
 import { BOARD_API } from './board-api.js';
 import { PLANS_API } from './plans-api.js';
+import { ISSUES_API } from './issues-api.js';
 import { GIT_API } from './git-api.js';
 import { VIEWS_API } from './views-api.js';
 import { FILES_EDIT_API } from './files-api.js';
@@ -329,6 +330,8 @@ export const API = {
   // ---- tasks: the board, its tasks and their briefs (board-api.ts)
   ...BOARD_API,
   ...PLANS_API,
+  // ---- a project's GitHub issues, and handing one to Claude (issues-api.ts)
+  ...ISSUES_API,
   // ---- git: keeping main current, GitHub, history (git-api.ts)
   ...GIT_API,
   ...VIEWS_API,

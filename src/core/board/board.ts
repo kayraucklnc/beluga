@@ -18,6 +18,7 @@ import {
   type BriefSection,
   ISSUE_STATUSES,
   type Issue,
+  type IssueGitHub,
   type IssueLink,
   type IssuePlan,
   type IssuePr,
@@ -73,12 +74,16 @@ export interface NewIssue {
   readonly autoTitle?: boolean;
   readonly drafting?: boolean;
   readonly plan?: IssuePlan;
+  /** The GitHub issue it's made from. */
+  readonly github?: IssueGitHub;
 }
 
 /** What Claude wrote for a task made from a description (agent/task-drafter.ts). */
 export interface IssueDraft {
   readonly title: string;
   readonly goal: string;
+  /** What Claude found looking at the code (a draft written after a quick look). */
+  readonly context?: string;
   readonly acceptance: readonly string[];
   readonly labels: readonly string[];
   readonly priority?: Priority;
@@ -133,7 +138,7 @@ const SavedIssue = z
     activity: z.array(z.unknown()).default([]),
     createdAt: z.number(),
     updatedAt: z.number(),
-    origin: z.enum(['manual', 'worktree', 'claude', 'plan', 'sync']).default('manual'),
+    origin: z.enum(['manual', 'worktree', 'claude', 'plan', 'sync', 'github']).default('manual'),
   })
   .passthrough();
 
@@ -237,6 +242,7 @@ export class Board {
       ...(input.assignee ? { assignee: input.assignee } : {}),
       ...(parent ? { parent: parent.id } : {}),
       ...(input.plan ? { plan: input.plan } : {}),
+      ...(input.github ? { github: input.github } : {}),
       blockedBy: [...new Set(blockers)],
       related: [],
       rank: this.lastRank(status),
@@ -244,7 +250,7 @@ export class Board {
       revisions: [],
       worktrees: [],
       proof: [],
-      activity: [this.entry(by, 'created', origin === 'worktree' ? 'opened this task for a new worktree' : origin === 'plan' ? 'created this task from a plan' : origin === 'sync' ? 'brought this task over' : 'created this task', undefined, at)],
+      activity: [this.entry(by, 'created', origin === 'worktree' ? 'opened this task for a new worktree' : origin === 'plan' ? 'created this task from a plan' : origin === 'sync' ? 'brought this task over' : origin === 'github' && input.github ? `made this task from GitHub issue #${input.github.number}` : 'created this task', undefined, at)],
       createdAt: at,
       updatedAt: at,
       createdBy: by,
@@ -349,6 +355,7 @@ export class Board {
     const title = oneLine(draft.title, MAX_TITLE);
     const brief = { ...issue.brief };
     if (!brief.goal && draft.goal.trim()) brief.goal = draft.goal.trim().slice(0, MAX_SECTION);
+    if (!brief.context && draft.context?.trim()) brief.context = draft.context.trim().slice(0, MAX_SECTION);
     if (!brief.acceptance && draft.acceptance.length) brief.acceptance = draft.acceptance.map((a) => `- [ ] ${oneLine(a, 300)}`).join('\n');
     return this.change(
       issue,
@@ -372,6 +379,17 @@ export class Board {
     if (!link && !issue.link) return issue;
     const entries = note ? [this.entry({ kind: 'beluga' }, 'link', note)] : [];
     return this.change(issue, { link }, entries, false);
+  }
+
+  /**
+   * The GitHub issue a task is for, and what Claude was last asked to do about it (see
+   * core/issues); `note` goes in the activity ("asked Claude to investigate #12").
+   */
+  setGitHub(ref: string, github: IssueGitHub | undefined, by: Actor, note?: string): Issue {
+    const issue = this.need(ref);
+    const was = issue.github;
+    if (was?.repo === github?.repo && was?.number === github?.number && was?.url === github?.url && was?.step === github?.step && was?.host === github?.host) return issue;
+    return this.change(issue, { github }, note ? [this.entry(by, 'link', note)] : [], Boolean(note));
   }
 
   /** The plan (and milestone) a task belongs to; undefined: none any more. */

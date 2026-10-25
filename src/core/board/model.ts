@@ -196,12 +196,37 @@ export interface Issue {
   readonly closedAt?: number;
   /** When it went to the Archive (off the board, its words kept, its proof files let go). */
   readonly archivedAt?: number;
-  /** How it started: by hand, a worktree opening, Claude, an approved plan, or brought over from another tracker (Linear). */
-  readonly origin: 'manual' | 'worktree' | 'claude' | 'plan' | 'sync';
+  /** How it started: by hand, a worktree opening, Claude, an approved plan, brought over from another tracker (Linear), or made from a GitHub issue. */
+  readonly origin: 'manual' | 'worktree' | 'claude' | 'plan' | 'sync' | 'github';
   /** The plan it's part of: the plan, its milestone and its task there (ids). */
   readonly plan?: IssuePlan;
   /** The same task in another tracker (Linear), kept in step by sync (core/board/sync). */
   readonly link?: IssueLink;
+  /** The GitHub issue it's for (made from it in Issues): its pull request says "Fixes #n", so merging closes the issue. */
+  readonly github?: IssueGitHub;
+}
+
+/** What Claude was last asked to do about a task's GitHub issue: find out why it happens (Investigate), or fix it. */
+export type GitHubStep = 'investigate' | 'fix';
+
+/** The GitHub issue a task is for (see core/issues). */
+export interface IssueGitHub {
+  /** "owner/repo". */
+  readonly repo: string;
+  /** Its host, when it isn't github.com (GitHub Enterprise). */
+  readonly host?: string;
+  readonly number: number;
+  readonly url: string;
+  readonly step?: GitHubStep;
+}
+
+/** "#12", or "acme/api#12" when it's another repository's. */
+export const githubRef = (gh: Pick<IssueGitHub, 'repo' | 'number'>, repo?: string): string => (repo && repo.toLowerCase() === gh.repo.toLowerCase() ? `#${gh.number}` : `${gh.repo}#${gh.number}`);
+
+/** The task made from a GitHub issue (the newest one still on the board), if there is one. */
+export function taskForGitHub(board: Pick<BoardState, 'issues'>, projectId: string, repo: string, number: number): Issue | undefined {
+  const r = repo.toLowerCase();
+  return board.issues.filter((i) => i.projectId === projectId && i.github?.number === number && i.github.repo.toLowerCase() === r && !isArchived(i)).sort((a, b) => b.createdAt - a.createdAt)[0];
 }
 
 /** Trackers a project's board can sync with. */
