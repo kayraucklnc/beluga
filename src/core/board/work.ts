@@ -23,8 +23,8 @@ export interface BoardWorkDeps {
   readonly controller?: WorkspaceController;
   readonly selfId: () => string;
   readonly selfName: () => string;
-  /** Ask your Claude in a conversation (`ws:<id>`). */
-  readonly askClaude: (prompt: string, channel: string) => void;
+  /** Ask your Claude in a conversation (`ws:<id>`); `shown`: what the conversation shows you asked, when not the prompt itself. */
+  readonly askClaude: (prompt: string, channel: string, shown?: string) => void;
   /** Your Claude writes a task from a description (none: the first line is the title). */
   readonly draftTask?: (text: string, ctx: DraftContext) => Promise<TaskDraft | undefined>;
   /** A branch's pull request, asked of gh (none: tasks whose worktree went aren't looked after). Throws when gh can't tell. */
@@ -206,7 +206,7 @@ export class BoardWork {
    * Start a worktree for a task (from the latest origin, or `base`), named after it, and open it;
    * with `claude`, your Claude starts on the task there with its brief. → the workspace's id.
    */
-  async start(ref: string, opts: { readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean; /** What your Claude is told instead of working the task through (it implies `claude`). */ readonly prompt?: (issue: Issue, ws: Workspace) => string } = {}): Promise<string> {
+  async start(ref: string, opts: { readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean; /** What your Claude is told instead of working the task through (it implies `claude`), and the line the conversation shows for it. */ readonly prompt?: (issue: Issue, ws: Workspace) => string; readonly shown?: string } = {}): Promise<string> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Worktrees need a project folder');
     // Claude still writing it: its worktree is named after, and Claude starts with, the real words.
@@ -239,7 +239,7 @@ export class BoardWork {
       ...((opts.claude || opts.prompt) && (!now.assignee || (now.assignee.kind === 'person' && now.assignee.id === this.deps.selfId())) ? { assignee: this.myClaude() } : {}),
     };
     if (Object.keys(patch).length) this.board.update(issue.id, patch, this.me());
-    if (opts.prompt) this.deps.askClaude(opts.prompt(this.board.need(issue.id), ws), `${WS}${ws.id}`);
+    if (opts.prompt) this.deps.askClaude(opts.prompt(this.board.need(issue.id), ws), `${WS}${ws.id}`, opts.shown);
     else if (opts.claude) this.deps.askClaude(startPrompt(this.board.need(issue.id)), `${WS}${ws.id}`);
     return ws.id;
   }

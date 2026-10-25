@@ -1,7 +1,6 @@
-import type { GhIssue, GhIssueState } from '@beluga/core/issues/model.js';
-import type { LogItem } from '@beluga/core/store.js';
+import type { GhIssue, GhIssueState } from '../../../../src/core/issues/model.js';
+import type { LogItem } from '../../../../src/core/store.js';
 import { ago } from '../tasks/tasks-model.js';
-import type { Project } from '@beluga/workspaces/types.js';
 
 /**
  * The Issues screens' plain parts (no React): an issue's state in words and color, a label's
@@ -37,7 +36,7 @@ export function readIssuesPrefs(raw: string | null): IssuesPrefs {
 }
 
 /** The project Issues shows: the one asked for, else the one you were last in, else the first. */
-export function issuesProject(projects: readonly Pick<Project, 'id' | 'root' | 'error'>[], asked: string | undefined, last: string | undefined): string | undefined {
+export function issuesProject(projects: ReadonlyArray<{ readonly id: string; readonly root: string; readonly error?: string | undefined }>, asked: string | undefined, last: string | undefined): string | undefined {
   const real = projects.filter((p) => p.root && !p.error);
   return real.find((p) => p.id === asked)?.id ?? real.find((p) => p.id === last)?.id ?? real[0]?.id;
 }

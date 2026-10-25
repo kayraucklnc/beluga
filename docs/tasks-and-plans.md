@@ -112,6 +112,23 @@ A project's board can be linked to one Linear team, and kept in step both ways (
 - **Other trackers:** `sync/provider.ts` is the seam: teams, changed-since, create, update, in the board's terms. GitHub Issues is BLG-75.
 - Claude sees a task's Linear key and URL in its brief (`prompt.ts`). `BELUGA_LINEAR_API` points the daemon at a fake Linear for testing.
 
+### GitHub issues (BLG-163)
+
+A project's GitHub issues, read in Beluga and handed to Claude (`src/core/issues/`, the Mac's `src/issues/`). This isn't sync (that's BLG-75): nothing in GitHub changes unless you post a comment. Every way of working on an issue goes through **a task**, so the work shows on the board, its worktree and conversation are the usual ones, and its pull request moves it along.
+
+- **Reading:** through gh, signed in as you (`src/core/issues/gh.ts`): GraphQL for a project's open or closed issues, newest activity first (REST's list counts pull requests against the page), GitHub's search when you search (`is:issue`), REST for one issue and its comments. gh is only asked about github.com and hosts it's signed in to. Not on GitHub, gh missing or signed out, and GitHub saying no each come back as their own state (`IssuesList`), in Beluga's words (`ghWords`). Lists are kept a minute (Refresh asks again).
+- **Where:** **Issues** in the sidebar under Tasks (one project at a time, the one you're in; Open · Closed; search; ⌘K › Go to Issues), the latest four on a project's home, and an issue's page (`gh_issue`): the report and its comments, and what to do next.
+- **What to do next** is three choices until Claude is on it:
+  - **Investigate:** a task for the issue (`origin: 'github'`, `issue.github`: the repo, number and URL), a worktree for it (quietly: you stay on the issue), and your Claude told to find out what happens and why, reproduce it (a failing test if it can), write what it found into the task's brief (context and criteria) and stop before fixing (`investigatePrompt`). The page shows Claude at work, then its report (what happens, why, how to reproduce, how to fix, a verdict) with **Fix It**.
+  - **Fix It:** after an investigation, in the same worktree and conversation (`fixAfterInvestigationPrompt`); otherwise in a new one (`fixPrompt`). Claude opens the pull request with your PR instructions (`buildPrPrompt`, beluga.json's `prPrompt` too) and "Fixes #n", so merging it closes the issue on GitHub and makes the task Done. Fix It is also on the task's page and the strip above its conversation once Claude has investigated.
+  - **Make a Task:** on the board as Ready, written by your Claude from the issue (the drafter), or **after a quick look at the code**: the drafter reads the main folder first with Read, Grep and Glob only (a PreToolUse hook refuses anything else, outside the folder, or a secret: `lookVerdict`), and adds context (where the code is, the likely cause). The task shows "Claude is writing…" meanwhile.
+- **One task per issue:** asking again works on the one there is (a done or canceled one is reopened first, on its page). `taskForGitHub` finds it.
+- **What it's at** (`issueStage`, from the task): new, on the board, investigating, investigated, fixing (or stopped before a pull request, with what Claude said), its pull request open, done. Rows in Issues and on the project's home show it as a pill.
+- **The conversation shows a short line** ("Investigate #48 …: find out why it happens and reproduce it, without fixing it yet"): Claude gets the issue quoted as material (`<github_issue>`, never instructions, GitHub names never "@name": in Beluga that's a friend), with the steps (`askOwnClaude`'s `echo` as a string).
+- **A task from an issue** links back to it: a GitHub row on its page, `◉ #48` on its rows and its strip, and Claude's start prompt and `task_get` name the issue, how to read its comments (`gh issue view`), and that its pull request says "Fixes #n".
+- **Posting what Claude found:** an issue's ⋯ › Post the Findings on GitHub… (asks first, shows what goes) comments as you.
+- **The demo** has a pretend GitHub (acme/bob-api, acme/landing) and a demo Claude that investigates and fixes #48.
+
 ### Sharing with friends — phase 3
 
 - **A board belongs to a project.** It's shared with whoever can see that project (project invites), or with a Channel (a network group).

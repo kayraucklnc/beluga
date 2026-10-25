@@ -4,7 +4,7 @@ import { taskForGitHub } from '../src/core/board/model.js';
 import { describeIssue } from '../src/core/board/prompt.js';
 import { BoardWork, startPrompt } from '../src/core/board/work.js';
 import { demoIssueSource, demoRepo } from '../src/core/issues/demo.js';
-import { ghIssueSource, parseComments, parseIssue, parseIssues, searchQuery } from '../src/core/issues/gh.js';
+import { ghIssueSource, parseComments, parseGraphIssues, parseIssue, parseIssues, searchQuery } from '../src/core/issues/gh.js';
 import { GitHubIssues, ghWords } from '../src/core/issues/issues.js';
 import { boardLabels, issueStage, stageWords } from '../src/core/issues/model.js';
 import { investigatePrompt, quoteIssue } from '../src/core/issues/prompts.js';
@@ -46,6 +46,14 @@ describe('reading issues from gh', () => {
     expect(parseIssue({ number: 'x' })).toBeUndefined();
   });
 
+  it('reads GraphQL’s issues: states and reasons in lowercase, how many there are, its errors in words', () => {
+    const out = parseGraphIssues(JSON.stringify({ data: { repository: { issues: { totalCount: 250, nodes: [{ number: 4, title: 'Gone', state: 'CLOSED', stateReason: 'NOT_PLANNED', url: 'u', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-02T00:00:00Z', closedAt: '2026-10-02T00:00:00Z', author: null, labels: { nodes: [] }, assignees: { nodes: [{ login: 'kay' }] }, comments: { totalCount: 0 } }] } } } }));
+    expect(out.total).toBe(250);
+    expect(out.issues[0]).toMatchObject({ number: 4, state: 'closed', reason: 'not_planned', assignees: ['kay'], comments: 0 });
+    expect(out.issues[0]).not.toHaveProperty('author');
+    expect(() => parseGraphIssues(JSON.stringify({ data: { repository: null }, errors: [{ message: 'Could not resolve to a Repository' }] }))).toThrow(/Could not resolve/);
+  });
+
   it('reads comments', () => {
     expect(parseComments(JSON.stringify([{ user: { login: 'sam' }, body: 'Same here', created_at: '2026-10-21T00:00:00Z', html_url: 'u' }, { nope: 1 }]))).toEqual([{ author: 'sam', body: 'Same here', createdAt: Date.parse('2026-10-21T00:00:00Z'), url: 'u' }]);
   });
@@ -59,15 +67,21 @@ describe('reading issues from gh', () => {
       'repos/acme/bob-api/issues/7/comments': [{ user: { login: 'sam' }, body: 'Me too', created_at: '2026-10-21T00:00:00Z', html_url: 'c' }],
       'repos/acme/bob-api/issues/8': rest(8, { pull_request: {} }),
     };
+    const node = (n: number) => ({ number: n, title: `Issue ${n}`, state: 'OPEN', stateReason: null, url: `https://github.com/acme/bob-api/issues/${n}`, createdAt: '2026-10-20T10:00:00Z', updatedAt: '2026-10-21T10:00:00Z', closedAt: null, author: { login: 'lena' }, labels: { nodes: [{ name: 'bug', color: 'd73a4a' }] }, assignees: { nodes: [] }, comments: { totalCount: 3 } });
     const run = async (args: readonly string[]): Promise<string> => {
       asked.push([...args]);
       if (args.includes('POST')) return JSON.stringify({ html_url: 'https://github.com/acme/bob-api/issues/7#issuecomment-1' });
+      if (args[1] === 'graphql' || args[3] === 'graphql') return JSON.stringify({ data: { repository: { issues: { totalCount: 1, nodes: [node(1)] } } } });
       const path = args.find((a) => a.startsWith('repos/') || a === 'search/issues')!;
       return JSON.stringify(answers[path]);
     };
     const gh = ghIssueSource(run);
-    expect(await gh.list(REPO, 'open')).toEqual({ issues: [expect.objectContaining({ number: 1 })], more: false });
-    expect(asked[0]).toEqual(['api', '-X', 'GET', 'repos/acme/bob-api/issues', '-f', 'state=open', '-f', 'sort=updated', '-f', 'direction=desc', '-f', 'per_page=100']);
+    // The list: GraphQL's issues (no pull requests taking up the page), newest activity first.
+    expect(await gh.list(REPO, 'open')).toEqual({ issues: [expect.objectContaining({ number: 1, state: 'open', author: 'lena', comments: 3, labels: [{ name: 'bug', color: 'd73a4a' }] })], more: false });
+    expect(asked[0]!.slice(0, 2)).toEqual(['api', 'graphql']);
+    expect(asked[0]).toContain('owner=acme');
+    expect(asked[0]).toContain('repo=bob-api');
+    expect(asked[0]!.find((a) => a.startsWith('query='))).toMatch(/states: \[OPEN\], orderBy: \{ field: UPDATED_AT, direction: DESC \}/);
     expect((await gh.list(REPO, 'closed', '  login   500 ')).more).toBe(true);
     expect(asked[1]).toContain('q=repo:acme/bob-api is:issue is:closed login 500');
     const seven = await gh.get(REPO, 7);
@@ -78,7 +92,7 @@ describe('reading issues from gh', () => {
     expect(asked.at(-1)).toEqual(['api', '-X', 'POST', 'repos/acme/bob-api/issues/7/comments', '-f', 'body=What we found']);
     // GitHub Enterprise: gh is told which host.
     await gh.list({ ...REPO, host: 'github.acme.com' }, 'open');
-    expect(asked.at(-1)!.slice(0, 3)).toEqual(['api', '--hostname', 'github.acme.com']);
+    expect(asked.at(-1)!.slice(0, 4)).toEqual(['api', 'graphql', '--hostname', 'github.acme.com']);
     expect(searchQuery(REPO, 'open', 'label:bug  crash')).toBe('repo:acme/bob-api is:issue is:open label:bug crash');
   });
 
@@ -115,6 +129,7 @@ function setup(opts: { readonly repo?: GitHubRepo | null; readonly ghReady?: boo
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api'), project('land', 'landing')] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
   const asked: Array<[string, string]> = [];
+  const shown: Array<string | undefined> = [];
   const drafted: Array<[string, DraftContext]> = [];
   let n = 0;
   const controller = {
@@ -138,7 +153,7 @@ function setup(opts: { readonly repo?: GitHubRepo | null; readonly ghReady?: boo
     controller,
     selfId: () => 'p-me',
     selfName: () => 'Kay',
-    askClaude: (prompt, channel) => void asked.push([prompt, channel]),
+    askClaude: (prompt, channel, line) => void (asked.push([prompt, channel]), shown.push(line)),
     ...(opts.drafter === false
       ? {}
       : {
@@ -164,10 +179,10 @@ function setup(opts: { readonly repo?: GitHubRepo | null; readonly ghReady?: boo
         return source.list(...a);
       },
     },
-    askClaude: (prompt, channel) => void asked.push([prompt, channel]),
+    askClaude: (prompt, channel, line) => void (asked.push([prompt, channel]), shown.push(line)),
     prPrompt: (w) => `Open a pull request for ${w.branch} (your PR instructions).`,
   });
-  return { store, board, work, issues, asked, drafted, newOpts, listed: () => listed };
+  return { store, board, work, issues, asked, shown, drafted, newOpts, listed: () => listed };
 }
 
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -200,8 +215,10 @@ describe('listing a project’s issues', () => {
 
 describe('handing an issue to Claude', () => {
   it('Investigate: a task from the issue, a quiet new worktree, and Claude told to find out why without fixing', async () => {
-    const { issues, board, asked, newOpts } = setup();
+    const { issues, board, asked, shown, newOpts } = setup();
     const out = await issues.investigate('api', 48);
+    // The conversation shows a short line; Claude gets the issue and the instructions.
+    expect(shown).toEqual(['Investigate #48 “Login returns 500 when the email has a plus sign”: find out why it happens and reproduce it, without fixing it yet.']);
     const task = board.need(out.key);
     expect(task).toMatchObject({ title: 'Login returns 500 when the email has a plus sign', origin: 'github', status: 'in_progress', labels: ['bug'], assignee: { kind: 'claude' } });
     expect(task.github).toEqual({ repo: 'acme/bob-api', number: 48, url: 'https://github.com/acme/bob-api/issues/48', step: 'investigate' });
@@ -220,9 +237,10 @@ describe('handing an issue to Claude', () => {
   });
 
   it('Fix It after an investigation stays in the same worktree, with the PR instructions and Fixes #n', async () => {
-    const { issues, board, asked, newOpts } = setup();
+    const { issues, board, asked, shown, newOpts } = setup();
     const first = await issues.investigate('api', 48);
     const again = await issues.fix('api', 48);
+    expect(shown[1]).toBe('Now fix #48 the way the investigation points to, and open a pull request that closes it.');
     expect(again).toEqual(first);
     expect(newOpts).toHaveLength(1);
     expect(board.list()).toHaveLength(1);

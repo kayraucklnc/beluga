@@ -443,10 +443,11 @@ export class Session {
 
   /**
    * Send a message to the Claude of a workspace conversation: yours, or (in a workspace
-   * someone shared with you) theirs. `echo: false` leaves the prompt out of the chat (it's there already).
+   * someone shared with you) theirs. `echo: false` leaves the prompt out of the chat (it's there already);
+   * a string shows that instead (a short line for a long brief: Claude still gets the whole prompt).
    * Returns the request's id (undefined when you can't ask there).
    */
-  askOwnClaude(prompt: string, channel: string, urgent = false, echo = true): string | undefined {
+  askOwnClaude(prompt: string, channel: string, urgent = false, echo: boolean | string = true): string | undefined {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
       this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
@@ -456,7 +457,7 @@ export class Session {
     if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
     const requestId = randomUUID();
     // Steering your own Claude at work here: the message says it isn't read yet from the moment it's drawn.
-    if (echo) this.sendChat(prompt, false, channel, requestId, urgent && !shared && this.host.runningIn(channel));
+    if (echo) this.sendChat(typeof echo === 'string' ? echo : prompt, false, channel, requestId, urgent && !shared && this.host.runningIn(channel));
     return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent, undefined, requestId);
   }
 

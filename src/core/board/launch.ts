@@ -53,7 +53,7 @@ export function launchBoard(host: BoardHost): () => void {
     ...(session.workspaces ? { controller: session.workspaces } : {}),
     selfId: () => session.selfId,
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
-    askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
+    askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
     ...(session.draftsTasks ? { draftTask: (text: string, ctx: DraftContext) => session.draftTask(text, ctx) } : {}),
     // Tasks whose worktree went before their pull request merged still go Done (the demo has no GitHub).
     ...(host.demo
@@ -75,7 +75,7 @@ export function launchBoard(host: BoardHost): () => void {
     ...(host.demo ? {} : { knownHost: (h: string) => h === 'github.com' || ghHosts().includes(h) }),
     ghReady: async (h) => host.demo || runGhCli(['auth', 'status', '--hostname', h]).then(() => true, () => false),
     source: host.demo ? demoIssueSource() : ghIssueSource(),
-    askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
+    askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
     prPrompt: (ws) => {
       const project = projectOf(ws.projectId);
       return buildPrPrompt({ branch: ws.branch ?? ws.name, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', ...(project?.scripts?.prPrompt ? { projectPrompt: project.scripts.prPrompt } : {}) });

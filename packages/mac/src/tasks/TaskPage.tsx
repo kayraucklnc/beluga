@@ -20,6 +20,7 @@ import { openSheet } from '../lib/sheets.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import { useSwipeBack } from './use-swipe-back.js';
 import { SwipeBackEdge } from './SwipeBackEdge.js';
+import { FixItButton, GitHubIssueProp } from '../issues/task-bits.js';
 import t from './tasks.module.css';
 
 /**
@@ -293,7 +294,10 @@ function NextStep({ issue }: { issue: Issue }) {
   return (
     <div className={t.nextStep}>
       {had || live ? (
-        <WorktreeLinks issue={issue} ws={ws} live={live} />
+        <>
+          <FixItButton issue={issue} />
+          <WorktreeLinks issue={issue} ws={ws} live={live} />
+        </>
       ) : (
         <>
           <Button variant="primary" size="small" icon="play" disabled={starting} onClick={() => void start()}>
@@ -461,6 +465,7 @@ function Properties({ issue }: { issue: Issue }) {
         </Prop>
       ) : null}
       {issue.link ? <TrackerLink link={issue.link} /> : null}
+      <GitHubIssueProp issue={issue} Prop={Prop} />
       <Prop label="Created" quiet>
         <span className={t.propStatic}>
           {ago(issue.createdAt)} by {actorName(issue.createdBy, selfId)}

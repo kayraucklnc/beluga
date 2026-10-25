@@ -33,8 +33,8 @@ export interface GitHubIssuesDeps {
   /** gh is installed and signed in to this host (asked when reading fails, to tell why). */
   readonly ghReady: (host: string) => Promise<boolean>;
   readonly source: IssueSource;
-  /** Ask your Claude in a conversation (`ws:<id>`). */
-  readonly askClaude: (prompt: string, channel: string) => void;
+  /** Ask your Claude in a conversation (`ws:<id>`); `shown`: the short line the conversation shows (the issue and the instructions stay Claude's). */
+  readonly askClaude: (prompt: string, channel: string, shown?: string) => void;
   /** How a worktree's pull request is opened: the user's PR instructions, filled in for it. */
   readonly prPrompt: (ws: Workspace) => string;
   readonly now?: () => number;
@@ -108,7 +108,7 @@ export class GitHubIssues {
   async investigate(projectId: string, number: number): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
-    const ws = await this.workOn(task, 'investigate', (t) => investigatePrompt(t, issue, repo), `asked Claude to investigate #${number}`);
+    const ws = await this.workOn(task, 'investigate', (t) => investigatePrompt(t, issue, repo), `asked Claude to investigate #${number}`, () => `Investigate #${number} “${issue.title}”: find out why it happens and reproduce it, without fixing it yet.`);
     return { task: task.id, key: task.key, ws };
   }
 
@@ -119,7 +119,13 @@ export class GitHubIssues {
   async fix(projectId: string, number: number): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
-    const ws = await this.workOn(task, 'fix', (t, w, here) => (here ? fixAfterInvestigationPrompt(t, issue, this.deps.prPrompt(w)) : fixPrompt(t, issue, repo, this.deps.prPrompt(w))), `asked Claude to fix #${number}`);
+    const ws = await this.workOn(
+      task,
+      'fix',
+      (t, w, here) => (here ? fixAfterInvestigationPrompt(t, issue, this.deps.prPrompt(w)) : fixPrompt(t, issue, repo, this.deps.prPrompt(w))),
+      `asked Claude to fix #${number}`,
+      (here) => (here ? `Now fix #${number} the way the investigation points to, and open a pull request that closes it.` : `Fix #${number} “${issue.title}”, and open a pull request that closes it.`),
+    );
     return { task: task.id, key: task.key, ws };
   }
 
@@ -163,19 +169,19 @@ export class GitHubIssues {
    * Claude on the task: in its worktree when it has one still there (`here`: Claude knows the issue
    * already), else in a new one started for it. The task says what Claude was asked last.
    */
-  private async workOn(task: Issue, step: NonNullable<IssueGitHub['step']>, prompt: (task: Issue, ws: Workspace, here: boolean) => string, note: string): Promise<string> {
+  private async workOn(task: Issue, step: NonNullable<IssueGitHub['step']>, prompt: (task: Issue, ws: Workspace, here: boolean) => string, note: string, shown: (here: boolean) => string): Promise<string> {
     const work = this.deps.work;
     const live = this.liveWorktree(task);
     work.board.setGitHub(task.id, { ...task.github!, step }, work.me(), note);
     if (live) {
       const now = work.board.need(task.id);
       if (now.status === 'backlog' || now.status === 'todo') work.board.update(now.id, { status: 'in_progress' }, work.me());
-      this.deps.askClaude(prompt(work.board.need(task.id), live, true), `ws:${live.id}`);
+      this.deps.askClaude(prompt(work.board.need(task.id), live, true), `ws:${live.id}`, shown(true));
       return live.id;
     }
     try {
       // Quiet: you stay on the issue (its page shows Claude at work, a click from the conversation).
-      return await work.start(task.id, { quiet: true, prompt: (t, ws) => prompt(t, ws, false) });
+      return await work.start(task.id, { quiet: true, prompt: (t, ws) => prompt(t, ws, false), shown: shown(false) });
     } catch (err) {
       // Nothing started: the task says what it said before.
       work.board.setGitHub(task.id, task.github, work.me());

@@ -92,9 +92,8 @@
 }
 .rowCompact {
   min-height: 46px;
-  padding: 6px 12px;
+  padding: 6px 8px 6px 12px;
   border-bottom: 0;
-  border-radius: var(--radius);
 }
 .rowMain {
   flex: 1;
@@ -439,9 +438,80 @@
   color: var(--merged);
 }
 
-/* ---------- On a project's home ---------- */
+/* ---------- On a task: its issue ---------- */
 
-.homeRows {
-  display: flex;
-  flex-direction: column;
+.ghMark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 19px;
+  padding: 0 6px 0 5px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--ok) 70%, var(--text));
+  cursor: pointer;
+}
+.ghMark:hover {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+}
+.ghMarkCompact {
+  height: 17px;
+  font-size: 10.5px;
+}
+.propIssue {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+.propIssueOpen {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.propIssueOpen > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.propIssueOpen svg {
+  flex: none;
+  color: var(--ok);
+}
+.propIssueOpen:hover,
+.propIssueOut:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.propIssueOut {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
 }

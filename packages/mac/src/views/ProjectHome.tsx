@@ -36,6 +36,8 @@ import { useAttachments } from "../chat/use-attachments.js";
 import { MentionHighlighter } from "../chat/MentionHighlighter.js";
 import { HomeHistory } from "./history/HomeHistory.js";
 import { GitHubRow } from "./project/GitHubRow.js";
+import { IssueRow } from "../issues/parts.js";
+import { useIssueActions, useIssueList } from "../issues/use-issues.js";
 import { MainSyncBar } from "./project/MainSyncBar.js";
 import { outsideOf } from "../layout/outside-model.js";
 import { openSheet } from "../lib/sheets.js";
@@ -578,6 +580,7 @@ function Lists({ model }: { model: HomeModel }) {
           ))}
         </Section>
       ) : null}
+      <HomeIssues projectId={project.id} />
       <HomeHistory projectId={project.id} />
       {archived.length ? (
         <Section
@@ -599,6 +602,38 @@ function Lists({ model }: { model: HomeModel }) {
         </Section>
       ) : null}
     </div>
+  );
+}
+
+/** How many GitHub issues Project Home lists before "Show All". */
+const HOME_ISSUES = 4;
+
+/**
+ * The project's open GitHub issues, the most recently active first, each opening its page (where
+ * Claude can investigate it, fix it or write it up as a task). Nothing when it isn't on GitHub,
+ * gh isn't set up (Issues says how), or nothing is open.
+ */
+function HomeIssues({ projectId }: { projectId: string }) {
+  const { list } = useIssueList(projectId, "open", "");
+  const { openList } = useIssueActions();
+  if (list?.kind !== "github" || !list.issues.length) return null;
+  return (
+    <Section
+      title="Issues"
+      count={list.issues.length}
+      hint={list.more ? "The most recently active, from GitHub" : "Open on GitHub"}
+      action={
+        <Button size="small" variant="quiet" onClick={() => openList(projectId)}>
+          Show All Issues
+        </Button>
+      }
+    >
+      {list.issues.slice(0, HOME_ISSUES).map((issue) => (
+        <div key={issue.number} role="listitem">
+          <IssueRow projectId={projectId} repo={list.repo} issue={issue} compact />
+        </div>
+      ))}
+    </Section>
   );
 }
 

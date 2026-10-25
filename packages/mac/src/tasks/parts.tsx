@@ -14,6 +14,7 @@ import { LabelChip, PrChip } from './marks.js';
 import { doneCount, dueText } from './tasks-model.js';
 import type { LogItem } from '@beluga/core/store.js';
 import { useTaskActions } from './use-tasks.js';
+import { IssueMark } from '../issues/task-bits.js';
 import t from './tasks.module.css';
 
 const NONE: readonly never[] = [];
@@ -88,6 +89,7 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
           </span>
         </Tip>
       ) : null}
+      <IssueMark issue={issue} compact={compact} />
       {labels ? issue.labels.slice(0, compact ? 2 : 4).map((l) => <LabelChip key={l} label={l} />) : null}
       {due ? (
         <span className={cx(t.due, due.late && STATUS_INFO[issue.status].open && t.dueLate)}>

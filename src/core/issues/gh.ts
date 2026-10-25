@@ -88,6 +88,44 @@ export function parseComments(json: string): GhComment[] {
   });
 }
 
+/**
+ * A repository's open or closed issues, newest activity first, through GraphQL: unlike REST's
+ * issues list (where pull requests take up the pages), only issues, and how many there are.
+ */
+export const ISSUES_QUERY = (state: GhIssueState): string =>
+  `query($owner: String!, $repo: String!) { repository(owner: $owner, name: $repo) { issues(first: ${ISSUES_PAGE}, states: [${state === 'open' ? 'OPEN' : 'CLOSED'}], orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount nodes { number title state stateReason url createdAt updatedAt closedAt author { login } labels(first: 10) { nodes { name color } } assignees(first: 5) { nodes { login } } comments { totalCount } } } } }`;
+
+/** One issue of the GraphQL answer, in Beluga's words. */
+export function parseGraphIssue(raw: unknown): GhIssue | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const nodes = (v: unknown): unknown[] => (v && typeof v === 'object' && Array.isArray((v as { nodes?: unknown }).nodes) ? (v as { nodes: unknown[] }).nodes : []);
+  const count = (v: unknown): number => (v && typeof v === 'object' && typeof (v as { totalCount?: unknown }).totalCount === 'number' ? (v as { totalCount: number }).totalCount : 0);
+  return parseIssue({
+    number: r.number,
+    title: r.title,
+    state: typeof r.state === 'string' ? r.state.toLowerCase() : 'open',
+    state_reason: typeof r.stateReason === 'string' ? r.stateReason.toLowerCase() : undefined,
+    html_url: r.url,
+    user: r.author,
+    labels: nodes(r.labels),
+    assignees: nodes(r.assignees),
+    comments: count(r.comments),
+    created_at: r.createdAt,
+    updated_at: r.updatedAt,
+    closed_at: r.closedAt,
+  });
+}
+
+/** The GraphQL answer's issues, and how many the repository has in that state. */
+export function parseGraphIssues(json: string): { readonly issues: GhIssue[]; readonly total: number } {
+  const raw = JSON.parse(json) as { data?: { repository?: { issues?: { totalCount?: number; nodes?: unknown[] } } | null }; errors?: Array<{ message?: string }> };
+  const list = raw.data?.repository?.issues;
+  if (!list || !Array.isArray(list.nodes)) throw new Error(raw.errors?.[0]?.message ?? 'GitHub gave an answer Beluga doesn’t understand');
+  const issues = list.nodes.map(parseGraphIssue).filter((i): i is GhIssue => Boolean(i));
+  return { issues, total: typeof list.totalCount === 'number' ? list.totalCount : issues.length };
+}
+
 /** GitHub's search words for a repository's issues: `repo:o/r is:issue is:open <words>`. */
 export const searchQuery = (repo: GitHubRepo, state: GhIssueState, words: string): string => `repo:${repo.owner}/${repo.repo} is:issue is:${state} ${words.replace(/\s+/g, ' ').trim()}`;
 
@@ -96,15 +134,15 @@ export function ghIssueSource(run: GhRunner = runGhCli): IssueSource {
   return {
     async list(repo, state, search) {
       const words = search?.trim();
-      const out = words
-        ? await run(['api', ...hostArgs(repo), '-X', 'GET', 'search/issues', '-f', `q=${searchQuery(repo, state, words)}`, '-f', 'sort=updated', '-f', `per_page=${ISSUES_PAGE}`])
-        : await run(['api', ...hostArgs(repo), '-X', 'GET', `repos/${repo.owner}/${repo.repo}/issues`, '-f', `state=${state}`, '-f', 'sort=updated', '-f', 'direction=desc', '-f', `per_page=${ISSUES_PAGE}`]);
-      const raw = JSON.parse(out) as unknown;
-      // A full page (pull requests count towards it): there are probably more.
-      const read = Array.isArray(raw) ? raw.length : ((raw as { items?: unknown[] }).items?.length ?? 0);
-      const total = !Array.isArray(raw) && typeof (raw as { total_count?: unknown }).total_count === 'number' ? (raw as { total_count: number }).total_count : undefined;
+      if (!words) {
+        const { issues, total } = parseGraphIssues(await run(['api', 'graphql', ...hostArgs(repo), '-f', `query=${ISSUES_QUERY(state)}`, '-f', `owner=${repo.owner}`, '-f', `repo=${repo.repo}`]));
+        return { issues, more: total > issues.length };
+      }
+      // Searching: GitHub's search (is:issue leaves pull requests out), the best matches newest first.
+      const out = await run(['api', ...hostArgs(repo), '-X', 'GET', 'search/issues', '-f', `q=${searchQuery(repo, state, words)}`, '-f', 'sort=updated', '-f', `per_page=${ISSUES_PAGE}`]);
+      const raw = JSON.parse(out) as { total_count?: unknown };
       const issues = parseIssues(out);
-      return { issues, more: total !== undefined ? total > issues.length : read >= ISSUES_PAGE };
+      return { issues, more: typeof raw.total_count === 'number' ? raw.total_count > issues.length : false };
     },
     async get(repo, number) {
       const path = `repos/${repo.owner}/${repo.repo}/issues/${number}`;
