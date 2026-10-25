@@ -429,8 +429,9 @@ describe('the watcher', () => {
       fake.add(fake.session, user('Hello', now));
       touch(fake.session);
       live.start();
-      // The scan reads the disk for real (async): time moves on while it does.
-      for (let i = 0; i < 100 && !sessions().length; i++) {
+      // The scan reads the disk for real (async): time moves on while it does, for as long as a slow
+      // CI runner needs (a real deadline, not a count of turns: Date isn't faked here).
+      for (const until = Date.now() + 10_000; !sessions().length && Date.now() < until; ) {
         await vi.advanceTimersByTimeAsync(20);
         await new Promise((r) => setImmediate(r));
       }
