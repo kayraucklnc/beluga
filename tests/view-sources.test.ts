@@ -173,6 +173,34 @@ describe('the show tool', () => {
     expect(shelf.finish('Next turn.')).toBe('Next turn.');
   });
 
+  it('drops a token it has no view for, its line with it, even when the run showed none (BLG-182)', async () => {
+    const shelf = new ViewShelf();
+    expect(shelf.finish('Here is the GIF:\n\n[[view:1]]')).toBe('Here is the GIF:');
+    expect(shelf.expand('Before.\n\n[[view:2]]\n\nAfter.')).toBe('Before.\n\nAfter.');
+    expect(shelf.expand('Before.\n  [[view:2]]  \nAfter.')).toBe('Before.\nAfter.');
+    expect(shelf.finish('Two files: [[view:3]] and that is all.')).toBe('Two files: and that is all.');
+    expect(shelf.finish('It ends here [[view:3]].')).toBe('It ends here.');
+    // The made-up token wasn't a placement: the run's first real view still goes at the end.
+    await showView(shelf, dir, { type: 'stats', items: [{ label: 'Up', value: 3 }] });
+    expect(shelf.finish('All good.')).toMatch(/^All good\.\n\n```beluga-view\n.*\n```$/);
+    const other = new ViewShelf();
+    await showView(other, dir, { type: 'stats', items: [{ label: 'Up', value: 3 }] });
+    expect(other.finish('[[view:1]]\n\n[[view:2]]\n\nDone.')).toMatch(/^```beluga-view\n.*\n```\n\nDone\.$/);
+  });
+
+  it('leaves a token Claude writes about (in code) as it is, and places a real one it quoted', async () => {
+    const shelf = new ViewShelf();
+    await showView(shelf, dir, { type: 'stats', items: [{ label: 'Up', value: 3 }] });
+    const code = 'A stray `[[view:9]]` was text, like this:\n\n```ts\nshelf.finish("[[view:1]]");\n```';
+    const answer = shelf.finish(`${code}\n\nNow: \`[[view:1]]\``);
+    expect(answer).toMatch(/^A stray `\[\[view:9\]\]` was text, like this:\n\n```ts\nshelf\.finish\("\[\[view:1\]\]"\);\n```\n\nNow:\n\n```beluga-view\n.*\n```$/);
+    // Only in code, it isn't placed: the view goes at the end.
+    const quoted = new ViewShelf();
+    await showView(quoted, dir, { type: 'stats', items: [{ label: 'Up', value: 3 }] });
+    expect(quoted.finish(code)).toMatch(/```\n\n```beluga-view\n.*\n```$/);
+    expect(quoted.finish(code).startsWith(code)).toBe(true);
+  });
+
   it('draws graphs too, and says what is wrong', async () => {
     const shelf = new ViewShelf();
     await showView(shelf, dir, { type: 'graph', nodes: [{ id: 'a', label: 'A' }] });

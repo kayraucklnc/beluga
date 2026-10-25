@@ -137,7 +137,9 @@ Claude makes a view with `mcp__beluga_view__show`. It gives the element as JSON,
 3. runs the source once on this Mac and brings the first rows back to Claude, so Claude knows what's there and everyone sees something,
 4. returns a token like `[[view:1]]`.
 
-Claude puts the token on its own line where the view belongs, and Beluga swaps in the block. A view Claude didn't place goes at the end of the answer. `show` also draws [graphs](graphs.md) (`"type": "graph"`).
+Claude puts the token on its own line where the view belongs, and Beluga swaps in the block. A view Claude didn't place goes at the end of the answer. A token with no view behind it (one Claude wrote by hand) is dropped with its line, never shown as text; a token in code (`` `[[view:9]]` ``, a fenced block) is Claude writing about one and stays as it is (BLG-182). `show` also draws [graphs](graphs.md) (`"type": "graph"`).
+
+A picture isn't a view: Claude shows a screenshot or a GIF it made as a Markdown image with its absolute path (`![Login page](/Users/…/.beluga/scratch/01-login.png)`). Your own Claude's answers show it as a thumbnail; the file's bytes go to the window as they are, so a GIF plays (png, jpg, gif, webp, svg, up to 10 MB). Others in the room see its name.
 
 Asking: a command source asks like Bash. A file, folder or SQLite file outside the shared folders asks like Read. Data, a database query or a plain web address just runs.
 
