@@ -96,10 +96,48 @@ export async function pickFolder(): Promise<Directory | undefined> {
 
 // ---- saving
 
+const isText = (o: OutputView): boolean => o.kind === 'text' || o.kind === 'json' || o.kind === 'markdown';
+
+/**
+ * A text output whole, as the reader shows it: page by page, with the secrets a log printed
+ * redacted by the Mac (never the raw bytes, which `full` would be).
+ */
+function wholeText(ref: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let last = -1;
+    const check = (): void => {
+      const f = store.file(ref, 'text');
+      if (!f || f.status === 'loading') return;
+      if (f.status === 'error') {
+        unsub();
+        reject(new Error(f.error ?? 'Couldn’t get it.'));
+      } else if (f.size !== undefined && f.got < f.size && f.got > last) {
+        last = f.got;
+        store.fetch(ref, 'text', true);
+      } else {
+        unsub();
+        resolve(f.text ?? '');
+      }
+    };
+    const unsub = store.subscribe(`file:${ref}#text`, check);
+    store.fetch(ref, 'text');
+    check();
+  });
+}
+
 /** A file on the phone with the whole output in it, and whether it's ours to delete after. */
 async function localCopy(o: OutputView): Promise<{ file: File; temp: boolean }> {
   const full = o.kind === 'image' ? store.file(o.ref, 'full') : undefined;
   if (full?.status === 'ready' && full.uri?.startsWith('file:')) return { file: new File(full.uri), temp: false };
+  if (isText(o)) {
+    const text = await wholeText(o.ref);
+    const dir = new Directory(Paths.cache, CACHE_DIRS.save);
+    dir.create({ intermediates: true, idempotent: true });
+    const file = new File(dir, `text-${Date.now()}`);
+    file.create({ overwrite: true });
+    await file.write(text);
+    return { file, temp: true };
+  }
   return { file: new File(await store.saveCopy(o.ref)), temp: true };
 }
 

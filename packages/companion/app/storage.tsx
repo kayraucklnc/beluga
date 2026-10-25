@@ -61,7 +61,7 @@ export default function Storage() {
               Icon={Eraser}
               tone="butter"
               label="Cache"
-              sub={`${sizeOf(cache)} · pictures you opened, fetched again when needed`}
+              sub={`${sizeOf(cache)} · pictures you opened`}
               onPress={() =>
                 setSheet({
                   title: 'Cache',
@@ -89,8 +89,8 @@ export default function Storage() {
                 first
                 Icon={Archive}
                 tone="mint"
-                label="Remove with their conversation"
-                sub="When it's archived or deleted on your Mac"
+                label="Remove when archived"
+                sub="Saved files go with their conversation"
                 right={toggle(cleanup)}
                 chevron={false}
                 onPress={() => {
@@ -130,7 +130,7 @@ export default function Storage() {
                         title: f.name,
                         options: [
                           { Icon: Trash2, label: 'Delete from the phone', tone: 'rose', onPress: () => remove([f]) },
-                          { Icon: Trash2, label: `Delete all ${g.files.length} from ${g.title}`, sub: sizeOf(g.bytes), tone: 'rose', hidden: g.files.length < 2, onPress: () => remove(g.files) },
+                          { Icon: Trash2, label: `Delete all ${g.files.length} from this conversation`, sub: `${g.title} · ${sizeOf(g.bytes)}`, tone: 'rose', hidden: g.files.length < 2, onPress: () => remove(g.files) },
                         ],
                       })
                     }

@@ -197,6 +197,8 @@ export class FileServer {
       const text = redactSecrets(bytes.toString('utf8'));
       return { off, b64: Buffer.from(text, 'utf8').toString('base64').slice(0, Math.ceil(COMPANION_PIECE / 3) * 4), eof: off + bytes.length >= size, size, mime: mimeOf(entry.path) };
     }
+    // A text output only ever leaves redacted (`text`): never its raw bytes, which a save would keep (BLG-123).
+    if (kind === 'text' || kind === 'json' || kind === 'markdown') throw new Error('Text files come redacted: ask for its text');
     const { bytes, size } = await readPiece(entry.path, off, COMPANION_PIECE);
     return { off, b64: bytes.toString('base64'), eof: off + bytes.length >= size, size, mime: mimeOf(entry.path) };
   }

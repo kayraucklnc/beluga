@@ -89,12 +89,23 @@ describe('the file server', () => {
     await expect(server.piece('out:nothing-here', 'full', 0)).rejects.toThrow(/no longer offered/);
   });
 
+  it('never sends a text output raw: only redacted, as text', async () => {
+    const { project, scratch } = fixture();
+    const table = refs();
+    const server = new FileServer({ refs: table, thumbsDir: path.join(project, 'thumbs') });
+    writeFileSync(path.join(scratch, 'run.log'), 'token=ghp_abcdefghijklmnopqrstuvwxyz0123456789\n');
+    const ref = table.refFor(path.join(scratch, 'run.log'), project)!;
+    await expect(server.piece(ref, 'full', 0)).rejects.toThrow(/redacted/);
+    const text = Buffer.from((await server.piece(ref, 'text', 0)).b64, 'base64').toString('utf8');
+    expect(text).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+  });
+
   it('sends big files in pieces', async () => {
     const { project, scratch } = fixture();
     const table = refs();
     const server = new FileServer({ refs: table, thumbsDir: path.join(project, 'thumbs') });
-    writeFileSync(path.join(scratch, 'big.log'), 'x'.repeat(COMPANION_PIECE + 100));
-    const ref = table.refFor(path.join(scratch, 'big.log'), project)!;
+    writeFileSync(path.join(scratch, 'big.pdf'), 'x'.repeat(COMPANION_PIECE + 100));
+    const ref = table.refFor(path.join(scratch, 'big.pdf'), project)!;
     const first = await server.piece(ref, 'full', 0);
     expect(first.eof).toBe(false);
     expect(Buffer.from(first.b64, 'base64').length).toBe(COMPANION_PIECE);
