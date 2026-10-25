@@ -21,9 +21,7 @@
       },
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.POST_NOTIFICATIONS"
-      ],
-      "blockedPermissions": [
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECORD_AUDIO"
       ],
       "softwareKeyboardLayoutMode": "resize",
@@ -33,6 +31,7 @@
       "bundleIdentifier": "sh.ratel.beluga",
       "supportsTablet": false,
       "infoPlist": {
+        "NSMicrophoneUsageDescription": "Beluga writes down what you say on this phone, so you can ask your Mac by voice. Nothing you say leaves the phone.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }

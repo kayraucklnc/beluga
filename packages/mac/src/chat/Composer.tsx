@@ -24,6 +24,8 @@ import { MentionHighlighter } from './MentionHighlighter.js';
 import { useSuggestions } from './Suggestions.js';
 import { useMentionWorld, worktreeOf } from './Mention.js';
 import { MentionedTasks } from './MentionedTasks.js';
+import { DictationStrip, MicButton } from './Dictation.js';
+import { useDictationTarget } from '../lib/dictation.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
@@ -300,6 +302,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     deliver(text, urgent);
   };
+  // Speaking instead of typing (Settings › Voice): the words come here when this is the box you're in; Send right away sends them as ↩ would.
+  useDictationTarget(ref, () => send(false));
   /** A queued message pulled back to edit: into the box, ahead of anything already there. */
   const editQueued = async (sent: string): Promise<void> => {
     // Its images wait above the box again, each an "[image N]" in the words (not the link it went as).
@@ -428,6 +432,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
         ) : null}
         {att.waiting}
         <MentionedTasks text={buffer} world={mentionWorld} />
+        <DictationStrip box={ref} />
         <div className={s.inputWrap}>
           <MentionHighlighter text={buffer} world={mentionWorld} input={ref} className={s.input ?? ""} />
           <textarea
@@ -491,6 +496,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               </button>
             </Tip>
           ) : null}
+          {!readOnly ? <MicButton box={ref} /> : null}
           {draftProject ? (
             <Tip label={worktree.name.trim() && !buffer.trim() ? `Create ${worktree.name.trim()} without a task` : 'Make the branch and folder, then Claude starts on the task'} keys={sendKeys}>
               <button type="button" className={cx(d.create, canCreate && d.createReady)} onClick={() => send(false)} aria-disabled={!canCreate}>

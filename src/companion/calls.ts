@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { API, type Method } from '../ipc/api.js';
-import { ChatMessageView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, SubAgentDetailView, TerminalView, TerminalsView, TurnView } from './protocol.js';
+import { ChatMessageView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, SubAgentDetailView, TerminalView, TerminalsView, TranscriptView, TurnView, VoiceMacView } from './protocol.js';
 
 /**
  * Every call the phone may make, typed: each `phone` method of coverage.ts with its arguments
@@ -117,6 +117,9 @@ export const PhoneCalls = {
   'companion.subAgent': entry('companion.subAgent', SubAgentDetailView),
   // 1.11 (BLG-124): the conversations no longer on the Mac, of those asked about.
   'companion.gone': entry('companion.gone', z.object({ gone: z.array(z.string()) })),
+  'companion.voice': entry('companion.voice', VoiceMacView),
+  'companion.voicePrepare': entry('companion.voicePrepare', VoiceMacView),
+  'companion.transcribe': entry('companion.transcribe', TranscriptView),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;
