@@ -1,11 +1,13 @@
 import net from 'node:net';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 import type { SystemPort } from '../core/gateway/device.js';
 import type { PhoneTools } from '../agent/types.js';
 import { phoneBrief } from '../agent/phone-tools.js';
 import { Adb, adbCandidates, findAdb, parseDevices } from './phone-adb.js';
 import type { DeviceBook } from './devices.js';
+import { type Macro, MacroStep, type PhoneMacros } from './phone-macros.js';
 import {
   type AdbView,
   type PhoneControl as PhoneControlState,
@@ -62,6 +64,8 @@ export interface PhoneControlDeps {
   readonly link: (deviceId: string) => PhoneLinkHandle | undefined;
   /** View/state changed: re-publish the companion slice. */
   readonly onChange: () => void;
+  /** Saved phone flows (BLG-175). */
+  readonly macros?: PhoneMacros;
   readonly log?: (line: string) => void;
   /** Tests: adb's path straight away (skip discovery), and a fake home for candidates. */
   readonly adbPath?: string;
@@ -472,6 +476,114 @@ export class PhoneControl {
     };
   }
 
+  /** Elements on screen now with where to tap them, for find-by-text (macros, BLG-175). */
+  private async screenTargets(deviceId: string): Promise<Array<{ label: string; cx: number; cy: number }>> {
+    const r = await this.need(deviceId, 'look');
+    if (r.link?.control?.accessibility) {
+      const view = (await r.link.request('screen', {})) as ScreenView;
+      return view.nodes.flatMap((n) => {
+        const label = [n.t, n.s, n.h, n.r].filter(Boolean).join(' ');
+        const [l, t, rr, b] = n.b;
+        return label ? [{ label, cx: Math.round((l + rr) / 2), cy: Math.round((t + b) / 2) }] : [];
+      });
+    }
+    if (r.adb) {
+      const dump = await r.adb.shell('uiautomator dump && cat /sdcard/window_dump.xml', 20_000);
+      return targetsFromUiautomator(dump.stdout);
+    }
+    return [];
+  }
+
+  /** Where to tap the element that shows `text` (case-insensitive, contains), or undefined. */
+  async findByText(deviceId: string, text: string): Promise<{ x: number; y: number } | undefined> {
+    const want = text.trim().toLowerCase();
+    const targets = await this.screenTargets(deviceId);
+    const hit = targets.find((t) => t.label.toLowerCase() === want) ?? targets.find((t) => t.label.toLowerCase().includes(want));
+    return hit ? { x: hit.cx, y: hit.cy } : undefined;
+  }
+
+  /**
+   * Run a saved flow (BLG-175): each step in turn, with a short settle between them, re-finding
+   * tap-by-text against the live screen. Returns a short transcript; throws on the first step that
+   * can't be done (so a broken macro stops rather than wandering).
+   */
+  async runMacro(deviceId: string, steps: readonly MacroStep[], onStep?: (line: string) => void): Promise<string> {
+    const log: string[] = [];
+    const note = (line: string): void => {
+      log.push(line);
+      onStep?.(line);
+    };
+    for (const [i, step] of steps.entries()) {
+      const at = `${i + 1}/${steps.length}`;
+      switch (step.op) {
+        case 'wait':
+          await delay(step.ms);
+          note(`${at} waited ${step.ms}ms`);
+          break;
+        case 'open':
+          await this.open(deviceId, step);
+          note(`${at} opened ${step.url ?? step.package}`);
+          break;
+        case 'tapText': {
+          const spot = await this.findByText(deviceId, step.text);
+          if (!spot) throw new Error(`Step ${at}: couldn’t find “${step.text}” on screen`);
+          await this.tap(deviceId, spot);
+          note(`${at} tapped “${step.text}”`);
+          break;
+        }
+        case 'tap':
+          await this.tap(deviceId, { x: step.x, y: step.y });
+          note(`${at} tapped ${step.x},${step.y}`);
+          break;
+        case 'type':
+          await this.type(deviceId, { text: step.text, ...(step.clear ? { replace: true } : {}), ...(step.enter ? { enter: true } : {}) });
+          note(`${at} typed`);
+          break;
+        case 'key':
+          await this.key(deviceId, step.key);
+          note(`${at} pressed ${step.key}`);
+          break;
+        case 'swipe':
+          await this.swipe(deviceId, step);
+          note(`${at} swiped`);
+          break;
+        case 'scroll':
+          await this.scroll(deviceId, { dir: step.dir });
+          note(`${at} scrolled ${step.dir}`);
+          break;
+      }
+      if (step.op !== 'wait') await delay(700);
+    }
+    return log.join('\n');
+  }
+
+  // ---- saved flows (BLG-175)
+
+  listMacros(): readonly Macro[] {
+    return this.deps.macros?.all() ?? [];
+  }
+  saveMacro(name: string, steps: readonly MacroStep[]): Macro {
+    if (!this.deps.macros) throw new Error('Macros need the Beluga app');
+    const id = this.targetDevice();
+    const model = id ? this.deps.link(id)?.control?.device.model : undefined;
+    const macro = this.deps.macros.save({ name, steps: [...steps], createdAt: Date.now(), ...(model ? { device: model } : {}) });
+    this.deps.onChange();
+    return macro;
+  }
+  deleteMacro(name: string): boolean {
+    const gone = this.deps.macros?.remove(name) ?? false;
+    if (gone) this.deps.onChange();
+    return gone;
+  }
+  /** Run a saved macro on the phone Claude would act on now. */
+  async runNamedMacro(name: string, onStep?: (line: string) => void): Promise<string> {
+    const macro = this.deps.macros?.get(name);
+    if (!macro) throw new Error(`There’s no macro called “${name}”`);
+    const deviceId = this.targetDevice();
+    if (!deviceId) throw new Error('No phone is set up to run it on');
+    return this.runMacro(deviceId, macro.steps, onStep);
+  }
+
   /** One action for the Mac UI (the mirror's tap/type/scroll, or a button), by op. */
   async action(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
     switch (op) {
@@ -713,6 +825,18 @@ export class PhoneControl {
         const list = await ctl.notifications(deviceId);
         return list.length ? list.map((n) => `• ${n.title || n.app}${n.text ? ` — ${n.text}` : ''}  [${n.app}]`).join('\n') : 'No notifications right now.';
       },
+      macroSave: async (name, steps) => {
+        const parsed = z.array(MacroStep).min(1).max(100).safeParse(steps);
+        if (!parsed.success) throw new Error(`Those steps aren’t valid: ${parsed.error.issues[0]?.message ?? 'bad shape'}`);
+        const m = ctl.saveMacro(name, parsed.data);
+        return `Saved the macro “${m.name}” (${m.steps.length} steps). Run it later with phone_macro_run.`;
+      },
+      macroList: async () => {
+        const list = ctl.listMacros();
+        return list.length ? list.map((m) => `• ${m.name} — ${m.steps.length} steps`).join('\n') : 'No macros saved yet.';
+      },
+      macroRun: async (name) => ctl.runNamedMacro(name),
+      macroDelete: async (name) => (ctl.deleteMacro(name) ? `Deleted “${name}”.` : `No macro called “${name}”.`),
     };
     return { tools, brief: phoneBrief(`- Now: ${this.summaryLine(deviceId)}`), deviceId, env: this.runEnv() };
   }
@@ -774,6 +898,21 @@ export function describeScreen(view: ScreenView): string {
     lines.push(`#${n.i} ${n.c}${says ? ` "${says.slice(0, 80)}"` : ''}${n.r ? ` [${n.r}]` : ''}${can ? ` (${can})` : ''} @${Math.round((l + r) / 2)},${Math.round((t + b) / 2)}`);
   }
   return lines.join('\n');
+}
+
+/** Tappable targets (label + centre) from `uiautomator dump` XML (for macros' find-by-text). */
+export function targetsFromUiautomator(xml: string): Array<{ label: string; cx: number; cy: number }> {
+  const out: Array<{ label: string; cx: number; cy: number }> = [];
+  const attr = (tag: string, name: string): string | undefined => new RegExp(`${name}="([^"]*)"`).exec(tag)?.[1];
+  for (const m of xml.matchAll(/<node\b[^>]*>/g)) {
+    const tag = m[0];
+    const bounds = /bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(tag);
+    if (!bounds) continue;
+    const label = [attr(tag, 'text'), attr(tag, 'content-desc'), attr(tag, 'resource-id')?.split('/').pop()].filter(Boolean).join(' ');
+    if (!label) continue;
+    out.push({ label, cx: Math.round((Number(bounds[1]) + Number(bounds[3])) / 2), cy: Math.round((Number(bounds[2]) + Number(bounds[4])) / 2) });
+  }
+  return out;
 }
 
 /** `uiautomator dump` XML as the same kind of lines (used when adb is driving and the app isn't). */

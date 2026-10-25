@@ -47,6 +47,7 @@ import {
   parsePhoneFrame,
 } from './protocol.js';
 import { PhoneControl, type PhoneLinkHandle, type TunnelEnd, type TunnelSide } from './phone-control.js';
+import { type Macro, PhoneMacros } from './phone-macros.js';
 import { type SystemPort, realSystem } from '../core/gateway/device.js';
 import { type Delivery, NO_PUSH, type Nudge, type Pusher, deliver } from './push.js';
 import { type ConvOutput, type ViewContext, channelOf, chatMessages, convTopic, convTurns, needsYou, phoneChannel, viewOf } from './views.js';
@@ -115,6 +116,8 @@ export interface CompanionHostOptions {
   /** Tests: adb's path straight away, and a fake home for finding it. */
   readonly adbPath?: string;
   readonly home?: string;
+  /** Where saved phone flows live (BLG-175); default ~/.beluga/phone-macros.json via launch. */
+  readonly macrosFile?: string;
 }
 
 /** The companion address's key pair: HKDF of your identity's seed, 'companion-v1'. */
@@ -433,6 +436,7 @@ export class CompanionHost {
       devices: opts.devices,
       link: (id) => this.linkFor(id),
       onChange: () => this.publish(),
+      ...(opts.macrosFile ? { macros: new PhoneMacros(opts.macrosFile) } : {}),
       ...(opts.adbPath ? { adbPath: opts.adbPath } : {}),
       ...(opts.home ? { home: opts.home } : {}),
       ...(opts.log ? { log: opts.log } : {}),
@@ -950,6 +954,16 @@ export class CompanionHost {
   /** One phone action from the Mac UI (the mirror's tap/type, a button). */
   phoneAction(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
     return this.control.action(deviceId, op, args);
+  }
+  /** Saved phone flows (BLG-175), for the Mac UI. */
+  listPhoneMacros(): readonly Macro[] {
+    return this.control.listMacros();
+  }
+  runPhoneMacro(name: string): Promise<string> {
+    return this.control.runNamedMacro(name);
+  }
+  deletePhoneMacro(name: string): { deleted: boolean } {
+    return { deleted: this.control.deleteMacro(name) };
   }
   /** Stream a phone's screen to a screen that's watching (the Mac app's mirror). */
   mirrorPhone(

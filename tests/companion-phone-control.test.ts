@@ -208,6 +208,24 @@ describe('mirror and action (BLG-171)', () => {
   });
 });
 
+describe('macros (BLG-175)', () => {
+  const id = 'dd'.padEnd(16, '0');
+  const device: DeviceRecord = { cert: cert('dd'), pairedAt: 1, use: 'use' };
+  const screen = { gen: 1, app: 'com.x', w: 1080, h: 2400, nodes: [{ i: 0, d: 0, c: 'Button', t: 'Send', b: [100, 200, 300, 260], f: 'c' }] };
+
+  it('runs a flow, finding tapText by on-screen text (Accessibility route)', async () => {
+    const { sys } = fakeSys([{ match: /version/, code: 1 }]); // no adb → Accessibility
+    const link = fakeLink(id, control(), (op) => (op === 'screen' ? screen : {}));
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => link, onChange: () => {}, home: '/nope' });
+    const log = await ctl.runMacro(id, [{ op: 'open', package: 'com.x' }, { op: 'tapText', text: 'Send' }]);
+    const ops = link.reqs.map((r) => r.op);
+    expect(ops).toContain('open');
+    expect(ops).toContain('screen');
+    expect(ops).toContain('tap');
+    expect(log).toContain('tapped “Send”');
+  });
+});
+
 describe('notifications (BLG-176)', () => {
   it('parses dumpsys notification records', () => {
     const dump = [

@@ -215,6 +215,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.phone.use` | ✓ Settings › Phone › Let Claude use this phone: Off · Ask each time · Use · Full (BLG-150) |
 | `companion.phone.pairAdb` | ✓ Settings › Phone › Connect, once the phone shows a Wireless-debugging pairing code (runs `adb pair`) |
 | `companion.phone.act` | ✓ the Your phone page's live mirror: click to tap, drag to swipe, the hardware-key buttons, the type line (BLG-171) |
+| `companion.phone.macros` | ✓ the Your phone page's Macros strip: the saved flows (BLG-175) |
+| `companion.phone.macroRun` | ✓ the Your phone page's Macros strip › Run |
+| `companion.phone.macroDelete` | ✓ the Your phone page's Macros strip › a macro's × |
 | `companion.older` | – the phone only: older turns of a conversation (or messages of a chat) as you scroll up (docs/companion.md) |
 | `companion.ask` | – the phone only: Ask your Mac (a question in a project, as New Chat does, or a message in a conversation, Your Mac's `conv:mac:assistant` included), with photos and files the phone sent (`put`) |
 | `companion.post` | – the phone only: a message in a friends' chat with files from the phone |

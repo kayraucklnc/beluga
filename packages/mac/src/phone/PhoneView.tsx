@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DeviceView, PhoneUse } from '../../../../src/companion/protocol.js';
+import type { Macro } from '../../../../src/companion/phone-macros.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Empty, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -143,6 +144,8 @@ function Mirror({ phone }: { phone: DeviceView }) {
         </span>
       </header>
 
+      <Macros />
+
       <div className={s.stage} onWheel={onWheel}>
         {frame ? (
           <img
@@ -195,6 +198,40 @@ function Mirror({ phone }: { phone: DeviceView }) {
           <Icon name="claude" size={14} /> Ask Claude
         </Button>
       </footer>
+    </div>
+  );
+}
+
+/** The saved flows (BLG-175): run one, or remove it. Record new ones by asking Claude. */
+function Macros() {
+  const { client } = useBeluga();
+  const [macros, setMacros] = useState<readonly Macro[]>([]);
+  const [running, setRunning] = useState<string>();
+  const load = useCallback(() => void client.api.companion['phone.macros']().then(setMacros).catch(() => undefined), [client]);
+  useEffect(load, [load]);
+  if (!macros.length) return null;
+  return (
+    <div className={s.macros}>
+      <span className={s.macrosLabel}>Macros</span>
+      {macros.map((m) => (
+        <span key={m.name} className={s.macro}>
+          <button
+            type="button"
+            className={s.macroRun}
+            disabled={!!running}
+            onClick={async () => {
+              setRunning(m.name);
+              await client.api.companion['phone.macroRun'](m.name).catch(() => undefined);
+              setRunning(undefined);
+            }}
+          >
+            {running === m.name ? 'Running…' : m.name}
+          </button>
+          <button type="button" className={s.macroX} title="Delete" onClick={() => void client.api.companion['phone.macroDelete'](m.name).then(load)}>
+            ×
+          </button>
+        </span>
+      ))}
     </div>
   );
 }

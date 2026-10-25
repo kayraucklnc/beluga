@@ -203,6 +203,14 @@ export interface PhoneTools {
   pull(remotePath: string): Promise<string>;
   /** The phone's current notifications (needs Wireless debugging). */
   notifications(): Promise<string>;
+  /** Save a flow you just did as a named, repeatable macro (BLG-175). */
+  macroSave(name: string, steps: readonly unknown[]): Promise<string>;
+  /** The saved macros. */
+  macroList(): Promise<string>;
+  /** Run a saved macro on the phone. */
+  macroRun(name: string): Promise<string>;
+  /** Delete a saved macro. */
+  macroDelete(name: string): Promise<string>;
 }
 
 /** "Your Mac"'s tools (agent/mac-tools.ts, server `beluga_mac`): each answers in words for Claude. */

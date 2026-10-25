@@ -119,6 +119,53 @@
   border-color: var(--accent);
 }
 
+/* The saved-flows strip (BLG-175). */
+.macros {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 0.5px solid var(--hairline);
+  overflow-x: auto;
+}
+.macrosLabel {
+  color: var(--text-3);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.macro {
+  display: inline-flex;
+  align-items: center;
+  border: 0.5px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--bg-hover);
+}
+.macroRun {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 9px 0 0 9px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.macroRun:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+.macroX {
+  padding: 4px 8px;
+  border: none;
+  border-left: 0.5px solid var(--hairline);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.macroX:hover {
+  color: var(--text);
+}
+
 .setup {
   display: flex;
   flex-direction: column;

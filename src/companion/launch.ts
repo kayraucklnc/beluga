@@ -159,6 +159,7 @@ export function launchCompanion(opts: CompanionLaunch): () => Promise<void> {
     macName,
     version: installedVersion(),
     thumbsDir: path.join(dir, 'companion', 'thumbs'),
+    macrosFile: path.join(dir, 'phone-macros.json'),
     outputs: outputs.get,
     watching: (channels, linked) => outputs.watch(channels, linked),
     idleMs: macIdleMs,

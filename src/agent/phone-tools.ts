@@ -14,10 +14,10 @@ import type { PhoneTools } from './types.js';
  */
 
 export const PHONE_TOOL_NAMES = [
-  'phone_status', 'phone_screenshot', 'phone_screen', 'phone_tap', 'phone_swipe', 'phone_type', 'phone_key', 'phone_scroll', 'phone_open', 'phone_apps', 'phone_info', 'phone_install', 'phone_shell', 'phone_logcat', 'phone_push', 'phone_pull', 'phone_notifications',
+  'phone_status', 'phone_screenshot', 'phone_screen', 'phone_tap', 'phone_swipe', 'phone_type', 'phone_key', 'phone_scroll', 'phone_open', 'phone_apps', 'phone_info', 'phone_install', 'phone_shell', 'phone_logcat', 'phone_push', 'phone_pull', 'phone_notifications', 'phone_macro_save', 'phone_macro_list', 'phone_macro_run', 'phone_macro_delete',
 ].map((n) => `mcp__beluga_phone__${n}`);
 /** The tools that only look (never change the phone): always allowed, like the Mac's screenshot. */
-export const PHONE_LOOK_TOOLS = ['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info', 'phone_pull', 'phone_notifications'].map((n) => `mcp__beluga_phone__${n}`);
+export const PHONE_LOOK_TOOLS = ['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info', 'phone_pull', 'phone_notifications', 'phone_macro_list'].map((n) => `mcp__beluga_phone__${n}`);
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 
@@ -109,6 +109,33 @@ export function createPhoneToolDefs(phone: PhoneTools) {
       guarded(async () => words(await phone.pull(a.path))),
     ),
     tool('phone_notifications', 'The phone’s current notifications (needs Wireless debugging): app, title and text.', {}, () => guarded(async () => words(await phone.notifications()))),
+    tool(
+      'phone_macro_save',
+      'Save a flow you just did as a named, repeatable macro (BLG-175). Prefer tapText steps (tap by the text an element shows) over tap x,y — they keep working when the screen shifts. Open the right app first.',
+      {
+        name: z.string().min(1).max(60),
+        steps: z
+          .array(
+            z.union([
+              z.object({ op: z.literal('open'), package: z.string().max(200).optional(), url: z.string().max(4000).optional() }),
+              z.object({ op: z.literal('tapText'), text: z.string().min(1).max(200) }),
+              z.object({ op: z.literal('tap'), x: z.number().int().min(0), y: z.number().int().min(0) }),
+              z.object({ op: z.literal('type'), text: z.string().max(4000), enter: z.boolean().optional(), clear: z.boolean().optional() }),
+              z.object({ op: z.literal('key'), key: z.string().max(40) }),
+              z.object({ op: z.literal('swipe'), x1: z.number().int(), y1: z.number().int(), x2: z.number().int(), y2: z.number().int(), ms: z.number().int().optional() }),
+              z.object({ op: z.literal('scroll'), dir: z.enum(['up', 'down', 'left', 'right']) }),
+              z.object({ op: z.literal('wait'), ms: z.number().int().min(100).max(20_000) }),
+            ]),
+          )
+          .min(1)
+          .max(100)
+          .describe('The steps, in order'),
+      },
+      (a) => guarded(async () => words(await phone.macroSave(a.name, a.steps))),
+    ),
+    tool('phone_macro_list', 'The saved phone macros.', {}, () => guarded(async () => words(await phone.macroList()))),
+    tool('phone_macro_run', 'Run a saved macro on the phone by name.', { name: z.string().min(1).max(60) }, (a) => guarded(async () => words(await phone.macroRun(a.name)))),
+    tool('phone_macro_delete', 'Delete a saved macro by name.', { name: z.string().min(1).max(60) }, (a) => guarded(async () => words(await phone.macroDelete(a.name)))),
   ];
 }
 
@@ -133,5 +160,14 @@ export function phoneBrief(summary: string): string {
     'build and install directly — e.g. `./gradlew assembleDebug` then `adb install -r <apk>`, or `adb shell am start -n <pkg>/<activity>`,',
     '`adb logcat -d` for recent logs, `scrcpy` to mirror. Then phone_screenshot to see the result. Prefer phone_install / phone_open',
     'for the simple cases. Call phone_status once first so adb is connected to the phone.',
+    '',
+    'Turning a screen into data: phone_screen gives the on-screen text and fields; a phone_screenshot is an image you can read',
+    'directly — so you can OCR a photo, read a QR code, or lift the numbers off a dashboard. When the result is rows or a trend,',
+    'show it with mcp__beluga_view__show (a table or chart) rather than pasting a wall of text. To read a photo, phone_pull it',
+    '(e.g. the newest file in /sdcard/DCIM/Camera) and look at it.',
+    '',
+    'Macros (record & replay): once you’ve done a flow, save it with phone_macro_save so the owner can re-run it — "every morning',
+    'open Strava and screenshot my stats". Use tapText steps (tap by the text an element shows) over tap x,y, so it keeps working',
+    'when the screen shifts. phone_macro_list / phone_macro_run / phone_macro_delete manage them.',
   ].join('\n');
 }
