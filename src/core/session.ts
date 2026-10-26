@@ -432,7 +432,7 @@ export class Session {
       return;
     }
     if (this.store.getState().self?.guest && !this.store.getState().peers.find((p) => p.peerId === this.selfId && !p.guest)) {
-      this.toast("You came in with a link to a project, so there's no group chat here. Open it under SHARED WITH ME", 'warn');
+      this.toast("You came in with a link to a project, so there's no group chat here. Open it in Projects", 'warn');
       return;
     }
     if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent }, { keep: true })) {
@@ -913,7 +913,7 @@ export class Session {
         return;
       case 'share_offer':
         this.store.dispatch({ type: 'offer', offer: { owner: from, name: body.name, writable: body.writable }, active: body.active });
-        if (body.active) this.toast(`${peerName(this.store.getState(), from)} shared ${body.name} with you. It's in Shared files`, 'success');
+        if (body.active) this.toast(`${peerName(this.store.getState(), from)} shared ${body.name} with you. It's in Files`, 'success');
         return;
       case 'agent_question':
         return this.questions.onQuestion(from, body);

@@ -3,8 +3,7 @@ import { overviewNews } from '@beluga/ui/workspace-models.js';
 import { macTabs } from '../lib/go.js';
 import { newShares } from '@beluga/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
-import { SpecContext } from '../components/SpecMenu.js';
-import { Avatar, Badge, IconButton, cx } from '../components/ui.js';
+import { Badge, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { inApp } from '../lib/boot.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
@@ -16,8 +15,6 @@ import { Projects, ProjectsAddMenu } from './ProjectTree.js';
 import { SharedProjects } from './SharedProjects.js';
 import { WorkspaceRow } from './workspace-row.js';
 import { UnreadSection } from './UnreadSection.js';
-import { signalOf } from './attention-model.js';
-import { SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { Row, Section } from './sidebar-parts.js';
 import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
@@ -34,7 +31,7 @@ import s from './Sidebar.module.css';
 /**
  * The sidebar's top: three places, always. The rest are a click away without a row of their
  * own: Search in the toolbar (⇧⌘F), Usage as an icon above, the terminal in the right panel (⌘J),
- * shared folders under Shared with me; Activity and Requests show up only while there's something
+ * folders friends share under Files (projects they share are in Projects); Activity and Requests show up only while there's something
  * in them. Everything is also in ⌘K and the Go menu (⌥1…7).
  */
 const NAV: ReadonlyArray<{ kind: 'overview' | 'room'; icon: IconName }> = [
@@ -88,7 +85,7 @@ export function Sidebar() {
   const actions = useActions();
   const drop = useFolderDrop();
   // Only what the sidebar itself shows: drawn again when that changes, not on every streamed event (KLD-48).
-  const { tabs, liveChats, view, othersShare, badges, shared } = useApp((state) => {
+  const { tabs, liveChats, view, badges } = useApp((state) => {
     const news = overviewNews(state);
     const fresh = newShares(state);
     const badges: Partial<Record<string, { count: number; urgent?: boolean }>> = {
@@ -100,10 +97,7 @@ export function Sidebar() {
       tabs: macTabs(state),
       liveChats: state.projects.find((p) => !p.root)?.workspaces.filter((w) => !w.archived) ?? [],
       view: state.view,
-      // Folders someone else shares with you (or that went away while you weren't looking).
-      othersShare: state.peers.some((p) => p.peerId !== state.self?.peerId && p.shares.length > 0) || fresh > 0,
       badges,
-      shared: state.shared.filter((w) => w.via !== 'mesh').map((w) => ({ w, owner: state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone', signal: signalOf(state, `ws:${w.id}`) })),
     };
   }, sameDeep);
   const files = tabs.find((t) => t.kind === 'files');
@@ -136,6 +130,15 @@ export function Sidebar() {
             // Overview, Work (Tasks, GitHub's issues and Plans in one row, BLG-197), then Chat.
             return n.kind === 'overview' ? [row, <WorkNav key="work" />] : row;
           })}
+          {/* Files: folders friends share with you (over the network), and the room's (BLG-205). */}
+          <Row
+            icon={<Icon name="folder" size={14} />}
+            label="Files"
+            detail={files?.hint ?? 'Folders friends share with you'}
+            selected={view.kind === 'files'}
+            onClick={() => actions.run({ type: 'view', view: { kind: 'files' } })}
+            trailing={badges.files?.count ? <Badge count={badges.files.count} /> : null}
+          />
           <ActivityRow whenLive />
           <RequestsNav whenAny />
         </section>
@@ -156,39 +159,6 @@ export function Sidebar() {
           {/* Housekeeping for every project's worktrees: after the projects, out of the daily places above. */}
           <WorktreesNav />
         </Section>
-
-        {shared.length || othersShare ? (
-          <Section id="shared" title="Shared with me">
-            {othersShare ? (
-              <Row
-                icon={<Icon name="folder" size={14} />}
-                label={files?.label ?? 'Shared files'}
-                detail={files?.hint ?? 'Folders people share with you'}
-                selected={view.kind === 'files'}
-                onClick={() => actions.run({ type: 'view', view: { kind: 'files' } })}
-                trailing={badges.files?.count ? <Badge count={badges.files.count} /> : null}
-              />
-            ) : null}
-            {shared.map(({ w, owner, signal }) => {
-              const selected = view.kind === 'shared' && view.id === w.id;
-              return (
-                <SpecContext key={`${w.owner}:${w.id}`} menu={{ kind: 'shared', owner: w.owner, id: w.id }}>
-                  <Row
-                    selected={selected}
-                    className={signalClass(signal, selected)}
-                    data-signal-row={signal.level}
-                    aria-label={w.name}
-                    icon={<Avatar name={owner} id={w.owner} size={16} />}
-                    label={<span className={nameClass(signal)}>{w.name}</span>}
-                    detail={`${owner}'s ${w.project} · ${signal.tip || (w.role === 'contribute' ? 'you can work here' : 'you can follow along')}`}
-                    onClick={() => actions.run({ type: 'open_shared', owner: w.owner, id: w.id, tab: 'chat' })}
-                    trailing={<SignalMark signal={signal} />}
-                  />
-                </SpecContext>
-              );
-            })}
-          </Section>
-        ) : null}
 
         <FriendsSection />
         <GroupsSection />

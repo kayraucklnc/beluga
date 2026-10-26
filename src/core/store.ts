@@ -174,6 +174,8 @@ export interface BrowserRow {
   readonly dir: boolean;
   readonly target: Location | 'up';
   readonly size?: number;
+  /** At the top of Files: whose folder it is (rows of one person come together, under their name). */
+  readonly group?: string;
 }
 
 /** The Shared files browser: the folder open and what's in it (each screen keeps its own cursor). */
@@ -660,23 +662,33 @@ function appendLog(log: readonly LogItem[], item: LogItem): readonly LogItem[] {
   return next.filter((_l, i) => i !== drop);
 }
 
-/** Every folder you can open: shared with the room, shared with just you, and workspaces you were invited into. */
+/**
+ * Every folder you can open, grouped by whose it is: what friends share with you over the network,
+ * what people in the room share (with everyone, or just you), and workspaces a room invited you into.
+ * Worktrees friends share over the network are projects, not folders: they're in Projects.
+ */
 function rootRows(state: DomainState): BrowserRow[] {
-  const name = (id: string) => state.peers.find((p) => p.peerId === id)?.name ?? 'someone';
+  const name = (id: string) => state.peers.find((p) => p.peerId === id)?.name ?? state.network.friends.find((f) => f.peerId === id)?.name ?? 'someone';
+  const friends = state.friendFolders.map((f) => ({ label: `${f.ownerName} · ${f.label}${f.writable ? '' : ' (read-only)'}`, dir: true, target: { owner: f.owner, share: f.name, path: '' }, group: f.ownerName }));
   const room = state.peers.flatMap((p) =>
-    p.shares.map((s) => ({ label: `${p.name} · ${s.name}${s.writable ? '' : ' (read-only)'}`, dir: true, target: { owner: p.peerId, share: s.name, path: '' } })),
+    p.shares.map((s) => ({ label: `${p.name} · ${s.name}${s.writable ? '' : ' (read-only)'}`, dir: true, target: { owner: p.peerId, share: s.name, path: '' }, group: p.name })),
   );
-  const offers = state.offers.map((o) => ({ label: `${name(o.owner)} · ${o.name} (shared with you)`, dir: true, target: { owner: o.owner, share: o.name, path: '' } }));
-  const workspaces = state.shared.map((w) => ({ label: `${name(w.owner)} · ${w.name} (workspace)`, dir: true, target: { owner: w.owner, share: w.share, path: '' } }));
-  return [...room, ...offers, ...workspaces];
+  const offers = state.offers.map((o) => ({ label: `${name(o.owner)} · ${o.name} (shared with you)`, dir: true, target: { owner: o.owner, share: o.name, path: '' }, group: name(o.owner) }));
+  const workspaces = state.shared.filter((w) => w.via !== 'mesh').map((w) => ({ label: `${name(w.owner)} · ${w.name} (workspace)`, dir: true, target: { owner: w.owner, share: w.share, path: '' }, group: name(w.owner) }));
+  const seen = new Set<string>();
+  const all = [...friends, ...room, ...offers, ...workspaces].filter((r) => !seen.has(`${r.target.owner}/${r.target.share}`) && Boolean(seen.add(`${r.target.owner}/${r.target.share}`)));
+  // One person's folders together, in the order people first appear.
+  const order = [...new Set(all.map((r) => r.group))];
+  return all.map((r, i) => ({ r, i })).sort((a, b) => order.indexOf(a.r.group) - order.indexOf(b.r.group) || a.i - b.i).map(({ r }) => r);
 }
 
 /** One key per folder listed at the top of Shared files (to tell which ones are new). */
-export function shareKeys(state: Pick<DomainState, 'peers' | 'offers' | 'shared' | 'self'>): string[] {
+export function shareKeys(state: Pick<DomainState, 'peers' | 'offers' | 'shared' | 'self' | 'friendFolders'>): string[] {
   return [
+    ...state.friendFolders.map((f) => `${f.owner}/${f.name}`),
     ...state.peers.filter((p) => p.peerId !== state.self?.peerId).flatMap((p) => p.shares.map((s) => `${p.peerId}/${s.name}`)),
     ...state.offers.map((o) => `${o.owner}/${o.name}`),
-    ...state.shared.map((w) => `${w.owner}/${w.share}`),
+    ...state.shared.filter((w) => w.via !== 'mesh').map((w) => `${w.owner}/${w.share}`),
   ];
 }
 
@@ -1050,9 +1062,13 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'gw_freely':
     case 'gw_off':
       return { ...state, ...reduceGateway(state, action) };
+    case 'fshare_folders': {
+      // The top of Files updates live while you're looking at it.
+      const next = { ...state, ...reduceFriendShare(state, action) };
+      return next.browser.at ? next : { ...next, browser: { ...next.browser, rows: rootRows(next) } };
+    }
     case 'fshare_projects':
     case 'fshare_grants':
-    case 'fshare_folders':
     case 'fshare_delivery':
       return { ...state, ...reduceFriendShare(state, action) };
     case 'board_init':

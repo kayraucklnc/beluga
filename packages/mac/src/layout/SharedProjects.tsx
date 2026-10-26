@@ -1,4 +1,5 @@
 import type { SharedProject } from '@beluga/core/friend-share-store.js';
+import type { AppState } from '@beluga/core/store.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { Avatar, IconButton, cx } from '../components/ui.js';
@@ -44,7 +45,8 @@ function SharedIcon({ p, size = 16 }: { p: SharedProject; size?: number }) {
   );
 }
 
-function SharedProjectBlock({ p }: { p: SharedProject }) {
+/** `room`: worktrees shared through today's room (they go when the room ends), grouped as their project. */
+function SharedProjectBlock({ p, room = false }: { p: SharedProject; room?: boolean }) {
   const actions = useActions();
   const api = useApi();
   const { client } = useBeluga();
@@ -57,9 +59,12 @@ function SharedProjectBlock({ p }: { p: SharedProject }) {
     const rest = getPrefs().openProjects.filter((k) => k !== foldKey(p));
     setPrefs({ openProjects: open ? rest : [...rest, foldKey(p)] });
   };
-  const leave = (): void => void api.sharing.leaveProject(p.owner, p.id).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  const leave = (): void => {
+    const done = room ? Promise.all(p.worktrees.map((w) => api.sharing.leave(p.owner, w.id))) : api.sharing.leaveProject(p.owner, p.id);
+    void done.catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  };
   const items: ActionItem[] = [{ label: 'Leave Project', icon: 'x', danger: true, onSelect: leave }];
-  const detail = owner.state === 'offline' ? `${p.ownerName} is offline` : owner.state === 'update' ? `${p.ownerName}'s Beluga needs an update` : `${p.ownerName}'s · ${p.role === 'contribute' ? 'you can work here' : 'you can follow along'}`;
+  const detail = room ? `${p.ownerName}'s · in your room` : owner.state === 'offline' ? `${p.ownerName} is offline` : owner.state === 'update' ? `${p.ownerName}'s Beluga needs an update` : `${p.ownerName}'s · ${p.role === 'contribute' ? 'you can work here' : 'you can follow along'}`;
   const shown = open ? rows : rows.filter((r) => r.w.id === here);
   return (
     <>
@@ -123,12 +128,27 @@ function SharedProjectBlock({ p }: { p: SharedProject }) {
 
 export function SharedProjects() {
   const projects = useApp((st) => st.sharedProjects);
-  if (!projects.length) return null;
+  const room = useApp((st) => roomProjects(st), sameDeep);
+  if (!projects.length && !room.length) return null;
   return (
-    <div role="group" aria-label="Shared with you by friends">
+    <div role="group" aria-label="Shared with you">
       {projects.map((p) => (
         <SharedProjectBlock key={foldKey(p)} p={p} />
       ))}
+      {room.map((p) => (
+        <SharedProjectBlock key={foldKey(p)} p={p} room />
+      ))}
     </div>
   );
+}
+
+/** Worktrees people in your room shared with you, one row per their project (as a friend's shared project reads). */
+function roomProjects(st: AppState): SharedProject[] {
+  const byProject = new Map<string, SharedProject>();
+  for (const w of st.shared.filter((x) => x.via !== 'mesh')) {
+    const key = `${w.owner}/room:${w.project}`;
+    const p = byProject.get(key) ?? { owner: w.owner, ownerName: st.peers.find((x) => x.peerId === w.owner)?.name ?? 'someone', id: `room:${w.project}`, name: w.project || w.name, role: w.role, worktrees: [], members: [], updatedAt: 0 };
+    byProject.set(key, { ...p, role: p.role === 'contribute' || w.role === 'contribute' ? 'contribute' : 'view', worktrees: [...p.worktrees, { id: w.id, name: w.name, ...(w.branch ? { branch: w.branch } : {}) }] });
+  }
+  return [...byProject.values()];
 }

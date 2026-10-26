@@ -413,7 +413,7 @@ export function topTabs(state: AppState): TopTab[] {
   const news = state.view.kind === 'overview' ? { count: 0, urgent: false } : overviewNews(state);
   const tabs: TopTab[] = [
     { kind: 'room', label: solo ? 'Chat' : 'Group chat', short: 'Chat', hint: solo ? 'Talk with your Claude, or @a-workspace to reach the Claude working there' : 'Chat with everyone in the room and their Claudes', badge: state.unread.room ?? 0 },
-    { kind: 'files', label: 'Shared files', short: 'Files', hint: files ? `${files} new shared folder${files === 1 ? '' : 's'}: browse what people in the room share` : 'Browse folders people in the room share', badge: files },
+    { kind: 'files', label: 'Shared files', short: 'Files', hint: files ? `${files} new shared folder${files === 1 ? '' : 's'}: browse what friends and the room share` : 'Browse folders friends and the room share', badge: files },
     { kind: 'overview', label: 'Overview', short: 'Overview', hint: news.count ? `${news.count} workspace${news.count === 1 ? '' : 's'} to look at${news.urgent ? ' (one needs you)' : ''}: every worktree and chat at a glance` : 'Every worktree and chat at a glance', badge: news.count, urgent: news.urgent },
     { kind: 'search', label: 'Search', short: 'Search', hint: 'Search every conversation: type below, ↑↓ choose, Enter opens', badge: 0 },
     { kind: 'usage', label: 'Usage', short: 'Usage', hint: 'Disk space and Claude tokens per workspace', badge: 0 },

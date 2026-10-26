@@ -538,7 +538,7 @@ export class RemoteWork {
     }
     this.deps.controller?.manager.markHandedOff(offer.wsId, who);
     void this.deps.controller?.refresh();
-    this.deps.store.dispatch({ type: 'system', text: `${who} took this over. Their Claude continues on their computer; it's under SHARED WITH ME so you can follow along. Archive this one when you like.`, channel });
-    this.deps.notify({ kind: 'people', title: `${who} took over the workspace`, body: 'Follow along under SHARED WITH ME', channel });
+    this.deps.store.dispatch({ type: 'system', text: `${who} took this over. Their Claude continues on their computer; it's in Projects so you can follow along. Archive this one when you like.`, channel });
+    this.deps.notify({ kind: 'people', title: `${who} took over the workspace`, body: 'Follow along in Projects', channel });
   }
 }

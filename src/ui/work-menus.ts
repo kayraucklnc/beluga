@@ -107,7 +107,7 @@ function remoteWsMenu(state: AppState, peerId: string): MenuSpec | undefined {
     title: `Start a worktree on ${peer.name}'s computer`,
     intro: [
       `Pick one of ${peer.name}'s projects, then describe the task. ${peer.name} approves it, and ${peer.name}'s Claude`,
-      `does the work there. You both see it under SHARED WITH ME / in ${peer.name}'s projects.`,
+      `does the work there. You both see it in Projects (yours, and ${peer.name}'s).`,
       '',
     ],
     options: [...(peer.projects ?? []).map((name) => ({ id: `rws:${name}`, label: name, hint: `a new worktree on ${peer.name}'s computer` })), { id: 'close', label: 'Cancel', hint: 'Esc' }],

@@ -477,6 +477,17 @@ message goes when it's back"; a message sent then shows "Waiting for ata's Mac" 
 Mac took it (`delivery` in the state). The phone lists the worktree in its work view under "ata · bob-api", chats there
 the same way, and its message box says the same (`ConvView.waiting`).
 
+**Folders, under Files.** A folder you share with only some people (**Share a Folder** › *Only…*, which lists your
+friends as well as the room's people) goes to those of them who are friends over the network as well, with no room
+needed: a `folder` message, again when you change it, `active: false` when you stop or untick them. On their Mac it's in
+**Files**, under your name (the top of Files is grouped by person: friends' folders, then what the room shares,
+`rootRows`). Its files are read over the link with the room's own `fs_list`/`fs_read`/`fs_fetch` (256 KB pieces, `fs_chunk`)
+and checked as the room checks them (`ShareService`: inside the folder, links followed, `isDenied` secrets never),
+read-only unless you shared it read and write; a share you give the whole room never answers a friend this way. The
+"Shared with me" sidebar section is gone: shared projects are in Projects (a room's shared worktrees too, grouped by
+their project), folders in Files, which has a row of its own at the top of the sidebar. Room shares still work for the
+room's people, in the same places.
+
 **Never dropped** (`courier.ts`). Messages, requests to a Claude, its questions and answers, the project's state and the
 steps of a run that matter (queued, started, waiting for approval, done, failed, declined) wait in
 `~/.beluga/share-outbox.json` until the friend's Mac acknowledges them: sent again every 20 s while you're linked, at

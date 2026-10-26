@@ -133,6 +133,7 @@ export class FriendShares implements FriendSharing {
     this.publishReceived(true);
     this.publishFolders();
     this.resync();
+    this.syncFolders();
   }
 
   stop(): void {
@@ -148,8 +149,8 @@ export class FriendShares implements FriendSharing {
     const name = this.friendName(peerId);
     const project = this.projectFor(share);
     const grant = this.grants[project.id]?.[peerId];
-    // A worktree on its own adds it to what they have; the whole project stays the whole project.
-    const only = share.workspaceId && !share.projectId ? (grant && !grant.only ? undefined : [...new Set([...(grant?.only ?? []), share.workspaceId])]) : undefined;
+    // A worktree (`workspaceId`, with or without its project's id) adds it to what they have; the whole project stays the whole project.
+    const only = share.workspaceId ? (grant && !grant.only ? undefined : [...new Set([...(grant?.only ?? []), share.workspaceId])]) : undefined;
     this.grants = { ...this.grants, [project.id]: { ...this.grants[project.id], [peerId]: { role, ...(only ? { only } : {}) } } };
     this.saveOwn();
     this.publishGrants();
@@ -162,7 +163,7 @@ export class FriendShares implements FriendSharing {
     const project = this.projectFor(share, false);
     const grant = this.grants[project.id]?.[share.peerId];
     if (!grant) return;
-    if (share.workspaceId && !share.projectId) {
+    if (share.workspaceId) {
       const only = (grant.only ?? liveWorktrees(project).map((w) => w.id)).filter((id) => id !== share.workspaceId);
       if (only.length) {
         this.grants = { ...this.grants, [project.id]: { ...this.grants[project.id], [share.peerId]: { ...grant, only } } };
@@ -176,20 +177,26 @@ export class FriendShares implements FriendSharing {
     this.opts.session.toast(`Stopped sharing ${project.name} with ${this.opts.mesh.nameFor(share.peerId)}`, 'success');
   }
 
-  /** Share a folder with these friends (none: stop sharing it with friends). */
-  shareFolder(name: string, label: string, writable: boolean, peers: readonly string[]): void {
-    for (const p of peers) this.friendName(p, 'share.folder');
-    const before = this.folders[name]?.peers ?? [];
-    if (peers.length) this.folders = { ...this.folders, [name]: { label, writable, peers: [...peers] } };
-    else this.folders = Object.fromEntries(Object.entries(this.folders).filter(([n]) => n !== name));
-    for (const p of peers) this.courier.send(p, { k: 'folder', name, label, writable, active: true }, { reliable: true, key: `folder:${name}` });
-    for (const p of before.filter((x) => !peers.includes(x))) this.courier.send(p, { k: 'folder', name, label, writable, active: false }, { reliable: true, key: `folder:${name}` });
+  /**
+   * Your folders shared with only some people (Share a Folder's "Only…") go to those of them who are
+   * friends over the network too, so no room is needed; stop sharing (or untick them) and it goes.
+   */
+  private syncFolders(): void {
+    const { mesh } = this.opts;
+    const next: Record<string, FolderGrant> = {};
+    for (const share of this.state.myShares) {
+      const peers = share.private ? (share.allowed ?? []).filter((p) => mesh.isFriend(p) && !cannotTake('', mesh.belugaOf(p), 'share.folder', mesh.isLinked(p))) : [];
+      if (peers.length) next[share.name] = { label: share.root.split('/').filter(Boolean).pop() ?? share.name, writable: Boolean(share.writable), peers };
+    }
+    if (JSON.stringify(next) === JSON.stringify(this.folders)) return;
+    const msg = (name: string, g: FolderGrant, active: boolean): ShareMsg => ({ k: 'folder', name, label: g.label.slice(0, 200), writable: g.writable, active });
+    for (const [name, g] of Object.entries(next)) {
+      const had = this.folders[name];
+      for (const p of g.peers) if (!had?.peers.includes(p) || had.label !== g.label || had.writable !== g.writable) this.courier.send(p, msg(name, g, true), { reliable: true, key: `folder:${name}` });
+    }
+    for (const [name, g] of Object.entries(this.folders)) for (const p of g.peers.filter((x) => !next[name]?.peers.includes(x))) this.courier.send(p, msg(name, g, false), { reliable: true, key: `folder:${name}` });
+    this.folders = next;
     this.saveOwn();
-  }
-
-  /** Who a folder of yours is shared with over the network. */
-  folderPeers(name: string): readonly string[] {
-    return this.folders[name]?.peers ?? [];
   }
 
   /** The friends a project of yours is shared with. */
@@ -282,6 +289,8 @@ export class FriendShares implements FriendSharing {
   /** Messages about what's shared between you and `to` go over their link (see Session.meshRoute). */
   route(to: string, body: BodyInput): boolean | undefined {
     const { mesh } = this.opts;
+    // A folder shared with a friend over the network: its own `folder` message says so (see syncFolders).
+    if (body.kind === 'share_offer') return mesh.isFriend(to) && (this.folders[body.name]?.peers.includes(to) || !this.state.peers.some((p) => p.peerId === to)) ? true : undefined;
     if (!KINDS.has(body.kind) || !mesh.isFriend(to)) return undefined;
     if (!this.about(to, body)) return undefined;
     // Who's in a shared worktree goes with the project's own message.
@@ -326,8 +335,14 @@ export class FriendShares implements FriendSharing {
     return ws || Object.values(this.received).some((p) => p.owner === peerId && p.worktrees.some((w) => shareNameOf(w.id) === share));
   }
 
+  /** Is anything shared between you and them over the network (a project or a folder, either way)? */
   private related(peerId: string): boolean {
-    return Boolean(this.sent[peerId] && Object.keys(this.sent[peerId]!).length) || Object.values(this.received).some((p) => p.owner === peerId);
+    return (
+      Boolean(this.sent[peerId] && Object.keys(this.sent[peerId]!).length) ||
+      Object.values(this.received).some((p) => p.owner === peerId) ||
+      Object.values(this.friendFolders).some((f) => f.owner === peerId) ||
+      Object.values(this.folders).some((f) => f.peers.includes(peerId))
+    );
   }
 
   private acked(_to: string, m: ShareMsg): void {
@@ -486,6 +501,7 @@ export class FriendShares implements FriendSharing {
   /** What's said in a friend's worktree is kept with it, so it's there after a restart too. */
   private onAction(action: Action): void {
     if (action.type === 'projects') return this.resync();
+    if (action.type === 'my_shares') return this.syncFolders();
     const channel = action.type === 'chat' || action.type === 'agent_event' ? action.channel : undefined;
     const ws = wsOf(channel);
     const rec = ws ? this.receivedWs(ws) : undefined;

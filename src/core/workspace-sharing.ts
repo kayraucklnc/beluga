@@ -5,7 +5,7 @@ import { type DomainState, type LogItem, type SaidBy, type Store, clean, peerNam
 import { shareNameOf } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 
-/** What to share with a friend: a project (all its worktrees, now and later), or one worktree. */
+/** What to share with a friend: a project (all its worktrees, now and later), or one worktree (`workspaceId`; `projectId` may come with it). */
 export interface FriendShareInput {
   readonly peerId: string;
   readonly projectId?: string;
@@ -190,7 +190,7 @@ export class WorkspaceSharing {
     }
     // Came in with a link: go straight to the first workspace you were let into.
     if (this.deps.store.getState().self?.guest) this.deps.intend({ type: 'navigate', view: { kind: 'shared', owner: from, id: body.ws.id, tab: 'chat' }, unless: 'shared' });
-    this.deps.toast(`${peerName(state, from)} invited you to ${clean(body.ws.name)}${body.role === 'view' ? ' (to follow along)' : ''}. It's under SHARED WITH ME`, 'success');
+    this.deps.toast(`${peerName(state, from)} invited you to ${clean(body.ws.name)}${body.role === 'view' ? ' (to follow along)' : ''}. It's in Projects`, 'success');
   }
 
   onRoster(from: string, body: BodyOf<'ws_roster'>): void {

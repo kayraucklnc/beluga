@@ -4,11 +4,11 @@ import { inviteChoice } from '@beluga/ui/invite-menus.js';
 import type { UiStore } from './beluga.js';
 
 /**
- * Sharing a project or a worktree with a friend (BLG-203's `/invite @ata` in a project). The real
- * thing, `sharing.shareWithFriend`, shares it over your friends' network links with nobody hosting;
- * it's being built separately (agent-to-agent plan, step 4). Until this Beluga has it, a friend who
- * is in your room gets the worktree through the room as before, and otherwise the room's share sheet
- * opens with a note. Everything goes through here, so switching over is this one file.
+ * Sharing a project or a worktree with a friend (BLG-203's `/invite @ata` in a project). It goes
+ * over your friends' network links with nobody hosting (`sharing.shareWithFriend`, BLG-204): it
+ * shows in their Projects. A Beluga daemon from before that (an older one still running) doesn't
+ * have it: then a friend who is in your room gets the worktree through the room as before, and
+ * otherwise the room's share sheet opens with a note.
  */
 
 export interface ShareWithFriend {
@@ -19,17 +19,14 @@ export interface ShareWithFriend {
   readonly role: 'view' | 'contribute';
 }
 
-/** Whether this Beluga can share with friends over the network yet. */
+/** Whether this Beluga can share with friends over the network. */
 export const canShareWithFriends = (): boolean => (METHODS as readonly string[]).includes('sharing.shareWithFriend');
-
-type ShareCall = (req: { peerId: string; projectId?: string; workspaceId?: string; role: 'view' | 'contribute' }) => Promise<unknown>;
 
 /** → how it went: shared over the network, through the room, or the sheet opened for you to finish. */
 export async function shareWithFriend(client: SocketClient, ui: UiStore, req: ShareWithFriend): Promise<'network' | 'room' | 'sheet'> {
   const { name: _name, ...wire } = req;
   if (canShareWithFriends()) {
-    const call = (client.api.sharing as unknown as Record<string, ShareCall>)['shareWithFriend']!;
-    await call(wire);
+    await client.api.sharing.shareWithFriend(wire);
     return 'network';
   }
   const state = client.store.getState();
