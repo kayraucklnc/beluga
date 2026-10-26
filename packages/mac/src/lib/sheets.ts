@@ -36,6 +36,8 @@ export type NativeSheet =
   | { readonly kind: 'task_sync'; readonly projectId: string }
   /** A new plan with Claude: what it's for, the project (unset: pick one), how far it runs on its own. */
   | { readonly kind: 'new_plan'; readonly projectId?: string }
+  /** A new sentinel (docs/sentinel.md §3): from a recipe, or built yourself; `projectId` 'mac' is Your Mac. */
+  | { readonly kind: 'new_sentinel'; readonly projectId?: string; readonly way?: 'describe' | 'recipe' | 'build' }
   /** Your planning style (how you like plans cut). */
   | { readonly kind: 'plan_style' }
   /** Not yet: what a milestone still needs, for the plan's head Claude. */

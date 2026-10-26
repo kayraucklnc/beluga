@@ -496,8 +496,8 @@ export class Sentinels {
     if (run.state === 'failed') this.deps.notify({ kind: 'problems', tag: 'sentinel', title: `${s.name} failed`, body: run.headline, key: `${run.id}:failed`, ...channel });
     // A Notify step told it already (with its own words).
     else if (run.state === 'done' && (where === 'mac' || where === 'both') && !s.steps.some((st, i) => st.kind === 'notify' && run.steps[i]?.state === 'done')) this.deps.notify({ kind: 'done', tag: 'sentinel', title: s.name, body: run.headline, key: run.id, ...channel });
-    // TODO(BLG-237 screens): where === 'phone' | 'both': the phone's `done` nudge with collapse
-    // `sentinel:<id>` (src/companion/host.ts notice() / push.ts), the report as an output of the run's topic.
+    // The phone (where === 'phone' | 'both') is told by the companion host, from the state: a `done`
+    // nudge collapsed as `sentinel:<id>` (src/companion/views.ts sentinelDone), the report on its page.
   }
 
   private claudeTurn(signal: AbortSignal): Promise<() => void> {

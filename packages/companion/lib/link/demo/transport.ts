@@ -25,6 +25,7 @@ import { demoRows } from './render-demo';
 import type { ViewQuery } from '../../render';
 import { DEMO_IMAGES } from './images.generated';
 import { DemoShell, demoAttach, demoFind, demoFolder, demoRead } from './worktree';
+import { makeSentinels, runOf, sentinelNeeds, sentinelOf, sentinelPage, sentinelsView } from './sentinel';
 
 
 /** What the demo Mac "hears", phrase by phrase (it has no model; the phone's voice UI shows it arriving). */
@@ -51,6 +52,8 @@ export function ownerName(deviceName: string | null | undefined): string {
 export class DemoTransport implements Transport {
   readonly kind = 'demo' as const;
   private world: DemoWorld = makeWorld();
+  /** Sentinel (1.21): its merge waiting for you joins what needs you. */
+  private sentinels = this.seedSentinels();
   /** When the demo's Parakeet started coming (Settings › Voice › Get it on your Mac). */
   private demoParakeet: number | undefined;
   /** Which line of DEMO_SPOKEN the next phrase spoken to the demo Mac writes down as. */
@@ -214,6 +217,8 @@ export class DemoTransport implements Transport {
     if (topic === 'work') return { projects: w.projects.map((p) => ({ id: p.id, name: p.name, conversations: p.convs.map((t) => this.summary(w.convs.get(t)!)), ...(w.icons[p.id] ? { icon: w.icons[p.id]!.sum } : {}) })) };
     if (topic === 'tasks') return this.tasks();
     if (topic.startsWith('task:')) return w.tasks.find((t) => t.topic === topic);
+    if (topic === 'sentinels') return sentinelsView(this.sentinels);
+    if (topic.startsWith('sentinel:')) return sentinelPage(this.sentinels, topic, w.needs);
     if (topic === 'plans') return { plans: w.plans.map((p) => ({ id: p.id, title: p.title, state: p.state, topic: p.topic, ...count(p) })) } satisfies PlansView;
     if (topic === 'chats') return { chats: [...w.chats].map(([t, c]) => ({ topic: t, name: c.name, kind: c.kind, last: lastLine(c.messages.at(-1)), lastAt: c.messages.at(-1)?.ts, unread: c.unread })).sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0)) };
     if (topic === 'people') return { people: w.people };
@@ -786,6 +791,48 @@ export class DemoTransport implements Transport {
         const report = a.status === 'running' ? undefined : a.status === 'failed' ? 'It stopped before it finished: the emulator went away.' : `**Done.** ${a.steps.at(-1) ?? 'Finished'}.\n\n- ${a.steps.slice(0, 3).join('\n- ')}\n\n[[code:0]]`;
         return ok({ id: a.id, timeline, count: a.count ?? timeline.length, ...(report ? { result: { text: report, code: report.includes('[[code:0]]') ? [{ lang: 'ts', lines: 4 }] : [] } } : {}) });
       }
+      // ---- Sentinel (1.21): Run Now, Pause / Turn On, a run's report, Merge / Not Now
+      case 'sentinel.run': {
+        const s = sentinelOf(this.sentinels, str(0));
+        if (!s) return this.frames.emit({ t: 'result', id, ok: false, error: 'No such sentinel' });
+        const run = { id: `run_${Math.random().toString(36).slice(2, 10)}`, by: 'your phone', state: 'running', headline: '', startedAt: Date.now(), step: s.steps[0]?.name ?? 'Starting' };
+        s.runs.unshift(run);
+        this.touch(s.summary.topic, 'sentinels');
+        this.later(4000, () => {
+          Object.assign(run, { state: 'done', endedAt: Date.now(), headline: s.summary.name === 'Morning brief' ? 'Nothing new since this morning' : 'It ran: nothing to do', text: 'It ran, and found nothing new to tell you.' });
+          delete (run as { step?: string }).step;
+          this.touch(s.summary.topic, 'sentinels');
+          this.frames.emit({ t: 'nudge', kind: 'done', title: s.summary.name, body: run.headline, topic: s.summary.topic });
+        });
+        return ok({ ...run, sentinelId: s.summary.id });
+      }
+      case 'sentinel.pause': {
+        const s = sentinelOf(this.sentinels, str(0));
+        if (s) {
+          const paused = args[1] === true;
+          s.summary = { ...s.summary, paused };
+          if (!paused) delete (s.summary as { pausedWhy?: string }).pausedWhy;
+          this.touch(s.summary.topic, 'sentinels');
+        }
+        return ok();
+      }
+      case 'sentinel.runGet': {
+        const found = runOf(this.sentinels, str(0));
+        if (!found) return this.frames.emit({ t: 'result', id, ok: false, error: 'No such run' });
+        const { text, ...run } = found.r;
+        return ok({ run: { ...run, sentinelId: found.s.summary.id }, sentinel: { id: found.s.summary.id, name: found.s.summary.name }, ...(text ? { report: text } : {}) });
+      }
+      case 'sentinel.decide': {
+        const found = runOf(this.sentinels, str(0));
+        this.resolve(item);
+        if (found) {
+          const merged = args[1] === 'merge';
+          Object.assign(found.r, { state: merged ? 'done' : 'stopped', endedAt: Date.now(), headline: merged ? `Merged #${found.r.pr?.number ?? 53}` : 'Not now: the pull request stays open' });
+          delete (found.r as { step?: string }).step;
+          this.touch(found.s.summary.topic, 'sentinels');
+        }
+        return ok(found ? { ...found.r, sentinelId: found.s.summary.id } : null);
+      }
       // ---- saved files (BLG-124): the demo's conversations are never archived
       case 'companion.gone':
         return ok({ gone: [] });
@@ -796,6 +843,12 @@ export class DemoTransport implements Transport {
       default:
         this.frames.emit({ t: 'result', id, ok: false, error: `The demo Mac doesn't do ${method}.` });
     }
+  }
+
+  private seedSentinels() {
+    const d = makeSentinels();
+    this.world.needs = [...this.world.needs, ...sentinelNeeds(d)];
+    return d;
   }
 
   /** Who's in a chat (you first), as views.ts sends it (1.2). */

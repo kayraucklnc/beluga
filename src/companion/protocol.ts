@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 20 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 21 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -43,8 +43,12 @@ export const COMPANION_PROTO = { major: 1, minor: 20 } as const;
  * chat and what their Claude is doing (`ChatMemberView.presence` / `claude`), what waits on whom
  * (`ChatView.waiting`), who gets a message later (`ChatView.note`), and whose a task's card is
  * (`ChatMessageView.task.who` / `secret`). Read-only fields: an older Mac just leaves them out.
+ * 1.21 (BLG-237): Sentinel, your watchers (docs/sentinel.md): the `sentinels` and `sentinel:<id>`
+ * topics (`SentinelsView`, `SentinelPageView`), Run Now, Pause / Turn On and a run's report
+ * (`sentinel.run` / `pause` / `runs` / `runGet`), and a run waiting for your Merge as a `decision`
+ * (`sentinel.decide`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -94,6 +98,9 @@ export const Topic = z.union([
   z.string().regex(/^chat:[\w:.-]{1,200}$/),
   /** One task's page (1.3). */
   z.string().regex(/^task:[\w.-]{1,200}$/),
+  /** 1.21: every sentinel, and one sentinel's page with its runs. */
+  z.literal('sentinels'),
+  z.string().regex(/^sentinel:[\w.-]{1,200}$/),
 ]);
 export type Topic = z.infer<typeof Topic>;
 
@@ -547,6 +554,68 @@ export const TaskPageView = TaskSummary.extend({
 });
 export type TaskPageView = z.infer<typeof TaskPageView>;
 
+/** 1.21 (BLG-237): a sentinel run's state (src/core/sentinel/model.ts RUN_STATES); one a phone doesn't know is drawn plain. */
+export const SentinelRunState = z.union([z.enum(['queued', 'running', 'needs-you', 'done', 'skipped', 'failed', 'stopped']), z.string().max(20)]);
+
+/**
+ * 1.21: a sentinel in the list (docs/sentinel.md §2): its name, icon (a name the screens know:
+ * "calendar", "wrench"…), project (none: Your Mac), when it runs in words (`sentence`, the Mac's
+ * own), whether it's paused and why Beluga paused it, its last run, its next one, and whether a
+ * run is going now.
+ */
+export const SentinelSummary = z.object({
+  id,
+  topic: Topic,
+  name: z.string().max(100),
+  icon: z.string().max(40),
+  projectId: z.string().max(200).optional(),
+  project: z.string().max(200).optional(),
+  sentence: z.string().max(300),
+  paused: z.boolean(),
+  pausedWhy: z.string().max(300).optional(),
+  last: z.object({ state: SentinelRunState, headline: z.string().max(300), at: ts }).optional(),
+  nextAt: ts.optional(),
+  live: z.boolean(),
+});
+export type SentinelSummary = z.infer<typeof SentinelSummary>;
+
+/** 1.21: every sentinel, and the latest runs that ended across them (newest first), for Home's "2 ran since you looked". */
+export const SentinelsView = z.object({
+  /** Sentinel runs on this Mac (the Mac app's daemon). */
+  enabled: z.boolean(),
+  sentinels: z.array(SentinelSummary).max(200),
+  recent: z.array(z.object({ id, sentinelId: id, state: SentinelRunState, at: ts })).max(50),
+});
+export type SentinelsView = z.infer<typeof SentinelsView>;
+
+/**
+ * 1.21: one run, as the sentinel's page lists it: who ran it in words ("schedule", "you", "after
+ * Nightly tests"), its state, headline, times, why it failed, its pull request, the step it's on
+ * (a running one), and its report as an output (opened in the reader). No report ref (a run kept
+ * in memory only): the phone asks `sentinel.runGet` for its text.
+ */
+export const SentinelRunView = z.object({
+  id,
+  by: z.string().max(120),
+  state: SentinelRunState,
+  headline: z.string().max(300),
+  startedAt: ts,
+  endedAt: ts.optional(),
+  why: z.string().max(500).optional(),
+  pr: z.object({ number: z.number().int().min(0), url: z.string().max(500) }).optional(),
+  step: z.string().max(100).optional(),
+  report: OutputView.optional(),
+});
+export type SentinelRunView = z.infer<typeof SentinelRunView>;
+
+/** 1.21: a sentinel's page: its summary, its steps (kind and name, never their commands), its last 30 runs (newest first) and what of it waits for you. */
+export const SentinelPageView = SentinelSummary.extend({
+  steps: z.array(z.object({ kind: z.string().max(20), name: z.string().max(100) })).max(40),
+  runs: z.array(SentinelRunView).max(30),
+  needsYou: z.array(NeedsYou).max(10),
+});
+export type SentinelPageView = z.infer<typeof SentinelPageView>;
+
 export const ChatMessageView = z.object({
   id,
   from: z.string().max(100),
@@ -982,6 +1051,8 @@ export function viewSchema(topic: Topic): z.ZodType {
   if (topic.startsWith('plan:')) return PlanView;
   if (topic === 'tasks') return TasksView;
   if (topic.startsWith('task:')) return TaskPageView;
+  if (topic === 'sentinels') return SentinelsView;
+  if (topic.startsWith('sentinel:')) return SentinelPageView;
   return ChatView;
 }
 

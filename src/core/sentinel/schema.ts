@@ -60,7 +60,8 @@ export const StepInputSchema = z.discriminatedUnion('kind', [
 
 export const LimitsSchema = z.object({
   minutes: z.number().int().min(1).max(240),
-  perDay: z.number().int().min(1).max(500).optional(),
+  // 0: no limit (how the page turns a limit off again: a patch can't send undefined).
+  perDay: z.number().int().min(0).max(500).optional(),
   pauseAfter: z.number().int().min(0).max(50),
 });
 

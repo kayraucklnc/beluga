@@ -185,7 +185,7 @@ export type NotifyWhere = (typeof NOTIFY_WHERE)[number];
 export interface Limits {
   /** Per run (30 by default): a Claude step still going is cancelled, the run fails as timed out. */
   readonly minutes: number;
-  /** Runs per day (none: no limit); over it, a run is skipped with a line in the history. */
+  /** Runs per day (none or 0: no limit); over it, a run is skipped with a line in the history. */
   readonly perDay?: number;
   /** Failures in a row that pause the sentinel (3 by default; 0: never). */
   readonly pauseAfter: number;

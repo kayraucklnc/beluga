@@ -88,6 +88,12 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
           { id: 'issues:open', label: 'Go to Issues', icon: 'issue' as const, hint: 'A project’s GitHub issues: Claude investigates, fixes, or writes them up as tasks', keywords: ['issues', 'github', 'bugs', 'triage', 'investigate', 'fix'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'issues' } }) },
         ]
       : []),
+    ...(state.sentinel.enabled
+      ? [
+          { id: 'sentinel:open', label: 'Go to Sentinel', icon: 'sentinel' as const, hint: 'Watchers that run Claude, a script or a notification on a schedule', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'every morning', 'brief', 'recurring'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'sentinel' } }) },
+          { id: 'sentinel:new', label: 'New Sentinel…', icon: 'sentinel' as const, hint: 'From a recipe, or build it yourself', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'recipe', 'automate'], run: () => openSheet({ kind: 'new_sentinel' }) },
+        ]
+      : []),
     cmd('template', 'template-new', 'New Template…', 'wand', () => openSheet({ kind: 'template' }), 'A way to start a task you do often'),
     cmd('template', 'templates', 'Manage Templates…', 'wand', () => ui.openMenu({ kind: 'templates', manage: true })),
     ...(canRun ? [cmd('run', 'peer-run', 'Run a Command on a Friend’s Computer…', 'terminal', () => openSheet({ kind: 'peer_run' }), 'The output shows in the chat')] : []),

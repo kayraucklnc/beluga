@@ -10,6 +10,7 @@ import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
+import { type RunSummary, type Sentinel, type SentinelState, firstLine, isLive, lastRunOf, runsOf, scheduleSentence, sentinelById } from '../core/sentinel/model.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
 import { shortVersion } from '../net/mesh/features.js';
@@ -31,6 +32,10 @@ import {
   type PeopleView,
   type PlansView,
   type PlanView,
+  type SentinelPageView,
+  type SentinelRunView,
+  type SentinelSummary,
+  type SentinelsView,
   type StepView,
   type SubAgentView,
   TASK_OTHERS,
@@ -96,6 +101,7 @@ export const convTopic = (channel: string): Topic | undefined => valid(`conv:${c
 export const chatTopic = (conversation: string): Topic | undefined => valid(`chat:${conversation}`);
 export const planTopic = (id: string): Topic | undefined => valid(`plan:${id}`);
 export const taskTopic = (id: string): Topic | undefined => valid(`task:${id}`);
+export const sentinelTopic = (id: string): Topic | undefined => valid(`sentinel:${id}`);
 /** The channel a `conv:` topic names. */
 export const channelOf = (topic: string): string | undefined => (topic.startsWith('conv:') ? topic.slice(5) : undefined);
 
@@ -453,6 +459,38 @@ function sharedPlanItems(state: DomainState): NeedsYou[] {
   return [...theirs, ...mine];
 }
 
+/**
+ * Sentinel runs waiting for you (docs/sentinel.md §5): a merge that passed its checks and review,
+ * held for your Merge. The detail is the merge step's own line (the checks, Claude's review).
+ */
+function sentinelItems(state: DomainState): NeedsYou[] {
+  const s = state.sentinel;
+  if (!s.enabled) return [];
+  return s.runs.flatMap((r) => {
+    const sn = r.state === 'needs-you' ? sentinelById(s, r.sentinelId) : undefined;
+    if (!sn) return [];
+    const at = sn.steps.findIndex((st) => st.kind === 'merge');
+    const step = at >= 0 ? (r.steps.find((x) => x.id === sn.steps[at]!.id) ?? r.steps[at]) : undefined;
+    const detail = [step?.why ? firstLine(step.why, 2000) : '', r.pr ? `Pull request #${r.pr.number}` : ''].filter(Boolean).join('\n');
+    const topic = sentinelTopic(sn.id);
+    return [
+      {
+        id: `sentinel:${r.id}`,
+        kind: 'decision' as const,
+        title: clip(firstLine(r.headline, 500) || `${sn.name} waits for you`, 500),
+        ...(detail ? { detail: clip(detail, 64_000) } : {}),
+        from: clip(sn.name, 100),
+        ...(topic ? { topic } : {}),
+        askedAt: Math.round(step?.startedAt ?? r.startedAt),
+        actions: [
+          { label: 'Merge', tone: 'main' as const, method: 'sentinel.decide', args: [r.id, 'merge'] },
+          { label: 'Not Now', tone: 'danger' as const, method: 'sentinel.decide', args: [r.id, 'skip'] },
+        ],
+      },
+    ];
+  });
+}
+
 /** Everything waiting for you, oldest first: approvals, Claude's questions, friends' requests, plan decisions. */
 export function needsYou(state: DomainState): NeedsYou[] {
   const items = [
@@ -466,6 +504,7 @@ export function needsYou(state: DomainState): NeedsYou[] {
     ...teamOfferItems(state),
     ...assignedItems(state),
     ...sharedPlanItems(state),
+    ...sentinelItems(state),
   ];
   // Oldest first; what has no time (Claude's questions) counts as just asked.
   const at = (n: NeedsYou): number => n.askedAt ?? Number.MAX_SAFE_INTEGER;
@@ -1210,6 +1249,116 @@ export function taskPageView(state: DomainState, id: string, ctx?: ViewContext):
   };
 }
 
+// ---- Sentinel (docs/sentinel.md): your watchers, their runs and reports
+
+/** Runs that ended, across sentinels, for Home's "ran since you looked". */
+const RECENT_RUNS = 20;
+
+function sentinelSummary(state: DomainState, s: SentinelState, sn: Sentinel): SentinelSummary | undefined {
+  const topic = sentinelTopic(sn.id);
+  if (!topic) return undefined;
+  const project = sn.projectId ? state.projects.find((p) => p.id === sn.projectId) : undefined;
+  const last = lastRunOf(s, sn.id);
+  const next = s.nextAt[sn.id];
+  return {
+    id: clip(sn.id, 200),
+    topic,
+    name: clip(sn.name, 100),
+    icon: clip(sn.icon, 40),
+    ...(sn.projectId ? { projectId: clip(sn.projectId, 200) } : {}),
+    ...(project ? { project: clip(project.name, 200) } : {}),
+    sentence: clip(scheduleSentence(sn.trigger, (id) => sentinelById(s, id)?.name), 300),
+    paused: sn.paused,
+    ...(sn.pausedWhy ? { pausedWhy: clip(sn.pausedWhy, 300) } : {}),
+    ...(last ? { last: { state: last.state, headline: firstLine(last.headline, 300), at: Math.round(last.endedAt ?? last.startedAt) } } : {}),
+    ...(next !== undefined && !sn.paused ? { nextAt: Math.round(next) } : {}),
+    live: s.runs.some((r) => r.sentinelId === sn.id && isLive(r.state)),
+  };
+}
+
+export function sentinelsView(state: DomainState): SentinelsView {
+  const s = state.sentinel;
+  if (!s.enabled) return { enabled: false, sentinels: [], recent: [] };
+  const recent = s.runs
+    .filter((r) => !isLive(r.state) && r.endedAt !== undefined && sentinelById(s, r.sentinelId))
+    .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+    .slice(0, RECENT_RUNS)
+    .map((r) => ({ id: clip(r.id, 200), sentinelId: clip(r.sentinelId, 200), state: r.state, at: Math.round(r.endedAt!) }));
+  return { enabled: true, sentinels: s.items.slice(0, 200).flatMap((sn) => sentinelSummary(state, s, sn) ?? []), recent };
+}
+
+/** Who ran it, in words ("schedule", "you", "after Nightly tests"). */
+function runBy(s: SentinelState, r: RunSummary): string {
+  if (r.by.startsWith('after:')) {
+    const before = s.runs.find((x) => x.id === r.by.slice('after:'.length));
+    const name = before ? sentinelById(s, before.sentinelId)?.name : undefined;
+    return clip(name ? `after ${name}` : 'after another sentinel', 120);
+  }
+  if (r.by === 'event') return firstLine(r.trigger.summary, 120) || 'an event';
+  return r.by === 'phone' ? 'your phone' : r.by === 'claude' ? 'your Claude' : r.by;
+}
+
+function sentinelRunView(s: SentinelState, sn: Sentinel, r: RunSummary, ctx?: ViewContext): SentinelRunView {
+  const live = s.live[r.id]?.stepId;
+  const step = live && isLive(r.state) ? sn.steps.find((st) => st.id === live)?.name : undefined;
+  const report = r.report ? ctx?.refs.output(r.report, r.endedAt !== undefined ? { ts: r.endedAt } : {}) : undefined;
+  return {
+    id: clip(r.id, 200),
+    by: runBy(s, r),
+    state: r.state,
+    headline: firstLine(r.headline, 300),
+    startedAt: Math.round(r.startedAt),
+    ...(r.endedAt !== undefined ? { endedAt: Math.round(r.endedAt) } : {}),
+    ...(r.why && (r.state === 'failed' || r.state === 'stopped' || r.state === 'skipped') ? { why: firstLine(r.why, 500) } : {}),
+    ...(r.pr ? { pr: { number: r.pr.number, url: clip(r.pr.url, 500) } } : {}),
+    ...(step ? { step: clip(step, 100) } : {}),
+    ...(report ? { report } : {}),
+  };
+}
+
+export function sentinelPageView(state: DomainState, id: string, ctx?: ViewContext): SentinelPageView | undefined {
+  const s = state.sentinel;
+  const sn = s.enabled ? sentinelById(s, id) : undefined;
+  const summary = sn ? sentinelSummary(state, s, sn) : undefined;
+  if (!sn || !summary) return undefined;
+  return {
+    ...summary,
+    steps: sn.steps.slice(0, 40).map((st) => ({ kind: st.kind, name: clip(st.name, 100) })),
+    runs: runsOf(s, sn.id)
+      .slice(0, 30)
+      .map((r) => sentinelRunView(s, sn, r, ctx)),
+    needsYou: needsYou(state)
+      .filter((n) => n.topic === summary.topic)
+      .slice(0, 10),
+  };
+}
+
+/**
+ * Sentinel runs that ended since `prev`, to tell the phone (a `done` nudge): those whose sentinel
+ * notifies the phone (`notify` phone or both), or whose Notify step for the phone ran. A failed
+ * one says so (and that it paused the sentinel); skipped and stopped runs say nothing. A run only
+ * counts when its sentinel was there before (the demo's history arriving isn't news).
+ */
+export function sentinelDone(prev: DomainState, state: DomainState): Array<{ title: string; body: string; topic?: Topic; channel?: string; run: string }> {
+  const was = prev.sentinel;
+  const s = state.sentinel;
+  if (!s.enabled || !was.enabled || was === s) return [];
+  return s.runs.flatMap((r) => {
+    if (r.state !== 'done' && r.state !== 'failed') return [];
+    const before = was.runs.find((x) => x.id === r.id);
+    if (before ? !isLive(before.state) : false) return [];
+    const sn = sentinelById(s, r.sentinelId);
+    if (!sn || !sentinelById(was, sn.id)) return [];
+    const phoneStep = sn.steps.some((st) => st.kind === 'notify' && st.phone && r.steps.find((x) => x.id === st.id)?.state === 'done');
+    if (sn.notify !== 'phone' && sn.notify !== 'both' && !phoneStep) return [];
+    const topic = sentinelTopic(sn.id);
+    const failed = r.state === 'failed';
+    const title = failed ? (sn.paused && sn.pausedWhy ? `${sn.name}: ${sn.pausedWhy.charAt(0).toLowerCase()}${sn.pausedWhy.slice(1)}` : `${sn.name} failed`) : sn.name;
+    const body = firstLine(r.headline, 300) || (failed && r.why ? firstLine(r.why, 300) : 'It ran');
+    return [{ title: clip(title, 200), body: clip(body, 300), ...(topic ? { topic } : {}), ...(r.channel ? { channel: r.channel } : {}), run: r.id }];
+  });
+}
+
 const lastLine = (m: MessageView | undefined): string | undefined => (m ? plainLine(m.text || (m.files?.length ? `${m.files.length} file${m.files.length === 1 ? '' : 's'}` : ''), 300) || undefined : undefined);
 
 export function chatsView(state: DomainState): ChatsView {
@@ -1370,5 +1519,7 @@ export function viewOf(state: DomainState, ctx: ViewContext, topic: Topic): unkn
   if (topic.startsWith('plan:')) return planPageView(state, topic.slice('plan:'.length));
   if (topic.startsWith('chat:')) return chatView(state, ctx, topic);
   if (topic.startsWith('task:')) return taskPageView(state, topic.slice('task:'.length), ctx);
+  if (topic === 'sentinels') return sentinelsView(state);
+  if (topic.startsWith('sentinel:')) return sentinelPageView(state, topic.slice('sentinel:'.length), ctx);
   return undefined;
 }

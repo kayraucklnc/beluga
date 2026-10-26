@@ -338,8 +338,8 @@ export class SentinelRunner {
     const channel = active.run.channel;
     // The run's id is the key: its end isn't told again.
     this.deps.notify({ kind: 'done', tag: 'sentinel', title, body: firstLine(body, 300), key: active.run.id, ...(channel ? { channel } : {}) });
-    // TODO(BLG-237 screens): with step.phone, the phone's `done` nudge with collapse `sentinel:<id>`
-    // (src/companion/host.ts notice() / push.ts), the report as an output of the run's topic.
+    // With step.phone, the companion host tells the phone when the run ends (src/companion/views.ts
+    // sentinelDone: a `done` nudge collapsed as `sentinel:<id>`, the report on the sentinel's page).
     return { kind: 'done', output: `Told you${step.phone ? ' (Mac and phone)' : ''}: ${title}${body ? ` · ${firstLine(body, 200)}` : ''}` };
   }
 

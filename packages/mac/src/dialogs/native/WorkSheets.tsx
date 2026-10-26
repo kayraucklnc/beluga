@@ -1,4 +1,5 @@
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
+import { NewSentinelSheet } from '../../sentinel/NewSentinelSheet.js';
 import { ShareProjectSheet } from './ShareProjectSheet.js';
 import { SyncSheet } from '../../tasks/SyncSheet.js';
 import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
@@ -184,6 +185,8 @@ export function NativeSheets() {
       return <SyncSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_plan':
       return <NewPlanSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} close={close} />;
+    case 'new_sentinel':
+      return <NewSentinelSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.way ? { way: sheet.way } : {})} close={close} />;
     case 'plan_style':
       return <PlanStyleSheet close={close} />;
     case 'plan_send_back':

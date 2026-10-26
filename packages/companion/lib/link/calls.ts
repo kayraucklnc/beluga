@@ -114,6 +114,10 @@ export const calls = {
   /** Ask a friend's Claude yourself; the answer (and files) come back in the topic it returns. */
   askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s Claude`),
   screenshot: (peerId: string, name: string): Call => make('companion.askPerson', [{ peerId, text: 'Take a screenshot of your desktop and send it to me.', needs: ['screen'] }], `Screenshot of ${name}'s desktop`),
+  // Sentinel (1.21, docs/sentinel.md): Run Now, Pause / Turn On, one run with its report's text.
+  sentinelRun: (id: string, name: string): Call => make('sentinel.run', [id], `Run ${short(name)}`),
+  sentinelPause: (id: string, paused: boolean, name: string): Call => make('sentinel.pause', [id, paused], `${paused ? 'Pause' : 'Turn on'} ${short(name)}`),
+  sentinelRunGet: (runId: string): Call => make('sentinel.runGet', [runId], 'Read the report'),
   /** This phone signs out on the Mac (its certificate goes). */
   signOut: (): Call => make('companion.signOut', [], 'Sign out'),
 

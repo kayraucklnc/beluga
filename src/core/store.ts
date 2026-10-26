@@ -321,7 +321,11 @@ export type View =
   | { readonly kind: 'team_plan'; readonly owner: string; readonly id: string }
 
   /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
-  | { readonly kind: 'worktrees'; readonly projectId?: string };
+  | { readonly kind: 'worktrees'; readonly projectId?: string }
+  /** Sentinel (Mac app, docs/sentinel.md): every sentinel (one project's, or Your Mac's: `projectId` 'mac'), one sentinel's page, and one run. */
+  | { readonly kind: 'sentinel'; readonly projectId?: string }
+  | { readonly kind: 'sentinel_page'; readonly id: string }
+  | { readonly kind: 'sentinel_run'; readonly runId: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';

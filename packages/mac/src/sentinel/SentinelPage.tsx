@@ -1,0 +1,324 @@
+import { useRef } from 'react';
+import { ACCESS, ACCESS_INFO, type Access, NOTIFY_WHERE, type RunSummary, type Sentinel, type SentinelPatch, TIME_LIMITS, runsOf, scheduleSentence } from '@beluga/core/sentinel/model.js';
+import { Icon } from '../components/Icon.js';
+import { Select } from '../components/Select.js';
+import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
+import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
+import { useApp } from '../lib/beluga.js';
+import { useSwipeBack } from '../tasks/use-swipe-back.js';
+import { SwipeBackEdge } from '../tasks/SwipeBackEdge.js';
+import { ago } from '../tasks/tasks-model.js';
+import { Disc, RunPill } from './marks.js';
+import { StepsCard, WhenCard } from './SentinelCards.js';
+import {
+  LATER,
+  MAC_SCOPE,
+  NOTIFY_LABEL,
+  PAUSE_AFTER_CHOICES,
+  PER_DAY_CHOICES,
+  byWords,
+  chatPlaceOf,
+  dotStrip,
+  durationText,
+  headlineOf,
+  iconOf,
+  pauseAfterLabel,
+  perDayLabel,
+  runDuration,
+  sharedModel,
+  whenText,
+  withModel,
+} from './sentinel-model.js';
+import { useDraft } from './use-draft.js';
+import { useClock } from '../lib/window-active.js';
+import { useRunsFolder, useSentinelActions, useSentinelState } from './use-sentinel.js';
+import t from '../tasks/tasks.module.css';
+import s from './sentinel.module.css';
+
+/**
+ * A sentinel's page: the editor and its history in one. The name is renamed in place, When and
+ * Steps change as you go (saved at once: no Save button), the properties run down the right, and
+ * the history shows the last 30 runs as dots, then as rows that open the run. ⌘[ or Esc go back.
+ */
+export function SentinelPage({ id }: { id: string }) {
+  const state = useSentinelState();
+  const item = state.items.find((x) => x.id === id);
+  if (!state.enabled) return <Empty icon="sentinel" title="Sentinel needs the Beluga app" />;
+  if (!item) return <Empty icon="sentinel" title="This sentinel isn’t here anymore" detail="It may have been deleted." />;
+  return <Page item={item} />;
+}
+
+function Page({ item }: { item: Sentinel }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const a = useSentinelActions();
+  const back = (): void => a.openList();
+  const swipe = useSwipeBack(wrap, back);
+  const save = (patch: SentinelPatch): void => void a.act(() => a.update(item.id, patch));
+  return (
+    <div ref={wrap} className={t.pageWrap}>
+      <SwipeBackEdge progress={swipe} />
+      <div className={t.page}>
+        <div className={t.pageMain} data-sentinel-page={item.id}>
+          <Crumbs item={item} back={back} />
+          <Header item={item} save={save} />
+          <Banners item={item} />
+          <WhenCard item={item} save={save} />
+          <StepsCard item={item} save={save} />
+          <History item={item} />
+        </div>
+        <Properties item={item} save={save} />
+      </div>
+    </div>
+  );
+}
+
+function Crumbs({ item, back }: { item: Sentinel; back: () => void }) {
+  const a = useSentinelActions();
+  const project = useApp((st) => st.projects.find((p) => p.id === item.projectId));
+  return (
+    <nav className={t.crumbs} aria-label="Where this sentinel is">
+      <IconButton icon="back" label="Back" keys="⌘[" className={t.crumbBack} onClick={back} />
+      <button type="button" className={t.crumb} onClick={() => a.openList()}>
+        Sentinel
+      </button>
+      <Icon name="chevronRight" size={10} />
+      <button type="button" className={t.crumb} onClick={() => a.openList(item.projectId ?? MAC_SCOPE)}>
+        {project?.name ?? 'Your Mac'}
+      </button>
+      <span className={t.grow} />
+    </nav>
+  );
+}
+
+function Header({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) => void }) {
+  const a = useSentinelActions();
+  const folder = useRunsFolder();
+  const items = useApp((st) => st.sentinel.items);
+  const name = useDraft(item.name, (v) => {
+    const next = v.replace(/\s+/g, ' ').trim();
+    if (next && next !== item.name) save({ name: next });
+  });
+  const more: ActionItem[] = [
+    { label: 'Duplicate', icon: 'copy', onSelect: () => void a.duplicate(item) },
+    { label: 'Copy as JSON', icon: 'copy', onSelect: () => a.copyJson(item) },
+    ...(folder ? [{ label: 'Open the Runs Folder', icon: 'folder' as const, onSelect: () => a.openFolder(folder) }] : []),
+    { label: 'Delete…', danger: true, separate: true, onSelect: () => a.remove(item, () => a.openList()) },
+  ];
+  return (
+    <header className={s.head}>
+      <Disc icon={item.paused ? 'pause' : iconOf(item.icon)} tone={item.paused ? 'paused' : item.trigger.kind === 'schedule' ? 'clock' : 'hand'} size={40} />
+      <div className={s.headText}>
+        <input
+          className={s.name}
+          value={name.text}
+          aria-label="Name"
+          spellCheck={false}
+          onChange={(e) => name.change(e.target.value)}
+          onBlur={name.flush}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          }}
+        />
+        <span className={s.subtitle}>{scheduleSentence(item.trigger, (id) => items.find((x) => x.id === id)?.name)}</span>
+      </div>
+      <div className={s.headActions}>
+        <Tip label={item.paused ? 'Once now, even though it’s paused' : 'Once now, whatever its schedule'}>
+          <Button size="small" icon="play" variant={item.paused ? 'plain' : 'primary'} onClick={() => void a.runNow(item)}>
+            Run Now
+          </Button>
+        </Tip>
+        {item.paused ? (
+          <Button size="small" variant="primary" icon="check" onClick={() => void a.setPaused(item, false)}>
+            {item.pausedWhy ? 'Resume' : 'Turn On'}
+          </Button>
+        ) : (
+          <Button size="small" icon="pause" onClick={() => void a.setPaused(item, true)}>
+            Pause
+          </Button>
+        )}
+        <ActionsDropdown items={more}>
+          <IconButton icon="more" label={`More for ${item.name}`} />
+        </ActionsDropdown>
+      </div>
+    </header>
+  );
+}
+
+function Banners({ item }: { item: Sentinel }) {
+  const a = useSentinelActions();
+  const last = useApp((st) => runsOf(st.sentinel, item.id)[0]);
+  if (item.paused && item.pausedWhy) {
+    return (
+      <div className={s.banner} data-tone="error" role="status">
+        <Icon name="alert" size={14} />
+        <span className={s.bannerText}>
+          <strong>{item.pausedWhy}.</strong> {last?.why ? `The last one: ${last.why.split('\n')[0]}` : 'Look at the last run, fix what it needs, then resume.'}
+        </span>
+        {last ? (
+          <Button size="small" variant="quiet" onClick={() => a.openRun(last.id)}>
+            Open Last Run
+          </Button>
+        ) : null}
+        <Button size="small" onClick={() => void a.setPaused(item, false)}>
+          Resume
+        </Button>
+      </div>
+    );
+  }
+  if (item.paused) {
+    return (
+      <div className={s.banner} data-tone="info" role="status">
+        <Icon name="pause" size={14} />
+        <span className={s.bannerText}>This sentinel is paused. Turn On to let it run{item.trigger.kind === 'schedule' ? ' on its schedule' : ''}; Run Now tries it once first.</span>
+      </div>
+    );
+  }
+  return null;
+}
+
+/** The runs: a dot strip of the last 30, then each as a row (when, by what, how it went, how long). */
+function History({ item }: { item: Sentinel }) {
+  const state = useSentinelState();
+  const a = useSentinelActions();
+  const now = useClock(true, 15_000);
+  const runs = runsOf(state, item.id);
+  const dots = dotStrip(runs);
+  const liveName = (r: RunSummary): string | undefined => {
+    const step = state.live[r.id]?.stepId;
+    return step ? item.steps.find((x) => x.id === step)?.name : undefined;
+  };
+  return (
+    <section className={s.card} aria-label="History">
+      <header className={s.cardHead}>
+        <h3 className={s.cardTitle}>History</h3>
+        <span className={t.grow} />
+        {runs.length ? <span className={s.hint}>{runs.length === 1 ? '1 run' : `the last ${runs.length} runs`}</span> : null}
+      </header>
+      {!runs.length ? (
+        <p className={s.empty}>No runs yet. Run Now tries it once.</p>
+      ) : (
+        <>
+          <div className={s.strip} role="list" aria-label="The last runs, oldest first">
+            {dots.map((d) => (
+              <Tip key={d.id} label={d.label}>
+                <button type="button" role="listitem" className={s.stripDot} data-tone={d.tone} aria-label={d.label} onClick={() => a.openRun(d.id)} />
+              </Tip>
+            ))}
+          </div>
+          <div className={s.runs} role="list">
+            {runs.map((r) => {
+              const live = r.state === 'running' ? liveName(r) : undefined;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  role="listitem"
+                  className={s.run}
+                  data-run={r.id}
+                  onClick={() => a.openRun(r.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.metaKey) {
+                      e.preventDefault();
+                      const channel = r.channel ?? r.steps.find((x) => x.channel)?.channel;
+                      if (chatPlaceOf(channel)) a.openChannel(channel);
+                    }
+                  }}
+                >
+                  <span className={s.runWhen}>{whenText(r.startedAt, now)}</span>
+                  <span className={s.runBy}>{byWords(r, state)}</span>
+                  <RunPill state={r.state} />
+                  <span className={cx(s.runHeadline, live && s.runLive)}>{live ? `${live}…` : headlineOf(r)}</span>
+                  <span className={s.runTook}>{durationText(runDuration(r, now))}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) => void }) {
+  const all = useApp((st) => st.projects);
+  const models = useApp((st) => st.models);
+  const projects = all.filter((p) => p.root && !p.error);
+  const model = sharedModel(item.steps);
+  const claudeSteps = item.steps.some((x) => x.kind === 'claude');
+  const limits: number[] = TIME_LIMITS.includes(item.limits.minutes as (typeof TIME_LIMITS)[number]) ? [...TIME_LIMITS] : [...TIME_LIMITS, item.limits.minutes].sort((x, y) => x - y);
+  const perDay: number[] = PER_DAY_CHOICES.includes(item.limits.perDay ?? 0) ? [...PER_DAY_CHOICES] : [...PER_DAY_CHOICES, item.limits.perDay!].sort((x, y) => x - y);
+  const pauseAfter: number[] = PAUSE_AFTER_CHOICES.includes(item.limits.pauseAfter) ? [...PAUSE_AFTER_CHOICES] : [...PAUSE_AFTER_CHOICES, item.limits.pauseAfter].sort((x, y) => x - y);
+  return (
+    <aside className={t.props} aria-label="Properties">
+      <Prop label="Project">
+        <Select
+          label="Project"
+          size="small"
+          value={item.projectId ?? MAC_SCOPE}
+          options={[{ value: MAC_SCOPE, label: 'Your Mac' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+          onChange={(v) => save({ projectId: v === MAC_SCOPE ? null : v })}
+        />
+      </Prop>
+      <Prop label="Access">
+        <Select<Access>
+          label="Access"
+          size="small"
+          value={item.access}
+          options={ACCESS.map((x) => ({ value: x, label: ACCESS_INFO[x].label, description: x === 'ship' && item.access !== 'ship' ? LATER : ACCESS_INFO[x].sentence, disabled: x === 'ship' && item.access !== 'ship' }))}
+          onChange={(access) => save({ access })}
+        />
+      </Prop>
+      <p className={s.accessHint}>
+        {ACCESS_INFO[item.access].sentence}.
+      </p>
+      {claudeSteps ? (
+        <Prop label="Model">
+          <Select
+            label="Model for every Claude step"
+            size="small"
+            value={model ?? 'mixed'}
+            placeholder="Mixed"
+            options={(models.length ? models : [{ value: '', label: 'Default', description: '' }]).map((m) => ({ value: m.value, label: m.label || 'Default', ...(m.description ? { description: m.description } : {}) }))}
+            onChange={(m) => save({ steps: withModel(item.steps, m) })}
+          />
+        </Prop>
+      ) : null}
+      <Prop label="Time limit">
+        <Select label="Time limit" size="small" value={String(item.limits.minutes)} options={limits.map((n) => ({ value: String(n), label: n < 60 ? `${n} minutes` : n === 60 ? '1 hour' : `${n / 60} hours`, description: 'Per run; Claude is stopped and the run fails as timed out' }))} onChange={(v) => save({ limits: { minutes: Number(v) } })} />
+      </Prop>
+      <Prop label="Runs per day">
+        <Select label="Runs per day" size="small" value={String(item.limits.perDay ?? 0)} options={perDay.map((n) => ({ value: String(n), label: perDayLabel(n) }))} onChange={(v) => save({ limits: { perDay: Number(v) } })} />
+      </Prop>
+      <Prop label="Pause after">
+        <Select label="Pause after" size="small" value={String(item.limits.pauseAfter)} options={pauseAfter.map((n) => ({ value: String(n), label: pauseAfterLabel(n) }))} onChange={(v) => save({ limits: { pauseAfter: Number(v) } })} />
+      </Prop>
+      <Prop label="Notify">
+        <Select label="Notify" size="small" value={item.notify} options={NOTIFY_WHERE.map((n) => ({ value: n, label: NOTIFY_LABEL[n], description: n === 'off' ? 'Only failures and pausing still tell you' : 'When a run ends (a Notify step says more)' }))} onChange={(notify) => save({ notify })} />
+      </Prop>
+      <div className={t.propsRule} />
+      <Prop label="Id" quiet>
+        <span className={cx(t.propStatic, t.mono, 'selectable')}>{item.id}</span>
+      </Prop>
+      {item.recipe ? (
+        <Prop label="Recipe" quiet>
+          <span className={t.propStatic}>{item.recipe}</span>
+        </Prop>
+      ) : null}
+      <Prop label="Created" quiet>
+        <span className={t.propStatic}>{ago(item.createdAt)}</span>
+      </Prop>
+      <Prop label="Changed" quiet>
+        <span className={t.propStatic}>{ago(item.updatedAt)}</span>
+      </Prop>
+    </aside>
+  );
+}
+
+function Prop({ label, children, quiet }: { label: string; children: React.ReactNode; quiet?: boolean }) {
+  return (
+    <div className={cx(t.prop, quiet && t.propStaticRow)}>
+      <span className={t.propLabel}>{label}</span>
+      <div className={t.propControl}>{children}</div>
+    </div>
+  );
+}
