@@ -787,6 +787,7 @@ export class AgentHost {
       prompt: this.promptOf(body),
       requesterName: peerName(this.store.getState(), from),
       viaAgent: body.viaAgent,
+      model: this.modelNow(body.channel),
       context: this.recentChat(body.channel),
       onEvent: (kind, text) => emit(kind, text),
       onStep: (record) => this.steps.put(runKey(body.requestId), record),
@@ -817,6 +818,7 @@ export class AgentHost {
       prompt: this.promptOf(body),
       requesterName: peerName(this.store.getState(), from),
       viaAgent: body.viaAgent,
+      model: this.modelNow(body.channel),
       // The conversation is the run's own: what's said in the chat it has already.
       context: [],
       onEvent: (kind, text) => {
@@ -1201,6 +1203,14 @@ export class AgentHost {
     const prefs = this.store.getState().prefs;
     const model = own ?? prefs.model;
     return { ...(model ? { model } : {}), ...(prefs.effort ? { effort: prefs.effort } : {}) };
+  }
+
+  /**
+   * The model a conversation uses now ('' for Claude Code's default), for a message into its live
+   * run: picked after the run started (the chat's model picker), the run switches to it first.
+   */
+  private modelNow(channel: string): string {
+    return this.modelFor(this.deps.workspaces?.inChannel(channel)?.model).model ?? '';
   }
 
   private async authorizeTool(requester: string, requesterName: string, toolName: string, input: Record<string, unknown>, channel = 'room', cwd?: string): Promise<boolean> {

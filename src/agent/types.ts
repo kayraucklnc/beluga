@@ -227,6 +227,11 @@ export interface MacTools {
 
 /** A message sent into a live run: while it waits on its background agents, or steering it. */
 export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName' | 'viaAgent' | 'context' | 'onEvent' | 'onStep'> {
+  /**
+   * The model the conversation uses now ('' for Claude Code's default). Picked after the run
+   * started, the run switches to it before reading the message; unset: the run keeps its own.
+   */
+  readonly model?: string;
   readonly onDone: (final: string) => void;
   readonly onError: (reason: string) => void;
   /** Its own turn begins (see TurnRoute.onStart). */

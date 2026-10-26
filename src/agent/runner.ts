@@ -308,9 +308,18 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         turns.failPending('Claude finished before getting to this message');
         prompts.close();
       };
+      /** The model the session runs on, so a message picked for another one switches it first. */
+      let model = input.model ?? opts.model;
       /** A message into the live session. `steer`: Claude works on a turn, and takes it in at its next step. */
       const deliver = (followUp: FollowUp, steer: boolean): string | false => {
         if (prompts.closed) return false;
+        // Another model was picked for the conversation meanwhile: Claude Code switches before the
+        // message reaches it (the control request goes down the same pipe, ahead of the prompt).
+        if (followUp.model !== undefined && (followUp.model || undefined) !== model) {
+          model = followUp.model || undefined;
+          void q.setModel(model).catch(() => undefined);
+          report.switched(model);
+        }
         // Between turns it starts one now: thinking before its first step counts from here.
         if (turns.between) recorder.begin();
         const uuid = prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)), { steer: steer && !turns.between });

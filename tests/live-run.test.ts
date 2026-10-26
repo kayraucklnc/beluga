@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 
 /** A scripted Claude Code: for each prompt it reads, it yields the next scripted turn (a promise in it: waited for). */
 type Turn = (prompt: string) => Array<object | Promise<object>>;
-const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options; interrupt?: () => void; queue?: unknown } = { turns: [], extra: [], prompts: [] };
+const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options; interrupt?: () => void; queue?: unknown; models: Array<{ model: string | undefined; afterPrompts: number }> } = { turns: [], extra: [], prompts: [], models: [] };
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
   ...(await original<object>()),
@@ -28,7 +28,11 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
           for (const extra of script.extra.splice(0)) for (const m of extra) yield m;
         }
       })(),
-      { interrupt: async () => script.interrupt?.() },
+      {
+        interrupt: async () => script.interrupt?.(),
+        // Recorded with how many prompts Claude Code had read by then: a switch must come before the message it is for.
+        setModel: async (model?: string) => void script.models.push({ model, afterPrompts: script.prompts.length }),
+      },
     ),
 }));
 
@@ -150,6 +154,33 @@ describe('live runs', () => {
     expect(input.events).toEqual(['started 1 job', 'job finished']);
     expect(script.prompts[1]).toContain('also this');
     expect(send).toBeUndefined(); // closed again
+  });
+
+  it('a follow-up for another model switches Claude Code to it before it reads the message; the same model, nothing', async () => {
+    let send: ((f: FollowUp) => boolean) | undefined;
+    script.prompts = [];
+    script.models = [];
+    script.turns = [
+      () => [tasks('job'), text('started'), result('started')],
+      () => [text('still here'), result('still here')],
+      () => {
+        script.extra.push([tasks(), text('job finished'), result('job finished')]);
+        return [text('on opus'), result('on opus')];
+      },
+    ];
+    const input = runInput({ model: 'sonnet', onFollowUps: (s) => void (send = s) });
+    const done = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    await vi.waitFor(() => expect(send).toBeDefined());
+    const followUp = (prompt: string, model: string) => ({ prompt, model, requesterName: 'kay', viaAgent: false, context: [], onEvent: () => undefined, onDone: () => undefined, onError: () => undefined });
+    // The conversation still uses the model the run started on: no switch.
+    expect(send!(followUp('same', 'sonnet'))).toBe(true);
+    await vi.waitFor(() => expect(script.prompts).toHaveLength(2));
+    expect(script.models).toEqual([]);
+    // Opus was picked meanwhile: switched, and before the message went in.
+    expect(send!(followUp('now opus', 'opus'))).toBe(true);
+    expect(await done).toBe('started\n\njob finished');
+    expect(script.models).toEqual([{ model: 'opus', afterPrompts: 2 }]);
+    expect(script.prompts[2]).toContain('now opus');
   });
 });
 
