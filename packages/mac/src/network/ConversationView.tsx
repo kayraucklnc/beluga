@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactElement, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FriendView, GroupView, MessageView } from '@beluga/net/mesh/views.js';
 import type { MentionWorld } from '../chat/mentions.js';
 import { Icon } from '../components/Icon.js';
@@ -7,6 +7,8 @@ import { Avatar, Button, Empty, claudeColor, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { LogTaskCard } from '../gateway/TaskCard.js';
+import { Attention } from '../chat/Attention.js';
+import { isFinal } from '@beluga/core/gateway/model.js';
 import { usePrefs } from '../lib/prefs.js';
 import { Markdown } from '../chat/Markdown.js';
 import { plainText } from '../chat/message-menu.js';
@@ -193,6 +195,16 @@ function RequestOffer({ m }: { m: MessageView }) {
   );
 }
 
+/**
+ * A task between two people's Claudes (BLG-208): both of them see its card here, drawn from their
+ * own Mac's task book, so it moves along (sent, waiting for approval, working, the result). Someone
+ * else in the channel has no such task: they see the message's words, the request's summary.
+ */
+function TaskMessage({ id, plain }: { id: string; plain: ReactElement }) {
+  const task = useApp((st) => st.gateway.tasks.find((t) => t.id === id));
+  return task ? <LogTaskCard task={task} inChat /> : plain;
+}
+
 /** The start of a conversation: who it's with, and that it stays between you. */
 function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
   const net = useNetwork();
@@ -365,6 +377,10 @@ function Conversation({ id }: { id: string }) {
     [friend?.peerId, friend?.name, group?.members],
   );
   const world = useMemo(() => channelWorld(me, people), [me, people]);
+  // Your Claude, asked here, waits for your OK to ask someone ("Ask Alice's Claude?"), or asked
+  // someone whose card is in your DM with them (not in this channel): shown here until it's over.
+  const tasks = useApp((st) => st.gateway.tasks);
+  const asking = useMemo(() => tasks.filter((t) => t.direction === 'sent' && t.conversation === id && t.chat !== id && !isFinal(t.state)), [tasks, id]);
 
   if (!net.enabled) {
     return (
@@ -417,13 +433,17 @@ function Conversation({ id }: { id: string }) {
         {messages.map((m, i) => {
           const prev = messages[i - 1];
           const newDay = !prev || !sameDay(prev.ts, m.ts);
+          const plain = <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} offer={Boolean(m.claude?.request && !m.mine && mineIds.has(m.claude.for))} {...(me ? { me } : {})} />;
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} offer={Boolean(m.claude?.request && !m.mine && mineIds.has(m.claude.for))} {...(me ? { me } : {})} />
+              {m.task ? <TaskMessage id={m.task.id} plain={plain} /> : plain}
             </div>
           );
         })}
+        {asking.map((t) => (
+          <LogTaskCard key={t.id} task={t} inChat />
+        ))}
         <LiveRow id={id} {...(me ? { me: me.peerId } : {})} />
       </div>
       {drop.over ? (
@@ -443,7 +463,11 @@ function Conversation({ id }: { id: string }) {
           </div>
         </div>
       ) : (
-        <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(me ? { me } : {})} {...(group?.admin ? { addPeople: () => openNet({ kind: 'add_people', groupId: group.id }) } : {})} />
+        <>
+          {/* What holds up your Claude working here: its tool approvals and questions (BLG-207). */}
+          <Attention channel={id} />
+          <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(me ? { me } : {})} {...(group?.admin ? { addPeople: () => openNet({ kind: 'add_people', groupId: group.id }) } : {})} />
+        </>
       )}
     </div>
   );

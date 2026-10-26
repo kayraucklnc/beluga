@@ -11,10 +11,11 @@ import { type Expects, type GatewayMsg, MAX_QUESTIONS, MAX_REQUEST_SUMMARY, type
 import { describeForClaude, oneLine, questionPrompt, resumePrompt } from './result.js';
 import { RuleBook, type RuleInput } from './rule-book.js';
 import { validate } from './schema.js';
-import { type Pending, type ServeShell, TaskServer, defaultScratch } from './serve.js';
+import { type ApproveOpts, type Pending, type ServeShell, TaskServer, defaultScratch } from './serve.js';
+import { isSecretPath } from '../shares.js';
 import { FileFetcher, mergeFiles, wantedFiles } from './transfer.js';
 import { Courier, type MeshPort, type RoomPort, type Via } from './transport.js';
-import { cannotTake, featureForTask, shortVersion } from '../../net/mesh/features.js';
+import { type Feature, cannotTake, featureForTask, shortVersion } from '../../net/mesh/features.js';
 
 /**
  * The gateway: tasks between Claudes. Your Claude (or you) asks a friend's Claude to do
@@ -37,7 +38,7 @@ export interface GatewayDeps {
   readonly scratch?: string;
   readonly agent: () => AgentBackend | undefined;
   /** Ask you (today's approval cards, linked to the task they're about), with a way to take the question back. */
-  readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string) => Pending;
+  readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string, opts?: ApproveOpts) => Pending;
   /** ~/.beluga/rules.json (null or missing: rules stay in memory). */
   readonly rulesFile?: string | null;
   /** Your capability settings (what friends' Claudes may do here), and saving them. */
@@ -152,6 +153,8 @@ export class Gateway {
   private readonly offStore: Array<() => void> = [];
   private cardsQueued = false;
   private stopped = false;
+  /** Past the start (tasks marked as ended then were already over: nobody is told again). */
+  private ready = false;
 
   constructor(private readonly deps: GatewayDeps) {
     this.book = new TaskBook(deps.dir);
@@ -194,6 +197,11 @@ export class Gateway {
       ...(deps.system ? { system: deps.system } : {}),
       ...(deps.questionWaitMs ? { questionWaitMs: deps.questionWaitMs } : {}),
       ...(deps.runFolder ? { runFolder: deps.runFolder } : {}),
+      chatOf: (from, chat) => {
+        const mesh = this.mesh;
+        if (!mesh?.isFriend(from)) return undefined;
+        return chat && mesh.shares?.(chat, from) ? chat : `dm:${from}`;
+      },
     });
     this.fetcher = new FileFetcher({
       send: (to, msg) => this.courier.send(to, msg, false),
@@ -218,6 +226,7 @@ export class Gateway {
     this.offStore.push(deps.store.subscribe(() => this.queueCards()));
     this.ticker = setInterval(() => this.tick(), TICK_MS);
     this.ticker.unref();
+    this.ready = true;
   }
 
   stop(): void {
@@ -320,7 +329,7 @@ export class Gateway {
     if (!ask) throw new Error('Say what to ask');
     if (input.expects && input.expects !== 'files' && validateSchema(input.expects)) throw new Error(`The expects schema isn't usable: ${validateSchema(input.expects)}`);
     // Their Mac said what it takes: one that can't take this hears so now, not after a week of waiting.
-    const unable = this.cannotTake(peer, kind);
+    const unable = this.cannotTake(peer, kind) ?? (kind === 'file' && isSecretPath(input.path?.trim() ?? '') ? this.cannotTake(peer, kind, 'task.secret') : undefined);
     if (unable) throw new Error(unable);
     const level = this.trustFor(peer.peerId);
     // Your Claude asks first, unless you trust them or said Always for them (asking them, not what they may do here).
@@ -558,10 +567,26 @@ export class Gateway {
 
   /** Save a task, show it, and wake whoever waits on it. */
   private put(task: TaskView): TaskView {
+    const before = this.book.get(task.id);
     this.book.put(task);
+    if (this.ready && before && !isFinal(before.state)) this.ranHere(task);
     this.deps.store.dispatch({ type: 'gw_task', task });
     for (const w of [...(this.waiters.get(task.id) ?? [])]) w();
     return task;
+  }
+
+  /** A friend's task that ran here just ended (not one you stopped or they cancelled): you hear how it went, pointing at its chat. */
+  private ranHere(task: TaskView): void {
+    if (task.direction !== 'received' || !task.startedAt || (task.state !== 'done' && task.state !== 'failed')) return;
+    const what = task.kind === 'run' ? `${task.peerName}'s command on your Mac` : task.kind === 'file' ? `Sending a file to ${task.peerName}` : `Your Claude's work for ${task.peerName}`;
+    this.deps.notify?.({
+      kind: 'people',
+      tag: 'task',
+      title: `${what} ${task.state === 'done' ? (task.kind === 'file' ? 'is done' : 'finished') : 'failed'}`,
+      body: oneLine((task.result?.summary ?? task.ask).replace(/[*_`#>]/g, ''), 140),
+      ...(task.chat ? { channel: task.chat } : {}),
+      ...(presenceQuiet(this.deps.store.getState()) ? { quiet: true } : {}),
+    });
   }
 
   /** Your trust in someone: chosen in the room, remembered from before, or your default. */
@@ -598,14 +623,48 @@ export class Gateway {
    * Why a friend's Beluga can't take a request of this kind, from what it said on its last link.
    * Only for requests that go over the network: someone in the room takes them there.
    */
-  private cannotTake(peer: { peerId: string; name: string }, kind: TaskKind): string | undefined {
+  private cannotTake(peer: { peerId: string; name: string }, kind: TaskKind, feature: Feature = featureForTask(kind)): string | undefined {
     const state = this.deps.store.getState();
     if (state.peers.some((p) => p.peerId === peer.peerId)) return undefined;
     const info = this.mesh?.belugaOf?.(peer.peerId) ?? state.network.friends.find((f) => f.peerId === peer.peerId)?.beluga;
-    return cannotTake(peer.name, info, featureForTask(kind), this.mesh?.isLinked(peer.peerId) ?? false);
+    return cannotTake(peer.name, info, feature, this.mesh?.isLinked(peer.peerId) ?? false);
   }
 
-  private transmit(task: TaskView): void {
+  /**
+   * Where both of you see a task's card (BLG-208): the channel it was asked from, when they're in it
+   * too, else your DM with them. Only between friends (the network carries the card).
+   */
+  private chatFor(task: TaskView): string | undefined {
+    const mesh = this.mesh;
+    if (!mesh?.post || !mesh.isFriend(task.peerId)) return undefined;
+    const from = task.conversation;
+    if (from?.startsWith('group:') && mesh.shares?.(from, task.peerId)) return from;
+    return `dm:${task.peerId}`;
+  }
+
+  /** Post the task's card into that chat: newer Macs draw it from their task book; older ones read the words. */
+  private postCard(task: TaskView): TaskView {
+    const chat = task.chat ?? this.chatFor(task);
+    if (!chat || task.chat) return task;
+    const me = this.deps.selfName();
+    const who = task.by === 'agent' ? `${me}'s Claude` : me;
+    const what =
+      task.kind === 'run'
+        ? `asked to run \`${oneLine(task.command ?? '', 80)}\` on ${task.peerName}'s Mac`
+        : task.kind === 'file'
+          ? `asked ${task.peerName}'s Mac for ${(task.path ?? '').split('/').pop() || 'a file'}`
+          : `asked ${task.peerName}'s Claude: ${oneLine(task.summary?.trim() || task.ask, 140)}`;
+    try {
+      this.mesh?.post?.(chat, `${who} ${what}`, { task: { id: task.id, role: 'request' } });
+    } catch {
+      // The chat isn't there (the friend just went): the task goes on without its card.
+      return task;
+    }
+    return this.put({ ...task, chat });
+  }
+
+  private transmit(given: TaskView): void {
+    const task = this.postCard(given);
     const sentNow = this.courier.send(
       task.peerId,
       {
@@ -626,6 +685,7 @@ export class Gateway {
         ...(task.cwd ? { cwd: task.cwd } : {}),
         ...(task.timeoutSec ? { timeoutSec: task.timeoutSec } : {}),
         ...(task.path ? { path: task.path } : {}),
+        ...(task.chat?.startsWith('group:') ? { chat: task.chat } : {}),
       },
       true,
     );
@@ -757,6 +817,7 @@ export class Gateway {
         ...(msg.data !== undefined ? { data: msg.data } : {}),
         ...(task.expects && msg.status === 'done' ? { valid: checked.length === 0 } : {}),
         ...(problems.length ? { problems } : {}),
+        ...(task.kind === 'file' && msg.secret ? { secret: msg.secret } : {}),
       },
       endedAt: this.now(),
       updatedAt: this.now(),

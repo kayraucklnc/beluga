@@ -203,9 +203,9 @@ message carries), the Mac app's `src/network/` (`ChatTabs`, `ChatFiles`, `NetCom
 whenever the network is on.
 
 **What a message carries.** Inside the encryption (a group message's sealed JSON, a direct message's Noise
-link) a message is `{ text, files?, ask?, claude? }`: `files` are `{ sha, name, size, mime?, image? }` (the
+link) a message is `{ text, files?, ask?, claude?, task? }`: `files` are `{ sha, name, size, mime?, image? }` (the
 bytes travel separately), `ask: { to: 'all' | peerIds }` calls Claudes in, `claude: { for }` marks a Claude's
-answer to message `for`. Older Macs read only `text`. Names are cleaned (no folders, control or bidi
+answer to message `for`, `task: { id, role: 'request' }` is a task's card (see *Tasks between Claudes*). Older Macs read only `text`. Names are cleaned (no folders, control or bidi
 characters); malformed extras are dropped.
 
 Each person's Claude is drawn in that person's color (its mark and its name), here and in rooms, so a
@@ -232,6 +232,20 @@ someone who isn't your friend) when you click Download. While you pull from a Ma
 their own allowance on the link (64 MB/s, bursts of 128 MB), so a transfer doesn't starve messages; at
 other times they count like anything else. On a local link a 128 MB file takes about 2 s. A direct message
 with only files carries "📎 name" as its text for Macs that don't know about files yet.
+
+**Your Claude acts when you ask it** (BLG-207). When you ask your own Claude in a DM or a channel (Ask Claude
+› yours, or @-mentioning it), it takes a real turn with its tools, not the toolless answer below: your own run
+in that chat's lane (`AgentHost.runChat`, channel `dm:<peerId>` / `group:<id>`), working in Your Mac's folder
+(`~/.beluga/assistant/work`, `MacAssistant.forChat`; no saved session: each ask carries the chat as below), with
+your usual approvals, the Mac tools and the gateway's (`who_can`, `ask_person`, `run_on`, `get_file`,
+`wait_for`…), whose tasks belong to that chat. Its final answer goes into the chat as "<owner>’s Claude".
+When a friend's result or their Claude's question comes back after its turn ended, it carries on in the
+chat and answers there (`ChatClaude.continueWith`). In the conversation, above the message box, you see its
+tool approvals and questions, and its "Ask Alice's Claude?" cards (and any request whose card is in your DM
+with that person); a friend's request that came from this chat is approved on its card. Approvals of
+requests from a chat point at it (`Approval.channel`), so their notification and the phone's item open the
+chat. Without the Mac app (no Your Mac) your own asks are answered without tools as before. Friends' asks
+of your Claude are unchanged:
 
 **Claudes, only when asked.** Nobody's Claude reads along. The Ask Claude menu under the message box asks
 your Claude, everyone's, or one person's, for that one message. The message may have no words: the Claudes
@@ -264,7 +278,7 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
 - **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run|file, ask, summary?, needs, project?,
   expects?: JSON schema | "files", deadline?, command?/cwd?/timeoutSec?, path?, by}`, `task_update {id,
   state: queued|awaiting_approval|working, step?}`, `task_result {id, status: done|declined|failed|
-  cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log}`, `task_cancel`,
+  cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log, secret?}`, `task_cancel`,
   `task_question {id, qid, questions}` / `task_answer {id, qid, answers? | skip}`,
   `file_get {id, ref, offset}` / `file_chunk {id, ref, offset, b64, eof, error?}`, and `card` (your
   trust in them, what your Beluga offers them, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
@@ -283,8 +297,29 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   against `expects` on both sides; files only from the folder it ran in (and the folders you chose;
   anywhere with full trust), never secrets: up to 512 KB in all inline, bigger ones fetched in
   pieces (see *Big files*). A file request someone said yes to (or that a rule of theirs covers) may
-  come from anywhere on their Mac, not only the folders they share; a secret file is refused before
-  they're asked.
+  come from anywhere on their Mac, not only the folders they share.
+- **Secrets** (BLG-209): a `file` request for a secret (`isSecretPath`: an SSH key, a `.env` file, cloud
+  credentials, a token file, any other key) is never declined up front, and never let in either: its owner
+  always gets a separate approval that says what it is ("kay's Claude wants your private SSH key
+  id_ed25519", `secretKindOf` / `secretLabel`), each time, with only Allow once / Decline (on the card,
+  the request sheet, the pop-up and the menu bar; its notification only offers Review…). Trust, Allow
+  rules and Always never cover it; a capability that is Off or a Decline rule still declines it. If
+  they allow it, Beluga sends that one file and the `task_result` carries `secret: "private SSH key
+  id_ed25519"`, so the requester's Claude is told (outside the data block) that the owner approved it and
+  hands it over instead of refusing. Still refused at once: Beluga's own private files in `~/.beluga`
+  and the keychains (`isNeverSent`), and every `run` or `ask` task that touches secrets. Macs that do this
+  say `task.secret`; asking an older one for a secret fails at once ("Ata's Beluga 1.2.0 can't send
+  secrets Ata approves yet. Ask Ata to update Beluga.").
+- **Both people see it** (BLG-208): when a task goes to a friend, the requester's Beluga posts its card
+  in the chat they share: the channel it was asked from if the friend is in it (the request carries
+  `chat: "group:<id>"`), else their DM. The message carries `task: { id, role: 'request' }` and words for
+  older Macs ("kay's Claude asked bob's Claude: take a screenshot of your desktop"); each side draws the
+  card from its own task book by id (`TaskView.chat` says where), so it moves along: sent, waiting for
+  approval, working, done / declined / failed, with the summary and files. Someone else in the channel
+  has no such task and sees only those words. The result posts nothing more; the person whose Claude
+  (or Mac) ran it gets a notification when it's done, pointing at the chat. A card makes no message
+  notification of its own (the request itself asks you). The phone draws it as a small card
+  (`ChatMessageView.task`).
 - **Tagging a friend**: `@mia` anywhere in a message to your Claude (the message box offers your
   friends by name as you type `@`) means mia: your Claude asks her Claude with `ask_person`, takes a
   file with `get_file`, or runs one command with `run_on`. Every request carries a `summary` (at most
@@ -399,7 +434,7 @@ Your card tells each friend what you offer them (their Claude sees it in `who_ca
   /Applications and ~/Applications.
 - **Read and write files**: the folders you choose are added to the task's Claude's folders when
   the request needs `files`; `get_file(person, path)` (a `file` task) sends one file from them
-  (anywhere with full trust), never secrets.
+  (anywhere with full trust); a secret only when they approve that one request (see *Secrets* above).
 
 ### Big files
 

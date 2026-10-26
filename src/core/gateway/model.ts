@@ -45,7 +45,31 @@ export interface TaskOutcome {
   /** The data matches what was asked for (`expects`); problems say how it doesn't. */
   readonly valid?: boolean;
   readonly problems?: readonly string[];
+  /** The file is a secret its owner approved sending, that one time ("private SSH key id_ed25519"). */
+  readonly secret?: string;
 }
+
+/** What kind of secret a file is (core/shares.ts secretKindOf decides). */
+export type SecretKind = 'ssh-key' | 'dotenv' | 'cloud' | 'token' | 'secret';
+
+/** A secret, in the words its approval says: "your private SSH key id_ed25519". */
+export function secretLabel(kind: SecretKind, name: string): string {
+  switch (kind) {
+    case 'ssh-key':
+      return /^id_(rsa|ed25519|ecdsa|dsa)$/i.test(name) ? `your private SSH key ${name}` : `${name} from your SSH folder`;
+    case 'dotenv':
+      return `your .env file ${name}`;
+    case 'cloud':
+      return `your cloud credentials ${name}`;
+    case 'token':
+      return `your token file ${name}`;
+    default:
+      return /\.(pem|key|p12|pfx|keystore|jks)$/i.test(name) ? `your private key ${name}` : `your secret file ${name}`;
+  }
+}
+
+/** The label as the requester says it ("private SSH key id_ed25519"): without "your". */
+export const secretNoun = (label: string): string => label.replace(/^your /, '');
 
 export interface TaskView {
   readonly id: string;
@@ -70,6 +94,8 @@ export interface TaskView {
   readonly by: 'agent' | 'person';
   /** Sent: the conversation your Claude asked from (its answer continues there). */
   readonly conversation?: string;
+  /** The chat both people see its card in (BLG-208): your DM with them (`dm:<peerId>`), or the channel it was asked from. */
+  readonly chat?: string;
   readonly state: TaskState;
   /** The latest steps (short lines). */
   readonly steps: readonly string[];
@@ -90,6 +116,8 @@ export interface TaskView {
   readonly folder?: string;
   /** Received: how it was let in ("you trust them", "your rule", "you approved it"). */
   readonly allowedBy?: string;
+  /** A file request for a secret: you're asked each time (Allow once / Decline; trust, rules and Always never cover it). */
+  readonly secret?: { readonly kind: SecretKind; readonly label: string };
   /** Sent: you saw it before it left (you asked yourself, or said Ask on "Ask Alice's Claude?"). */
   readonly confirmed?: boolean;
   /** Sent: the questions their Claude asked so far (by id: each is taken once, a few at most). */
@@ -184,8 +212,9 @@ export const oneLine = (text: string, max = 120): string => {
 };
 
 /** The approval card's title for a request that reached you (screens find the card by it). */
-export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary'>>): string => {
+export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary' | 'secret'>>): string => {
   const who = `${t.peerName}${t.by === 'agent' ? "'s Claude" : ''}`;
+  if (t.kind === 'file' && t.secret) return `${who} wants ${t.secret.label}`;
   if (t.kind === 'run' && t.command) return `${who} wants to run on your Mac: ${oneLine(t.command)}`;
   if (t.kind === 'file' && t.path) return `${who} wants a file from your Mac: ${oneLine(t.path)}`;
   return `${who} wants to: ${requestGist(t)}`;

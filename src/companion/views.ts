@@ -4,7 +4,7 @@ import { criteria, tally } from '../core/board/criteria.js';
 import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
-import { type TaskView as GwTask, isFinal } from '../core/gateway/model.js';
+import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
@@ -119,7 +119,8 @@ export function usageViews(usage: Usage | undefined): UsageView[] {
 
 function approvalItem(state: DomainState, a: Approval): NeedsYou {
   const from = a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : 'your Claude';
-  const topic = a.channel ? convTopic(a.channel) : undefined;
+  // A friends' chat opens that chat (a request from there, your Claude working there: BLG-207).
+  const topic = a.channel ? (/^(dm|group):/.test(a.channel) ? chatTopic(a.channel) : convTopic(a.channel)) : undefined;
   return {
     id: `approval:${a.id}`,
     kind: a.kind === 'request' ? 'request' : 'approval',
@@ -130,9 +131,10 @@ function approvalItem(state: DomainState, a: Approval): NeedsYou {
     ...(a.askedAt !== undefined ? { askedAt: a.askedAt } : {}),
     ...(a.timeoutMs !== undefined ? { timeoutMs: a.timeoutMs } : {}),
     actions: [
-      { label: 'Approve', tone: 'main', method: 'host.answerApproval', args: ['yes', a.id] },
+      { label: a.once ? 'Allow once' : 'Approve', tone: 'main', method: 'host.answerApproval', args: ['yes', a.id] },
       { label: 'Decline', tone: 'danger', method: 'host.answerApproval', args: ['no', a.id] },
-      { label: 'Always', tone: 'plain', method: 'host.answerApproval', args: ['always', a.id] },
+      // A friend's request for a secret is asked each time: no Always.
+      ...(a.once ? [] : [{ label: 'Always', tone: 'plain' as const, method: 'host.answerApproval', args: ['always', a.id] }]),
     ],
   };
 }
@@ -243,14 +245,15 @@ function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
       {
         id: `request:${t.id}`,
         kind: 'request',
-        title: clip(t.summary ? `${t.peerName}: ${t.summary}` : `${t.peerName} asks your Claude`, 500),
+        title: clip(t.secret ? `${t.peerName} wants ${t.secret.label}` : t.summary ? `${t.peerName}: ${t.summary}` : `${t.peerName} asks your Claude`, 500),
         detail: clip(plainLine(t.ask, 64_000), 64_000),
         from: clip(t.peerName, 100),
+        ...(t.chat && chatTopic(t.chat) ? { topic: chatTopic(t.chat)! } : {}),
         askedAt: t.createdAt,
         actions: [
-          { label: 'Approve', tone: 'main', method: 'gateway.decide', args: [t.id, { answer: 'yes' }] },
+          { label: t.secret ? 'Allow once' : 'Approve', tone: 'main', method: 'gateway.decide', args: [t.id, { answer: 'yes' }] },
           { label: 'Decline', tone: 'danger', method: 'gateway.decide', args: [t.id, { answer: 'no' }] },
-          { label: 'Always', tone: 'plain', method: 'gateway.decide', args: [t.id, { answer: 'always' }] },
+          ...(t.secret ? [] : [{ label: 'Always', tone: 'plain' as const, method: 'gateway.decide', args: [t.id, { answer: 'always' }] }]),
         ],
       },
     ];
@@ -1151,6 +1154,25 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     ts: m.ts,
     ...(files.length ? { files: files.slice(0, 20) } : {}),
     ...(offerOf(state, m) ? { offer: offerOf(state, m) } : {}),
+    ...(chatTaskOf(state, m) ? { task: chatTaskOf(state, m) } : {}),
+  };
+}
+
+/** A task's card in a chat (BLG-208), from this Mac's task book; someone the task isn't between sees just the words. */
+function chatTaskOf(state: DomainState, m: MessageView): ChatMessageView['task'] {
+  const t = m.task ? state.gateway.tasks.find((x) => x.id === m.task?.id) : undefined;
+  if (!t) return undefined;
+  const title = t.direction === 'sent' ? `To ${targetLabel(t)}` : `From ${t.peerName}${t.by === 'agent' ? '’s Claude' : ''}`;
+  const summary = t.result?.summary ? plainLine(stripCode(t.result.summary).text, 600) : '';
+  const files = (t.result?.files ?? []).map((f) => clip(f.name, 200)).slice(0, 8);
+  return {
+    id: clip(t.id, 200),
+    title: clip(title, 200),
+    ask: clip(plainLine(t.kind === 'run' && t.command ? `$ ${t.command}` : requestGist(t, 300), 300), 300),
+    state: clip(stateLabel(t), 80),
+    tone: stateTone(t),
+    ...(summary ? { summary: clip(summary, 600) } : {}),
+    ...(files.length ? { files } : {}),
   };
 }
 

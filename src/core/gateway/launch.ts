@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { TASK_FEATURES } from '../../net/mesh/features.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
+import { type Chat, chatOf } from '../chat/launch.js';
 import { belugaHome } from '../home.js';
 import { watchNetwork } from '../network.js';
 import type { Session } from '../session.js';
@@ -11,13 +12,22 @@ import type { Store } from '../store.js';
 import { pretendSystem } from './demo-system.js';
 import { Gateway, type MeshNode } from './gateway.js';
 import { attachGateway, detachGateway } from './registry.js';
-import type { Pending } from './serve.js';
+import type { ApproveOpts, Pending } from './serve.js';
 
 /**
  * Start the gateway for the daemon (the Mac app's Beluga): tasks between Claudes over today's
  * room at once, and over the Beluga network whenever it's on. The demo keeps its tasks in a
  * temporary folder; otherwise they live in ~/.beluga/tasks/.
  */
+
+/** The session's chats, while the network is on. */
+const chatIn = (session: Session): Chat | undefined => {
+  try {
+    return chatOf(session);
+  } catch {
+    return undefined;
+  }
+};
 
 /** The mesh node as the gateway sees it. */
 export function meshNode(mesh: Mesh): MeshNode {
@@ -30,6 +40,8 @@ export function meshNode(mesh: Mesh): MeshNode {
     sendGateway: (id, payload) => mesh.sendGateway(id, payload),
     nameFor: (id) => mesh.nameFor(id),
     belugaOf: (id) => mesh.belugaOf(id),
+    post: (conversation, text, extras) => void mesh.post(conversation, text, extras),
+    shares: (conversation, id) => mesh.shares(conversation, id),
     listen: ({ frame, link }) => {
       mesh.on('gateway', frame);
       mesh.on('link', link);
@@ -45,10 +57,11 @@ export function meshNode(mesh: Mesh): MeshNode {
 }
 
 /** Ask through today's approval cards (linked to the task), with a way to take the question back (it's answered "no"). */
-export function approvals(session: Pick<Session, 'host' | 'store'>): (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string) => Pending {
-  return (kind, title, detail, peer, task) => {
+export function approvals(session: Pick<Session, 'host' | 'store'>): (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string, opts?: ApproveOpts) => Pending {
+  return (kind, title, detail, peer, task, opts = {}) => {
     const before = new Set(session.store.getState().approvals.map((a) => a.id));
-    const answer = session.host.ask(kind, title, detail, peer, 'room', task ? { task } : {});
+    // A request from a chat points at that chat (its card is there); the rest at the room as before.
+    const answer = session.host.ask(kind, title, detail, peer, opts.conversation ?? 'room', { ...(task ? { task } : {}), ...(opts.once ? { once: true } : {}) });
     // ask() shows its card right away: find it, so it can be withdrawn.
     const id = session.store.getState().approvals.find((a) => !before.has(a.id))?.id;
     return { answer, withdraw: () => void (id && session.host.answerApproval('no', id)) };
@@ -87,6 +100,9 @@ export function launchGateway(host: GatewayHost): () => void {
     // The demo never looks at your real screen.
     ...(host.demo ? { system: pretendSystem() } : {}),
     resume: (channel, prompt) => {
+      // Your Claude asked from a friends' chat (BLG-207): it carries on there, and answers in the chat.
+      const chat = /^(dm|group):/.test(channel) ? chatIn(session) : undefined;
+      if (chat?.claude.acts()) return chat.claude.continueWith(channel, prompt);
       const name = /^\[(?:beluga|klaud)\] (.+?) \(task/.exec(prompt)?.[1] ?? 'A reply came';
       store.dispatch({ type: 'system', text: `${name}. Claude continues with it.`, channel });
       session.runFor(session.selfId, channel, prompt);

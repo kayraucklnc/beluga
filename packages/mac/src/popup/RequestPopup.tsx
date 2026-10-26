@@ -60,17 +60,18 @@ function Card({ r, act }: { r: PopupRequest; act: (action: RequestAction, r: Pop
     setTimeout(() => setBusy(false), 4000);
   };
   return (
-    <article className={s.card} data-testid="request-popup-card" aria-label={`${popupWho(r)} wants to ${r.gist}`}>
+    <article className={s.card} data-testid="request-popup-card" aria-label={r.secret ? `${popupWho(r)} wants ${r.secret}` : `${popupWho(r)} wants to ${r.gist}`}>
       <header className={s.head}>
         <Avatar name={r.peerName} id={r.peerId} claude={r.claude} size={30} />
         <div className={s.headText}>
           <div className={s.who}>
-            <strong>{popupWho(r)}</strong> wants to
+            <strong>{popupWho(r)}</strong> {r.secret ? 'wants' : 'wants to'}
           </div>
           <div className={s.gist}>
-            <Icon name={KIND_ICON[r.kind]} size={13} />
-            <span>{r.gist}</span>
+            <Icon name={r.secret ? 'lock' : KIND_ICON[r.kind]} size={13} />
+            <span>{r.secret ?? r.gist}</span>
           </div>
+          {r.secret ? <div className={s.said}>A secret: you’re asked each time, and only this one file goes.</div> : null}
           {r.said ? <div className={s.said}>{r.said}</div> : null}
         </div>
       </header>

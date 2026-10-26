@@ -89,6 +89,8 @@ export const TaskRequest = z.object({
   path: z.string().min(1).max(4096).optional(),
   /** Who asked: the person's Claude, or the person from their screen. */
   by: z.enum(['agent', 'person']).default('agent'),
+  /** The channel you both are in that it was asked from (its card is there; otherwise it's in your DM). */
+  chat: z.string().regex(/^group:[\w-]{1,80}$/).optional(),
   ts: z.number().int().min(0),
 });
 export type TaskRequest = z.infer<typeof TaskRequest>;
@@ -124,6 +126,8 @@ export const TaskResult = z.object({
   files: z.array(ResultFile).max(MAX_FILES).default([]),
   /** The steps it took (short lines). */
   log: z.array(z.string().max(300)).max(60).default([]),
+  /** A file request for a secret that its owner approved, that one time ("private SSH key id_ed25519"): the requester's Claude is told so. */
+  secret: z.string().min(1).max(200).optional(),
   ts: z.number().int().min(0),
 });
 export type TaskResult = z.infer<typeof TaskResult>;

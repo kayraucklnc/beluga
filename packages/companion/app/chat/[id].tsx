@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Sparkles, X } from 'lucide-react-native';
+import { ArrowLeftRight, Sparkles, X } from 'lucide-react-native';
 import { AskClaudePicker, type AskTarget, askTargets } from '../../components/AskClaudePicker';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, View } from 'react-native';
@@ -103,9 +103,45 @@ export default function Chat() {
   );
 }
 
+const TONE = { claude: 'claude', ok: 'ok', warn: 'warn', error: 'error', info: 'info' } as const;
+
+/** A task between two people's Claudes (BLG-208): who asks whom, where it is, and what came back. */
+function TaskCard({ task }: { task: NonNullable<ChatMessageView['task']> }) {
+  const tone = TONE[task.tone as keyof typeof TONE] ?? 'info';
+  return (
+    <View style={{ marginTop: 10, padding: 12, gap: 6, borderRadius: 18, backgroundColor: color.card, borderWidth: 0.5, borderColor: color.hairline }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <ArrowLeftRight color={color.claude} size={15} />
+        <T v="caption" c={color.text} style={{ fontWeight: '700', flex: 1 }} numberOfLines={1}>
+          {task.title}
+        </T>
+        <View style={{ paddingVertical: 2, paddingHorizontal: 8, borderRadius: 10, backgroundColor: tint[tone] }}>
+          <T v="caption" c={color[tone]} style={{ fontSize: 11, fontWeight: '700' }} numberOfLines={1}>
+            {task.state}
+          </T>
+        </View>
+      </View>
+      <T v="body" c={color.text2} style={{ fontSize: 14 }} numberOfLines={3}>
+        {task.ask}
+      </T>
+      {task.summary ? (
+        <T v="body" c={color.text} style={{ fontSize: 14 }} numberOfLines={6}>
+          {task.summary}
+        </T>
+      ) : null}
+      {task.files?.length ? (
+        <T v="caption" c={color.text2}>
+          {task.files.join(' · ')}
+        </T>
+      ) : null}
+    </View>
+  );
+}
+
 function Bubble({ m, first, group, pics }: { m: ChatMessageView; first: boolean; group: boolean; pics: OutputView[] }) {
   const mine = m.mine;
   const files = m.files ?? [];
+  if (m.task) return <TaskCard task={m.task} />;
   return (
     <View style={{ flexDirection: 'row', justifyContent: mine ? 'flex-end' : 'flex-start', gap: 8, marginTop: first ? 10 : 0 }}>
       {!mine ? <View style={{ width: 30 }}>{first ? <Avatar name={m.from} size={30} claude={m.claude} /> : null}</View> : null}

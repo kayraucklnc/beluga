@@ -13,6 +13,8 @@ export const FEATURE_NAMES = {
   'task.run': 'commands',
   'task.file': 'file requests',
   'task.question': "their Claude's questions",
+  /** A file request for a secret gets its own approval (BLG-209); before, a secret was declined at once. */
+  'task.secret': 'secrets',
   'share.project': 'shared projects',
   'share.folder': 'shared folders',
 } as const;
@@ -26,7 +28,7 @@ export const SHARE_FEATURES: readonly Feature[] = ['share.project', 'share.folde
 export const MESH_FEATURES: readonly Feature[] = ['chat.files', 'chat.claude'];
 
 /** What a Mac takes while its gateway listens (core/gateway). */
-export const TASK_FEATURES: readonly Feature[] = ['task.ask', 'task.run', 'task.file', 'task.question'];
+export const TASK_FEATURES: readonly Feature[] = ['task.ask', 'task.run', 'task.file', 'task.question', 'task.secret'];
 
 /** What a friend's Beluga said about itself on its last link. */
 export interface BelugaInfo {
@@ -51,6 +53,8 @@ export function cannotTake(name: string, info: BelugaInfo | undefined, feature: 
   // No task features at all: their Beluga runs, but its requests side isn't on.
   if (feature.startsWith('task.') && !info.can.some((f) => f.startsWith('task.')))
     return !linked ? undefined : `${name}'s Beluga isn't taking requests right now (it's open, but not the Mac app). Ask ${name} to open Beluga for Mac.`;
+  // Their Beluga declines every secret at once: say so before asking.
+  if (feature === 'task.secret') return `${name}'s Beluga ${shortVersion(info.version)} can't send secrets ${name} approves yet. Ask ${name} to update Beluga.`;
   // Shared things are opened on their Mac, not taken as requests.
   const verb = feature.startsWith('share.') ? 'open' : 'take';
   return `${name}'s Beluga ${shortVersion(info.version)} can't ${verb} ${what} yet. Ask ${name} to update Beluga.`;
