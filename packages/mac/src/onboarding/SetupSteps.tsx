@@ -2,11 +2,13 @@ import { motion } from 'motion/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
+import { STARTERS, type FireLook, DEFAULT_FIRE, presetOf, starterOf } from '../chat/fire-look.js';
+import { Preview } from '../dialogs/FireSettings.js';
 import { Select, Switch } from '../dialogs/settings-controls.js';
 import { previewRequestPopup } from '../gateway/request-native.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { askNotificationPermission, openNotificationSettings, useNotificationAccess } from '../lib/sounds/access.js';
-import { ACCENTS, type Accent, type UiPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
+import { ACCENTS, type Accent, type UiPrefs, getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EASE_OUT, Rise, SPRING, Words } from './fx.js';
 import { Glass } from './Glass.js';
 import s from './onboarding.module.css';
@@ -130,6 +132,56 @@ function SetupRow({ label, detail, children, index }: { readonly label: string; 
       </div>
       <div className={s.rowControl}>{children}</div>
     </motion.div>
+  );
+}
+
+/**
+ * The message box's fire: two pixel fires or none, tried in a box like the real one as you pick.
+ * Someone still on the default starts on Arcade; a look of their own is left alone until they pick.
+ */
+export function Fire() {
+  const look = usePrefs().maxFire;
+  const set = (patch: Partial<FireLook>): void => {
+    const next = { ...getPrefs().maxFire, ...patch };
+    setPrefs({ maxFire: { ...next, preset: presetOf(next) } });
+  };
+  useEffect(() => {
+    const now = getPrefs().maxFire;
+    const untouched = (['preset', 'show', 'typing', 'popDelete', 'border'] as const).every((k) => now[k] === DEFAULT_FIRE[k]);
+    if (untouched) set(STARTERS[0]!.set);
+  }, []);
+  const picked = starterOf(look);
+  const starter = STARTERS.find((x) => x.id === picked);
+  return (
+    <div className={s.setup}>
+      <h2 className={s.title}>
+        <Words text="Set your words on fire." />
+      </h2>
+      <Rise delay={0.2} className={s.body}>
+        On Max effort, the box you type in burns. Pick one and type below to try it; Settings › Fire & Confetti has the rest.
+      </Rise>
+      <Rise delay={0.3} className={s.fireTry}>
+        <Preview look={look} className={s.fireStage} />
+      </Rise>
+      <Glass radius={16} width="100%" className={s.fireRows}>
+        <SetupRow index={0} label={starter?.name ?? 'Your own'} detail={starter?.blurb ?? 'Tuned in Settings. Pick one to change it.'}>
+          <Choice label="Fire" value={picked ?? ''} onChange={(id) => set(STARTERS.find((x) => x.id === id)!.set)} options={STARTERS.map((x) => ({ value: x.id, label: x.name }))} />
+        </SetupRow>
+        {picked !== 'none' ? (
+          <SetupRow index={1} label="Where it burns" detail={look.where === 'max' ? 'Only on Max effort, so it tells you you’re on Max.' : 'With every model and effort.'}>
+            <Choice
+              label="Where it burns"
+              value={look.where}
+              onChange={(where) => set({ where })}
+              options={[
+                { value: 'max', label: 'On Max Only' },
+                { value: 'everywhere', label: 'Everywhere' },
+              ]}
+            />
+          </SetupRow>
+        ) : null}
+      </Glass>
+    </div>
   );
 }
 

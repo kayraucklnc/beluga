@@ -198,14 +198,14 @@ export function FireSettings() {
   );
 }
 
-/** A box like the message box, burning with these settings: type or delete in it to try them. */
-function Preview({ look }: { look: FireLook }) {
+/** A box like the message box, burning with these settings: type or delete in it to try them (`className` replaces the stage's own look; the welcome's Fire step has its own). */
+export function Preview({ look, className }: { look: FireLook; className?: string }) {
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState('');
   // As it will be: no flames when the fire is off (the pixels and confetti still fly).
   return (
-    <div className={f.stage} style={{ paddingTop: 200 }}>
+    <div className={className ?? f.stage} style={{ paddingTop: 200 }}>
       <div ref={box} data-fire={look.show} className={cx(f.fakeBox, look.show !== 'off' && look.border ? m.max : cx(f.plainBox, m.maxPlain))} style={fireVars(look) as React.CSSProperties}>
         <MaxFire box={box} input={input} look={look} />
         <textarea ref={input} className={f.fakeInput} rows={2} value={text} placeholder="Type or delete here to try it" aria-label="Try the fire" onChange={(e) => setText(e.target.value)} />

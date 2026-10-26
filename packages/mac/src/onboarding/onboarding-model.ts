@@ -20,7 +20,7 @@ export const FORCE_PARAM = 'welcome';
 /** The document event File › Onboard Again, Help › Welcome to Beluga and the palette send to show it again. */
 export const SHOW_WELCOME = 'beluga:welcome';
 
-export const STEPS = ['hello', 'parallel', 'agents', 'tables', 'friends', 'earnings', 'archive', 'look', 'terminal', 'setup', 'screen', 'accessibility', 'disk', 'automation', 'popups', 'phone', 'ready'] as const;
+export const STEPS = ['hello', 'parallel', 'agents', 'tables', 'friends', 'earnings', 'archive', 'look', 'terminal', 'fire', 'setup', 'screen', 'accessibility', 'disk', 'automation', 'popups', 'phone', 'ready'] as const;
 
 /** The last step before the app (its button says Finish). */
 export const LAST_SETTING: Step = 'phone';

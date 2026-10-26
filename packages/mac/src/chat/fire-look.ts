@@ -67,6 +67,7 @@ export const PRESETS: ReadonlyArray<{ readonly id: string; readonly name: string
   { id: 'bonfire', name: 'Bonfire', blurb: 'Tall, thick and wild', look: { style: 'toon', fuel: 0.9, height: 0.9, thickness: 0.75, wildness: 0.75, palette: 'ember', temper: false } },
   { id: 'rose', name: 'Rose Garden', blurb: 'Soft pink, gently swaying', look: { style: 'toon', fuel: 0.45, height: 0.45, thickness: 0.6, wildness: 0.3, palette: 'rose', temper: false } },
   { id: 'arcade', name: 'Arcade', blurb: 'Pixel fire, like an old game', look: { style: 'pixel', fuel: 0.6, height: 0.55, thickness: 0.55, wildness: 0.5, palette: 'red', temper: true } },
+  { id: 'ghost', name: 'Ghost', blurb: 'Tall violet pixels, calm and eerie', look: { style: 'pixel', fuel: 0.6, height: 0.75, thickness: 0.5, wildness: 0.35, palette: 'violet', temper: false } },
 ];
 
 /** Only while typing, how quickly it catches and goes out: the most and least each can be (seconds), and the step its slider moves in. */
@@ -140,3 +141,15 @@ export const anyEffect = (look: FireLook): boolean => look.show !== 'off' || loo
 
 /** The effects are on here: on Max effort, or everywhere if you said so. */
 export const effectsOn = (look: FireLook, effort: string | undefined): boolean => anyEffect(look) && (look.where === 'everywhere' || effort === 'max');
+
+const tuningOf = (id: string): Tuning => PRESETS.find((p) => p.id === id)!.look;
+
+/** The welcome's three (onboarding › Fire): two pixel fires and none at all. Each sets what's on and the look; None keeps the look for later. */
+export const STARTERS: ReadonlyArray<{ readonly id: string; readonly name: string; readonly blurb: string; readonly set: Partial<FireLook> }> = [
+  { id: 'arcade', name: 'Arcade', blurb: 'Red pixel fire that flares when you rush, and pixels fly as you type.', set: { ...tuningOf('arcade'), preset: 'arcade', show: 'always', typing: 'pixels', popDelete: true, border: true } },
+  { id: 'ghost', name: 'Ghost', blurb: 'Tall, calm violet pixels that burn while you type.', set: { ...tuningOf('ghost'), preset: 'ghost', show: 'typing', typing: 'pixels', popDelete: true, border: true } },
+  { id: 'none', name: 'None', blurb: 'A plain box: no fire, nothing flies. Settings has it if you change your mind.', set: { show: 'off', typing: 'off', popDelete: false } },
+];
+
+/** Which of the welcome's three these settings are, if any. */
+export const starterOf = (look: FireLook): string | undefined => STARTERS.find((x) => (Object.keys(x.set) as Array<keyof FireLook>).every((k) => look[k] === x.set[k]))?.id;

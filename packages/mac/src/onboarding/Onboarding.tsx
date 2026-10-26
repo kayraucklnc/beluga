@@ -15,12 +15,12 @@ import { EASE_OUT, SPRING } from './fx.js';
 import { LAST_SETTING, SHOW_WELCOME, STEPS, type Step, afterAccess, afterTour, clearPlace, groupOf, inAccess, inTour, resumeAt, saveMark, savePlace, shouldShow, stepBy, stepIndex, tourPlace, wasDone } from './onboarding-model.js';
 import { PhoneStep } from './PhoneStep.js';
 import { TerminalStep } from './TerminalStep.js';
-import { Look, Popups, Setup } from './SetupSteps.js';
+import { Fire, Look, Popups, Setup } from './SetupSteps.js';
 import { Hello, Ready, Tour } from './Steps.js';
 import s from './onboarding.module.css';
 
 /** How lit the backdrop is on each step: bright for the welcome and the end, calm behind settings. */
-const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, tables: 0.9, friends: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, terminal: 0.7, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, ready: 1 };
+const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, tables: 0.9, friends: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, terminal: 0.7, fire: 0.7, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, ready: 1 };
 
 /** How long the app takes to settle into place as the wormhole clears (Shell.module.css, `arrive`). */
 const ARRIVE_S = 1.6;
@@ -249,6 +249,7 @@ export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly st
               {inTour(step) ? <Tour step={step} /> : null}
               {step === 'look' ? <Look /> : null}
               {step === 'terminal' ? <TerminalStep /> : null}
+              {step === 'fire' ? <Fire /> : null}
               {step === 'setup' ? <Setup /> : null}
               {inAccess(step) ? <AccessStepView step={step} access={privacy.access} recheck={privacy.recheck} go={go} /> : null}
               {step === 'popups' ? <Popups /> : null}
