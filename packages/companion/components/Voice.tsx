@@ -46,9 +46,12 @@ export function VoiceButton({ voice, size = 44, onPress }: { readonly voice: Voi
   const phase = voice.view.phase;
   const on = useDerivedValue(() => withSpring(phase === 'listening' ? 1 : 0, spring.bouncy), [phase]);
   const busy = phase === 'getting' || phase === 'writing';
+  // Worked out here, not in the worklet: a plain JS function called on the UI thread crashes the app.
+  const rose = ROSE();
+  const sunken = color.sunken;
   const face = useAnimatedStyle(() => ({
     borderRadius: interpolate(on.value, [0, 1], [size / 2, size * 0.3]),
-    backgroundColor: interpolateColor(on.value, [0, 1], [color.sunken, ROSE()]),
+    backgroundColor: interpolateColor(on.value, [0, 1], [sunken, rose]),
     transform: [{ scale: 1 + on.value * 0.04 }],
   }));
   const breath = useDerivedValue(() => withSpring(voice.level.value, { stiffness: 260, damping: 18 }));
