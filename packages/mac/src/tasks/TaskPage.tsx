@@ -22,7 +22,7 @@ import { useSwipeBack } from './use-swipe-back.js';
 import { SwipeBackEdge } from './SwipeBackEdge.js';
 import { FixItButton, GitHubIssueProp, useInvestigated } from '../issues/task-bits.js';
 import t from './tasks.module.css';
-import { WorkingOn } from '../team/Team.js';
+import { AssignedToYou, WorkingOn } from '../team/Team.js';
 
 /**
  * One task: its title (click to rename), what to do next (start a worktree with Claude on it, or
@@ -104,6 +104,7 @@ function Header({ issue }: { issue: Issue }) {
       <header className={t.pageHead}>
         <Title issue={issue} />
         <WorkingOn issueId={issue.id} />
+        <AssignedToYou issueId={issue.id} />
         <ArchivedBanner issue={issue} />
         <GoneBanner issue={issue} />
         <ChecksBanner issue={issue} />

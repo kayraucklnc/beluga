@@ -389,6 +389,25 @@ function teamOfferItems(state: DomainState): NeedsYou[] {
     }));
 }
 
+/** A teammate gave you a task (BLG-223): it waits until you've seen it. */
+function assignedItems(state: DomainState): NeedsYou[] {
+  return state.team.assigned.flatMap((a) => {
+    const topic = taskTopic(a.issueId);
+    return [
+      {
+        id: `team-task:${a.issueId}`,
+        kind: 'request' as const,
+        title: clip(`${a.by} gave you ${a.key}: ${a.title}`, 500),
+        detail: 'It’s in your tasks, on your board for this repository.',
+        from: clip(a.by, 100),
+        ...(topic ? { topic } : {}),
+        askedAt: a.at,
+        actions: [{ label: 'Got It', tone: 'main' as const, method: 'team.ackAssignment', args: [a.issueId] }],
+      },
+    ];
+  });
+}
+
 /** Everything waiting for you, oldest first: approvals, Claude's questions, friends' requests, plan decisions. */
 export function needsYou(state: DomainState): NeedsYou[] {
   const items = [
@@ -400,6 +419,7 @@ export function needsYou(state: DomainState): NeedsYou[] {
     ...joinItems(state),
     ...offerItems(state),
     ...teamOfferItems(state),
+    ...assignedItems(state),
   ];
   // Oldest first; what has no time (Claude's questions) counts as just asked.
   const at = (n: NeedsYou): number => n.askedAt ?? Number.MAX_SAFE_INTEGER;

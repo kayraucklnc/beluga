@@ -53,6 +53,7 @@ export const PhoneCalls = {
   'network.friends.answerOffer': entry('network.friends.answerOffer', done),
   // Team boards: an offer to team up with a friend on the same repository (its card).
   'team.answer': entry('team.answer', done),
+  'team.ackAssignment': entry('team.ackAssignment', done),
   'network.dm.send': entry('network.dm.send', done),
   'network.dm.history': entry('network.dm.history', done),
   'network.groups.list': entry('network.groups.list', done),

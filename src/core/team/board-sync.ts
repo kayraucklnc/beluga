@@ -54,6 +54,7 @@ export class TeamBoardSync implements TeamPart {
   private saveTimer: NodeJS.Timeout | undefined;
   private readonly listeners: Array<(c: TeamChange) => void> = [];
   private readonly reconciled = new Set<string>();
+  private readonly locals: Array<(issue: Issue, changed: Readonly<Record<string, Field>>) => void> = [];
 
   constructor(
     private readonly team: TeamBoards,
@@ -69,6 +70,11 @@ export class TeamBoardSync implements TeamPart {
   /** Hear what a teammate changed (after it's on the board). */
   onChange(fn: (c: TeamChange) => void): void {
     this.listeners.push(fn);
+  }
+
+  /** Hear what changed here and went to the team (the fields, with their new clocks). */
+  onLocal(fn: (issue: Issue, changed: Readonly<Record<string, Field>>) => void): void {
+    this.locals.push(fn);
   }
 
   /** The team's copy of a task (undefined: not a team task). */
@@ -191,6 +197,7 @@ export class TeamBoardSync implements TeamPart {
     const delta: TaskDelta = { id: issue.id, fields: changed, acts: [...added] as TaskDelta['acts'], ...(drop.length ? { drop } : {}), ...(rec ? {} : { born }) };
     for (const link of this.team.linksOf(issue.projectId)) this.team.send(link.peerId, { k: 'ops', link: link.id, tasks: [delta] });
     this.team.publish();
+    if (Object.keys(changed).length) for (const fn of this.locals) fn(issue, changed);
   }
 
   private removed(id: string): void {

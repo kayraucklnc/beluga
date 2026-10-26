@@ -14,4 +14,6 @@ export const TEAM_API = {
   'team.answer': { args: z.tuple([peerId, projectId, z.boolean()]) },
   // Leave a project's team (one teammate, or everyone): your tasks stay on your board, they stop staying in step.
   'team.leave': { args: z.tuple([projectId, peerId.optional()]) },
+  // A task a teammate gave you: you've seen it (it leaves your inbox; it stays yours).
+  'team.ackAssignment': { args: z.tuple([z.string().min(1).max(40)]) },
 } as const;

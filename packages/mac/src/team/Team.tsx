@@ -96,3 +96,23 @@ export function WorkingMark({ issueId }: { issueId: string }) {
     </span>
   );
 }
+
+/** A teammate gave you this task: a quiet strip with Got It, until you've seen it. */
+export function AssignedToYou({ issueId }: { issueId: string }) {
+  const a = useApp((st) => st.team.assigned.find((x) => x.issueId === issueId), sameDeep);
+  const api = useApi();
+  const say = useSay();
+  if (!a) return null;
+  return (
+    <section className={s.offer} aria-label={`${a.by} gave you this task`}>
+      <Avatar name={a.by} id={a.byId} size={22} />
+      <div className={s.offerText}>
+        <span className={s.offerTitle}>{a.by} gave you this task</span>
+        <span className={s.offerDetail}>It’s in My Tasks. Start it when you’re ready.</span>
+      </div>
+      <Button variant="primary" onClick={() => say(api.team.ackAssignment(a.issueId))}>
+        Got It
+      </Button>
+    </section>
+  );
+}

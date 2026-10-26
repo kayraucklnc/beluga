@@ -127,6 +127,13 @@ export class TeamBoards {
     this.parts.push(part);
   }
 
+  /** The part of a kind (TeamAssign, TeamPlans…), for the API. */
+  part<T extends TeamPart>(kind: abstract new (...args: never[]) => T): T {
+    const found = this.parts.find((p): p is T => p instanceof kind);
+    if (!found) throw new Error('That part of team boards isn’t running');
+    return found;
+  }
+
   async start(): Promise<void> {
     this.load();
     const { mesh, store } = this.deps;

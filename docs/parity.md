@@ -431,6 +431,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `issues.toTask` | ✓ Make a Task in an issue's composer (Claude writes the title, goal and criteria; ☐ Look at the code first: Claude reads the code first, read-only, and adds where it is and the likely cause); also in its ⋯ and right-click menu (Make a Task, Make a Task After a Quick Look) |
 | `issues.comment` | ✓ an issue's ⋯ › Post the Findings on GitHub… (after an investigation; asks first, shows what goes) |
 | `team.answer` | ✓ the offer strip on a project's home and at the top of its Tasks (Team Up; ••• › Not Now, or Take Back while you wait for them); the phone's card (Team Up / Not Now) |
+| `team.ackAssignment` | ✓ Got It on the strip a task a teammate gave you shows on its page; the phone's card (Got It) |
 | `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates) |
 | `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (Claude plans in the conversation you're in) |
