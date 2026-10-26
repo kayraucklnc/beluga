@@ -26,6 +26,9 @@ export interface FireTune {
   readonly wildness: number;
   readonly colors: readonly [string, string, string];
   readonly temper: boolean;
+  /** Only while typing: how long (s) a run of typing takes to catch, and how long (s) after the last key the fuel runs out. */
+  readonly catchAfter: number;
+  readonly outAfter: number;
 }
 
 export interface FireBox {
@@ -42,10 +45,12 @@ export interface FireBox {
 
 const CONFETTI = ['#ffe35a', '#ff8a1f', '#3fa2ff', '#d4f6ff', '#ff6fae', '#8fe3b0'] as const;
 
-/** Only while typing: it catches after this many keys in a run, at least this long (s) into it; a pause this long (s) ends the run. */
-const WARM_KEYS = 4;
-const WARM_UP = 0.6;
+/**
+ * Only while typing: a pause this long (s) ends a run of typing. A run catches once it's `catchAfter`
+ * long (Settings) and has had a few keys: up to this many, fewer the sooner it catches, one at once.
+ */
 const RUN_GAP = 0.7;
+const WARM_KEYS = 4;
 /** How it spreads round the box from the caret: it takes this long (s) plus a bit per px to go, eased in and out. */
 const SPREAD_TIME = 0.7;
 const SPREAD_PER_PX = 1 / 700;
@@ -272,7 +277,7 @@ class FlameGL {
 export class MaxFire {
   private readonly flame: FlameGL | undefined;
   private readonly front: CanvasRenderingContext2D;
-  private tune: FireTune = { style: 'toon', show: 'always', fuel: 0.5, height: 0.5, thickness: 0.5, wildness: 0.5, colors: TEMPER, temper: true };
+  private tune: FireTune = { style: 'toon', show: 'always', fuel: 0.5, height: 0.5, thickness: 0.5, wildness: 0.5, colors: TEMPER, temper: true, catchAfter: 0.6, outAfter: 0.4 };
   /**
    * What's drawn now, gliding toward `tune` (about half a second), so a new preset or slider
    * changes the fire smoothly instead of all at once; a new style fades in.
@@ -283,7 +288,7 @@ export class MaxFire {
   private amount = 1;
   private typedAt = -Infinity;
   /**
-   * Only while typing, it takes a run of keys to catch (one key never sets it off): when this run
+   * Only while typing, it takes a run of keys to catch (unless it catches at once): when this run
    * of typing began, and how many keys it has had.
    */
   private runAt = -Infinity;
@@ -479,12 +484,14 @@ export class MaxFire {
     cur.alpha += (1 - cur.alpha) * Math.min(1, 0.07 * dt);
     const target = this.focused ? 0.55 : 0.4;
     this.heat += (target - this.heat) * 0.02 * dt;
-    // Only while typing: it catches only once you keep on typing (a few keys, for a moment; a single
-    // key does nothing), at the caret, and spreads from there round the box. 0.4s after you stop,
+    // Only while typing: it catches once you keep on typing (a few keys, for `catchAfter`; at once
+    // if that's 0), at the caret, and spreads from there round the box. `outAfter` after you stop,
     // the fuel runs out: no new flames, the base goes out quickly, and the last flames lift off the
-    // box and burn out as they rise, like a real fire.
+    // box and burn out as they rise, like a real fire. A key before it's quite out feeds it again.
     const typing = this.tune.show === 'typing';
-    if (typing && !this.lit && this.time - this.typedAt < RUN_GAP && this.runKeys >= WARM_KEYS && this.time - this.runAt >= WARM_UP) {
+    const { catchAfter, outAfter } = this.tune;
+    const keys = Math.min(WARM_KEYS, 1 + Math.round(catchAfter * 5));
+    if (typing && !this.lit && this.time - this.typedAt < Math.min(RUN_GAP, outAfter) && this.runKeys >= keys && this.time - this.runAt >= catchAfter) {
       this.lit = true;
       // Still burning from before: it keeps its spread. Out: it starts again at the caret.
       if (this.amount < 0.05) {
@@ -494,11 +501,11 @@ export class MaxFire {
         this.spreadT = 0;
       }
     }
-    if (this.lit && this.time - this.typedAt >= RUN_GAP) this.lit = false;
+    if (this.lit && this.time - this.typedAt >= Math.max(RUN_GAP, outAfter)) this.lit = false;
     if (this.lit && this.spreadT < 1) this.spreadT = Math.min(1, this.spreadT + dt / 60 / (SPREAD_TIME + this.spreadTo * SPREAD_PER_PX));
     // The front starts just behind the caret (nothing yet) and ends past the farthest corner (all of it).
     this.spread = !typing || this.spreadT >= 1 ? Infinity : easeInOut(this.spreadT) * (this.spreadTo + SPREAD_FRONT * 2) - SPREAD_FRONT * 0.4;
-    const goal = this.tune.show === 'off' ? 0 : typing ? (this.lit && this.time - this.typedAt < 0.4 ? 1 : 0) : 1;
+    const goal = this.tune.show === 'off' ? 0 : typing ? (this.lit && this.time - this.typedAt < outAfter ? 1 : 0) : 1;
     const was = this.amount;
     this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.07 : 0.12) * dt);
     if (Math.abs(this.amount - was) > 0.004 || (goal !== was && Math.abs(goal - this.amount) < 0.004)) this.onBurn?.(this.amount);

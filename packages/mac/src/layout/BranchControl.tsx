@@ -9,6 +9,7 @@ import { useActions } from '../lib/actions.js';
 import { useApi } from '../lib/beluga.js';
 import { MERGE_METHODS } from '../lib/pr-checks.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
+import { useWsBusy, whileBusy } from '../lib/ws-busy.js';
 import s from './BranchControl.module.css';
 
 const PILL_ICON: Record<BranchTone, IconName> = { merged: 'merge', ok: 'check', error: 'alert', warn: 'alert', wait: 'clock', info: 'branch', muted: 'branch' };
@@ -34,33 +35,30 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
   const api = useApi();
   const actions = useActions();
   const [method, setMethod] = useState<MergeMethod>(lastMethod);
-  const [busy, setBusy] = useState(false);
+  // This worktree's, not the component's: it's the same one when you switch to another worktree.
+  const busy = useWsBusy(wsId);
   const [main, ...rest] = branch.steps;
 
-  const merge = async (how: MergeMethod, mode?: 'auto' | 'admin'): Promise<void> => {
+  const merge = (how: MergeMethod, mode?: 'auto' | 'admin'): void => {
     setMethod(how);
     rememberMethod(how);
-    setBusy(true);
     // Workbench says how it went (a toast), and GitHub's new state shows here.
-    await api.workbench.mergePr(wsId, { method: how, ...(mode ? { [mode]: true } : {}) }).catch(() => undefined);
-    setBusy(false);
+    void whileBusy(wsId, () => api.workbench.mergePr(wsId, { method: how, ...(mode ? { [mode]: true } : {}) }));
   };
   const run = (step: BranchStep): void => {
     if (busy) return;
     switch (step.id) {
       case 'merge_pr':
-        return void merge(method);
+        return merge(method);
       case 'merge_auto':
-        return void merge(method, 'auto');
+        return merge(method, 'auto');
       case 'merge_admin':
-        return void merge(method, 'admin');
+        return merge(method, 'admin');
       case 'cancel_auto':
-        setBusy(true);
-        return void api.workbench.cancelMergeWhenReady(wsId).catch(() => undefined).finally(() => setBusy(false));
+        return void whileBusy(wsId, () => api.workbench.cancelMergeWhenReady(wsId));
       case 'update_branch':
       case 'mark_ready':
-        setBusy(true);
-        return void api.workbench.prStep(wsId, step.id === 'mark_ready' ? 'ready' : 'update_branch').catch(() => undefined).finally(() => setBusy(false));
+        return void whileBusy(wsId, () => api.workbench.prStep(wsId, step.id === 'mark_ready' ? 'ready' : 'update_branch'));
       case 'resolve_pr':
       case 'fix_checks':
       case 'continue_after_merge':
@@ -71,8 +69,7 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
       case 'pr':
       case 'pr_draft':
         // Straight to GitHub, no Claude in between (Workbench toasts how it went).
-        setBusy(true);
-        return void api.workbench.quickPr(wsId, step.id === 'pr_draft' ? { draft: true } : {}).catch(() => undefined).finally(() => setBusy(false));
+        return void whileBusy(wsId, () => api.workbench.quickPr(wsId, step.id === 'pr_draft' ? { draft: true } : {}));
       case 'pr_claude':
         return void api.workbench.createPr(wsId);
       default:

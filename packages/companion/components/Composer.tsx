@@ -6,8 +6,11 @@ import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp, LinearTransition, use
 import { composerPlan, FIELD_LINE_HEIGHT, FIELD_PAD, fieldHeight, MAX_PHOTOS } from '../lib/composer';
 import { pickPhoto } from '../lib/pick';
 import { color, ink, spring, tint } from '../lib/theme';
+import { appendSpoken } from '../lib/dictate';
+import { useVoice, voiceAvailable } from '../lib/voice';
 import { Options } from './Options';
 import { Card, haptic, Press, T } from './ui';
+import { VoiceButton, VoiceNote, VoiceStage, voiceActive } from './Voice';
 
 /**
  * Write to your Mac: a field that takes the width and grows with what you write (up to seven
@@ -15,6 +18,9 @@ import { Card, haptic, Press, T } from './ui';
  * round button: Send, or Stop (rose, while Claude works and there's nothing to send). While Claude
  * works the button queues (after what it's doing, the Mac's ↩) and a long-press offers Steer (now,
  * the Mac's ⌥↩); what's queued shows above the field. Which does what: lib/composer.ts.
+ *
+ * The microphone beside it (BLG-161): each pause is written down while you talk; ■ puts the words in
+ * the field to edit, the round button sends them as you said them (queued, while Claude works).
  */
 
 /** A photo picked to go with the message (lib/pick.ts). */
@@ -119,7 +125,10 @@ export function Composer({
   // What the long-press sheet sends, read when its row is tapped (after the sheet has closed).
   const now = useRef({ text: '', pics: [] as readonly Photo[] });
   now.current = { text, pics };
-  const plan = composerPlan({ working: Boolean(working), hasText: text.trim().length > 0, photos: pics.length, canSteer: Boolean(onSteer), canStop: Boolean(onStop) });
+  const said = useRef<(words: string) => void>(() => {});
+  const voice = useVoice({ text: (words) => setText((t) => appendSpoken(t, words)), send: (words) => said.current(words) });
+  const speaking = voice.view.phase === 'listening' || voice.view.phase === 'writing';
+  const plan = composerPlan({ working: Boolean(working), hasText: text.trim().length > 0 || speaking, photos: pics.length, canSteer: Boolean(onSteer), canStop: Boolean(onStop) });
   const live = plan.tap !== 'idle';
   const btn = useAnimatedStyle(() => ({ transform: [{ scale: withSpring(live ? 1 : 0.9, spring.bouncy) }] }));
   if (disabled) {
@@ -138,6 +147,15 @@ export function Composer({
     haptic.commit();
     if (how === 'steer' && onSteer && words && !attached.length) onSteer(words);
     else onSend(words, attached);
+    setText('');
+    setPics([]);
+    setH(fieldHeight(0));
+  };
+  // Said and written down: sent (or queued) with the photos, as the round button would.
+  said.current = (spoken) => {
+    const words = appendSpoken(now.current.text, spoken).trim();
+    if (!words) return;
+    onSend(words, now.current.pics);
     setText('');
     setPics([]);
     setH(fieldHeight(0));
@@ -162,6 +180,11 @@ export function Composer({
         </Animated.View>
       ) : null}
       <Card r={24} style={{ paddingHorizontal: 4, paddingVertical: 4, gap: 2 }}>
+        {voiceAvailable() ? (
+          <View style={{ paddingHorizontal: 10 }}>
+            <VoiceNote voice={voice} />
+          </View>
+        ) : null}
         <PhotoStrip photos={pics} onRemove={(uri) => setPics((l) => l.filter((p) => p.uri !== uri))} />
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
           {canAttach ? (
@@ -170,40 +193,60 @@ export function Composer({
             </Press>
           ) : null}
           {left}
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            placeholder={placeholder}
-            placeholderTextColor={color.text3}
-            multiline
-            scrollEnabled
-            onContentSizeChange={(e) => setH(fieldHeight(e.nativeEvent.contentSize.height))}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              color: color.text,
-              fontSize: 16.5,
-              lineHeight: FIELD_LINE_HEIGHT,
-              paddingTop: FIELD_PAD,
-              paddingBottom: FIELD_PAD,
-              paddingLeft: canAttach || left ? 4 : 12,
-              paddingRight: 6,
-              minHeight: fieldHeight(0),
-              maxHeight: fieldHeight(Number.POSITIVE_INFINITY),
-              height: Platform.OS === 'web' ? h : undefined,
-              textAlignVertical: 'top',
-              ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}),
-            }}
-            onKeyPress={(e) => {
-              // On the web, Enter sends (Shift+Enter is a new line); ⌥↩ steers, as on the Mac.
-              const ne = e.nativeEvent as unknown as { key: string; shiftKey?: boolean; altKey?: boolean };
-              if (Platform.OS === 'web' && ne.key === 'Enter' && !ne.shiftKey) {
-                (e as unknown as { preventDefault(): void }).preventDefault();
-                if (plan.tap === 'stop' || plan.tap === 'idle') return;
-                send(ne.altKey === true && plan.more.includes('steer') ? 'steer' : 'send');
-              }
-            }}
-          />
+          {voiceActive(voice.view) ? (
+            // While it records, the stage is the field: the blob, and the words landing where they'll stay.
+            <View style={{ flex: 1, minWidth: 0, paddingLeft: canAttach || left ? 4 : 10 }}>
+              <VoiceStage voice={voice} before={text} box minHeight={fieldHeight(0)} />
+            </View>
+          ) : (
+            <TextInput
+              value={text}
+              onChangeText={setText}
+              placeholder={placeholder}
+              placeholderTextColor={color.text3}
+              multiline
+              scrollEnabled
+              onContentSizeChange={(e) => setH(fieldHeight(e.nativeEvent.contentSize.height))}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                color: color.text,
+                fontSize: 16.5,
+                lineHeight: FIELD_LINE_HEIGHT,
+                paddingTop: FIELD_PAD,
+                paddingBottom: FIELD_PAD,
+                paddingLeft: canAttach || left ? 4 : 12,
+                paddingRight: 6,
+                minHeight: fieldHeight(0),
+                maxHeight: fieldHeight(Number.POSITIVE_INFINITY),
+                height: Platform.OS === 'web' ? h : undefined,
+                textAlignVertical: 'top',
+                ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}),
+              }}
+              onKeyPress={(e) => {
+                // On the web, Enter sends (Shift+Enter is a new line); ⌥↩ steers, as on the Mac.
+                const ne = e.nativeEvent as unknown as { key: string; shiftKey?: boolean; altKey?: boolean };
+                if (Platform.OS === 'web' && ne.key === 'Enter' && !ne.shiftKey) {
+                  (e as unknown as { preventDefault(): void }).preventDefault();
+                  if (plan.tap === 'stop' || plan.tap === 'idle') return;
+                  send(ne.altKey === true && plan.more.includes('steer') ? 'steer' : 'send');
+                }
+              }}
+            />
+          )}
+          {voiceAvailable() ? (
+            <VoiceButton
+              voice={voice}
+              size={40}
+              onPress={() => {
+                const p = voice.view.phase;
+                if (p === 'off') return void (haptic.tap(), voice.start());
+                haptic.commit();
+                if (p === 'listening') voice.finish('edit');
+                else voice.cancel();
+              }}
+            />
+          ) : null}
           <Animated.View style={btn}>
             {plan.tap === 'stop' ? (
               <Animated.View key="stop" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
@@ -214,7 +257,7 @@ export function Composer({
             ) : (
               <Animated.View key="send" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
                 <Press
-                  onPress={() => send('send')}
+                  onPress={() => (speaking ? (haptic.commit(), voice.finish('send')) : send('send'))}
                   onLongPress={plan.more.length ? () => (haptic.commit(), Keyboard.dismiss(), setMenu(true)) : undefined}
                   delayLongPress={320}
                   disabled={!live}

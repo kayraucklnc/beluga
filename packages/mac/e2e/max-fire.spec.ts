@@ -28,6 +28,34 @@ test('a preset sets the fire, your own colours are named, and both are kept', as
   await expect(page.getByRole('slider', { name: 'Height' })).toHaveValue('0.2');
 });
 
+test('while typing, it catches and goes out as quickly as you said, and that is kept', async ({ page }) => {
+  await page.goto('/');
+  await openFire(page);
+  // Only while typing are there delays to set.
+  await expect(page.getByRole('slider', { name: 'Catches' })).toHaveCount(0);
+  await page.getByRole('radiogroup', { name: 'When it burns' }).getByRole('radio', { name: 'While Typing' }).click();
+  await expect(page.getByRole('slider', { name: 'Catches' })).toHaveValue('0.6');
+  await expect(page.getByRole('slider', { name: 'Goes out' })).toHaveValue('0.4');
+  await page.getByRole('slider', { name: 'Catches' }).fill('0');
+  await page.getByRole('slider', { name: 'Goes out' }).fill('2.5');
+  await expect(page.getByText('2.5 s', { exact: true })).toBeVisible();
+  // How much the preview burns (the fire sets it on the box, 0–1).
+  const box = page.locator('[data-fire="typing"]');
+  const burn = (): Promise<number> => box.evaluate((el) => Number((el as HTMLElement).style.getPropertyValue('--burn') || 0));
+  await expect.poll(burn).toBeLessThan(0.05);
+  // At once: a single key sets it off.
+  await page.getByRole('textbox', { name: 'Try the fire' }).press('a');
+  await expect.poll(burn).toBeGreaterThan(0.9);
+  // It lingers well past the old 0.4 s, then goes out.
+  await page.waitForTimeout(1500);
+  expect(await burn()).toBeGreaterThan(0.9);
+  await expect.poll(burn, { timeout: 5_000 }).toBeLessThan(0.05);
+  await page.reload();
+  await openFire(page);
+  await expect(page.getByRole('slider', { name: 'Catches' })).toHaveValue('0');
+  await expect(page.getByRole('slider', { name: 'Goes out' })).toHaveValue('2.5');
+});
+
 test('the effects can be on everywhere, or just pixels, not only on Max', async ({ page }) => {
   await page.goto('/');
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });

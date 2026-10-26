@@ -11,6 +11,7 @@ import { focusFor, openFocus, showPanelTab, forgetChangeAsk, peekChangeAsk, useP
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
+import { useWsBusy, whileBusy } from '../../lib/ws-busy.js';
 import { STATE, UnifiedDiff, useCommitItems, useFileItems } from '../../views/DiffView.js';
 import { type ChangeLook, ChangedFileView, canShowFile, fileLookLabel, onlyAsFile, useChangeLocation } from '../../views/ChangedFile.js';
 import d from '../../views/diff.module.css';
@@ -101,7 +102,8 @@ function Summary({ data, loading, onReload }: { data: Review; loading: boolean; 
 function Actions({ wsId }: { wsId: string }) {
   const actions = useActions();
   const api = useApi();
-  const [opening, setOpening] = useState(false);
+  // Shared with the toolbar's Create PR, and kept per worktree when you switch to another.
+  const opening = useWsBusy(wsId);
   const ws = useApp((st) => findWorkspace(st.projects, wsId));
   const pr = useApp((st) => st.prs[wsId]);
   if (!ws) return null;
@@ -109,10 +111,7 @@ function Actions({ wsId }: { wsId: string }) {
   const ahead = ws.status?.ahead ?? 0;
   const worktree = ws.kind === 'worktree';
   const run = (action: 'commit' | 'pr' | 'review_claude'): void => actions.run({ type: 'ws', id: wsId, action });
-  const quick = (draft = false): void => {
-    setOpening(true);
-    void api.workbench.quickPr(wsId, draft ? { draft: true } : {}).catch(() => undefined).finally(() => setOpening(false));
-  };
+  const quick = (draft = false): void => void whileBusy(wsId, () => api.workbench.quickPr(wsId, draft ? { draft: true } : {}));
   return (
     <div className={s.actions}>
       {worktree && changed ? (

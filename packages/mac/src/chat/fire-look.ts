@@ -37,6 +37,9 @@ export interface FireLook {
   readonly typing: TypingFx;
   /** What you delete pops into pixels. */
   readonly popDelete: boolean;
+  /** Only while typing: how long you type before it catches, and how long after your last key it goes out (seconds; see TIMING). */
+  readonly catchAfter: number;
+  readonly outAfter: number;
   /** The preset it matches, or 'custom' once you've changed something. */
   readonly preset: string;
   /** Colours you made and named. */
@@ -66,7 +69,14 @@ export const PRESETS: ReadonlyArray<{ readonly id: string; readonly name: string
   { id: 'arcade', name: 'Arcade', blurb: 'Pixel fire, like an old game', look: { style: 'pixel', fuel: 0.6, height: 0.55, thickness: 0.55, wildness: 0.5, palette: 'red', temper: true } },
 ];
 
-export const DEFAULT_FIRE: FireLook = { where: 'max', show: 'always', ...PRESETS[0]!.look, typing: 'confetti', border: true, popDelete: true, preset: 'hades', palettes: [] };
+/** Only while typing, how quickly it catches and goes out: the most and least each can be (seconds), and the step its slider moves in. */
+export const TIMING = {
+  catchAfter: { min: 0, max: 2, step: 0.1 },
+  // Less than a gap between two keys and it would flicker as you type.
+  outAfter: { min: 0.2, max: 3, step: 0.1 },
+} as const;
+
+export const DEFAULT_FIRE: FireLook = { where: 'max', show: 'always', ...PRESETS[0]!.look, typing: 'confetti', border: true, popDelete: true, catchAfter: 0.6, outAfter: 0.4, preset: 'hades', palettes: [] };
 
 /** A palette by id: yours first, then the built-in ones (Blue if it's gone). */
 export const paletteOf = (look: Pick<FireLook, 'palette' | 'palettes'>): FirePalette => look.palettes.find((p) => p.id === look.palette) ?? PALETTES.find((p) => p.id === look.palette) ?? PALETTES[0]!;
@@ -81,6 +91,10 @@ export function presetOf(look: FireLook): string {
 export function fireLookOf(saved: unknown): FireLook {
   const s = (saved && typeof saved === 'object' ? saved : {}) as Partial<FireLook>;
   const unit = (v: unknown, d: number): number => (typeof v === 'number' && v >= 0 && v <= 1 ? v : d);
+  const time = (key: keyof typeof TIMING): number => {
+    const v = s[key];
+    return typeof v === 'number' && v >= TIMING[key].min && v <= TIMING[key].max ? v : DEFAULT_FIRE[key];
+  };
   return {
     where: s.where === 'everywhere' ? 'everywhere' : 'max',
     show: s.show === 'typing' || s.show === 'off' ? s.show : 'always',
@@ -95,6 +109,8 @@ export function fireLookOf(saved: unknown): FireLook {
     // (Before there were pixels, typing's confetti was a switch.)
     typing: s.typing === 'off' || s.typing === 'confetti' || s.typing === 'pixels' ? s.typing : (s as { confetti?: unknown }).confetti === false ? 'off' : DEFAULT_FIRE.typing,
     popDelete: typeof s.popDelete === 'boolean' ? s.popDelete : DEFAULT_FIRE.popDelete,
+    catchAfter: time('catchAfter'),
+    outAfter: time('outAfter'),
     preset: typeof s.preset === 'string' ? s.preset : DEFAULT_FIRE.preset,
     palettes: Array.isArray(s.palettes) ? s.palettes.filter((p): p is FirePalette => Boolean(p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.colors) && p.colors.length === 3)) : [],
   };

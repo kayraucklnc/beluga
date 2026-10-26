@@ -210,7 +210,10 @@ export default function Voice() {
                   {link.phase !== 'open' ? (
                     <Row first Icon={Laptop} tone="plain" label="Your Mac is away" sub="Its models show when it’s linked" chevron={false} />
                   ) : (
-                    (mac?.models ?? []).map((m, i) => (
+                    !mac ? (
+                    <Row first Icon={Laptop} tone="plain" label="Looking at your Mac…" chevron={false} />
+                  ) : (
+                    mac.models.map((m, i) => (
                       <Row
                         key={m.model}
                         first={i === 0}
@@ -222,7 +225,7 @@ export default function Voice() {
                         chevron={false}
                       />
                     ))
-                  )}
+                  ))}
                 </Card>
               </View>
             ) : null}

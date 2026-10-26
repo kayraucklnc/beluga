@@ -5,12 +5,14 @@ import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { insertText } from '../chat/paste-paths.js';
 import { inApp } from './boot.js';
 import { getPrefs, usePrefs, type UiPrefs } from './prefs.js';
-import { cleanWords, DICTATION_MAX_SECONDS, downsample, HOLD_MS, levelOf, matchesAccel, parseAccel, spoken, wavFromFloats } from './dictation-model.js';
+import { joinPhrases, PhraseCutter, PHRASE_RATE, promptFrom, Resampler } from '@beluga/shared/voice-phrases.js';
+import { cleanWords, DICTATION_MAX_SECONDS, HOLD_MS, matchesAccel, parseAccel, spoken, wavFromFloats } from './dictation-model.js';
 
 /**
  * Speak instead of typing (BLG-145): the microphone beside Send, and the talk shortcut (Settings ›
- * Voice). The window records (getUserMedia), the daemon writes it down on the Mac's GPU
- * (voice.transcribe: Whisper Turbo or Parakeet, the phone's On your Mac engine), and the words go
+ * Voice). The window records (getUserMedia), and each pause cuts a phrase (BLG-160) that the daemon
+ * writes down on the Mac's GPU at once (voice.transcribe: Whisper Turbo or Parakeet, the phone's On
+ * your Mac engine), in order, while you keep talking; so when you stop, the words are ready. They go
  * in at the cursor of the box you were in, to read over; or, with Send right away, they're sent.
  *
  * The shortcut: hold it and talk, let go to write it in; or tap it, talk, then ↩ (or the shortcut
@@ -18,11 +20,19 @@ import { cleanWords, DICTATION_MAX_SECONDS, downsample, HOLD_MS, levelOf, matche
  * registers it with macOS, so it brings Beluga forward and listens from wherever you are.
  */
 
+/** A phrase cut at a pause: being written down, written, or not (it failed). */
+export interface Phrase {
+  readonly id: number;
+  readonly status: 'writing' | 'done' | 'failed';
+  readonly text?: string;
+}
+
 export type DictationState =
   | { readonly kind: 'off'; readonly error?: string }
   | { readonly kind: 'getting'; readonly model: VoiceModelId; readonly progress: number }
-  | { readonly kind: 'listening'; readonly level: number; readonly since: number }
-  | { readonly kind: 'writing' };
+  | { readonly kind: 'listening'; readonly since: number; readonly phrases: readonly Phrase[] }
+  /** Stopped: the last phrases are being written down (then they go in, or are sent). */
+  | { readonly kind: 'writing'; readonly phrases: readonly Phrase[]; readonly send: boolean };
 
 let state: DictationState = { kind: 'off' };
 const subs = new Set<() => void>();
@@ -111,29 +121,82 @@ async function modelReady(model: VoiceModelId): Promise<boolean> {
   }
 }
 
-/* ---------- Recording ---------- */
+/* ---------- The waveform (read by the strip's canvas at its own pace, not through React) ---------- */
+
+/** Each 30 ms of the recording: how loud, whether it was speech, and whether a phrase was cut there. */
+export interface WaveFrame {
+  readonly level: number;
+  readonly speaking: boolean;
+  cut?: boolean;
+}
+const WAVE_KEEP = 400;
+let wave: WaveFrame[] = [];
+/** The frames so far (the newest last): the strip draws the end of it. */
+export const dictationWave = (): readonly WaveFrame[] => wave;
+
+/* ---------- Recording, cut into phrases ---------- */
 
 interface Recording {
   readonly stream: MediaStream;
   readonly ctx: AudioContext;
   readonly node: ScriptProcessorNode;
-  readonly chunks: Float32Array[];
   readonly timer: ReturnType<typeof setTimeout>;
 }
 let rec: Recording | undefined;
+/** The recording at 16 kHz (two minutes and a little), and how much of it there is. */
+let samples = new Float32Array(0);
+let heard = 0;
+let cutter: PhraseCutter | undefined;
+/** Phrases are written down one after another; `run` counts recordings, so a cancelled one's answers are dropped. */
+let queue: Promise<void> = Promise.resolve();
+let run = 0;
+let phrases: Phrase[] = [];
 /** The shortcut went down at (push-to-talk if it's held past HOLD_MS). */
 let keyDownAt: number | undefined;
 
-function stopRecording(): Recording | undefined {
+const phrasesNow = (): readonly Phrase[] => phrases;
+function showPhrases(): void {
+  if (state.kind === 'listening') set({ ...state, phrases: phrasesNow() });
+  else if (state.kind === 'writing') set({ ...state, phrases: phrasesNow() });
+}
+
+function stopRecording(): void {
   const r = rec;
   rec = undefined;
-  if (!r) return undefined;
+  if (!r) return;
   clearTimeout(r.timer);
   r.node.onaudioprocess = null;
   r.node.disconnect();
   for (const t of r.stream.getTracks()) t.stop();
   void r.ctx.close().catch(() => undefined);
-  return r;
+}
+
+/** A phrase cut out: written down after the ones before it (with their words as Whisper's prompt). */
+function writeDown(from: number, to: number): void {
+  const mine = run;
+  const id = phrases.length;
+  const audio = samples.slice(from, to);
+  phrases = [...phrases, { id, status: 'writing' }];
+  showPhrases();
+  const p = getPrefs();
+  queue = queue.then(async () => {
+    if (mine !== run || !client) return;
+    let text: string | undefined;
+    try {
+      const wav = wavFromFloats(audio);
+      let bin = '';
+      for (let i = 0; i < wav.length; i += 0x8000) bin += String.fromCharCode(...wav.subarray(i, i + 0x8000));
+      const before = joinPhrases(phrases.map((x) => x.text));
+      const prompt = promptFrom(before);
+      const r = (await client.api.voice.transcribe(btoa(bin), { model: voiceModelOf(p), language: p.voiceLanguage, ...(prompt ? { prompt } : {}) })) as TranscriptView;
+      text = cleanWords(r.text);
+    } catch {
+      text = undefined;
+    }
+    if (mine !== run) return;
+    phrases = phrases.map((x) => (x.id === id ? { id, status: text === undefined ? 'failed' : 'done', ...(text ? { text } : {}) } : x));
+    showPhrases();
+  });
 }
 
 /** Start listening, into the box you're in (or `prefer`). */
@@ -154,23 +217,35 @@ export async function startDictation(prefer?: HTMLTextAreaElement | null): Promi
     if (getDictation().kind !== 'getting') return void stream.getTracks().forEach((t) => t.stop());
     const ctx = new AudioContext();
     const source = ctx.createMediaStreamSource(stream);
-    const node = ctx.createScriptProcessor(4096, 1, 1);
-    const chunks: Float32Array[] = [];
-    let shown = 0;
+    const node = ctx.createScriptProcessor(2048, 1, 1);
+    const resample = new Resampler(ctx.sampleRate);
+    run++;
+    queue = Promise.resolve();
+    phrases = [];
+    wave = [];
+    samples = new Float32Array(PHRASE_RATE * (DICTATION_MAX_SECONDS + 2));
+    heard = 0;
+    const c = (cutter = new PhraseCutter());
+    c.onFrame = (level, speaking) => {
+      wave.push({ level, speaking });
+      if (wave.length > WAVE_KEEP) wave = wave.slice(-WAVE_KEEP);
+    };
     node.onaudioprocess = (e) => {
-      const d = new Float32Array(e.inputBuffer.getChannelData(0));
-      chunks.push(d);
-      // The bar's level about ten times a second, not at every buffer.
-      const now = performance.now();
-      if (now - shown > 90 && state.kind === 'listening') {
-        shown = now;
-        set({ ...state, level: levelOf(d) });
+      const at16 = resample.push(e.inputBuffer.getChannelData(0));
+      const room = Math.min(at16.length, samples.length - heard);
+      samples.set(at16.subarray(0, room), heard);
+      heard += room;
+      for (const cut of c.push(at16.subarray(0, room))) {
+        const last = wave[wave.length - 1];
+        if (last) last.cut = true;
+        // A phrase of noise (a click, a cough) isn't worth writing down.
+        if (cut.speechMs >= 200) writeDown(cut.start, cut.end);
       }
     };
     source.connect(node);
     node.connect(ctx.destination);
-    rec = { stream, ctx, node, chunks, timer: setTimeout(() => void finishDictation(), DICTATION_MAX_SECONDS * 1000) };
-    set({ kind: 'listening', level: 0, since: Date.now() });
+    rec = { stream, ctx, node, timer: setTimeout(() => void finishDictation(), DICTATION_MAX_SECONDS * 1000) };
+    set({ kind: 'listening', since: Date.now(), phrases: [] });
   } catch (e) {
     stopRecording();
     const denied = e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
@@ -178,41 +253,40 @@ export async function startDictation(prefer?: HTMLTextAreaElement | null): Promi
   }
 }
 
-/** Stop listening and write it in (and send it, when asked or set). */
+/** Stop listening; when the last phrases are written down, the words go in (and are sent, when asked or set). */
 export async function finishDictation(opts: { send?: boolean } = {}): Promise<void> {
   if (state.kind === 'getting') return cancelDictation();
+  if (state.kind === 'writing' && opts.send) return set({ ...state, send: true });
   if (state.kind !== 'listening' || !client) return;
-  const r = stopRecording();
+  stopRecording();
+  const mine = run;
   const target = into;
-  if (!r || !target) return set({ kind: 'off' });
-  const all = new Float32Array(r.chunks.reduce((n, c) => n + c.length, 0));
-  let at = 0;
-  for (const c of r.chunks) all.set(c, (at += c.length) - c.length);
-  const samples = downsample(all, r.ctx.sampleRate);
-  // Less than a third of a second is a tap, not words.
-  if (samples.length < 16_000 * 0.3) return set({ kind: 'off' });
-  set({ kind: 'writing' });
+  const last = cutter?.end();
+  cutter = undefined;
+  if (last && last.speechMs >= 200) writeDown(last.start, last.end);
   const p = getPrefs();
-  try {
-    const wav = wavFromFloats(samples);
-    let bin = '';
-    for (let i = 0; i < wav.length; i += 0x8000) bin += String.fromCharCode(...wav.subarray(i, i + 0x8000));
-    const r2 = (await client.api.voice.transcribe(btoa(bin), { model: voiceModelOf(p), language: p.voiceLanguage })) as TranscriptView;
-    const words = cleanWords(r2.text);
-    if (!words) return set({ kind: 'off', error: 'Didn’t catch that. Try again a little closer to the microphone.' });
-    const el = target.el();
-    if (!el?.isConnected) return set({ kind: 'off', error: 'That chat closed before it was written down' });
-    insertText(el, spoken(el.value.slice(0, el.selectionStart ?? el.value.length), words));
-    set({ kind: 'off' });
-    // After React has the words in its state.
-    if (opts.send ?? p.voiceSend) requestAnimationFrame(() => target.send());
-  } catch (e) {
-    set({ kind: 'off', error: `Couldn’t write that down: ${errorText(e)}` });
-  }
+  set({ kind: 'writing', phrases: phrasesNow(), send: opts.send ?? p.voiceSend });
+  await queue;
+  const now = getDictation();
+  if (mine !== run || now.kind !== 'writing') return;
+  const send = now.send;
+  const words = joinPhrases(phrases.map((x) => x.text));
+  const failed = phrases.some((x) => x.status === 'failed');
+  if (!target) return set({ kind: 'off' });
+  if (!words) return set({ kind: 'off', error: failed ? 'Couldn’t write that down. Try again.' : 'Didn’t catch that. Try again a little closer to the microphone.' });
+  const el = target.el();
+  if (!el?.isConnected) return set({ kind: 'off', error: 'That chat closed before it was written down' });
+  insertText(el, spoken(el.value.slice(0, el.selectionStart ?? el.value.length), words));
+  set(failed ? { kind: 'off', error: 'A part of it couldn’t be written down: read it over.' } : { kind: 'off' });
+  // After React has the words in its state; a part missing never goes unread.
+  if (send && !failed) requestAnimationFrame(() => target.send());
 }
 
 export function cancelDictation(): void {
   stopRecording();
+  run++;
+  cutter = undefined;
+  phrases = [];
   keyDownAt = undefined;
   set({ kind: 'off' });
 }
@@ -268,9 +342,10 @@ export function useDictationSetup(c: SocketClient): void {
           e.stopPropagation();
           return cancelDictation();
         }
-        if (e.key === 'Enter' && state.kind === 'listening' && !e.isComposing) {
+        if (e.key === 'Enter' && (state.kind === 'listening' || state.kind === 'writing') && !e.isComposing) {
           e.preventDefault();
           e.stopPropagation();
+          // ⌘↩ sends it, even while the last phrase is still being written down.
           return void finishDictation(e.metaKey || e.ctrlKey ? { send: true } : {});
         }
       }

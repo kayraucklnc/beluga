@@ -9,7 +9,7 @@ const SIDE = 40;
 const BOTTOM = 40;
 const TOP = reachOf({ height: 1, thickness: 1 });
 
-const tuneOf = (look: FireLook): FireTune => ({ style: look.style, show: look.show, fuel: look.fuel, height: look.height, thickness: look.thickness, wildness: look.wildness, colors: paletteOf(look).colors, temper: look.temper });
+const tuneOf = (look: FireLook): FireTune => ({ style: look.style, show: look.show, fuel: look.fuel, height: look.height, thickness: look.thickness, wildness: look.wildness, colors: paletteOf(look).colors, temper: look.temper, catchAfter: look.catchAfter, outAfter: look.outAfter });
 
 /**
  * Max effort: the box is on fire; typing throws confetti from the caret, and deleting pops what

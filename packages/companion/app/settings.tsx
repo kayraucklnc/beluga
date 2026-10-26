@@ -152,7 +152,7 @@ export default function Settings() {
                 onPress={askBatteryUnrestricted}
               />
             ) : null}
-            {voiceAvailable() ? <VoiceRow /> : null}
+            {Platform.OS !== 'web' && voiceAvailable() ? <VoiceRow /> : null}
             {canControl ? (
               <Row
                 Icon={MonitorSmartphone}
