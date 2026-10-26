@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { AgentOrigin, CcSession } from '@beluga/core/claude-code/model.js';
 import type { Project, Workspace } from '@beluga/workspaces/types.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
@@ -14,14 +14,15 @@ import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { useNow } from '../chat/Items.js';
 import { agoText } from '../views/project/home-model.js';
 import { Row } from './sidebar-parts.js';
+import { WorkspaceRow, type WorkspaceFold } from './workspace-row.js';
 import s from './subagents.module.css';
 
 /**
  * Sub-agents in the sidebar: Claude's helpers, not your work. They sit under the conversation
  * that started them (a small robot, quieter than a worktree), in the order they started (newest
  * last: a row never moves when its agent finishes); the newest few show, earlier ones behind
- * "N earlier", and the whole group folds away under one "4 sub-agents · 1 running" row
- * (remembered per conversation). Their own worktrees aren't listed as worktrees: they open as the
+ * "N earlier", and they fold away under the worktree's own row, by the arrow in its gutter (like
+ * a folder in Finder; remembered per worktree): project → plans → worktrees → sub-agents. Their own worktrees aren't listed as worktrees: they open as the
  * agent. A sub-agent shows only under what started it, and only while Beluga follows it: old
  * agent worktrees with nothing to tie them to aren't listed (the Worktrees page has them). A
  * project's main folder has no row of its own: its sub-agents gather behind one "Agents" row.
@@ -84,47 +85,51 @@ function AgentRow({ s: sub, indent, worktree, residue, menu }: { s: SubAgent; in
   return menu ? <ActionsContext items={menu}>{row}</ActionsContext> : row;
 }
 
-/** Under a conversation's row: the sub-agents it started. */
-export function SubAgentRows({ ws, indent }: { ws: Workspace; indent: number }) {
-  const actions = useActions();
+/** A worktree's sub-agents (the ones it started), and whether they're folded under its row. */
+function useSubAgentFold(ws: Workspace): { list: SubAgent[]; folded: boolean; toggle: () => void } {
   const sessions = useCcSessions();
   const origins = useAgentOrigins();
+  const prefs = usePrefs();
+  const key = `subagents:${ws.id}`;
+  const list = useMemo(() => subAgentsUnder(sessions, ws.id, origins), [sessions, ws.id, origins]);
+  const folded = prefs.folded.includes(key);
+  const toggle = useCallback(() => setPrefs({ folded: folded ? prefs.folded.filter((f) => f !== key) : [...prefs.folded, key] }), [folded, prefs.folded, key]);
+  return { list, folded, toggle };
+}
+
+/**
+ * A worktree or chat in the sidebar with the sub-agents it started under it: its row carries the
+ * arrow that folds them (and ← → do too), so there's no extra row saying how many there are.
+ */
+export function WorkspaceWithAgents({ ws, indent }: { ws: Workspace; indent: number }) {
+  const { list, folded, toggle } = useSubAgentFold(ws);
+  const count = list.length;
+  const running = list.filter((sub) => sub.agent.status === 'running').length;
+  const fold = useMemo<WorkspaceFold | undefined>(() => (count ? { open: !folded, count, running, summary: subAgentsSummary(list), toggle } : undefined), [count, folded, running, list, toggle]);
+  return (
+    <>
+      <WorkspaceRow ws={ws} indent={indent} {...(fold ? { fold } : {})} />
+      {count && !folded ? <SubAgentRows ws={ws} list={list} indent={indent + 1} /> : null}
+    </>
+  );
+}
+
+/** Under a conversation's row, unfolded: the sub-agents it started, the newest few and "N earlier". */
+function SubAgentRows({ ws, list, indent }: { ws: Workspace; list: readonly SubAgent[]; indent: number }) {
+  const actions = useActions();
   const projects = useApp((st) => st.projects);
   const key = `subagents-more:${ws.id}`;
   const expanded = useUi((u) => u.collapsed.includes(key));
-  // The whole group folded away (kept across launches, per conversation).
-  const prefs = usePrefs();
-  const foldKey = `subagents:${ws.id}`;
-  const list = useMemo(() => subAgentsUnder(sessions, ws.id, origins), [sessions, ws.id, origins]);
   const selected = useSelectedAgent();
-  if (!list.length) return null;
-  // One sub-agent needs no group row of its own.
-  const grouped = list.length > 1;
-  const folded = grouped && prefs.folded.includes(foldKey);
   const worktreeOf = (sub: SubAgent): Workspace | undefined => (sub.agent.worktree ? projects.flatMap((p) => p.workspaces).find((w) => w.path === sub.agent.worktree!.path) : undefined);
-  // The one you're looking at always shows when the list is capped; folding hides them all.
+  // The one you're looking at always shows when the list is capped.
   const isOn = (sub: SubAgent): boolean => selected.agent === sub.agent.id || (selected.ws !== undefined && worktreeOf(sub)?.id === selected.ws);
   // The newest few, in start order: an agent finishing never moves or hides a row (BLG-21).
-  const { shown, hidden } = folded ? { shown: [], hidden: 0 } : expanded ? { shown: list, hidden: 0 } : cappedAgents(list, SHOWN, isOn);
-  const running = list.filter((sub) => sub.agent.status === 'running').length;
-  const summary = subAgentsSummary(list);
+  const { shown, hidden } = expanded ? { shown: list, hidden: 0 } : cappedAgents(list, SHOWN, isOn);
   return (
     <div role="group" aria-label={`Sub-agents of ${ws.name}`}>
-      {grouped ? (
-        <Row
-          indent={indent}
-          className={cx(s.row, s.group)}
-          aria-expanded={!folded}
-          aria-label={`${summary} of ${ws.name}`}
-          icon={<Icon name="chevronRight" size={9} className={cx(s.disclosure, !folded && s.disclosureOpen)} />}
-          label={<span className={s.label}>{summary}</span>}
-          detail={folded ? `Show the sub-agents ${ws.name} started` : `Fold away the sub-agents ${ws.name} started`}
-          onClick={() => setPrefs({ folded: folded ? prefs.folded.filter((f) => f !== foldKey) : [...prefs.folded, foldKey] })}
-          trailing={folded && running ? <Dot tone="subagent" live /> : null}
-        />
-      ) : null}
       {/* The tucked-away ones are the earlier ones: the toggle sits above the rows, where they unfold. */}
-      {!folded && (hidden > 0 || expanded) ? (
+      {hidden > 0 || expanded ? (
         <Row
           indent={indent}
           className={cx(s.row, s.more)}

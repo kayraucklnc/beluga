@@ -425,6 +425,78 @@ describe('work carried by another worktree, and sub-tasks done with their parent
     board.update(parent.key, { status: 'done' }, claude);
     expect([a, b, c].map((i) => board.need(i.key).status)).toEqual(['done', 'canceled', 'done']);
     expect(board.need(a.key).activity.at(-1)?.text).toBe(`done with its parent ${parent.key}: moved this from In Review to Done`);
+    expect(board.need(parent.key).status).toBe('done');
+  });
+});
+
+describe('a parent following its sub-tasks', () => {
+  it('goes In Progress, In Review and Done with them, Canceled ones left out, and says why', () => {
+    const { board } = setup();
+    const parent = board.create({ projectId: 'api', title: 'Buglist' }, claude);
+    const a = board.create({ projectId: 'api', title: 'A', parent: parent.key }, claude);
+    const b = board.create({ projectId: 'api', title: 'B', parent: parent.key }, claude);
+    const c = board.create({ projectId: 'api', title: 'C', parent: parent.key }, claude);
+    expect(board.need(parent.key).status).toBe('todo');
+    board.update(a.key, { status: 'in_progress' }, claude);
+    expect(board.need(parent.key).status).toBe('in_progress');
+    board.update(a.key, { status: 'in_review' }, claude);
+    board.update(b.key, { status: 'done' }, claude);
+    expect(board.need(parent.key).status).toBe('in_progress');
+    board.update(c.key, { status: 'canceled' }, claude);
+    expect(board.need(parent.key).status).toBe('in_review');
+    board.update(a.key, { status: 'done' }, claude);
+    expect(board.need(parent.key)).toMatchObject({ status: 'done', closedAt: expect.any(Number) });
+    expect(board.need(parent.key).activity.at(-1)).toMatchObject({ by: { kind: 'beluga' }, text: 'all 2 sub-tasks are done: moved this from In Review to Done' });
+  });
+
+  it('opens again when a sub-task does, or a new one comes', () => {
+    const { board } = setup();
+    const parent = board.create({ projectId: 'api', title: 'Buglist' }, me);
+    const a = board.create({ projectId: 'api', title: 'A', status: 'done', parent: parent.key }, me);
+    expect(board.need(parent.key).status).toBe('done');
+    board.create({ projectId: 'api', title: 'B', parent: parent.key }, me);
+    expect(board.need(parent.key).status).toBe('in_progress');
+    expect(board.need(parent.key).activity.at(-1)?.text).toBe('a sub-task is open again: moved this from Done to In Progress');
+    board.update(a.key, { status: 'in_progress' }, me);
+    expect(board.need(parent.key).status).toBe('in_progress');
+  });
+
+  it('follows them all the way up, and when one moves to another parent or goes', () => {
+    const { board } = setup();
+    const top = board.create({ projectId: 'api', title: 'Top' }, me);
+    const mid = board.create({ projectId: 'api', title: 'Mid', parent: top.key }, me);
+    const leaf = board.create({ projectId: 'api', title: 'Leaf', parent: mid.key }, me);
+    const other = board.create({ projectId: 'api', title: 'Other', parent: top.key }, me);
+    board.update(leaf.key, { status: 'done' }, me);
+    expect([mid, top].map((i) => board.need(i.key).status)).toEqual(['done', 'in_progress']);
+    board.update(other.key, { parent: null }, me);
+    expect(board.need(top.key).status).toBe('done');
+    const late = board.create({ projectId: 'api', title: 'Late', status: 'in_progress', parent: top.key }, me);
+    expect(board.need(top.key).status).toBe('in_progress');
+    board.remove(late.key);
+    expect(board.need(top.key).status).toBe('done');
+  });
+
+  it('a parent with work of its own goes no further than In Progress; a canceled or plan one stays put; one by hand stays where it was put', () => {
+    const { board } = setup();
+    const own = board.create({ projectId: 'api', title: 'Own' }, me);
+    board.linkWorktree(own.key, 'w1', {}, me);
+    board.create({ projectId: 'api', title: 'A', status: 'done', parent: own.key }, me);
+    expect(board.need(own.key).status).toBe('in_progress');
+    expect(board.need(own.key).activity.at(-1)?.text).toBe('its sub-task is done: moved this from Ready to In Progress');
+
+    const gone = board.create({ projectId: 'api', title: 'Gone', status: 'canceled' }, me);
+    board.create({ projectId: 'api', title: 'B', status: 'done', parent: gone.key }, me);
+    expect(board.need(gone.key).status).toBe('canceled');
+
+    const planned = board.create({ projectId: 'api', title: 'Planned', plan: { id: 'p', milestone: 'm', task: 't' } }, me);
+    board.create({ projectId: 'api', title: 'C', status: 'done', parent: planned.key }, me);
+    expect(board.need(planned.key).status).toBe('todo');
+
+    const held = board.create({ projectId: 'api', title: 'Held' }, me);
+    board.create({ projectId: 'api', title: 'D', status: 'done', parent: held.key }, me);
+    board.update(held.key, { status: 'todo' }, me);
+    expect(board.need(held.key).status).toBe('todo');
   });
 });
 

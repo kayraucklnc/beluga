@@ -1,7 +1,11 @@
 import { COMMANDS } from '../core/commands.js';
 import type { Location } from '../core/store.js';
 import type { FsEntry, PeerInfo } from '../protocol.js';
+import type { ClaudeSkill } from '../shared/skills.js';
 import { type TaskMention, matchTasks } from '../shared/task-refs.js';
+
+/** What a suggestion is (the list shows its icon). */
+export type SuggestionKind = 'command' | 'skill' | 'claude' | 'person' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'option';
 
 export interface Suggestion {
   /** What the list shows. */
@@ -17,6 +21,8 @@ export interface Suggestion {
   readonly enter: 'complete' | 'submit';
   /** A task on the board ("@BLG-24"): the list shows it with its status, in a Tasks section. */
   readonly task?: TaskMention;
+  /** What it is, for its icon (and its section: Claude's skills come under their own heading). */
+  readonly kind?: SuggestionKind;
 }
 
 export interface SuggestContext {
@@ -35,6 +41,8 @@ export interface SuggestContext {
   readonly entries?: (dir: string) => readonly FsEntry[] | undefined;
   /** Tasks on the board ("@BLG-24", "@24", "@login"). */
   readonly tasks?: readonly TaskMention[];
+  /** Claude's skills and custom commands in this conversation ("/frontend-design"). */
+  readonly skills?: readonly ClaudeSkill[];
 }
 
 /** How a friend is written in a message: "@mia" ("@Mia Chen" → "@MiaChen", "@Zoë" stays). */
@@ -89,6 +97,7 @@ function localPathSuggestions(sub: string, typed: string, ctx: SuggestContext): 
       hint: e.size === 1 ? 'git project · Enter adds it' : 'folder',
       value: `/project ${sub} ${dir}${e.name}${e.size === 1 && sub === 'add' ? '' : '/'}`,
       enter: e.size === 1 && sub === 'add' ? ('submit' as const) : ('complete' as const),
+      kind: 'folder' as const,
     }));
 }
 
@@ -108,14 +117,34 @@ export function suggestionWindow(total: number, selected: number): { start: numb
 const PEER_COMMANDS = new Set(['follow', 'trust', 'untrust']);
 const OPEN_SPEC = /^\/(?:open|e|get) ([\w.-]+):([\w.-]+)\/(.*)$/;
 
-function commandSuggestions(buffer: string): Suggestion[] {
+const BELUGA_COMMANDS = new Set(COMMANDS.map((c) => c.name));
+
+/**
+ * Beluga's commands, then Claude's skills and custom commands. A skill matches from the start of
+ * its name or of any part of it ("/mig" finds "supabase:migrate"); one that shares a Beluga
+ * command's name is sent as "//name" (straight to Claude).
+ */
+function commandSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
   const typed = buffer.slice(1).toLowerCase();
-  return COMMANDS.filter((c) => c.name.startsWith(typed)).map((c) => ({
+  const ours = COMMANDS.filter((c) => c.name.startsWith(typed)).map((c) => ({
     label: `/${c.name}${c.args ? ` ${c.args}` : ''}`,
     hint: c.desc,
     value: `/${c.name}${c.args ? ' ' : ''}`,
     enter: 'complete' as const,
+    kind: 'command' as const,
   }));
+  const parts = (name: string): string[] => name.toLowerCase().split(/[:_-]/);
+  const skills = (ctx.skills ?? [])
+    .filter((k) => k.name.toLowerCase().startsWith(typed) || parts(k.name).some((p) => p.startsWith(typed)))
+    .sort((a, b) => Number(!a.name.toLowerCase().startsWith(typed)) - Number(!b.name.toLowerCase().startsWith(typed)))
+    .map((k) => ({
+      label: `/${k.name}${k.args ? ` ${k.args}` : ''}`,
+      hint: k.description || (k.kind === 'skill' ? 'skill' : 'command'),
+      value: `${BELUGA_COMMANDS.has(k.name.toLowerCase()) ? '//' : '/'}${k.name} `,
+      enter: 'complete' as const,
+      kind: 'skill' as const,
+    }));
+  return [...ours, ...skills];
 }
 
 /** The folder whose contents should be suggested for the current `/open` buffer. */
@@ -134,7 +163,7 @@ function openSuggestions(partial: string, ctx: SuggestContext): Suggestion[] {
     return ctx.peers
       .flatMap((p) => p.shares.map((s) => `${p.name}:${s.name}/`))
       .filter((spec) => spec.toLowerCase().startsWith(partial.toLowerCase()))
-      .map((spec) => ({ label: spec, hint: 'shared folder', value: `/open ${spec}`, enter: 'complete' as const }));
+      .map((spec) => ({ label: spec, hint: 'shared folder', value: `/open ${spec}`, enter: 'complete' as const, kind: 'folder' as const }));
   }
   const entries = ctx.dirCache?.[`${target.owner}:${target.share}/${target.path}`] ?? [];
   const typed = partial.slice(partial.lastIndexOf('/') + 1).toLowerCase();
@@ -146,6 +175,7 @@ function openSuggestions(partial: string, ctx: SuggestContext): Suggestion[] {
       hint: e.dir ? 'folder' : 'file',
       value: `/open ${prefix}${e.name}${e.dir ? '/' : ''}`,
       enter: e.dir ? ('complete' as const) : ('submit' as const),
+      kind: e.dir ? ('folder' as const) : ('file' as const),
     }));
 }
 
@@ -154,7 +184,7 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
   if (PEER_COMMANDS.has(cmd)) {
     return ctx.peers
       .filter((p) => p.peerId !== ctx.selfId && p.name.toLowerCase().startsWith(lower))
-      .map((p) => ({ label: p.name, hint: p.agent ? 'has Claude on' : '', value: `/${cmd} ${p.name}`, enter: 'submit' as const }));
+      .map((p) => ({ label: p.name, hint: p.agent ? 'has Claude on' : '', value: `/${cmd} ${p.name}`, enter: 'submit' as const, kind: 'person' as const }));
   }
   // "/invite @ata": your friends by name, to add to the chat, project or worktree you're in (BLG-203).
   if (cmd === 'invite') {
@@ -168,7 +198,7 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
     const opts = { ask: 'approve each request', auto: 'run without asking', deny: 'refuse all requests' } as const;
     return (Object.keys(opts) as Array<keyof typeof opts>)
       .filter((k) => k.startsWith(lower))
-      .map((k) => ({ label: k, hint: opts[k], value: `/policy ${k}`, enter: 'submit' as const }));
+      .map((k) => ({ label: k, hint: opts[k], value: `/policy ${k}`, enter: 'submit' as const, kind: 'option' as const }));
   }
   return [];
 }
@@ -182,25 +212,25 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
   if (typed.includes('/')) {
     return pathMentions(typed, ctx)
       .filter((o) => o.label.toLowerCase() !== token)
-      .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const }));
+      .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const, kind: o.folder ? ('folder' as const) : ('file' as const) }));
   }
   // `name`: the friend's handle, so "@mi" offers mia and mia's Claude alike.
-  const options: Array<{ label: string; hint: string; name?: string }> = [
-    { label: '@claude', hint: 'ask your Claude' },
+  const options: Array<{ label: string; hint: string; kind: SuggestionKind; name?: string }> = [
+    { label: '@claude', hint: 'ask your Claude', kind: 'claude' },
     ...ctx.peers
       .filter((p) => p.agent && p.peerId !== ctx.selfId)
-      .map((p) => ({ label: `@claude:${p.name}`, hint: `ask ${p.name}'s Claude (on their machine)` })),
-    ...(ctx.peers.length > 1 ? [{ label: '@claudes', hint: 'ask every Claude in the room' }] : []),
+      .map((p) => ({ label: `@claude:${p.name}`, hint: `ask ${p.name}'s Claude (on their machine)`, kind: 'claude' as const })),
+    ...(ctx.peers.length > 1 ? [{ label: '@claudes', hint: 'ask every Claude in the room', kind: 'claude' as const }] : []),
     // Each friend twice: their Claude ("@claude:ata", asked on their Mac) and the person ("@ata", told you mentioned them).
     ...(ctx.friends ?? [])
       .filter((f) => friendMention(f.name).length > 1 && !ctx.peers.some((p) => p.agent && p.peerId !== ctx.selfId && p.name.toLowerCase() === f.name.toLowerCase()))
-      .map((f) => ({ label: `@claude:${friendMention(f.name).slice(1)}`, hint: `ask ${f.name}'s Claude, on their Mac${f.online ? '' : ' (offline: it goes when they’re back)'}`, name: friendMention(f.name) })),
+      .map((f) => ({ label: `@claude:${friendMention(f.name).slice(1)}`, hint: `ask ${f.name}'s Claude, on their Mac${f.online ? '' : ' (offline: it goes when they’re back)'}`, kind: 'claude' as const, name: friendMention(f.name) })),
     ...(ctx.friends ?? [])
       .filter((f) => friendMention(f.name).length > 1)
-      .map((f) => ({ label: friendMention(f.name), hint: `${f.name}, the person: they're told you mentioned them` })),
-    ...(ctx.projects ?? []).map((p) => ({ label: `@${p.name}`, hint: 'a project' })),
+      .map((f) => ({ label: friendMention(f.name), hint: `${f.name}, the person: they're told you mentioned them`, kind: 'person' as const })),
+    ...(ctx.projects ?? []).map((p) => ({ label: `@${p.name}`, hint: 'a project', kind: 'project' as const })),
     // Only at the start: "@add-auth …" sends the whole message to that workspace's Claude.
-    ...(before.trim() ? [] : (ctx.workspaces ?? [])),
+    ...(before.trim() ? [] : (ctx.workspaces ?? []).map((w) => ({ ...w, kind: 'workspace' as const }))),
   ];
   const named = options
     .filter((o) => (o.label.toLowerCase().startsWith(token) || (o.name !== undefined && o.name.toLowerCase().startsWith(token))) && o.label.toLowerCase() !== token)
@@ -211,10 +241,10 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
   // Tasks, the very key included ("@BLG-24" completes to itself, so Return never picks a neighbour).
   const tasks = matchTasks(typed, ctx.tasks ?? [])
     .filter((t) => !seen.has(`@${t.key}`.toLowerCase()))
-    .map((t) => ({ label: `@${t.key}`, hint: t.title, value: `${before}@${t.key} `, enter: 'complete' as const, task: t }));
+    .map((t) => ({ label: `@${t.key}`, hint: t.title, value: `${before}@${t.key} `, enter: 'complete' as const, task: t, kind: 'task' as const }));
   const paths = pathMentions(typed, ctx)
     .filter((o) => !seen.has(o.label.toLowerCase()))
-    .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const }));
+    .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const, kind: o.folder ? ('folder' as const) : ('file' as const) }));
   return [...named, ...tasks, ...paths];
 }
 
@@ -222,7 +252,7 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
 export function suggest(buffer: string, ctx: SuggestContext): Suggestion[] {
   if (buffer.startsWith('/') && !buffer.startsWith('//')) {
     const space = buffer.indexOf(' ');
-    if (space === -1) return commandSuggestions(buffer).slice(0, MAX);
+    if (space === -1) return commandSuggestions(buffer, ctx).slice(0, MAX);
     const cmd = buffer.slice(1, space).toLowerCase();
     const rest = buffer.slice(space + 1);
     const project = /^(add|folder) (.*)$/.exec(rest);

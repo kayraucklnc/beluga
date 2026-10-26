@@ -109,13 +109,8 @@ export default function Chat() {
             else sends.message(topic, text, calls.chat(topic, text, opts));
             setAsk(undefined);
           }}
-          left={
-            <Press onPress={() => setPicking(true)} accessibilityLabel="Ask: your Claude" style={{ width: 36, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-              <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: ask ? tint.peach : 'transparent' }}>
-                <SquareTerminal color={ask ? ink.peach : color.text2} size={20} />
-              </View>
-            </Press>
-          }
+          // Behind the + with the photo; who's asked shows in the pill above. The Claude mark, as on the Mac.
+          more={[{ Icon: SquareTerminal, label: 'Ask: your Claude', sub: 'A Claude here answers in the chat', tone: 'peach', onPress: () => setPicking(true) }]}
         />
       </KeyboardLift>
       <AskClaudePicker visible={picking} onClose={() => setPicking(false)} targets={targets} chosen={ask} onPick={setAsk} members={c?.members} />

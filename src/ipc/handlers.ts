@@ -28,6 +28,7 @@ import { FILES_EDIT_HANDLERS } from './files-handlers.js';
 import { COMPANION_HANDLERS } from './companion-handlers.js';
 import { ASSISTANT_HANDLERS } from './assistant-handlers.js';
 import { VOICE_HANDLERS } from './voice-handlers.js';
+import { TERMINAL_IMPORT_HANDLERS } from './terminal-import-handlers.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
@@ -203,6 +204,7 @@ export const HANDLERS = {
   'workbench.setModel': (s, channel, value) => (s.workbench ? s.workbench.setModel(channel, value) : s.setPrefs({ model: value || undefined })),
   'workbench.createPr': (s, id, extra) => bench(s)?.createPr(id, extra),
   'workbench.quickPr': (s, id, opts) => bench(s)?.quickPr(id, opts),
+  'workbench.gitFix': (s, id, fix, retry) => bench(s)?.gitFix(id, fix, retry),
   'workbench.fixChecks': (s, id) => bench(s)?.fixChecks(id),
   'workbench.resolvePrConflicts': (s, id) => bench(s)?.resolvePrConflicts(id),
   'workbench.continueAfterMerge': (s, id) => bench(s)?.continueAfterMerge(id),
@@ -311,6 +313,7 @@ export const HANDLERS = {
   ...COMPANION_HANDLERS,
   ...ASSISTANT_HANDLERS,
   ...VOICE_HANDLERS,
+  ...TERMINAL_IMPORT_HANDLERS,
 } satisfies Handlers;
 
 export type Result<M extends Method> = Awaited<ReturnType<(typeof HANDLERS)[M]>>;

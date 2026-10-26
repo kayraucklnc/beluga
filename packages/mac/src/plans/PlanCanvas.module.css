@@ -308,6 +308,7 @@
 .criterion[data-state='checking'] .criterionMark {
   border-color: color-mix(in srgb, var(--claude) 70%, transparent);
   border-top-color: transparent;
+  transform: rotate(var(--check-turn, 0deg));
 }
 .criterion[data-state='unmet'] .criterionMark {
   border-color: color-mix(in srgb, var(--error) 70%, transparent);

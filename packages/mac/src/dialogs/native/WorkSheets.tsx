@@ -18,6 +18,7 @@ import { ContinueSheet } from './ContinueSheet.js';
 import { CleanUpWorktreesAlert } from './CleanUpWorktrees.js';
 import { DeleteProjectAlert } from './DeleteProjectAlert.js';
 import { WorkConfirm } from './WorkConfirm.js';
+import { GitTroubleSheet } from './GitTroubleSheet.js';
 
 /** The folder and branch name Beluga makes from a name (as the core's `slug` does). */
 const slug = (name: string): string =>
@@ -189,6 +190,8 @@ export function NativeSheets() {
       return <SendBackSheet planId={sheet.planId} milestone={sheet.milestone} close={close} />;
     case 'plan_mode':
       return <PlanModeSheet key={sheet.planId} planId={sheet.planId} close={close} />;
+    case 'git_trouble':
+      return <GitTroubleSheet key={`${sheet.wsId}:${sheet.trouble.kind}`} wsId={sheet.wsId} trouble={sheet.trouble} retry={sheet.retry} close={close} />;
     case 'confirm':
       return (
         <Alert

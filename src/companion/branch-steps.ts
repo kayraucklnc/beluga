@@ -36,8 +36,11 @@ export async function branchStep(s: Session, topic: string, step: PhoneBranchSte
     case 'cancel_auto':
       return needBench().cancelMergeWhenReady(id);
     case 'update_branch':
-    case 'mark_ready':
-      return needBench().prStep(id, step === 'mark_ready' ? 'ready' : 'update_branch');
+    case 'mark_ready': {
+      // Trouble reaching GitHub comes as its plain sentence; the card with its fixes is on the Mac.
+      const r = await needBench().prStep(id, step === 'mark_ready' ? 'ready' : 'update_branch');
+      return { ok: r.ok, message: r.message };
+    }
     case 'resolve_pr':
       needBench().resolvePrConflicts(id);
       return claude('resolving the conflicts');
@@ -54,8 +57,10 @@ export async function branchStep(s: Session, topic: string, step: PhoneBranchSte
       await ws.commit(id);
       return { ok: true, message: 'Committed' };
     case 'pr':
-    case 'pr_draft':
-      return needBench().quickPr(id, step === 'pr_draft' ? { draft: true } : {});
+    case 'pr_draft': {
+      const r = await needBench().quickPr(id, step === 'pr_draft' ? { draft: true } : {});
+      return { ok: r.ok, message: r.message };
+    }
     case 'pr_claude':
       needBench().createPr(id);
       return claude('opening the pull request');

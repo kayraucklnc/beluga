@@ -32,7 +32,8 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
     trace: 'retain-on-failure',
     // Every spec starts past the first-run welcome (src/onboarding); e2e/onboarding.spec.ts clears this.
-    storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'beluga.onboarding.v1', value: JSON.stringify({ version: 'e2e', at: 0, how: 'finished' }) }] }] },
+    // And on Tasks' list (the board is the default since BLG-216; the specs pick it when they mean it).
+    storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'beluga.onboarding.v1', value: JSON.stringify({ version: 'e2e', at: 0, how: 'finished' }) }, { name: 'beluga.tasks.v2', value: JSON.stringify({ display: 'list' }) }] }] },
   },
   webServer: { command: `npx vite --port ${port} --strictPort`, url: `http://localhost:${port}`, reuseExistingServer: false, env: { BELUGA_HOME: process.env.KLAUD_HOME!, KLAUD_HOME: process.env.KLAUD_HOME! } },
 });

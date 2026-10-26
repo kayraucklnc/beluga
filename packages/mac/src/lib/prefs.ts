@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { DEFAULT_FIRE, type FireLook, fireLookOf } from '../chat/fire-look.js';
+import { type TermThemePref, themeOf } from './terminal-import-model.js';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
 /**
@@ -56,6 +57,10 @@ export interface UiPrefs {
   readonly termCursorBlink: boolean;
   /** Lines each terminal keeps to scroll back through. */
   readonly termScrollback: number;
+  /** Colours brought from another terminal (Settings › Terminal › Import from…); null: Beluga's own. */
+  readonly termTheme: TermThemePref | null;
+  /** Option sends Meta (Esc+) in the terminal, instead of typing special characters. */
+  readonly termOptionMeta: boolean;
   /** A file open full size wraps its long lines (instead of scrolling sideways). */
   readonly readerWrap: boolean;
   /** Chats open as tabs above the conversation (`dm:<peerId>` / `group:<id>`; the main channel is always first). */
@@ -130,6 +135,8 @@ export const DEFAULT_PREFS: UiPrefs = {
   termCursor: 'block',
   termCursorBlink: true,
   termScrollback: 5000,
+  termTheme: null,
+  termOptionMeta: true,
   readerWrap: false,
   chatTabs: [],
   changeLook: 'diff',
@@ -153,7 +160,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire) };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), termTheme: themeOf(saved.termTheme) };
   } catch {
     return DEFAULT_PREFS;
   }

@@ -19,6 +19,24 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
+  // Another terminal's look (BLG-212): skippable, Beluga's own until you pick one.
+  await expect(welcome.getByRole('heading', { name: 'Coming from another terminal?' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  // The fire: it starts on Arcade, a box to try it in, and None is right there.
+  const fire = (): Promise<{ preset: string; show: string; typing: string }> => page.evaluate(() => JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}').maxFire);
+  await expect(welcome.getByRole('heading', { name: 'Set your words on fire.' })).toBeVisible();
+  await expect(welcome.getByRole('radio', { name: 'Arcade' })).toHaveAttribute('aria-checked', 'true');
+  await welcome.getByRole('textbox', { name: 'Try the fire' }).fill('Hello');
+  await welcome.getByRole('radio', { name: 'Ghost' }).click();
+  await expect.poll(async () => (await fire()).preset).toBe('ghost');
+  await welcome.getByRole('radio', { name: 'None' }).click();
+  await expect.poll(async () => (await fire()).show).toBe('off');
+  await expect(welcome.getByRole('radio', { name: 'Everywhere' })).toHaveCount(0);
+  await welcome.getByRole('radio', { name: 'Arcade' }).click();
+  await expect.poll(async () => (await fire()).typing).toBe('pixels');
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+
   // The settings apply as they're changed.
   await welcome.getByRole('radio', { name: '⌘ Return' }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}').sendWith)).toBe('cmd-enter');
@@ -90,6 +108,10 @@ test('a permission macOS already allows shows as allowed, and the tour shows a r
   await expect(table.locator('tbody tr').first()).toContainText('Globex');
 
   await welcome.getByRole('button', { name: 'Skip Tour' }).click();
+  // The look, another terminal's look, the fire, the defaults.
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(welcome.getByRole('heading', { name: 'Set your words on fire.' })).toBeVisible();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(welcome.getByText('Allowed', { exact: true })).toBeVisible();

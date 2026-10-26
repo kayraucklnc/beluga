@@ -16,6 +16,7 @@ import { STATE, UnifiedDiff, useCommitItems, useFileItems } from '../../views/Di
 import { type ChangeLook, ChangedFileView, canShowFile, fileLookLabel, onlyAsFile, useChangeLocation } from '../../views/ChangedFile.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
+import { showGitTrouble } from '../../lib/git-trouble.js';
 import s from './panel.module.css';
 
 /** The last answer Claude finished in this workspace (its edits may have changed what's shown). */
@@ -111,7 +112,7 @@ function Actions({ wsId }: { wsId: string }) {
   const ahead = ws.status?.ahead ?? 0;
   const worktree = ws.kind === 'worktree';
   const run = (action: 'commit' | 'pr' | 'review_claude'): void => actions.run({ type: 'ws', id: wsId, action });
-  const quick = (draft = false): void => void whileBusy(wsId, () => api.workbench.quickPr(wsId, draft ? { draft: true } : {}));
+  const quick = (draft = false): void => void whileBusy(wsId, async () => showGitTrouble(wsId, await api.workbench.quickPr(wsId, draft ? { draft: true } : {}), draft ? 'pr_draft' : 'pr'));
   return (
     <div className={s.actions}>
       {worktree && changed ? (

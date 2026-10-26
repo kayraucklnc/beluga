@@ -58,16 +58,22 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
  * just the icons, each named in its tooltip.
  */
 /** `radio`: a choice of how to show one thing (a radio group), not tabs of their own. */
-export function Segmented<T extends string>({ value, options, onChange, label, iconOnly, radio }: { value: T; options: ReadonlyArray<{ value: T; label: string; hint?: string; icon?: IconName; keys?: string }>; onChange: (v: T) => void; label: string; iconOnly?: boolean; radio?: boolean }) {
+/** `count`: a number after the label, in a quieter tone (`data-count`, so a narrow toolbar can drop it). */
+export function Segmented<T extends string>({ value, options, onChange, label, iconOnly, radio }: { value: T; options: ReadonlyArray<{ value: T; label: string; hint?: string; icon?: IconName; keys?: string; count?: number }>; onChange: (v: T) => void; label: string; iconOnly?: boolean; radio?: boolean }) {
   return (
     <div className={s.segmented} role={radio ? 'radiogroup' : 'tablist'} aria-label={label}>
       {options.map((o) => {
         const bare = iconOnly && o.icon;
         return (
           <Tip key={o.value} label={bare ? `${o.label}${o.hint ? ` · ${o.hint}` : ''}` : (o.hint ?? o.label)} {...(o.keys ? { keys: o.keys } : {})}>
-            <button type="button" role={radio ? 'radio' : 'tab'} aria-label={bare ? o.label : undefined} {...(radio ? { 'aria-checked': o.value === value } : { 'aria-selected': o.value === value })} className={cx(s.segment, o.value === value && s.segmentOn, bare && s.segmentIcon)} onClick={() => onChange(o.value)}>
+            <button type="button" role={radio ? 'radio' : 'tab'} aria-label={bare ? o.label : o.count ? `${o.label} ${o.count}` : undefined} {...(radio ? { 'aria-checked': o.value === value } : { 'aria-selected': o.value === value })} className={cx(s.segment, o.value === value && s.segmentOn, bare && s.segmentIcon)} onClick={() => onChange(o.value)}>
               {o.icon ? <Icon name={o.icon} size={13} /> : null}
               {bare ? null : o.label}
+              {bare || !o.count ? null : (
+                <span className={s.segmentCount} data-count="">
+                  {o.count}
+                </span>
+              )}
             </button>
           </Tip>
         );

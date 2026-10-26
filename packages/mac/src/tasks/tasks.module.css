@@ -230,10 +230,12 @@
   overflow: hidden;
   container: tasks / inline-size;
 }
+/* One row at every width: as the panel narrows, the pickers shrink, then the counts, the filter
+   and New Task's word go (container queries below), rather than the bar breaking onto two rows. */
 .bar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px 16px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--hairline);
@@ -243,12 +245,29 @@
 .barGroup {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   min-width: 0;
 }
 .barGroup > * {
   flex-shrink: 0;
+}
+/* The who / worktree pickers give way first. */
+.barGroup > button[aria-haspopup='listbox'] {
+  flex-shrink: 1;
+  min-width: 56px;
+}
+/* Narrower than everything at its smallest: the filters slide sideways under the actions, never over them. */
+.barFilters {
+  flex: 0 1 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* Room for the focus rings the scroll box would clip. */
+  padding: 3px;
+  margin: -3px;
+}
+.barFilters::-webkit-scrollbar {
+  display: none;
 }
 .barActions {
   margin-left: auto;
@@ -262,6 +281,7 @@
 }
 .barActions {
   flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 .find {
   display: flex;
@@ -1680,6 +1700,49 @@
   }
   .row .meta .label:nth-of-type(n + 2) {
     display: none;
+  }
+}
+/* As the panel narrows: first the filter folds to its glass and New Task to its plus, then the
+   counts and the project's name go (its icon still opens the menu), then the tabs tighten. */
+@container tasks (max-width: 1000px) {
+  .bar {
+    gap: 8px 10px;
+  }
+  .newTask {
+    padding: 0 7px;
+  }
+  .newTask > span {
+    display: none;
+  }
+  .barGroup > .find {
+    flex: 0 0 auto;
+    min-width: 0;
+    width: 30px;
+    padding: 0 8px;
+    transition: width 160ms var(--ease-out);
+  }
+  .barGroup > .find > svg {
+    flex: none;
+  }
+  .barGroup > .find:focus-within,
+  .barGroup > .find:has(input:not(:placeholder-shown)) {
+    width: 130px;
+  }
+  .barGroup > .find input::placeholder {
+    color: transparent;
+  }
+}
+@container tasks (max-width: 760px) {
+  .bar [data-count],
+  .projectName {
+    display: none;
+  }
+  .projectSwitch {
+    padding: 0 6px;
+    margin-right: 0;
+  }
+  .bar [role='tablist'] > button {
+    padding: 0 7px;
   }
 }
 @container tasks (max-width: 600px) {

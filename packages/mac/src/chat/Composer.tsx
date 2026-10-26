@@ -24,6 +24,7 @@ import { useAttachments } from './use-attachments.js';
 import { MentionHighlighter } from './MentionHighlighter.js';
 import { useSuggestions } from './Suggestions.js';
 import { useMentionWorld, worktreeOf } from './Mention.js';
+import { useSkills } from './use-skills.js';
 import { MentionedTasks } from './MentionedTasks.js';
 import { DictationStrip, MicButton } from './Dictation.js';
 import { useDictationTarget } from '../lib/dictation.js';
@@ -172,6 +173,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   }, [wsId, atDir, state.selfId]);
   // "@BLG-24": a task on your board (not in a workspace someone shared with you: their Claude has its own).
   const mentionWorld = useMentionWorld(channel, { tasks: !shared });
+  // "/fron…": Claude's skills and custom commands here, beside Beluga's commands.
+  const skills = useSkills(channel, !shared && buffer.startsWith('/') && !buffer.includes(' '));
 
   // Suggestions as you type: commands, people and Claudes, workspaces, folders, tasks.
   const suggestions: Suggestion[] = useMemo(
@@ -188,8 +191,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             projects: state.projects.filter((p) => p.root),
             ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
             ...(mentionWorld.tasks ? { tasks: mentionWorld.tasks } : {}),
+            skills,
           }),
-    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId, mentionWorld.tasks],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId, mentionWorld.tasks, skills],
   );
   const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 

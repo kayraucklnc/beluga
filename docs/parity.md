@@ -253,6 +253,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `voice.models` | Settings › Voice: the models on this Mac, here or coming |
 | `voice.prepare` | Settings › Voice › Get now |
 | `voice.transcribe` | The composer's microphone beside Send, and the talk shortcut (Settings › Voice) |
+| `terminalImport.detect` | Settings › Terminal › Import from… (Ghostty, iTerm2, Terminal, Alacritty, kitty, WezTerm, Warp), and the welcome's “Coming from another terminal?” step |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |
@@ -304,6 +305,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.setModel` | ✓ |
 | `workbench.createPr` | ✓ |
 | `workbench.quickPr` | ✓ the toolbar's Create PR (and Create Draft PR under its chevron), the Changes panel's Create PR |
+| `workbench.gitFix` | ✓ the GitHub trouble card that a failed Create PR, Merge or Update Branch opens (Push over HTTPS, Log In to GitHub, Install GitHub CLI, the SSH steps under •••) |
 | `workbench.fixChecks` | ✓ |
 | `workbench.resolvePrConflicts` | ✓ Resolve Merge Conflicts… (toolbar, PR sheet, the PR strip above the chat) when GitHub says the PR conflicts |
 | `workbench.continueAfterMerge` | ✓ Continue After Merge… (⋯, PR sheet, the PR strip) once the PR merged |
@@ -463,6 +465,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `claudeCode.outputs` | ✓ a sub-agent's Outputs tab: the screenshots, test output, logs and JSON it made or looked at (from its transcript, wherever it put them, plus its own `.beluga/scratch/agents/<name>/`), still on disk, newest first |
 | `claudeCode.output` | ✓ looking at one of them: pictures inline (GIFs animate), videos playing inline up to 64 MB, text with secrets redacted (only files that agent made or looked at) |
 | `claudeCode.taskOutput` | ✓ following a background command or watch Claude or a sub-agent started (the panel's Background tab, below the terminal; a sub-agent's Background): the end of its output, live, cleaned of terminal codes and secrets; its own log when it writes to one |
+| `claudeCode.skills` | ✓ the message box's / list: the skills and custom commands Claude can use in this conversation (the project's, yours, your plugins'), each with its description |
 | `agent.steps` | ✓ a Claude card's steps as disclosure rows (an icon per tool, ✓/✗, how long it took), thinking as “Thought for 12s”, sub-agents' steps |
 | `agent.step` | ✓ opening a step on a Claude card: Bash's command and output (colours kept), the file read, an edit's diff, a search's matches, a page fetched, an MCP tool's input and output as JSON, the thinking |
 | `view.fetch` | ✓ a live table, chart, stats or code view in a conversation fetching its next page, sorted or searched, or refreshing it (docs/views.md) |
@@ -504,7 +507,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | A workspace's screen: the conversation always in the center; a right panel (⌥⌘0, resizable, its tab remembered per workspace; in two panes split where you drag it: what Claude made on top (Changes, Files, Scratch, Info) and what runs below (Terminal, Background; it folds to its tabs); drag a tab to the other pane or right-click › Move to Bottom / Top, Reset Panel Layout; tabs always named; History is Changes' second view; a dot on Scratch when Claude saves something new) with Changes (files with +/−, the diff inline or the file as itself — Markdown formatted, pictures and PDFs always as themselves — Show in Files, Commit / PR / Review), Files (a tree you filter by name, a preview with PDFs drawn page by page, Show Changes on a changed file), Terminal (the workspace's shells, setup and run) and Info (the inspector); a calm toolbar (what the workspace needs next, Run, ⋯ in sections: git steps, the conversation, the folder, putting it away; then Search, the bell, the panel); ⌘J types in the terminal, and puts it away when you're already typing there; Claude's steps fold away once it answers (Show Steps on the answer, Settings › Chat to keep them); ⌘J's terminal in that panel or a drawer under the chat; a diff, file or the terminal in full for a while (⌘↩, Esc back) | Mac (`layout/RightPanel.tsx`, `layout/panel/*`, `lib/panel.ts`) |
 | Dock badge, clicking a desktop notification to go where it's about | Mac |
 | Marking one notification unread again | Mac (hover a notification) |
-| First-run welcome: a six-part animated tour (parallel worktrees, live agents, the table weave: Claude picks Postgres, connects and answers with a real, sortable table view, friends, earnings, archive), then the look and a few shared settings; the macOS permissions one a step, each optional (Not Now, Skip Permissions) with why in a sentence, whether Beluga has it, and a button to its System Settings pane: Screen Recording, Accessibility, Full Disk Access, Automation (`privacy_access`, `privacy_request` in `src-tauri/src/privacy.rs`); notifications (allowed or not); the Android phone app with Pair a Phone… (`companion.pair.start`) and where to get it; once per Mac, never after an update; Help › Welcome to Beluga shows it again | Mac (`onboarding/*`, `lib/privacy.ts`) |
+| First-run welcome: a six-part animated tour (parallel worktrees, live agents, the table weave: Claude picks Postgres, connects and answers with a real, sortable table view, friends, earnings, archive), then the look, the message box’s fire (Arcade, Ghost or None, tried in a live box) and a few shared settings; the macOS permissions one a step, each optional (Not Now, Skip Permissions) with why in a sentence, whether Beluga has it, and a button to its System Settings pane: Screen Recording, Accessibility, Full Disk Access, Automation (`privacy_access`, `privacy_request` in `src-tauri/src/privacy.rs`); notifications (allowed or not); the Android phone app with Pair a Phone… (`companion.pair.start`) and where to get it; once per Mac, never after an update; Help › Welcome to Beluga shows it again | Mac (`onboarding/*`, `lib/privacy.ts`) |
 | Local UI preferences (appearance, accent, text size, density, widths) | Mac (`lib/prefs.ts`) |
 | Terminal look (font, size, line height, cursor style and blink, scrollback) | Mac (`lib/prefs.ts`, Settings › Terminal) |
 | Environment variable editor (masked values, paste KEY=value lines, per-project scope, load the project's .env) | Mac (Settings › Environment) |

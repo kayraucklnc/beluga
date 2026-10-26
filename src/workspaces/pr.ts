@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { PrCheck, PullRequest } from '../core/work-store.js';
 import { belugaHome } from './store.js';
 import { belugaEnv } from '../core/beluga-env.js';
+import { type GitSetup, httpsRemoteOf } from '../shared/git-trouble.js';
 export { describePr } from '../shared/format.js';
 
 /**
@@ -101,22 +102,86 @@ export const catchUpPrompt = (pr: PullRequest, base: string): string =>
 export const fixChecksPrompt = (pr: PullRequest): string =>
   `The checks on pull request #${pr.number} (${pr.url}) are failing. Use gh pr checks ${pr.number} and gh run view --log-failed to find out why, fix it, run the tests, commit and push. Then say what was wrong.`;
 
+// Never wait on a username prompt nobody can answer (the daemon has no terminal): fail and say so.
+const QUIET_ENV = { GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
+
 const run = (cmd: string, args: readonly string[], cwd: string, timeoutMs = 20_000): Promise<string> =>
   new Promise((resolve, reject) => {
-    execFile(cmd, [...args], { cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => (err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)));
+    execFile(cmd, [...args], { cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, ...QUIET_ENV } }, (err, stdout, stderr) => (err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)));
   });
 
-/** The GitHub CLI to run: `gh`, or BELUGA_GH (the Mac app's end-to-end tests point it at a stand-in). */
-const gh = (): string => belugaEnv('GH') || 'gh';
+/** Where Homebrew puts programs: a Mac app started from the Dock gets a PATH without them. */
+export const HOMEBREW_BINS = ['/opt/homebrew/bin', '/usr/local/bin'] as const;
 
-let ghReady: Promise<boolean> | undefined;
-/** Whether the GitHub CLI is installed and signed in (checked once). */
-export function hasGh(): Promise<boolean> {
+/** The first `name` on `pathEnv` or in Homebrew's folders, as a full path (undefined: none). */
+export function findTool(name: string, pathEnv = process.env.PATH ?? '', exists: (file: string) => boolean = existsSync): string | undefined {
+  const dirs = [...pathEnv.split(':').filter(Boolean), ...HOMEBREW_BINS];
+  for (const dir of [...new Set(dirs)]) {
+    const file = path.join(dir, name);
+    if (exists(file)) return file;
+  }
+  return undefined;
+}
+
+/** How to run `name`: by its name when it's on PATH, else its full path in Homebrew's folders (else the name, which fails with ENOENT). */
+export function toolCommand(name: string, pathEnv = process.env.PATH ?? '', exists: (file: string) => boolean = existsSync): string {
+  const found = findTool(name, pathEnv, exists);
+  return found && !pathEnv.split(':').includes(path.dirname(found)) ? found : name;
+}
+
+/** The GitHub CLI to run: BELUGA_GH (the Mac app's end-to-end tests point it at a stand-in), else gh on PATH or in Homebrew's folders. */
+const gh = (): string => belugaEnv('GH') || toolCommand('gh');
+
+export type GhState = 'ok' | 'logged_out' | 'missing';
+let ghReady: Promise<GhState> | undefined;
+/** The GitHub CLI: installed and logged in, installed but logged out, or missing (checked once; forgetGh asks again). */
+export function ghState(): Promise<GhState> {
   ghReady ??= run(gh(), ['auth', 'status'], process.cwd(), 8000).then(
-    () => true,
-    () => false,
+    (): GhState => 'ok',
+    (err: unknown): GhState => (/ENOENT/.test(err instanceof Error ? err.message : String(err)) ? 'missing' : 'logged_out'),
   );
   return ghReady;
+}
+
+/** Whether the GitHub CLI is installed and signed in (checked once). */
+export const hasGh = (): Promise<boolean> => ghState().then((s) => s === 'ok');
+
+/** Ask about gh again next time (it was just installed or logged in to). */
+export function forgetGh(): void {
+  ghReady = undefined;
+}
+
+/** What Beluga knows about this Mac's way to GitHub from `dir`: gh, Homebrew, the origin remote (for explainGitTrouble). */
+export async function gitSetup(dir: string): Promise<GitSetup> {
+  const [state, remote] = await Promise.all([ghState(), run('git', ['remote', 'get-url', 'origin'], dir, 5000).then((u) => u.trim() || undefined, () => undefined)]);
+  const brew = findTool('brew');
+  const ghCommand = gh();
+  return {
+    gh: state,
+    ...(brew ? { brew: path.dirname(brew) } : {}),
+    // The terminal's own PATH usually has it; a full path when it's only in Homebrew's folder.
+    ...(ghCommand !== 'gh' ? { ghCommand } : {}),
+    ...(remote ? { remote } : {}),
+  };
+}
+
+/** git's options that make one command use gh's GitHub login (nothing is saved). */
+const ghCredentials = (): string[] => ['-c', 'credential.helper=', '-c', `credential.helper=!"${gh()}" auth git-credential`];
+
+/**
+ * Switch a project's origin to HTTPS for good, with gh's login for it in that repository only
+ * (asked first, on the Mac). Returns the URL it had, so it can be changed back.
+ */
+export async function useHttpsRemote(dir: string): Promise<{ from: string; to: string }> {
+  const from = (await run('git', ['remote', 'get-url', 'origin'], dir, 5000)).trim();
+  const to = httpsRemoteOf(from);
+  if (!to) throw new Error(`origin isn’t an SSH address Beluga can turn into HTTPS (${from})`);
+  await run('git', ['remote', 'set-url', 'origin', to], dir, 5000);
+  const key = `credential.${new URL(to).origin}.helper`;
+  // An empty helper first: only gh's answers for this host here (a stale keychain password won't be tried first).
+  await run('git', ['config', '--local', '--replace-all', key, ''], dir, 5000);
+  await run('git', ['config', '--local', '--add', key, `!"${gh()}" auth git-credential`], dir, 5000);
+  return { from, to };
 }
 
 /** One entry of gh's statusCheckRollup: a CheckRun (Actions job) or a StatusContext (commit status). */
@@ -251,20 +316,46 @@ export const PR_LIST_LIMIT = 60;
  * there is new: it's replaced, with a lease on that very commit so anything pushed since is never
  * lost. Any other refusal says git's reason, not its first line ("To https://github.com/…").
  */
-export async function pushForPr(dir: string, head: string): Promise<'pushed' | 'replaced'> {
+export async function pushForPr(dir: string, head: string, opts: { readonly https?: boolean } = {}): Promise<'pushed' | 'replaced'> {
+  // Over HTTPS with gh's login, this once (the SSH key isn't working): to origin's HTTPS address, origin itself unchanged.
+  const url = opts.https ? httpsRemoteOf((await run('git', ['remote', 'get-url', 'origin'], dir, 5000)).trim()) : undefined;
+  if (opts.https && !url) throw new Error('origin isn’t an SSH address Beluga can push to over HTTPS');
+  const to = url ?? 'origin';
+  const pre = url ? ghCredentials() : [];
+  const push = (...args: string[]): Promise<string> => run('git', [...pre, 'push', ...(url ? [] : ['-u']), ...args, to, `${head}:${head}`], dir, 120_000);
+  // Pushed to a URL, git doesn't move origin/<head> or set the upstream: do it, so the branch reads as pushed.
+  const track = async (): Promise<void> => {
+    if (!url) return;
+    const sha = (await run('git', ['rev-parse', head], dir, 5000).catch(() => '')).trim();
+    if (sha) await run('git', ['update-ref', `refs/remotes/origin/${head}`, sha], dir, 5000).catch(() => undefined);
+    await run('git', ['branch', `--set-upstream-to=origin/${head}`, head], dir, 5000).catch(() => undefined);
+  };
   try {
-    await run('git', ['push', '-u', 'origin', `${head}:${head}`], dir, 120_000);
+    await push();
+    await track();
     return 'pushed';
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
-    if (!/non-fast-forward|\[rejected\]|fetch first/.test(why)) throw new Error(pushWhy(why));
-    const remote = (await run('git', ['ls-remote', 'origin', `refs/heads/${head}`], dir, 30_000).catch(() => '')).trim().split(/\s+/)[0];
+    if (!/non-fast-forward|\[rejected\]|fetch first/.test(why)) throw new PushError(pushWhy(why), why);
+    const remote = (await run('git', [...pre, 'ls-remote', to, `refs/heads/${head}`], dir, 30_000).catch(() => '')).trim().split(/\s+/)[0];
     const last = await mergedHead(dir, head);
     if (!remote || !last || last !== remote) throw new Error(`GitHub has commits on ${head} that this worktree doesn’t: bring them in first (git pull), or check who pushed there`);
-    await run('git', ['push', '-u', `--force-with-lease=${head}:${remote}`, 'origin', `${head}:${head}`], dir, 120_000).catch((again: unknown) => {
-      throw new Error(pushWhy(again instanceof Error ? again.message : String(again)));
+    await push(`--force-with-lease=${head}:${remote}`).catch((again: unknown) => {
+      const raw = again instanceof Error ? again.message : String(again);
+      throw new PushError(pushWhy(raw), raw);
     });
+    await track();
     return 'replaced';
+  }
+}
+
+/** A failed push: git's reason in a line, and all it said (to tell SSH or login trouble from the rest). */
+export class PushError extends Error {
+  constructor(
+    message: string,
+    readonly raw: string,
+  ) {
+    super(message);
   }
 }
 
@@ -440,9 +531,11 @@ export async function unpushedCommits(dir: string, branch: string, remote = 'ori
 }
 
 /** Push `head` and open a pull request for it into `base` (a plan's branch → main) → the pull request. */
-export async function createPr(dir: string, pr: { readonly base: string; readonly head: string; readonly title: string; readonly body: string; readonly draft?: boolean }): Promise<PullRequest> {
-  if (!(await hasGh())) throw new Error('Opening a pull request needs the GitHub CLI (gh), signed in');
-  await pushForPr(dir, pr.head);
+export async function createPr(dir: string, pr: { readonly base: string; readonly head: string; readonly title: string; readonly body: string; readonly draft?: boolean; readonly https?: boolean }): Promise<PullRequest> {
+  const state = await ghState();
+  if (state === 'missing') throw new Error('The GitHub CLI (gh) isn’t installed');
+  if (state === 'logged_out') throw new Error('The GitHub CLI isn’t logged in: gh auth login');
+  await pushForPr(dir, pr.head, pr.https ? { https: true } : {});
   const existing = await findPr(dir, pr.head).catch(() => undefined);
   if (existing?.state === 'OPEN') return existing;
   await run(gh(), ['pr', 'create', '--base', pr.base, '--head', pr.head, '--title', pr.title, '--body', pr.body, ...(pr.draft ? ['--draft'] : [])], dir, 60_000);

@@ -280,3 +280,54 @@
     animation-duration: 2400ms;
   }
 }
+
+/* A worktree's sub-agents fold under it: the arrow sits in the gutter left of its icon (its icon
+   stays in line with its neighbours'), quiet until you point at the row. */
+.foldIcon {
+  position: relative;
+  display: inline-flex;
+}
+.agentFold {
+  position: absolute;
+  left: -15px;
+  top: 50%;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+  margin-top: -9px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  cursor: default;
+}
+.agentFold:hover {
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+.agentDisclosure {
+  opacity: 0.55;
+  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast);
+}
+.row:hover .agentDisclosure,
+.agentFold:focus-visible .agentDisclosure {
+  opacity: 1;
+}
+.agentDisclosureOpen {
+  transform: rotate(90deg);
+}
+.agentCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+  color: var(--text-3);
+  font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
+}
+.agentCount svg {
+  color: var(--claude);
+  opacity: 0.7;
+}

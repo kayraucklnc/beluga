@@ -20,6 +20,7 @@ import { FILES_EDIT_API } from './files-api.js';
 import { COMPANION_API } from './companion-api.js';
 import { ASSISTANT_API } from './assistant-api.js';
 import { VOICE_API } from './voice-api.js';
+import { TERMINAL_IMPORT_API } from './terminal-import-api.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -258,8 +259,11 @@ export const API = {
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
   'workbench.createPr': args(id, opt(str)),
-  // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message }.
-  'workbench.quickPr': args(id, opt(z.object({ draft: opt(bool) }).strict())),
+  // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message, trouble? }.
+  // https: push this once over HTTPS with gh's login (the SSH key isn't working; origin stays as it is).
+  'workbench.quickPr': args(id, opt(z.object({ draft: opt(bool), https: opt(bool) }).strict())),
+  // A fix from a GitHub trouble card (BLG-213), then Create PR again ('pr', 'pr_draft') or nothing ('none') → { ok, message, trouble? }.
+  'workbench.gitFix': args(id, z.enum(['push_https', 'use_https', 'install_gh', 'gh_login', 'add_ssh_key', 'check_host', 'retry']), opt(z.enum(['pr', 'pr_draft', 'none']))),
   'workbench.fixChecks': args(id),
   'workbench.resolvePrConflicts': args(id),
   'workbench.continueAfterMerge': args(id),
@@ -356,6 +360,8 @@ export const API = {
   ...ASSISTANT_API,
   // ---- speaking instead of typing: the Mac writes it down (voice-api.ts)
   ...VOICE_API,
+  // ---- bringing another terminal's look into Beluga's (terminal-import-api.ts)
+  ...TERMINAL_IMPORT_API,
 } as const;
 
 export type Api = typeof API;

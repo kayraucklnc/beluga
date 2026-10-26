@@ -16,7 +16,7 @@ const tuneOf = (look: FireLook): FireTune => ({ style: look.style, show: look.sh
  * you took out into pixels. How it all looks is Settings › Max Fire (`look` overrides it, for that
  * page's preview). With reduced motion only the rim stays (see max.module.css).
  */
-export function MaxFire({ box, input, look: given }: { box: RefObject<HTMLDivElement | null>; input: RefObject<HTMLTextAreaElement | null>; look?: FireLook }) {
+export function MaxFire({ box, input, look: given }: { box: RefObject<HTMLElement | null>; input: RefObject<HTMLTextAreaElement | null>; look?: FireLook }) {
   const behind = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
   const fire = useRef<Fire | undefined>(undefined);

@@ -8,7 +8,7 @@ import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
-import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, prStep, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, listPrs, useHttpsRemote, mergePr, prStep, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
 import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -18,6 +18,7 @@ import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
 import type { ModelChoice, PullRequest } from './work-store.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
+import { type GitFixId, type GitSetup, type GitTrouble, explainGitTrouble, httpsRemoteOf, troubleLine } from '../shared/git-trouble.js';
 
 export interface WorkbenchDeps {
   readonly store: Store;
@@ -57,6 +58,10 @@ export interface WorkbenchDeps {
   /** The clock (injected in tests). */
   readonly now?: () => number;
   readonly hasGh?: () => Promise<boolean>;
+  /** This Mac's way to GitHub from a folder: gh, Homebrew, the remote (injected in tests). */
+  readonly gitSetup?: (dir: string) => Promise<GitSetup>;
+  /** Switch a project's origin to HTTPS (injected in tests). */
+  readonly useHttpsRemote?: (dir: string) => Promise<{ from: string; to: string }>;
   readonly measure?: (dir: string) => Promise<number | undefined>;
   /** Your environment variables for something starting there (see env-vars.ts). */
   readonly envFor?: (where: EnvPlace) => Record<string, string>;
@@ -109,8 +114,8 @@ export function fixFailedPrompt(kind: 'setup' | 'run', command: string, code: nu
     .join('\n\n');
 }
 
-export { shellId, setupId, runId, globalShellId, isGlobalShell, globalShellNumber, globalShellDir } from '../shared/terminal-keys.js';
-import { runId, setupId, shellId, isGlobalShell, globalShellNumber, cleanTerminalName } from '../shared/terminal-keys.js';
+export { shellId, setupId, runId, githubId, globalShellId, isGlobalShell, globalShellNumber, globalShellDir } from '../shared/terminal-keys.js';
+import { githubId, runId, setupId, shellId, isGlobalShell, globalShellNumber, cleanTerminalName } from '../shared/terminal-keys.js';
 
 /**
  * What changed about a pull request that's worth telling you. A PR showing up is only news
@@ -142,7 +147,20 @@ export function prCadence(pr: PullRequest | undefined, pushedAt: number | undefi
  * How a merge on GitHub went: `merged` now, or `queued` (auto-merge is on, or the repository's
  * merge queue took it); else why not, in words you can act on.
  */
-export type MergeOutcome = { readonly ok: true; readonly result: 'merged' | 'queued'; readonly message: string } | { readonly ok: false; readonly reason: MergeProblem | 'no_pr' | 'busy' | 'unpushed'; readonly message: string };
+export type MergeOutcome = { readonly ok: true; readonly result: 'merged' | 'queued'; readonly message: string } | { readonly ok: false; readonly reason: MergeProblem | 'no_pr' | 'busy' | 'unpushed' | 'github'; readonly message: string; readonly trouble?: GitTrouble };
+
+/** How a GitHub step went; `trouble`: it couldn't reach GitHub, and what can fix that (the Mac shows it as a card). */
+export interface GitHubOutcome {
+  readonly ok: boolean;
+  readonly message: string;
+  readonly trouble?: GitTrouble;
+}
+
+/** What to do again once a fix worked: Create PR (as a draft), or nothing (say it's fixed). */
+export type GitRetry = 'pr' | 'pr_draft' | 'none';
+
+/** How long a terminal step (installing gh, logging in) may take before Beluga stops waiting for it. */
+const GITHUB_STEP_MS = 15 * 60_000;
 
 /** Run `tasks`, at most `limit` at a time. */
 async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number): Promise<void> {
@@ -155,6 +173,8 @@ async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number):
 
 const samePr = (a: PullRequest | undefined, b: PullRequest | undefined): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+/** All an error said (a push's whole output, not just its line). */
+const rawOf = (err: unknown): string => (err && typeof err === 'object' && 'raw' in err && typeof err.raw === 'string' ? err.raw : err instanceof Error ? err.message : String(err));
 /** An error's first line ("no reason given" when it has none). */
 const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split('\n').find((l) => l.trim())?.trim() ?? 'no reason given';
 /** Variables as text in one order, to tell whether they changed (kept only in memory, on this Mac). */
@@ -190,6 +210,10 @@ export class Workbench {
   private polling = false;
   /** Focus and push looks asked for while a look ran (or before the first): they run right after, never dropped. */
   private pollQueue: Array<{ reason: 'focus' | 'push'; id?: string }> = [];
+  /** The last trouble reaching GitHub per worktree (what a fix that went through the terminal retries with). */
+  private readonly troubles = new Map<string, GitTrouble>();
+  /** Worktrees waiting on a GitHub step in the terminal (installing gh, logging in). */
+  private readonly githubSteps = new Map<string, () => void>();
   /** Worktrees whose PR is being merged right now. */
   private readonly merging = new Set<string>();
   /** Projects Claude is working out the commands of right now (one look each, shared by the worktrees waiting on it). */
@@ -281,7 +305,7 @@ export class Workbench {
    * Create PR, straight away and without Claude: commits anything left (as the branch's name),
    * pushes, and opens a pull request titled from the commits (`gh pr create`).
    */
-  async quickPr(id: string, opts: { readonly draft?: boolean } = {}): Promise<{ ok: boolean; message: string }> {
+  async quickPr(id: string, opts: { readonly draft?: boolean; readonly https?: boolean } = {}): Promise<GitHubOutcome> {
     const fail = (message: string): { ok: false; message: string } => {
       this.deps.toast(message, 'error');
       return { ok: false, message };
@@ -289,8 +313,11 @@ export class Workbench {
     const ws = this.worktree(id);
     if (!ws?.branch) return { ok: false, message: 'Pull requests are for worktrees (a branch of their own)' };
     if (this.deps.store.getState().gh === false) {
-      this.deps.toast('Install the GitHub CLI first: brew install gh, then gh auth login', 'warn');
-      return { ok: false, message: 'Install the GitHub CLI first: brew install gh, then gh auth login' };
+      // Maybe it was installed or logged in to since: ask again before saying it isn't.
+      forgetGh();
+      const state = this.deps.hasGh ? ((await this.deps.hasGh()) ? 'ok' : 'logged_out') : await ghState();
+      if (state !== 'ok') return this.troubleOr(ws, new Error(state === 'missing' ? 'The GitHub CLI (gh) isn’t installed' : 'The GitHub CLI isn’t logged in: gh auth login'), 'GitHub didn’t open the pull request');
+      this.deps.store.dispatch({ type: 'gh', ok: true });
     }
     if (this.creatingPr.has(id)) return { ok: false, message: 'The pull request is already being opened' };
     this.creatingPr.add(id);
@@ -307,10 +334,11 @@ export class Workbench {
       const text = prFromCommits(branch, subjects);
       let pr: PullRequest;
       try {
-        pr = await (this.deps.createPr ?? createPr)(ws.path, { base, head: branch, ...text, ...(opts.draft ? { draft: true } : {}) });
+        pr = await (this.deps.createPr ?? createPr)(ws.path, { base, head: branch, ...text, ...(opts.draft ? { draft: true } : {}), ...(opts.https ? { https: true } : {}) });
       } catch (err) {
-        return fail(`GitHub didn’t open the pull request: ${firstLine(err)}`);
+        return this.troubleOr(ws, err, 'GitHub didn’t open the pull request');
       }
+      this.troubles.delete(id);
       this.pushedAt.set(id, this.now());
       this.deps.store.dispatch({ type: 'pr', id, pr });
       void this.deps.controller.refresh();
@@ -320,6 +348,111 @@ export class Workbench {
     } finally {
       this.creatingPr.delete(id);
     }
+  }
+
+  /** A GitHub step's error as trouble reaching GitHub (with the fixes this Mac can use), if it is that. */
+  private async troubleOf(ws: Workspace, err: unknown): Promise<GitTrouble | undefined> {
+    const raw = rawOf(err);
+    // Most errors aren't (a conflict, a rule): only then is the setup looked at.
+    if (!explainGitTrouble(raw)) return undefined;
+    const setup = await (this.deps.gitSetup ?? gitSetup)(ws.path).catch((): GitSetup => ({ gh: 'unknown' }));
+    const trouble = explainGitTrouble(raw, setup);
+    if (trouble) this.troubles.set(ws.id, trouble);
+    return trouble;
+  }
+
+  /** Fail with the trouble's plain words and its fixes, or else "<what>: <git's line>". Toasts either way. */
+  private async troubleOr(ws: Workspace, err: unknown, what: string): Promise<GitHubOutcome> {
+    const trouble = await this.troubleOf(ws, err);
+    if (trouble) {
+      // The toast is the title (the Mac shows the card too); the phone gets the line.
+      this.deps.toast(trouble.title, 'warn');
+      return { ok: false, message: troubleLine(trouble), trouble };
+    }
+    const message = `${what}: ${firstLine(err)}`;
+    this.deps.toast(message, 'error');
+    return { ok: false, message };
+  }
+
+  /**
+   * One of the fixes a GitHub trouble card offers (see shared/git-trouble.ts), then `retry`.
+   * Push over HTTPS pushes this once with gh's login; Always Use HTTPS (the Mac asks first) changes
+   * origin; installing gh, logging in and the SSH steps run in the worktree's GitHub terminal, where
+   * you see and answer them, and once they finish well it's tried again.
+   */
+  async gitFix(id: string, fix: GitFixId, retry: GitRetry = 'pr'): Promise<GitHubOutcome> {
+    const ws = this.worktree(id);
+    if (!ws?.branch) return { ok: false, message: 'Pull requests are for worktrees (a branch of their own)' };
+    const draft = retry === 'pr_draft';
+    const again = (https = false): Promise<GitHubOutcome> => {
+      if (retry !== 'none') return this.quickPr(id, { ...(draft ? { draft: true } : {}), ...(https ? { https: true } : {}) });
+      const message = 'GitHub is set up: try it again';
+      this.deps.toast(message, 'success');
+      return Promise.resolve({ ok: true, message });
+    };
+    switch (fix) {
+      case 'retry':
+        return again();
+      case 'push_https':
+        return again(true);
+      case 'use_https': {
+        try {
+          const { from, to } = await (this.deps.useHttpsRemote ?? useHttpsRemote)(ws.path);
+          this.deps.toast(`origin is ${to} now (it was ${from})`, 'success');
+        } catch (err) {
+          const message = `Couldn’t switch origin to HTTPS: ${firstLine(err)}`;
+          this.deps.toast(message, 'error');
+          return { ok: false, message };
+        }
+        return again();
+      }
+      case 'link':
+        return { ok: false, message: 'Links open on the Mac' };
+      case 'install_gh':
+      case 'gh_login':
+      case 'add_ssh_key':
+      case 'check_host':
+        return this.githubStep(ws, fix, again);
+    }
+  }
+
+  /** Run a fix's command in the worktree's GitHub terminal; when it ends well, try again. */
+  private async githubStep(ws: Workspace, fix: GitFixId, again: (https?: boolean) => Promise<GitHubOutcome>): Promise<GitHubOutcome> {
+    const setup = await (this.deps.gitSetup ?? gitSetup)(ws.path).catch((): GitSetup => ({ gh: 'unknown' }));
+    // The card's own command, worked out again for this Mac now (gh may have been installed since).
+    const trouble = this.troubles.get(ws.id);
+    const command = explainGitTrouble(trouble?.raw ?? '', setup)?.fixes.find((f) => f.id === fix)?.command ?? trouble?.fixes.find((f) => f.id === fix)?.command;
+    if (!command) return { ok: false, message: 'There’s nothing to run for that here' };
+    const key = githubId(ws.id);
+    this.githubSteps.get(ws.id)?.();
+    this.closeTerminal(key);
+    const session = this.openSession(key, ws, command);
+    if (!session) return { ok: false, message: 'There’s no terminal here to run it in' };
+    this.deps.toast(fix === 'install_gh' ? 'Installing the GitHub CLI in the terminal…' : fix === 'gh_login' ? 'Log in to GitHub in the terminal and your browser…' : 'Follow the steps in the terminal…');
+    const code = await new Promise<number | null | 'stopped'>((resolve) => {
+      const timer = setTimeout(() => resolve('stopped'), GITHUB_STEP_MS);
+      timer.unref?.();
+      const done = (c: number | null | 'stopped'): void => {
+        clearTimeout(timer);
+        this.githubSteps.delete(ws.id);
+        resolve(c);
+      };
+      this.githubSteps.set(ws.id, () => done('stopped'));
+      this.watchExit(key, session, done);
+    });
+    if (code !== 0) {
+      const message = code === 'stopped' ? 'Stopped waiting for the GitHub step in the terminal' : `The GitHub step in the terminal didn’t finish (exit ${code ?? '?'}): have a look there`;
+      this.deps.toast(message, 'warn');
+      return { ok: false, message, ...(trouble ? { trouble } : {}) };
+    }
+    forgetGh();
+    const ok = await (this.deps.hasGh ?? hasGh)();
+    this.deps.store.dispatch({ type: 'gh', ok });
+    if (ok) void this.refreshPrs(ws.id);
+    // The SSH key was the trouble and gh is logged in now: push over HTTPS with that login (origin unchanged).
+    const sshTrouble = trouble && (trouble.kind === 'ssh_denied' || trouble.kind === 'host_key');
+    const https = Boolean(ok && sshTrouble && (fix === 'gh_login' || fix === 'install_gh') && httpsRemoteOf(setup.remote));
+    return again(https);
   }
 
   /** The branch a worktree's PRs go into ("main"). */
@@ -407,6 +540,11 @@ export class Workbench {
       try {
         await (this.deps.mergePr ?? mergePr)(ws.path, pr.number, opts);
       } catch (err) {
+        const trouble = await this.troubleOf(ws, err);
+        if (trouble) {
+          this.deps.toast(trouble.title, 'warn');
+          return { ok: false, reason: 'github', message: troubleLine(trouble), trouble };
+        }
         const problem = explainMergeError(err instanceof Error ? err.message : String(err), opts.method);
         // GitHub may know more now (a conflict, a review): show it.
         await this.refreshPrs(id);
@@ -501,7 +639,7 @@ export class Workbench {
   }
 
   /** A PR's one-click step on GitHub (update its branch from the base, or mark a draft ready), then its state again. */
-  async prStep(id: string, step: PrStepKind): Promise<{ ok: boolean; message: string }> {
+  async prStep(id: string, step: PrStepKind): Promise<GitHubOutcome> {
     const ws = this.worktree(id);
     const pr = this.deps.store.getState().prs[id];
     if (!ws || !pr || pr.state !== 'OPEN') {
@@ -511,9 +649,7 @@ export class Workbench {
     try {
       await (this.deps.prStep ?? prStep)(ws.path, pr.number, step);
     } catch (err) {
-      const message = `GitHub didn’t ${step === 'ready' ? 'mark it ready' : 'update the branch'}: ${(err instanceof Error ? err.message : String(err)).split('\n').find((l) => l.trim())?.trim() ?? 'no reason given'}`;
-      this.deps.toast(message, 'error');
-      return { ok: false, message };
+      return this.troubleOr(ws, err, `GitHub didn’t ${step === 'ready' ? 'mark it ready' : 'update the branch'}`);
     }
     if (step === 'update_branch') this.pushedAt.set(id, this.now());
     await this.refreshPrs(id);
@@ -534,7 +670,9 @@ export class Workbench {
   async refreshPrs(only?: string, recheckGh = false): Promise<void> {
     if (this.deps.store.getState().gh === false) {
       // "Check Again" (the Mac's Connect GitHub sheet): maybe gh was installed or signed in to since.
-      if (!recheckGh || !(await (this.deps.hasGh ?? hasGh)())) return;
+      if (!recheckGh) return;
+      forgetGh();
+      if (!(await (this.deps.hasGh ?? hasGh)())) return;
       this.deps.store.dispatch({ type: 'gh', ok: true });
     }
     // The first look after starting only learns what exists; news is what changes after that.
@@ -702,7 +840,7 @@ export class Workbench {
     });
     this.deps.store.dispatch({ type: 'terminal', id: key, title: session.title });
     // A setup is over in a moment: only shells and the run command are worth a restart later.
-    if (!key.endsWith(':setup')) this.started.set(key, { place, env: envText(vars) });
+    if (!key.endsWith(':setup') && !key.endsWith(':github')) this.started.set(key, { place, env: envText(vars) });
     this.envChanged();
     // Every screen sees when it ends (the tab shows its exit code; clicking starts it again).
     const report = (code: number | null): void => {
@@ -773,7 +911,7 @@ export class Workbench {
       this.closeTerminal(key);
       return keepName(this.globalShell(key, was.place.dir));
     }
-    if (key.endsWith(':setup')) return undefined;
+    if (key.endsWith(':setup') || key.endsWith(':github')) return undefined;
     if (key.endsWith(':run')) {
       const wsId = key.slice(0, -':run'.length);
       this.closeTerminal(key);
@@ -797,7 +935,7 @@ export class Workbench {
 
   /** Stop a workspace's shell, setup and run terminals (it's being archived or deleted). */
   closeTerminals(wsId: string): void {
-    for (const key of [shellId(wsId), setupId(wsId), runId(wsId)]) if (this.deps.terminals?.get(key)) this.closeTerminal(key);
+    for (const key of [shellId(wsId), setupId(wsId), runId(wsId), githubId(wsId)]) if (this.deps.terminals?.get(key)) this.closeTerminal(key);
   }
 
   private watchExit(key: string, session: PtyProcess, onExit: (code: number | null) => void): void {

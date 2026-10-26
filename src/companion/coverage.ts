@@ -160,6 +160,7 @@ export const PHONE: Record<Method, Side> = {
   'workbench.setModel': 'mac',
   'workbench.createPr': 'mac',
   'workbench.quickPr': 'mac',
+  'workbench.gitFix': 'mac',
   'workbench.fixChecks': 'mac',
   'workbench.resolvePrConflicts': 'mac',
   'workbench.continueAfterMerge': 'mac',
@@ -266,6 +267,7 @@ export const PHONE: Record<Method, Side> = {
   'claudeCode.outputs': 'phone',
   'claudeCode.output': 'phone',
   'claudeCode.taskOutput': 'phone',
+  'claudeCode.skills': 'mac',
   // A step's details are code (commands, diffs); the phone gets steps in words in its views.
   'agent.steps': 'mac',
   'agent.step': 'mac',
@@ -429,6 +431,8 @@ export const PHONE: Record<Method, Side> = {
   'voice.models': 'mac',
   'voice.prepare': 'mac',
   'voice.transcribe': 'mac',
+  // Settings › Terminal › Import from…, and the welcome's terminal step: Mac settings only.
+  'terminalImport.detect': 'mac',
 };
 
 /** A method the phone may call (unknown names are not). */

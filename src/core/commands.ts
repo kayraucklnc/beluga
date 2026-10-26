@@ -100,8 +100,12 @@ function inviteCommand(session: Session, args: readonly string[], channel: strin
   if (away.length) session.toast(`Sharing a worktree with friends who aren’t in your room isn’t in this Beluga yet. Ask ${namesLine(away.map((f) => f.name))} to join your room for now`, 'warn');
 }
 
-/** Execute a `/command` (or legacy `:command`) typed in `channel` (the conversation on screen). */
-export function runCommand(session: Session, name: string, args: readonly string[], channel = 'room'): void {
+/**
+ * Execute a `/command` (or legacy `:command`) typed in `channel` (the conversation on screen).
+ * `raw`: the words as typed; in a workspace's conversation, a command Beluga doesn't know (one of
+ * Claude's skills or custom commands, "/frontend-design make it pastel") goes to Claude as typed.
+ */
+export function runCommand(session: Session, name: string, args: readonly string[], channel = 'room', raw?: string): void {
   const state = session.store.getState();
   const arg = args[0];
   switch (name) {
@@ -302,6 +306,10 @@ export function runCommand(session: Session, name: string, args: readonly string
       session.toast(`Theme: ${arg}`, 'success');
       return;
     default:
+      if (raw && channel !== 'room' && session.workspaces?.inChannel(channel)) {
+        session.askOwnClaude(raw.trim().replace(/^:/, '/'), channel);
+        return;
+      }
       session.toast(`Unknown command /${name}. Type /help (or // to send a message starting with /)`, 'warn');
   }
 }

@@ -364,7 +364,7 @@ export class Session {
       case 'empty':
         return true;
       case 'command':
-        runCommand(this, parsed.name, parsed.args, channel);
+        runCommand(this, parsed.name, parsed.args, channel, raw);
         return true;
       case 'chat':
         this.sendChat(parsed.text, false);
