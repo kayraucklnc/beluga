@@ -48,6 +48,7 @@ import { usePlanActions, usePlanView, usePlans } from "../plans/use-plans.js";
 import c from "../chat/composer.module.css";
 import d from "../chat/draft.module.css";
 import s from "./project-home.module.css";
+import { TeamOffers } from "../team/Team.js";
 
 /**
  * A project's home: what you see when you click a project. Its main folder is never worked in,
@@ -86,6 +87,7 @@ export function ProjectHome({ id }: { id: string }) {
     <div className={s.page} aria-label={`${project.name} home`}>
       <div className={s.column}>
         <Header model={model} />
+        <TeamOffers projectId={project.id} />
         <HomeComposer project={project} />
         <Lists model={model} />
       </div>

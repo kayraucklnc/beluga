@@ -1,4 +1,5 @@
 import type { Session } from '../core/session.js';
+import { needFriendShares } from '../core/friend-share/launch.js';
 import type { WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
@@ -20,6 +21,7 @@ import { GATEWAY_HANDLERS } from './gateway-handlers.js';
 import { BOARD_HANDLERS } from './board-handlers.js';
 import { PLANS_HANDLERS } from './plans-handlers.js';
 import { ISSUES_HANDLERS } from './issues-handlers.js';
+import { TEAM_HANDLERS } from './team-handlers.js';
 import { GIT_HANDLERS } from './git-handlers.js';
 import { VIEWS_HANDLERS } from './views-handlers.js';
 import { FILES_EDIT_HANDLERS } from './files-handlers.js';
@@ -105,6 +107,9 @@ export const HANDLERS = {
   },
   'sharing.remove': (s, wsId, peerId) => s.sharing.remove(wsId, peerId),
   'sharing.leave': (s, owner, id) => s.sharing.leave(owner, id),
+  'sharing.shareWithFriend': (s, share) => s.sharing.shareWithFriend(share),
+  'sharing.unshareFriend': (s, share) => s.sharing.unshareFriend(share),
+  'sharing.leaveProject': (s, owner, projectId) => needFriendShares(s).leave(owner, projectId),
 
   'invites.create': async (s, opts) => {
     const link = await s.invites.create(opts);
@@ -301,6 +306,7 @@ export const HANDLERS = {
   ...BOARD_HANDLERS,
   ...PLANS_HANDLERS,
   ...ISSUES_HANDLERS,
+  ...TEAM_HANDLERS,
   ...GIT_HANDLERS,
   ...VIEWS_HANDLERS,
   ...FILES_EDIT_HANDLERS,

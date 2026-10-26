@@ -517,7 +517,7 @@
   color: var(--error);
 }
 
-/* "Add Claude" with others here: your Claude on the left, the chevron for anyone else's. */
+/* "Ask: your Claude" with others here: your Claude on the left, the chevron for anyone else's. */
 .askSplit {
   display: inline-flex;
   align-items: center;
@@ -1527,4 +1527,298 @@
 .requestAsk svg {
   flex: none;
   color: var(--claude);
+}
+/* "Not friends yet": people in your room, under your friends (BLG-202). */
+.subhead {
+  padding: 8px 12px 2px 16px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* ---- the chat as a messaging app (BLG-210) */
+
+/* One message's row: yours on the right, a friend's on the left, a Claude's full width. */
+.row {
+  --person: var(--accent);
+  --bubble-mix: 15%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  max-width: var(--chat-max);
+  margin: 0 auto;
+  padding: 10px 24px 0;
+}
+:root[data-theme='dark'] .row {
+  --bubble-mix: 24%;
+}
+.rowCont {
+  padding-top: 3px;
+}
+.rowMine {
+  grid-template-columns: minmax(0, 1fr);
+}
+.rowMine .stack {
+  align-items: flex-end;
+  padding-left: 18%;
+}
+.rowTheirs .stack {
+  align-items: flex-start;
+  padding-right: 18%;
+}
+.rowClaude {
+  padding-top: 14px;
+}
+.rowClaude.rowCont {
+  padding-top: 4px;
+}
+.side {
+  display: flex;
+  justify-content: center;
+}
+.rowTheirs .side {
+  align-items: flex-end;
+}
+.rowClaude .side {
+  align-items: flex-start;
+  padding-top: 1px;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.claudeBody {
+  position: relative;
+  min-width: 0;
+}
+.runName {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-height: 18px;
+  margin: 0 0 2px 2px;
+}
+.rowClaude .runName {
+  margin-left: 0;
+}
+.runAuthor {
+  font-weight: 600;
+}
+.runTime {
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.bubble {
+  max-width: 100%;
+  padding: 7px 13px 8px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--person) var(--bubble-mix), var(--bg-raised));
+  color: var(--text);
+}
+.rowMine.rowCont .bubbleMine {
+  border-top-right-radius: 8px;
+}
+.rowTheirs.rowCont .bubbleTheirs {
+  border-top-left-radius: 8px;
+}
+.bubbleMine:not(.tailMine) {
+  border-bottom-right-radius: 8px;
+}
+.bubbleTheirs:not(.tailTheirs) {
+  border-bottom-left-radius: 8px;
+}
+.tailMine {
+  border-bottom-right-radius: 5px;
+}
+.tailTheirs {
+  border-bottom-left-radius: 5px;
+}
+.bubble :global(p:first-child) {
+  margin-top: 0;
+}
+.bubble :global(p:last-child) {
+  margin-bottom: 0;
+}
+/* Under the last of your run: the time, and Delivered in a DM. */
+.under {
+  margin: 0 4px 2px;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the header's people */
+
+.titleName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 3px;
+  border-radius: 12px;
+  background: var(--bg-sunken);
+  font-size: 0.86rem;
+  font-weight: 400;
+  white-space: nowrap;
+  --ring: var(--bg-sunken);
+}
+.pillName {
+  font-weight: 600;
+  color: var(--text);
+}
+.pillState {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+}
+.pill[data-claude='offline'] .pillState {
+  color: var(--text-3);
+}
+.pill[data-claude='update'] .pillState {
+  color: var(--warn);
+}
+.pillMore {
+  color: var(--text-3);
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+/* ---- what waits on whom, under the header */
+
+.waitBand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: none;
+  padding: 8px 24px;
+  border-bottom: 0.5px solid var(--hairline);
+  background: var(--bg);
+}
+.waitItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.waitItem span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.waitItem:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.waitYou {
+  background: color-mix(in srgb, var(--warn) 13%, var(--bg));
+  color: color-mix(in srgb, var(--warn) 80%, var(--text));
+}
+.waitYou:hover {
+  background: color-mix(in srgb, var(--warn) 19%, var(--bg));
+  color: color-mix(in srgb, var(--warn) 80%, var(--text));
+}
+.waitSecret {
+  background: color-mix(in srgb, var(--error) 10%, var(--bg));
+  color: var(--error);
+}
+.waitSecret:hover {
+  background: color-mix(in srgb, var(--error) 15%, var(--bg));
+  color: var(--error);
+}
+.waitMore {
+  align-self: center;
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+
+/* ---- the message box: who won't get it now */
+
+.offlineNote {
+  min-width: 0;
+  margin-right: 6px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- the panel: in this channel, and what waits */
+
+.hereList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hereList > li + li {
+  border-top: 0.5px solid var(--hairline);
+}
+.hereRow {
+  --ring: var(--bg-sunken);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+}
+.hereText {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.hereName {
+  font-weight: 600;
+  color: var(--text);
+}
+.hereLine {
+  color: var(--text-2);
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hereVersion {
+  color: var(--text-3);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+.hereBehind {
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.waitRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 7px 0;
+  text-align: left;
+}
+.waitRow:hover .hereName {
+  text-decoration: underline;
 }

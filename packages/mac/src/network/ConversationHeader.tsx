@@ -1,11 +1,14 @@
 import type { ReactNode } from 'react';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
-import { IconButton } from '../components/ui.js';
+import { IconButton, Tip, claudeColor } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
-import { GroupAvatar, PersonAvatar, PresenceDot } from './Avatars.js';
+import { type ChatPerson, claudePill } from '@beluga/core/chat-people.js';
+import { Icon } from '../components/Icon.js';
+import { GroupAvatar, PersonAvatar } from './Avatars.js';
+import { useChatPeople } from './use-chat-people.js';
 import { MembersButton } from './GroupInfo.js';
-import { conversationOf, membersLine, openGroupInvitation, presenceLine, shownState } from './net-model.js';
+import { STATE_LABEL, conversationOf, openGroupInvitation } from './net-model.js';
 import { openNet } from './net-sheets.js';
 import { useSay } from './use-net.js';
 import { channelName } from './chat-model.js';
@@ -17,7 +20,45 @@ export interface HeaderParts {
   readonly right?: ReactNode;
 }
 
-/** The toolbar of a conversation with friends: who it's with and their status, the group's people, a ⋯ menu. */
+/** How many people get a pill before the rest fold into "+3" (the members button lists them all). */
+const PILLS = 4;
+
+/** One person in the header (BLG-210): their picture with presence, their name, what their Claude is doing. */
+function PersonPill({ p }: { p: ChatPerson }) {
+  const words = claudePill(p);
+  const tip = `${p.me ? 'You' : p.name} · ${STATE_LABEL[p.presence]} · ${p.me ? 'your' : 'their'} Claude ${p.claude === 'working' && p.doing ? `is on: ${p.doing}` : words}`;
+  return (
+    <Tip label={tip}>
+      <span className={s.pill} data-claude={p.claude} aria-label={tip}>
+        <PersonAvatar name={p.name} id={p.peerId} state={p.presence} size={18} />
+        <span className={s.pillName}>{p.me ? 'You' : p.name}</span>
+        <span className={s.pillState}>
+          {p.claude === 'working' || p.claude === 'idle' ? <Icon name="claude" size={11} style={{ color: claudeColor(p.peerId) }} /> : p.claude === 'update' ? <Icon name="alert" size={11} /> : null}
+          {words}
+        </span>
+      </span>
+    </Tip>
+  );
+}
+
+/** Everyone in the conversation as pills, you first. */
+function PeoplePills({ id }: { id: string }) {
+  const { people } = useChatPeople(id);
+  if (!people.length) return null;
+  const shown = people.slice(0, PILLS);
+  return (
+    <span className={s.pills} role="list" aria-label="People here">
+      {shown.map((p) => (
+        <span key={p.peerId} role="listitem">
+          <PersonPill p={p} />
+        </span>
+      ))}
+      {people.length > PILLS ? <span className={s.pillMore}>+{people.length - PILLS}</span> : null}
+    </span>
+  );
+}
+
+/** The toolbar of a conversation with friends: its name, each person and their Claude as a pill, a ⋯ menu. */
 export function useConversationHeader(id: string): HeaderParts {
   const { client } = useBeluga();
   const say = useSay();
@@ -26,7 +67,6 @@ export function useConversationHeader(id: string): HeaderParts {
   if (target?.kind === 'dm') {
     const f = net.friends.find((x) => x.peerId === target.peerId);
     if (!f) return { title: 'Conversation' };
-    const state = shownState(f);
     const items: ActionItem[] = [
       { label: `New Channel with ${f.name}…`, icon: 'people', onSelect: () => openNet({ kind: 'new_group', with: [f.peerId] }) },
       { label: 'Copy Name', icon: 'copy', onSelect: () => void copyText(f.name).then(() => say(`Copied “${f.name}”`)) },
@@ -34,16 +74,10 @@ export function useConversationHeader(id: string): HeaderParts {
     ];
     return {
       title: (
-        <span className={s.titleRow}>
-          <PersonAvatar name={f.name} id={f.peerId} size={20} />
-          <span>{f.name}</span>
-        </span>
-      ),
-      subtitle: (
-        <span className={s.subtitleDot}>
-          <PresenceDot state={state} size={8} />
-          {presenceLine(f)}
-          {f.via === 'relay' && f.online ? ' · through another member’s Mac' : ''}
+        <span className={s.titleRow} title={f.via === 'relay' && f.online ? 'Through another member’s Mac' : undefined}>
+          <Icon name="person" size={15} />
+          <span className={s.titleName}>{f.name}</span>
+          <PeoplePills id={id} />
         </span>
       ),
       right: (
@@ -76,15 +110,15 @@ export function useConversationHeader(id: string): HeaderParts {
           { label: 'Channel Info', icon: 'people', onSelect: () => openNet({ kind: 'group_info', groupId: g.id }) },
           { label: 'Delete Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'delete_group', groupId: g.id }) },
         ];
-    const online = g.members.filter((m) => !m.self && m.online).length;
     return {
       title: (
         <span className={s.titleRow}>
-          <GroupAvatar name={g.name} id={g.id} size={20} muted={!g.active} />
-          <span>{channelName(net, g)}</span>
+          {g.active ? <Icon name="people" size={15} /> : <GroupAvatar name={g.name} id={g.id} size={20} muted />}
+          <span className={s.titleName}>{channelName(net, g)}</span>
+          {g.active ? <PeoplePills id={id} /> : null}
         </span>
       ),
-      subtitle: <span>{g.active ? `${membersLine(g.members)}${online ? ` · ${online} online` : ''}` : 'You’re no longer in this channel'}</span>,
+      ...(g.active ? {} : { subtitle: <span>You’re no longer in this channel</span> }),
       right: (
         <>
           <MembersButton g={g} />

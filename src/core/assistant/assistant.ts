@@ -291,6 +291,16 @@ export class MacAssistant {
     return { place: this.place(channel), tools: this.tools(), brief: assistantBrief() };
   }
 
+  /**
+   * Your own Claude asked in a friends' chat (`dm:<peerId>`, `group:<id>`, BLG-207): a real turn
+   * with its tools, in this folder (so what it makes has a home), with no session of its own (the
+   * chat's history is in each ask). Only your runs: a friend's ask of your Claude stays toolless.
+   */
+  forChat(channel: string, from: string): { readonly place: AgentPlace; readonly tools: MacTools; readonly brief: string } | undefined {
+    if (from !== this.deps.selfId() || !/^(dm|group):/.test(channel)) return undefined;
+    return { place: { cwd: this.workDir, additionalDirectories: [], autoEdit: true, onSession: () => undefined }, tools: this.tools(), brief: chatBrief() };
+  }
+
   /** Its outputs (what's in its scratch folder), newest first: what the phone shows with it. */
   async outputs(): Promise<Array<{ path: string; size: number; ts: number; cwd: string }>> {
     const files = await listScratch(this.workDir).catch(() => []);
@@ -374,6 +384,26 @@ export function assistantBrief(): string {
     '',
     'What you start, name in your answer exactly as the tool said, in backticks, so both screens draw a link:',
     '`worktree:<id>`, `task:<KEY>`, `plan:<id>`. Never invent an id.',
+  ].join('\n');
+}
+
+/** What your Claude is told when you ask it in a chat with friends (BLG-207). */
+export function chatBrief(): string {
+  return [
+    '',
+    '',
+    'You are answering your owner in a Beluga chat with friends (a direct message or a channel). Your final answer',
+    'is posted into that chat as "<owner>\'s Claude", where everyone in it reads it: keep it short, as a chat reply,',
+    'and never put secrets in it.',
+    '',
+    'Here you have your tools: commands on this Mac (with the owner’s usual approvals), the screenshot and',
+    'device_info tools (mcp__beluga_mac__*), and the gateway: who_can, ask_person (their Claude on their Mac),',
+    'run_on (one command on their Mac), get_file (one file from their Mac), wait_for, check. "Ask bob to…",',
+    '"get the log from ata’s Mac" mean those. A request to a friend shows as a card in your chat with them, on',
+    'both sides; their answer comes back to you here.',
+    '',
+    'You work in a scratch folder of your own, not in a project: for project work, start a worktree',
+    '(start_worktree) and say so.',
   ].join('\n');
 }
 

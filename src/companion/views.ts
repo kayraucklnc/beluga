@@ -1,16 +1,20 @@
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
+import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
+import { OFFER_DETAIL, offerWords, workingOn, workingWords } from '../core/team/model.js';
 import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
-import { type TaskView as GwTask, isFinal } from '../core/gateway/model.js';
+import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
-import type { MessageView } from '../net/mesh/views.js';
+import { shortVersion } from '../net/mesh/features.js';
+import type { MessageView, PersonView } from '../net/mesh/views.js';
+import { chatPeople, claudePill, offlineNote, waitingIn, waitingLabel } from '../core/chat-people.js';
 import type { Usage } from '../protocol.js';
 import {
   type BranchView,
@@ -117,7 +121,8 @@ export function usageViews(usage: Usage | undefined): UsageView[] {
 
 function approvalItem(state: DomainState, a: Approval): NeedsYou {
   const from = a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : 'your Claude';
-  const topic = a.channel ? convTopic(a.channel) : undefined;
+  // A friends' chat opens that chat (a request from there, your Claude working there: BLG-207).
+  const topic = a.channel ? (/^(dm|group):/.test(a.channel) ? chatTopic(a.channel) : convTopic(a.channel)) : undefined;
   return {
     id: `approval:${a.id}`,
     kind: a.kind === 'request' ? 'request' : 'approval',
@@ -128,9 +133,10 @@ function approvalItem(state: DomainState, a: Approval): NeedsYou {
     ...(a.askedAt !== undefined ? { askedAt: a.askedAt } : {}),
     ...(a.timeoutMs !== undefined ? { timeoutMs: a.timeoutMs } : {}),
     actions: [
-      { label: 'Approve', tone: 'main', method: 'host.answerApproval', args: ['yes', a.id] },
+      { label: a.once ? 'Allow once' : 'Approve', tone: 'main', method: 'host.answerApproval', args: ['yes', a.id] },
       { label: 'Decline', tone: 'danger', method: 'host.answerApproval', args: ['no', a.id] },
-      { label: 'Always', tone: 'plain', method: 'host.answerApproval', args: ['always', a.id] },
+      // A friend's request for a secret is asked each time: no Always.
+      ...(a.once ? [] : [{ label: 'Always', tone: 'plain' as const, method: 'host.answerApproval', args: ['always', a.id] }]),
     ],
   };
 }
@@ -241,14 +247,15 @@ function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
       {
         id: `request:${t.id}`,
         kind: 'request',
-        title: clip(t.summary ? `${t.peerName}: ${t.summary}` : `${t.peerName} asks your Claude`, 500),
+        title: clip(t.secret ? `${t.peerName} wants ${t.secret.label}` : t.summary ? `${t.peerName}: ${t.summary}` : `${t.peerName} asks your Claude`, 500),
         detail: clip(plainLine(t.ask, 64_000), 64_000),
         from: clip(t.peerName, 100),
+        ...(t.chat && chatTopic(t.chat) ? { topic: chatTopic(t.chat)! } : {}),
         askedAt: t.createdAt,
         actions: [
-          { label: 'Approve', tone: 'main', method: 'gateway.decide', args: [t.id, { answer: 'yes' }] },
+          { label: t.secret ? 'Allow once' : 'Approve', tone: 'main', method: 'gateway.decide', args: [t.id, { answer: 'yes' }] },
           { label: 'Decline', tone: 'danger', method: 'gateway.decide', args: [t.id, { answer: 'no' }] },
-          { label: 'Always', tone: 'plain', method: 'gateway.decide', args: [t.id, { answer: 'always' }] },
+          ...(t.secret ? [] : [{ label: 'Always', tone: 'plain' as const, method: 'gateway.decide', args: [t.id, { answer: 'always' }] }]),
         ],
       },
     ];
@@ -347,6 +354,105 @@ function joinItems(state: DomainState): NeedsYou[] {
     );
 }
 
+/** Someone in your room asks to be friends on the Beluga network (BLG-202). */
+function offerItems(state: DomainState): NeedsYou[] {
+  return (state.network.offers ?? [])
+    .filter((o) => o.dir === 'in')
+    .map((o) => ({
+      id: `friend:${o.peerId}`,
+      kind: 'request' as const,
+      title: clip(`${o.name} wants to add you as a friend`, 500),
+      detail: 'You’re in the same room. As friends you can talk, share and ask each other’s Claude, with nobody hosting',
+      from: clip(o.name, 100),
+      askedAt: o.at,
+      actions: [
+        { label: 'Accept', tone: 'main' as const, method: 'network.friends.answerOffer', args: [o.peerId, true] },
+        { label: 'Not now', tone: 'danger' as const, method: 'network.friends.answerOffer', args: [o.peerId, false] },
+      ],
+    }));
+}
+
+/** A friend on the same GitHub repository: team up on it (BLG-221). Only offers waiting on you. */
+function teamOfferItems(state: DomainState): NeedsYou[] {
+  return state.team.offers
+    .filter((o) => o.state !== 'asked')
+    .map((o) => ({
+      id: `team:${o.peerId}:${o.projectId}`,
+      kind: 'request' as const,
+      title: clip(`${offerWords(o)}. Team up?`, 500),
+      detail: OFFER_DETAIL,
+      from: clip(o.name, 100),
+      askedAt: o.at,
+      actions: [
+        { label: 'Team Up', tone: 'main' as const, method: 'team.answer', args: [o.peerId, o.projectId, true] },
+        { label: 'Not Now', tone: 'danger' as const, method: 'team.answer', args: [o.peerId, o.projectId, false] },
+      ],
+    }));
+}
+
+/** A teammate gave you a task (BLG-223): it waits until you've seen it. */
+function assignedItems(state: DomainState): NeedsYou[] {
+  return state.team.assigned.flatMap((a) => {
+    const topic = taskTopic(a.issueId);
+    return [
+      {
+        id: `team-task:${a.issueId}`,
+        kind: 'request' as const,
+        title: clip(`${a.by} gave you ${a.key}: ${a.title}`, 500),
+        detail: 'It’s in your tasks, on your board for this repository.',
+        from: clip(a.by, 100),
+        ...(topic ? { topic } : {}),
+        askedAt: a.at,
+        actions: [{ label: 'Got It', tone: 'main' as const, method: 'team.ackAssignment', args: [a.issueId] }],
+      },
+    ];
+  });
+}
+
+/**
+ * Shared plans (BLG-225): a plan a teammate shared that you haven't approved (Approve, or words as a
+ * comment), and a teammate's suggested change to a plan of yours (Apply / Set Aside).
+ */
+function sharedPlanItems(state: DomainState): NeedsYou[] {
+  const self = myId(state);
+  const theirs = state.team.plans
+    .filter((p) => p.status === 'draft' && !p.reviews.some((r) => r.by === self && r.kind === 'approve' && r.rev === p.rev))
+    .map((p) => ({
+      id: `team-plan:${p.owner}:${p.id}:${p.rev}`,
+      kind: 'decision' as const,
+      title: clip(`${p.ownerName} shared the plan “${p.title}”: approve it?`, 500),
+      detail: clip(
+        [plainLine(p.body.goal, 2000), ...p.body.milestones.map((m, i) => `${i + 1}. ${m.title} (${m.tasks.length} task${m.tasks.length === 1 ? '' : 's'})`)].filter(Boolean).join('\n'),
+        64_000,
+      ),
+      from: clip(p.ownerName, 100),
+      askedAt: p.updatedAt,
+      freeText: true,
+      actions: [{ label: 'Approve', tone: 'main' as const, method: 'team.reviewPlan', args: [p.owner, p.id, { kind: 'approve' }] }],
+      answer: { method: 'team.reviewPlan', args: [p.owner, p.id, { kind: 'comment', text: '' }], slot: [2, 'text'], text: true, picks: false, label: 'Comment' },
+    }));
+  const mine = Object.values(state.team.planShares).flatMap((share) => {
+    const plan = state.plans.plans.find((p) => p.id === share.planId);
+    if (!plan) return [];
+    return share.reviews
+      .filter((r) => r.kind === 'suggest' && !r.settled)
+      .map((r) => ({
+        id: `team-suggest:${r.id}`,
+        kind: 'decision' as const,
+        title: clip(`${r.name} suggests ${r.ops?.length === 1 ? 'a change' : `${r.ops?.length ?? 0} changes`} to “${planTitle(plan)}”`, 500),
+        ...(r.text ? { detail: clip(r.text, 64_000) } : {}),
+        from: clip(r.name, 100),
+        ...(planTopic(plan.id) ? { topic: planTopic(plan.id)! } : {}),
+        askedAt: r.at,
+        actions: [
+          { label: 'Apply', tone: 'main' as const, method: 'team.applySuggestion', args: [plan.id, r.id] },
+          { label: 'Set Aside', tone: 'danger' as const, method: 'team.dismissSuggestion', args: [plan.id, r.id] },
+        ],
+      }));
+  });
+  return [...theirs, ...mine];
+}
+
 /** Everything waiting for you, oldest first: approvals, Claude's questions, friends' requests, plan decisions. */
 export function needsYou(state: DomainState): NeedsYou[] {
   const items = [
@@ -356,6 +462,10 @@ export function needsYou(state: DomainState): NeedsYou[] {
     ...state.plans.plans.filter((p) => p.status !== 'done').flatMap((p) => planItems(p, progressOf(state, p))),
     ...knockItems(state),
     ...joinItems(state),
+    ...offerItems(state),
+    ...teamOfferItems(state),
+    ...assignedItems(state),
+    ...sharedPlanItems(state),
   ];
   // Oldest first; what has no time (Claude's questions) counts as just asked.
   const at = (n: NeedsYou): number => n.askedAt ?? Number.MAX_SAFE_INTEGER;
@@ -857,7 +967,14 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...(queue.length ? { queue } : {}),
     ...mergeOf(state, ctx, channel),
     ...(plan && planT ? { plan: planBand(state, plan, planT) } : {}),
+    ...waitingOf(state, channel),
   };
+}
+
+/** A friend's worktree whose Mac is offline: the message box says so (what you send waits for it). */
+function waitingOf(state: DomainState, channel: string): { waiting?: string } {
+  const note = channel.startsWith('ws:') ? waitingNote(state, channel.slice(3)) : undefined;
+  return note ? { waiting: clip(note, 200) } : {};
 }
 
 function planBand(state: DomainState, plan: Plan, topic: Topic): NonNullable<ConvView['plan']> {
@@ -1004,6 +1121,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
   const t = tally(i.brief.acceptance);
   const conv = taskConv(state, i);
   const who = assigneeWords(state, i);
+  const working = workingWords(workingOn(state.team, i.id).map((p) => p.name));
   return {
     id: clip(i.id, 200),
     topic,
@@ -1015,6 +1133,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
     ...(t.total ? { checks: { done: t.done, total: t.total } } : {}),
     ...(conv ? { conv } : {}),
     ...(i.pr ? { pr: { number: i.pr.number, state: i.pr.state } } : {}),
+    ...(working ? { working: clip(working, 200) } : {}),
     updatedAt: Math.round(i.updatedAt),
   };
 }
@@ -1123,6 +1242,31 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     ts: m.ts,
     ...(files.length ? { files: files.slice(0, 20) } : {}),
     ...(offerOf(state, m) ? { offer: offerOf(state, m) } : {}),
+    ...(chatTaskOf(state, m) ? { task: chatTaskOf(state, m) } : {}),
+  };
+}
+
+/** A task's card in a chat (BLG-208), from this Mac's task book; someone the task isn't between sees just the words. */
+function chatTaskOf(state: DomainState, m: MessageView): ChatMessageView['task'] {
+  const t = m.task ? state.gateway.tasks.find((x) => x.id === m.task?.id) : undefined;
+  if (!t) return undefined;
+  const title = t.direction === 'sent' ? `To ${targetLabel(t)}` : `From ${t.peerName}${t.by === 'agent' ? '’s Claude' : ''}`;
+  const summary = t.result?.summary ? plainLine(stripCode(t.result.summary).text, 600) : '';
+  const files = (t.result?.files ?? []).map((f) => clip(f.name, 200)).slice(0, 8);
+  // Whose it is, as the Mac's chat heads it (BLG-210): "Your Claude · asked ata’s Claude", "mia’s Claude · asked your Mac".
+  const sent = t.direction === 'sent';
+  const owner = t.by === 'agent' ? (sent ? 'Your Claude' : `${t.peerName}’s Claude`) : sent ? 'You' : t.peerName;
+  const who = `${owner} · asked ${sent ? targetLabel(t) : t.kind === 'ask' ? 'your Claude' : 'your Mac'}`;
+  return {
+    id: clip(t.id, 200),
+    title: clip(title, 200),
+    ask: clip(plainLine(t.kind === 'run' && t.command ? `$ ${t.command}` : requestGist(t, 300), 300), 300),
+    state: clip(stateLabel(t), 80),
+    tone: stateTone(t),
+    ...(summary ? { summary: clip(summary, 600) } : {}),
+    ...(files.length ? { files } : {}),
+    who: clip(who, 200),
+    ...(t.secret && !isFinal(t.state) ? { secret: true } : {}),
   };
 }
 
@@ -1149,6 +1293,9 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
   const dm = conversation.startsWith('dm:') ? net.friends.find((f) => `dm:${f.peerId}` === conversation) : undefined;
   const group = conversation.startsWith('group:') ? net.groups.find((g) => `group:${g.id}` === conversation) : undefined;
   const { messages, more } = chatMessages(state, ctx, conversation);
+  const people = chatPeopleOf(state, conversation, dm, group);
+  const waiting = waitingIn({ conversation, tasks: state.gateway.tasks, approvals: state.approvals });
+  const note = offlineNote(people);
   return {
     topic,
     name: clip(dm?.name ?? group?.name ?? 'Chat', 100),
@@ -1156,15 +1303,38 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
     messages,
     more,
     live: (net.live?.[conversation] ?? []).slice(0, 20).map((l) => clip(`${l.name}'s Claude`, 100)),
-    members: chatMembers(state, dm, group),
+    members: chatMembers(state, dm, group, people),
+    ...(waiting.length ? { waiting: waiting.slice(0, 10).map((w) => ({ text: clip(waitingLabel(w), 300), you: w.on === 'you', ...(w.target.kind === 'task' ? { task: clip(w.target.id, 200) } : {}) })) } : {}),
+    ...(note ? { note: clip(note, 200) } : {}),
   };
 }
 
-/** Whose Claude a chat message can ask: you first, then the friend (a DM) or the group's members. */
-function chatMembers(state: DomainState, dm: { peerId: string; name: string } | undefined, group: { members: readonly { peerId: string; name: string; self: boolean }[] } | undefined): ChatView['members'] {
-  const me = { peerId: clip(myId(state), 200), name: clip(myName(state), 64), me: true };
+/** Who's in a chat and what their Claudes do (BLG-210), as the Mac's header says it. */
+function chatPeopleOf(state: DomainState, conversation: string, dm: PersonView | undefined, group: { members: readonly (PersonView & { self: boolean })[] } | undefined) {
+  const net = state.network;
+  const others = dm ? [dm] : (group?.members ?? []).filter((m) => !m.self);
+  const run = [...state.log].reverse().find((l) => l.type === 'agent' && l.channel === conversation && l.owner === state.selfId && isRunning(l.status) && l.status !== 'queued' && l.status !== 'awaiting_approval');
+  const doing = run?.type === 'agent' ? (run.steps.at(-1) ?? run.prompt) : undefined;
+  const now = Date.now();
+  return chatPeople({
+    conversation,
+    self: { peerId: net.self?.peerId ?? myId(state), name: myName(state), ...(net.self ? { presence: net.self.appearOffline ? 'offline' : net.self.presence.state } : {}) },
+    others,
+    live: (net.live?.[conversation] ?? []).filter((l) => now - l.since < 3 * 60_000),
+    tasks: state.gateway.tasks,
+    myRun: { working: Boolean(run), ...(doing ? { doing } : {}) },
+  });
+}
+
+/** Whose Claude a chat message can ask: you first, then the friend (a DM) or the group's members; each with presence and their Claude's state (1.20). */
+function chatMembers(state: DomainState, dm: { peerId: string; name: string } | undefined, group: { members: readonly { peerId: string; name: string; self: boolean }[] } | undefined, people: ReturnType<typeof chatPeopleOf>): ChatView['members'] {
+  const extra = (peerId: string, mine: boolean) => {
+    const p = people.find((x) => (mine ? x.me : x.peerId === peerId));
+    return p ? { presence: p.presence, claude: clip(claudePill(p), 80) } : {};
+  };
+  const me = { peerId: clip(myId(state), 200), name: clip(myName(state), 64), me: true, ...extra(myId(state), true) };
   const others = dm ? [{ peerId: dm.peerId, name: dm.name }] : (group?.members ?? []).filter((m) => !m.self && m.peerId !== me.peerId).map((m) => ({ peerId: m.peerId, name: m.name }));
-  return [me, ...others.slice(0, 199).map((m) => ({ peerId: clip(m.peerId, 200), name: clip(m.name, 64) }))];
+  return [me, ...others.slice(0, 199).map((m) => ({ peerId: clip(m.peerId, 200), name: clip(m.name, 64), ...extra(m.peerId, false) }))];
 }
 
 export function peopleView(state: DomainState): PeopleView {
@@ -1181,6 +1351,8 @@ export function peopleView(state: DomainState): PeopleView {
         ...(usage ? { usage } : {}),
         offers: [...(card?.claude ? ['claude'] : []), ...(card?.offers ?? [])].slice(0, 20),
         ...(chat ? { chat } : {}),
+        ...(f.beluga && f.beluga.version !== 'unknown' ? { beluga: clip(shortVersion(f.beluga.version), 40) } : {}),
+        ...(f.update ? { update: f.update } : {}),
       };
     }),
   };

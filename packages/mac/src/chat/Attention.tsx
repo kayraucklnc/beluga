@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
 import { currentQuestion } from '@beluga/ui/collab-actions.js';
 import { isDecisionQid } from '@beluga/core/plans/decisions.js';
@@ -8,6 +8,9 @@ import { Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { brandText } from '../lib/brand.js';
+import { sameDeep } from '../lib/stable.js';
+import { hostToBefriend } from '../network/net-model.js';
+import { befriend } from '../network/use-net.js';
 import { Markdown } from './Markdown.js';
 import { useNow } from './Items.js';
 import s from './attention.module.css';
@@ -16,22 +19,28 @@ import s from './attention.module.css';
  * What needs you right now, just above the box you type in: an approval, Claude's question or
  * plan, someone at the door, a new person to choose a trust level for.
  */
-export function Attention() {
+export function Attention({ channel }: { channel?: string } = {}) {
   // People at the door and new people to trust belong to the room; approvals reach you anywhere.
   const inRoom = useApp((st) => st.view.kind === 'room');
   return (
     <div className={s.stack}>
-      <Approvals />
-      <Question />
+      <Approvals {...(channel ? { channel } : {})} />
+      <Question {...(channel ? { channel } : {})} />
       {inRoom ? <Knock /> : null}
+      {inRoom ? <BefriendHost /> : null}
       {inRoom ? <TrustPrompt /> : null}
     </div>
   );
 }
 
-function Approvals() {
+/**
+ * `channel`: in a friends' chat (BLG-207), only what holds up your Claude there; a friend's request
+ * is answered on its card in the chat instead.
+ */
+function Approvals({ channel }: { channel?: string }) {
   const api = useApi();
-  const approvals = useApp((st) => st.approvals);
+  const all = useApp((st) => st.approvals);
+  const approvals = useMemo(() => (channel ? all.filter((a) => a.channel === channel && !a.task) : all), [all, channel]);
   const first = approvals[0];
   const now = useNow(Boolean(first?.askedAt));
   const [showAll, setShowAll] = useState(false);
@@ -72,6 +81,16 @@ function Approvals() {
             Don’t allow
           </Button>
         </div>
+      ) : first.once ? (
+        // A friend's request for a secret: asked each time, so there's no Always.
+        <div className={s.actions}>
+          <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>
+            Allow once
+          </Button>
+          <Button variant="quiet" onClick={() => void api.host.answerApproval('no', first.id)}>
+            Decline
+          </Button>
+        </div>
       ) : (
         <div className={s.actions}>
           <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>
@@ -105,12 +124,13 @@ function Approvals() {
   );
 }
 
-function Question() {
+function Question({ channel }: { channel?: string }) {
   const actions = useActions();
   const { ui } = useBeluga();
   const state = useApp((st) => st);
-  const q = state.questions[0];
-  if (!q || q.channel !== channelOf(state.view)) return null;
+  const first = state.questions[0];
+  const q = channel ? state.questions.find((x) => x.channel === channel) : first?.channel === channelOf(state.view) ? first : undefined;
+  if (!q) return null;
   const owner = state.peers.find((p) => p.peerId === q.owner)?.name;
   if (q.question.kind === 'plan') {
     return (
@@ -202,6 +222,48 @@ function Knock() {
         <Button onClick={() => actions.run({ type: 'knock', peerId: knock.peerId, pick: 'watch' })}>Let in to watch</Button>
         <Button variant="quiet" onClick={() => actions.run({ type: 'knock', peerId: knock.peerId, pick: 'decline' })}>
           Not now
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Hosts you said Not Now to ("Add kay as a friend?"), remembered on this Mac. */
+const BEFRIEND_KEY = 'beluga.befriend.notNow';
+const notNow = (): Set<string> => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(BEFRIEND_KEY) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+};
+
+/**
+ * You joined someone's room with an old room link: rooms fold into friends (BLG-202), so their
+ * host is offered as a friend, once. The room itself works as before.
+ */
+function BefriendHost() {
+  const { client } = useBeluga();
+  const [dismissed, setDismissed] = useState(notNow);
+  const host = useApp((st) => hostToBefriend({ peers: st.peers, selfId: st.self?.peerId, friends: st.network.friends, ...(st.network.offers ? { offers: st.network.offers } : {}), dismissed }), sameDeep);
+  if (!host) return null;
+  const later = (): void => {
+    const next = new Set([...dismissed, host.peerId]);
+    localStorage.setItem(BEFRIEND_KEY, JSON.stringify([...next].slice(-200)));
+    setDismissed(next);
+  };
+  return (
+    <div className={s.card} role="group" aria-label={`Add ${host.name} as a friend`}>
+      <div className={s.head}>
+        <Icon name="person" size={13} />
+        <span className={s.title}>Add {host.name} as a friend?</span>
+      </div>
+      <div className={s.actions}>
+        <Button variant="primary" onClick={() => void befriend(client, host.peerId, host.name)}>
+          Add as Friend
+        </Button>
+        <Button variant="quiet" onClick={later}>
+          Not Now
         </Button>
       </div>
     </div>

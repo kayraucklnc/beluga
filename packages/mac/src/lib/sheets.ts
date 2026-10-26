@@ -26,6 +26,8 @@ export type NativeSheet =
   | { readonly kind: 'work'; readonly wsId: string; readonly action: AskedWork }
   /** A project's worktrees made outside Beluga that can go, ticked, before removing them. */
   | { readonly kind: 'clean_up_worktrees'; readonly projectId: string }
+  /** Share with…: a project with friends over the network (pick who, and whether they work there or follow). */
+  | { readonly kind: 'share_project'; readonly projectId: string }
   /** Delete Project…: out of Beluga with the worktrees it made (archived); the project's folder is never touched. */
   | { readonly kind: 'delete_project'; readonly projectId: string }
   /** A new task (in a project, a status, under a parent). */

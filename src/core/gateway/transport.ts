@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import type { BelugaInfo } from '../../net/mesh/features.js';
+import type { ChatExtras } from '../../net/mesh/views.js';
 import type { TaskBook } from './book.js';
 import { type Frame, type GatewayMsg, type GatewayMsgInput, parseFrame } from './protocol.js';
 
@@ -18,6 +20,12 @@ export interface MeshPort {
   /** Hand a frame to the friend's link; false when there's no link now. */
   sendGateway(peerId: string, payload: unknown): boolean;
   nameFor(peerId: string): string;
+  /** What their Beluga said about itself (its version and features); undefined for older Macs. */
+  belugaOf?(peerId: string): BelugaInfo | undefined;
+  /** Write in a conversation you share (`dm:<peerId>`, `group:<id>`): a task's card there (BLG-208). */
+  post?(conversation: string, text: string, extras: ChatExtras): void;
+  /** `peerId` is in this conversation with you now. */
+  shares?(conversation: string, peerId: string): boolean;
 }
 
 /** What the gateway needs from today's room. */

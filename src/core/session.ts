@@ -7,6 +7,8 @@ import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { Body, type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
+import { networkOf } from './network.js';
+import { mentionNote, personMentions } from './person-mentions.js';
 import { type ShareService, parseShareSpec } from './shares.js';
 import { existsSync } from 'node:fs';
 import { type Attention, type Location, type MyShare, type Prefs, type Store, peerName } from './store.js';
@@ -41,6 +43,7 @@ import type { GuestShell } from './guest-shell.js';
 import { type SharedDiff, guestMayDo } from './shared-diff.js';
 import type { EnvVars } from './env-vars.js';
 import { gatewayOf } from './gateway/registry.js';
+import { receiveFriendOffer } from './friend-offers.js';
 
 /** Bigger, smaller, or back to normal text. */
 export type ZoomDir = 'in' | 'out' | 'reset';
@@ -147,6 +150,7 @@ const GUARDED = new Set([
   'fs_search',
   'ws_diff',
   'gateway',
+  'friend_offer',
 ]);
 
 export { dirKey };
@@ -222,6 +226,11 @@ export class Session {
 
   get selfId(): string {
     return this.opts.client.peerId;
+  }
+
+  /** Your shared folders and workspaces' folders (who may open what). */
+  get shareService(): ShareService {
+    return this.opts.shares;
   }
 
   /** Your Claude (undefined when it's off). */
@@ -326,11 +335,19 @@ export class Session {
     const parsed = parseInput(raw, this.selfId, state.peers);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
-      const prompt = parsed.kind === 'agent' ? parsed.prompt : parsed.text;
-      if (!id) return this.askOwnClaude(prompt, channel, urgent) !== undefined;
+      // A leading "@claude" is just you talking to your Claude; "@claude:ata" stays in the words, so your
+      // Claude knows to ask Ata's Claude (the room's own parse only knows people in the room).
+      const onlyYours = parsed.kind === 'agent' && parsed.unknown.length === 0 && parsed.targets.every((t) => t === this.selfId);
+      const prompt = parsed.kind === 'agent' && onlyYours ? parsed.prompt : parsed.text;
+      if (!id) {
+        const sent = this.askOwnClaude(prompt, channel, urgent) !== undefined;
+        if (sent) this.tellMentioned(prompt, channel);
+        return sent;
+      }
       if (this.sentById.has(id)) return true;
       const requestId = this.askOwnClaude(prompt, channel, urgent);
       if (requestId === undefined) return false;
+      this.tellMentioned(prompt, channel);
       this.sentById.set(id, requestId);
       if (this.sentById.size > 200) this.sentById.delete(this.sentById.keys().next().value!);
       return true;
@@ -361,6 +378,33 @@ export class Session {
         if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No Claude is online', 'warn');
         return true;
     }
+  }
+
+  /**
+   * "@ata" in what you said to your Claude is Ata, the person: Ata gets it as a direct message saying
+   * where you mentioned them. "@claude:ata" (Ata's Claude) is your Claude's to ask, not a mention.
+   */
+  private tellMentioned(text: string, channel: string): void {
+    const state = this.store.getState();
+    const people = personMentions(text, state.network.friends);
+    if (!people.length) return;
+    let mesh: ReturnType<typeof networkOf>;
+    try {
+      mesh = networkOf(this);
+    } catch {
+      return;
+    }
+    const ws = channel.startsWith('ws:') ? state.projects.flatMap((p) => p.workspaces.map((w) => ({ w, p }))).find(({ w }) => w.id === channel.slice(3)) : undefined;
+    const where = ws ? `${ws.w.name} (${ws.p.name})` : 'a conversation with their Claude';
+    const me = state.self?.name ?? state.network.self?.name ?? 'A friend';
+    for (const f of people) {
+      try {
+        mesh.sendDm(f.peerId, mentionNote(me, where, text));
+      } catch {
+        continue;
+      }
+    }
+    this.store.dispatch({ type: 'system', text: `Told ${people.map((f) => f.name).join(', ')} you mentioned them (a direct message).`, level: 'info', channel });
   }
 
   system(text: string, level: 'info' | 'warn' | 'error' = 'info'): void {
@@ -425,7 +469,7 @@ export class Session {
       return;
     }
     if (this.store.getState().self?.guest && !this.store.getState().peers.find((p) => p.peerId === this.selfId && !p.guest)) {
-      this.toast("You came in with a link to a project, so there's no group chat here. Open it under SHARED WITH ME", 'warn');
+      this.toast("You came in with a link to a project, so there's no group chat here. Open it in Projects", 'warn');
       return;
     }
     if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent }, { keep: true })) {
@@ -765,7 +809,24 @@ export class Session {
   // Networking
   // -------------------------------------------------------------------------
 
+  /**
+   * Sharing with friends over the network (core/friend-share) takes the messages about what you
+   * share with a friend (or they with you) to that friend's Mac: true or false when it took one
+   * (it went, or waits for them), undefined to leave it to the room.
+   */
+  meshRoute?: (to: string, body: BodyInput) => boolean | undefined;
+
+  /** A room message that came over a friend's network link (core/friend-share checked what it may be). */
+  receiveFromFriend(from: string, body: Body, frameId: string): Promise<void> {
+    const now = Date.now();
+    return this.handle({ id: `mesh:${from}:${frameId}`, from, ts: now, sentAt: now, body }).catch((err: unknown) => this.system(`Error handling ${body.kind}: ${errorText(err)}`, 'error'));
+  }
+
   send(body: BodyInput, opts: { to?: string; keep?: boolean } = {}): boolean {
+    if (opts.to !== undefined && opts.to !== this.selfId) {
+      const routed = this.meshRoute?.(opts.to, body);
+      if (routed !== undefined) return routed;
+    }
     // To yourself (your Claude in your own conversations, its events back to you): handled right
     // here, never through the room. A dropped or half-open room connection (after sleep, a network
     // change, offline) used to swallow these silently: the plan chat's message never reached Claude
@@ -878,6 +939,9 @@ export class Session {
         // Tasks between Claudes (core/gateway): sent to one person; the gateway checks who may say what.
         gatewayOf(this)?.onRoomFrame(from, body.frame);
         return;
+      case 'friend_offer':
+        // Someone in the room wants to be friends on the network (BLG-202): shown, never acted on by itself.
+        return receiveFriendOffer(this, from, body);
       case 'room_cleared':
         if (this.store.getState().peers.find((p) => p.peerId === from)?.host) {
           this.store.dispatch({ type: 'clear', channel: 'room' });
@@ -886,7 +950,7 @@ export class Session {
         return;
       case 'share_offer':
         this.store.dispatch({ type: 'offer', offer: { owner: from, name: body.name, writable: body.writable }, active: body.active });
-        if (body.active) this.toast(`${peerName(this.store.getState(), from)} shared ${body.name} with you. It's in Shared files`, 'success');
+        if (body.active) this.toast(`${peerName(this.store.getState(), from)} shared ${body.name} with you. It's in Files`, 'success');
         return;
       case 'agent_question':
         return this.questions.onQuestion(from, body);

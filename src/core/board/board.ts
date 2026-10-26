@@ -742,6 +742,58 @@ export class Board {
     return this.change(issue, { status, rank: this.lastRank(status) }, [this.entry(beluga, 'plan', text), this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`)]);
   }
 
+  // ------------------------------------------------------------------ team boards (core/team/board-sync.ts)
+
+  /**
+   * A teammate's task, new here: it keeps its id (the same on every Mac in the team) and gets a
+   * key of this project's own. Its activity is what the team has of it; nothing is added here.
+   */
+  adoptTeam(input: Omit<Issue, 'key' | 'number' | 'rank' | 'revisions' | 'worktrees' | 'proof' | 'updatedAt'>): Issue {
+    if (this.issues.some((i) => i.id === input.id)) return this.need(input.id);
+    const project = this.projectFor(input.projectId);
+    const number = project.next;
+    const issue: Issue = { ...input, key: `${project.prefix}-${number}`, number, rank: this.lastRank(input.status), revisions: [], worktrees: [], proof: [], updatedAt: this.now(), ...(isOpen(input.status) ? {} : { closedAt: input.closedAt ?? this.now() }) };
+    this.projects = { ...this.projects, [input.projectId]: { ...project, next: number + 1 } };
+    this.issues = [...this.issues, issue];
+    this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
+    this.deps.store.dispatch({ type: 'board_issue', issue });
+    this.save();
+    return issue;
+  }
+
+  /**
+   * A teammate's change to a task, as the team settled it: the fields that won, activity entries to
+   * add (and entries its author took back, a coalesced line), and who wrote the brief sections
+   * (they're kept as revisions, so Restore This works on what came from a teammate too).
+   */
+  applyTeam(ref: string, patch: Partial<Pick<Issue, 'title' | 'status' | 'priority' | 'labels' | 'estimate' | 'due' | 'assignee' | 'parent' | 'blockedBy' | 'related' | 'github'>> & { readonly brief?: Partial<Record<BriefSection, string>> }, add: readonly Activity[], drop: readonly string[], by: Actor): Issue {
+    const issue = this.need(ref);
+    const { brief: briefPatch, ...fields } = patch;
+    const next: Record<string, unknown> = { ...fields };
+    if (fields.status && fields.status !== issue.status) {
+      next.rank = this.lastRank(fields.status);
+      if (issue.needsChecks) next.needsChecks = undefined;
+    }
+    if (briefPatch) {
+      const brief = { ...issue.brief } as Record<BriefSection, string>;
+      const revisions = [...issue.revisions];
+      for (const [section, text] of Object.entries(briefPatch) as Array<[BriefSection, string]>) {
+        const before = issue.brief[section] ?? '';
+        if (before === text) continue;
+        revisions.push({ id: short('r'), at: this.now(), by, section, before, after: text, reason: 'from a teammate' });
+        if (text) brief[section] = text;
+        else delete brief[section];
+      }
+      next.brief = brief;
+      next.revisions = keepRevisions(revisions);
+    }
+    const gone = new Set(drop);
+    const kept = gone.size ? issue.activity.filter((a) => !gone.has(a.id)) : issue.activity;
+    const known = new Set(kept.map((a) => a.id));
+    const activity = [...kept, ...add.filter((a) => !known.has(a.id))].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
+    return this.change({ ...issue, activity: [] }, next as Partial<Issue>, activity);
+  }
+
   // ------------------------------------------------------------------ settings
 
   setAutoTasks(on: boolean): void {

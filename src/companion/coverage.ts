@@ -72,6 +72,9 @@ export const PHONE: Record<Method, Side> = {
   'sharing.invite': 'mac',
   'sharing.remove': 'mac',
   'sharing.leave': 'mac',
+  'sharing.shareWithFriend': 'mac',
+  'sharing.unshareFriend': 'mac',
+  'sharing.leaveProject': 'mac',
   'invites.create': 'mac',
   'invites.revoke': 'mac',
   'invites.copyLink': 'mac',
@@ -210,6 +213,9 @@ export const PHONE: Record<Method, Side> = {
   'network.friends.accept': 'mac',
   'network.friends.cancelInvite': 'mac',
   'network.friends.remove': 'mac',
+  // Asking someone in your room is the Mac's (the sidebar's Not friends yet); answering a request is a NeedsYou item, on the phone too.
+  'network.friends.addFromRoom': 'mac',
+  'network.friends.answerOffer': 'phone',
   'network.dm.send': 'phone',
   'network.dm.history': 'phone',
   'network.groups.list': 'phone',
@@ -338,6 +344,15 @@ export const PHONE: Record<Method, Side> = {
   'issues.fix': 'mac',
   'issues.toTask': 'mac',
   'issues.comment': 'mac',
+  // Team boards: answering an offer is the phone's (a NeedsYou card); leaving a team is the Mac's.
+  'team.answer': 'phone',
+  'team.leave': 'mac',
+  'team.ackAssignment': 'phone',
+  // Shared plans: sharing one is the Mac's (its menu); reviewing one and settling suggestions are answers, the phone's too.
+  'team.sharePlan': 'mac',
+  'team.reviewPlan': 'phone',
+  'team.applySuggestion': 'phone',
+  'team.dismissSuggestion': 'phone',
 
   // ---- git, live views' sources, editing files: the Mac's
   'git.fetch': 'mac',

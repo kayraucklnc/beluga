@@ -1,9 +1,9 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Sparkles, X } from 'lucide-react-native';
+import { ArrowLeftRight, Clock, Lock, SquareTerminal, TriangleAlert, X } from 'lucide-react-native';
 import { AskClaudePicker, type AskTarget, askTargets } from '../../components/AskClaudePicker';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import Animated, { FadeInUp, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '../../components/Composer';
@@ -11,16 +11,22 @@ import { SendStatus } from '../../components/SendStatus';
 import { Thumb } from '../../components/Outputs';
 import { TaskWords } from '../../components/render/TaskChip';
 import { Header, Screen, useScrolled } from '../../components/Screen';
-import { Avatar, Press, T } from '../../components/ui';
+import { Avatar, Press, T, hueOf, toneBg, toneInk } from '../../components/ui';
 import { ago, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
-import type { ChatMessageView, ChatView, OutputView, Topic } from '../../lib/link/protocol';
+import type { ChatMemberView, ChatMessageView, ChatView, OutputView, Topic } from '../../lib/link/protocol';
 import { upload } from '../../lib/pick';
+import { runOf } from '../../lib/chat-runs';
 import { sends, useSends } from '../../lib/sends';
 import { store } from '../../lib/store';
 import { color, ink, tint } from '../../lib/theme';
 
-/** A chat with friends: messages, photos and files both ways, and Ask Claude. */
+/**
+ * A chat with friends, as a messaging app (BLG-210): your words on the right in your pastel, a
+ * friend's on the left in theirs (their name above a run, their picture at its end), a Claude's
+ * answer and a task's card full width under "<owner>'s Claude". Above: each person and their
+ * Claude, and what waits on whom.
+ */
 export default function Chat() {
   const { scrolled, onScroll } = useScrolled();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,12 +35,15 @@ export default function Chat() {
   const c = view?.data;
   const insets = useSafeAreaInsets();
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  /** Where each task's card sits in the list (for the waiting band to scroll to it). */
+  const cards = useRef<Record<string, number>>({});
   const [ask, setAsk] = useState<AskTarget | undefined>();
   const [picking, setPicking] = useState(false);
   /** What you sent that the Mac's view doesn't show yet. */
   const pending = useSends(topic);
   const targets = askTargets(c?.members, c?.kind ?? 'dm', c?.name ?? '');
   const pics: OutputView[] = c?.messages.flatMap((m) => (m.files ?? []).filter((f) => f.kind === 'image')) ?? [];
+  const meName = c?.members?.find((m) => m.me)?.name;
 
   useEffect(() => {
     if (c) void store.call(calls.read(topic), { queue: false }).catch(() => undefined);
@@ -43,21 +52,27 @@ export default function Chat() {
   return (
     <Screen>
       <Header scrolled={scrolled} back title={c?.name ?? 'Chat'} eyebrow={c?.kind === 'group' ? 'Channel' : c?.live.length ? 'Here now' : 'Direct message'} at={view?.at} />
+      {c?.members?.some((m) => m.claude) ? <People members={c.members} /> : null}
+      {c?.waiting?.length ? <Waiting items={c.waiting} onPick={(task) => task && cards.current[task] !== undefined && scroll.current?.scrollTo({ y: Math.max(0, cards.current[task]! - 24), animated: true })} /> : null}
       <KeyboardLift>
-        <ScrollView onScroll={onScroll} scrollEventThrottle={32} ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })} contentContainerStyle={{ padding: 14, gap: 6 }}>
+        <ScrollView onScroll={onScroll} scrollEventThrottle={32} ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })} contentContainerStyle={{ padding: 14, gap: 4 }}>
           {c?.messages.map((m, i) => {
-            const prev = c.messages[i - 1];
-            const firstOfRun = !prev || prev.from !== m.from || m.ts - prev.ts > 10 * 60_000;
+            const run = runOf(c.messages, i);
             return (
-              <Animated.View key={m.id} entering={i > c.messages.length - 3 ? FadeInUp.springify().stiffness(220).damping(22) : undefined} layout={LinearTransition.springify()}>
-                <Bubble m={m} first={firstOfRun} group={c.kind === 'group'} pics={pics} />
+              <Animated.View
+                key={m.id}
+                entering={i > c.messages.length - 3 ? FadeInUp.springify().stiffness(220).damping(22) : undefined}
+                layout={LinearTransition.springify()}
+                onLayout={m.task ? (e) => (cards.current[m.task!.id] = e.nativeEvent.layout.y) : undefined}
+              >
+                <Bubble m={m} first={run.first} last={run.last} group={c.kind === 'group'} pics={pics} me={meName} />
               </Animated.View>
             );
           })}
           {pending.map((p) => (
             <Animated.View key={p.id} entering={FadeInUp.springify().stiffness(220).damping(22)} layout={LinearTransition.springify()} style={{ alignItems: 'flex-end', marginTop: 6 }}>
-              <View style={{ maxWidth: '78%', paddingVertical: 9, paddingHorizontal: 13, borderRadius: 19, borderBottomRightRadius: 6, backgroundColor: tint.sky, opacity: p.state === 'failed' ? 1 : 0.6, borderWidth: p.state === 'failed' ? 1 : 0, borderColor: color.error }}>
-                <T v="body" c={ink.sky} style={{ fontSize: 15.5 }}>
+              <View style={{ maxWidth: '78%', paddingVertical: 9, paddingHorizontal: 13, borderRadius: 19, borderBottomRightRadius: 6, backgroundColor: meName ? toneBg(hueOf(meName)) : tint.sky, opacity: p.state === 'failed' ? 1 : 0.6, borderWidth: p.state === 'failed' ? 1 : 0, borderColor: color.error }}>
+                <T v="body" c={color.text} style={{ fontSize: 15.5 }}>
                   {p.text || 'Photo'}
                 </T>
               </View>
@@ -68,7 +83,7 @@ export default function Chat() {
         {ask ? (
           <Animated.View entering={FadeInUp.duration(180)} style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 2 }}>
             <Press onPress={() => setPicking(true)} accessibilityLabel={`Ask: ${ask.label}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingLeft: 10, paddingRight: 4, borderRadius: 15, backgroundColor: tint.peach }}>
-              <Sparkles color={ink.peach} size={14} />
+              <SquareTerminal color={ink.peach} size={14} />
               <T v="caption" c={ink.peach} style={{ fontWeight: '700' }}>
                 Ask: {ask.label}
               </T>
@@ -77,6 +92,11 @@ export default function Chat() {
               </Press>
             </Press>
           </Animated.View>
+        ) : null}
+        {c?.note ? (
+          <T v="caption" c={color.text3} style={{ textAlign: 'right', paddingHorizontal: 18, paddingBottom: 2, fontSize: 12 }} numberOfLines={1}>
+            {c.note}
+          </T>
         ) : null}
         <Composer
           placeholder={ask ? `Ask ${ask.label}…` : `Message ${c?.name ?? ''}`}
@@ -89,8 +109,8 @@ export default function Chat() {
             else sends.message(topic, text, calls.chat(topic, text, opts));
             setAsk(undefined);
           }}
-          // Behind the + with the photo; who's asked shows in the pill above.
-          more={[{ Icon: Sparkles, label: 'Ask Claude', sub: 'A Claude here answers in the chat', tone: 'peach', onPress: () => setPicking(true) }]}
+          // Behind the + with the photo; who's asked shows in the pill above. The Claude mark, as on the Mac.
+          more={[{ Icon: SquareTerminal, label: 'Ask: your Claude', sub: 'A Claude here answers in the chat', tone: 'peach', onPress: () => setPicking(true) }]}
         />
       </KeyboardLift>
       <AskClaudePicker visible={picking} onClose={() => setPicking(false)} targets={targets} chosen={ask} onPick={setAsk} members={c?.members} />
@@ -98,15 +118,141 @@ export default function Chat() {
   );
 }
 
-function Bubble({ m, first, group, pics }: { m: ChatMessageView; first: boolean; group: boolean; pics: OutputView[] }) {
+/** Each person here and what their Claude is doing: "You · working", "ata · offline · 1.1". */
+function People({ members }: { members: readonly ChatMemberView[] }) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, backgroundColor: color.bg }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 6 }}>
+      {members.slice(0, 12).map((m) => (
+        <View key={m.peerId} accessibilityLabel={`${m.me ? 'You' : m.name}: ${m.presence ?? ''}, Claude ${m.claude ?? ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 28, paddingLeft: 3, paddingRight: 10, borderRadius: 14, backgroundColor: color.card, borderWidth: 0.5, borderColor: color.hairline }}>
+          <Avatar name={m.name} size={22} {...(m.presence ? { presence: m.presence } : {})} />
+          <T v="caption" c={color.text} style={{ fontWeight: '700' }}>
+            {m.me ? 'You' : m.name}
+          </T>
+          {m.claude === 'working' || m.claude === 'idle' ? <SquareTerminal color={toneInk(hueOf(m.name))} size={12} /> : m.claude && /update/.test(m.claude) ? <TriangleAlert color={color.warn} size={12} /> : null}
+          {m.claude ? (
+            <T v="caption" c={m.claude.startsWith('offline') ? color.text3 : color.text2} style={{ fontSize: 12 }}>
+              {m.claude}
+            </T>
+          ) : null}
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+/** What waits here, under the header: on you (butter), on someone else (plain); a tap goes to its card. */
+function Waiting({ items, onPick }: { items: NonNullable<ChatView['waiting']>; onPick: (task: string | undefined) => void }) {
+  return (
+    <View style={{ paddingHorizontal: 16, paddingBottom: 8, gap: 6, backgroundColor: color.bg, borderBottomWidth: 0.5, borderBottomColor: color.hairline }}>
+      {items.slice(0, 3).map((w, i) => {
+        const Icon = w.you ? TriangleAlert : Clock;
+        return (
+          <Press key={`${w.task ?? i}:${w.text}`} onPress={() => onPick(w.task)} accessibilityLabel={w.text} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32, paddingHorizontal: 12, borderRadius: 10, backgroundColor: w.you ? tint.butter : color.card }}>
+            <Icon color={w.you ? ink.butter : color.text2} size={14} />
+            <T v="caption" c={w.you ? ink.butter : color.text2} style={{ flex: 1, fontWeight: '600' }} numberOfLines={1}>
+              {w.text}
+            </T>
+          </Press>
+        );
+      })}
+    </View>
+  );
+}
+
+const TONE = { claude: 'claude', ok: 'ok', warn: 'warn', error: 'error', info: 'info' } as const;
+
+/** A task between two people's Claudes (BLG-208): who asks whom, where it is, and what came back. A secret's card is soft red. */
+function TaskCard({ task }: { task: NonNullable<ChatMessageView['task']> }) {
+  const tone = TONE[task.tone as keyof typeof TONE] ?? 'info';
+  return (
+    <View style={{ padding: 12, gap: 6, borderRadius: 18, backgroundColor: task.secret ? tint.rose : color.card, borderWidth: task.secret ? 1 : 0.5, borderColor: task.secret ? color.error : color.hairline }}>
+      {task.secret ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Lock color={color.error} size={13} />
+          <T v="caption" c={color.error}>
+            A secret · approved on its own, each time
+          </T>
+        </View>
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <ArrowLeftRight color={color.claude} size={15} />
+        <T v="caption" c={color.text} style={{ fontWeight: '700', flex: 1 }} numberOfLines={1}>
+          {task.title}
+        </T>
+        <View style={{ paddingVertical: 2, paddingHorizontal: 8, borderRadius: 10, backgroundColor: tint[tone] }}>
+          <T v="caption" c={color[tone]} style={{ fontSize: 11, fontWeight: '700' }} numberOfLines={1}>
+            {task.state}
+          </T>
+        </View>
+      </View>
+      <T v="body" c={color.text2} style={{ fontSize: 14 }} numberOfLines={3}>
+        {task.ask}
+      </T>
+      {task.summary ? (
+        <T v="body" c={color.text} style={{ fontSize: 14 }} numberOfLines={6}>
+          {task.summary}
+        </T>
+      ) : null}
+      {task.files?.length ? (
+        <T v="caption" c={color.text2}>
+          {task.files.join(' · ')}
+        </T>
+      ) : null}
+    </View>
+  );
+}
+
+/** Full width under "<owner>'s Claude": a Claude's answer, or a task's card. */
+function ClaudeRow({ owner, label, first, children }: { owner: string; label: string; first: boolean; children: React.ReactNode }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 8, marginTop: first ? 12 : 0 }}>
+      <View style={{ width: 30 }}>{first ? <Avatar name={owner} size={30} claude owner={owner} /> : null}</View>
+      <View style={{ flex: 1, gap: 4 }}>
+        {first ? (
+          <T v="caption" c={toneInk(hueOf(owner))} style={{ fontWeight: '700' }} numberOfLines={1}>
+            {label}
+          </T>
+        ) : null}
+        {children}
+      </View>
+    </View>
+  );
+}
+
+function Bubble({ m, first, last, group, pics, me }: { m: ChatMessageView; first: boolean; last: boolean; group: boolean; pics: OutputView[]; me?: string | undefined }) {
   const mine = m.mine;
   const files = m.files ?? [];
+  if (m.task) {
+    return (
+      <ClaudeRow owner={m.from} label={m.task.who ?? m.from} first>
+        <TaskCard task={m.task} />
+      </ClaudeRow>
+    );
+  }
+  if (m.claude) {
+    const owner = m.from.replace(/’s Claude$/, '');
+    return (
+      <ClaudeRow owner={mine && me ? me : owner} label={mine ? 'Your Claude' : `${owner}’s Claude`} first={first}>
+        {files.map((f) => (
+          <Thumb key={f.ref} o={f} group={pics} w={f.kind === 'image' ? 220 : 200} h={f.kind === 'image' ? 170 : 92} style={{ borderRadius: 18 }} />
+        ))}
+        {m.text ? (
+          <T v="body" c={color.text} style={{ fontSize: 15.5 }}>
+            {m.text}
+          </T>
+        ) : null}
+        {m.offer ? <Offer offer={m.offer} name={owner} /> : null}
+      </ClaudeRow>
+    );
+  }
+  // Your pastel, or theirs: each person keeps their colour (the same as their picture).
+  const bg = toneBg(hueOf(mine && me ? me : m.from));
   return (
-    <View style={{ flexDirection: 'row', justifyContent: mine ? 'flex-end' : 'flex-start', gap: 8, marginTop: first ? 10 : 0 }}>
-      {!mine ? <View style={{ width: 30 }}>{first ? <Avatar name={m.from} size={30} claude={m.claude} /> : null}</View> : null}
+    <View style={{ flexDirection: 'row', justifyContent: mine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: 8, marginTop: first ? 10 : 0 }}>
+      {!mine ? <View style={{ width: 30 }}>{last ? <Avatar name={m.from} size={30} /> : null}</View> : null}
       <View style={{ maxWidth: '78%', alignItems: mine ? 'flex-end' : 'flex-start', gap: 4 }}>
-        {!mine && first && (group || m.claude) ? (
-          <T v="caption" c={m.claude ? color.claude : color.text2} style={{ fontWeight: '700', marginLeft: 4 }}>
+        {!mine && first && group ? (
+          <T v="caption" c={color.text2} style={{ fontWeight: '700', marginLeft: 4 }}>
             {m.from}
           </T>
         ) : null}
@@ -119,21 +265,18 @@ function Bubble({ m, first, group, pics }: { m: ChatMessageView; first: boolean;
               paddingVertical: 9,
               paddingHorizontal: 13,
               borderRadius: 19,
-              borderBottomRightRadius: mine ? 6 : 19,
-              borderBottomLeftRadius: mine ? 19 : 6,
-              backgroundColor: mine ? tint.sky : m.claude ? tint.peach : color.card,
-              borderWidth: mine || m.claude ? 0 : 0.5,
-              borderColor: color.hairline,
+              borderBottomRightRadius: mine ? (last ? 5 : 8) : 19,
+              borderBottomLeftRadius: mine ? 19 : last ? 5 : 8,
+              backgroundColor: bg,
             }}
           >
-            <T v="body" c={mine ? ink.sky : m.claude ? ink.peach : color.text} style={{ fontSize: 15.5 }}>
+            <T v="body" c={color.text} style={{ fontSize: 15.5 }}>
               {/* Task keys as chips in your own messages only: a friend's key may be on their board (BLG-109). */}
               {mine ? <TaskWords text={m.text} /> : m.text}
             </T>
           </View>
         ) : null}
-        {m.offer ? <Offer offer={m.offer} name={m.from.replace(/’s Claude$/, '')} /> : null}
-        {first ? (
+        {last ? (
           <T v="caption" style={{ marginHorizontal: 4, fontSize: 11 }}>
             {ago(m.ts)}
           </T>

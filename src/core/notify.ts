@@ -27,6 +27,8 @@ export interface NoticeEvent {
   readonly quiet?: boolean;
   /** A friend's request (the gateway) this approval is about. */
   readonly task?: string;
+  /** That approval is Allow once / Decline only (a secret): the notification offers no Always. */
+  readonly once?: boolean;
   /** The plan it's about (its id), and the plan's task (its id there): opening it goes to the plan at that task. */
   readonly plan?: string;
   readonly planTask?: string;
@@ -50,6 +52,8 @@ export interface DesktopNote {
   readonly approval?: string;
   /** The friend's request that approval is about. */
   readonly task?: string;
+  /** That approval offers no Always (a secret): only Review…. */
+  readonly once?: boolean;
   /** Only what Claude needs from you, and the Mac's on-screen pop-up shows it: a banner would say it twice (its sound still plays). */
   readonly popup?: boolean;
   /** A friend's message while Beluga is in front: the window shows it as a banner, with its sound (macOS hides banners of the app in front). */
@@ -86,6 +90,9 @@ const firstLine = (text: string, max = 140): string => {
 export function placeName(state: DomainState, channel: string): string {
   if (channel === 'room') return state.peers.length > 1 ? 'the group chat' : 'your chat';
   if (isAssistant(channel)) return ASSISTANT_TITLE;
+  // A friends' chat (your Claude acts there when you ask it, BLG-207).
+  if (channel.startsWith('dm:')) return `your chat with ${state.network.friends.find((f) => f.peerId === channel.slice(3))?.name ?? 'a friend'}`;
+  if (channel.startsWith('group:')) return state.network.groups.find((g) => g.id === channel.slice(6))?.name ?? 'a channel';
   const id = channel.slice(3);
   const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) ?? state.shared.find((w) => w.id === id);
   return ws?.name ?? 'a workspace';
@@ -286,7 +293,8 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
     const old = before.messages[conversation];
     if (old === list) continue;
     const seen = new Set((old ?? []).map((m) => m.id));
-    const fresh = list.filter((m) => !seen.has(m.id) && !m.mine && m.status !== 'locked' && now - m.ts < STALE_MESSAGE_MS);
+    // A task's card says nothing new: the task itself asks you (or tells you it ran).
+    const fresh = list.filter((m) => !seen.has(m.id) && !m.mine && !m.task && m.status !== 'locked' && now - m.ts < STALE_MESSAGE_MS);
     if (fresh.length > MESSAGE_BURST * 4) continue;
     const group = conversation.startsWith('group:') ? after.groups.find((g) => `group:${g.id}` === conversation) : undefined;
     for (const m of fresh) {
@@ -312,8 +320,9 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     for (const a of next.approvals) {
       if (seen.has(a.id)) continue;
       // An approval a plan's task asks for opens the plan there.
-      const inPlan = a.channel !== undefined && planOfChannel(next, a.channel) ? { channel: a.channel } : {};
-      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
+      // One in a friends' chat (a request that came from there, your Claude working there) opens that chat.
+      const inPlan = a.channel !== undefined && (planOfChannel(next, a.channel) || /^(dm|group):/.test(a.channel)) ? { channel: a.channel } : {};
+      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.once ? { once: true } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
     }
   }
   if (prev.questions !== next.questions) {
@@ -520,7 +529,7 @@ export function combine(batch: readonly NoticeEvent[], prefs: boolean | SoundPre
   const sound = { ...soundOf(batch, prefs), ...(popup && batch.every((e) => e.kind === 'needsYou') ? { popup: true } : {}) };
   const channel = first.channel !== undefined && batch.every((e) => e.channel === first.channel) ? { channel: first.channel } : {};
   // One approval on its own can be answered from the notification itself.
-  const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}) } : {};
+  const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}), ...(first.once ? { once: true } : {}) } : {};
   if (batch.length === 1) return { title: first.title, body: first.body, ...sound, ...channel, ...approval };
   return { title: `${batch.length} updates in Beluga`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), ...sound, ...channel };
 }

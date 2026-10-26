@@ -1,25 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { trustOf } from '@beluga/core/trust.js';
 import { overviewNews } from '@beluga/ui/workspace-models.js';
 import { macTabs } from '../lib/go.js';
 import { newShares } from '@beluga/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
-import { SpecContext } from '../components/SpecMenu.js';
-import { Avatar, Badge, IconButton, Tip, cx } from '../components/ui.js';
+import { Badge, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { inApp } from '../lib/boot.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
-import { openPerson } from '../dialogs/native/PersonPopover.js';
-import { PersonContextMenu } from '../dialogs/native/PersonMenu.js';
 import { RoomStatus } from '../dialogs/native/RoomPopover.js';
 import { PhoneMark } from '../phone/Phone.js';
 import { Projects, ProjectsAddMenu } from './ProjectTree.js';
+import { SharedProjects } from './SharedProjects.js';
 import { WorkspaceRow } from './workspace-row.js';
 import { UnreadSection } from './UnreadSection.js';
-import { signalOf } from './attention-model.js';
-import { SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { Row, Section } from './sidebar-parts.js';
 import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
@@ -36,7 +31,7 @@ import s from './Sidebar.module.css';
 /**
  * The sidebar's top: three places, always. The rest are a click away without a row of their
  * own: Search in the toolbar (⇧⌘F), Usage as an icon above, the terminal in the right panel (⌘J),
- * shared folders under Shared with me; Activity and Requests show up only while there's something
+ * folders friends share under Files (projects they share are in Projects); Activity and Requests show up only while there's something
  * in them. Everything is also in ⌘K and the Go menu (⌥1…7).
  */
 const NAV: ReadonlyArray<{ kind: 'overview' | 'room'; icon: IconName }> = [
@@ -45,47 +40,6 @@ const NAV: ReadonlyArray<{ kind: 'overview' | 'room'; icon: IconName }> = [
 ];
 
 export { workspaceItems } from './workspace-row.js';
-
-function People() {
-  const { ui } = useBeluga();
-  const people = useApp(
-    (state) => state.peers.map((p) => ({ p, me: p.peerId === state.self?.peerId, trust: p.peerId === state.self?.peerId ? undefined : trustOf(state, p.peerId), following: state.follow === p.peerId })),
-    sameDeep,
-  );
-  if (people.length <= 1) {
-    return <Row className={s.hintRow} icon={<Icon name="link" size={13} />} label="Invite someone…" onClick={() => document.dispatchEvent(new CustomEvent('beluga:invite'))} />;
-  }
-  return (
-    <>
-      {people.map(({ p, me, trust, following }, index) => {
-        return (
-          <PersonContextMenu key={p.peerId} index={index}>
-            <Row
-              data-person-row={p.peerId}
-              icon={<Avatar name={p.name} id={p.peerId} size={18} />}
-              label={
-                <span>
-                  {p.name}
-                  {me ? <span className={s.dim}> (you)</span> : null}
-                  {p.guest ? <span className={s.dim}> · guest</span> : null}
-                </span>
-              }
-              detail={me ? 'You' : `${p.name}${p.agent ? ' · Claude on' : ''}${trust ? ` · trust: ${trust}` : ''}`}
-              onClick={() => openPerson(ui, index, document.querySelector<HTMLElement>(`[data-person-row="${CSS.escape(p.peerId)}"]`))}
-              trailing={
-                <>
-                  {following ? <Tip label="Following their screen"><Icon name="eye" size={12} /></Tip> : null}
-                  {p.agent ? <Tip label={`${me ? 'Your' : `${p.name}'s`} Claude is on`}><Icon name="claude" size={12} className={s.claudeMark} /></Tip> : null}
-                  {trust === 'full' ? <Tip label="Full trust"><Icon name="lock" size={11} /></Tip> : null}
-                </>
-              }
-            />
-          </PersonContextMenu>
-        );
-      })}
-    </>
-  );
-}
 
 /**
  * Folders dragged from Finder onto the sidebar become projects (a git project, or a folder of
@@ -131,7 +85,7 @@ export function Sidebar() {
   const actions = useActions();
   const drop = useFolderDrop();
   // Only what the sidebar itself shows: drawn again when that changes, not on every streamed event (KLD-48).
-  const { tabs, liveChats, view, othersShare, badges, shared } = useApp((state) => {
+  const { tabs, liveChats, view, badges } = useApp((state) => {
     const news = overviewNews(state);
     const fresh = newShares(state);
     const badges: Partial<Record<string, { count: number; urgent?: boolean }>> = {
@@ -143,10 +97,7 @@ export function Sidebar() {
       tabs: macTabs(state),
       liveChats: state.projects.find((p) => !p.root)?.workspaces.filter((w) => !w.archived) ?? [],
       view: state.view,
-      // Folders someone else shares with you (or that went away while you weren't looking).
-      othersShare: state.peers.some((p) => p.peerId !== state.self?.peerId && p.shares.length > 0) || fresh > 0,
       badges,
-      shared: state.shared.map((w) => ({ w, owner: state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone', signal: signalOf(state, `ws:${w.id}`) })),
     };
   }, sameDeep);
   const files = tabs.find((t) => t.kind === 'files');
@@ -179,6 +130,15 @@ export function Sidebar() {
             // Overview, Work (Tasks, GitHub's issues and Plans in one row, BLG-197), then Chat.
             return n.kind === 'overview' ? [row, <WorkNav key="work" />] : row;
           })}
+          {/* Files: folders friends share with you (over the network), and the room's (BLG-205). */}
+          <Row
+            icon={<Icon name="folder" size={14} />}
+            label="Files"
+            detail={files?.hint ?? 'Folders friends share with you'}
+            selected={view.kind === 'files'}
+            onClick={() => actions.run({ type: 'view', view: { kind: 'files' } })}
+            trailing={badges.files?.count ? <Badge count={badges.files.count} /> : null}
+          />
           <ActivityRow whenLive />
           <RequestsNav whenAny />
         </section>
@@ -194,50 +154,14 @@ export function Sidebar() {
 
         <Section id="projects" title="Projects" action={<ProjectsAddMenu />}>
           <Projects />
+          {/* Friends' projects shared over the network: with yours, the owner's avatar on each. */}
+          <SharedProjects />
           {/* Housekeeping for every project's worktrees: after the projects, out of the daily places above. */}
           <WorktreesNav />
         </Section>
 
-        {shared.length || othersShare ? (
-          <Section id="shared" title="Shared with me">
-            {othersShare ? (
-              <Row
-                icon={<Icon name="folder" size={14} />}
-                label={files?.label ?? 'Shared files'}
-                detail={files?.hint ?? 'Folders people share with you'}
-                selected={view.kind === 'files'}
-                onClick={() => actions.run({ type: 'view', view: { kind: 'files' } })}
-                trailing={badges.files?.count ? <Badge count={badges.files.count} /> : null}
-              />
-            ) : null}
-            {shared.map(({ w, owner, signal }) => {
-              const selected = view.kind === 'shared' && view.id === w.id;
-              return (
-                <SpecContext key={`${w.owner}:${w.id}`} menu={{ kind: 'shared', owner: w.owner, id: w.id }}>
-                  <Row
-                    selected={selected}
-                    className={signalClass(signal, selected)}
-                    data-signal-row={signal.level}
-                    aria-label={w.name}
-                    icon={<Avatar name={owner} id={w.owner} size={16} />}
-                    label={<span className={nameClass(signal)}>{w.name}</span>}
-                    detail={`${owner}'s ${w.project} · ${signal.tip || (w.role === 'contribute' ? 'you can work here' : 'you can follow along')}`}
-                    onClick={() => actions.run({ type: 'open_shared', owner: w.owner, id: w.id, tab: 'chat' })}
-                    trailing={<SignalMark signal={signal} />}
-                  />
-                </SpecContext>
-              );
-            })}
-          </Section>
-        ) : null}
-
         <FriendsSection />
         <GroupsSection />
-
-        {/* The current room's people (today's rooms), apart from your friends on the Beluga network. */}
-        <Section id="people" title="In this room">
-          <People />
-        </Section>
       </div>
       <UpdatePill />
       <SidebarFooter />

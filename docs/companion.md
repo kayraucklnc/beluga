@@ -552,7 +552,9 @@ Advanced at the bottom. Learn it once and it works everywhere.
   gate), how many run side by side, and how it runs as one chip (Step by Step, Check-ins, Autopilot:
   `plans.setAutonomy`).
 - **Chats**: your friends' DMs and channels, as on the Mac, with photos and files both ways and
-  Ask Claude.
+  Ask Claude. A task between you and a friend's Claude shows as a small card there (`ChatMessageView.task`:
+  who asks whom, where it is, the result's summary and files; BLG-208); a phone too old for it shows the
+  message's words.
 - **People**: friends, their presence and allowance; tap one for Message, Ask their Claude, Take a
   screenshot of their desktop.
 

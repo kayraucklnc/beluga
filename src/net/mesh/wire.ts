@@ -17,7 +17,15 @@ const msgId = z.string().regex(/^[\w-]{8,64}$/);
 const tid = z.number().int().min(0).max(2 ** 31);
 
 export const LinkMessage = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('hello'), proto: z.number().int(), name: NameSchema, presence: PresenceSchema }),
+  /** `app`, `can`: their Beluga's version and what it does (net/mesh/features.ts); Macs from before them send neither. */
+  z.object({
+    t: z.literal('hello'),
+    proto: z.number().int(),
+    name: NameSchema,
+    presence: PresenceSchema,
+    app: z.string().max(64).optional(),
+    can: z.array(z.string().max(40)).max(64).optional(),
+  }),
   z.object({ t: z.literal('presence'), presence: PresenceSchema }),
   /** A direct message (end-to-end: the link is a Noise channel between the two of you). */
   z.object({ t: z.literal('dm'), id: msgId, text: z.string().max(8_000), ts: z.number().int().min(0), x: z.unknown().optional() }),
@@ -41,6 +49,10 @@ export const LinkMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('tun_close'), tid, o: z.boolean(), reason: z.string().max(200).optional() }),
   /** The gateway (tasks between Claudes, core/gateway): a frame it checks itself, between friends only. */
   z.object({ t: z.literal('gw'), p: z.unknown() }),
+  /** Sharing projects, worktrees and folders with friends (core/friend-share): a frame it checks itself, between friends only. */
+  z.object({ t: z.literal('share'), p: z.unknown() }),
+  /** Team boards (core/team): friends on the same GitHub repo; a frame it checks itself, between friends only. */
+  z.object({ t: z.literal('team'), p: z.unknown() }),
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

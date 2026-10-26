@@ -14,6 +14,7 @@ import { bars, nextWords, planStatus, plansOf, titleOf } from './plans-model.js'
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 import v from './PlansView.module.css';
+import { SharedPlansList } from '../team/SharedPlans.js';
 
 /**
  * Plans: one project's at a time (the one you're in, like Tasks). Each is a row with how far it
@@ -89,6 +90,7 @@ export function PlansView() {
           }
         />
       )}
+      <SharedPlansList projectId={here.id} />
     </div>
   );
 }

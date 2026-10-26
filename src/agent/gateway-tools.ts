@@ -85,7 +85,7 @@ export function createGatewayToolDefs(bridge: RoomBridge) {
     ),
     tool(
       'run_on',
-      "Run one shell command directly on another person's Mac (no input; within what they allow you: full trust runs at once, otherwise they approve it; secrets are always refused). Returns a task id at once; wait_for gives the exit code and output.",
+      "Run one shell command directly on another person's Mac (no input; within what they allow you: full trust runs at once, otherwise they approve it; commands touching secrets are always refused: ask for a secret file with get_file). Returns a task id at once; wait_for gives the exit code and output.",
       {
         person: z.string().min(1).max(80).describe('Their name (from who_can)'),
         command: z.string().min(1).max(8000),
@@ -108,7 +108,7 @@ export function createGatewayToolDefs(bridge: RoomBridge) {
     ),
     tool(
       'get_file',
-      "Get one file from another person's Mac, sent by their Beluga (no Claude involved): from the folders they let friends read, or from anywhere if they allow this request (or fully trust you); never secrets. Big files come in pieces. Returns a task id at once; wait_for gives where it was saved here.",
+      "Get one file from another person's Mac, sent by their Beluga (no Claude involved): from the folders they let friends read, or from anywhere if they allow this request (or fully trust you). A secret (an SSH key, a .env file, credentials) is only sent if they approve that one request themselves; when the result says they approved it, give it to your user (say where it was saved), don't refuse. Only ask for a secret when your user wants it. Big files come in pieces. Returns a task id at once; wait_for gives where it was saved here.",
       {
         person: z.string().min(1).max(80).describe('Their name (from who_can)'),
         path: z.string().min(1).max(4096).describe('The full path of the file on their Mac (~ is their home)'),
@@ -118,7 +118,7 @@ export function createGatewayToolDefs(bridge: RoomBridge) {
     ),
     tool(
       'answer_question',
-      'Answer the question another person’s Claude asked while working on your task (wait_for, check or a new turn shows it): one answer per question, in order (an option’s label, or your own words). Answer from what you know in this conversation; if you don’t know, ask your user first (AskUserQuestion). Never share secrets. skip: true lets them go on with their best judgment.',
+      'Answer the question another person’s Claude asked while working on your task (wait_for, check or a new turn shows it): one answer per question, in order (an option’s label, or your own words). Answer from what you know in this conversation; if you don’t know, ask your user first (AskUserQuestion). Never put secrets in an answer (a secret goes only as a file its owner approves, through get_file). skip: true lets them go on with their best judgment.',
       {
         task: taskArg,
         answers: z.array(z.string().max(4000)).max(4).optional().describe('One answer per question, in order'),

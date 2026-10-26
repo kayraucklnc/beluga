@@ -14,8 +14,10 @@ import { type EarningsAction, type EarningsSlice, initialEarnings, reduceEarning
 import { type SupportAction, type SupportSlice, initialSupport } from './support-store.js';
 import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceClaudeCode } from './claude-code/model.js';
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
+import { type FriendShareAction, type FriendShareSlice, initialFriendShare, reduceFriendShare } from './friend-share-store.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
+import { type TeamAction, type TeamSlice, initialTeam, reduceTeam } from './team/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_DEFAULT, type SlotWait } from '../shared/run-slots.js';
@@ -158,7 +160,9 @@ export interface Approval {
   readonly peer?: string;
   /** The friend's request it's about (the gateway: the request sheet and notifications open it). */
   readonly task?: string;
-  /** The conversation it holds up, when that's a workspace ("ws:<id>"): the sidebar marks it as needing you. */
+  /** Only Allow once / Decline: a friend's request for a secret (trust, rules and Always never cover it). */
+  readonly once?: boolean;
+  /** The conversation it holds up, when that's a workspace ("ws:<id>") or a friends' chat ("dm:<peerId>", "group:<id>"): the sidebar marks it as needing you, and the chat shows it. */
   readonly channel?: string;
 }
 
@@ -173,6 +177,8 @@ export interface BrowserRow {
   readonly dir: boolean;
   readonly target: Location | 'up';
   readonly size?: number;
+  /** At the top of Files: whose folder it is (rows of one person come together, under their name). */
+  readonly group?: string;
 }
 
 /** The Shared files browser: the folder open and what's in it (each screen keeps its own cursor). */
@@ -222,7 +228,7 @@ export interface Toast {
   readonly level: 'info' | 'success' | 'warn' | 'error';
 }
 
-export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff';
+export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff' | 'add_friend';
 
 /** Preferences mirrored from ~/.beluga/settings.json (every key here is a settings key). */
 export interface Prefs {
@@ -310,6 +316,8 @@ export type View =
   /** Plans (Mac app): one project's plans, and one plan's page (its graph, outline and conversation). */
   | { readonly kind: 'plans'; readonly projectId?: string }
   | { readonly kind: 'plan'; readonly id: string; readonly task?: string }
+  /** A plan draft a teammate shared with you (core/team): read-only, to review, comment, suggest or approve. */
+  | { readonly kind: 'team_plan'; readonly owner: string; readonly id: string }
 
   /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
   | { readonly kind: 'worktrees'; readonly projectId?: string };
@@ -375,7 +383,7 @@ export interface MyShare {
  * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice, FriendShareSlice, TeamSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -533,8 +541,10 @@ export type Action =
   | EarningsAction
   | ClaudeCodeAction
   | GatewayAction
+  | FriendShareAction
   | BoardAction
   | PlansAction
+  | TeamAction
   | SupportAction;
 
 const LOG_LIMIT = 1000;
@@ -610,8 +620,10 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialSupport,
     ...initialClaudeCode,
     ...initialGateway,
+    ...initialFriendShare,
     ...initialBoard,
     ...initialPlans,
+    ...initialTeam,
     companion: { devices: [] },
     assistant: NO_ASSISTANT_CHATS,
   };
@@ -638,8 +650,12 @@ export function stampAction<A extends Action>(action: A): A {
   }
 }
 
-export const peerName = (state: Pick<DomainState, 'peers' | 'self'>, peerId: string): string =>
-  state.peers.find((p) => p.peerId === peerId)?.name ?? (state.self?.peerId === peerId ? state.self.name : peerId.slice(0, 6));
+/** Someone's name: in the room, yourself, a friend, or someone in a project a friend shared with you. */
+export const peerName = (state: Pick<DomainState, 'peers' | 'self'> & { readonly network?: Pick<DomainState['network'], 'friends'>; readonly sharedProjects?: DomainState['sharedProjects'] }, peerId: string): string =>
+  state.peers.find((p) => p.peerId === peerId)?.name ??
+  (state.self?.peerId === peerId
+    ? state.self.name
+    : (state.network?.friends.find((f) => f.peerId === peerId)?.name ?? state.sharedProjects?.flatMap((p) => p.members).find((m) => m.peerId === peerId)?.name ?? peerId.slice(0, 6)));
 
 const sameLoc = (a: Location | undefined, b: Location): boolean =>
   Boolean(a) && a?.owner === b.owner && a.share === b.share && a.path === b.path;
@@ -653,23 +669,33 @@ function appendLog(log: readonly LogItem[], item: LogItem): readonly LogItem[] {
   return next.filter((_l, i) => i !== drop);
 }
 
-/** Every folder you can open: shared with the room, shared with just you, and workspaces you were invited into. */
+/**
+ * Every folder you can open, grouped by whose it is: what friends share with you over the network,
+ * what people in the room share (with everyone, or just you), and workspaces a room invited you into.
+ * Worktrees friends share over the network are projects, not folders: they're in Projects.
+ */
 function rootRows(state: DomainState): BrowserRow[] {
-  const name = (id: string) => state.peers.find((p) => p.peerId === id)?.name ?? 'someone';
+  const name = (id: string) => state.peers.find((p) => p.peerId === id)?.name ?? state.network.friends.find((f) => f.peerId === id)?.name ?? 'someone';
+  const friends = state.friendFolders.map((f) => ({ label: `${f.ownerName} · ${f.label}${f.writable ? '' : ' (read-only)'}`, dir: true, target: { owner: f.owner, share: f.name, path: '' }, group: f.ownerName }));
   const room = state.peers.flatMap((p) =>
-    p.shares.map((s) => ({ label: `${p.name} · ${s.name}${s.writable ? '' : ' (read-only)'}`, dir: true, target: { owner: p.peerId, share: s.name, path: '' } })),
+    p.shares.map((s) => ({ label: `${p.name} · ${s.name}${s.writable ? '' : ' (read-only)'}`, dir: true, target: { owner: p.peerId, share: s.name, path: '' }, group: p.name })),
   );
-  const offers = state.offers.map((o) => ({ label: `${name(o.owner)} · ${o.name} (shared with you)`, dir: true, target: { owner: o.owner, share: o.name, path: '' } }));
-  const workspaces = state.shared.map((w) => ({ label: `${name(w.owner)} · ${w.name} (workspace)`, dir: true, target: { owner: w.owner, share: w.share, path: '' } }));
-  return [...room, ...offers, ...workspaces];
+  const offers = state.offers.map((o) => ({ label: `${name(o.owner)} · ${o.name} (shared with you)`, dir: true, target: { owner: o.owner, share: o.name, path: '' }, group: name(o.owner) }));
+  const workspaces = state.shared.filter((w) => w.via !== 'mesh').map((w) => ({ label: `${name(w.owner)} · ${w.name} (workspace)`, dir: true, target: { owner: w.owner, share: w.share, path: '' }, group: name(w.owner) }));
+  const seen = new Set<string>();
+  const all = [...friends, ...room, ...offers, ...workspaces].filter((r) => !seen.has(`${r.target.owner}/${r.target.share}`) && Boolean(seen.add(`${r.target.owner}/${r.target.share}`)));
+  // One person's folders together, in the order people first appear.
+  const order = [...new Set(all.map((r) => r.group))];
+  return all.map((r, i) => ({ r, i })).sort((a, b) => order.indexOf(a.r.group) - order.indexOf(b.r.group) || a.i - b.i).map(({ r }) => r);
 }
 
 /** One key per folder listed at the top of Shared files (to tell which ones are new). */
-export function shareKeys(state: Pick<DomainState, 'peers' | 'offers' | 'shared' | 'self'>): string[] {
+export function shareKeys(state: Pick<DomainState, 'peers' | 'offers' | 'shared' | 'self' | 'friendFolders'>): string[] {
   return [
+    ...state.friendFolders.map((f) => `${f.owner}/${f.name}`),
     ...state.peers.filter((p) => p.peerId !== state.self?.peerId).flatMap((p) => p.shares.map((s) => `${p.peerId}/${s.name}`)),
     ...state.offers.map((o) => `${o.owner}/${o.name}`),
-    ...state.shared.map((w) => `${w.owner}/${w.share}`),
+    ...state.shared.filter((w) => w.via !== 'mesh').map((w) => `${w.owner}/${w.share}`),
   ];
 }
 
@@ -1019,6 +1045,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'net_files':
     case 'net_live':
     case 'net_main':
+    case 'net_offer':
+    case 'net_offer_gone':
     case 'net_off':
       return { ...state, ...reduceNetwork(state, action) };
     case 'support':
@@ -1041,6 +1069,15 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'gw_freely':
     case 'gw_off':
       return { ...state, ...reduceGateway(state, action) };
+    case 'fshare_folders': {
+      // The top of Files updates live while you're looking at it.
+      const next = { ...state, ...reduceFriendShare(state, action) };
+      return next.browser.at ? next : { ...next, browser: { ...next.browser, rows: rootRows(next) } };
+    }
+    case 'fshare_projects':
+    case 'fshare_grants':
+    case 'fshare_delivery':
+      return { ...state, ...reduceFriendShare(state, action) };
     case 'board_init':
     case 'board_issue':
     case 'board_remove':
@@ -1054,6 +1091,9 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'plans_style':
     case 'plans_off':
       return offPlanHomes({ ...state, ...reducePlans(state, action) });
+    case 'team_state':
+    case 'team_off':
+      return { ...state, ...reduceTeam(state, action) };
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };

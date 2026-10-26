@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { chatOf } from '../core/chat/launch.js';
+import { answerFriendOffer, sendFriendOffer } from '../core/friend-offers.js';
 import { networkEnabled, networkOf, networkStatus, networkSwitchOf } from '../core/network.js';
 import { systemOpen } from '../core/os-open.js';
 import type { ChatFile } from '../net/mesh/views.js';
@@ -50,6 +51,8 @@ export const NETWORK_HANDLERS = {
   'network.friends.accept': (s, text) => net(s).accept(text),
   'network.friends.cancelInvite': (s, id) => net(s).cancelInvite(id),
   'network.friends.remove': (s, peerId) => net(s).removeFriend(peerId),
+  'network.friends.addFromRoom': (s, peerId) => sendFriendOffer(s, net(s), peerId),
+  'network.friends.answerOffer': (s, peerId, accept) => answerFriendOffer(s, accept ? net(s) : undefined, peerId, accept),
   'network.dm.send': (s, peerId, text) => net(s).sendDm(peerId, text),
   'network.dm.history': (s, peerId, page) => net(s).dmHistory(peerId, { ...(page?.before !== undefined ? { before: page.before } : {}), ...(page?.limit !== undefined ? { limit: page.limit } : {}) }),
   'network.groups.list': (s) => net(s).summary().groups,

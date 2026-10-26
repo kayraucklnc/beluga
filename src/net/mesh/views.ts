@@ -24,6 +24,10 @@ export interface PersonView {
   readonly presence: Presence;
   /** How you're connected: straight to their Mac, or through another member's Mac (still end-to-end encrypted). */
   readonly via?: 'direct' | 'relay';
+  /** Their Beluga's version and what it does, as it said on its last link (unknown for Macs from before that). */
+  readonly beluga?: { readonly version: string; readonly can: readonly string[] };
+  /** Your two Macs speak different network versions, so they can't link: who needs to update. */
+  readonly update?: 'them' | 'you';
 }
 
 /** A file shared in a chat: who has it is found by its checksum; the bytes come Mac to Mac. */
@@ -55,11 +59,22 @@ export interface ChatAsk {
   readonly to: 'all' | readonly string[];
 }
 
+/**
+ * A task between Claudes this message stands for (BLG-208): each side draws its card from its own
+ * task book by `id` (the requester's and the receiver's both know it), so it updates as the task goes.
+ */
+export interface ChatTaskRef {
+  readonly id: string;
+  readonly role: 'request';
+}
+
 /** What a message carries besides its text (all inside the encryption). */
 export interface ChatExtras {
   readonly files?: readonly ChatFile[];
   /** The author called for Claudes to answer this message. */
   readonly ask?: ChatAsk;
+  /** The message is the card of a task between two people's Claudes (its text is for Macs that don't know it). */
+  readonly task?: ChatTaskRef;
   /** This message is the author's Claude answering message `for`. */
   readonly claude?: ClaudeReply;
 }
@@ -128,6 +143,21 @@ export interface InvitationView {
   readonly codeExpiresAt: number;
   /** The code as a link: beluga://add?code=K7QM-4XPA-R2TD (same lifetime as the code). */
   readonly codeLink: string;
+  /** Made for one person (a friend request sent in a room): only they can use it. */
+  readonly for?: string;
+}
+
+/**
+ * A friend request between two people in the same room (BLG-202): one they sent you (`in`,
+ * Accept makes you friends), or one you sent them (`out`, waiting for them). The invitation
+ * link itself stays in the daemon.
+ */
+export interface FriendOfferView {
+  readonly peerId: string;
+  readonly name: string;
+  readonly dir: 'in' | 'out';
+  readonly at: number;
+  readonly expiresAt: number;
 }
 
 /** A group you asked to join and that hasn't let you in yet. */
@@ -185,6 +215,8 @@ export interface NetworkState extends NetworkSummary {
   readonly live?: Readonly<Record<string, readonly LiveClaude[]>>;
   /** Your main channel (a group with all your friends), once it exists. */
   readonly main?: string;
+  /** Friend requests with people in your room, both ways (BLG-202). */
+  readonly offers?: readonly FriendOfferView[];
 }
 
 export const dmConversation = (peerId: string): string => `dm:${peerId}`;

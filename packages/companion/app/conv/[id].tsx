@@ -214,7 +214,7 @@ export default function Conversation() {
             ))}
           </ScrollView>
           <Composer
-            placeholder={c?.working ? 'What’s next for Claude…' : 'Reply to Claude…'}
+            placeholder={c?.waiting ?? (c?.working ? 'What’s next for Claude…' : 'Reply to Claude…')}
             working={c?.working}
             disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
             photos

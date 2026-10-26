@@ -5,6 +5,20 @@ import { type DomainState, type LogItem, type SaidBy, type Store, clean, peerNam
 import { shareNameOf } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 
+/** What to share with a friend: a project (all its worktrees, now and later), or one worktree (`workspaceId`; `projectId` may come with it). */
+export interface FriendShareInput {
+  readonly peerId: string;
+  readonly projectId?: string;
+  readonly workspaceId?: string;
+  readonly role: WsRole;
+}
+
+/** What core/friend-share does for WorkspaceSharing. */
+export interface FriendSharing {
+  shareWithFriend(share: FriendShareInput): void;
+  unshareFriend(share: Omit<FriendShareInput, 'role'>): void;
+}
+
 export interface SharingDeps {
   readonly store: Store;
   readonly selfId: () => string;
@@ -20,7 +34,7 @@ const HISTORY_ITEMS = 60;
 const wsIdOf = (channel: string): string | undefined => (channel.startsWith('ws:') ? channel.slice(3) : undefined);
 
 /** A short, plain-text version of the recent conversation for someone joining. */
-function historyFor(log: readonly LogItem[], channel: string, nameOf: (id: string) => string): Array<{ from: string; text: string; ts: number; byAgent: boolean }> {
+export function historyFor(log: readonly LogItem[], channel: string, nameOf: (id: string) => string): Array<{ from: string; text: string; ts: number; byAgent: boolean }> {
   return log
     .filter((l) => l.channel === channel && (l.type === 'chat' || (l.type === 'agent' && l.status === 'done')))
     .slice(-HISTORY_ITEMS)
@@ -35,7 +49,7 @@ function historyFor(log: readonly LogItem[], channel: string, nameOf: (id: strin
  * Who wrote a line of the conversation someone shared with you, matched to who's in the room by
  * name (screens that draw it as their message use this; the line itself stays "bob: …").
  */
-function saidBy(state: DomainState, owner: string, h: BodyOf<'ws_invite'>['history'][number]): SaidBy {
+export function saidBy(state: DomainState, owner: string, h: BodyOf<'ws_invite'>['history'][number]): SaidBy {
   const name = clean(h.from).slice(0, 80);
   const person = h.byAgent ? name.replace(/'s Claude$/, '') : name;
   const from = state.peers.find((p) => p.name === person)?.peerId ?? (person === peerName(state, owner) ? owner : `history:${person}`);
@@ -122,12 +136,31 @@ export class WorkspaceSharing {
   /** Called when who's in your workspaces changes (guests' contacts follow it). */
   onChange?: () => void;
 
+  /** Sharing with friends over the network (core/friend-share), while it runs. */
+  friends?: FriendSharing;
+
+  /**
+   * Share a project (or one worktree) with a friend over the network: it shows in their Projects
+   * with your avatar, its worktrees under it, and stays there while either of you is offline.
+   */
+  shareWithFriend(share: FriendShareInput): void {
+    if (!this.friends) throw new Error('Sharing with friends needs the Beluga network: turn it on in Settings › Network');
+    this.friends.shareWithFriend(share);
+  }
+
+  /** Stop sharing a project (or one worktree) with a friend. */
+  unshareFriend(share: Omit<FriendShareInput, 'role'>): void {
+    if (!this.friends) throw new Error('Sharing with friends needs the Beluga network: turn it on in Settings › Network');
+    this.friends.unshareFriend(share);
+  }
+
   /** Everyone leaves (e.g. the workspace was archived). */
   removeAll(wsId: string): void {
     for (const peerId of Object.keys(this.members(wsId))) this.remove(wsId, peerId);
   }
 
-  private syncShare(wsId: string): void {
+  /** Keep the workspace folder's share open to exactly its members. */
+  syncShare(wsId: string): void {
     const name = shareNameOf(wsId);
     const share = this.deps.shares.configs.find((s) => s.name === name);
     if (share) this.deps.shares.upsert({ ...share, allowed: Object.keys(this.members(wsId)) });
@@ -157,7 +190,7 @@ export class WorkspaceSharing {
     }
     // Came in with a link: go straight to the first workspace you were let into.
     if (this.deps.store.getState().self?.guest) this.deps.intend({ type: 'navigate', view: { kind: 'shared', owner: from, id: body.ws.id, tab: 'chat' }, unless: 'shared' });
-    this.deps.toast(`${peerName(state, from)} invited you to ${clean(body.ws.name)}${body.role === 'view' ? ' (to follow along)' : ''}. It's under SHARED WITH ME`, 'success');
+    this.deps.toast(`${peerName(state, from)} invited you to ${clean(body.ws.name)}${body.role === 'view' ? ' (to follow along)' : ''}. It's in Projects`, 'success');
   }
 
   onRoster(from: string, body: BodyOf<'ws_roster'>): void {

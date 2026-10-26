@@ -14,6 +14,7 @@ import { store } from '../../lib/store';
 import { color } from '../../lib/theme';
 
 const WORD = { online: 'Online', away: 'Away', dnd: 'Busy', offline: 'Offline' } as const;
+const UPDATE_WORD = { them: 'Needs a Beluga update', you: 'Update Beluga to reach them' } as const;
 const OFFER: Record<string, { label: string; Icon: typeof Eye }> = { screen: { label: 'Screen', Icon: Eye }, commands: { label: 'Commands', Icon: SquareTerminal }, files: { label: 'Files', Icon: FolderOpen } };
 
 /** A friend: Message, Ask their Claude, Screenshot of their desktop. */
@@ -65,9 +66,14 @@ export default function Person() {
             {p.name}
           </T>
           <T v="callout" style={{ marginTop: 2 }}>
-            {WORD[p.presence]}
-            {p.note ? ` · ${p.note}` : ''}
+            {p.update ? UPDATE_WORD[p.update] : WORD[p.presence]}
+            {p.note && !p.update ? ` · ${p.note}` : ''}
           </T>
+          {p.beluga ? (
+            <T v="caption" style={{ marginTop: 2 }}>
+              Beluga {p.beluga}
+            </T>
+          ) : null}
         </View>
 
         <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginTop: 24 }}>

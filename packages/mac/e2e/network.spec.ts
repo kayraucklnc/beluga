@@ -56,7 +56,8 @@ test('a new group with bob and mia: create, rename in its info, then leave', asy
   await expect(sheet).toBeHidden();
   await expect(group(page, 'Weekend')).toBeVisible();
   await expect(toolbar(page)).toContainText('Weekend');
-  await expect(toolbar(page)).toContainText('bob, mia and you');
+  // Each person here as a pill in the header (BLG-210), you first.
+  await expect(toolbar(page).getByRole('list', { name: 'People here' }).getByRole('listitem')).toHaveText([/You/, /bob|mia/, /bob|mia/]);
 
   const box = page.getByRole('textbox', { name: 'Message Weekend' });
   await box.fill('Hiking on Saturday?');

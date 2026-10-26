@@ -10,6 +10,7 @@ import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
 import { setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
+import { WorkingMark } from '../team/Team.js';
 
 /**
  * Tasks as a list, grouped by status (each group folds, and its + adds a task there). A row's
@@ -105,6 +106,7 @@ const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; curso
         </span>
         <span className={cx(t.title, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</span>
         <IssueMeta issue={issue} />
+        <WorkingMark issueId={issue.id} />
         {solo ? null : <span className={t.rowCell} onClick={stop}>
           <AssigneePicker value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
             <button type="button" className={t.iconHit}>

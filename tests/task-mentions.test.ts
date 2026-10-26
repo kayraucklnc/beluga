@@ -79,7 +79,7 @@ describe('the "@" list offers tasks', () => {
     expect(list[2]).toMatchObject({ value: 'look at @BLG-24 ', hint: 'Fix the login redirect', task: { key: 'BLG-24', status: 'in_progress' } });
     expect(suggest('@24', ctx)[0]).toMatchObject({ value: '@BLG-24 ' });
     const mixed = suggest('@mi', { ...ctx, tasks: [t('BLG-3', 'Mirror the menu')] });
-    expect(mixed.map((s) => [s.label, Boolean(s.task)])).toEqual([['@mia', false], ['@BLG-3', true]]);
+    expect(mixed.map((s) => [s.label, Boolean(s.task)])).toEqual([['@mia', false], ['@claude:mia', false], ['@BLG-3', true]]);
   });
 
   it('the exact key typed is still offered, so Return completes it instead of picking a neighbour', () => {

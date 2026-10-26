@@ -58,7 +58,8 @@ export type PeerInfo = z.infer<typeof PeerInfo>;
  * Mac"'s chats ("mac:assistant", "mac:assistant:<id>", core/assistant). Your own messages to your Claude are parsed by this too
  * (session's loopback), so a channel it refuses never reaches Claude.
  */
-export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|ws:[\w:.-]{1,80})$/).default('room');
+// `dm:`/`group:`: your own Claude acting in a friends' chat (BLG-207); its events only go to you.
+export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|ws:[\w:.-]{1,80}|dm:[\w-]{8,64}|group:[\w-]{1,80})$/).default('room');
 
 export const ChatBody = z.object({
   kind: z.literal('chat'),
@@ -194,6 +195,11 @@ export const ReportBody = z.object({
 export const RoomClearedBody = z.object({ kind: z.literal('room_cleared') });
 /** The gateway (tasks between Claudes, core/gateway) over a room: one frame, to one person; it checks the frame itself. */
 export const GatewayBody = z.object({ kind: z.literal('gateway'), frame: z.unknown() });
+/**
+ * Someone in the room wants to be friends on the Beluga network (BLG-202): a one-time friend
+ * invitation made only for you. Accepting it pairs your Macs over the network. Older Macs drop it.
+ */
+export const FriendOfferBody = z.object({ kind: z.literal('friend_offer'), link: z.string().regex(/^beluga:\/\/add#[\w-]{22}$/), expiresAt: z.number().int().positive() });
 
 // ---- Claude asking the person who asked it (questions, plans to approve) ----
 
@@ -405,6 +411,7 @@ export const Body = z.discriminatedUnion('kind', [
   FileOfferBody,
   RoomClearedBody,
   GatewayBody,
+  FriendOfferBody,
   ShareOfferBody,
   AgentQuestionBody,
   AgentAnswerBody,

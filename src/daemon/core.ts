@@ -15,6 +15,7 @@ import { launchBoard } from '../core/board/launch.js';
 import { launchAssistant } from '../core/assistant/launch.js';
 import { launchChat } from '../core/chat/launch.js';
 import { launchGateway } from '../core/gateway/launch.js';
+import { launchFriendShares } from '../core/friend-share/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
 import { launchSupport } from '../core/merge-counter.js';
 import { launchClaudeCode } from '../core/claude-code/launch.js';
@@ -309,6 +310,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopClaudeCode = (): void => undefined;
   let stopGateway = (): void => undefined;
   let stopChat = (): void => undefined;
+  let stopFriendShares = (): void => undefined;
   let stopBoard = (): void => undefined;
   let stopAssistant = (): void => undefined;
   let stopCompanion = async (): Promise<void> => undefined;
@@ -326,6 +328,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopGateway = launchGateway({ session, store, demo: Boolean(demo) });
     // Chats: files shared Mac to Mac, Claudes called into a conversation, your main channel.
     if (opts.network) stopChat = launchChat({ session, store, demo: Boolean(demo) });
+    // Projects, worktrees and folders shared with friends over the network, nobody hosting.
+    if (opts.network) stopFriendShares = launchFriendShares({ session, store, demo: Boolean(demo) });
     // Tasks (the board): opened by worktrees, moved by pull requests, kept true by Claude.
     if (opts.network) stopBoard = launchBoard({ session, store, demo: Boolean(demo) });
     // "Your Mac": one conversation with your Claude for the whole Mac, from the phone and the sidebar (core/assistant).
@@ -362,6 +366,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     closeAllTunnels();
     stopGateway();
     stopChat();
+    stopFriendShares();
     stopAssistant();
     stopBoard();
     await stopCompanion();

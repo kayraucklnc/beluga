@@ -161,7 +161,7 @@ describe('a run in Your Mac', () => {
       approvalTimeoutMs: () => 60_000,
       refreshUsage: async () => undefined,
       workspaces: { place: () => undefined, refreshWorkspace: async () => undefined, manager: { list: [] } } as never,
-      ...(mac ? { assistant: (channel: string, from: string) => mac.forRun(channel, from) } : {}),
+      ...(mac ? { assistant: (channel: string, from: string) => mac.forRun(channel, from) ?? mac.forChat(channel, from) } : {}),
     });
     return { h, runs, sent };
   }
@@ -185,6 +185,22 @@ describe('a run in Your Mac', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(runs).toHaveLength(0);
     expect(a.forRun(ASSISTANT_CHANNEL, 'bob')).toBeUndefined();
+  });
+
+  it('your own ask in a friends’ chat is a real turn in its folder, with its tools, and its answer comes back (BLG-207)', async () => {
+    const { a, store } = assistant();
+    const { h, runs } = host(a, store);
+    const channel = 'dm:bob-peer-0000000000000000000000001';
+    const answer = await h.runChat(channel, 'ask bob for the log');
+    expect(answer).toBe('done');
+    expect(runs[0]).toMatchObject({ channel, scope: 'full', prompt: 'ask bob for the log' });
+    expect(runs[0]!.place?.cwd).toBe(a.workDir);
+    expect(runs[0]!.place?.resume).toBeUndefined();
+    expect(runs[0]!.macBrief).toMatch(/Beluga chat with friends/);
+    expect(Body.parse({ kind: 'agent_event', requestId: 'r0', requester: ME, event: 'done', text: '', channel })).toMatchObject({ channel });
+    // Nobody else gets a turn with tools there.
+    expect(a.forChat(channel, 'bob')).toBeUndefined();
+    expect(a.forChat('ws:abc', ME)).toBeUndefined();
   });
 
   it('without the Beluga app it says so', async () => {

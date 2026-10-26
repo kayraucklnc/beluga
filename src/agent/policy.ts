@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { isDotenvPath, isSecretPath } from '../core/shares.js';
+import { isDotenvPath, isReceivedTaskFile, isSecretPath } from '../core/shares.js';
 import { isReadOnlyCommand } from './read-only.js';
 import { SourceSchema } from '../shared/view-spec.js';
 import { type ScriptPlan, planScript } from '../core/views/scripts.js';
@@ -152,6 +152,8 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
   const readField = READ_TOOLS[toolName];
   if (readField) {
     const target = resolveTarget(ctx.cwd, input[readField]);
+    // A secret a friend approved sending you (BLG-209) is your user's file now: your own Claude may read it, once you say so.
+    if (ctx.dotenv && isReceivedTaskFile(target) && !namesOf(input).some(isSecretPath)) return 'ask';
     if (!dotenv && (isSecretPath(target) || namesOf(input).some(isSecretPath))) return 'deny';
     if ([target, ...namesOf(input)].some((n) => isSecretPath(n) && !isDotenvPath(n))) return 'deny';
     if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';

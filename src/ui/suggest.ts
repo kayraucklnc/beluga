@@ -186,6 +186,13 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
       .filter((p) => p.peerId !== ctx.selfId && p.name.toLowerCase().startsWith(lower))
       .map((p) => ({ label: p.name, hint: p.agent ? 'has Claude on' : '', value: `/${cmd} ${p.name}`, enter: 'submit' as const, kind: 'person' as const }));
   }
+  // "/invite @ata": your friends by name, to add to the chat, project or worktree you're in (BLG-203).
+  if (cmd === 'invite') {
+    const typed = lower.replace(/^@/, '');
+    return (ctx.friends ?? [])
+      .filter((f) => friendMention(f.name).length > 1 && friendMention(f.name).slice(1).toLowerCase().startsWith(typed))
+      .map((f) => ({ label: friendMention(f.name), hint: `add ${f.name} here`, value: `/invite ${friendMention(f.name)}`, enter: 'submit' as const }));
+  }
   if (cmd === 'open' || cmd === 'e' || cmd === 'get') return openSuggestions(partial, ctx).map((s) => ({ ...s, value: s.value.replace(/^\/open /, `/${cmd} `) }));
   if (cmd === 'policy') {
     const opts = { ask: 'approve each request', auto: 'run without asking', deny: 'refuse all requests' } as const;
@@ -207,22 +214,29 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
       .filter((o) => o.label.toLowerCase() !== token)
       .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const, kind: o.folder ? ('folder' as const) : ('file' as const) }));
   }
-  const options: Array<{ label: string; hint: string; kind: SuggestionKind }> = [
+  // `name`: the friend's handle, so "@mi" offers mia and mia's Claude alike.
+  const options: Array<{ label: string; hint: string; kind: SuggestionKind; name?: string }> = [
     { label: '@claude', hint: 'ask your Claude', kind: 'claude' },
     ...ctx.peers
       .filter((p) => p.agent && p.peerId !== ctx.selfId)
       .map((p) => ({ label: `@claude:${p.name}`, hint: `ask ${p.name}'s Claude (on their machine)`, kind: 'claude' as const })),
     ...(ctx.peers.length > 1 ? [{ label: '@claudes', hint: 'ask every Claude in the room', kind: 'claude' as const }] : []),
+    // Each friend twice: their Claude ("@claude:ata", asked on their Mac) and the person ("@ata", told you mentioned them).
+    ...(ctx.friends ?? [])
+      .filter((f) => friendMention(f.name).length > 1 && !ctx.peers.some((p) => p.agent && p.peerId !== ctx.selfId && p.name.toLowerCase() === f.name.toLowerCase()))
+      .map((f) => ({ label: `@claude:${friendMention(f.name).slice(1)}`, hint: `ask ${f.name}'s Claude, on their Mac${f.online ? '' : ' (offline: it goes when they’re back)'}`, kind: 'claude' as const, name: friendMention(f.name) })),
     ...(ctx.friends ?? [])
       .filter((f) => friendMention(f.name).length > 1)
-      .map((f) => ({ label: friendMention(f.name), hint: `ask ${f.name}'s Claude, on their Mac${f.online ? '' : ' (offline: it goes when they’re back)'}`, kind: 'person' as const })),
+      .map((f) => ({ label: friendMention(f.name), hint: `${f.name}, the person: they're told you mentioned them`, kind: 'person' as const })),
     ...(ctx.projects ?? []).map((p) => ({ label: `@${p.name}`, hint: 'a project', kind: 'project' as const })),
     // Only at the start: "@add-auth …" sends the whole message to that workspace's Claude.
     ...(before.trim() ? [] : (ctx.workspaces ?? []).map((w) => ({ ...w, kind: 'workspace' as const }))),
   ];
   const named = options
-    .filter((o) => o.label.toLowerCase().startsWith(token) && o.label.toLowerCase() !== token)
-    .map((o) => ({ ...o, value: `${before}${o.label} `, enter: 'complete' as const }));
+    .filter((o) => (o.label.toLowerCase().startsWith(token) || (o.name !== undefined && o.name.toLowerCase().startsWith(token))) && o.label.toLowerCase() !== token)
+    // The person first, then their Claude.
+    .sort((a, b) => Number(a.name !== undefined) - Number(b.name !== undefined))
+    .map(({ name: _name, ...o }) => ({ ...o, value: `${before}${o.label} `, enter: 'complete' as const }));
   const seen = new Set(named.map((o) => o.label.toLowerCase()));
   // Tasks, the very key included ("@BLG-24" completes to itself, so Return never picks a neighbour).
   const tasks = matchTasks(typed, ctx.tasks ?? [])

@@ -154,7 +154,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       isGuest: (peerId) => invites.isRestricted(peerId),
       board: (channel, from, o) => boardOf(session)?.forRun(channel, from, o),
       plans: (channel, from) => plansOf(session)?.forRun(channel, from),
-      assistant: (channel, from) => assistantOf(session)?.forRun(channel, from),
+      // "Your Mac"'s chats, and your own asks in friends' chats (BLG-207): both work in its folder.
+      assistant: (channel, from) => assistantOf(session)?.forRun(channel, from) ?? assistantOf(session)?.forChat(channel, from),
       phone: (scratchDir) => companionOf(session)?.control.toolsFor(scratchDir),
       phoneUse: () => companionOf(session)?.control.useLevel() ?? 'off',
     });

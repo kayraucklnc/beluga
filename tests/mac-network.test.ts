@@ -13,7 +13,13 @@ import {
   membersLine,
   mergeMessages,
   openFriendInvitation,
+  hostToBefriend,
+  incomingOffers,
+  notFriendsYet,
+  offerSent,
+  roomBits,
   presenceFor,
+  belugaLine,
   presenceLine,
   readCode,
   selfLine,
@@ -74,6 +80,14 @@ describe('presence', () => {
   it('says the status with the note, but not an offline person’s note', () => {
     expect(presenceLine({ online: true, presence: { state: 'away', note: 'in a meeting' } })).toBe('Away · in a meeting');
     expect(presenceLine({ online: false, presence: { state: 'away', note: 'in a meeting' } })).toBe('Offline');
+  });
+
+  it('says who needs to update instead of just offline, and which Beluga they’re on', () => {
+    expect(presenceLine({ online: false, presence: { state: 'offline' }, update: 'them' })).toBe('Offline to you · their Beluga needs an update');
+    expect(presenceLine({ online: false, presence: { state: 'offline' }, update: 'you' })).toBe('Update Beluga to reach them');
+    expect(belugaLine({ beluga: { version: '0.6.2+mac.1.2.0', can: [] } })).toBe('1.2.0');
+    expect(belugaLine({})).toBe('An older version (it doesn’t say)');
+    expect(belugaLine({ beluga: { version: '0.6.2+mac.1.1.0', can: [] }, update: 'them' })).toBe('1.1.0 · they need to update to reach you');
   });
 
   it('says your own choice, how long it lasts and your note', () => {
@@ -140,6 +154,9 @@ describe('invitations', () => {
     const inv = (n: string, expiresAt: number, extra: object = {}) => ({ id: n, kind: 'friend' as const, code: n, link: n, expiresAt, uses: 0, codeExpiresAt: expiresAt, codeLink: n, ...extra });
     expect(openFriendInvitation([inv('a', 10), inv('b', 20), inv('c', 30, { uses: 1 }), inv('d', 40, { kind: 'group' })], 5)?.id).toBe('b');
     expect(openFriendInvitation([inv('a', 10)], 11)).toBeUndefined();
+    // One made for someone in your room (BLG-202) isn't yours to hand out.
+    expect(openFriendInvitation([inv('a', 10, { for: id('z') }), inv('b', 20)], 5)?.id).toBe('b');
+    expect(openFriendInvitation([inv('a', 10, { for: id('z') })], 5)).toBeUndefined();
   });
 
   it('turns accept errors into plain words', () => {
@@ -190,9 +207,9 @@ describe('@ and / in a channel', () => {
   });
 
   it('lists the channel’s commands for / at the start', () => {
-    expect(channelSuggestions('/', { people }).map((s) => s.command)).toEqual(['claude', 'claudes', 'files']);
+    expect(channelSuggestions('/', { people }).map((s) => s.command ?? s.label)).toEqual(['claude', 'claudes', 'files', '/invite']);
     expect(channelSuggestions('/', { people, admin: true }).map((s) => s.command)).toContain('add-people');
-    expect(channelSuggestions('/', { people: [] }).map((s) => s.command)).toEqual(['claude', 'files']);
+    expect(channelSuggestions('/', { people: [] }).map((s) => s.command ?? s.label)).toEqual(['claude', 'files', '/invite']);
     expect(channelSuggestions('/f', { people }).map((s) => s.label)).toEqual(['/files']);
     expect(channelSuggestions('/files now', { people })).toEqual([]);
   });
@@ -211,5 +228,50 @@ describe('@ and / in a channel', () => {
     expect(mergeAsk(undefined, 'all')).toBe('all');
     expect(mergeAsk(['me'], undefined)).toEqual(['me']);
     expect(mergeAsk(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe('one people list (BLG-202)', () => {
+  const peer = (name: string, extra: { agent?: boolean; guest?: boolean; host?: boolean } = {}) => ({ peerId: id(name[0]!), name, ...extra });
+  const offer = (name: string, dir: 'in' | 'out', extra: { at?: number; expiresAt?: number } = {}) => ({ peerId: id(name[0]!), name, dir, at: extra.at ?? 1, expiresAt: extra.expiresAt ?? 1_000 });
+
+  it('a friend in your room keeps one row, with the room bits on it', () => {
+    const peers = [peer('kay'), peer('ata', { agent: true }), peer('gus', { guest: true })];
+    expect(roomBits(peers, id('a'), id('a'))).toEqual({ here: true, claude: true, following: true, index: 1 });
+    expect(roomBits(peers, id('k'), undefined)).toEqual({ here: true, claude: false, following: false, index: 0 });
+    // Not in the room, or only a guest there: no room bits.
+    expect(roomBits(peers, id('m'), undefined)).toBeUndefined();
+    expect(roomBits(peers, id('g'), undefined)).toBeUndefined();
+  });
+
+  it('lists people in your room who aren’t friends yet: never you, friends or guests', () => {
+    const peers = [peer('kay'), peer('zoe'), peer('ata'), peer('gus', { guest: true }), peer('hal'), peer('bob')];
+    const out = notFriendsYet(peers, { selfId: id('k'), friends: [friend('bob')], guests: { [id('h')]: {} } });
+    expect(out.map((p) => [p.name, p.index])).toEqual([
+      ['ata', 2],
+      ['zoe', 1],
+    ]);
+  });
+
+  it('friend requests: yours waiting, and theirs oldest first', () => {
+    const offers = [offer('mia', 'in', { at: 5 }), offer('ata', 'out', { expiresAt: 100 }), offer('bob', 'in', { at: 2 })];
+    expect(incomingOffers(offers).map((o) => o.name)).toEqual(['bob', 'mia']);
+    expect(incomingOffers(undefined)).toEqual([]);
+    expect(offerSent(offers, id('a'), 50)).toBe(true);
+    expect(offerSent(offers, id('a'), 200)).toBe(false);
+    expect(offerSent(offers, id('m'), 50)).toBe(false);
+  });
+
+  it('after joining by an old room link, offers the host as a friend, once', () => {
+    const peers = [peer('kay', { host: true }), peer('ata')];
+    const base = { peers, selfId: id('a'), friends: [] as FriendView[], dismissed: new Set<string>() };
+    expect(hostToBefriend(base)?.name).toBe('kay');
+    expect(hostToBefriend({ ...base, friends: [friend('kay')] })).toBeUndefined();
+    expect(hostToBefriend({ ...base, dismissed: new Set([id('k')]) })).toBeUndefined();
+    expect(hostToBefriend({ ...base, offers: [offer('kay', 'out')] })).toBeUndefined();
+    expect(hostToBefriend({ ...base, offers: [offer('kay', 'in')] })).toBeUndefined();
+    // You're the host, or you came with a project link: nobody to offer.
+    expect(hostToBefriend({ ...base, selfId: id('k') })).toBeUndefined();
+    expect(hostToBefriend({ ...base, peers: [peer('kay', { host: true }), peer('ata', { guest: true })] })).toBeUndefined();
   });
 });

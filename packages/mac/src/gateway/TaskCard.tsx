@@ -155,24 +155,40 @@ function Result({ task }: { task: TaskView }) {
           </div>
         </>
       ) : null}
+      {r.secret && r.status === 'done' ? (
+        <div className={s.hint}>
+          <Icon name="lock" size={11} /> A secret ({r.secret}): {task.direction === 'sent' ? `${task.peerName} approved sending it to you` : 'you approved sending it'}, this once.
+        </div>
+      ) : null}
       {r.problems?.length ? <div className={s.problems}>{r.valid === false ? 'The data doesn’t match what was asked for: ' : ''}{r.problems.join(' · ')}</div> : null}
     </div>
   );
 }
 
 /** A friend's request waiting for you: Approve, Always (a rule for requests like it), Decline, or the full sheet. */
-function Approve({ task }: { task: TaskView }) {
+function Approve({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   const api = useApi();
   const call = useCall();
   const waiting = useApp((st) => st.approvals.some((x) => x.task === task.id || x.title === approvalTitle(task)));
   const answer = (decision: 'yes' | 'always' | 'no'): Promise<unknown> => api.gateway.decide(task.id, { answer: decision, scope: 'this', command: 'this', expiry: 'never' });
+  // In a friends' chat the card is where you answer: there's no approval above the message box there.
+  if (!waiting && inChat)
+    return (
+      <div className={s.actions}>
+        <span className={s.hint}>Waiting for your answer.</span>
+        <Button variant="quiet" icon="eye" onClick={() => openRequest(task.id)}>
+          Review…
+        </Button>
+      </div>
+    );
   if (!waiting) return <div className={s.hint}>Waiting for your answer above the message box.</div>;
   return (
     <div className={s.actions}>
       <Button variant="primary" onClick={() => call('approve it', answer('yes'))}>
-        Approve
+        {task.secret ? 'Allow Once' : 'Approve'}
       </Button>
-      <Button onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>
+      {/* A secret is asked about each time: nothing to make "Always". */}
+      {task.secret ? null : <Button onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>}
       <Button variant="quiet" onClick={() => call('decline it', answer('no'))}>
         Decline
       </Button>
@@ -269,15 +285,16 @@ function Confirm({ task }: { task: TaskView }) {
 }
 
 /** A task card placed in a conversation, lined up with the messages. */
-export function LogTaskCard({ task }: { task: TaskView }) {
+export function LogTaskCard({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   return (
     <div className={s.inLog}>
-      <TaskCard task={task} />
+      <TaskCard task={task} {...(inChat ? { inChat } : {})} />
     </div>
   );
 }
 
-export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
+/** `inChat`: in a friends' chat (BLG-207), where the card itself is where you answer. */
+export const TaskCard = memo(function TaskCard({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   const api = useApi();
   const call = useCall();
   const live = !isFinal(task.state) && task.state !== 'confirm';
@@ -288,7 +305,14 @@ export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
   const done = isFinal(task.state) && task.endedAt ? ` · ${formatDuration(task.endedAt - task.createdAt)}` : '';
   const title = task.state === 'confirm' ? `Ask ${targetLabel(task)}?` : sent ? `To ${targetLabel(task)}` : `From ${task.peerName}${task.by === 'agent' ? '’s Claude' : ''}`;
   return (
-    <section className={`${s.card} ${task.state === 'confirm' ? s.confirm : ''}`} aria-label={`Task: ${title}`} data-task={task.id} data-state={task.state}>
+    <section className={`${s.card} ${task.state === 'confirm' ? s.confirm : ''} ${task.secret && !isFinal(task.state) ? s.secret : ''}`} aria-label={`Task: ${title}`} data-task={task.id} data-state={task.state}>
+      {/* A secret is its own approval, each time (BLG-209): the card says so before anything else. */}
+      {task.secret && !isFinal(task.state) ? (
+        <div className={s.secretLine}>
+          <Icon name="lock" size={12} />
+          {sent ? `A secret · only ${task.peerName} can allow it, each time` : 'A secret · only you can allow it, each time'}
+        </div>
+      ) : null}
       <div className={s.head}>
         <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} size={20} />
         <span className={s.who}>{title}</span>
@@ -317,7 +341,7 @@ export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
           ) : null}
           {sent && task.question ? <Question task={task} /> : null}
           <Result task={task} />
-          {!sent && task.state === 'awaiting_approval' ? <Approve task={task} /> : null}
+          {!sent && task.state === 'awaiting_approval' ? <Approve task={task} {...(inChat ? { inChat } : {})} /> : null}
           {live && !(!sent && task.state === 'awaiting_approval') ? (
             <div className={s.actions}>
               <Button size="small" variant="quiet" icon="stop" onClick={() => call(sent ? 'cancel it' : 'stop it', api.gateway.cancel(task.id))}>

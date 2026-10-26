@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { ChevronRight, Ellipsis, type LucideIcon } from 'lucide-react-native';
+import { ChevronRight, Ellipsis, type LucideIcon, SquareTerminal } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { Platform, Pressable, type PressableProps, type StyleProp, StyleSheet, Text, type TextProps, type TextStyle, View, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -147,12 +147,13 @@ const HUES: Tone[] = ['peach', 'sky', 'mint', 'lavender', 'butter', 'rose'];
 export const hueOf = (name: string): Tone => HUES[[...name].reduce((n, ch) => n + ch.charCodeAt(0), 0) % HUES.length]!;
 const PRESENCE: Record<string, () => string> = { online: () => color.ok, away: () => color.warn, dnd: () => color.error, offline: () => color.text3 };
 
-export function Avatar({ name, size = 40, presence, claude }: { readonly name: string; readonly size?: number; readonly presence?: string; readonly claude?: boolean }) {
-  const t: Tone = claude ? 'peach' : hueOf(name);
+/** A person's initial in their pastel; their Claude gets the Claude mark (`owner`: in its owner's pastel, BLG-210). */
+export function Avatar({ name, size = 40, presence, claude, owner }: { readonly name: string; readonly size?: number; readonly presence?: string; readonly claude?: boolean; readonly owner?: string }) {
+  const t: Tone = claude ? (owner ? hueOf(owner) : 'peach') : hueOf(name);
   return (
     <View style={{ width: size, height: size }}>
       <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(t) }}>
-        <Text style={{ color: toneInk(t), fontSize: size * 0.4, fontWeight: '700' }}>{claude ? '✳' : (name[0] ?? '?').toUpperCase()}</Text>
+        {claude ? <SquareTerminal color={toneInk(t)} size={size * 0.5} strokeWidth={2.1} /> : <Text style={{ color: toneInk(t), fontSize: size * 0.4, fontWeight: '700' }}>{(name[0] ?? '?').toUpperCase()}</Text>}
       </View>
       {presence ? <View style={{ position: 'absolute', right: -1, bottom: -1, width: size * 0.3, height: size * 0.3, borderRadius: size, backgroundColor: PRESENCE[presence]?.() ?? color.text3, borderWidth: 2.5, borderColor: color.bg }} /> : null}
     </View>

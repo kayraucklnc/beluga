@@ -60,7 +60,17 @@ the one dialed by the lower address); a reconnection after a restart replaces th
 at once. A relayed link is retried directly now and then and replaced once that works. Each link has a heartbeat (dropped after 3 missed),
 2 MB frames and token-bucket limits on messages and bytes. Messages are versioned JSON (`hello` carries
 `proto: 1`; unknown kinds are ignored): `hello`, `presence`, `dm`/`dm_ack`,
-`g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`.
+`g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`, `gw` (the gateway), `share`
+(sharing with friends), `team` (team boards: friends on the same GitHub repository, see docs/tasks-and-plans.md phase 3).
+
+**Versions and features.** `hello` also carries the Beluga version (`app`) and what this Mac does (`can`,
+`src/net/mesh/features.ts`: `chat.*` always, `task.*` while the gateway listens, `share.*` while sharing with friends
+runs, `team.*` while team boards run, said again when that changes).
+A friend's card and `who_can` show their version. A request their Mac said it can't take fails at once
+("Ata's Beluga 1.1.0 can't take file requests yet. Ask Ata to update Beluga") rather than waiting a week;
+"isn't taking requests" only counts while they're linked (a Mac withdraws it as it quits). Macs from before
+this say neither, and are asked as before. Someone on another `proto` major is shown as needing an update
+(`update: 'them' | 'you'`), not as offline. See docs/agent-to-agent.md for where this is going.
 
 **Relaying.** When a direct dial fails (both sides behind strict NATs, UDP blocked), your Mac asks
 someone linked to both of you (people in a shared group first) to open a tunnel. The relay only
@@ -119,6 +129,24 @@ system's idle time) when you chose Online, and Online again when you're back. Ne
 through the shared Notifier (the `mentions` kind), silently on Do Not Disturb or while you appear
 offline.
 
+## Friends from your room (BLG-202)
+
+There is one people list: Friends. Someone in your room who is also a friend is just their friend row,
+with the room's bits on it (Claude on, following their screen). Someone in your room who isn't a friend
+shows under **Not friends yet** with one action, Add as Friend; guests (project-link visitors) aren't listed.
+
+Add as Friend (`network.friends.addFromRoom`, `src/core/friend-offers.ts`) makes a one-time friend
+invitation only that person may use (`for`: anyone else who got hold of it is refused) and sends it to
+them as a directed room message (`friend_offer`, a guarded kind: fresh and only once). Their Beluga
+keeps the link in the daemon, never in the shared state, and shows "kay wants to add you as a friend"
+in Friends and as a NeedsYou item on the phone, with a notification. Accept
+(`network.friends.answerOffer`) uses the invitation and checks it really came from the person who sent it.
+Macs from before this drop the message. After joining a room with an old room link, the room chat offers
+its host: "Add kay as a friend?".
+
+Trust is a property of a friend, set in one place: their card (the conversation's Info › Trust). The
+room's menus, Settings › People and a request's sheet say it and link there.
+
 ## Multiple rooms
 
 One person can be in several rooms at once. Each room is its own Beluga: its own core, room client
@@ -175,9 +203,9 @@ message carries), the Mac app's `src/network/` (`ChatTabs`, `ChatFiles`, `NetCom
 whenever the network is on.
 
 **What a message carries.** Inside the encryption (a group message's sealed JSON, a direct message's Noise
-link) a message is `{ text, files?, ask?, claude? }`: `files` are `{ sha, name, size, mime?, image? }` (the
+link) a message is `{ text, files?, ask?, claude?, task? }`: `files` are `{ sha, name, size, mime?, image? }` (the
 bytes travel separately), `ask: { to: 'all' | peerIds }` calls Claudes in, `claude: { for }` marks a Claude's
-answer to message `for`. Older Macs read only `text`. Names are cleaned (no folders, control or bidi
+answer to message `for`, `task: { id, role: 'request' }` is a task's card (see *Tasks between Claudes*). Older Macs read only `text`. Names are cleaned (no folders, control or bidi
 characters); malformed extras are dropped.
 
 Each person's Claude is drawn in that person's color (its mark and its name), here and in rooms, so a
@@ -204,6 +232,20 @@ someone who isn't your friend) when you click Download. While you pull from a Ma
 their own allowance on the link (64 MB/s, bursts of 128 MB), so a transfer doesn't starve messages; at
 other times they count like anything else. On a local link a 128 MB file takes about 2 s. A direct message
 with only files carries "📎 name" as its text for Macs that don't know about files yet.
+
+**Your Claude acts when you ask it** (BLG-207). When you ask your own Claude in a DM or a channel (Ask Claude
+› yours, or @-mentioning it), it takes a real turn with its tools, not the toolless answer below: your own run
+in that chat's lane (`AgentHost.runChat`, channel `dm:<peerId>` / `group:<id>`), working in Your Mac's folder
+(`~/.beluga/assistant/work`, `MacAssistant.forChat`; no saved session: each ask carries the chat as below), with
+your usual approvals, the Mac tools and the gateway's (`who_can`, `ask_person`, `run_on`, `get_file`,
+`wait_for`…), whose tasks belong to that chat. Its final answer goes into the chat as "<owner>’s Claude".
+When a friend's result or their Claude's question comes back after its turn ended, it carries on in the
+chat and answers there (`ChatClaude.continueWith`). In the conversation, above the message box, you see its
+tool approvals and questions, and its "Ask Alice's Claude?" cards (and any request whose card is in your DM
+with that person); a friend's request that came from this chat is approved on its card. Approvals of
+requests from a chat point at it (`Approval.channel`), so their notification and the phone's item open the
+chat. Without the Mac app (no Your Mac) your own asks are answered without tools as before. Friends' asks
+of your Claude are unchanged:
 
 **Claudes, only when asked.** Nobody's Claude reads along. The Ask Claude menu under the message box asks
 your Claude, everyone's, or one person's, for that one message. The message may have no words: the Claudes
@@ -236,7 +278,7 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
 - **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run|file, ask, summary?, needs, project?,
   expects?: JSON schema | "files", deadline?, command?/cwd?/timeoutSec?, path?, by}`, `task_update {id,
   state: queued|awaiting_approval|working, step?}`, `task_result {id, status: done|declined|failed|
-  cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log}`, `task_cancel`,
+  cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log, secret?}`, `task_cancel`,
   `task_question {id, qid, questions}` / `task_answer {id, qid, answers? | skip}`,
   `file_get {id, ref, offset}` / `file_chunk {id, ref, offset, b64, eof, error?}`, and `card` (your
   trust in them, what your Beluga offers them, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
@@ -255,11 +297,36 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   against `expects` on both sides; files only from the folder it ran in (and the folders you chose;
   anywhere with full trust), never secrets: up to 512 KB in all inline, bigger ones fetched in
   pieces (see *Big files*). A file request someone said yes to (or that a rule of theirs covers) may
-  come from anywhere on their Mac, not only the folders they share; a secret file is refused before
-  they're asked.
-- **Tagging a friend**: `@mia` anywhere in a message to your Claude (the message box offers your
-  friends by name as you type `@`) means mia: your Claude asks her Claude with `ask_person`, takes a
-  file with `get_file`, or runs one command with `run_on`. Every request carries a `summary` (at most
+  come from anywhere on their Mac, not only the folders they share.
+- **Secrets** (BLG-209): a `file` request for a secret (`isSecretPath`: an SSH key, a `.env` file, cloud
+  credentials, a token file, any other key) is never declined up front, and never let in either: its owner
+  always gets a separate approval that says what it is ("kay's Claude wants your private SSH key
+  id_ed25519", `secretKindOf` / `secretLabel`), each time, with only Allow once / Decline (on the card,
+  the request sheet, the pop-up and the menu bar; its notification only offers Review…). Trust, Allow
+  rules and Always never cover it; a capability that is Off or a Decline rule still declines it. If
+  they allow it, Beluga sends that one file and the `task_result` carries `secret: "private SSH key
+  id_ed25519"`, so the requester's Claude is told (outside the data block) that the owner approved it and
+  hands it over instead of refusing. Still refused at once: Beluga's own private files in `~/.beluga`
+  and the keychains (`isNeverSent`), and every `run` or `ask` task that touches secrets. Macs that do this
+  say `task.secret`; asking an older one for a secret fails at once ("Ata's Beluga 1.2.0 can't send
+  secrets Ata approves yet. Ask Ata to update Beluga.").
+- **Both people see it** (BLG-208): when a task goes to a friend, the requester's Beluga posts its card
+  in the chat they share: the channel it was asked from if the friend is in it (the request carries
+  `chat: "group:<id>"`), else their DM. The message carries `task: { id, role: 'request' }` and words for
+  older Macs ("kay's Claude asked bob's Claude: take a screenshot of your desktop"); each side draws the
+  card from its own task book by id (`TaskView.chat` says where), so it moves along: sent, waiting for
+  approval, working, done / declined / failed, with the summary and files. Someone else in the channel
+  has no such task and sees only those words. The result posts nothing more; the person whose Claude
+  (or Mac) ran it gets a notification when it's done, pointing at the chat. A card makes no message
+  notification of its own (the request itself asks you). The phone draws it as a small card
+  (`ChatMessageView.task`).
+- **Mentioning a friend, or their Claude**: two different things. `@claude:mia` is mia's Claude: your Claude
+  asks it with `ask_person`, takes a file with `get_file`, or runs one command with `run_on`. `@mia` is mia,
+  the person: said to your Claude in a worktree or Your Mac, Beluga sends mia a direct message ("kay mentioned
+  you in fix-auth (bob-api): …", `src/core/person-mentions.ts`) and your Claude only asks mia's Claude if the
+  work itself needs their Mac, access or answer (it may decide to on its own, under the usual check). In a
+  DM or channel `@mia` is the person and `@claude:mia` calls mia's Claude, as before. The message box offers
+  each friend twice as you type `@` (the person, then their Claude). Every request carries a `summary` (at most
   140 characters, "take a screenshot of your desktop") that their pop-up, notification and menu bar
   show; the full ask is behind See more.
 - **Asking**: `ask_person` / `run_on` for someone you don't trust (Trusted / Full) first put an
@@ -371,7 +438,7 @@ Your card tells each friend what you offer them (their Claude sees it in `who_ca
   /Applications and ~/Applications.
 - **Read and write files**: the folders you choose are added to the task's Claude's folders when
   the request needs `files`; `get_file(person, path)` (a `file` task) sends one file from them
-  (anywhere with full trust), never secrets.
+  (anywhere with full trust); a secret only when they approve that one request (see *Secrets* above).
 
 ### Big files
 
@@ -397,3 +464,71 @@ question is taken once (a replay is ignored, frames are de-duplicated by id) and
 task (more are answered "go on"). The question is shown as data from that person, never as
 instructions. You can also answer (or let them decide) on the task's card; a task you asked
 yourself notifies you.
+
+## Sharing with friends
+
+Code: `src/core/friend-share/` (`protocol.ts`, `courier.ts`, `service.ts`), `src/core/friend-share-store.ts` (the shared
+state), the Mac app's `layout/SharedProjects.tsx` and `dialogs/native/ShareProjectSheet.tsx`. The daemon runs it whenever
+the network is on (`launchFriendShares`), and says `share.project` and `share.folder` in its `hello`.
+
+**A project, shared with a friend.** You share it from the project's ••• menu (**Share with…**: each friend gets
+*Can work here*, *Can follow* or *No access*), or with `sharing.shareWithFriend({ peerId, projectId?, workspaceId?, role })`
+(`role`: `contribute` | `view`; a `workspaceId` alone shares that one worktree). Only friends; a friend whose Beluga said
+it can't open shared projects is told at once ("Ata's Beluga 1.1.0 can't open shared projects yet. Ask Ata to update
+Beluga"). Nobody hosts: everything goes over the two Macs' Noise link in `share` frames.
+
+On their Mac it's one row in **Projects**, after yours: the project's icon with your avatar on its corner, "· ata's" beside
+its name, and its worktrees nested under it as your own are. It stays while your Mac is offline ("ata is offline") and
+after either of you restarts (`~/.beluga/shared-projects.json`). New worktrees appear and archived ones go by themselves.
+**Leave Project** (its ••• menu) takes it off their Mac and tells yours; *No access* (or `sharing.unshareFriend`) takes it
+back. Each worktree also becomes a workspace shared with them (the state's `shared`, `via: 'mesh'`), so its conversation,
+files and changes open as a room share's do; unlike those, it isn't wiped when a room ends. Your side keeps who has what
+in `~/.beluga/project-shares.json`.
+
+**What travels** (`protocol.ts`): each message rides in `{f, m}`, acknowledged with `{ack}`.
+
+- `project {id, name, icon?, role, worktrees[{id, name, branch?}], members[{peerId, name, role}]}`: what they have of it
+  now, sent whenever any of that changes (the newest replaces one still waiting). The icon goes when it's under 120 KB.
+- `unshare {id}` (you took it back), `leave {id}` (they left).
+- `history {ws, items}`: a worktree's last 60 messages and answers (4000 characters each), once, when it's first shared
+  with them; their Mac keeps it, and what's said after, with the project.
+- `body {b, as?}`: one of the room's own messages about a shared worktree or folder: `chat`, `agent_request`,
+  `agent_event`, `agent_question`/`agent_answer`, the files' `fs_list`/`fs_read`/`fs_fetch`/`fs_search`/`ws_diff` and
+  their answers. The sending Session hands it over instead of the room (`Session.meshRoute`); the receiving one checks
+  it as if the room had brought it (`receiveFromFriend`: the replay guard, who may post, who may see, which share), and
+  only for what's shared between the two of you: a channel of a worktree shared with them (or by them), a share of
+  one of those worktrees or of a folder shared with them, the answer to a request they made over the link. A share
+  you give a room is never reachable this way. `as`: a message the worktree's owner passes on from someone else in it.
+- `folder {name, label, writable, active}`: a folder you share with them (see below).
+
+**A worktree, live for everyone in it.** Anyone it's shared with to work in (`contribute`) talks to its Claude, which
+runs on the owner's Mac: their message goes to the owner as `chat` plus `agent_request`, and the owner's Mac takes it as a
+room request from someone invited into that workspace (`canPost`; the owner's policy and tool approvals as usual; a
+request for another project, or into a worktree not shared with them, is declined). Its Claude's turn goes back to
+everyone in it (`agent_event`), and so does the owner's own chat. The owner's Mac passes each person's message on to
+the others (`as`), so people who aren't friends with each other still see it all. Someone who only follows along
+(`view`) reads but can't ask; their Mac refuses, and the owner's would too.
+
+The worktree's header shows each person in it, its owner first, with how they're doing (online, away, offline, "needs
+an update" when their Beluga can't link with yours; someone who isn't your friend isn't known), on the owner's Mac too
+(`core/friend-share-people.ts`). While the owner's Mac is offline the message box says "ata's Mac is offline: your
+message goes when it's back"; a message sent then shows "Waiting for ata's Mac" under it, then "Delivered" once their
+Mac took it (`delivery` in the state). The phone lists the worktree in its work view under "ata · bob-api", chats there
+the same way, and its message box says the same (`ConvView.waiting`).
+
+**Folders, under Files.** A folder you share with only some people (**Share a Folder** › *Only…*, which lists your
+friends as well as the room's people) goes to those of them who are friends over the network as well, with no room
+needed: a `folder` message, again when you change it, `active: false` when you stop or untick them. On their Mac it's in
+**Files**, under your name (the top of Files is grouped by person: friends' folders, then what the room shares,
+`rootRows`). Its files are read over the link with the room's own `fs_list`/`fs_read`/`fs_fetch` (256 KB pieces, `fs_chunk`)
+and checked as the room checks them (`ShareService`: inside the folder, links followed, `isDenied` secrets never),
+read-only unless you shared it read and write; a share you give the whole room never answers a friend this way. The
+"Shared with me" sidebar section is gone: shared projects are in Projects (a room's shared worktrees too, grouped by
+their project), folders in Files, which has a row of its own at the top of the sidebar. Room shares still work for the
+room's people, in the same places.
+
+**Never dropped** (`courier.ts`). Messages, requests to a Claude, its questions and answers, the project's state and the
+steps of a run that matter (queued, started, waiting for approval, done, failed, declined) wait in
+`~/.beluga/share-outbox.json` until the friend's Mac acknowledges them: sent again every 20 s while you're linked, at
+once when a link comes up, for 7 days. A Claude's streamed steps and file pieces only go to someone linked now. Frames
+are de-duplicated by id, and a message handed on is remembered by the replay guard, so a resend never acts twice.

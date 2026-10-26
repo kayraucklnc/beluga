@@ -20,9 +20,10 @@ export const ALWAYS_FROM_OUTSIDE = { answer: 'always', scope: 'this', command: '
 export const ALWAYS_FROM_POPUP = { answer: 'always', scope: 'this', command: 'this', expiry: 'never' } as const;
 
 /** The buttons a notification gets: a friend's request (Approve / Always for a week / Decline), anything else Review only. */
-export function notificationActions(n: { readonly approval?: string; readonly task?: string }): { actionTypeId?: string } {
+export function notificationActions(n: { readonly approval?: string; readonly task?: string; readonly once?: boolean }): { actionTypeId?: string } {
   if (!n.approval) return {};
-  return { actionTypeId: n.task ? 'beluga-request' : 'beluga-review' };
+  // A secret has no Always: Review… opens its sheet (Allow once / Decline).
+  return { actionTypeId: n.task && !n.once ? 'beluga-request' : 'beluga-review' };
 }
 
 /** A friend's request (from someone else, about something they asked): it may be answered from outside the window. */
@@ -40,6 +41,8 @@ export function outsideStep(action: RequestAction, approval: Approval | undefine
   if (!approval) return { kind: 'gone' };
   // Your own Claude's tools (and anything that isn't a friend's request) are only reviewed in the window.
   if (!answerableOutside(approval)) return { kind: 'review', ...(approval.task ? { task: approval.task } : {}) };
+  // A secret: trust, rules and Always never cover it, so "Always" only opens it.
+  if (approval.once && (action === 'always' || action === 'allow_always')) return { kind: 'review', ...(approval.task ? { task: approval.task } : {}) };
   if (approval.task) {
     if (action === 'always') return { kind: 'decide', task: approval.task, decision: ALWAYS_FROM_OUTSIDE };
     if (action === 'allow_always') return { kind: 'decide', task: approval.task, decision: ALWAYS_FROM_POPUP };
@@ -64,5 +67,5 @@ export function trayRequests(approvals: readonly Approval[]): Array<{ id: string
     .filter(answerableOutside)
     .slice(-6)
     .reverse()
-    .map((a) => ({ id: a.id, title: a.title.length > 64 ? `${a.title.slice(0, 63)}…` : a.title, always: Boolean(a.task) }));
+    .map((a) => ({ id: a.id, title: a.title.length > 64 ? `${a.title.slice(0, 63)}…` : a.title, always: Boolean(a.task) && !a.once }));
 }

@@ -340,6 +340,9 @@ async function mockPeerRun(input: AgentRunInput, bridge: RoomBridge, target: { p
 
 /** "ask bob to run the tests" / "ask mia's Claude whether …" / "@bob run the tests": whom to ask, and what. */
 export function gatewayTarget(prompt: string): { person: string; ask: string } | undefined {
+  // "@claude:bob run the tests": bob's Claude, said outright.
+  const theirs = /(?:^|\s)@claude:(\w[\w.-]*)[,:]?\s+([\s\S]+)/i.exec(prompt.trim());
+  if (theirs) return { person: theirs[1]!, ask: theirs[2]!.trim().replace(/[.?!]+$/, '') };
   // A task ("@BLG-24 (task: …)", see explainTaskMentions) is nobody to ask.
   const tagged = /(?:^|\s)@(?!claude)(?![A-Za-z][A-Za-z0-9]*-\d+ \(task: )(\w[\w.-]*)[,:]?\s+([\s\S]+)/i.exec(prompt.trim());
   if (tagged) return { person: tagged[1]!, ask: tagged[2]!.trim().replace(/[.?!]+$/, '') };

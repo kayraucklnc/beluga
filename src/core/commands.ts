@@ -2,6 +2,7 @@ import type { Session } from './session.js';
 import type { Policy } from './store.js';
 import { THEMES, type ThemeName } from '../shared/settings-schema.js';
 import { runEnvCommand, runShellCommand } from './terminal-commands.js';
+import { type InvitePlace, inviteRoute, namesLine, parseInvite } from '../shared/invite-route.js';
 
 export interface CommandSpec {
   readonly name: string;
@@ -11,7 +12,7 @@ export interface CommandSpec {
 
 /** Single source of truth for autocomplete and the help screen. */
 export const COMMANDS: readonly CommandSpec[] = [
-  { name: 'invite', desc: 'copy the invite link for friends' },
+  { name: 'invite', args: '[@friend]', desc: 'add a friend; with @name, add them to the chat, project or worktree you’re in' },
   { name: 'overview', desc: 'see every worktree at a glance' },
   { name: 'room', desc: 'back to the room chat' },
   { name: 'new', args: '<name>', desc: 'new worktree from the latest origin (in the current project)' },
@@ -78,6 +79,28 @@ export function visualizePrompt(what: string): string {
 }
 
 /**
+ * `/invite` (BLG-203). On its own: the Add a Friend sheet. With friends named, typed in a worktree:
+ * share it with them. The Mac's message boxes route it themselves (they also know DMs, channels and
+ * projects, src/shared/invite-route.ts); this is the core's own reading, for any other screen. Until
+ * worktrees can be shared with friends over the network, a friend in your room gets it through the room.
+ */
+function inviteCommand(session: Session, args: readonly string[], channel: string): void {
+  const parsed = parseInvite(['/invite', ...args].join(' '));
+  if (!parsed?.names.length) return session.intend({ type: 'overlay', overlay: 'add_friend' });
+  const state = session.store.getState();
+  const wsId = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  const ws = wsId ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === wsId) : undefined;
+  const place: InvitePlace = ws && wsId ? { kind: 'workspace', workspaceId: wsId, projectId: ws.projectId, name: ws.name } : { kind: 'none' };
+  const route = inviteRoute(place, parsed.names, state.network.friends);
+  if (route.kind === 'error') return session.toast(route.text, 'warn');
+  if (route.kind !== 'share' || !route.workspaceId) return session.toast('Type it in the Mac app’s message box there', 'info');
+  const inRoom = route.friends.filter((f) => state.peers.some((p) => p.peerId === f.peerId && !p.guest));
+  for (const f of inRoom) session.sharing.invite(route.workspaceId, f.peerId, 'contribute');
+  const away = route.friends.filter((f) => !inRoom.includes(f));
+  if (away.length) session.toast(`Sharing a worktree with friends who aren’t in your room isn’t in this Beluga yet. Ask ${namesLine(away.map((f) => f.name))} to join your room for now`, 'warn');
+}
+
+/**
  * Execute a `/command` (or legacy `:command`) typed in `channel` (the conversation on screen).
  * `raw`: the words as typed; in a workspace's conversation, a command Beluga doesn't know (one of
  * Claude's skills or custom commands, "/frontend-design make it pastel") goes to Claude as typed.
@@ -97,8 +120,7 @@ export function runCommand(session: Session, name: string, args: readonly string
       session.intend({ type: 'overlay', overlay: 'help' });
       return;
     case 'invite':
-      void session.copyInvite();
-      return;
+      return inviteCommand(session, args, channel);
     case 'overview':
     case 'projects':
     case 'workspaces':

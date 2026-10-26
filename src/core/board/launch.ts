@@ -23,6 +23,11 @@ import { PlansWork } from '../plans/work.js';
 import { attachPlans, detachPlans } from '../plans/registry.js';
 import { seedDemoPlan } from '../plans/demo.js';
 import { PlanDecisions } from '../plans/decisions.js';
+import { launchTeam } from '../team/launch.js';
+import { TeamBoardSync } from '../team/board-sync.js';
+import { TeamAssign } from '../team/assign.js';
+import { TeamPlans } from '../team/plan-share.js';
+import { gatewayOf } from '../gateway/registry.js';
 
 /**
  * Start the board and plans for the daemon (the Mac app's Beluga): tasks in ~/.beluga/board.json,
@@ -123,12 +128,36 @@ export function launchBoard(host: BoardHost): () => void {
     askClaude: (prompt, channel) => void session.askOwnClaude(prompt, channel, false, false),
     schedule: () => planWork.pilot.schedule(),
   });
+  // Team boards: friends on the same GitHub repository keep one board (core/team), once both say yes.
+  const stopTeam = launchTeam({
+    session,
+    store,
+    dir: host.demo ? null : dir,
+    repoOf: async (id) => (host.demo ? (projectOf(id) ? demoRepo(projectOf(id)!.name) : undefined) : session.workspaces?.mainSync.githubRepo(id)),
+    notify: (e) => session.notifier.notify(e),
+    toast: (text, level) => session.toast(text, level),
+    parts: (team) => {
+      const live = (id: string): boolean => store.getState().projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived));
+      const teamDir = host.demo ? null : dir;
+      const teamSync = new TeamBoardSync(team, { board, live, dir: teamDir });
+      // A task given to a teammate's Claude goes to it as a request from you (the gateway: their trust and approvals apply).
+      const askClaude = (peerId: string, ask: string, summary: string, project: string | undefined): string => {
+        const gw = gatewayOf(session);
+        if (!gw) throw new Error('requests to Claudes need the Beluga app');
+        return gw.ask({ person: peerId, ask, summary, by: 'person', ...(project ? { project } : {}) }).id;
+      };
+      // Plans you choose to share with the team: teammates review them, you apply what you like.
+      const teamPlans = new TeamPlans(team, { edit: (id, ops) => void planWork.edit(id, ops), dir: teamDir });
+      return [teamSync, new TeamAssign(team, { board, sync: teamSync, askClaude, dir: teamDir }), teamPlans];
+    },
+  });
   let stopSeed = (): void => undefined;
   if (host.demo && !board.list().length) {
     stopSeed = seedDemoBoard(store, work, (ms) => (back = ms), () => void seedDemoPlan(store, planWork, work, (ms) => (back = ms)).catch(() => undefined));
   }
   return () => {
     stopSeed();
+    stopTeam();
     decisions?.stop();
     detachPlans(session);
     planWork.stop();

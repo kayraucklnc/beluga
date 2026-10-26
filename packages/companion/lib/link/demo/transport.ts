@@ -374,6 +374,7 @@ export class DemoTransport implements Transport {
       case 'invites.decline':
       case 'network.groups.approve':
       case 'network.groups.decline':
+      case 'network.friends.answerOffer':
       case 'plans.approve':
       case 'plans.discard': {
         this.resolve(item);
