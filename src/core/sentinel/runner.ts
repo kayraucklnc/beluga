@@ -87,6 +87,8 @@ export interface PrLook {
   readonly failed: readonly string[];
   /** How many checks it has. */
   readonly count: number;
+  /** Its head commit (GitHub's headRefOid). */
+  readonly head?: string;
 }
 
 /** Where a run's pull request lives: its worktree, else the project's main folder. */
@@ -105,9 +107,13 @@ export interface SentinelGitHub {
   /** Push the worktree and open a pull request (the project's PR instructions, or its commits). */
   openPr(workspaceId: string, opts: { readonly draft: boolean }): Promise<PrRef | string>;
   look(where: PrPlace, number: number): Promise<PrLook | string>;
-  /** A one-shot reviewer (read-only, a small model, two minutes): ship or hold, in one sentence. Undefined: it couldn't. */
-  review(where: PrPlace, pr: PrRef): Promise<{ readonly verdict: 'ship' | 'hold'; readonly line: string } | undefined>;
-  merge(where: PrPlace, pr: PrRef, method: MergeStep['method']): Promise<true | string>;
+  /**
+   * A one-shot reviewer (read-only, a small model, two minutes): ship or hold, in one sentence, and
+   * the commit it diffed (the worktree's HEAD). Undefined: it couldn't.
+   */
+  review(where: PrPlace, pr: PrRef): Promise<{ readonly verdict: 'ship' | 'hold'; readonly line: string; readonly head?: string } | undefined>;
+  /** Merge it only if its head is still `head` (gh pr merge --match-head-commit). */
+  merge(where: PrPlace, pr: PrRef, method: MergeStep['method'], head: string): Promise<true | string>;
 }
 
 /** The Beluga network's chats, as you (Message a chat). */
@@ -181,6 +187,28 @@ const CANCEL_GRACE_MS = 10_000;
 const POLL_MS = 15_000;
 /** A service's answer kept at most (the step fails above it). */
 const MAX_ANSWER = 4 * 1024 * 1024;
+const MAX_REDIRECTS = 3;
+const CUT_NOTE = '\n… (cut: the answer was bigger than 4 MB)';
+
+/** A service's answer as text, read until `max` bytes and no further (the rest is never downloaded). */
+export async function readCapped(res: Response, max: number): Promise<string> {
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text + decoder.decode();
+    if (bytes + value.byteLength > max) {
+      text += decoder.decode(value.subarray(0, max - bytes));
+      await reader.cancel().catch(() => undefined);
+      return text + CUT_NOTE;
+    }
+    bytes += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+  }
+}
 
 /** A run going now: what the runner and Sentinels share about it. */
 export interface ActiveRun {
@@ -393,15 +421,15 @@ export class SentinelRunner {
     // is never filled in (and sent somewhere).
     const secrets: string[] = [];
     const missing = new Set<string>();
-    const expand = (text: string, strict: boolean): string =>
+    const expand = (text: string, strict: boolean, escape: (v: string) => string = (v) => v): string =>
       text.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (whole, name: string) => {
         const v = env[name];
         if (v === undefined) {
           if (strict) missing.add(name);
           return whole;
         }
-        if (v.length >= 4) secrets.push(v);
-        return v;
+        if (v.length >= 4) secrets.push(v, escape(v));
+        return escape(v);
       });
     const ctx = this.context(active, outputs);
     const url = render(expand(step.url.trim(), true), { ...ctx, escape: encodeURIComponent }).trim();
@@ -411,8 +439,10 @@ export class SentinelRunner {
     if (!url) return { kind: 'failed', why: 'it has no address yet: fill in the URL' };
     if (!/^https?:\/\/[^/\s]+/i.test(url)) return { kind: 'failed', why: 'its address must start with https:// (or http://)' };
     const host = /^https?:\/\/([^/?#]+)/i.exec(url)?.[1] ?? 'the service';
-    const rawBody = step.body !== undefined && step.method !== 'GET' ? expand(step.body, false) : undefined;
-    const json = /json/i.test(Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '') || /^\s*[[{]/.test(rawBody ?? '');
+    const sendsBody = step.body !== undefined && step.method !== 'GET';
+    const json = /json/i.test(Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '') || (sendsBody && /^\s*[[{]/.test(step.body ?? ''));
+    // In a JSON body your values are JSON-escaped too: a `"` in a key never breaks out of its string.
+    const rawBody = sendsBody ? expand(step.body!, false, json ? jsonInside : undefined) : undefined;
     const body = rawBody === undefined ? undefined : render(rawBody, json ? { ...ctx, escape: jsonInside } : ctx);
     // Nothing a service says back carries your secrets on (a service echoing its key).
     const scrub = (text: string): string => secrets.reduce((t, v) => t.split(v).join('[redacted]'), text);
@@ -421,7 +451,9 @@ export class SentinelRunner {
     const signal = AbortSignal.any([AbortSignal.timeout(Math.max(1, limit)), active.abort.signal]);
     let res: Response;
     try {
-      res = await (this.deps.fetch ?? fetch)(url, { method: step.method, headers, ...(body !== undefined ? { body } : {}), signal, redirect: 'follow' });
+      const got = await this.fetchSafely(url, { method: step.method, headers, ...(body !== undefined ? { body } : {}), signal });
+      if (typeof got === 'string') return { kind: 'failed', why: scrub(got) };
+      res = got;
     } catch (err) {
       if (active.abort.signal.aborted) return { kind: 'stopped' };
       if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) return limit < own ? { kind: 'timeout' } : { kind: 'failed', why: `${host} didn’t answer in ${Math.round(own / 1000)} s` };
@@ -430,15 +462,47 @@ export class SentinelRunner {
     }
     let text: string;
     try {
-      text = await res.text();
+      text = await readCapped(res, MAX_ANSWER);
     } catch (err) {
       if (active.abort.signal.aborted) return { kind: 'stopped' };
       return { kind: 'failed', why: scrub(`${host}’s answer broke off: ${err instanceof Error ? err.message : String(err)}`) };
     }
-    if (text.length > MAX_ANSWER) text = `${text.slice(0, MAX_ANSWER)}\n… (cut: the answer was bigger than 4 MB)`;
     text = scrub(text);
     if (!res.ok) return { kind: 'failed', why: `${host} answered ${res.status}${res.statusText ? ` ${res.statusText}` : ''}${text.trim() ? `: ${firstLine(text, 200)}` : ''}`, output: text };
     return { kind: 'done', output: text };
+  }
+
+  /**
+   * A service call whose redirects are followed by hand: at most 3, each to the same origin, over
+   * https (http only to this Mac), so your key headers never go to another host or in the clear.
+   * → the answer, or why it was refused in words.
+   */
+  private async fetchSafely(url: string, init: RequestInit): Promise<Response | string> {
+    const doFetch = this.deps.fetch ?? fetch;
+    const origin = new URL(url);
+    let at = origin;
+    let req = init;
+    for (let hop = 0; ; hop++) {
+      const res = await doFetch(at.toString(), { ...req, redirect: 'manual' });
+      const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!location) return res;
+      await res.body?.cancel().catch(() => undefined);
+      let next: URL;
+      try {
+        next = new URL(location, at);
+      } catch {
+        return `${origin.host} redirected to an address that doesn’t read`;
+      }
+      const local = next.hostname === 'localhost' || next.hostname === '127.0.0.1';
+      if (next.origin !== origin.origin || !(next.protocol === 'https:' || (next.protocol === 'http:' && local))) return `${origin.host} redirected to ${next.host || next.protocol}: only redirects within ${origin.host} over https are followed`;
+      if (hop >= MAX_REDIRECTS) return `${origin.host} redirected more than ${MAX_REDIRECTS} times`;
+      // As browsers do: a 303 (or a 301/302 after a POST) is fetched again with GET, without the body.
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && req.method === 'POST')) {
+        const { body: _body, ...rest } = req;
+        req = { ...rest, method: 'GET' };
+      }
+      at = next;
+    }
   }
 
   // ---------------------------------------------------------------- Open a pull request
@@ -504,24 +568,30 @@ export class SentinelRunner {
       }
     }
     const checks = look.checks === 'none' ? 'No checks on this repository' : look.count === 1 ? 'The check passed' : `All ${look.count} checks passed`;
+    // The merge is pinned to the commit the checks passed on (and Claude reviews): kept on the run.
+    const head = look.head;
+    if (!head) return { kind: 'failed', why: `GitHub didn’t say which commit ${n} is at` };
+    live.run({ prHead: head });
     // 3. The review: ship or hold, in one sentence.
     live.step({ why: `${checks} · Claude is reviewing ${n}` });
     const reviewed = await race(gh.review(where, pr).catch(() => undefined), this.remaining(active), signal);
     if (reviewed.kind === 'timeout') return { kind: 'timeout' };
     if (reviewed.kind === 'aborted') return { kind: 'stopped' };
     const review = reviewed.value;
-    const said = review ? `Claude’s review: ${review.verdict}, ${lowerFirst(review.line.replace(/[.\s]+$/, ''))}` : 'Claude couldn’t review it';
+    // Claude diffed the worktree: a HEAD that isn't the pull request's head is a hold.
+    const elsewhere = review !== undefined && review.head !== head;
+    const said = !review ? 'Claude couldn’t review it' : elsewhere ? (review.head ? `Claude reviewed ${review.head.slice(0, 7)}, not ${n}’s head ${head.slice(0, 7)}` : `Claude couldn’t say which commit of ${n} it reviewed`) : `Claude’s review: ${review.verdict}, ${lowerFirst(review.line.replace(/[.\s]+$/, ''))}`;
     const why = `${checks} · ${said}`;
     live.step({ why });
     // 4. Your approval (a hold always asks).
-    const hold = !review || review.verdict === 'hold';
+    const hold = !review || review.verdict === 'hold' || elsewhere;
     if (step.require.approval || hold) {
       const wait = this.deps.waitForYou;
       if (!wait) return { kind: 'failed', why: `${n} needs your approval, and nothing can ask you here` };
       const headline = hold ? `${n}: Claude says hold. Merge it anyway?` : `Merge ${n}?`;
-      live.run({ state: 'needs-you', headline });
-      this.deps.notify({ kind: 'needsYou', tag: 'sentinel', title: `${active.sentinel.name}: merge ${n}?`, body: why, key: `${active.run.id}:merge`, ...(active.run.channel ? { channel: active.run.channel } : {}) });
       const since = this.deps.now();
+      live.run({ state: 'needs-you', headline, waitingSince: since });
+      this.deps.notify({ kind: 'needsYou', tag: 'sentinel', title: `${active.sentinel.name}: merge ${n}?`, body: why, key: `${active.run.id}:merge`, ...(active.run.channel ? { channel: active.run.channel } : {}) });
       const asked = await race(wait(active), APPROVAL_MS + 60_000, signal);
       // The time it waited for you doesn't count against its time limit.
       active.deadline += this.deps.now() - since;
@@ -533,19 +603,19 @@ export class SentinelRunner {
         return { kind: 'end', headline: `Not now: ${n} stays open`, why: `${why} · you said Not Now` };
       }
       if (answer.choice === 'expired') return { kind: 'end', headline: `Nobody said Merge in 24 hours: ${n} stays open`, why: `${why} · nobody said Merge in 24 hours` };
-      const merged = await this.merge(active, gh, where, pr, step);
+      const merged = await this.merge(active, gh, where, pr, step, head);
       answer.settle?.(typeof merged === 'string' ? merged : undefined);
       return typeof merged === 'string' ? { kind: 'failed', why: merged } : merged;
     }
-    const merged = await this.merge(active, gh, where, pr, step);
+    const merged = await this.merge(active, gh, where, pr, step, head);
     return typeof merged === 'string' ? { kind: 'failed', why: merged } : merged;
   }
 
-  /** 5. Merge it, then archive the worktree (its work is on the base branch now). */
-  private async merge(active: ActiveRun, gh: SentinelGitHub, where: PrPlace, pr: PrRef, step: MergeStep): Promise<StepEnd | string> {
+  /** 5. Merge it (still at the commit that was checked and reviewed), then archive the worktree (its work is on the base branch now). */
+  private async merge(active: ActiveRun, gh: SentinelGitHub, where: PrPlace, pr: PrRef, step: MergeStep, head: string): Promise<StepEnd | string> {
     const n = `#${pr.number}`;
-    const res = await gh.merge(where, pr, step.method).catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
-    if (res !== true) return `GitHub didn’t merge ${n}: ${res}`;
+    const res = await mergePinned(gh, where, pr, step.method, head);
+    if (res !== true) return res;
     active.merged = pr.number;
     let archived = false;
     if (where.workspaceId && this.deps.places) {
@@ -787,6 +857,26 @@ export class SentinelRunner {
       // It stays: nothing is lost.
     }
   }
+}
+
+/** A run whose pull request's head moved after the checks and the review says this. */
+export const BRANCH_CHANGED = 'the branch changed since Claude reviewed it; run it again';
+
+/**
+ * Look at the pull request once more, right before merging: still open, still at `head`, its
+ * checks still passing there; then merge, pinned to `head`. → true, or why not in words.
+ */
+export async function mergePinned(gh: SentinelGitHub, where: PrPlace, pr: PrRef, method: MergeStep['method'], head: string): Promise<true | string> {
+  const n = `#${pr.number}`;
+  const why = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+  const now = await gh.look(where, pr.number).catch(why);
+  if (typeof now === 'string') return `GitHub couldn’t say how ${n} is doing: ${now}`;
+  if (now.state === 'CLOSED') return `${n} is closed`;
+  if (now.state === 'MERGED') return `${n} was merged by someone else meanwhile`;
+  if (now.head !== head) return BRANCH_CHANGED;
+  if (!(now.checks === 'passing' || (now.checks === 'none' && now.count === 0))) return `the checks on ${n} aren’t passing anymore${now.failed[0] ? ` (“${now.failed[0]}”)` : ''}; run it again`;
+  const res = await gh.merge(where, pr, method, head).catch(why);
+  return res === true ? true : `GitHub didn’t merge ${n}: ${res}`;
 }
 
 const capital = (text: string): string => (text ? text[0]!.toUpperCase() + text.slice(1) : text);

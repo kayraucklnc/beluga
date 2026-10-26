@@ -45,7 +45,7 @@ export function createSentinelToolDefs(sentinel: SentinelTools) {
     tool('sentinel_run', 'Run a sentinel now. Only one that is on: a paused one runs only when the user turns it on or presses Run. It runs on its own; its report shows on its page.', { id: ref }, (a) => guarded(() => sentinel.run(a.id))),
     tool(
       'sentinel_update',
-      'Change a sentinel: only the fields given change (steps: the whole new list in order, keeping the ids of steps you keep or edit; sentinel_get has them). You can’t turn one on. Adding or editing a script, a service call, a pull request or a merge step, or raising its access, pauses a sentinel that was on until the user turns it on again: tell them. A change to its name, schedule, a prompt or where it notifies doesn’t.',
+      'Change a sentinel: only the fields given change (steps: the whole new list in order, keeping the ids of steps you keep or edit; sentinel_get has them). You can’t turn one on. Adding or editing a script, a service call, a pull request or a merge step, raising its access, moving it to another project, pointing a message, friend or Run another sentinel step elsewhere, or giving it a trigger of another kind or target pauses it until the user turns it on again: tell them. A change to its name, schedule times, a prompt or where it notifies doesn’t. A merge step always waits for the user’s approval: you can’t turn that off.',
       { id: ref, ...TOOL_PATCH_SHAPE },
       ({ id, ...patch }) => guarded(() => sentinel.update(id, patch)),
     ),

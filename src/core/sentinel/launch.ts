@@ -7,7 +7,7 @@ import { commandEnv } from '../views/sources.js';
 import { gatewayOf } from '../gateway/registry.js';
 import { isFinal } from '../gateway/model.js';
 import { networkOf } from '../network.js';
-import { status } from '../../workspaces/git.js';
+import { git, status } from '../../workspaces/git.js';
 import { findPr, mergePr } from '../../workspaces/pr.js';
 import type { PullRequest } from '../work-store.js';
 import { runGhCli } from '../issues/gh.js';
@@ -170,6 +170,7 @@ export function prLook(pr: PullRequest): PrLook {
     checks: pr.checks,
     failed: runs.filter((c) => c.state === 'completed' && FAILED.has(c.conclusion ?? '')).map((c) => c.name),
     count: runs.length,
+    ...(pr.head ? { head: pr.head } : {}),
   };
 }
 
@@ -203,17 +204,20 @@ function github(session: Session, store: Store): SentinelGitHub {
       const project = store.getState().projects.find((p) => p.id === ws.projectId);
       const base = (ws.base ?? project?.base ?? 'main').replace(/^origin\//, '');
       const title = store.getState().prs[ws.id]?.title;
-      return session.reviewPr({ dir: ws.path, number: pr.number, base, ...(title ? { title } : {}) });
+      // The commit the reviewer diffs (HEAD here): the gate holds when it isn't the pull request's head.
+      const head = (await git(ws.path, ['rev-parse', 'HEAD'], 5000).catch(() => '')).trim();
+      const review = await session.reviewPr({ dir: ws.path, number: pr.number, base, ...(title ? { title } : {}) });
+      return review ? { ...review, ...(head ? { head } : {}) } : undefined;
     },
-    merge: async (where, pr, method) => {
+    merge: async (where, pr, method, head) => {
       const ws = live(where.workspaceId);
       if (bench && ws && store.getState().prs[ws.id]) {
-        const out = await bench.mergePr(ws.id, { method, deleteBranch: true });
+        const out = await bench.mergePr(ws.id, { method, deleteBranch: true, matchHead: head });
         return out.ok ? true : out.message;
       }
       const dir = dirOf(where);
       if (!dir) return 'its worktree and project are gone';
-      await mergePr(dir, pr.number, { method });
+      await mergePr(dir, pr.number, { method, matchHead: head });
       return true;
     },
   };

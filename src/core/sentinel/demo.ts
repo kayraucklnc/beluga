@@ -20,6 +20,9 @@ const DAY = 24 * HOUR;
  * The demo's GitHub: a pull request opens (#54 on), its six checks pass, the reviewer says ship,
  * and Merge merges it (Fix what broke's waiting run goes through the real decide path).
  */
+/** A demo pull request's head commit: the same for its look and its review, so the merge is pinned. */
+const demoHead = (number: number): string => `de30${String(number).padStart(4, '0')}`.padEnd(40, '0');
+
 export function demoGitHub(): SentinelGitHub {
   let next = 54;
   return {
@@ -27,8 +30,8 @@ export function demoGitHub(): SentinelGitHub {
       const number = next++;
       return { number, url: `https://github.com/acme/bob-api/pull/${number}` };
     },
-    look: async (_where, number) => ({ number, url: `https://github.com/acme/bob-api/pull/${number}`, state: 'OPEN', draft: false, conflicts: false, checks: 'passing', failed: [], count: 6 }),
-    review: async () => ({ verdict: 'ship', line: 'A small fix with a test that covers it' }),
+    look: async (_where, number) => ({ number, url: `https://github.com/acme/bob-api/pull/${number}`, state: 'OPEN', draft: false, conflicts: false, checks: 'passing', failed: [], count: 6, head: demoHead(number) }),
+    review: async (_where, pr) => ({ verdict: 'ship', line: 'A small fix with a test that covers it', head: demoHead(pr.number) }),
     merge: async () => true,
   };
 }
@@ -199,6 +202,8 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
         { id: ids[3]!, state: 'waiting' },
       ],
       pr: { number: 53, url: 'https://github.com/acme/bob-api/pull/53' },
+      prHead: demoHead(53),
+      waitingSince: t2 + 10 * MIN,
       tasks: [],
     },
     {

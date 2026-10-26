@@ -22,11 +22,12 @@ function fakeFetch(answer: (url: string, init: RequestInit) => Response | Promis
   return { fetch, calls };
 }
 
-const look = (patch: Partial<PrLook> = {}): PrLook => ({ number: 7, url: 'https://github.com/acme/bob-api/pull/7', state: 'OPEN', draft: false, conflicts: false, checks: 'passing', failed: [], count: 3, ...patch });
+const HEAD = 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0';
+const look = (patch: Partial<PrLook> = {}): PrLook => ({ number: 7, url: 'https://github.com/acme/bob-api/pull/7', state: 'OPEN', draft: false, conflicts: false, checks: 'passing', failed: [], count: 3, head: HEAD, ...patch });
 
-function fakeGitHub(opts: { looks?: Array<PrLook | string>; review?: { verdict: 'ship' | 'hold'; line: string } | undefined; merge?: true | string } = {}) {
+function fakeGitHub(opts: { looks?: Array<PrLook | string>; review?: { verdict: 'ship' | 'hold'; line: string; head?: string } | undefined; merge?: true | string } = {}) {
   const opened: Array<{ workspaceId: string; draft: boolean }> = [];
-  const merged: Array<{ workspaceId?: string; number: number; method: string }> = [];
+  const merged: Array<{ workspaceId?: string; number: number; method: string; head?: string }> = [];
   const looks = [...(opts.looks ?? [look()])];
   let looked = 0;
   const github: SentinelGitHub = {
@@ -38,9 +39,9 @@ function fakeGitHub(opts: { looks?: Array<PrLook | string>; review?: { verdict: 
       looked++;
       return looks.length > 1 ? looks.shift()! : looks[0]!;
     },
-    review: async () => ('review' in opts ? opts.review : { verdict: 'ship', line: 'A two-line fix with a test.' }),
-    merge: async (where, pr, method) => {
-      merged.push({ ...(where.workspaceId ? { workspaceId: where.workspaceId } : {}), number: pr.number, method });
+    review: async () => ('review' in opts ? opts.review : { verdict: 'ship', line: 'A two-line fix with a test.', head: HEAD }),
+    merge: async (where, pr, method, head) => {
+      merged.push({ ...(where.workspaceId ? { workspaceId: where.workspaceId } : {}), number: pr.number, method, head });
       return opts.merge ?? true;
     },
   };
@@ -177,10 +178,11 @@ describe('Merge if acceptable', () => {
     const run = s.sentinels.start(s.sentinels.create(shipping({ approval: false })).id, 'you');
     await until(ended(s, run.id));
     const r = s.sentinels.runGet(run.id).run;
-    expect(gh.looked()).toBe(3);
+    // Three looks while the checks ran, and one more right before merging.
+    expect(gh.looked()).toBe(4);
     expect(r).toMatchObject({ state: 'done', headline: 'Merged #7' });
     expect(r.steps[2]).toMatchObject({ state: 'done', why: 'All 3 checks passed · Claude’s review: ship, a two-line fix with a test', output: 'Merged #7 (squashed); its worktree is archived' });
-    expect(gh.merged).toEqual([{ workspaceId: 'w1', number: 7, method: 'squash' }]);
+    expect(gh.merged).toEqual([{ workspaceId: 'w1', number: 7, method: 'squash', head: HEAD }]);
     expect(s.archived).toEqual(['w1']);
     expect(s.notices.some((n) => n.kind === 'needsYou')).toBe(false);
   });
@@ -229,6 +231,121 @@ describe('Merge if acceptable', () => {
     await expect(no.sentinels.decide(r2.id, 'merge')).rejects.toThrow('GitHub didn’t merge #7: This branch conflicts with the base branch.');
     await until(ended(no, r2.id));
     expect(no.sentinels.runGet(r2.id).run.state).toBe('failed');
+  });
+
+  it('the merge is pinned to the commit that was checked and reviewed; a push while it waits is refused', async () => {
+    const OTHER = 'f'.repeat(40);
+    // The first look (the checks) sees HEAD; the one right before merging sees a new push.
+    const gh = fakeGitHub({ looks: [look(), look({ head: OTHER })] });
+    const s = setup({ github: gh.github, reply: () => 'Fixed it', changes: true });
+    const run = s.sentinels.start(s.sentinels.create(shipping()).id, 'you');
+    await until(waiting(s, run.id));
+    const asked = s.sentinels.runGet(run.id).run;
+    expect(asked).toMatchObject({ prHead: HEAD });
+    expect(asked.waitingSince).toBeTypeOf('number');
+    await expect(s.sentinels.decide(run.id, 'merge')).rejects.toThrow('the branch changed since Claude reviewed it; run it again');
+    await until(ended(s, run.id));
+    expect(s.sentinels.runGet(run.id).run).toMatchObject({ state: 'failed', why: 'the branch changed since Claude reviewed it; run it again' });
+    expect(gh.merged).toEqual([]);
+  });
+
+  it('a review of another commit than the pull request’s head is a hold, even with approval off', async () => {
+    const gh = fakeGitHub({ review: { verdict: 'ship', line: 'Fine.', head: 'b'.repeat(40) } });
+    const s = setup({ github: gh.github, reply: () => 'Fixed it', changes: true });
+    const run = s.sentinels.start(s.sentinels.create(shipping({ approval: false })).id, 'you');
+    await until(waiting(s, run.id));
+    const r = s.sentinels.runGet(run.id).run;
+    expect(r.headline).toBe('#7: Claude says hold. Merge it anyway?');
+    expect(r.steps[2]!.why).toBe('All 3 checks passed · Claude reviewed bbbbbbb, not #7’s head a1b2c3d');
+    expect(gh.merged).toEqual([]);
+    // You said Merge: it merges what the checks passed on, pinned to it.
+    await s.sentinels.decide(run.id, 'merge');
+    expect(gh.merged).toEqual([{ workspaceId: 'w1', number: 7, method: 'squash', head: HEAD }]);
+  });
+});
+
+describe('Merge after Beluga was closed (decide on a run nobody runs)', () => {
+  /** A sentinel with a merge waiting for you, as Beluga left it when it closed. */
+  const closedUnder = (s: S, patch: Record<string, unknown> = {}) => {
+    const made = s.sentinels.create(shipping());
+    const at = (patch.startedAt as number | undefined) ?? Date.now() - 60_000;
+    const run = s.sentinels.addHistory(made.id, {
+      by: 'you',
+      trigger: { kind: 'manual', summary: 'You pressed Run' },
+      state: 'needs-you',
+      startedAt: at,
+      headline: 'Merge #7?',
+      steps: [
+        { id: made.steps[0]!.id, state: 'done', startedAt: at, endedAt: at },
+        { id: made.steps[1]!.id, state: 'done', startedAt: at, endedAt: at },
+        { id: made.steps[2]!.id, state: 'running', startedAt: at },
+        { id: made.steps[3]!.id, state: 'waiting' },
+      ],
+      worktreeId: 'w9',
+      pr: { number: 7, url: 'https://github.com/acme/bob-api/pull/7' },
+      prHead: HEAD,
+      waitingSince: at,
+      tasks: [],
+      ...patch,
+    });
+    return { made, run };
+  };
+
+  it('merges pinned to the reviewed commit, ends as a run ends, and the sentinels after it start', async () => {
+    const gh = fakeGitHub();
+    const s = setup({ github: gh.github });
+    const { made, run } = closedUnder(s);
+    const after = s.sentinels.create({ name: 'After the merge', trigger: { kind: 'after', sentinelId: made.id, on: 'success' }, steps: [{ kind: 'notify', phone: false }] });
+    s.sentinels.pause(after.id, false);
+    await expect(s.sentinels.decide(run.id, 'merge')).resolves.toMatchObject({ state: 'done', headline: 'Merged #7' });
+    expect(gh.merged).toEqual([{ workspaceId: 'w9', number: 7, method: 'squash', head: HEAD }]);
+    expect(s.archived).toEqual(['w9']);
+    expect(s.sentinels.runsOf(after.id)).toHaveLength(1);
+    expect(s.sentinels.runsOf(after.id)[0]).toMatchObject({ by: `after:${run.id}` });
+  });
+
+  it('refused when the branch moved, when Ship access is gone, or when its merge step is gone; the run fails and counts', async () => {
+    const moved = fakeGitHub({ looks: [look({ head: 'c'.repeat(40) })] });
+    const s1 = setup({ github: moved.github });
+    const one = closedUnder(s1);
+    await expect(s1.sentinels.decide(one.run.id, 'merge')).rejects.toThrow('The branch changed since Claude reviewed it; run it again');
+    expect(s1.sentinels.runGet(one.run.id).run).toMatchObject({ state: 'failed', why: 'the branch changed since Claude reviewed it; run it again' });
+    expect(s1.sentinels.need(one.made.id).failures).toBe(1);
+    expect(moved.merged).toEqual([]);
+
+    const gh = fakeGitHub();
+    const s2 = setup({ github: gh.github });
+    const two = closedUnder(s2);
+    // Its access lowered (by hand in its file) while the run waited.
+    s2.sentinels.demoSet(two.made.id, { access: 'work' } as never);
+    await expect(s2.sentinels.decide(two.run.id, 'merge')).rejects.toThrow('It needs Ship access, and this sentinel has Work');
+    expect(s2.sentinels.runGet(two.run.id).run.state).toBe('failed');
+
+    const three = closedUnder(s2);
+    s2.sentinels.update(three.made.id, { steps: three.made.steps.filter((st) => st.kind !== 'merge') });
+    await expect(s2.sentinels.decide(three.run.id, 'merge')).rejects.toThrow('This sentinel has no merge step anymore');
+    expect(gh.merged).toEqual([]);
+  });
+
+  it('a second Merge while the first is going is refused', async () => {
+    const gh = fakeGitHub();
+    const s = setup({ github: gh.github });
+    const { run } = closedUnder(s);
+    const first = s.sentinels.decide(run.id, 'merge');
+    await expect(s.sentinels.decide(run.id, 'merge')).rejects.toThrow('That run is being merged already');
+    await first;
+    expect(gh.merged).toHaveLength(1);
+  });
+
+  it('the 24 hours count from when it started waiting for you, not from when its merge step started', () => {
+    const s = setup({ github: fakeGitHub().github });
+    const long = Date.now() - 30 * 60 * 60_000;
+    // Its merge step started 30 hours ago (the checks were slow), but it has waited only an hour.
+    const { run: recent } = closedUnder(s, { startedAt: long, waitingSince: Date.now() - 60 * 60_000 });
+    const { run: old } = closedUnder(s, { startedAt: long, waitingSince: Date.now() - 25 * 60 * 60_000 });
+    s.sentinels.tick();
+    expect(s.sentinels.runGet(recent.id).run.state).toBe('needs-you');
+    expect(s.sentinels.runGet(old.id).run).toMatchObject({ state: 'stopped', headline: 'Nobody said Merge in 24 hours: #7 stays open' });
   });
 });
 

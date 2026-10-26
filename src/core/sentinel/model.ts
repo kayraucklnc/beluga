@@ -294,6 +294,10 @@ export interface Run {
   /** The worktree a Claude step made (later steps share it). */
   readonly worktreeId?: string;
   readonly pr?: { readonly number: number; readonly url: string };
+  /** The pull request's head commit its checks passed on and Claude reviewed: the merge is pinned to it. */
+  readonly prHead?: string;
+  /** When it went needs-you (the 24 hours count from here). */
+  readonly waitingSince?: number;
   /** Keys of the tasks it made. */
   readonly tasks: readonly string[];
   /** Where report.md is (none in memory-only runs: sentinel.runGet still has its text). */
@@ -610,15 +614,54 @@ const stepContent = (st: Step): string => {
 const stable = (v: unknown): string =>
   Array.isArray(v) ? `[${v.map(stable).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter((k) => (v as Record<string, unknown>)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}` : JSON.stringify(v);
 
+/** Who or what a step reaches (a chat, a friend, another sentinel); undefined for the other kinds. */
+const stepTarget = (st: Step): string | undefined => (st.kind === 'message' ? `message:${st.to}` : st.kind === 'friend' ? `friend:${st.peerId}` : st.kind === 'trigger' ? `trigger:${st.sentinelId}` : undefined);
+
+/**
+ * What a trigger watches, without how often or when: its kind and its target (the other
+ * sentinel, the event, the repository's label, the URL, the Sentry project, the signature).
+ * A schedule's times aren't a target: changing when it runs isn't widening.
+ */
+const triggerTarget = (t: Trigger): string => {
+  switch (t.kind) {
+    case 'schedule':
+    case 'manual':
+      return t.kind;
+    case 'after':
+      return `after:${t.sentinelId}`;
+    case 'beluga':
+      return stable({ k: t.kind, what: t.what, projectId: t.projectId });
+    case 'github':
+      return stable({ k: t.kind, what: t.what, label: t.label });
+    case 'stripe':
+      return stable({ k: t.kind, what: t.what });
+    case 'uptime':
+      return stable({ k: t.kind, url: t.url });
+    case 'sentry':
+      return stable({ k: t.kind, org: t.org, project: t.project, what: t.what });
+    case 'webhook':
+      return stable({ k: t.kind, signature: t.signature });
+  }
+};
+
 /**
  * Whether a change widened what a sentinel can do (docs/sentinel.md §3, "Rules"): a script, a
- * service call, a pull request or a merge step added or edited, or more access. A change to the
- * name, the schedule, a prompt or Notify doesn't; removing a step doesn't either.
+ * service call, a pull request or a merge step added or edited; more access; another project; a
+ * message to another chat, a question to another friend, another sentinel run; or a trigger of
+ * another kind or target. A change to the name, the schedule's times, a prompt or Notify doesn't;
+ * removing a step doesn't either.
  */
-export function claudeWidened(was: Pick<Sentinel, 'steps' | 'access'>, next: Pick<Sentinel, 'steps' | 'access'>): boolean {
+export function claudeWidened(was: Pick<Sentinel, 'steps' | 'access'> & Partial<Pick<Sentinel, 'projectId' | 'trigger'>>, next: Pick<Sentinel, 'steps' | 'access'> & Partial<Pick<Sentinel, 'projectId' | 'trigger'>>): boolean {
   if (RANK[next.access] > RANK[was.access]) return true;
+  if ((next.projectId ?? '') !== (was.projectId ?? '')) return true;
+  if (was.trigger && next.trigger && triggerTarget(was.trigger) !== triggerTarget(next.trigger)) return true;
   const before = new Set(was.steps.filter((st) => GUARDED_STEPS.has(st.kind)).map(stepContent));
-  return next.steps.some((st) => GUARDED_STEPS.has(st.kind) && !before.has(stepContent(st)));
+  if (next.steps.some((st) => GUARDED_STEPS.has(st.kind) && !before.has(stepContent(st)))) return true;
+  const reached = new Set(was.steps.map(stepTarget).filter((t) => t !== undefined));
+  return next.steps.some((st) => {
+    const t = stepTarget(st);
+    return t !== undefined && !reached.has(t);
+  });
 }
 
 // ---------------------------------------------------------------- service presets

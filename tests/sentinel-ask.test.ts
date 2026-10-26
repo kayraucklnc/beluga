@@ -87,10 +87,11 @@ describe('sentinel_update, sentinel_get, sentinel_remove', () => {
     expect(s.sentinels.need(made.id).pausedWhy).toBeUndefined();
     tools.update(made.id, { access: 'ship' });
     expect(s.sentinels.need(made.id).pausedWhy).toBe(CLAUDE_CHANGED);
-    // Paused already (after failures): it stays as it was, with its own words.
+    // Paused already (after failures): it now says Claude changed it, so Resume doesn't run the new steps unseen.
     s.sentinels.demoSet(made.id, { paused: true, pausedWhy: 'Paused after 3 failures in a row' });
-    tools.update(made.id, { steps: [...edited, { kind: 'http', name: 'Ping', url: 'https://x.dev' }] as never });
-    expect(s.sentinels.need(made.id).pausedWhy).toBe('Paused after 3 failures in a row');
+    expect(tools.update(made.id, { steps: [...edited, { kind: 'http', name: 'Ping', url: 'https://x.dev' }] as never })).toContain('it is paused now');
+    expect(s.sentinels.need(made.id)).toMatchObject({ paused: true, pausedWhy: CLAUDE_CHANGED });
+    expect(pausedWords(s.sentinels.need(made.id))).toBe('Claude changed what it can do');
     // Claude can't turn one on: the patch has no such field.
     const defs = createSentinelToolDefs(tools);
     await call(defs, 'sentinel_update', { id: made.id, paused: false });

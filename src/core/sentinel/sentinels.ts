@@ -47,7 +47,7 @@ import {
 import { redactSecrets } from '../../shared/steps.js';
 import { describeSentinels, sentinelAskBrief, sentinelMaterial, sentinelNote } from './prompt.js';
 import { RECIPES } from './recipes.js';
-import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, SentinelRunner, type YourAnswer, runSentinelShell } from './runner.js';
+import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, SentinelRunner, type YourAnswer, mergePinned, runSentinelShell } from './runner.js';
 import { StepInputSchema } from './schema.js';
 import type { ToolDraft, ToolPatch, ToolStep } from './tool-draft.js';
 import { Triggers, isEventTrigger } from './triggers/index.js';
@@ -143,6 +143,10 @@ export class Sentinels {
   /** Conversations where your Claude changes a sentinel (sentinel.ask), and which. */
   private readonly askChannels = new Map<string, string>();
   private asks: Record<string, SentinelAsk> = {};
+  /** Sentinels whose ask is being set up (before its state says writing): a second one waits. */
+  private readonly asking = new Set<string>();
+  /** Runs Beluga was closed under that are being merged now (decide): one Merge at a time. */
+  private readonly deciding = new Set<string>();
   /** What each event sentinel saw last (kept in the file). */
   private cursors: Record<string, unknown>;
   /** Webhook sentinels' secrets (in the file only, never in the state). */
@@ -535,11 +539,27 @@ export class Sentinels {
     }
     const run = this.runs.find((r) => r.id === runId);
     if (!run || run.state !== 'needs-you') throw new Error('That run isn’t waiting for you (anymore)');
+    if (this.deciding.has(runId)) throw new Error('That run is being merged already');
+    this.deciding.add(runId);
+    try {
+      return await this.decideClosed(run, choice);
+    } finally {
+      this.deciding.delete(runId);
+    }
+  }
+
+  /**
+   * decide for a run Beluga was closed under: Not Now stops it; Merge looks again (the sentinel
+   * still has Ship access and its merge step, the pull request still at the commit that was checked
+   * and reviewed, its checks passing there), merges pinned to that commit, and ends the run as a
+   * run ends (its failures counted, the sentinels that run after it started).
+   */
+  private async decideClosed(run: RunSummary, choice: 'merge' | 'skip'): Promise<RunSummary> {
     const s = this.need(run.sentinelId);
     const at = s.steps.findIndex((st) => st.kind === 'merge');
     const mergeStep = at >= 0 ? s.steps[at] : undefined;
     const n = run.pr ? `#${run.pr.number}` : 'the pull request';
-    const ended = (state: 'done' | 'skipped', why?: string): RunSummary['steps'] =>
+    const ended = (state: 'done' | 'skipped' | 'failed', why?: string): RunSummary['steps'] =>
       run.steps.map((st) => (mergeStep && st.id === mergeStep.id ? { ...st, state, endedAt: this.now(), ...(why ? { why } : {}) } : st.state === 'waiting' || st.state === 'running' ? { ...st, state: 'skipped' as const } : st));
     if (choice === 'skip') {
       const next: RunSummary = { ...run, state: 'stopped', headline: `Not now: ${n} stays open`, endedAt: this.now(), steps: ended('skipped') };
@@ -548,15 +568,27 @@ export class Sentinels {
     }
     const gh = this.deps.github;
     if (!gh || !run.pr) throw new Error('Merging needs the Beluga app and the run’s pull request');
+    const end = (state: 'done' | 'failed', headline: string, why?: string): RunSummary => {
+      const fresh = this.runs.find((r) => r.id === run.id) ?? run;
+      const next: RunSummary = { ...fresh, state, headline: redactSecrets(headline), endedAt: this.now(), steps: ended(state, why), ...(why ? { why: redactSecrets(why) } : {}) };
+      // Ended as a run ends: its failures counted, told, the sentinels after it started.
+      const active: ActiveRun = { run: next, sentinel: s, abort: new AbortController(), deadline: this.now(), places: {} };
+      this.finished(active, next);
+      return next;
+    };
+    const refuse = (why: string): never => {
+      end('failed', `${mergeStep?.name ?? 'Merge'}: ${firstLine(why, 100)}`, why);
+      throw new Error(capitalFirst(why));
+    };
+    if (mergeStep?.kind !== 'merge') return refuse('this sentinel has no merge step anymore');
+    if (!accessAllows(s.access, 'merge')) return refuse(`it needs ${ACCESS_INFO.ship.label} access, and this sentinel has ${ACCESS_INFO[s.access].label}`);
+    if (!run.prHead) return refuse('Beluga can’t tell which commit Claude reviewed; run it again');
     const where = { ...(run.worktreeId ? { workspaceId: run.worktreeId } : {}), ...(s.projectId ? { projectId: s.projectId } : {}) };
-    const res = await gh.merge(where, run.pr, mergeStep?.kind === 'merge' ? mergeStep.method : 'squash').catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
-    if (res !== true) throw new Error(`GitHub didn’t merge ${n}: ${res}`);
+    const res = await mergePinned(gh, where, run.pr, mergeStep.method, run.prHead);
+    if (res !== true) return refuse(res);
+    // Its work is on the base branch now; a worktree that can't go stays (nothing is lost).
     if (run.worktreeId) await this.deps.places?.archive(run.worktreeId).catch(() => undefined);
-    const fresh = this.runs.find((r) => r.id === runId) ?? run;
-    const next: RunSummary = { ...fresh, state: 'done', headline: `Merged ${n}`, endedAt: this.now(), steps: ended('done') };
-    this.recordSummary(next);
-    if (s.notify !== 'off') this.deps.notify({ kind: 'done', tag: 'sentinel', title: s.name, body: `Merged ${n}`, key: run.id, ...(run.channel ? { channel: run.channel } : {}) });
-    return next;
+    return end('done', `Merged ${n}`);
   }
 
   /** The clock: start what's due (the Mac waking from sleep shows as a gap since the last look). */
@@ -615,21 +647,50 @@ export class Sentinels {
     if (!claude || !places) throw new Error('Asking Claude needs the Beluga app with your Claude on');
     const words = text.trim();
     if (!words) throw new Error('Say what to change');
-    if (this.asks[s.id]?.state === 'writing') throw new Error(`Claude is changing “${s.name}” already: wait for it, or open its chat`);
-    const place = s.projectId ? await places.projectChat(s.projectId, `Change “${s.name}”`) : places.macChat();
-    if (!place) throw new Error('Claude’s conversation couldn’t be made');
+    if (this.asking.has(s.id) || this.asks[s.id]?.state === 'writing') throw new Error(`Claude is changing “${s.name}” already: wait for it, or open its chat`);
+    // Taken before the first await: a second ask in the meantime is refused, not run twice.
+    this.asking.add(s.id);
+    let place: Awaited<ReturnType<SentinelPlaces['projectChat']>>;
+    try {
+      place = s.projectId ? await places.projectChat(s.projectId, `Change “${s.name}”`) : places.macChat();
+    } catch (err) {
+      this.asking.delete(s.id);
+      throw err;
+    }
+    if (!place) {
+      this.asking.delete(s.id);
+      throw new Error('Claude’s conversation couldn’t be made');
+    }
     const { channel } = place;
     this.askChannels.set(channel, s.id);
     const ask: SentinelAsk = { channel, startedAt: this.now(), state: 'writing', text: firstLine(words, 200) };
     this.setAsk(s.id, ask);
+    this.asking.delete(s.id);
     const requestId = claude.ask(words, channel, words);
     if (!requestId) {
       this.setAsk(s.id, { ...ask, state: 'failed', answer: 'Your Claude couldn’t be asked there', endedAt: this.now() });
       throw new Error('Your Claude couldn’t be asked there');
     }
+    // As long as one of its runs may take: then it's stopped, and the page says so.
+    let over = false;
+    const timer = setTimeout(
+      () => {
+        over = true;
+        claude.cancel(requestId, 'Stopped by Beluga: Claude took too long');
+        this.setAsk(s.id, { ...ask, state: 'failed', answer: TOOK_TOO_LONG, endedAt: this.now() });
+      },
+      (s.limits.minutes || DEFAULT_LIMITS.minutes) * 60_000,
+    );
+    timer.unref?.();
     void claude.wait(requestId).then(
-      (answer) => this.setAsk(s.id, { ...ask, state: 'done', answer: clipLines(answer), endedAt: this.now() }),
-      (err: unknown) => this.setAsk(s.id, { ...ask, state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'Claude stopped', endedAt: this.now() }),
+      (answer) => {
+        clearTimeout(timer);
+        if (!over) this.setAsk(s.id, { ...ask, state: 'done', answer: clipLines(answer), endedAt: this.now() });
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        if (!over) this.setAsk(s.id, { ...ask, state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'Claude stopped', endedAt: this.now() });
+      },
     );
     return { channel };
   }
@@ -638,7 +699,8 @@ export class Sentinels {
   claudeUpdate(ref: string, patch: ToolPatch): { readonly sentinel: Sentinel; readonly paused: boolean } {
     const was = this.need(ref);
     const next = this.update(was.id, this.fromToolPatch(patch));
-    if (was.paused || !claudeWidened(was, next)) return { sentinel: next, paused: false };
+    // Paused already (after failures, say): it now says Claude changed it, so Resume runs nothing new unseen.
+    if (!claudeWidened(was, next)) return { sentinel: next, paused: false };
     const paused: Sentinel = { ...next, paused: true, pausedWhy: CLAUDE_CHANGED, updatedAt: this.now() };
     this.replace(paused);
     return { sentinel: paused, paused: true };
@@ -728,7 +790,7 @@ export class Sentinels {
     this.follow(next, run);
     this.chains.delete(run.id);
     this.prune();
-    const waiting = this.queued.get(sid);
+    const waiting = this.active.has(sid) ? undefined : this.queued.get(sid);
     if (waiting) {
       this.queued.delete(sid);
       const { payload, ...q } = waiting;
@@ -823,7 +885,7 @@ export class Sentinels {
     const going = new Set([...this.active.values()].map((a) => a.run.id));
     for (const r of this.runs) {
       if (r.state !== 'needs-you' || going.has(r.id)) continue;
-      const since = r.steps.find((st) => st.state === 'running')?.startedAt ?? r.startedAt;
+      const since = r.waitingSince ?? r.steps.find((st) => st.state === 'running')?.startedAt ?? r.startedAt;
       if (now - since < limit) continue;
       const n = r.pr ? `#${r.pr.number}` : 'the pull request';
       this.recordSummary({ ...r, state: 'stopped', headline: `Nobody said Merge in 24 hours: ${n} stays open`, why: 'nobody said Merge in 24 hours', endedAt: now, steps: r.steps.map((st) => (st.state === 'running' || st.state === 'waiting' ? { ...st, state: 'skipped' as const } : st)) });
@@ -1053,8 +1115,16 @@ function limitsOf(l: Limits): Limits {
 
 const oneLine = (text: string, max: number): string => text.replace(/\s+/g, ' ').trim().slice(0, max);
 
-/** Claude's step as a step draft: what it left out is filled in (StepInputSchema's defaults). */
-const toolStep = (st: ToolStep): StepDraft => StepInputSchema.parse(st) as StepDraft;
+/**
+ * Claude's step as a step draft: what it left out is filled in (StepInputSchema's defaults). A
+ * merge step always asks you: only the editor can untick its approval (with its alert).
+ */
+const toolStep = (st: ToolStep): StepDraft => StepInputSchema.parse(st.kind === 'merge' ? { ...st, require: { checks: true, approval: true } } : st) as StepDraft;
+
+/** An ask that ran past its sentinel's time limit says this. */
+export const TOOK_TOO_LONG = 'Claude took too long';
+
+const capitalFirst = (text: string): string => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
 
 /** Claude's draft as a sentinel draft (its project by name). */
 export function fromToolDraft(d: ToolDraft): SentinelDraft {

@@ -42,12 +42,39 @@ export function parseReview(raw: string): PrReview | undefined {
   }
 }
 
-/** Only `git diff` with plain arguments (refs, paths, a few flags): no pipes, no other command. */
-export const DIFF_ONLY = /^git\s+diff(\s+(--stat|--name-only|--no-color|-U\d+|[\w./@^~:{}-]+))*\s*$/;
+/** Anything that would end the command or start another one: a line break, `;`, a pipe, `&`, a backtick, `$(`. */
+const CHAINS = /[\n\r;|&`]|\$\(/;
+/** git diff's flags that write a file, compare outside the repository, or run a program. */
+const HARMFUL = /^(--output(=.*)?|-O.*|--no-index|--ext-diff|--textconv)$/;
+/** A flag the reviewer may use (`--`: paths follow). */
+const FLAG = /^(--|--stat|--name-only|--no-color|-U\d+)$/;
+/** A plain argument (a ref, a range, a relative path): no `~`, no `{}`, no quotes or `$`. */
+const PLAIN = /^[\w./@^:-]+$/;
+
+/**
+ * Only `git diff` with plain arguments (refs, ranges, relative paths, a few flags): no second
+ * command, no flag that writes a file or runs a program, no absolute path. Arguments are split
+ * on spaces and tabs only, so a line break can never hide a second command.
+ */
+export function diffOnly(command: string): boolean {
+  if (CHAINS.test(command)) return false;
+  const words = command.trim().split(/[ \t]+/);
+  if (words[0] !== 'git' || words[1] !== 'diff') return false;
+  for (const w of words.slice(2)) {
+    if (HARMFUL.test(w)) return false;
+    if (FLAG.test(w)) continue;
+    if (w.startsWith('-')) return false;
+    if (!PLAIN.test(w) || w.startsWith('/') || /(^|:)\//.test(w)) return false;
+  }
+  return true;
+}
+
+/** diffOnly as a test (`DIFF_ONLY.test(command)`). */
+export const DIFF_ONLY = { test: diffOnly } as const;
 
 /** What the reviewer may do: read in its folder (never a secret), and `git diff`. */
 export function reviewVerdict(dir: string, tool: string, input: Record<string, unknown>): 'allow' | 'deny' {
-  if (tool === 'Bash') return typeof input.command === 'string' && DIFF_ONLY.test(input.command.trim()) ? 'allow' : 'deny';
+  if (tool === 'Bash') return typeof input.command === 'string' && diffOnly(input.command) ? 'allow' : 'deny';
   return lookVerdict(dir, tool, input);
 }
 
