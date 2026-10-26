@@ -4,7 +4,7 @@ import { type Action, type DomainState, reduceDomain } from '../core/store.js';
 import type { PtyExit } from '../terminal/pty-host.js';
 import type { PtyLink } from '../terminal/emulator.js';
 import type { Args, Method } from './api.js';
-import { type ApiProxy, type ClientKind, type BelugaClient, type PhoneMirror, apiProxy } from './client.js';
+import { type ApiProxy, type ClientKind, type BelugaClient, type PhoneMirror, type PhoneMirrorStatus, type PhoneVideoPiece, apiProxy } from './client.js';
 import type { Result } from './handlers.js';
 import { type Cap, type ClientFrame, type DaemonFrame, IPC_VERSION, encodeFrame, parseDaemonFrame } from './protocol.js';
 
@@ -133,6 +133,7 @@ class SocketTerm implements PtyLink {
 class SocketPhoneMirror implements PhoneMirror {
   private readonly frameListeners = new Set<(f: PhoneFrameData) => void>();
   private readonly statusListeners = new Set<(s: PhoneMirrorStatus) => void>();
+  private readonly videoListeners = new Set<(p: PhoneVideoPiece) => void>();
 
   constructor(
     private readonly device: string,
@@ -143,6 +144,10 @@ class SocketPhoneMirror implements PhoneMirror {
   onFrame(listener: (f: PhoneFrameData) => void): () => void {
     this.frameListeners.add(listener);
     return () => void this.frameListeners.delete(listener);
+  }
+  onVideo(listener: (p: PhoneVideoPiece) => void): () => void {
+    this.videoListeners.add(listener);
+    return () => void this.videoListeners.delete(listener);
   }
   onStatus(listener: (s: PhoneMirrorStatus) => void): () => void {
     this.statusListeners.add(listener);
@@ -155,13 +160,15 @@ class SocketPhoneMirror implements PhoneMirror {
   frame(f: PhoneFrameData): void {
     for (const l of [...this.frameListeners]) l(f);
   }
+  video(p: PhoneVideoPiece): void {
+    for (const l of [...this.videoListeners]) l(p);
+  }
   status(s: PhoneMirrorStatus): void {
     for (const l of [...this.statusListeners]) l(s);
   }
 }
 
 type PhoneFrameData = { b64: string; mime: string; w: number; h: number };
-type PhoneMirrorStatus = { on: boolean; route?: string; error?: string };
 
 /**
  * A screen attached to the beluga daemon over its local WebSocket (the Mac app).
@@ -275,13 +282,13 @@ export class SocketClient implements BelugaClient {
     return term;
   }
 
-  watchPhone(device: string, opts: { fps?: number; max?: number } = {}): PhoneMirror {
+  watchPhone(device: string, opts: { fps?: number; max?: number; video?: boolean } = {}): PhoneMirror {
     this.phones.get(device)?.close();
     const mirror = new SocketPhoneMirror(device, (f) => this.send(f), () => {
       if (this.phones.get(device) === mirror) this.phones.delete(device);
     });
     this.phones.set(device, mirror);
-    this.send({ t: 'phone_watch', device, ...(opts.fps ? { fps: opts.fps } : {}), ...(opts.max ? { max: opts.max } : {}) });
+    this.send({ t: 'phone_watch', device, ...(opts.fps ? { fps: opts.fps } : {}), ...(opts.max ? { max: opts.max } : {}), ...(opts.video ? { video: true } : {}) });
     return mirror;
   }
 
@@ -333,8 +340,11 @@ export class SocketClient implements BelugaClient {
       case 'phone_frame':
         this.phones.get(frame.device)?.frame({ b64: frame.b64, mime: frame.mime, w: frame.w, h: frame.h });
         return;
+      case 'phone_video':
+        this.phones.get(frame.device)?.video({ b64: frame.b64, key: frame.key, ts: frame.ts, w: frame.w, h: frame.h, sw: frame.sw, sh: frame.sh });
+        return;
       case 'phone_mirror':
-        this.phones.get(frame.device)?.status({ on: frame.on, ...(frame.route ? { route: frame.route } : {}), ...(frame.error ? { error: frame.error } : {}) });
+        this.phones.get(frame.device)?.status({ on: frame.on, ...(frame.route ? { route: frame.route } : {}), ...(frame.error ? { error: frame.error } : {}), ...(frame.video ? { video: frame.video } : {}), ...(frame.note ? { note: frame.note } : {}) });
         return;
       case 'clients':
         this.clients = frame.count;

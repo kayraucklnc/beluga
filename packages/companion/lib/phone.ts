@@ -61,6 +61,7 @@ export function controlState(): PhoneControlState {
     allowed: phoneAllowed(),
     accessibility: phoneControl.accessibilityEnabled(),
     screenshots: phoneControl.canScreenshot(),
+    video: phoneControl.canMirror(),
     adb: { on: adbPorts.port !== undefined, ...(adbPorts.port ? { port: adbPorts.port } : {}), ...(adbPorts.pairing ? { pairing: adbPorts.pairing } : {}) },
     ...(ip ? { wifi: { ip } } : {}),
     device,
@@ -70,7 +71,8 @@ export function controlState(): PhoneControlState {
 /** Run one op the Mac asked for (a `req`), returning its result (throws with a message on failure). */
 export async function runOp(op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
   if (!phoneAllowed()) throw new Error('This phone hasn’t allowed its Mac to use it');
-  if (op !== 'info' && op !== 'apps' && !phoneControl.accessibilityEnabled()) throw new Error('Turn on Accessibility for Beluga on the phone');
+  // Video (`mirror`) is Android's screen capture, asked of the user on the phone: no Accessibility needed.
+  if (op !== 'info' && op !== 'apps' && op !== 'mirror' && !phoneControl.accessibilityEnabled()) throw new Error('Turn on Accessibility for Beluga on the phone');
   return phoneControl.perform(op, args);
 }
 
@@ -80,6 +82,18 @@ export function controlNote(on: boolean, text = 'Your Mac is using this phone'):
   if (on) phoneControl.startControlNote(text);
   else phoneControl.stopControlNote();
 }
+
+/** The screen's video to the Mac (1.18): each piece as a `vid` frame, and its end as `vid_end`. */
+export function watchMirror(send: (f: { t: 'vid'; seq: number; b64: string; key?: boolean; ts: number; w: number; h: number; sw: number; sh: number } | { t: 'vid_end'; reason?: string }) => void): () => void {
+  if (!phoneControlAvailable()) return () => {};
+  const offPiece = phoneControl.onMirror((p) => send({ t: 'vid', seq: p.seq, b64: p.b64, ...(p.key ? { key: true } : {}), ts: p.ts, w: p.w, h: p.h, sw: p.sw, sh: p.sh }));
+  const offEnd = phoneControl.onMirrorEnd((reason) => send({ t: 'vid_end', ...(reason ? { reason: reason.slice(0, 300) } : {}) }));
+  return () => {
+    offPiece();
+    offEnd();
+  };
+}
+export const mirrorAck = (seq: number): void => phoneControl.mirrorAck(seq);
 
 export const accessibilityOn = (): boolean => phoneControlAvailable() && phoneControl.accessibilityEnabled();
 export const openAccessibilitySettings = (): void => phoneControl.openAccessibilitySettings();

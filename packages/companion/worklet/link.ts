@@ -142,6 +142,7 @@ function open(msg: Extract<UiToWorklet, { op: 'open' }>): void {
   c.on('term', (f) => frame(f));
   // 1.16 (BLG-150): the Mac wants the phone to act — hand it to the screens (the native side is there).
   c.on('req', (f) => frame(f));
+  c.on('vidAck', (f) => frame(f));
   // 1.16: a byte tunnel to the phone's own debugging port (adb over the link). The worklet has bare-tcp.
   c.on('tun', (f) => onTunnel(c, f));
   c.on('close', (code, reason) => {
@@ -226,6 +227,9 @@ function onFrame(json: string): void {
       return c.sendAdbCode(f.code);
     case 'reply':
       return c.reply(f.id, f.ok, f.value, f.error);
+    case 'vid':
+    case 'vid_end':
+      return c.video(f);
     case 'call':
       c.call(f.method, f.args).then(
         (value) => frame({ t: 'result', id: f.id, ok: true, value }),

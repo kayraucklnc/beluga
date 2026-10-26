@@ -3,6 +3,9 @@
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
   <uses-permission android:name="android.permission.INTERNET" />
+  <!-- The Mac's live mirror (BLG-184): Android's screen capture runs in a foreground service. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
   <!-- Listing installed apps (open by package) needs to see launcher activities on Android 11+. -->
   <queries>
@@ -27,6 +30,18 @@
         android:name="android.accessibilityservice"
         android:resource="@xml/beluga_accessibility" />
     </service>
+
+    <!-- The Mac's live mirror: the capture and encoder, and the see-through screen that asks "Start now". -->
+    <service
+      android:name="sh.ratel.beluga.control.MirrorService"
+      android:exported="false"
+      android:foregroundServiceType="mediaProjection" />
+    <activity
+      android:name="sh.ratel.beluga.control.MirrorConsentActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
     <!-- The "Your Mac is using this phone" notification's Stop button comes back here. -->
     <receiver

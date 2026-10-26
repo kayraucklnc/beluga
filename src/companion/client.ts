@@ -331,6 +331,8 @@ interface ClientEvents extends Record<string, unknown[]> {
   req: [Extract<MacFrame, { t: 'req' }>];
   /** 1.16: a byte tunnel to the phone's debugging port (adb over the link). */
   tun: [Extract<MacFrame, { t: 'tun_open' | 'tun_data' | 'tun_ack' | 'tun_close' }>];
+  /** 1.18: the Mac took a piece of the screen's video. */
+  vidAck: [Extract<MacFrame, { t: 'vid_ack' }>];
   /** The link closed: its code (4002: a version this Mac or app doesn't answer; 4010: this phone was removed) and why. */
   close: [number, string];
 }
@@ -560,6 +562,10 @@ export class CompanionClient extends Emitter<ClientEvents> {
   sendAdbCode(code: string): void {
     this.send({ t: 'adb_code', code });
   }
+  /** 1.18: a piece of the screen's video, or its end. */
+  video(f: Extract<PhoneFrame, { t: 'vid' | 'vid_end' }>): void {
+    this.send(f);
+  }
   /** Answer a `req` from the Mac. */
   reply(id: number, ok: boolean, value?: unknown, error?: string): void {
     this.send({ t: 'reply', id, ok, ...(value !== undefined ? { value } : {}), ...(error ? { error: error.slice(0, 2000) } : {}) });
@@ -638,6 +644,8 @@ export class CompanionClient extends Emitter<ClientEvents> {
         return this.emit('term', f);
       case 'req':
         return this.emit('req', f);
+      case 'vid_ack':
+        return this.emit('vidAck', f);
       case 'tun_open':
       case 'tun_data':
       case 'tun_ack':

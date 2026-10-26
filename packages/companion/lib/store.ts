@@ -5,7 +5,7 @@ import { BareTransport } from './link/bare';
 import { type Call, calls } from './link/calls';
 import { DemoTransport } from './link/demo/transport';
 import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, isMacTopic, type MacFrame, type NeedsYou, type OutputView, type PhoneOp, type Topic, viewSchema } from './link/protocol';
-import { controlNote, controlState, onAccessibilityChange, onControlStop, phoneAllowed, phoneControlAvailable, runOp, setPhoneAllowed, watchAdb } from './phone';
+import { controlNote, controlState, mirrorAck, onAccessibilityChange, onControlStop, phoneAllowed, phoneControlAvailable, runOp, setPhoneAllowed, watchAdb, watchMirror } from './phone';
 import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
 import { checkOnline } from './link/online';
 import { graceExpired, onResume, PROBE_TIMEOUT_MS, RETRY_LIMIT, retryDelay } from './link/resume';
@@ -566,6 +566,9 @@ class Store {
           (err: unknown) => this.transport?.send({ t: 'reply', id: f.id, ok: false, error: err instanceof Error ? err.message : String(err) }),
         );
         return;
+      case 'vid_ack':
+        mirrorAck(f.seq);
+        return;
       case 'tun_open':
       case 'tun_data':
       case 'tun_ack':
@@ -595,6 +598,7 @@ class Store {
   private offAcc?: () => void;
   private offAdb?: () => void;
   private offStop?: () => void;
+  private offMirror?: () => void;
 
   /** Tell the Mac what this phone allows and how it can be reached (only to a Mac that supports it). */
   private reportControl(): void {
@@ -609,6 +613,8 @@ class Store {
   controlSet(allowed: boolean): void {
     if (!phoneControlAvailable()) return;
     this.offAcc ??= onAccessibilityChange(() => this.reportControl());
+    // The screen's video for the Mac's mirror (1.18), piece by piece as the encoder makes it.
+    this.offMirror ??= watchMirror((f) => this.transport?.send(f));
     this.offStop ??= onControlStop(() => {
       setPhoneAllowed(false);
       this.controlSet(false);

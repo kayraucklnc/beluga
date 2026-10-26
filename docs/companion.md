@@ -118,6 +118,8 @@ One Noise stream (`@hyperswarm/secret-stream` over hyperdht's UDX), framed as to
 | `reply {id, ok, value \| error}` (1.16): the answer to a `req` | |
 | `adb_code {code}` (1.16): the Wireless-debugging pairing code the user typed | |
 | `tun_ok / tun_data / tun_ack / tun_close {id, …}` (1.16): the adb tunnel, phone side | `tun_open {id, to}` then `tun_data / tun_ack / tun_close` (1.16): the adb tunnel, Mac side |
+| `vid {seq, b64, key?, ts, w, h, sw, sh}` (1.18): a piece of the screen's live video, after `req mirror` | `vid_ack {seq}` (1.18): the Mac took it (the phone paces itself by these) |
+| `vid_end {reason?}` (1.18): the video stopped (the user said no or pressed Stop) | |
 | `bye` | `bye {reason}` |
 
 **Files come in pieces, the phone asking for each.** One `get` is answered by one `chunk` of at most
@@ -627,8 +629,21 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   `ACTION_SET_TEXT`), presses back/home/recents (global actions), opens apps and links, and takes a
   screenshot (`takeScreenshot`, API 30+, no MediaProjection prompt). The Mac asks with `req`, the
   app answers with `reply`. `FLAG_SECURE` screens capture black; the tool says so rather than lying.
+- **The mirror on the Mac** (Your phone, BLG-173/BLG-184). Live H.264 video when the phone can
+  (`control.video`, 1.18): the Mac asks with `req mirror {on, max, fps, kbps}`; the first time,
+  the phone shows Android's "Start now" sheet (MediaProjection, from a see-through screen, or a
+  notification where Android won't open one from the background), then its hardware encoder
+  streams `vid` pieces (Annex B, 1280 px on the long side, up to 30 fps, ~2.5 Mbit/s, a still
+  screen repeated four times a second). The Mac acks each with `vid_ack`; a phone with a dozen
+  unanswered skips to the next key frame, and stops encoding after 10 s without acks. The Mac
+  app decodes with WebCodecs (`packages/mac/src/phone/h264.ts`, rewritten to AVCC for WebKit).
+  When the mirror closes the encoder stops and the capture is kept 90 s (reopening doesn't ask
+  again). Until video flows, or without it, the mirror shows pictures: `screencap` over adb, or
+  the Accessibility screenshot at most one per 340 ms (Android's minimum is 333 ms). Claude's own
+  `phone_screenshot` stays a full-quality capture and `phone_screen` reads the UI, so the
+  mirror's video is only for your eyes.
 - **What the phone says** (`control`, 1.16): `allowed` (its own switch), `accessibility`,
-  `screenshots`, `adb {on, port, pairing}` (found over mDNS, `_adb-tls-connect._tcp`), `wifi {ip}`,
+  `screenshots`, `video` (1.18), `adb {on, port, pairing}` (found over mDNS, `_adb-tls-connect._tcp`), `wifi {ip}`,
   and the device. Samsung turns debugging off on network changes and the port changes each toggle,
   so the phone re-finds it and re-sends `control`.
 - **Claude's tools** (`src/agent/phone-tools.ts`, server `beluga_phone`): `phone_status`,
