@@ -7,6 +7,7 @@ import { ChatView } from '../views/ChatView.js';
 import { Toolbar } from './Toolbar.js';
 import { WorkspaceCenter } from './panel/FocusView.js';
 import { TerminalDrawer } from './panel/TerminalDrawer.js';
+import { WorkFrame } from '../work/WorkNav.js';
 import s from './Shell.module.css';
 import side from './Sidebar.module.css';
 
@@ -79,15 +80,15 @@ function Route() {
     case 'requests':
       return <RequestsView />;
     case 'tasks':
-      return <TasksView />;
+      return <WorkFrame page="tasks"><TasksView /></WorkFrame>;
     case 'task':
       return <TaskPage key={view.id} id={view.id} />;
     case 'issues':
-      return <IssuesView />;
+      return <WorkFrame page="issues"><IssuesView /></WorkFrame>;
     case 'gh_issue':
       return <IssuePage key={`${view.projectId}#${view.number}`} projectId={view.projectId} number={view.number} />;
     case 'plans':
-      return <PlansView />;
+      return <WorkFrame page="plans"><PlansView /></WorkFrame>;
     case 'plan':
       return <PlanPage key={view.id} id={view.id} task={view.task} />;
     case 'worktrees':
