@@ -3,7 +3,7 @@ import { ghCiSource, logTail, parseJobs, parseRuns } from '../src/core/ci/gh.js'
 import { GitHubCi, LIVE_TTL_MS } from '../src/core/ci/ci.js';
 import { demoCiSource } from '../src/core/ci/demo.js';
 import { durationWords, eventWords, jobsSummary, pollEvery, runTone, sortRuns, statusWords } from '../src/core/ci/model.js';
-import { jobsOf, matrixSize, readWorkflow, toneOf, workflowGraph } from '../src/core/ci/workflow-graph.js';
+import { jobsOf, matrixSize, readWorkflow, stepItems, toneOf, workflowGraph } from '../src/core/ci/workflow-graph.js';
 import type { GhJob } from '../src/core/ci/model.js';
 import type { GitHubRepo } from '../src/workspaces/github.js';
 import { parseGraph } from '../src/shared/graph-spec.js';
@@ -116,7 +116,7 @@ describe('a workflow as a graph', () => {
       ['build', 'build', ['lint', 'test']],
       ['release', 'release', ['build']],
     ]);
-    expect(shape.jobs[0]!.steps).toEqual(['actions/checkout@v4', 'Run npm run lint']);
+    expect(shape.jobs[0]!.steps).toEqual(['actions/checkout@v4', 'npm run lint']);
     expect(shape.jobs[1]!.matrix).toBe(3);
     expect(readWorkflow({ name: 'not a workflow' })).toBeUndefined();
     // A YAML 1.1 reader's `on`.
@@ -152,6 +152,36 @@ describe('a workflow as a graph', () => {
     expect(by('job:test').emphasis).toBe(true);
     expect(by('job:build').status).toBe('idle');
     expect(by('job:release').sublabel).toContain('Not run');
+  });
+
+  it('draws each job’s steps inside it: as the file says, then as they run', () => {
+    const plain = workflowGraph(readWorkflow(CI)!);
+    expect(plain.nodes.find((n) => n.id === 'job:lint')!.items).toEqual([{ label: 'actions/checkout@v4' }, { label: 'npm run lint' }]);
+    // A reusable workflow has no steps of its own.
+    expect(plain.nodes.find((n) => n.id === 'job:release')!.items).toBeUndefined();
+    const parsed = parseGraph(JSON.stringify(plain));
+    expect(parsed.ok && parsed.graph.nodes[1]!.items).toHaveLength(2);
+  });
+
+  it('a running job’s steps: GitHub’s own chores left out, each with its status and time', () => {
+    const t0 = 1_000_000;
+    const step = (number: number, name: string, status: GhJob['status'], conclusion?: GhJob['conclusion'], secs = 10) => ({ number, name, status, ...(conclusion ? { conclusion } : {}), startedAt: t0 + number * 10_000, ...(status === 'completed' ? { completedAt: t0 + number * 10_000 + secs * 1000 } : {}) });
+    const running: GhJob = { ...job('lint', 'in_progress'), steps: [step(1, 'Set up job', 'completed', 'success'), step(2, 'Run actions/checkout@v4', 'completed', 'success', 3), step(3, 'Run npm run lint', 'in_progress'), step(4, 'Complete job', 'queued')] };
+    const items = stepItems({ steps: ['actions/checkout@v4', 'npm run lint'] }, [running], t0 + 35_000);
+    expect(items).toEqual([
+      { label: 'actions/checkout@v4', status: 'done', note: '3s' },
+      { label: 'npm run lint', status: 'active', note: '5s' },
+    ]);
+    // Not picked up yet: the file's steps, to do; not run at all: idle.
+    expect(stepItems({ steps: ['a', 'b'] }, [job('lint', 'queued')], t0).map((i) => i.status)).toEqual(['todo', 'todo']);
+    expect(stepItems({ steps: ['a'] }, [], t0)).toEqual([{ label: 'a', status: 'idle' }]);
+  });
+
+  it('a matrix’s steps add up: one failing makes the step failed', () => {
+    const step = (name: string, conclusion: GhJob['conclusion']) => ({ number: 1, name, status: 'completed' as const, conclusion });
+    const a: GhJob = { ...job('Tests (a)', 'completed', 'success'), steps: [step('Unit tests', 'success')] };
+    const b: GhJob = { ...job('Tests (b)', 'completed', 'failure'), steps: [step('Unit tests', 'failure')] };
+    expect(stepItems({ steps: ['Unit tests'] }, [a, b], 0)).toEqual([{ label: 'Unit tests', status: 'failed' }]);
   });
 
   it('finds a reusable workflow’s jobs under the job that calls it', () => {

@@ -49,6 +49,11 @@ export interface FlowGraphProps {
   /** Nodes stand for something that opens (a task): the details panel's main button, and double-click. */
   readonly onOpen?: (nodeId: string) => void;
   readonly openLabel?: string;
+  /**
+   * What the layout depends on (its nodes and lines, not their statuses): while it stays the same,
+   * a new graph (a CI run moving along) updates the drawing in place instead of laying it out again.
+   */
+  readonly shapeKey?: string;
 }
 
 /** A fresh canvas for each graph (Claude rewrote the block, the file changed): nothing carries over. */
@@ -63,7 +68,7 @@ const keyOf = (graph: Graph): number => {
 export default function FlowGraph(props: FlowGraphProps) {
   return (
     <ReactFlowProvider>
-      <Canvas key={keyOf(props.graph)} {...props} />
+      <Canvas key={props.shapeKey ?? keyOf(props.graph)} {...props} />
     </ReactFlowProvider>
   );
 }
@@ -153,6 +158,15 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
     else frameAll(ms);
   };
   const frame = (ms: number): void => (stepRef.current >= 0 ? frameStep(stepRef.current, ms) : frameAll(ms));
+
+  // The same shape with new words or statuses (shapeKey): the nodes take them where they are.
+  const first = useRef(graph);
+  useEffect(() => {
+    if (first.current === graph) return;
+    first.current = graph;
+    const by = new Map(graph.nodes.map((n) => [n.id, n]));
+    setNodes((now) => now.map((n) => (by.has(n.id) ? { ...n, data: { ...n.data, node: by.get(n.id)! } } : n)));
+  }, [graph]);
 
   // Shown from the cache: frame it once React Flow knows the canvas, and size the card.
   useEffect(() => {

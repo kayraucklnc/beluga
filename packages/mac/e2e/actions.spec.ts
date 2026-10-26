@@ -35,6 +35,8 @@ test('a project’s home shows its latest runs, the running one first and live',
 });
 
 test('a run’s page: the workflow as a graph, its jobs and steps, and where a failed one failed', async ({ page }) => {
+  // It watches a re-run play out for a while.
+  test.slow();
   await openHome(page);
   await main(page).locator('[data-run="9102"]').click();
   await expect(main(page).getByRole('heading', { name: 'Read-only API keys' })).toBeVisible();
@@ -42,11 +44,14 @@ test('a run’s page: the workflow as a graph, its jobs and steps, and where a f
   // The graph: what starts it and its jobs.
   await expect(main(page).getByRole('figure', { name: 'Graph: CI' })).toBeVisible();
   await expect(main(page).locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 });
+  // Each job's steps are drawn inside it, the failed one marked.
+  await expect(main(page).locator('.react-flow__node li[data-status="failed"]', { hasText: 'Unit tests' })).toBeVisible();
   // The failed job is open, with its steps; the log is a click away.
   const failed = main(page).locator('[data-job="test (macos-latest, 20)"]');
   await expect(failed.getByText('Unit tests')).toBeVisible();
   await expect(main(page).getByRole('button', { name: 'Re-run Failed Jobs' })).toBeVisible();
   await page.mouse.move(5, 890);
+  await page.waitForTimeout(2_000);
   await shot(page, '02-run-failed.png');
   await failed.getByRole('button', { name: 'Show Where It Failed' }).click();
   await expect(failed.getByText('expected 201 to be 403')).toBeVisible();
@@ -59,6 +64,10 @@ test('a run’s page: the workflow as a graph, its jobs and steps, and where a f
   await expect(main(page).locator('.react-flow__node').first()).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(5_000);
   await shot(page, '03-run-live.png');
+  // The steps move along in place, the graph staying where it is.
+  await expect(main(page).locator('.react-flow__node li[data-status="done"]').first()).toBeVisible({ timeout: 40_000 });
+  await page.waitForTimeout(15_000);
+  await shot(page, '03b-run-live-later.png');
 });
 
 test('Actions: every run, and each workflow drawn as a graph', async ({ page }) => {
@@ -71,6 +80,7 @@ test('Actions: every run, and each workflow drawn as a graph', async ({ page }) 
   await expect(main(page).getByRole('region', { name: 'CI' })).toBeVisible();
   await expect(main(page).getByRole('figure', { name: 'Graph: CI' })).toBeVisible();
   await expect(main(page).getByRole('figure', { name: 'Graph: Nightly' })).toBeVisible();
+  await expect(main(page).locator('.react-flow__node li', { hasText: 'npm run lint' }).first()).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(1_500);
   await shot(page, '05-actions-workflows.png');
 });

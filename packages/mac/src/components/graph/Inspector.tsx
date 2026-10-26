@@ -6,7 +6,7 @@ import { useApp } from '../../lib/beluga.js';
 import { Icon } from '../Icon.js';
 import { IconButton } from '../ui.js';
 import { KIND_NAME, connections, linkGoal } from './graph-model.js';
-import { KindIcon, StatusPill } from './marks.js';
+import { KindIcon, StatusMark, StatusPill } from './marks.js';
 import g from './graph.module.css';
 
 /**
@@ -86,6 +86,20 @@ export function Inspector({ graph, node, onPick, onClose, wide, onOpen, openLabe
             </ul>
           </section>
         ) : null}
+        {node.items?.length ? (
+          <section>
+            <h4 className={g.inspectorSection}>Steps</h4>
+            <ol className={g.inspectorItems}>
+              {node.items.map((it, i) => (
+                <li key={`${i}:${it.label}`} className={g.item} data-status={it.status}>
+                  {it.status ? <StatusMark status={it.status} /> : <span className={g.itemDot} aria-hidden="true" />}
+                  <span className={g.itemLabel}>{it.label}</span>
+                  {it.note ? <span className={g.itemNote}>{it.note}</span> : null}
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
         {links.length ? (
           <section>
             <h4 className={g.inspectorSection}>Links</h4>
@@ -117,7 +131,7 @@ export function Inspector({ graph, node, onPick, onClose, wide, onOpen, openLabe
             </ul>
           </section>
         ) : null}
-        {!node.details && !node.fields?.length && !links.length && !lines.length && !node.sublabel ? <p className={g.inspectorEmpty}>Nothing more about this one.</p> : null}
+        {!node.details && !node.fields?.length && !node.items?.length && !links.length && !lines.length && !node.sublabel ? <p className={g.inspectorEmpty}>Nothing more about this one.</p> : null}
       </div>
     </aside>
   );

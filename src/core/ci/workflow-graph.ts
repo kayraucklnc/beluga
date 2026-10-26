@@ -1,5 +1,5 @@
-import { type Graph, type GraphEdge, type GraphNode, type GraphStatus, MAX_NODES, cleanId } from '../../shared/graph-spec.js';
-import { type GhJob, type RunTone, TONE_WORDS, durationWords, fileName, isLive, runTone, spanOf, statusWords } from './model.js';
+import { type Graph, type GraphEdge, type GraphItem, type GraphNode, type GraphStatus, MAX_NODES, cleanId } from '../../shared/graph-spec.js';
+import { type GhConclusion, type GhJob, type GhRunStatus, type RunTone, TONE_WORDS, durationWords, fileName, isLive, runTone, spanOf, statusWords } from './model.js';
 
 /**
  * A workflow file as a graph: what starts it, then its jobs, joined by their `needs:`. Given a
@@ -65,7 +65,8 @@ export function readWorkflow(doc: unknown): WorkflowShape | undefined {
           if (!isObj(st)) return `Step ${i + 1}`;
           if (typeof st.name === 'string') return st.name;
           if (typeof st.uses === 'string') return st.uses;
-          if (typeof st.run === 'string') return `Run ${st.run.trim().split('\n')[0]!.slice(0, 60)}`;
+          // As a run names it, less GitHub's "Run ": the command.
+          if (typeof st.run === 'string') return st.run.trim().split('\n')[0]!.slice(0, 60);
           return `Step ${i + 1}`;
         })
       : [];
@@ -114,11 +115,39 @@ export function jobsOf(job: Pick<WorkflowJob, 'id' | 'name'>, jobs: readonly GhJ
   return jobs.filter((j) => names.some((n) => j.name === n || j.name.startsWith(`${n} (`) || j.name.startsWith(`${n} / `)));
 }
 
-/** How a group of jobs went, as one: any failed, else any running, else any waiting… */
-export function toneOf(jobs: readonly GhJob[]): RunTone | undefined {
+/** How a group of jobs (or of the same step in each) went, as one: any failed, else any running, else any waiting… */
+export function toneOf(jobs: ReadonlyArray<{ readonly status: GhRunStatus; readonly conclusion?: GhConclusion | undefined }>): RunTone | undefined {
   if (!jobs.length) return undefined;
   const tones = new Set(jobs.map(runTone));
   return (['failed', 'running', 'waiting', 'queued', 'cancelled', 'passed', 'skipped'] as const).find((t) => tones.has(t));
+}
+
+/** GitHub's own bookkeeping around a job's steps: shown only when it's what failed. */
+const CHORE = /^(Set up job|Complete job|Post .+)$/;
+
+/**
+ * A job's steps, drawn inside its node: as the file lists them, or, in a run, as GitHub ran them,
+ * each with how it went (a matrix's jobs add up step by step) and how long it took.
+ */
+export function stepItems(job: Pick<WorkflowJob, 'steps'>, ran: readonly GhJob[] | undefined, now: number): GraphItem[] {
+  const planned = (status?: GraphStatus): GraphItem[] => job.steps.map((label) => ({ label: label.slice(0, 80), ...(status ? { status } : {}) }));
+  if (!ran) return planned();
+  if (!ran.length) return planned('idle');
+  const base = ran.reduce((a, b) => (b.steps.length > a.steps.length ? b : a));
+  // Not picked up by a runner yet: what it's going to do.
+  if (!base.steps.length) return planned(ran.some((r) => runTone(r) === 'skipped' || runTone(r) === 'cancelled') && !ran.some(isLive) ? 'idle' : 'todo');
+  return base.steps.flatMap((step, i): GraphItem[] => {
+    // The same step in each of the matrix's jobs: by its name, else where it stands.
+    const same = ran.flatMap((r) => {
+      const x = r.steps.find((y) => y.name === step.name) ?? r.steps[i];
+      return x ? [x] : [];
+    });
+    const tone = toneOf(same) ?? 'queued';
+    if (CHORE.test(step.name) && tone !== 'failed') return [];
+    const spans = same.map((x) => spanOf(x, now)).filter((x): x is number => x !== undefined);
+    const took = spans.length && tone !== 'skipped' && tone !== 'queued' ? Math.max(...spans) : undefined;
+    return [{ label: step.name.replace(/^Run /, '').slice(0, 80), status: STATUS[tone], ...(took !== undefined ? { note: durationWords(took) } : {}) }];
+  });
 }
 
 const STATUS: Readonly<Record<RunTone, GraphStatus>> = { running: 'active', queued: 'todo', waiting: 'review', passed: 'done', failed: 'failed', cancelled: 'idle', skipped: 'idle' };
@@ -128,9 +157,11 @@ const triggerLabel = (t: WorkflowShape['triggers']): string => (t.length ? t.map
 
 /**
  * The workflow as a beluga-graph: a node for what starts it, one per job, a line for each
- * `needs:`. With a run's jobs, each node says how it's going, and how long it took once done.
+ * `needs:`, each job's steps inside it. With a run's jobs, each job and step says how it's going
+ * and how long it took.
  */
-export function workflowGraph(shape: WorkflowShape, opts: { readonly title?: string; readonly path?: string; readonly jobs?: readonly GhJob[] } = {}): Graph {
+export function workflowGraph(shape: WorkflowShape, opts: { readonly title?: string; readonly path?: string; readonly jobs?: readonly GhJob[]; /** A running step's time counts to here. */ readonly now?: number } = {}): Graph {
+  const now = opts.now ?? Date.now();
   const ids = new Map<string, string>();
   const taken = new Set<string>(['on']);
   for (const j of shape.jobs.slice(0, MAX_NODES - 1)) {
@@ -173,10 +204,10 @@ export function workflowGraph(shape: WorkflowShape, opts: { readonly title?: str
       j.environment ? `**Environment** ${j.environment}` : undefined,
       j.condition ? `**Only if** \`${j.condition}\`` : undefined,
       j.uses ? `**Calls** \`${j.uses}\`` : undefined,
-      j.steps.length ? `**Steps**\n\n${j.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : undefined,
       // Only finished jobs' times: a running one's would redraw the graph each time GitHub is asked.
       ran && ran.length > 1 ? `**Jobs in this run**\n\n${ran.map((r) => `- ${r.name}: ${statusWords(r)}${!isLive(r) && spanOf(r, 0) ? ` (${durationWords(spanOf(r, 0)!)})` : ''}`).join('\n')}` : undefined,
     ].filter(Boolean);
+    const items = reusable ? [] : stepItems(j, ran, now);
     nodes.push({
       id,
       type: reusable ? (j.uses!.startsWith('./') ? 'file' : 'external') : 'function',
@@ -185,6 +216,7 @@ export function workflowGraph(shape: WorkflowShape, opts: { readonly title?: str
       ...(tone ? { status: STATUS[tone] } : opts.jobs ? { status: 'idle' as const } : {}),
       ...(tone === 'failed' ? { emphasis: true } : {}),
       ...(lines.length ? { details: lines.join('\n\n').slice(0, 4000) } : {}),
+      ...(items.length ? { items } : {}),
       ...(ran?.length === 1 && ran[0]!.url ? { links: [{ label: 'Open on GitHub', href: ran[0]!.url }] } : {}),
     });
     const needs = j.needs.filter((n) => ids.has(n));
