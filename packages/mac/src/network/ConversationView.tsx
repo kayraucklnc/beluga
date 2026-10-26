@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactElement, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FriendView, GroupView, MessageView } from '@beluga/net/mesh/views.js';
 import type { MentionWorld } from '../chat/mentions.js';
 import { Icon } from '../components/Icon.js';
@@ -191,6 +191,16 @@ function RequestOffer({ m }: { m: MessageView }) {
       </Button>
     </div>
   );
+}
+
+/**
+ * A task between two people's Claudes (BLG-208): both of them see its card here, drawn from their
+ * own Mac's task book, so it moves along (sent, waiting for approval, working, the result). Someone
+ * else in the channel has no such task: they see the message's words, the request's summary.
+ */
+function TaskMessage({ id, plain }: { id: string; plain: ReactElement }) {
+  const task = useApp((st) => st.gateway.tasks.find((t) => t.id === id));
+  return task ? <LogTaskCard task={task} /> : plain;
 }
 
 /** The start of a conversation: who it's with, and that it stays between you. */
@@ -417,10 +427,11 @@ function Conversation({ id }: { id: string }) {
         {messages.map((m, i) => {
           const prev = messages[i - 1];
           const newDay = !prev || !sameDay(prev.ts, m.ts);
+          const plain = <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} offer={Boolean(m.claude?.request && !m.mine && mineIds.has(m.claude.for))} {...(me ? { me } : {})} />;
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} offer={Boolean(m.claude?.request && !m.mine && mineIds.has(m.claude.for))} {...(me ? { me } : {})} />
+              {m.task ? <TaskMessage id={m.task.id} plain={plain} /> : plain}
             </div>
           );
         })}

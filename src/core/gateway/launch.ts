@@ -30,6 +30,8 @@ export function meshNode(mesh: Mesh): MeshNode {
     sendGateway: (id, payload) => mesh.sendGateway(id, payload),
     nameFor: (id) => mesh.nameFor(id),
     belugaOf: (id) => mesh.belugaOf(id),
+    post: (conversation, text, extras) => void mesh.post(conversation, text, extras),
+    shares: (conversation, id) => mesh.shares(conversation, id),
     listen: ({ frame, link }) => {
       mesh.on('gateway', frame);
       mesh.on('link', link);

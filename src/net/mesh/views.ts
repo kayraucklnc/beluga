@@ -59,11 +59,22 @@ export interface ChatAsk {
   readonly to: 'all' | readonly string[];
 }
 
+/**
+ * A task between Claudes this message stands for (BLG-208): each side draws its card from its own
+ * task book by `id` (the requester's and the receiver's both know it), so it updates as the task goes.
+ */
+export interface ChatTaskRef {
+  readonly id: string;
+  readonly role: 'request';
+}
+
 /** What a message carries besides its text (all inside the encryption). */
 export interface ChatExtras {
   readonly files?: readonly ChatFile[];
   /** The author called for Claudes to answer this message. */
   readonly ask?: ChatAsk;
+  /** The message is the card of a task between two people's Claudes (its text is for Macs that don't know it). */
+  readonly task?: ChatTaskRef;
   /** This message is the author's Claude answering message `for`. */
   readonly claude?: ClaudeReply;
 }

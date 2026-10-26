@@ -550,6 +550,21 @@ export const ChatMessageView = z.object({
   files: z.array(OutputView).max(20).optional(),
   /** A friend's Claude answering you can't touch their Mac from the chat: what it offers to do there as a request (gateway.ask `to`). */
   offer: z.object({ to: id, ask: z.string().max(500), needs: z.array(z.enum(['project', 'shell', 'files', 'screen', 'device'])).max(5).optional() }).optional(),
+  /**
+   * A task between two people's Claudes (BLG-208), drawn as a small card: who asks whom, where it is
+   * ("Waiting for bob to approve"), its tone, the result's summary and the files it brought.
+   */
+  task: z
+    .object({
+      id,
+      title: z.string().max(200),
+      ask: z.string().max(300),
+      state: z.string().max(80),
+      tone: z.union([z.enum(['claude', 'ok', 'warn', 'error', 'muted']), z.string().max(20)]),
+      summary: z.string().max(600).optional(),
+      files: z.array(z.string().max(200)).max(8).optional(),
+    })
+    .optional(),
 });
 export type ChatMessageView = z.infer<typeof ChatMessageView>;
 export const ChatsView = z.object({

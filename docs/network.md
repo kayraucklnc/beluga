@@ -201,9 +201,9 @@ message carries), the Mac app's `src/network/` (`ChatTabs`, `ChatFiles`, `NetCom
 whenever the network is on.
 
 **What a message carries.** Inside the encryption (a group message's sealed JSON, a direct message's Noise
-link) a message is `{ text, files?, ask?, claude? }`: `files` are `{ sha, name, size, mime?, image? }` (the
+link) a message is `{ text, files?, ask?, claude?, task? }`: `files` are `{ sha, name, size, mime?, image? }` (the
 bytes travel separately), `ask: { to: 'all' | peerIds }` calls Claudes in, `claude: { for }` marks a Claude's
-answer to message `for`. Older Macs read only `text`. Names are cleaned (no folders, control or bidi
+answer to message `for`, `task: { id, role: 'request' }` is a task's card (see *Tasks between Claudes*). Older Macs read only `text`. Names are cleaned (no folders, control or bidi
 characters); malformed extras are dropped.
 
 Each person's Claude is drawn in that person's color (its mark and its name), here and in rooms, so a
@@ -294,6 +294,16 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   and the keychains (`isNeverSent`), and every `run` or `ask` task that touches secrets. Macs that do this
   say `task.secret`; asking an older one for a secret fails at once ("Ata's Beluga 1.2.0 can't send
   secrets Ata approves yet. Ask Ata to update Beluga.").
+- **Both people see it** (BLG-208): when a task goes to a friend, the requester's Beluga posts its card
+  in the chat they share: the channel it was asked from if the friend is in it (the request carries
+  `chat: "group:<id>"`), else their DM. The message carries `task: { id, role: 'request' }` and words for
+  older Macs ("kay's Claude asked bob's Claude: take a screenshot of your desktop"); each side draws the
+  card from its own task book by id (`TaskView.chat` says where), so it moves along: sent, waiting for
+  approval, working, done / declined / failed, with the summary and files. Someone else in the channel
+  has no such task and sees only those words. The result posts nothing more; the person whose Claude
+  (or Mac) ran it gets a notification when it's done, pointing at the chat. A card makes no message
+  notification of its own (the request itself asks you). The phone draws it as a small card
+  (`ChatMessageView.task`).
 - **Tagging a friend**: `@mia` anywhere in a message to your Claude (the message box offers your
   friends by name as you type `@`) means mia: your Claude asks her Claude with `ask_person`, takes a
   file with `get_file`, or runs one command with `run_on`. Every request carries a `summary` (at most

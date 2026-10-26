@@ -3,7 +3,7 @@ import { criteria, tally } from '../core/board/criteria.js';
 import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
-import { type TaskView as GwTask, isFinal } from '../core/gateway/model.js';
+import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
@@ -1144,6 +1144,25 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     ts: m.ts,
     ...(files.length ? { files: files.slice(0, 20) } : {}),
     ...(offerOf(state, m) ? { offer: offerOf(state, m) } : {}),
+    ...(chatTaskOf(state, m) ? { task: chatTaskOf(state, m) } : {}),
+  };
+}
+
+/** A task's card in a chat (BLG-208), from this Mac's task book; someone the task isn't between sees just the words. */
+function chatTaskOf(state: DomainState, m: MessageView): ChatMessageView['task'] {
+  const t = m.task ? state.gateway.tasks.find((x) => x.id === m.task?.id) : undefined;
+  if (!t) return undefined;
+  const title = t.direction === 'sent' ? `To ${targetLabel(t)}` : `From ${t.peerName}${t.by === 'agent' ? '’s Claude' : ''}`;
+  const summary = t.result?.summary ? plainLine(stripCode(t.result.summary).text, 600) : '';
+  const files = (t.result?.files ?? []).map((f) => clip(f.name, 200)).slice(0, 8);
+  return {
+    id: clip(t.id, 200),
+    title: clip(title, 200),
+    ask: clip(plainLine(t.kind === 'run' && t.command ? `$ ${t.command}` : requestGist(t, 300), 300), 300),
+    state: clip(stateLabel(t), 80),
+    tone: stateTone(t),
+    ...(summary ? { summary: clip(summary, 600) } : {}),
+    ...(files.length ? { files } : {}),
   };
 }
 

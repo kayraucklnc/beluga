@@ -94,6 +94,8 @@ export interface TaskView {
   readonly by: 'agent' | 'person';
   /** Sent: the conversation your Claude asked from (its answer continues there). */
   readonly conversation?: string;
+  /** The chat both people see its card in (BLG-208): your DM with them (`dm:<peerId>`), or the channel it was asked from. */
+  readonly chat?: string;
   readonly state: TaskState;
   /** The latest steps (short lines). */
   readonly steps: readonly string[];

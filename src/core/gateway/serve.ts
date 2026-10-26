@@ -95,6 +95,8 @@ export interface ServeContext {
   readonly runFolder?: (from: string) => Promise<string | undefined>;
   /** How long a question waits for the requester's answer (default 15 minutes). */
   readonly questionWaitMs?: number;
+  /** The chat its card is in here (BLG-208): the channel it names if you're both in it, else your DM with them (friends only). */
+  readonly chatOf?: (from: string, chat: string | undefined) => string | undefined;
 }
 
 /** Received tasks one person may have open here at once. */
@@ -166,7 +168,9 @@ export class TaskServer {
     const now = ctx.now();
     // Blocked people get their answer, and nothing of theirs is kept here.
     if (level === 'blocked') return this.declineUnkept(from, req.id, `${me} doesn't take requests from you`);
+    const chat = ctx.chatOf?.(from, req.chat);
     const task = ctx.put({
+      ...(chat ? { chat } : {}),
       id: req.id,
       direction: 'received',
       peerId: from,

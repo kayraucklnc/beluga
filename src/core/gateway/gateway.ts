@@ -153,6 +153,8 @@ export class Gateway {
   private readonly offStore: Array<() => void> = [];
   private cardsQueued = false;
   private stopped = false;
+  /** Past the start (tasks marked as ended then were already over: nobody is told again). */
+  private ready = false;
 
   constructor(private readonly deps: GatewayDeps) {
     this.book = new TaskBook(deps.dir);
@@ -195,6 +197,11 @@ export class Gateway {
       ...(deps.system ? { system: deps.system } : {}),
       ...(deps.questionWaitMs ? { questionWaitMs: deps.questionWaitMs } : {}),
       ...(deps.runFolder ? { runFolder: deps.runFolder } : {}),
+      chatOf: (from, chat) => {
+        const mesh = this.mesh;
+        if (!mesh?.isFriend(from)) return undefined;
+        return chat && mesh.shares?.(chat, from) ? chat : `dm:${from}`;
+      },
     });
     this.fetcher = new FileFetcher({
       send: (to, msg) => this.courier.send(to, msg, false),
@@ -219,6 +226,7 @@ export class Gateway {
     this.offStore.push(deps.store.subscribe(() => this.queueCards()));
     this.ticker = setInterval(() => this.tick(), TICK_MS);
     this.ticker.unref();
+    this.ready = true;
   }
 
   stop(): void {
@@ -559,10 +567,26 @@ export class Gateway {
 
   /** Save a task, show it, and wake whoever waits on it. */
   private put(task: TaskView): TaskView {
+    const before = this.book.get(task.id);
     this.book.put(task);
+    if (this.ready && before && !isFinal(before.state)) this.ranHere(task);
     this.deps.store.dispatch({ type: 'gw_task', task });
     for (const w of [...(this.waiters.get(task.id) ?? [])]) w();
     return task;
+  }
+
+  /** A friend's task that ran here just ended (not one you stopped or they cancelled): you hear how it went, pointing at its chat. */
+  private ranHere(task: TaskView): void {
+    if (task.direction !== 'received' || !task.startedAt || (task.state !== 'done' && task.state !== 'failed')) return;
+    const what = task.kind === 'run' ? `${task.peerName}'s command on your Mac` : task.kind === 'file' ? `Sending a file to ${task.peerName}` : `Your Claude's work for ${task.peerName}`;
+    this.deps.notify?.({
+      kind: 'people',
+      tag: 'task',
+      title: `${what} ${task.state === 'done' ? (task.kind === 'file' ? 'is done' : 'finished') : 'failed'}`,
+      body: oneLine((task.result?.summary ?? task.ask).replace(/[*_`#>]/g, ''), 140),
+      ...(task.chat ? { channel: task.chat } : {}),
+      ...(presenceQuiet(this.deps.store.getState()) ? { quiet: true } : {}),
+    });
   }
 
   /** Your trust in someone: chosen in the room, remembered from before, or your default. */
@@ -606,7 +630,41 @@ export class Gateway {
     return cannotTake(peer.name, info, feature, this.mesh?.isLinked(peer.peerId) ?? false);
   }
 
-  private transmit(task: TaskView): void {
+  /**
+   * Where both of you see a task's card (BLG-208): the channel it was asked from, when they're in it
+   * too, else your DM with them. Only between friends (the network carries the card).
+   */
+  private chatFor(task: TaskView): string | undefined {
+    const mesh = this.mesh;
+    if (!mesh?.post || !mesh.isFriend(task.peerId)) return undefined;
+    const from = task.conversation;
+    if (from?.startsWith('group:') && mesh.shares?.(from, task.peerId)) return from;
+    return `dm:${task.peerId}`;
+  }
+
+  /** Post the task's card into that chat: newer Macs draw it from their task book; older ones read the words. */
+  private postCard(task: TaskView): TaskView {
+    const chat = task.chat ?? this.chatFor(task);
+    if (!chat || task.chat) return task;
+    const me = this.deps.selfName();
+    const who = task.by === 'agent' ? `${me}'s Claude` : me;
+    const what =
+      task.kind === 'run'
+        ? `asked to run \`${oneLine(task.command ?? '', 80)}\` on ${task.peerName}'s Mac`
+        : task.kind === 'file'
+          ? `asked ${task.peerName}'s Mac for ${(task.path ?? '').split('/').pop() || 'a file'}`
+          : `asked ${task.peerName}'s Claude: ${oneLine(task.summary?.trim() || task.ask, 140)}`;
+    try {
+      this.mesh?.post?.(chat, `${who} ${what}`, { task: { id: task.id, role: 'request' } });
+    } catch {
+      // The chat isn't there (the friend just went): the task goes on without its card.
+      return task;
+    }
+    return this.put({ ...task, chat });
+  }
+
+  private transmit(given: TaskView): void {
+    const task = this.postCard(given);
     const sentNow = this.courier.send(
       task.peerId,
       {
@@ -627,6 +685,7 @@ export class Gateway {
         ...(task.cwd ? { cwd: task.cwd } : {}),
         ...(task.timeoutSec ? { timeoutSec: task.timeoutSec } : {}),
         ...(task.path ? { path: task.path } : {}),
+        ...(task.chat?.startsWith('group:') ? { chat: task.chat } : {}),
       },
       true,
     );

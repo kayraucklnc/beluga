@@ -290,7 +290,8 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
     const old = before.messages[conversation];
     if (old === list) continue;
     const seen = new Set((old ?? []).map((m) => m.id));
-    const fresh = list.filter((m) => !seen.has(m.id) && !m.mine && m.status !== 'locked' && now - m.ts < STALE_MESSAGE_MS);
+    // A task's card says nothing new: the task itself asks you (or tells you it ran).
+    const fresh = list.filter((m) => !seen.has(m.id) && !m.mine && !m.task && m.status !== 'locked' && now - m.ts < STALE_MESSAGE_MS);
     if (fresh.length > MESSAGE_BURST * 4) continue;
     const group = conversation.startsWith('group:') ? after.groups.find((g) => `group:${g.id}` === conversation) : undefined;
     for (const m of fresh) {

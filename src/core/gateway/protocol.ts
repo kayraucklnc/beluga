@@ -89,6 +89,8 @@ export const TaskRequest = z.object({
   path: z.string().min(1).max(4096).optional(),
   /** Who asked: the person's Claude, or the person from their screen. */
   by: z.enum(['agent', 'person']).default('agent'),
+  /** The channel you both are in that it was asked from (its card is there; otherwise it's in your DM). */
+  chat: z.string().regex(/^group:[\w-]{1,80}$/).optional(),
   ts: z.number().int().min(0),
 });
 export type TaskRequest = z.infer<typeof TaskRequest>;
