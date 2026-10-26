@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { readJson, safeName, writeJson } from '../../net/mesh/files.js';
 import { DEFAULT_RUN_AT_ONCE, KEEP_IN_FILE, type RunSummary, type Sentinel, keepRuns } from './model.js';
@@ -16,6 +16,11 @@ export interface SentinelData {
   readonly items: readonly Sentinel[];
   /** Oldest first. */
   readonly runs: readonly RunSummary[];
+  /**
+   * The load lost something: the file was set aside (or couldn't be), or sentinels or runs didn't
+   * read. Their runs' folders may still be someone's, so nothing is swept on this start.
+   */
+  readonly lossy?: boolean;
 }
 
 export const EMPTY_DATA: SentinelData = { runAtOnce: DEFAULT_RUN_AT_ONCE, items: [], runs: [] };
@@ -47,7 +52,7 @@ export class SentinelFile {
       } catch {
         this.readOnly = true;
       }
-      return EMPTY_DATA;
+      return { ...EMPTY_DATA, lossy: true };
     }
     const dropped: unknown[] = [];
     const items = parsed.data.items.flatMap((raw) => {
@@ -56,18 +61,47 @@ export class SentinelFile {
       return r.success ? [r.data as unknown as Sentinel] : [];
     });
     const ids = new Set(items.map((i) => i.id));
+    // A dropped sentinel's runs (and runs that don't read) go beside it with it: their folders stay.
+    const droppedRuns: unknown[] = [];
     const runs = parsed.data.runs.flatMap((raw) => {
       const r = SavedRunSchema.safeParse(raw);
-      return r.success && ids.has(r.data.sentinelId) ? [r.data as unknown as RunSummary] : [];
+      if (r.success && ids.has(r.data.sentinelId)) return [r.data as unknown as RunSummary];
+      droppedRuns.push(raw);
+      return [];
     });
-    if (dropped.length) {
+    if (dropped.length || droppedRuns.length) {
       try {
-        writeJson(path.join(this.dir!, `sentinel.dropped-${this.now()}.json`), dropped);
+        writeJson(path.join(this.dir!, `sentinel.dropped-${this.now()}.json`), { items: dropped, runs: droppedRuns });
       } catch {
-        // Nowhere to keep them: Sentinel goes on without them.
+        // Nowhere to keep them: Sentinel goes on without them, and never writes over the file that has them.
+        this.readOnly = true;
       }
     }
-    return { runAtOnce: parsed.data.runAtOnce, items, runs };
+    return { runAtOnce: parsed.data.runAtOnce, items, runs, ...(dropped.length || droppedRuns.length ? { lossy: true } : {}) };
+  }
+
+  /**
+   * What earlier loads set aside: the runs in sentinel.dropped-*.json (their folders are kept), and
+   * whether an unreadable sentinel.json is there (`all`: then no folder is swept, any could be its).
+   */
+  setAside(): { readonly all: boolean; readonly ids: ReadonlySet<string> } {
+    const ids = new Set<string>();
+    if (!this.dir) return { all: false, ids };
+    let names: string[];
+    try {
+      names = readdirSync(this.dir);
+    } catch {
+      return { all: true, ids };
+    }
+    if (names.some((n) => n.startsWith('sentinel.json.unreadable-'))) return { all: true, ids };
+    for (const name of names) {
+      if (!/^sentinel\.dropped-.*\.json$/.test(name)) continue;
+      const saved = readJson(path.join(this.dir, name)) as { runs?: unknown } | undefined;
+      // A file that doesn't read: any folder could be one of its runs'.
+      if (!saved || typeof saved !== 'object') return { all: true, ids };
+      for (const r of Array.isArray(saved.runs) ? saved.runs : []) if (r && typeof r === 'object' && typeof (r as { id?: unknown }).id === 'string') ids.add((r as { id: string }).id);
+    }
+    return { all: false, ids };
   }
 
   /** Written a moment later (several changes in a row are one write). */

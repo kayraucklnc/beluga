@@ -116,7 +116,9 @@ describe('Run a script', () => {
     expect(s.ran[0]).toMatchObject({ command: 'npm test', cwd: '/code/bob-api', timeoutMs: 60_000 });
     expect(s.ran[0]!.env).toMatchObject({ GREETING: 'hello', SENTINEL_PREVIOUS: '', SENTINEL_RUN_DIR: '' });
     expect(JSON.parse(s.ran[0]!.env.SENTINEL_TRIGGER!)).toEqual({ kind: 'manual', summary: 'You pressed Run' });
-    expect(s.asked[0]!.prompt).toBe('They said: ok\n / ok');
+    // Earlier outputs are filled in as material, in tags (never instructions).
+    const material = '<sentinel_step name="Run the tests">\nok\n</sentinel_step>';
+    expect(s.asked[0]!.prompt).toBe(`They said: ${material} / ${material}`);
     expect(s.sentinels.forRun('x', 'p-me')).toBeDefined();
   });
 

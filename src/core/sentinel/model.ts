@@ -435,6 +435,44 @@ export function sentinelOwnerOf(state: SentinelState, workspaceId: string): Sent
   return undefined;
 }
 
+/** A conversation a sentinel's run made: whose, and which run (the newest that used it). */
+export interface SentinelPlaceOwner {
+  readonly sentinel: Sentinel;
+  readonly runId: string;
+}
+
+const owned = new WeakMap<SentinelState, ReadonlyMap<string, SentinelPlaceOwner>>();
+
+/**
+ * Every conversation sentinel runs made, by channel (`ws:<id>` for a project chat or worktree,
+ * `mac:assistant:<id>` for Your Mac's): its Claude steps' chats and the run's worktree. Worked out
+ * once per state (screens ask for every row). Such a conversation is the sentinel's, not one of
+ * yours: it stays out of Unread and the counts (packages/mac/src/layout/attention-model.ts).
+ */
+export function sentinelChannels(state: SentinelState): ReadonlyMap<string, SentinelPlaceOwner> {
+  const hit = owned.get(state);
+  if (hit) return hit;
+  const map = new Map<string, SentinelPlaceOwner>();
+  const items = new Map(state.items.map((i) => [i.id, i]));
+  // Newest first: a conversation two runs shared is the newest one's.
+  for (let i = state.runs.length - 1; i >= 0; i--) {
+    const r = state.runs[i]!;
+    const sentinel = items.get(r.sentinelId);
+    if (!sentinel) continue;
+    const add = (channel: string | undefined): void => {
+      if (channel && !map.has(channel)) map.set(channel, { sentinel, runId: r.id });
+    };
+    add(r.channel);
+    for (const s of r.steps) add(s.channel);
+    if (r.worktreeId) add(`ws:${r.worktreeId}`);
+  }
+  owned.set(state, map);
+  return map;
+}
+
+/** The sentinel run a conversation belongs to, if any. */
+export const sentinelOfChannel = (state: SentinelState, channel: string | undefined): SentinelPlaceOwner | undefined => (channel ? sentinelChannels(state).get(channel) : undefined);
+
 /** Tasks a sentinel's Claude makes carry this label ("sentinel:morning-brief"). */
 export const slugOf = (name: string): string =>
   name

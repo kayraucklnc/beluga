@@ -35,6 +35,9 @@ test('the list shows the demo’s sentinels, grouped by project, with their last
   await expect(main(page).getByRole('row', { name: /^Morning brief, Every day at 7:00/ })).toContainText('Done');
   await expect(main(page).getByRole('row', { name: /^Nightly tests/ })).toContainText('Paused after 3 failures in a row');
   await expect(main(page).getByRole('row', { name: /^Fix what broke/ })).toContainText('Needs you');
+  // The demo's run going now is the recorded one: nothing caught up, nothing failed.
+  await expect(main(page).getByRole('row', { name: /^Watch the web/ })).toContainText('Running');
+  await expect(main(page).getByRole('row', { name: /^Watch the web/ })).not.toContainText('Failed');
   await page.getByRole('tab', { name: /Paused/ }).click();
   await expect(rows).toHaveCount(1);
   await page.getByRole('tab', { name: /^All/ }).click();
@@ -54,8 +57,8 @@ test('Morning brief’s page: When, Steps, Properties, History; Run Now starts a
   await expect(steps.getByRole('button', { name: 'Write a brief of what changed' })).toBeVisible();
   await expect(main(page).getByRole('complementary', { name: 'Properties' })).toContainText('Claude can look and tell you');
   const history = main(page).getByRole('region', { name: 'History' });
-  // A week of runs (and perhaps today's, caught up when the demo started).
-  await expect.poll(() => history.locator('[data-run]').count()).toBeGreaterThanOrEqual(7);
+  // A week of runs, as seeded (the demo's start catches nothing up).
+  await expect(history.locator('[data-run]')).toHaveCount(7);
   await shoot(page, 'page');
   const before = await history.locator('[data-run]').count();
   await main(page).getByRole('button', { name: 'Run Now' }).click();

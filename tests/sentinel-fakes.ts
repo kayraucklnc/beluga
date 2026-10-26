@@ -18,7 +18,7 @@ export interface Asked {
 }
 
 /** Your Claude: every ask is kept; `reply` answers at once (or not: undefined leaves it running). */
-export function fakeClaude(reply?: (asked: Asked) => string | undefined) {
+export function fakeClaude(reply?: (asked: Asked) => string | undefined, opts: { readonly holdCancel?: boolean } = {}) {
   const asked: Asked[] = [];
   const cancelled: Array<[string, string]> = [];
   const waits = new Map<string, { resolve: (t: string) => void; reject: (e: Error) => void }>();
@@ -49,9 +49,10 @@ export function fakeClaude(reply?: (asked: Asked) => string | undefined) {
         }
         waits.set(requestId, { resolve, reject });
       }),
+    // As your Claude does: a cancelled request ends with an error (holdCancel: not until the test says).
     cancel: (requestId, note) => {
       cancelled.push([requestId, note]);
-      waits.delete(requestId);
+      if (!opts.holdCancel) settle(requestId, false, 'Stopped');
     },
   };
   return { claude, asked, cancelled };
@@ -93,11 +94,11 @@ export function fakeShell(result: (command: string, env: Record<string, string>)
   return { shell, ran };
 }
 
-export function setup(deps: Partial<SentinelsDeps> & { readonly reply?: (a: Asked) => string | undefined; readonly changes?: boolean } = {}) {
+export function setup(deps: Partial<SentinelsDeps> & { readonly reply?: (a: Asked) => string | undefined; readonly changes?: boolean; readonly holdCancel?: boolean } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api'), project('land', 'landing')] });
   const notices: NoticeEvent[] = [];
-  const c = fakeClaude(deps.reply);
+  const c = fakeClaude(deps.reply, { ...(deps.holdCancel ? { holdCancel: true } : {}) });
   const p = fakePlaces({ ...(deps.changes !== undefined ? { changes: deps.changes } : {}) });
   const sh = fakeShell();
   const sentinels = new Sentinels({

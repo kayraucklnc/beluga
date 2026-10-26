@@ -30,6 +30,11 @@ import {
   anyRunning,
 } from '../packages/mac/src/sentinel/sentinel-model.js';
 import { panelFits } from '../packages/mac/src/lib/panel-model.js';
+import { dockCount, isSentinelOwned, projectTally, unreadEntries } from '../packages/mac/src/layout/attention-model.js';
+import { initialAppState, reduceApp } from '../src/client/screen.js';
+import type { Action, AppState } from '../src/core/store.js';
+import type { Notice } from '../src/core/work-store.js';
+import type { Project, Workspace } from '../src/workspaces/types.js';
 import { NO_SENTINEL, type RunSummary, type Sentinel, type SentinelState, type Step } from '../src/core/sentinel/model.js';
 
 /** Sentinel on the Mac, its plain parts: rows, groups, the sidebar's line, times, the schedule's controls, step edits. */
@@ -226,5 +231,44 @@ describe('Sentinel on the Mac', () => {
     expect(panelFits({ kind: 'sentinel_page', id: 'sn_1' })).toBe(false);
     expect(panelFits({ kind: 'sentinel_run', runId: 'run_1' })).toBe(false);
     expect(panelFits({ kind: 'overview' })).toBe(true);
+  });
+});
+
+describe('a sentinel run’s conversations in Unread and the Dock', () => {
+  const ws = (id: string, kind: Workspace['kind']): Workspace => ({ id, projectRoot: '/p', name: id, path: `/wt/${id}`, kind, branch: `b/${id}`, base: 'origin/main', createdAt: 1, projectId: 'api', external: false, status: { changed: 0, ahead: 0, behind: 0 } });
+  const api: Project = { id: 'api', name: 'bob-api', root: '/p', base: 'origin/main', workspaces: [ws('main', 'main'), ws('mine', 'worktree'), ws('brief-chat', 'chat')] };
+  const apply = (s: AppState, ...actions: Action[]): AppState => actions.reduce<AppState>((st, a) => reduceApp(st, a), s);
+  const done = (channel: string, requestId: string): Action => ({ type: 'agent_event', owner: 'me', requestId, requester: 'me', event: 'done', text: 'Brief written', ts: 5, channel });
+  const notice = (ts: number, over: Partial<Notice>): Action => ({ type: 'notice_add', notice: { kind: 'done', title: 't', body: '', ...over } as Notice, ts }) as Action;
+  const ask = (qid: string, channel: string): Action => ({
+    type: 'question_add',
+    question: { qid, requestId: 'r9', owner: 'me', channel, picked: {}, question: { kind: 'question', questions: [{ question: 'Which branch?', header: '', options: [], multiSelect: false }] } },
+  });
+  const sentinels = state({ runs: [run({ id: 'run_1', sentinelId: 'sn_brief', channel: 'ws:brief-chat', steps: [{ id: 'a', state: 'done', channel: 'ws:brief-chat' }] }), run({ id: 'run_2', sentinelId: 'sn_mac', channel: 'mac:assistant:c7' })] });
+  const base = (): AppState =>
+    apply(initialAppState('room'), { type: 'welcome', self: { peerId: 'me', name: 'kay', agent: true, shares: [] } }, { type: 'projects', projects: [api] }, { type: 'sentinel_init', state: sentinels }, { type: 'view', view: { kind: 'overview' } } as unknown as Action);
+
+  it('a finished run’s chat is in neither Unread, the project’s tally nor the Dock', () => {
+    const s = apply(base(), done('ws:brief-chat', 'r1'), done('ws:mine', 'r2'), done('mac:assistant:c7', 'r3'), notice(1, { channel: 'ws:brief-chat' }), notice(2, { channel: 'mac:assistant:c7', tag: 'sentinel' }));
+    expect(s.unread['ws:brief-chat']).toBe(1);
+    expect(isSentinelOwned(s, 'ws:brief-chat')).toBe(true);
+    expect(isSentinelOwned(s, 'mac:assistant:c7')).toBe(true);
+    expect(isSentinelOwned(s, 'ws:mine')).toBe(false);
+    expect(unreadEntries(s).map((e) => e.channel)).toEqual(['ws:mine']);
+    expect(projectTally(s, api).unread).toBe(1);
+    expect(dockCount(s)).toBe(1);
+  });
+
+  it('one that needs you shows once, as the sentinel’s, and opens the run’s chat', () => {
+    const s = apply(base(), done('ws:brief-chat', 'r1'), ask('q1', 'ws:brief-chat'), notice(1, { kind: 'needsYou', tag: 'question', ref: 'q1', channel: 'ws:brief-chat' }));
+    const entries = unreadEntries(s);
+    expect(entries).toHaveLength(1);
+    const e = entries[0]!;
+    expect(e).toMatchObject({ kind: 'sentinel', channel: 'sentinel:sn_brief', name: 'Morning brief', at: 'ws:brief-chat', runId: 'run_1', signal: { level: 'needs', need: 'question', tip: 'Morning brief asks a question' } });
+    // The question and its notice are that one entry.
+    expect(dockCount(s)).toBe(1);
+    // Answered: gone again.
+    const answered = apply(s, { type: 'question_remove', qid: 'q1' });
+    expect(unreadEntries(answered)).toEqual([]);
   });
 });

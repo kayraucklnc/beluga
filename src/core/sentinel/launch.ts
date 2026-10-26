@@ -62,9 +62,19 @@ function ownClaude(session: Session, store: Store): SentinelClaude & { close(): 
   return {
     ask: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown),
     wait: (requestId) => new Promise<string>((resolve, reject) => void waits.set(requestId, { resolve, reject })),
+    // The wait stays until the request ends (its done or error event), so the run can wait for it
+    // before archiving its worktree; one that never says so is let go after a while.
     cancel: (requestId, note) => {
-      waits.delete(requestId);
-      session.host.cancelRun(requestId, note);
+      const letGo = (): void => {
+        const w = waits.get(requestId);
+        if (!w) return;
+        waits.delete(requestId);
+        w.reject(new Error('Stopped'));
+      };
+      // Not running (any more): nothing to wait for.
+      if (!session.host.cancelRun(requestId, note)) return letGo();
+      const timer = setTimeout(letGo, 15_000);
+      timer.unref?.();
     },
     close: () => {
       off();

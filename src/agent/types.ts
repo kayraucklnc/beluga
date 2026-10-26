@@ -119,8 +119,10 @@ export interface SentinelTools {
   list(): string;
   /** A new sentinel from a draft (it starts paused; the answer links it as `sentinel:<id>`). */
   create(draft: import('../core/sentinel/tool-draft.js').ToolDraft): string;
+  /** Runs one that's on (never a paused one). */
   run(ref: string): string;
-  pause(ref: string, paused: boolean): string;
+  /** Pause-only: turning a sentinel on is the user's (the Mac or the phone), never Claude's. */
+  pause(ref: string): string;
 }
 
 /** A plan as Claude's tools (agent/plan-tools.ts, server `beluga_plan`): each answers in words. */

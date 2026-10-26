@@ -43,7 +43,7 @@ describe('beluga_sentinel', () => {
       steps: [{ kind: 'claude', name: 'Triage', where: 'project', prompt: 'Read new issues and make tasks' }, { kind: 'notify', name: 'Tell me' }],
     });
     const made = s.sentinels.list()[0]!;
-    expect(res.content[0]!.text).toBe(`Made “Issues to tasks” (Every weekday at 8:00), paused: \`sentinel:${made.id}\`. It runs once the user turns it on from its page.`);
+    expect(res.content[0]!.text).toBe(`Made “Issues to tasks” (Every weekday at 8:00), paused: \`sentinel:${made.id}\`. It runs once the user turns it on from its page (you can’t).`);
     expect(made).toMatchObject({ projectId: 'api', paused: true, access: 'look', steps: [{ kind: 'claude', name: 'Triage' }, { kind: 'notify', phone: false }] });
     const bad = await call(defs, 'sentinel_create', { name: 'X', project: 'nope', trigger: { kind: 'manual' }, steps: [{ kind: 'notify', name: 'n' }] });
     expect(bad).toMatchObject({ isError: true, content: [{ text: "There's no project nope" }] });
@@ -54,13 +54,27 @@ describe('beluga_sentinel', () => {
     const made = s.sentinels.create(brief);
     const defs = createSentinelToolDefs(s.sentinels.forRun('ws:else', 'p-me')!.tools);
     expect((await call(defs, 'sentinel_list', {})).content[0]!.text).toBe(`Morning brief · Every day at 7:00 · paused · Look · \`sentinel:${made.id}\``);
-    // Claude can't run a paused one: the user turns it on.
+    // Claude can't run a paused one, nor turn it on: sentinel_pause is pause-only (paused: false does nothing).
     expect(await call(defs, 'sentinel_run', { id: 'Morning brief' })).toMatchObject({ isError: true });
-    expect((await call(defs, 'sentinel_pause', { id: made.id, paused: false })).content[0]!.text).toBe('“Morning brief” is on: Every day at 7:00');
+    expect((await call(defs, 'sentinel_pause', { id: made.id, paused: false })).content[0]!.text).toBe('“Morning brief” is paused already; only the user can turn it on, from its page');
+    expect(s.sentinels.need(made.id).paused).toBe(true);
+    // The user turns it on; then Claude may run it, and pause it.
+    s.sentinels.pause(made.id, false);
     expect((await call(defs, 'sentinel_run', { id: 'morning brief' })).content[0]!.text).toBe(`Started “Morning brief” (\`sentinel:${made.id}\`)`);
     await until(() => s.sentinels.runsOf(made.id)[0]?.state === 'done');
     expect(s.sentinels.runsOf(made.id)[0]).toMatchObject({ by: 'claude', trigger: { summary: 'Your Claude ran it' } });
     expect((await call(defs, 'sentinel_list', {})).content[0]!.text).toContain('last run done: Done it');
+    expect((await call(defs, 'sentinel_pause', { id: made.id })).content[0]!.text).toBe('“Morning brief” is paused; the user can turn it back on from its page');
+    expect(s.sentinels.need(made.id).paused).toBe(true);
+  });
+
+  it('sentinel_pause takes only the sentinel; sentinel_create says it’s made paused', () => {
+    const s = setup();
+    const defs = createSentinelToolDefs(s.sentinels.forRun('ws:else', 'p-me')!.tools);
+    const pause = defs.find((d) => d.name === 'sentinel_pause')!;
+    expect(Object.keys(pause.inputSchema)).toEqual(['id']);
+    expect(pause.description).toMatch(/never turn one on/);
+    expect(defs.find((d) => d.name === 'sentinel_create')!.description).toMatch(/always made paused/);
   });
 
   it('tasks the run’s Claude makes with its label go on the run', async () => {

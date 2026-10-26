@@ -37,12 +37,12 @@ export function createSentinelToolDefs(sentinel: SentinelTools) {
     tool('sentinel_list', 'The user’s sentinels, one per line: name, when it runs, watching or paused, access, its last run and the next, and its `sentinel:<id>` link.', {}, () => guarded(() => sentinel.list())),
     tool(
       'sentinel_create',
-      'Set up a sentinel from what the user asked for ("every weekday at 8, triage new issues into tasks"): when it runs, and its steps in order (Ask Claude with a full prompt in your own words, Run a script, Notify me). It starts paused: tell the user and link it as `sentinel:<id>` (inline code) so they can check it and turn it on.',
+      'Set up a sentinel from what the user asked for ("every weekday at 8, triage new issues into tasks"): when it runs, and its steps in order (Ask Claude with a full prompt in your own words, Run a script, Notify me). It is always made paused, and you can’t turn it on: tell the user and link it as `sentinel:<id>` (inline code) so they can check it and turn it on themselves from its page (the Mac or the phone).',
       TOOL_DRAFT_SHAPE,
       (a) => guarded(() => sentinel.create(a)),
     ),
-    tool('sentinel_run', 'Run a sentinel now (it must be on). It runs on its own; its report shows on its page.', { id: ref }, (a) => guarded(() => sentinel.run(a.id))),
-    tool('sentinel_pause', 'Pause a sentinel (nothing runs), or turn it back on (paused: false) when the user asks.', { id: ref, paused: z.boolean() }, (a) => guarded(() => sentinel.pause(a.id, a.paused))),
+    tool('sentinel_run', 'Run a sentinel now. Only one that is on: a paused one runs only when the user turns it on or presses Run. It runs on its own; its report shows on its page.', { id: ref }, (a) => guarded(() => sentinel.run(a.id))),
+    tool('sentinel_pause', 'Pause a sentinel: nothing runs until the user turns it back on. You can pause one but never turn one on: that is the user’s, from the Mac or the phone.', { id: ref }, (a) => guarded(() => sentinel.pause(a.id))),
   ];
 }
 

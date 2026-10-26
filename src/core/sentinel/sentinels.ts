@@ -13,6 +13,7 @@ import {
   DEFAULT_LIMITS,
   KEEP_IN_STATE,
   MAX_RUN_AT_ONCE,
+  type Limits,
   type Recipe,
   type Run,
   type RunBy,
@@ -36,6 +37,7 @@ import {
   sentinelLabel,
   toSummary,
 } from './model.js';
+import { redactSecrets } from '../../shared/steps.js';
 import { describeSentinels, sentinelNote } from './prompt.js';
 import { RECIPES } from './recipes.js';
 import { type ActiveRun, OUTPUT_KEPT, type SentinelClaude, type SentinelPlaces, type SentinelShell, SentinelRunner, runSentinelShell } from './runner.js';
@@ -68,6 +70,8 @@ export interface SentinelsDeps {
   /** The first look after start (10 s). */
   readonly firstTickMs?: number;
   readonly saveDelayMs?: number;
+  /** How long a cancelled Claude request may take to end before its worktree is looked at (10 s). */
+  readonly cancelGraceMs?: number;
 }
 
 const TICK_MS = 30_000;
@@ -75,6 +79,8 @@ const FIRST_TICK_MS = 10_000;
 /** A run over its runs per day says this. */
 const OVER_DAY = 'Over its runs per day';
 const MAX_SENTINELS = 200;
+/** The runs that count toward runs per day. */
+const COUNTS_PER_DAY: ReadonlySet<Run['state']> = new Set(['running', 'done', 'failed', 'stopped']);
 
 const short = (prefix: string, bytes = 6): string => `${prefix}_${randomBytes(bytes).toString('hex')}`;
 const startOfDay = (at: number): number => {
@@ -116,9 +122,14 @@ export class Sentinels {
     this.runAtOnce = data.runAtOnce;
     const at = this.now();
     this.items = data.items.map((s) => (!s.paused && s.trigger.kind === 'schedule' && s.lastScheduledAt === undefined ? { ...s, lastScheduledAt: at } : s));
-    // Runs that were going when Beluga closed (or crashed) ended there.
-    this.runs = data.runs.map((r) => (isLive(r.state) ? { ...r, state: 'failed', why: 'Beluga closed while it ran', headline: 'Beluga closed while it ran', endedAt: r.endedAt ?? at, steps: r.steps.map((s) => (s.state === 'running' || s.state === 'waiting' ? { ...s, state: 'skipped' as const } : s)) } : r));
-    this.sweepFolders();
+    // Runs that were going (or waiting their turn) when Beluga closed or crashed ended there; one
+    // that waits for you (a merge) still does.
+    this.runs = data.runs.map((r) => (r.state === 'running' || r.state === 'queued' ? { ...r, state: 'failed', why: 'Beluga closed while it ran', headline: 'Beluga closed while it ran', endedAt: r.endedAt ?? at, steps: r.steps.map((s) => (s.state === 'running' || s.state === 'waiting' ? { ...s, state: 'skipped' as const } : s)) } : r));
+    // A load that lost something (the file set aside, sentinels or runs that didn't read) sweeps
+    // nothing: those runs' folders are kept for when the file is mended.
+    if (!data.lossy) this.sweepFolders();
+    // What didn't read is kept beside it now: sentinel.json is written again without it.
+    else this.save();
     this.runner = new SentinelRunner({
       now: this.now,
       ...(deps.claude ? { claude: deps.claude } : {}),
@@ -134,6 +145,7 @@ export class Sentinels {
       beluga: (projectId) => this.belugaData(projectId),
       home: deps.home ?? os.homedir(),
       claudeTurn: (signal) => this.claudeTurn(signal),
+      ...(deps.cancelGraceMs !== undefined ? { cancelGraceMs: deps.cancelGraceMs } : {}),
     });
     deps.store.dispatch({ type: 'sentinel_init', state: this.state() });
     // Tasks a run's Claude makes (labelled sentinel:<slug>) go on the run.
@@ -231,7 +243,7 @@ export class Sentinels {
       trigger: draft.trigger ?? { kind: 'manual' },
       steps,
       access,
-      limits: { ...DEFAULT_LIMITS, ...draft.limits },
+      limits: limitsOf({ ...DEFAULT_LIMITS, ...draft.limits }),
       notify: draft.notify ?? 'mac',
       paused: true,
       failures: 0,
@@ -261,7 +273,7 @@ export class Sentinels {
       ...(patch.trigger ? { trigger: patch.trigger } : {}),
       steps,
       access,
-      limits: { ...was.limits, ...patch.limits },
+      limits: limitsOf({ ...was.limits, ...patch.limits }),
       ...(patch.notify ? { notify: patch.notify } : {}),
       // A new schedule starts from now: nothing it would have run before is caught up.
       ...(triggerChanged ? { lastScheduledAt: this.now() } : {}),
@@ -284,7 +296,9 @@ export class Sentinels {
   /** Delete a sentinel: its run stops; its runs' folders go with the next prune. */
   remove(ref: string): void {
     const s = this.need(ref);
+    // Its run stops; when it ends it's gone with the sentinel (record ignores a run whose sentinel is gone).
     this.active.get(s.id)?.abort.abort();
+    this.active.delete(s.id);
     this.queued.delete(s.id);
     this.items = this.items.filter((i) => i.id !== s.id);
     this.runs = this.runs.filter((r) => r.sentinelId !== s.id);
@@ -324,7 +338,8 @@ export class Sentinels {
     const limit = s.limits.perDay;
     if (limit && !yours) {
       const today = startOfDay(this.now());
-      const ran = this.runs.filter((r) => r.sentinelId === s.id && r.startedAt >= today && !(r.state === 'skipped' && r.why === OVER_DAY)).length;
+      // Runs that ran (or run now); skipped and queued ones don't count.
+      const ran = this.runs.filter((r) => r.sentinelId === s.id && r.startedAt >= today && COUNTS_PER_DAY.has(r.state)).length;
       if (ran >= limit) return this.note(s, by, fired, OVER_DAY, `Skipped: it ran ${limit} ${limit === 1 ? 'time' : 'times'} today already`);
     }
     if (this.active.has(s.id)) {
@@ -415,7 +430,7 @@ export class Sentinels {
   }
 
   /** The demo's history: a sentinel as if its runs had failed (and paused it). */
-  demoSet(ref: string, patch: { readonly paused?: boolean; readonly failures?: number; readonly pausedWhy?: string }): Sentinel {
+  demoSet(ref: string, patch: { readonly paused?: boolean; readonly failures?: number; readonly pausedWhy?: string; readonly lastScheduledAt?: number }): Sentinel {
     const next: Sentinel = { ...this.need(ref), ...patch };
     this.replace(next);
     return next;
@@ -425,9 +440,17 @@ export class Sentinels {
   stopAll(): void {
     this.closed = true;
     for (const off of this.offs) off();
+    // Nothing reads "running" after a restart: the steps going (or still to come) are skipped, and
+    // the runs waiting their turn are stopped.
+    const unfinished = (steps: RunSummary['steps']): RunSummary['steps'] => steps.map((st) => (st.state === 'running' || st.state === 'waiting' ? { ...st, state: 'skipped' as const } : st));
     for (const a of this.active.values()) {
       a.abort.abort();
-      this.recordSummary({ ...toSummary(a.run), state: 'stopped', headline: 'Beluga closed while it ran', endedAt: this.now() });
+      const run = toSummary(a.run);
+      this.recordSummary({ ...run, state: 'stopped', headline: 'Beluga closed while it ran', endedAt: this.now(), steps: unfinished(run.steps) });
+    }
+    for (const q of this.queued.values()) {
+      const { payload: _p, ...run } = q;
+      this.recordSummary({ ...run, state: 'stopped', headline: 'Beluga closed before it started', endedAt: this.now(), steps: unfinished(run.steps) });
     }
     this.active.clear();
     this.queued.clear();
@@ -455,7 +478,7 @@ export class Sentinels {
     this.record(run);
     void this.runner
       .execute(active, (r) => !this.closed && this.record(r))
-      .catch((err: unknown) => ({ ...active.run, state: 'failed' as const, why: err instanceof Error ? err.message : String(err), headline: 'Something went wrong', endedAt: this.now() }))
+      .catch((err: unknown) => ({ ...active.run, state: 'failed' as const, why: redactSecrets(err instanceof Error ? err.message : String(err)), headline: 'Something went wrong', endedAt: this.now() }))
       .then((final) => this.finished(active, final));
     return active.run;
   }
@@ -464,18 +487,21 @@ export class Sentinels {
     if (this.closed) return;
     const sid = active.sentinel.id;
     if (this.active.get(sid) === active) this.active.delete(sid);
-    this.record(run);
     const s = this.items.find((i) => i.id === sid);
-    if (s) {
-      const failures = run.state === 'failed' ? s.failures + 1 : run.state === 'done' || run.state === 'skipped' ? 0 : s.failures;
-      const pausing = run.state === 'failed' && s.limits.pauseAfter > 0 && failures >= s.limits.pauseAfter && !s.paused;
-      const next: Sentinel = { ...s, failures, ...(pausing ? { paused: true, pausedWhy: `Paused after ${failures} failures in a row` } : {}) };
-      if (next.failures !== s.failures || pausing) this.replace(next);
-      this.tell(next, run, pausing);
+    // Its sentinel was deleted while it ran: it goes too, its folder with it.
+    if (!s) {
+      this.folders.remove(run.id);
+      return;
     }
+    this.record(run);
+    const failures = run.state === 'failed' ? s.failures + 1 : run.state === 'done' || run.state === 'skipped' ? 0 : s.failures;
+    const pausing = run.state === 'failed' && s.limits.pauseAfter > 0 && failures >= s.limits.pauseAfter && !s.paused;
+    const next: Sentinel = { ...s, failures, ...(pausing ? { paused: true, pausedWhy: `Paused after ${failures} failures in a row` } : {}) };
+    if (next.failures !== s.failures || pausing) this.replace(next);
+    this.tell(next, run, pausing);
     this.prune();
     const waiting = this.queued.get(sid);
-    if (waiting && s) {
+    if (waiting) {
       this.queued.delete(sid);
       const { payload, ...q } = waiting;
       const fresh = this.items.find((i) => i.id === sid)!;
@@ -560,6 +586,8 @@ export class Sentinels {
   }
 
   private recordSummary(summary: RunSummary): void {
+    // A deleted sentinel's run (one that ends after the delete) isn't kept: nothing shows it.
+    if (!this.items.some((i) => i.id === summary.sentinelId)) return;
     const at = this.runs.findIndex((r) => r.id === summary.id);
     this.runs = at >= 0 ? this.runs.map((r, n) => (n === at ? summary : r)) : [...this.runs, summary];
     this.deps.store.dispatch({ type: 'sentinel_run', run: summary });
@@ -574,17 +602,23 @@ export class Sentinels {
     this.save();
   }
 
-  /** Run folders no run in the index has (a deleted sentinel's, pruned ones Beluga closed before removing). */
+  /**
+   * Run folders no run in the index has (a deleted sentinel's, pruned ones Beluga closed before
+   * removing); never the runs an earlier load set aside (sentinel.dropped-*.json), and nothing at all
+   * while an unreadable sentinel.json is kept beside it.
+   */
   private sweepFolders(): void {
     const root = this.folders.root;
     if (!root) return;
+    const aside = this.file.setAside();
+    if (aside.all) return;
     let names: string[];
     try {
       names = readdirSync(root);
     } catch {
       return;
     }
-    const ids = new Set(this.runs.map((r) => r.id));
+    const ids = new Set([...this.runs.map((r) => r.id), ...aside.ids]);
     for (const name of names) if (!ids.has(name)) this.folders.remove(name);
   }
 
@@ -647,7 +681,7 @@ export class Sentinels {
       list: () => describeSentinels(this.items, line),
       create: (d: ToolDraft) => {
         const s = this.create(fromToolDraft(d));
-        return `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. It runs once the user turns it on from its page.`;
+        return `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. It runs once the user turns it on from its page (you can’t).`;
       },
       run: (ref: string) => {
         const s = this.need(ref);
@@ -655,12 +689,21 @@ export class Sentinels {
         const run = this.start(s.id, 'claude');
         return run.state === 'queued' ? `“${s.name}” is running already: this run waits for it` : run.state === 'skipped' ? `“${s.name}” didn’t run: ${run.headline}` : `Started “${s.name}” (\`sentinel:${s.id}\`)`;
       },
-      pause: (ref: string, paused: boolean) => {
-        const s = this.pause(ref, paused);
-        return paused ? `“${s.name}” is paused` : `“${s.name}” is on: ${scheduleSentence(s.trigger)}`;
+      // Pause-only: Claude never turns a sentinel on (that's the user's, from the Mac or the phone).
+      pause: (ref: string) => {
+        const was = this.need(ref);
+        if (was.paused) return `“${was.name}” is paused already; only the user can turn it on, from its page`;
+        const s = this.pause(ref, true);
+        return `“${s.name}” is paused; the user can turn it back on from its page`;
       },
     };
   }
+}
+
+/** Runs per day 0 is no limit, the same as none: kept as none. */
+function limitsOf(l: Limits): Limits {
+  const { perDay, ...rest } = l;
+  return perDay ? { ...rest, perDay } : rest;
 }
 
 const oneLine = (text: string, max: number): string => text.replace(/\s+/g, ' ').trim().slice(0, max);

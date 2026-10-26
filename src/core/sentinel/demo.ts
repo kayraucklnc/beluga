@@ -52,14 +52,15 @@ const at = (daysAgo: number, hh: number, mm = 0): number => {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm).getTime();
 };
 
+/** Oldest first: the last is yesterday's (the row's last run: done, a real brief). */
 const BRIEFS: ReadonlyArray<readonly [string, string]> = [
-  ['3 commits landed, 1 review waits on you, CI is green', '- bob asked for your review on the webhook retries `task:BOB-4`\n- Sign-in with a `+` in the email is fixed (#52)\n- Checkout refuses expired sessions `task:BOB-3`'],
-  ['Nightly tests failed again; a fix is in review', '- The checkout test times out on CI only: Fix what broke opened #52\n- 2 commits on main, both small'],
-  ['Quiet day: 1 commit, nothing waits on you', '- The landing hero got its new copy\n- No new issues'],
-  ['2 pull requests merged, 1 new issue', '- Refund webhooks are in\n- Issue #48: sign-in fails with a `+` in the email (a task for it is Ready)'],
-  ['4 tasks moved to Done, CI is green', '- The payments launch is three tasks from done\n- bob is on the refunds'],
-  ['A failing check on main', '- `npm test` fails in `webhooks.test.ts` since last night\n- Nightly tests will say more at 2:00'],
   ['Nothing changed since Friday', ''],
+  ['A failing check on main', '- `npm test` fails in `webhooks.test.ts` since last night\n- Nightly tests will say more at 2:00'],
+  ['4 tasks moved to Done, CI is green', '- The payments launch is three tasks from done\n- bob is on the refunds'],
+  ['2 pull requests merged, 1 new issue', '- Refund webhooks are in\n- Issue #48: sign-in fails with a `+` in the email (a task for it is Ready)'],
+  ['Quiet day: 1 commit, nothing waits on you', '- The landing hero got its new copy\n- No new issues'],
+  ['Nightly tests failed again; a fix is in review', '- The checkout test times out on CI only: Fix what broke opened #52\n- 2 commits on main, both small'],
+  ['3 commits landed, 1 review waits on you, CI is green', '- bob asked for your review on the webhook retries `task:BOB-4`\n- Sign-in with a `+` in the email is fixed (#52)\n- Checkout refuses expired sessions `task:BOB-3`'],
 ];
 
 function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string, landing: string, after: (fn: () => void, ms: number) => void): void {
@@ -214,6 +215,10 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
     { outputs: ['{"results": [{"title": "Hero sections that convert in 2026", "url": "https://example.com/heroes"}, {"title": "Core Web Vitals: INP replaces FID", "url": "https://example.com/inp"}]}'] },
   );
   travel(0);
+  // The schedules start from now: the clock's first look catches nothing up (the history above is
+  // recorded, and Watch the web's run going now is that recorded one: its Call a Service step is
+  // phase 2, so the runner must never be the one running it).
+  for (const s of [brief, web]) sentinels.demoSet(s.id, { lastScheduledAt: Date.now() });
   // It finishes a moment later, so the demo shows a run ending.
   after(() => {
     const end = Date.now();

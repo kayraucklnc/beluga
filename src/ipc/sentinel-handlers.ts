@@ -1,3 +1,4 @@
+import { fromPhone } from '../core/client-context.js';
 import { needSentinel } from '../core/sentinel/registry.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
@@ -16,7 +17,8 @@ export const SENTINEL_HANDLERS = {
   'sentinel.update': (s, id, patch) => needSentinel(s).update(id, patch),
   'sentinel.remove': (s, id) => needSentinel(s).remove(id),
   'sentinel.duplicate': (s, id) => needSentinel(s).duplicate(id),
-  'sentinel.run': (s, id) => needSentinel(s).start(id, 'you'),
+  // Run Now from the phone says so in the run's history ("You ran it from your phone").
+  'sentinel.run': (s, id) => needSentinel(s).start(id, fromPhone() ? 'phone' : 'you'),
   'sentinel.stop': (s, runId) => needSentinel(s).stop(runId),
   'sentinel.pause': (s, id, paused) => needSentinel(s).pause(id, paused),
   'sentinel.runs': (s, id) => needSentinel(s).runsOf(id),

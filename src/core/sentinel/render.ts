@@ -18,6 +18,13 @@ export interface RenderContext {
   readonly tasks?: string;
   readonly worktrees?: string;
   readonly plans?: string;
+  /** The step before's name (for `material`). */
+  readonly previousName?: string;
+  /**
+   * Earlier outputs (and the trigger's payload) wrapped as material where they're filled in: a
+   * Claude step's prompt gets them in tags (prompt.ts stepMaterial), so they're never instructions.
+   */
+  readonly material?: (kind: 'step' | 'trigger', name: string, text: string) => string;
 }
 
 const SLOT = /\{\{\s*([^{}]+?)\s*\}\}/g;
@@ -35,10 +42,12 @@ function valueOf(key: string, ctx: RenderContext): string | undefined {
   switch (key.toLowerCase()) {
     case 'trigger':
       return ctx.trigger.summary;
-    case 'trigger.json':
-      return JSON.stringify(ctx.trigger.payload !== undefined ? ctx.trigger.payload : { kind: ctx.trigger.kind, summary: ctx.trigger.summary }, null, 2);
+    case 'trigger.json': {
+      const json = JSON.stringify(ctx.trigger.payload !== undefined ? ctx.trigger.payload : { kind: ctx.trigger.kind, summary: ctx.trigger.summary }, null, 2);
+      return ctx.material ? ctx.material('trigger', 'trigger', json) : json;
+    }
     case 'previous':
-      return ctx.previous ?? '';
+      return ctx.previous === undefined ? '' : ctx.material ? ctx.material('step', ctx.previousName ?? 'previous', ctx.previous) : ctx.previous;
     case 'project':
       return ctx.project?.name ?? 'Your Mac';
     case 'project.path':
@@ -56,10 +65,11 @@ function valueOf(key: string, ctx: RenderContext): string | undefined {
   }
   const step = /^steps\.(.+)$/i.exec(key)?.[1]?.trim();
   if (step === undefined || !ctx.steps) return undefined;
-  if (Object.hasOwn(ctx.steps, step)) return ctx.steps[step];
   const lower = step.toLowerCase();
-  const found = Object.keys(ctx.steps).find((n) => n.toLowerCase() === lower);
-  return found === undefined ? undefined : ctx.steps[found];
+  const found = Object.hasOwn(ctx.steps, step) ? step : Object.keys(ctx.steps).find((n) => n.toLowerCase() === lower);
+  if (found === undefined) return undefined;
+  const text = ctx.steps[found]!;
+  return ctx.material ? ctx.material('step', found, text) : text;
 }
 
 /** "Mon 26 Oct 2026". */

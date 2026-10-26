@@ -4,7 +4,7 @@ import { redactSecrets } from '../../shared/steps.js';
 import type { NoticeEvent } from '../notify.js';
 import type { RunFolders } from './files.js';
 import { type ClaudeStep, type NotifyStep, type Run, type ScriptStep, type Sentinel, type Step, type StepRun, STEP_INFO, accessAllows, accessNeeded, ACCESS_INFO, firstLine, stepAvailable } from './model.js';
-import { sentinelRunPrompt } from './prompt.js';
+import { sentinelRunPrompt, stepMaterial } from './prompt.js';
 import { type RenderContext, dateText, render } from './render.js';
 
 /**
@@ -66,7 +66,11 @@ export interface RunnerDeps {
   readonly home: string;
   /** A turn among the Claude steps that may run together (Run at Once) → give it back when done. */
   readonly claudeTurn: (signal: AbortSignal) => Promise<() => void>;
+  /** How long a cancelled Claude request may take to end before its worktree is looked at (10 s). */
+  readonly cancelGraceMs?: number;
 }
+
+const CANCEL_GRACE_MS = 10_000;
 
 /** A run going now: what the runner and Sentinels share about it. */
 export interface ActiveRun {
@@ -81,6 +85,8 @@ export interface ActiveRun {
   stopReason?: string;
   /** Places made in this run, reused by its later steps. */
   places: Partial<Record<'project' | 'worktree' | 'mac', SentinelPlace>>;
+  /** Claude requests cancelled in this run, settling (done or error): the worktree waits for them. */
+  cancelling?: Promise<unknown>[];
 }
 
 /** Kept on the run and in the state; the whole output is in the run's folder. */
@@ -147,6 +153,9 @@ export class SentinelRunner {
       } catch (err) {
         result = { kind: 'failed', why: err instanceof Error ? err.message : String(err) };
       }
+      // Nothing leaves a step with a secret in it: its output, why it failed, why it stopped.
+      if (result.kind === 'failed') result = { ...result, why: redactSecrets(result.why) };
+      else if (result.kind === 'skip') result = { ...result, reason: redactSecrets(result.reason) };
       const endedAt = this.deps.now();
       const output = result.output === undefined ? undefined : redactSecrets(result.output);
       if (output !== undefined) {
@@ -201,7 +210,7 @@ export class SentinelRunner {
             ? `Done · ${sentinel.steps.length} ${sentinel.steps.length === 1 ? 'step' : 'steps'}`
             : 'Nothing to do: it has no steps');
     await this.settleWorktree(active);
-    set({ state, headline, endedAt: this.deps.now(), ...(end?.why ? { why: end.why } : {}) });
+    set({ state, headline: redactSecrets(headline), endedAt: this.deps.now(), ...(end?.why ? { why: redactSecrets(end.why) } : {}) });
     return active.run;
   }
 
@@ -233,7 +242,7 @@ export class SentinelRunner {
     const own = this.deps.beluga(s.projectId);
     return {
       trigger: active.run.trigger,
-      ...(outputs.length ? { previous: outputs.at(-1)!.output } : {}),
+      ...(outputs.length ? { previous: outputs.at(-1)!.output, previousName: outputs.at(-1)!.name } : {}),
       steps: Object.fromEntries(outputs.map((o) => [o.name, o.output])),
       ...(project ? { project: { name: project.name, path: project.root } } : {}),
       date: dateText(this.deps.now()),
@@ -271,7 +280,8 @@ export class SentinelRunner {
     const place = await this.place(active, step);
     if (typeof place === 'string') return { kind: 'failed', why: place };
     const { channel } = place;
-    const prompt = render(step.prompt, this.context(active, outputs)).trim();
+    // Earlier outputs filled in are material in tags, never instructions.
+    const prompt = render(step.prompt, { ...this.context(active, outputs), material: stepMaterial }).trim();
     if (!prompt) return { kind: 'failed', why: 'its prompt is empty', channel };
     const signal = active.abort.signal;
     const remaining = (): number => Math.max(0, active.deadline - this.deps.now());
@@ -291,17 +301,23 @@ export class SentinelRunner {
       const requestId = claude.ask(prompt, channel, prompt);
       if (!requestId) return { kind: 'failed', why: 'your Claude couldn’t be asked there', channel };
       active.claude.requestId = requestId;
-      const answer = await race(claude.wait(requestId).then((text) => ({ ok: true as const, text }), (err: unknown) => ({ ok: false as const, why: err instanceof Error ? err.message : String(err) })), remaining(), signal);
+      const settled = claude.wait(requestId).then((text) => ({ ok: true as const, text }), (err: unknown) => ({ ok: false as const, why: err instanceof Error ? err.message : String(err) }));
+      const answer = await race(settled, remaining(), signal);
+      // Cancelled: the run goes on ending, but its worktree waits for the request's end (settleWorktree).
+      const cancel = (note: string): void => {
+        claude.cancel(requestId, note);
+        (active.cancelling ??= []).push(settled);
+      };
       if (answer.kind === 'timeout') {
-        claude.cancel(requestId, 'Stopped by Beluga: the sentinel’s time limit');
+        cancel('Stopped by Beluga: the sentinel’s time limit');
         return { kind: 'timeout', channel };
       }
       if (answer.kind === 'aborted') {
-        claude.cancel(requestId, 'Stopped by you: the sentinel’s run was stopped');
+        cancel('Stopped by you: the sentinel’s run was stopped');
         return { kind: 'stopped', channel };
       }
       const said = answer.value;
-      if (!said.ok) return { kind: 'failed', why: USAGE.test(said.why) ? 'usage limit' : firstLine(said.why, 200) || 'Claude stopped', channel };
+      if (!said.ok) return { kind: 'failed', why: USAGE.test(said.why) ? 'usage limit' : firstLine(redactSecrets(said.why), 200) || 'Claude stopped', channel };
       if (active.stopReason !== undefined) return { kind: 'skip', reason: active.stopReason, output: said.text, channel };
       return { kind: 'done', output: said.text, channel };
     } finally {
@@ -327,14 +343,17 @@ export class SentinelRunner {
     const res = await this.deps.shell(step.command, cwd, limit, env, active.abort.signal);
     if (active.abort.signal.aborted) return { kind: 'stopped', output: res.output };
     if (res.timedOut) return limit < own ? { kind: 'timeout', output: res.output } : { kind: 'failed', why: `took longer than ${Math.round(own / 1000)} s`, output: res.output };
-    if (res.exitCode !== 0) return { kind: 'failed', why: `exit ${res.exitCode ?? '?'}${res.output.trim() ? `: ${tail(res.output)}` : ''}`, output: res.output, ms: res.ms };
+    // `why` (the headline, the notification) is built from the output with its secrets redacted.
+    const said = redactSecrets(res.output);
+    if (res.exitCode !== 0) return { kind: 'failed', why: `exit ${res.exitCode ?? '?'}${said.trim() ? `: ${tail(said)}` : ''}`, output: res.output, ms: res.ms };
     return { kind: 'done', output: res.output, ms: res.ms };
   }
 
   private notifyStep(active: ActiveRun, step: NotifyStep, outputs: ReadonlyArray<{ readonly name: string; readonly output: string }>): StepEnd {
     const ctx = this.context(active, outputs);
-    const title = firstLine(render(step.title?.trim() || '{{sentinel}}', ctx), 120) || active.sentinel.name;
-    const body = (step.body?.trim() ? render(step.body, ctx) : firstLine(ctx.previous ?? '', 200)) || 'It ran';
+    // What a template fills in (the trigger's payload among it) may hold a secret: never in a notification.
+    const title = firstLine(redactSecrets(render(step.title?.trim() || '{{sentinel}}', ctx)), 120) || active.sentinel.name;
+    const body = redactSecrets((step.body?.trim() ? render(step.body, ctx) : firstLine(ctx.previous ?? '', 200)) || 'It ran');
     const channel = active.run.channel;
     // The run's id is the key: its end isn't told again.
     this.deps.notify({ kind: 'done', tag: 'sentinel', title, body: firstLine(body, 300), key: active.run.id, ...(channel ? { channel } : {}) });
@@ -348,6 +367,17 @@ export class SentinelRunner {
     const id = active.run.worktreeId;
     const places = this.deps.places;
     if (!id || !places) return;
+    // A Claude request cancelled in it may still be writing: wait for its end (or a grace), so what
+    // it changed is seen and the worktree isn't archived under it.
+    if (active.cancelling?.length) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const grace = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, this.deps.cancelGraceMs ?? CANCEL_GRACE_MS);
+        timer.unref?.();
+      });
+      await Promise.race([Promise.all(active.cancelling), grace]);
+      clearTimeout(timer);
+    }
     try {
       if ((await places.madeChanges(id)) === false) await places.archive(id);
     } catch {

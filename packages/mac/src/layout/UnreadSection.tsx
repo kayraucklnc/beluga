@@ -9,6 +9,7 @@ import { useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { usePrefs } from '../lib/prefs.js';
 import { openDm, openGroup } from '../network/use-net.js';
+import { chatPlaceOf, iconOf } from '../sentinel/sentinel-model.js';
 import { IDLE_SIGNAL, type Signal, type UnreadEntry, planSignal, unreadEntries, workspaceSignal } from './attention-model.js';
 import { SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { Row, Section } from './sidebar-parts.js';
@@ -32,6 +33,8 @@ function EntryIcon({ e }: { e: UnreadEntry }) {
       return <Icon name="people" size={14} />;
     case 'plan':
       return <Icon name="flag" size={14} />;
+    case 'sentinel':
+      return <Icon name={iconOf(e.sentinel.icon)} size={14} />;
   }
 }
 
@@ -48,6 +51,8 @@ function whereOf(e: UnreadEntry, ownerName: (id: string) => string): string {
       return 'Group';
     case 'plan':
       return e.project?.name ?? 'Plan';
+    case 'sentinel':
+      return 'Sentinel';
   }
 }
 
@@ -56,6 +61,12 @@ function nowOf(state: Parameters<typeof planSignal>[0], e: UnreadEntry): Signal 
   if (e.kind === 'workspace') return workspaceSignal(state, e.ws);
   if (e.kind === 'plan') return planSignal(state, e.plan);
   return IDLE_SIGNAL;
+}
+
+/** Where a sentinel run's conversation opens (its chat), and the channel you're in as that entry's. */
+function sentinelHere(entries: readonly UnreadEntry[], channel: string | undefined): string | undefined {
+  const e = entries.find((x) => x.kind === 'sentinel' && channel !== undefined && x.channels.includes(channel));
+  return e?.channel;
 }
 
 export function UnreadSection() {
@@ -68,8 +79,10 @@ export function UnreadSection() {
   const { here, entries, stay, owners } = useApp((state) => {
     // Where you are: a plan counts as one place (its page, its conversation and its tasks' worktrees).
     const inPlan = state.view.kind === 'plan' ? state.view.id : state.view.kind === 'workspace' ? planOf(state, state.view.id)?.id : undefined;
-    const here = inPlan ? `plan:${inPlan}` : shownChannel(state.view);
     const entries = prefs.unreadSection ? unreadEntries(state) : [];
+    const shown = shownChannel(state.view);
+    // In a sentinel run's chat that needs you: that's its entry.
+    const here = inPlan ? `plan:${inPlan}` : (sentinelHere(entries, shown) ?? shown);
     const keep = kept && kept.entry.channel === here && !entries.some((e) => e.channel === here) ? kept.entry : undefined;
     return { here, entries, stay: keep ? { ...keep, signal: nowOf(state, keep) } : undefined, owners: Object.fromEntries(state.peers.map((p) => [p.peerId, p.name])) };
   }, sameDeep);
@@ -90,7 +103,13 @@ export function UnreadSection() {
     if (e.kind === 'workspace') actions.run({ type: 'open_ws', id: e.ws.id });
     // The plan, with its conversation; at the task that waits on you, so answering is one click on.
     else if (e.kind === 'plan') actions.run({ type: 'view', view: { kind: 'plan', id: e.plan.id, ...(e.at?.task ? { task: e.at.task } : {}) } });
-    else if (e.kind === 'shared') actions.run({ type: 'open_shared', owner: e.owner, id: e.id, tab: 'chat' });
+    // The run's chat, where it waits on you.
+    else if (e.kind === 'sentinel') {
+      const place = chatPlaceOf(e.at);
+      if (place?.kind === 'workspace') actions.run({ type: 'open_ws', id: place.id, tab: 'chat' });
+      else if (place) actions.run({ type: 'view', view: { kind: 'assistant', ...(place.chat ? { chat: place.chat } : {}) } });
+      else actions.run({ type: 'view', view: { kind: 'sentinel_run', runId: e.runId } });
+    } else if (e.kind === 'shared') actions.run({ type: 'open_shared', owner: e.owner, id: e.id, tab: 'chat' });
     else if (e.kind === 'dm') openDm(client, e.peerId);
     else openGroup(client, e.groupId);
   };

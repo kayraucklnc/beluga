@@ -77,7 +77,7 @@ describe('sentinel.json', () => {
     const s = setup({ dir });
     expect(s.sentinels.list().map((i) => i.id)).toEqual(['sn_ok']);
     const dropped = readdirSync(dir).find((f) => f.startsWith('sentinel.dropped-'))!;
-    expect(JSON.parse(readFileSync(path.join(dir, dropped), 'utf8'))).toEqual([{ id: 'sn_bad', name: 'Broken', trigger: { kind: 'schedule', every: 'fortnight' } }]);
+    expect(JSON.parse(readFileSync(path.join(dir, dropped), 'utf8'))).toEqual({ items: [{ id: 'sn_bad', name: 'Broken', trigger: { kind: 'schedule', every: 'fortnight' } }], runs: [] });
 
     const other = tmp();
     writeFileSync(path.join(other, 'sentinel.json'), '{"version": 9}');
