@@ -1,6 +1,7 @@
 import type { ChatFile, GroupView, LiveClaude, MessageView, NetworkState } from '../../../../src/net/mesh/views.js';
 import { type Suggestion, friendMention, typedMention } from '../../../../src/ui/suggest.js';
 import { MENTION, type MentionWorld } from '../chat/mentions.js';
+import { continues } from './net-model.js';
 
 /**
  * What the chats say and decide, as plain functions (no React, no daemon): whose Claude a
@@ -152,6 +153,23 @@ export function liveLine(live: readonly LiveClaude[], me: string | undefined): s
   if (!names.length) return '';
   const list = names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
   return `${list} ${names.length === 1 ? 'is' : 'are'} answering…`;
+}
+
+// ---- runs of messages (BLG-210)
+
+/** Where a message sits in its run: the first (its name above), the last (the avatar, the tail, the time). */
+export interface RunPlace {
+  readonly first: boolean;
+  readonly last: boolean;
+}
+
+/**
+ * Consecutive messages by the same person (or the same person's Claude) within a few minutes on the
+ * same day make a run, as in a messaging app. A task's card stands on its own.
+ */
+export function runPlaces(messages: readonly MessageView[]): RunPlace[] {
+  const joins = (a: MessageView | undefined, b: MessageView | undefined): boolean => Boolean(a && b && !a.task && !b.task && continues(a, b));
+  return messages.map((m, i) => ({ first: !joins(messages[i - 1], m), last: !joins(m, messages[i + 1]) }));
 }
 
 // ---- chat tabs

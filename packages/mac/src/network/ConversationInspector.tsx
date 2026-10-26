@@ -5,7 +5,10 @@ import { TRUST_LEVELS, type TrustLevel } from '@beluga/shared/settings-schema.js
 import { PersonRules } from '../gateway/AccessSettings.js';
 import { Select } from '../dialogs/settings-controls.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { type ChatPerson, claudeLine, versionChip, waitingLabel } from '@beluga/core/chat-people.js';
+import { APP_VERSION } from '../lib/boot.js';
 import { PersonAvatar } from './Avatars.js';
+import { showWaiting, useChatPeople } from './use-chat-people.js';
 import { belugaLine, conversationOf, presenceLine, shownState, sortMembers } from './net-model.js';
 import { openNet } from './net-sheets.js';
 import s from '../layout/Inspector.module.css';
@@ -56,6 +59,63 @@ function FriendAccess({ peerId, name }: { peerId: string; name: string }) {
   );
 }
 
+/** Your trust in someone, in a word ("Trusted"), as their card sets it. */
+function useTrustLabel(): (peerId: string) => string {
+  const levels = useApp((st) => st.levels);
+  const remembered = useApp((st) => st.remembered);
+  const policy = useApp((st) => st.policy);
+  return (peerId) => TRUST_INFO[levels[peerId] ?? remembered[peerId]?.trust ?? (policy === 'deny' ? 'blocked' : policy === 'auto' ? 'trusted' : 'ask')].label;
+}
+
+function PersonRow({ p, trust }: { p: ChatPerson; trust?: string }) {
+  const chip = versionChip(p, APP_VERSION);
+  const line = p.me || p.claude === 'offline' || p.claude === 'update' || !trust ? claudeLine(p) : `${trust} · ${claudeLine(p)}`;
+  return (
+    <li className={n.hereRow}>
+      <PersonAvatar name={p.name} id={p.peerId} state={p.presence} size={30} />
+      <span className={n.hereText}>
+        <span className={n.hereName}>{p.me ? 'You' : p.name}</span>
+        <span className={n.hereLine}>{line}</span>
+      </span>
+      {chip ? <span className={chip.behind ? n.hereBehind : n.hereVersion}>{chip.text}</span> : null}
+    </li>
+  );
+}
+
+/**
+ * Who's here (BLG-210): each person with presence, your trust in them, their Claude's state and
+ * their Beluga's version (or what it needs), then what waits on whom.
+ */
+function PeopleHere({ id, title }: { id: string; title: string }) {
+  const { people, waiting } = useChatPeople(id);
+  const trust = useTrustLabel();
+  return (
+    <>
+      <Panel title={title}>
+        <ul className={n.hereList}>
+          {people.map((p) => (
+            <PersonRow key={p.peerId} p={p} {...(p.me ? {} : { trust: trust(p.peerId) })} />
+          ))}
+        </ul>
+      </Panel>
+      {waiting.length ? (
+        <Panel title="Waiting">
+          <ul className={n.hereList}>
+            {waiting.map((w) => (
+              <li key={`${w.target.kind}:${w.target.id}`}>
+                <button type="button" className={n.waitRow} title={waitingLabel(w)} onClick={() => showWaiting(w)}>
+                  <span className={n.hereName}>{w.on === 'you' ? 'On you' : `On ${w.onName}`}</span>
+                  <span className={n.hereLine}>{w.text}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ) : null}
+    </>
+  );
+}
+
 const since = (ts: number): string => new Date(ts).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
 
 /** The inspector beside a conversation with friends: who it's with (a friend, or a group's members). */
@@ -67,6 +127,7 @@ export function ConversationDetails({ id }: { id: string }) {
     if (!f) return null;
     return (
       <>
+        <PeopleHere id={id} title="In this conversation" />
         <Panel title="Friend">
           <Field label="Name">{f.name}</Field>
           <Field label="Status">{presenceLine(f)}</Field>
@@ -82,7 +143,9 @@ export function ConversationDetails({ id }: { id: string }) {
     const g = net.groups.find((x) => x.id === target.groupId);
     if (!g) return null;
     return (
-      <Panel
+      <>
+        {g.active ? <PeopleHere id={id} title="In this channel" /> : null}
+        <Panel
         title="Channel"
         action={
           <Button size="small" variant="quiet" icon="people" onClick={() => openNet({ kind: 'group_info', groupId: g.id })}>
@@ -104,7 +167,8 @@ export function ConversationDetails({ id }: { id: string }) {
         </Field>
         <Field label="You">{g.active ? (g.admin ? 'Admin' : 'Member') : 'Left'}</Field>
         <Field label="Created">{since(g.createdAt)}</Field>
-      </Panel>
+        </Panel>
+      </>
     );
   }
   return null;

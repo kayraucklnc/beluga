@@ -7,13 +7,17 @@ exports[`the views of a known Mac > snapshot 1`] = `
     "live": [],
     "members": [
       {
+        "claude": "idle",
         "me": true,
         "name": "kayra",
         "peerId": "me0000000000000000000000000000me",
+        "presence": "online",
       },
       {
+        "claude": "idle",
         "name": "bob",
         "peerId": "bob00000000000000000000000000bob",
+        "presence": "away",
       },
     ],
     "messages": [

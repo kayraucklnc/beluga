@@ -3,12 +3,13 @@ import type { FriendView, GroupView, MessageView } from '@beluga/net/mesh/views.
 import type { MentionWorld } from '../chat/mentions.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
-import { Avatar, Button, Empty, claudeColor, cx } from '../components/ui.js';
+import { Avatar, Button, Empty, claudeColor, cx, personColor } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
-import { LogTaskCard } from '../gateway/TaskCard.js';
+import { TaskCard } from '../gateway/TaskCard.js';
 import { Attention } from '../chat/Attention.js';
-import { isFinal } from '@beluga/core/gateway/model.js';
+import { type TaskView, isFinal, targetLabel } from '@beluga/core/gateway/model.js';
+import { type WaitingItem, offlineNote, waitingLabel } from '@beluga/core/chat-people.js';
 import { usePrefs } from '../lib/prefs.js';
 import { Markdown } from '../chat/Markdown.js';
 import { plainText } from '../chat/message-menu.js';
@@ -17,8 +18,9 @@ import { ASK_EVENT, NetComposer, type Outgoing, QUOTE_EVENT } from './NetCompose
 import { MessageFiles } from './ChatFiles.js';
 import { ChatTabs } from './ChatTabs.js';
 import { addBlobs, addPaths } from './attachments.js';
-import { askedLine, authorLabel, channelName, channelWorld, isMain, liveIn, liveLine } from './chat-model.js';
-import { continues, conversationOf, dayLabel, membersLine, mergeMessages, presenceLine, sameDay, shownState } from './net-model.js';
+import { type RunPlace, askedLine, authorLabel, channelName, channelWorld, isMain, liveIn, liveLine, runPlaces } from './chat-model.js';
+import { conversationOf, dayLabel, membersLine, mergeMessages, presenceLine, sameDay, shownState } from './net-model.js';
+import { showWaiting, useChatPeople } from './use-chat-people.js';
 import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork, useSay } from './use-net.js';
 import { inApp } from '../lib/boot.js';
@@ -56,13 +58,21 @@ function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: 
   ];
 }
 
-/** One message: the room chat's look; your own say whether they're waiting to be delivered. */
-const Message = memo(function Message({ m, continued, dm, last, resend, me, nameOf, world, offer }: { m: MessageView; continued: boolean; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string }; nameOf: (peerId: string) => string; world: MentionWorld; offer?: boolean }) {
+/** A person's colour as a CSS variable, for their bubble's pastel (the same colour as their avatar and their Claude). */
+const tintOf = (peerId: string): React.CSSProperties => ({ ['--person' as string]: personColor(peerId) });
+
+/**
+ * One message, as a messaging app (BLG-210): your own words in a bubble of your colour on the right,
+ * a friend's in a bubble of theirs on the left (their name above a run, their picture at its end),
+ * and a Claude's answer full width under "<owner>'s Claude". `place`: where it sits in its run.
+ */
+const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, world, offer }: { m: MessageView; place: RunPlace; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string }; nameOf: (peerId: string) => string; world: MentionWorld; offer?: boolean }) {
   const prefs = usePrefs();
   const say = useSay();
   const locked = m.status === 'locked';
   const expired = m.mine && m.status === 'expired';
   const asked = askedLine(m, nameOf, me?.peerId);
+  const author = m.mine && me ? me.peerId : m.from;
   const deliveryState =
     m.mine && m.status === 'waiting' ? (
       <div className={s.state}>
@@ -77,46 +87,71 @@ const Message = memo(function Message({ m, continued, dm, last, resend, me, name
           Send Again
         </button>
       </div>
-    ) : dm && last && m.mine && m.status === 'delivered' ? (
-      <div className={s.state}>Delivered</div>
     ) : null;
-  // Your own words (not your Claude's): a tinted bubble on the right, no name or picture, as in the room's chat.
+  const askedChip = asked ? (
+    <div className={s.asked}>
+      <Icon name="claude" size={11} />
+      {asked}
+    </div>
+  ) : null;
+  const items = () => messageItems(m, { say, ...(expired ? { resend: () => resend(m) } : {}) });
+  // Your own words (not your Claude's): your colour, on the right; the time (and Delivered) under the run.
   if (m.mine && !m.claude && !locked)
     return (
-      <ActionsContext items={() => messageItems(m, { say, ...(expired ? { resend: () => resend(m) } : {}) })}>
-        <div className={cx(chat.message, chat.own, continued && chat.continued, m.status === 'waiting' && s.waiting)} data-message={m.id} data-mine="true">
-          <div className={chat.body} title={fullTime(m.ts)}>
+      <ActionsContext items={items}>
+        <div className={cx(s.row, s.rowMine, !place.first && s.rowCont, m.status === 'waiting' && s.waiting)} data-message={m.id} data-mine="true" style={tintOf(author)}>
+          <div className={s.stack} title={fullTime(m.ts)}>
             {m.text.trim() ? (
-              <div className={chat.bubble}>
+              <div className={cx(s.bubble, s.bubbleMine, place.last && s.tailMine)}>
                 <Markdown text={m.text} mentions={world} />
               </div>
             ) : null}
             {m.files?.length ? <MessageFiles files={m.files} conversation={m.conversation} mine /> : null}
-            {asked ? (
-              <div className={s.asked}>
-                <Icon name="claude" size={11} />
-                {asked}
-              </div>
-            ) : null}
-            {deliveryState}
+            {askedChip}
+            {deliveryState ?? (place.last ? <div className={s.under}>{[time(m.ts), dm && last && m.status === 'delivered' ? 'Delivered' : ''].filter(Boolean).join(' · ')}</div> : null)}
           </div>
         </div>
       </ActionsContext>
     );
+  // A friend's words: their colour, on the left; their name above the run, their picture at its end.
+  if (!m.claude && !locked)
+    return (
+      <ActionsContext items={items}>
+        <div className={cx(s.row, s.rowTheirs, !place.first && s.rowCont, m.status === 'waiting' && s.waiting)} data-message={m.id} style={tintOf(author)}>
+          <div className={s.side}>{place.last ? <Avatar name={m.name} id={m.from} size={28} /> : null}</div>
+          <div className={s.stack} title={fullTime(m.ts)}>
+            {place.first ? (
+              <div className={s.runName}>
+                <span className={s.runAuthor}>{m.name}</span>
+                {prefs.timestamps ? <span className={s.runTime}>{time(m.ts)}</span> : null}
+              </div>
+            ) : null}
+            {m.text.trim() ? (
+              <div className={cx(s.bubble, s.bubbleTheirs, place.last && s.tailTheirs)}>
+                <Markdown text={m.text} mentions={world} />
+              </div>
+            ) : null}
+            {m.files?.length ? <MessageFiles files={m.files} conversation={m.conversation} mine={false} /> : null}
+            {askedChip}
+          </div>
+        </div>
+      </ActionsContext>
+    );
+  // A Claude (yours or a friend's), or a message this Mac can't read: full width, under its name.
   return (
-    <ActionsContext items={() => messageItems(m, { say, ...(expired ? { resend: () => resend(m) } : {}) })}>
-      <div className={cx(chat.message, continued && chat.continued, m.mine && s.mine, m.claude && s.claudeMsg, m.status === 'waiting' && s.waiting)} data-message={m.id} data-claude={m.claude ? 'true' : undefined}>
-        <div className={chat.gutter}>{continued ? null : <Avatar name={m.mine && me ? me.name : m.name} id={m.mine && me ? me.peerId : m.from} size={26} claude={Boolean(m.claude)} />}</div>
-        <div className={chat.body} title={fullTime(m.ts)}>
-          {continued ? null : (
-            <div className={chat.meta}>
-              <span className={cx(chat.author, m.claude && s.claudeAuthor)} style={m.claude ? { color: claudeColor(m.mine && me ? me.peerId : m.from) } : undefined}>
+    <ActionsContext items={items}>
+      <div className={cx(s.row, s.rowClaude, !place.first && s.rowCont, m.status === 'waiting' && s.waiting)} data-message={m.id} data-claude={m.claude ? 'true' : undefined}>
+        <div className={s.side}>{place.first ? <Avatar name={m.mine && me ? me.name : m.name} id={author} size={28} claude={Boolean(m.claude)} /> : null}</div>
+        <div className={s.claudeBody} title={fullTime(m.ts)}>
+          {place.first ? (
+            <div className={s.runName}>
+              <span className={cx(s.runAuthor, m.claude && s.claudeAuthor)} style={m.claude ? { color: claudeColor(author) } : undefined}>
                 {authorLabel(m)}
               </span>
               {m.claude ? <span className={s.claudeTag}>on {m.mine ? 'your' : `${m.name}’s`} Mac</span> : null}
-              {prefs.timestamps ? <span className={chat.time}>{time(m.ts)}</span> : null}
+              {prefs.timestamps ? <span className={s.runTime}>{time(m.ts)}</span> : null}
             </div>
-          )}
+          ) : null}
           {locked ? (
             <div className={s.locked}>
               <Icon name="lock" size={12} />
@@ -126,12 +161,7 @@ const Message = memo(function Message({ m, continued, dm, last, resend, me, name
             <>
               {m.text.trim() ? <Markdown text={m.text} mentions={world} /> : null}
               {m.files?.length ? <MessageFiles files={m.files} conversation={m.conversation} mine={m.mine} /> : null}
-              {asked ? (
-                <div className={s.asked}>
-                  <Icon name="claude" size={11} />
-                  {asked}
-                </div>
-              ) : null}
+              {askedChip}
               {offer ? <RequestOffer m={m} /> : null}
             </>
           )}
@@ -141,6 +171,35 @@ const Message = memo(function Message({ m, continued, dm, last, resend, me, name
     </ActionsContext>
   );
 });
+
+/**
+ * A task between two people's Claudes in the chat (BLG-208), placed as a Claude's message: under
+ * "<owner>'s Claude · asked Ata's Mac", full width, with its card (the approval is answered there).
+ */
+function TaskRow({ task, me }: { task: TaskView; me?: { name: string; peerId: string } }) {
+  const sent = task.direction === 'sent';
+  const agent = task.by === 'agent';
+  const owner = sent ? (me?.peerId ?? 'me') : task.peerId;
+  const ownerName = sent ? (me?.name ?? 'You') : task.peerName;
+  const label = agent ? (sent ? 'Your Claude' : `${task.peerName}’s Claude`) : sent ? 'You' : task.peerName;
+  const asked = sent ? `asked ${targetLabel(task)}` : `asked ${task.kind === 'ask' ? 'your Claude' : 'your Mac'}`;
+  return (
+    <div className={cx(s.row, s.rowClaude)} data-task-row={task.id}>
+      <div className={s.side}>
+        <Avatar name={ownerName} id={owner} size={28} claude={agent} />
+      </div>
+      <div className={s.claudeBody}>
+        <div className={s.runName}>
+          <span className={cx(s.runAuthor, agent && s.claudeAuthor)} style={agent ? { color: claudeColor(owner) } : undefined}>
+            {label}
+          </span>
+          <span className={s.claudeTag}>{asked}</span>
+        </div>
+        <TaskCard task={task} inChat />
+      </div>
+    </div>
+  );
+}
 
 /** Which answers you sent as requests (message id → task id), so the card stays under the answer. */
 const SENT_KEY = 'beluga.chat-requests';
@@ -169,7 +228,7 @@ function RequestOffer({ m }: { m: MessageView }) {
   const task = useApp((st) => (taskId ? st.gateway.tasks.find((t) => t.id === taskId) : undefined));
   const request = m.claude?.request;
   if (!request) return null;
-  if (task) return <LogTaskCard task={task} />;
+  if (task) return <TaskCard task={task} inChat />;
   if (taskId) return <div className={s.asked}>Sent as a request to {m.name}’s Mac</div>;
   const send = (): void => {
     setSending(true);
@@ -200,9 +259,28 @@ function RequestOffer({ m }: { m: MessageView }) {
  * own Mac's task book, so it moves along (sent, waiting for approval, working, the result). Someone
  * else in the channel has no such task: they see the message's words, the request's summary.
  */
-function TaskMessage({ id, plain }: { id: string; plain: ReactElement }) {
+function TaskMessage({ id, plain, me }: { id: string; plain: ReactElement; me?: { name: string; peerId: string } }) {
   const task = useApp((st) => st.gateway.tasks.find((t) => t.id === id));
-  return task ? <LogTaskCard task={task} inChat /> : plain;
+  return task ? <TaskRow task={task} {...(me ? { me } : {})} /> : plain;
+}
+
+/**
+ * What waits, under the header (BLG-210): "Waiting on you: …" (yours to answer here) and
+ * "Waiting on Ata: …" (your requests they haven't taken yet). Each one scrolls to its card.
+ */
+function WaitingBand({ waiting }: { waiting: readonly WaitingItem[] }) {
+  if (!waiting.length) return null;
+  return (
+    <div className={s.waitBand} role="region" aria-label="Waiting">
+      {waiting.slice(0, 4).map((w) => (
+        <button key={`${w.target.kind}:${w.target.id}`} type="button" className={cx(s.waitItem, w.on === 'you' && s.waitYou, w.kind === 'secret' && s.waitSecret)} title={waitingLabel(w)} onClick={() => showWaiting(w)}>
+          <Icon name={w.on === 'you' ? (w.kind === 'secret' ? 'lock' : 'alert') : 'clock'} size={12} />
+          <span>{waitingLabel(w)}</span>
+        </button>
+      ))}
+      {waiting.length > 4 ? <span className={s.waitMore}>+{waiting.length - 4} more</span> : null}
+    </div>
+  );
 }
 
 /** The start of a conversation: who it's with, and that it stays between you. */
@@ -232,7 +310,7 @@ function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
         End-to-end encrypted, kept on each member’s Mac
       </div>
       <div className={s.introHint}>
-        Drop files here to share them straight from your Mac. Claude answers only when you ask: type <b>@claude</b>, or click <b>Add Claude</b> under the message box.
+        Drop files here to share them straight from your Mac. Claude answers only when you ask: type <b>@claude</b>, or click <b>Ask: your Claude</b> under the message box.
       </div>
       {group.admin && group.active ? (
         <div className={s.introActions}>
@@ -381,6 +459,8 @@ function Conversation({ id }: { id: string }) {
   // someone whose card is in your DM with them (not in this channel): shown here until it's over.
   const tasks = useApp((st) => st.gateway.tasks);
   const asking = useMemo(() => tasks.filter((t) => t.direction === 'sent' && t.conversation === id && t.chat !== id && !isFinal(t.state)), [tasks, id]);
+  const places = useMemo(() => runPlaces(messages), [messages]);
+  const { people: here, waiting } = useChatPeople(id);
 
   if (!net.enabled) {
     return (
@@ -417,9 +497,11 @@ function Conversation({ id }: { id: string }) {
   const mineIds = new Set(messages.filter((m) => m.mine).map((m) => m.id));
   const nameOf = (peerId: string): string => net.friends.find((f) => f.peerId === peerId)?.name ?? group?.members.find((m) => m.peerId === peerId)?.name ?? 'someone';
   const title = group ? channelName(net, group) : (friend?.name ?? '');
+  const note = offlineNote(here);
 
   return (
     <div ref={drop.ref} className={cx(s.conversation, drop.over && s.dropping)} {...drop.html}>
+      <WaitingBand waiting={waiting} />
       <div ref={ref} className={s.log} onScroll={onScroll} role="log" aria-label={friend ? `Conversation with ${friend.name}` : `Channel ${title}`}>
         {more ? (
           <div className={s.earlier}>
@@ -433,16 +515,17 @@ function Conversation({ id }: { id: string }) {
         {messages.map((m, i) => {
           const prev = messages[i - 1];
           const newDay = !prev || !sameDay(prev.ts, m.ts);
-          const plain = <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} offer={Boolean(m.claude?.request && !m.mine && mineIds.has(m.claude.for))} {...(me ? { me } : {})} />;
+          const place = places[i] ?? { first: true, last: true };
+          const plain = <Message m={m} place={place} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} offer={Boolean(m.claude?.request && !m.mine && mineIds.has(m.claude.for))} {...(me ? { me } : {})} />;
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              {m.task ? <TaskMessage id={m.task.id} plain={plain} /> : plain}
+              {m.task ? <TaskMessage id={m.task.id} plain={plain} {...(me ? { me } : {})} /> : plain}
             </div>
           );
         })}
         {asking.map((t) => (
-          <LogTaskCard key={t.id} task={t} inChat />
+          <TaskRow key={t.id} task={t} {...(me ? { me } : {})} />
         ))}
         <LiveRow id={id} {...(me ? { me: me.peerId } : {})} />
       </div>
@@ -465,8 +548,10 @@ function Conversation({ id }: { id: string }) {
       ) : (
         <>
           {/* What holds up your Claude working here: its tool approvals and questions (BLG-207). */}
-          <Attention channel={id} />
-          <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(me ? { me } : {})} {...(group?.admin ? { addPeople: () => openNet({ kind: 'add_people', groupId: group.id }) } : {})} />
+          <div data-attention="">
+            <Attention channel={id} />
+          </div>
+          <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(note ? { note } : {})} {...(me ? { me } : {})} {...(group?.admin ? { addPeople: () => openNet({ kind: 'add_people', groupId: group.id }) } : {})} />
         </>
       )}
     </div>

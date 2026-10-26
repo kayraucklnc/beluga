@@ -193,7 +193,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
                 {item.type === 'task' ? (
                   <LogTaskCard task={item.task} />
                 ) : item.type === 'chat' ? (
-                  <ChatRow item={item} continued={continued(v.index)} mine={item.from === selfId} steer={steered.waiting.get(item.id)} />
+                  <ChatRow item={item} continued={continued(v.index)} ends={!continued(v.index + 1)} mine={item.from === selfId} steer={steered.waiting.get(item.id)} />
                 ) : item.type === 'agent' ? (
                   <AgentCard item={item} tasks={part?.side === 'head' || part?.side === 'live' ? undefined : inTurn.get(item.id)} latest={item.id === latest} part={part} working={shown[v.index]?.working} subs={shown[v.index]?.subs} />
                 ) : item.type === 'shell' ? (

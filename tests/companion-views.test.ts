@@ -400,7 +400,10 @@ describe('the views of a known Mac', () => {
     expect(needsYou(writing).some((n) => n.id.startsWith('plan:pl_auth:approve'))).toBe(false);
     const chat = ChatView.parse(viewOf(state, ctx, `chat:dm:${BOB}`));
     // Whose Claude a message can ask: you, then them.
-    expect(chat.members).toEqual([{ peerId: ME, name: 'kayra', me: true }, { peerId: BOB, name: 'bob' }]);
+    expect(chat.members?.map((m) => ({ peerId: m.peerId, name: m.name, me: m.me }))).toEqual([
+      { peerId: ME, name: 'kayra', me: true },
+      { peerId: BOB, name: 'bob', me: undefined },
+    ]);
     expect(chat.messages.map((m) => [m.from, m.mine, m.text])).toEqual([
       ['bob', false, 'see\n[[code:0]]\nhere'],
       ['kayra', true, 'on it'],
@@ -435,6 +438,33 @@ describe('the views of a known Mac', () => {
     const withAnswers = { ...state, network: { ...state.network, messages: { ...state.network.messages, [conv]: [...list, answer('m3abcdefgh', 'm2abcdefgh'), answer('m4abcdefgh', 'm1abcdefgh')] } } };
     const chat = ChatView.parse(viewOf(withAnswers, ctx, `chat:dm:${BOB}`));
     expect(chat.messages.map((m) => m.offer)).toEqual([undefined, undefined, { to: BOB, ask: 'Send me your wallpaper', needs: ['files'] }, undefined]);
+  });
+
+  it('a chat says who’s there, what their Claude does, what waits on whom and who gets it later (BLG-210)', () => {
+    const conv = `dm:${BOB}`;
+    const secret = { id: 't_secret000001', direction: 'received' as const, peerId: BOB, peerName: 'bob', kind: 'file' as const, ask: 'Send me your deploy key', path: '~/.ssh/id_ed25519', secret: { kind: 'ssh-key' as const, label: 'your private SSH key id_ed25519' }, needs: [], by: 'agent' as const, chat: conv, state: 'awaiting_approval' as const, steps: [], createdAt: T0 + 50, updatedAt: T0 + 50 };
+    const sent = { id: 't_sent00000001', direction: 'sent' as const, peerId: BOB, peerName: 'bob', kind: 'ask' as const, ask: 'Run the tests in bob-api', needs: [], by: 'person' as const, chat: conv, state: 'sent' as const, steps: [], createdAt: T0 + 51, updatedAt: T0 + 51 };
+    const card = { id: 'm5abcdefgh', conversation: conv, from: BOB, name: 'bob', text: "bob's Claude asked for a file", ts: T0 + 50, mine: false, task: { id: secret.id, role: 'request' as const } };
+    const offline = {
+      ...state,
+      gateway: { ...state.gateway, tasks: [...state.gateway.tasks, secret, sent] },
+      network: { ...state.network, friends: state.network.friends.map((f) => ({ ...f, online: false })), messages: { ...state.network.messages, [conv]: [...(state.network.messages[conv] ?? []), card] } },
+    };
+    const chat = ChatView.parse(viewOf(offline, ctx, `chat:${conv}`));
+    expect(chat.members?.map((m) => [m.name, m.presence, m.claude])).toEqual([
+      ['kayra', 'online', 'idle'],
+      ['bob', 'offline', 'offline'],
+    ]);
+    expect(chat.waiting).toEqual([
+      { text: 'Waiting on you: bob’s Claude wants your private SSH key id_ed25519', you: true, task: secret.id },
+      { text: 'Waiting on bob: Run the tests in bob-api', you: false, task: sent.id },
+    ]);
+    expect(chat.note).toBe('bob is offline: this waits for them');
+    expect(chat.messages.at(-1)?.task).toMatchObject({ who: 'bob’s Claude · asked your Mac', secret: true });
+    // Nothing waiting, everyone online: no band, no note.
+    const calm = ChatView.parse(viewOf(state, ctx, `chat:${conv}`));
+    expect(calm.waiting).toBeUndefined();
+    expect(calm.note).toBeUndefined();
   });
 
   it('every needs-you action is a call the phone may make', async () => {

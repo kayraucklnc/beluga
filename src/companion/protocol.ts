@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 19 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 20 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -39,7 +39,10 @@ export const COMPANION_PROTO = { major: 1, minor: 19 } as const;
  * Wireless debugging through the link (`tun_*`). 1.18 (BLG-184): the Mac's mirror of the phone as
  * live H.264 video (the `mirror` op, `vid` / `vid_end`, and the Mac's `vid_ack`). 1.19 (BLG-189,
  * BLG-190): the phone proves it's the one at a Wireless-debugging address (`proof`), and opens its
- * Developer options or About phone for the person (`open {settings}`).
+ * Developer options or About phone for the person (`open {settings}`). 1.20 (BLG-210): who's in a
+ * chat and what their Claude is doing (`ChatMemberView.presence` / `claude`), what waits on whom
+ * (`ChatView.waiting`), who gets a message later (`ChatView.note`), and whose a task's card is
+ * (`ChatMessageView.task.who` / `secret`). Read-only fields: an older Mac just leaves them out.
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19 } as const;
 
@@ -565,6 +568,10 @@ export const ChatMessageView = z.object({
       tone: z.union([z.enum(['claude', 'ok', 'warn', 'error', 'muted']), z.string().max(20)]),
       summary: z.string().max(600).optional(),
       files: z.array(z.string().max(200)).max(8).optional(),
+      /** 1.20: whose it is, as the chat heads it ("mia’s Claude · asked your Mac"). */
+      who: z.string().max(200).optional(),
+      /** 1.20: a secret, approved on its own each time (the card is tinted). */
+      secret: z.boolean().optional(),
     })
     .optional(),
 });
@@ -574,7 +581,15 @@ export const ChatsView = z.object({
 });
 export type ChatsView = z.infer<typeof ChatsView>;
 /** Someone in a chat (you too, `me`): whose Claude a message can ask (companion.post `ask`). Since 1.2. */
-export const ChatMemberView = z.object({ peerId: id, name: z.string().max(64), me: z.boolean().optional() });
+export const ChatMemberView = z.object({
+  peerId: id,
+  name: z.string().max(64),
+  me: z.boolean().optional(),
+  /** 1.20 (BLG-210): online, away, dnd or offline. */
+  presence: z.union([z.enum(['online', 'away', 'dnd', 'offline']), z.string().max(20)]).optional(),
+  /** 1.20: what their Claude is doing, in the header's words ("working", "idle", "offline · 1.1", "needs an update"). */
+  claude: z.string().max(80).optional(),
+});
 export type ChatMemberView = z.infer<typeof ChatMemberView>;
 export const ChatView = z.object({
   topic: Topic,
@@ -585,6 +600,10 @@ export const ChatView = z.object({
   live: z.array(z.string().max(100)).max(20),
   /** Who's in it, you first (1.2; older Macs leave it out). */
   members: z.array(ChatMemberView).max(200).optional(),
+  /** 1.20 (BLG-210): what waits here: on you ("Waiting on you: …"), or on someone else; `task`: its card. */
+  waiting: z.array(z.object({ text: z.string().max(300), you: z.boolean(), task: id.optional() })).max(10).optional(),
+  /** 1.20: who won't get a message now ("Mia is offline: this waits for them"). */
+  note: z.string().max(200).optional(),
 });
 export type ChatView = z.infer<typeof ChatView>;
 
