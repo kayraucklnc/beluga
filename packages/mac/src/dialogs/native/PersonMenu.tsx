@@ -1,9 +1,8 @@
 import * as Context from '@radix-ui/react-context-menu';
 import { type ReactNode, useState } from 'react';
 import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
-import { TRUST_LEVELS, type TrustLevel } from '@beluga/shared/settings-schema.js';
-import { Icon } from '../../components/Icon.js';
 import { cx } from '../../components/ui.js';
+import { befriend, openFriendCard } from '../../network/use-net.js';
 import { useActions } from '../../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Alert, optionIndex } from './parts.js';
@@ -19,8 +18,8 @@ interface Item {
 }
 
 /**
- * Right-click on someone in People: Trust as a submenu (the level they have is ticked), then
- * what you can do with them. The same actions as their card.
+ * Right-click on someone in your room: their trust (said, and changed in their friend card), then
+ * what you can do with them. The same actions as their room card.
  */
 export function PersonContextMenu({ index, children }: { index: number; children: ReactNode }) {
   const [removing, setRemoving] = useState<{ name: string; guest: boolean; run: () => void }>();
@@ -84,6 +83,7 @@ function Items({ index, onRemove, onRun }: { index: number; onRemove: (r: { name
         ...(guest ? [] : [{ label: `Share a Folder with ${peer.name}…`, run: () => (presetShareWith(peer.peerId), pick('person-share')) }]),
       ];
   const trust = trustOf(state, peer.peerId);
+  const friend = state.network.friends.some((f) => f.peerId === peer.peerId);
   const host = state.self?.host === true;
   return (
     <>
@@ -93,32 +93,21 @@ function Items({ index, onRemove, onRun }: { index: number; onRemove: (r: { name
       <Context.Separator className={m.separator} />
       {!me && !guest ? (
         <>
-          <Context.Sub>
-            <Context.SubTrigger className={cx(m.item, p.subTrigger)}>
-              <span className={m.label}>Trust</span>
-              <span className={p.subValue}>
-                {TRUST_INFO[trust].label}
-                <Icon name="chevronRight" size={9} />
-              </span>
-            </Context.SubTrigger>
-            <Context.Portal>
-              <Context.SubContent className={m.menu} sideOffset={4} collisionPadding={8}>
-                <Context.RadioGroup value={trust} onValueChange={(v) => void api.people.setTrust(peer.peerId, v as TrustLevel)}>
-                  {TRUST_LEVELS.map((l) => (
-                    <Context.RadioItem key={l} value={l} className={cx(m.item, p.radio)}>
-                      <span className={p.tick}>
-                        <Context.ItemIndicator>
-                          <Icon name="check" size={11} />
-                        </Context.ItemIndicator>
-                      </span>
-                      <span className={m.label}>{TRUST_INFO[l].label}</span>
-                      <span className={m.hint}>{TRUST_INFO[l].detail}</span>
-                    </Context.RadioItem>
-                  ))}
-                </Context.RadioGroup>
-              </Context.SubContent>
-            </Context.Portal>
-          </Context.Sub>
+          {/* Trust is set in one place, their friend card (BLG-202): here it's only said. */}
+          <Context.Item className={cx(m.item, p.subTrigger)} disabled>
+            <span className={m.label}>Trust</span>
+            <span className={p.subValue}>{TRUST_INFO[trust].label}</span>
+          </Context.Item>
+          {friend ? (
+            <Context.Item className={m.item} onSelect={() => openFriendCard(client, peer.peerId)}>
+              <span className={m.label}>Change in Their Card…</span>
+            </Context.Item>
+          ) : (
+            <Context.Item className={m.item} onSelect={() => void befriend(client, peer.peerId, peer.name)}>
+              <span className={m.label}>Add as Friend</span>
+              <span className={m.hint}>Trust is set on a friend’s card</span>
+            </Context.Item>
+          )}
           <Context.Separator className={m.separator} />
         </>
       ) : null}

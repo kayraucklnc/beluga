@@ -294,3 +294,15 @@
   grid-row: span 2;
   padding-top: 2px;
 }
+/* "Change in their card…": trust is set on a friend's card (BLG-202). */
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.linkButton:hover {
+  text-decoration: underline;
+}

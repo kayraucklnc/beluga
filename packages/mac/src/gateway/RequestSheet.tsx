@@ -8,6 +8,7 @@ import { Choice, Sheet } from '../dialogs/native/parts.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { backLine, whereLine } from './popup-model.js';
 import { closeRequest, useRequestSheet } from './request-native.js';
+import { openFriendCard } from '../network/use-net.js';
 import s from './access.module.css';
 
 /**
@@ -39,6 +40,7 @@ function Body({ task }: { task: TaskView }) {
   const { client } = useBeluga();
   const level = useApp((st) => st.levels[task.peerId] ?? st.remembered[task.peerId]?.trust ?? (st.policy === 'deny' ? 'blocked' : st.policy === 'auto' ? 'trusted' : 'ask'));
   const caps = useApp((st) => st.gateway.capabilities);
+  const friend = useApp((st) => st.network.friends.some((f) => f.peerId === task.peerId));
   const [mode, setMode] = useState<Mode>('choose');
   const [scope, setScope] = useState<'this' | 'any'>('this');
   const [command, setCommand] = useState<'this' | 'any'>('this');
@@ -127,6 +129,19 @@ function Body({ task }: { task: TaskView }) {
           {level !== 'trusted' && level !== 'full' ? (
             <button type="button" className={s.linkButton} onClick={() => void trust()}>
               Trust {task.peerName} instead
+            </button>
+          ) : null}
+          {/* Trust is set on their card (BLG-202); "Trust them instead" stays as this request's shortcut. */}
+          {friend ? (
+            <button
+              type="button"
+              className={s.linkButton}
+              onClick={() => {
+                closeRequest();
+                openFriendCard(client, task.peerId);
+              }}
+            >
+              Their card…
             </button>
           ) : null}
         </span>

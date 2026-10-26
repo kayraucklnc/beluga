@@ -348,6 +348,24 @@ function joinItems(state: DomainState): NeedsYou[] {
     );
 }
 
+/** Someone in your room asks to be friends on the Beluga network (BLG-202). */
+function offerItems(state: DomainState): NeedsYou[] {
+  return (state.network.offers ?? [])
+    .filter((o) => o.dir === 'in')
+    .map((o) => ({
+      id: `friend:${o.peerId}`,
+      kind: 'request' as const,
+      title: clip(`${o.name} wants to add you as a friend`, 500),
+      detail: 'You’re in the same room. As friends you can talk, share and ask each other’s Claude, with nobody hosting',
+      from: clip(o.name, 100),
+      askedAt: o.at,
+      actions: [
+        { label: 'Accept', tone: 'main' as const, method: 'network.friends.answerOffer', args: [o.peerId, true] },
+        { label: 'Not now', tone: 'danger' as const, method: 'network.friends.answerOffer', args: [o.peerId, false] },
+      ],
+    }));
+}
+
 /** Everything waiting for you, oldest first: approvals, Claude's questions, friends' requests, plan decisions. */
 export function needsYou(state: DomainState): NeedsYou[] {
   const items = [
@@ -357,6 +375,7 @@ export function needsYou(state: DomainState): NeedsYou[] {
     ...state.plans.plans.filter((p) => p.status !== 'done').flatMap((p) => planItems(p, progressOf(state, p))),
     ...knockItems(state),
     ...joinItems(state),
+    ...offerItems(state),
   ];
   // Oldest first; what has no time (Claude's questions) counts as just asked.
   const at = (n: NeedsYou): number => n.askedAt ?? Number.MAX_SAFE_INTEGER;

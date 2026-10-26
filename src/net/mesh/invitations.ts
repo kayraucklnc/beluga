@@ -44,6 +44,8 @@ export const InvitationRecord = z.object({
   failures: z.number().int().min(0),
   /** Group invites: let people in without asking an admin. */
   auto: z.boolean().optional(),
+  /** Only this person may use it (a friend request sent to someone in your room). */
+  for: z.string().regex(/^[\w-]{32}$/).optional(),
 });
 export type InvitationRecord = z.infer<typeof InvitationRecord>;
 
@@ -53,7 +55,7 @@ export const LINK_SCHEME = 'beluga://';
 export const formatCode = (code: string): string => (code.match(/.{1,4}/g) ?? []).join('-');
 export const linkOf = (r: Pick<InvitationRecord, 'kind' | 'secret'>): string => `${LINK_SCHEME}${r.kind === 'friend' ? 'add' : 'join'}#${r.secret}`;
 
-export function newInvitation(kind: InviteKind, opts: { groupId?: string; auto?: boolean; ttlMs?: number; codeTtlMs?: number } = {}): InvitationRecord {
+export function newInvitation(kind: InviteKind, opts: { groupId?: string; auto?: boolean; ttlMs?: number; codeTtlMs?: number; for?: string } = {}): InvitationRecord {
   const now = Date.now();
   const code = Array.from({ length: CODE_LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
   return {
@@ -68,6 +70,7 @@ export function newInvitation(kind: InviteKind, opts: { groupId?: string; auto?:
     uses: 0,
     failures: 0,
     ...(opts.auto ? { auto: true } : {}),
+    ...(opts.for ? { for: opts.for } : {}),
   };
 }
 

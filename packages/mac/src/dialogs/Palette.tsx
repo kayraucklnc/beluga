@@ -76,7 +76,8 @@ export function Palette() {
     ]),
     { id: 'add-project', label: 'Add a project…', icon: 'plus', run: () => actions.run({ type: 'add_project' }) },
     { id: 'share-folder', label: 'Share a folder…', icon: 'share', run: () => ui.openMenu({ kind: 'share_folder', launchDir: state.home, mine: state.myShares }) },
-    { id: 'invite', label: 'Invite someone…', icon: 'link', run: () => document.dispatchEvent(new CustomEvent('beluga:invite')) },
+    // One entry for inviting and adding a friend (BLG-203): /invite does the same.
+    { id: 'invite', label: 'Add a friend…', hint: 'Invite someone: a link, a code or a QR code, no server', icon: 'people', keywords: ['invite', 'invite someone', 'friend', 'code', 'link'], run: () => document.dispatchEvent(new CustomEvent('beluga:invite')) },
     { id: 'templates', label: 'Start from a template…', icon: 'wand', run: () => ui.openMenu({ kind: 'templates' }) },
   ];
   const people: Item[] = state.peers

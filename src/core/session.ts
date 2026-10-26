@@ -41,6 +41,7 @@ import type { GuestShell } from './guest-shell.js';
 import { type SharedDiff, guestMayDo } from './shared-diff.js';
 import type { EnvVars } from './env-vars.js';
 import { gatewayOf } from './gateway/registry.js';
+import { receiveFriendOffer } from './friend-offers.js';
 
 /** Bigger, smaller, or back to normal text. */
 export type ZoomDir = 'in' | 'out' | 'reset';
@@ -147,6 +148,7 @@ const GUARDED = new Set([
   'fs_search',
   'ws_diff',
   'gateway',
+  'friend_offer',
 ]);
 
 export { dirKey };
@@ -878,6 +880,9 @@ export class Session {
         // Tasks between Claudes (core/gateway): sent to one person; the gateway checks who may say what.
         gatewayOf(this)?.onRoomFrame(from, body.frame);
         return;
+      case 'friend_offer':
+        // Someone in the room wants to be friends on the network (BLG-202): shown, never acted on by itself.
+        return receiveFriendOffer(this, from, body);
       case 'room_cleared':
         if (this.store.getState().peers.find((p) => p.peerId === from)?.host) {
           this.store.dispatch({ type: 'clear', channel: 'room' });

@@ -1,18 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { trustOf } from '@beluga/core/trust.js';
 import { overviewNews } from '@beluga/ui/workspace-models.js';
 import { macTabs } from '../lib/go.js';
 import { newShares } from '@beluga/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { SpecContext } from '../components/SpecMenu.js';
-import { Avatar, Badge, IconButton, Tip, cx } from '../components/ui.js';
+import { Avatar, Badge, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { inApp } from '../lib/boot.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
-import { openPerson } from '../dialogs/native/PersonPopover.js';
-import { PersonContextMenu } from '../dialogs/native/PersonMenu.js';
 import { RoomStatus } from '../dialogs/native/RoomPopover.js';
 import { PhoneMark } from '../phone/Phone.js';
 import { Projects, ProjectsAddMenu } from './ProjectTree.js';
@@ -45,47 +42,6 @@ const NAV: ReadonlyArray<{ kind: 'overview' | 'room'; icon: IconName }> = [
 ];
 
 export { workspaceItems } from './workspace-row.js';
-
-function People() {
-  const { ui } = useBeluga();
-  const people = useApp(
-    (state) => state.peers.map((p) => ({ p, me: p.peerId === state.self?.peerId, trust: p.peerId === state.self?.peerId ? undefined : trustOf(state, p.peerId), following: state.follow === p.peerId })),
-    sameDeep,
-  );
-  if (people.length <= 1) {
-    return <Row className={s.hintRow} icon={<Icon name="link" size={13} />} label="Invite someone…" onClick={() => document.dispatchEvent(new CustomEvent('beluga:invite'))} />;
-  }
-  return (
-    <>
-      {people.map(({ p, me, trust, following }, index) => {
-        return (
-          <PersonContextMenu key={p.peerId} index={index}>
-            <Row
-              data-person-row={p.peerId}
-              icon={<Avatar name={p.name} id={p.peerId} size={18} />}
-              label={
-                <span>
-                  {p.name}
-                  {me ? <span className={s.dim}> (you)</span> : null}
-                  {p.guest ? <span className={s.dim}> · guest</span> : null}
-                </span>
-              }
-              detail={me ? 'You' : `${p.name}${p.agent ? ' · Claude on' : ''}${trust ? ` · trust: ${trust}` : ''}`}
-              onClick={() => openPerson(ui, index, document.querySelector<HTMLElement>(`[data-person-row="${CSS.escape(p.peerId)}"]`))}
-              trailing={
-                <>
-                  {following ? <Tip label="Following their screen"><Icon name="eye" size={12} /></Tip> : null}
-                  {p.agent ? <Tip label={`${me ? 'Your' : `${p.name}'s`} Claude is on`}><Icon name="claude" size={12} className={s.claudeMark} /></Tip> : null}
-                  {trust === 'full' ? <Tip label="Full trust"><Icon name="lock" size={11} /></Tip> : null}
-                </>
-              }
-            />
-          </PersonContextMenu>
-        );
-      })}
-    </>
-  );
-}
 
 /**
  * Folders dragged from Finder onto the sidebar become projects (a git project, or a folder of
@@ -233,11 +189,6 @@ export function Sidebar() {
 
         <FriendsSection />
         <GroupsSection />
-
-        {/* The current room's people (today's rooms), apart from your friends on the Beluga network. */}
-        <Section id="people" title="In this room">
-          <People />
-        </Section>
       </div>
       <UpdatePill />
       <SidebarFooter />

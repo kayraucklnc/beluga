@@ -374,13 +374,18 @@ describe('Session', () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
     await room(kay);
+    // /invite adds a friend now (BLG-203); the room's link is still copied from Settings and the room's menus.
     kay.session.submit('/invite');
+    expect(kay.screen.store.getState().overlay).toBe('add_friend');
+    kay.session.submit('/invite @nobody');
+    await waitFor(() => kay.toasts.some((t) => /nobody isn’t your friend yet/.test(t)));
+    void kay.session.copyInvite();
     await waitFor(() => kay.toasts.includes('No invite link available'));
     kay.session.store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel' } });
-    kay.session.submit('/invite');
+    void kay.session.copyInvite();
     await waitFor(() => kay.toasts.includes('The invite link is still being created…'));
     kay.session.store.dispatch({ type: 'invite', invite: 'https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx' });
-    kay.session.submit('/invite');
+    void kay.session.copyInvite();
     await waitFor(() => kay.copied.length === 1);
     expect(kay.copied[0]).toBe('https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx');
     expect(kay.toasts).toContain('Invite copied. Paste it to a friend');

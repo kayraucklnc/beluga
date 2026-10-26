@@ -410,6 +410,24 @@ describe('the views of a known Mac', () => {
     expect(WorkView.parse(viewOf(state, ctx, 'work')).projects.find((p) => p.id === 'p1')?.conversations.map((c) => c.title)).toEqual(['tests', 'auth']);
   });
 
+  it('people are friends only: someone only in your room isn’t listed, and their friend request needs you (BLG-202)', () => {
+    const RAE = 'r'.repeat(32);
+    const withRoom: DomainState = {
+      ...state,
+      peers: [...state.peers, { peerId: RAE, name: 'rae', agent: true, shares: [] }],
+      network: { ...state.network, offers: [{ peerId: RAE, name: 'rae', dir: 'in', at: T0 + 5, expiresAt: T0 + 86_400_000 }] },
+    };
+    const people = PeopleView.parse(viewOf(withRoom, ctx, 'people')).people;
+    expect(people.map((p) => p.peerId)).toEqual(state.network.friends.map((f) => f.peerId));
+    expect(people.some((p) => p.peerId === RAE)).toBe(false);
+    const item = HomeView.parse(homeView(withRoom, ctx)).needsYou.find((n) => n.id === `friend:${RAE}`)!;
+    expect(item).toMatchObject({ kind: 'request', title: 'rae wants to add you as a friend', from: 'rae' });
+    expect(item.actions.map((a) => [a.label, a.method, a.args])).toEqual([
+      ['Accept', 'network.friends.answerOffer', [RAE, true]],
+      ['Not now', 'network.friends.answerOffer', [RAE, false]],
+    ]);
+  });
+
   it('a friend’s Claude answering you offers to do it on their Mac; answering someone else, it doesn’t', () => {
     const conv = `dm:${BOB}`;
     const answer = (id: string, asked: string) => ({ id, conversation: conv, from: BOB, name: 'bob', text: 'I can do that as a request.', ts: T0 + 40, mine: false, claude: { for: asked, request: { ask: 'Send me your wallpaper', needs: ['files' as const] } } });

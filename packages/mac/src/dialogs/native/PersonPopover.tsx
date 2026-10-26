@@ -7,7 +7,7 @@ import type { UiStore } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { Alert } from './parts.js';
 import { RunCommandSheet } from './PeerSheets.js';
-import { AccountCard, FriendCard, GuestCard } from './PersonCards.js';
+import { AccountCard, GuestCard, RoomPeerCard } from './PersonCards.js';
 import p from './person.module.css';
 
 // The row (or avatar) that opened the card, so it shows beside it.
@@ -57,7 +57,7 @@ export function PersonPopover({ menu, close }: NativeMenuProps<'person'>) {
       />
     );
   }
-  const card = peer.peerId === selfId ? <AccountCard peer={peer} menu={menu} close={close} confirm={setAsking} /> : guest ? <GuestCard peer={peer} guest={guest} close={close} confirm={setAsking} /> : <FriendCard peer={peer} menu={menu} close={close} confirm={setAsking} onRun={() => setRunning(true)} />;
+  const card = peer.peerId === selfId ? <AccountCard peer={peer} menu={menu} close={close} confirm={setAsking} /> : guest ? <GuestCard peer={peer} guest={guest} close={close} confirm={setAsking} /> : <RoomPeerCard peer={peer} menu={menu} close={close} confirm={setAsking} onRun={() => setRunning(true)} />;
   return <Frame peer={peer} close={close}>{card}</Frame>;
 }
 

@@ -4,7 +4,7 @@ import type { Guest } from '@beluga/core/collab-store.js';
 import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
 import type { GuestCan, PeerInfo, Usage } from '@beluga/protocol.js';
 import { CAN_INFO } from '@beluga/shared/invites.js';
-import { TRUST_LEVELS, type TrustLevel } from '@beluga/shared/settings-schema.js';
+import type { TrustLevel } from '@beluga/shared/settings-schema.js';
 import { CAN_ORDER } from '@beluga/ui/invite-menus.js';
 import type { MenuKind } from '@beluga/ui/menus.js';
 import { Icon, type IconName } from '../../components/Icon.js';
@@ -16,11 +16,10 @@ import type { Confirm } from './PersonPopover.js';
 import { Choice, Tag, optionIndex } from './parts.js';
 import { addressTo } from './PeerSheets.js';
 import { presetShareWith } from './ShareFolderSheet.js';
+import { offerSent } from '../../network/net-model.js';
+import { befriend, openFriendCard } from '../../network/use-net.js';
 import m from '../../components/SpecMenu.module.css';
 import p from './person.module.css';
-
-/** Short names for the trust levels, for the segmented control (the long ones are in the line under it). */
-export const TRUST_SHORT: Record<TrustLevel, string> = { blocked: 'Blocked', ask: 'Ask', trusted: 'Trusted', full: 'Full' };
 
 interface CardProps {
   readonly peer: PeerInfo;
@@ -108,14 +107,18 @@ function UsageMeters({ usage }: { usage: Usage | undefined }) {
   );
 }
 
-/** A friend in the room: trust, things to do together, and (for the host) removing them. */
-export function FriendCard({ peer, menu, confirm, onRun }: CardProps & { menu: Extract<MenuKind, { kind: 'person' }> }) {
-  const api = useApi();
+/**
+ * Someone in your room (not a guest): what you do together there, their trust as a line (it's set
+ * on their friend card, BLG-202), and (for the host) removing them.
+ */
+export function RoomPeerCard({ peer, menu, close, confirm, onRun }: CardProps & { menu: Extract<MenuKind, { kind: 'person' }> }) {
   const actions = useActions();
   const { client, ui } = useBeluga();
   const address = (claude: boolean): void => addressTo(ui, actions, client.store.getState().view, { peerId: peer.peerId, name: peer.name, claude });
   const pick = usePick(menu);
   const trust = useApp((st) => trustOf(st, peer.peerId));
+  const friend = useApp((st) => st.network.friends.some((f) => f.peerId === peer.peerId));
+  const asked = useApp((st) => offerSent(st.network.offers, peer.peerId));
   const grant = useApp((st) => st.granted[peer.peerId]);
   const following = useApp((st) => st.follow === peer.peerId);
   const host = useApp((st) => st.self?.host === true);
@@ -142,10 +145,29 @@ export function FriendCard({ peer, menu, confirm, onRun }: CardProps & { menu: E
         {share ? <Action icon="folder" label="Files" onClick={() => pick('browse')} /> : null}
       </div>
       <div className={p.block}>
-        <div className={p.blockLabel}>How much do you trust {peer.name}?</div>
-        <Choice<TrustLevel> wide label={`Trust ${peer.name}`} value={trust} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_SHORT[l] }))} onChange={(l) => void api.people.setTrust(peer.peerId, l)} />
+        <div className={p.blockLabel}>Trust</div>
         <div className={p.blockDetail}>
           <strong>{TRUST_INFO[trust].label}.</strong> {TRUST_INFO[trust].detail}
+        </div>
+        <div className={p.blockDetail}>
+          {friend ? (
+            <button
+              type="button"
+              className={p.linkButton}
+              onClick={() => {
+                close();
+                openFriendCard(client, peer.peerId);
+              }}
+            >
+              Change in their card…
+            </button>
+          ) : asked ? (
+            'Friend request sent. You set their trust on their card once they accept.'
+          ) : (
+            <button type="button" className={p.linkButton} onClick={() => void befriend(client, peer.peerId, peer.name)}>
+              Add {peer.name} as a friend
+            </button>
+          )}
         </div>
       </div>
       <div className={p.rows}>

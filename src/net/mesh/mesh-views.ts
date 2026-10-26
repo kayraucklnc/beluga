@@ -88,4 +88,5 @@ export const invitationView = (r: InvitationRecord): InvitationView => ({
   uses: r.uses,
   codeExpiresAt: r.codeExpiresAt,
   codeLink: codeLinkOf(r),
+  ...(r.for ? { for: r.for } : {}),
 });

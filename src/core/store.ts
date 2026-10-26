@@ -222,7 +222,7 @@ export interface Toast {
   readonly level: 'info' | 'success' | 'warn' | 'error';
 }
 
-export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff';
+export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff' | 'add_friend';
 
 /** Preferences mirrored from ~/.beluga/settings.json (every key here is a settings key). */
 export interface Prefs {
@@ -1019,6 +1019,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'net_files':
     case 'net_live':
     case 'net_main':
+    case 'net_offer':
+    case 'net_offer_gone':
     case 'net_off':
       return { ...state, ...reduceNetwork(state, action) };
     case 'support':

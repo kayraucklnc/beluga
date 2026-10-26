@@ -8,7 +8,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 
 | Command | Core | Mac |
 |---|---|---|
-| `/invite` | `session.submit` → `runCommand` | typed in the composer · Sidebar footer Invite · File › Invite… · ⌘K |
+| `/invite` | the Mac's message boxes route it themselves (`src/shared/invite-route.ts`, `lib/invite-command.ts`); elsewhere `session.submit` → `runCommand` | `/invite` alone: the Add a Friend sheet (link, code, QR) · `/invite @ata` adds ata to what's on screen: a channel (`network.groups.addMember`), a DM (offers “New channel with you, X and Y”, the New Channel sheet), a project or worktree (`sharing.shareWithFriend` once it exists, through `lib/share-with-friend.ts`; until then a friend in your room gets the worktree through the room, otherwise the room's share sheet opens with a note) · `/invite @` completes your friends' names, in the chat box and in a DM's or channel's box · Sidebar footer Invite · File › Invite… · ⌘K › Add a friend… (one entry for inviting and adding a friend) |
 | `/overview` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Overview · Go › Overview (⌥2) |
 | `/room` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Chat (⌥1) |
 | `/new` | `session.submit` → `runCommand` | typed in the composer · Sidebar project ⌥ button · File › New Worktree… (⌘⇧N) · ⌘K · empty Overview / chat › New Worktree |
@@ -44,9 +44,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/close` | `session.submit` → `runCommand` | typed in the composer · Viewer › Close |
 | `/stop` | `session.submit` → `runCommand` | typed in the composer · ⌘K › Stop your Claude everywhere (stopping in one conversation: `host.stopRun`, Mac only) |
 | `/policy` | `session.submit` → `runCommand` | typed in the composer · Settings › General |
-| `/trust` | `session.submit` → `runCommand` | typed in the composer · Trust card · person sheet · Settings › People |
-| `/untrust` | `session.submit` → `runCommand` | typed in the composer · Person sheet |
-| `/people` | `session.submit` → `runCommand` | typed in the composer · Sidebar › People |
+| `/trust` | `session.submit` → `runCommand` | typed in the composer · a friend's card (their conversation › Info › Trust, the one place it's set) · the room's new-person trust card · a request's “Trust them instead” |
+| `/untrust` | `session.submit` → `runCommand` | typed in the composer · a friend's card › Trust |
+| `/people` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Friends (your room's people are friend rows, or Not friends yet) · the room popover in the sidebar footer |
 | `/share` | `session.submit` → `runCommand` | typed in the composer · File › Share a Folder… |
 | `/unshare` | `session.submit` → `runCommand` | typed in the composer · Share a Folder… › Stop sharing |
 | `/settings` | `session.submit` → `runCommand` | typed in the composer · Beluga › Settings… (⌘,) |
@@ -110,7 +110,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `settings` | Settings window |
 | `model` | model picker / sheet |
 | `inbox` | notification centre under the toolbar bell: the same filters and groups, click to go there, hover for read/unread and ×, Mark all read, Clear all |
-| `person` | a card beside the person's row (centred from the palette): trust as a segmented control, Message / Ask Claude / Run / Follow / Files buttons, Remove with an alert; your own row is your account card (name, who may use your Claude). Right-click: Trust submenu and the same actions |
+| `person` | the room card (`RoomPeerCard`), beside their row in Friends (a friend in your room, or Not friends yet) or the room popover's people: Message / Ask Claude / Run / Follow / Files buttons, their trust as a line with “Change in their card…” (a friend: their conversation's Info, the one place trust is set) or “Add as a friend”, Remove with an alert; you are your account card (name, who may use your Claude), from the room popover. Right-click: Trust (read-only), Change in Their Card… / Add as Friend, and the same actions |
 | `confirm` | sheet |
 | `project` | sheet and right-click menu |
 | `archived` | sheet and right-click menu |
@@ -127,7 +127,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `handoff` | sheet |
 | `remote_ws` | sheet |
 | `ws_more` | sheet |
-| `invite_link` | Invite People sheet: Invite to popup, They can (Watch / Prompt / Edit), link checkboxes, Copy Invite Link (Return, says Copied), how they join, people waiting, active links with Copy and Revoke |
+| `invite_link` | Invite People sheet (the room's own links: the room popover's Invite, the room panel, Hand Off's “invite someone”; `/invite` and File › Invite… add a friend instead): Invite to popup, They can (Watch / Prompt / Edit), link checkboxes, Copy Invite Link (Return, says Copied), how they join, people waiting, active links with Copy and Revoke |
 | `guest_add` | the guest's card: Add ▾ beside the projects they're in |
 
 ## API methods
@@ -343,7 +343,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `projects.setIcon` | ✓ right-click a project › Change Icon… |
 | `network.setEnabled` | ✓ the Friends card’s Turn On, Settings › People & access › Talk with friends directly (starts and stops live) |
 | `network.status` | ✓ the network is on (the Friends card, Settings › People & access) |
-| `network.friends.list` | ✓ sidebar Friends (presence dots, notes, unread, relayed link) |
+| `network.friends.list` | ✓ sidebar Friends, the one people list (presence dots, notes, unread, relayed link; a friend in your room also shows Claude on and Following there) |
+| `network.friends.addFromRoom` | ✓ sidebar Friends › Not friends yet › Add as friend (people in your room who aren't friends; never guests); the room card's Add as Friend; after joining a room by link, “Add <host> as a friend?” |
+| `network.friends.answerOffer` | ✓ sidebar Friends › “kay wants to add you as a friend” › Accept / Not Now (right-click); the phone: a NeedsYou item with Accept / Not now |
 | `network.friends.invite` | ✓ Add a Friend sheet › Create Invitation (code, link, QR, expiry) |
 | `network.friends.accept` | ✓ Add a Friend sheet › Have a code or link? (pasted from the clipboard; `beluga://add…` links open it) |
 | `network.friends.cancelInvite` | ✓ Add a Friend sheet › Cancel Invitation; replacing a group link |

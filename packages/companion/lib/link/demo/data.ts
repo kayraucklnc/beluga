@@ -580,6 +580,18 @@ export function makeWorld(now = Date.now()): DemoWorld {
       ],
     },
     {
+      id: 'friend:theo',
+      kind: 'request',
+      title: 'Theo wants to add you as a friend',
+      detail: 'You’re in the same room. As friends you can talk, share and ask each other’s Claude, with nobody hosting',
+      from: 'Theo',
+      askedAt: now - 46 * MIN,
+      actions: [
+        { label: 'Accept', tone: 'main', method: 'network.friends.answerOffer', args: ['theo', true] },
+        { label: 'Not now', tone: 'danger', method: 'network.friends.answerOffer', args: ['theo', false] },
+      ],
+    },
+    {
       id: 'n-handoff',
       kind: 'handoff',
       title: 'Sam wants to hand you "Offline maps"',
