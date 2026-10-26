@@ -338,6 +338,27 @@ export interface SentinelState {
   readonly nextAt: Readonly<Record<string, number>>;
   /** Your Claude changing a sentinel (sentinel.ask), by sentinel: live, or its answer once done. */
   readonly asks: Readonly<Record<string, SentinelAsk>>;
+  /**
+   * Why an event sentinel can't watch right now, in words with what to do ("Put SENTRY_TOKEN in
+   * Settings › Environment"), by sentinel. Gone once it watches again.
+   */
+  readonly troubles?: Readonly<Record<string, string>>;
+  /** The webhook sentinels' tunnel (one for all of them): up or not, and its address (never a secret). */
+  readonly webhook?: WebhookState;
+}
+
+/** The tunnel webhook sentinels share: open only while one is on. `url` is its base (no path, no secret). */
+export interface WebhookState {
+  readonly ready: boolean;
+  readonly url?: string;
+  /** Why it isn't up (a failed open), in words. */
+  readonly why?: string;
+}
+
+/** sentinel.webhookUrl / rotateSecret: its address while the tunnel is up, else why not, in words. */
+export interface WebhookAddress {
+  readonly url?: string;
+  readonly why?: string;
 }
 
 /** Your Claude asked to change a sentinel (the page's box, Describe it): where, and how it's going. */
@@ -375,9 +396,13 @@ export type SentinelAction =
   | { type: 'sentinel_run'; run: RunSummary }
   /** Your Claude changing a sentinel: began, or ended (none: forgotten). */
   | { type: 'sentinel_ask'; id: string; ask?: SentinelAsk }
+  /** An event sentinel can't watch (none: it watches again). */
+  | { type: 'sentinel_trouble'; id: string; trouble?: string }
+  /** The webhook tunnel opened, closed or moved. */
+  | { type: 'sentinel_webhook'; webhook: WebhookState }
   | { type: 'sentinel_off' };
 
-export const SENTINEL_ACTIONS: ReadonlySet<string> = new Set(['sentinel_init', 'sentinel_put', 'sentinel_remove', 'sentinel_run', 'sentinel_ask', 'sentinel_off']);
+export const SENTINEL_ACTIONS: ReadonlySet<string> = new Set(['sentinel_init', 'sentinel_put', 'sentinel_remove', 'sentinel_run', 'sentinel_ask', 'sentinel_trouble', 'sentinel_webhook', 'sentinel_off']);
 
 /** The step a live run is on: the running one, else the first still waiting. */
 const liveStep = (run: RunSummary): string | undefined => (run.steps.find((s) => s.state === 'running') ?? run.steps.find((s) => s.state === 'waiting'))?.id;
@@ -412,8 +437,15 @@ export function reduceSentinel(state: SentinelSlice, action: SentinelAction): Se
       const gone = new Set(s.runs.filter((r) => r.sentinelId === action.id).map((r) => r.id));
       const live = Object.fromEntries(Object.entries(s.live).filter(([id]) => !gone.has(id)));
       const { [action.id]: _ask, ...asks } = s.asks ?? {};
-      return { sentinel: { ...s, items: s.items.filter((i) => i.id !== action.id), runs: s.runs.filter((r) => r.sentinelId !== action.id), nextAt, live, asks } };
+      const { [action.id]: _trouble, ...troubles } = s.troubles ?? {};
+      return { sentinel: { ...s, items: s.items.filter((i) => i.id !== action.id), runs: s.runs.filter((r) => r.sentinelId !== action.id), nextAt, live, asks, troubles } };
     }
+    case 'sentinel_trouble': {
+      const { [action.id]: _was, ...troubles } = s.troubles ?? {};
+      return { sentinel: { ...s, troubles: action.trouble ? { ...troubles, [action.id]: action.trouble } : troubles } };
+    }
+    case 'sentinel_webhook':
+      return { sentinel: { ...s, webhook: action.webhook } };
     case 'sentinel_ask': {
       const { [action.id]: _was, ...asks } = s.asks ?? {};
       return { sentinel: { ...s, asks: action.ask ? { ...asks, [action.id]: action.ask } : asks } };
@@ -539,8 +571,8 @@ export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; read
   trigger: { label: 'Run another sentinel', hint: 'Starts it with this run’s last output', needs: 'look', phase: 2 },
 };
 
-/** The steps and triggers this Beluga runs (phase 2); the others show, but a run says they aren't available yet. */
-export const SENTINEL_PHASE = 2;
+/** The steps and triggers this Beluga runs (phase 3: every one); later ones show, but a run says they aren't available yet. */
+export const SENTINEL_PHASE = 3;
 export const stepAvailable = (kind: StepKind): boolean => STEP_INFO[kind].phase <= SENTINEL_PHASE;
 export const triggerAvailable = (kind: TriggerKind): boolean => TRIGGER_INFO[kind].phase <= SENTINEL_PHASE;
 
@@ -745,13 +777,16 @@ export function scheduleSentence(trigger: Trigger, nameOf: (id: string) => strin
     case 'uptime':
       return `When ${hostOf(trigger.url)} stops answering (checked every ${trigger.minutes === 1 ? 'minute' : `${trigger.minutes} minutes`}), and when it’s back`;
     case 'sentry':
-      return `When ${WORDS[trigger.what] ?? trigger.what}`;
+      return `When ${WORDS[trigger.what] ?? trigger.what}${trigger.org && trigger.project ? ` in ${trigger.org}/${trigger.project}` : ''}`;
     case 'webhook':
-      return 'When something posts to its URL';
+      return trigger.signature === 'github' ? 'When GitHub posts to its URL' : trigger.signature === 'stripe' ? 'When Stripe posts to its URL' : 'When something posts to its URL';
   }
 }
 
-function hostOf(url: string): string {
+/** When a sentinel runs, in one sentence, for every kind of trigger (scheduleSentence's name for what it is now). */
+export const triggerSentence = scheduleSentence;
+
+export function hostOf(url: string): string {
   const m = /^[a-z]+:\/\/([^/?#]+)/i.exec(url);
   return m?.[1] ?? url;
 }

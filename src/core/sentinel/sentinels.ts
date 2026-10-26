@@ -28,6 +28,8 @@ import {
   type SentinelPatch,
   type SentinelState,
   type Step,
+  type WebhookAddress,
+  type WebhookState,
   type StepDraft,
   STEP_INFO,
   accessAllows,
@@ -48,6 +50,9 @@ import { RECIPES } from './recipes.js';
 import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, SentinelRunner, type YourAnswer, runSentinelShell } from './runner.js';
 import { StepInputSchema } from './schema.js';
 import type { ToolDraft, ToolPatch, ToolStep } from './tool-draft.js';
+import { Triggers, isEventTrigger } from './triggers/index.js';
+import type { TriggerDeps, TriggerEvent } from './triggers/types.js';
+import { newSecret } from './triggers/webhook.js';
 
 /**
  * Sentinels (docs/sentinel.md): the sentinels and their runs, kept in ~/.beluga/sentinel.json and
@@ -85,6 +90,11 @@ export interface SentinelsDeps {
   readonly pollMs?: number;
   /** How long a merge waits for your Merge (24 hours). */
   readonly approvalMs?: number;
+  /**
+   * The event triggers' sources (gh, fetch, Stripe keys, your variables, the tunnel). Without
+   * them no event trigger watches (the tests that don't test them, a CLI without the app).
+   */
+  readonly triggers?: Omit<TriggerDeps, 'store' | 'selfId'>;
 }
 
 const TICK_MS = 30_000;
@@ -133,6 +143,13 @@ export class Sentinels {
   /** Conversations where your Claude changes a sentinel (sentinel.ask), and which. */
   private readonly askChannels = new Map<string, string>();
   private asks: Record<string, SentinelAsk> = {};
+  /** What each event sentinel saw last (kept in the file). */
+  private cursors: Record<string, unknown>;
+  /** Webhook sentinels' secrets (in the file only, never in the state). */
+  private secrets: Record<string, string>;
+  private troubles: Record<string, string> = {};
+  private webhook: WebhookState = { ready: false };
+  private readonly triggers: Triggers | undefined;
 
   constructor(private readonly deps: SentinelsDeps) {
     this.now = deps.now ?? Date.now;
@@ -140,6 +157,8 @@ export class Sentinels {
     this.folders = new RunFolders(deps.dir);
     const data = this.file.load();
     this.runAtOnce = data.runAtOnce;
+    this.cursors = { ...data.cursors };
+    this.secrets = { ...data.secrets };
     const at = this.now();
     this.items = data.items.map((s) => (!s.paused && s.trigger.kind === 'schedule' && s.lastScheduledAt === undefined ? { ...s, lastScheduledAt: at } : s));
     // Runs that were going (or waiting their turn) when Beluga closed or crashed ended there; one
@@ -175,7 +194,32 @@ export class Sentinels {
       waitForYou: (active) => this.waitForYou(active),
     });
     this.expireWaiting();
+    for (const item of this.items) this.ensureSecret(item);
+    this.triggers = deps.triggers
+      ? new Triggers({
+          deps: { ...deps.triggers, store: deps.store, selfId: deps.selfId, now: deps.triggers.now ?? this.now },
+          cursor: (id) => this.cursors[id],
+          saveCursor: (id, c) => {
+            this.cursors = { ...this.cursors, [id]: c };
+            this.save();
+          },
+          fire: (id, e) => this.fireEvent(id, e),
+          trouble: (id, words) => this.setTrouble(id, words),
+          webhookState: (w) => {
+            this.webhook = w;
+            if (!this.closed) deps.store.dispatch({ type: 'sentinel_webhook', webhook: w });
+          },
+          hook: (id) => {
+            const s = this.items.find((i) => i.id === id);
+            const secret = this.secrets[id];
+            if (!s || s.paused || s.trigger.kind !== 'webhook' || !secret) return undefined;
+            const stripeSecret = s.trigger.signature === 'stripe' ? deps.triggers?.env?.(s.projectId).STRIPE_WEBHOOK_SECRET?.trim() : undefined;
+            return { secret, ...(s.trigger.signature ? { signature: s.trigger.signature } : {}), ...(stripeSecret ? { stripeSecret } : {}) };
+          },
+        })
+      : undefined;
     deps.store.dispatch({ type: 'sentinel_init', state: this.state() });
+    this.triggers?.sync(this.items);
     // Tasks a run's Claude makes (labelled sentinel:<slug>) go on the run.
     this.offs.push(deps.store.onAction((a) => queueMicrotask(() => this.onAction(a))));
     const every = deps.tickMs ?? TICK_MS;
@@ -206,7 +250,7 @@ export class Sentinels {
       const at = this.nextAtOf(s);
       if (at !== undefined) nextAt[s.id] = at;
     }
-    return { enabled: true, items: this.items, runs: index, live, runAtOnce: this.runAtOnce, nextAt, asks: this.asks };
+    return { enabled: true, items: this.items, runs: index, live, runAtOnce: this.runAtOnce, nextAt, asks: this.asks, troubles: this.troubles, webhook: this.webhook };
   }
 
   list = (): readonly Sentinel[] => this.items;
@@ -307,6 +351,8 @@ export class Sentinels {
       ...(triggerChanged ? { lastScheduledAt: this.now() } : {}),
       updatedAt: this.now(),
     };
+    // Another trigger watches from now: what the old one saw doesn't apply.
+    if (triggerChanged) this.forgetCursor(next.id);
     this.replace(next);
     return next;
   }
@@ -332,8 +378,78 @@ export class Sentinels {
     this.runs = this.runs.filter((r) => r.sentinelId !== s.id);
     const { [s.id]: _ask, ...asks } = this.asks;
     this.asks = asks;
+    const { [s.id]: _secret, ...secrets } = this.secrets;
+    this.secrets = secrets;
+    const { [s.id]: _trouble, ...troubles } = this.troubles;
+    this.troubles = troubles;
+    this.forgetCursor(s.id);
+    this.triggers?.sync(this.items);
     this.deps.store.dispatch({ type: 'sentinel_remove', id: s.id });
     this.save();
+  }
+
+  // ------------------------------------------------------------------ webhooks
+
+  /** A webhook sentinel's address (with its secret), or why there isn't one now, in words. */
+  webhookUrl(ref: string): WebhookAddress {
+    const s = this.need(ref);
+    if (s.trigger.kind !== 'webhook') throw new Error(`“${s.name}” doesn’t start from a webhook`);
+    if (!this.triggers) return { why: 'Webhooks need the Beluga app for Mac' };
+    const secret = this.ensureSecret(s);
+    const base = this.triggers.webhooks.base();
+    const url = base ? `${base}/hook/${s.id}/${secret}` : undefined;
+    if (s.paused) return { ...(url ? { url } : {}), why: 'It’s paused: posts to its URL are refused until you turn it on' };
+    if (!url) return { why: this.webhook.why ?? 'The tunnel is opening: its URL is here in a moment' };
+    return { url };
+  }
+
+  /** A new secret for a webhook sentinel: the old URL stops working at once. → its new address. */
+  rotateSecret(ref: string): WebhookAddress {
+    const s = this.need(ref);
+    if (s.trigger.kind !== 'webhook') throw new Error(`“${s.name}” doesn’t start from a webhook`);
+    this.secrets = { ...this.secrets, [s.id]: newSecret() };
+    this.save();
+    return this.webhookUrl(s.id);
+  }
+
+  /** Something an event trigger saw: a run, unless it's paused, or a run of its own (or of a sentinel that led to it) made it. */
+  private fireEvent(id: string, e: TriggerEvent): void {
+    const s = this.items.find((i) => i.id === id);
+    if (!s || s.paused || this.closed) return;
+    let chain: string[] | undefined;
+    if (e.from) {
+      chain = [...(this.chains.get(e.from.runId) ?? []), e.from.sentinelId];
+      if (chain.includes(s.id) || chain.length >= MAX_CHAIN) return;
+    }
+    try {
+      this.start(s.id, 'event', { kind: s.trigger.kind, summary: e.summary, ...(e.payload !== undefined ? { payload: e.payload } : {}) }, chain);
+    } catch {
+      // Deleted or paused meanwhile.
+    }
+  }
+
+  private setTrouble(id: string, words: string | undefined): void {
+    if (this.closed || this.troubles[id] === words) return;
+    if (words && !this.items.some((i) => i.id === id)) return;
+    const { [id]: _was, ...rest } = this.troubles;
+    this.troubles = words ? { ...rest, [id]: words } : rest;
+    this.deps.store.dispatch({ type: 'sentinel_trouble', id, ...(words ? { trouble: words } : {}) });
+  }
+
+  private forgetCursor(id: string): void {
+    if (!(id in this.cursors)) return;
+    const { [id]: _c, ...rest } = this.cursors;
+    this.cursors = rest;
+  }
+
+  /** A webhook sentinel has its secret from the start (a copy or a new one gets its own). */
+  private ensureSecret(s: Sentinel): string {
+    const had = this.secrets[s.id];
+    if (had || s.trigger.kind !== 'webhook') return had ?? '';
+    const secret = newSecret();
+    this.secrets = { ...this.secrets, [s.id]: secret };
+    this.save();
+    return secret;
   }
 
   duplicate(ref: string): Sentinel {
@@ -547,6 +663,7 @@ export class Sentinels {
 
   /** On the way out: runs going now stop, and everything is written. */
   stopAll(): void {
+    this.triggers?.stopAll();
     this.closed = true;
     for (const off of this.offs) off();
     // Nothing reads "running" after a restart: the steps going (or still to come) are skipped, and
@@ -780,8 +897,10 @@ export class Sentinels {
 
   private put(s: Sentinel): void {
     const at = this.nextAtOf(s);
+    this.ensureSecret(s);
     this.deps.store.dispatch({ type: 'sentinel_put', item: s, ...(at !== undefined ? { nextAt: at } : {}) });
     this.save();
+    if (isEventTrigger(s.trigger) || this.triggers?.watching().includes(s.id)) this.triggers?.sync(this.items);
   }
 
   private replace(next: Sentinel): void {
@@ -831,7 +950,7 @@ export class Sentinels {
   }
 
   private save(): void {
-    this.file.save(() => ({ runAtOnce: this.runAtOnce, items: this.items, runs: this.runs }));
+    this.file.save(() => ({ runAtOnce: this.runAtOnce, items: this.items, runs: this.runs, cursors: this.cursors, secrets: this.secrets }));
   }
 
   private projectIdOf(ref: string | undefined): string | undefined {

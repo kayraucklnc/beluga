@@ -34,7 +34,7 @@ export const SENTINEL_API = {
   'sentinel.decide': { args: z.tuple([id, z.enum(['merge', 'skip'])]) },
   // Claude steps running together across all sentinels.
   'sentinel.setRunAtOnce': { args: z.tuple([z.number().int().min(1).max(MAX_RUN_AT_ONCE)]) },
-  // A webhook sentinel's secret, new; its URL (phase 3).
+  // A webhook sentinel's secret, new (the old URL stops at once); its URL with the secret, or why there's none now → { url?, why? }.
   'sentinel.rotateSecret': { args: z.tuple([id]) },
   'sentinel.webhookUrl': { args: z.tuple([id]) },
 } as const;

@@ -16,6 +16,10 @@ export interface SentinelData {
   readonly items: readonly Sentinel[];
   /** Oldest first. */
   readonly runs: readonly RunSummary[];
+  /** What each event sentinel saw last, by sentinel (its trigger's cursor). */
+  readonly cursors?: Readonly<Record<string, unknown>>;
+  /** Webhook sentinels' secrets, by sentinel (never in the state). */
+  readonly secrets?: Readonly<Record<string, string>>;
   /**
    * The load lost something: the file was set aside (or couldn't be), or sentinels or runs didn't
    * read. Their runs' folders may still be someone's, so nothing is swept on this start.
@@ -77,7 +81,8 @@ export class SentinelFile {
         this.readOnly = true;
       }
     }
-    return { runAtOnce: parsed.data.runAtOnce, items, runs, ...(dropped.length || droppedRuns.length ? { lossy: true } : {}) };
+    const keep = <T,>(rec: Record<string, T>): Record<string, T> => Object.fromEntries(Object.entries(rec).filter(([id]) => ids.has(id)));
+    return { runAtOnce: parsed.data.runAtOnce, items, runs, cursors: keep(parsed.data.cursors), secrets: keep(parsed.data.secrets), ...(dropped.length || droppedRuns.length ? { lossy: true } : {}) };
   }
 
   /**
@@ -130,7 +135,7 @@ export class SentinelFile {
     const file = this.file;
     if (!data || !file) return;
     try {
-      writeJson(file, { version: 1, runAtOnce: data.runAtOnce, items: data.items, runs: data.runs });
+      writeJson(file, { version: 1, runAtOnce: data.runAtOnce, items: data.items, runs: data.runs, cursors: data.cursors ?? {}, secrets: data.secrets ?? {} });
     } catch {
       // A full disk or a permission problem: the next change tries again.
     }

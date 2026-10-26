@@ -10,7 +10,11 @@ import { networkOf } from '../network.js';
 import { status } from '../../workspaces/git.js';
 import { findPr, mergePr } from '../../workspaces/pr.js';
 import type { PullRequest } from '../work-store.js';
-import { demoGitHub, seedDemoSentinel } from './demo.js';
+import { runGhCli } from '../issues/gh.js';
+import { loadStripeFile } from '../stripe-earnings.js';
+import { openTunnel, waitUntilReachable } from '../../net/tunnel.js';
+import { demoGitHub, demoTriggers, seedDemoSentinel } from './demo.js';
+import type { FetchLike, TriggerDeps, WebhookTunnel } from './triggers/types.js';
 import { attachSentinel, detachSentinel } from './registry.js';
 import type { PrLook, PrPlace, SentinelChat, SentinelClaude, SentinelFriends, SentinelGitHub, SentinelPlaces } from './runner.js';
 import { Sentinels } from './sentinels.js';
@@ -45,6 +49,8 @@ export function launchSentinel(host: SentinelHost): () => void {
     github: host.demo ? demoGitHub() : github(session, store),
     chat: chat(session, store),
     friends: friends(session),
+    // The demo's GitHub, Stripe, Sentry, sites and tunnel answer without the network.
+    triggers: host.demo ? demoTriggers(store) : triggers(session, store),
   });
   attachSentinel(session, sentinels);
   const stopSeed = host.demo && !sentinels.list().length ? seedDemoSentinel(store, sentinels, (ms) => (back = ms)) : () => undefined;
@@ -56,6 +62,35 @@ export function launchSentinel(host: SentinelHost): () => void {
     store.dispatch({ type: 'sentinel_off' });
   };
 }
+
+/** Where the event triggers look: gh, the web, Earnings' Stripe keys, your variables, a Cloudflare quick tunnel. */
+function triggers(session: Session, store: Store): Omit<TriggerDeps, 'store' | 'selfId'> {
+  const rootOf = (id: string | undefined): string | undefined => (id ? store.getState().projects.find((p) => p.id === id)?.root : undefined);
+  return {
+    gh: runGhCli,
+    repoOf: async (id) => session.workspaces?.mainSync.githubRepo(id),
+    fetch: globalThis.fetch as unknown as FetchLike,
+    stripeKey: (id) => {
+      const root = rootOf(id);
+      return root ? loadStripeFile().projects[root]?.key : undefined;
+    },
+    env: (id) => commandEnv(rootOf(id)),
+    tunnel: cloudflareTunnel,
+    // The daemon's start replays tasks, pull requests and plans: none of that is news.
+    warmupMs: 20_000,
+  };
+}
+
+/** A Cloudflare quick tunnel to the webhook server, handed out once its name answers. */
+const cloudflareTunnel: WebhookTunnel = async (port, onDied) => {
+  const t = await openTunnel('cloudflared', port, { onDied });
+  if (!t) throw new Error('no tunnel');
+  if (!(await waitUntilReachable(t.publicUrl, 90_000))) {
+    t.close();
+    throw new Error('the tunnel never answered');
+  }
+  return { url: t.publicUrl, close: () => t.close() };
+};
 
 /** Your own Claude, asked in a conversation and waited for by its request (askAndWait's pattern, keyed by request). */
 function ownClaude(session: Session, store: Store): SentinelClaude & { close(): void } {

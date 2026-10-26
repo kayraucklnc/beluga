@@ -547,6 +547,11 @@ describe('the views of a known Mac', () => {
     expect(fix.needsYou.map((n) => n.id)).toEqual(['sentinel:run_f1']);
     expect(fix.steps.map((x) => x.kind)).toEqual(['claude', 'pr', 'merge']);
     expect(viewOf(state, ctx, 'sentinel:nope')).toBeUndefined();
+    // An event trigger that can't watch says why (BLG-239); a paused one doesn't.
+    const troubled = { ...state, sentinel: { ...SENTINELS, troubles: { sn_brief: 'Sign in to GitHub first: run gh auth login in a terminal' } } };
+    expect(SentinelsView.parse(viewOf(troubled, ctx, 'sentinels')).sentinels[0]!.trouble).toBe('Sign in to GitHub first: run gh auth login in a terminal');
+    expect(SentinelPageView.parse(viewOf(troubled, ctx, 'sentinel:sn_brief')).trouble).toBe('Sign in to GitHub first: run gh auth login in a terminal');
+    expect(list.sentinels[0]!.trouble).toBeUndefined();
   });
 
   it('sentinel: a run that ended where the sentinel notifies the phone is told once', () => {

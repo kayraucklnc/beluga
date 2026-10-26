@@ -1270,6 +1270,7 @@ function sentinelSummary(state: DomainState, s: SentinelState, sn: Sentinel): Se
     sentence: clip(scheduleSentence(sn.trigger, (id) => sentinelById(s, id)?.name), 300),
     paused: sn.paused,
     ...(pausedWords(sn) ? { pausedWhy: clip(pausedWords(sn)!, 300) } : {}),
+    ...(!sn.paused && s.troubles?.[sn.id] ? { trouble: clip(s.troubles[sn.id]!, 300) } : {}),
     ...(last ? { last: { state: last.state, headline: firstLine(last.headline, 300), at: Math.round(last.endedAt ?? last.startedAt) } } : {}),
     ...(next !== undefined && !sn.paused ? { nextAt: Math.round(next) } : {}),
     live: s.runs.some((r) => r.sentinelId === sn.id && isLive(r.state)),

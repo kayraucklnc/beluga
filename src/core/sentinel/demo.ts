@@ -1,12 +1,15 @@
 import type { Store } from '../store.js';
+import { demoRepo } from '../issues/demo.js';
 import { type StepRun, presetFields } from './model.js';
 import type { SentinelGitHub } from './runner.js';
 import type { Sentinels } from './sentinels.js';
+import type { FetchLike, TriggerDeps } from './triggers/types.js';
 
 /**
  * The demo's sentinels (`beluga demo`, screenshots, the README): a Morning brief with a week of
  * reports, Fix what broke with a pull request it opened and a run waiting for your Merge, Nightly
- * tests paused after failing three nights, and Watch the web with a run going now.
+ * tests paused after failing three nights, Watch the web with a run going now, Uptime guard with
+ * the landing page going down and coming back, and a webhook on Your Mac with its URL.
  */
 
 const MIN = 60_000;
@@ -27,6 +30,26 @@ export function demoGitHub(): SentinelGitHub {
     look: async (_where, number) => ({ number, url: `https://github.com/acme/bob-api/pull/${number}`, state: 'OPEN', draft: false, conflicts: false, checks: 'passing', failed: [], count: 6 }),
     review: async () => ({ verdict: 'ship', line: 'A small fix with a test that covers it' }),
     merge: async () => true,
+  };
+}
+
+/** The demo's event sources: GitHub, Stripe and Sentry have nothing new, every site answers, the tunnel is pretend. No network. */
+export function demoTriggers(store: Store): Omit<TriggerDeps, 'store' | 'selfId'> {
+  const fetch: FetchLike = async (url) => {
+    const body = url.includes('sentry.io') ? '[]' : url.includes('api.stripe.com') ? '{"object":"list","data":[],"has_more":false}' : 'ok';
+    return { status: 200, ok: true, text: async () => body };
+  };
+  return {
+    gh: async (args) => (args.some((a) => a.includes('/actions/runs')) ? '{"total_count":0,"workflow_runs":[]}' : '[]'),
+    repoOf: async (id) => {
+      const p = store.getState().projects.find((x) => x.id === id);
+      return p ? demoRepo(p.name) : undefined;
+    },
+    fetch,
+    stripeKey: () => 'sk_test_demo',
+    env: () => ({ SENTRY_TOKEN: 'demo' }),
+    tunnel: async () => ({ url: 'https://quiet-harbor-demo.trycloudflare.com', close: () => undefined }),
+    warmupMs: 5_000,
   };
 }
 
@@ -232,6 +255,85 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
     { by: 'you', trigger: { kind: 'manual', summary: 'You pressed Run' }, state: 'running', startedAt: start, headline: '', steps: [{ id: w[0]!, state: 'done', startedAt: start, endedAt: start + 4_000 }, { id: w[1]!, state: 'running', startedAt: start + 4_000 }, { id: w[2]!, state: 'waiting' }], tasks: [] },
     { outputs: ['{"results": [{"title": "Hero sections that convert in 2026", "url": "https://example.com/heroes"}, {"title": "Core Web Vitals: INP replaces FID", "url": "https://example.com/inp"}]}'] },
   );
+  // ---- Uptime guard: the landing page went down yesterday afternoon, and came back
+  const guard = sentinels.create({
+    name: 'Uptime guard',
+    icon: 'pulse',
+    projectId: landing,
+    trigger: { kind: 'uptime', url: 'https://landing.example.com', minutes: 5 },
+    access: 'look',
+    notify: 'phone',
+    steps: [
+      { kind: 'claude', name: 'Say what’s likely', where: 'project', prompt: '{{trigger}}\n{{trigger.json}}\n\nIf it is down: look at what you can (the latest deploy, its logs, the status pages of what it runs on) and say in a few lines what is most likely wrong and what to do. If it is back, say how long it was down and stop.' },
+      { kind: 'notify', name: 'Tell me', phone: true },
+    ],
+  });
+  sentinels.pause(guard.id, false);
+  const g = guard.steps.map((st) => st.id);
+  const down = at(1, 14, 7);
+  const back = down + 12 * MIN;
+  sentinels.addHistory(
+    guard.id,
+    {
+      by: 'event',
+      trigger: { kind: 'uptime', summary: 'landing.example.com stopped answering (503)', payload: { state: 'down', url: 'https://landing.example.com', status: 503, ms: 812, since: down - 5 * MIN, expected: 200 } },
+      state: 'done',
+      startedAt: down,
+      endedAt: down + 2 * MIN,
+      headline: 'landing.example.com answers 503: the 14:02 deploy ran out of memory',
+      steps: steps(g, 'done', down, MIN),
+      tasks: [],
+    },
+    {
+      outputs: ['landing.example.com answers 503: the 14:02 deploy ran out of memory', 'Told you (phone): Uptime guard · landing.example.com answers 503'],
+      report: 'landing.example.com answers 503: the 14:02 deploy ran out of memory\n\n- The deploy at 14:02 doubled the image sizes in the hero; the server hits its 512 MB limit on the first requests\n- Roll back to the 13:40 deploy, or raise the memory limit to 1 GB\n- Nothing else changed today',
+    },
+  );
+  sentinels.addHistory(
+    guard.id,
+    {
+      by: 'event',
+      trigger: { kind: 'uptime', summary: 'landing.example.com is back (200, 284 ms)', payload: { state: 'up', url: 'https://landing.example.com', status: 200, ms: 284, since: down - 5 * MIN, downFor: 17 * MIN } },
+      state: 'done',
+      startedAt: back,
+      endedAt: back + 40_000,
+      headline: 'landing.example.com is back after 17 minutes',
+      steps: steps(g, 'done', back, 20_000),
+      tasks: [],
+    },
+    { outputs: ['landing.example.com is back after 17 minutes', 'Told you (phone): Uptime guard · landing.example.com is back'], report: 'landing.example.com is back after 17 minutes\n\nIt answers 200 in 284 ms again, since the rollback at 14:19.' },
+  );
+
+  // ---- A webhook on Your Mac: GitHub posts its pushes to the sentinel's URL
+  const hook = sentinels.create({
+    name: 'GitHub pushes',
+    icon: 'link',
+    trigger: { kind: 'webhook', signature: 'github' },
+    access: 'look',
+    notify: 'mac',
+    steps: [
+      { kind: 'claude', name: 'Say what came in', where: 'mac', prompt: 'GitHub posted this to the webhook:\n{{trigger.json}}\n\nSay in one line what happened (who pushed what where), then anything worth a look.' },
+      { kind: 'notify', name: 'Tell me', phone: false },
+    ],
+  });
+  sentinels.pause(hook.id, false);
+  const hk = hook.steps.map((st) => st.id);
+  const pushed = now - 2 * HOUR;
+  sentinels.addHistory(
+    hook.id,
+    {
+      by: 'event',
+      trigger: { kind: 'webhook', summary: 'Webhook from GitHub: push', payload: { headers: { 'x-github-event': 'push' }, event: 'push', body: { ref: 'refs/heads/main', pusher: { name: 'lena' }, commits: [{ message: 'Refund webhooks retry once' }, { message: 'Fix the checkout test' }, { message: 'Bump stripe to 17.2' }] } } },
+      state: 'done',
+      startedAt: pushed,
+      endedAt: pushed + 25_000,
+      headline: 'lena pushed 3 commits to main of bob-api',
+      steps: steps(hk, 'done', pushed, 12_500),
+      tasks: [],
+    },
+    { outputs: ['lena pushed 3 commits to main of bob-api', 'Told you: GitHub pushes · lena pushed 3 commits to main'], report: 'lena pushed 3 commits to main of bob-api\n\n- Refund webhooks retry once\n- Fix the checkout test\n- Bump stripe to 17.2 (a minor version: read its changelog)' },
+  );
+
   travel(0);
   // The schedules start from now: the clock's first look catches nothing up (the history above is
   // recorded, and Watch the web's run going now is that recorded one: its Call a Service step has

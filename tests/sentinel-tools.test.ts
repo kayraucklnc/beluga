@@ -105,8 +105,8 @@ describe('the sentinel.* API', () => {
     expect(copy).toMatchObject({ name: 'Renamed copy', paused: true });
     expect(SENTINEL_HANDLERS['sentinel.recipes'](session).map((r) => r.id)).toEqual(['morning-brief', 'nightly-tests', 'dependency-updates', 'release-notes', 'issues-to-tasks', 'watch-the-web']);
     expect(SENTINEL_HANDLERS['sentinel.setRunAtOnce'](session, 3)).toBe(3);
-    expect(() => (SENTINEL_HANDLERS['sentinel.rotateSecret'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('isn’t available yet');
-    expect(() => (SENTINEL_HANDLERS['sentinel.webhookUrl'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('isn’t available yet');
+    expect(() => (SENTINEL_HANDLERS['sentinel.rotateSecret'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('doesn’t start from a webhook');
+    expect(() => (SENTINEL_HANDLERS['sentinel.webhookUrl'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('doesn’t start from a webhook');
     const run = SENTINEL_HANDLERS['sentinel.run'](session, made.id);
     expect(run.by).toBe('you');
     await until(() => SENTINEL_HANDLERS['sentinel.runGet'](session, run.id).run.state !== 'running');
@@ -134,7 +134,7 @@ describe('recipes', () => {
 });
 
 describe('the demo', () => {
-  it('seeds four sentinels with their history', async () => {
+  it('seeds six sentinels with their history', async () => {
     const { demoGitHub, seedDemoSentinel } = await import('../src/core/sentinel/demo.js');
     const s = setup({ github: demoGitHub() });
     let back = 0;
@@ -146,6 +146,14 @@ describe('the demo', () => {
       ['Fix what broke', false],
       ['Nightly tests', true],
       ['Watch the web', false],
+      ['Uptime guard', false],
+      ['GitHub pushes', false],
+    ]);
+    // Uptime guard went down and came back: a pair of runs, by the event, in that order.
+    const guard = st.items[4]!;
+    expect(st.runs.filter((r) => r.sentinelId === guard.id).map((r) => [r.by, r.trigger.summary])).toEqual([
+      ['event', 'landing.example.com stopped answering (503)'],
+      ['event', 'landing.example.com is back (200, 284 ms)'],
     ]);
     expect(st.items[2]!.pausedWhy).toBe('Paused after 3 failures in a row');
     const brief = st.items[0]!;

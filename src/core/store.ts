@@ -1097,6 +1097,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'sentinel_remove':
     case 'sentinel_run':
     case 'sentinel_ask':
+    case 'sentinel_trouble':
+    case 'sentinel_webhook':
     case 'sentinel_off':
       return { ...state, ...reduceSentinel(state, action) };
     case 'plans_init':

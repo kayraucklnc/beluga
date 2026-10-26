@@ -439,8 +439,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `sentinel.recipes` | (planned) New Sentinel › Recipe: the recipe cards |
 | `sentinel.decide` | ✓ Merge and Not Now on a run waiting for you (a run's page), and the phone's needs-you card |
 | `sentinel.setRunAtOnce` | (planned) Sentinel › ⋯ › Run at Once |
-| `sentinel.rotateSecret` | (phase 3) a webhook sentinel's page › Rotate Secret (answers "not available yet" until then) |
-| `sentinel.webhookUrl` | (phase 3) a webhook sentinel's page: its URL with Copy (answers "not available yet" until then) |
+| `sentinel.rotateSecret` | a webhook sentinel's page › When › Rotate Secret… (asks first; the old URL stops at once) |
+| `sentinel.webhookUrl` | a webhook sentinel's page › When: its URL with Copy (or why there's none now) |
 | `issues.list` | ✓ Issues (Work in the sidebar › Issues, Go › Issues, ⌘K › Go to Issues): a project's open or closed GitHub issues, newest activity first, through gh (GraphQL, so pull requests never take up the page); the search box asks GitHub; each shows what Beluga is doing about it; a project's home lists the latest four |
 | `issues.get` | ✓ an issue's page: the report and its comments in Markdown, its labels, assignees and dates, its task, and what to do next |
 | `issues.investigate` | ✓ Investigate (an issue's page: the composer's first way, with anything Claude should know; its ⋯ and right-click menu): a task for it (or the one it has), a worktree, and your Claude finding out why and reproducing it, writing what it found into the task's brief, without fixing it; the page shows it at work, then its report with Fix It · when a teammate on the same repository is already on it (team boards) it asks first (Start Anyway: `anyway`) |

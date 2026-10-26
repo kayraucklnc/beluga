@@ -8,10 +8,6 @@ import type { Args, Method } from './api.js';
 type SentinelMethod = Extract<Method, `sentinel.${string}`>;
 type SentinelHandlers = { readonly [M in SentinelMethod]: (s: Session, ...args: Args<M>) => unknown };
 
-const later = (what: string): never => {
-  throw new Error(`${what} isn’t available yet: it comes with the next part of Sentinel`);
-};
-
 export const SENTINEL_HANDLERS = {
   'sentinel.create': (s, draft) => needSentinel(s).create(draft),
   'sentinel.update': (s, id, patch) => needSentinel(s).update(id, patch),
@@ -27,12 +23,8 @@ export const SENTINEL_HANDLERS = {
   'sentinel.recipes': (s) => needSentinel(s).recipes(),
   'sentinel.decide': (s, runId, choice) => needSentinel(s).decide(runId, choice),
   'sentinel.setRunAtOnce': (s, n) => needSentinel(s).setRunAtOnce(n),
-  'sentinel.rotateSecret': (s) => {
-    needSentinel(s);
-    return later('A webhook sentinel’s secret');
-  },
-  'sentinel.webhookUrl': (s) => {
-    needSentinel(s);
-    return later('A webhook sentinel’s URL');
-  },
+  // A webhook sentinel's new secret (the old URL stops at once) → its address, or why there's none now.
+  'sentinel.rotateSecret': (s, id) => needSentinel(s).rotateSecret(id),
+  // Its address with the secret ({ url }), or why there's none now ({ why }): never in the state.
+  'sentinel.webhookUrl': (s, id) => needSentinel(s).webhookUrl(id),
 } satisfies SentinelHandlers;

@@ -29,7 +29,8 @@ export const TriggerSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('github'), what: z.enum(GITHUB_EVENTS), label: text(64).optional(), minutes: z.number().int().min(1).max(60).optional() }),
   z.object({ kind: z.literal('stripe'), what: z.enum(STRIPE_EVENTS) }),
   z.object({ kind: z.literal('uptime'), url: z.string().url().max(2000), minutes: z.union([z.literal(1), z.literal(5), z.literal(15)]), expect: z.number().int().min(100).max(599).optional() }),
-  z.object({ kind: z.literal('sentry'), org: text(100).min(1), project: text(100).min(1), what: z.enum(SENTRY_EVENTS) }),
+  // Its organization and project may be filled in later (empty: the page says to).
+  z.object({ kind: z.literal('sentry'), org: text(100), project: text(100), what: z.enum(SENTRY_EVENTS) }),
   z.object({ kind: z.literal('webhook'), signature: z.enum(['github', 'stripe']).optional() }),
 ]);
 
@@ -125,4 +126,9 @@ export const SentinelFileSchema = z.object({
   runAtOnce: z.number().int().min(1).max(6).default(2),
   items: z.array(z.unknown()).default([]),
   runs: z.array(z.unknown()).default([]),
+  // What each event sentinel saw last (GitHub's newest ids, the uptime's up or down…): one that
+  // doesn't read starts again from now, never takes the file with it.
+  cursors: z.record(z.string(), z.unknown()).default({}).catch({}),
+  // Webhook sentinels' secrets (32 bytes, hex): in the file only, never in the state.
+  secrets: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)).default({}).catch({}),
 });
