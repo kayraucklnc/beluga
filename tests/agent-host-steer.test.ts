@@ -176,6 +176,19 @@ describe('Steer on a queued message', () => {
     await t.h.idle('room');
   });
 
+  it('a message steered in carries the model picked meanwhile, so the run switches to it', async () => {
+    const b = backend();
+    const t = await busy(b);
+    expect(b.steered).toEqual([]);
+    t.store.dispatch({ type: 'prefs', prefs: { model: 'opus' } });
+    b.live.status = { tool: { label: 'Read src/a.ts', since: Date.now() - 2_000 }, lastEventAt: Date.now() - 2_000, between: false };
+    expect(t.h.promote('r2')).toBe(true);
+    expect(b.steered.map((f) => f.model)).toEqual(['opus']);
+    b.steered[0]!.onFolded?.();
+    b.live.finish!();
+    await t.h.idle('room');
+  });
+
   it('dead run: stops it and starts a fresh turn with the message', async () => {
     const b = backend();
     const t = await busy(b);
