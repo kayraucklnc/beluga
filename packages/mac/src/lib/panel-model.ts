@@ -94,12 +94,12 @@ type WsKind = 'chat' | 'main' | 'worktree' | string;
 
 /**
  * The panel's tabs for what's on screen, in their fixed order. With a phone paired (`phone`), its
- * live mirror is a tab too (BLG-186): beside any chat, so you can watch what Claude does on it.
- * Not on the Phone page, which is the mirror already.
+ * live mirror is a tab beside Your Mac's chat (BLG-186), where Ask Claude on the Phone page takes
+ * you. Not beside a project's chats: nothing there is about the phone.
  */
 export function panelTabsFor(view: View, wsKind?: WsKind, phone = false): PanelTab[] {
   const tabs = tabsOfView(view, wsKind);
-  return phone && tabs.length && view.kind !== 'phone' ? [...tabs, 'phone'] : tabs;
+  return phone && tabs.length && view.kind === 'assistant' ? [...tabs, 'phone'] : tabs;
 }
 
 function tabsOfView(view: View, wsKind?: WsKind): PanelTab[] {

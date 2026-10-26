@@ -26,6 +26,9 @@ function ago(ts: number, now: number): string {
 
 const needsYou = (t: TaskView): boolean => (t.direction === 'sent' && t.state === 'confirm') || (t.direction === 'received' && t.state === 'awaiting_approval');
 
+/** Still open: waiting for you or on its way. Answered ones (done, declined, failed) are tucked away. */
+const pending = (t: TaskView): boolean => !isFinal(t.state);
+
 /** How many tasks wait for you (the sidebar's badge). */
 export const waitingForYou = (tasks: readonly TaskView[]): number => tasks.filter(needsYou).length;
 
@@ -144,11 +147,14 @@ export function RequestsView() {
   const [tab, setTab] = useState<Tab>(() => (gateway.tasks.some((t) => t.direction === 'received' && t.state === 'awaiting_approval') ? 'received' : 'sent'));
   const [open, setOpen] = useState<string | undefined>();
   const [composing, setComposing] = useState(false);
+  const [answered, setAnswered] = useState(false);
   if (!gateway.enabled) {
     return <Empty icon="hand" title="Requests need the Beluga app" detail="Tasks between Claudes run in the Beluga app's daemon." />;
   }
-  const list = gateway.tasks.filter((t) => t.direction === tab).slice().reverse();
-  const count = (d: Tab): number => gateway.tasks.filter((t) => t.direction === d).length;
+  const mine = gateway.tasks.filter((t) => t.direction === tab);
+  const done = mine.filter((t) => !pending(t)).length;
+  const list = (answered ? mine : mine.filter(pending)).slice().reverse();
+  const count = (d: Tab): number => gateway.tasks.filter((t) => t.direction === d && pending(t)).length;
   return (
     <div className={s.page}>
       <div className={s.inner}>
@@ -190,10 +196,15 @@ export function RequestsView() {
             ))
           ) : (
             <div className={s.empty}>
-              {tab === 'sent' ? 'Nothing sent yet. Ask your Claude to get something from a friend’s Claude (“ask bob to run the tests”).' : 'Nothing received yet. When a friend’s Claude asks yours for something, it shows here.'}
+              {done ? 'Nothing waiting. Everything here has been answered.' : tab === 'sent' ? 'Nothing sent yet. Ask your Claude to get something from a friend’s Claude (“ask bob to run the tests”).' : 'Nothing received yet. When a friend’s Claude asks yours for something, it shows here.'}
             </div>
           )}
         </div>
+        {done ? (
+          <Button variant="quiet" onClick={() => setAnswered(!answered)}>
+            {answered ? 'Hide answered' : `Show answered · ${done}`}
+          </Button>
+        ) : null}
       </div>
     </div>
   );
