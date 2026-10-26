@@ -22,6 +22,7 @@ import { ContinueButton } from '../chat/AskBanner.js';
 import { useConversationHeader } from '../network/ConversationHeader.js';
 import { ContextNote } from '../chat/ContextMeter.js';
 import { PeopleHere } from './PeopleHere.js';
+import { PrivateMark, shareWithTeamItems } from '../team/Team.js';
 import s from './Toolbar.module.css';
 
 /** Room the title keeps, and the window buttons on the right (search, bell, panel). */
@@ -132,6 +133,8 @@ export function Toolbar() {
     // Icons that don't fit lead ⋯ as a section of their own.
     const overflow = [...(fit < icons.length ? [icons.slice(fit)] : []), ...more];
     const menu = overflow.flatMap((section, k) => section.map((a, i) => ({ a, separate: k > 0 && i === 0 })));
+    // A team project's conversation is yours alone until you share it (core/team, BLG-226).
+    const teamItems = shareWithTeamItems(state, client, ws.id, project?.id);
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
       if (isPrStep(a.action)) return askBeforeWork(ws.id, a.action);
@@ -180,7 +183,8 @@ export function Toolbar() {
         }
         right={
           <>
-            {/* Friends you shared it with over the network, each with how they're doing. */}
+            {/* Friends you shared it with over the network, each with how they're doing (or that only you see it). */}
+            <PrivateMark wsId={ws.id} projectId={project?.id} />
             <PeopleHere wsId={ws.id} />
             {branch ? <BranchControl wsId={ws.id} branch={branch} fold={fold} /> : null}
             {/* A main folder is questions only: what it needs next is a worktree to work in. */}
@@ -201,8 +205,8 @@ export function Toolbar() {
               {icons.slice(0, fit).map((a) => (
                 <IconButton key={a.id} icon={a.icon} label={a.disabled ? `${a.label}: ${a.hint}` : (a.tip ?? `${a.label} · ${a.hint}`)} keys={a.keys} aria-disabled={a.disabled} data-tool={a.action} data-tool-ws={ws.id} className={cx(a.disabled && s.off, a.tone === 'error' && s.toolError)} onClick={() => run(a)} />
               ))}
-              {overflow.length ? (
-                <ActionsDropdown items={menu.map(({ a, separate }) => ({ label: a.label, icon: a.icon, hint: a.disabled ? a.hint : undefined, keys: a.keys, disabled: a.disabled, danger: a.danger, separate, onSelect: () => requestAnimationFrame(() => run(a)) }))}>
+              {overflow.length || teamItems.length ? (
+                <ActionsDropdown items={[...menu.map(({ a, separate }) => ({ label: a.label, icon: a.icon, hint: a.disabled ? a.hint : undefined, keys: a.keys, disabled: a.disabled, danger: a.danger, separate, onSelect: () => requestAnimationFrame(() => run(a)) })), ...teamItems]}>
                   <IconButton icon="more" label="More for this workspace" data-tool="more" data-tool-ws={ws.id} />
                 </ActionsDropdown>
               ) : null}

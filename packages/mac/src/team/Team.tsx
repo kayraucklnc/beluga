@@ -1,9 +1,12 @@
-import { OFFER_DETAIL, offerWords, teammateOn, teammatesOf, workingOn, workingWords } from '@beluga/core/team/model.js';
+import { OFFER_DETAIL, offerWords, teamShareChoices, teammateOn, teammatesOf, workingOn, workingWords } from '@beluga/core/team/model.js';
+import { Icon } from '../components/Icon.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
-import { Avatar, Button, IconButton } from '../components/ui.js';
+import { Avatar, Button, IconButton, Tip } from '../components/ui.js';
 import { AvatarStack } from '../network/Avatars.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
+import type { AppState } from '@beluga/core/store.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import s from './team.module.css';
 
 /**
@@ -129,5 +132,40 @@ export function TeammateOnIssue({ projectId, number }: { projectId: string; numb
       <Avatar name={on.name} id={on.peerId} size={14} />
       {on.words}
     </span>
+  );
+}
+
+/**
+ * A conversation's "Share with Team ▸" (BLG-226): one teammate at a time (or everyone), live, with
+ * the worktree sharing friends already have; Stop Sharing ends it. Nothing is shared until you pick.
+ */
+export function shareWithTeamItems(state: Pick<AppState, 'team' | 'members'>, client: SocketClient, wsId: string, projectId: string | undefined): readonly ActionItem[] {
+  const choices = teamShareChoices(state.team, state.members[wsId], projectId ?? '');
+  if (!projectId || !choices.mates.length) return [];
+  const api = client.api;
+  const say = (p: Promise<unknown>): void => void p.catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  const share = (peerId: string): void => say(api.sharing.shareWithFriend({ peerId, workspaceId: wsId, role: 'contribute' }));
+  const stop = (peerId: string): void => say(api.sharing.unshareFriend({ peerId, workspaceId: wsId }));
+  const everyone = choices.mates.filter((m) => !m.shared);
+  const submenu: ActionItem[] = [
+    ...(choices.mates.length > 1 && everyone.length ? [{ label: 'Everyone on the Team', onSelect: () => everyone.forEach((m) => share(m.peerId)) }] : []),
+    ...choices.mates.map((m) => ({ label: m.name, checked: m.shared, onSelect: () => (m.shared ? stop(m.peerId) : share(m.peerId)) })),
+  ];
+  return [
+    { label: 'Share with Team', icon: 'people', separate: true, submenu, onSelect: () => undefined },
+    ...(choices.sharedWith.length ? [{ label: 'Stop Sharing', icon: 'x' as const, onSelect: () => choices.sharedWith.forEach(stop) }] : []),
+  ];
+}
+
+/** A team project's conversation nobody else can see: a quiet lock that says so. */
+export function PrivateMark({ wsId, projectId }: { wsId: string; projectId: string | undefined }) {
+  const choices = useApp((st) => teamShareChoices(st.team, st.members[wsId], projectId ?? ''), sameDeep);
+  if (!projectId || !choices.mates.length || choices.sharedWith.length) return null;
+  return (
+    <Tip label="Only you can see this conversation. Your teammates see the board, not your chats. Use More › Share with Team to work on it together.">
+      <span className={s.badge} aria-label="Only you can see this conversation" role="img">
+        <Icon name="lock" size={12} />
+      </span>
+    </Tip>
   );
 }

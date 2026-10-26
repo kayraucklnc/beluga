@@ -170,3 +170,12 @@ export function teammateOn(team: TeamState, issue: Pick<Issue, 'id' | 'projectId
   if (a?.kind === 'claude' && a.owner !== self && mates.some((m) => m.peerId === a.owner)) return { peerId: a.owner, name: a.ownerName, words: `${a.ownerName}’s Claude has it${issue.github ? ` (#${issue.github.number})` : ''}` };
   return undefined;
 }
+
+/**
+ * A conversation's "Share with Team" (BLG-226): each teammate and whether this worktree is shared
+ * with them now (friend-share's members). Conversations are private until you pick someone.
+ */
+export function teamShareChoices(team: TeamState, members: Readonly<Record<string, unknown>> | undefined, projectId: string): { readonly mates: ReadonlyArray<Teammate & { readonly shared: boolean }>; readonly sharedWith: readonly string[] } {
+  const mates = teammatesOf(team, projectId).map((m) => ({ ...m, shared: Boolean(members?.[m.peerId]) }));
+  return { mates, sharedWith: mates.filter((m) => m.shared).map((m) => m.peerId) };
+}
