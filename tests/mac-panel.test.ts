@@ -76,13 +76,15 @@ describe('the right panel’s tabs', () => {
     expect(panelTabsFor({ kind: 'terminal' })).toEqual(['info']);
     expect(panelTabsFor(room)).toEqual(['terminal', 'info']);
   });
-  it('with a phone paired, its mirror is a tab beside any chat, but not on the Phone page or a plan', () => {
-    expect(panelTabsFor(ws, 'worktree', true).at(-1)).toBe('phone');
+  it('with a phone paired, its mirror is a tab beside Your Mac only, never a project’s chat, the Phone page or a plan', () => {
+    expect(panelTabsFor(ws, 'worktree', true)).not.toContain('phone');
+    expect(panelTabsFor(ws, 'chat', true)).not.toContain('phone');
+    expect(panelTabsFor(room, undefined, true)).not.toContain('phone');
     expect(panelTabsFor({ kind: 'assistant' }, undefined, true)).toEqual(['terminal', 'info', 'phone']);
+    expect(panelTabsFor({ kind: 'assistant' })).toEqual(['terminal', 'info']);
     expect(panelTabsFor({ kind: 'phone' }, undefined, true)).toEqual(['terminal', 'info']);
     expect(panelTabsFor({ kind: 'plan', id: 'p1' }, undefined, true)).toEqual([]);
-    expect(panelTabsFor(ws, 'worktree')).not.toContain('phone');
-    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor(room, undefined, true))).toEqual(['info', 'phone']);
+    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor({ kind: 'assistant' }, undefined, true))).toEqual(['info', 'phone']);
   });
 
   it('opens on the tab you last picked there, else Changes when there are changes, else Info', () => {

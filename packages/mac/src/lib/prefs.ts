@@ -64,6 +64,8 @@ export interface UiPrefs {
   readonly changeLook: 'diff' | 'file';
   /** The panel has a Scratch tab: the workspace's .beluga/scratch/ folder, live. */
   readonly scratchTab: boolean;
+  /** Your phone shows its live screen (BLG-196). Off: Claude still uses the phone, you just don't watch. */
+  readonly phoneScreen: boolean;
   /** How Scratch lists its files: newest first, or pictures, videos, PDFs and web pages first (BLG-111). */
   readonly scratchSort: 'newest' | 'viewable';
   /** The icon you picked for each sidebar group (by name; unset: a folder). */
@@ -132,6 +134,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   chatTabs: [],
   changeLook: 'diff',
   scratchTab: true,
+  phoneScreen: false,
   scratchSort: 'newest',
   groupIcons: {},
   planTaskChats: [],

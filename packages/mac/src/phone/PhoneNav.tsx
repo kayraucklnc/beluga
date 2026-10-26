@@ -1,16 +1,24 @@
 import { Icon } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/beluga.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
+import { showPanelTab, tabShowing, usePanelRuntime } from '../lib/panel.js';
+import { usePrefs } from '../lib/prefs.js';
 import { sameDeep } from '../lib/stable.js';
 import { Row } from '../layout/sidebar-parts.js';
 
 /**
  * "Your phone" in the sidebar, just under "Your Mac" (BLG-171). Shown only when a phone is paired —
- * nothing clutters the Mac when there's no phone. Opens the phone page (the live mirror and what
- * Claude's done on it). A green dot while a phone is linked.
+ * nothing clutters the Mac when there's no phone. A green dot while a phone is linked.
+ *
+ * It opens a chat, not a remote control (BLG-196): Your Mac's Claude, which can use the phone
+ * (get a file, install an app, read a screen), with the phone beside it in the panel's Phone tab.
+ * Driving it yourself is the mirror's full size, one tap away there.
  */
 export function PhoneNav() {
   const actions = useActions();
+  const { client } = useBeluga();
+  const prefs = usePrefs();
+  usePanelRuntime((r) => r.phone);
   const phone = useApp((st) => {
     const android = st.companion.devices.filter((d) => d.platform !== 'ios');
     if (!android.length) return undefined;
@@ -19,15 +27,18 @@ export function PhoneNav() {
     return { name: android.length === 1 ? android[0]!.name : `${android.length} phones`, linked, usable };
     // A new object each time: without sameDeep the window re-renders forever and goes blank (1.1.0).
   }, sameDeep);
-  const selected = useApp((st) => st.view.kind === 'phone');
+  const selected = useApp((st) => st.view.kind === 'phone' || (st.view.kind === 'assistant' && tabShowing(st, 'phone', prefs)));
   if (!phone) return null;
   return (
     <Row
       icon={<Icon name="phone" size={14} />}
       label="Your phone"
-      detail={phone.usable ? 'Ask Claude to do things here, or drive it yourself' : 'Set it up in Settings › Phone to let Claude use it'}
+      detail={phone.usable ? 'Ask Claude to get a file, install an app, read the screen…' : 'Set it up in Settings › Phone to let Claude use it'}
       selected={selected}
-      onClick={() => actions.run({ type: 'view', view: { kind: 'phone' } })}
+      onClick={() => {
+        showPanelTab({ view: { kind: 'assistant' }, projects: client.store.getState().projects }, 'phone');
+        actions.run({ type: 'view', view: { kind: 'assistant' } });
+      }}
       trailing={phone.linked ? <span aria-label="linked" style={{ width: 7, height: 7, borderRadius: 7, background: 'var(--ok, #58c08b)' }} /> : null}
     />
   );

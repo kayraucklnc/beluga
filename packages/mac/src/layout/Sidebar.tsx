@@ -24,11 +24,9 @@ import { Row, Section } from './sidebar-parts.js';
 import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
 import { RequestsNav } from '../gateway/RequestsNav.js';
-import { TasksNav } from '../tasks/TasksNav.js';
+import { WorkNav } from '../work/WorkNav.js';
 import { AssistantNav } from './AssistantNav.js';
 import { PhoneNav } from '../phone/PhoneNav.js';
-import { PlansNav } from '../plans/PlansNav.js';
-import { IssuesNav } from '../issues/IssuesNav.js';
 import { footerStatus } from '../views/room/connection-model.js';
 import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
 import { SelfBar } from '../network/StatusMenu.js';
@@ -178,8 +176,8 @@ export function Sidebar() {
                 trailing={b?.count ? <Badge count={b.count} urgent={b.urgent} /> : null}
               />
             );
-            // Overview, Tasks (and GitHub's issues), Plans, then Chat.
-            return n.kind === 'overview' ? [row, <TasksNav key="tasks" />, <IssuesNav key="issues" />, <PlansNav key="plans" />] : row;
+            // Overview, Work (Tasks, GitHub's issues and Plans in one row, BLG-197), then Chat.
+            return n.kind === 'overview' ? [row, <WorkNav key="work" />] : row;
           })}
           <ActivityRow whenLive />
           <RequestsNav whenAny />
