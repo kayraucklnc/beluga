@@ -46,7 +46,7 @@ export function PhoneView() {
   return <Mirror key={phone.id} phone={phone} />;
 }
 
-/** The right panel's Phone tab (BLG-186): the same live mirror beside the chat, to watch what Claude does on it. */
+/** The right panel's Phone tab (BLG-186): the same live mirror beside Your Mac's chat, to watch what Claude does on it (taps still land; the keys and typing are on the full size page). */
 export function PhonePanel() {
   const phone = useAndroidPhone();
   if (!phone) return <Empty icon="phone" title="No phone" detail="Pair an Android phone to see it here." />;
@@ -277,39 +277,42 @@ function Mirror({ phone, compact = false }: { phone: DeviceView; compact?: boole
         </div>
       </div>
 
-      <footer className={s.controls}>
-        <div className={s.keys}>
-          <Button size="small" variant="quiet" onClick={press('back')} title="Back">
-            <Icon name="back" size={16} />
-          </Button>
-          <Button size="small" variant="quiet" onClick={press('home')} title="Home">
-            Home
-          </Button>
-          <Button size="small" variant="quiet" onClick={press('recents')} title="Recent apps">
-            Recents
-          </Button>
-        </div>
-        <input
-          className={s.type}
-          value={typing}
-          placeholder={compact ? 'Type on the phone, ⏎ to send' : 'Type on the phone…'}
-          onChange={(e) => setTyping(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') sendText(true);
-          }}
-        />
-        {compact ? null : (
-          <>
-            <Button size="small" onClick={() => sendText(false)} disabled={!typing.trim()}>
-              Send
+      {/* Beside the chat the phone is to watch Claude on (BLG-196); driving it yourself is the full size page. */}
+      {compact ? null : (
+        <footer className={s.controls}>
+          <div className={s.keys}>
+            <Button size="small" variant="quiet" onClick={press('back')} title="Back">
+              <Icon name="back" size={16} />
             </Button>
-            <span className={s.spacer} />
-            <Button size="small" variant="quiet" onClick={askClaude} title="Ask your Mac's Claude, with the phone beside the chat">
-              <Icon name="claude" size={14} /> Ask Claude
+            <Button size="small" variant="quiet" onClick={press('home')} title="Home">
+              Home
             </Button>
-          </>
-        )}
-      </footer>
+            <Button size="small" variant="quiet" onClick={press('recents')} title="Recent apps">
+              Recents
+            </Button>
+          </div>
+          <input
+            className={s.type}
+            value={typing}
+            placeholder={compact ? 'Type on the phone, ⏎ to send' : 'Type on the phone…'}
+            onChange={(e) => setTyping(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') sendText(true);
+            }}
+          />
+          {compact ? null : (
+            <>
+              <Button size="small" onClick={() => sendText(false)} disabled={!typing.trim()}>
+                Send
+              </Button>
+              <span className={s.spacer} />
+              <Button size="small" variant="quiet" onClick={askClaude} title="Ask your Mac's Claude, with the phone beside the chat">
+                <Icon name="claude" size={14} /> Ask Claude
+              </Button>
+            </>
+          )}
+        </footer>
+      )}
     </div>
   );
 }

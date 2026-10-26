@@ -1264,7 +1264,7 @@ export class PhoneControl {
       pull: async (remotePath) => {
         if (!scratchDir) throw new Error('No scratch folder to save into');
         const local = await ctl.pull(deviceId, remotePath, scratchDir);
-        return `Saved from the phone as ${path.basename(local)} (an output).`;
+        return `Saved from the phone as ${path.basename(local)} (an output), at ${local}. Show it in your answer: an image as ![name](${local}), any other file as a link to that path.`;
       },
       notifications: async () => {
         const list = await ctl.notifications(deviceId);
