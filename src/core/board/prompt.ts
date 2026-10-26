@@ -68,7 +68,7 @@ export function briefPrompt(board: BoardState, issue: Issue): string {
 const HOW_TASKS_WORK = [
   'How tasks work: Backlog → Ready → In Progress → In Review → Done (or Canceled). A task moved along from a worktree',
   'ships with it: that worktree\'s pull request merging (or the worktree merging into main) makes the task Done, so',
-  'never leave one behind. A parent reaching Done takes its open sub-tasks with it. The user archives Done tasks.',
+  'never leave one behind. A parent follows its sub-tasks (all Done: Done) and, reaching Done, takes its open ones with it: never move a parent by hand. The user archives Done tasks.',
   'Use tasks unasked when one message asks for two or more separate things (fixes, features, changes): before',
   'working, open one task per thing with task_create (under a parent task when they belong together), then work',
   'through them: task_update to in_progress when you start one, in_review once it\'s built and checked (tick its',
