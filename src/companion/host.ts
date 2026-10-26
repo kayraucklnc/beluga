@@ -243,6 +243,12 @@ class PhoneLink implements PhoneLinkHandle {
     return speaks && this.control?.video === true;
   }
 
+  /** Can this phone prove it's the one at a Wireless-debugging address (1.19)? */
+  get proofs(): boolean {
+    const v = this.hello?.v;
+    return Boolean(v && (v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE.proof)));
+  }
+
   /** Take the screen's video until the returned stop(); the last taker wins. */
   watchVideo(onPiece: (p: VideoPiece) => void, onEnd: (reason?: string) => void): () => void {
     const taker = { piece: onPiece, end: onEnd };
@@ -564,6 +570,21 @@ export class CompanionHost {
 
   pairStart(): Promise<PairingInfo> {
     return this.pairing.start();
+  }
+
+  /** Pair the phone on the USB cable (BLG-190): a pairing opens here and on the phone, the four pictures as ever. */
+  async pairOverCable(): Promise<string> {
+    const info = await this.pairing.start();
+    await this.control.openPairingOnCable(info.link);
+    return 'The phone opened the pairing: check its four pictures match the ones here, then Pair.';
+  }
+  /** Open Developer options (or About phone) on a linked phone, for turning on USB debugging. */
+  showPhoneSettings(deviceId: string, which: 'developer' | 'about'): Promise<void> {
+    return this.control.showSettings(deviceId, which);
+  }
+  /** Look for a phone on this Mac's USB (the daemon's). */
+  watchCable(): void {
+    this.control.watchCable();
   }
 
   pairApprove(): { id: string } {

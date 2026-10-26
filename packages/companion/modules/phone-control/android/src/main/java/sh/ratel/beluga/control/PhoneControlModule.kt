@@ -43,6 +43,13 @@ class PhoneControlModule : Module() {
       // Live video is Android's screen capture, not the Accessibility service's (it only lends its
       // right to open the "Start now" sheet from the background).
       if (op == "mirror") return@AsyncFunction MirrorService.control(BelugaAccessibilityService.instance ?: context, if (args.isBlank()) JSONObject() else JSONObject(args))
+      // A proof for the Mac (BLG-189), and a settings screen for the person (BLG-190): no Accessibility needed.
+      val parsed = if (args.isBlank()) JSONObject() else JSONObject(args)
+      if (op == "proof") return@AsyncFunction proof(context, parsed.getString("nonce")).toString()
+      if (op == "open" && parsed.has("settings")) {
+        openOnPhone(BelugaAccessibilityService.instance ?: context, parsed)
+        return@AsyncFunction "{}"
+      }
       val service = BelugaAccessibilityService.instance ?: throw IllegalStateException("Turn on Accessibility for Beluga on the phone")
       service.perform(op, if (args.isBlank()) JSONObject() else JSONObject(args))
     }
@@ -191,11 +198,27 @@ class PhoneControlModule : Module() {
       return JSONObject().put("apps", out)
     }
 
-    /** Open an app by package, or a link in whatever app handles it. */
+    /**
+     * Keep the Mac's one-time code where only adb on this phone can read it: the app's own files
+     * folder on shared storage (other apps can't, adb's shell can). The Mac reads it back over a
+     * direct Wireless-debugging connection: the device at that address is this phone (BLG-189).
+     */
+    fun proof(context: Context, nonce: String): JSONObject {
+      require(Regex("^[0-9a-f]{32,64}$").matches(nonce)) { "Not a proof code" }
+      val dir = context.getExternalFilesDir(null) ?: throw IllegalStateException("No shared storage for the proof")
+      val file = java.io.File(dir, "beluga-proof")
+      file.writeText(nonce)
+      return JSONObject().put("path", file.absolutePath)
+    }
+
+    /** Open an app by package, a link in whatever app handles it, or one of the phone's settings screens. */
     fun openOnPhone(context: Context, args: JSONObject) {
       val pkg = args.optString("package", "")
       val url = args.optString("url", "")
+      val settings = args.optString("settings", "")
       val intent = when {
+        settings == "developer" -> Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+        settings == "about" -> Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)
         url.isNotEmpty() -> Intent(Intent.ACTION_VIEW, Uri.parse(url))
         pkg.isNotEmpty() -> context.packageManager.getLaunchIntentForPackage(pkg) ?: throw IllegalArgumentException("No app called $pkg")
         else -> throw IllegalArgumentException("Give a package or a url")

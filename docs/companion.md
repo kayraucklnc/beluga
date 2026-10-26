@@ -637,17 +637,29 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   each picture was a 1.9 MB `screencap` PNG (~0.75 s on a Galaxy S24+); now the first picture
   comes in ~0.5 s and each change after it at once. The mirror's own taps go by the Accessibility
   service when it's on (instant gestures), and an action's route is reused for 3 s.
-- **Wireless debugging, safely** (BLG-187). A phone's adb is a full shell, so the Mac reaches
-  Wireless debugging **only through the link**: a local tunnel the paired phone's own app carries,
-  end-to-end encrypted to its keys, to its own debugging port. Never straight to an address on the
-  network or one announced over mDNS: nothing there proves it's your phone (on a hostile Wi‑Fi
-  anyone can answer as it), and many networks keep devices apart anyway. Settings › Phone › Over
-  Wi‑Fi: **Use over Wi‑Fi** (on a cable: `settings put global adb_wifi_enabled 1`, Android asks
-  "Allow wireless debugging on this network?"; tap Allow, not Always) and **Turn Off**; turned on by
-  Beluga, it goes off again after 15 minutes unused (it listens on the phone's Wi‑Fi meanwhile, for
-  keys the phone allowed). The phone's own switch and its notification's **Stop** cut every route,
-  adb's included, and the Mac keeps that no on the device record (`DeviceRecord.stopped`) so it holds
-  while the app isn't running. adb in Claude's Bash (PATH, `ANDROID_SERIAL`) only at **Full**.
+- **Wireless debugging, safely** (BLG-187, BLG-189). A phone's adb is a full shell, so the Mac
+  never trusts an address on the network or a name announced over mDNS. Two ways, the first that
+  works: **straight over the same Wi‑Fi** (fastest), to the address and port the paired phone gave
+  over the link, used only once the device there proves it's that phone: the Mac sends the app a
+  one-time code over the link (`proof`, 1.19), the app keeps it in its own files folder, and the
+  Mac reads it back with `adb shell cat` over the new connection (again each minute); or **through
+  the link**: a local tunnel the paired phone's app carries, end-to-end encrypted to its keys, to its
+  own debugging port. Many networks (dorms, campuses, cafés) keep devices apart: the straight way is
+  then `blocked`, Settings › Phone says so in a sentence ("this Wi‑Fi keeps devices apart, so through
+  Beluga's link instead"), and it's tried again on another network or after 5 minutes. Settings ›
+  Phone › Over Wi‑Fi: **Use over Wi‑Fi** (on a cable: `settings put global adb_wifi_enabled 1`;
+  Android asks "Allow wireless debugging on this network?", behind the lock screen if it's locked;
+  tap Allow, not Always) and **Turn Off**; turned on by Beluga, it goes off after 15 minutes unused.
+  The phone's own switch and its notification's **Stop** cut every route, adb's included, and the
+  Mac keeps that no on the device record (`DeviceRecord.stopped`). adb in Claude's Bash only at Full.
+- **A phone on the cable** (BLG-190). The daemon looks at macOS's own USB list every 4 s
+  (`ioreg -p IOUSB`, read-only; Android vendors or "Android" in the name) and asks adb only once a
+  phone is there. Settings › Phone › **On the cable** says what's next: USB debugging is off (the
+  steps, and **Open on the Phone**, which shows its Developer options or About phone through its
+  Beluga, `open {settings}`, 1.19); "tap Allow on Allow USB debugging?"; or ready. A phone with
+  Beluga that isn't paired with this Mac (matched by its device name) gets **Pair over the Cable**:
+  a pairing opens here and the Mac opens it on the phone (`am start … beluga://device#…`, which the
+  app routes to its pairing screen, `app/+native-intent.tsx`); the four pictures are checked as ever.
 - **The phone beside the chat** (BLG-186). The right panel has a **Phone** tab (⌥⌘8) wherever it
   shows, while an Android phone is paired: the same live mirror, fitted to the panel, beside any
   conversation or Your Mac. What Claude does shows on it as it happens: a ripple where it taps, a

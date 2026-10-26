@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 18 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 19 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -37,9 +37,11 @@ export const COMPANION_PROTO = { major: 1, minor: 18 } as const;
  * `transcribe`). 1.17 (BLG-150): your Mac uses your phone. The phone says what it lets the Mac do
  * (`control`), the Mac asks it to act (`req` / `reply`), and the Mac's adb reaches the phone's
  * Wireless debugging through the link (`tun_*`). 1.18 (BLG-184): the Mac's mirror of the phone as
- * live H.264 video (the `mirror` op, `vid` / `vid_end`, and the Mac's `vid_ack`).
+ * live H.264 video (the `mirror` op, `vid` / `vid_end`, and the Mac's `vid_ack`). 1.19 (BLG-189,
+ * BLG-190): the phone proves it's the one at a Wireless-debugging address (`proof`), and opens its
+ * Developer options or About phone for the person (`open {settings}`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -659,7 +661,7 @@ const termKey = z.string().min(1).max(200);
  * What the Mac may ask the phone to do (the `req` frame's `op`), through the app's Accessibility
  * service. Positions are the screen's pixels, as the phone's `screen` gives them.
  */
-export const PHONE_OPS = ['screen', 'screenshot', 'tap', 'long_press', 'swipe', 'type', 'key', 'scroll', 'open', 'apps', 'info', 'install', 'mirror'] as const;
+export const PHONE_OPS = ['screen', 'screenshot', 'tap', 'long_press', 'swipe', 'type', 'key', 'scroll', 'open', 'apps', 'info', 'install', 'mirror', 'proof'] as const;
 export const PhoneOp = z.enum(PHONE_OPS);
 export type PhoneOp = z.infer<typeof PhoneOp>;
 
@@ -687,7 +689,12 @@ export const PHONE_ARGS = {
   /** Scroll a node of the last screen (or the biggest scrollable one) a page that way. */
   scroll: z.object({ dir: z.enum(['up', 'down', 'left', 'right']), ...nodeRef }),
   /** An app by its package name, or a link (https:, tel:, a deep link) in whatever app opens it. */
-  open: z.object({ package: z.string().min(1).max(200).regex(/^[A-Za-z][\w.]*$/).optional(), url: z.string().min(1).max(4000).optional() }),
+  open: z.object({
+    package: z.string().min(1).max(200).regex(/^[A-Za-z][\w.]*$/).optional(),
+    url: z.string().min(1).max(4000).optional(),
+    /** 1.19: one of the phone's own settings screens, for the person to switch something on (USB debugging). */
+    settings: z.enum(['developer', 'about']).optional(),
+  }),
   apps: z.object({}),
   info: z.object({}),
   /** An APK the Mac offers (`out:` ref, fetched in pieces like any output), installed with the phone's own Install button. */
@@ -697,7 +704,16 @@ export const PHONE_ARGS = {
    * `fps` and `kbps`: its rate. The first time, the phone asks its user (Android's "Start now").
    */
   mirror: z.object({ on: z.boolean(), max: z.number().int().min(320).max(1920).optional(), fps: z.number().int().min(5).max(60).optional(), kbps: z.number().int().min(200).max(12_000).optional() }),
+  /**
+   * 1.19: keep this one-time code where only adb on this phone can read it (the app's own files
+   * folder); the Mac reads it back over a direct Wireless-debugging connection, so it knows the
+   * device at that address is this phone. Answered with `{ path }`.
+   */
+  proof: z.object({ nonce: z.string().regex(/^[0-9a-f]{32,64}$/) }),
 } as const satisfies Record<PhoneOp, z.ZodType>;
+
+/** `proof`'s answer: where the code is, as adb's shell sees it. */
+export const ProofView = z.object({ path: z.string().min(1).max(400) });
 
 /** `mirror`'s answer: streaming now, asking the phone's user first, or stopped. */
 export const MirrorView = z.object({ state: z.enum(['streaming', 'asking', 'off']) });
@@ -1033,6 +1049,8 @@ export interface PhoneControlView {
   readonly model?: string;
   /** Claude is acting on it now (its last tap, swipe or key was moments ago): the Mac's Phone tab shows a dot. */
   readonly busy?: boolean;
+  /** Wireless debugging on this Wi‑Fi: reached straight (the phone proved itself), or the network keeps devices apart (through Beluga instead). */
+  readonly wifiPath?: 'direct' | 'blocked';
   /** What's wrong or what's next, in words, when there's something to say. */
   readonly note?: string;
 }
@@ -1043,6 +1061,19 @@ export interface AdbView {
   readonly version?: string;
   readonly fetching?: boolean;
   readonly error?: string;
+  /** A phone on this Mac's USB cable, and how far adb gets with it (BLG-190). */
+  readonly cable?: CableView;
+}
+
+/**
+ * A phone on the cable: `no-debugging` (macOS sees it, adb doesn't: USB debugging is off),
+ * `unauthorized` (the phone hasn't allowed this Mac yet: "Allow USB debugging?"), or `ready`.
+ * `canPair`: ready, with Beluga on it, but not paired with this Mac (it can pair over the cable).
+ */
+export interface CableView {
+  readonly state: 'no-debugging' | 'unauthorized' | 'ready';
+  readonly name: string;
+  readonly canPair?: boolean;
 }
 
 export interface CompanionSlice {

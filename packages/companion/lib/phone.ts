@@ -71,8 +71,10 @@ export function controlState(): PhoneControlState {
 /** Run one op the Mac asked for (a `req`), returning its result (throws with a message on failure). */
 export async function runOp(op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
   if (!phoneAllowed()) throw new Error('This phone hasn’t allowed its Mac to use it');
-  // Video (`mirror`) is Android's screen capture, asked of the user on the phone: no Accessibility needed.
-  if (op !== 'info' && op !== 'apps' && op !== 'mirror' && !phoneControl.accessibilityEnabled()) throw new Error('Turn on Accessibility for Beluga on the phone');
+  // Video (`mirror`) is Android's screen capture, asked of the user on the phone; a proof (`proof`) and a
+  // settings screen for the person (`open {settings}`) don't act on the screen: no Accessibility needed.
+  const free = op === 'info' || op === 'apps' || op === 'mirror' || op === 'proof' || (op === 'open' && typeof args.settings === 'string');
+  if (!free && !phoneControl.accessibilityEnabled()) throw new Error('Turn on Accessibility for Beluga on the phone');
   return phoneControl.perform(op, args);
 }
 

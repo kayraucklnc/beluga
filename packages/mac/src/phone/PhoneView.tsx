@@ -29,7 +29,7 @@ const LEVELS: ReadonlyArray<{ value: PhoneUse; label: string }> = [
   { value: 'use', label: 'Use' },
   { value: 'full', label: 'Full' },
 ];
-const ROUTE_WORDS: Record<string, string> = { usb: 'USB', wifi: 'Wi‑Fi debugging', link: 'Wi‑Fi debugging', accessibility: 'Accessibility' };
+const ROUTE_WORDS: Record<string, string> = { usb: 'USB', wifi: 'Wi‑Fi', link: 'through Beluga', accessibility: 'Accessibility' };
 
 function useAndroidPhone(): DeviceView | undefined {
   return useApp((st) => {

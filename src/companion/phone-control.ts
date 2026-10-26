@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import net from 'node:net';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -5,14 +6,16 @@ import { z } from 'zod';
 import type { SystemPort } from '../core/gateway/device.js';
 import type { PhoneTools } from '../agent/types.js';
 import { phoneBrief } from '../agent/phone-tools.js';
-import { Adb, adbCandidates, findAdb, parseDevices } from './phone-adb.js';
+import { Adb, adbCandidates, findAdb, parseDevices, parseUsbPhones } from './phone-adb.js';
 import type { DeviceBook } from './devices.js';
 import { type Macro, MacroStep, type PhoneMacros } from './phone-macros.js';
 import { type VideoPiece, adbScreenVideo } from './phone-video.js';
 import {
   type AdbView,
+  type CableView,
   type MirrorView,
   type PhoneControl as PhoneControlState,
+  ProofView,
   type PhoneControlView,
   type PhoneOp,
   type PhoneRoute,
@@ -45,6 +48,8 @@ export interface PhoneLinkHandle {
   openTunnel(to: 'adb' | 'adb-pair', side: TunnelSide): TunnelEnd;
   /** 1.18: the phone can stream its screen as video (`mirror`); false or missing on an older app. */
   readonly video?: boolean;
+  /** 1.19: the phone can prove it's the one at a Wireless-debugging address (`proof`). */
+  readonly proofs?: boolean;
   /** Take the screen's video (`vid`, each acked while taken) and hear when it ends (`vid_end`). */
   watchVideo?(onPiece: (p: VideoPiece) => void, onEnd: (reason?: string) => void): () => void;
 }
@@ -130,6 +135,12 @@ const VIDEO_KBPS_WIFI = 4000;
 const VIDEO_STALL_MS = 2_000;
 /** An action's route is reused this long (finding it runs adb). */
 const REACH_KEEP_MS = 3_000;
+/** How often the Mac looks for a phone on its USB (macOS's own list, read-only). */
+const CABLE_SCAN_MS = 4_000;
+/** A straight Wireless-debugging connection proves it's the phone again after this long. */
+const PROOF_KEEP_MS = 60_000;
+/** A Wi-Fi that kept devices apart is tried straight again after this long (or at once on another network). */
+const DIRECT_RETRY_MS = 5 * 60_000;
 /** Wireless debugging Beluga turned on goes off again after this long unused (it listens on the network meanwhile). */
 const WIFI_IDLE_MS = 15 * 60_000;
 /** Claude counts as using the phone this long after its last action (the Phone tab's dot). */
@@ -175,12 +186,77 @@ export class PhoneControl {
     this.deps.log?.(`phone-control: ${line}`);
   }
 
-  /** How this Mac's adb stands, for Settings › Phone. */
+  /** How this Mac's adb stands, and a phone on its cable, for Settings › Phone. */
   adbView(): AdbView {
-    if (this.adb) return { path: this.adb.path, version: this.adb.version };
-    if (this.fetching) return { fetching: true };
-    if (this.adbError) return { error: this.adbError };
-    return {};
+    const cable = this.cable ? { cable: this.cable } : {};
+    if (this.adb) return { path: this.adb.path, version: this.adb.version, ...cable };
+    if (this.fetching) return { fetching: true, ...cable };
+    if (this.adbError) return { error: this.adbError, ...cable };
+    return cable;
+  }
+
+  // ---- a phone on the cable (BLG-190)
+
+  private cable?: CableView;
+  private cableTimer?: NodeJS.Timeout;
+  /** Per adb serial: whether Beluga is on it and its name (asked once). */
+  private readonly cableFacts = new Map<string, { beluga: boolean; name: string }>();
+
+  /** Look for a phone on this Mac's USB every few seconds (the daemon's; not in tests). */
+  watchCable(): void {
+    this.cableTimer ??= unrefd(setInterval(() => void this.scanCable().catch(() => undefined), CABLE_SCAN_MS));
+    void this.scanCable().catch(() => undefined);
+  }
+
+  /**
+   * What's on the cable now. macOS lists the USB devices itself (read-only, no adb), so a phone
+   * shows even with USB debugging off; adb is asked only once one is there.
+   */
+  async scanCable(): Promise<CableView | undefined> {
+    const io = await this.deps.sys.exec('/usr/sbin/ioreg', ['-p', 'IOUSB', '-l', '-w0'], 5_000).catch(() => undefined);
+    const phone = parseUsbPhones(io?.stdout ?? '')[0];
+    let next: CableView | undefined;
+    if (phone) {
+      const adb = await this.ensureAdb();
+      const rows = adb ? (await this.attached()).filter((d) => d.usb) : [];
+      const row = rows.find((d) => d.serial === phone.serial) ?? (rows.length === 1 ? rows[0] : undefined);
+      if (!row) next = { state: 'no-debugging', name: phone.name };
+      else if (row.state !== 'device') next = { state: 'unauthorized', name: phone.name };
+      else {
+        const facts = this.cableFacts.get(row.serial) ?? (await this.factsOf(new Adb(this.deps.sys, adb!.path, row.serial)));
+        this.cableFacts.set(row.serial, facts);
+        const paired = this.deps.devices.all().some((r) => r.cert.platform === 'android' && r.cert.name === facts.name);
+        next = { state: 'ready', name: facts.name || phone.name, ...(facts.beluga && !paired ? { canPair: true } : {}) };
+      }
+    }
+    if (JSON.stringify(next) !== JSON.stringify(this.cable)) {
+      this.cable = next;
+      this.deps.onChange();
+    }
+    return next;
+  }
+
+  private async factsOf(adb: Adb): Promise<{ beluga: boolean; name: string }> {
+    const res = await adb.shell('pm path sh.ratel.beluga; settings get global device_name', 8_000).catch(() => undefined);
+    const lines = (res?.stdout ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+    return { beluga: lines.some((l) => l.startsWith('package:')), name: lines.filter((l) => !l.startsWith('package:')).at(-1) ?? '' };
+  }
+
+  /** Open a pairing on the phone on the cable (its Beluga shows "Pair with …?"; you still check the four pictures). */
+  async openPairingOnCable(link: string): Promise<void> {
+    if (!/^beluga:\/\/device#[\w-]+(\?r=[\w%.-]+)?$/.test(link)) throw new Error('Not a pairing link');
+    const adb = await this.ensureAdb();
+    const row = adb ? (await this.attached()).find((d) => d.usb && d.state === 'device') : undefined;
+    if (!adb || !row) throw new Error('Plug the phone in, with USB debugging on and this Mac allowed.');
+    const res = await new Adb(this.deps.sys, adb.path, row.serial).shell(`am start -a android.intent.action.VIEW -d '${link}' sh.ratel.beluga`, 10_000);
+    if (res.code !== 0 || /Error|Exception/.test(res.stdout + res.stderr)) throw new Error('The phone didn’t open Beluga’s pairing: open Beluga on the phone and try again.');
+  }
+
+  /** Show the person one of the phone's settings screens (Developer options, About phone), through its Beluga. */
+  async showSettings(deviceId: string, which: 'developer' | 'about'): Promise<void> {
+    const link = this.deps.link(deviceId);
+    if (!link?.proofs) throw new Error('Open Beluga on the phone (and update it) so the Mac can show you the setting.');
+    await link.request('open', { settings: which }, 10_000);
   }
 
   /** Find adb once (lazily). Call before anything that may need it. */
@@ -221,22 +297,66 @@ export class PhoneControl {
 
   /**
    * Make sure the Mac's adb is connected to this phone's Wireless debugging and return its serial,
-   * or undefined if it isn't reachable. Only ever through the link (BLG-187): a local tunnel the
-   * paired phone's own app carries, end-to-end encrypted to its keys, to its own debugging port.
-   * Never straight to an address on the network: nothing there proves it's your phone (anyone on
-   * the Wi-Fi can answer as it, or announce its name over mDNS), and a phone's adb is a full shell.
+   * or undefined if it isn't reachable. Two ways, the first that works (BLG-189):
+   *  - straight over the same Wi-Fi (fastest), to the address and port the paired phone itself
+   *    gave over the link, and only once the device there proves it's that phone: it reads back a
+   *    one-time code the phone was sent over the link. Nobody else on the network can pass for it
+   *    (and a name announced over mDNS is never trusted). Many networks (dorms, campuses, cafés)
+   *    keep devices apart: then it's `blocked` there, said in Settings › Phone, and tried again on
+   *    another network or a while later;
+   *  - through the link: a local tunnel the phone's own app carries, end-to-end encrypted to its
+   *    keys, to its own debugging port. Works from anywhere.
    */
   private async adbSerial(deviceId: string, state: PhoneControlState | undefined): Promise<string | undefined> {
     const adb = await this.ensureAdb();
     if (!adb || !state?.adb.on) return undefined;
+    const link = this.deps.link(deviceId);
     const known = this.serials.get(deviceId);
-    if (known && (await this.attached()).some((d) => d.serial === known && d.state === 'device')) return known;
+    if (known && (await this.attached()).some((d) => d.serial === known && d.state === 'device')) {
+      // Through the link it's always the phone; straight, it proves itself again now and then (an address can change hands).
+      if (known.startsWith('127.0.0.1') || Date.now() - (this.provenAt.get(known) ?? 0) < PROOF_KEEP_MS || (link && (await this.proves(link, adb.path, known)))) return known;
+      await this.deps.sys.exec(adb.path, ['disconnect', known], 5_000).catch(() => undefined);
+      this.serials.delete(deviceId);
+    }
+    if (state.wifi?.ip && state.adb.port && link?.proofs) {
+      const ip = state.wifi.ip;
+      const tried = this.direct.get(deviceId);
+      if (!tried || tried.ip !== ip || tried.result === 'direct' || Date.now() - tried.at > DIRECT_RETRY_MS) {
+        const target = `${ip}:${state.adb.port}`;
+        const serial = await this.connect(adb.path, target, 5_000);
+        const result = !serial ? 'blocked' : (await this.proves(link, adb.path, serial)) ? 'direct' : 'unproven';
+        const changed = tried?.ip !== ip || tried.result !== result;
+        this.direct.set(deviceId, { ip, result, at: Date.now() });
+        if (changed) this.deps.onChange();
+        if (result === 'direct') return this.remember(deviceId, serial!);
+        if (serial) {
+          this.logLine(`${target} didn’t prove it’s the phone: not used`);
+          await this.deps.sys.exec(adb.path, ['disconnect', serial], 5_000).catch(() => undefined);
+        }
+      }
+    }
     const port = await this.tunnelPort(deviceId);
     if (port) {
       const serial = await this.connect(adb.path, `127.0.0.1:${port}`);
       if (serial) return this.remember(deviceId, serial);
     }
     return undefined;
+  }
+
+  /** Per phone: the Wi-Fi the straight way was last tried on and what it found. */
+  private readonly direct = new Map<string, { ip: string; result: 'direct' | 'blocked' | 'unproven'; at: number }>();
+  /** When each straight connection last proved it's the phone. */
+  private readonly provenAt = new Map<string, number>();
+
+  /** The device at `serial` reads back a one-time code only the paired phone was sent (over the link). */
+  private async proves(link: PhoneLinkHandle, adbPath: string, serial: string): Promise<boolean> {
+    const nonce = randomBytes(16).toString('hex');
+    const sent = ProofView.safeParse(await link.request('proof', { nonce }, 8_000).catch(() => undefined));
+    if (!sent.success || !/^[\w./-]+$/.test(sent.data.path)) return false;
+    const read = await this.deps.sys.exec(adbPath, ['-s', serial, 'shell', 'cat', sent.data.path], 8_000).catch(() => undefined);
+    const ok = read?.code === 0 && read.stdout.trim() === nonce;
+    if (ok) this.provenAt.set(serial, Date.now());
+    return ok;
   }
 
   /**
@@ -271,7 +391,12 @@ export class PhoneControl {
       if (serial) {
         this.reached.delete(deviceId);
         this.deps.onChange();
-        return 'Ready: unplug it whenever you like. Claude and the mirror go on through Beluga’s encrypted link (never straight over the network), and Wireless debugging turns itself off after 15 minutes unused.';
+        const later = 'Unplug it whenever you like; Wireless debugging turns itself off after 15 minutes unused.';
+        return serial.startsWith('127.0.0.1')
+          ? this.direct.get(deviceId)?.result === 'blocked'
+            ? `Ready, through Beluga: this Wi‑Fi keeps devices apart (dorms, campuses and cafés often do), so the Mac reaches the phone through Beluga’s encrypted link instead. A little slower; on another network it connects straight. ${later}`
+            : `Ready, through Beluga’s encrypted link. ${later}`
+          : `Ready, straight over this Wi‑Fi (the phone proved it’s yours). ${later}`;
       }
     }
     if (asked) throw new Error('The phone is asking “Allow wireless debugging on this network?”: unlock it and tap Allow, then try again.');
@@ -321,8 +446,8 @@ export class PhoneControl {
     return serial;
   }
 
-  private async connect(adbPath: string, target: string): Promise<string | undefined> {
-    const res = await this.deps.sys.exec(adbPath, ['connect', target], 10_000).catch(() => undefined);
+  private async connect(adbPath: string, target: string, timeoutMs = 10_000): Promise<string | undefined> {
+    const res = await this.deps.sys.exec(adbPath, ['connect', target], timeoutMs).catch(() => undefined);
     if (res && /connected to|already connected/i.test(res.stdout)) return target;
     this.logLine(`adb connect ${target}: ${(res?.stdout || res?.stderr || 'no answer').trim().slice(0, 120)}`);
     return undefined;
@@ -355,7 +480,7 @@ export class PhoneControl {
       const usb = await this.usbSerial(state);
       if (usb) return { route: 'usb', adb: new Adb(this.deps.sys, adb.path, usb), ...(link ? { link } : {}) };
       const serial = await this.adbSerial(deviceId, state);
-      if (serial) return { route: 'link', adb: new Adb(this.deps.sys, adb.path, serial), ...(link ? { link } : {}) };
+      if (serial) return { route: serial.startsWith('127.0.0.1') ? 'link' : 'wifi', adb: new Adb(this.deps.sys, adb.path, serial), ...(link ? { link } : {}) };
     }
     // No adb: the app's Accessibility service, if it's on and allowed.
     if (link?.control?.allowed && link.control.accessibility) return { route: 'accessibility', link };
@@ -381,7 +506,9 @@ export class PhoneControl {
     const connected = Boolean(serial);
     const adbStage: PhoneControlView['adb'] = connected ? 'connected' : !state?.adb.on ? 'off' : state.adb.pairing ? 'unpaired' : 'ready';
     const usb = this.lastUsb.get(deviceId) ?? false;
-    const routes = this.phoneSaidNo(deviceId) ? [] : this.routesOf(state, usb, false, connected || (state?.adb.on ?? false));
+    const straight = connected && !serial?.startsWith('127.0.0.1');
+    const routes = this.phoneSaidNo(deviceId) ? [] : this.routesOf(state, usb, straight, (connected && !straight) || (state?.adb.on ?? false));
+    const tried = state?.adb.on ? this.direct.get(deviceId) : undefined;
     return {
       use,
       ...(state ? { allowed: state.allowed, accessibility: state.accessibility, screenshots: state.screenshots } : {}),
@@ -392,6 +519,7 @@ export class PhoneControl {
       ...(state?.device.model ? { model: state.device.model } : {}),
       ...(this.noteFor(state, routes, use, this.phoneSaidNo(deviceId)) ? { note: this.noteFor(state, routes, use, this.phoneSaidNo(deviceId))! } : {}),
       ...(this.busy(deviceId) ? { busy: true } : {}),
+      ...(tried && tried.result !== 'unproven' ? { wifiPath: tried.result } : {}),
     };
   }
   private lastUsb = new Map<string, boolean>();
@@ -1053,6 +1181,7 @@ export class PhoneControl {
 
   stop(): void {
     clearInterval(this.idleCheck);
+    clearInterval(this.cableTimer);
     for (const { server } of this.tunnels.values()) server.close();
     this.tunnels.clear();
   }
@@ -1071,7 +1200,7 @@ export class PhoneControl {
   summaryLine(deviceId: string): string {
     const v = this.controlView(deviceId);
     const name = this.deps.devices.get(deviceId)?.cert.name ?? 'your phone';
-    const how = v.routes.length ? `reached by ${v.routes[0] === 'accessibility' ? 'the Accessibility service' : v.routes[0] === 'link' ? 'Wireless debugging (through the link)' : v.routes[0] === 'wifi' ? 'Wireless debugging (same Wi-Fi)' : 'USB'}` : (v.note ?? 'not reachable right now');
+    const how = v.routes.length ? `reached by ${v.routes[0] === 'accessibility' ? 'the Accessibility service' : v.routes[0] === 'link' ? `Wireless debugging through Beluga’s link${v.wifiPath === 'blocked' ? ' (this Wi-Fi keeps devices apart)' : ''}` : v.routes[0] === 'wifi' ? 'Wireless debugging (straight over the same Wi-Fi)' : 'USB'}` : (v.note ?? 'not reachable right now');
     const shell = v.routes.some((x) => x === 'usb' || x === 'wifi' || x === 'link');
     return `${name} (${v.model ?? 'Android'}) — ${how}.${shell ? ' Shell, logs and installs work.' : ' Taps, typing and screenshots only (no shell/logs: turn on Wireless debugging for those).'}`;
   }

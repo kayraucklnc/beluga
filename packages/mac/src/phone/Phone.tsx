@@ -36,7 +36,7 @@ const USE_OPTIONS: ReadonlyArray<{ value: PhoneUse; label: string }> = [
   { value: 'use', label: 'Use' },
   { value: 'full', label: 'Full (shell too)' },
 ];
-const ROUTE_WORDS: Record<string, string> = { usb: 'over USB', wifi: 'Wireless debugging (same Wi‑Fi)', link: 'Wireless debugging (through Beluga)', accessibility: 'the Accessibility service' };
+const ROUTE_WORDS: Record<string, string> = { usb: 'over USB', wifi: 'Wireless debugging, straight over this Wi‑Fi', link: 'Wireless debugging, through Beluga’s encrypted link', accessibility: 'the Accessibility service' };
 
 function PhoneClaude({ d }: { d: DeviceView }) {
   const { client } = useBeluga();
@@ -48,7 +48,7 @@ function PhoneClaude({ d }: { d: DeviceView }) {
       <Row label="Let Claude use this phone" detail={route ? `Reached by ${ROUTE_WORDS[route] ?? route}.` : (c.note ?? 'Not reachable right now.')}>
         <Select label="Let Claude use this phone" value={c.use} onChange={(v) => void client.api.companion['phone.use'](d.id, v as PhoneUse)} options={USE_OPTIONS.map((o) => ({ ...o }))} />
       </Row>
-      {c.use !== 'off' && (c.usb || c.adb !== 'off') ? <OverWifi id={d.id} on={c.adb !== undefined && c.adb !== 'off'} cable={c.usb === true} /> : null}
+      {c.use !== 'off' && (c.usb || c.adb !== 'off') ? <OverWifi id={d.id} on={c.adb !== undefined && c.adb !== 'off'} cable={c.usb === true} path={c.wifiPath} /> : null}
       {c.use !== 'off' && c.adb === 'unpaired' ? (
         <Row label="Wireless debugging" detail="On the phone, open Wireless debugging › Pair device with pairing code, then type the six digits into Beluga’s notification.">
           <Button size="small" onClick={() => void quietly(client, client.api.companion['phone.pairAdb'](d.id))}>
@@ -64,7 +64,7 @@ function PhoneClaude({ d }: { d: DeviceView }) {
  * Wireless debugging (BLG-187): on over the cable so Claude and the mirror carry on unplugged, or
  * off. It's only ever reached through Beluga's encrypted link, and goes off by itself when unused.
  */
-function OverWifi({ id, on, cable }: { id: string; on: boolean; cable: boolean }) {
+function OverWifi({ id, on, cable, path }: { id: string; on: boolean; cable: boolean; path?: 'direct' | 'blocked' }) {
   const { client } = useBeluga();
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string>();
@@ -79,9 +79,15 @@ function OverWifi({ id, on, cable }: { id: string; on: boolean; cable: boolean }
       setBusy(false);
     }
   };
+  const way =
+    path === 'blocked'
+      ? 'This Wi‑Fi keeps devices apart (dorms, campuses and cafés often do), so the Mac reaches the phone through Beluga’s end-to-end encrypted link instead: a little slower. On another network it connects straight.'
+      : path === 'direct'
+        ? 'On this Wi‑Fi the Mac connects straight to the phone, once it proves it’s yours (a one-time code sent over Beluga’s encrypted link), so nobody else on the network can pass for it.'
+        : 'Straight over the Wi‑Fi when the network lets devices reach each other and the phone proves it’s yours, else through Beluga’s end-to-end encrypted link.';
   const detail = on
-    ? 'Wireless debugging is on: Claude and the mirror reach the phone without the cable, only through Beluga’s end-to-end encrypted link. While it’s on, the phone listens for debugging on its Wi‑Fi (only keys it allowed get in). Beluga turns it off after 15 minutes unused.'
-    : 'Keep using it when you unplug the cable: this turns on the phone’s Wireless debugging. Beluga reaches it only through its end-to-end encrypted link, never straight over the network, and turns it off after 15 minutes unused. Tap Allow on the phone when it asks (not “Always”).';
+    ? `Wireless debugging is on. ${way} While it’s on, the phone listens for debugging on its Wi‑Fi (only keys it allowed get in); Beluga turns it off after 15 minutes unused.`
+    : `Keep using it when you unplug the cable: this turns on the phone’s Wireless debugging. ${way} Beluga turns it off after 15 minutes unused. Tap Allow on the phone when it asks (not “Always”).`;
   return (
     <Row label="Over Wi‑Fi" detail={said ?? detail}>
       {on ? (
@@ -284,11 +290,71 @@ function AdbLine() {
   );
 }
 
+/**
+ * A phone on this Mac's USB cable (BLG-190): what to switch on, said plainly (and shown on the phone
+ * when its Beluga can), or pair it over the cable.
+ */
+function OnTheCable() {
+  const { client } = useBeluga();
+  const cable = useAdb()?.cable;
+  const devices = useDevices();
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string>();
+  if (!cable) return null;
+  const linked = devices.find((d) => d.platform !== 'ios' && d.linked);
+  const run = async (work: () => Promise<string | void>): Promise<void> => {
+    setBusy(true);
+    setSaid(undefined);
+    try {
+      setSaid((await work()) || undefined);
+    } catch (err) {
+      setSaid(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  // Developer options, or About phone when they aren't on yet (tap Build number seven times there).
+  const showOnPhone = (): Promise<string> =>
+    client.api.companion['phone.settings'](linked!.id, 'developer').then(
+      () => 'Developer options are open on the phone: turn on USB debugging.',
+      () => client.api.companion['phone.settings'](linked!.id, 'about').then(() => 'About phone is open on the phone: tap Software information › Build number seven times, then Settings › Developer options › USB debugging.'),
+    );
+  const name = cable.name;
+  if (cable.state === 'no-debugging')
+    return (
+      <Row label="On the cable" detail={said ?? `${name} is plugged in, but USB debugging is off, so Claude can’t use the cable yet. On the phone: Settings › About phone › Software information › tap Build number seven times; then Settings › Developer options › USB debugging.`}>
+        {linked ? (
+          <Button size="small" disabled={busy} onClick={() => void run(showOnPhone)}>
+            Open on the Phone
+          </Button>
+        ) : (
+          <span />
+        )}
+      </Row>
+    );
+  if (cable.state === 'unauthorized') return <Row label="On the cable" detail={`${name} is asking: unlock it and tap Allow on “Allow USB debugging?” (tick “Always allow from this computer” so it doesn’t ask again).`}><span /></Row>;
+  if (cable.canPair)
+    return (
+      <Row label="On the cable" detail={said ?? `${name} has Beluga but isn’t paired with this Mac. Pair it over the cable: its Beluga opens the pairing, and you check the four pictures match.`}>
+        <Button size="small" disabled={busy} onClick={() => void run(() => client.api.companion['phone.pairCable']())}>
+          {busy ? 'Opening…' : 'Pair over the Cable'}
+        </Button>
+      </Row>
+    );
+  return <Row label="On the cable" detail={`${name} is plugged in: Claude and the mirror use the cable, the fastest way.`}><span /></Row>;
+}
+
 /** Settings › Phone. */
 export function PhoneSettings() {
   const now = useMinute();
+  const cable = useAdb()?.cable;
   return (
     <>
+      {cable ? (
+        <Group title="On the cable">
+          <OnTheCable />
+        </Group>
+      ) : null}
       <Group title="Your phones">
         <div className={s.inSettings}>
           <DeviceList now={now} />

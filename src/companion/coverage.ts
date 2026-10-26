@@ -366,6 +366,8 @@ export const PHONE: Record<Method, Side> = {
   'companion.phone.use': 'mac',
   'companion.phone.pairAdb': 'mac',
   'companion.phone.wifi': 'mac',
+  'companion.phone.pairCable': 'mac',
+  'companion.phone.settings': 'mac',
   'companion.phone.act': 'mac',
   'companion.phone.macros': 'mac',
   'companion.phone.macroRun': 'mac',
