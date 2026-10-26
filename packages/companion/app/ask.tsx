@@ -220,7 +220,7 @@ export default function Ask() {
               ) : null}
               <VoiceNote voice={voice} />
             </View>
-            {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} /> : null}
+            {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} planFirst={planFirst} onPlanFirst={setPlanFirst} /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 10 }}>
               <Press onPress={() => setPicking(true)} accessibilityLabel="Where it goes" style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingLeft: 6, paddingRight: 12, borderRadius: 22, backgroundColor: color.sunken }}>
                 {target ? mark(target, 32) : null}
@@ -229,7 +229,6 @@ export default function Ask() {
                 </T>
                 <ChevronDown color={color.text2} size={16} />
               </Press>
-              {target?.kind === 'project' && modes && how === 'worktree' ? <PlanFirst on={planFirst} onChange={setPlanFirst} /> : null}
               {!photos ? null : (
               <Press onPress={async () => setPhoto((await pickPhoto().catch(() => undefined)) ?? photo)} accessibilityLabel="Add a photo" style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: color.sunken }}>
                 <ImagePlus color={color.text2} size={20} />
@@ -264,10 +263,10 @@ export default function Ask() {
   );
 }
 
-/** A project's three ways in, as icon chips (as the Mac's project home offers them). */
-function ModeChips({ mode, onMode }: { readonly mode: Mode; readonly onMode: (m: Mode) => void }) {
+/** A project's three ways in, as icon chips (as the Mac's project home offers them), and Plan first beside a worktree's (wrapping on a narrow phone, so the send row keeps only where it goes, a photo, the mic and send). */
+function ModeChips({ mode, onMode, planFirst, onPlanFirst }: { readonly mode: Mode; readonly onMode: (m: Mode) => void; readonly planFirst: boolean; readonly onPlanFirst: (on: boolean) => void }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 10 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 10 }}>
       {MODES.map((m) => {
         const on = m.mode === mode;
         return (
@@ -286,6 +285,7 @@ function ModeChips({ mode, onMode }: { readonly mode: Mode; readonly onMode: (m:
           </Press>
         );
       })}
+      {mode === 'worktree' ? <PlanFirst on={planFirst} onChange={onPlanFirst} /> : null}
     </View>
   );
 }
@@ -298,9 +298,9 @@ function PlanFirst({ on, onChange }: { readonly on: boolean; readonly onChange: 
       accessibilityRole="switch"
       accessibilityState={{ checked: on }}
       accessibilityLabel="Plan mode: Claude plans first"
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 44, paddingHorizontal: 13, borderRadius: 22, backgroundColor: on ? toneBg('lavender') : color.sunken }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: on ? toneBg('lavender') : color.sunken }}
     >
-      <ListChecks color={on ? toneInk('lavender') : color.text2} size={17} strokeWidth={2.3} />
+      <ListChecks color={on ? toneInk('lavender') : color.text2} size={15} strokeWidth={2.3} />
       <T v="caption" c={on ? toneInk('lavender') : color.text2} style={{ fontWeight: '700' }}>
         Plan first
       </T>

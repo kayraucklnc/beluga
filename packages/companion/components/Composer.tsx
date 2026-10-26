@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { ArrowUp, Clock, ImagePlus, ListPlus, Navigation, Square, X } from 'lucide-react-native';
+import { ArrowUp, Clock, ImagePlus, ListPlus, Navigation, Plus, Square, X } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { Keyboard, Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp, LinearTransition, useAnimatedStyle, withSpring, ZoomIn, ZoomOut } from 'react-native-reanimated';
@@ -8,7 +8,7 @@ import { pickPhoto } from '../lib/pick';
 import { color, ink, spring, tint } from '../lib/theme';
 import { appendSpoken } from '../lib/dictate';
 import { useVoice, voiceAvailable } from '../lib/voice';
-import { Options } from './Options';
+import { type Option, Options } from './Options';
 import { Card, haptic, Press, T } from './ui';
 import { VoiceButton, VoiceNote, VoiceStage, voiceActive } from './Voice';
 
@@ -17,10 +17,12 @@ import { VoiceButton, VoiceNote, VoiceStage, voiceActive } from './Voice';
  * lines, then it scrolls inside), a photo button that's there whatever you've written, and one
  * round button: Send, or Stop (rose, while Claude works and there's nothing to send). While Claude
  * works the button queues (after what it's doing, the Mac's ↩) and a long-press offers Steer (now,
- * the Mac's ⌥↩); what's queued shows above the field. Which does what: lib/composer.ts.
+ * the Mac's ⌥↩); what's queued shows above the field. Which does what: lib/composer.ts. More to
+ * add than the photo (the chat's Ask Claude) folds with it into one + (a narrow phone's row fits).
  *
  * The microphone beside it (BLG-161): each pause is written down while you talk; ■ puts the words in
  * the field to edit, the round button sends them as you said them (queued, while Claude works).
+ * While it listens, the + and photo step aside so the words have the width.
  */
 
 /** A photo picked to go with the message (lib/pick.ts). */
@@ -98,7 +100,7 @@ export function Composer({
   working,
   disabled,
   bottom = 0,
-  left,
+  more = [],
   above,
   photos: canAttach,
 }: {
@@ -111,8 +113,8 @@ export function Composer({
   readonly working?: boolean;
   readonly disabled?: string;
   readonly bottom?: number;
-  /** More beside the photo button (the chat's Ask Claude). */
-  readonly left?: React.ReactNode;
+  /** More to add beside the photo (the chat's Ask Claude): with it, behind one +. */
+  readonly more?: readonly Option[];
   /** Above the field: what's queued. */
   readonly above?: React.ReactNode;
   /** Photos can go with a message: the photo button, there whatever you've written. */
@@ -122,6 +124,7 @@ export function Composer({
   const [h, setH] = useState(fieldHeight(0));
   const [pics, setPics] = useState<readonly Photo[]>([]);
   const [menu, setMenu] = useState(false);
+  const [adding, setAdding] = useState(false);
   // What the long-press sheet sends, read when its row is tapped (after the sheet has closed).
   const now = useRef({ text: '', pics: [] as readonly Photo[] });
   now.current = { text, pics };
@@ -166,6 +169,10 @@ export function Composer({
     const p = await pickPhoto().catch(() => undefined);
     if (p) setPics((l) => (l.some((x) => x.uri === p.uri) ? l : [...l, p].slice(0, MAX_PHOTOS)));
   };
+  // What can go with the message: one is its own button, more are behind one +.
+  const adds: readonly Option[] = [...(canAttach ? [{ Icon: ImagePlus, label: 'Add a photo', tone: 'sky' as const, hidden: full, onPress: () => void attach() }] : []), ...more];
+  const One = adds.length === 1 ? adds[0]!.Icon : undefined;
+  const recording = voiceActive(voice.view);
   // While Claude works, one quiet line says what the button does (no second button).
   const hint = plan.more.length ? 'Goes after what Claude is doing · hold ↑ to steer now' : working && plan.tap === 'queue' && pics.length ? 'Photos go after what Claude is doing' : undefined;
   return (
@@ -187,15 +194,18 @@ export function Composer({
         ) : null}
         <PhotoStrip photos={pics} onRemove={(uri) => setPics((l) => l.filter((p) => p.uri !== uri))} />
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
-          {canAttach ? (
-            <Press onPress={() => void attach()} disabled={full} accessibilityLabel="Add a photo" hitSlop={4} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', opacity: full ? 0.4 : 1 }}>
-              <ImagePlus color={color.text2} size={21} />
+          {recording ? null : adds.length > 1 ? (
+            <Press onPress={() => (Keyboard.dismiss(), setAdding(true))} accessibilityLabel="Add" accessibilityHint={adds.map((o) => o.label).join(', ')} hitSlop={4} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }}>
+              <Plus color={color.text2} size={22} />
+            </Press>
+          ) : One ? (
+            <Press onPress={adds[0]!.onPress} disabled={canAttach && full} accessibilityLabel={adds[0]!.label} hitSlop={4} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', opacity: canAttach && full ? 0.4 : 1 }}>
+              <One color={color.text2} size={21} />
             </Press>
           ) : null}
-          {left}
-          {voiceActive(voice.view) ? (
+          {recording ? (
             // While it records, the stage is the field: the blob, and the words landing where they'll stay.
-            <View style={{ flex: 1, minWidth: 0, paddingLeft: canAttach || left ? 4 : 10 }}>
+            <View style={{ flex: 1, minWidth: 0, paddingLeft: 10 }}>
               <VoiceStage voice={voice} before={text} box minHeight={fieldHeight(0)} />
             </View>
           ) : (
@@ -215,7 +225,7 @@ export function Composer({
                 lineHeight: FIELD_LINE_HEIGHT,
                 paddingTop: FIELD_PAD,
                 paddingBottom: FIELD_PAD,
-                paddingLeft: canAttach || left ? 4 : 12,
+                paddingLeft: adds.length ? 4 : 12,
                 paddingRight: 6,
                 minHeight: fieldHeight(0),
                 maxHeight: fieldHeight(Number.POSITIVE_INFINITY),
@@ -283,6 +293,7 @@ export function Composer({
           { Icon: ListPlus, label: 'Queue', sub: 'After what Claude is doing', tone: 'mint', onPress: () => send('send') },
         ]}
       />
+      <Options window visible={adding} onClose={() => setAdding(false)} title="Add" options={adds} />
     </View>
   );
 }
