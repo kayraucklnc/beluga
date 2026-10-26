@@ -10,6 +10,7 @@ import { useActions } from '../../lib/actions.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { MERGE_METHODS, canAutoMerge, canSkipChecks, checkDuration, checkTone, checksSummary, sortChecks } from '../../lib/pr-checks.js';
 import { openExternal } from '../../lib/system.js';
+import { showGitTrouble } from '../../lib/git-trouble.js';
 import { askBeforeWork } from '../../lib/work-confirm.js';
 import { useClock } from '../../lib/window-active.js';
 import type { NativeMenuProps } from './index.js';
@@ -98,7 +99,8 @@ export function MergeButton({ wsId, pr, onError, size }: { wsId: string; pr: Pul
     onError(undefined);
     try {
       const out = await api.workbench.mergePr(wsId, { method: how, ...(mode ? { [mode]: true } : {}) });
-      if (out && !out.ok) onError(out.message);
+      // Couldn't reach GitHub: its card (why, and the fix) instead of the line.
+      if (out && !out.ok && !showGitTrouble(wsId, out, 'none')) onError(out.message);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {

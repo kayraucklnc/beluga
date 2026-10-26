@@ -4,7 +4,7 @@ import type { AppState, View } from '@beluga/core/store.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
-import { type Person, type TasksPrefs, isSolo, readTasksPrefs } from './tasks-model.js';
+import { type Person, type TasksPrefs, fromV1TasksPrefs, isSolo, readTasksPrefs } from './tasks-model.js';
 
 /** What the Tasks screens share: the board, you, the people a task can be for, the view's prefs, and acting on tasks. */
 
@@ -114,8 +114,16 @@ export const issueWayBack = (projectId: string): View => issueCameFrom ?? { kind
 
 // ---- the view's prefs, per window
 
-const KEY = 'beluga.tasks.v1';
-let prefs = readTasksPrefs(typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY));
+const KEY = 'beluga.tasks.v2';
+const saved = (): string | null => {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    return localStorage.getItem(KEY) ?? fromV1TasksPrefs(localStorage.getItem('beluga.tasks.v1'));
+  } catch {
+    return null;
+  }
+};
+let prefs = readTasksPrefs(saved());
 const listeners = new Set<() => void>();
 
 export function setTasksPrefs(patch: Partial<TasksPrefs>): void {

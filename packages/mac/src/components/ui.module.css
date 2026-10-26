@@ -157,6 +157,13 @@
 .segmentIcon {
   padding: 0 9px;
 }
+.segmentCount {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.segmentOn .segmentCount {
+  color: var(--text-2);
+}
 .segmentOn {
   background: var(--bg-raised);
   color: var(--text);

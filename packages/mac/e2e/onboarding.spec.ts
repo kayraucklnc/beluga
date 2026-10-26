@@ -19,6 +19,10 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
+  // Another terminal's look (BLG-212): skippable, Beluga's own until you pick one.
+  await expect(welcome.getByRole('heading', { name: 'Coming from another terminal?' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+
   // The settings apply as they're changed.
   await welcome.getByRole('radio', { name: '⌘ Return' }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}').sendWith)).toBe('cmd-enter');
@@ -90,6 +94,8 @@ test('a permission macOS already allows shows as allowed, and the tour shows a r
   await expect(table.locator('tbody tr').first()).toContainText('Globex');
 
   await welcome.getByRole('button', { name: 'Skip Tour' }).click();
+  // The look, another terminal's look, the defaults.
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(welcome.getByText('Allowed', { exact: true })).toBeVisible();

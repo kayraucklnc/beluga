@@ -24,7 +24,7 @@ import { useArrangeDrag } from './arrange-drag.js';
 import { GroupHeader, NewGroupRow, groupItems, isGroupOption, moveItems, moveKey } from './ProjectGroups.js';
 import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, useLayout } from './project-layout.js';
 import { OutsideWorktrees } from './OtherWorktrees.js';
-import { ProjectAgents, SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
+import { ProjectAgents, WorkspaceWithAgents, useAgentOrigins, useCcSessions } from './SubAgents.js';
 import { hasRowsInside } from './project-rows.js';
 import { type Tally, groupTally, groupWorking, projectPlans, projectTally, projectWorking, tallyTip } from './attention-model.js';
 import { TallyMark } from './signal-marks.js';
@@ -271,15 +271,12 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
             <Fragment key={x.id}>
               <PlanRow plan={x} indent={kids} />
               {taskChats(x.id).map((w) => (
-                <WorkspaceRow key={w.id} ws={w} indent={kids + 1} />
+                <WorkspaceWithAgents key={w.id} ws={w} indent={kids + 1} />
               ))}
             </Fragment>
           ))}
           {mine.map((w) => (
-            <Fragment key={w.id}>
-              <WorkspaceRow ws={w} indent={kids} />
-              <SubAgentRows ws={w} indent={kids + 1} />
-            </Fragment>
+            <WorkspaceWithAgents key={w.id} ws={w} indent={kids} />
           ))}
           {/* Worktrees made outside Beluga: after Beluga's own, most recent first, each with where it is. */}
           <OutsideWorktrees p={p} indent={kids} />
