@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { fireVars, SETUPS, setupOf, DEFAULT_FIRE, type FireLook, type FirePalette, PALETTES, PRESETS, paletteOf, presetOf } from '../chat/fire-look.js';
+import { fireVars, SETUPS, setupOf, DEFAULT_FIRE, type FireLook, type FirePalette, PALETTES, PRESETS, paletteOf, presetOf, TIMING } from '../chat/fire-look.js';
 import { MaxFire } from '../chat/MaxFire.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Segmented, cx } from '../components/ui.js';
@@ -16,6 +16,35 @@ const DIALS = [
   { key: 'thickness', label: 'Thickness', low: 'Wispy', high: 'Thick' },
   { key: 'wildness', label: 'Wildness', low: 'Calm', high: 'Wild' },
 ] as const;
+
+/** Only while typing: how soon it catches and goes out (and the seconds it is). */
+const TIMES = [
+  { key: 'catchAfter', label: 'Catches', low: 'At once', high: 'After a while' },
+  { key: 'outAfter', label: 'Goes out', low: 'At once', high: 'Lingers' },
+] as const;
+
+/** A slider with a word at each end, its track filled in the fire's colours (and, `shown`, its value at the end). */
+function Dial({ label, low, high, value, min = 0, max = 1, step = 0.05, colors, shown, onChange }: { label: string; low: string; high: string; value: number; min?: number; max?: number; step?: number; colors: readonly string[]; shown?: string; onChange: (v: number) => void }) {
+  return (
+    <div className={cx(f.dial, shown !== undefined && f.shown)}>
+      <span className={f.dialLabel}>{label}</span>
+      <span className={f.end}>{low}</span>
+      <input
+        type="range"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        className={f.range}
+        style={{ '--fill': `${((value - min) / (max - min)) * 100}%`, '--c0': colors[0], '--c1': colors[1] } as React.CSSProperties}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className={f.end}>{high}</span>
+      {shown !== undefined ? <span className={f.value}>{shown}</span> : null}
+    </div>
+  );
+}
 
 /** Three dots in a palette's colours, edge to core. */
 function Dots({ colors }: { colors: readonly string[] }) {
@@ -124,24 +153,16 @@ export function FireSettings() {
           />
         </Row>
       </Group>
+      {look.show === 'typing' ? (
+        <Group title="While typing">
+          {TIMES.map((d) => (
+            <Dial key={d.key} label={d.label} low={d.low} high={d.high} {...TIMING[d.key]} value={look[d.key]} colors={colors} shown={`${Number(look[d.key].toFixed(1))} s`} onChange={(v) => set({ [d.key]: v })} />
+          ))}
+        </Group>
+      ) : null}
       <Group title="The flames">
         {DIALS.map((d) => (
-          <div key={d.key} className={f.dial}>
-            <span className={f.dialLabel}>{d.label}</span>
-            <span className={f.end}>{d.low}</span>
-            <input
-              type="range"
-              aria-label={d.label}
-              min={0}
-              max={1}
-              step={0.05}
-              value={look[d.key]}
-              className={f.range}
-              style={{ '--fill': `${look[d.key] * 100}%`, '--c0': colors[0], '--c1': colors[1] } as React.CSSProperties}
-              onChange={(e) => set({ [d.key]: Number(e.target.value) })}
-            />
-            <span className={f.end}>{d.high}</span>
-          </div>
+          <Dial key={d.key} label={d.label} low={d.low} high={d.high} value={look[d.key]} colors={colors} onChange={(v) => set({ [d.key]: v })} />
         ))}
       </Group>
       <Colors look={look} set={set} />
@@ -166,7 +187,7 @@ export function FireSettings() {
           <Switch label="Deleting pops into pixels" on={look.popDelete} onChange={(popDelete) => set({ popDelete })} />
         </Row>
       </Group>
-      {(['preset', 'show', 'where', 'typing', 'popDelete'] as const).some((k) => look[k] !== DEFAULT_FIRE[k]) ? (
+      {(['preset', 'show', 'where', 'typing', 'popDelete', 'catchAfter', 'outAfter'] as const).some((k) => look[k] !== DEFAULT_FIRE[k]) ? (
         <div className={f.reset}>
           <Button size="small" onClick={() => setPrefs({ maxFire: { ...DEFAULT_FIRE, palettes: look.palettes } })}>
             Back to the Default
