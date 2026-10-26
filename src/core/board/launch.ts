@@ -24,6 +24,7 @@ import { attachPlans, detachPlans } from '../plans/registry.js';
 import { seedDemoPlan } from '../plans/demo.js';
 import { PlanDecisions } from '../plans/decisions.js';
 import { launchTeam } from '../team/launch.js';
+import { TeamBoardSync } from '../team/board-sync.js';
 
 /**
  * Start the board and plans for the daemon (the Mac app's Beluga): tasks in ~/.beluga/board.json,
@@ -132,7 +133,10 @@ export function launchBoard(host: BoardHost): () => void {
     repoOf: async (id) => (host.demo ? (projectOf(id) ? demoRepo(projectOf(id)!.name) : undefined) : session.workspaces?.mainSync.githubRepo(id)),
     notify: (e) => session.notifier.notify(e),
     toast: (text, level) => session.toast(text, level),
-    parts: () => [],
+    parts: (team) => {
+      const live = (id: string): boolean => store.getState().projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived));
+      return [new TeamBoardSync(team, { board, live, dir: host.demo ? null : dir })];
+    },
   });
   let stopSeed = (): void => undefined;
   if (host.demo && !board.list().length) {

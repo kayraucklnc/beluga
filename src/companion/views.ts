@@ -1,7 +1,7 @@
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
-import { OFFER_DETAIL, offerWords } from '../core/team/model.js';
+import { OFFER_DETAIL, offerWords, workingOn, workingWords } from '../core/team/model.js';
 import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
@@ -1055,6 +1055,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
   const t = tally(i.brief.acceptance);
   const conv = taskConv(state, i);
   const who = assigneeWords(state, i);
+  const working = workingWords(workingOn(state.team, i.id).map((p) => p.name));
   return {
     id: clip(i.id, 200),
     topic,
@@ -1066,6 +1067,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
     ...(t.total ? { checks: { done: t.done, total: t.total } } : {}),
     ...(conv ? { conv } : {}),
     ...(i.pr ? { pr: { number: i.pr.number, state: i.pr.state } } : {}),
+    ...(working ? { working: clip(working, 200) } : {}),
     updatedAt: Math.round(i.updatedAt),
   };
 }

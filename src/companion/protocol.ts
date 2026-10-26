@@ -501,6 +501,8 @@ export const TaskSummary = z.object({
   /** The conversation of the worktree doing it. */
   conv: Topic.optional(),
   pr: z.object({ number: z.number().int().min(0), state: z.string().max(20) }).optional(),
+  /** Teammates on the same repository working on it now (core/team): "Ata is working on this". */
+  working: z.string().max(200).optional(),
   updatedAt: ts,
 });
 export type TaskSummary = z.infer<typeof TaskSummary>;

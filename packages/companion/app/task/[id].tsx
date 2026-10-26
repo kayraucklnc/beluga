@@ -76,6 +76,7 @@ export default function Task() {
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {pr && t.priority !== 'none' ? <Pill label={pr.label} tone={pr.tone} /> : null}
                 <Pill label={t.assignee ?? 'No one'} Icon={User} tone={t.assignee ? 'lavender' : 'plain'} />
+                {t.working ? <Pill label={t.working} Icon={User} tone="mint" /> : null}
                 {t.checks ? <Pill label={`${t.checks.done} of ${t.checks.total} checked`} Icon={Check} tone={t.checks.done === t.checks.total ? 'mint' : 'plain'} /> : null}
               </View>
 

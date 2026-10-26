@@ -84,3 +84,15 @@ export function WorkingOn({ issueId }: { issueId: string }) {
     </span>
   );
 }
+
+/** A teammate working on a task, as their avatars only (a row in Tasks). */
+export function WorkingMark({ issueId }: { issueId: string }) {
+  const people = useApp((st) => workingOn(st.team, issueId), sameDeep);
+  const words = workingWords(people.map((p) => p.name));
+  if (!words) return null;
+  return (
+    <span className={s.badge} title={words} aria-label={words} role="img">
+      <AvatarStack people={people} size={14} max={2} />
+    </span>
+  );
+}

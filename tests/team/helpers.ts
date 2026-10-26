@@ -32,7 +32,7 @@ export interface TeamMac {
   close(): Promise<void>;
 }
 
-export type PartsFor = (m: { team: TeamBoards; store: Store; board: Board; name: string; id: string }) => readonly TeamPart[];
+export type PartsFor = (m: { team: TeamBoards; store: Store; board: Board; name: string; id: string; dir: string }) => readonly TeamPart[];
 
 export async function teamMac(net: Crowd, name: string, projects: readonly RepoProject[], parts: PartsFor = () => []): Promise<TeamMac> {
   const person = await net.add(name);
@@ -58,7 +58,7 @@ export async function teamMac(net: Crowd, name: string, projects: readonly RepoP
       },
       notify: (e) => notices.push(e),
     });
-    for (const part of parts({ team, store, board, name, id: person.identity.peerId })) team.use(part);
+    for (const part of parts({ team, store, board, name, id: person.identity.peerId, dir: person.dir })) team.use(part);
     await team.start();
     return team;
   };

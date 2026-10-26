@@ -52,7 +52,7 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
             <T v="caption" style={{ fontWeight: '700' }}>
               {t.key}
             </T>
-            {[t.assignee, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined]
+            {[t.assignee, t.working, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined]
               .filter(Boolean)
               .map((x) => `  ·  ${x}`)
               .join('')}
