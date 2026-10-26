@@ -83,8 +83,18 @@
 .dial + .dial {
   border-top: 0.5px solid var(--hairline);
 }
+/* With its value at the end (the seconds, while typing). */
+.shown {
+  grid-template-columns: 84px 96px 1fr 96px 36px;
+}
 .dialLabel {
   font-weight: 500;
+}
+.value {
+  color: var(--text-2);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .end {
   color: var(--text-3);
