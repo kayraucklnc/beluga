@@ -150,6 +150,34 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const actorWords = (a: Assignee): string => (a.kind === 'person' ? a.name : `${a.ownerName}’s Claude`);
 const assigneeId = (a: Assignee | undefined): string => (!a ? '' : a.kind === 'person' ? `person:${a.id}` : `claude:${a.owner}`);
 const statusText = (from: string, to: string): string => `moved this from ${from} to ${to}`;
+/** How far along a status is, for a parent following its sub-tasks (Canceled isn't on the way). */
+const STAGE: Readonly<Record<IssueStatus, number>> = { backlog: 0, todo: 1, in_progress: 2, in_review: 3, in_plan: 3, done: 4, canceled: -1 };
+
+/**
+ * Where a parent goes when its sub-tasks (Canceled ones left out) move: Done when they're all
+ * Done, In Review when they're all in review or done, In Progress once one is under way; nowhere
+ * while none has started. A parent with work of its own (a worktree, a pull request, carried by
+ * one) follows that to review and Done, so its sub-tasks only take it as far as In Progress.
+ */
+function rollUpTo(parent: Issue, kids: readonly Issue[]): { readonly to: IssueStatus; readonly why: string } | undefined {
+  if (!kids.length) return undefined;
+  const all = kids.length === 1 ? 'its sub-task is' : `all ${kids.length} sub-tasks are`;
+  let next: { to: IssueStatus; why: string } | undefined = kids.every((k) => k.status === 'done')
+    ? { to: 'done', why: `${all} done` }
+    : kids.every((k) => STAGE[k.status] >= STAGE.in_review)
+      ? { to: 'in_review', why: `${all} in review or done` }
+      : kids.some((k) => STAGE[k.status] >= STAGE.in_progress)
+        ? { to: 'in_progress', why: STAGE[parent.status] > STAGE.in_progress ? 'a sub-task is open again' : 'a sub-task is under way' }
+        : undefined;
+  if (!next || next.to === parent.status) return undefined;
+  const ownWork = parent.worktrees.length > 0 || parent.pr !== undefined || parent.carriedBy !== undefined;
+  if (ownWork) {
+    if (STAGE[next.to] > STAGE.in_progress) next = { to: 'in_progress', why: `${all} ${next.to === 'done' ? 'done' : 'in review or done'}` };
+    if (STAGE[next.to] <= STAGE[parent.status]) return undefined;
+  }
+  return next;
+}
+
 const sameActor = (a: Actor, b: Actor): boolean => a.kind === b.kind && (a.kind === 'person' ? a.id === (b as typeof a).id : a.kind === 'claude' ? a.owner === (b as typeof a).owner : true);
 
 /** A change to note in the activity; `was`/`now` let quick changes to one field become one line. */
@@ -165,6 +193,8 @@ export class Board {
   private issues: Issue[] = [];
   private projects: Record<string, BoardProject> = {};
   private autoTasks = false;
+  /** Sub-tasks are going Done with their parent: parents wait until it's over to follow them. */
+  private cascading = 0;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   /** board.json couldn't be read nor moved aside: changes stay in memory rather than overwrite it. */
   private readOnly = false;
@@ -262,7 +292,8 @@ export class Board {
     this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
     this.deps.store.dispatch({ type: 'board_issue', issue });
     this.save();
-    return issue;
+    if (parent) this.rollUp(parent.id);
+    return this.need(issue.id);
   }
 
   update(ref: string, patch: IssuePatch, by: Actor): Issue {
@@ -584,6 +615,7 @@ export class Board {
       if (!touched) continue;
       this.change(other, { ...(other.parent === issue.id ? { parent: undefined } : {}), blockedBy: other.blockedBy.filter((id) => id !== issue.id), related: other.related.filter((id) => id !== issue.id) }, [], false);
     }
+    if (issue.parent) this.rollUp(issue.parent);
     this.save();
   }
 
@@ -770,14 +802,36 @@ export class Board {
     this.deps.store.dispatch({ type: 'board_issue', issue: next });
     this.save();
     if (status === 'done' && issue.status !== 'done') this.doneWithParent(next);
+    // Its parent follows its sub-tasks: this one moved, or moved to another parent.
+    const moved = status !== issue.status;
+    if (issue.parent && (moved || next.parent !== issue.parent)) this.rollUp(issue.parent);
+    if (next.parent && next.parent !== issue.parent) this.rollUp(next.parent);
     return next;
+  }
+
+  /** A task's sub-tasks moved: it goes where they've got to (see rollUpTo), and its own parent with it, in turn. */
+  private rollUp(id: string): void {
+    if (this.cascading) return;
+    const parent = this.issues.find((i) => i.id === id);
+    // A plan's pilot moves its tasks; a canceled task stays put.
+    if (!parent || parent.plan || parent.status === 'canceled' || parent.status === 'in_plan') return;
+    const step = rollUpTo(parent, this.issues.filter((i) => i.parent === id && i.status !== 'canceled'));
+    if (!step) return;
+    this.change(parent, { status: step.to, rank: this.lastRank(step.to), needsChecks: undefined, ...(step.to === 'done' ? { worktreeGone: undefined } : {}) }, [
+      this.entry({ kind: 'beluga' }, 'status', `${step.why}: ${statusText(STATUS_INFO[parent.status].label, STATUS_INFO[step.to].label)}`),
+    ]);
   }
 
   /** A task reached Done: its sub-tasks still open go with it (theirs with them, in turn). */
   private doneWithParent(parent: Issue): void {
     const beluga: Actor = { kind: 'beluga' };
-    for (const kid of this.issues.filter((i) => i.parent === parent.id && isOpen(i.status))) {
-      this.change(kid, { status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [this.entry(beluga, 'status', `done with its parent ${parent.key}: ${statusText(STATUS_INFO[kid.status].label, STATUS_INFO.done.label)}`)]);
+    this.cascading++;
+    try {
+      for (const kid of this.issues.filter((i) => i.parent === parent.id && isOpen(i.status))) {
+        this.change(kid, { status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [this.entry(beluga, 'status', `done with its parent ${parent.key}: ${statusText(STATUS_INFO[kid.status].label, STATUS_INFO.done.label)}`)]);
+      }
+    } finally {
+      this.cascading--;
     }
   }
 
