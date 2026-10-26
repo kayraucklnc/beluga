@@ -865,3 +865,130 @@
   border-radius: 50%;
   background: var(--claude);
 }
+
+/* Events on the When card (phase 3): the kind's events as cards, like the plans' autonomy cards */
+.eventCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.eventCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 11px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: default;
+  transition: box-shadow var(--dur-fast), background var(--dur-fast);
+}
+.eventCard:hover {
+  background: var(--bg-hover);
+}
+.eventCard:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.eventCardOn,
+.eventCardOn:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.eventCardOn:focus-visible {
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.eventIcon {
+  display: flex;
+  margin-bottom: 3px;
+  color: var(--text-3);
+}
+.eventCardOn .eventIcon {
+  color: var(--accent);
+}
+.eventName {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.eventLine {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+.eventSentence {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.trouble {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  background: color-mix(in srgb, var(--error) 8%, var(--bg));
+}
+.trouble > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--error);
+}
+.troubleMark {
+  display: inline-flex;
+  align-items: center;
+  color: var(--error);
+}
+.staticValue {
+  font-size: 12.5px;
+  color: var(--text);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.shortField {
+  width: 180px;
+}
+.pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.slash {
+  color: var(--text-3);
+}
+.copyField {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+.copyField:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent), inset 0 0 0 1px var(--accent);
+}
+.copyField::placeholder {
+  color: var(--text-3);
+}
+.hintLine {
+  font-size: 11.5px;
+  color: var(--text-3);
+}

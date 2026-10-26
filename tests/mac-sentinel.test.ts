@@ -37,6 +37,10 @@ import {
   newStep,
   otherSentinels,
   rowsToHeaders,
+  eventCards,
+  eventSentence,
+  secretOfUrl,
+  troubleOf,
 } from '../packages/mac/src/sentinel/sentinel-model.js';
 import { panelFits } from '../packages/mac/src/lib/panel-model.js';
 import { dockCount, isSentinelOwned, projectTally, unreadEntries } from '../packages/mac/src/layout/attention-model.js';
@@ -44,7 +48,8 @@ import { initialAppState, reduceApp } from '../src/client/screen.js';
 import type { Action, AppState } from '../src/core/store.js';
 import type { Notice } from '../src/core/work-store.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
-import { CLAUDE_CHANGED, NO_SENTINEL, type RunSummary, type Sentinel, type SentinelState, type Step, presetFields, stepSentence } from '../src/core/sentinel/model.js';
+import { BELUGA_EVENTS, CLAUDE_CHANGED, GITHUB_EVENTS, NO_SENTINEL, type RunSummary, SENTRY_EVENTS, STRIPE_EVENTS, type Sentinel, type SentinelState, type Step, type Trigger, presetFields, stepSentence, triggerSentence } from '../src/core/sentinel/model.js';
+import { TriggerSchema } from '../src/core/sentinel/schema.js';
 import { StepInputSchema } from '../src/core/sentinel/schema.js';
 
 /** Sentinel on the Mac, its plain parts: rows, groups, the sidebar's line, times, the schedule's controls, step edits. */
@@ -196,12 +201,15 @@ describe('Sentinel on the Mac', () => {
 
   it('offers only what this Beluga runs: the rest is shown for a later update, or refused by the access', () => {
     const triggers = triggerChoices();
-    expect(triggers.filter((c) => !c.disabled).map((c) => c.value)).toEqual(['schedule', 'manual', 'after']);
-    expect(triggers.find((c) => c.value === 'github')).toMatchObject({ disabled: true, description: LATER });
+    // Every kind runs now (phase 3): nothing is left for a later update.
+    expect(triggers.filter((c) => !c.disabled).map((c) => c.value)).toEqual(['schedule', 'manual', 'after', 'beluga', 'github', 'stripe', 'uptime', 'sentry', 'webhook']);
+    expect(triggers.some((c) => c.description === LATER)).toBe(false);
     expect(triggerOfKind('manual', { kind: 'schedule', every: 'day', at: '07:00', missed: 'skip' })).toEqual({ kind: 'manual' });
     expect(triggerOfKind('schedule', { kind: 'manual' })).toMatchObject({ kind: 'schedule', every: 'day' });
     expect(triggerOfKind('after', { kind: 'manual' })).toEqual({ kind: 'after', sentinelId: '', on: 'failure' });
-    expect(triggerOfKind('github', { kind: 'manual' })).toBeUndefined();
+    expect(triggerOfKind('github', { kind: 'manual' })).toEqual({ kind: 'github', what: 'workflow-failed', minutes: 2 });
+    // Every kind's starting trigger is one the daemon takes as it is.
+    for (const c of triggers) expect(TriggerSchema.safeParse(triggerOfKind(c.value, { kind: 'manual' })).success).toBe(true);
     const steps = stepChoices('look');
     expect(steps).toHaveLength(9);
     expect(steps.filter((c) => !c.disabled).map((c) => c.kind)).toEqual(['claude', 'script', 'notify', 'http', 'message', 'friend', 'trigger']);
@@ -325,5 +333,63 @@ describe('a sentinel run’s conversations in Unread and the Dock', () => {
     // Answered: gone again.
     const answered = apply(s, { type: 'question_remove', qid: 'q1' });
     expect(unreadEntries(answered)).toEqual([]);
+  });
+});
+
+describe('Sentinel’s events on the Mac', () => {
+  it('says when every kind of trigger runs, in the design’s words', () => {
+    const cases: Array<[Trigger, string]> = [
+      [{ kind: 'beluga', what: 'task-done' }, 'When a task is done'],
+      [{ kind: 'beluga', what: 'claude-finished' }, 'When a worktree’s Claude finishes'],
+      [{ kind: 'github', what: 'workflow-failed' }, 'When a workflow fails on GitHub'],
+      [{ kind: 'github', what: 'issue-labelled', label: 'bug' }, 'When an issue gets the label “bug” on GitHub'],
+      [{ kind: 'stripe', what: 'payment-failed' }, 'When a payment fails in Stripe'],
+      [{ kind: 'uptime', url: 'https://example.com/health', minutes: 5 }, 'When example.com stops answering (checked every 5 minutes), and when it’s back'],
+      [{ kind: 'uptime', url: 'https://example.com', minutes: 1 }, 'When example.com stops answering (checked every minute), and when it’s back'],
+      [{ kind: 'sentry', org: 'acme', project: 'checkout', what: 'regression' }, 'When Sentry sees a regression in acme/checkout'],
+      [{ kind: 'sentry', org: '', project: '', what: 'new-issue' }, 'When Sentry sees a new issue'],
+      [{ kind: 'webhook' }, 'When something posts to its URL'],
+      [{ kind: 'webhook', signature: 'github' }, 'When GitHub posts to its URL'],
+    ];
+    for (const [t, words] of cases) expect(triggerSentence(t)).toBe(words);
+  });
+
+  it('has a card for every event of each kind, and none for the kinds with fields', () => {
+    expect(eventCards('beluga')!.map((c) => c.value)).toEqual([...BELUGA_EVENTS]);
+    expect(eventCards('github')!.map((c) => c.value).sort()).toEqual([...GITHUB_EVENTS].sort());
+    expect(eventCards('stripe')!.map((c) => c.value)).toEqual([...STRIPE_EVENTS]);
+    expect(eventCards('sentry')!.map((c) => c.value)).toEqual([...SENTRY_EVENTS]);
+    expect(eventCards('uptime')).toBeUndefined();
+    expect(eventCards('webhook')).toBeUndefined();
+  });
+
+  it('says in one sentence what will happen', () => {
+    expect(eventSentence({ kind: 'github', what: 'workflow-failed', minutes: 2 }, { repo: 'acme/bob-api' })).toMatch(/^Beluga asks GitHub about acme\/bob-api every 2 minutes with gh\. When a workflow run failed/);
+    expect(eventSentence({ kind: 'uptime', url: 'https://example.com', minutes: 15, expect: 204 })).toMatch(/^Beluga opens example\.com every 15 minutes and expects 204 within 10 seconds\. Two misses in a row/);
+    expect(eventSentence({ kind: 'sentry', org: '', project: '', what: 'spike' })).toMatch(/^Say which Sentry organization and project/);
+    expect(eventSentence({ kind: 'webhook', signature: 'github' })).toMatch(/it’s live while this sentinel is on/);
+    expect(eventSentence({ kind: 'beluga', what: 'pr-opened' })).toMatch(/never start it again/);
+    expect(eventSentence({ kind: 'schedule', every: 'day', at: '07:00', missed: 'skip' })).toBeUndefined();
+  });
+
+  it('puts a trigger’s trouble on its row (the alert mark), never on a paused one', () => {
+    const gh = sentinel({ id: 'sn_gh', name: 'Fix what broke', projectId: 'api', trigger: { kind: 'github', what: 'workflow-failed' } });
+    const hook = sentinel({ id: 'sn_hook', name: 'Pushes', trigger: { kind: 'webhook' } });
+    const st = state({ items: [gh, hook], troubles: { sn_gh: 'Sign in to GitHub first: run gh auth login in a terminal' } });
+    expect(rowOf(st, gh, NOW).trouble).toBe('Sign in to GitHub first: run gh auth login in a terminal');
+    expect(rowOf(st, { ...gh, paused: true }, NOW).trouble).toBeUndefined();
+    // The tunnel: opening isn't trouble; one that didn't open is, for the webhooks that are on.
+    expect(troubleOf({ webhook: { ready: false } }, hook)).toBeUndefined();
+    expect(troubleOf({ webhook: { ready: false, why: 'The tunnel didn’t open' } }, hook)).toBe('The tunnel didn’t open');
+    expect(troubleOf({ webhook: { ready: false, why: 'The tunnel didn’t open' } }, gh)).toBeUndefined();
+    expect(rowOf(state({ items: [hook] }), hook, NOW).trouble).toBeUndefined();
+  });
+
+  it('finds the secret in a webhook URL (for GitHub’s Secret field)', () => {
+    const secret = 'a'.repeat(64);
+    expect(secretOfUrl(`https://x.trycloudflare.com/hook/sn_1/${secret}`)).toBe(secret);
+    expect(secretOfUrl('https://x.trycloudflare.com/hook/sn_1/short')).toBeUndefined();
+    expect(secretOfUrl(undefined)).toBeUndefined();
+    expect(iconOf('link')).toBe('link');
   });
 });

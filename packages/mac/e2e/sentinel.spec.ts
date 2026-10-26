@@ -2,9 +2,10 @@ import path from 'node:path';
 import { expect, test, type Page } from './fixtures.js';
 
 /**
- * Sentinel (docs/sentinel.md §3) on the demo's four sentinels: the list, Morning brief's page and
- * Run Now, a run's page with its report, and the merge waiting on Fix what broke. Screenshots in
- * light and dark go to .beluga/scratch/sentinel-*.png.
+ * Sentinel (docs/sentinel.md §3) on the demo's six sentinels: the list, Morning brief's page and
+ * Run Now, a run's page with its report, the merge waiting on Fix what broke, and the event
+ * triggers (Uptime guard's page, the webhook's URL). Screenshots in light and dark go to
+ * .beluga/scratch/sentinel-*.png.
  */
 
 const shots = path.join(import.meta.dirname, '..', '..', '..', '.beluga', 'scratch');
@@ -31,7 +32,7 @@ test.describe.configure({ mode: 'serial' });
 test('the list shows the demo’s sentinels, grouped by project, with their last runs', async ({ page }) => {
   await openList(page);
   const rows = main(page).locator('[data-sentinel]');
-  await expect(rows).toHaveCount(4);
+  await expect(rows).toHaveCount(6);
   await expect(main(page).getByRole('row', { name: /^Morning brief, Every day at 7:00/ })).toContainText('Done');
   await expect(main(page).getByRole('row', { name: /^Nightly tests/ })).toContainText('Paused after 3 failures in a row');
   await expect(main(page).getByRole('row', { name: /^Fix what broke/ })).toContainText('Needs you');
@@ -41,7 +42,7 @@ test('the list shows the demo’s sentinels, grouped by project, with their last
   await page.getByRole('tab', { name: /Paused/ }).click();
   await expect(rows).toHaveCount(1);
   await page.getByRole('tab', { name: /^All/ }).click();
-  await expect(rows).toHaveCount(4);
+  await expect(rows).toHaveCount(6);
   await shoot(page, 'list');
 });
 
@@ -134,4 +135,53 @@ test('Describe it: Claude writes the sentinel, the page shows it working, then i
   await expect(main(page).getByRole('button', { name: 'Turn On' }).first()).toBeVisible();
   await expect(box.getByRole('button', { name: 'Open Chat' })).toBeVisible();
   await shoot(page, 'page-ask');
+});
+
+test('an event trigger: Uptime guard’s page, its events, and the down-then-back runs', async ({ page }) => {
+  await openList(page);
+  await expect(main(page).getByRole('row', { name: /^Uptime guard, When landing\.example\.com stops answering/ })).toBeVisible();
+  await main(page).getByRole('row', { name: /^Uptime guard/ }).click();
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('When landing.example.com stops answering (checked every 5 minutes), and when it’s back');
+  const when = main(page).getByRole('region', { name: 'When' });
+  await expect(when.getByRole('textbox', { name: 'Address to check' })).toHaveValue('https://landing.example.com');
+  await expect(when).toContainText('Two misses in a row start a run');
+  const history = main(page).getByRole('region', { name: 'History' });
+  await expect(history.locator('[data-run]')).toHaveCount(2);
+  await expect(history.locator('[data-run]').first()).toContainText('landing.example.com is back');
+  await expect(history.locator('[data-run]').nth(1)).toContainText('landing.example.com stopped answering (503)');
+  await shoot(page, 'uptime');
+  // Another kind shows its events as cards: GitHub's five.
+  await when.getByRole('combobox', { name: 'What starts it' }).click();
+  await page.getByRole('option', { name: /When something happens on GitHub/ }).click();
+  const cards = when.getByRole('radiogroup', { name: 'What starts it' });
+  await expect(cards.getByRole('radio')).toHaveCount(5);
+  await expect(cards.getByRole('radio', { name: /A workflow fails/ })).toHaveAttribute('aria-checked', 'true');
+  await cards.getByRole('radio', { name: /An issue gets a label/ }).click();
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('When an issue gets a label on GitHub');
+  await expect(when.getByRole('textbox', { name: 'Label' })).toBeVisible();
+  await shoot(page, 'events');
+  // Back as it was (the demo stays tidy for the next test).
+  await when.getByRole('combobox', { name: 'What starts it' }).click();
+  await page.getByRole('option', { name: /When a site stops answering/ }).click();
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText(/^When example\.com stops answering/);
+});
+
+test('a webhook: its URL with Copy, the signature, Rotate Secret asks first', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('row', { name: /^GitHub pushes/ }).click();
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('When GitHub posts to its URL');
+  const when = main(page).getByRole('region', { name: 'When' });
+  const url = when.getByTestId('webhook-url');
+  await expect(url).toHaveValue(/^https:\/\/quiet-harbor-demo\.trycloudflare\.com\/hook\/sn_[0-9a-f]+\/[0-9a-f]{64}$/, { timeout: 15_000 });
+  const before = await url.inputValue();
+  await expect(when.getByRole('button', { name: 'Copy', exact: true })).toBeEnabled();
+  await expect(when.getByRole('button', { name: 'Copy Secret' })).toBeVisible();
+  await expect(when).toContainText('it’s live while this sentinel is on');
+  await shoot(page, 'webhook');
+  await when.getByRole('button', { name: 'Rotate Secret…' }).click();
+  const confirm = page.getByRole('alertdialog').or(page.getByRole('dialog', { name: /A new secret/ }));
+  await expect(confirm).toContainText('the old one stops working at once');
+  await confirm.getByRole('button', { name: 'Rotate Secret' }).click();
+  await expect(url).not.toHaveValue(before);
+  await expect(url).toHaveValue(/\/[0-9a-f]{64}$/);
 });

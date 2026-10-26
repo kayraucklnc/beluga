@@ -109,7 +109,7 @@ function Header({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) =
   ];
   return (
     <header className={s.head}>
-      <Disc icon={item.paused ? 'pause' : iconOf(item.icon)} tone={item.paused ? 'paused' : item.trigger.kind === 'schedule' ? 'clock' : 'hand'} size={40} />
+      <Disc icon={item.paused ? 'pause' : iconOf(item.icon)} tone={item.paused ? 'paused' : item.trigger.kind === 'schedule' ? 'clock' : item.trigger.kind === 'manual' || item.trigger.kind === 'after' ? 'hand' : 'event'} size={40} />
       <div className={s.headText}>
         <input
           className={s.name}
@@ -241,7 +241,7 @@ function Banners({ item }: { item: Sentinel }) {
     return (
       <div className={s.banner} data-tone="info" role="status">
         <Icon name="pause" size={14} />
-        <span className={s.bannerText}>This sentinel is paused. Turn On to let it run{item.trigger.kind === 'schedule' ? ' on its schedule' : ''}; Run Now tries it once first.</span>
+        <span className={s.bannerText}>This sentinel is paused. Turn On to let it run{item.trigger.kind === 'schedule' ? ' on its schedule' : item.trigger.kind === 'manual' || item.trigger.kind === 'after' ? '' : ' when it happens'}; Run Now tries it once first.</span>
       </div>
     );
   }

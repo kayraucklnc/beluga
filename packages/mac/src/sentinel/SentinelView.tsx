@@ -205,6 +205,12 @@ const SentinelRow = memo(function SentinelRow({ item, state, now, a }: { item: S
                 <Icon name="pause" size={10} />
                 Paused
               </span>
+            ) : row.trouble ? (
+              <Tip label={row.trouble}>
+                <span className={s.troubleMark} role="img" aria-label={`Can’t watch: ${row.trouble}`} data-testid="sentinel-row-trouble">
+                  <Icon name="alert" size={11} />
+                </span>
+              </Tip>
             ) : null}
           </span>
           <span className={s.rowSub}>

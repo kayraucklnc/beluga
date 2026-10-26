@@ -1,6 +1,13 @@
 import {
   type Access,
   type AfterTrigger,
+  type BelugaTrigger,
+  type GitHubTrigger,
+  type SentryTrigger,
+  type StripeTrigger,
+  type UptimeTrigger,
+  type WebhookTrigger,
+  hostOf,
   type HttpStep,
   type MergeStep,
   type RunState,
@@ -48,7 +55,7 @@ export const LATER = 'Comes with a later update';
 
 // ---------------------------------------------------------------- icons
 
-const SENTINEL_ICONS: ReadonlySet<string> = new Set(['calendar', 'check', 'refresh', 'tag', 'issue', 'wrench', 'globe', 'eye', 'bell', 'terminal', 'flag', 'pr', 'coin', 'pulse', 'task', 'claude', 'clock', 'hand', 'sentinel', 'laptop', 'search', 'chartLine', 'merge']);
+const SENTINEL_ICONS: ReadonlySet<string> = new Set(['calendar', 'check', 'refresh', 'tag', 'issue', 'wrench', 'globe', 'eye', 'bell', 'terminal', 'flag', 'pr', 'coin', 'pulse', 'task', 'claude', 'clock', 'hand', 'sentinel', 'laptop', 'search', 'chartLine', 'merge', 'link', 'alert']);
 
 /** A sentinel's (or a recipe's) icon: the name it carries when the window has it, else the shield. */
 export const iconOf = (name: string | undefined): IconName => (name && SENTINEL_ICONS.has(name) ? (name as IconName) : 'sentinel');
@@ -179,6 +186,8 @@ export function groupSentinels(items: readonly Sentinel[], projects: ReadonlyArr
 
 export interface Row {
   readonly sentence: string;
+  /** Why its trigger can't watch now (the alert mark's tooltip). */
+  readonly trouble?: string;
   readonly last?: { readonly state: RunState; readonly label: string; readonly tone: (typeof RUN_STATE_INFO)[RunState]['tone']; readonly headline: string; readonly when: string; readonly id: string };
   /** "next 7:00" (watching schedules only). */
   readonly next?: string;
@@ -196,13 +205,27 @@ export function rowOf(state: SentinelState, s: Sentinel, now: number): Row {
   const last = lastRunOf(state, s.id);
   const next = state.nextAt[s.id];
   const info = last ? RUN_STATE_INFO[last.state] : undefined;
+  const trouble = troubleOf(state, s);
   return {
     sentence: scheduleSentence(s.trigger, nameOfIn(state)),
+    ...(trouble ? { trouble } : {}),
     ...(last && info ? { last: { id: last.id, state: last.state, label: info.label, tone: info.tone, headline: headlineOf(last), when: ago(last.startedAt, now) } } : {}),
     ...(next !== undefined && !s.paused ? { next: `next ${nextText(next, now)}` } : {}),
     live: Boolean(last && isLive(last.state) && last.state !== 'needs-you'),
     steps: s.steps.map((st) => ({ kind: st.kind, name: st.name })),
   };
+}
+
+/**
+ * Why a sentinel's trigger can't watch now, in words with what to do: its own trouble (no gh, no
+ * Stripe key, no token), or for a webhook that's on, the tunnel's (it didn't open). A paused one has none.
+ */
+export function troubleOf(state: Pick<SentinelState, 'troubles' | 'webhook'>, s: Pick<Sentinel, 'id' | 'paused' | 'trigger'>): string | undefined {
+  if (s.paused) return undefined;
+  const own = state.troubles?.[s.id];
+  if (own) return own;
+  if (s.trigger.kind === 'webhook' && state.webhook && !state.webhook.ready && state.webhook.why) return state.webhook.why;
+  return undefined;
 }
 
 /** A run's one line: its headline, else what it's doing. */
@@ -327,19 +350,161 @@ export const WEEK = [1, 2, 3, 4, 5, 6, 0] as const;
 
 export const HOURS_CHOICES: readonly ScheduleHours[] = [1, 2, 3, 6, 12];
 
-/** "What starts it": schedule, by hand and after another sentinel now; the rest shown, for a later update. */
+/** "What starts it": a schedule, by hand, after another sentinel, or an event (each kind this Beluga runs). */
 export function triggerChoices(): Array<{ readonly value: TriggerKind; readonly label: string; readonly disabled: boolean; readonly description?: string }> {
-  return (Object.keys(TRIGGER_INFO) as TriggerKind[]).map((k) => ({ value: k, label: k === 'schedule' ? 'On a schedule' : TRIGGER_INFO[k].label, disabled: !triggerAvailable(k), ...(triggerAvailable(k) ? {} : { description: LATER }) }));
+  return (Object.keys(TRIGGER_INFO) as TriggerKind[]).map((k) => ({ value: k, label: k === 'schedule' ? 'On a schedule' : TRIGGER_INFO[k].label, disabled: !triggerAvailable(k), ...(triggerAvailable(k) ? { description: TRIGGER_HINT[k] } : { description: LATER }) }));
 }
 
-/** A trigger of another kind (only the ones this Beluga runs). */
+/** The menu's one line under each kind. */
+const TRIGGER_HINT: Readonly<Record<TriggerKind, string>> = {
+  schedule: 'Every day, week, month or few hours',
+  manual: 'Run Now, here or from your phone',
+  after: 'When another sentinel’s run ends',
+  beluga: 'A task is done, a pull request opens, Claude finishes…',
+  github: 'An issue, a pull request, a failed workflow or deployment',
+  stripe: 'A failed payment, a subscription, a dispute, a refund',
+  uptime: 'A site stops answering, and when it’s back',
+  sentry: 'A new issue, a regression, a spike',
+  webhook: 'Its own URL: GitHub, Stripe or anything that posts',
+};
+
+/** A trigger of another kind, with what it needs filled in (an uptime starts on the project's site when it has one). */
 export function triggerOfKind(kind: TriggerKind, was: Trigger): Trigger | undefined {
   if (kind === was.kind) return was;
-  if (kind === 'schedule') return DEFAULT_SCHEDULE;
-  if (kind === 'manual') return { kind: 'manual' };
-  if (kind === 'after') return { kind: 'after', sentinelId: '', on: 'failure' };
-  return undefined;
+  switch (kind) {
+    case 'schedule':
+      return DEFAULT_SCHEDULE;
+    case 'manual':
+      return { kind: 'manual' };
+    case 'after':
+      return { kind: 'after', sentinelId: '', on: 'failure' };
+    case 'beluga':
+      return { kind: 'beluga', what: 'task-done' };
+    case 'github':
+      return { kind: 'github', what: 'workflow-failed', minutes: 2 };
+    case 'stripe':
+      return { kind: 'stripe', what: 'payment-failed' };
+    case 'uptime':
+      return { kind: 'uptime', url: 'https://example.com', minutes: 5 };
+    case 'sentry':
+      return { kind: 'sentry', org: '', project: '', what: 'new-issue' };
+    case 'webhook':
+      return { kind: 'webhook' };
+  }
 }
+
+/** An event's card: its name, one line, its icon. */
+export interface EventCard<W extends string = string> {
+  readonly value: W;
+  readonly label: string;
+  readonly line: string;
+  readonly icon: IconName;
+}
+
+export const BELUGA_CARDS: ReadonlyArray<EventCard<BelugaTrigger['what']>> = [
+  { value: 'task-done', label: 'A task is done', line: 'Any task on the board goes Done', icon: 'task' },
+  { value: 'pr-opened', label: 'A pull request opens', line: 'From one of your worktrees', icon: 'pr' },
+  { value: 'pr-merged', label: 'A pull request merges', line: 'One of your worktrees’ pull requests', icon: 'merge' },
+  { value: 'milestone-passed', label: 'A milestone passes', line: 'In one of your plans', icon: 'flag' },
+  { value: 'claude-finished', label: 'Claude finishes', line: 'A worktree’s Claude ends its turn', icon: 'claude' },
+  { value: 'friend-asks', label: 'A friend asks', line: 'A request from a friend comes in', icon: 'people' },
+];
+
+export const GITHUB_CARDS: ReadonlyArray<EventCard<GitHubTrigger['what']>> = [
+  { value: 'workflow-failed', label: 'A workflow fails', line: 'CI or any Actions run', icon: 'alert' },
+  { value: 'issue-opened', label: 'An issue opens', line: 'Anyone opens one', icon: 'issue' },
+  { value: 'issue-labelled', label: 'An issue gets a label', line: 'Like “bug”, or any label', icon: 'tag' },
+  { value: 'pr-opened', label: 'A pull request opens', line: 'Yours or anyone’s', icon: 'pr' },
+  { value: 'deployment-failed', label: 'A deployment fails', line: 'Its latest status says failed', icon: 'globe' },
+];
+
+export const STRIPE_CARDS: ReadonlyArray<EventCard<StripeTrigger['what']>> = [
+  { value: 'payment-failed', label: 'A payment fails', line: 'A card declined, an invoice unpaid', icon: 'alert' },
+  { value: 'subscription-started', label: 'A subscription starts', line: 'A new customer subscribes', icon: 'play' },
+  { value: 'subscription-ended', label: 'A subscription ends', line: 'Cancelled or ran out', icon: 'stop' },
+  { value: 'dispute-opened', label: 'A dispute opens', line: 'A customer disputes a charge', icon: 'flag' },
+  { value: 'refund', label: 'A refund happens', line: 'From Stripe or your app', icon: 'refresh' },
+];
+
+export const SENTRY_CARDS: ReadonlyArray<EventCard<SentryTrigger['what']>> = [
+  { value: 'new-issue', label: 'A new issue', line: 'An error Sentry hasn’t seen before', icon: 'spark' },
+  { value: 'regression', label: 'A regression', line: 'A resolved error is back', icon: 'refresh' },
+  { value: 'spike', label: 'A spike', line: 'Escalating, or 5× the hour before', icon: 'chartLine' },
+];
+
+/** The cards each event kind shows (uptime and webhook have fields, not choices). */
+export function eventCards(kind: TriggerKind): ReadonlyArray<EventCard> | undefined {
+  switch (kind) {
+    case 'beluga':
+      return BELUGA_CARDS;
+    case 'github':
+      return GITHUB_CARDS;
+    case 'stripe':
+      return STRIPE_CARDS;
+    case 'sentry':
+      return SENTRY_CARDS;
+    default:
+      return undefined;
+  }
+}
+
+export const GITHUB_MINUTES: readonly number[] = [1, 2, 5, 15, 30, 60];
+export const UPTIME_MINUTES: ReadonlyArray<UptimeTrigger['minutes']> = [1, 5, 15];
+export const SIGNATURES: ReadonlyArray<{ readonly value: 'none' | NonNullable<WebhookTrigger['signature']>; readonly label: string; readonly description: string }> = [
+  { value: 'none', label: 'None', description: 'The secret in the URL is the check' },
+  { value: 'github', label: 'GitHub', description: 'X-Hub-Signature-256, with this sentinel’s secret' },
+  { value: 'stripe', label: 'Stripe', description: 'Stripe-Signature, with STRIPE_WEBHOOK_SECRET from Settings › Environment' },
+];
+
+const every = (minutes: number): string => (minutes === 1 ? 'every minute' : `every ${minutes} minutes`);
+
+/** One sentence of what will happen, under the event's fields. `where`: the project's name and GitHub repository, when known. */
+export function eventSentence(t: Trigger, where: { readonly project?: string; readonly repo?: string } = {}): string | undefined {
+  const project = where.project ? `in ${where.project}` : 'in any project';
+  switch (t.kind) {
+    case 'beluga': {
+      const p = t.projectId ? project : 'in any project';
+      const what = BELUGA_CARDS.find((c) => c.value === t.what)?.label.toLowerCase() ?? t.what;
+      return `When ${what} ${p}, a run starts with what happened as {{trigger}}. Its own runs’ worktrees, pull requests and chats never start it again.`;
+    }
+    case 'github': {
+      const repo = where.repo ?? 'the project’s repository';
+      const what =
+        t.what === 'workflow-failed'
+          ? 'a workflow run failed, the run starts with its failed jobs, the first failing step and the end of its log'
+          : t.what === 'issue-labelled'
+            ? `an issue got ${t.label ? `the label “${t.label}”` : 'a label'}, the run starts with the issue`
+            : t.what === 'deployment-failed'
+              ? 'a deployment failed, the run starts with its environment, commit and status'
+              : t.what === 'issue-opened'
+                ? 'an issue opened, the run starts with the issue'
+                : 'a pull request opened, the run starts with it';
+      return `Beluga asks GitHub about ${repo} ${every(t.minutes ?? 2)} with gh. When ${what}. What was there before it was on never fires.`;
+    }
+    case 'stripe':
+      return `Beluga reads the project’s Stripe events every 2 minutes with its key from Earnings. Each new one starts a run with its amount, currency, the customer’s email and the description; never card details.`;
+    case 'uptime':
+      return `Beluga opens ${hostOf(t.url) || 'the address'} ${every(t.minutes)} and expects ${t.expect ?? 200} within 10 seconds. Two misses in a row start a run (“stopped answering”), and the first good answer after that starts another (“back”).`;
+    case 'sentry':
+      return t.org && t.project
+        ? `Beluga reads ${t.org}/${t.project}’s unresolved issues every 2 minutes with $SENTRY_TOKEN. ${t.what === 'spike' ? 'An issue Sentry calls escalating, or with 5 times the events of the hour before (10 at least), starts a run once.' : t.what === 'regression' ? 'An issue that came back after it was resolved starts a run once.' : 'An issue first seen after it was turned on starts a run.'}`
+        : 'Say which Sentry organization and project, as in the address of its issues page (sentry.io/organizations/<org>/projects/<project>).';
+    case 'webhook':
+      return t.signature === 'github'
+        ? 'Point GitHub’s webhook at this URL with this secret as its Secret; it’s live while this sentinel is on. Each post starts a run with what was posted.'
+        : t.signature === 'stripe'
+          ? 'Point a Stripe webhook endpoint at this URL and keep its signing secret (whsec_…) in Settings › Environment as STRIPE_WEBHOOK_SECRET; it’s live while this sentinel is on.'
+          : 'Point GitHub’s webhook (or anything that posts) at this URL; it’s live while this sentinel is on. Each post starts a run with what was posted.';
+    default:
+      return undefined;
+  }
+}
+
+/** The webhook's secret, from its URL (the last part of the path), to paste into GitHub's Secret field. */
+export const secretOfUrl = (url: string | undefined): string | undefined => url?.match(/\/hook\/[^/]+\/([0-9a-f]{64})$/)?.[1];
+
+/** The address the tunnel changes: quick tunnels get a new name when Beluga restarts. */
+export const WEBHOOK_MOVES = 'The address changes when Beluga restarts (Cloudflare quick tunnels get a new name): Copy it again then.';
 
 export const AFTER_ON: ReadonlyArray<{ readonly value: AfterTrigger['on']; readonly label: string; readonly description: string }> = [
   { value: 'failure', label: 'When it fails', description: 'A fixer for what the other one found broken' },

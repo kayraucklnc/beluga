@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronDown, ChevronRight, CirclePause, FileText, Monitor, Play, Power } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, CirclePause, FileText, Monitor, Play, Power, TriangleAlert } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
@@ -108,6 +108,13 @@ export default function SentinelPage() {
                 <CirclePause color={toneInk('rose')} size={18} />
                 <T v="callout" c={toneInk('rose')} style={{ flex: 1 }}>
                   {s.pausedWhy}. Turn it on again from •••.
+                </T>
+              </Card>
+            ) : s.trouble ? (
+              <Card tone="rose" style={{ marginHorizontal: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <TriangleAlert color={toneInk('rose')} size={18} />
+                <T v="callout" c={toneInk('rose')} style={{ flex: 1 }}>
+                  {s.trouble}
                 </T>
               </Card>
             ) : null}
