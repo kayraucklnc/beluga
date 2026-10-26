@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { RunSummary, Sentinel, SentinelDraft, SentinelPatch, SentinelState } from '@beluga/core/sentinel/model.js';
+import { CLAUDE_CHANGED, type RunSummary, type Sentinel, type SentinelDraft, type SentinelPatch, type SentinelState } from '@beluga/core/sentinel/model.js';
 import type { Args } from '@beluga/ipc/api.js';
 import type { View } from '@beluga/core/store.js';
 import type { ActionItem } from '../components/SpecMenu.js';
@@ -78,7 +78,7 @@ export function sentinelMenu(s: Sentinel, last: RunSummary | undefined, a: Senti
   return [
     { label: 'Run Now', icon: 'play', hint: s.paused ? 'Once, even though it’s paused' : undefined, onSelect: () => void a.runNow(s) },
     s.paused
-      ? { label: s.pausedWhy ? 'Resume' : 'Turn On', icon: 'play', hint: s.trigger.kind === 'schedule' ? 'It runs on its schedule from now' : undefined, onSelect: () => void a.setPaused(s, false) }
+      ? { label: s.pausedWhy && s.pausedWhy !== CLAUDE_CHANGED ? 'Resume' : 'Turn On', icon: 'play', hint: s.trigger.kind === 'schedule' ? 'It runs on its schedule from now' : undefined, onSelect: () => void a.setPaused(s, false) }
       : { label: 'Pause', icon: 'pause', hint: 'Nothing runs until you turn it on again', onSelect: () => void a.setPaused(s, true) },
     { label: 'Open Last Run', icon: 'arrowRight', disabled: !last, separate: true, onSelect: () => last && a.openRun(last.id) },
     { label: 'Duplicate', icon: 'copy', onSelect: () => void a.duplicate(s) },

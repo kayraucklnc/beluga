@@ -1,6 +1,10 @@
 import {
   type Access,
+  type AfterTrigger,
+  type HttpStep,
+  type MergeStep,
   type RunState,
+  type SentinelAsk,
   type RunSummary,
   type ScheduleEvery,
   type ScheduleHours,
@@ -12,10 +16,14 @@ import {
   type StepKind,
   type TriggerKind,
   type Trigger,
+  ACCESS_INFO,
+  CLAUDE_CHANGED,
   RUN_STATE_INFO,
+  SERVICE_PRESETS,
   STEP_INFO,
   TRIGGER_INFO,
   isLive,
+  pausedWords,
   lastRunOf,
   scheduleSentence,
   stepAvailable,
@@ -205,10 +213,10 @@ export function headlineOf(run: Pick<RunSummary, 'headline' | 'state' | 'why'>):
   return run.why ?? RUN_STATE_INFO[run.state].label;
 }
 
-/** The sidebar row's line, and whether it's a problem (paused after failures). */
+/** The sidebar row's line, and whether it's a problem (paused after failures; Claude's change isn't one). */
 export function sidebarLine(state: SentinelState): { readonly text: string; readonly problem: boolean } {
-  const broken = state.items.find((s) => s.paused && s.pausedWhy);
-  if (broken) return { text: broken.pausedWhy ?? 'Paused after failures', problem: true };
+  const broken = state.items.find((s) => s.paused && s.pausedWhy && s.pausedWhy !== CLAUDE_CHANGED);
+  if (broken) return { text: pausedWords(broken) ?? 'Paused after failures', problem: true };
   const watching = state.items.filter((s) => !s.paused);
   if (!state.items.length) return { text: 'Nothing watching yet', problem: false };
   if (!watching.length) return { text: `Nothing watching · ${state.items.length} paused`, problem: false };
@@ -319,7 +327,7 @@ export const WEEK = [1, 2, 3, 4, 5, 6, 0] as const;
 
 export const HOURS_CHOICES: readonly ScheduleHours[] = [1, 2, 3, 6, 12];
 
-/** "What starts it": schedule and by hand now; the rest shown, for a later update. */
+/** "What starts it": schedule, by hand and after another sentinel now; the rest shown, for a later update. */
 export function triggerChoices(): Array<{ readonly value: TriggerKind; readonly label: string; readonly disabled: boolean; readonly description?: string }> {
   return (Object.keys(TRIGGER_INFO) as TriggerKind[]).map((k) => ({ value: k, label: k === 'schedule' ? 'On a schedule' : TRIGGER_INFO[k].label, disabled: !triggerAvailable(k), ...(triggerAvailable(k) ? {} : { description: LATER }) }));
 }
@@ -329,8 +337,22 @@ export function triggerOfKind(kind: TriggerKind, was: Trigger): Trigger | undefi
   if (kind === was.kind) return was;
   if (kind === 'schedule') return DEFAULT_SCHEDULE;
   if (kind === 'manual') return { kind: 'manual' };
+  if (kind === 'after') return { kind: 'after', sentinelId: '', on: 'failure' };
   return undefined;
 }
+
+export const AFTER_ON: ReadonlyArray<{ readonly value: AfterTrigger['on']; readonly label: string; readonly description: string }> = [
+  { value: 'failure', label: 'When it fails', description: 'A fixer for what the other one found broken' },
+  { value: 'success', label: 'When it succeeds', description: 'The next part of the work' },
+  { value: 'always', label: 'Whenever it runs', description: 'Done or failed; not when it had nothing to do' },
+];
+
+/** The sentinels an "after" (or Run another sentinel) may name: every other one, A to Z. */
+export const otherSentinels = (items: readonly Sentinel[], self: string): Array<{ readonly value: string; readonly label: string; readonly description?: string }> =>
+  items
+    .filter((i) => i.id !== self)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((i) => ({ value: i.id, label: i.name, ...(i.paused ? { description: 'Paused: it won’t start until you turn it on' } : {}) }));
 
 // ---------------------------------------------------------------- the Steps card
 
@@ -419,10 +441,107 @@ export function stepChoices(access: Access): StepChoice[] {
 }
 
 /** A new step of a kind this Beluga runs, with what it needs filled in. */
-export function newStep(kind: 'claude' | 'script' | 'notify'): StepDraft {
-  if (kind === 'claude') return { kind: 'claude', name: 'Ask Claude', prompt: '', where: 'project' };
-  if (kind === 'script') return { kind: 'script', name: 'Run a script', command: '', cwd: 'project', timeoutSec: 120 };
-  return { kind: 'notify', name: 'Tell me', phone: false };
+export function newStep(kind: StepKind): StepDraft {
+  switch (kind) {
+    case 'claude':
+      return { kind: 'claude', name: 'Ask Claude', prompt: '', where: 'project' };
+    case 'script':
+      return { kind: 'script', name: 'Run a script', command: '', cwd: 'project', timeoutSec: 120 };
+    case 'notify':
+      return { kind: 'notify', name: 'Tell me', phone: false };
+    case 'http':
+      return { kind: 'http', name: 'Call a service', method: 'GET', url: 'https://', headers: {}, timeoutSec: 30, preset: 'url' };
+    case 'pr':
+      return { kind: 'pr', name: 'Open a pull request' };
+    case 'merge':
+      return { kind: 'merge', name: 'Merge if acceptable', require: { checks: true, approval: true }, method: 'squash' };
+    case 'message':
+      return { kind: 'message', name: 'Message a chat', to: '', text: '{{sentinel}}: {{previous}}' };
+    case 'friend':
+      return { kind: 'friend', name: 'Ask a friend’s Claude', peerId: '', prompt: '' };
+    case 'trigger':
+      return { kind: 'trigger', name: 'Run another sentinel', sentinelId: '' };
+  }
+}
+
+// ---------------------------------------------------------------- phase 2's step fields
+
+export const SERVICE_CHOICES = (Object.keys(SERVICE_PRESETS) as Array<keyof typeof SERVICE_PRESETS>).map((k) => ({ value: k, label: SERVICE_PRESETS[k].label, description: SERVICE_PRESETS[k].line }));
+
+export const HTTP_METHODS: ReadonlyArray<HttpStep['method']> = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
+/** The one line under a service's fields: where secrets go, and that headers stay out of reports. */
+export const SECRETS_NOTE = '$VAR from Settings › Environment; headers never show in reports';
+
+/** Headers as rows to edit (one empty row to add to, at the end). */
+export function headerRows(headers: Readonly<Record<string, string>>): Array<{ readonly key: string; readonly value: string }> {
+  return [...Object.entries(headers).map(([key, value]) => ({ key, value })), { key: '', value: '' }];
+}
+
+/** Rows back to headers: empty names left out, the last one with a name wins. */
+export function rowsToHeaders(rows: ReadonlyArray<{ readonly key: string; readonly value: string }>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of rows) if (r.key.trim()) out[r.key.trim()] = r.value;
+  return out;
+}
+
+/** Where a Message step can write: your friends and the groups you're in. */
+export function chatChoices(network: { readonly friends: ReadonlyArray<{ readonly peerId: string; readonly name: string }>; readonly groups: ReadonlyArray<{ readonly id: string; readonly name: string; readonly active: boolean }> }): Array<{ readonly value: string; readonly label: string; readonly description: string }> {
+  return [
+    ...[...network.friends].sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ value: `dm:${f.peerId}`, label: f.name, description: 'A direct message' })),
+    ...network.groups.filter((g) => g.active).sort((a, b) => a.name.localeCompare(b.name)).map((g) => ({ value: `group:${g.id}`, label: g.name, description: 'A group' })),
+  ];
+}
+
+/** The merge step in words: who decides. */
+export const mergeWords = (step: Pick<MergeStep, 'require'>): string =>
+  step.require.approval ? 'It merges once the checks pass, Claude’s review says ship, and you tap Merge (here or on your phone).' : 'It merges by itself once the checks pass and Claude’s review says ship. A hold still asks you.';
+
+/** The access sentence, as the picker shows it (Ship says when a merge goes by itself). */
+export function accessSentence(access: Access, steps: readonly Step[]): string {
+  if (access === 'ship' && steps.some((st) => st.kind === 'merge' && !st.require.approval)) return 'Claude can change code in a worktree, open pull requests, and merge by itself when the checks pass';
+  return ACCESS_INFO[access].sentence;
+}
+
+// ---------------------------------------------------------------- Claude changing it (the page's box)
+
+/** Describe it: a name to start with, from the words (Claude names it properly). */
+export function describedName(text: string): string {
+  const words = text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^(every|each)\s+(other\s+)?(weekday|week|day|morning|evening|night|hour)s?(\s+(morning|evening|night))?,?\s*/i, '')
+    .replace(/^(at|by|on)\s+[\w:]+(\s*(am|pm))?\s*,?\s*/i, '')
+    .replace(/^(please|can you|i want( you)? to|make (it|a sentinel) (that|to))\s+/i, '')
+    .split(/[,.;:!?]/)[0]!
+    .split(' ')
+    .slice(0, 5)
+    .join(' ')
+    .replace(/(\s+(and|or|the|a|an|to|of|with|for))+$/i, '');
+  return words ? (words.charAt(0).toUpperCase() + words.slice(1)).slice(0, 80) : 'New sentinel';
+}
+
+export interface AskLine {
+  readonly who: 'claude' | 'done' | 'failed';
+  readonly text: string;
+}
+
+/** The box's line: what Claude is doing now (its conversation's last line), its answer, or what went wrong. */
+export function askLine(ask: SentinelAsk | undefined, live: { readonly running: boolean; readonly last?: string } | undefined): AskLine | undefined {
+  if (!ask) return undefined;
+  if (ask.state === 'writing') {
+    const last = live?.running && live.last && live.last !== ask.text ? live.last : undefined;
+    return { who: 'claude', text: last ? `Claude is writing… ${toolWords(last)}` : 'Claude is writing…' };
+  }
+  if (ask.state === 'failed') return { who: 'failed', text: ask.answer ? `Claude stopped: ${ask.answer}` : 'Claude stopped' };
+  return { who: 'done', text: ask.answer || 'Done' };
+}
+
+/** A tool step in plain words ("mcp__beluga_sentinel__sentinel_update" → "changing the sentinel"). */
+function toolWords(line: string): string {
+  if (/sentinel_update/.test(line)) return 'changing the sentinel';
+  if (/sentinel_get|sentinel_list/.test(line)) return 'reading the sentinel';
+  return line.replace(/^mcp__\w+__/, '').slice(0, 120);
 }
 
 /** Steps moved: `at` goes `by` places (kept in the list). */

@@ -28,6 +28,15 @@ import {
   withEvery,
   withModel,
   anyRunning,
+  accessSentence,
+  askLine,
+  chatChoices,
+  describedName,
+  headerRows,
+  mergeWords,
+  newStep,
+  otherSentinels,
+  rowsToHeaders,
 } from '../packages/mac/src/sentinel/sentinel-model.js';
 import { panelFits } from '../packages/mac/src/lib/panel-model.js';
 import { dockCount, isSentinelOwned, projectTally, unreadEntries } from '../packages/mac/src/layout/attention-model.js';
@@ -35,7 +44,8 @@ import { initialAppState, reduceApp } from '../src/client/screen.js';
 import type { Action, AppState } from '../src/core/store.js';
 import type { Notice } from '../src/core/work-store.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
-import { NO_SENTINEL, type RunSummary, type Sentinel, type SentinelState, type Step } from '../src/core/sentinel/model.js';
+import { CLAUDE_CHANGED, NO_SENTINEL, type RunSummary, type Sentinel, type SentinelState, type Step, presetFields, stepSentence } from '../src/core/sentinel/model.js';
+import { StepInputSchema } from '../src/core/sentinel/schema.js';
 
 /** Sentinel on the Mac, its plain parts: rows, groups, the sidebar's line, times, the schedule's controls, step edits. */
 
@@ -117,6 +127,8 @@ describe('Sentinel on the Mac', () => {
     expect(sidebarLine(fine)).toEqual({ text: '3 watching · next at 6:00', problem: false });
     expect(sidebarLine({ ...NO_SENTINEL, enabled: true })).toEqual({ text: 'Nothing watching yet', problem: false });
     expect(sidebarLine({ ...NO_SENTINEL, enabled: true, items: [{ ...mac, paused: true }] }).text).toBe('Nothing watching · 1 paused');
+    // Claude's change pausing one isn't a problem.
+    expect(sidebarLine({ ...NO_SENTINEL, enabled: true, items: [{ ...mac, paused: true, pausedWhy: CLAUDE_CHANGED }] })).toEqual({ text: 'Nothing watching · 1 paused', problem: false });
     expect(anyRunning(state({ live: { r: { state: 'running' } } }))).toBe(true);
     expect(anyRunning(state({ live: { r: { state: 'needs-you' } } }))).toBe(false);
   });
@@ -184,15 +196,58 @@ describe('Sentinel on the Mac', () => {
 
   it('offers only what this Beluga runs: the rest is shown for a later update, or refused by the access', () => {
     const triggers = triggerChoices();
-    expect(triggers.filter((c) => !c.disabled).map((c) => c.value)).toEqual(['schedule', 'manual']);
+    expect(triggers.filter((c) => !c.disabled).map((c) => c.value)).toEqual(['schedule', 'manual', 'after']);
     expect(triggers.find((c) => c.value === 'github')).toMatchObject({ disabled: true, description: LATER });
     expect(triggerOfKind('manual', { kind: 'schedule', every: 'day', at: '07:00', missed: 'skip' })).toEqual({ kind: 'manual' });
     expect(triggerOfKind('schedule', { kind: 'manual' })).toMatchObject({ kind: 'schedule', every: 'day' });
+    expect(triggerOfKind('after', { kind: 'manual' })).toEqual({ kind: 'after', sentinelId: '', on: 'failure' });
     expect(triggerOfKind('github', { kind: 'manual' })).toBeUndefined();
     const steps = stepChoices('look');
     expect(steps).toHaveLength(9);
-    expect(steps.filter((c) => !c.disabled).map((c) => c.kind)).toEqual(['claude', 'script', 'notify']);
-    expect(steps.find((c) => c.kind === 'merge')!.hint).toBe(LATER);
+    expect(steps.filter((c) => !c.disabled).map((c) => c.kind)).toEqual(['claude', 'script', 'notify', 'http', 'message', 'friend', 'trigger']);
+    expect(steps.find((c) => c.kind === 'pr')!.hint).toBe('Needs Work access');
+    expect(steps.find((c) => c.kind === 'merge')!.hint).toBe('Needs Ship access');
+    expect(stepChoices('ship').every((c) => !c.disabled)).toBe(true);
+    // Every new step is one the daemon takes as it is.
+    for (const c of stepChoices('ship')) expect(StepInputSchema.safeParse(newStep(c.kind)).success).toBe(true);
+  });
+
+  it('phase 2’s steps in words: services, merges, chats, other sentinels', () => {
+    const groq = { id: 'h', kind: 'http', name: 'Search', timeoutSec: 30, ...presetFields('groqbot'), url: 'https://api.groqbot.example/search' } as Step;
+    expect(stepSentence(groq)).toBe('Groqbot: POST api.groqbot.example');
+    expect(stepSentence({ id: 'h', kind: 'http', name: 'x', method: 'GET', url: '', headers: {}, timeoutSec: 30 })).toBe('GET a URL');
+    expect(presetFields('slack')).toMatchObject({ method: 'POST', url: '$SLACK_WEBHOOK_URL', headers: { 'Content-Type': 'application/json' } });
+    const merge = { id: 'm', kind: 'merge' as const, name: 'Merge', require: { checks: true as const, approval: true }, method: 'squash' as const };
+    expect(mergeWords(merge)).toBe('It merges once the checks pass, Claude’s review says ship, and you tap Merge (here or on your phone).');
+    expect(mergeWords({ require: { checks: true, approval: false } })).toMatch(/^It merges by itself/);
+    expect(accessSentence('ship', [merge])).toBe('Claude can change code in a worktree, open pull requests, and merge when the checks pass and you’ve approved');
+    expect(accessSentence('ship', [{ ...merge, require: { checks: true, approval: false } }])).toBe('Claude can change code in a worktree, open pull requests, and merge by itself when the checks pass');
+    const network = { friends: [{ peerId: 'p2', name: 'Zoe' }, { peerId: 'p1', name: 'Ata' }], groups: [{ id: 'g1', name: 'Launch crew', active: true }, { id: 'g2', name: 'Old', active: false }] };
+    expect(chatChoices(network).map((c) => [c.value, c.label])).toEqual([
+      ['dm:p1', 'Ata'],
+      ['dm:p2', 'Zoe'],
+      ['group:g1', 'Launch crew'],
+    ]);
+    expect(stepSentence({ id: 'x', kind: 'message', name: 'm', to: 'group:g1', text: '' }, (id) => (id === 'group:g1' ? 'Launch crew' : undefined))).toBe('Messages Launch crew');
+    expect(otherSentinels([{ ...mac, id: 'b', name: 'B', paused: true }, { ...mac, id: 'a', name: 'A' }, { ...mac, id: 'me', name: 'Me' }], 'me')).toEqual([
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B', description: 'Paused: it won’t start until you turn it on' },
+    ]);
+    expect(headerRows({ Authorization: 'Bearer $K' })).toEqual([{ key: 'Authorization', value: 'Bearer $K' }, { key: '', value: '' }]);
+    expect(rowsToHeaders([{ key: ' X-A ', value: '1' }, { key: '', value: 'lost' }, { key: 'X-A', value: '2' }])).toEqual({ 'X-A': '2' });
+  });
+
+  it('the page’s box: Claude’s last line while it writes, then its answer', () => {
+    const ask = { channel: 'ws:c1', startedAt: NOW, state: 'writing' as const, text: 'make it weekly' };
+    expect(askLine(undefined, undefined)).toBeUndefined();
+    expect(askLine(ask, { running: true, last: 'mcp__beluga_sentinel__sentinel_update' })).toEqual({ who: 'claude', text: 'Claude is writing… changing the sentinel' });
+    expect(askLine(ask, { running: true, last: 'make it weekly' })).toEqual({ who: 'claude', text: 'Claude is writing…' });
+    expect(askLine({ ...ask, state: 'done', answer: 'Made it weekly' }, undefined)).toEqual({ who: 'done', text: 'Made it weekly' });
+    expect(askLine({ ...ask, state: 'failed', answer: 'usage limit' }, undefined)).toEqual({ who: 'failed', text: 'Claude stopped: usage limit' });
+    expect(describedName('Every weekday morning, read yesterday’s commits and open issues, write me a brief')).toBe('Read yesterday’s commits and open');
+    expect(describedName('Read the commits and the issues')).toBe('Read the commits');
+    expect(describedName('Every weekday at 8, read yesterday’s commits')).toBe('Read yesterday’s commits');
+    expect(describedName('   ')).toBe('New sentinel');
   });
 
   it('edits steps: move, duplicate, one model for every Claude step', () => {

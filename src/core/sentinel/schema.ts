@@ -23,7 +23,8 @@ export const ScheduleTriggerSchema = z.object({
 export const TriggerSchema = z.discriminatedUnion('kind', [
   ScheduleTriggerSchema,
   z.object({ kind: z.literal('manual') }),
-  z.object({ kind: z.literal('after'), sentinelId: id, on: z.enum(['success', 'failure', 'always']) }),
+  // Its sentinel may be picked later (empty: a run says to pick one).
+  z.object({ kind: z.literal('after'), sentinelId: z.string().max(80), on: z.enum(['success', 'failure', 'always']).default('failure') }),
   z.object({ kind: z.literal('beluga'), what: z.enum(BELUGA_EVENTS), projectId: id.optional() }),
   z.object({ kind: z.literal('github'), what: z.enum(GITHUB_EVENTS), label: text(64).optional(), minutes: z.number().int().min(1).max(60).optional() }),
   z.object({ kind: z.literal('stripe'), what: z.enum(STRIPE_EVENTS) }),
@@ -38,14 +39,16 @@ const stepName = z.string().max(80).optional();
 /** A step as given: ids and names are filled in when missing. */
 export const StepInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: text(20_000), where: z.enum(['project', 'worktree', 'mac']).default('project'), model: text(80).optional(), effort: text(20).optional() }),
-  z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: text(4000).min(1), cwd: z.enum(['project', 'home']).default('project'), timeoutSec: z.number().int().min(1).max(3600).default(120) }),
+  // Empty until it's filled in (a new step from Add a Step): a run says so.
+  z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: text(4000), cwd: z.enum(['project', 'home']).default('project'), timeoutSec: z.number().int().min(1).max(3600).default(120) }),
   z.object({ kind: z.literal('notify'), id: stepId, name: stepName, title: text(200).optional(), body: text(4000).optional(), phone: z.boolean().default(false) }),
   z.object({
     kind: z.literal('http'),
     id: stepId,
     name: stepName,
     method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
-    url: text(2000).min(1),
+    // Empty until it's filled in (the Groqbot preset's address): a run says so.
+    url: text(2000),
     headers: z.record(z.string().max(200), z.string().max(4000)).default({}),
     body: text(60_000).optional(),
     timeoutSec: z.number().int().min(1).max(600).default(30),
@@ -53,9 +56,10 @@ export const StepInputSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('pr'), id: stepId, name: stepName, draft: z.boolean().optional() }),
   z.object({ kind: z.literal('merge'), id: stepId, name: stepName, require: z.object({ checks: z.literal(true).default(true), approval: z.boolean().default(true) }).default({ checks: true, approval: true }), method: z.enum(['squash', 'merge']).default('squash') }),
-  z.object({ kind: z.literal('message'), id: stepId, name: stepName, to: z.string().regex(/^(dm|group):[\w-]{1,80}$/), text: text(8000) }),
-  z.object({ kind: z.literal('friend'), id: stepId, name: stepName, peerId: id, prompt: text(20_000), project: text(200).optional() }),
-  z.object({ kind: z.literal('trigger'), id: stepId, name: stepName, sentinelId: id }),
+  // Who it messages, asks or runs may be picked later (empty: a run says to pick one).
+  z.object({ kind: z.literal('message'), id: stepId, name: stepName, to: z.string().regex(/^((dm|group):[\w-]{1,80})?$/, 'A chat: dm:<peer> or group:<id>').default(''), text: text(8000).default('') }),
+  z.object({ kind: z.literal('friend'), id: stepId, name: stepName, peerId: z.string().max(80).default(''), prompt: text(20_000).default(''), project: text(200).optional() }),
+  z.object({ kind: z.literal('trigger'), id: stepId, name: stepName, sentinelId: z.string().max(80).default('') }),
 ]);
 
 export const LimitsSchema = z.object({

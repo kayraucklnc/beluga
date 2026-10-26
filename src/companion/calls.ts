@@ -130,7 +130,7 @@ export const PhoneCalls = {
   'companion.voicePrepare': entry('companion.voicePrepare', VoiceMacView),
   'companion.transcribe': entry('companion.transcribe', TranscriptView),
   // Sentinel (docs/sentinel.md): Run Now, Pause / Resume, a sentinel's runs, one run with its
-  // report, and Merge / Not Now on a run waiting for you (phase 2).
+  // report, and Merge / Not Now on a run waiting for you.
   'sentinel.run': entry('sentinel.run', SentinelRunResult),
   'sentinel.pause': entry('sentinel.pause', done),
   'sentinel.runs': entry('sentinel.runs', z.array(SentinelRunResult)),

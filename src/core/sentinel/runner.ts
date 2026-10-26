@@ -2,16 +2,40 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { redactSecrets } from '../../shared/steps.js';
 import type { NoticeEvent } from '../notify.js';
+import { type Named, mentionNote, personMentions } from '../person-mentions.js';
 import type { RunFolders } from './files.js';
-import { type ClaudeStep, type NotifyStep, type Run, type ScriptStep, type Sentinel, type Step, type StepRun, STEP_INFO, accessAllows, accessNeeded, ACCESS_INFO, firstLine, stepAvailable } from './model.js';
+import {
+  type ClaudeStep,
+  type FriendStep,
+  type HttpStep,
+  type MergeStep,
+  type MessageStep,
+  type NotifyStep,
+  type PrStep,
+  type Run,
+  type ScriptStep,
+  type Sentinel,
+  type Step,
+  type StepRun,
+  type TriggerStep,
+  APPROVAL_MS,
+  STEP_INFO,
+  accessAllows,
+  accessNeeded,
+  ACCESS_INFO,
+  firstLine,
+  stepAvailable,
+} from './model.js';
 import { sentinelRunPrompt, stepMaterial } from './prompt.js';
-import { type RenderContext, dateText, render } from './render.js';
+import { type RenderContext, dateText, jsonInside, render } from './render.js';
 
 /**
  * A run's steps, one after the other (docs/sentinel.md §4, "Runner"): Ask Claude, Run a script,
- * Notify me. A step's output is text; the run stops when a script exits non-zero, Claude calls
- * sentinel_stop (skipped: nothing to do), the time limit is reached, or you stop it. Steps of later
- * phases are refused with a clear line. Everything it needs is injected, so the tests fake it.
+ * Notify me, Call a service, Open a pull request, Merge if acceptable (§5), Message a chat, Ask a
+ * friend's Claude, Run another sentinel. A step's output is text; the run stops when a script exits
+ * non-zero, a service answers an error, Claude calls sentinel_stop (skipped: nothing to do), the
+ * time limit is reached, or you stop it. Steps of later phases are refused with a clear line.
+ * Everything it needs is injected, so the tests fake it.
  */
 
 export interface ShellResult {
@@ -51,6 +75,79 @@ export interface SentinelPlaces {
   archive(workspaceId: string): Promise<unknown>;
 }
 
+/** A pull request as GitHub sees it now (for the merge gate, §5). */
+export interface PrLook {
+  readonly number: number;
+  readonly url: string;
+  readonly state: 'OPEN' | 'MERGED' | 'CLOSED';
+  readonly draft: boolean;
+  readonly conflicts: boolean;
+  readonly checks: 'passing' | 'pending' | 'failing' | 'none';
+  /** The checks that failed, by name. */
+  readonly failed: readonly string[];
+  /** How many checks it has. */
+  readonly count: number;
+}
+
+/** Where a run's pull request lives: its worktree, else the project's main folder. */
+export interface PrPlace {
+  readonly workspaceId?: string;
+  readonly projectId?: string;
+}
+
+export interface PrRef {
+  readonly number: number;
+  readonly url: string;
+}
+
+/** GitHub for the pull request and merge steps (the workbench and gh; fakes in the tests). Each answers why not in words. */
+export interface SentinelGitHub {
+  /** Push the worktree and open a pull request (the project's PR instructions, or its commits). */
+  openPr(workspaceId: string, opts: { readonly draft: boolean }): Promise<PrRef | string>;
+  look(where: PrPlace, number: number): Promise<PrLook | string>;
+  /** A one-shot reviewer (read-only, a small model, two minutes): ship or hold, in one sentence. Undefined: it couldn't. */
+  review(where: PrPlace, pr: PrRef): Promise<{ readonly verdict: 'ship' | 'hold'; readonly line: string } | undefined>;
+  merge(where: PrPlace, pr: PrRef, method: MergeStep['method']): Promise<true | string>;
+}
+
+/** The Beluga network's chats, as you (Message a chat). */
+export interface SentinelChat {
+  /** Write in `dm:<peerId>` or `group:<id>`; throws in words. */
+  post(to: string, text: string): void;
+  /** The chat's name ("Ata", "Launch crew"). */
+  nameOf(to: string): string | undefined;
+  readonly friends: () => readonly Named[];
+  /** Whether a friend is in that chat (and sees the message there). */
+  shares(to: string, peerId: string): boolean;
+  /** A direct message saying where you mentioned them. */
+  tell(peerId: string, note: string): void;
+  readonly me: () => string;
+}
+
+/** A friend's Claude through the gateway, as you (their trust applies). */
+export interface FriendAnswer {
+  readonly state: string;
+  readonly final: boolean;
+  readonly summary?: string;
+  readonly data?: unknown;
+  /** Whose Claude answered. */
+  readonly name?: string;
+}
+
+export interface SentinelFriends {
+  /** → the request's id; throws in words (not a friend, their Mac can't take it). */
+  ask(input: { readonly person: string; readonly ask: string; readonly summary: string; readonly project?: string }): string;
+  /** Until it ends or `ms` pass: its state, and its answer once done. */
+  wait(id: string, ms: number): Promise<FriendAnswer>;
+  cancel(id: string): void;
+}
+
+/** Your answer to a merge waiting for you, and how it went (the API call that sent it waits for this). */
+export interface YourAnswer {
+  readonly choice: 'merge' | 'skip' | 'expired';
+  readonly settle?: (why?: string) => void;
+}
+
 export interface RunnerDeps {
   readonly now: () => number;
   readonly claude?: SentinelClaude;
@@ -68,17 +165,30 @@ export interface RunnerDeps {
   readonly claudeTurn: (signal: AbortSignal) => Promise<() => void>;
   /** How long a cancelled Claude request may take to end before its worktree is looked at (10 s). */
   readonly cancelGraceMs?: number;
+  readonly fetch?: typeof fetch;
+  readonly github?: SentinelGitHub;
+  readonly chat?: SentinelChat;
+  readonly friends?: SentinelFriends;
+  /** Run another sentinel (Run another sentinel) with this run's last output → its name; throws in words. */
+  readonly startOther?: (sentinelId: string, from: ActiveRun, output: string | undefined) => string;
+  /** Wait for your Merge or Not Now (Sentinels.decide), or 24 hours. */
+  readonly waitForYou?: (active: ActiveRun) => Promise<YourAnswer>;
+  /** How often pending checks are looked at again (PR_FAST_MS, 15 s). */
+  readonly pollMs?: number;
 }
 
 const CANCEL_GRACE_MS = 10_000;
+const POLL_MS = 15_000;
+/** A service's answer kept at most (the step fails above it). */
+const MAX_ANSWER = 4 * 1024 * 1024;
 
 /** A run going now: what the runner and Sentinels share about it. */
 export interface ActiveRun {
   run: Run;
   readonly sentinel: Sentinel;
   readonly abort: AbortController;
-  /** When its time limit is reached. */
-  readonly deadline: number;
+  /** When its time limit is reached (moved on by the time it waited for you). */
+  deadline: number;
   /** The Claude step running now: its request, its conversation, and what Claude is told there. */
   claude?: { readonly stepId: string; readonly channel: string; readonly brief: string; requestId?: string };
   /** Claude said there's nothing to do (sentinel_stop). */
@@ -87,6 +197,10 @@ export interface ActiveRun {
   places: Partial<Record<'project' | 'worktree' | 'mac', SentinelPlace>>;
   /** Claude requests cancelled in this run, settling (done or error): the worktree waits for them. */
   cancelling?: Promise<unknown>[];
+  /** Waiting for your Merge or Not Now: answer it (Sentinels.decide). */
+  answer?: (choice: 'merge' | 'skip') => Promise<void>;
+  /** The pull request it merged. */
+  merged?: number;
 }
 
 /** Kept on the run and in the state; the whole output is in the run's folder. */
@@ -99,7 +213,15 @@ type StepEnd =
   | { readonly kind: 'failed'; readonly why: string; readonly output?: string; readonly channel?: string; readonly ms?: number }
   | { readonly kind: 'skip'; readonly reason: string; readonly output?: string; readonly channel?: string }
   | { readonly kind: 'timeout'; readonly output?: string; readonly channel?: string }
-  | { readonly kind: 'stopped'; readonly output?: string; readonly channel?: string };
+  | { readonly kind: 'stopped'; readonly output?: string; readonly channel?: string }
+  /** The run ends here as you said (Not Now, nobody answered): stopped, with its own line. */
+  | { readonly kind: 'end'; readonly headline: string; readonly why: string; readonly output?: string; readonly channel?: string };
+
+/** What a step may change on its run while it goes (the merge's needs-you, the pull request). */
+interface Live {
+  readonly run: (patch: Partial<Run>) => void;
+  readonly step: (patch: Partial<StepRun>) => void;
+}
 
 const seconds = (ms: number): string => (ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : ms < 120_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
 const tail = (text: string, max = 400): string => {
@@ -149,12 +271,12 @@ export class SentinelRunner {
       setStep(i, { state: 'running', startedAt });
       let result: StepEnd;
       try {
-        result = await this.step(active, step, i, outputs, i === lastClaude);
+        result = await this.step(active, step, i, outputs, i === lastClaude, { run: set, step: (patch) => setStep(i, patch) });
       } catch (err) {
         result = { kind: 'failed', why: err instanceof Error ? err.message : String(err) };
       }
       // Nothing leaves a step with a secret in it: its output, why it failed, why it stopped.
-      if (result.kind === 'failed') result = { ...result, why: redactSecrets(result.why) };
+      if (result.kind === 'failed' || result.kind === 'end') result = { ...result, why: redactSecrets(result.why) };
       else if (result.kind === 'skip') result = { ...result, reason: redactSecrets(result.reason) };
       const endedAt = this.deps.now();
       const output = result.output === undefined ? undefined : redactSecrets(result.output);
@@ -190,6 +312,10 @@ export class SentinelRunner {
           setStep(i, { state: 'failed', endedAt, ...kept, ...channel, why: 'stopped' });
           end = { state: 'stopped', headline: 'Stopped by you' };
           break;
+        case 'end':
+          setStep(i, { state: 'skipped', endedAt, ...kept, why: result.why });
+          end = { state: 'stopped', why: result.why, headline: result.headline };
+          break;
       }
     }
     // Steps it never got to.
@@ -202,7 +328,9 @@ export class SentinelRunner {
     const state = end?.state ?? 'done';
     const headline =
       end?.headline ??
-      (report !== undefined && firstLine(report)
+      (active.merged !== undefined
+        ? `Merged #${active.merged}`
+        : report !== undefined && firstLine(report)
         ? firstLine(report)
         : lastScript && !sentinel.steps.some((s) => s.kind === 'claude')
           ? `Script ran · ${seconds(lastScript.ms)} · exit ${lastScript.exit ?? '?'}`
@@ -222,7 +350,7 @@ export class SentinelRunner {
     return undefined;
   }
 
-  private step(active: ActiveRun, step: Step, index: number, outputs: ReadonlyArray<{ readonly name: string; readonly output: string }>, reports: boolean): Promise<StepEnd> {
+  private step(active: ActiveRun, step: Step, index: number, outputs: Outputs, reports: boolean, live: Live): Promise<StepEnd> {
     switch (step.kind) {
       case 'claude':
         return this.claudeStep(active, step, outputs, reports);
@@ -230,9 +358,283 @@ export class SentinelRunner {
         return this.scriptStep(active, step, outputs);
       case 'notify':
         return Promise.resolve(this.notifyStep(active, step, outputs));
+      case 'http':
+        return this.httpStep(active, step, outputs);
+      case 'pr':
+        return this.prStep(active, step, live);
+      case 'merge':
+        return this.mergeStep(active, step, live);
+      case 'message':
+        return Promise.resolve(this.messageStep(active, step, outputs));
+      case 'friend':
+        return this.friendStep(active, step, outputs);
+      case 'trigger':
+        return Promise.resolve(this.triggerStep(active, step, outputs));
       default:
-        return Promise.resolve({ kind: 'failed', why: `${STEP_INFO[step.kind].label} isn’t available yet (step ${index + 1})` });
+        return Promise.resolve({ kind: 'failed', why: `${STEP_INFO[(step as Step).kind].label} isn’t available yet (step ${index + 1})` });
     }
+  }
+
+  private remaining(active: ActiveRun): number {
+    return Math.max(0, active.deadline - this.deps.now());
+  }
+
+  /** The folder a step works from: the project's main folder, else your home. */
+  private cwdOf(s: Sentinel): string {
+    const project = s.projectId ? this.deps.project(s.projectId) : undefined;
+    return project?.root || this.deps.home;
+  }
+
+  // ---------------------------------------------------------------- Call a service
+
+  private async httpStep(active: ActiveRun, step: HttpStep, outputs: Outputs): Promise<StepEnd> {
+    const env = this.deps.envFor(this.cwdOf(active.sentinel));
+    // Your variables go in first, into what you wrote only: an earlier output saying "$GROQBOT_KEY"
+    // is never filled in (and sent somewhere).
+    const secrets: string[] = [];
+    const missing = new Set<string>();
+    const expand = (text: string, strict: boolean): string =>
+      text.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (whole, name: string) => {
+        const v = env[name];
+        if (v === undefined) {
+          if (strict) missing.add(name);
+          return whole;
+        }
+        if (v.length >= 4) secrets.push(v);
+        return v;
+      });
+    const ctx = this.context(active, outputs);
+    const url = render(expand(step.url.trim(), true), { ...ctx, escape: encodeURIComponent }).trim();
+    const headers: Record<string, string> = { 'user-agent': 'Beluga Sentinel' };
+    for (const [k, v] of Object.entries(step.headers)) if (k.trim()) headers[k.trim()] = render(expand(v, true), ctx).replace(/[\r\n]+/g, ' ');
+    if (missing.size) return { kind: 'failed', why: `${[...missing].map((n) => `$${n}`).join(', ')} ${missing.size === 1 ? 'isn’t' : 'aren’t'} set: add ${missing.size === 1 ? 'it' : 'them'} in Settings › Environment` };
+    if (!url) return { kind: 'failed', why: 'it has no address yet: fill in the URL' };
+    if (!/^https?:\/\/[^/\s]+/i.test(url)) return { kind: 'failed', why: 'its address must start with https:// (or http://)' };
+    const host = /^https?:\/\/([^/?#]+)/i.exec(url)?.[1] ?? 'the service';
+    const rawBody = step.body !== undefined && step.method !== 'GET' ? expand(step.body, false) : undefined;
+    const json = /json/i.test(Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '') || /^\s*[[{]/.test(rawBody ?? '');
+    const body = rawBody === undefined ? undefined : render(rawBody, json ? { ...ctx, escape: jsonInside } : ctx);
+    // Nothing a service says back carries your secrets on (a service echoing its key).
+    const scrub = (text: string): string => secrets.reduce((t, v) => t.split(v).join('[redacted]'), text);
+    const own = Math.min(600, Math.max(1, step.timeoutSec)) * 1000;
+    const limit = Math.min(own, this.remaining(active));
+    const signal = AbortSignal.any([AbortSignal.timeout(Math.max(1, limit)), active.abort.signal]);
+    let res: Response;
+    try {
+      res = await (this.deps.fetch ?? fetch)(url, { method: step.method, headers, ...(body !== undefined ? { body } : {}), signal, redirect: 'follow' });
+    } catch (err) {
+      if (active.abort.signal.aborted) return { kind: 'stopped' };
+      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) return limit < own ? { kind: 'timeout' } : { kind: 'failed', why: `${host} didn’t answer in ${Math.round(own / 1000)} s` };
+      const cause = err instanceof Error ? ((err.cause as Error | undefined)?.message ?? err.message) : String(err);
+      return { kind: 'failed', why: scrub(`couldn’t reach ${host}: ${cause}`) };
+    }
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      if (active.abort.signal.aborted) return { kind: 'stopped' };
+      return { kind: 'failed', why: scrub(`${host}’s answer broke off: ${err instanceof Error ? err.message : String(err)}`) };
+    }
+    if (text.length > MAX_ANSWER) text = `${text.slice(0, MAX_ANSWER)}\n… (cut: the answer was bigger than 4 MB)`;
+    text = scrub(text);
+    if (!res.ok) return { kind: 'failed', why: `${host} answered ${res.status}${res.statusText ? ` ${res.statusText}` : ''}${text.trim() ? `: ${firstLine(text, 200)}` : ''}`, output: text };
+    return { kind: 'done', output: text };
+  }
+
+  // ---------------------------------------------------------------- Open a pull request
+
+  private async prStep(active: ActiveRun, step: PrStep, live: Live): Promise<StepEnd> {
+    const worktree = active.run.worktreeId;
+    if (!worktree) return { kind: 'failed', why: 'there’s no worktree to open a pull request from: an “Ask Claude” step in a new worktree comes first' };
+    const open = active.run.pr;
+    if (open) return { kind: 'done', output: `#${open.number} is open already: ${open.url}` };
+    const gh = this.deps.github;
+    if (!gh) return { kind: 'failed', why: 'pull requests need the Beluga app' };
+    const got = await race(gh.openPr(worktree, { draft: Boolean(step.draft) }).catch((err: unknown) => (err instanceof Error ? err.message : String(err))), this.remaining(active), active.abort.signal);
+    if (got.kind === 'timeout') return { kind: 'timeout' };
+    if (got.kind === 'aborted') return { kind: 'stopped' };
+    const pr = got.value;
+    if (typeof pr === 'string') return { kind: 'failed', why: pr };
+    live.run({ pr });
+    return { kind: 'done', output: `Opened #${pr.number}${step.draft ? ' as a draft' : ''}: ${pr.url}` };
+  }
+
+  // ---------------------------------------------------------------- Merge if acceptable (§5)
+
+  /**
+   * "Acceptable" is Beluga's: a pull request, every check passed (pending ones waited for), a
+   * reviewer's ship, and your Merge (unless the step merges by itself); then it merges and the
+   * worktree is archived.
+   */
+  private async mergeStep(active: ActiveRun, step: MergeStep, live: Live): Promise<StepEnd> {
+    const pr = active.run.pr;
+    if (!pr) return { kind: 'failed', why: 'there’s no pull request to merge: an “Open a pull request” step comes first' };
+    const gh = this.deps.github;
+    if (!gh) return { kind: 'failed', why: 'merging needs the Beluga app' };
+    const where: PrPlace = { ...(active.run.worktreeId ? { workspaceId: active.run.worktreeId } : {}), ...(active.sentinel.projectId ? { projectId: active.sentinel.projectId } : {}) };
+    const signal = active.abort.signal;
+    const n = `#${pr.number}`;
+    // 2. The checks: every one passed; pending ones are waited for (up to the run's time limit).
+    let look: PrLook | undefined;
+    let sawNone = false;
+    let waited = false;
+    while (!look) {
+      const got = await race(gh.look(where, pr.number).catch((err: unknown) => (err instanceof Error ? err.message : String(err))), this.remaining(active), signal);
+      if (got.kind === 'timeout') return { kind: 'timeout' };
+      if (got.kind === 'aborted') return { kind: 'stopped' };
+      const now = got.value;
+      if (typeof now === 'string') return { kind: 'failed', why: `GitHub couldn’t say how ${n} is doing: ${now}` };
+      if (now.state === 'MERGED') {
+        active.merged = pr.number;
+        return { kind: 'done', output: `${n} is merged already` };
+      }
+      if (now.state === 'CLOSED') return { kind: 'failed', why: `${n} is closed` };
+      if (now.draft) return { kind: 'failed', why: `${n} is a draft: a draft can’t merge (untick Draft on the pull request step)` };
+      if (now.conflicts) return { kind: 'failed', why: `${n} conflicts with its base branch` };
+      if (now.checks === 'failing') return { kind: 'failed', why: `the check “${now.failed[0] ?? 'a check'}” failed on ${n}` };
+      // No checks at all: looked at twice, so checks that haven't shown up yet aren't missed.
+      if (now.checks === 'passing' || (now.checks === 'none' && sawNone)) look = now;
+      else {
+        if (now.checks === 'none') sawNone = true;
+        if (!waited) live.step({ why: now.checks === 'pending' ? `Waiting for the checks on ${n}` : `Looking for checks on ${n}` });
+        waited = true;
+        const pause = await race(delay(this.deps.pollMs ?? POLL_MS), this.remaining(active), signal);
+        if (pause.kind === 'timeout') return { kind: 'timeout' };
+        if (pause.kind === 'aborted') return { kind: 'stopped' };
+      }
+    }
+    const checks = look.checks === 'none' ? 'No checks on this repository' : look.count === 1 ? 'The check passed' : `All ${look.count} checks passed`;
+    // 3. The review: ship or hold, in one sentence.
+    live.step({ why: `${checks} · Claude is reviewing ${n}` });
+    const reviewed = await race(gh.review(where, pr).catch(() => undefined), this.remaining(active), signal);
+    if (reviewed.kind === 'timeout') return { kind: 'timeout' };
+    if (reviewed.kind === 'aborted') return { kind: 'stopped' };
+    const review = reviewed.value;
+    const said = review ? `Claude’s review: ${review.verdict}, ${lowerFirst(review.line.replace(/[.\s]+$/, ''))}` : 'Claude couldn’t review it';
+    const why = `${checks} · ${said}`;
+    live.step({ why });
+    // 4. Your approval (a hold always asks).
+    const hold = !review || review.verdict === 'hold';
+    if (step.require.approval || hold) {
+      const wait = this.deps.waitForYou;
+      if (!wait) return { kind: 'failed', why: `${n} needs your approval, and nothing can ask you here` };
+      const headline = hold ? `${n}: Claude says hold. Merge it anyway?` : `Merge ${n}?`;
+      live.run({ state: 'needs-you', headline });
+      this.deps.notify({ kind: 'needsYou', tag: 'sentinel', title: `${active.sentinel.name}: merge ${n}?`, body: why, key: `${active.run.id}:merge`, ...(active.run.channel ? { channel: active.run.channel } : {}) });
+      const since = this.deps.now();
+      const asked = await race(wait(active), APPROVAL_MS + 60_000, signal);
+      // The time it waited for you doesn't count against its time limit.
+      active.deadline += this.deps.now() - since;
+      live.run({ state: 'running', headline: '' });
+      if (asked.kind !== 'ok') return { kind: 'stopped' };
+      const answer = asked.value;
+      if (answer.choice === 'skip') {
+        answer.settle?.();
+        return { kind: 'end', headline: `Not now: ${n} stays open`, why: `${why} · you said Not Now` };
+      }
+      if (answer.choice === 'expired') return { kind: 'end', headline: `Nobody said Merge in 24 hours: ${n} stays open`, why: `${why} · nobody said Merge in 24 hours` };
+      const merged = await this.merge(active, gh, where, pr, step);
+      answer.settle?.(typeof merged === 'string' ? merged : undefined);
+      return typeof merged === 'string' ? { kind: 'failed', why: merged } : merged;
+    }
+    const merged = await this.merge(active, gh, where, pr, step);
+    return typeof merged === 'string' ? { kind: 'failed', why: merged } : merged;
+  }
+
+  /** 5. Merge it, then archive the worktree (its work is on the base branch now). */
+  private async merge(active: ActiveRun, gh: SentinelGitHub, where: PrPlace, pr: PrRef, step: MergeStep): Promise<StepEnd | string> {
+    const n = `#${pr.number}`;
+    const res = await gh.merge(where, pr, step.method).catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
+    if (res !== true) return `GitHub didn’t merge ${n}: ${res}`;
+    active.merged = pr.number;
+    let archived = false;
+    if (where.workspaceId && this.deps.places) {
+      try {
+        await this.deps.places.archive(where.workspaceId);
+        archived = true;
+      } catch {
+        // It stays; nothing is lost.
+      }
+    }
+    return { kind: 'done', output: `Merged ${n} (${step.method === 'squash' ? 'squashed' : 'a merge commit'})${archived ? '; its worktree is archived' : ''}` };
+  }
+
+  // ---------------------------------------------------------------- Message a chat
+
+  private messageStep(active: ActiveRun, step: MessageStep, outputs: Outputs): StepEnd {
+    const chat = this.deps.chat;
+    if (!chat) return { kind: 'failed', why: 'messages need the Beluga network: turn it on in Settings › Network' };
+    if (!step.to) return { kind: 'failed', why: 'pick the chat it writes in' };
+    // What a template fills in may hold a secret: never in a chat.
+    const text = redactSecrets(render(step.text, this.context(active, outputs))).trim();
+    if (!text) return { kind: 'failed', why: 'its message is empty' };
+    chat.post(step.to, text);
+    const name = chat.nameOf(step.to);
+    // "@ata" tags Ata; one who isn't in this chat is told where (as a message you sent would).
+    const told: string[] = [];
+    const where = name ? (step.to.startsWith('group:') ? `the group “${name}”` : `your chat with ${name}`) : 'a chat';
+    for (const f of personMentions(text, chat.friends())) {
+      if (chat.shares(step.to, f.peerId)) {
+        told.push(f.name);
+        continue;
+      }
+      try {
+        chat.tell(f.peerId, mentionNote(chat.me(), where, text));
+        told.push(f.name);
+      } catch {
+        // They'll see it when they're back in it.
+      }
+    }
+    return { kind: 'done', output: `Sent to ${name ?? step.to}: ${firstLine(text, 200)}${told.length ? ` · tagged ${told.join(', ')}` : ''}` };
+  }
+
+  // ---------------------------------------------------------------- Ask a friend's Claude
+
+  private async friendStep(active: ActiveRun, step: FriendStep, outputs: Outputs): Promise<StepEnd> {
+    const friends = this.deps.friends;
+    if (!friends) return { kind: 'failed', why: 'asking a friend’s Claude needs the Beluga network: turn it on in Settings › Network' };
+    if (!step.peerId) return { kind: 'failed', why: 'pick whose Claude it asks' };
+    // It goes to someone else's Mac: nothing that looks like a secret goes with it.
+    const ask = redactSecrets(render(step.prompt, { ...this.context(active, outputs), material: stepMaterial })).trim();
+    if (!ask) return { kind: 'failed', why: 'its question is empty' };
+    const id = friends.ask({ person: step.peerId, ask, summary: `${active.sentinel.name}: ${firstLine(ask, 80)}`, ...(step.project ? { project: step.project } : {}) });
+    const signal = active.abort.signal;
+    for (;;) {
+      const left = this.remaining(active);
+      const got = await race(friends.wait(id, left).catch((err: unknown): FriendAnswer => ({ state: 'failed', final: true, summary: err instanceof Error ? err.message : String(err) })), left, signal);
+      if (got.kind !== 'ok') {
+        friends.cancel(id);
+        return got.kind === 'timeout' ? { kind: 'timeout' } : { kind: 'stopped' };
+      }
+      const t = got.value;
+      if (!t.final) {
+        // A question back from their Claude: nobody answers it here; it waits for the end (or the time limit).
+        if (this.remaining(active) <= 0) {
+          friends.cancel(id);
+          return { kind: 'timeout' };
+        }
+        const pause = await race(delay(1000), this.remaining(active), signal);
+        if (pause.kind === 'aborted') {
+          friends.cancel(id);
+          return { kind: 'stopped' };
+        }
+        continue;
+      }
+      const who = t.name ?? 'Their Claude';
+      if (t.state !== 'done') return { kind: 'failed', why: `${who} ${t.state === 'declined' ? 'said no' : t.state}${t.summary ? `: ${firstLine(t.summary, 200)}` : ''}` };
+      const data = t.data === undefined ? '' : `\n\n${JSON.stringify(t.data, null, 2)}`;
+      return { kind: 'done', output: `${t.summary ?? ''}${data}`.trim() || `${who} answered` };
+    }
+  }
+
+  // ---------------------------------------------------------------- Run another sentinel
+
+  private triggerStep(active: ActiveRun, step: TriggerStep, outputs: Outputs): StepEnd {
+    if (!step.sentinelId) return { kind: 'failed', why: 'pick the sentinel it runs' };
+    const start = this.deps.startOther;
+    if (!start) return { kind: 'failed', why: 'running another sentinel needs the Beluga app' };
+    const name = start(step.sentinelId, active, outputs.at(-1)?.output);
+    return { kind: 'done', output: `Started “${name}”` };
   }
 
   /** What a step's templates see. */
@@ -327,6 +729,7 @@ export class SentinelRunner {
   }
 
   private async scriptStep(active: ActiveRun, step: ScriptStep, outputs: ReadonlyArray<{ readonly name: string; readonly output: string }>): Promise<StepEnd> {
+    if (!step.command.trim()) return { kind: 'failed', why: 'its command is empty: fill it in' };
     const s = active.sentinel;
     const project = s.projectId ? this.deps.project(s.projectId) : undefined;
     const cwd = step.cwd === 'project' && project?.root ? project.root : this.deps.home;
@@ -387,6 +790,15 @@ export class SentinelRunner {
 }
 
 const capital = (text: string): string => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
+const lowerFirst = (text: string): string => (text && !/^[A-Z]{2}/.test(text) ? text[0]!.toLowerCase() + text.slice(1) : text);
+
+type Outputs = ReadonlyArray<{ readonly name: string; readonly output: string }>;
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    t.unref?.();
+  });
 
 type Raced<T> = { readonly kind: 'ok'; readonly value: T } | { readonly kind: 'timeout' } | { readonly kind: 'aborted' };
 

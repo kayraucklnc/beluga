@@ -435,6 +435,57 @@ async function mockSentinel(input: AgentRunInput, pace: number): Promise<string>
   ].join('\n');
 }
 
+/**
+ * The demo's Claude setting a sentinel up from words (Describe it, the page's box): when it runs
+ * from the time and days the words name, an Ask Claude step with them as its prompt, and a Notify.
+ */
+async function mockSentinelAsk(input: AgentRunInput, tools: NonNullable<AgentRunInput['sentinelTools']>, id: string, pace: number): Promise<string> {
+  const words = input.prompt.trim();
+  const said = words.toLowerCase();
+  await sleep(700 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_get');
+  await sleep(600 * pace, input.signal);
+  input.onEvent('tool', 'Bash git log --oneline -5');
+  // "at 8", "8am", "7:30": the hour it runs (7 in the morning when the words say none).
+  const time = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/.exec(said) ?? /\bat\s+(\d{1,2})(?::(\d{2}))?\b/.exec(said) ?? /\b(\d{1,2}):(\d{2})\b/.exec(said);
+  const h = time ? Number(time[1]) : /evening/.test(said) ? 18 : 7;
+  const hour = time?.[3] === 'pm' && h < 12 ? h + 12 : time?.[3] === 'am' && h === 12 ? 0 : h;
+  const at = `${String(Math.min(23, hour)).padStart(2, '0')}:${time?.[2] ?? '00'}`;
+  const trigger = /weekday/.test(said)
+    ? { kind: 'schedule' as const, every: 'week' as const, days: [1, 2, 3, 4, 5], at, missed: 'catch-up' as const }
+    : /\bweek(ly)?\b|monday/.test(said)
+      ? { kind: 'schedule' as const, every: 'week' as const, days: [1], at, missed: 'catch-up' as const }
+      : /hour/.test(said)
+        ? { kind: 'schedule' as const, every: 'hours' as const, hours: 3 as const, at: '00:00', missed: 'skip' as const }
+        : /morning|daily|every day|night|evening/.test(said)
+          ? { kind: 'schedule' as const, every: 'day' as const, at, missed: 'catch-up' as const }
+          : { kind: 'manual' as const };
+  const firstWords = words
+    .replace(/^(every|each)\s+(other\s+)?(weekday|week|day|morning|evening|night|hour)s?(\s+(morning|evening|night))?,?\s*/i, '')
+    .replace(/^(at|by|on)\s+[\w:]+(\s*(am|pm))?\s*,?\s*/i, '')
+    .split(/[,.;]/)[0]!
+    .split(/\s+/)
+    .slice(0, 4)
+    .join(' ')
+    .replace(/(\s+(and|or|the|a|an|to|of|with|for))+$/i, '');
+  const name = firstWords ? firstWords.charAt(0).toUpperCase() + firstWords.slice(1) : 'Watcher';
+  const tasks = /task/.test(said);
+  const steps = [
+    { kind: 'claude' as const, name: 'Read what changed', where: /mac\b|disk|screen/.test(said) ? ('mac' as const) : ('project' as const), prompt: `${words}\n\nLook at what changed since the last run in {{project}} ({{date}}): commits, pull requests, issues, CI and these open tasks:\n{{tasks}}\n\nStart with what needs the user first.${tasks ? ' Make a task (task_create) for anything that looks urgent.' : ''} If nothing changed, say so in one line and stop.` },
+    { kind: 'notify' as const, name: 'Tell me', phone: /phone/.test(said) },
+  ];
+  await sleep(800 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_update');
+  try {
+    tools.update(id, { name, trigger, steps });
+  } catch (err) {
+    return `I couldn’t change it: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  await sleep(400 * pace, input.signal);
+  const when = trigger.kind === 'manual' ? 'it runs when you press Run' : trigger.every === 'week' && trigger.days?.length === 5 ? `every weekday at ${at.replace(/^0/, '')}` : trigger.every === 'week' ? `every Monday at ${at.replace(/^0/, '')}` : trigger.every === 'hours' ? 'every 3 hours' : `every day at ${at.replace(/^0/, '')}`;
+  return `Set it up: ${when}, Claude reads what changed and writes a brief${tasks ? ', with tasks for anything urgent' : ''}, then tells you${/phone/.test(said) ? ' on your phone' : ''}. It’s paused: Turn On when it looks right.`;
+}
+
 const FILLER = /^(?:(?:please|pls|can you|could you|we should|we need to|i want to|i'd like to|let's|lets|make it so)\s+)+/i;
 
 /** The demo's task writer: a tidy title from the first line, a goal and criteria, labels the words name. */
@@ -521,6 +572,8 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     if (input.place?.syncMain) return mockSyncMain(input, input.place.syncMain, pace);
     // A sentinel's run (core/sentinel): its brief, before the main folder's "move it to a worktree".
     if (input.sentinelBrief && input.sentinelTools?.stop) return mockSentinel(input, pace);
+    // Changing a sentinel (sentinel.ask): it reads the words, fills the sentinel in with its tools.
+    if (input.sentinelTools?.asking) return mockSentinelAsk(input, input.sentinelTools, input.sentinelTools.asking, pace);
     // A plan's conversation: Claude writes, revises and checks the plan with its tools.
     if (input.planTools && !/^\/compact/.test(input.prompt.trim())) return mockPlanning(input, input.planTools, pace);
     // A main folder is questions only: a change request moves to a new worktree, as real Claude is told to.

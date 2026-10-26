@@ -174,11 +174,16 @@ describe('closing Beluga', () => {
       JSON.stringify({
         version: 1,
         items: [{ id: 'sn_1', name: 'Fix', trigger: { kind: 'manual' }, createdAt: 1, updatedAt: 1 }],
-        runs: [{ id: 'run_w', sentinelId: 'sn_1', by: 'event', trigger: { kind: 'manual', summary: 'x' }, state: 'needs-you', startedAt: 5, headline: 'Merge it?', steps: [{ id: 'st', state: 'running' }], tasks: [] }],
+        runs: [
+          { id: 'run_w', sentinelId: 'sn_1', by: 'event', trigger: { kind: 'manual', summary: 'x' }, state: 'needs-you', startedAt: Date.now() - 60_000, headline: 'Merge it?', steps: [{ id: 'st', state: 'running' }], tasks: [] },
+          // One nobody answered for a day: stopped, and says so.
+          { id: 'run_old', sentinelId: 'sn_1', by: 'event', trigger: { kind: 'manual', summary: 'x' }, state: 'needs-you', startedAt: 5, headline: 'Merge it?', pr: { number: 9, url: 'u' }, steps: [{ id: 'st', state: 'running' }], tasks: [] },
+        ],
       }),
     );
     const b = setup({ dir: other });
-    expect(b.sentinels.runsOf('sn_1')[0]).toMatchObject({ state: 'needs-you', headline: 'Merge it?' });
+    expect(b.sentinels.runsOf('sn_1').find((r) => r.id === 'run_w')).toMatchObject({ state: 'needs-you', headline: 'Merge it?' });
+    expect(b.sentinels.runsOf('sn_1').find((r) => r.id === 'run_old')).toMatchObject({ state: 'stopped', headline: 'Nobody said Merge in 24 hours: #9 stays open' });
   });
 });
 

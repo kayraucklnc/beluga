@@ -20,7 +20,8 @@ describe('beluga_sentinel', () => {
     const s = setup();
     const outside = createSentinelToolDefs(s.sentinels.forRun('ws:else', 'p-me')!.tools);
     expect(outside.map((d) => `mcp__beluga_sentinel__${d.name}`)).toEqual(SENTINEL_TOOL_NAMES.slice(1));
-    for (const name of SENTINEL_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false })).toBe('allow');
+    // Deleting one asks you (the approval gate); everything else never asks.
+    for (const name of SENTINEL_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false })).toBe(name.endsWith('sentinel_remove') ? 'ask' : 'allow');
     // A friend's runs get nothing.
     expect(s.sentinels.forRun('ws:else', 'p-friend')).toBeUndefined();
 
@@ -91,7 +92,7 @@ describe('beluga_sentinel', () => {
 });
 
 describe('the sentinel.* API', () => {
-  it('works through the session; later phases say so in words', async () => {
+  it('works through the session; phase 3’s webhooks say so in words', async () => {
     const s = setup({ reply: () => 'ok' });
     const session = {} as Session;
     attachSentinel(session, s.sentinels);
@@ -102,16 +103,15 @@ describe('the sentinel.* API', () => {
     expect(updated.projectId).toBeUndefined();
     const copy = SENTINEL_HANDLERS['sentinel.duplicate'](session, made.id);
     expect(copy).toMatchObject({ name: 'Renamed copy', paused: true });
-    expect(SENTINEL_HANDLERS['sentinel.recipes'](session).map((r) => r.id)).toEqual(['morning-brief', 'nightly-tests', 'dependency-updates', 'release-notes', 'issues-to-tasks']);
+    expect(SENTINEL_HANDLERS['sentinel.recipes'](session).map((r) => r.id)).toEqual(['morning-brief', 'nightly-tests', 'dependency-updates', 'release-notes', 'issues-to-tasks', 'watch-the-web']);
     expect(SENTINEL_HANDLERS['sentinel.setRunAtOnce'](session, 3)).toBe(3);
-    expect(() => (SENTINEL_HANDLERS['sentinel.draft'] as (s: Session, ...a: unknown[]) => unknown)(session, 'every morning…')).toThrow('isn’t available yet');
     expect(() => (SENTINEL_HANDLERS['sentinel.rotateSecret'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('isn’t available yet');
     expect(() => (SENTINEL_HANDLERS['sentinel.webhookUrl'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('isn’t available yet');
     const run = SENTINEL_HANDLERS['sentinel.run'](session, made.id);
     expect(run.by).toBe('you');
     await until(() => SENTINEL_HANDLERS['sentinel.runGet'](session, run.id).run.state !== 'running');
     expect(SENTINEL_HANDLERS['sentinel.runs'](session, made.id)).toHaveLength(1);
-    expect(() => SENTINEL_HANDLERS['sentinel.decide'](session, run.id, 'merge')).toThrow('isn’t available yet');
+    await expect(SENTINEL_HANDLERS['sentinel.decide'](session, run.id, 'merge')).rejects.toThrow('isn’t waiting for you');
     SENTINEL_HANDLERS['sentinel.remove'](session, made.id);
     expect(s.store.getState().sentinel.items.map((i) => i.id)).toEqual([copy.id]);
   });
@@ -135,8 +135,8 @@ describe('recipes', () => {
 
 describe('the demo', () => {
   it('seeds four sentinels with their history', async () => {
-    const { seedDemoSentinel } = await import('../src/core/sentinel/demo.js');
-    const s = setup();
+    const { demoGitHub, seedDemoSentinel } = await import('../src/core/sentinel/demo.js');
+    const s = setup({ github: demoGitHub() });
     let back = 0;
     seedDemoSentinel(s.store, s.sentinels, (ms) => (back = ms))();
     expect(back).toBe(0);
@@ -154,7 +154,9 @@ describe('the demo', () => {
     expect(waiting).toMatchObject({ headline: 'Merge the fix for #48?', pr: { number: 53 } });
     expect(Object.values(st.live).map((l) => l.state).sort()).toEqual(['needs-you', 'running']);
     expect(s.sentinels.runGet(st.runs.find((r) => r.sentinelId === brief.id && r.state === 'done')!.id).report).toMatch(/\n\n- /);
-    // Merge on the demo's waiting run is recorded.
-    expect(s.sentinels.decide(waiting.id, 'merge')).toMatchObject({ state: 'done', headline: 'Merged #53' });
+    // Merge on the demo's waiting run goes through the real decide path (the demo's GitHub merges it).
+    await expect(s.sentinels.decide(waiting.id, 'merge')).resolves.toMatchObject({ state: 'done', headline: 'Merged #53' });
+    expect(s.store.getState().sentinel.runs.find((r) => r.id === waiting.id)!.steps.map((st) => st.state)).toEqual(['done', 'done', 'done', 'skipped']);
+    await expect(s.sentinels.decide(waiting.id, 'merge')).rejects.toThrow('isn’t waiting for you');
   });
 });

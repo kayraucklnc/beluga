@@ -23,6 +23,7 @@ import { answerChat } from './chat-answer.js';
 import { nameTask, titlePlan } from './namer.js';
 import { fixRun, fixSetup, workOutScripts } from './setup-fixer.js';
 import { draftTask } from './task-drafter.js';
+import { reviewPr } from './pr-reviewer.js';
 import { createRoomTools } from './tools.js';
 import { ViewShelf, createViewTools } from './view-tools.js';
 import { createTaskTools } from './task-tools.js';
@@ -523,6 +524,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     fixRun: (dir: string, failed: string, output: string) => fixRun(dir, failed, output, { claudePath: opts.claudePath }),
     workOutScripts: (dir: string, want: { setup: boolean; run: boolean }) => workOutScripts(dir, want, { claudePath: opts.claudePath }),
     draftTask: (text, ctx) => draftTask(text, ctx, { cwd: opts.cwd, ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
+    reviewPr: (input) => reviewPr(input, { ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
 
     /** Ask Claude Code which models it offers (no prompt is sent). */
     async listModels() {

@@ -27,10 +27,10 @@ export const SENTINEL_API = {
   'sentinel.runs': { args: z.tuple([id]) },
   // One run: its steps' outputs (the first 16 KB each) and its report's text → RunDetail.
   'sentinel.runGet': { args: z.tuple([id]) },
-  // Describe it: Claude drafts a sentinel from words (phase 2).
-  'sentinel.draft': { args: z.tuple([z.string().min(1).max(8000), id.optional()]) },
+  // Your Claude changes it from your words (the page's box; Describe it is create, then this) → { channel }.
+  'sentinel.ask': { args: z.tuple([id, z.string().trim().min(1).max(8000)]) },
   'sentinel.recipes': { args: z.tuple([]) },
-  // A run waiting for you (a merge): Merge or Not Now.
+  // A run waiting for you (a merge): Merge (once GitHub merged it) or Not Now → the run.
   'sentinel.decide': { args: z.tuple([id, z.enum(['merge', 'skip'])]) },
   // Claude steps running together across all sentinels.
   'sentinel.setRunAtOnce': { args: z.tuple([z.number().int().min(1).max(MAX_RUN_AT_ONCE)]) },

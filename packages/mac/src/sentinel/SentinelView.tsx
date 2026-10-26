@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { MAX_RUN_AT_ONCE, type Sentinel, type SentinelState, lastRunOf } from '@beluga/core/sentinel/model.js';
+import { CLAUDE_CHANGED, MAX_RUN_AT_ONCE, type Sentinel, type SentinelState, lastRunOf, pausedWords } from '@beluga/core/sentinel/model.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { type ActionItem, ActionsContext, ActionsDropdown } from '../components/SpecMenu.js';
@@ -190,10 +190,15 @@ const SentinelRow = memo(function SentinelRow({ item, state, now, a }: { item: S
         <span className={s.rowMain}>
           <span className={s.rowTop}>
             <span className={s.rowName}>{item.name}</span>
-            {item.pausedWhy ? (
+            {item.pausedWhy && item.pausedWhy !== CLAUDE_CHANGED ? (
               <span className={s.problemMark}>
                 <Icon name="alert" size={11} />
-                {item.pausedWhy}
+                {pausedWords(item)}
+              </span>
+            ) : item.pausedWhy ? (
+              <span className={s.pausedMark}>
+                <Icon name="claude" size={10} />
+                {pausedWords(item)}
               </span>
             ) : item.paused ? (
               <span className={s.pausedMark}>

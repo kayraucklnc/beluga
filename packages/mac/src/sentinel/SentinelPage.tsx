@@ -1,5 +1,6 @@
-import { useRef } from 'react';
-import { ACCESS, ACCESS_INFO, type Access, NOTIFY_WHERE, type RunSummary, type Sentinel, type SentinelPatch, TIME_LIMITS, runsOf, scheduleSentence } from '@beluga/core/sentinel/model.js';
+import { useRef, useState } from 'react';
+import { activityOf } from '@beluga/ui/workspace-models.js';
+import { ACCESS, ACCESS_INFO, type Access, CLAUDE_CHANGED, CLAUDE_CHANGED_BANNER, NOTIFY_WHERE, type RunSummary, type Sentinel, type SentinelPatch, TIME_LIMITS, accessRank, runsOf, scheduleSentence } from '@beluga/core/sentinel/model.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
@@ -11,11 +12,12 @@ import { ago } from '../tasks/tasks-model.js';
 import { Disc, RunPill } from './marks.js';
 import { StepsCard, WhenCard } from './SentinelCards.js';
 import {
-  LATER,
   MAC_SCOPE,
   NOTIFY_LABEL,
   PAUSE_AFTER_CHOICES,
   PER_DAY_CHOICES,
+  accessSentence,
+  askLine,
   byWords,
   chatPlaceOf,
   dotStrip,
@@ -61,6 +63,7 @@ function Page({ item }: { item: Sentinel }) {
         <div className={t.pageMain} data-sentinel-page={item.id}>
           <Crumbs item={item} back={back} />
           <Header item={item} save={save} />
+          <AskBox item={item} />
           <Banners item={item} />
           <WhenCard item={item} save={save} />
           <StepsCard item={item} save={save} />
@@ -129,7 +132,7 @@ function Header({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) =
         </Tip>
         {item.paused ? (
           <Button size="small" variant="primary" icon="check" onClick={() => void a.setPaused(item, false)}>
-            {item.pausedWhy ? 'Resume' : 'Turn On'}
+            {item.pausedWhy && item.pausedWhy !== CLAUDE_CHANGED ? 'Resume' : 'Turn On'}
           </Button>
         ) : (
           <Button size="small" icon="pause" onClick={() => void a.setPaused(item, true)}>
@@ -144,9 +147,78 @@ function Header({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) =
   );
 }
 
+/**
+ * "Ask Claude to change this sentinel…": one line under the header (⌘↩ or Return sends). While
+ * Claude works it shows its conversation's last line; then its answer, with Open Chat.
+ */
+function AskBox({ item }: { item: Sentinel }) {
+  const a = useSentinelActions();
+  const ask = useApp((st) => st.sentinel.asks?.[item.id]);
+  const live = useApp((st) => (ask?.state === 'writing' ? activityOf(st.log, ask.channel) : undefined));
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const writing = ask?.state === 'writing';
+  const line = askLine(ask, live);
+  const send = async (): Promise<void> => {
+    const words = text.trim();
+    if (!words || writing || busy) return;
+    setBusy(true);
+    const sent = await a.act(() => a.api.ask(item.id, words));
+    setBusy(false);
+    if (sent) setText('');
+  };
+  return (
+    <section className={s.ask} aria-label="Ask Claude" data-testid="sentinel-ask">
+      <div className={s.askRow}>
+        <Icon name="claude" size={14} />
+        <input
+          className={s.askInput}
+          value={text}
+          placeholder={writing ? 'Claude is changing it…' : 'Ask Claude to change this sentinel…'}
+          aria-label="Ask Claude to change this sentinel"
+          spellCheck
+          disabled={writing}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+        />
+        <Tip label="Claude changes it for you; it looks at the project first when that helps" keys="⌘↩">
+          <Button size="small" icon="arrowRight" disabled={!text.trim() || writing || busy} onClick={() => void send()}>
+            Ask
+          </Button>
+        </Tip>
+      </div>
+      {line && ask ? (
+        <div className={s.askLine} data-who={line.who} role="status" aria-live="polite">
+          {line.who === 'claude' ? <span className={s.askDot} aria-hidden="true" /> : <Icon name={line.who === 'done' ? 'check' : 'alert'} size={12} />}
+          <span className={s.askText}>{line.text}</span>
+          <Button size="small" variant="quiet" onClick={() => a.openChannel(ask.channel)}>
+            Open Chat
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function Banners({ item }: { item: Sentinel }) {
   const a = useSentinelActions();
   const last = useApp((st) => runsOf(st.sentinel, item.id)[0]);
+  if (item.paused && item.pausedWhy === CLAUDE_CHANGED) {
+    return (
+      <div className={s.banner} data-tone="info" role="status" data-testid="sentinel-claude-changed">
+        <Icon name="claude" size={14} />
+        <span className={s.bannerText}>{CLAUDE_CHANGED_BANNER}</span>
+        <Button size="small" variant="primary" onClick={() => void a.setPaused(item, false)}>
+          Turn On
+        </Button>
+      </div>
+    );
+  }
   if (item.paused && item.pausedWhy) {
     return (
       <div className={s.banner} data-tone="error" role="status">
@@ -240,6 +312,7 @@ function History({ item }: { item: Sentinel }) {
 }
 
 function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) => void }) {
+  const a = useSentinelActions();
   const all = useApp((st) => st.projects);
   const models = useApp((st) => st.models);
   const projects = all.filter((p) => p.root && !p.error);
@@ -264,12 +337,19 @@ function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatc
           label="Access"
           size="small"
           value={item.access}
-          options={ACCESS.map((x) => ({ value: x, label: ACCESS_INFO[x].label, description: x === 'ship' && item.access !== 'ship' ? LATER : ACCESS_INFO[x].sentence, disabled: x === 'ship' && item.access !== 'ship' }))}
-          onChange={(access) => save({ access })}
+          options={ACCESS.map((x) => ({ value: x, label: ACCESS_INFO[x].label, description: accessSentence(x, item.steps) }))}
+          onChange={(access) => {
+            // Less access than its steps need: say which step, before it's refused.
+            if (accessRank(access) < accessRank(item.access)) {
+              const needs = item.steps.find((st) => (st.kind === 'merge' && access !== 'ship') || ((st.kind === 'pr' || (st.kind === 'claude' && st.where === 'worktree')) && access === 'look'));
+              if (needs) return void a.act(() => Promise.reject(new Error(`“${needs.name}” needs more than ${ACCESS_INFO[access].label}: remove it first`)));
+            }
+            save({ access });
+          }}
         />
       </Prop>
       <p className={s.accessHint}>
-        {ACCESS_INFO[item.access].sentence}.
+        {accessSentence(item.access, item.steps)}.
       </p>
       {claudeSteps ? (
         <Prop label="Model">

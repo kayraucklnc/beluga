@@ -23,10 +23,7 @@ export const SENTINEL_HANDLERS = {
   'sentinel.pause': (s, id, paused) => needSentinel(s).pause(id, paused),
   'sentinel.runs': (s, id) => needSentinel(s).runsOf(id),
   'sentinel.runGet': (s, runId) => needSentinel(s).runGet(runId),
-  'sentinel.draft': (s) => {
-    needSentinel(s);
-    return later('Describing a sentinel for Claude to write');
-  },
+  'sentinel.ask': (s, id, text) => needSentinel(s).ask(id, text),
   'sentinel.recipes': (s) => needSentinel(s).recipes(),
   'sentinel.decide': (s, runId, choice) => needSentinel(s).decide(runId, choice),
   'sentinel.setRunAtOnce': (s, n) => needSentinel(s).setRunAtOnce(n),

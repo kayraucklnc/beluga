@@ -32,7 +32,7 @@ export interface ManualTrigger {
   readonly kind: 'manual';
 }
 
-/** Phase 2: after another sentinel's run ends. */
+/** After another sentinel's run ends. */
 export interface AfterTrigger {
   readonly kind: 'after';
   readonly sentinelId: string;
@@ -209,7 +209,10 @@ export interface Sentinel {
   readonly notify: NotifyWhere;
   /** A new sentinel starts paused until you Turn It On. */
   readonly paused: boolean;
-  /** Beluga paused it ("Paused after 3 failures"): the banner's words. */
+  /**
+   * Beluga paused it: the banner's words ("Paused after 3 failures in a row"), or CLAUDE_CHANGED
+   * when your Claude changed what it can do (pausedWords says it in words).
+   */
   readonly pausedWhy?: string;
   /** Failed runs in a row. */
   readonly failures: number;
@@ -333,6 +336,21 @@ export interface SentinelState {
   readonly runAtOnce: number;
   /** When each watching schedule runs next. */
   readonly nextAt: Readonly<Record<string, number>>;
+  /** Your Claude changing a sentinel (sentinel.ask), by sentinel: live, or its answer once done. */
+  readonly asks: Readonly<Record<string, SentinelAsk>>;
+}
+
+/** Your Claude asked to change a sentinel (the page's box, Describe it): where, and how it's going. */
+export interface SentinelAsk {
+  /** The conversation (a quiet project chat, or Your Mac's). */
+  readonly channel: string;
+  readonly startedAt: number;
+  readonly state: 'writing' | 'done' | 'failed';
+  /** What you asked (its first line). */
+  readonly text: string;
+  /** Claude's answer once done (its first lines), or what went wrong. */
+  readonly answer?: string;
+  readonly endedAt?: number;
 }
 
 export interface SentinelSlice {
@@ -344,7 +362,7 @@ export const KEEP_IN_FILE = 200;
 export const DEFAULT_RUN_AT_ONCE = 2;
 export const MAX_RUN_AT_ONCE = 6;
 
-export const NO_SENTINEL: SentinelState = { enabled: false, items: [], runs: [], live: {}, runAtOnce: DEFAULT_RUN_AT_ONCE, nextAt: {} };
+export const NO_SENTINEL: SentinelState = { enabled: false, items: [], runs: [], live: {}, runAtOnce: DEFAULT_RUN_AT_ONCE, nextAt: {}, asks: {} };
 export const initialSentinel: SentinelSlice = { sentinel: NO_SENTINEL };
 
 export type SentinelAction =
@@ -355,9 +373,11 @@ export type SentinelAction =
   | { type: 'sentinel_remove'; id: string }
   /** One run changed or began. */
   | { type: 'sentinel_run'; run: RunSummary }
+  /** Your Claude changing a sentinel: began, or ended (none: forgotten). */
+  | { type: 'sentinel_ask'; id: string; ask?: SentinelAsk }
   | { type: 'sentinel_off' };
 
-export const SENTINEL_ACTIONS: ReadonlySet<string> = new Set(['sentinel_init', 'sentinel_put', 'sentinel_remove', 'sentinel_run', 'sentinel_off']);
+export const SENTINEL_ACTIONS: ReadonlySet<string> = new Set(['sentinel_init', 'sentinel_put', 'sentinel_remove', 'sentinel_run', 'sentinel_ask', 'sentinel_off']);
 
 /** The step a live run is on: the running one, else the first still waiting. */
 const liveStep = (run: RunSummary): string | undefined => (run.steps.find((s) => s.state === 'running') ?? run.steps.find((s) => s.state === 'waiting'))?.id;
@@ -391,7 +411,12 @@ export function reduceSentinel(state: SentinelSlice, action: SentinelAction): Se
       const { [action.id]: _old, ...nextAt } = s.nextAt;
       const gone = new Set(s.runs.filter((r) => r.sentinelId === action.id).map((r) => r.id));
       const live = Object.fromEntries(Object.entries(s.live).filter(([id]) => !gone.has(id)));
-      return { sentinel: { ...s, items: s.items.filter((i) => i.id !== action.id), runs: s.runs.filter((r) => r.sentinelId !== action.id), nextAt, live } };
+      const { [action.id]: _ask, ...asks } = s.asks ?? {};
+      return { sentinel: { ...s, items: s.items.filter((i) => i.id !== action.id), runs: s.runs.filter((r) => r.sentinelId !== action.id), nextAt, live, asks } };
+    }
+    case 'sentinel_ask': {
+      const { [action.id]: _was, ...asks } = s.asks ?? {};
+      return { sentinel: { ...s, asks: action.ask ? { ...asks, [action.id]: action.ask } : asks } };
     }
     case 'sentinel_run': {
       const run = action.run;
@@ -435,7 +460,7 @@ export function sentinelOwnerOf(state: SentinelState, workspaceId: string): Sent
   return undefined;
 }
 
-/** A conversation a sentinel's run made: whose, and which run (the newest that used it). */
+/** A conversation a sentinel's run made: whose, and which run (the newest that used it; '' for the chat where Claude changes it). */
 export interface SentinelPlaceOwner {
   readonly sentinel: Sentinel;
   readonly runId: string;
@@ -445,7 +470,8 @@ const owned = new WeakMap<SentinelState, ReadonlyMap<string, SentinelPlaceOwner>
 
 /**
  * Every conversation sentinel runs made, by channel (`ws:<id>` for a project chat or worktree,
- * `mac:assistant:<id>` for Your Mac's): its Claude steps' chats and the run's worktree. Worked out
+ * `mac:assistant:<id>` for Your Mac's): its Claude steps' chats and the run's worktree, and the chat
+ * where your Claude changes it. Worked out
  * once per state (screens ask for every row). Such a conversation is the sentinel's, not one of
  * yours: it stays out of Unread and the counts (packages/mac/src/layout/attention-model.ts).
  */
@@ -465,6 +491,11 @@ export function sentinelChannels(state: SentinelState): ReadonlyMap<string, Sent
     add(r.channel);
     for (const s of r.steps) add(s.channel);
     if (r.worktreeId) add(`ws:${r.worktreeId}`);
+  }
+  // The chat where your Claude changes it (sentinel.ask): the sentinel's page shows it.
+  for (const [id, ask] of Object.entries(state.asks ?? {})) {
+    const sentinel = items.get(id);
+    if (sentinel && !map.has(ask.channel)) map.set(ask.channel, { sentinel, runId: '' });
   }
   owned.set(state, map);
   return map;
@@ -508,8 +539,8 @@ export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; read
   trigger: { label: 'Run another sentinel', hint: 'Starts it with this run’s last output', needs: 'look', phase: 2 },
 };
 
-/** The steps and triggers this Beluga runs (phase 1); the others show, but a run says they aren't available yet. */
-export const SENTINEL_PHASE = 1;
+/** The steps and triggers this Beluga runs (phase 2); the others show, but a run says they aren't available yet. */
+export const SENTINEL_PHASE = 2;
 export const stepAvailable = (kind: StepKind): boolean => STEP_INFO[kind].phase <= SENTINEL_PHASE;
 export const triggerAvailable = (kind: TriggerKind): boolean => TRIGGER_INFO[kind].phase <= SENTINEL_PHASE;
 
@@ -518,6 +549,93 @@ export const ACCESS_INFO: Readonly<Record<Access, { readonly label: string; read
   work: { label: 'Work', sentence: 'Claude can change code in a worktree and open pull requests' },
   ship: { label: 'Ship', sentence: 'Claude can change code in a worktree, open pull requests, and merge when the checks pass and you’ve approved' },
 };
+
+/** Access ranked: Look < Work < Ship. */
+export const accessRank = (a: Access): number => RANK[a];
+
+/** pausedWhy when your Claude changed what a sentinel can do (a script, a service, a pull request, a merge, more access). */
+export const CLAUDE_CHANGED = 'claude-changed';
+
+/** Why a sentinel is paused, in words (none: you paused it, or it's new). */
+export function pausedWords(s: Pick<Sentinel, 'paused' | 'pausedWhy'>): string | undefined {
+  if (!s.paused || !s.pausedWhy) return undefined;
+  return s.pausedWhy === CLAUDE_CHANGED ? 'Claude changed what it can do' : s.pausedWhy;
+}
+
+/** The banner on a sentinel Claude changed. */
+export const CLAUDE_CHANGED_BANNER = 'Claude changed what this sentinel can do. Turn On to let it run.';
+
+/** Steps whose change by Claude pauses the sentinel (they run things, call out, or ship). */
+export const GUARDED_STEPS: ReadonlySet<StepKind> = new Set(['script', 'http', 'pr', 'merge']);
+
+/** A step's content, without its id and name (what it does, not what it's called). */
+const stepContent = (st: Step): string => {
+  const { id: _id, name: _name, ...rest } = st;
+  return stable(rest);
+};
+
+/** JSON with every object's keys in order, so the same content reads the same. */
+const stable = (v: unknown): string =>
+  Array.isArray(v) ? `[${v.map(stable).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter((k) => (v as Record<string, unknown>)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}` : JSON.stringify(v);
+
+/**
+ * Whether a change widened what a sentinel can do (docs/sentinel.md §3, "Rules"): a script, a
+ * service call, a pull request or a merge step added or edited, or more access. A change to the
+ * name, the schedule, a prompt or Notify doesn't; removing a step doesn't either.
+ */
+export function claudeWidened(was: Pick<Sentinel, 'steps' | 'access'>, next: Pick<Sentinel, 'steps' | 'access'>): boolean {
+  if (RANK[next.access] > RANK[was.access]) return true;
+  const before = new Set(was.steps.filter((st) => GUARDED_STEPS.has(st.kind)).map(stepContent));
+  return next.steps.some((st) => GUARDED_STEPS.has(st.kind) && !before.has(stepContent(st)));
+}
+
+// ---------------------------------------------------------------- service presets
+
+export type ServicePreset = NonNullable<HttpStep['preset']>;
+
+/**
+ * The Call a service step's presets (docs/sentinel.md §6): they only fill the fields; everything
+ * stays editable. `$VAR` comes from Settings › Environment.
+ */
+export const SERVICE_PRESETS: Readonly<Record<ServicePreset, { readonly label: string; readonly line: string; readonly method: HttpStep['method']; readonly url: string; readonly headers: Readonly<Record<string, string>>; readonly body?: string; readonly note?: string }>> = {
+  groqbot: {
+    label: 'Groqbot',
+    line: 'Search the web with Groqbot',
+    method: 'POST',
+    url: '',
+    headers: { Authorization: 'Bearer $GROQBOT_KEY', 'Content-Type': 'application/json' },
+    body: '{"query": "{{previous}}"}',
+    note: 'A placeholder: Groqbot’s address and the shape of its answer are filled in once its API is settled. Put your key in Settings › Environment as GROQBOT_KEY.',
+  },
+  slack: {
+    label: 'Slack webhook',
+    line: 'Post to a Slack channel (an incoming webhook)',
+    method: 'POST',
+    url: '$SLACK_WEBHOOK_URL',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{"text": "{{sentinel}}: {{previous}}"}',
+    note: 'Make an incoming webhook in Slack and keep its address in Settings › Environment as SLACK_WEBHOOK_URL.',
+  },
+  discord: {
+    label: 'Discord webhook',
+    line: 'Post to a Discord channel (a webhook)',
+    method: 'POST',
+    url: '$DISCORD_WEBHOOK_URL',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{"content": "{{sentinel}}: {{previous}}"}',
+    note: 'Make a webhook in the Discord channel’s settings and keep its address in Settings › Environment as DISCORD_WEBHOOK_URL.',
+  },
+  url: { label: 'Any URL', line: 'A web request of your own', method: 'GET', url: 'https://', headers: {} },
+};
+
+/** An http step's fields from a preset (its name and timeout kept). */
+export function presetFields(preset: ServicePreset): Pick<HttpStep, 'method' | 'url' | 'headers' | 'preset'> & { readonly body?: string } {
+  const p = SERVICE_PRESETS[preset];
+  return { preset, method: p.method, url: p.url, headers: { ...p.headers }, ...(p.body !== undefined ? { body: p.body } : {}) };
+}
+
+/** How long a merge waits for your Merge before the run stops (24 hours). */
+export const APPROVAL_MS = 24 * 60 * 60_000;
 
 const RANK: Readonly<Record<Access, number>> = { look: 0, work: 1, ship: 2 };
 
@@ -656,15 +774,19 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
     case 'notify':
       return step.phone ? 'Tells you on the Mac and the phone' : 'Tells you on the Mac';
     case 'http':
-      return `${step.method} ${hostOf(step.url)}`;
+      return step.preset && step.preset !== 'url' ? `${SERVICE_PRESETS[step.preset].label}: ${step.method} ${hostOf(step.url) || 'its address'}` : `${step.method} ${hostOf(step.url) || 'a URL'}`;
     case 'pr':
       return step.draft ? 'Opens a draft pull request' : 'Opens a pull request';
     case 'merge':
       return step.require.approval ? 'Merges when the checks pass and you approve' : 'Merges by itself when the checks pass';
-    case 'message':
-      return `Messages ${step.to.startsWith('group:') ? 'a group' : 'a friend'}`;
-    case 'friend':
-      return 'Asks a friend’s Claude';
+    case 'message': {
+      const name = nameOf(step.to);
+      return name ? `Messages ${name}` : `Messages ${step.to.startsWith('group:') ? 'a group' : 'a friend'}`;
+    }
+    case 'friend': {
+      const name = nameOf(step.peerId);
+      return name ? `Asks ${name}’s Claude` : 'Asks a friend’s Claude';
+    }
     case 'trigger': {
       const name = nameOf(step.sentinelId);
       return name ? `Runs “${name}”` : 'Runs another sentinel';

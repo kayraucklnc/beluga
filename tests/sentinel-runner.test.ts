@@ -167,10 +167,11 @@ describe('Run a script', () => {
 describe('steps from later phases', () => {
   it('show, but a run refuses them in words', async () => {
     const s = setup();
-    const made = s.sentinels.create({ name: 'Ping', steps: [{ kind: 'http', method: 'GET', url: 'https://example.com', headers: {}, timeoutSec: 10 }] });
+    // A trigger of phase 3 is kept; Run Now still runs it, and its steps run.
+    const made = s.sentinels.create({ name: 'Ping', trigger: { kind: 'uptime', url: 'https://example.com', minutes: 5 }, steps: [{ kind: 'notify', phone: false }] });
     const run = s.sentinels.start(made.id, 'you');
     await until(ended(s, run.id));
-    expect(s.sentinels.runGet(run.id).run).toMatchObject({ state: 'failed', why: 'Call a service isn’t available yet: it comes with the next part of Sentinel' });
+    expect(s.sentinels.runGet(run.id).run.state).toBe('done');
   });
 
   it('access is checked when a step is added', () => {

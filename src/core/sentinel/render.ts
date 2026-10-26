@@ -25,7 +25,12 @@ export interface RenderContext {
    * Claude step's prompt gets them in tags (prompt.ts stepMaterial), so they're never instructions.
    */
   readonly material?: (kind: 'step' | 'trigger', name: string, text: string) => string;
+  /** Every value filled in goes through this (a JSON body gets them as JSON string contents). */
+  readonly escape?: (text: string) => string;
 }
+
+/** A value as the inside of a JSON string ("say \"hi\"" without its quotes). */
+export const jsonInside = (text: string): string => JSON.stringify(text).slice(1, -1);
 
 const SLOT = /\{\{\s*([^{}]+?)\s*\}\}/g;
 
@@ -34,7 +39,7 @@ export function render(template: string, ctx: RenderContext): string {
   return template.replace(SLOT, (whole, raw: string) => {
     const key = raw.trim();
     const value = valueOf(key, ctx);
-    return value === undefined ? whole : value;
+    return value === undefined ? whole : ctx.escape ? ctx.escape(value) : value;
   });
 }
 

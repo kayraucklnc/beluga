@@ -86,4 +86,52 @@ test('a run that waits for you: Merge', async ({ page }) => {
   await shoot(page, 'merge');
   await decide.getByRole('button', { name: 'Merge' }).click();
   await expect(main(page).getByRole('heading', { name: 'Merged #53' })).toBeVisible();
+  await expect(decide).toHaveCount(0);
+  await shoot(page, 'merge-done');
+});
+
+test('phase 2’s steps on a page: a service with its preset, and a merge that asks before it stops asking', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('row', { name: /^Watch the web/ }).click();
+  const steps = main(page).getByRole('region', { name: 'Steps' });
+  await expect(steps.locator('[data-step="http"]')).toContainText('Groqbot: POST api.groqbot.example');
+  await steps.locator('[data-step="http"]').getByRole('button', { name: 'Show its fields' }).click();
+  await expect(steps.getByRole('textbox', { name: 'URL' })).toHaveValue('https://api.groqbot.example/search');
+  await expect(steps.getByRole('textbox', { name: 'Header 1’s value' })).toHaveValue('Bearer $GROQBOT_KEY');
+  await expect(steps).toContainText('$VAR from Settings › Environment; headers never show in reports');
+  await shoot(page, 'http-step');
+
+  await openList(page);
+  await main(page).getByRole('row', { name: /^Fix what broke/ }).click();
+  await expect(main(page).getByRole('complementary', { name: 'Properties' })).toContainText('merge when the checks pass and you’ve approved');
+  const merge = main(page).getByRole('region', { name: 'Steps' }).locator('[data-step="merge"]');
+  await merge.getByRole('button', { name: 'Show its fields' }).click();
+  await merge.getByRole('checkbox', { name: /Ask me before merging/ }).click();
+  const alert = page.getByRole('alertdialog').or(page.getByRole('dialog', { name: 'Merge without asking?' }));
+  await expect(alert).toContainText('Merge without asking?');
+  await alert.getByRole('button', { name: 'Merge Without Asking' }).click();
+  await expect(merge).toContainText('Merges by itself when the checks pass');
+  await expect(main(page).getByRole('complementary', { name: 'Properties' })).toContainText('merge by itself when the checks pass');
+});
+
+test('Describe it: Claude writes the sentinel, the page shows it working, then its answer', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('button', { name: 'New Sentinel' }).first().click();
+  const sheet = page.getByRole('dialog', { name: 'New Sentinel' });
+  await expect(sheet.getByRole('tab', { name: /Describe it/ })).toHaveAttribute('aria-selected', 'true');
+  await sheet.getByRole('combobox', { name: 'Where it works' }).click();
+  await page.getByRole('option', { name: 'bob-api' }).click();
+  await sheet.getByRole('textbox', { name: 'What should it do?' }).fill('Every weekday at 8, read yesterday’s commits and open issues, write me a brief, and make tasks for anything urgent');
+  await sheet.getByRole('button', { name: 'Write It' }).click();
+  await expect(main(page).locator('[data-sentinel-page]')).toBeVisible();
+  const box = main(page).getByTestId('sentinel-ask');
+  await expect(box).toContainText('Claude is writing…');
+  await expect(box).toContainText('Set it up: every weekday at 8:00', { timeout: 30_000 });
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('Every weekday at 8:00');
+  await expect(main(page).getByRole('region', { name: 'Steps' }).getByRole('textbox', { name: 'Step 1’s name' })).toHaveValue('Read what changed');
+  await expect(main(page).getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Read yesterday’s commits');
+  // It starts paused: Turn On is the main button.
+  await expect(main(page).getByRole('button', { name: 'Turn On' }).first()).toBeVisible();
+  await expect(box.getByRole('button', { name: 'Open Chat' })).toBeVisible();
+  await shoot(page, 'page-ask');
 });

@@ -10,7 +10,7 @@ import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
-import { type RunSummary, type Sentinel, type SentinelState, firstLine, isLive, lastRunOf, runsOf, scheduleSentence, sentinelById } from '../core/sentinel/model.js';
+import { type RunSummary, type Sentinel, type SentinelState, firstLine, isLive, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById } from '../core/sentinel/model.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
 import { shortVersion } from '../net/mesh/features.js';
@@ -1269,7 +1269,7 @@ function sentinelSummary(state: DomainState, s: SentinelState, sn: Sentinel): Se
     ...(project ? { project: clip(project.name, 200) } : {}),
     sentence: clip(scheduleSentence(sn.trigger, (id) => sentinelById(s, id)?.name), 300),
     paused: sn.paused,
-    ...(sn.pausedWhy ? { pausedWhy: clip(sn.pausedWhy, 300) } : {}),
+    ...(pausedWords(sn) ? { pausedWhy: clip(pausedWords(sn)!, 300) } : {}),
     ...(last ? { last: { state: last.state, headline: firstLine(last.headline, 300), at: Math.round(last.endedAt ?? last.startedAt) } } : {}),
     ...(next !== undefined && !sn.paused ? { nextAt: Math.round(next) } : {}),
     live: s.runs.some((r) => r.sentinelId === sn.id && isLive(r.state)),
@@ -1353,7 +1353,8 @@ export function sentinelDone(prev: DomainState, state: DomainState): Array<{ tit
     if (sn.notify !== 'phone' && sn.notify !== 'both' && !phoneStep) return [];
     const topic = sentinelTopic(sn.id);
     const failed = r.state === 'failed';
-    const title = failed ? (sn.paused && sn.pausedWhy ? `${sn.name}: ${sn.pausedWhy.charAt(0).toLowerCase()}${sn.pausedWhy.slice(1)}` : `${sn.name} failed`) : sn.name;
+    const why = pausedWords(sn);
+    const title = failed ? (why ? `${sn.name}: ${why.charAt(0).toLowerCase()}${why.slice(1)}` : `${sn.name} failed`) : sn.name;
     const body = firstLine(r.headline, 300) || (failed && r.why ? firstLine(r.why, 300) : 'It ran');
     return [{ title: clip(title, 200), body: clip(body, 300), ...(topic ? { topic } : {}), ...(r.channel ? { channel: r.channel } : {}), run: r.id }];
   });

@@ -10,6 +10,8 @@ import { planTitle } from '../plans/model.js';
 import { dueNow, nextRunAt } from './clock.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
 import {
+  APPROVAL_MS,
+  CLAUDE_CHANGED,
   DEFAULT_LIMITS,
   KEEP_IN_STATE,
   MAX_RUN_AT_ONCE,
@@ -21,6 +23,7 @@ import {
   type RunSummary,
   type RunTrigger,
   type Sentinel,
+  type SentinelAsk,
   type SentinelDraft,
   type SentinelPatch,
   type SentinelState,
@@ -30,6 +33,8 @@ import {
   accessAllows,
   accessNeeded,
   ACCESS_INFO,
+  claudeWidened,
+  firstLine,
   isLive,
   keepRuns,
   lastRunOf,
@@ -38,11 +43,11 @@ import {
   toSummary,
 } from './model.js';
 import { redactSecrets } from '../../shared/steps.js';
-import { describeSentinels, sentinelNote } from './prompt.js';
+import { describeSentinels, sentinelAskBrief, sentinelMaterial, sentinelNote } from './prompt.js';
 import { RECIPES } from './recipes.js';
-import { type ActiveRun, OUTPUT_KEPT, type SentinelClaude, type SentinelPlaces, type SentinelShell, SentinelRunner, runSentinelShell } from './runner.js';
+import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, SentinelRunner, type YourAnswer, runSentinelShell } from './runner.js';
 import { StepInputSchema } from './schema.js';
-import type { ToolDraft } from './tool-draft.js';
+import type { ToolDraft, ToolPatch, ToolStep } from './tool-draft.js';
 
 /**
  * Sentinels (docs/sentinel.md): the sentinels and their runs, kept in ~/.beluga/sentinel.json and
@@ -72,9 +77,19 @@ export interface SentinelsDeps {
   readonly saveDelayMs?: number;
   /** How long a cancelled Claude request may take to end before its worktree is looked at (10 s). */
   readonly cancelGraceMs?: number;
+  readonly fetch?: typeof fetch;
+  readonly github?: SentinelGitHub;
+  readonly chat?: SentinelChat;
+  readonly friends?: SentinelFriends;
+  /** How often pending checks are looked at again (15 s). */
+  readonly pollMs?: number;
+  /** How long a merge waits for your Merge (24 hours). */
+  readonly approvalMs?: number;
 }
 
 const TICK_MS = 30_000;
+/** A chain of sentinels running each other (after, Run another sentinel) stops this long. */
+const MAX_CHAIN = 8;
 const FIRST_TICK_MS = 10_000;
 /** A run over its runs per day says this. */
 const OVER_DAY = 'Over its runs per day';
@@ -113,6 +128,11 @@ export class Sentinels {
   private readonly offs: Array<() => void> = [];
   private lastTick: number | undefined;
   private closed = false;
+  /** The sentinels that led to a run (after, Run another sentinel), so a loop stops. */
+  private readonly chains = new Map<string, readonly string[]>();
+  /** Conversations where your Claude changes a sentinel (sentinel.ask), and which. */
+  private readonly askChannels = new Map<string, string>();
+  private asks: Record<string, SentinelAsk> = {};
 
   constructor(private readonly deps: SentinelsDeps) {
     this.now = deps.now ?? Date.now;
@@ -146,7 +166,15 @@ export class Sentinels {
       home: deps.home ?? os.homedir(),
       claudeTurn: (signal) => this.claudeTurn(signal),
       ...(deps.cancelGraceMs !== undefined ? { cancelGraceMs: deps.cancelGraceMs } : {}),
+      ...(deps.fetch ? { fetch: deps.fetch } : {}),
+      ...(deps.github ? { github: deps.github } : {}),
+      ...(deps.chat ? { chat: deps.chat } : {}),
+      ...(deps.friends ? { friends: deps.friends } : {}),
+      ...(deps.pollMs !== undefined ? { pollMs: deps.pollMs } : {}),
+      startOther: (id, from, output) => this.startFrom(id, from, output),
+      waitForYou: (active) => this.waitForYou(active),
     });
+    this.expireWaiting();
     deps.store.dispatch({ type: 'sentinel_init', state: this.state() });
     // Tasks a run's Claude makes (labelled sentinel:<slug>) go on the run.
     this.offs.push(deps.store.onAction((a) => queueMicrotask(() => this.onAction(a))));
@@ -178,7 +206,7 @@ export class Sentinels {
       const at = this.nextAtOf(s);
       if (at !== undefined) nextAt[s.id] = at;
     }
-    return { enabled: true, items: this.items, runs: index, live, runAtOnce: this.runAtOnce, nextAt };
+    return { enabled: true, items: this.items, runs: index, live, runAtOnce: this.runAtOnce, nextAt, asks: this.asks };
   }
 
   list = (): readonly Sentinel[] => this.items;
@@ -302,6 +330,8 @@ export class Sentinels {
     this.queued.delete(s.id);
     this.items = this.items.filter((i) => i.id !== s.id);
     this.runs = this.runs.filter((r) => r.sentinelId !== s.id);
+    const { [s.id]: _ask, ...asks } = this.asks;
+    this.asks = asks;
     this.deps.store.dispatch({ type: 'sentinel_remove', id: s.id });
     this.save();
   }
@@ -330,7 +360,7 @@ export class Sentinels {
    * Start a run (Run Now, the clock, Claude): one at a time per sentinel, so one that fires while
    * it runs waits (once). Paused sentinels only run when you ask (Run Now). → the run.
    */
-  start(ref: string, by: RunBy, trigger?: RunTrigger): RunSummary {
+  start(ref: string, by: RunBy, trigger?: RunTrigger, chain?: readonly string[]): RunSummary {
     const s = this.need(ref);
     const yours = by === 'you' || by === 'phone';
     if (s.paused && !yours) throw new Error(`“${s.name}” is paused: turn it on first`);
@@ -346,11 +376,15 @@ export class Sentinels {
       const waiting = this.queued.get(s.id);
       if (waiting) return waiting;
       const run = this.newRun(s, by, fired, 'queued');
+      if (chain) this.chains.set(run.id, chain);
       this.queued.set(s.id, { ...toSummary(run), ...(fired.payload !== undefined ? { payload: fired.payload } : {}) });
       this.record(run);
       return toSummary(run);
     }
-    return toSummary(this.launch(s, this.newRun(s, by, fired, 'running')));
+    const run = this.newRun(s, by, fired, 'running');
+    // Known before its steps start: a step that runs another sentinel at once sees the chain.
+    if (chain) this.chains.set(run.id, chain);
+    return toSummary(this.launch(s, run));
   }
 
   /** Stop a run going now (or one waiting its turn). → whether there was one. */
@@ -371,14 +405,41 @@ export class Sentinels {
   }
 
   /**
-   * A run waiting for you (a merge, docs/sentinel.md §5): Merge or Not Now. Merging is phase 2;
-   * until then only the demo's runs wait like this, and the answer is recorded.
+   * A run waiting for you (a merge, docs/sentinel.md §5): Merge merges it (and archives its
+   * worktree), Not Now ends it as stopped with the pull request left open. A run still going hears
+   * it and goes on with its steps; one Beluga was closed under is merged from here. → the run, once
+   * GitHub has merged it (or said why not).
    */
-  decide(runId: string, choice: 'merge' | 'skip'): RunSummary {
+  async decide(runId: string, choice: 'merge' | 'skip'): Promise<RunSummary> {
+    const going = [...this.active.values()].find((a) => a.run.id === runId);
+    if (going) {
+      if (going.run.state !== 'needs-you' || !going.answer) throw new Error('That run isn’t waiting for you');
+      await going.answer(choice);
+      return toSummary(going.run);
+    }
     const run = this.runs.find((r) => r.id === runId);
-    if (!run || run.state !== 'needs-you' || [...this.active.values()].some((a) => a.run.id === runId)) throw new Error('Merging from a sentinel isn’t available yet: it comes with the next part of Sentinel');
-    const next: RunSummary = choice === 'merge' ? { ...run, state: 'done', headline: run.pr ? `Merged #${run.pr.number}` : 'Merged', endedAt: this.now() } : { ...run, state: 'stopped', headline: run.pr ? `Not now: #${run.pr.number} stays open` : 'Not now', endedAt: this.now() };
+    if (!run || run.state !== 'needs-you') throw new Error('That run isn’t waiting for you (anymore)');
+    const s = this.need(run.sentinelId);
+    const at = s.steps.findIndex((st) => st.kind === 'merge');
+    const mergeStep = at >= 0 ? s.steps[at] : undefined;
+    const n = run.pr ? `#${run.pr.number}` : 'the pull request';
+    const ended = (state: 'done' | 'skipped', why?: string): RunSummary['steps'] =>
+      run.steps.map((st) => (mergeStep && st.id === mergeStep.id ? { ...st, state, endedAt: this.now(), ...(why ? { why } : {}) } : st.state === 'waiting' || st.state === 'running' ? { ...st, state: 'skipped' as const } : st));
+    if (choice === 'skip') {
+      const next: RunSummary = { ...run, state: 'stopped', headline: `Not now: ${n} stays open`, endedAt: this.now(), steps: ended('skipped') };
+      this.recordSummary(next);
+      return next;
+    }
+    const gh = this.deps.github;
+    if (!gh || !run.pr) throw new Error('Merging needs the Beluga app and the run’s pull request');
+    const where = { ...(run.worktreeId ? { workspaceId: run.worktreeId } : {}), ...(s.projectId ? { projectId: s.projectId } : {}) };
+    const res = await gh.merge(where, run.pr, mergeStep?.kind === 'merge' ? mergeStep.method : 'squash').catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
+    if (res !== true) throw new Error(`GitHub didn’t merge ${n}: ${res}`);
+    if (run.worktreeId) await this.deps.places?.archive(run.worktreeId).catch(() => undefined);
+    const fresh = this.runs.find((r) => r.id === runId) ?? run;
+    const next: RunSummary = { ...fresh, state: 'done', headline: `Merged ${n}`, endedAt: this.now(), steps: ended('done') };
     this.recordSummary(next);
+    if (s.notify !== 'off') this.deps.notify({ kind: 'done', tag: 'sentinel', title: s.name, body: `Merged ${n}`, key: run.id, ...(run.channel ? { channel: run.channel } : {}) });
     return next;
   }
 
@@ -389,6 +450,7 @@ export class Sentinels {
     const every = this.deps.tickMs || TICK_MS;
     const woke = this.lastTick !== undefined && now - this.lastTick > 3 * every;
     this.lastTick = now;
+    this.expireWaiting();
     for (const s of this.items) {
       if (s.paused || s.trigger.kind !== 'schedule') continue;
       const due = dueNow(s.trigger, s.lastScheduledAt, now, this.deps.tz ? { tz: this.deps.tz } : {});
@@ -416,7 +478,54 @@ export class Sentinels {
   forRun(channel: string, from: string): RunSentinel | undefined {
     if (from !== this.deps.selfId()) return undefined;
     const active = [...this.active.values()].find((a) => a.claude?.channel === channel);
-    return { tools: this.toolsFor(active), brief: active?.claude ? active.claude.brief : sentinelNote(), inRun: Boolean(active?.claude) };
+    if (active?.claude) return { tools: this.toolsFor(active), brief: active.claude.brief, inRun: true };
+    // A conversation where your Claude changes a sentinel (sentinel.ask): the sentinel as material.
+    const asked = this.askChannels.get(channel);
+    const sentinel = asked ? this.items.find((i) => i.id === asked) : undefined;
+    if (sentinel) return { tools: this.toolsFor(undefined, sentinel.id), brief: sentinelAskBrief(sentinel, this.items, RECIPES), inRun: false };
+    return { tools: this.toolsFor(undefined), brief: sentinelNote(), inRun: false };
+  }
+
+  /**
+   * Ask your Claude to change a sentinel (the page's box; Describe it is create, then this): a quiet
+   * chat in its project's main folder (Claude reads, never changes files) or in Your Mac, told the
+   * sentinel, the step kinds and the recipes, with the tools to change it. The page follows it
+   * through the state (asks). → the conversation.
+   */
+  async ask(ref: string, text: string): Promise<{ readonly channel: string }> {
+    const s = this.need(ref);
+    const claude = this.deps.claude;
+    const places = this.deps.places;
+    if (!claude || !places) throw new Error('Asking Claude needs the Beluga app with your Claude on');
+    const words = text.trim();
+    if (!words) throw new Error('Say what to change');
+    if (this.asks[s.id]?.state === 'writing') throw new Error(`Claude is changing “${s.name}” already: wait for it, or open its chat`);
+    const place = s.projectId ? await places.projectChat(s.projectId, `Change “${s.name}”`) : places.macChat();
+    if (!place) throw new Error('Claude’s conversation couldn’t be made');
+    const { channel } = place;
+    this.askChannels.set(channel, s.id);
+    const ask: SentinelAsk = { channel, startedAt: this.now(), state: 'writing', text: firstLine(words, 200) };
+    this.setAsk(s.id, ask);
+    const requestId = claude.ask(words, channel, words);
+    if (!requestId) {
+      this.setAsk(s.id, { ...ask, state: 'failed', answer: 'Your Claude couldn’t be asked there', endedAt: this.now() });
+      throw new Error('Your Claude couldn’t be asked there');
+    }
+    void claude.wait(requestId).then(
+      (answer) => this.setAsk(s.id, { ...ask, state: 'done', answer: clipLines(answer), endedAt: this.now() }),
+      (err: unknown) => this.setAsk(s.id, { ...ask, state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'Claude stopped', endedAt: this.now() }),
+    );
+    return { channel };
+  }
+
+  /** Your Claude's change (sentinel_update): a change to what it can do pauses one that was on. */
+  claudeUpdate(ref: string, patch: ToolPatch): { readonly sentinel: Sentinel; readonly paused: boolean } {
+    const was = this.need(ref);
+    const next = this.update(was.id, this.fromToolPatch(patch));
+    if (was.paused || !claudeWidened(was, next)) return { sentinel: next, paused: false };
+    const paused: Sentinel = { ...next, paused: true, pausedWhy: CLAUDE_CHANGED, updatedAt: this.now() };
+    this.replace(paused);
+    return { sentinel: paused, paused: true };
   }
 
   /** Recorded history (the demo): a run as if it had happened, with its outputs and report (the same id: that run, changed). */
@@ -499,6 +608,8 @@ export class Sentinels {
     const next: Sentinel = { ...s, failures, ...(pausing ? { paused: true, pausedWhy: `Paused after ${failures} failures in a row` } : {}) };
     if (next.failures !== s.failures || pausing) this.replace(next);
     this.tell(next, run, pausing);
+    this.follow(next, run);
+    this.chains.delete(run.id);
     this.prune();
     const waiting = this.queued.get(sid);
     if (waiting) {
@@ -524,6 +635,103 @@ export class Sentinels {
     else if (run.state === 'done' && (where === 'mac' || where === 'both') && !s.steps.some((st, i) => st.kind === 'notify' && run.steps[i]?.state === 'done')) this.deps.notify({ kind: 'done', tag: 'sentinel', title: s.name, body: run.headline, key: run.id, ...channel });
     // The phone (where === 'phone' | 'both') is told by the companion host, from the state: a `done`
     // nudge collapsed as `sentinel:<id>` (src/companion/views.ts sentinelDone), the report on its page.
+  }
+
+  /** Sentinels that run after this one ("After “Nightly tests” fails"): started with its last output. */
+  private follow(s: Sentinel, run: Run): void {
+    const fits = (on: 'success' | 'failure' | 'always'): boolean => (on === 'success' ? run.state === 'done' : on === 'failure' ? run.state === 'failed' : run.state === 'done' || run.state === 'failed');
+    const output = this.lastOutput(run);
+    for (const f of this.items) {
+      if (f.paused || f.trigger.kind !== 'after' || f.trigger.sentinelId !== s.id || !fits(f.trigger.on)) continue;
+      const how = run.state === 'done' ? 'succeeded' : run.state === 'failed' ? 'failed' : 'ran';
+      try {
+        this.chained(f, run, s, { kind: 'after', summary: `After “${s.name}” ${how}${run.headline ? `: ${firstLine(run.headline, 120)}` : ''}`, payload: { sentinel: s.name, run: run.id, state: run.state, headline: run.headline, ...(output !== undefined ? { output } : {}) } });
+      } catch {
+        // Deleted, paused, or a loop: nothing starts.
+      }
+    }
+  }
+
+  /** Start `target` from another sentinel's run (after, Run another sentinel), never in a loop. */
+  private chained(target: Sentinel, from: Pick<Run, 'id'>, by: Sentinel, trigger: RunTrigger): RunSummary {
+    const chain = [...(this.chains.get(from.id) ?? []), by.id];
+    if (chain.includes(target.id)) throw new Error(`“${target.name}” led to this run: starting it again would run them in a loop`);
+    if (chain.length >= MAX_CHAIN) throw new Error(`${MAX_CHAIN} sentinels ran each other in a row: “${target.name}” doesn’t start`);
+    return this.start(target.id, `after:${from.id}`, trigger, chain);
+  }
+
+  /** Run another sentinel (a step): with this run's last output as its trigger's payload. → its name. */
+  private startFrom(ref: string, from: ActiveRun, output: string | undefined): string {
+    const target = this.need(ref);
+    this.chained(target, from.run, from.sentinel, { kind: 'after', summary: `“${from.sentinel.name}” ran it`, payload: { sentinel: from.sentinel.name, run: from.run.id, ...(output !== undefined ? { output: output.slice(0, OUTPUT_KEPT) } : {}) } });
+    return target.name;
+  }
+
+  /** A run's last step output (the first 16 KB), from its folder. */
+  private lastOutput(run: Run): string | undefined {
+    for (let i = run.steps.length; i >= 1; i--) {
+      const out = this.folders.read(run.id, `step-${i}.txt`);
+      if (out !== undefined) return out.slice(0, OUTPUT_KEPT);
+    }
+    return undefined;
+  }
+
+  /** A merge waits for your Merge or Not Now (decide), or 24 hours. */
+  private waitForYou(active: ActiveRun): Promise<YourAnswer> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => finish({ choice: 'expired' }), this.deps.approvalMs ?? APPROVAL_MS);
+      timer.unref?.();
+      const onAbort = (): void => finish({ choice: 'expired' });
+      active.abort.signal.addEventListener('abort', onAbort, { once: true });
+      let done = false;
+      function finish(a: YourAnswer): void {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        active.abort.signal.removeEventListener('abort', onAbort);
+        active.answer = undefined;
+        resolve(a);
+      }
+      active.answer = (choice) =>
+        new Promise<void>((ok, no) => {
+          finish({ choice, settle: (why) => (why ? no(new Error(why)) : ok()) });
+        });
+    });
+  }
+
+  /** Runs waiting for you that Beluga was closed under, unanswered for 24 hours: stopped. */
+  private expireWaiting(): void {
+    const now = this.now();
+    const limit = this.deps.approvalMs ?? APPROVAL_MS;
+    const going = new Set([...this.active.values()].map((a) => a.run.id));
+    for (const r of this.runs) {
+      if (r.state !== 'needs-you' || going.has(r.id)) continue;
+      const since = r.steps.find((st) => st.state === 'running')?.startedAt ?? r.startedAt;
+      if (now - since < limit) continue;
+      const n = r.pr ? `#${r.pr.number}` : 'the pull request';
+      this.recordSummary({ ...r, state: 'stopped', headline: `Nobody said Merge in 24 hours: ${n} stays open`, why: 'nobody said Merge in 24 hours', endedAt: now, steps: r.steps.map((st) => (st.state === 'running' || st.state === 'waiting' ? { ...st, state: 'skipped' as const } : st)) });
+    }
+  }
+
+  private setAsk(id: string, ask: SentinelAsk): void {
+    if (!this.items.some((i) => i.id === id)) return;
+    this.asks = { ...this.asks, [id]: ask };
+    this.deps.store.dispatch({ type: 'sentinel_ask', id, ask });
+  }
+
+  /** Claude's patch as a sentinel patch: its project and other sentinels by name. */
+  private fromToolPatch(p: ToolPatch): SentinelPatch {
+    const idOf = (ref: string): string => this.get(ref)?.id ?? ref;
+    const trigger = p.trigger?.kind === 'after' ? { ...p.trigger, sentinelId: idOf(p.trigger.sentinelId) } : p.trigger;
+    return {
+      ...(p.name !== undefined ? { name: p.name } : {}),
+      ...(p.project !== undefined ? { projectId: p.project } : {}),
+      ...(trigger ? { trigger } : {}),
+      ...(p.steps ? { steps: p.steps.map((st) => toolStep(st.kind === 'trigger' ? { ...st, sentinelId: idOf(st.sentinelId) } : st)) } : {}),
+      ...(p.access ? { access: p.access } : {}),
+      ...(p.limits ? { limits: p.limits } : {}),
+      ...(p.notify ? { notify: p.notify } : {}),
+    };
   }
 
   private claudeTurn(signal: AbortSignal): Promise<() => void> {
@@ -663,13 +871,14 @@ export class Sentinels {
 
   // ------------------------------------------------------------------ Claude's tools
 
-  private toolsFor(active: ActiveRun | undefined): SentinelTools {
+  private toolsFor(active: ActiveRun | undefined, asking?: string): SentinelTools {
     const line = (s: Sentinel): string => {
       const last = lastRunOf(this.state(), s.id);
       const next = this.nextAtOf(s);
       return `${last ? ` · last run ${last.state}${last.headline ? `: ${last.headline}` : ''}` : ''}${next ? ` · next ${new Date(next).toLocaleString()}` : ''}`;
     };
     return {
+      ...(asking ? { asking } : {}),
       ...(active
         ? {
             stop: (reason: string) => {
@@ -680,7 +889,8 @@ export class Sentinels {
         : {}),
       list: () => describeSentinels(this.items, line),
       create: (d: ToolDraft) => {
-        const s = this.create(fromToolDraft(d));
+        const { name: _n, ...refs } = this.fromToolPatch({ trigger: d.trigger, steps: d.steps });
+        const s = this.create({ ...fromToolDraft(d), ...refs });
         return `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. It runs once the user turns it on from its page (you can’t).`;
       },
       run: (ref: string) => {
@@ -696,6 +906,22 @@ export class Sentinels {
         const s = this.pause(ref, true);
         return `“${s.name}” is paused; the user can turn it back on from its page`;
       },
+      get: (ref: string) => {
+        const s = this.need(ref);
+        return `“${s.name}” (${scheduleSentence(s.trigger, (id) => this.get(id)?.name)}) ${s.paused ? 'is paused' : 'is on'}${line(s)}. As material:\n${sentinelMaterial(s)}`;
+      },
+      update: (ref: string, patch: ToolPatch) => {
+        if (active?.sentinel.id === this.get(ref)?.id) throw new Error('This run is that sentinel’s: it can’t change itself while it runs');
+        const { sentinel: s, paused } = this.claudeUpdate(ref, patch);
+        const changed = Object.keys(patch).filter((k) => patch[k as keyof ToolPatch] !== undefined);
+        return `Changed “${s.name}” (${changed.join(', ') || 'nothing'}): ${scheduleSentence(s.trigger, (id) => this.get(id)?.name)}; ${s.steps.length} ${s.steps.length === 1 ? 'step' : 'steps'}.${paused ? ' It changed what it can do, so it is paused now: the user turns it on again from its page (say so).' : s.paused ? ' It is paused: the user turns it on from its page.' : ''} \`sentinel:${s.id}\``;
+      },
+      remove: (ref: string) => {
+        const s = this.need(ref);
+        if (active?.sentinel.id === s.id) throw new Error('This run is that sentinel’s: it can’t delete itself');
+        this.remove(s.id);
+        return `Deleted “${s.name}”. Its past runs’ reports go with the next clean-up.`;
+      },
     };
   }
 }
@@ -708,14 +934,23 @@ function limitsOf(l: Limits): Limits {
 
 const oneLine = (text: string, max: number): string => text.replace(/\s+/g, ' ').trim().slice(0, max);
 
+/** Claude's step as a step draft: what it left out is filled in (StepInputSchema's defaults). */
+const toolStep = (st: ToolStep): StepDraft => StepInputSchema.parse(st) as StepDraft;
+
 /** Claude's draft as a sentinel draft (its project by name). */
 export function fromToolDraft(d: ToolDraft): SentinelDraft {
   return {
     name: d.name,
     ...(d.project ? { projectId: d.project } : {}),
     trigger: d.trigger,
-    steps: d.steps.map((st) => (st.kind === 'script' ? { ...st, cwd: st.cwd ?? 'project', timeoutSec: st.timeoutSec ?? 120 } : st.kind === 'notify' ? { ...st, phone: st.phone ?? false } : st)),
+    steps: d.steps.map(toolStep),
     ...(d.access ? { access: d.access } : {}),
     ...(d.notify ? { notify: d.notify } : {}),
   };
+}
+
+/** Claude's answer, its first lines (the page's box shows it). */
+function clipLines(text: string): string {
+  const lines = text.split('\n').map((l) => l.replace(/^#+\s*/, '').trim()).filter(Boolean).slice(0, 3).join('\n');
+  return lines.length > 600 ? `${lines.slice(0, 599)}…` : lines;
 }

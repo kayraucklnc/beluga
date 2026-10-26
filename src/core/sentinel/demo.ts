@@ -1,5 +1,6 @@
 import type { Store } from '../store.js';
-import type { StepRun } from './model.js';
+import { type StepRun, presetFields } from './model.js';
+import type { SentinelGitHub } from './runner.js';
 import type { Sentinels } from './sentinels.js';
 
 /**
@@ -11,6 +12,23 @@ import type { Sentinels } from './sentinels.js';
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
+
+/**
+ * The demo's GitHub: a pull request opens (#54 on), its six checks pass, the reviewer says ship,
+ * and Merge merges it (Fix what broke's waiting run goes through the real decide path).
+ */
+export function demoGitHub(): SentinelGitHub {
+  let next = 54;
+  return {
+    openPr: async () => {
+      const number = next++;
+      return { number, url: `https://github.com/acme/bob-api/pull/${number}` };
+    },
+    look: async (_where, number) => ({ number, url: `https://github.com/acme/bob-api/pull/${number}`, state: 'OPEN', draft: false, conflicts: false, checks: 'passing', failed: [], count: 6 }),
+    review: async () => ({ verdict: 'ship', line: 'A small fix with a test that covers it' }),
+    merge: async () => true,
+  };
+}
 
 /** Seed once the demo's projects are there (they arrive a moment after the daemon starts). */
 export function seedDemoSentinel(store: Store, sentinels: Sentinels, travel: (msAgo: number) => void, tries = 60): () => void {
@@ -201,7 +219,7 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
     access: 'look',
     notify: 'phone',
     steps: [
-      { kind: 'http', name: 'Search the web', method: 'POST', url: 'https://api.groqbot.example/search', headers: { authorization: 'Bearer $GROQBOT_KEY' }, body: '{"query": "landing page builders news"}', timeoutSec: 30, preset: 'groqbot' },
+      { kind: 'http', name: 'Search the web', ...presetFields('groqbot'), url: 'https://api.groqbot.example/search', body: '{"query": "landing page builders news"}', timeoutSec: 30 },
       { kind: 'claude', name: 'Turn it into tasks', where: 'project', prompt: 'Here is what the web search found:\n{{previous}}\n\nMake a task for each real thing worth doing on {{project}} (one per thing, skip noise and duplicates of these open tasks):\n{{tasks}}' },
       { kind: 'notify', name: 'Tell me', phone: true },
     ],
@@ -216,8 +234,8 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
   );
   travel(0);
   // The schedules start from now: the clock's first look catches nothing up (the history above is
-  // recorded, and Watch the web's run going now is that recorded one: its Call a Service step is
-  // phase 2, so the runner must never be the one running it).
+  // recorded, and Watch the web's run going now is that recorded one: its Call a Service step has
+  // no real address to call, so the runner must never be the one running it).
   for (const s of [brief, web]) sentinels.demoSet(s.id, { lastScheduledAt: Date.now() });
   // It finishes a moment later, so the demo shows a run ending.
   after(() => {
