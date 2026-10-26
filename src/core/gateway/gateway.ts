@@ -14,6 +14,7 @@ import { validate } from './schema.js';
 import { type Pending, type ServeShell, TaskServer, defaultScratch } from './serve.js';
 import { FileFetcher, mergeFiles, wantedFiles } from './transfer.js';
 import { Courier, type MeshPort, type RoomPort, type Via } from './transport.js';
+import { cannotTake, featureForTask, shortVersion } from '../../net/mesh/features.js';
 
 /**
  * The gateway: tasks between Claudes. Your Claude (or you) asks a friend's Claude to do
@@ -110,6 +111,10 @@ export interface Candidate {
   readonly ask_me_for?: string;
   /** Offers what you asked about (when you named a need). */
   readonly fits?: boolean;
+  /** Their Beluga's version, as it said (unknown for Macs from before that). */
+  readonly beluga?: string;
+  /** Your Macs can't link until someone updates Beluga: who. */
+  readonly needs_update?: 'them' | 'you';
 }
 
 /** A gateway mesh: the port, and a way to hear its frames and new links (see launch.ts). */
@@ -314,6 +319,9 @@ export class Gateway {
     const ask = (input.ask || input.command || (input.path ? `Send me ${input.path}` : '')).trim();
     if (!ask) throw new Error('Say what to ask');
     if (input.expects && input.expects !== 'files' && validateSchema(input.expects)) throw new Error(`The expects schema isn't usable: ${validateSchema(input.expects)}`);
+    // Their Mac said what it takes: one that can't take this hears so now, not after a week of waiting.
+    const unable = this.cannotTake(peer, kind);
+    if (unable) throw new Error(unable);
     const level = this.trustFor(peer.peerId);
     // Your Claude asks first, unless you trust them or said Always for them (asking them, not what they may do here).
     const confirm = input.by === 'agent' && level !== 'trusted' && level !== 'full' && !this.freely().includes(peer.peerId);
@@ -501,6 +509,8 @@ export class Gateway {
         projects: card?.projects ?? room?.projects ?? [],
         ...(card?.note ? { ask_me_for: card.note } : {}),
         ...(need ? { fits: offers.includes(need) && theirs !== 'blocked' } : {}),
+        ...(friend?.beluga ? { beluga: shortVersion(friend.beluga.version) } : {}),
+        ...(friend?.update ? { needs_update: friend.update } : {}),
       } satisfies Candidate;
     });
   }
@@ -582,6 +592,17 @@ export class Gateway {
     if (!hit) throw new Error(`Nobody called "${person}" among your friends or the people in this room. Call who_can to see who's there.`);
     if (!this.courier.knows(hit.peerId)) throw new Error(`${hit.name} can't be reached`);
     return { peerId: hit.peerId, name: hit.name };
+  }
+
+  /**
+   * Why a friend's Beluga can't take a request of this kind, from what it said on its last link.
+   * Only for requests that go over the network: someone in the room takes them there.
+   */
+  private cannotTake(peer: { peerId: string; name: string }, kind: TaskKind): string | undefined {
+    const state = this.deps.store.getState();
+    if (state.peers.some((p) => p.peerId === peer.peerId)) return undefined;
+    const info = this.mesh?.belugaOf?.(peer.peerId) ?? state.network.friends.find((f) => f.peerId === peer.peerId)?.beluga;
+    return cannotTake(peer.name, info, featureForTask(kind), this.mesh?.isLinked(peer.peerId) ?? false);
   }
 
   private transmit(task: TaskView): void {

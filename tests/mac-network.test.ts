@@ -14,6 +14,7 @@ import {
   mergeMessages,
   openFriendInvitation,
   presenceFor,
+  belugaLine,
   presenceLine,
   readCode,
   selfLine,
@@ -74,6 +75,14 @@ describe('presence', () => {
   it('says the status with the note, but not an offline person’s note', () => {
     expect(presenceLine({ online: true, presence: { state: 'away', note: 'in a meeting' } })).toBe('Away · in a meeting');
     expect(presenceLine({ online: false, presence: { state: 'away', note: 'in a meeting' } })).toBe('Offline');
+  });
+
+  it('says who needs to update instead of just offline, and which Beluga they’re on', () => {
+    expect(presenceLine({ online: false, presence: { state: 'offline' }, update: 'them' })).toBe('Offline to you · their Beluga needs an update');
+    expect(presenceLine({ online: false, presence: { state: 'offline' }, update: 'you' })).toBe('Update Beluga to reach them');
+    expect(belugaLine({ beluga: { version: '0.6.2+mac.1.2.0', can: [] } })).toBe('1.2.0');
+    expect(belugaLine({})).toBe('An older version (it doesn’t say)');
+    expect(belugaLine({ beluga: { version: '0.6.2+mac.1.1.0', can: [] }, update: 'them' })).toBe('1.1.0 · they need to update to reach you');
   });
 
   it('says your own choice, how long it lasts and your note', () => {

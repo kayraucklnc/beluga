@@ -1,3 +1,4 @@
+import { shortVersion } from '../../../../src/net/mesh/features.js';
 import type { FriendView, GroupView, InvitationView, MemberView, MessageView, NetworkState, PersonView, Presence, PresenceState } from '../../../../src/net/mesh/views.js';
 
 /**
@@ -38,11 +39,21 @@ export function untilLabel(until: number | undefined, now = Date.now()): string 
   return `until ${new Date(until).toLocaleDateString([], { weekday: 'long' })}`;
 }
 
-/** "Away · in a meeting", "Online", "Offline". */
-export function presenceLine(p: Pick<PersonView, 'online' | 'presence'>): string {
+/** "Away · in a meeting", "Online", "Offline"; "Needs a Beluga update" when your Macs can't link because of it. */
+export function presenceLine(p: Pick<PersonView, 'online' | 'presence' | 'update'>): string {
+  if (p.update === 'them') return 'Offline to you · their Beluga needs an update';
+  if (p.update === 'you') return 'Update Beluga to reach them';
   const state = shownState(p);
   const note = state !== 'offline' ? p.presence.note?.trim() : undefined;
   return [STATE_LABEL[state], note].filter(Boolean).join(' · ');
+}
+
+/** Their Beluga in words: "1.2.0", "1.1.0 · update needed", or "An older version" for Macs that don't say. */
+export function belugaLine(p: Pick<PersonView, 'beluga' | 'update'>): string {
+  const version = p.beluga ? shortVersion(p.beluga.version) : undefined;
+  if (p.update === 'them') return `${version ?? 'An older version'} · they need to update to reach you`;
+  if (p.update === 'you') return `${version ?? 'A newer version'} · update yours to reach them`;
+  return version && version !== 'unknown' ? version : 'An older version (it doesn’t say)';
 }
 
 /** Your status in words, as your sidebar and the menu bar say it ("Do Not Disturb until 3:30 PM"). */

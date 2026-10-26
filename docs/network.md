@@ -62,6 +62,14 @@ at once. A relayed link is retried directly now and then and replaced once that 
 `proto: 1`; unknown kinds are ignored): `hello`, `presence`, `dm`/`dm_ack`,
 `g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`.
 
+**Versions and features.** `hello` also carries the Beluga version (`app`) and what this Mac does (`can`,
+`src/net/mesh/features.ts`: `chat.*` always, `task.*` while the gateway listens, said again when that changes).
+A friend's card and `who_can` show their version. A request their Mac said it can't take fails at once
+("Ata's Beluga 1.1.0 can't take file requests yet. Ask Ata to update Beluga") rather than waiting a week;
+"isn't taking requests" only counts while they're linked (a Mac withdraws it as it quits). Macs from before
+this say neither, and are asked as before. Someone on another `proto` major is shown as needing an update
+(`update: 'them' | 'you'`), not as offline. See docs/agent-to-agent.md for where this is going.
+
 **Relaying.** When a direct dial fails (both sides behind strict NATs, UDP blocked), your Mac asks
 someone linked to both of you (people in a shared group first) to open a tunnel. The relay only
 forwards bytes; inside, the two ends run their own Noise handshake with their addresses

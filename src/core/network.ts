@@ -6,6 +6,7 @@ import { Mesh } from '../net/mesh/mesh.js';
 import type { Timing } from '../net/mesh/links.js';
 import type { Store } from './store.js';
 import { belugaEnv } from './beluga-env.js';
+import { installedVersion } from './version.js';
 
 /**
  * The Beluga network as a core service: starts your Mac's mesh node (src/net/mesh) next to
@@ -83,7 +84,7 @@ export async function startNetwork(opts: NetworkOptions): Promise<NetworkService
   const unlock = lock(opts.dir);
   let mesh: Mesh;
   try {
-    mesh = await Mesh.start({ identity: opts.identity, name: opts.name, dir: opts.dir, ...(opts.bootstrap ? { bootstrap: opts.bootstrap } : {}), ...(opts.host ? { host: opts.host } : {}), ...(opts.timing ? { timing: opts.timing } : {}) });
+    mesh = await Mesh.start({ identity: opts.identity, name: opts.name, dir: opts.dir, app: installedVersion(), ...(opts.bootstrap ? { bootstrap: opts.bootstrap } : {}), ...(opts.host ? { host: opts.host } : {}), ...(opts.timing ? { timing: opts.timing } : {}) });
   } catch (err) {
     unlock();
     throw err;

@@ -24,6 +24,10 @@ export interface PersonView {
   readonly presence: Presence;
   /** How you're connected: straight to their Mac, or through another member's Mac (still end-to-end encrypted). */
   readonly via?: 'direct' | 'relay';
+  /** Their Beluga's version and what it does, as it said on its last link (unknown for Macs from before that). */
+  readonly beluga?: { readonly version: string; readonly can: readonly string[] };
+  /** Your two Macs speak different network versions, so they can't link: who needs to update. */
+  readonly update?: 'them' | 'you';
 }
 
 /** A file shared in a chat: who has it is found by its checksum; the bytes come Mac to Mac. */

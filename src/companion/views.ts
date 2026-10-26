@@ -10,6 +10,7 @@ import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
+import { shortVersion } from '../net/mesh/features.js';
 import type { MessageView } from '../net/mesh/views.js';
 import type { Usage } from '../protocol.js';
 import {
@@ -1181,6 +1182,8 @@ export function peopleView(state: DomainState): PeopleView {
         ...(usage ? { usage } : {}),
         offers: [...(card?.claude ? ['claude'] : []), ...(card?.offers ?? [])].slice(0, 20),
         ...(chat ? { chat } : {}),
+        ...(f.beluga && f.beluga.version !== 'unknown' ? { beluga: clip(shortVersion(f.beluga.version), 40) } : {}),
+        ...(f.update ? { update: f.update } : {}),
       };
     }),
   };

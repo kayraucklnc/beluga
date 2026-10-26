@@ -6,7 +6,7 @@ import { PersonRules } from '../gateway/AccessSettings.js';
 import { Select } from '../dialogs/settings-controls.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { PersonAvatar } from './Avatars.js';
-import { conversationOf, presenceLine, shownState, sortMembers } from './net-model.js';
+import { belugaLine, conversationOf, presenceLine, shownState, sortMembers } from './net-model.js';
 import { openNet } from './net-sheets.js';
 import s from '../layout/Inspector.module.css';
 import n from './network.module.css';
@@ -66,6 +66,7 @@ export function ConversationDetails({ id }: { id: string }) {
           <Field label="Name">{f.name}</Field>
           <Field label="Status">{presenceLine(f)}</Field>
           <Field label="Connection">{!f.online ? 'Not connected' : f.via === 'relay' ? 'Through another member’s Mac' : 'Direct'}</Field>
+          <Field label="Beluga">{belugaLine(f)}</Field>
           <Field label="Added">{since(f.addedAt)}</Field>
         </Panel>
         <FriendAccess peerId={f.peerId} name={f.name} />

@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { TASK_FEATURES } from '../../net/mesh/features.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
 import { belugaHome } from '../home.js';
 import { watchNetwork } from '../network.js';
@@ -28,12 +29,16 @@ export function meshNode(mesh: Mesh): MeshNode {
     isLinked: (id) => mesh.isLinked(id),
     sendGateway: (id, payload) => mesh.sendGateway(id, payload),
     nameFor: (id) => mesh.nameFor(id),
+    belugaOf: (id) => mesh.belugaOf(id),
     listen: ({ frame, link }) => {
       mesh.on('gateway', frame);
       mesh.on('link', link);
+      // Friends' Macs learn this one takes requests now (and no longer, once it stops listening).
+      mesh.offer(TASK_FEATURES, true);
       return () => {
         mesh.off('gateway', frame);
         mesh.off('link', link);
+        mesh.offer(TASK_FEATURES, false);
       };
     },
   };

@@ -11,6 +11,7 @@ import { ChevronRight } from 'lucide-react-native';
 
 const ORDER = { online: 0, away: 1, dnd: 2, offline: 3 } as const;
 const WORD = { online: 'Online', away: 'Away', dnd: 'Busy', offline: 'Offline' } as const;
+const UPDATE_WORD = { them: 'Needs a Beluga update', you: 'Update Beluga to reach them' } as const;
 
 /** People: your friends, their presence and allowance. */
 export default function People() {
@@ -35,8 +36,8 @@ export default function People() {
                       {p.name}
                     </T>
                     <T v="caption" numberOfLines={1}>
-                      {WORD[p.presence]}
-                      {p.note ? ` · ${p.note}` : ''}
+                      {p.update ? UPDATE_WORD[p.update] : WORD[p.presence]}
+                      {p.note && !p.update ? ` · ${p.note}` : ''}
                     </T>
                   </View>
                   {week ? (

@@ -583,6 +583,10 @@ export const PeopleView = z.object({
         /** What their Beluga lets your Claude do (their card): "screen", "commands"… */
         offers: z.array(z.string().max(40)).max(20),
         chat: Topic.optional(),
+        /** Their Beluga's version ("1.2.0"), when their Mac says it. */
+        beluga: z.string().max(40).optional(),
+        /** Your Macs can't link until one of you updates Beluga: who. */
+        update: z.enum(['them', 'you']).optional(),
       }),
     )
     .max(600),

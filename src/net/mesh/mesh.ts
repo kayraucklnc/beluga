@@ -5,6 +5,7 @@ import type DHT from 'hyperdht';
 import type { BootstrapNode } from 'hyperdht';
 import type { Identity } from '../crypto.js';
 import { DmBook } from './dms.js';
+import { type BelugaInfo, type Feature, MESH_FEATURES } from './features.js';
 import { checkMessage, parseExtras, wireNote } from './extras.js';
 import { readJson, writeJson } from './files.js';
 import { FriendBook } from './friends.js';
@@ -44,6 +45,8 @@ export interface MeshOptions {
   readonly relay?: boolean;
   /** Tests: act as if there were no direct route to these people. */
   readonly blocked?: (peerId: string) => boolean;
+  /** This Beluga's version, said in every hello (core/version.ts). */
+  readonly app?: string;
 }
 
 /** What using an invitation got you. */
@@ -81,6 +84,12 @@ export class Mesh extends EventEmitter<MeshEvents> {
   private presence: Presence;
   private readonly theirPresence = new Map<string, Presence>();
   private readonly helloNames = new Map<string, string>();
+  /** What each person's Beluga said about itself on its last link (kept while they're away). */
+  private readonly theirBeluga = new Map<string, BelugaInfo>();
+  /** People whose Mac speaks another network version, and who needs to update. */
+  private readonly mismatched = new Map<string, 'them' | 'you'>();
+  /** What else this Mac does now (the gateway adds its tasks while it listens). */
+  private readonly offered = new Set<Feature>();
   private reads: Record<string, number>;
   private allowed = new Map<string, Profile>();
   private wanted = new Map<string, Profile>();
@@ -472,6 +481,8 @@ export class Mesh extends EventEmitter<MeshEvents> {
       me: this.peerId,
       link: (peerId) => this.links.get(peerId),
       presenceOf: (peerId) => this.theirPresence.get(peerId),
+      belugaOf: (peerId) => this.theirBeluga.get(peerId),
+      updateOf: (peerId) => this.mismatched.get(peerId),
       nameOf: (peerId) => this.nameOf(peerId),
       readCount: (conversation) => this.reads[conversation] ?? 0,
     };
@@ -551,8 +562,24 @@ export class Mesh extends EventEmitter<MeshEvents> {
       .filter((p) => p !== peerId && p !== this.peerId);
   }
 
+  /** Say (again) that this Mac does these too, or no longer does: every linked friend hears it at once. */
+  offer(features: readonly Feature[], on: boolean): void {
+    for (const f of features) on ? this.offered.add(f) : this.offered.delete(f);
+    if (this.closed) return;
+    for (const link of this.links.linked()) this.sendHello(link);
+  }
+
+  /** What a person's Beluga said about itself (undefined for Macs from before that, or never linked). */
+  belugaOf(peerId: string): BelugaInfo | undefined {
+    return this.theirBeluga.get(peerId);
+  }
+
+  private sendHello(link: MeshLink): void {
+    link.send({ t: 'hello', proto: PROTO, name: this.opts.name, presence: shown(this.presence), app: this.opts.app ?? 'unknown', can: [...new Set([...MESH_FEATURES, ...this.offered])] });
+  }
+
   private linkUp(link: MeshLink): void {
-    link.send({ t: 'hello', proto: PROTO, name: this.opts.name, presence: shown(this.presence) });
+    this.sendHello(link);
     this.groups.linkUp(link);
     for (const dm of this.dms.waiting(link.peerId)) link.send(dmFrame(dm));
     this.emit('link', link.peerId);
@@ -565,9 +592,16 @@ export class Mesh extends EventEmitter<MeshEvents> {
     switch (msg.t) {
       case 'hello':
         if (Math.floor(msg.proto) !== PROTO) {
+          // Said on their card rather than looking offline (they redial, and are told the same).
+          this.mismatched.set(from, Math.floor(msg.proto) > PROTO ? 'you' : 'them');
+          if (msg.app) this.theirBeluga.set(from, { version: msg.app, can: msg.can ?? [] });
+          this.emit('change');
           link.close(CLOSE.version, 'different protocol version');
           return;
         }
+        this.mismatched.delete(from);
+        if (msg.app) this.theirBeluga.set(from, { version: msg.app, can: msg.can ?? [] });
+        else this.theirBeluga.delete(from);
         // The name they go by now (shown for people in your groups; friends keep the name you know them by).
         this.helloNames.set(from, msg.name);
         this.theirPresence.set(from, msg.presence);
