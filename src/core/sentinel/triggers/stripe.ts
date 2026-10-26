@@ -108,7 +108,10 @@ function price(o: Record<string, unknown>): string | undefined {
 
 class StripeTrouble extends Error {}
 
-async function getEvents(fetchFn: FetchLike, key: string, query: string, base: string): Promise<Record<string, unknown>[]> {
+/** Pages of 100 read in one look at most (10,000 events between looks; the rest wait for the next). */
+const MAX_PAGES = 100;
+
+async function getEvents(fetchFn: FetchLike, key: string, query: string, base: string): Promise<{ readonly data: Record<string, unknown>[]; readonly more: boolean }> {
   const res = await fetchFn(`${base}/v1/events?${query}`, { headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
   if (res.status === 401) throw new StripeTrouble('Stripe doesn’t accept the project’s key anymore: connect it again in Earnings');
   if (res.status === 403) throw new StripeTrouble('The project’s Stripe key can’t read events: give it Events: Read in Stripe, then connect it again in Earnings');
@@ -119,7 +122,7 @@ async function getEvents(fetchFn: FetchLike, key: string, query: string, base: s
   } catch {
     throw new Error('Stripe gave an answer Beluga doesn’t understand');
   }
-  return isObj(body) && Array.isArray(body.data) ? body.data.filter(isObj) : [];
+  return { data: isObj(body) && Array.isArray(body.data) ? body.data.filter(isObj) : [], more: isObj(body) && body.has_more === true };
 }
 
 /** One look: new events oldest first, and the cursor moved. The first look only notes the newest. */
@@ -128,7 +131,16 @@ export async function lookStripe(t: StripeTrigger, key: string, cursor: StripeCu
   const q = new URLSearchParams({ limit: cursor ? '100' : '1' });
   for (const ty of types) q.append('types[]', ty);
   if (cursor) q.set('created[gte]', String(cursor.at));
-  const found = await getEvents(fetchFn, key, q.toString(), base);
+  // Stripe lists newest first, 100 at most a page: more than that since the last look are read
+  // page by page (starting_after the oldest so far), so none is lost.
+  const found: Record<string, unknown>[] = [];
+  for (let page = 0; page < (cursor ? MAX_PAGES : 1); page++) {
+    const last = found.at(-1);
+    if (last) q.set('starting_after', str(last.id) ?? '');
+    const got = await getEvents(fetchFn, key, q.toString(), base);
+    found.push(...got.data);
+    if (!got.more || !got.data.length || !str(got.data.at(-1)?.id)) break;
+  }
   if (!cursor) {
     const top = found[0];
     return { events: [], cursor: { at: num(top?.created) ?? Math.floor(now / 1000), seen: top && str(top.id) ? [str(top.id)!] : [] } };

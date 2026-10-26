@@ -20,6 +20,8 @@ export interface SentinelData {
   readonly cursors?: Readonly<Record<string, unknown>>;
   /** Webhook sentinels' secrets, by sentinel (never in the state). */
   readonly secrets?: Readonly<Record<string, string>>;
+  /** The secrets GitHub signs their posts with (apart from the URL's), by sentinel (never in the state). */
+  readonly signingSecrets?: Readonly<Record<string, string>>;
   /**
    * The load lost something: the file was set aside (or couldn't be), or sentinels or runs didn't
    * read. Their runs' folders may still be someone's, so nothing is swept on this start.
@@ -82,7 +84,7 @@ export class SentinelFile {
       }
     }
     const keep = <T,>(rec: Record<string, T>): Record<string, T> => Object.fromEntries(Object.entries(rec).filter(([id]) => ids.has(id)));
-    return { runAtOnce: parsed.data.runAtOnce, items, runs, cursors: keep(parsed.data.cursors), secrets: keep(parsed.data.secrets), ...(dropped.length || droppedRuns.length ? { lossy: true } : {}) };
+    return { runAtOnce: parsed.data.runAtOnce, items, runs, cursors: keep(parsed.data.cursors), secrets: keep(parsed.data.secrets), signingSecrets: keep(parsed.data.signingSecrets), ...(dropped.length || droppedRuns.length ? { lossy: true } : {}) };
   }
 
   /**
@@ -135,7 +137,7 @@ export class SentinelFile {
     const file = this.file;
     if (!data || !file) return;
     try {
-      writeJson(file, { version: 1, runAtOnce: data.runAtOnce, items: data.items, runs: data.runs, cursors: data.cursors ?? {}, secrets: data.secrets ?? {} });
+      writeJson(file, { version: 1, runAtOnce: data.runAtOnce, items: data.items, runs: data.runs, cursors: data.cursors ?? {}, secrets: data.secrets ?? {}, signingSecrets: data.signingSecrets ?? {} });
     } catch {
       // A full disk or a permission problem: the next change tries again.
     }

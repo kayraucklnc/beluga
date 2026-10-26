@@ -1,3 +1,4 @@
+import type { Actor } from '../../board/model.js';
 import type { Action, DomainState, Store } from '../../store.js';
 import { planTitle } from '../../plans/model.js';
 import { type BelugaTrigger, sentinelOfChannel } from '../model.js';
@@ -12,22 +13,63 @@ import { type TriggerContext, type TriggerDeps, type TriggerEvent, clip } from '
  */
 
 /** What the listener remembers, to tell a change from a repeat. */
-interface Memory {
+export interface Memory {
   readonly status: Map<string, string>;
   readonly prs: Map<string, { readonly number: number; readonly state: string }>;
+  /**
+   * Each worktree's pull request numbers seen (kept when gh briefly says none, and in the cursor
+   * across restarts): only a number never seen there opens.
+   */
+  readonly prsSeen?: Map<string, Set<number>>;
   readonly passed: Set<string>;
   readonly asks: Set<string>;
 }
 
-function remembered(st: DomainState): Memory {
+/** The cursor: each worktree's pull request numbers seen. */
+export interface BelugaCursor {
+  readonly prs: Readonly<Record<string, readonly number[]>>;
+}
+
+/** Numbers kept per worktree (a worktree has a few pull requests over its life), and worktrees kept (the latest). */
+const PRS_KEPT = 50;
+const WORKTREES_KEPT = 500;
+
+export function remembered(st: DomainState, cursor?: BelugaCursor): Memory {
   const passed = new Set<string>();
   for (const p of st.plans.plans) for (const [mid, run] of Object.entries(p.runs)) if (run.passedAt) passed.add(`${p.id}:${mid}`);
+  const prsSeen = new Map<string, Set<number>>();
+  for (const [id, nums] of Object.entries(cursor?.prs ?? {})) if (Array.isArray(nums)) prsSeen.set(id, new Set(nums.filter((n) => typeof n === 'number')));
+  // The first look: what's open now isn't news (nor after a restart, with the cursor).
+  for (const [id, pr] of Object.entries(st.prs)) prsSeen.set(id, (prsSeen.get(id) ?? new Set()).add(pr.number));
   return {
     status: new Map(st.board.issues.map((i) => [i.id, i.status])),
     prs: new Map(Object.entries(st.prs).map(([id, pr]) => [id, { number: pr.number, state: pr.state }])),
+    prsSeen,
     passed,
     asks: new Set(st.gateway.tasks.map((t) => t.id)),
   };
+}
+
+/**
+ * The memory's pull request numbers as a cursor: the worktrees with news last, the latest 500
+ * kept (one gone isn't dropped by its absence: the projects may not have loaded yet).
+ */
+export function belugaCursor(mem: Memory): BelugaCursor {
+  const prs: Record<string, number[]> = {};
+  for (const [id, nums] of [...(mem.prsSeen ?? [])].slice(-WORKTREES_KEPT)) prs[id] = [...nums].slice(-PRS_KEPT);
+  return { prs };
+}
+
+/**
+ * Whose move a task's change was: yours (you, your Claude, Beluga here) or not (a teammate's,
+ * through the team's board; a tracker's, through sync). The newest status line in its activity says.
+ */
+function movedHere(issue: { readonly activity?: ReadonlyArray<{ readonly kind: string; readonly at: number; readonly by: Actor }> }, selfId: string): boolean {
+  const moves = (issue.activity ?? []).filter((a) => a.kind === 'status');
+  const last = moves.reduce<(typeof moves)[number] | undefined>((m, a) => (!m || a.at >= m.at ? a : m), undefined);
+  if (!last) return true;
+  const by = last.by;
+  return by.kind === 'beluga' || (by.kind === 'person' && by.id === selfId) || (by.kind === 'claude' && by.owner === selfId);
 }
 
 const workspaceOf = (st: DomainState, id: string) => {
@@ -51,7 +93,10 @@ export function belugaEvent(t: BelugaTrigger, a: Action, st: DomainState, mem: M
     case 'board_issue': {
       const was = mem.status.get(a.issue.id);
       mem.status.set(a.issue.id, a.issue.status);
-      if (t.what !== 'task-done' || a.issue.status !== 'done' || was === 'done' || !inProject(a.issue.projectId)) return undefined;
+      // A task seen before, moved to done here: not one that came over done (a teammate's, the
+      // tracker's), nor one a teammate or the tracker moved.
+      if (t.what !== 'task-done' || a.issue.status !== 'done' || was === undefined || was === 'done' || !inProject(a.issue.projectId)) return undefined;
+      if (a.origin === 'team' || !movedHere(a.issue, selfId)) return undefined;
       const issue = a.issue;
       const from = issue.worktrees.map((w) => madeBy(st, `ws:${w}`)).find(Boolean);
       const project = st.projects.find((p) => p.id === issue.projectId)?.name;
@@ -62,10 +107,20 @@ export function belugaEvent(t: BelugaTrigger, a: Action, st: DomainState, mem: M
       const pr = a.pr;
       if (pr) mem.prs.set(a.id, { number: pr.number, state: pr.state });
       else mem.prs.delete(a.id);
-      if (!pr || (t.what !== 'pr-opened' && t.what !== 'pr-merged')) return undefined;
+      if (!pr) return undefined;
+      // Seen before here (before a restart, before gh said none for a moment): not news.
+      const nums = mem.prsSeen ?? new Map<string, Set<number>>();
+      const seen = nums.get(a.id) ?? new Set<number>();
+      const fresh = !seen.has(pr.number);
+      if (fresh) {
+        // Last in the map: the latest worktrees are the ones kept.
+        nums.delete(a.id);
+        nums.set(a.id, seen.add(pr.number));
+      }
+      if (t.what !== 'pr-opened' && t.what !== 'pr-merged') return undefined;
       const place = workspaceOf(st, a.id);
       if (!inProject(place?.project.id)) return undefined;
-      const opened = t.what === 'pr-opened' && pr.state === 'OPEN' && (!was || was.number !== pr.number);
+      const opened = t.what === 'pr-opened' && pr.state === 'OPEN' && fresh;
       const merged = t.what === 'pr-merged' && pr.state === 'MERGED' && was !== undefined && was.number === pr.number && was.state !== 'MERGED';
       if (!opened && !merged) return undefined;
       const from = madeBy(st, `ws:${a.id}`);
@@ -117,14 +172,25 @@ export function belugaEvent(t: BelugaTrigger, a: Action, st: DomainState, mem: M
 }
 
 /** Listen to the store until stopped; the first `warmupMs` only remembers (the daemon's start isn't news). → stop. */
-export function startBeluga(t: BelugaTrigger, ctx: TriggerContext, deps: TriggerDeps & { readonly store: Store }): () => void {
+export function startBeluga(t: BelugaTrigger, ctx: TriggerContext<BelugaCursor>, deps: TriggerDeps & { readonly store: Store }): () => void {
   const now = deps.now ?? Date.now;
   const quietUntil = now() + (deps.warmupMs ?? 0);
-  const mem = remembered(deps.store.getState());
+  const was = ctx.cursor();
+  const mem = remembered(deps.store.getState(), was && typeof was === 'object' && was.prs && typeof was.prs === 'object' ? was : undefined);
+  let saved = '';
+  const save = (): void => {
+    const c = belugaCursor(mem);
+    const text = JSON.stringify(c);
+    if (text === saved) return;
+    saved = text;
+    ctx.save(c);
+  };
+  save();
   return deps.store.onAction((a) => {
     // After the reducer: the state has what the action brought.
     queueMicrotask(() => {
       const e = belugaEvent(t, a, deps.store.getState(), mem, deps.selfId());
+      if (a.type === 'pr' && a.pr) save();
       if (e && now() >= quietUntil) ctx.fire(e);
     });
   });

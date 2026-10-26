@@ -304,6 +304,12 @@ export interface Run {
   readonly report?: string;
   /** Failed: why, in words. */
   readonly why?: string;
+  /**
+   * The sentinels that led to it (after, Run another sentinel, an event a sentinel's run made),
+   * oldest first: kept on the run, so an event that comes after its run ended (a merge, a task
+   * done later) still can't start a loop.
+   */
+  readonly chain?: readonly string[];
 }
 
 /** A run in the index and the state: no outputs, no trigger payload. */
@@ -322,6 +328,44 @@ export interface RunDetail {
 export function toSummary(run: Run): RunSummary {
   const { payload: _payload, ...trigger } = run.trigger;
   return { ...run, trigger, steps: run.steps.map(({ output: _output, ...s }) => s) };
+}
+
+/** A trigger's payload is kept (and handed to scripts and Claude) up to this much JSON. */
+export const PAYLOAD_MAX = 64 * 1024;
+
+/**
+ * A payload whose JSON is over PAYLOAD_MAX, cut once: an object keeps its small fields and its
+ * biggest one becomes the start of its JSON as text; anything else becomes the start of its JSON.
+ * Either way it says `truncated: true`. A payload that fits is the same object.
+ */
+export function capPayload(payload: unknown, max = PAYLOAD_MAX): unknown {
+  if (payload === undefined) return payload;
+  let json: string;
+  try {
+    json = JSON.stringify(payload) ?? '';
+  } catch {
+    return { truncated: true, text: '' };
+  }
+  if (json.length <= max) return payload;
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const entries = Object.entries(payload as Record<string, unknown>).map(([k, v]) => ({ k, v, json: JSON.stringify(v) ?? '' }));
+    const biggest = entries.reduce((m, e) => (e.json.length > m.json.length ? e : m));
+    const rest = Object.fromEntries(entries.filter((e) => e !== biggest).map((e) => [e.k, e.v]));
+    const room = max - (JSON.stringify(rest).length + JSON.stringify(biggest.k).length + 24);
+    if (room > 1024) return { ...rest, [biggest.k]: cutTo(biggest.json, room), truncated: true };
+  }
+  return { truncated: true, text: cutTo(json, max - 32) };
+}
+
+/** The start of `text` whose JSON (quotes and escapes) is at most `room` long. */
+function cutTo(text: string, room: number): string {
+  let n = Math.min(text.length, room);
+  let cut = text.slice(0, n);
+  for (let size = JSON.stringify(cut).length; size > room && n > 0; size = JSON.stringify(cut).length) {
+    n = Math.max(0, Math.min(n - 1, Math.floor((n * room) / size) - 1));
+    cut = text.slice(0, n);
+  }
+  return cut;
 }
 
 export const isLive = (state: RunState): boolean => state === 'queued' || state === 'running' || state === 'needs-you';
@@ -363,6 +407,8 @@ export interface WebhookState {
 export interface WebhookAddress {
   readonly url?: string;
   readonly why?: string;
+  /** GitHub's signature: the secret its webhook form asks for (Copy Secret), not the URL's. Never in the state. */
+  readonly signingSecret?: string;
 }
 
 /** Your Claude asked to change a sentinel (the page's box, Describe it): where, and how it's going. */

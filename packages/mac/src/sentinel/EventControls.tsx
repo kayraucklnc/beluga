@@ -7,7 +7,7 @@ import { Button, Tip, cx } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { copyText } from '../lib/copy.js';
 import { openSheet } from '../lib/sheets.js';
-import { type EventCard, GITHUB_MINUTES, SIGNATURES, UPTIME_MINUTES, WEBHOOK_MOVES, eventCards, eventSentence, secretOfUrl, troubleOf } from './sentinel-model.js';
+import { type EventCard, GITHUB_MINUTES, SIGNATURES, UPTIME_MINUTES, WEBHOOK_MOVES, eventCards, eventSentence, looksLikeUrl, troubleOf } from './sentinel-model.js';
 import { useDraft } from './use-draft.js';
 import s from './sentinel.module.css';
 
@@ -163,8 +163,6 @@ function StripeFields({ project }: { t: StripeTrigger; project: string | undefin
   );
 }
 
-const looksLikeUrl = (v: string): boolean => /^https?:\/\/[^\s/?#]+\.[^\s/?#]+(?:[/?#]\S*)?$/i.test(v.trim());
-
 function UptimeFields({ t, set }: { t: UptimeTrigger; set: (t: Trigger) => void }) {
   const [bad, setBad] = useState(false);
   const url = useDraft(t.url, (v) => {
@@ -241,7 +239,7 @@ function WebhookFields({ t, item, set }: { t: WebhookTrigger; item: Sentinel; se
     openSheet({
       kind: 'confirm',
       title: `A new secret for “${item.name}”?`,
-      message: 'Its URL changes, and the old one stops working at once: whatever posts to it (GitHub, Stripe) needs the new URL.',
+      message: 'Its URL and its signing secret change, and the old ones stop working at once: whatever posts to it (GitHub, Stripe) needs the new URL, and GitHub the new secret.',
       confirm: 'Rotate Secret',
       destructive: true,
       run: () =>
@@ -254,7 +252,8 @@ function WebhookFields({ t, item, set }: { t: WebhookTrigger; item: Sentinel; se
           (err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'),
         ),
     });
-  const secret = secretOfUrl(address?.url);
+  // GitHub's form asks for the signing secret, never the one in the URL.
+  const secret = address?.signingSecret;
   return (
     <>
       <div className={s.field}>

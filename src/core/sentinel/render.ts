@@ -1,3 +1,5 @@
+import { PAYLOAD_MAX, capPayload } from './model.js';
+
 /**
  * A step's templates (docs/sentinel.md §4): `{{trigger}}`, `{{trigger.json}}`, `{{previous}}`,
  * `{{steps.<name>}}`, `{{project}}`, `{{project.path}}`, `{{date}}`, `{{sentinel}}`, and Beluga's
@@ -48,7 +50,10 @@ function valueOf(key: string, ctx: RenderContext): string | undefined {
     case 'trigger':
       return ctx.trigger.summary;
     case 'trigger.json': {
-      const json = JSON.stringify(ctx.trigger.payload !== undefined ? ctx.trigger.payload : { kind: ctx.trigger.kind, summary: ctx.trigger.summary }, null, 2);
+      const value = ctx.trigger.payload !== undefined ? capPayload(ctx.trigger.payload) : { kind: ctx.trigger.kind, summary: ctx.trigger.summary };
+      // Indented when that still fits in 64 KB; a big payload goes as it is.
+      const pretty = JSON.stringify(value, null, 2);
+      const json = pretty.length > PAYLOAD_MAX ? JSON.stringify(value) : pretty;
       return ctx.material ? ctx.material('trigger', 'trigger', json) : json;
     }
     case 'previous':

@@ -25,6 +25,28 @@ export interface UptimeCheck {
   readonly ms: number;
   /** No answer: why ("timed out after 10 s"). */
   readonly error?: string;
+  /** The Mac itself is offline (no DNS, no network): says nothing about the site, either way. */
+  readonly offline?: boolean;
+}
+
+/** Errors that mean this Mac can't reach anything (not that the site is down). */
+const OFFLINE = /\b(ENOTFOUND|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|ENETDOWN)\b/;
+
+/** An error's codes and messages, its causes' too (fetch says "fetch failed" with the reason in `cause`). */
+function codesOf(err: unknown): string {
+  const out: string[] = [];
+  for (let e: unknown = err, depth = 0; e && depth < 4; depth++) {
+    if (typeof e !== 'object') {
+      out.push(String(e));
+      break;
+    }
+    const o = e as { code?: unknown; message?: unknown; cause?: unknown; errors?: unknown };
+    if (typeof o.code === 'string') out.push(o.code);
+    if (typeof o.message === 'string') out.push(o.message);
+    if (Array.isArray(o.errors)) for (const x of o.errors) if (x && typeof x === 'object' && typeof (x as { code?: unknown }).code === 'string') out.push((x as { code: string }).code);
+    e = o.cause;
+  }
+  return out.join(' ');
 }
 
 const TIMEOUT_MS = 10_000;
@@ -41,13 +63,17 @@ export async function checkUrl(fetchFn: FetchLike, t: UptimeTrigger, now: () => 
     return { ok: res.status === expect, status: res.status, ms: now() - start };
   } catch (err) {
     const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return { ok: false, status: 0, ms: now() - start, error: timedOut ? `no answer in ${TIMEOUT_MS / 1000} s` : firstWords(err) };
+    const codes = codesOf(err);
+    const offline = !timedOut && OFFLINE.test(codes);
+    return { ok: false, status: 0, ms: now() - start, error: timedOut ? `no answer in ${TIMEOUT_MS / 1000} s` : offline ? `this Mac is offline (${OFFLINE.exec(codes)![1]})` : firstWords(err), ...(offline ? { offline: true } : {}) };
   }
 }
 
 /** A check against what was: the next cursor, and the event when it changed (down after two failures, back on the first success). */
 export function uptimeStep(t: UptimeTrigger, cursor: UptimeCursor | undefined, check: UptimeCheck, at: number): { readonly cursor: UptimeCursor; readonly event?: TriggerEvent } {
   const was: UptimeCursor = cursor ?? { state: 'up', fails: 0, since: at };
+  // Offline here: neither a failure nor a success (down stays down, up stays up, the count waits).
+  if (check.offline) return { cursor: was };
   const host = hostOf(t.url);
   if (check.ok) {
     if (was.state === 'down') {

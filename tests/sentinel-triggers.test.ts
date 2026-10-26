@@ -1,18 +1,20 @@
 import { createHmac } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Sentinel, Trigger, UptimeTrigger } from '../src/core/sentinel/model.js';
-import { belugaEvent } from '../src/core/sentinel/triggers/beluga.js';
+import { PAYLOAD_MAX, type Sentinel, type Trigger, type UptimeTrigger, capPayload } from '../src/core/sentinel/model.js';
+import { render } from '../src/core/sentinel/render.js';
+import { Board } from '../src/core/board/board.js';
+import { belugaCursor, belugaEvent, remembered } from '../src/core/sentinel/triggers/beluga.js';
 import { ghTrouble, lookGitHub, startGitHub, type GitHubCursor } from '../src/core/sentinel/triggers/github.js';
 import { Triggers } from '../src/core/sentinel/triggers/index.js';
 import { NO_SENTRY_TOKEN, type SentryCursor, fetchSentry, parseSentryIssues, sentryStep, startSentry } from '../src/core/sentinel/triggers/sentry.js';
 import { NO_STRIPE, type StripeCursor, lookStripe, moneyText, startStripe } from '../src/core/sentinel/triggers/stripe.js';
 import { type FetchLike, MAX_BACKOFF_MS, TROUBLE_MS, type TriggerDeps, type TriggerEvent, startPolling } from '../src/core/sentinel/triggers/types.js';
 import { checkUrl, uptimeStep, type UptimeCursor } from '../src/core/sentinel/triggers/uptime.js';
-import { MAX_BODY, PER_MINUTE, WebhookHub, githubSignatureOk, newSecret, sameSecret, stripeSignatureOk } from '../src/core/sentinel/triggers/webhook.js';
+import { HEADERS_TIMEOUT_MS, MAX_BODY, PER_MINUTE, REQUEST_TIMEOUT_MS, WebhookHub, githubSignatureOk, newSecret, sameSecret, stripeSignatureOk } from '../src/core/sentinel/triggers/webhook.js';
 import { Sentinels } from '../src/core/sentinel/sentinels.js';
 import type { GitHubRepo } from '../src/workspaces/github.js';
 import { project, setup, until } from './sentinel-fakes.js';
@@ -412,6 +414,7 @@ function post(port: number, pathname: string, body: string | Buffer, headers: Re
 
 describe('the webhook server', () => {
   const secret = newSecret();
+  const signingSecret = newSecret();
   const stripeSecret = 'whsec_test_123';
   let hub: WebhookHub;
   let fired: Array<[string, TriggerEvent]>;
@@ -426,7 +429,7 @@ describe('the webhook server', () => {
     signature = undefined;
     now = Date.now();
     hub = new WebhookHub({
-      hook: (id) => (id === 'sn_hook' ? { secret, ...(signature ? { signature } : {}), stripeSecret } : undefined),
+      hook: (id) => (id === 'sn_hook' ? { secret, signingSecret, ...(signature ? { signature } : {}), stripeSecret } : undefined),
       fire: (id, e) => void fired.push([id, e]),
       onState: (st) => void states.push(st),
       tunnel: async () => ({ url: 'https://quiet-harbor.trycloudflare.com/', close: () => undefined }),
@@ -466,17 +469,20 @@ describe('the webhook server', () => {
     expect(fired).toHaveLength(1);
   });
 
-  it('checks GitHub’s signature when asked: valid, wrong, missing', async () => {
+  it('checks GitHub’s signature when asked, with the signing secret (never the URL’s): valid, wrong, missing', async () => {
     signature = 'github';
     const body = '{"ref":"refs/heads/main"}';
-    const sig = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
+    const sig = `sha256=${createHmac('sha256', signingSecret).update(body).digest('hex')}`;
+    // Signed with the URL's secret: refused (anyone who has the URL has that one).
+    const withUrlSecret = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
+    expect((await post(port, `/hook/sn_hook/${secret}`, body, { 'X-Hub-Signature-256': withUrlSecret, 'X-GitHub-Event': 'push' })).status).toBe(401);
     expect((await post(port, `/hook/sn_hook/${secret}`, body, { 'X-Hub-Signature-256': sig, 'X-GitHub-Event': 'push' })).status).toBe(202);
     expect(fired[0]![1].summary).toBe('Webhook from GitHub: push');
     expect((await post(port, `/hook/sn_hook/${secret}`, body, { 'X-Hub-Signature-256': `sha256=${'0'.repeat(64)}` })).status).toBe(401);
     expect((await post(port, `/hook/sn_hook/${secret}`, `${body} `, { 'X-Hub-Signature-256': sig })).status).toBe(401);
     expect((await post(port, `/hook/sn_hook/${secret}`, body)).status).toBe(401);
     expect(fired).toHaveLength(1);
-    expect(githubSignatureOk(Buffer.from(body), sig, secret)).toBe(true);
+    expect(githubSignatureOk(Buffer.from(body), sig, signingSecret)).toBe(true);
   });
 
   it('checks Stripe’s signature when asked: valid, wrong, stale', async () => {
@@ -521,30 +527,39 @@ describe('webhook sentinels: the URL and the secret', () => {
   beforeEach(() => void (dir = mkdtempSync(path.join(os.tmpdir(), 'sentinel-hooks-'))));
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('a secret from the start, in the file only; the URL while it’s on; Rotate Secret makes a new one', async () => {
+  it('secrets from the start (the URL’s, and a separate one GitHub signs with), in the file only; the URL while it’s on; Rotate Secret makes both new', async () => {
     const s = setup({ dir, saveDelayMs: 0, triggers: { tunnel: async () => ({ url: 'https://quiet-harbor.trycloudflare.com', close: () => undefined }) } });
     const hook = s.sentinels.create({ name: 'GitHub pushes', trigger: { kind: 'webhook', signature: 'github' }, steps: [{ kind: 'notify', name: 'Tell me', phone: false }] });
-    // Paused: no tunnel for it yet.
-    expect(s.sentinels.webhookUrl(hook.id)).toEqual({ why: 'It’s paused: posts to its URL are refused until you turn it on' });
+    // Paused: no tunnel for it yet (the signing secret is there to copy already).
+    expect(s.sentinels.webhookUrl(hook.id)).toEqual({ why: 'It’s paused: posts to its URL are refused until you turn it on', signingSecret: expect.stringMatching(/^[0-9a-f]{64}$/) });
     s.sentinels.pause(hook.id, false);
     await until(() => s.store.getState().sentinel.webhook?.ready === true);
-    const { url } = s.sentinels.webhookUrl(hook.id);
+    const { url, signingSecret } = s.sentinels.webhookUrl(hook.id);
     expect(url).toMatch(new RegExp(`^https://quiet-harbor\\.trycloudflare\\.com/hook/${hook.id}/[0-9a-f]{64}$`));
     const secret = url!.split('/').at(-1)!;
+    expect(signingSecret).toMatch(/^[0-9a-f]{64}$/);
+    expect(signingSecret).not.toBe(secret);
     await new Promise((r) => setTimeout(r, 10));
-    const file = readFileSync(path.join(dir, 'sentinel.json'), 'utf8');
-    expect(JSON.parse(file).secrets[hook.id]).toBe(secret);
+    const file = JSON.parse(readFileSync(path.join(dir, 'sentinel.json'), 'utf8'));
+    expect(file.secrets[hook.id]).toBe(secret);
+    expect(file.signingSecrets[hook.id]).toBe(signingSecret);
     // Never in the state.
     expect(JSON.stringify(s.store.getState().sentinel)).not.toContain(secret);
+    expect(JSON.stringify(s.store.getState().sentinel)).not.toContain(signingSecret);
     const rotated = s.sentinels.rotateSecret(hook.id);
     expect(rotated.url).not.toContain(secret);
     expect(rotated.url).toMatch(/\/[0-9a-f]{64}$/);
+    expect(rotated.signingSecret).toMatch(/^[0-9a-f]{64}$/);
+    expect(rotated.signingSecret).not.toBe(signingSecret);
     // A post with the old secret is refused; the new one is taken.
     const port = (s.sentinels as unknown as { triggers: Triggers }).triggers.webhooks.localPort();
     expect((await post(port, `/hook/${hook.id}/${secret}`, '{}')).status).toBe(404);
     expect((await post(port, new URL(rotated.url!).pathname, '{}')).status).toBe(401);
     const body = '{"zen":"Keep it simple"}';
-    const sig = `sha256=${createHmac('sha256', rotated.url!.split('/').at(-1)!).update(body).digest('hex')}`;
+    // Signed with the URL's secret: refused; with the signing secret: taken.
+    const byUrl = `sha256=${createHmac('sha256', rotated.url!.split('/').at(-1)!).update(body).digest('hex')}`;
+    expect((await post(port, new URL(rotated.url!).pathname, body, { 'X-Hub-Signature-256': byUrl, 'X-GitHub-Event': 'ping' })).status).toBe(401);
+    const sig = `sha256=${createHmac('sha256', rotated.signingSecret!).update(body).digest('hex')}`;
     expect((await post(port, new URL(rotated.url!).pathname, body, { 'X-Hub-Signature-256': sig, 'X-GitHub-Event': 'ping' })).status).toBe(202);
     expect(() => s.sentinels.webhookUrl(s.sentinels.create({ name: 'Clock', trigger: { kind: 'manual' } }).id)).toThrow('doesn’t start from a webhook');
     // Paused again: the server closes with its last webhook sentinel.
@@ -651,5 +666,277 @@ describe('the Triggers coordinator', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ------------------------------------------------------------------ the review's fixes (BLG-239)
+
+describe('the review’s fixes', () => {
+  let dir: string;
+  beforeEach(() => void (dir = mkdtempSync(path.join(os.tmpdir(), 'sentinel-fixes-'))));
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const me = { kind: 'person' as const, id: 'p-me', name: 'Kayra' };
+  const lena = { kind: 'person' as const, id: 'p-lena', name: 'Lena' };
+  const board = (store: Store) => new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name, saveDelayMs: 0 });
+
+  it('task done: yours moving to done fires; a teammate’s (synced over done, or moved by them) or the tracker’s doesn’t', async () => {
+    const s = setup({ triggers: { warmupMs: 0 } });
+    const b = board(s.store);
+    const watcher = s.sentinels.create({ name: 'Done tasks', trigger: { kind: 'beluga', what: 'task-done' }, steps: [{ kind: 'notify', name: 'Tell me', phone: false }] });
+    s.sentinels.pause(watcher.id, false);
+    const runs = () => s.store.getState().sentinel.runs.filter((r) => r.sentinelId === watcher.id);
+    // A teammate's task, new here and done already: not news.
+    b.adoptTeam({ id: 'i_team', projectId: 'api', title: 'Their task', status: 'done', priority: 'none', labels: [], blockedBy: [], related: [], brief: {}, activity: [], createdAt: 1, createdBy: lena, origin: 'manual' });
+    // Yours, moved to done by a teammate through the team's board.
+    const shared = b.create({ projectId: 'api', title: 'Shared task' }, me);
+    b.applyTeam(shared.id, { status: 'done' }, [{ id: 'a_l', at: Date.now(), by: lena, kind: 'status', text: 'moved this to Done' }], [], lena);
+    // Moved by the tracker (Linear) through sync.
+    const synced = b.create({ projectId: 'api', title: 'Tracked task' }, me);
+    b.update(synced.id, { status: 'done' }, { kind: 'person', id: 'sync:linear', name: 'Linear' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(runs()).toHaveLength(0);
+    // Yours, moved by you.
+    const mine = b.create({ projectId: 'api', title: 'Retry webhooks' }, me);
+    b.update(mine.id, { status: 'done' }, me);
+    await until(() => runs().length === 1);
+    expect(runs()[0]!.trigger.summary).toMatch(/is done: Retry webhooks$/);
+    s.sentinels.stopAll();
+  });
+
+  it('a task done the first time it’s seen isn’t news', () => {
+    const st = initialState('room');
+    const mem = remembered(st);
+    const issue = { id: 'i9', key: 'BOB-9', number: 9, projectId: 'api', title: 'Old', status: 'done', priority: 'none', labels: [], blockedBy: [], related: [], rank: 0, brief: {}, revisions: [], worktrees: [], proof: [], activity: [] } as never;
+    expect(belugaEvent({ kind: 'beluga', what: 'task-done' }, { type: 'board_issue', issue }, st, mem, 'me')).toBeUndefined();
+  });
+
+  it('pull request opened: not again after a restart, nor when gh signs in later, nor after gh briefly said none; a new number fires', async () => {
+    const pr = (n: number) => ({ number: n, url: `https://github.com/acme/bob-api/pull/${n}`, state: 'OPEN' as const, title: `PR ${n}`, draft: false, checks: 'pending' as const });
+    const ws = { id: 'w9', name: 'fast-checkout', kind: 'worktree', path: '/code/bob-api/w9', branch: 'fast', projectId: 'api' } as never;
+    const boot = () => {
+      const s = setup({ dir, saveDelayMs: 0, triggers: { warmupMs: 0 } });
+      s.store.dispatch({ type: 'projects', projects: [{ ...project('api', 'bob-api'), workspaces: [ws] }] });
+      return s;
+    };
+    const s1 = boot();
+    const watcher = s1.sentinels.create({ name: 'New pull requests', trigger: { kind: 'beluga', what: 'pr-opened' }, steps: [{ kind: 'notify', name: 'Tell me', phone: false }] });
+    s1.sentinels.pause(watcher.id, false);
+    const runsOf = (s: ReturnType<typeof setup>) => s.store.getState().sentinel.runs.filter((r) => r.sentinelId === watcher.id && r.by === 'event');
+    s1.store.dispatch({ type: 'pr', id: 'w9', pr: pr(60) });
+    await until(() => runsOf(s1).length === 1);
+    // gh briefly said there's none, then the same one again: not news.
+    s1.store.dispatch({ type: 'pr', id: 'w9', pr: undefined });
+    s1.store.dispatch({ type: 'pr', id: 'w9', pr: pr(60) });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(runsOf(s1)).toHaveLength(1);
+    s1.sentinels.stopAll();
+    // A restart: the store's pull requests start empty; gh reports #60 again (at once, or later
+    // once it's signed in): seen before, by the cursor.
+    const s2 = boot();
+    s2.store.dispatch({ type: 'pr', id: 'w9', pr: pr(60) });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(runsOf(s2)).toHaveLength(1);
+    // A new pull request in the same worktree fires.
+    s2.store.dispatch({ type: 'pr', id: 'w9', pr: pr(61) });
+    await until(() => runsOf(s2).length === 2);
+    expect(runsOf(s2).at(-1)!.trigger.summary).toBe('Beluga: pull request #61 opened: PR 61');
+    s2.sentinels.stopAll();
+  });
+
+  it('what’s open at the first look isn’t news, with no cursor yet', () => {
+    const st = { ...initialState('room'), prs: { w1: { number: 7, url: 'u', state: 'OPEN', title: 'Seven', draft: false, checks: 'none' } } } as never;
+    const mem = remembered(st);
+    expect(belugaEvent({ kind: 'beluga', what: 'pr-opened' }, { type: 'pr', id: 'w1', pr: undefined }, st, mem, 'me')).toBeUndefined();
+    expect(belugaEvent({ kind: 'beluga', what: 'pr-opened' }, { type: 'pr', id: 'w1', pr: { number: 7, url: 'u', state: 'OPEN', title: 'Seven', draft: false, checks: 'none' } }, st, mem, 'me')).toBeUndefined();
+    expect(belugaCursor(mem)).toEqual({ prs: { w1: [7] } });
+  });
+
+  it('a sentinel moved to another project forgets what its trigger saw', () => {
+    const s = setup({ triggers: { fetch: async () => ({ status: 200, text: async () => '' }) } });
+    const up = s.sentinels.create({ name: 'Errors', projectId: 'api', trigger: { kind: 'sentry', org: 'acme', project: 'web', what: 'new-issue' } });
+    const cursors = () => (s.sentinels as unknown as { cursors: Record<string, unknown> }).cursors;
+    (s.sentinels as unknown as { cursors: Record<string, unknown> }).cursors = { [up.id]: { since: 1, seen: ['x'], flagged: [], hours: {} } };
+    s.sentinels.update(up.id, { name: 'Errors here' });
+    expect(cursors()[up.id]).toBeDefined();
+    s.sentinels.update(up.id, { projectId: 'land' });
+    expect(cursors()[up.id]).toBeUndefined();
+    s.sentinels.stopAll();
+  });
+
+  it('a 1 MB webhook body reaches a script as at most 64 KB, marked truncated, and {{trigger.json}} too', async () => {
+    const s = setup({ triggers: { tunnel: async () => ({ url: 'https://h.trycloudflare.com', close: () => undefined }) } });
+    const hook = s.sentinels.create({ name: 'Big posts', trigger: { kind: 'webhook' }, steps: [{ kind: 'script', name: 'Echo', command: 'echo "$SENTINEL_TRIGGER"', cwd: 'home', timeoutSec: 10 }] });
+    s.sentinels.pause(hook.id, false);
+    await until(() => s.store.getState().sentinel.webhook?.ready === true);
+    const url = new URL(s.sentinels.webhookUrl(hook.id).url!);
+    const internal = (s.sentinels as unknown as { triggers: Triggers }).triggers;
+    const body = JSON.stringify({ action: 'big', blob: 'a"b'.repeat(Math.floor((MAX_BODY - 100) / 4)) });
+    expect(body.length).toBeGreaterThan(1000 * 1000);
+    expect(body.length).toBeLessThanOrEqual(MAX_BODY);
+    expect((await post(internal.webhooks.localPort(), url.pathname, body, { 'X-GitHub-Event': 'push' })).status).toBe(202);
+    await until(() => s.ran.length === 1);
+    const env = s.ran[0]!.env.SENTINEL_TRIGGER!;
+    expect(env.length).toBeLessThanOrEqual(PAYLOAD_MAX + 512);
+    const parsed = JSON.parse(env);
+    expect(parsed).toMatchObject({ kind: 'webhook', summary: 'Webhook from GitHub: push (big)', payload: { truncated: true, event: 'push', headers: { 'x-github-event': 'push' } } });
+    expect(typeof parsed.payload.body).toBe('string');
+    expect(parsed.payload.body.startsWith('{"action":"big","blob":"a\\"b')).toBe(true);
+    // {{trigger.json}} of a payload that big (one that came some other way) is cut the same.
+    const huge = { rows: Array.from({ length: 20_000 }, (_, i) => ({ i, text: 'x'.repeat(40) })) };
+    const json = render('{{trigger.json}}', { trigger: { kind: 'webhook', summary: 'x', payload: huge }, date: 'today', sentinel: 'Big posts' } as never);
+    expect(json.length).toBeLessThanOrEqual(PAYLOAD_MAX);
+    expect(JSON.parse(json)).toMatchObject({ truncated: true });
+    // A small one is as it was.
+    expect(capPayload({ a: 1 })).toEqual({ a: 1 });
+    s.sentinels.stopAll();
+  });
+
+  it('the loop guard holds after the runs ended: A starts B, B’s pull request merges later, A doesn’t start B again', async () => {
+    const s = setup({ triggers: { warmupMs: 0 } });
+    const b = s.sentinels.create({ name: 'B', trigger: { kind: 'manual' }, steps: [{ kind: 'notify', name: 'Tell me', phone: false }] });
+    const a = s.sentinels.create({ name: 'A', trigger: { kind: 'beluga', what: 'pr-merged' }, steps: [{ kind: 'trigger', name: 'Run B', sentinelId: b.id }] });
+    s.sentinels.pause(a.id, false);
+    s.sentinels.pause(b.id, false);
+    const runs = (id: string) => s.store.getState().sentinel.runs.filter((r) => r.sentinelId === id);
+    s.sentinels.start(a.id, 'you');
+    await until(() => runs(b.id).length === 1 && runs(b.id)[0]!.state === 'done' && runs(a.id)[0]!.state === 'done');
+    const bRun = runs(b.id)[0]!;
+    expect(bRun.chain).toEqual([a.id]);
+    // Both ended; then B's pull request merges (an event from B's run).
+    (s.sentinels as unknown as { fireEvent: (id: string, e: TriggerEvent) => void }).fireEvent(a.id, { summary: 'Beluga: pull request #9 merged: B’s fix', from: { sentinelId: b.id, runId: bRun.id } });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(runs(a.id)).toHaveLength(1);
+    expect(runs(b.id)).toHaveLength(1);
+    s.sentinels.stopAll();
+  });
+
+  it('GitHub’s rate limits are a blip (a longer wait), never “needs scopes”; a failed re-run fires', async () => {
+    expect(ghTrouble(new Error('gh: API rate limit exceeded for user ID 1234. (HTTP 403)'))).toBeUndefined();
+    expect(ghTrouble(new Error('You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)'))).toBeUndefined();
+    expect(ghTrouble(new Error('HTTP 429: Too Many Requests'))).toBeUndefined();
+    expect(ghTrouble(new Error('HTTP 403: Resource not accessible by integration'))).toMatch(/scopes/);
+    const run = (attempt: number, at: number) => ({ id: 2, run_attempt: attempt, name: 'CI', head_branch: 'main', created_at: iso(T0), updated_at: iso(at) });
+    const runs = { workflow_runs: [run(1, T0)] };
+    const gh = async (args: readonly string[]): Promise<string> => (String(args.at(-1)).includes('/actions/runs?') ? JSON.stringify(runs) : JSON.stringify({ jobs: [] }));
+    const t = { kind: 'github' as const, what: 'workflow-failed' as const };
+    const first = await lookGitHub(t, repo, undefined, gh, T0);
+    expect(first.cursor.seen).toEqual(['r2']);
+    runs.workflow_runs = [run(2, T0 + 5 * MIN)];
+    const again = await lookGitHub(t, repo, first.cursor, gh, T0 + 6 * MIN);
+    expect(again.events).toHaveLength(1);
+    expect(again.events[0]!.payload).toMatchObject({ run: 2, attempt: 2 });
+    expect((await lookGitHub(t, repo, again.cursor, gh, T0 + 8 * MIN)).events).toEqual([]);
+  });
+
+  it('Stripe: more than 100 events between looks are read page by page, none lost, oldest first', async () => {
+    const all = Array.from({ length: 250 }, (_, i) => ({ id: `evt_${i + 1}`, type: 'invoice.payment_failed', created: 2000 + i, livemode: false, data: { object: { amount_due: 100, currency: 'usd' } } })).reverse();
+    const calls: string[] = [];
+    const fetchFn = jsonFetch((url) => {
+      const q = new URL(url).searchParams;
+      const after = q.get('starting_after');
+      const from = after ? all.findIndex((e) => e.id === after) + 1 : 0;
+      const page = all.filter((e) => e.created >= Number(q.get('created[gte]') ?? 0)).slice(0, all.length).slice(from, from + Number(q.get('limit')));
+      return { body: { data: page, has_more: from + page.length < all.length } };
+    }, calls);
+    const t = { kind: 'stripe' as const, what: 'payment-failed' as const };
+    const r = await lookStripe(t, 'rk_test', { at: 2000, seen: [] }, fetchFn, 0, 'https://stripe.test');
+    expect(calls).toHaveLength(3);
+    expect(calls[1]).toContain('starting_after=evt_151');
+    expect(r.events).toHaveLength(250);
+    expect(r.events[0]!.payload).toMatchObject({ id: 'evt_1' });
+    expect(r.events.at(-1)!.payload).toMatchObject({ id: 'evt_250' });
+    expect(r.cursor).toEqual({ at: 2249, seen: ['evt_250'] });
+  });
+
+  it('uptime: this Mac offline (no DNS, no network) is neither down nor back', async () => {
+    const offline = (code: string): FetchLike => async () => {
+      throw new TypeError('fetch failed', { cause: Object.assign(new Error(`getaddrinfo ${code} example.com`), { code }) });
+    };
+    const t: UptimeTrigger = { kind: 'uptime', url: 'https://example.com/health', minutes: 5 };
+    for (const code of ['ENOTFOUND', 'ENETUNREACH', 'EHOSTUNREACH', 'EAI_AGAIN']) {
+      const check = await checkUrl(offline(code), t);
+      expect(check).toMatchObject({ ok: false, offline: true });
+      const up: UptimeCursor = { state: 'up', fails: 1, since: T0, failingSince: T0 };
+      expect(uptimeStep(t, up, check, T0 + MIN)).toEqual({ cursor: up });
+      const down: UptimeCursor = { state: 'down', fails: 3, since: T0 };
+      expect(uptimeStep(t, down, check, T0 + MIN)).toEqual({ cursor: down });
+    }
+    // A refused connection is the site's trouble: it counts.
+    const refused = await checkUrl(async () => Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) })), t);
+    expect(refused.offline).toBeUndefined();
+    expect(uptimeStep(t, { state: 'up', fails: 1, since: T0, failingSince: T0 }, refused, T0 + MIN).event?.summary).toMatch(/stopped answering/);
+  });
+
+  it('bursts: events while it runs and another waits are one skipped line in its history, counted', async () => {
+    let release: () => void = () => undefined;
+    const shell = (_c: string, _cwd: string, _t: number, _e: Record<string, string>, signal: AbortSignal) =>
+      new Promise<{ exitCode: number; output: string; truncated: boolean; timedOut: boolean; ms: number }>((resolve) => {
+        release = () => resolve({ exitCode: 0, output: 'ok', truncated: false, timedOut: false, ms: 1 });
+        signal.addEventListener('abort', () => resolve({ exitCode: 1, output: 'killed', truncated: false, timedOut: false, ms: 1 }));
+      });
+    const s = setup({ shell });
+    const hook = s.sentinels.create({ name: 'Busy', trigger: { kind: 'webhook' }, steps: [{ kind: 'script', name: 'Slow', command: 'sleep 1', cwd: 'home', timeoutSec: 10 }] });
+    s.sentinels.pause(hook.id, false);
+    const fire = (n: number) => (s.sentinels as unknown as { fireEvent: (id: string, e: TriggerEvent) => void }).fireEvent(hook.id, { summary: `Webhook ${n}` });
+    const runs = () => s.store.getState().sentinel.runs.filter((r) => r.sentinelId === hook.id);
+    for (let i = 1; i <= 4; i++) fire(i);
+    expect(runs().map((r) => r.state)).toEqual(['running', 'queued', 'skipped']);
+    expect(runs()[2]).toMatchObject({ by: 'event', headline: 'Skipped: 2 more events while it ran', trigger: { summary: 'Webhook 4' } });
+    release();
+    await until(() => runs()[1]!.state === 'running');
+    // A new run going: the count starts again.
+    fire(5);
+    fire(6);
+    await until(() => runs().length === 5);
+    expect(runs().at(-1)).toMatchObject({ state: 'skipped', headline: 'Skipped: 1 more event while it ran' });
+    s.sentinels.stopAll();
+  });
+
+  it('a webhook made before the signing secret was apart keeps signing with its URL’s secret until Rotate', async () => {
+    const tunnel = async () => ({ url: 'https://h.trycloudflare.com', close: () => undefined });
+    const s1 = setup({ dir, saveDelayMs: 0, triggers: { tunnel } });
+    const hook = s1.sentinels.create({ name: 'Old hook', trigger: { kind: 'webhook', signature: 'github' } });
+    s1.sentinels.stopAll();
+    const file = path.join(dir, 'sentinel.json');
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    delete saved.signingSecrets;
+    writeFileSync(file, JSON.stringify(saved));
+    const s2 = setup({ dir, saveDelayMs: 0, triggers: { tunnel } });
+    expect(s2.sentinels.webhookUrl(hook.id).signingSecret).toBe(saved.secrets[hook.id]);
+    expect(s2.sentinels.rotateSecret(hook.id).signingSecret).not.toBe(saved.secrets[hook.id]);
+    s2.sentinels.stopAll();
+  });
+
+  it('the webhook server: slow senders time out; a dead tunnel saying so again doesn’t close the one that replaced it', async () => {
+    const died: Array<(why: string) => void> = [];
+    let n = 0;
+    const hub = new WebhookHub({
+      hook: () => undefined,
+      fire: () => undefined,
+      onState: () => undefined,
+      retryMs: 5,
+      tunnel: async (_port, onDied) => {
+        died.push(onDied);
+        return { url: `https://t${++n}.trycloudflare.com`, close: () => undefined };
+      },
+    });
+    hub.add('sn_x');
+    await until(() => hub.base() === 'https://t1.trycloudflare.com');
+    const server = (hub as unknown as { server: http.Server }).server;
+    expect(server.headersTimeout).toBe(HEADERS_TIMEOUT_MS);
+    expect(server.requestTimeout).toBe(REQUEST_TIMEOUT_MS);
+    expect([HEADERS_TIMEOUT_MS, REQUEST_TIMEOUT_MS]).toEqual([10_000, 15_000]);
+    died[0]!('exit 1');
+    expect(hub.base()).toBeUndefined();
+    await until(() => hub.base() === 'https://t2.trycloudflare.com');
+    // The first tunnel says it died again (its process's error after its exit): the second stays.
+    died[0]!('error');
+    expect(hub.base()).toBe('https://t2.trycloudflare.com');
+    // The second one dying is heard.
+    died[1]!('exit 1');
+    expect(hub.base()).toBeUndefined();
+    await until(() => hub.base() === 'https://t3.trycloudflare.com');
+    hub.close();
   });
 });

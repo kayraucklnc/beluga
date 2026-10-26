@@ -316,8 +316,8 @@ export const initialBoard: BoardSlice = { board: NO_BOARD };
 export type BoardAction =
   /** Everything at once (on start). */
   | { type: 'board_init'; state: BoardState }
-  /** One task changed (same id: replaced) or was added. */
-  | { type: 'board_issue'; issue: Issue }
+  /** One task changed (same id: replaced) or was added; `origin: 'team'`: a teammate's, through the team's board. */
+  | { type: 'board_issue'; issue: Issue; origin?: 'team' }
   | { type: 'board_remove'; id: string }
   | { type: 'board_meta'; projects: Readonly<Record<string, BoardProject>>; autoTasks: boolean }
   /** A project's sync changed (no `sync`: disconnected). */

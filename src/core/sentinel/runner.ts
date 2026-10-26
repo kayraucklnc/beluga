@@ -23,6 +23,7 @@ import {
   accessAllows,
   accessNeeded,
   ACCESS_INFO,
+  capPayload,
   firstLine,
   stepAvailable,
 } from './model.js';
@@ -807,7 +808,8 @@ export class SentinelRunner {
     const env = {
       ...this.deps.envFor(cwd),
       SENTINEL_RUN_DIR: this.deps.folders.folder(active.run.id) ?? '',
-      SENTINEL_TRIGGER: JSON.stringify(active.run.trigger),
+      // At most 64 KB of payload (an environment variable that big fails the spawn on macOS).
+      SENTINEL_TRIGGER: JSON.stringify({ ...active.run.trigger, ...(active.run.trigger.payload !== undefined ? { payload: capPayload(active.run.trigger.payload) } : {}) }),
       SENTINEL_PREVIOUS: previous.length > PREVIOUS_MAX ? previous.slice(0, PREVIOUS_MAX) : previous,
     };
     const remaining = Math.max(0, active.deadline - this.deps.now());

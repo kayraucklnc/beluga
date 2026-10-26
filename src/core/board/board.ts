@@ -756,7 +756,7 @@ export class Board {
     this.projects = { ...this.projects, [input.projectId]: { ...project, next: number + 1 } };
     this.issues = [...this.issues, issue];
     this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
-    this.deps.store.dispatch({ type: 'board_issue', issue });
+    this.deps.store.dispatch({ type: 'board_issue', issue, origin: 'team' });
     this.save();
     return issue;
   }
@@ -791,7 +791,7 @@ export class Board {
     const kept = gone.size ? issue.activity.filter((a) => !gone.has(a.id)) : issue.activity;
     const known = new Set(kept.map((a) => a.id));
     const activity = [...kept, ...add.filter((a) => !known.has(a.id))].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
-    return this.change({ ...issue, activity: [] }, next as Partial<Issue>, activity);
+    return this.change({ ...issue, activity: [] }, next as Partial<Issue>, activity, true, false, 'team');
   }
 
   // ------------------------------------------------------------------ settings
@@ -838,7 +838,7 @@ export class Board {
   }
 
   /** Replace a task with changes and activity (`replaceLast`: instead of its last line), tell every screen, and save. */
-  private change(issue: Issue, patch: Partial<{ -readonly [K in keyof Issue]: Issue[K] }>, activity: readonly Activity[], touch = true, replaceLast = false): Issue {
+  private change(issue: Issue, patch: Partial<{ -readonly [K in keyof Issue]: Issue[K] }>, activity: readonly Activity[], touch = true, replaceLast = false, origin?: 'team'): Issue {
     const at = this.now();
     const merged: Record<string, unknown> = { ...issue, ...patch };
     // undefined in a patch removes the field (no "key": undefined in the file).
@@ -851,7 +851,7 @@ export class Board {
     if (patch.title !== undefined && issue.autoTitle && !('autoTitle' in patch)) delete merged.autoTitle;
     const next = { ...(merged as unknown as Issue), activity: [...(replaceLast ? issue.activity.slice(0, -1) : issue.activity), ...activity].slice(-KEEP_ACTIVITY), updatedAt: touch ? at : issue.updatedAt };
     this.issues = this.issues.map((i) => (i.id === issue.id ? next : i));
-    this.deps.store.dispatch({ type: 'board_issue', issue: next });
+    this.deps.store.dispatch({ type: 'board_issue', issue: next, ...(origin ? { origin } : {}) });
     this.save();
     if (status === 'done' && issue.status !== 'done') this.doneWithParent(next);
     // Its parent follows its sub-tasks: this one moved, or moved to another parent.

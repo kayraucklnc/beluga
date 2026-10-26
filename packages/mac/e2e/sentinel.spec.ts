@@ -180,7 +180,7 @@ test('a webhook: its URL with Copy, the signature, Rotate Secret asks first', as
   await shoot(page, 'webhook');
   await when.getByRole('button', { name: 'Rotate Secret…' }).click();
   const confirm = page.getByRole('alertdialog').or(page.getByRole('dialog', { name: /A new secret/ }));
-  await expect(confirm).toContainText('the old one stops working at once');
+  await expect(confirm).toContainText('the old ones stop working at once');
   await confirm.getByRole('button', { name: 'Rotate Secret' }).click();
   await expect(url).not.toHaveValue(before);
   await expect(url).toHaveValue(/\/[0-9a-f]{64}$/);

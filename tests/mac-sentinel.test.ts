@@ -39,7 +39,7 @@ import {
   rowsToHeaders,
   eventCards,
   eventSentence,
-  secretOfUrl,
+  looksLikeUrl,
   troubleOf,
 } from '../packages/mac/src/sentinel/sentinel-model.js';
 import { panelFits } from '../packages/mac/src/lib/panel-model.js';
@@ -385,11 +385,9 @@ describe('Sentinel’s events on the Mac', () => {
     expect(rowOf(state({ items: [hook] }), hook, NOW).trouble).toBeUndefined();
   });
 
-  it('finds the secret in a webhook URL (for GitHub’s Secret field)', () => {
-    const secret = 'a'.repeat(64);
-    expect(secretOfUrl(`https://x.trycloudflare.com/hook/sn_1/${secret}`)).toBe(secret);
-    expect(secretOfUrl('https://x.trycloudflare.com/hook/sn_1/short')).toBeUndefined();
-    expect(secretOfUrl(undefined)).toBeUndefined();
+  it('takes any whole http(s) address to check: localhost and ports too', () => {
+    for (const ok of ['http://localhost:3000/health', 'https://example.com', 'https://api.example.com/v1/health?deep=1', 'http://127.0.0.1:8080', 'http://intranet/status']) expect(looksLikeUrl(ok), ok).toBe(true);
+    for (const bad of ['', 'example.com', 'ftp://example.com', 'file:///etc/hosts', 'https://', 'http://exa mple.com', 'javascript:alert(1)']) expect(looksLikeUrl(bad), bad).toBe(false);
     expect(iconOf('link')).toBe('link');
   });
 });

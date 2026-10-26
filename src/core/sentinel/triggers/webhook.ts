@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { WebhookState, WebhookTrigger } from '../model.js';
+import { type WebhookState, type WebhookTrigger, capPayload } from '../model.js';
 import { type TriggerEvent, type WebhookTunnel, clip, firstWords, isObj, str } from './types.js';
 
 /**
@@ -53,6 +53,8 @@ export function stripeSignatureOk(body: Buffer, header: string | undefined, secr
 /** What a webhook sentinel the server knows needs: its secret, and how its posts are signed. */
 export interface HookOf {
   readonly secret: string;
+  /** GitHub signs with this one (its webhook form's Secret, Copy Secret), never the URL's. */
+  readonly signingSecret?: string;
   readonly signature?: WebhookTrigger['signature'];
   /** Stripe signs with its own secret (whsec_…): $STRIPE_WEBHOOK_SECRET from Settings › Environment. */
   readonly stripeSecret?: string;
@@ -66,14 +68,20 @@ export interface WebhookHubDeps {
   readonly tunnel?: WebhookTunnel;
   readonly now?: () => number;
   readonly log?: (line: string) => void;
+  /** A dead tunnel opens again after this long (30 s; the tests' shorter). */
+  readonly retryMs?: number;
 }
+
+/** A post's headers must come in this long; the whole post in this long. */
+export const HEADERS_TIMEOUT_MS = 10_000;
+export const REQUEST_TIMEOUT_MS = 15_000;
 
 const HEADERS = ['x-github-event', 'x-github-delivery', 'x-github-hook-id', 'x-gitlab-event', 'content-type', 'user-agent'];
 
 /** A post as the run sees it: the body (JSON when it reads as JSON), a few headers, and the event's name in words. */
 export function webhookEvent(body: Buffer, headers: http.IncomingHttpHeaders): TriggerEvent {
   const text = body.toString('utf8');
-  let parsed: unknown = text.length > 256 * 1024 ? `${text.slice(0, 256 * 1024)}…` : text;
+  let parsed: unknown = text;
   try {
     parsed = JSON.parse(text) as unknown;
   } catch {
@@ -88,7 +96,8 @@ export function webhookEvent(body: Buffer, headers: http.IncomingHttpHeaders): T
   const action = isObj(parsed) ? str(parsed.action) : undefined;
   const stripeType = headers['stripe-signature'] && isObj(parsed) ? str(parsed.type) : undefined;
   const summary = gh ? `Webhook from GitHub: ${gh}${action ? ` (${action})` : ''}` : stripeType ? `Webhook from Stripe: ${stripeType}` : head['x-gitlab-event'] ? `Webhook from GitLab: ${head['x-gitlab-event']}` : 'Webhook: something posted';
-  return { summary: clip(summary, 120), payload: { headers: head, ...(gh ? { event: gh } : stripeType ? { event: stripeType } : {}), body: parsed } };
+  // A big body (up to 1 MB comes in) is kept as the start of its JSON, at most 64 KB, marked truncated.
+  return { summary: clip(summary, 120), payload: capPayload({ headers: head, ...(gh ? { event: gh } : stripeType ? { event: stripeType } : {}), body: parsed }) };
 }
 
 /** The local server and its tunnel, for every webhook sentinel that's on. */
@@ -150,6 +159,9 @@ export class WebhookHub {
     if (!this.server) {
       const server = http.createServer((req, res) => this.handle(req, res));
       server.on('clientError', (_err, socket) => socket.destroy());
+      // A slow sender doesn't hold a connection open.
+      server.headersTimeout = HEADERS_TIMEOUT_MS;
+      server.requestTimeout = REQUEST_TIMEOUT_MS;
       this.server = server;
       await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
       if (gen !== this.generation) return;
@@ -165,13 +177,26 @@ export class WebhookHub {
       this.why = 'Webhooks need the Beluga app (its tunnel)';
       return this.publish();
     }
+    // Only this tunnel's death tears it down: one that died before (and was replaced in the same
+    // generation by a retry) can say so again without closing its successor.
+    let mine: { close(): void } | undefined;
+    let diedEarly: string | undefined;
+    const died = (why: string): void => {
+      if (gen !== this.generation) return;
+      this.deps.log?.(`sentinel: the webhook tunnel stopped: ${why}`);
+      this.lost(`The tunnel stopped (${clip(why, 80)}); it opens again in a moment`);
+    };
     try {
       const t = await tunnel(this.port, (why) => {
-        if (gen !== this.generation) return;
-        this.deps.log?.(`sentinel: the webhook tunnel stopped: ${why}`);
-        this.lost(`The tunnel stopped (${clip(why, 80)}); it opens again in a moment`);
+        if (!mine) diedEarly ??= why;
+        else if (this.tunnel === mine) died(why);
       });
       if (gen !== this.generation || !this.on.size) return t.close();
+      mine = t;
+      if (diedEarly !== undefined) {
+        t.close();
+        return died(diedEarly);
+      }
       this.tunnel = t;
       this.url = t.url.replace(/\/+$/, '');
       this.why = undefined;
@@ -192,7 +217,7 @@ export class WebhookHub {
     if (!this.on.size) return;
     clearTimeout(this.retry);
     const gen = this.generation;
-    this.retry = setTimeout(() => gen === this.generation && void this.openTunnel(gen), RETRY_MS);
+    this.retry = setTimeout(() => gen === this.generation && void this.openTunnel(gen), this.deps.retryMs ?? RETRY_MS);
     this.retry.unref?.();
   }
 
@@ -262,7 +287,7 @@ export class WebhookHub {
         const v = req.headers[name];
         return typeof v === 'string' ? v : undefined;
       };
-      if (hook.signature === 'github' && !githubSignatureOk(body, header('x-hub-signature-256'), hook.secret)) return answer(401, 'The signature doesn’t match');
+      if (hook.signature === 'github' && (!hook.signingSecret || !githubSignatureOk(body, header('x-hub-signature-256'), hook.signingSecret))) return answer(401, 'The signature doesn’t match');
       if (hook.signature === 'stripe') {
         if (!hook.stripeSecret) return answer(401, 'Stripe’s signing secret isn’t set here');
         if (!stripeSignatureOk(body, header('stripe-signature'), hook.stripeSecret, (this.deps.now ?? Date.now)())) return answer(401, 'The signature doesn’t match');

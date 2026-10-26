@@ -131,4 +131,6 @@ export const SentinelFileSchema = z.object({
   cursors: z.record(z.string(), z.unknown()).default({}).catch({}),
   // Webhook sentinels' secrets (32 bytes, hex): in the file only, never in the state.
   secrets: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)).default({}).catch({}),
+  // The secrets GitHub signs a webhook sentinel's posts with (its form's Secret): the same, apart from the URL's.
+  signingSecrets: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)).default({}).catch({}),
 });

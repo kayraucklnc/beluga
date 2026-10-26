@@ -76,7 +76,11 @@ async function items(t: GitHubTrigger, repo: GitHubRepo, gh: GhRunner): Promise<
     case 'workflow-failed':
       return list(await api(gh, repo, `${base}/actions/runs?status=failure&per_page=20`), 'workflow_runs')
         .filter((r): r is Record<string, unknown> => isObj(r) && r.id !== undefined)
-        .map((r) => ({ id: `r${String(r.id)}`, at: time(r.updated_at) || time(r.created_at), event: () => workflowEvent(r, repo, gh) }));
+        // A re-run is another attempt of the same run: its failure fires too ("r12" the first, "r12a2" the second).
+        .map((r) => {
+          const attempt = num(r.run_attempt) ?? 1;
+          return { id: `r${String(r.id)}${attempt > 1 ? `a${attempt}` : ''}`, at: time(r.updated_at) || time(r.created_at), event: () => workflowEvent(r, repo, gh) };
+        });
     case 'deployment-failed': {
       // The latest few deployments' latest status says how each went (a status id is seen once).
       const deps = list(await api(gh, repo, `${base}/deployments?per_page=5`)).filter((d): d is Record<string, unknown> => isObj(d) && d.id !== undefined);
@@ -131,7 +135,7 @@ async function workflowEvent(r: Record<string, unknown>, repo: GitHubRepo, gh: G
   const where = failed[0] ? `: ${failed[0].job}${failed[0].step ? ` › ${failed[0].step}` : ''}` : '';
   return {
     summary: clip(`GitHub: workflow ${name} failed${branch ? ` on ${branch}` : ''}${where}`, 140),
-    payload: { event: 'workflow-failed', repo: `${repo.owner}/${repo.repo}`, workflow: name, run: num(r.id), number: num(r.run_number), branch, sha: str(r.head_sha), url: str(r.html_url), event_name: str(r.event), actor: login(r.actor), title: str(r.display_title), failed, ...(log ? { log } : {}) },
+    payload: { event: 'workflow-failed', repo: `${repo.owner}/${repo.repo}`, workflow: name, run: num(r.id), number: num(r.run_number), attempt: num(r.run_attempt) ?? 1, branch, sha: str(r.head_sha), url: str(r.html_url), event_name: str(r.event), actor: login(r.actor), title: str(r.display_title), failed, ...(log ? { log } : {}) },
   };
 }
 
@@ -153,9 +157,11 @@ export async function lookGitHub(t: GitHubTrigger, repo: GitHubRepo, cursor: Git
   return { events, cursor: { since: Math.max(cursor.since, newest), seen: remember(cursor.seen, fresh.map((f) => f.id)) } };
 }
 
-/** gh's own trouble in words with what to do (none: a blip, tried again later). */
+/** gh's own trouble in words with what to do (none: a blip, tried again later, slower each time). */
 export function ghTrouble(err: unknown): string | undefined {
   const text = err instanceof Error ? err.message : String(err);
+  // GitHub's rate limits (a 403 or a 429) pass: the poller waits longer, then looks again.
+  if (/rate limit|secondary rate|HTTP 429|too many requests|abuse detection/i.test(text)) return undefined;
   if (/ENOENT|command not found|not found: gh|spawn gh/i.test(text)) return 'GitHub needs the gh command: brew install gh, then gh auth login';
   if (/gh auth login|not logged in|authentication|HTTP 401|Bad credentials/i.test(text)) return 'Sign in to GitHub first: run gh auth login in a terminal';
   if (/HTTP 404|Not Found/i.test(text)) return 'GitHub doesn’t show this repository to you (gh is signed in as someone else, or it moved)';

@@ -35,6 +35,7 @@ import {
   accessAllows,
   accessNeeded,
   ACCESS_INFO,
+  capPayload,
   claudeWidened,
   firstLine,
   isLive,
@@ -138,8 +139,8 @@ export class Sentinels {
   private readonly offs: Array<() => void> = [];
   private lastTick: number | undefined;
   private closed = false;
-  /** The sentinels that led to a run (after, Run another sentinel), so a loop stops. */
-  private readonly chains = new Map<string, readonly string[]>();
+  /** Events that came while a run went and another waited: the history's note of them, by sentinel. */
+  private readonly extra = new Map<string, { readonly runId: string; readonly n: number }>();
   /** Conversations where your Claude changes a sentinel (sentinel.ask), and which. */
   private readonly askChannels = new Map<string, string>();
   private asks: Record<string, SentinelAsk> = {};
@@ -151,6 +152,8 @@ export class Sentinels {
   private cursors: Record<string, unknown>;
   /** Webhook sentinels' secrets (in the file only, never in the state). */
   private secrets: Record<string, string>;
+  /** The secrets GitHub signs their posts with (Copy Secret), apart from the URL's (in the file only). */
+  private signingSecrets: Record<string, string>;
   private troubles: Record<string, string> = {};
   private webhook: WebhookState = { ready: false };
   private readonly triggers: Triggers | undefined;
@@ -163,6 +166,7 @@ export class Sentinels {
     this.runAtOnce = data.runAtOnce;
     this.cursors = { ...data.cursors };
     this.secrets = { ...data.secrets };
+    this.signingSecrets = { ...data.signingSecrets };
     const at = this.now();
     this.items = data.items.map((s) => (!s.paused && s.trigger.kind === 'schedule' && s.lastScheduledAt === undefined ? { ...s, lastScheduledAt: at } : s));
     // Runs that were going (or waiting their turn) when Beluga closed or crashed ended there; one
@@ -217,8 +221,9 @@ export class Sentinels {
             const s = this.items.find((i) => i.id === id);
             const secret = this.secrets[id];
             if (!s || s.paused || s.trigger.kind !== 'webhook' || !secret) return undefined;
+            const signingSecret = this.signingSecrets[id];
             const stripeSecret = s.trigger.signature === 'stripe' ? deps.triggers?.env?.(s.projectId).STRIPE_WEBHOOK_SECRET?.trim() : undefined;
-            return { secret, ...(s.trigger.signature ? { signature: s.trigger.signature } : {}), ...(stripeSecret ? { stripeSecret } : {}) };
+            return { secret, ...(signingSecret ? { signingSecret } : {}), ...(s.trigger.signature ? { signature: s.trigger.signature } : {}), ...(stripeSecret ? { stripeSecret } : {}) };
           },
         })
       : undefined;
@@ -355,8 +360,8 @@ export class Sentinels {
       ...(triggerChanged ? { lastScheduledAt: this.now() } : {}),
       updatedAt: this.now(),
     };
-    // Another trigger watches from now: what the old one saw doesn't apply.
-    if (triggerChanged) this.forgetCursor(next.id);
+    // Another trigger (or another project's GitHub, Stripe, board) watches from now: what the old one saw doesn't apply.
+    if (triggerChanged || projectId !== was.projectId) this.forgetCursor(next.id);
     this.replace(next);
     return next;
   }
@@ -384,6 +389,9 @@ export class Sentinels {
     this.asks = asks;
     const { [s.id]: _secret, ...secrets } = this.secrets;
     this.secrets = secrets;
+    const { [s.id]: _signing, ...signing } = this.signingSecrets;
+    this.signingSecrets = signing;
+    this.extra.delete(s.id);
     const { [s.id]: _trouble, ...troubles } = this.troubles;
     this.troubles = troubles;
     this.forgetCursor(s.id);
@@ -400,18 +408,21 @@ export class Sentinels {
     if (s.trigger.kind !== 'webhook') throw new Error(`“${s.name}” doesn’t start from a webhook`);
     if (!this.triggers) return { why: 'Webhooks need the Beluga app for Mac' };
     const secret = this.ensureSecret(s);
+    const signing = this.signingSecrets[s.id];
+    const signingSecret = signing ? { signingSecret: signing } : {};
     const base = this.triggers.webhooks.base();
     const url = base ? `${base}/hook/${s.id}/${secret}` : undefined;
-    if (s.paused) return { ...(url ? { url } : {}), why: 'It’s paused: posts to its URL are refused until you turn it on' };
-    if (!url) return { why: this.webhook.why ?? 'The tunnel is opening: its URL is here in a moment' };
-    return { url };
+    if (s.paused) return { ...(url ? { url } : {}), why: 'It’s paused: posts to its URL are refused until you turn it on', ...signingSecret };
+    if (!url) return { why: this.webhook.why ?? 'The tunnel is opening: its URL is here in a moment', ...signingSecret };
+    return { url, ...signingSecret };
   }
 
-  /** A new secret for a webhook sentinel: the old URL stops working at once. → its new address. */
+  /** New secrets for a webhook sentinel (the URL's and GitHub's signing one): the old URL stops working at once. → its new address. */
   rotateSecret(ref: string): WebhookAddress {
     const s = this.need(ref);
     if (s.trigger.kind !== 'webhook') throw new Error(`“${s.name}” doesn’t start from a webhook`);
     this.secrets = { ...this.secrets, [s.id]: newSecret() };
+    this.signingSecrets = { ...this.signingSecrets, [s.id]: newSecret() };
     this.save();
     return this.webhookUrl(s.id);
   }
@@ -422,11 +433,16 @@ export class Sentinels {
     if (!s || s.paused || this.closed) return;
     let chain: string[] | undefined;
     if (e.from) {
-      chain = [...(this.chains.get(e.from.runId) ?? []), e.from.sentinelId];
+      // The run that made it keeps its chain after it ended (a merge, a task done later).
+      const runId = e.from.runId;
+      const made = [...this.active.values()].find((a) => a.run.id === runId)?.run ?? this.runs.find((r) => r.id === runId) ?? [...this.queued.values()].find((q) => q.id === runId);
+      chain = [...(made?.chain ?? []), e.from.sentinelId];
       if (chain.includes(s.id) || chain.length >= MAX_CHAIN) return;
     }
+    // The payload is kept, and handed on, at most 64 KB.
+    const payload = capPayload(e.payload);
     try {
-      this.start(s.id, 'event', { kind: s.trigger.kind, summary: e.summary, ...(e.payload !== undefined ? { payload: e.payload } : {}) }, chain);
+      this.start(s.id, 'event', { kind: s.trigger.kind, summary: e.summary, ...(payload !== undefined ? { payload } : {}) }, chain);
     } catch {
       // Deleted or paused meanwhile.
     }
@@ -446,12 +462,18 @@ export class Sentinels {
     this.cursors = rest;
   }
 
-  /** A webhook sentinel has its secret from the start (a copy or a new one gets its own). */
+  /**
+   * A webhook sentinel has its secrets from the start (a copy or a new one gets its own): the URL's,
+   * and the one GitHub signs with. One made before they were apart signs with its URL's secret (what
+   * was pasted into GitHub keeps working) until Rotate Secret.
+   */
   private ensureSecret(s: Sentinel): string {
     const had = this.secrets[s.id];
-    if (had || s.trigger.kind !== 'webhook') return had ?? '';
-    const secret = newSecret();
+    if (s.trigger.kind !== 'webhook') return had ?? '';
+    if (had && this.signingSecrets[s.id]) return had;
+    const secret = had ?? newSecret();
     this.secrets = { ...this.secrets, [s.id]: secret };
+    this.signingSecrets = { ...this.signingSecrets, [s.id]: had ?? newSecret() };
     this.save();
     return secret;
   }
@@ -494,16 +516,17 @@ export class Sentinels {
     }
     if (this.active.has(s.id)) {
       const waiting = this.queued.get(s.id);
-      if (waiting) return waiting;
-      const run = this.newRun(s, by, fired, 'queued');
-      if (chain) this.chains.set(run.id, chain);
+      if (waiting) {
+        if (by === 'event') this.oneMore(s, fired);
+        return waiting;
+      }
+      const run = this.newRun(s, by, fired, 'queued', chain);
       this.queued.set(s.id, { ...toSummary(run), ...(fired.payload !== undefined ? { payload: fired.payload } : {}) });
       this.record(run);
       return toSummary(run);
     }
-    const run = this.newRun(s, by, fired, 'running');
-    // Known before its steps start: a step that runs another sentinel at once sees the chain.
-    if (chain) this.chains.set(run.id, chain);
+    // The chain is on the run from the start: a step that runs another sentinel at once sees it.
+    const run = this.newRun(s, by, fired, 'running', chain);
     return toSummary(this.launch(s, run));
   }
 
@@ -747,8 +770,27 @@ export class Sentinels {
 
   // ------------------------------------------------------------------ inside
 
-  private newRun(s: Sentinel, by: RunBy, trigger: RunTrigger, state: Run['state']): Run {
-    return { id: short('run', 8), sentinelId: s.id, by, trigger, state, startedAt: this.now(), headline: state === 'queued' ? 'Waiting for the run before it' : '', steps: s.steps.map((st) => ({ id: st.id, state: 'waiting' })), tasks: [] };
+  private newRun(s: Sentinel, by: RunBy, trigger: RunTrigger, state: Run['state'], chain?: readonly string[]): Run {
+    return { id: short('run', 8), sentinelId: s.id, by, trigger, state, startedAt: this.now(), headline: state === 'queued' ? 'Waiting for the run before it' : '', steps: s.steps.map((st) => ({ id: st.id, state: 'waiting' })), tasks: [], ...(chain?.length ? { chain } : {}) };
+  }
+
+  /**
+   * An event while it runs and another run waits already: it isn't run, but the history says so,
+   * one line for them all until the run ends ("2 more events while it ran").
+   */
+  private oneMore(s: Sentinel, trigger: RunTrigger): void {
+    const was = this.extra.get(s.id);
+    const n = (was?.n ?? 0) + 1;
+    const headline = `Skipped: ${n} more ${n === 1 ? 'event' : 'events'} while it ran`;
+    const prev = was && this.runs.find((r) => r.id === was.runId);
+    const { payload: _p, ...summary } = trigger;
+    if (prev) this.recordSummary({ ...prev, trigger: summary, headline, endedAt: this.now() });
+    else {
+      const note = this.note(s, 'event', summary, 'it was running, and another run waited already', headline);
+      this.extra.set(s.id, { runId: note.id, n });
+      return;
+    }
+    this.extra.set(s.id, { runId: prev.id, n });
   }
 
   /** A run that didn't run (over its runs per day, a missed slot skipped): a line in the history. */
@@ -788,7 +830,7 @@ export class Sentinels {
     if (next.failures !== s.failures || pausing) this.replace(next);
     this.tell(next, run, pausing);
     this.follow(next, run);
-    this.chains.delete(run.id);
+    this.extra.delete(sid);
     this.prune();
     const waiting = this.active.has(sid) ? undefined : this.queued.get(sid);
     if (waiting) {
@@ -832,8 +874,8 @@ export class Sentinels {
   }
 
   /** Start `target` from another sentinel's run (after, Run another sentinel), never in a loop. */
-  private chained(target: Sentinel, from: Pick<Run, 'id'>, by: Sentinel, trigger: RunTrigger): RunSummary {
-    const chain = [...(this.chains.get(from.id) ?? []), by.id];
+  private chained(target: Sentinel, from: Pick<Run, 'id' | 'chain'>, by: Sentinel, trigger: RunTrigger): RunSummary {
+    const chain = [...(from.chain ?? []), by.id];
     if (chain.includes(target.id)) throw new Error(`“${target.name}” led to this run: starting it again would run them in a loop`);
     if (chain.length >= MAX_CHAIN) throw new Error(`${MAX_CHAIN} sentinels ran each other in a row: “${target.name}” doesn’t start`);
     return this.start(target.id, `after:${from.id}`, trigger, chain);
@@ -1012,7 +1054,7 @@ export class Sentinels {
   }
 
   private save(): void {
-    this.file.save(() => ({ runAtOnce: this.runAtOnce, items: this.items, runs: this.runs, cursors: this.cursors, secrets: this.secrets }));
+    this.file.save(() => ({ runAtOnce: this.runAtOnce, items: this.items, runs: this.runs, cursors: this.cursors, secrets: this.secrets, signingSecrets: this.signingSecrets }));
   }
 
   private projectIdOf(ref: string | undefined): string | undefined {

@@ -452,7 +452,7 @@ export const GITHUB_MINUTES: readonly number[] = [1, 2, 5, 15, 30, 60];
 export const UPTIME_MINUTES: ReadonlyArray<UptimeTrigger['minutes']> = [1, 5, 15];
 export const SIGNATURES: ReadonlyArray<{ readonly value: 'none' | NonNullable<WebhookTrigger['signature']>; readonly label: string; readonly description: string }> = [
   { value: 'none', label: 'None', description: 'The secret in the URL is the check' },
-  { value: 'github', label: 'GitHub', description: 'X-Hub-Signature-256, with this sentinel’s secret' },
+  { value: 'github', label: 'GitHub', description: 'X-Hub-Signature-256, with this sentinel’s signing secret (Copy Secret)' },
   { value: 'stripe', label: 'Stripe', description: 'Stripe-Signature, with STRIPE_WEBHOOK_SECRET from Settings › Environment' },
 ];
 
@@ -491,7 +491,7 @@ export function eventSentence(t: Trigger, where: { readonly project?: string; re
         : 'Say which Sentry organization and project, as in the address of its issues page (sentry.io/organizations/<org>/projects/<project>).';
     case 'webhook':
       return t.signature === 'github'
-        ? 'Point GitHub’s webhook at this URL with this secret as its Secret; it’s live while this sentinel is on. Each post starts a run with what was posted.'
+        ? 'Point GitHub’s webhook at this URL with Copy Secret’s secret as its Secret; it’s live while this sentinel is on. Each post starts a run with what was posted.'
         : t.signature === 'stripe'
           ? 'Point a Stripe webhook endpoint at this URL and keep its signing secret (whsec_…) in Settings › Environment as STRIPE_WEBHOOK_SECRET; it’s live while this sentinel is on.'
           : 'Point GitHub’s webhook (or anything that posts) at this URL; it’s live while this sentinel is on. Each post starts a run with what was posted.';
@@ -500,8 +500,17 @@ export function eventSentence(t: Trigger, where: { readonly project?: string; re
   }
 }
 
-/** The webhook's secret, from its URL (the last part of the path), to paste into GitHub's Secret field. */
-export const secretOfUrl = (url: string | undefined): string | undefined => url?.match(/\/hook\/[^/]+\/([0-9a-f]{64})$/)?.[1];
+/** A whole http(s) address (a host, a port, a path: http://localhost:3000/health is one). */
+export function looksLikeUrl(v: string): boolean {
+  const text = v.trim();
+  if (!text || /\s/.test(text)) return false;
+  try {
+    const u = new URL(text);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && Boolean(u.hostname);
+  } catch {
+    return false;
+  }
+}
 
 /** The address the tunnel changes: quick tunnels get a new name when Beluga restarts. */
 export const WEBHOOK_MOVES = 'The address changes when Beluga restarts (Cloudflare quick tunnels get a new name): Copy it again then.';
