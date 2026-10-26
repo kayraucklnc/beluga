@@ -24,7 +24,7 @@ export interface MentionRef {
 /** What mentions can name here. */
 export interface MentionWorld {
   readonly friends: ReadonlyArray<{ readonly name: string; readonly peerId: string }>;
-  /** People in this room, for "@claude:bob". */
+  /** People in this room, for "@claude:bob" (friends count too). */
   readonly peers: ReadonlyArray<{ readonly name: string; readonly peerId: string }>;
   readonly projects: ReadonlyArray<{ readonly name: string; readonly id: string }>;
   /** Worktrees and chats ("@add-auth"), as the main chat offers them. */
@@ -59,9 +59,11 @@ function pathRef(token: string, world: MentionWorld): MentionRef | undefined {
 export function resolveMention(token: string, world: MentionWorld): MentionRef | undefined {
   const t = lower(token);
   if (t === 'claude' || t === 'claudes') return { kind: 'claude', label: token };
-  const room = /^claude:(.+)$/i.exec(token);
-  if (room) {
-    const peer = world.peers.find((p) => lower(p.name) === lower(room[1]!));
+  // "@claude:ata": Ata's Claude, someone in the room or a friend (plain "@ata" is Ata, the person).
+  const theirs = /^claude:(.+)$/i.exec(token);
+  if (theirs) {
+    const who = lower(theirs[1]!);
+    const peer = world.peers.find((p) => lower(p.name) === who) ?? world.friends.find((f) => lower(friendMention(f.name).slice(1)) === who);
     return peer ? { kind: 'claude', label: `${peer.name}’s Claude`, id: peer.peerId } : undefined;
   }
   const friend = world.friends.find((f) => lower(friendMention(f.name).slice(1)) === t);

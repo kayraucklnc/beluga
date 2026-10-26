@@ -320,9 +320,13 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   (or Mac) ran it gets a notification when it's done, pointing at the chat. A card makes no message
   notification of its own (the request itself asks you). The phone draws it as a small card
   (`ChatMessageView.task`).
-- **Tagging a friend**: `@mia` anywhere in a message to your Claude (the message box offers your
-  friends by name as you type `@`) means mia: your Claude asks her Claude with `ask_person`, takes a
-  file with `get_file`, or runs one command with `run_on`. Every request carries a `summary` (at most
+- **Mentioning a friend, or their Claude**: two different things. `@claude:mia` is mia's Claude: your Claude
+  asks it with `ask_person`, takes a file with `get_file`, or runs one command with `run_on`. `@mia` is mia,
+  the person: said to your Claude in a worktree or Your Mac, Beluga sends mia a direct message ("kay mentioned
+  you in fix-auth (bob-api): …", `src/core/person-mentions.ts`) and your Claude only asks mia's Claude if the
+  work itself needs their Mac, access or answer (it may decide to on its own, under the usual check). In a
+  DM or channel `@mia` is the person and `@claude:mia` calls mia's Claude, as before. The message box offers
+  each friend twice as you type `@` (the person, then their Claude). Every request carries a `summary` (at most
   140 characters, "take a screenshot of your desktop") that their pop-up, notification and menu bar
   show; the full ask is behind See more.
 - **Asking**: `ask_person` / `run_on` for someone you don't trust (Trusted / Full) first put an

@@ -7,6 +7,8 @@ import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { Body, type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
+import { networkOf } from './network.js';
+import { mentionNote, personMentions } from './person-mentions.js';
 import { type ShareService, parseShareSpec } from './shares.js';
 import { existsSync } from 'node:fs';
 import { type Attention, type Location, type MyShare, type Prefs, type Store, peerName } from './store.js';
@@ -333,11 +335,19 @@ export class Session {
     const parsed = parseInput(raw, this.selfId, state.peers);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
-      const prompt = parsed.kind === 'agent' ? parsed.prompt : parsed.text;
-      if (!id) return this.askOwnClaude(prompt, channel, urgent) !== undefined;
+      // A leading "@claude" is just you talking to your Claude; "@claude:ata" stays in the words, so your
+      // Claude knows to ask Ata's Claude (the room's own parse only knows people in the room).
+      const onlyYours = parsed.kind === 'agent' && parsed.unknown.length === 0 && parsed.targets.every((t) => t === this.selfId);
+      const prompt = parsed.kind === 'agent' && onlyYours ? parsed.prompt : parsed.text;
+      if (!id) {
+        const sent = this.askOwnClaude(prompt, channel, urgent) !== undefined;
+        if (sent) this.tellMentioned(prompt, channel);
+        return sent;
+      }
       if (this.sentById.has(id)) return true;
       const requestId = this.askOwnClaude(prompt, channel, urgent);
       if (requestId === undefined) return false;
+      this.tellMentioned(prompt, channel);
       this.sentById.set(id, requestId);
       if (this.sentById.size > 200) this.sentById.delete(this.sentById.keys().next().value!);
       return true;
@@ -368,6 +378,33 @@ export class Session {
         if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No Claude is online', 'warn');
         return true;
     }
+  }
+
+  /**
+   * "@ata" in what you said to your Claude is Ata, the person: Ata gets it as a direct message saying
+   * where you mentioned them. "@claude:ata" (Ata's Claude) is your Claude's to ask, not a mention.
+   */
+  private tellMentioned(text: string, channel: string): void {
+    const state = this.store.getState();
+    const people = personMentions(text, state.network.friends);
+    if (!people.length) return;
+    let mesh: ReturnType<typeof networkOf>;
+    try {
+      mesh = networkOf(this);
+    } catch {
+      return;
+    }
+    const ws = channel.startsWith('ws:') ? state.projects.flatMap((p) => p.workspaces.map((w) => ({ w, p }))).find(({ w }) => w.id === channel.slice(3)) : undefined;
+    const where = ws ? `${ws.w.name} (${ws.p.name})` : 'a conversation with their Claude';
+    const me = state.self?.name ?? state.network.self?.name ?? 'A friend';
+    for (const f of people) {
+      try {
+        mesh.sendDm(f.peerId, mentionNote(me, where, text));
+      } catch {
+        continue;
+      }
+    }
+    this.store.dispatch({ type: 'system', text: `Told ${people.map((f) => f.name).join(', ')} you mentioned them (a direct message).`, level: 'info', channel });
   }
 
   system(text: string, level: 'info' | 'warn' | 'error' = 'info'): void {

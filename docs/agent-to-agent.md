@@ -37,6 +37,9 @@ Rooms fold into this: an old room link opens as a friend request.
 3. **A folder** (shared files): this is a separate thing that lives under Files, never mixed with
    projects.
 
+**@ata is Ata; @claude:ata is Ata's Claude.** Mentioning a friend tells them; naming their Claude asks it.
+Your Claude may still decide to ask a friend's Claude when the work needs it (with the usual check).
+
 **Every conversation can act.** In a DM, a channel or a worktree, your Claude has its full tools
 when *you* ask it. A request's approval card appears in that conversation, on both sides. Its
 result is posted there too, so everyone involved sees it.
