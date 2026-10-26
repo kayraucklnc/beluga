@@ -432,6 +432,12 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `issues.fix` | ✓ Fix It (an issue's page and menus; after an investigation also the task's page and the strip above its conversation): your Claude fixes it, in the investigation's worktree when there is one, and opens a pull request with your PR instructions and "Fixes #n" · asks first when a teammate is on it, as Investigate does |
 | `issues.toTask` | ✓ Make a Task in an issue's composer (Claude writes the title, goal and criteria; ☐ Look at the code first: Claude reads the code first, read-only, and adds where it is and the likely cause); also in its ⋯ and right-click menu (Make a Task, Make a Task After a Quick Look) |
 | `issues.comment` | ✓ an issue's ⋯ › Post the Findings on GitHub… (after an investigation; asks first, shows what goes) |
+| `ci.runs` | ✓ Actions (Work in the sidebar › Actions, Go › Actions, ⌘K › Go to Actions): a project's latest workflow runs, running ones first, through gh; Workflow and branch filters; refreshed every few seconds while one runs · a project's home lists the latest five, live |
+| `ci.run` | ✓ a run's page: its workflow as a graph with each job coloured by how it's going, every job and its steps with their times, live while it runs |
+| `ci.workflows` | ✓ Actions › Workflows: each workflow file drawn as a graph (what starts it, its jobs, what needs what), from the project's folder first; Show the YAML |
+| `ci.log` | ✓ a failed job on a run's page › Show the Log (its end, where it failed) |
+| `ci.rerun` | ✓ a run's page › Re-run Failed Jobs, and ⋯ › Re-run All Jobs; a run's right-click menu |
+| `ci.cancel` | ✓ a running run's page › Cancel Run (asks first); a running run's right-click menu |
 | `team.answer` | ✓ the offer strip on a project's home and at the top of its Tasks (Team Up; ••• › Not Now, or Take Back while you wait for them); the phone's card (Team Up / Not Now) |
 | `team.ackAssignment` | ✓ Got It on the strip a task a teammate gave you shows on its page; the phone's card (Got It) |
 | `team.sharePlan` | ✓ a plan's ••• › Share Plan with Team / Stop Sharing with Team (only in a project worked on as a team) |

@@ -1,0 +1,449 @@
+/*
+ * Actions: the Issues screens' calm greys. Color only says how a run is going (soft tints of the
+ * theme's own: green passed, red failed, amber running, grey otherwise); a running one has a slowly
+ * turning ring, never a glow.
+ */
+
+/* ---------- Tones ---------- */
+
+.tone_running {
+  --tone: var(--warn);
+}
+.tone_queued,
+.tone_cancelled,
+.tone_skipped {
+  --tone: var(--text-3);
+}
+.tone_waiting {
+  --tone: var(--warn);
+}
+.tone_passed {
+  --tone: var(--ok);
+}
+.tone_failed {
+  --tone: var(--error);
+}
+
+/* ---------- A run's mark ---------- */
+
+.mark {
+  --mark: 16px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--mark);
+  height: var(--mark);
+  border-radius: 50%;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+}
+.tone_queued.mark,
+.tone_skipped.mark {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.2px color-mix(in srgb, var(--tone) 55%, transparent);
+}
+.ring {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1.6px solid color-mix(in srgb, var(--tone) 28%, transparent);
+  border-top-color: var(--tone);
+  animation: spin 1.1s linear infinite;
+}
+.spinning svg {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .spinning svg {
+    animation: none;
+  }
+}
+
+/* ---------- The list ---------- */
+
+.list {
+  padding: 4px 0 24px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  padding: 7px 12px 7px 18px;
+  border-bottom: 1px solid var(--hairline);
+  cursor: default;
+  outline: none;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.row:focus-visible {
+  background: var(--bg-selected);
+}
+.rowCompact {
+  min-height: 44px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 0;
+}
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rowTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.rowSub {
+  display: flex;
+  gap: 0;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rowSub > * + *::before {
+  content: '·';
+  padding: 0 5px;
+}
+.rowFlow {
+  font-weight: 550;
+  color: var(--text-2);
+}
+.rowBranch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.took {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 52px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.tookLive {
+  color: color-mix(in srgb, var(--warn) 70%, var(--text-2));
+}
+.when {
+  flex: none;
+  width: 68px;
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.rowMore {
+  flex: none;
+  opacity: 0;
+}
+.row:hover .rowMore,
+.row:focus-within .rowMore,
+.rowMore:has([data-state='open']) {
+  opacity: 1;
+}
+
+/* ---------- The bar ---------- */
+
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-2);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+.filter:hover {
+  background: var(--bg-hover);
+}
+.liveTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 550;
+  color: color-mix(in srgb, var(--warn) 70%, var(--text-2));
+}
+.liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: breathe 1.8s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .liveDot {
+    animation: none;
+  }
+}
+
+/* ---------- Workflows ---------- */
+
+.flows {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 18px 32px;
+}
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.flowHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.flowName {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.flowPath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.badge {
+  flex: none;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 550;
+  line-height: 18px;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-3) 14%, transparent);
+}
+.flowLast {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 320px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-2);
+  background: transparent;
+}
+.flowLast:hover {
+  background: var(--bg-hover);
+}
+.flowLastTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flowLast .when {
+  width: auto;
+}
+.yaml {
+  max-height: 520px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius-l);
+  font-size: 12px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+.graphNote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.graphWait {
+  height: 160px;
+  border-radius: var(--radius-l);
+  background: var(--bg-sunken);
+}
+
+/* ---------- A run's page ---------- */
+
+.pageTitle {
+  max-width: var(--prose);
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--text);
+}
+.byline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.statePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px 0 5px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 550;
+  color: color-mix(in srgb, var(--tone) 75%, var(--text));
+  background: color-mix(in srgb, var(--tone) 11%, transparent);
+}
+.statePill .mark {
+  background: transparent;
+}
+.runGraph {
+  margin-bottom: 18px;
+}
+.jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.job {
+  border-radius: var(--radius-l);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+}
+.jobHead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 12px 6px 10px;
+  border: 0;
+  border-radius: var(--radius-l);
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+}
+.jobHead:hover {
+  background: var(--bg-hover);
+}
+.jobChevron {
+  flex: none;
+  color: var(--text-3);
+}
+.jobName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 550;
+}
+.jobRunner {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.jobBody {
+  padding: 0 12px 10px 30px;
+}
+.steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 26px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.step_skipped,
+.step_queued {
+  color: var(--text-3);
+}
+.step_failed .stepName {
+  font-weight: 550;
+  color: color-mix(in srgb, var(--error) 70%, var(--text));
+}
+.step_running .stepName {
+  color: var(--text);
+}
+.stepNo {
+  flex: none;
+  width: 16px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.stepName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jobFoot {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.log {
+  flex: 1 1 100%;
+  max-height: 360px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+.propHint {
+  color: var(--text-3);
+}

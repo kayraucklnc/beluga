@@ -11,6 +11,7 @@ import { CLAUDE_CODE_API } from './claude-code-api.js';
 import { STEPS_API } from './steps-api.js';
 import { GATEWAY_API } from './gateway-api.js';
 import { BOARD_API } from './board-api.js';
+import { CI_API } from './ci-api.js';
 import { PLANS_API } from './plans-api.js';
 import { ISSUES_API } from './issues-api.js';
 import { TEAM_API } from './team-api.js';
@@ -347,6 +348,8 @@ export const API = {
   ...PLANS_API,
   // ---- a project's GitHub issues, and handing one to Claude (issues-api.ts)
   ...ISSUES_API,
+  // ---- a project's GitHub Actions: its runs, a run's jobs and steps, its workflows (ci-api.ts)
+  ...CI_API,
   // ---- team boards: friends on the same GitHub repository keep one board (team-api.ts)
   ...TEAM_API,
   // ---- git: keeping main current, GitHub, history (git-api.ts)

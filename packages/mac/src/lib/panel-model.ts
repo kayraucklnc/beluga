@@ -119,7 +119,7 @@ function tabsOfView(view: View, wsKind?: WsKind): PanelTab[] {
  * The right panel shows beside this view: not on a plan's page (its right side is its chat), nor
  * on the Tasks board, a task's page or the plans: nothing in it is about them, so they get the whole window.
  */
-export const panelFits = (view: View): boolean => view.kind !== 'plan' && view.kind !== 'plans' && view.kind !== 'tasks' && view.kind !== 'task' && view.kind !== 'gh_issue';
+export const panelFits = (view: View): boolean => view.kind !== 'plan' && view.kind !== 'plans' && view.kind !== 'tasks' && view.kind !== 'task' && view.kind !== 'gh_issue' && view.kind !== 'gh_run';
 
 /** Where a view's last tab is remembered: per workspace, one for everything else. */
 export const panelKey = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : 'app');

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PullRequest } from "@beluga/core/work-store.js";
 import { describePr } from "@beluga/shared/format.js";
 import { isPlanOwned } from "@beluga/core/plans/owner.js";
@@ -37,6 +37,9 @@ import { MentionHighlighter } from "../chat/MentionHighlighter.js";
 import { HomeHistory } from "./history/HomeHistory.js";
 import { EarningsSection } from "./project/EarningsSection.js";
 import { GitHubRow } from "./project/GitHubRow.js";
+import { RunRow } from "../ci/parts.js";
+import { useCiActions, useNow, useRuns } from "../ci/use-ci.js";
+import { isLive, sortRuns } from "@beluga/core/ci/model.js";
 import { IssueRow } from "../issues/parts.js";
 import { useIssueActions, useIssueList } from "../issues/use-issues.js";
 import { MainSyncBar } from "./project/MainSyncBar.js";
@@ -584,6 +587,7 @@ function Lists({ model }: { model: HomeModel }) {
         </Section>
       ) : null}
       <HomeIssues projectId={project.id} />
+      <HomeActions projectId={project.id} />
       <HomeHistory projectId={project.id} />
       {archived.length ? (
         <Section
@@ -636,6 +640,41 @@ function HomeIssues({ projectId }: { projectId: string }) {
       {list.issues.slice(0, HOME_ISSUES).map((issue) => (
         <div key={issue.number} role="listitem">
           <IssueRow projectId={projectId} repo={list.repo} issue={issue} compact />
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+/** How many workflow runs Project Home lists before "Show All". */
+const HOME_RUNS = 5;
+
+/**
+ * The project's latest GitHub Actions runs, running ones first, kept current while they run (a
+ * turning ring and a growing time), each opening its page to watch. Nothing when it isn't on
+ * GitHub, gh isn't set up, or nothing has run.
+ */
+function HomeActions({ projectId }: { projectId: string }) {
+  const { list } = useRuns(projectId);
+  const { openList } = useCiActions();
+  const runs = useMemo(() => (list?.kind === "github" ? sortRuns(list.runs) : []), [list]);
+  const running = runs.filter(isLive).length;
+  const now = useNow(running > 0);
+  if (!runs.length) return null;
+  return (
+    <Section
+      title="Actions"
+      count={running || runs.length}
+      hint={running ? `${running} running · live` : "The latest workflow runs, from GitHub"}
+      action={
+        <Button size="small" variant="quiet" onClick={() => openList(projectId)}>
+          Show All Runs
+        </Button>
+      }
+    >
+      {runs.slice(0, HOME_RUNS).map((run) => (
+        <div key={run.id} role="listitem">
+          <RunRow projectId={projectId} run={run} now={now} compact />
         </div>
       ))}
     </Section>

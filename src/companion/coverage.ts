@@ -344,6 +344,13 @@ export const PHONE: Record<Method, Side> = {
   'issues.fix': 'mac',
   'issues.toTask': 'mac',
   'issues.comment': 'mac',
+  // A project's GitHub Actions: the Mac's Actions and run pages (the phone has no GitHub screens yet).
+  'ci.runs': 'mac',
+  'ci.run': 'mac',
+  'ci.workflows': 'mac',
+  'ci.log': 'mac',
+  'ci.rerun': 'mac',
+  'ci.cancel': 'mac',
   // Team boards: answering an offer is the phone's (a NeedsYou card); leaving a team is the Mac's.
   'team.answer': 'phone',
   'team.leave': 'mac',

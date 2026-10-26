@@ -21,6 +21,7 @@ import { GATEWAY_HANDLERS } from './gateway-handlers.js';
 import { BOARD_HANDLERS } from './board-handlers.js';
 import { PLANS_HANDLERS } from './plans-handlers.js';
 import { ISSUES_HANDLERS } from './issues-handlers.js';
+import { CI_HANDLERS } from './ci-handlers.js';
 import { TEAM_HANDLERS } from './team-handlers.js';
 import { GIT_HANDLERS } from './git-handlers.js';
 import { VIEWS_HANDLERS } from './views-handlers.js';
@@ -306,6 +307,7 @@ export const HANDLERS = {
   ...BOARD_HANDLERS,
   ...PLANS_HANDLERS,
   ...ISSUES_HANDLERS,
+  ...CI_HANDLERS,
   ...TEAM_HANDLERS,
   ...GIT_HANDLERS,
   ...VIEWS_HANDLERS,

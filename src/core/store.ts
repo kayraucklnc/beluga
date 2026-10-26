@@ -313,6 +313,9 @@ export type View =
   /** GitHub issues (Mac app): one project's issues (the one you were last in when unset), and one issue's page. */
   | { readonly kind: 'issues'; readonly projectId?: string }
   | { readonly kind: 'gh_issue'; readonly projectId: string; readonly number: number }
+  /** GitHub Actions (Mac app): one project's workflow runs, or its workflows drawn as graphs; and one run's page (its jobs and steps, live). */
+  | { readonly kind: 'actions'; readonly projectId?: string; readonly page?: 'workflows' }
+  | { readonly kind: 'gh_run'; readonly projectId: string; readonly runId: number }
   /** Plans (Mac app): one project's plans, and one plan's page (its graph, outline and conversation). */
   | { readonly kind: 'plans'; readonly projectId?: string }
   | { readonly kind: 'plan'; readonly id: string; readonly task?: string }

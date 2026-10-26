@@ -166,6 +166,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item(app, "go-tasks", "Tasks", Some("Alt+2"))?,
             // A project's GitHub issues (no ⌥ key: the places keep theirs).
             &item(app, "go-issues", "Issues", None)?,
+            // Its GitHub Actions: runs as they go, workflows as graphs.
+            &item(app, "go-actions", "Actions", None)?,
             &item(app, "go-room", "Chat", Some("Alt+3"))?,
             &item(app, "go-search", "Search", Some("Alt+4"))?,
             &item(app, "go-usage", "Usage", Some("Alt+5"))?,
