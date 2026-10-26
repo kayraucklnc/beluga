@@ -50,6 +50,7 @@ export const PhoneCalls = {
   'attachments.read': entry('attachments.read', z.object({ mime: z.string(), size: z.number(), data: z.string() })),
   'network.status': entry('network.status', done),
   'network.friends.list': entry('network.friends.list', done),
+  'network.friends.answerOffer': entry('network.friends.answerOffer', done),
   'network.dm.send': entry('network.dm.send', done),
   'network.dm.history': entry('network.dm.history', done),
   'network.groups.list': entry('network.groups.list', done),

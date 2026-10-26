@@ -1528,3 +1528,9 @@
   flex: none;
   color: var(--claude);
 }
+/* "Not friends yet": people in your room, under your friends (BLG-202). */
+.subhead {
+  padding: 8px 12px 2px 16px;
+  font-size: 11px;
+  color: var(--text-3);
+}

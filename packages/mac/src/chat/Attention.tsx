@@ -8,6 +8,9 @@ import { Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { brandText } from '../lib/brand.js';
+import { sameDeep } from '../lib/stable.js';
+import { hostToBefriend } from '../network/net-model.js';
+import { befriend } from '../network/use-net.js';
 import { Markdown } from './Markdown.js';
 import { useNow } from './Items.js';
 import s from './attention.module.css';
@@ -24,6 +27,7 @@ export function Attention() {
       <Approvals />
       <Question />
       {inRoom ? <Knock /> : null}
+      {inRoom ? <BefriendHost /> : null}
       {inRoom ? <TrustPrompt /> : null}
     </div>
   );
@@ -202,6 +206,48 @@ function Knock() {
         <Button onClick={() => actions.run({ type: 'knock', peerId: knock.peerId, pick: 'watch' })}>Let in to watch</Button>
         <Button variant="quiet" onClick={() => actions.run({ type: 'knock', peerId: knock.peerId, pick: 'decline' })}>
           Not now
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Hosts you said Not Now to ("Add kay as a friend?"), remembered on this Mac. */
+const BEFRIEND_KEY = 'beluga.befriend.notNow';
+const notNow = (): Set<string> => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(BEFRIEND_KEY) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+};
+
+/**
+ * You joined someone's room with an old room link: rooms fold into friends (BLG-202), so their
+ * host is offered as a friend, once. The room itself works as before.
+ */
+function BefriendHost() {
+  const { client } = useBeluga();
+  const [dismissed, setDismissed] = useState(notNow);
+  const host = useApp((st) => hostToBefriend({ peers: st.peers, selfId: st.self?.peerId, friends: st.network.friends, ...(st.network.offers ? { offers: st.network.offers } : {}), dismissed }), sameDeep);
+  if (!host) return null;
+  const later = (): void => {
+    const next = new Set([...dismissed, host.peerId]);
+    localStorage.setItem(BEFRIEND_KEY, JSON.stringify([...next].slice(-200)));
+    setDismissed(next);
+  };
+  return (
+    <div className={s.card} role="group" aria-label={`Add ${host.name} as a friend`}>
+      <div className={s.head}>
+        <Icon name="person" size={13} />
+        <span className={s.title}>Add {host.name} as a friend?</span>
+      </div>
+      <div className={s.actions}>
+        <Button variant="primary" onClick={() => void befriend(client, host.peerId, host.name)}>
+          Add as Friend
+        </Button>
+        <Button variant="quiet" onClick={later}>
+          Not Now
         </Button>
       </div>
     </div>

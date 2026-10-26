@@ -209,6 +209,9 @@ export const PHONE: Record<Method, Side> = {
   'network.friends.accept': 'mac',
   'network.friends.cancelInvite': 'mac',
   'network.friends.remove': 'mac',
+  // Asking someone in your room is the Mac's (the sidebar's Not friends yet); answering a request is a NeedsYou item, on the phone too.
+  'network.friends.addFromRoom': 'mac',
+  'network.friends.answerOffer': 'phone',
   'network.dm.send': 'phone',
   'network.dm.history': 'phone',
   'network.groups.list': 'phone',

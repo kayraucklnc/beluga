@@ -160,6 +160,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
       decide: (record, profile) => {
         if (profile.card.peerId === this.peerId) return { ok: false, reason: "That's your own invitation" };
         if (record.kind === 'group') return this.groups.decideJoin(record, profile);
+        if (record.for && record.for !== profile.card.peerId) return { ok: false, reason: 'That invitation was for someone else' };
         this.friends.add(profile.card, profile.name);
         this.contactsChanged();
         return { ok: true, kind: 'friend' };
@@ -218,9 +219,12 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   // ---- friends
 
-  /** A one-time invitation to be friends: a link (a day, or `ttlMs`) and a code (an hour, or less). */
-  async createInvite(opts: { ttlMs?: number; codeTtlMs?: number } = {}): Promise<InvitationView> {
-    const record = newInvitation('friend', { ...(opts.ttlMs ? { ttlMs: opts.ttlMs } : {}), ...(opts.codeTtlMs ? { codeTtlMs: opts.codeTtlMs } : {}) });
+  /**
+   * A one-time invitation to be friends: a link (a day, or `ttlMs`) and a code (an hour, or less).
+   * `for`: only that person may use it; anyone else who got hold of it is refused.
+   */
+  async createInvite(opts: { ttlMs?: number; codeTtlMs?: number; for?: string } = {}): Promise<InvitationView> {
+    const record = newInvitation('friend', { ...(opts.ttlMs ? { ttlMs: opts.ttlMs } : {}), ...(opts.codeTtlMs ? { codeTtlMs: opts.codeTtlMs } : {}), ...(opts.for ? { for: opts.for } : {}) });
     await this.openInvitation(record);
     this.emit('change');
     return invitationView(record);
@@ -230,12 +234,16 @@ export class Mesh extends EventEmitter<MeshEvents> {
     await this.pairing.stop(id);
   }
 
-  /** Use a friend or group invitation (a beluga:// or klaud:// link, or a code). */
-  async accept(text: string): Promise<Accepted> {
+  /**
+   * Use a friend or group invitation (a beluga:// or klaud:// link, or a code). `from`: whose it must
+   * be (a friend request sent in a room); anyone else on the other end isn't added.
+   */
+  async accept(text: string, opts: { from?: string } = {}): Promise<Accepted> {
     const ticket = parseTicket(text);
     if (!ticket) throw new Error('That isn’t a Beluga invitation: paste the beluga:// link or type the code (like K7QM-4XPA-R2TD)');
     const result = await pairWith(this.node, this.keys.keyPair, this.profile, ticket, this.timing.pairTimeoutMs);
     if (result.profile.card.peerId === this.peerId) throw new Error("That's your own invitation");
+    if (opts.from && (result.kind !== 'friend' || result.profile.card.peerId !== opts.from)) throw new Error('That invitation came from someone else');
     if (result.kind === 'friend') {
       this.friends.add(result.profile.card, result.profile.name);
       this.contactsChanged();

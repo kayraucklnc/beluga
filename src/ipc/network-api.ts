@@ -31,6 +31,10 @@ export const NETWORK_API = {
   'network.friends.accept': { args: z.tuple([invitation]) },
   'network.friends.cancelInvite': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/)]) },
   'network.friends.remove': { args: z.tuple([peerId]) },
+  // Ask someone in your room to be friends: a one-time invitation only they may use, sent to them over the room: → { name }.
+  'network.friends.addFromRoom': { args: z.tuple([peerId]) },
+  // Answer a friend request someone in your room sent you (true: accept it, pairing your Macs): → who you're now friends with.
+  'network.friends.answerOffer': { args: z.tuple([peerId, z.boolean()]) },
   'network.dm.send': { args: z.tuple([peerId, text]) },
   'network.dm.history': { args: z.tuple([peerId, page.optional()]) },
   'network.groups.list': { args: z.tuple([]) },

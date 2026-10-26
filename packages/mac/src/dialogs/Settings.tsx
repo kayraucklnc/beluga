@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { type ReactNode, useState } from 'react';
 import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
-import { EFFORTS, TRUST_LEVELS, type TrustLevel } from '@beluga/shared/settings-schema.js';
+import { EFFORTS } from '@beluga/shared/settings-schema.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
@@ -21,6 +21,7 @@ import s from './settings.module.css';
 import { TerminalSettings } from './TerminalSettings.js';
 import { FireSettings } from './FireSettings.js';
 import { NetworkSettings } from '../network/NetworkSettings.js';
+import { befriend, openFriendCard } from '../network/use-net.js';
 import { PhoneSettings } from '../phone/Phone.js';
 import { AccessSettings } from '../gateway/AccessSettings.js';
 import { UpdateAboutRow, UpdateSettingsGroup } from './UpdateSettings.js';
@@ -282,6 +283,7 @@ function Workspaces() {
 
 function People() {
   const api = useApi();
+  const { client, ui } = useBeluga();
   const state = useApp((st) => st);
   const others = state.peers.filter((p) => p.peerId !== state.selfId);
   const remembered = Object.entries(state.remembered).filter(([id]) => !others.some((p) => p.peerId === id));
@@ -289,14 +291,32 @@ function People() {
     <>
       <NetworkSettings />
       <AccessSettings />
+      {/* Trust is shown here and set on each friend's card (BLG-202). */}
       <Group title="In the room">
         {others.length ? (
-          others.map((p) => (
-            <Row key={p.peerId} label={p.name} detail={TRUST_INFO[trustOf(state, p.peerId)].detail}>
-              <Avatar name={p.name} id={p.peerId} size={20} />
-              <Select<TrustLevel> label={`Trust ${p.name}`} value={trustOf(state, p.peerId)} onChange={(v) => void api.people.setTrust(p.peerId, v)} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_INFO[l].label, description: TRUST_INFO[l].detail }))} />
-            </Row>
-          ))
+          others.map((p) => {
+            const friend = state.network.friends.some((f) => f.peerId === p.peerId);
+            return (
+              <Row key={p.peerId} label={p.name} detail={`${TRUST_INFO[trustOf(state, p.peerId)].label}. ${friend ? 'Change it on their card.' : 'Add them as a friend to set it.'}`}>
+                <Avatar name={p.name} id={p.peerId} size={20} />
+                {friend ? (
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      ui.patch({ settings: undefined });
+                      openFriendCard(client, p.peerId);
+                    }}
+                  >
+                    Their Card…
+                  </Button>
+                ) : p.guest || state.guests[p.peerId] ? null : (
+                  <Button variant="quiet" onClick={() => void befriend(client, p.peerId, p.name)}>
+                    Add as Friend
+                  </Button>
+                )}
+              </Row>
+            );
+          })
         ) : (
           <div className={s.note}>Nobody else is here yet.</div>
         )}

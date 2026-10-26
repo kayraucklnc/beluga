@@ -1,5 +1,5 @@
 import { shortVersion } from '../../../../src/net/mesh/features.js';
-import type { FriendView, GroupView, InvitationView, MemberView, MessageView, NetworkState, PersonView, Presence, PresenceState } from '../../../../src/net/mesh/views.js';
+import type { FriendOfferView, FriendView, GroupView, InvitationView, MemberView, MessageView, NetworkState, PersonView, Presence, PresenceState } from '../../../../src/net/mesh/views.js';
 
 /**
  * What the Mac app's friends, groups and status screens say and decide, as plain functions
@@ -147,9 +147,62 @@ export function timeLeft(until: number, now = Date.now()): string {
   return label === 'Expired' ? 'no longer' : label.replace(/^Expires in /, '');
 }
 
-/** The friend invitation still worth showing (the newest unexpired one), if any. */
+/** The friend invitation still worth showing (the newest unexpired one), if any. One made for someone in your room isn't yours to hand out. */
 export function openFriendInvitation(invitations: readonly InvitationView[], now = Date.now()): InvitationView | undefined {
-  return [...invitations].filter((i) => i.kind === 'friend' && i.expiresAt > now && i.uses === 0).sort((a, b) => b.expiresAt - a.expiresAt)[0];
+  return [...invitations].filter((i) => i.kind === 'friend' && !i.for && i.expiresAt > now && i.uses === 0).sort((a, b) => b.expiresAt - a.expiresAt)[0];
+}
+
+// ---- one people list (BLG-202): your room folds into Friends
+
+/** Someone in your room, as the people list needs them. */
+export interface RoomPerson {
+  readonly peerId: string;
+  readonly name: string;
+  readonly agent?: boolean;
+  readonly guest?: boolean;
+  readonly host?: boolean;
+}
+
+/** What a friend's row says about them when they're in your room too: their Claude is on, you follow their screen. */
+export interface RoomBits {
+  readonly here: boolean;
+  readonly claude: boolean;
+  readonly following: boolean;
+  /** Their index in the room's people (their room card and menu). */
+  readonly index: number;
+}
+
+export function roomBits(peers: readonly RoomPerson[], peerId: string, follow: string | undefined): RoomBits | undefined {
+  const index = peers.findIndex((p) => p.peerId === peerId && !p.guest);
+  if (index < 0) return undefined;
+  return { here: true, claude: peers[index]!.agent === true, following: follow === peerId, index };
+}
+
+/** People in your room who aren't friends yet (not you, and never guests: they came with a project link), by name. */
+export function notFriendsYet(peers: readonly RoomPerson[], opts: { readonly selfId: string | undefined; readonly friends: readonly Pick<FriendView, 'peerId'>[]; readonly guests?: Readonly<Record<string, unknown>> }): Array<RoomPerson & { index: number }> {
+  return peers
+    .map((p, index) => ({ ...p, index }))
+    .filter((p) => p.peerId !== opts.selfId && !p.guest && !opts.guests?.[p.peerId] && !opts.friends.some((f) => f.peerId === p.peerId))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.peerId.localeCompare(b.peerId));
+}
+
+/** Friend requests someone in your room sent you, oldest first. */
+export const incomingOffers = (offers: readonly FriendOfferView[] | undefined): FriendOfferView[] => (offers ?? []).filter((o) => o.dir === 'in').sort((a, b) => a.at - b.at);
+
+/** Whether you already asked this person (and they haven't answered yet). */
+export const offerSent = (offers: readonly FriendOfferView[] | undefined, peerId: string, now = Date.now()): boolean => (offers ?? []).some((o) => o.dir === 'out' && o.peerId === peerId && o.expiresAt > now);
+
+/**
+ * After you join someone's room with an old room link: the host to offer as a friend ("Add kay as a
+ * friend?"), unless they're one already, you asked them, they asked you, or you said not now.
+ */
+export function hostToBefriend(opts: { readonly peers: readonly RoomPerson[]; readonly selfId: string | undefined; readonly friends: readonly Pick<FriendView, 'peerId'>[]; readonly offers?: readonly FriendOfferView[]; readonly dismissed: ReadonlySet<string> }): RoomPerson | undefined {
+  const me = opts.peers.find((p) => p.peerId === opts.selfId);
+  if (!me || me.host || me.guest) return undefined;
+  const host = opts.peers.find((p) => p.host && p.peerId !== opts.selfId);
+  if (!host || opts.dismissed.has(host.peerId) || opts.friends.some((f) => f.peerId === host.peerId)) return undefined;
+  if ((opts.offers ?? []).some((o) => o.peerId === host.peerId)) return undefined;
+  return host;
 }
 
 /** A group's open invitation, if an admin made one. */

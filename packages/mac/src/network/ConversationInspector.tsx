@@ -32,21 +32,26 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** What this friend's Claude may do here: your trust in them, and your rules for their requests. */
+/**
+ * What this friend may do here: your trust in them (the one place it's set, BLG-202; the room's
+ * menus, Settings and requests only say it and link here), and your rules for their requests.
+ */
 function FriendAccess({ peerId, name }: { peerId: string; name: string }) {
   const api = useApi();
   const { client } = useBeluga();
   const gateway = useApp((st) => st.gateway.enabled);
   const level = useApp((st): TrustLevel => st.levels[peerId] ?? st.remembered[peerId]?.trust ?? (st.policy === 'deny' ? 'blocked' : st.policy === 'auto' ? 'trusted' : 'ask'));
-  if (!gateway) return null;
   const set = (v: TrustLevel): void =>
     void api.people.setTrust(peerId, v).catch((err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't change it: ${err instanceof Error ? err.message : String(err)}`, level: 'error' }));
   return (
-    <Panel title="Their requests">
+    <Panel title="Trust">
       <Field label="Trust">
-        <Select<TrustLevel> label={`Trust ${name}`} value={level} onChange={set} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_INFO[l].label }))} />
+        <Select<TrustLevel> label={`Trust ${name}`} value={level} onChange={set} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_INFO[l].label, description: TRUST_INFO[l].detail }))} />
       </Field>
-      <PersonRules peerId={peerId} compact />
+      <div className={s.fieldLabel} style={{ padding: '0 0 6px', whiteSpace: 'normal' }}>
+        {TRUST_INFO[level].detail}
+      </div>
+      {gateway ? <PersonRules peerId={peerId} compact /> : null}
     </Panel>
   );
 }

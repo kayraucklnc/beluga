@@ -1019,6 +1019,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'net_files':
     case 'net_live':
     case 'net_main':
+    case 'net_offer':
+    case 'net_offer_gone':
     case 'net_off':
       return { ...state, ...reduceNetwork(state, action) };
     case 'support':

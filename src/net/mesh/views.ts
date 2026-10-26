@@ -132,6 +132,21 @@ export interface InvitationView {
   readonly codeExpiresAt: number;
   /** The code as a link: beluga://add?code=K7QM-4XPA-R2TD (same lifetime as the code). */
   readonly codeLink: string;
+  /** Made for one person (a friend request sent in a room): only they can use it. */
+  readonly for?: string;
+}
+
+/**
+ * A friend request between two people in the same room (BLG-202): one they sent you (`in`,
+ * Accept makes you friends), or one you sent them (`out`, waiting for them). The invitation
+ * link itself stays in the daemon.
+ */
+export interface FriendOfferView {
+  readonly peerId: string;
+  readonly name: string;
+  readonly dir: 'in' | 'out';
+  readonly at: number;
+  readonly expiresAt: number;
 }
 
 /** A group you asked to join and that hasn't let you in yet. */
@@ -189,6 +204,8 @@ export interface NetworkState extends NetworkSummary {
   readonly live?: Readonly<Record<string, readonly LiveClaude[]>>;
   /** Your main channel (a group with all your friends), once it exists. */
   readonly main?: string;
+  /** Friend requests with people in your room, both ways (BLG-202). */
+  readonly offers?: readonly FriendOfferView[];
 }
 
 export const dmConversation = (peerId: string): string => `dm:${peerId}`;

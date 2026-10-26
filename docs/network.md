@@ -127,6 +127,24 @@ system's idle time) when you chose Online, and Online again when you're back. Ne
 through the shared Notifier (the `mentions` kind), silently on Do Not Disturb or while you appear
 offline.
 
+## Friends from your room (BLG-202)
+
+There is one people list: Friends. Someone in your room who is also a friend is just their friend row,
+with the room's bits on it (Claude on, following their screen). Someone in your room who isn't a friend
+shows under **Not friends yet** with one action, Add as Friend; guests (project-link visitors) aren't listed.
+
+Add as Friend (`network.friends.addFromRoom`, `src/core/friend-offers.ts`) makes a one-time friend
+invitation only that person may use (`for`: anyone else who got hold of it is refused) and sends it to
+them as a directed room message (`friend_offer`, a guarded kind: fresh and only once). Their Beluga
+keeps the link in the daemon, never in the shared state, and shows "kay wants to add you as a friend"
+in Friends and as a NeedsYou item on the phone, with a notification. Accept
+(`network.friends.answerOffer`) uses the invitation and checks it really came from the person who sent it.
+Macs from before this drop the message. After joining a room with an old room link, the room chat offers
+its host: "Add kay as a friend?".
+
+Trust is a property of a friend, set in one place: their card (the conversation's Info › Trust). The
+room's menus, Settings › People and a request's sheet say it and link there.
+
 ## Multiple rooms
 
 One person can be in several rooms at once. Each room is its own Beluga: its own core, room client

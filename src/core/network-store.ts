@@ -1,4 +1,4 @@
-import type { ChatFileState, LiveClaude, MessageView, NetworkState, NetworkSummary } from '../net/mesh/views.js';
+import type { ChatFileState, FriendOfferView, LiveClaude, MessageView, NetworkState, NetworkSummary } from '../net/mesh/views.js';
 
 /**
  * The Beluga network in the shared state: friends with their status, groups with members,
@@ -30,8 +30,14 @@ export type NetworkAction =
   | { type: 'net_live'; conversation: string; live: LiveClaude; state: 'thinking' | 'idle' }
   /** Your main channel is this group. */
   | { type: 'net_main'; groupId: string | undefined }
+  /** A friend request with someone in your room came or went out (`gone`: it's answered or withdrawn). */
+  | { type: 'net_offer'; offer: FriendOfferView }
+  | { type: 'net_offer_gone'; peerId: string; dir: 'in' | 'out' }
   /** The network stopped. */
   | { type: 'net_off' };
+
+/** Friend requests kept at once (both ways). */
+export const MAX_OFFERS = 40;
 
 /** A Claude that said nothing for this long isn't shown as answering any more. */
 export const LIVE_TTL_MS = 3 * 60_000;
@@ -57,7 +63,19 @@ export function reduceNetwork(state: NetworkSlice, action: NetworkAction): Netwo
   switch (action.type) {
     case 'net_summary': {
       const { files, live, main } = state.network;
-      return { network: { ...action.summary, messages: state.network.messages, ...(files ? { files } : {}), ...(live ? { live } : {}), ...(main ? { main } : {}) } };
+      // A friend request is over once you're friends (either side may have used it).
+      const offers = state.network.offers?.filter((o) => !action.summary.friends.some((f) => f.peerId === o.peerId));
+      return { network: { ...action.summary, messages: state.network.messages, ...(files ? { files } : {}), ...(live ? { live } : {}), ...(main ? { main } : {}), ...(offers?.length ? { offers } : {}) } };
+    }
+    case 'net_offer': {
+      const o = action.offer;
+      const rest = (state.network.offers ?? []).filter((x) => !(x.peerId === o.peerId && x.dir === o.dir));
+      return { network: { ...state.network, offers: [...rest, o].slice(-MAX_OFFERS) } };
+    }
+    case 'net_offer_gone': {
+      const { offers: was, ...rest } = state.network;
+      const offers = (was ?? []).filter((x) => !(x.peerId === action.peerId && x.dir === action.dir));
+      return { network: offers.length ? { ...rest, offers } : rest };
     }
     case 'net_message': {
       const m = action.message;
@@ -84,8 +102,11 @@ export function reduceNetwork(state: NetworkSlice, action: NetworkAction): Netwo
     }
     case 'net_messages':
       return { network: { ...state.network, messages: { ...state.network.messages, ...Object.fromEntries(Object.entries(action.messages).map(([k, v]) => [k, v.slice(-KEEP_MESSAGES)])) } } };
-    case 'net_off':
-      return { network: NO_NETWORK };
+    case 'net_off': {
+      // Friend requests came through the room: they're still there when the network comes back on.
+      const offers = state.network.offers;
+      return { network: offers?.length ? { ...NO_NETWORK, offers } : NO_NETWORK };
+    }
     default:
       return state;
   }
