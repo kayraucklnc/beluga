@@ -110,10 +110,10 @@ export interface VoicePreset {
 }
 
 export const VOICE_PRESETS: readonly VoicePreset[] = [
-  { id: 'quick', label: 'Quick, on this phone', where: 'phone', model: 'whisper-base', sub: `Whisper Base · ${voiceSize(VOICE_MODELS['whisper-base'].files.phone!.bytes)} · clear speech` },
-  { id: 'best-phone', label: 'Best, on this phone', where: 'phone', model: 'whisper-turbo', sub: `Whisper Turbo · ${voiceSize(VOICE_MODELS['whisper-turbo'].files.phone!.bytes)} · most exact here` },
-  { id: 'mac', label: 'Best, on your Mac', where: 'mac', model: 'whisper-turbo', sub: 'Whisper Turbo on its GPU · no download here' },
-  { id: 'mac-fast', label: 'Fastest, on your Mac', where: 'mac', model: 'parakeet', sub: 'Parakeet · English + 24 European, no Turkish' },
+  { id: 'quick', label: 'Quick, on this phone', where: 'phone', model: 'whisper-base', sub: `Whisper Base · ${voiceSize(VOICE_MODELS['whisper-base'].files.phone!.bytes)}` },
+  { id: 'best-phone', label: 'Best, on this phone', where: 'phone', model: 'whisper-turbo', sub: `Whisper Turbo · ${voiceSize(VOICE_MODELS['whisper-turbo'].files.phone!.bytes)}` },
+  { id: 'mac', label: 'Best, on your Mac', where: 'mac', model: 'whisper-turbo', sub: 'Whisper Turbo' },
+  { id: 'mac-fast', label: 'Fastest, on your Mac', where: 'mac', model: 'parakeet', sub: 'Parakeet · no Turkish' },
 ];
 
 /** What Beluga knows when it suggests a preset. */

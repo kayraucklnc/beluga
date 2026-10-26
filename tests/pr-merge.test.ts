@@ -92,7 +92,7 @@ describe('parsePr: merge fields', () => {
 });
 
 /** A Workbench with one worktree whose PR lives in a stubbed GitHub: merging changes what gh pr view says next. */
-function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => PullRequest | Error) {
+function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => PullRequest | Error, unpushed = 0) {
   const store = new Store(initialState('t', 'ask'));
   const ws: Record<string, unknown> = { id: 'auth', name: 'auth', kind: 'worktree', branch: 'klaud/auth', path: '/code/auth', projectId: 'p1', status: { changed: 0, ahead: 2, behind: 0 } };
   const manager = { list: [{ id: 'p1', workspaces: [ws] }], find: (id: string) => (id === ws.id ? ws : undefined), setMergeWait: (_id: string, wait: unknown) => void (ws.mergeWhenReady = wait) };
@@ -115,6 +115,7 @@ function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => P
     hasGh: async () => true,
     findPr: async (_dir, branch) => (views.push(branch), github),
     remoteRef: () => undefined,
+    unpushedCommits: async () => unpushed,
     mergePr: async (dir, number, opts) => {
       merges.push({ dir, number, opts });
       const next = answer(opts);
@@ -212,6 +213,18 @@ describe('Workbench.mergePr', () => {
   it('says when it conflicts', async () => {
     const b = bench(pr(), () => new Error('X Pull request #42 is not mergeable: the merge commit cannot be cleanly created.'));
     expect(await b.wb.mergePr('auth', { method: 'rebase' })).toMatchObject({ ok: false, reason: 'conflicts' });
+  });
+
+  it('won’t merge while commits here aren’t on GitHub: they’d be left out of the merge', async () => {
+    for (const auto of [false, true]) {
+      const b = bench(pr(), () => pr({ state: 'MERGED' }), 5);
+      const out = await b.wb.mergePr('auth', { method: 'squash', ...(auto ? { auto } : {}) });
+      expect(out).toMatchObject({ ok: false, reason: 'unpushed', message: '5 commits in auth aren’t on GitHub yet: push klaud/auth first, or PR #42 merges without them' });
+      expect(b.merges).toEqual([]);
+      expect(b.ws.mergeWhenReady).toBeUndefined();
+      expect(b.toasts.at(-1)?.level).toBe('error');
+    }
+    expect(await bench(pr(), () => pr(), 1).wb.mergePr('auth', { method: 'merge' })).toMatchObject({ message: expect.stringMatching(/^1 commit in auth isn’t on GitHub yet: .* without it$/) });
   });
 
   it('does nothing without an open PR, or while one merge is under way', async () => {

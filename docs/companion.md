@@ -262,13 +262,15 @@ through `companion.files.*` and `companion.terminals` / `termOpen` / `termClose`
 - Also `phone` since 1.3: `board.move` and `board.start` (a task moved along, or started in a new
   worktree with Claude), and `session.submit` with `urgent` (Steer) next to `host.promote` and
   `host.cancelQueued` for the queue.
-- `companion.voice` / `voicePrepare(model)` / `transcribe {audio, model, language}` (1.16,
-  BLG-140): the Mac writes down what you said on the phone. The phone `put`s a 16 kHz mono WAV
-  (`audio/wav`, only that phone's ref); the Mac runs Whisper Turbo or Parakeet v3 on its GPU
-  (whisper.cpp through `@fugood/whisper.node`, `src/companion/voice.ts`), deletes the recording and
-  answers `{text, language?, ms}`. Models (`src/shared/voice-models.ts`) come once, into
-  `~/.beluga/voice`, the first time they're asked for; until one is here, `transcribe` starts it
-  and says how far it is, and the phone writes it down itself.
+- `companion.voice` / `voicePrepare(model)` / `transcribe {audio, model, language, prompt?}` (1.16,
+  BLG-140): the Mac writes down what you said on the phone, one phrase at a time (BLG-160: the phone
+  cuts the recording at your pauses, `src/shared/voice-phrases.ts`, and sends each as it's cut, with
+  the words before it as Whisper's `prompt`). The phone `put`s a 16 kHz mono WAV (`audio/wav`, only
+  that phone's ref); the Mac runs Whisper Turbo or Parakeet v3 on its GPU (whisper.cpp through
+  `@fugood/whisper.node`, `src/core/voice.ts`, one model loaded for the phone and the Mac app),
+  deletes the recording and answers `{text, language?, ms}`. Models (`src/shared/voice-models.ts`)
+  come once, into `~/.beluga/voice`, the first time they're asked for; until one is here,
+  `transcribe` starts it and says how far it is, and the phone writes it down itself.
 
 **Answering.** Every needs-you item carries its buttons as calls (`actions`), and, when it takes
 picks or words, an `answer` template: call `method` with `args` after putting the answer at
@@ -528,15 +530,22 @@ Advanced at the bottom. Learn it once and it works everywhere.
   opens to approve) and **Question** (a read-only chat in its main folder). **Plan first** beside
   Worktree is Claude Code's plan mode (it proposes before it acts), nothing to do with Advanced plans. Attach a photo
   or a file from the phone. The answer comes back into that conversation, with a notification if you
-  left. The **microphone** beside Send speaks instead of typing
-  (`lib/voice.ts`): tap, speak (up to two minutes), tap ■, and the words go into the field to read
-  over. Where and by which model is **Settings › Voice** (BLG-142): four presets (Quick or Best on
-  this phone: Whisper Base 57 MB, Whisper Turbo 547 MB; Best or Fastest on your Mac: Whisper Turbo,
-  Parakeet), the one Beluga suggests marked and chosen until you pick another (your Mac when it can;
-  Parakeet there only for English, since it has no Turkish; without the Mac, Turbo on a phone with
-  8 GB or more), the language, and under Choose it yourself your own where and model and the models
-  on the phone and the Mac. A phone model comes once, the first time it's needed. With the Mac away,
-  too old or still getting its model, the phone writes it down itself and says so. Not on the web.
+  left. The **microphone** beside Send (here and in a conversation's box)
+  speaks instead of typing (`lib/voice.ts`, `lib/voice-session.ts`): each pause of three seconds cuts
+  a phrase that's written down at once while you go on (a pause never stops the recording) (up to two minutes), so the words are ready when you stop.
+  **■** puts them in the field to edit; **↑** sends them as you said them once the last phrase is
+  written (the conversation opens with it). While it records, the stage takes the field's place (`components/Voice.tsx`), in the field's own type:
+  a liquid pastel blob (metaballs, `components/Metaballs.tsx`, drawn on the UI thread) that swells
+  and stretches with your voice and pinches a droplet off at each pause, the words arriving phrase
+  by phrase, a shimmering pill where one is still being written, a light tick at each pause. Where and by which model is
+  **Settings › Voice** (BLG-142): four presets (Quick or Best on this phone: Whisper Base 57 MB,
+  Whisper Turbo 547 MB; Best or Fastest on your Mac: Whisper Turbo, Parakeet), the one Beluga
+  suggests marked and chosen until you pick another (your Mac when it can; Parakeet there only for
+  English, since it has no Turkish; without the Mac, Turbo on a phone with 8 GB or more), the
+  language, and under Choose it yourself your own where and model and the models on the phone and
+  the Mac. A phone model comes once, the first time it's needed. With the Mac away, too old or still
+  getting its model, the phone writes the rest down itself and says so. The web build speaks
+  through the Mac only (the browser's microphone; the demo Mac answers with sample lines).
 - **Plans** (in Work and on Home when one runs): milestones as a vertical timeline (each says what it
   runs after), tasks as rows with their state and what they wait on (tap one for its goal and what
   done means), decisions as cards with their buttons (Approve or Discard a draft, pass a milestone's

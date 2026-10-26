@@ -103,7 +103,7 @@ export const calls = {
   /** 1.16 (BLG-140): the Mac's voice models, getting one there now, and a recording it writes down. */
   voice: (): Call => make('companion.voice', [], 'Voice on your Mac'),
   voicePrepare: (model: VoiceModelId): Call => make('companion.voicePrepare', [model], 'Get a voice model on your Mac'),
-  transcribe: (audio: string, model: VoiceModelId, language: string): Call => make('companion.transcribe', [{ audio, model, language }], 'Write down what you said'),
+  transcribe: (audio: string, model: VoiceModelId, language: string, prompt?: string): Call => make('companion.transcribe', [{ audio, model, language, ...(prompt ? { prompt } : {}) }], 'Write down what you said'),
   /** Write in a friends' chat (with photos, or asking Claude). */
   /** Ask a friend's Claude to do it on their Mac (their chat answer offered it): a request, as from their card. */
   request: (to: string, ask: string, needs?: readonly ('project' | 'shell' | 'files' | 'screen' | 'device')[]): Call => make('gateway.ask', [to, ask, needs?.length ? { needs: [...needs] } : undefined], `Ask "${short(ask)}"`),

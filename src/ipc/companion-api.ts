@@ -149,9 +149,9 @@ export const COMPANION_API = {
   'companion.gone': { args: z.tuple([z.array(z.string().regex(/^conv:[\w:.-]{1,200}$/)).max(500)]) },
   // 1.16 (BLG-140): the Mac writes down what you said on the phone. Its models, here or coming →
   // VoiceMacView; get one now (it comes in the background) → VoiceMacView; the words in a WAV the
-  // phone `put` (16 kHz mono; deleted once written down) → TranscriptView. A model that isn't here
+  // phone `put` (16 kHz mono; deleted once written down; `prompt`: the words before it, BLG-160) → TranscriptView. A model that isn't here
   // yet starts coming, and the call says how far it is.
   'companion.voice': { args: z.tuple([]) },
   'companion.voicePrepare': { args: z.tuple([VoiceModelId]) },
-  'companion.transcribe': { args: z.tuple([z.object({ audio: UploadRef, model: VoiceModelId, language: z.string().regex(/^(auto|[a-z]{2,3})$/) }).strict()]) },
+  'companion.transcribe': { args: z.tuple([z.object({ audio: UploadRef, model: VoiceModelId, language: z.string().regex(/^(auto|[a-z]{2,3})$/), prompt: z.string().max(400).optional() }).strict()]) },
 } as const;
