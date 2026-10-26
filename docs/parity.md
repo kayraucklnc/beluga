@@ -8,7 +8,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 
 | Command | Core | Mac |
 |---|---|---|
-| `/invite` | `session.submit` → `runCommand` | typed in the composer · Sidebar footer Invite · File › Invite… · ⌘K |
+| `/invite` | the Mac's message boxes route it themselves (`src/shared/invite-route.ts`, `lib/invite-command.ts`); elsewhere `session.submit` → `runCommand` | `/invite` alone: the Add a Friend sheet (link, code, QR) · `/invite @ata` adds ata to what's on screen: a channel (`network.groups.addMember`), a DM (offers “New channel with you, X and Y”, the New Channel sheet), a project or worktree (`sharing.shareWithFriend` once it exists, through `lib/share-with-friend.ts`; until then a friend in your room gets the worktree through the room, otherwise the room's share sheet opens with a note) · `/invite @` completes your friends' names, in the chat box and in a DM's or channel's box · Sidebar footer Invite · File › Invite… · ⌘K › Add a friend… (one entry for inviting and adding a friend) |
 | `/overview` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Overview · Go › Overview (⌥2) |
 | `/room` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Chat (⌥1) |
 | `/new` | `session.submit` → `runCommand` | typed in the composer · Sidebar project ⌥ button · File › New Worktree… (⌘⇧N) · ⌘K · empty Overview / chat › New Worktree |
@@ -127,7 +127,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `handoff` | sheet |
 | `remote_ws` | sheet |
 | `ws_more` | sheet |
-| `invite_link` | Invite People sheet: Invite to popup, They can (Watch / Prompt / Edit), link checkboxes, Copy Invite Link (Return, says Copied), how they join, people waiting, active links with Copy and Revoke |
+| `invite_link` | Invite People sheet (the room's own links: the room popover's Invite, the room panel, Hand Off's “invite someone”; `/invite` and File › Invite… add a friend instead): Invite to popup, They can (Watch / Prompt / Edit), link checkboxes, Copy Invite Link (Return, says Copied), how they join, people waiting, active links with Copy and Revoke |
 | `guest_add` | the guest's card: Add ▾ beside the projects they're in |
 
 ## API methods

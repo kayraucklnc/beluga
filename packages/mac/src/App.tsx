@@ -29,6 +29,7 @@ import { brandText } from './lib/brand.js';
 import { NativeSheets } from './dialogs/native/WorkSheets.js';
 import { JoinSheet } from './dialogs/JoinSheet.js';
 import { NetworkSheets } from './network/NetworkSheets.js';
+import { openNet } from './network/net-sheets.js';
 import { MessageBanner } from './network/MessageBanner.js';
 import { RequestSheet } from './gateway/RequestSheet.js';
 import { useRequestNative } from './gateway/request-native.js';
@@ -95,6 +96,8 @@ function useOverlays() {
         return ui.patch({ settings: 'general' });
       case 'help':
         return ui.patch({ palette: true });
+      case 'add_friend':
+        return openNet({ kind: 'add_friend' });
     }
   }, [overlay]);
 }
@@ -181,13 +184,17 @@ function useShortcuts() {
     return () => window.removeEventListener('keydown', onKey);
   }, [prefs.inspector, prefs.sidebar]);
   useEffect(() => {
-    // The Invite sheet, set to the project you're looking at.
-    const invite = (): void => ui.openMenu({ kind: 'invite_link', ...inviteChoice(projectInView(client)) });
+    // Invite means add a friend (BLG-203): the Add a Friend sheet (link, code, QR).
+    const invite = (): void => openNet({ kind: 'add_friend' });
     document.addEventListener('beluga:invite', invite);
+    // The room's own Invite sheet (its links, set to the project you're looking at), from the room's menus.
+    const inviteRoom = (): void => ui.openMenu({ kind: 'invite_link', ...inviteChoice(projectInView(client)) });
+    document.addEventListener('beluga:invite-room', inviteRoom);
     const palette = (): void => ui.patch({ palette: true });
     document.addEventListener('beluga:palette', palette);
     return () => {
       document.removeEventListener('beluga:invite', invite);
+      document.removeEventListener('beluga:invite-room', inviteRoom);
       document.removeEventListener('beluga:palette', palette);
     };
   }, []);

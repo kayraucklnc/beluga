@@ -156,6 +156,13 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
       .filter((p) => p.peerId !== ctx.selfId && p.name.toLowerCase().startsWith(lower))
       .map((p) => ({ label: p.name, hint: p.agent ? 'has Claude on' : '', value: `/${cmd} ${p.name}`, enter: 'submit' as const }));
   }
+  // "/invite @ata": your friends by name, to add to the chat, project or worktree you're in (BLG-203).
+  if (cmd === 'invite') {
+    const typed = lower.replace(/^@/, '');
+    return (ctx.friends ?? [])
+      .filter((f) => friendMention(f.name).length > 1 && friendMention(f.name).slice(1).toLowerCase().startsWith(typed))
+      .map((f) => ({ label: friendMention(f.name), hint: `add ${f.name} here`, value: `/invite ${friendMention(f.name)}`, enter: 'submit' as const }));
+  }
   if (cmd === 'open' || cmd === 'e' || cmd === 'get') return openSuggestions(partial, ctx).map((s) => ({ ...s, value: s.value.replace(/^\/open /, `/${cmd} `) }));
   if (cmd === 'policy') {
     const opts = { ask: 'approve each request', auto: 'run without asking', deny: 'refuse all requests' } as const;

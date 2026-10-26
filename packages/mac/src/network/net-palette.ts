@@ -25,7 +25,7 @@ export function networkPaletteItems(state: AppState, client: SocketClient): { re
   }
   return {
     create: [
-      { id: 'net:add-friend', label: 'Add a friend…', hint: 'A code or a link, no server', icon: 'people', run: () => openNet({ kind: 'add_friend' }), keywords: ['invite', 'friend', 'code'] },
+      // Adding a friend is the palette's own Add a friend… (it's Invite too), not a second entry here.
       { id: 'net:new-group', label: 'New group…', hint: 'A conversation with several friends', icon: 'people', run: () => openNet({ kind: 'new_group' }), keywords: ['group'] },
       { id: 'net:status', label: 'Set your status…', hint: 'Online, Away, Do Not Disturb, Appear Offline', icon: 'person', run: () => openNet({ kind: 'status' }), keywords: ['away', 'dnd', 'do not disturb', 'offline', 'presence'] },
     ],

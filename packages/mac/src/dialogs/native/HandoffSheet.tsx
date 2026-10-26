@@ -33,7 +33,7 @@ export function HandoffSheet({ menu, close }: NativeMenuProps<'handoff'>) {
       width={540}
       footer={
         people.length ? undefined : (
-          <button type="button" className={f.linkButton} onClick={() => (close(), document.dispatchEvent(new CustomEvent('beluga:invite')))}>
+          <button type="button" className={f.linkButton} onClick={() => (close(), document.dispatchEvent(new CustomEvent('beluga:invite-room')))}>
             Invite Someone…
           </button>
         )

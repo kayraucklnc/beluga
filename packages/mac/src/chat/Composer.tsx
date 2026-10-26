@@ -32,6 +32,7 @@ import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
 import { isPlanHome, planForHome } from '@beluga/core/plans/model.js';
 import { MaxFire } from './MaxFire.js';
 import { effectsOn, fireVars } from './fire-look.js';
+import { handleInvite } from '../lib/invite-command.js';
 import s from './composer.module.css';
 import m from './max.module.css';
 import d from './draft.module.css';
@@ -245,6 +246,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
   };
   const deliver = (text: string, urgent: boolean): void => {
+    // /invite adds a friend, or adds friends to what's on screen (BLG-203): done here, where the view is known.
+    if (handleInvite(client, ui, text)) return;
     if (draftProject && !text.startsWith('/')) return createWorktree(draftProject, text);
     if (to && !text.startsWith('/')) {
       ui.patch({ to: undefined });

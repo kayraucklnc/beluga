@@ -222,7 +222,7 @@ export interface Toast {
   readonly level: 'info' | 'success' | 'warn' | 'error';
 }
 
-export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff';
+export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff' | 'add_friend';
 
 /** Preferences mirrored from ~/.beluga/settings.json (every key here is a settings key). */
 export interface Prefs {

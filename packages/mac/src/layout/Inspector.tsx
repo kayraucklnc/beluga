@@ -221,7 +221,7 @@ function Room() {
   const { ui } = useBeluga();
   const state = useApp((st) => st);
   const hosting = state.hosting;
-  const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite'));
+  const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite-room'));
   const inviteState = hosting?.phase === 'ready' || state.invite ? 'Ready to share' : hosting?.phase === 'local' ? 'Local network only' : hosting?.phase === 'failed' ? (hosting.detail ?? 'Couldn’t open remote access') : hosting ? 'Opening…' : 'Not open yet';
   return (
     <Panel

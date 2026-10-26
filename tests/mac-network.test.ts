@@ -207,9 +207,9 @@ describe('@ and / in a channel', () => {
   });
 
   it('lists the channel’s commands for / at the start', () => {
-    expect(channelSuggestions('/', { people }).map((s) => s.command)).toEqual(['claude', 'claudes', 'files']);
+    expect(channelSuggestions('/', { people }).map((s) => s.command ?? s.label)).toEqual(['claude', 'claudes', 'files', '/invite']);
     expect(channelSuggestions('/', { people, admin: true }).map((s) => s.command)).toContain('add-people');
-    expect(channelSuggestions('/', { people: [] }).map((s) => s.command)).toEqual(['claude', 'files']);
+    expect(channelSuggestions('/', { people: [] }).map((s) => s.command ?? s.label)).toEqual(['claude', 'files', '/invite']);
     expect(channelSuggestions('/f', { people }).map((s) => s.label)).toEqual(['/files']);
     expect(channelSuggestions('/files now', { people })).toEqual([]);
   });

@@ -4,7 +4,8 @@ import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { inApp } from '../lib/boot.js';
-import { useBeluga } from '../lib/beluga.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
+import { handleInvite } from '../lib/invite-command.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { quoted } from '../chat/message-menu.js';
@@ -88,7 +89,7 @@ function AskButton({ ask, setAsk, people, me }: { ask: Ask | undefined; setAsk: 
  * (or ⌘Return, as in Settings); a failed send puts everything back.
  */
 export function NetComposer({ id, placeholder, people, me, send, addPeople }: { id: string; placeholder: string; people: readonly Person[]; me?: Person; send: (out: Outgoing) => Promise<unknown>; addPeople?: () => void }) {
-  const { client } = useBeluga();
+  const { client, ui } = useBeluga();
   const prefs = usePrefs();
   const [text, setText] = useState(() => drafts.get(id) ?? '');
   const [ask, setAsk] = useState<Ask>();
@@ -96,7 +97,8 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople }: { 
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   // @ and / as you type: the Claudes and people here, and the channel's commands.
-  const items = useMemo(() => (text ? channelSuggestions(text, { people, admin: Boolean(addPeople) }) : []), [text, people, addPeople]);
+  const friends = useApp((st) => st.network.friends);
+  const items = useMemo(() => (text ? channelSuggestions(text, { people, admin: Boolean(addPeople), friends }) : []), [text, people, addPeople, friends]);
   const world = useMemo(() => channelWorld(me, people), [me, people]);
   const write = (next: string): void => {
     setText(next);
@@ -156,6 +158,8 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople }: { 
   const submit = (): void => {
     if (!canSend) return;
     const body = text.trim();
+    // /invite adds a friend, or adds the friends named to this conversation (BLG-203): never sent as a message.
+    if (handleInvite(client, ui, body)) return setText('');
     const files = takePending(id);
     // The button and the words' mentions ("@claude", "@claude:mia", "@claudes") together; the words stay as typed.
     const to = me ? mergeAsk(ask ? askTo(ask, me.peerId) : undefined, mentionedAsk(body, me.peerId, people)) : undefined;

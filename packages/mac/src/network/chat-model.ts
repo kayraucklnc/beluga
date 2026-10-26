@@ -50,10 +50,19 @@ const COMMANDS: ReadonlyArray<{ name: ChannelCommand; hint: string; when?: 'othe
  * What to list for the words in a channel's box: "/" at the start → the channel's commands;
  * "@…" → your Claude, each member's Claude, everyone's, then the people themselves.
  */
-export function channelSuggestions(text: string, ctx: { people: readonly Member[]; admin?: boolean }): ChannelSuggestion[] {
+export function channelSuggestions(text: string, ctx: { people: readonly Member[]; admin?: boolean; friends?: readonly Member[] }): ChannelSuggestion[] {
   if (/^\/[\w-]*$/.test(text)) {
     const typed = text.slice(1).toLowerCase();
-    return COMMANDS.filter((c) => c.name.startsWith(typed) && (c.when !== 'others' || ctx.people.length > 0) && (c.when !== 'admin' || ctx.admin)).map((c) => ({ label: `/${c.name}`, hint: c.hint, value: '', enter: 'complete', command: c.name }));
+    const commands: ChannelSuggestion[] = COMMANDS.filter((c) => c.name.startsWith(typed) && (c.when !== 'others' || ctx.people.length > 0) && (c.when !== 'admin' || ctx.admin)).map((c) => ({ label: `/${c.name}`, hint: c.hint, value: '', enter: 'complete', command: c.name }));
+    // /invite: a friend link on its own, or "/invite @ata" adds ata here (BLG-203). It's written out, then sent.
+    return 'invite'.startsWith(typed) ? [...commands, { label: '/invite', hint: 'Add a friend, or @name to add them here', value: '/invite @', enter: 'complete' }] : commands;
+  }
+  const inviting = /^\/invite\s+@?([\p{L}\p{N}_.-]*)$/iu.exec(text);
+  if (inviting) {
+    const t = (inviting[1] ?? '').toLowerCase();
+    return (ctx.friends ?? [])
+      .filter((f) => handle(f.name) && handle(f.name).toLowerCase().startsWith(t) && !ctx.people.some((p) => p.peerId === f.peerId))
+      .map((f) => ({ label: f.name, hint: `/invite @${handle(f.name)} · add ${f.name} here`, value: `/invite @${handle(f.name)}`, enter: 'complete' }));
   }
   const typed = typedMention(text);
   if (typed === undefined) return [];
