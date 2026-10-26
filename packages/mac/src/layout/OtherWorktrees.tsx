@@ -5,10 +5,8 @@ import { useApp, useUi } from '../lib/beluga.js';
 import { useOtherActivity } from '../views/worktree-info-state.js';
 import { orderOutside, outsideActivity, outsideOf, visibleOutside } from './outside-model.js';
 import { Row } from './sidebar-parts.js';
-import { WorkspaceRow } from './workspace-row.js';
-import { SubAgentRows } from './SubAgents.js';
+import { WorkspaceWithAgents } from './SubAgents.js';
 import { isAgentWorktree } from '../claude-code/subagents-model.js';
-import { Fragment } from 'react';
 import o from './other-worktrees.module.css';
 
 /**
@@ -37,10 +35,7 @@ export function OutsideWorktrees({ p, indent }: { p: Project; indent: number }) 
   return (
     <>
       {shown.map((w) => (
-        <Fragment key={w.id}>
-          <WorkspaceRow ws={w} indent={indent} />
-          <SubAgentRows ws={w} indent={indent + 1} />
-        </Fragment>
+        <WorkspaceWithAgents key={w.id} ws={w} indent={indent} />
       ))}
       {hidden.length ? (
         <Row

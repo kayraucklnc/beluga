@@ -25,4 +25,6 @@ export const CLAUDE_CODE_API = {
   'claudeCode.output': { args: z.tuple([sessionId, agentId, filePath]) },
   // The end of a background command's output (the session's, or one of its agents') → { text, size, file, mtime, truncated? }, or undefined.
   'claudeCode.taskOutput': { args: z.tuple([sessionId, agentId.optional(), agentId]) },
+  // The skills and custom commands Claude can use in a conversation (its folder's, yours, your plugins') → ClaudeSkill[].
+  'claudeCode.skills': { args: z.tuple([z.string().min(1).max(200)]) },
 } as const;

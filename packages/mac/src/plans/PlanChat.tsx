@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { queueIn } from "@beluga/ui/compose.js";
 import { activityOf } from "@beluga/ui/workspace-models.js";
 import { ChatLog } from "../chat/ChatLog.js";
 import { PaneLook } from "../chat/Items.js";
 import { QueueTray } from "../chat/QueueTray.js";
 import { MentionHighlighter } from "../chat/MentionHighlighter.js";
+import { MaxFire } from "../chat/MaxFire.js";
+import { effectsOn, fireVars } from "../chat/fire-look.js";
+import m from "../chat/max.module.css";
+import { usePrefs } from "../lib/prefs.js";
 import { useAttachments } from "../chat/use-attachments.js";
 import { Icon } from "../components/Icon.js";
 import { Empty, IconButton, Tip, Working, cx } from "../components/ui.js";
@@ -55,6 +59,12 @@ export function PlanChat({
     setTextState(next);
   };
   const box = useRef<HTMLTextAreaElement>(null);
+  // The box burns here as in every message box (Settings › Fire & Confetti).
+  const form = useRef<HTMLFormElement>(null);
+  const fire = usePrefs().maxFire;
+  const effort = useApp((st) => st.prefs.effort);
+  const effects = effectsOn(fire, effort);
+  const burning = effects && fire.show !== "off";
   const busy = useApp((st) => activityOf(st.log, channel).running);
   const selfName = useApp((st) => st.self?.name ?? "");
   // What waits for Claude here (picked as text, so streaming doesn't redraw this pane).
@@ -245,13 +255,21 @@ export function PlanChat({
         </div>
       ) : null}
       <form
-        className={cx(p.chatBox, att.dropping && s.dropping)}
+        ref={form}
+        className={cx(
+          p.chatBox,
+          burning ? (fire.border ? m.max : m.maxPlain) : effects && m.fxOnly,
+          att.dropping && s.dropping,
+        )}
+        style={effects ? (fireVars(fire) as CSSProperties) : undefined}
+        data-fire={burning ? fire.show : undefined}
         {...att.dropProps}
         onSubmit={(e) => {
           e.preventDefault();
           send();
         }}
       >
+        {effects ? <MaxFire box={form} input={box} /> : null}
         {att.images.length || att.files.length ? (
           <div className={p.chatWaiting}>{att.waiting}</div>
         ) : null}

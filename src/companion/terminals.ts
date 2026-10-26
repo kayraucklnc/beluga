@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 import type { DomainState } from '../core/store.js';
-import { globalShellId, globalShellNumber, isGlobalShell, runId, setupId, shellId, terminalLabel } from '../shared/terminal-keys.js';
+import { githubId, globalShellId, globalShellNumber, isGlobalShell, runId, setupId, shellId, terminalLabel } from '../shared/terminal-keys.js';
 import type { PtyProcess, TerminalManager } from '../terminal/pty-host.js';
 import { TERM_COALESCE_MS, TERM_PIECE, type MacFrame, type TerminalView } from './protocol.js';
 
@@ -38,9 +38,9 @@ const realOf = (p: string): string => {
   }
 };
 
-/** The terminal keys of a workspace: its shell, setup and run while they exist, and shells started in its folder. */
+/** The terminal keys of a workspace: its shell, setup, run and GitHub step while they exist, and shells started in its folder. */
 export function keysOf(state: DomainState, terminals: TerminalManager | undefined, ws: Ws): string[] {
-  const own = [shellId(ws.id), setupId(ws.id), runId(ws.id)].filter((k) => k in state.terminals);
+  const own = [shellId(ws.id), setupId(ws.id), runId(ws.id), githubId(ws.id)].filter((k) => k in state.terminals);
   const dir = realOf(ws.path);
   const extra = (terminals?.list() ?? [])
     .filter((p) => isGlobalShell(p.id) && p.id in state.terminals && realOf(p.cwd) === dir)
@@ -53,7 +53,7 @@ export function keysOf(state: DomainState, terminals: TerminalManager | undefine
 export function isWorkspaceTerminal(state: DomainState, terminals: TerminalManager | undefined, key: string): boolean {
   for (const ws of state.projects.flatMap((p) => p.workspaces)) {
     if (ws.archived || !ws.path) continue;
-    if (key === shellId(ws.id) || key === setupId(ws.id) || key === runId(ws.id)) return key in state.terminals;
+    if (key === shellId(ws.id) || key === setupId(ws.id) || key === runId(ws.id) || key === githubId(ws.id)) return key in state.terminals;
   }
   if (!isGlobalShell(key) || !(key in state.terminals)) return false;
   const pty = terminals?.get(key);

@@ -7,19 +7,21 @@ import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef } from 'react';
 import { useBeluga } from '../lib/beluga.js';
 import { getPrefs, usePrefs } from '../lib/prefs.js';
-import { terminalOptions } from '../lib/terminal-look.js';
+import { importedTheme, terminalOptions } from '../lib/terminal-look.js';
 import { openExternal } from '../lib/system.js';
 import s from '../views/terminal.module.css';
 
 const css = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const themeNow = () => ({ background: css('--term-bg') || css('--bg'), foreground: css('--text'), cursor: css('--accent') === 'AccentColor' ? css('--text') : css('--accent'), selectionBackground: 'rgba(120,140,190,0.35)' });
+/** Beluga's colours for the window's appearance, with the ones you brought from another terminal over them. */
+const themeNow = () => ({ background: css('--term-bg') || css('--bg'), foreground: css('--text'), cursor: css('--accent') === 'AccentColor' ? css('--text') : css('--accent'), selectionBackground: 'rgba(120,140,190,0.35)', ...importedTheme(getPrefs()) });
 
 /** One terminal program, drawn by xterm.js from its raw bytes (the program runs in Beluga). */
 export function Xterm({ termKey, start, focus = true }: { termKey: string; start: (size: { cols: number; rows: number }) => void; focus?: boolean }) {
   const { client } = useBeluga();
   const box = useRef<HTMLDivElement>(null);
   const live = useRef<{ term: Terminal; refit: () => void } | undefined>(undefined);
-  const look = terminalOptions(usePrefs());
+  const prefs = usePrefs();
+  const look = terminalOptions(prefs);
   // The program is started once per terminal: not again when it shows up in the state, when
   // it's closed (that empties the pane), or when React mounts twice in development.
   const startedFor = useRef<string | undefined>(undefined);
@@ -42,9 +44,10 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
     const term = new Terminal({
       ...terminalOptions(getPrefs()),
       allowProposedApi: true,
-      macOptionIsMeta: true,
       theme: themeNow(),
     });
+    // The padding around the text in the terminal's own background (an imported one, too).
+    el.style.background = themeNow().background;
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new Unicode11Addon());
@@ -74,6 +77,7 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
     // Follow the appearance (light/dark, accent) as it changes.
     const restyle = new MutationObserver(() => {
       term.options.theme = themeNow();
+      el.style.background = themeNow().background;
     });
     restyle.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style', 'class'] });
     if (focus) term.focus();
@@ -92,9 +96,10 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
   useEffect(() => {
     const t = live.current;
     if (!t) return;
-    t.term.options = look;
+    t.term.options = { ...look, theme: themeNow() };
+    if (box.current) box.current.style.background = themeNow().background;
     t.refit();
-  }, [look.fontFamily, look.fontSize, look.lineHeight, look.cursorStyle, look.cursorBlink, look.scrollback]);
+  }, [look.fontFamily, look.fontSize, look.lineHeight, look.cursorStyle, look.cursorBlink, look.scrollback, look.macOptionIsMeta, prefs.termTheme]);
   return <div ref={box} className={s.xterm} />;
 }
 

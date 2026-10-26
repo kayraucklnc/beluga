@@ -593,9 +593,18 @@ const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate
   const criteria = m.milestone.criteria;
   const label = gateLabel(m);
   const each = criterionState(m);
-  // Waiting for you: a soft ring that breathes out (with the live clock, lib/live-motion.ts).
+  // Waiting for you: a soft ring that breathes out; being checked: each criterion's mark turns
+  // (both with the live clock, lib/live-motion.ts).
   const gate = useRef<HTMLDivElement>(null);
-  useLive(gate, (t) => gate.current?.style.setProperty('--beckon', (1 - breath(t, 2400)).toFixed(3)), m.state === 'gate' && !data.folded);
+  const checking = each === 'checking';
+  useLive(
+    gate,
+    (t) => {
+      if (checking) gate.current?.style.setProperty('--check-turn', `${turn(t, 1100)}deg`);
+      else gate.current?.style.setProperty('--beckon', (1 - breath(t, 2400)).toFixed(3));
+    },
+    (m.state === 'gate' || checking) && !data.folded,
+  );
   const state = m.state === 'merging' ? 'passed' : m.state;
   return (
     <div

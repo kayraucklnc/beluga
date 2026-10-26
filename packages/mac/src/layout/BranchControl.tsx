@@ -8,6 +8,7 @@ import { Button, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi } from '../lib/beluga.js';
 import { MERGE_METHODS } from '../lib/pr-checks.js';
+import { showGitTrouble } from '../lib/git-trouble.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { useWsBusy, whileBusy } from '../lib/ws-busy.js';
 import s from './BranchControl.module.css';
@@ -43,7 +44,8 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
     setMethod(how);
     rememberMethod(how);
     // Workbench says how it went (a toast), and GitHub's new state shows here.
-    void whileBusy(wsId, () => api.workbench.mergePr(wsId, { method: how, ...(mode ? { [mode]: true } : {}) }));
+    // Couldn't reach GitHub (gh logged out, no network): the card says why and how to fix it.
+    void whileBusy(wsId, async () => showGitTrouble(wsId, await api.workbench.mergePr(wsId, { method: how, ...(mode ? { [mode]: true } : {}) }), 'none'));
   };
   const run = (step: BranchStep): void => {
     if (busy) return;
@@ -58,7 +60,7 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
         return void whileBusy(wsId, () => api.workbench.cancelMergeWhenReady(wsId));
       case 'update_branch':
       case 'mark_ready':
-        return void whileBusy(wsId, () => api.workbench.prStep(wsId, step.id === 'mark_ready' ? 'ready' : 'update_branch'));
+        return void whileBusy(wsId, async () => showGitTrouble(wsId, await api.workbench.prStep(wsId, step.id === 'mark_ready' ? 'ready' : 'update_branch'), 'none'));
       case 'resolve_pr':
       case 'fix_checks':
       case 'continue_after_merge':
@@ -68,8 +70,8 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
         return actions.run({ type: 'ws', id: wsId, action: 'pr' });
       case 'pr':
       case 'pr_draft':
-        // Straight to GitHub, no Claude in between (Workbench toasts how it went).
-        return void whileBusy(wsId, () => api.workbench.quickPr(wsId, step.id === 'pr_draft' ? { draft: true } : {}));
+        // Straight to GitHub, no Claude in between (Workbench toasts how it went; trouble reaching GitHub opens its card).
+        return void whileBusy(wsId, async () => showGitTrouble(wsId, await api.workbench.quickPr(wsId, step.id === 'pr_draft' ? { draft: true } : {}), step.id === 'pr_draft' ? 'pr_draft' : 'pr'));
       case 'pr_claude':
         return void api.workbench.createPr(wsId);
       default:

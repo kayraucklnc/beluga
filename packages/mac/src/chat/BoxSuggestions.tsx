@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { localDirKey } from '@beluga/core/local-key.js';
 import { workspaceMentions } from '@beluga/core/mentions.js';
 import { mentionDir, suggest, type Suggestion } from '@beluga/ui/suggest.js';
@@ -6,9 +6,8 @@ import { shareNameOf } from '@beluga/shared/share-names.js';
 import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp } from '../lib/beluga.js';
+import { MAX_LISTED, SuggestionBody, sectionOf } from './Suggestions.js';
 import s from './composer.module.css';
-
-const MAX_LISTED = 50;
 
 /**
  * The chat box's / and @ suggestions for another text box (the project home's New Worktree):
@@ -74,21 +73,26 @@ export function useBoxSuggestions({ text, setText, filesOf }: { text: string; se
   };
   const list = suggestions.length ? (
     <div ref={ref} className={s.suggestions} role="listbox" aria-label="Suggestions">
-      {suggestions.slice(0, MAX_LISTED).map((sug, i) => (
+      {suggestions.slice(0, MAX_LISTED).map((sug, i, all) => (
+        <Fragment key={`${sug.value}:${i}`}>
+        {sectionOf(sug, all[i - 1]) ? (
+          <div className={s.sugSection} role="presentation">
+            {sectionOf(sug, all[i - 1])}
+          </div>
+        ) : null}
         <div
-          key={`${sug.value}:${i}`}
           role="option"
           aria-selected={i === pick}
-          className={cx(s.suggestion, i === pick && s.suggestionOn)}
+          className={cx(s.suggestion, (sug.task || sug.kind) && s.sugTask, i === pick && s.suggestionOn)}
           onMouseEnter={() => {
             byKeys.current = false;
             setSelected(i);
           }}
           onMouseDown={(e) => (e.preventDefault(), accept(sug))}
         >
-          <span className={s.sugLabel}>{sug.label}</span>
-          <span className={s.sugHint}>{sug.hint}</span>
+          <SuggestionBody sug={sug} />
         </div>
+        </Fragment>
       ))}
     </div>
   ) : null;

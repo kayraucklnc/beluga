@@ -22,7 +22,7 @@ export interface TasksPrefs {
   readonly folded: readonly IssueStatus[];
 }
 
-export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'list', project: '', who: '', folded: ['canceled'] };
+export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'board', project: '', who: '', folded: ['canceled'] };
 
 export const SCOPES: ReadonlyArray<{ readonly value: Scope; readonly label: string; readonly hint: string }> = [
   { value: 'active', label: 'Active', hint: 'Ready, In Progress and In Review' },
@@ -44,6 +44,20 @@ export function readTasksPrefs(raw: string | null): TasksPrefs {
     };
   } catch {
     return DEFAULT_TASKS_PREFS;
+  }
+}
+
+/**
+ * Prefs saved before the board became the default (beluga.tasks.v1): kept, but for the display,
+ * which opens on the board once; a choice made after that is kept as usual.
+ */
+export function fromV1TasksPrefs(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const { display: _display, ...rest } = JSON.parse(raw) as Partial<TasksPrefs>;
+    return JSON.stringify(rest);
+  } catch {
+    return null;
   }
 }
 

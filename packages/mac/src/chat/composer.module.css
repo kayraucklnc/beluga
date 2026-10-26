@@ -181,6 +181,17 @@
   flex: none;
   font-weight: 500;
 }
+/* Each row's kind (a command, a skill, a person, a file…), in a soft tone. */
+.sugIcon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  justify-content: center;
+  color: var(--text-3);
+}
+.suggestionOn .sugIcon {
+  color: rgba(255, 255, 255, 0.85);
+}
 .sugHint {
   overflow: hidden;
   text-overflow: ellipsis;

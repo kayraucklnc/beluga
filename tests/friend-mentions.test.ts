@@ -8,8 +8,8 @@ const ctx = { peers: [], selfId: 'me', friends: [{ name: 'mia', online: true }, 
 
 describe('@friend in the message box', () => {
   it('offers friends by name, anywhere in the message, saying when they’re offline', () => {
-    expect(suggest('@m', ctx)).toEqual([{ label: '@mia', hint: "ask mia's Claude, on their Mac", value: '@mia ', enter: 'complete' }]);
-    expect(suggest('please ask @Bo', ctx)).toEqual([{ label: '@BobStone', hint: "ask Bob Stone's Claude, on their Mac (offline: it goes when they’re back)", value: 'please ask @BobStone ', enter: 'complete' }]);
+    expect(suggest('@m', ctx)).toEqual([{ label: '@mia', hint: "ask mia's Claude, on their Mac", value: '@mia ', enter: 'complete', kind: 'person' }]);
+    expect(suggest('please ask @Bo', ctx)).toEqual([{ label: '@BobStone', hint: "ask Bob Stone's Claude, on their Mac (offline: it goes when they’re back)", value: 'please ask @BobStone ', enter: 'complete', kind: 'person' }]);
     expect(suggest('@mia ', ctx)).toEqual([]);
   });
 

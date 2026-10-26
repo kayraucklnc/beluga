@@ -250,6 +250,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `voice.models` | Settings › Voice: the models on this Mac, here or coming |
 | `voice.prepare` | Settings › Voice › Get now |
 | `voice.transcribe` | The composer's microphone beside Send, and the talk shortcut (Settings › Voice) |
+| `terminalImport.detect` | Settings › Terminal › Import from… (Ghostty, iTerm2, Terminal, Alacritty, kitty, WezTerm, Warp), and the welcome's “Coming from another terminal?” step |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |
@@ -301,6 +302,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.setModel` | ✓ |
 | `workbench.createPr` | ✓ |
 | `workbench.quickPr` | ✓ the toolbar's Create PR (and Create Draft PR under its chevron), the Changes panel's Create PR |
+| `workbench.gitFix` | ✓ the GitHub trouble card that a failed Create PR, Merge or Update Branch opens (Push over HTTPS, Log In to GitHub, Install GitHub CLI, the SSH steps under •••) |
 | `workbench.fixChecks` | ✓ |
 | `workbench.resolvePrConflicts` | ✓ Resolve Merge Conflicts… (toolbar, PR sheet, the PR strip above the chat) when GitHub says the PR conflicts |
 | `workbench.continueAfterMerge` | ✓ Continue After Merge… (⋯, PR sheet, the PR strip) once the PR merged |
@@ -451,6 +453,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `claudeCode.outputs` | ✓ a sub-agent's Outputs tab: the screenshots, test output, logs and JSON it made or looked at (from its transcript, wherever it put them, plus its own `.beluga/scratch/agents/<name>/`), still on disk, newest first |
 | `claudeCode.output` | ✓ looking at one of them: pictures inline (GIFs animate), videos playing inline up to 64 MB, text with secrets redacted (only files that agent made or looked at) |
 | `claudeCode.taskOutput` | ✓ following a background command or watch Claude or a sub-agent started (the panel's Background tab, below the terminal; a sub-agent's Background): the end of its output, live, cleaned of terminal codes and secrets; its own log when it writes to one |
+| `claudeCode.skills` | ✓ the message box's / list: the skills and custom commands Claude can use in this conversation (the project's, yours, your plugins'), each with its description |
 | `agent.steps` | ✓ a Claude card's steps as disclosure rows (an icon per tool, ✓/✗, how long it took), thinking as “Thought for 12s”, sub-agents' steps |
 | `agent.step` | ✓ opening a step on a Claude card: Bash's command and output (colours kept), the file read, an edit's diff, a search's matches, a page fetched, an MCP tool's input and output as JSON, the thinking |
 | `view.fetch` | ✓ a live table, chart, stats or code view in a conversation fetching its next page, sorted or searched, or refreshing it (docs/views.md) |

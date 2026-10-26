@@ -1,12 +1,50 @@
 import { Fragment, type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
-import type { Suggestion } from '@beluga/ui/suggest.js';
+import type { Suggestion, SuggestionKind } from '@beluga/ui/suggest.js';
 import { type IssueStatus, STATUS_INFO } from '@beluga/core/board/model.js';
+import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { StatusIcon } from '../tasks/marks.js';
 import s from './composer.module.css';
 
-/** Suggestions listed under / and @ at most. */
-const MAX_LISTED = 50;
+/** Suggestions listed under / and @ at most (Beluga's commands and every one of Claude's skills). */
+export const MAX_LISTED = 300;
+
+/** Each kind's icon in the list. */
+const KIND_ICON: Record<SuggestionKind, IconName> = {
+  command: 'command',
+  skill: 'wand',
+  claude: 'claude',
+  person: 'person',
+  project: 'grid',
+  workspace: 'branch',
+  folder: 'folder',
+  file: 'file',
+  task: 'task',
+  option: 'check',
+};
+
+/** A section's heading above its first row: Claude's skills, tasks. */
+export function sectionOf(sug: Suggestion, prev: Suggestion | undefined): string | undefined {
+  if (sug.task && !prev?.task) return 'Tasks';
+  if (sug.kind === 'skill' && prev?.kind !== 'skill') return 'Claude’s skills and commands';
+  return undefined;
+}
+
+/** A row's insides: its kind's icon, what it is, and a word about it. */
+export function SuggestionBody({ sug }: { sug: Suggestion }) {
+  if (sug.task) return <TaskOption task={sug.task} />;
+  return (
+    <>
+      {sug.kind ? (
+        <span className={s.sugIcon} aria-hidden="true">
+          <Icon name={KIND_ICON[sug.kind]} size={12} />
+        </span>
+      ) : null}
+      <span className={s.sugLabel}>{sug.label}</span>
+      <span className={s.sugHint}>{sug.hint}</span>
+    </>
+  );
+}
 
 /**
  * The list above a message box as you type / or @ (the worktree chat's and a channel's): the
@@ -17,7 +55,7 @@ export function useSuggestions<T extends Suggestion>(items: readonly T[], text: 
   const [selected, setSelected] = useState(0);
   const [hidden, setHidden] = useState(false);
   const shown = hidden ? [] : items;
-  /** Only the first 50 are listed, so the arrows move within those. */
+  /** Only the first MAX_LISTED are listed, so the arrows move within those. */
   const listed = Math.min(shown.length, MAX_LISTED);
   const pick = Math.min(selected, Math.max(0, listed - 1));
   const ref = useRef<HTMLDivElement>(null);
@@ -47,28 +85,23 @@ export function useSuggestions<T extends Suggestion>(items: readonly T[], text: 
     <div ref={ref} className={s.suggestions} role="listbox" aria-label="Suggestions">
       {shown.slice(0, MAX_LISTED).map((sug, i, all) => (
         <Fragment key={`${sug.value}:${sug.label}:${i}`}>
-          {/* Tasks ("@BLG-24") come as their own section, under a heading. */}
-          {sug.task && !all[i - 1]?.task ? (
+          {/* Tasks ("@BLG-24") and Claude's skills come as their own sections, under a heading. */}
+          {sectionOf(sug, all[i - 1]) ? (
             <div className={s.sugSection} role="presentation">
-              Tasks
+              {sectionOf(sug, all[i - 1])}
             </div>
           ) : null}
           <div
             role="option"
             aria-selected={i === pick}
-            className={cx(s.suggestion, sug.task && s.sugTask, i === pick && s.suggestionOn)}
+            className={cx(s.suggestion, (sug.task || sug.kind) && s.sugTask, i === pick && s.suggestionOn)}
             onMouseEnter={() => {
               byKeys.current = false;
               setSelected(i);
             }}
             onMouseDown={(e) => (e.preventDefault(), accept(sug))}
           >
-            {sug.task ? <TaskOption task={sug.task} /> : (
-              <>
-                <span className={s.sugLabel}>{sug.label}</span>
-                <span className={s.sugHint}>{sug.hint}</span>
-              </>
-            )}
+            <SuggestionBody sug={sug} />
           </div>
         </Fragment>
       ))}

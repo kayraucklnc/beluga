@@ -90,7 +90,7 @@ export function TasksView() {
   return (
     <div className={t.view}>
       <div className={t.bar}>
-        <div className={t.barGroup}>
+        <div className={cx(t.barGroup, t.barFilters)}>
         <PickMenu<string>
           label="Project"
           choices={projects.map((p) => ({ value: p.id, label: p.name, mark: <ProjectIcon id={p.id} name={p.name} size={16} />, hint: openCount(board, p.id) }))}
@@ -107,7 +107,7 @@ export function TasksView() {
           label="Show"
           value={prefs.scope}
           onChange={(scope) => setTasksPrefs({ scope })}
-          options={SCOPES.map((s) => ({ value: s.value, label: counts[s.value] ? `${s.label} ${counts[s.value]}` : s.label, hint: s.hint }))}
+          options={SCOPES.map((s) => ({ value: s.value, label: s.label, count: counts[s.value], hint: s.hint }))}
         />
         {/* Whose tasks: only when you work with others (alone, every task is yours and your Claude's). */}
         {people.length > 1 || (people.length === 1 && people[0]!.key !== `person:${selfId}` && people[0]!.key !== `claude:${selfId}`) ? (
@@ -126,7 +126,7 @@ export function TasksView() {
             size="small"
             value={worktree}
             onChange={(w) => openWorktreeTasks(project, w || undefined)}
-            options={[{ value: '', label: 'Every worktree' }, ...worktrees.map((w) => ({ value: w.id, label: w.name }))]}
+            options={[{ value: '', label: 'Every worktree', short: 'Worktrees' }, ...worktrees.map((w) => ({ value: w.id, label: w.name }))]}
           />
         ) : null}
         </div>
@@ -184,7 +184,7 @@ export function TasksView() {
         >
           <IconButton icon="more" label="Tasks Options" />
         </ActionsDropdown>
-        <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_task', projectId: project })} title="New Task (⌘N)">
+        <Button variant="primary" size="small" icon="plus" className={t.newTask} aria-label="New Task" onClick={() => openSheet({ kind: 'new_task', projectId: project })} title="New Task (⌘N)">
           New Task
         </Button>
         </div>

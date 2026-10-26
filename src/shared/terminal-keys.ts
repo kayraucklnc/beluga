@@ -3,6 +3,8 @@
 export const shellId = (wsId: string): string => wsId;
 export const setupId = (wsId: string): string => `${wsId}:setup`;
 export const runId = (wsId: string): string => `${wsId}:run`;
+/** A GitHub setup step Beluga runs where you can see it (installing gh, logging in), BLG-213. */
+export const githubId = (wsId: string): string => `${wsId}:github`;
 /** Shells of the global Terminal tab (not tied to a workspace): `shell:1`, `shell:2`… */
 export const globalShellId = (n: number): string => `shell:${n}`;
 export const isGlobalShell = (key: string): boolean => /^shell:\d+$/.test(key);
@@ -29,10 +31,10 @@ export const MAX_TERMINAL_NAME = 40;
 // eslint-disable-next-line no-control-regex
 export const cleanTerminalName = (name: string): string => name.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_TERMINAL_NAME);
 
-/** What a terminal's tab says: the name you gave it, else Shell N, Shell, Setup or Run. */
+/** What a terminal's tab says: the name you gave it, else Shell N, Shell, Setup, Run or GitHub. */
 export function terminalLabel(key: string, names: Readonly<Record<string, string>> = {}): string {
   const named = names[key];
   if (named) return named;
   if (isGlobalShell(key)) return `Shell ${globalShellNumber(key)}`;
-  return key.endsWith(':setup') ? 'Setup' : key.endsWith(':run') ? 'Run' : 'Shell';
+  return key.endsWith(':setup') ? 'Setup' : key.endsWith(':run') ? 'Run' : key.endsWith(':github') ? 'GitHub' : 'Shell';
 }

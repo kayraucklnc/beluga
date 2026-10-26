@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { runId, setupId, shellId, terminalLabel } from '@beluga/shared/terminal-keys.js';
+import { githubId, runId, setupId, shellId, terminalLabel } from '@beluga/shared/terminal-keys.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { ActionsDropdown, type ActionItem } from '../../components/SpecMenu.js';
 import { Button, Dot, Empty, IconButton } from '../../components/ui.js';
@@ -42,7 +42,7 @@ function useWorkspaceTerminals(wsId: string): Tabbed {
   const ws = findWorkspace(projects, wsId);
   useEffect(() => pruneShells(terminals), [terminals]);
   const extra = extraShells(owners, wsId, terminals, picked);
-  const own = [shellId(wsId), setupId(wsId), runId(wsId)].filter((k) => k in terminals || k === shellId(wsId));
+  const own = [shellId(wsId), setupId(wsId), runId(wsId), githubId(wsId)].filter((k) => k in terminals || k === shellId(wsId));
   const keys = [...own, ...extra];
   const key = picked && keys.includes(picked) && (picked in terminals || extra.includes(picked)) ? picked : shellId(wsId);
   const isExtra = (k: string): boolean => extra.includes(k);

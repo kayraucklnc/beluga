@@ -1,4 +1,4 @@
-import { runId, setupId, shellId, terminalLabel } from '@beluga/shared/terminal-keys.js';
+import { githubId, runId, setupId, shellId, terminalLabel } from '@beluga/shared/terminal-keys.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Empty, IconButton, Tip } from '../components/ui.js';
@@ -29,7 +29,7 @@ export function TerminalView() {
     const project = state.projects.find((p) => p.id === ws.projectId);
     // Its shell, setup and run, and the shells added with + in the panel (lib/ws-shells.ts).
     const extra = extraShells(owners, ws.id, terminals, undefined);
-    const keys = [shellId(ws.id), setupId(ws.id), runId(ws.id), ...extra];
+    const keys = [shellId(ws.id), setupId(ws.id), runId(ws.id), githubId(ws.id), ...extra];
     const key = picked && keys.includes(picked) && picked in terminals ? picked : shellId(ws.id);
     const tabs = keys.filter((k) => k in terminals || k === shellId(ws.id));
     return (
