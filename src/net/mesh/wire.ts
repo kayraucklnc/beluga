@@ -51,6 +51,8 @@ export const LinkMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('gw'), p: z.unknown() }),
   /** Sharing projects, worktrees and folders with friends (core/friend-share): a frame it checks itself, between friends only. */
   z.object({ t: z.literal('share'), p: z.unknown() }),
+  /** Team boards (core/team): friends on the same GitHub repo; a frame it checks itself, between friends only. */
+  z.object({ t: z.literal('team'), p: z.unknown() }),
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

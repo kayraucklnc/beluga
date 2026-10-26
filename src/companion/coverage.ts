@@ -342,6 +342,9 @@ export const PHONE: Record<Method, Side> = {
   'issues.fix': 'mac',
   'issues.toTask': 'mac',
   'issues.comment': 'mac',
+  // Team boards: answering an offer is the phone's (a NeedsYou card); leaving a team is the Mac's.
+  'team.answer': 'phone',
+  'team.leave': 'mac',
 
   // ---- git, live views' sources, editing files: the Mac's
   'git.fetch': 'mac',

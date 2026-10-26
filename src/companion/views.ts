@@ -1,6 +1,7 @@
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
+import { OFFER_DETAIL, offerWords } from '../core/team/model.js';
 import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
@@ -370,6 +371,24 @@ function offerItems(state: DomainState): NeedsYou[] {
     }));
 }
 
+/** A friend on the same GitHub repository: team up on it (BLG-221). Only offers waiting on you. */
+function teamOfferItems(state: DomainState): NeedsYou[] {
+  return state.team.offers
+    .filter((o) => o.state !== 'asked')
+    .map((o) => ({
+      id: `team:${o.peerId}:${o.projectId}`,
+      kind: 'request' as const,
+      title: clip(`${offerWords(o)}. Team up?`, 500),
+      detail: OFFER_DETAIL,
+      from: clip(o.name, 100),
+      askedAt: o.at,
+      actions: [
+        { label: 'Team Up', tone: 'main' as const, method: 'team.answer', args: [o.peerId, o.projectId, true] },
+        { label: 'Not Now', tone: 'danger' as const, method: 'team.answer', args: [o.peerId, o.projectId, false] },
+      ],
+    }));
+}
+
 /** Everything waiting for you, oldest first: approvals, Claude's questions, friends' requests, plan decisions. */
 export function needsYou(state: DomainState): NeedsYou[] {
   const items = [
@@ -380,6 +399,7 @@ export function needsYou(state: DomainState): NeedsYou[] {
     ...knockItems(state),
     ...joinItems(state),
     ...offerItems(state),
+    ...teamOfferItems(state),
   ];
   // Oldest first; what has no time (Claude's questions) counts as just asked.
   const at = (n: NeedsYou): number => n.askedAt ?? Number.MAX_SAFE_INTEGER;
