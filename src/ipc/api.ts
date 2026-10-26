@@ -42,6 +42,10 @@ function args(...items: z.ZodType[]): { args: z.ZodTuple } {
 
 export const Location = z.object({ owner: id, share: z.string().min(1).max(200), path });
 
+/** A project (all its worktrees, now and later) or one worktree, shared with a friend over the network. */
+const FriendShare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id), role: WsRole }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
+const FriendUnshare = z.object({ peerId: id, projectId: opt(id), workspaceId: opt(id) }).refine((x) => x.projectId || x.workspaceId, 'Say which project or worktree');
+
 /** A settings change (no defaults: only the keys you send change). */
 export const PrefsPatch = z
   .object({
@@ -143,6 +147,11 @@ export const API = {
   'sharing.invite': args(id, id, WsRole),
   'sharing.remove': args(id, id),
   'sharing.leave': args(id, id),
+  // Over the network, with friends (core/friend-share): nobody hosts, it stays while someone is offline.
+  'sharing.shareWithFriend': args(FriendShare),
+  'sharing.unshareFriend': args(FriendUnshare),
+  // Leave a project a friend shared with you (owner, project id).
+  'sharing.leaveProject': args(id, id),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),

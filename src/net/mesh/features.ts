@@ -13,9 +13,14 @@ export const FEATURE_NAMES = {
   'task.run': 'commands',
   'task.file': 'file requests',
   'task.question': "their Claude's questions",
+  'share.project': 'shared projects',
+  'share.folder': 'shared folders',
 } as const;
 
 export type Feature = keyof typeof FEATURE_NAMES;
+
+/** What a Mac takes while it shares projects and folders with friends (core/friend-share). */
+export const SHARE_FEATURES: readonly Feature[] = ['share.project', 'share.folder'];
 
 /** What the network itself always does. */
 export const MESH_FEATURES: readonly Feature[] = ['chat.files', 'chat.claude'];
@@ -46,7 +51,9 @@ export function cannotTake(name: string, info: BelugaInfo | undefined, feature: 
   // No task features at all: their Beluga runs, but its requests side isn't on.
   if (feature.startsWith('task.') && !info.can.some((f) => f.startsWith('task.')))
     return !linked ? undefined : `${name}'s Beluga isn't taking requests right now (it's open, but not the Mac app). Ask ${name} to open Beluga for Mac.`;
-  return `${name}'s Beluga ${shortVersion(info.version)} can't take ${what} yet. Ask ${name} to update Beluga.`;
+  // Shared things are opened on their Mac, not taken as requests.
+  const verb = feature.startsWith('share.') ? 'open' : 'take';
+  return `${name}'s Beluga ${shortVersion(info.version)} can't ${verb} ${what} yet. Ask ${name} to update Beluga.`;
 }
 
 /** "0.6.2+mac.1.2.0" → "1.2.0" (the Mac app's version is the one people know). */

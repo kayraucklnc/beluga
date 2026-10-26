@@ -49,6 +49,8 @@ export const LinkMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('tun_close'), tid, o: z.boolean(), reason: z.string().max(200).optional() }),
   /** The gateway (tasks between Claudes, core/gateway): a frame it checks itself, between friends only. */
   z.object({ t: z.literal('gw'), p: z.unknown() }),
+  /** Sharing projects, worktrees and folders with friends (core/friend-share): a frame it checks itself, between friends only. */
+  z.object({ t: z.literal('share'), p: z.unknown() }),
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

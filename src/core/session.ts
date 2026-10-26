@@ -226,6 +226,11 @@ export class Session {
     return this.opts.client.peerId;
   }
 
+  /** Your shared folders and workspaces' folders (who may open what). */
+  get shareService(): ShareService {
+    return this.opts.shares;
+  }
+
   /** Your Claude (undefined when it's off). */
   get backend(): AgentBackend | undefined {
     return this.agent;
@@ -767,7 +772,24 @@ export class Session {
   // Networking
   // -------------------------------------------------------------------------
 
+  /**
+   * Sharing with friends over the network (core/friend-share) takes the messages about what you
+   * share with a friend (or they with you) to that friend's Mac: true or false when it took one
+   * (it went, or waits for them), undefined to leave it to the room.
+   */
+  meshRoute?: (to: string, body: BodyInput) => boolean | undefined;
+
+  /** A room message that came over a friend's network link (core/friend-share checked what it may be). */
+  receiveFromFriend(from: string, body: Body, frameId: string): Promise<void> {
+    const now = Date.now();
+    return this.handle({ id: `mesh:${from}:${frameId}`, from, ts: now, sentAt: now, body }).catch((err: unknown) => this.system(`Error handling ${body.kind}: ${errorText(err)}`, 'error'));
+  }
+
   send(body: BodyInput, opts: { to?: string; keep?: boolean } = {}): boolean {
+    if (opts.to !== undefined && opts.to !== this.selfId) {
+      const routed = this.meshRoute?.(opts.to, body);
+      if (routed !== undefined) return routed;
+    }
     // To yourself (your Claude in your own conversations, its events back to you): handled right
     // here, never through the room. A dropped or half-open room connection (after sleep, a network
     // change, offline) used to swallow these silently: the plan chat's message never reached Claude

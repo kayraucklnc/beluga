@@ -1,4 +1,5 @@
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
+import { ShareProjectSheet } from './ShareProjectSheet.js';
 import { SyncSheet } from '../../tasks/SyncSheet.js';
 import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
 import { useState } from 'react';
@@ -174,6 +175,8 @@ export function NativeSheets() {
       return <CleanUpWorktreesAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'delete_project':
       return <DeleteProjectAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'share_project':
+      return <ShareProjectSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_task':
       return <NewTaskSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
     case 'task_sync':

@@ -1,0 +1,55 @@
+import { z } from 'zod';
+
+/**
+ * What two friends' Macs say about the things they share, inside the mesh's `share` frame (a
+ * Noise link between the two of them; see docs/network.md, "Sharing with friends"). Each message
+ * rides in a frame `{f, m}` the other side acknowledges (`{ack}`), like the gateway's.
+ *
+ * - `project`: the owner's project as the friend sees it now (name, icon, worktrees, who else is
+ *   in it, their role). Sent whenever any of that changes; the newest replaces what waits.
+ * - `unshare`: the owner took it back. `leave`: the friend left it.
+ * - `history`: a worktree's recent conversation, once, when it's first shared with them.
+ * - `body`: one of today's room messages about a shared worktree or folder (its chat, requests to
+ *   its Claude and what that Claude does, its files), checked on arrival as if it came from the
+ *   room. `as`: a chat the owner passes on from someone else in the worktree.
+ * - `folder`: a folder the owner shares with them (`active: false`: no longer).
+ */
+
+const id = z.string().regex(/^[\w:.-]{1,80}$/);
+const peerId = z.string().regex(/^[\w-]{32}$/);
+const role = z.enum(['contribute', 'view']);
+const text = (max: number) => z.string().max(max);
+
+export const HISTORY_ITEMS = 60;
+export const HISTORY_TEXT = 4000;
+
+export const ShareMsg = z.discriminatedUnion('k', [
+  z.object({
+    k: z.literal('project'),
+    id,
+    name: text(200),
+    icon: z.object({ mime: text(60), data: text(160_000) }).optional(),
+    role,
+    worktrees: z.array(z.object({ id, name: text(200), branch: text(200).optional() })).max(200),
+    members: z.array(z.object({ peerId, name: text(80), role })).max(100),
+  }),
+  z.object({ k: z.literal('unshare'), id }),
+  z.object({ k: z.literal('leave'), id }),
+  z.object({
+    k: z.literal('history'),
+    ws: id,
+    items: z.array(z.object({ from: text(120), text: text(HISTORY_TEXT), ts: z.number().int().min(0), byAgent: z.boolean() })).max(HISTORY_ITEMS),
+  }),
+  z.object({ k: z.literal('body'), b: z.unknown(), as: peerId.optional() }),
+  z.object({ k: z.literal('folder'), name: z.string().regex(/^[\w.-]{1,64}$/), label: text(200), writable: z.boolean(), active: z.boolean() }),
+]);
+export type ShareMsg = z.infer<typeof ShareMsg>;
+
+const frameId = z.string().regex(/^[\w-]{8,40}$/);
+export const ShareFrame = z.union([z.object({ f: frameId, m: ShareMsg }), z.object({ ack: frameId })]);
+export type ShareFrame = z.infer<typeof ShareFrame>;
+
+export function parseShareFrame(raw: unknown): ShareFrame | undefined {
+  const parsed = ShareFrame.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}

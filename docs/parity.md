@@ -178,6 +178,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `sharing.invite` | ✓ |
 | `sharing.remove` | ✓ |
 | `sharing.leave` | ✓ |
+| `sharing.shareWithFriend` | ✓ project ••• › Share with… (pick friends and a role) · `/invite @friend` in a project or worktree |
+| `sharing.unshareFriend` | ✓ Share with… › No access |
+| `sharing.leaveProject` | ✓ a shared project's ••• › Leave Project |
 | `invites.create` | ✓ |
 | `invites.revoke` | ✓ |
 | `invites.copyLink` | ✓ |

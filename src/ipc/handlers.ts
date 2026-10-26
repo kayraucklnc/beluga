@@ -1,4 +1,5 @@
 import type { Session } from '../core/session.js';
+import { needFriendShares } from '../core/friend-share/launch.js';
 import type { WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
@@ -104,6 +105,9 @@ export const HANDLERS = {
   },
   'sharing.remove': (s, wsId, peerId) => s.sharing.remove(wsId, peerId),
   'sharing.leave': (s, owner, id) => s.sharing.leave(owner, id),
+  'sharing.shareWithFriend': (s, share) => s.sharing.shareWithFriend(share),
+  'sharing.unshareFriend': (s, share) => s.sharing.unshareFriend(share),
+  'sharing.leaveProject': (s, owner, projectId) => needFriendShares(s).leave(owner, projectId),
 
   'invites.create': async (s, opts) => {
     const link = await s.invites.create(opts);

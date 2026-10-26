@@ -13,6 +13,7 @@ import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { RoomStatus } from '../dialogs/native/RoomPopover.js';
 import { PhoneMark } from '../phone/Phone.js';
 import { Projects, ProjectsAddMenu } from './ProjectTree.js';
+import { SharedProjects } from './SharedProjects.js';
 import { WorkspaceRow } from './workspace-row.js';
 import { UnreadSection } from './UnreadSection.js';
 import { signalOf } from './attention-model.js';
@@ -102,7 +103,7 @@ export function Sidebar() {
       // Folders someone else shares with you (or that went away while you weren't looking).
       othersShare: state.peers.some((p) => p.peerId !== state.self?.peerId && p.shares.length > 0) || fresh > 0,
       badges,
-      shared: state.shared.map((w) => ({ w, owner: state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone', signal: signalOf(state, `ws:${w.id}`) })),
+      shared: state.shared.filter((w) => w.via !== 'mesh').map((w) => ({ w, owner: state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone', signal: signalOf(state, `ws:${w.id}`) })),
     };
   }, sameDeep);
   const files = tabs.find((t) => t.kind === 'files');
@@ -150,6 +151,8 @@ export function Sidebar() {
 
         <Section id="projects" title="Projects" action={<ProjectsAddMenu />}>
           <Projects />
+          {/* Friends' projects shared over the network: with yours, the owner's avatar on each. */}
+          <SharedProjects />
           {/* Housekeeping for every project's worktrees: after the projects, out of the daily places above. */}
           <WorktreesNav />
         </Section>

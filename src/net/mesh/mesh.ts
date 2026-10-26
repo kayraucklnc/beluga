@@ -59,6 +59,8 @@ interface MeshEvents {
   message: [MessageView];
   /** A gateway frame from a friend (core/gateway checks and answers it). */
   gateway: [string, unknown];
+  /** A sharing frame from a friend (core/friend-share checks it): shared projects, their worktrees' conversations, shared folders. */
+  share: [string, unknown];
   /** A link to someone came up (what waited for them can go now). */
   link: [string];
   /** Someone's Claude started or stopped answering message `for` in a conversation. */
@@ -428,6 +430,14 @@ export class Mesh extends EventEmitter<MeshEvents> {
     return true;
   }
 
+  /** Hand a sharing frame to a friend's link; false when they're not linked now. */
+  sendShare(peerId: string, payload: unknown): boolean {
+    const link = this.links.get(peerId);
+    if (!link?.isOpen || !this.friends.has(peerId)) return false;
+    link.send({ t: 'share', p: payload });
+    return true;
+  }
+
   // ---- status and reading
 
   setPresence(next: Presence): Presence {
@@ -634,6 +644,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
       }
       case 'gw':
         if (this.friends.has(from)) this.emit('gateway', from, msg.p);
+        return;
+      case 'share':
+        if (this.friends.has(from)) this.emit('share', from, msg.p);
         return;
       case 'live': {
         const conversation = msg.g ? groupConversation(msg.g) : dmConversation(from);

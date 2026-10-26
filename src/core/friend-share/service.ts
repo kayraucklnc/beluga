@@ -1,0 +1,567 @@
+import path from 'node:path';
+import { type BelugaInfo, type Feature, SHARE_FEATURES, cannotTake } from '../../net/mesh/features.js';
+import { readJson, writeJson } from '../../net/mesh/files.js';
+import { Body, type BodyInput, type WsRole } from '../../protocol.js';
+import { shareNameOf } from '../../shared/share-names.js';
+import type { Project } from '../../workspaces/types.js';
+import type { FriendFolder, ProjectGrant, SharedProject } from '../friend-share-store.js';
+import { readProjectIcon } from '../project-icons.js';
+import type { Session } from '../session.js';
+import type { Action, Store } from '../store.js';
+import { clean, peerName } from '../store.js';
+import { type FriendShareInput, type FriendSharing, historyFor, saidBy } from '../workspace-sharing.js';
+import { ShareCourier } from './courier.js';
+import { HISTORY_ITEMS, HISTORY_TEXT, type ShareMsg } from './protocol.js';
+
+/**
+ * Sharing with friends over the network, with nobody hosting (docs/network.md, "Sharing with
+ * friends"). A project you share shows in your friend's Projects as one row with your avatar, its
+ * worktrees under it; it stays there while either of you is offline. In a shared worktree everyone
+ * talks to its Claude: what's said and what that Claude does go to everyone in it, and what's said
+ * while its owner's Mac is offline waits and goes when it's back. Folders you share go the same way.
+ *
+ * Underneath it's today's room protocol for a shared worktree (`chat`, `agent_request`,
+ * `agent_event`, the files' `fs_*`), carried over the friends' Noise link instead of a room and
+ * checked as it would be there (Session.meshRoute / receiveFromFriend), plus the few messages of
+ * protocol.ts that say what's shared.
+ *
+ * Files: `project-shares.json` (what you share, with whom), `shared-projects.json` (what friends
+ * share with you, and each worktree's recent conversation), `share-outbox.json` (what waits).
+ */
+
+/** What the service needs from the mesh node (net/mesh/mesh.ts). */
+export interface FriendMesh {
+  readonly peerId: string;
+  isFriend(peerId: string): boolean;
+  isLinked(peerId: string): boolean;
+  nameFor(peerId: string): string;
+  belugaOf(peerId: string): BelugaInfo | undefined;
+  sendShare(peerId: string, payload: unknown): boolean;
+  offer(features: readonly Feature[], on: boolean): void;
+  on(event: 'share', fn: (from: string, payload: unknown) => void): unknown;
+  on(event: 'link', fn: (peerId: string) => void): unknown;
+  off(event: 'share', fn: (from: string, payload: unknown) => void): unknown;
+  off(event: 'link', fn: (peerId: string) => void): unknown;
+}
+
+type HistoryItem = { readonly from: string; readonly text: string; readonly ts: number; readonly byAgent: boolean };
+
+/** A project a friend shared with you, as kept on disk: with each worktree's recent conversation. */
+interface Received extends SharedProject {
+  readonly history: Readonly<Record<string, readonly HistoryItem[]>>;
+}
+
+/** What one friend has of one of your projects: its last state and the worktrees whose history went. */
+interface Sent {
+  readonly sig: string;
+  readonly ws: readonly string[];
+}
+
+/** A folder of yours shared with friends. */
+interface FolderGrant {
+  readonly label: string;
+  readonly writable: boolean;
+  readonly peers: readonly string[];
+}
+
+/** Room messages that may travel over a friend's link, and only about what you share. */
+const KINDS = new Set<Body['kind']>(['chat', 'agent_request', 'agent_event', 'agent_question', 'agent_answer', 'fs_list', 'fs_read', 'fs_fetch', 'fs_search', 'ws_diff', 'fs_list_result', 'fs_read_result', 'fs_chunk', 'fs_search_result', 'ws_diff_result', 'fs_changed', 'ws_roster', 'ws_leave']);
+const RESULTS = new Set<Body['kind']>(['fs_list_result', 'fs_read_result', 'fs_chunk', 'fs_search_result', 'ws_diff_result']);
+/** A Claude's steps as they stream only go to who's linked now; these wait for an offline Mac. */
+const KEPT_EVENTS = new Set(['queued', 'awaiting_approval', 'started', 'done', 'error', 'denied', 'answered']);
+const INBOUND_KEPT = 500;
+const ICON_MAX = 120_000;
+
+const wsOf = (channel: string | undefined): string | undefined => (channel?.startsWith('ws:') ? channel.slice(3) : undefined);
+const keyOf = (owner: string, id: string): string => `${owner}/${id}`;
+const liveWorktrees = (p: Project) => p.workspaces.filter((w) => !w.archived && !w.pending && !w.external && w.kind !== 'main');
+
+export interface FriendSharesOptions {
+  readonly session: Session;
+  readonly store: Store;
+  readonly mesh: FriendMesh;
+  /** Where its files live (normally ~/.beluga). */
+  readonly dir: string;
+}
+
+export class FriendShares implements FriendSharing {
+  private readonly courier: ShareCourier;
+  private grants: Record<string, Record<string, ProjectGrant>> = {};
+  private sent: Record<string, Record<string, Sent>> = {};
+  private folders: Record<string, FolderGrant> = {};
+  private received: Record<string, Received> = {};
+  private friendFolders: Record<string, FriendFolder> = {};
+  /** Requests that came over the network (`from:reqId`): their answers go back the same way. */
+  private readonly inbound = new Set<string>();
+  private readonly offs: Array<() => void> = [];
+  private saveTimer: NodeJS.Timeout | undefined;
+
+  constructor(private readonly opts: FriendSharesOptions) {
+    this.courier = new ShareCourier(opts.mesh, path.join(opts.dir, 'share-outbox.json'), (to, m) => this.acked(to, m));
+  }
+
+  private get state() {
+    return this.opts.store.getState();
+  }
+
+  private get dispatch() {
+    return this.opts.store.dispatch;
+  }
+
+  start(): void {
+    this.load();
+    const { mesh, session, store } = this.opts;
+    const onShare = (from: string, payload: unknown): void => this.onFrame(from, payload);
+    const onLink = (peerId: string): void => this.courier.flush(peerId, true);
+    mesh.on('share', onShare);
+    mesh.on('link', onLink);
+    this.offs.push(() => {
+      mesh.off('share', onShare);
+      mesh.off('link', onLink);
+    });
+    this.offs.push(store.onAction((action) => this.onAction(action)));
+    session.meshRoute = (to, body) => this.route(to, body);
+    session.sharing.friends = this;
+    this.offs.push(() => {
+      if (session.meshRoute) session.meshRoute = undefined;
+      if (session.sharing.friends === this) session.sharing.friends = undefined;
+    });
+    mesh.offer(SHARE_FEATURES, true);
+    this.offs.push(() => mesh.offer(SHARE_FEATURES, false));
+    this.courier.start();
+    this.publishGrants();
+    this.publishReceived(true);
+    this.publishFolders();
+    this.resync();
+  }
+
+  stop(): void {
+    this.courier.stop();
+    for (const off of this.offs.splice(0)) off();
+    if (this.saveTimer) this.saveNow();
+  }
+
+  // ------------------------------------------------------------------ owner side
+
+  shareWithFriend(share: FriendShareInput): void {
+    const { peerId, role } = share;
+    const name = this.friendName(peerId);
+    const project = this.projectFor(share);
+    const grant = this.grants[project.id]?.[peerId];
+    // A worktree on its own adds it to what they have; the whole project stays the whole project.
+    const only = share.workspaceId && !share.projectId ? (grant && !grant.only ? undefined : [...new Set([...(grant?.only ?? []), share.workspaceId])]) : undefined;
+    this.grants = { ...this.grants, [project.id]: { ...this.grants[project.id], [peerId]: { role, ...(only ? { only } : {}) } } };
+    this.saveOwn();
+    this.publishGrants();
+    this.resync();
+    const what = only?.length === 1 ? (project.workspaces.find((w) => w.id === only[0])?.name ?? project.name) : project.name;
+    this.opts.session.toast(`${name} ${role === 'contribute' ? 'can now work with you' : 'can now follow along'} in ${what}`, 'success');
+  }
+
+  unshareFriend(share: Omit<FriendShareInput, 'role'>): void {
+    const project = this.projectFor(share, false);
+    const grant = this.grants[project.id]?.[share.peerId];
+    if (!grant) return;
+    if (share.workspaceId && !share.projectId) {
+      const only = (grant.only ?? liveWorktrees(project).map((w) => w.id)).filter((id) => id !== share.workspaceId);
+      if (only.length) {
+        this.grants = { ...this.grants, [project.id]: { ...this.grants[project.id], [share.peerId]: { ...grant, only } } };
+        this.saveOwn();
+        this.publishGrants();
+        this.resync();
+        return;
+      }
+    }
+    this.dropGrant(project.id, share.peerId, true);
+    this.opts.session.toast(`Stopped sharing ${project.name} with ${this.opts.mesh.nameFor(share.peerId)}`, 'success');
+  }
+
+  /** Share a folder with these friends (none: stop sharing it with friends). */
+  shareFolder(name: string, label: string, writable: boolean, peers: readonly string[]): void {
+    for (const p of peers) this.friendName(p, 'share.folder');
+    const before = this.folders[name]?.peers ?? [];
+    if (peers.length) this.folders = { ...this.folders, [name]: { label, writable, peers: [...peers] } };
+    else this.folders = Object.fromEntries(Object.entries(this.folders).filter(([n]) => n !== name));
+    for (const p of peers) this.courier.send(p, { k: 'folder', name, label, writable, active: true }, { reliable: true, key: `folder:${name}` });
+    for (const p of before.filter((x) => !peers.includes(x))) this.courier.send(p, { k: 'folder', name, label, writable, active: false }, { reliable: true, key: `folder:${name}` });
+    this.saveOwn();
+  }
+
+  /** Who a folder of yours is shared with over the network. */
+  folderPeers(name: string): readonly string[] {
+    return this.folders[name]?.peers ?? [];
+  }
+
+  /** The friends a project of yours is shared with. */
+  grantsOf(projectId: string): Readonly<Record<string, ProjectGrant>> {
+    return this.grants[projectId] ?? {};
+  }
+
+  private friendName(peerId: string, feature: Feature = 'share.project'): string {
+    const { mesh } = this.opts;
+    if (peerId === mesh.peerId) throw new Error('That’s you');
+    if (!mesh.isFriend(peerId)) throw new Error('Add them as a friend first');
+    const name = mesh.nameFor(peerId);
+    const why = cannotTake(name, mesh.belugaOf(peerId), feature, mesh.isLinked(peerId));
+    if (why) throw new Error(why);
+    return name;
+  }
+
+  private projectFor(share: { projectId?: string; workspaceId?: string }, needRoot = true): Project {
+    const projects = this.state.projects;
+    const project = share.projectId ? projects.find((p) => p.id === share.projectId) : projects.find((p) => p.workspaces.some((w) => w.id === share.workspaceId));
+    if (!project) throw new Error(share.projectId || share.workspaceId ? 'There’s no such project on this Mac' : 'Say which project or worktree to share');
+    if (needRoot && !project.root) throw new Error('Chats aren’t part of a project, so they can’t be shared this way');
+    return project;
+  }
+
+  private dropGrant(projectId: string, peerId: string, tell: boolean): void {
+    const { [peerId]: _gone, ...rest } = this.grants[projectId] ?? {};
+    this.grants = Object.keys(rest).length ? { ...this.grants, [projectId]: rest } : Object.fromEntries(Object.entries(this.grants).filter(([id]) => id !== projectId));
+    for (const ws of this.sent[peerId]?.[projectId]?.ws ?? []) this.setMember(ws, peerId, undefined);
+    if (this.sent[peerId]) {
+      const { [projectId]: _was, ...left } = this.sent[peerId]!;
+      this.sent = { ...this.sent, [peerId]: left };
+    }
+    if (tell) this.courier.send(peerId, { k: 'unshare', id: projectId }, { reliable: true, key: `project:${projectId}` });
+    this.saveOwn();
+    this.publishGrants();
+    this.resync();
+  }
+
+  private setMember(wsId: string, peerId: string, role: WsRole | undefined): void {
+    if (this.state.members[wsId]?.[peerId] === role) return;
+    this.dispatch({ type: 'member_set', id: wsId, peerId, ...(role ? { role } : {}) });
+    this.opts.session.sharing.syncShare(wsId);
+  }
+
+  /** Tell each friend what they have of your projects now, when it changed (worktrees came or went, a role, a name). */
+  private resync(): void {
+    let changed = false;
+    for (const [projectId, byPeer] of Object.entries(this.grants)) {
+      const project = this.state.projects.find((p) => p.id === projectId);
+      if (!project) continue;
+      const members = Object.entries(byPeer).map(([peerId, g]) => ({ peerId, name: this.opts.mesh.nameFor(peerId).slice(0, 80), role: g.role }));
+      const icon = project.root ? readProjectIcon(project.root) : undefined;
+      for (const [peerId, grant] of Object.entries(byPeer)) {
+        const worktrees = liveWorktrees(project).filter((w) => !grant.only || grant.only.includes(w.id));
+        const had = this.sent[peerId]?.[projectId];
+        for (const w of worktrees) this.setMember(w.id, peerId, grant.role);
+        for (const gone of (had?.ws ?? []).filter((id) => !worktrees.some((w) => w.id === id))) this.setMember(gone, peerId, undefined);
+        const msg: ShareMsg = {
+          k: 'project',
+          id: projectId,
+          name: project.name.slice(0, 200),
+          ...(icon && icon.data.length <= ICON_MAX ? { icon } : {}),
+          role: grant.role,
+          worktrees: worktrees.map((w) => ({ id: w.id, name: w.name.slice(0, 200), ...(w.branch ? { branch: w.branch.slice(0, 200) } : {}) })),
+          members,
+        };
+        const sig = JSON.stringify(msg);
+        const fresh = worktrees.filter((w) => !had?.ws.includes(w.id));
+        if (had?.sig === sig && !fresh.length) continue;
+        changed = true;
+        if (had?.sig !== sig) this.courier.send(peerId, msg, { reliable: true, key: `project:${projectId}` });
+        for (const w of fresh) this.courier.send(peerId, { k: 'history', ws: w.id, items: this.historyOf(w.id) }, { reliable: true });
+        this.sent = { ...this.sent, [peerId]: { ...this.sent[peerId], [projectId]: { sig, ws: worktrees.map((w) => w.id) } } };
+      }
+    }
+    if (changed) this.saveOwn();
+  }
+
+  private historyOf(wsId: string): HistoryItem[] {
+    const state = this.state;
+    return historyFor(state.log, `ws:${wsId}`, (id) => peerName(state, id))
+      .filter((h) => h.text.trim())
+      .slice(-HISTORY_ITEMS)
+      .map((h) => ({ from: h.from.slice(0, 120), text: h.text.slice(0, HISTORY_TEXT), ts: Math.max(0, Math.floor(h.ts)), byAgent: h.byAgent }));
+  }
+
+  // ---------------------------------------------------------------- the link
+
+  /** Messages about what's shared between you and `to` go over their link (see Session.meshRoute). */
+  route(to: string, body: BodyInput): boolean | undefined {
+    const { mesh } = this.opts;
+    if (!KINDS.has(body.kind) || !mesh.isFriend(to)) return undefined;
+    if (!this.about(to, body)) return undefined;
+    // Who's in a shared worktree goes with the project's own message.
+    if (body.kind === 'ws_roster' || body.kind === 'ws_leave') return true;
+    const ws = 'channel' in body ? wsOf(body.channel) : undefined;
+    const theirs = ws ? this.receivedWs(ws) : undefined;
+    // In a friend's worktree, its owner passes what you say on to the others.
+    if (body.kind === 'chat' && theirs && theirs.owner !== to) return true;
+    const reliable = body.kind === 'chat' || body.kind === 'agent_request' || body.kind === 'agent_question' || body.kind === 'agent_answer' || (body.kind === 'agent_event' && KEPT_EVENTS.has(body.event));
+    const went = this.courier.send(to, { k: 'body', b: body }, { reliable });
+    if (body.kind === 'agent_request' && !went) this.dispatch({ type: 'fshare_delivery', id: body.requestId, state: 'waiting' });
+    return reliable ? true : went;
+  }
+
+  /** Is this message about something shared between you and `peerId` over the network? */
+  private about(peerId: string, body: BodyInput): boolean {
+    if ('channel' in body && body.channel !== undefined) {
+      const ws = wsOf(body.channel);
+      return Boolean(ws && (this.grantedTo(ws, peerId) || this.receivedWs(ws)?.owner === peerId));
+    }
+    if (body.kind === 'ws_diff') return this.grantedTo(body.id, peerId) || this.receivedWs(body.id)?.owner === peerId;
+    if (RESULTS.has(body.kind)) return 'reqId' in body && this.inbound.has(`${peerId}:${body.reqId}`);
+    if ('share' in body && typeof body.share === 'string') return this.shareBetween(body.share, peerId);
+    if (body.kind === 'agent_answer') return !this.state.peers.some((p) => p.peerId === peerId) && this.related(peerId);
+    return false;
+  }
+
+  /** One of your worktrees shared with them. */
+  private grantedTo(wsId: string, peerId: string): boolean {
+    return Object.values(this.sent[peerId] ?? {}).some((s) => s.ws.includes(wsId));
+  }
+
+  private receivedWs(wsId: string): Received | undefined {
+    return Object.values(this.received).find((p) => p.worktrees.some((w) => w.id === wsId));
+  }
+
+  /** A folder (or a worktree's folder) shared between you and them over the network. */
+  private shareBetween(share: string, peerId: string): boolean {
+    if (this.folders[share]?.peers.includes(peerId)) return true;
+    if (this.friendFolders[keyOf(peerId, share)]) return true;
+    const ws = share.startsWith('ws-') ? Object.values(this.sent[peerId] ?? {}).some((s) => s.ws.some((id) => shareNameOf(id) === share)) : false;
+    return ws || Object.values(this.received).some((p) => p.owner === peerId && p.worktrees.some((w) => shareNameOf(w.id) === share));
+  }
+
+  private related(peerId: string): boolean {
+    return Boolean(this.sent[peerId] && Object.keys(this.sent[peerId]!).length) || Object.values(this.received).some((p) => p.owner === peerId);
+  }
+
+  private acked(_to: string, m: ShareMsg): void {
+    if (m.k !== 'body') return;
+    const b = m.b as BodyInput;
+    if (b.kind === 'agent_request' && this.state.delivery[b.requestId] === 'waiting') this.dispatch({ type: 'fshare_delivery', id: b.requestId, state: 'delivered' });
+  }
+
+  /** Is a message for this request still waiting for the owner's Mac? */
+  waiting(requestId: string): boolean {
+    return this.state.delivery[requestId] === 'waiting';
+  }
+
+  private onFrame(from: string, payload: unknown): void {
+    const got = this.courier.receive(from, payload);
+    if (!got) return;
+    const { m } = got;
+    switch (m.k) {
+      case 'project':
+        return this.onProject(from, m);
+      case 'unshare':
+        return this.onUnshare(from, m.id);
+      case 'leave':
+        if (this.grants[m.id]?.[from]) this.dropGrant(m.id, from, false);
+        return;
+      case 'history':
+        return this.onHistory(from, m);
+      case 'body':
+        return this.onBody(from, m, got.id);
+      case 'folder':
+        return this.onFolder(from, m);
+    }
+  }
+
+  private onBody(from: string, m: Extract<ShareMsg, { k: 'body' }>, frameId: string): void {
+    const parsed = Body.safeParse(m.b);
+    if (!parsed.success || !KINDS.has(parsed.data.kind)) return;
+    const body = parsed.data;
+    const { session } = this.opts;
+    const ws = 'channel' in body ? wsOf(body.channel) : body.kind === 'ws_diff' ? body.id : undefined;
+    const mine = ws !== undefined && this.grantedTo(ws, from);
+    const theirs = ws !== undefined && this.receivedWs(ws)?.owner === from;
+    if ('channel' in body && body.channel !== undefined && !mine && !theirs) return;
+    if (body.kind === 'ws_roster' || body.kind === 'ws_leave') return;
+    let author = from;
+    if (m.as) {
+      // Only a worktree's owner passes on what others said in it.
+      if (body.kind !== 'chat' || !theirs || m.as === this.opts.mesh.peerId) return;
+      author = m.as;
+    }
+    if (body.kind === 'agent_request' && (!mine || body.project)) return;
+    if ((body.kind === 'agent_event' || body.kind === 'agent_question') && !theirs) return;
+    if (body.kind === 'fs_list' || body.kind === 'fs_read' || body.kind === 'fs_fetch' || body.kind === 'fs_search' || body.kind === 'ws_diff') {
+      if (body.kind === 'ws_diff') {
+        if (!mine) return;
+      } else if (!this.shareBetween(body.share, from) || !session.shareService.isPrivate(body.share)) {
+        // Only what's shared with them by name: never a folder you share with a room.
+        return;
+      }
+      this.inbound.add(`${from}:${body.reqId}`);
+      if (this.inbound.size > INBOUND_KEPT) this.inbound.delete(this.inbound.values().next().value!);
+    }
+    if (RESULTS.has(body.kind) && !this.related(from)) return;
+    void session.receiveFromFriend(author, body, frameId);
+    // What someone says in your worktree goes on to the others in it.
+    if (body.kind === 'chat' && mine && !m.as && session.sharing.canPost(from, body.channel ?? '')) {
+      for (const peer of Object.keys(session.sharing.members(ws!))) if (peer !== from) this.courier.send(peer, { k: 'body', b: body, as: from }, { reliable: true });
+    }
+  }
+
+  // ---------------------------------------------------------------- receiver side
+
+  private onProject(from: string, m: Extract<ShareMsg, { k: 'project' }>): void {
+    const own = new Set(this.state.projects.flatMap((p) => p.workspaces.map((w) => w.id)));
+    // Worktree ids are random; one that collides with yours or with someone else's share is left out.
+    const worktrees = m.worktrees.filter((w) => !own.has(w.id) && !this.state.shared.some((s) => s.id === w.id && s.owner !== from)).map((w) => ({ id: w.id, name: clean(w.name), ...(w.branch ? { branch: clean(w.branch) } : {}) }));
+    const key = keyOf(from, m.id);
+    const before = this.received[key];
+    const ownerName = this.opts.mesh.nameFor(from);
+    const next: Received = {
+      owner: from,
+      ownerName,
+      id: m.id,
+      name: clean(m.name),
+      ...(m.icon && /^image\/[\w.+-]+$/.test(m.icon.mime) && /^[A-Za-z0-9+/=]*$/.test(m.icon.data) ? { icon: m.icon } : {}),
+      role: m.role,
+      worktrees,
+      members: m.members.map((x) => ({ peerId: x.peerId, name: clean(x.name), role: x.role })),
+      updatedAt: Date.now(),
+      history: Object.fromEntries(Object.entries(before?.history ?? {}).filter(([ws]) => worktrees.some((w) => w.id === ws))),
+    };
+    this.received = { ...this.received, [key]: next };
+    for (const gone of (before?.worktrees ?? []).filter((w) => !worktrees.some((x) => x.id === w.id))) this.leaveWs(from, gone.id);
+    this.saveReceived();
+    this.publishReceived(false);
+    if (!before) this.opts.session.toast(`${ownerName} shared ${next.name} with you${m.role === 'view' ? ' (to follow along)' : ''}. It's in Projects`, 'success');
+  }
+
+  private onUnshare(from: string, id: string): void {
+    const before = this.received[keyOf(from, id)];
+    if (!before) return;
+    this.forget(from, id);
+    this.opts.session.toast(`${before.ownerName} stopped sharing ${before.name} with you`, 'warn');
+  }
+
+  private leaveWs(owner: string, id: string): void {
+    this.dispatch({ type: 'shared_remove', owner, id });
+    this.opts.session.intend({ type: 'close_tab', id });
+  }
+
+  /** Leave a project a friend shared with you (it goes from your Projects; they're told). */
+  leave(owner: string, projectId: string): void {
+    if (!this.received[keyOf(owner, projectId)]) return;
+    this.courier.send(owner, { k: 'leave', id: projectId }, { reliable: true });
+    this.forget(owner, projectId);
+  }
+
+  private forget(owner: string, id: string): void {
+    const key = keyOf(owner, id);
+    const before = this.received[key];
+    if (!before) return;
+    this.received = Object.fromEntries(Object.entries(this.received).filter(([k]) => k !== key));
+    for (const w of before.worktrees) this.leaveWs(owner, w.id);
+    this.saveReceived();
+    this.publishReceived(false);
+  }
+
+  private onHistory(from: string, m: Extract<ShareMsg, { k: 'history' }>): void {
+    const rec = this.receivedWs(m.ws);
+    if (!rec || rec.owner !== from) return;
+    const items = m.items.map((h) => ({ from: clean(h.from), text: clean(h.text), ts: h.ts, byAgent: h.byAgent }));
+    this.received = { ...this.received, [keyOf(rec.owner, rec.id)]: { ...rec, history: { ...rec.history, [m.ws]: items } } };
+    this.saveReceived();
+    this.injectHistory(rec.owner, m.ws, items);
+  }
+
+  /** A worktree's earlier conversation, as lines of who said what (as a room invite brings it). */
+  private injectHistory(owner: string, wsId: string, items: readonly HistoryItem[]): void {
+    const channel = `ws:${wsId}`;
+    this.dispatch({ type: 'clear', channel });
+    const state = this.state;
+    for (const h of items) this.dispatch({ type: 'system', text: `${h.from}: ${h.text}`, channel, said: saidBy(state, owner, h) });
+  }
+
+  private onFolder(from: string, m: Extract<ShareMsg, { k: 'folder' }>): void {
+    const key = keyOf(from, m.name);
+    if (m.active) {
+      const isNew = !this.friendFolders[key];
+      this.friendFolders = { ...this.friendFolders, [key]: { owner: from, ownerName: this.opts.mesh.nameFor(from), name: m.name, label: clean(m.label) || m.name, writable: m.writable, since: this.friendFolders[key]?.since ?? Date.now() } };
+      if (isNew) this.opts.session.toast(`${this.opts.mesh.nameFor(from)} shared the folder ${clean(m.label) || m.name} with you. It's in Files`, 'success');
+    } else this.friendFolders = Object.fromEntries(Object.entries(this.friendFolders).filter(([k]) => k !== key));
+    this.saveReceived();
+    this.publishFolders();
+  }
+
+  /** What's said in a friend's worktree is kept with it, so it's there after a restart too. */
+  private onAction(action: Action): void {
+    if (action.type === 'projects') return this.resync();
+    const channel = action.type === 'chat' || action.type === 'agent_event' ? action.channel : undefined;
+    const ws = wsOf(channel);
+    const rec = ws ? this.receivedWs(ws) : undefined;
+    if (!rec || !ws) return;
+    let item: HistoryItem | undefined;
+    if (action.type === 'chat') item = { from: peerName(this.state, action.from), text: action.text.slice(0, HISTORY_TEXT), ts: action.ts, byAgent: action.byAgent };
+    if (action.type === 'agent_event' && action.event === 'done' && action.text.trim()) item = { from: `${peerName(this.state, action.owner)}'s Claude`, text: action.text.slice(0, HISTORY_TEXT), ts: action.ts, byAgent: true };
+    if (!item) return;
+    const history = [...(rec.history[ws] ?? []), item].slice(-HISTORY_ITEMS);
+    this.received = { ...this.received, [keyOf(rec.owner, rec.id)]: { ...rec, history: { ...rec.history, [ws]: history } } };
+    this.saveReceived();
+  }
+
+  // ---------------------------------------------------------------- state and files
+
+  private publishGrants(): void {
+    this.dispatch({ type: 'fshare_grants', grants: this.grants });
+  }
+
+  private publishFolders(): void {
+    this.dispatch({ type: 'fshare_folders', folders: Object.values(this.friendFolders) });
+  }
+
+  /** Into the shared state: one row per project, and each worktree as a workspace shared with you. */
+  private publishReceived(startup: boolean): void {
+    const all = Object.values(this.received);
+    this.dispatch({ type: 'fshare_projects', projects: all.map(({ history: _h, ...p }) => p) });
+    for (const p of all) {
+      for (const w of p.worktrees) {
+        const known = this.state.shared.find((s) => s.id === w.id && s.owner === p.owner);
+        const ws = { owner: p.owner, id: w.id, name: w.name, project: p.name, ...(w.branch ? { branch: w.branch } : {}), role: p.role, share: shareNameOf(w.id), via: 'mesh' as const, projectId: p.id };
+        if (!known || JSON.stringify(known) !== JSON.stringify(ws)) this.dispatch({ type: 'shared_add', ws });
+        this.dispatch({ type: 'roster', id: w.id, members: p.members.map((m) => ({ peerId: m.peerId, role: m.role })) });
+        const items = p.history[w.id];
+        if (startup && items?.length && !this.state.log.some((l) => l.channel === `ws:${w.id}`)) this.injectHistory(p.owner, w.id, items);
+      }
+    }
+  }
+
+  private load(): void {
+    const own = readJson(path.join(this.opts.dir, 'project-shares.json')) as { grants?: unknown; sent?: unknown; folders?: unknown } | undefined;
+    if (own && typeof own === 'object') {
+      this.grants = (own.grants && typeof own.grants === 'object' ? own.grants : {}) as typeof this.grants;
+      this.sent = (own.sent && typeof own.sent === 'object' ? own.sent : {}) as typeof this.sent;
+      this.folders = (own.folders && typeof own.folders === 'object' ? own.folders : {}) as typeof this.folders;
+    }
+    const theirs = readJson(path.join(this.opts.dir, 'shared-projects.json')) as { projects?: unknown; folders?: unknown } | undefined;
+    if (theirs && typeof theirs === 'object') {
+      const projects = Array.isArray(theirs.projects) ? (theirs.projects as Received[]).filter((p) => p && typeof p.owner === 'string' && typeof p.id === 'string' && Array.isArray(p.worktrees)) : [];
+      this.received = Object.fromEntries(projects.map((p) => [keyOf(p.owner, p.id), { ...p, members: p.members ?? [], history: p.history ?? {} }]));
+      const folders = Array.isArray(theirs.folders) ? (theirs.folders as FriendFolder[]).filter((f) => f && typeof f.owner === 'string' && typeof f.name === 'string') : [];
+      this.friendFolders = Object.fromEntries(folders.map((f) => [keyOf(f.owner, f.name), f]));
+    }
+  }
+
+  private saveOwn(): void {
+    try {
+      writeJson(path.join(this.opts.dir, 'project-shares.json'), { grants: this.grants, sent: this.sent, folders: this.folders });
+    } catch {
+      // Best effort: it's in memory, and said again on the next change.
+    }
+  }
+
+  private saveReceived(): void {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => this.saveNow(), 300);
+    this.saveTimer.unref();
+  }
+
+  private saveNow(): void {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = undefined;
+    try {
+      writeJson(path.join(this.opts.dir, 'shared-projects.json'), { projects: Object.values(this.received), folders: Object.values(this.friendFolders) });
+    } catch {
+      // Best effort.
+    }
+  }
+}

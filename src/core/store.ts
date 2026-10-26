@@ -14,6 +14,7 @@ import { type EarningsAction, type EarningsSlice, initialEarnings, reduceEarning
 import { type SupportAction, type SupportSlice, initialSupport } from './support-store.js';
 import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceClaudeCode } from './claude-code/model.js';
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
+import { type FriendShareAction, type FriendShareSlice, initialFriendShare, reduceFriendShare } from './friend-share-store.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
@@ -375,7 +376,7 @@ export interface MyShare {
  * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice, FriendShareSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -533,6 +534,7 @@ export type Action =
   | EarningsAction
   | ClaudeCodeAction
   | GatewayAction
+  | FriendShareAction
   | BoardAction
   | PlansAction
   | SupportAction;
@@ -610,6 +612,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialSupport,
     ...initialClaudeCode,
     ...initialGateway,
+    ...initialFriendShare,
     ...initialBoard,
     ...initialPlans,
     companion: { devices: [] },
@@ -638,8 +641,9 @@ export function stampAction<A extends Action>(action: A): A {
   }
 }
 
-export const peerName = (state: Pick<DomainState, 'peers' | 'self'>, peerId: string): string =>
-  state.peers.find((p) => p.peerId === peerId)?.name ?? (state.self?.peerId === peerId ? state.self.name : peerId.slice(0, 6));
+export const peerName = (state: Pick<DomainState, 'peers' | 'self'> & { readonly network?: Pick<DomainState['network'], 'friends'> }, peerId: string): string =>
+  state.peers.find((p) => p.peerId === peerId)?.name ??
+  (state.self?.peerId === peerId ? state.self.name : (state.network?.friends.find((f) => f.peerId === peerId)?.name ?? peerId.slice(0, 6)));
 
 const sameLoc = (a: Location | undefined, b: Location): boolean =>
   Boolean(a) && a?.owner === b.owner && a.share === b.share && a.path === b.path;
@@ -1043,6 +1047,11 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'gw_freely':
     case 'gw_off':
       return { ...state, ...reduceGateway(state, action) };
+    case 'fshare_projects':
+    case 'fshare_grants':
+    case 'fshare_folders':
+    case 'fshare_delivery':
+      return { ...state, ...reduceFriendShare(state, action) };
     case 'board_init':
     case 'board_issue':
     case 'board_remove':

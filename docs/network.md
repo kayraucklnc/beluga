@@ -60,10 +60,12 @@ the one dialed by the lower address); a reconnection after a restart replaces th
 at once. A relayed link is retried directly now and then and replaced once that works. Each link has a heartbeat (dropped after 3 missed),
 2 MB frames and token-bucket limits on messages and bytes. Messages are versioned JSON (`hello` carries
 `proto: 1`; unknown kinds are ignored): `hello`, `presence`, `dm`/`dm_ack`,
-`g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`.
+`g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`, `gw` (the gateway), `share`
+(sharing with friends).
 
 **Versions and features.** `hello` also carries the Beluga version (`app`) and what this Mac does (`can`,
-`src/net/mesh/features.ts`: `chat.*` always, `task.*` while the gateway listens, said again when that changes).
+`src/net/mesh/features.ts`: `chat.*` always, `task.*` while the gateway listens, `share.*` while sharing with friends
+runs, said again when that changes).
 A friend's card and `who_can` show their version. A request their Mac said it can't take fails at once
 ("Ata's Beluga 1.1.0 can't take file requests yet. Ask Ata to update Beluga") rather than waiting a week;
 "isn't taking requests" only counts while they're linked (a Mac withdraws it as it quits). Macs from before
@@ -423,3 +425,45 @@ question is taken once (a replay is ignored, frames are de-duplicated by id) and
 task (more are answered "go on"). The question is shown as data from that person, never as
 instructions. You can also answer (or let them decide) on the task's card; a task you asked
 yourself notifies you.
+
+## Sharing with friends
+
+Code: `src/core/friend-share/` (`protocol.ts`, `courier.ts`, `service.ts`), `src/core/friend-share-store.ts` (the shared
+state), the Mac app's `layout/SharedProjects.tsx` and `dialogs/native/ShareProjectSheet.tsx`. The daemon runs it whenever
+the network is on (`launchFriendShares`), and says `share.project` and `share.folder` in its `hello`.
+
+**A project, shared with a friend.** You share it from the project's ••• menu (**Share with…**: each friend gets
+*Can work here*, *Can follow* or *No access*), or with `sharing.shareWithFriend({ peerId, projectId?, workspaceId?, role })`
+(`role`: `contribute` | `view`; a `workspaceId` alone shares that one worktree). Only friends; a friend whose Beluga said
+it can't open shared projects is told at once ("Ata's Beluga 1.1.0 can't open shared projects yet. Ask Ata to update
+Beluga"). Nobody hosts: everything goes over the two Macs' Noise link in `share` frames.
+
+On their Mac it's one row in **Projects**, after yours: the project's icon with your avatar on its corner, "· ata's" beside
+its name, and its worktrees nested under it as your own are. It stays while your Mac is offline ("ata is offline") and
+after either of you restarts (`~/.beluga/shared-projects.json`). New worktrees appear and archived ones go by themselves.
+**Leave Project** (its ••• menu) takes it off their Mac and tells yours; *No access* (or `sharing.unshareFriend`) takes it
+back. Each worktree also becomes a workspace shared with them (the state's `shared`, `via: 'mesh'`), so its conversation,
+files and changes open as a room share's do; unlike those, it isn't wiped when a room ends. Your side keeps who has what
+in `~/.beluga/project-shares.json`.
+
+**What travels** (`protocol.ts`): each message rides in `{f, m}`, acknowledged with `{ack}`.
+
+- `project {id, name, icon?, role, worktrees[{id, name, branch?}], members[{peerId, name, role}]}`: what they have of it
+  now, sent whenever any of that changes (the newest replaces one still waiting). The icon goes when it's under 120 KB.
+- `unshare {id}` (you took it back), `leave {id}` (they left).
+- `history {ws, items}`: a worktree's last 60 messages and answers (4000 characters each), once, when it's first shared
+  with them; their Mac keeps it, and what's said after, with the project.
+- `body {b, as?}`: one of the room's own messages about a shared worktree or folder: `chat`, `agent_request`,
+  `agent_event`, `agent_question`/`agent_answer`, the files' `fs_list`/`fs_read`/`fs_fetch`/`fs_search`/`ws_diff` and
+  their answers. The sending Session hands it over instead of the room (`Session.meshRoute`); the receiving one checks
+  it as if the room had brought it (`receiveFromFriend`: the replay guard, who may post, who may see, which share), and
+  only for what's shared between the two of you: a channel of a worktree shared with them (or by them), a share of
+  one of those worktrees or of a folder shared with them, the answer to a request they made over the link. A share
+  you give a room is never reachable this way. `as`: a message the worktree's owner passes on from someone else in it.
+- `folder {name, label, writable, active}`: a folder you share with them (see below).
+
+**Never dropped** (`courier.ts`). Messages, requests to a Claude, its questions and answers, the project's state and the
+steps of a run that matter (queued, started, waiting for approval, done, failed, declined) wait in
+`~/.beluga/share-outbox.json` until the friend's Mac acknowledges them: sent again every 20 s while you're linked, at
+once when a link comes up, for 7 days. A Claude's streamed steps and file pieces only go to someone linked now. Frames
+are de-duplicated by id, and a message handed on is remembered by the replay guard, so a resend never acts twice.
