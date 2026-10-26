@@ -61,11 +61,11 @@ at once. A relayed link is retried directly now and then and replaced once that 
 2 MB frames and token-bucket limits on messages and bytes. Messages are versioned JSON (`hello` carries
 `proto: 1`; unknown kinds are ignored): `hello`, `presence`, `dm`/`dm_ack`,
 `g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`, `gw` (the gateway), `share`
-(sharing with friends).
+(sharing with friends), `team` (team boards: friends on the same GitHub repository, see docs/tasks-and-plans.md phase 3).
 
 **Versions and features.** `hello` also carries the Beluga version (`app`) and what this Mac does (`can`,
 `src/net/mesh/features.ts`: `chat.*` always, `task.*` while the gateway listens, `share.*` while sharing with friends
-runs, said again when that changes).
+runs, `team.*` while team boards run, said again when that changes).
 A friend's card and `who_can` show their version. A request their Mac said it can't take fails at once
 ("Ata's Beluga 1.1.0 can't take file requests yet. Ask Ata to update Beluga") rather than waiting a week;
 "isn't taking requests" only counts while they're linked (a Mac withdraws it as it quits). Macs from before

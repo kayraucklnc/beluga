@@ -25,6 +25,7 @@ import { CHAT_DEFAULT, DEFAULT_PLAN_LAYOUT, type Display, PLAN_LAYOUT_KEY, type 
 import { barColumns, changeWords, headline, nextWords, titleOf } from './plans-model.js';
 import { useConversationLoaded, usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
+import { TeamReviews, usePlanTeamItems } from '../team/SharedPlans.js';
 
 const PlanCanvas = lazy(() => import('./PlanCanvas.js'));
 
@@ -187,6 +188,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     }
   })();
 
+  const teamItems = usePlanTeamItems(plan.id, plan.projectId);
   const more: ActionItem[] = [
     ...(plan.body && plan.status === 'active' ? [{ label: plan.paused ? 'Resume' : 'Pause', onSelect: () => void act(() => api.setPaused(plan.id, !plan.paused)) }] : []),
     { label: 'Run at Once', submenu: [1, 2, 3, 4, 6, MAX_PARALLEL].map((n) => ({ label: `${n} ${n === 1 ? 'milestone' : 'milestones'}`, checked: plan.maxParallel === n, onSelect: () => void act(() => api.setParallel(plan.id, n)) })), onSelect: () => undefined },
@@ -207,6 +209,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
         ]
       : []),
     ...(plan.status === 'active' ? [taskChatsItem(plan.id, uiPrefs)] : []),
+    ...teamItems,
     { label: 'Copy as Markdown', separate: true, onSelect: () => void copyText(markdownOf(view)) },
     { label: 'Planning Style…', onSelect: () => openSheet({ kind: 'plan_style' }) },
     ...(plan.draft ? [{ label: plan.body ? 'Discard Changes' : 'Discard Draft', danger: true, separate: true, onSelect: () => openSheet({ kind: 'confirm', title: plan.body ? 'Discard the proposed changes?' : 'Discard this draft?', message: plan.body ? 'The plan stays as you approved it.' : 'Nothing was put on the board, so nothing else changes.', confirm: 'Discard', destructive: true, run: () => void act(() => api.discard(plan.id)) }) }] : []),
@@ -252,6 +255,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       </header>
       <LimitPause view={view} />
       <TidyOffer view={view} />
+      <TeamReviews planId={plan.id} />
       {plan.body && plan.draft ? (
         <div className={p.changes} role="status">
           <Icon name="wand" size={13} />

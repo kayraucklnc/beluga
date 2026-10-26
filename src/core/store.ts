@@ -17,6 +17,7 @@ import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } 
 import { type FriendShareAction, type FriendShareSlice, initialFriendShare, reduceFriendShare } from './friend-share-store.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
+import { type TeamAction, type TeamSlice, initialTeam, reduceTeam } from './team/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_DEFAULT, type SlotWait } from '../shared/run-slots.js';
@@ -315,6 +316,8 @@ export type View =
   /** Plans (Mac app): one project's plans, and one plan's page (its graph, outline and conversation). */
   | { readonly kind: 'plans'; readonly projectId?: string }
   | { readonly kind: 'plan'; readonly id: string; readonly task?: string }
+  /** A plan draft a teammate shared with you (core/team): read-only, to review, comment, suggest or approve. */
+  | { readonly kind: 'team_plan'; readonly owner: string; readonly id: string }
 
   /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
   | { readonly kind: 'worktrees'; readonly projectId?: string };
@@ -380,7 +383,7 @@ export interface MyShare {
  * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice, FriendShareSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice, FriendShareSlice, TeamSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -541,6 +544,7 @@ export type Action =
   | FriendShareAction
   | BoardAction
   | PlansAction
+  | TeamAction
   | SupportAction;
 
 const LOG_LIMIT = 1000;
@@ -619,6 +623,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialFriendShare,
     ...initialBoard,
     ...initialPlans,
+    ...initialTeam,
     companion: { devices: [] },
     assistant: NO_ASSISTANT_CHATS,
   };
@@ -1086,6 +1091,9 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'plans_style':
     case 'plans_off':
       return offPlanHomes({ ...state, ...reducePlans(state, action) });
+    case 'team_state':
+    case 'team_off':
+      return { ...state, ...reduceTeam(state, action) };
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };

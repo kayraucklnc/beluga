@@ -32,6 +32,7 @@ import { Row } from './sidebar-parts.js';
 import { WorkspaceRow } from './workspace-row.js';
 import { PlanRow } from './plan-row.js';
 import { useGitHubMenuItems } from '../views/project/GitHubRow.js';
+import { TeamBadge, useTeamMenuItems } from '../team/Team.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
 
@@ -180,13 +181,15 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   const archived = p.workspaces.filter((w) => w.archived);
   const item: Target = { project: p.id };
   const githubItems = useGitHubMenuItems(p.id, Boolean(p.root));
+  // Friends on the same GitHub repository you teamed up with (core/team).
+  const teamItems = useTeamMenuItems(p.id);
   // Archived work stays out of the sidebar: the Overview's Archived list has it.
   const showArchivedItem: ActionItem[] = archived.length ? [{ label: `Show Archived (${archived.length})`, onSelect: () => showArchivedOf(actions.run, p.id) }] : [];
   // Everything about its worktrees (archiving, restoring, cleaning up those made outside Beluga) is on the Worktrees page.
   const cleanUpItem: ActionItem[] = p.workspaces.some((w) => w.kind === 'worktree') ? [{ label: 'Manage Worktrees…', onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) }] : [];
   // Share with friends over the network (nobody hosts): it shows in their Projects with your avatar.
   const shareItem: ActionItem[] = p.root ? [{ label: 'Share with…', icon: 'people', separate: true, onSelect: () => openSheet({ kind: 'share_project', projectId: p.id }) }] : [];
-  const extra: ActionItem[] = [...shareItem, ...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, earning), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, separate: true, onSelect: () => hide(p) }, { label: 'Delete Project…', danger: true, onSelect: () => openSheet({ kind: 'delete_project', projectId: p.id }) }];
+  const extra: ActionItem[] = [...shareItem, ...teamItems, ...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, earning), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, separate: true, onSelect: () => hide(p) }, { label: 'Delete Project…', danger: true, onSelect: () => openSheet({ kind: 'delete_project', projectId: p.id }) }];
   const kids = depth + 2;
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
   const sessions = useCcSessions();
@@ -242,6 +245,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
           }}
           trailing={
             <>
+              <TeamBadge projectId={p.id} />
               <EarningsPill root={p.root} projectId={p.id} celebrate />
               <span className={side.hoverTools}>
                 <IconButton icon="branch" label={`New worktree in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_worktree', projectId: p.id }))} />

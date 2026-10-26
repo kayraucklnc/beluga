@@ -10,6 +10,7 @@ import { TerminalDrawer } from './panel/TerminalDrawer.js';
 import { WorkFrame } from '../work/WorkNav.js';
 import s from './Shell.module.css';
 import side from './Sidebar.module.css';
+import { SharedPlanPage } from '../team/SharedPlans.js';
 
 const OverviewView = lazy(() => import('../views/OverviewView.js').then((m) => ({ default: m.OverviewView })));
 const SearchView = lazy(() => import('../views/SearchView.js').then((m) => ({ default: m.SearchView })));
@@ -91,6 +92,8 @@ function Route() {
       return <WorkFrame page="plans"><PlansView /></WorkFrame>;
     case 'plan':
       return <PlanPage key={view.id} id={view.id} task={view.task} />;
+    case 'team_plan':
+      return <WorkFrame page="plans"><SharedPlanPage key={`${view.owner}/${view.id}`} owner={view.owner} id={view.id} /></WorkFrame>;
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':

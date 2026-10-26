@@ -5,6 +5,8 @@ import { activityOf } from '@beluga/ui/workspace-models.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
 import { type IssuesPrefs, readIssuesPrefs } from './issues-model.js';
+import { teammateOn } from '@beluga/core/team/model.js';
+import { openSheet } from '../lib/sheets.js';
 
 /** What the Issues screens share: a project's issues and one issue (read through the core, kept a little while), how far Beluga got with each, and acting on them. */
 
@@ -122,11 +124,31 @@ export function useIssueActions() {
         return undefined;
       }
     };
+    /**
+     * A teammate on the same repository is already on it (BLG-224): ask first, and start only if
+     * you say so. Resolves with what the start gave (undefined when you didn't).
+     */
+    const unlessTeammate = <T,>(projectId: string, number: number, start: (anyway: boolean) => Promise<T | undefined>): Promise<T | undefined> => {
+      const st = client.store.getState();
+      const task = st.board.issues.find((i) => i.projectId === projectId && i.github?.number === number && !i.archivedAt);
+      const on = task ? teammateOn(st.team, task, st.selfId) : undefined;
+      if (!on) return start(false);
+      return new Promise((resolve) =>
+        openSheet({
+          kind: 'confirm',
+          title: on.words,
+          message: `Starting #${number} here too means two of you work on it. Ask ${on.name} first, or start anyway.`,
+          confirm: 'Start Anyway',
+          run: () => void start(true).then(resolve),
+        }),
+      );
+    };
+    const extra = (note: string | undefined, anyway: boolean) => (note?.trim() || anyway ? { ...(note?.trim() ? { note: note.trim() } : {}), ...(anyway ? { anyway: true } : {}) } : undefined);
     return {
       /** Claude finds out why and reproduces it, in a worktree of the issue's task. */
-      investigate: (projectId: string, number: number, note?: string) => act(() => api.issues.investigate(projectId, number, note?.trim() ? { note: note.trim() } : undefined), (w) => `Claude is investigating #${number} (${w.key})`),
+      investigate: (projectId: string, number: number, note?: string) => unlessTeammate(projectId, number, (anyway) => act(() => api.issues.investigate(projectId, number, extra(note, anyway)), (w) => `Claude is investigating #${number} (${w.key})`)),
       /** Claude fixes it and opens a pull request that closes it. */
-      fix: (projectId: string, number: number, note?: string) => act(() => api.issues.fix(projectId, number, note?.trim() ? { note: note.trim() } : undefined), (w) => `Claude is fixing #${number} (${w.key})`),
+      fix: (projectId: string, number: number, note?: string) => unlessTeammate(projectId, number, (anyway) => act(() => api.issues.fix(projectId, number, extra(note, anyway)), (w) => `Claude is fixing #${number} (${w.key})`)),
       /** On the board, written by Claude (`look`: after a quick look at the code). */
       toTask: (projectId: string, number: number, look = false, note?: string) =>
         act(

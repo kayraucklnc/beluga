@@ -13,6 +13,7 @@ import { PickMenu } from './PickMenu.js';
 import { type Display, SCOPES, ago, type Scope, assigneesIn, connected, doneCount, projectToShow, scopeCounts, scoped, statusesFor, taskGraph } from './tasks-model.js';
 import { setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
+import { TeamOffers } from '../team/Team.js';
 
 const FlowGraph = lazy(() => import('../components/graph/FlowGraph.js'));
 
@@ -190,6 +191,7 @@ export function TasksView() {
         </div>
       </div>
       <div className={cx(t.body, display === 'board' && t.bodyBoard, display === 'graph' && t.bodyGraph)}>
+        {project ? <TeamOffers projectId={project} /> : null}
         {none ? (
           <Empty
             icon="task"

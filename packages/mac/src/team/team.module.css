@@ -1,0 +1,53 @@
+/* Team boards (core/team): an offer to team up, the team badge on a project, "Ata is working on this". */
+
+.offer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--info) 7%, var(--bg-raised));
+  margin-bottom: 14px;
+}
+.offerText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.offerTitle {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+}
+.offerDetail {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Teammates on a project row: their avatars, small, after the name. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-3);
+  margin-right: 2px;
+}
+
+/* "Ata is working on this": a quiet line with their avatar. */
+.working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

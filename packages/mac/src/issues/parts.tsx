@@ -11,6 +11,7 @@ import { ago } from '../tasks/tasks-model.js';
 import { agoWords, comments, labelColor, stateOf } from './issues-model.js';
 import { useIssueActions, useIssueStage } from './use-issues.js';
 import s from './issues.module.css';
+import { TeammateOnIssue } from '../team/Team.js';
 
 /** An issue's state as GitHub draws it: a ring with a dot while open, with a check once done, grey when closed otherwise. */
 export function IssueStateIcon({ issue, size = 15 }: { issue: Pick<GhIssue, 'state' | 'reason'>; size?: number }) {
@@ -108,6 +109,7 @@ export const IssueRow = memo(function IssueRow({ projectId, repo, issue, compact
             {closed && issue.closedAt ? `closed ${agoWords(issue.closedAt)}` : `opened ${agoWords(issue.createdAt)}`}
           </span>
         </span>
+        <TeammateOnIssue projectId={projectId} number={issue.number} />
         <StagePill stage={stage} />
         {issue.comments ? (
           <Tip label={comments(issue.comments)}>

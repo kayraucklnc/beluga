@@ -17,12 +17,19 @@ export const FEATURE_NAMES = {
   'task.secret': 'secrets',
   'share.project': 'shared projects',
   'share.folder': 'shared folders',
+  /** Team boards (core/team): friends on the same GitHub repo find each other and keep one board. */
+  'team.board': 'team boards',
+  /** Plan drafts shared with teammates to review (core/team). */
+  'team.plans': 'shared plans',
 } as const;
 
 export type Feature = keyof typeof FEATURE_NAMES;
 
 /** What a Mac takes while it shares projects and folders with friends (core/friend-share). */
 export const SHARE_FEATURES: readonly Feature[] = ['share.project', 'share.folder'];
+
+/** What a Mac takes while its team boards run (core/team). */
+export const TEAM_FEATURES: readonly Feature[] = ['team.board', 'team.plans'];
 
 /** What the network itself always does. */
 export const MESH_FEATURES: readonly Feature[] = ['chat.files', 'chat.claude'];
@@ -56,7 +63,7 @@ export function cannotTake(name: string, info: BelugaInfo | undefined, feature: 
   // Their Beluga declines every secret at once: say so before asking.
   if (feature === 'task.secret') return `${name}'s Beluga ${shortVersion(info.version)} can't send secrets ${name} approves yet. Ask ${name} to update Beluga.`;
   // Shared things are opened on their Mac, not taken as requests.
-  const verb = feature.startsWith('share.') ? 'open' : 'take';
+  const verb = feature.startsWith('share.') || feature.startsWith('team.') ? 'open' : 'take';
   return `${name}'s Beluga ${shortVersion(info.version)} can't ${verb} ${what} yet. Ask ${name} to update Beluga.`;
 }
 
