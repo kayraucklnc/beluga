@@ -158,6 +158,8 @@ export interface Approval {
   readonly peer?: string;
   /** The friend's request it's about (the gateway: the request sheet and notifications open it). */
   readonly task?: string;
+  /** Only Allow once / Decline: a friend's request for a secret (trust, rules and Always never cover it). */
+  readonly once?: boolean;
   /** The conversation it holds up, when that's a workspace ("ws:<id>"): the sidebar marks it as needing you. */
   readonly channel?: string;
 }

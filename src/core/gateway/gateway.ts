@@ -11,10 +11,11 @@ import { type Expects, type GatewayMsg, MAX_QUESTIONS, MAX_REQUEST_SUMMARY, type
 import { describeForClaude, oneLine, questionPrompt, resumePrompt } from './result.js';
 import { RuleBook, type RuleInput } from './rule-book.js';
 import { validate } from './schema.js';
-import { type Pending, type ServeShell, TaskServer, defaultScratch } from './serve.js';
+import { type ApproveOpts, type Pending, type ServeShell, TaskServer, defaultScratch } from './serve.js';
+import { isSecretPath } from '../shares.js';
 import { FileFetcher, mergeFiles, wantedFiles } from './transfer.js';
 import { Courier, type MeshPort, type RoomPort, type Via } from './transport.js';
-import { cannotTake, featureForTask, shortVersion } from '../../net/mesh/features.js';
+import { type Feature, cannotTake, featureForTask, shortVersion } from '../../net/mesh/features.js';
 
 /**
  * The gateway: tasks between Claudes. Your Claude (or you) asks a friend's Claude to do
@@ -37,7 +38,7 @@ export interface GatewayDeps {
   readonly scratch?: string;
   readonly agent: () => AgentBackend | undefined;
   /** Ask you (today's approval cards, linked to the task they're about), with a way to take the question back. */
-  readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string) => Pending;
+  readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string, opts?: ApproveOpts) => Pending;
   /** ~/.beluga/rules.json (null or missing: rules stay in memory). */
   readonly rulesFile?: string | null;
   /** Your capability settings (what friends' Claudes may do here), and saving them. */
@@ -320,7 +321,7 @@ export class Gateway {
     if (!ask) throw new Error('Say what to ask');
     if (input.expects && input.expects !== 'files' && validateSchema(input.expects)) throw new Error(`The expects schema isn't usable: ${validateSchema(input.expects)}`);
     // Their Mac said what it takes: one that can't take this hears so now, not after a week of waiting.
-    const unable = this.cannotTake(peer, kind);
+    const unable = this.cannotTake(peer, kind) ?? (kind === 'file' && isSecretPath(input.path?.trim() ?? '') ? this.cannotTake(peer, kind, 'task.secret') : undefined);
     if (unable) throw new Error(unable);
     const level = this.trustFor(peer.peerId);
     // Your Claude asks first, unless you trust them or said Always for them (asking them, not what they may do here).
@@ -598,11 +599,11 @@ export class Gateway {
    * Why a friend's Beluga can't take a request of this kind, from what it said on its last link.
    * Only for requests that go over the network: someone in the room takes them there.
    */
-  private cannotTake(peer: { peerId: string; name: string }, kind: TaskKind): string | undefined {
+  private cannotTake(peer: { peerId: string; name: string }, kind: TaskKind, feature: Feature = featureForTask(kind)): string | undefined {
     const state = this.deps.store.getState();
     if (state.peers.some((p) => p.peerId === peer.peerId)) return undefined;
     const info = this.mesh?.belugaOf?.(peer.peerId) ?? state.network.friends.find((f) => f.peerId === peer.peerId)?.beluga;
-    return cannotTake(peer.name, info, featureForTask(kind), this.mesh?.isLinked(peer.peerId) ?? false);
+    return cannotTake(peer.name, info, feature, this.mesh?.isLinked(peer.peerId) ?? false);
   }
 
   private transmit(task: TaskView): void {
@@ -757,6 +758,7 @@ export class Gateway {
         ...(msg.data !== undefined ? { data: msg.data } : {}),
         ...(task.expects && msg.status === 'done' ? { valid: checked.length === 0 } : {}),
         ...(problems.length ? { problems } : {}),
+        ...(task.kind === 'file' && msg.secret ? { secret: msg.secret } : {}),
       },
       endedAt: this.now(),
       updatedAt: this.now(),

@@ -105,16 +105,17 @@ function Body({ task }: { task: TaskView }) {
     <>
       {error ? <span className={s.footNote} style={{ color: 'var(--error)' }}>{error}</span> : <span className={s.grow} />}
       <Button onClick={() => setMode('decline')}>Decline…</Button>
-      <Button onClick={() => setMode('always')}>Always…</Button>
+      {/* A secret is asked about each time: trust, rules and Always never cover it. */}
+      {task.secret ? null : <Button onClick={() => setMode('always')}>Always…</Button>}
       <Button variant="primary" disabled={busy} onClick={() => void answer({ answer: 'yes', scope: 'this', command: 'this', expiry: 'never' })}>
-        Approve Once
+        {task.secret ? 'Allow Once' : 'Approve Once'}
       </Button>
     </>
   );
   return (
     <Sheet
-      title={task.kind === 'run' ? `${who} wants to run a command on your Mac` : task.kind === 'file' ? `${who} wants a file from your Mac` : `${who} wants your Claude to do something`}
-      subtitle={waiting ? (task.by === 'agent' ? `${task.peerName} asked their Claude, and it asks yours.` : `${task.peerName} asks you directly.`) : stateLabel(task)}
+      title={task.secret ? `${who} wants ${task.secret.label}` : task.kind === 'run' ? `${who} wants to run a command on your Mac` : task.kind === 'file' ? `${who} wants a file from your Mac` : `${who} wants your Claude to do something`}
+      subtitle={waiting && task.secret ? 'This is a secret. You’re asked each time: if you allow it, Beluga sends this one file, and their Claude is told you approved it.' : waiting ? (task.by === 'agent' ? `${task.peerName} asked their Claude, and it asks yours.` : `${task.peerName} asks you directly.`) : stateLabel(task)}
       badge={<Avatar name={task.peerName} id={task.peerId} claude={task.by === 'agent'} size={32} />}
       close={closeRequest}
       footer={footer}
@@ -126,7 +127,7 @@ function Body({ task }: { task: TaskView }) {
         <span className={s.factLabel}>From</span>
         <span className={s.factValue} role="listitem">
           {task.peerName} · you: {TRUST_INFO[level].label.toLowerCase()}
-          {level !== 'trusted' && level !== 'full' ? (
+          {level !== 'trusted' && level !== 'full' && !task.secret ? (
             <button type="button" className={s.linkButton} onClick={() => void trust()}>
               Trust {task.peerName} instead
             </button>

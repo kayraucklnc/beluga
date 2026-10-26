@@ -3,6 +3,7 @@ import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import { type FsEntry, MAX_DOWNLOAD_BYTES, MAX_FILE_BYTES, type ShareInfo } from '../protocol.js';
 import { belugaEnv } from './beluga-env.js';
+import type { SecretKind } from './gateway/model.js';
 
 export interface ShareConfig {
   readonly name: string;
@@ -99,6 +100,44 @@ export function isSecretPath(p: string): boolean {
   const base = segments.at(-1) ?? '';
   if (DOTENV_TEMPLATE.test(base)) return false;
   return SECRET_FILE.some((re) => re.test(base));
+}
+
+/** The macOS keychains: never sent to anyone, whoever approves. */
+const KEYCHAINS = /(^|[\\/])library[\\/]keychains([\\/]|$)/i;
+
+/**
+ * A secret no approval sends (BLG-209): Beluga's own private files in ~/.beluga (your identity,
+ * settings, rules, trust choices, history) and the keychains. Other secrets can go to a friend
+ * when you approve that one request.
+ */
+export function isNeverSent(p: string): boolean {
+  if (KEYCHAINS.test(p)) return true;
+  return path.isAbsolute(p) && secretInHome(path.resolve(p));
+}
+
+const CLOUD_SEGMENTS = new Set(['.aws', '.azure', '.gcloud', '.kube', '.docker']);
+const CLOUD_PATHS = /(^|[\\/])\.config[\\/](gcloud|doctl)([\\/]|$)/i;
+const TOKEN_FILE = /^\.(npmrc|netrc|pypirc|git-credentials|pgpass)$/i;
+const TOKEN_PATHS = /(^|[\\/])(\.config[\\/](gh|hub|op|1password)|\.claude[\\/]\.credentials)/i;
+
+/** The kind of secret `p` is (its approval says it in words: secretLabel), or undefined when it isn't one (isSecretPath). */
+export function secretKindOf(p: string): SecretKind | undefined {
+  if (!isSecretPath(p)) return undefined;
+  const segments = segmentsOf(p);
+  const base = segments.at(-1) ?? '';
+  if (segments.includes('.ssh') || /^id_(rsa|ed25519|ecdsa|dsa)$/i.test(base)) return 'ssh-key';
+  if (DOTENV.test(base)) return 'dotenv';
+  if (segments.some((s) => CLOUD_SEGMENTS.has(s)) || CLOUD_PATHS.test(p)) return 'cloud';
+  if (TOKEN_FILE.test(base) || TOKEN_PATHS.test(p) || /^\.?credentials(\.json)?$/i.test(base)) return 'token';
+  return 'secret';
+}
+
+/** A file a friend's task result brought here (~/.beluga/tasks/files): yours now, whatever its name says. */
+export function isReceivedTaskFile(p: string): boolean {
+  if (!path.isAbsolute(p)) return false;
+  const homes = belugaHomes();
+  // Where it really is counts too: a link in there to your own ~/.ssh is still your key.
+  return [path.resolve(p), realOf(path.resolve(p))].every((at) => homes.some((home) => fold(at).startsWith(home + path.sep + fold(path.join('tasks', 'files')) + path.sep)));
 }
 
 /**

@@ -76,6 +76,16 @@ function Approvals() {
             Don’t allow
           </Button>
         </div>
+      ) : first.once ? (
+        // A friend's request for a secret: asked each time, so there's no Always.
+        <div className={s.actions}>
+          <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>
+            Allow once
+          </Button>
+          <Button variant="quiet" onClick={() => void api.host.answerApproval('no', first.id)}>
+            Decline
+          </Button>
+        </div>
       ) : (
         <div className={s.actions}>
           <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>

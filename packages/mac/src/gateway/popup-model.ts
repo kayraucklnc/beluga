@@ -34,6 +34,8 @@ export interface PopupRequest {
   readonly where: string;
   readonly back: string;
   readonly askedAt: number;
+  /** A file request for a secret ("your private SSH key id_ed25519"): the card says so, and offers only Allow once / Decline. */
+  readonly secret?: string;
 }
 
 /** Requests one card shows at once (the rest: "2 more waiting"). */
@@ -90,6 +92,7 @@ export function popupRequests(approvals: readonly Approval[], tasks: readonly Ta
         where: whereLine(t),
         back: backLine(t),
         askedAt: a.askedAt ?? t.createdAt,
+        ...(t.secret ? { secret: t.secret.label } : {}),
       };
       return [item];
     })
@@ -106,8 +109,9 @@ export const POPUP_BUTTONS: ReadonlyArray<{ readonly action: RequestAction; read
   { action: 'approve', label: 'Allow' },
 ];
 
-/** The buttons one request gets: a file is allowed one at a time here (Always for files, with its folder spelled out, is on the request sheet). */
-export const popupButtons = (r: Pick<PopupRequest, 'kind'>): typeof POPUP_BUTTONS => (r.kind === 'file' ? POPUP_BUTTONS.filter((b) => b.action !== 'allow_always') : POPUP_BUTTONS);
+/** The buttons one request gets: a file is allowed one at a time here (Always for files, with its folder spelled out, is on the request sheet; a secret never has one). */
+export const popupButtons = (r: Pick<PopupRequest, 'kind'> & { readonly secret?: string }): typeof POPUP_BUTTONS =>
+  r.secret ? POPUP_BUTTONS.filter((b) => b.action !== 'allow_always').map((b) => (b.action === 'approve' ? { ...b, label: 'Allow Once' } : b)) : r.kind === 'file' ? POPUP_BUTTONS.filter((b) => b.action !== 'allow_always') : POPUP_BUTTONS;
 
 // ------------------------------------------------------------------ when your own Claude needs you
 

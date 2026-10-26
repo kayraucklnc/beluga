@@ -155,6 +155,11 @@ function Result({ task }: { task: TaskView }) {
           </div>
         </>
       ) : null}
+      {r.secret && r.status === 'done' ? (
+        <div className={s.hint}>
+          <Icon name="lock" size={11} /> A secret ({r.secret}): {task.direction === 'sent' ? `${task.peerName} approved sending it to you` : 'you approved sending it'}, this once.
+        </div>
+      ) : null}
       {r.problems?.length ? <div className={s.problems}>{r.valid === false ? 'The data doesn’t match what was asked for: ' : ''}{r.problems.join(' · ')}</div> : null}
     </div>
   );
@@ -170,9 +175,10 @@ function Approve({ task }: { task: TaskView }) {
   return (
     <div className={s.actions}>
       <Button variant="primary" onClick={() => call('approve it', answer('yes'))}>
-        Approve
+        {task.secret ? 'Allow Once' : 'Approve'}
       </Button>
-      <Button onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>
+      {/* A secret is asked about each time: nothing to make "Always". */}
+      {task.secret ? null : <Button onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>}
       <Button variant="quiet" onClick={() => call('decline it', answer('no'))}>
         Decline
       </Button>

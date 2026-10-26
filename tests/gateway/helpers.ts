@@ -46,6 +46,8 @@ export interface Pending {
   readonly peer: string;
   /** The request it's about (request approvals only). */
   readonly task?: string;
+  /** Only Allow once / Decline (a secret). */
+  readonly once?: boolean;
   answer(a: Answer): void;
   withdrawn: boolean;
 }
@@ -91,10 +93,10 @@ export async function node(net: Crowd, name: string, extra: Partial<GatewayDeps>
     selfId: () => id,
     selfName: () => name,
     agent: () => claude,
-    approve: (kind, title, detail, peer, taskId) => {
+    approve: (kind, title, detail, peer, taskId, opts) => {
       let resolve!: (a: Answer) => void;
       const answer = new Promise<Answer>((r) => (resolve = r));
-      const p: Pending = { kind, title, detail, peer, ...(taskId ? { task: taskId } : {}), answer: (a) => resolve(a), withdrawn: false };
+      const p: Pending = { kind, title, detail, peer, ...(taskId ? { task: taskId } : {}), ...(opts?.once ? { once: true } : {}), answer: (a) => resolve(a), withdrawn: false };
       approvals.push(p);
       return {
         answer,

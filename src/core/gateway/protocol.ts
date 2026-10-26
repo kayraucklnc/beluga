@@ -124,6 +124,8 @@ export const TaskResult = z.object({
   files: z.array(ResultFile).max(MAX_FILES).default([]),
   /** The steps it took (short lines). */
   log: z.array(z.string().max(300)).max(60).default([]),
+  /** A file request for a secret that its owner approved, that one time ("private SSH key id_ed25519"): the requester's Claude is told so. */
+  secret: z.string().min(1).max(200).optional(),
   ts: z.number().int().min(0),
 });
 export type TaskResult = z.infer<typeof TaskResult>;

@@ -11,7 +11,7 @@ import type { Store } from '../store.js';
 import { pretendSystem } from './demo-system.js';
 import { Gateway, type MeshNode } from './gateway.js';
 import { attachGateway, detachGateway } from './registry.js';
-import type { Pending } from './serve.js';
+import type { ApproveOpts, Pending } from './serve.js';
 
 /**
  * Start the gateway for the daemon (the Mac app's Beluga): tasks between Claudes over today's
@@ -45,10 +45,10 @@ export function meshNode(mesh: Mesh): MeshNode {
 }
 
 /** Ask through today's approval cards (linked to the task), with a way to take the question back (it's answered "no"). */
-export function approvals(session: Pick<Session, 'host' | 'store'>): (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string) => Pending {
-  return (kind, title, detail, peer, task) => {
+export function approvals(session: Pick<Session, 'host' | 'store'>): (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string, opts?: ApproveOpts) => Pending {
+  return (kind, title, detail, peer, task, opts = {}) => {
     const before = new Set(session.store.getState().approvals.map((a) => a.id));
-    const answer = session.host.ask(kind, title, detail, peer, 'room', task ? { task } : {});
+    const answer = session.host.ask(kind, title, detail, peer, 'room', { ...(task ? { task } : {}), ...(opts.once ? { once: true } : {}) });
     // ask() shows its card right away: find it, so it can be withdrawn.
     const id = session.store.getState().approvals.find((a) => !before.has(a.id))?.id;
     return { answer, withdraw: () => void (id && session.host.answerApproval('no', id)) };

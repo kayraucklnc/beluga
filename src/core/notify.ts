@@ -27,6 +27,8 @@ export interface NoticeEvent {
   readonly quiet?: boolean;
   /** A friend's request (the gateway) this approval is about. */
   readonly task?: string;
+  /** That approval is Allow once / Decline only (a secret): the notification offers no Always. */
+  readonly once?: boolean;
   /** The plan it's about (its id), and the plan's task (its id there): opening it goes to the plan at that task. */
   readonly plan?: string;
   readonly planTask?: string;
@@ -50,6 +52,8 @@ export interface DesktopNote {
   readonly approval?: string;
   /** The friend's request that approval is about. */
   readonly task?: string;
+  /** That approval offers no Always (a secret): only Review…. */
+  readonly once?: boolean;
   /** Only what Claude needs from you, and the Mac's on-screen pop-up shows it: a banner would say it twice (its sound still plays). */
   readonly popup?: boolean;
   /** A friend's message while Beluga is in front: the window shows it as a banner, with its sound (macOS hides banners of the app in front). */
@@ -313,7 +317,7 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
       if (seen.has(a.id)) continue;
       // An approval a plan's task asks for opens the plan there.
       const inPlan = a.channel !== undefined && planOfChannel(next, a.channel) ? { channel: a.channel } : {};
-      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
+      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.once ? { once: true } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
     }
   }
   if (prev.questions !== next.questions) {
@@ -520,7 +524,7 @@ export function combine(batch: readonly NoticeEvent[], prefs: boolean | SoundPre
   const sound = { ...soundOf(batch, prefs), ...(popup && batch.every((e) => e.kind === 'needsYou') ? { popup: true } : {}) };
   const channel = first.channel !== undefined && batch.every((e) => e.channel === first.channel) ? { channel: first.channel } : {};
   // One approval on its own can be answered from the notification itself.
-  const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}) } : {};
+  const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}), ...(first.once ? { once: true } : {}) } : {};
   if (batch.length === 1) return { title: first.title, body: first.body, ...sound, ...channel, ...approval };
   return { title: `${batch.length} updates in Beluga`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), ...sound, ...channel };
 }

@@ -964,12 +964,12 @@ export class AgentHost {
   }
 
   /** Ask you to approve something; `peer` is who it's for (each person can have a few waiting at most). */
-  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string, channel = 'room', meta: { task?: string } = {}): Promise<'yes' | 'no' | 'always'> {
-    // Only a secret offers "for this project": anywhere else it's a plain yes.
-    return this.pose(kind, title, detail, peer, channel, meta).then((answer) => (answer === 'project' ? 'yes' : answer));
+  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string, channel = 'room', meta: { task?: string; once?: boolean } = {}): Promise<'yes' | 'no' | 'always'> {
+    // Only a secret offers "for this project": anywhere else it's a plain yes. `once` offers no Always: one that comes anyway is a yes.
+    return this.pose(kind, title, detail, peer, channel, meta).then((answer) => (answer === 'project' || (meta.once && answer === 'always') ? 'yes' : answer));
   }
 
-  private pose(kind: Approval['kind'], title: string, detail: string, peer?: string, channel = 'room', meta: { task?: string; project?: string } = {}): Promise<ApprovalAnswer> {
+  private pose(kind: Approval['kind'], title: string, detail: string, peer?: string, channel = 'room', meta: { task?: string; project?: string; once?: boolean } = {}): Promise<ApprovalAnswer> {
     if (this.approvals.size >= MAX_PENDING_APPROVALS) return Promise.resolve('no');
     if (peer && peer !== this.selfId && (this.approvalsBy.get(peer) ?? 0) >= MAX_APPROVALS_PER_PERSON) return Promise.resolve('no');
     if (peer) this.approvalsBy.set(peer, (this.approvalsBy.get(peer) ?? 0) + 1);
@@ -987,7 +987,7 @@ export class AgentHost {
         if (peer) this.approvalsBy.set(peer, Math.max(0, (this.approvalsBy.get(peer) ?? 1) - 1));
         resolve(answer);
       });
-      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(meta.project ? { project: meta.project } : {}), ...(channel.startsWith('ws:') ? { channel } : {}) } });
+      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(meta.project ? { project: meta.project } : {}), ...(meta.once ? { once: true } : {}), ...(channel.startsWith('ws:') ? { channel } : {}) } });
     });
   }
 

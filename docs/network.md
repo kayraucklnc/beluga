@@ -262,7 +262,7 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
 - **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run|file, ask, summary?, needs, project?,
   expects?: JSON schema | "files", deadline?, command?/cwd?/timeoutSec?, path?, by}`, `task_update {id,
   state: queued|awaiting_approval|working, step?}`, `task_result {id, status: done|declined|failed|
-  cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log}`, `task_cancel`,
+  cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log, secret?}`, `task_cancel`,
   `task_question {id, qid, questions}` / `task_answer {id, qid, answers? | skip}`,
   `file_get {id, ref, offset}` / `file_chunk {id, ref, offset, b64, eof, error?}`, and `card` (your
   trust in them, what your Beluga offers them, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
@@ -281,8 +281,19 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   against `expects` on both sides; files only from the folder it ran in (and the folders you chose;
   anywhere with full trust), never secrets: up to 512 KB in all inline, bigger ones fetched in
   pieces (see *Big files*). A file request someone said yes to (or that a rule of theirs covers) may
-  come from anywhere on their Mac, not only the folders they share; a secret file is refused before
-  they're asked.
+  come from anywhere on their Mac, not only the folders they share.
+- **Secrets** (BLG-209): a `file` request for a secret (`isSecretPath`: an SSH key, a `.env` file, cloud
+  credentials, a token file, any other key) is never declined up front, and never let in either: its owner
+  always gets a separate approval that says what it is ("kay's Claude wants your private SSH key
+  id_ed25519", `secretKindOf` / `secretLabel`), each time, with only Allow once / Decline (on the card,
+  the request sheet, the pop-up and the menu bar; its notification only offers Review…). Trust, Allow
+  rules and Always never cover it; a capability that is Off or a Decline rule still declines it. If
+  they allow it, Beluga sends that one file and the `task_result` carries `secret: "private SSH key
+  id_ed25519"`, so the requester's Claude is told (outside the data block) that the owner approved it and
+  hands it over instead of refusing. Still refused at once: Beluga's own private files in `~/.beluga`
+  and the keychains (`isNeverSent`), and every `run` or `ask` task that touches secrets. Macs that do this
+  say `task.secret`; asking an older one for a secret fails at once ("Ata's Beluga 1.2.0 can't send
+  secrets Ata approves yet. Ask Ata to update Beluga.").
 - **Tagging a friend**: `@mia` anywhere in a message to your Claude (the message box offers your
   friends by name as you type `@`) means mia: your Claude asks her Claude with `ask_person`, takes a
   file with `get_file`, or runs one command with `run_on`. Every request carries a `summary` (at most
@@ -397,7 +408,7 @@ Your card tells each friend what you offer them (their Claude sees it in `who_ca
   /Applications and ~/Applications.
 - **Read and write files**: the folders you choose are added to the task's Claude's folders when
   the request needs `files`; `get_file(person, path)` (a `file` task) sends one file from them
-  (anywhere with full trust), never secrets.
+  (anywhere with full trust); a secret only when they approve that one request (see *Secrets* above).
 
 ### Big files
 
