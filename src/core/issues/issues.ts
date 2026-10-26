@@ -5,6 +5,7 @@ import type { GitHubRepo } from '../../workspaces/github.js';
 import type { Workspace } from '../../workspaces/types.js';
 import type { IssueSource } from './gh.js';
 import { type GhIssueFull, type IssuesList, type IssuesQuery, boardLabels, repoSlug, taskForIssue } from './model.js';
+import { teammateOn } from '../team/model.js';
 import { fixAfterInvestigationPrompt, fixPrompt, investigatePrompt, issueAsRequest, issueBrief } from './prompts.js';
 
 /**
@@ -43,6 +44,8 @@ export interface GitHubIssuesDeps {
 /** What you add when handing an issue to Claude ("it only fails behind the proxy"). */
 export interface Asked {
   readonly note?: string;
+  /** A teammate on the same repository is already on it (core/team): start anyway. */
+  readonly anyway?: boolean;
 }
 
 /** What starting work on an issue gives: its task, and the worktree Claude works in. */
@@ -119,6 +122,7 @@ export class GitHubIssues {
   private async investigateNow(projectId: string, number: number, opts: Asked): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
+    this.notTeammates(task, opts);
     const ws = await this.workOn(task, 'investigate', (t) => investigatePrompt(t, issue, repo), `asked Claude to investigate #${number}`, () => `Investigate #${number} “${issue.title}”: find out why it happens and reproduce it, without fixing it yet.`, opts.note);
     return { task: task.id, key: task.key, ws };
   }
@@ -134,6 +138,7 @@ export class GitHubIssues {
   private async fixNow(projectId: string, number: number, opts: Asked): Promise<IssueWork> {
     const { repo, issue } = await this.get(projectId, number);
     const task = this.ensureTask(projectId, repo, issue);
+    this.notTeammates(task, opts);
     const ws = await this.workOn(
       task,
       'fix',
@@ -204,6 +209,14 @@ export class GitHubIssues {
    * already), else in a new one started for it. The task says what Claude was asked last. What you
    * add (`said`) comes after the instructions, in your words, and shows in the conversation too.
    */
+  /** A teammate is already on it (BLG-224): nobody starts the same issue twice without saying so. */
+  private notTeammates(task: Issue, opts: Asked): void {
+    if (opts.anyway) return;
+    const me = this.deps.work.me();
+    const on = teammateOn(this.deps.store.getState().team, task, me.kind === 'person' ? me.id : '');
+    if (on) throw new Error(`${on.words}. Ask ${on.name} first, or start it anyway`);
+  }
+
   private async workOn(task: Issue, step: NonNullable<IssueGitHub['step']>, ask: (task: Issue, ws: Workspace, here: boolean) => string, note: string, line: (here: boolean) => string, said?: string): Promise<string> {
     const work = this.deps.work;
     const yours = said?.trim();

@@ -1,3 +1,4 @@
+import type { Issue } from '../board/model.js';
 import type { PlanBody, PlanStatus } from '../plans/model.js';
 
 /**
@@ -149,3 +150,23 @@ export function offerWords(offer: Pick<TeamOffer, 'name' | 'repo' | 'state'>): s
 
 /** The plain words under an offer: what teaming up shares, and what it doesn't. */
 export const OFFER_DETAIL = 'Tasks, who is on which issue and the plans you choose to share stay in step. Chats and worktrees stay on your own Mac.';
+
+/** A teammate on a task: one of their worktrees does it, or it's theirs (or their Claude's). */
+export interface TeammateOn {
+  readonly peerId: string;
+  readonly name: string;
+  /** "Ata is investigating #48", "Ata's Claude is fixing #48", "Ata is working on this". */
+  readonly words: string;
+}
+
+/** Who of your teammates is on a task (BLG-224): what an issue's row says, and what starting it asks about. */
+export function teammateOn(team: TeamState, issue: Pick<Issue, 'id' | 'projectId' | 'assignee' | 'github'>, self: string): TeammateOn | undefined {
+  const mates = teammatesOf(team, issue.projectId);
+  const what = issue.github ? `${issue.github.step === 'fix' ? 'fixing' : issue.github.step === 'investigate' ? 'investigating' : 'working on'} #${issue.github.number}` : 'working on this';
+  const doing = workingOn(team, issue.id).find((p) => p.peerId !== self);
+  if (doing) return { peerId: doing.peerId, name: doing.name, words: `${doing.name} is ${what}` };
+  const a = issue.assignee;
+  if (a?.kind === 'person' && a.id !== self && mates.some((m) => m.peerId === a.id)) return { peerId: a.id, name: a.name, words: `${a.name} has it${issue.github ? ` (#${issue.github.number})` : ''}` };
+  if (a?.kind === 'claude' && a.owner !== self && mates.some((m) => m.peerId === a.owner)) return { peerId: a.owner, name: a.ownerName, words: `${a.ownerName}’s Claude has it${issue.github ? ` (#${issue.github.number})` : ''}` };
+  return undefined;
+}

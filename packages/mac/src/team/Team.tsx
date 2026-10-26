@@ -1,4 +1,4 @@
-import { OFFER_DETAIL, offerWords, teammatesOf, workingOn, workingWords } from '@beluga/core/team/model.js';
+import { OFFER_DETAIL, offerWords, teammateOn, teammatesOf, workingOn, workingWords } from '@beluga/core/team/model.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { Avatar, Button, IconButton } from '../components/ui.js';
 import { AvatarStack } from '../network/Avatars.js';
@@ -114,5 +114,20 @@ export function AssignedToYou({ issueId }: { issueId: string }) {
         Got It
       </Button>
     </section>
+  );
+}
+
+/** On an issue's row: the teammate on its team task ("Ata is investigating #48"), with their avatar. */
+export function TeammateOnIssue({ projectId, number }: { projectId: string; number: number }) {
+  const on = useApp((st) => {
+    const task = st.board.issues.find((i) => i.projectId === projectId && i.github?.number === number && !i.archivedAt);
+    return task ? teammateOn(st.team, task, st.selfId) : undefined;
+  }, sameDeep);
+  if (!on) return null;
+  return (
+    <span className={s.working} title={on.words}>
+      <Avatar name={on.name} id={on.peerId} size={14} />
+      {on.words}
+    </span>
   );
 }

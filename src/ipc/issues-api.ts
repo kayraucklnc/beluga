@@ -10,6 +10,8 @@ const projectId = z.string().min(1).max(200);
 const number = z.number().int().positive().max(10_000_000);
 /** What you add for Claude ("it only fails behind the proxy"). */
 const note = z.string().max(4000).optional();
+/** A teammate on the same repository is already on it: start anyway (asked first otherwise). */
+const anyway = z.boolean().optional();
 
 export const ISSUES_API = {
   /** A project's issues: open or closed, a GitHub search, `force` to ask GitHub again. */
@@ -17,9 +19,9 @@ export const ISSUES_API = {
   /** One issue in full, with its comments. */
   'issues.get': { args: z.tuple([projectId, number, z.object({ force: z.boolean().optional() }).strict().optional()]) },
   /** Claude finds out why it happens and reproduces it, in the issue's task's worktree, without fixing it. */
-  'issues.investigate': { args: z.tuple([projectId, number, z.object({ note }).strict().optional()]) },
+  'issues.investigate': { args: z.tuple([projectId, number, z.object({ note, anyway }).strict().optional()]) },
   /** Claude fixes it and opens a pull request that closes it (after an investigation: in the same worktree). */
-  'issues.fix': { args: z.tuple([projectId, number, z.object({ note }).strict().optional()]) },
+  'issues.fix': { args: z.tuple([projectId, number, z.object({ note, anyway }).strict().optional()]) },
   /** On the board as a task Claude writes from it (`look`: after a quick read-only look at the code). */
   'issues.toTask': { args: z.tuple([projectId, number, z.object({ look: z.boolean().optional(), note }).strict().optional()]) },
   /** A comment on the issue, as you. */
