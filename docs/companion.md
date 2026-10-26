@@ -613,7 +613,7 @@ look at the screen, tap, type, open apps, install a build, read logs, debug. Onl
 only your own runs; never a friend's Claude, never a guest. Off by default.
 
 - **Routes, best first** (`src/companion/phone-control.ts`, `PhoneControl.reach`). USB; Wireless
-  debugging on the same Wi‑Fi; Wireless debugging carried through the Beluga link from any network;
+  debugging carried through the Beluga link (from any network, and the only way it's reached, BLG-187);
   or, when debugging is off, the app's **Accessibility service**. Each tool picks the best route it
   has; the ones that need adb (shell, logs, install) say so plainly when only Accessibility is there.
 - **adb** (`src/companion/phone-adb.ts`). Found at `~/Library/Android/sdk/platform-tools/adb`, on
@@ -637,12 +637,17 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   each picture was a 1.9 MB `screencap` PNG (~0.75 s on a Galaxy S24+); now the first picture
   comes in ~0.5 s and each change after it at once. The mirror's own taps go by the Accessibility
   service when it's on (instant gestures), and an action's route is reused for 3 s.
-- **Wireless debugging without a code** (BLG-187). The phone's USB serial is kept on its record
-  (`DeviceRecord.adbSerial`) the first time it's on a cable; unplugged, the Mac finds its
-  Wireless debugging over mDNS (`adb mdns services`, `adb-<serial>-…`) and connects (a key the phone
-  allowed on the cable needs no pairing code). Settings › Phone › **Use over Wi‑Fi** (while on a
-  cable, `companion.phone.wifi`) turns Wireless debugging on with `settings put global
-  adb_wifi_enabled 1` and connects; Android may ask "Allow wireless debugging on this network?".
+- **Wireless debugging, safely** (BLG-187). A phone's adb is a full shell, so the Mac reaches
+  Wireless debugging **only through the link**: a local tunnel the paired phone's own app carries,
+  end-to-end encrypted to its keys, to its own debugging port. Never straight to an address on the
+  network or one announced over mDNS: nothing there proves it's your phone (on a hostile Wi‑Fi
+  anyone can answer as it), and many networks keep devices apart anyway. Settings › Phone › Over
+  Wi‑Fi: **Use over Wi‑Fi** (on a cable: `settings put global adb_wifi_enabled 1`, Android asks
+  "Allow wireless debugging on this network?"; tap Allow, not Always) and **Turn Off**; turned on by
+  Beluga, it goes off again after 15 minutes unused (it listens on the phone's Wi‑Fi meanwhile, for
+  keys the phone allowed). The phone's own switch and its notification's **Stop** cut every route,
+  adb's included, and the Mac keeps that no on the device record (`DeviceRecord.stopped`) so it holds
+  while the app isn't running. adb in Claude's Bash (PATH, `ANDROID_SERIAL`) only at **Full**.
 - **The phone beside the chat** (BLG-186). The right panel has a **Phone** tab (⌥⌘8) wherever it
   shows, while an Android phone is paired: the same live mirror, fitted to the panel, beside any
   conversation or Your Mac. What Claude does shows on it as it happens: a ripple where it taps, a

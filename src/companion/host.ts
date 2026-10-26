@@ -995,9 +995,9 @@ export class CompanionHost {
   pairPhoneAdb(deviceId: string): Promise<string> {
     return this.control.pairAdb(deviceId);
   }
-  /** Turn on a phone's Wireless debugging over its cable and connect (Settings › Phone › Use over Wi‑Fi). */
-  phoneOverWifi(deviceId: string): Promise<string> {
-    return this.control.overWifi(deviceId);
+  /** A phone's Wireless debugging on (over its cable) or off (Settings › Phone › Over Wi‑Fi). */
+  phoneWifiDebugging(deviceId: string, on: boolean): Promise<string> {
+    return this.control.setWifiDebugging(deviceId, on);
   }
   /** One phone action from the Mac UI (the mirror's tap/type, a button). */
   phoneAction(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {

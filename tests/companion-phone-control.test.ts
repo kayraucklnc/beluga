@@ -1,7 +1,7 @@
 import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { ExecBytesResult, ExecResult, SystemPort } from '../src/core/gateway/device.js';
-import { adbCandidates, parseDevices, parseMdns, parseWmSize } from '../src/companion/phone-adb.js';
+import { adbCandidates, parseDevices, parseWmSize } from '../src/companion/phone-adb.js';
 import { AnnexBSplitter, videoSize } from '../src/companion/phone-video.js';
 import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type VideoPiece, describeScreen, describeUiautomator, parseNotifications, phoneErrorText } from '../src/companion/phone-control.js';
 import { DeviceBook, type DeviceRecord } from '../src/companion/devices.js';
@@ -97,16 +97,18 @@ describe('PhoneControl routes', () => {
     expect(r?.adb?.serial).toBe('R5CX12');
   });
 
-  it('connects over Wi-Fi when debugging is on and an IP is known', async () => {
+  it('reaches Wireless debugging only through the link, never straight to an address on the network (BLG-187)', async () => {
     const { sys, calls } = fakeSys([
       { match: /devices -l/, out: 'List\n' },
-      { match: /connect 192\.168\.1\.9:40000/, out: 'connected to 192.168.1.9:40000' },
+      { match: /connect 127\.0\.0\.1:\d+/, out: 'connected to 127.0.0.1' },
     ]);
     const link = fakeLink(id.padEnd(16, '0'), control({ adb: { on: true, port: 40000 }, wifi: { ip: '192.168.1.9' } }));
     const ctl = new PhoneControl({ sys, devices: book([device]), link: () => link, onChange: () => {}, adbPath: '/fake/adb' });
     const r = await ctl.reach(id.padEnd(16, '0'));
-    expect(r?.route).toBe('wifi');
-    expect(calls.some((c) => /connect 192\.168\.1\.9:40000/.test(c))).toBe(true);
+    ctl.stop();
+    expect(r?.route).toBe('link');
+    expect(r?.adb?.serial).toMatch(/^127\.0\.0\.1:\d+$/);
+    expect(calls.some((c) => /192\.168\.1\.9/.test(c))).toBe(false);
   });
 
   it('falls back to the Accessibility service when there is no adb', async () => {
@@ -181,9 +183,9 @@ describe('mirror and action (BLG-171)', () => {
     expect(calls.some((c) => /shell input tap 5 9/.test(c))).toBe(true);
   });
 
-  it('runEnv puts adb on PATH for the owner’s Bash', () => {
+  it('runEnv puts adb on PATH for the owner’s Bash (at Full)', () => {
     const { sys } = fakeSys([]);
-    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/opt/sdk/platform-tools/adb' });
+    const ctl = new PhoneControl({ sys, devices: book([{ ...device, use: 'full' }]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/opt/sdk/platform-tools/adb' });
     const env = ctl.runEnv();
     expect(env.PATH?.startsWith('/opt/sdk/platform-tools')).toBe(true);
   });
@@ -369,10 +371,6 @@ describe('the mirror over adb plays video (BLG-185)', () => {
     expect(parseWmSize('Physical size: 1440x3120\n')).toEqual({ w: 1440, h: 3120 });
     expect(parseWmSize('Physical size: 1440x3120\nOverride size: 1080x2340\n')).toEqual({ w: 1080, h: 2340 });
     expect(videoSize({ w: 1440, h: 3120 }, 1280)).toEqual({ w: 592, h: 1280 });
-    expect(parseMdns('List of discovered mdns services\nadb-R5CX72-Ab1Cd2\t_adb-tls-connect._tcp\t172.17.12.32:37481\nadb-R5CX72-Ab1Cd2\t_adb-tls-pairing._tcp.\t172.17.12.32:41231\n')).toEqual([
-      { name: 'adb-R5CX72-Ab1Cd2', service: '_adb-tls-connect._tcp', addr: '172.17.12.32:37481' },
-      { name: 'adb-R5CX72-Ab1Cd2', service: '_adb-tls-pairing._tcp', addr: '172.17.12.32:41231' },
-    ]);
     // adb's own name for a phone it reached over Wi-Fi isn't a USB one.
     expect(parseDevices('List\nadb-R5CX72-Ab1Cd2._adb-tls-connect._tcp device product:x\n')[0]?.usb).toBe(false);
   });
@@ -405,8 +403,6 @@ describe('the mirror over adb plays video (BLG-185)', () => {
     const shots = calls.filter((c) => /screencap/.test(c)).length;
     await sleep(400);
     expect(calls.filter((c) => /screencap/.test(c)).length).toBe(shots);
-    // The phone was remembered by its USB serial, to find its Wi-Fi debugging later.
-    expect(book([device]).get(id)).toBeDefined();
     stop();
     expect(stopped()).toBe(true);
   });
@@ -444,38 +440,58 @@ describe('the mirror over adb plays video (BLG-185)', () => {
   });
 });
 
-describe('Wireless debugging found by name (BLG-187)', () => {
+describe('Wireless debugging, safely (BLG-187)', () => {
   const id = 'ab'.padEnd(16, '0');
+  const device: DeviceRecord = { cert: cert('ab'), pairedAt: 1, use: 'use' };
 
-  it('connects over the same Wi‑Fi to where this Mac hears the phone, by the USB serial it once had', async () => {
-    const device: DeviceRecord = { cert: cert('ab'), pairedAt: 1, use: 'use', adbSerial: 'R5CX72' };
-    const { sys, calls } = fakeSys([
-      { match: /devices -l/, out: 'List\n' },
-      { match: /mdns services/, out: 'List of discovered mdns services\nadb-R5CX72-Ab1Cd2\t_adb-tls-connect._tcp\t172.17.12.32:37481\n' },
-      { match: /connect 172\.17\.12\.32:37481/, out: 'connected to 172.17.12.32:37481' },
-    ]);
-    // An app that doesn't say its debugging port (or hasn't found it yet).
-    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/fake/adb' });
-    const r = await ctl.reach(id);
-    expect(r?.route).toBe('wifi');
-    expect(r?.adb?.serial).toBe('172.17.12.32:37481');
-    expect(calls.some((c) => /connect 172\.17\.12\.32:37481/.test(c))).toBe(true);
+  it('the phone’s Stop cuts every route, adb’s too, and holds while its app is away', async () => {
+    const { sys } = fakeSys([{ match: /devices -l/, out: 'List\nR5CX72 device usb:1-1\n' }]);
+    let link: PhoneLinkHandle | undefined = fakeLink(id, control({ allowed: false }));
+    const devices = book([device]);
+    const ctl = new PhoneControl({ sys, devices, link: () => link, onChange: () => {}, adbPath: '/fake/adb' });
+    expect(await ctl.reach(id)).toBeUndefined();
+    await expect(ctl.tap(id, { x: 1, y: 2 })).rejects.toThrow(/said Stop/);
+    ctl.touched(id);
+    expect(devices.get(id)?.stopped).toBe(true);
+    // Its app goes away: still no, even with the cable in.
+    link = undefined;
+    expect(await ctl.reach(id)).toBeUndefined();
+    expect(ctl.controlView(id).routes).toEqual([]);
+    // It says yes again.
+    link = fakeLink(id, control());
+    ctl.touched(id);
+    expect(devices.get(id)?.stopped).toBe(false);
+    expect((await ctl.reach(id))?.route).toBe('usb');
   });
 
-  it('Use over Wi‑Fi turns on Wireless debugging over the cable and connects', async () => {
-    const device: DeviceRecord = { cert: cert('ab'), pairedAt: 1, use: 'use' };
+  it('Use over Wi‑Fi turns it on over the cable, waits for Allow, and reaches it through the link; Turn Off turns it off', async () => {
+    let allowed = 0;
     const { sys, calls } = fakeSys([
       { match: /devices -l/, out: 'List\nR5CX72 device usb:1-1\n' },
-      { match: /mdns services/, out: 'adb-R5CX72-Ab1Cd2\t_adb-tls-connect._tcp\t172.17.12.32:37481\n' },
-      { match: /connect 172\.17\.12\.32:37481/, out: 'connected to 172.17.12.32:37481' },
+      { match: /connect 127\.0\.0\.1:\d+/, out: 'connected to 127.0.0.1' },
     ]);
-    const devices = book([device]);
-    const ctl = new PhoneControl({ sys, devices, link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/fake/adb' });
-    const said = await ctl.overWifi(id);
-    expect(said).toContain('172.17.12.32:37481');
+    // Android keeps it at 0 until the person taps Allow (here: the second time it's read).
+    const exec = sys.exec;
+    sys.exec = (cmd, args, t) => (args.join(' ').includes('settings get global adb_wifi_enabled') ? Promise.resolve({ code: 0, stdout: ++allowed > 1 ? '1\n' : '0\n', stderr: '' }) : exec(cmd, args, t));
+    const link = fakeLink(id, control({ adb: { on: true, port: 40000 } }));
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => link, onChange: () => {}, adbPath: '/fake/adb' });
+    const said = await ctl.setWifiDebugging(id, true);
+    expect(said).toMatch(/encrypted link/);
     expect(calls.some((c) => /shell settings put global adb_wifi_enabled 1/.test(c))).toBe(true);
-    expect(devices.get(id)?.adbSerial).toBe('R5CX72');
-    expect(ctl.controlView(id).adb).toBe('connected');
+    expect(calls.some((c) => /connect 127\.0\.0\.1:\d+/.test(c))).toBe(true);
+    expect(await ctl.setWifiDebugging(id, false)).toBe('Wireless debugging is off.');
+    expect(calls.some((c) => /shell settings put global adb_wifi_enabled 0/.test(c))).toBe(true);
+    ctl.stop();
+  });
+
+  it('gives Claude’s Bash adb only at Full (it’s a shell on the phone)', () => {
+    const { sys } = fakeSys([]);
+    const use = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/opt/sdk/platform-tools/adb' });
+    expect(use.runEnv()).toEqual({});
+    const full = new PhoneControl({ sys, devices: book([{ ...device, use: 'full' }]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/opt/sdk/platform-tools/adb' });
+    expect(full.runEnv().PATH?.startsWith('/opt/sdk/platform-tools')).toBe(true);
+    use.stop();
+    full.stop();
   });
 });
 

@@ -85,18 +85,6 @@ export class Adb {
   }
 }
 
-/**
- * `adb mdns services` → each phone's debugging services this Mac hears on the network: its name
- * (`adb-<serial>-<random>`), the service (`_adb-tls-connect._tcp` to connect, `_adb-tls-pairing._tcp`
- * to pair) and where.
- */
-export function parseMdns(stdout: string): Array<{ name: string; service: string; addr: string }> {
-  return stdout.split('\n').flatMap((line) => {
-    const m = /^\s*(\S+)\s+(_adb[\w.-]*?)\.?\s+(\d+\.\d+\.\d+\.\d+:\d+)\s*$/.exec(line);
-    return m ? [{ name: m[1]!, service: m[2]!, addr: m[3]! }] : [];
-  });
-}
-
 /** `wm size` → the size taps use: "Override size" when set, else "Physical size". */
 export function parseWmSize(stdout: string): { w: number; h: number } | undefined {
   const m = /Override size: (\d+)x(\d+)/.exec(stdout) ?? /Physical size: (\d+)x(\d+)/.exec(stdout);

@@ -48,7 +48,7 @@ function PhoneClaude({ d }: { d: DeviceView }) {
       <Row label="Let Claude use this phone" detail={route ? `Reached by ${ROUTE_WORDS[route] ?? route}.` : (c.note ?? 'Not reachable right now.')}>
         <Select label="Let Claude use this phone" value={c.use} onChange={(v) => void client.api.companion['phone.use'](d.id, v as PhoneUse)} options={USE_OPTIONS.map((o) => ({ ...o }))} />
       </Row>
-      {c.use !== 'off' && c.usb && c.adb !== 'connected' ? <OverWifi id={d.id} /> : null}
+      {c.use !== 'off' && (c.usb || c.adb !== 'off') ? <OverWifi id={d.id} on={c.adb !== undefined && c.adb !== 'off'} cable={c.usb === true} /> : null}
       {c.use !== 'off' && c.adb === 'unpaired' ? (
         <Row label="Wireless debugging" detail="On the phone, open Wireless debugging › Pair device with pairing code, then type the six digits into Beluga’s notification.">
           <Button size="small" onClick={() => void quietly(client, client.api.companion['phone.pairAdb'](d.id))}>
@@ -60,27 +60,39 @@ function PhoneClaude({ d }: { d: DeviceView }) {
   );
 }
 
-/** On a cable now: turn on Wireless debugging so Claude and the mirror carry on unplugged (BLG-187). */
-function OverWifi({ id }: { id: string }) {
+/**
+ * Wireless debugging (BLG-187): on over the cable so Claude and the mirror carry on unplugged, or
+ * off. It's only ever reached through Beluga's encrypted link, and goes off by itself when unused.
+ */
+function OverWifi({ id, on, cable }: { id: string; on: boolean; cable: boolean }) {
   const { client } = useBeluga();
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string>();
-  const go = async (): Promise<void> => {
+  const go = async (next: boolean): Promise<void> => {
     setBusy(true);
     setSaid(undefined);
     try {
-      setSaid(await client.api.companion['phone.wifi'](id));
+      setSaid(await client.api.companion['phone.wifi'](id, next));
     } catch (err) {
       setSaid(errorText(err));
     } finally {
       setBusy(false);
     }
   };
+  const detail = on
+    ? 'Wireless debugging is on: Claude and the mirror reach the phone without the cable, only through Beluga’s end-to-end encrypted link. While it’s on, the phone listens for debugging on its Wi‑Fi (only keys it allowed get in). Beluga turns it off after 15 minutes unused.'
+    : 'Keep using it when you unplug the cable: this turns on the phone’s Wireless debugging. Beluga reaches it only through its end-to-end encrypted link, never straight over the network, and turns it off after 15 minutes unused. Tap Allow on the phone when it asks (not “Always”).';
   return (
-    <Row label="Over Wi‑Fi" detail={said ?? 'It’s on a cable now. Turn on its Wireless debugging and Claude and the mirror keep working when you unplug it: straight over the same Wi‑Fi, or through Beluga from anywhere. Tap Allow on the phone if it asks.'}>
-      <Button size="small" disabled={busy} onClick={() => void go()}>
-        {busy ? 'Connecting…' : 'Use over Wi‑Fi'}
-      </Button>
+    <Row label="Over Wi‑Fi" detail={said ?? detail}>
+      {on ? (
+        <Button size="small" disabled={busy} onClick={() => void go(false)}>
+          {busy ? 'Turning Off…' : 'Turn Off'}
+        </Button>
+      ) : (
+        <Button size="small" disabled={busy || !cable} onClick={() => void go(true)}>
+          {busy ? 'Waiting for the phone…' : 'Use over Wi‑Fi'}
+        </Button>
+      )}
     </Row>
   );
 }

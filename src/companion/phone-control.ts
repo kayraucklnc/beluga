@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { SystemPort } from '../core/gateway/device.js';
 import type { PhoneTools } from '../agent/types.js';
 import { phoneBrief } from '../agent/phone-tools.js';
-import { Adb, adbCandidates, findAdb, parseDevices, parseMdns } from './phone-adb.js';
+import { Adb, adbCandidates, findAdb, parseDevices } from './phone-adb.js';
 import type { DeviceBook } from './devices.js';
 import { type Macro, MacroStep, type PhoneMacros } from './phone-macros.js';
 import { type VideoPiece, adbScreenVideo } from './phone-video.js';
@@ -130,6 +130,8 @@ const VIDEO_KBPS_WIFI = 4000;
 const VIDEO_STALL_MS = 2_000;
 /** An action's route is reused this long (finding it runs adb). */
 const REACH_KEEP_MS = 3_000;
+/** Wireless debugging Beluga turned on goes off again after this long unused (it listens on the network meanwhile). */
+const WIFI_IDLE_MS = 15 * 60_000;
 /** Claude counts as using the phone this long after its last action (the Phone tab's dot). */
 const BUSY_MS = 15_000;
 /** The mirror's own taps and keys: the Accessibility service's gestures are instant, adb's `input` starts a program each time. */
@@ -218,36 +220,18 @@ export class PhoneControl {
   }
 
   /**
-   * Make sure the Mac's adb is connected to this phone over Wi-Fi (same network) or through the
-   * link, and return its serial — or undefined if debugging isn't reachable. On the same Wi-Fi the
-   * phone is found two ways: the address and port its app says, or (BLG-187) its debugging service
-   * this Mac hears over mDNS, named after the USB serial it once had on a cable. A Mac whose adb
-   * key the phone allowed on that cable needs no pairing code.
+   * Make sure the Mac's adb is connected to this phone's Wireless debugging and return its serial,
+   * or undefined if it isn't reachable. Only ever through the link (BLG-187): a local tunnel the
+   * paired phone's own app carries, end-to-end encrypted to its keys, to its own debugging port.
+   * Never straight to an address on the network: nothing there proves it's your phone (anyone on
+   * the Wi-Fi can answer as it, or announce its name over mDNS), and a phone's adb is a full shell.
    */
   private async adbSerial(deviceId: string, state: PhoneControlState | undefined): Promise<string | undefined> {
     const adb = await this.ensureAdb();
-    if (!adb) return undefined;
-    const usbName = this.deps.devices.get(deviceId)?.adbSerial;
-    if (!state?.adb.on && !usbName) return undefined;
-    const attached = (await this.attached()).filter((d) => d.state === 'device' && !d.usb);
+    if (!adb || !state?.adb.on) return undefined;
     const known = this.serials.get(deviceId);
-    if (known && attached.some((d) => d.serial === known)) return known;
-    // adb itself may already be on it (it reconnects to phones it heard over mDNS).
-    const auto = usbName ? attached.find((d) => d.serial.startsWith(`adb-${usbName}-`)) : undefined;
-    if (auto) return this.remember(deviceId, auto.serial);
-    // Over the same Wi-Fi: connect straight to the phone's address and port…
-    if (state?.adb.on && state.wifi?.ip && state.adb.port) {
-      const serial = await this.connect(adb.path, `${state.wifi.ip}:${state.adb.port}`);
-      if (serial) return this.remember(deviceId, serial);
-    }
-    // …or to where this Mac hears it.
-    const heard = await this.heard(deviceId);
-    if (heard) {
-      const serial = await this.connect(adb.path, heard);
-      if (serial) return this.remember(deviceId, serial);
-    }
-    // From anywhere: a local tunnel the link carries to the phone's debugging port.
-    const port = state?.adb.on ? await this.tunnelPort(deviceId) : undefined;
+    if (known && (await this.attached()).some((d) => d.serial === known && d.state === 'device')) return known;
+    const port = await this.tunnelPort(deviceId);
     if (port) {
       const serial = await this.connect(adb.path, `127.0.0.1:${port}`);
       if (serial) return this.remember(deviceId, serial);
@@ -255,37 +239,81 @@ export class PhoneControl {
     return undefined;
   }
 
-  /** Where this Mac hears the phone's Wireless debugging over mDNS (`ip:port`), by its USB serial. */
-  private async heard(deviceId: string): Promise<string | undefined> {
-    const adb = this.adb;
-    const usbName = this.deps.devices.get(deviceId)?.adbSerial;
-    if (!adb || !usbName) return undefined;
-    const res = await this.deps.sys.exec(adb.path, ['mdns', 'services'], 5_000).catch(() => undefined);
-    return parseMdns(res?.stdout ?? '').find((s) => s.service === '_adb-tls-connect._tcp' && s.name.startsWith(`adb-${usbName}-`))?.addr;
+  /**
+   * Wireless debugging on or off, from the Mac (BLG-187, Settings › Phone). On needs the phone on a
+   * cable: it's turned on there, the phone's app says its port over the link, and the Mac checks it
+   * can reach it through the link, so Claude and the mirror carry on unplugged. Android asks "Allow
+   * wireless debugging on this network?" on the phone. Turned on here, it goes off again after
+   * WIFI_IDLE_MS unused. Off works over any route.
+   */
+  async setWifiDebugging(deviceId: string, on: boolean): Promise<string> {
+    const r = await this.need(deviceId, 'act');
+    if (!on) {
+      if (!r.adb) return 'Wireless debugging is already off.';
+      await this.wifiOff(deviceId, r.adb);
+      return 'Wireless debugging is off.';
+    }
+    if (r.route !== 'usb' || !r.adb) throw new Error('Plug the phone in with a cable first: Wireless debugging is turned on over it.');
+    const res = await r.adb.shell('settings put global adb_wifi_enabled 1', 8_000);
+    if (res.code !== 0) throw new Error(res.stderr.trim().slice(0, 200) || 'The phone didn’t turn on Wireless debugging.');
+    this.wifiByUs.add(deviceId);
+    this.lastUsed.set(deviceId, Date.now());
+    // Android asks first ("Allow wireless debugging on this network?"); then the app finds its port.
+    let asked = false;
+    for (let i = 0; i < 45; i++) {
+      await delay(1000);
+      const setting = (await r.adb.shell('settings get global adb_wifi_enabled', 5_000).catch(() => undefined))?.stdout.trim();
+      if (setting !== '1') {
+        asked = true;
+        continue;
+      }
+      const serial = await this.adbSerial(deviceId, this.deps.link(deviceId)?.control);
+      if (serial) {
+        this.reached.delete(deviceId);
+        this.deps.onChange();
+        return 'Ready: unplug it whenever you like. Claude and the mirror go on through Beluga’s encrypted link (never straight over the network), and Wireless debugging turns itself off after 15 minutes unused.';
+      }
+    }
+    if (asked) throw new Error('The phone is asking “Allow wireless debugging on this network?”: unlock it and tap Allow, then try again.');
+    if (!this.deps.link(deviceId)?.control?.adb.on) throw new Error('Wireless debugging is on, but the phone’s Beluga hasn’t said its port: open Beluga on the phone and try again.');
+    throw new Error('Wireless debugging is on, but the Mac couldn’t reach it through the link yet. Try again in a moment.');
+  }
+
+  private async wifiOff(deviceId: string, adb: Adb): Promise<void> {
+    await adb.shell('settings put global adb_wifi_enabled 0', 8_000).catch(() => undefined);
+    this.wifiByUs.delete(deviceId);
+    const serial = this.serials.get(deviceId);
+    if (serial?.startsWith('127.0.0.1') && this.adb) {
+      await this.deps.sys.exec(this.adb.path, ['disconnect', serial], 5_000).catch(() => undefined);
+      this.serials.delete(deviceId);
+    }
+    this.reached.delete(deviceId);
+    this.deps.onChange();
+  }
+
+  /** Wireless debugging Beluga turned on, and when each phone was last used: off again when idle. */
+  private readonly wifiByUs = new Set<string>();
+  private readonly lastUsed = new Map<string, number>();
+  private readonly idleCheck = unrefd(setInterval(() => void this.offWhenIdle(), 60_000));
+
+  private async offWhenIdle(): Promise<void> {
+    for (const id of [...this.wifiByUs]) {
+      if (Date.now() - (this.lastUsed.get(id) ?? 0) < WIFI_IDLE_MS) continue;
+      const r = await this.reach(id).catch(() => undefined);
+      if (r?.adb) {
+        this.logLine(`turning Wireless debugging off on ${id} (unused for ${Math.round(WIFI_IDLE_MS / 60_000)} min)`);
+        await this.wifiOff(id, r.adb);
+      }
+    }
   }
 
   /**
-   * Turn on the phone's Wireless debugging over its cable and connect to it (BLG-187), so Claude
-   * and the mirror carry on once it's unplugged: on the same Wi-Fi directly, elsewhere through the
-   * link. Android may ask "Allow wireless debugging on this network?" on the phone first.
+   * The phone's own switch said no ("Let your Mac use this phone" off, or Stop on its notification):
+   * every route is refused, adb's too. Kept on its record, so it holds while the app isn't running.
    */
-  async overWifi(deviceId: string): Promise<string> {
-    const r = await this.need(deviceId, 'act');
-    if (r.route !== 'usb' || !r.adb) throw new Error('Plug the phone in with a cable first (once is enough).');
-    const on = await r.adb.shell('settings put global adb_wifi_enabled 1', 8_000);
-    if (on.code !== 0) throw new Error(on.stderr.trim().slice(0, 200) || 'The phone didn’t turn on Wireless debugging.');
-    for (let i = 0; i < 20; i++) {
-      await delay(1000);
-      const addr = await this.heard(deviceId);
-      const serial = addr ? await this.connect(r.adb.adbPath, addr) : undefined;
-      if (serial) {
-        this.remember(deviceId, serial);
-        this.reached.delete(deviceId);
-        this.deps.onChange();
-        return `Connected over Wi‑Fi too (${addr}). Unplug it whenever you like.`;
-      }
-    }
-    throw new Error('Wireless debugging didn’t come up. On the phone, tap Allow if it asks about this network, and be on Wi‑Fi.');
+  private phoneSaidNo(deviceId: string): boolean {
+    const said = this.deps.link(deviceId)?.control?.allowed;
+    return said === undefined ? this.deps.devices.get(deviceId)?.stopped === true : !said;
   }
 
   private remember(deviceId: string, serial: string): string {
@@ -318,18 +346,16 @@ export class PhoneControl {
 
   /** Where the phone can be reached now, best route first. */
   async reach(deviceId: string): Promise<Reach | undefined> {
+    // The phone said Stop: nothing, by any route (adb included).
+    if (this.phoneSaidNo(deviceId)) return undefined;
     const link = this.deps.link(deviceId);
     const state = link?.control;
     const adb = await this.ensureAdb();
     if (adb) {
       const usb = await this.usbSerial(state);
-      if (usb) {
-        // Its USB serial names its Wireless debugging on the network: kept, to find it unplugged.
-        if (this.deps.devices.get(deviceId)?.adbSerial !== usb) this.deps.devices.update(deviceId, { adbSerial: usb });
-        return { route: 'usb', adb: new Adb(this.deps.sys, adb.path, usb), ...(link ? { link } : {}) };
-      }
+      if (usb) return { route: 'usb', adb: new Adb(this.deps.sys, adb.path, usb), ...(link ? { link } : {}) };
       const serial = await this.adbSerial(deviceId, state);
-      if (serial) return { route: serial.startsWith('127.0.0.1') ? 'link' : 'wifi', adb: new Adb(this.deps.sys, adb.path, serial), ...(link ? { link } : {}) };
+      if (serial) return { route: 'link', adb: new Adb(this.deps.sys, adb.path, serial), ...(link ? { link } : {}) };
     }
     // No adb: the app's Accessibility service, if it's on and allowed.
     if (link?.control?.allowed && link.control.accessibility) return { route: 'accessibility', link };
@@ -355,7 +381,7 @@ export class PhoneControl {
     const connected = Boolean(serial);
     const adbStage: PhoneControlView['adb'] = connected ? 'connected' : !state?.adb.on ? 'off' : state.adb.pairing ? 'unpaired' : 'ready';
     const usb = this.lastUsb.get(deviceId) ?? false;
-    const routes = this.routesOf(state, usb, connected && !serial?.startsWith('127.0.0.1'), (connected && Boolean(serial?.startsWith('127.0.0.1'))) || (state?.adb.on ?? false));
+    const routes = this.phoneSaidNo(deviceId) ? [] : this.routesOf(state, usb, false, connected || (state?.adb.on ?? false));
     return {
       use,
       ...(state ? { allowed: state.allowed, accessibility: state.accessibility, screenshots: state.screenshots } : {}),
@@ -364,14 +390,15 @@ export class PhoneControl {
       routes: use === 'off' ? [] : routes,
       ...(serial ? { serial } : {}),
       ...(state?.device.model ? { model: state.device.model } : {}),
-      ...(this.noteFor(state, routes, use) ? { note: this.noteFor(state, routes, use)! } : {}),
+      ...(this.noteFor(state, routes, use, this.phoneSaidNo(deviceId)) ? { note: this.noteFor(state, routes, use, this.phoneSaidNo(deviceId))! } : {}),
       ...(this.busy(deviceId) ? { busy: true } : {}),
     };
   }
   private lastUsb = new Map<string, boolean>();
 
-  private noteFor(state: PhoneControlState | undefined, routes: readonly PhoneRoute[], use: PhoneUse): string | undefined {
+  private noteFor(state: PhoneControlState | undefined, routes: readonly PhoneRoute[], use: PhoneUse, stopped = false): string | undefined {
     if (use === 'off') return 'Off. Turn it on to let Claude act on this phone.';
+    if (stopped && !state) return 'The phone said Stop: turn on “Let your Mac use this phone” in its Beluga.';
     if (!state) return 'Open the Beluga app on this phone so it can say what it allows.';
     if (!state.allowed) return 'Turn on “Let your Mac use this phone” in the phone’s Beluga.';
     if (routes.length) return undefined;
@@ -520,6 +547,9 @@ export class PhoneControl {
    * blocks a run; a `phone_status` or any phone tool first will have cached the serial.
    */
   runEnv(): Record<string, string> {
+    // adb in Claude's Bash is a full shell on the phone: only at Full, and never after the phone said Stop.
+    const target = this.targetDevice();
+    if (!target || this.howUsed(target) !== 'full' || this.phoneSaidNo(target)) return {};
     const dir = this.adbDirSync();
     if (!dir) return {};
     const env: Record<string, string> = { PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}` };
@@ -636,6 +666,7 @@ export class PhoneControl {
       let r: Reach | undefined;
       let checkedAt = 0;
       while (!stopped) {
+        this.lastUsed.set(deviceId, Date.now());
         if (flowing()) {
           await delay(250);
           continue;
@@ -868,6 +899,8 @@ export class PhoneControl {
   private async need(deviceId: string, kind: 'look' | 'act' | 'shell'): Promise<Reach> {
     const use = this.howUsed(deviceId);
     if (use === 'off') throw new Error('This phone is off for Claude (turn it on in Settings › Phone).');
+    if (this.phoneSaidNo(deviceId)) throw new Error('The phone said Stop: “Let your Mac use this phone” is off in its Beluga.');
+    this.lastUsed.set(deviceId, Date.now());
     const kept = this.reached.get(deviceId);
     if (kept && Date.now() - kept.at < REACH_KEEP_MS && kept.r.link === this.deps.link(deviceId)) return kept.r;
     const r = await this.reach(deviceId);
@@ -999,6 +1032,10 @@ export class PhoneControl {
   /** A phone said new control, went away, or its code came: recompute and publish. */
   touched(deviceId: string, usb?: boolean): void {
     if (usb !== undefined) this.lastUsb.set(deviceId, usb);
+    // The phone's own switch, kept: its Stop holds even while its app isn't running.
+    const said = this.deps.link(deviceId)?.control?.allowed;
+    if (said !== undefined && (this.deps.devices.get(deviceId)?.stopped === true) === said) this.deps.devices.update(deviceId, { stopped: !said });
+    if (said === false) this.reached.delete(deviceId);
     this.deps.onChange();
   }
 
@@ -1015,6 +1052,7 @@ export class PhoneControl {
   }
 
   stop(): void {
+    clearInterval(this.idleCheck);
     for (const { server } of this.tunnels.values()) server.close();
     this.tunnels.clear();
   }
@@ -1121,6 +1159,7 @@ export class PhoneControl {
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms).unref());
+const unrefd = <T extends { unref(): unknown }>(timer: T): T => (timer.unref(), timer);
 
 /** `dumpsys notification --noredact` → the active notifications (best-effort: pkg, title, text). */
 export function parseNotifications(dump: string): Array<{ app: string; title: string; text: string }> {
