@@ -8,6 +8,7 @@ import { useActions } from '../lib/actions.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { openSettings } from '../lib/native-routes.js';
 import { showPanelTab } from '../lib/panel.js';
+import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { sameDeep } from '../lib/stable.js';
 import { H264Player } from './h264.js';
 import { touchCaption } from './phone-model.js';
@@ -19,8 +20,8 @@ import s from './phone-view.module.css';
  * jump to ask your Mac's Claude to do something. The mirror streams from the daemon
  * (client.watchPhone): live H.264 video drawn by H264Player when the phone streams (BLG-184),
  * pictures until then; taps go back as companion.phone.act. Shown only when a phone is paired.
- * The same mirror is the right panel's Phone tab, beside any chat (BLG-186), and both show what
- * Claude does on the phone as it does it.
+ * The same mirror is the right panel's Phone tab, beside Your Mac's chat (BLG-186), and both show
+ * what Claude does on the phone as it does it. The screen is off until you ask for it (BLG-196).
  */
 
 const LEVELS: ReadonlyArray<{ value: PhoneUse; label: string }> = [
@@ -43,7 +44,7 @@ export function PhoneView() {
   if (!phone) return <Empty icon="phone" title="No phone" detail="Pair a phone to see it here." />;
   const use = phone.control?.use ?? 'off';
   if (use === 'off') return <SetUp phone={phone} />;
-  return <Mirror key={phone.id} phone={phone} />;
+  return <Screen phone={phone} />;
 }
 
 /** The right panel's Phone tab (BLG-186): the same live mirror beside Your Mac's chat, to watch what Claude does on it (taps still land; the keys and typing are on the full size page). */
@@ -51,7 +52,57 @@ export function PhonePanel() {
   const phone = useAndroidPhone();
   if (!phone) return <Empty icon="phone" title="No phone" detail="Pair an Android phone to see it here." />;
   if ((phone.control?.use ?? 'off') === 'off') return <SetUp phone={phone} />;
-  return <Mirror key={phone.id} phone={phone} compact />;
+  return <Screen phone={phone} compact />;
+}
+
+/**
+ * The live screen only when you want to watch (BLG-196): Claude uses the phone either way, so
+ * by default it's a calm line of how it's reached and how freely, with Show screen one click away.
+ */
+function Screen({ phone, compact = false }: { phone: DeviceView; compact?: boolean }) {
+  const { phoneScreen } = usePrefs();
+  return phoneScreen ? <Mirror key={phone.id} phone={phone} compact={compact} /> : <Ready phone={phone} compact={compact} />;
+}
+
+function Ready({ phone, compact }: { phone: DeviceView; compact: boolean }) {
+  const { client } = useBeluga();
+  const actions = useActions();
+  const routes = phone.control?.routes ?? [];
+  const how = routes.length ? `Reached ${routes[0] === 'link' ? 'through Beluga' : `over ${ROUTE_WORDS[routes[0]!] ?? routes[0]}`}` : (phone.control?.note ?? 'Not reachable right now');
+  const busy = phone.control?.busy === true;
+  const askClaude = (): void => {
+    showPanelTab({ view: { kind: 'assistant' }, projects: client.store.getState().projects }, 'phone');
+    actions.run({ type: 'view', view: { kind: 'assistant' } });
+  };
+  return (
+    <div className={s.setup}>
+      <Empty
+        icon="phone"
+        title={busy ? `Claude is using ${phone.name}` : `Claude can use ${phone.name}`}
+        detail={`${how}. Ask in the chat: “get me the newest photo”, “install Spotify”, “what did the bank text me?”. The screen stays off unless you want to watch.`}
+        action={
+          <div className={s.levels}>
+            <span className={s.levelBar}>
+              {LEVELS.map((l) => (
+                <button key={l.value} type="button" className={cx(s.level, (phone.control?.use ?? 'off') === l.value && s.levelOn)} onClick={() => void client.api.companion['phone.use'](phone.id, l.value)}>
+                  {l.label}
+                </button>
+              ))}
+            </span>
+            <Button variant="quiet" icon="eye" onClick={() => setPrefs({ phoneScreen: true })}>
+              Show screen
+            </Button>
+            {compact ? null : (
+              <Button variant="quiet" icon="claude" onClick={askClaude}>
+                Ask Claude
+              </Button>
+            )}
+          </div>
+        }
+      />
+      {compact ? null : <Macros />}
+    </div>
+  );
 }
 
 /** Before Claude may use it: pick a level right here, or open Settings. */
@@ -250,6 +301,7 @@ function Mirror({ phone, compact = false }: { phone: DeviceView; compact?: boole
             </button>
           ))}
         </span>
+        <IconButton icon="eyeOff" label="Hide the screen (Claude can still use the phone)" onClick={() => setPrefs({ phoneScreen: false })} />
         {compact ? <IconButton icon="expand" label="Open Your Phone" onClick={() => actions.run({ type: 'view', view: { kind: 'phone' } })} /> : null}
       </header>
 
