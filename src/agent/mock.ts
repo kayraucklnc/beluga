@@ -407,6 +407,34 @@ async function mockSyncMain(input: AgentRunInput, target: { branch: string; upst
   return `${target.branch} is up to date with ${target.upstream}. I set your uncommitted changes aside, merged the new commits (no conflicts), and put your changes back. Nothing was pushed.`;
 }
 
+/** The demo's Claude in a sentinel run (core/sentinel): a short brief whose first line is the run's headline. */
+async function mockSentinel(input: AgentRunInput, pace: number): Promise<string> {
+  const steps = /test/i.test(input.prompt)
+    ? ['Bash npm test', 'Read src/webhooks.ts']
+    : /issue/i.test(input.prompt)
+      ? ['Bash gh issue list --json number,title,labels', 'mcp__beluga_board__task_list']
+      : ['Bash git log --since="24 hours ago" --oneline', 'Bash gh pr list', 'Bash gh run list --limit 10', 'Read NOTES.md'];
+  for (const step of steps) {
+    await sleep(600 * pace, input.signal);
+    input.onEvent('tool', step);
+  }
+  await sleep(500 * pace, input.signal);
+  return [
+    '3 commits landed, 1 review waits on you, CI is green',
+    '',
+    '**Needs you first**',
+    '- bob asked for your review on the webhook retries `task:BOB-4`',
+    '',
+    '**What moved**',
+    '- Sign-in with a `+` in the email is fixed (merged as #52)',
+    '- Checkout now refuses expired sessions `task:BOB-3`',
+    '- The landing hero has its new copy',
+    '',
+    '**Next**',
+    '- Refunds from the admin are the last open part of the payments launch',
+  ].join('\n');
+}
+
 const FILLER = /^(?:(?:please|pls|can you|could you|we should|we need to|i want to|i'd like to|let's|lets|make it so)\s+)+/i;
 
 /** The demo's task writer: a tidy title from the first line, a goal and criteria, labels the words name. */
@@ -491,6 +519,8 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     if (/^\/compact/.test(input.prompt.trim())) return context.compact(input, (ms) => sleep(ms * pace, input.signal));
     // Updating main (the one thing a main-folder run may change): what real Claude would report.
     if (input.place?.syncMain) return mockSyncMain(input, input.place.syncMain, pace);
+    // A sentinel's run (core/sentinel): its brief, before the main folder's "move it to a worktree".
+    if (input.sentinelBrief && input.sentinelTools?.stop) return mockSentinel(input, pace);
     // A plan's conversation: Claude writes, revises and checks the plan with its tools.
     if (input.planTools && !/^\/compact/.test(input.prompt.trim())) return mockPlanning(input, input.planTools, pace);
     // A main folder is questions only: a change request moves to a new worktree, as real Claude is told to.

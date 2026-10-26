@@ -94,6 +94,9 @@ export interface AgentRunInput {
   /** Your phone (core/phone): tools to act on your own paired phone, and what Claude is told about it. */
   readonly phoneTools?: PhoneTools;
   readonly phoneBrief?: string;
+  /** Your own runs: sentinels (core/sentinel), and what Claude is told (a sentinel run's brief, or a short note). */
+  readonly sentinelTools?: SentinelTools;
+  readonly sentinelBrief?: string;
 }
 
 /** What Claude writes down about a piece of work: the task in its own words, never the request pasted in. */
@@ -107,6 +110,17 @@ export interface TaskDefinition {
   readonly estimate?: 1 | 2 | 3 | 5 | 8;
   readonly priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
   readonly labels?: readonly string[];
+}
+
+/** Sentinels as Claude's tools (agent/sentinel-tools.ts, server `beluga_sentinel`): each answers in words. */
+export interface SentinelTools {
+  /** Inside a sentinel run only: nothing to do this time, the run ends as skipped with the reason. */
+  stop?(reason: string): string;
+  list(): string;
+  /** A new sentinel from a draft (it starts paused; the answer links it as `sentinel:<id>`). */
+  create(draft: import('../core/sentinel/tool-draft.js').ToolDraft): string;
+  run(ref: string): string;
+  pause(ref: string, paused: boolean): string;
 }
 
 /** A plan as Claude's tools (agent/plan-tools.ts, server `beluga_plan`): each answers in words. */

@@ -7,6 +7,7 @@ import { buildGraphAppend } from './graph-prompt.js';
 import { buildViewAppend } from './view-prompt.js';
 import { createBoardTools } from './board-tools.js';
 import { createPlanTools } from './plan-tools.js';
+import { createSentinelTools } from './sentinel-tools.js';
 import { SECRET_DECLINED, decideTool, denyReason } from './policy.js';
 import { buildSyncMainAppend, syncProbes } from './sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse, toMs } from './usage.js';
@@ -84,6 +85,11 @@ function macServer(input: AgentRunInput): { beluga_mac?: ReturnType<typeof creat
 /** Your own runs can drive your phone (core/phone, BLG-150). */
 function phoneServer(input: AgentRunInput): { beluga_phone?: ReturnType<typeof createPhoneTools> } {
   return input.phoneTools ? { beluga_phone: createPhoneTools(input.phoneTools) } : {};
+}
+
+/** Your own runs get sentinels (core/sentinel): list, set up, run, pause; inside a run, stop it. */
+function sentinelServer(input: AgentRunInput): { beluga_sentinel?: ReturnType<typeof createSentinelTools> } {
+  return input.sentinelTools ? { beluga_sentinel: createSentinelTools(input.sentinelTools) } : {};
 }
 
 /** A plan's home conversation gets the plan's tools (core/plans). */
@@ -197,7 +203,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
+        mcpServers: { beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -234,7 +240,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.phoneBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.phoneBrief ?? '') + (input.sentinelBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
