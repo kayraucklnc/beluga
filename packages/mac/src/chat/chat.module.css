@@ -63,6 +63,36 @@
   background: color-mix(in srgb, var(--accent) 13%, var(--bg-raised));
   color: var(--text);
 }
+/* A friend's words in a shared worktree (BLG-210): a bubble of their colour on the left, the picture at the run's end. */
+.theirs {
+  --bubble-mix: 15%;
+}
+:root[data-theme='dark'] .theirs {
+  --bubble-mix: 24%;
+}
+.theirsBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-right: 15%;
+}
+.theirBubble {
+  max-width: 100%;
+  padding: 8px 13px;
+  border-radius: 16px 16px 16px 8px;
+  background: color-mix(in srgb, var(--person) var(--bubble-mix), var(--bg-raised));
+  color: var(--text);
+}
+.continued .theirBubble {
+  border-top-left-radius: 8px;
+}
+.theirTail {
+  border-bottom-left-radius: 5px;
+}
+.gutterEnd {
+  align-items: flex-end;
+}
 .gutter {
   padding-top: 2px;
   display: flex;

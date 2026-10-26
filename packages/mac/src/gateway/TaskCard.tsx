@@ -305,7 +305,14 @@ export const TaskCard = memo(function TaskCard({ task, inChat }: { task: TaskVie
   const done = isFinal(task.state) && task.endedAt ? ` · ${formatDuration(task.endedAt - task.createdAt)}` : '';
   const title = task.state === 'confirm' ? `Ask ${targetLabel(task)}?` : sent ? `To ${targetLabel(task)}` : `From ${task.peerName}${task.by === 'agent' ? '’s Claude' : ''}`;
   return (
-    <section className={`${s.card} ${task.state === 'confirm' ? s.confirm : ''}`} aria-label={`Task: ${title}`} data-task={task.id} data-state={task.state}>
+    <section className={`${s.card} ${task.state === 'confirm' ? s.confirm : ''} ${task.secret && !isFinal(task.state) ? s.secret : ''}`} aria-label={`Task: ${title}`} data-task={task.id} data-state={task.state}>
+      {/* A secret is its own approval, each time (BLG-209): the card says so before anything else. */}
+      {task.secret && !isFinal(task.state) ? (
+        <div className={s.secretLine}>
+          <Icon name="lock" size={12} />
+          {sent ? `A secret · only ${task.peerName} can allow it, each time` : 'A secret · only you can allow it, each time'}
+        </div>
+      ) : null}
       <div className={s.head}>
         <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} size={20} />
         <span className={s.who}>{title}</span>

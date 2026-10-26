@@ -86,6 +86,37 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   const responders = { bob: demoResponder(bob, 'bob', meId, base), mia: demoResponder(mia, 'mia', meId, base) };
   store.dispatch({ type: 'remembered', people: { ...store.getState().remembered, [bob.peerId]: { name: 'bob', trust: 'trusted' } } });
 
+  // BELUGA_DEMO_SCENE=people (screenshots of BLG-210): a channel with someone offline and a secret waiting on you.
+  let ata: Mesh | undefined;
+  if (belugaEnv('DEMO_SCENE') === 'people') {
+    void (async () => {
+      ata = await friend('ata');
+      await me.mesh.accept((await ata.createInvite()).link);
+      await ata.accept((await bob.createInvite()).code);
+      await until(() => bob.summary().friends.some((f) => f.peerId === ata!.peerId && f.online));
+      const api = bob.createGroup('api-redesign', [meId, mia.peerId, ata.peerId]);
+      const conv = groupConversation(api.id);
+      const joined = await until(() => [ata!, mia].every((m) => m.summary().groups.some((g) => g.id === api.id && g.active)) && me.mesh.summary().groups.some((g) => g.id === api.id && g.active));
+      if (!joined || stopped) return;
+      me.mesh.sendGroup(api.id, '@ata what’s in the text files on your desktop? Need the API notes.');
+      ata.sendGroup(api.id, 'Three endpoints to retire: /v1/session, /v1/token and /v1/me. And a todo to move auth to cookies.');
+      await new Promise((r) => setTimeout(r, 400));
+      bob.sendGroup(api.id, 'Yep, that’s the plan.');
+      mia.sendGroup(api.id, 'Can my Claude grab the deploy key to test against staging?');
+      me.mesh.sendGroup(api.id, 'Sure, just this once.');
+      // mia's Claude asks for a secret here: only you can allow it, each time.
+      try {
+        const t = responders.mia.gateway.ask({ person: meId, kind: 'file', path: '~/.ssh/id_ed25519', ask: 'Send me the deploy key so I can test against staging', summary: 'the deploy key', by: 'agent', conversation: conv });
+        if (t.state === 'confirm') responders.mia.gateway.confirm(t.id, true);
+      } catch {
+        // Not linked yet: the scene goes without it.
+      }
+      // ata goes offline: messages to them wait.
+      await new Promise((r) => setTimeout(r, 1500));
+      await ata.close();
+    })().catch(() => undefined);
+  }
+
   // They answer you (mention Claude and their Claude asks yours something).
   bob.on('message', (m) => {
     if (m.mine) return;
@@ -97,7 +128,7 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   });
   mia.on('message', (m) => {
     if (m.mine || m.from !== meId || m.conversation !== groupConversation(group.id)) return;
-    setTimeout(() => !stopped && mia.sendGroup(group.id, 'Sounds good 👍'), 1500).unref();
+    setTimeout(() => !stopped && mia.sendGroup(group.id, 'Sounds good, see you there.'), 1500).unref();
   });
 
   return {
@@ -111,7 +142,7 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
       responders.bob.stop();
       responders.mia.stop();
       await me.stop();
-      await Promise.all([bob.close(), mia.close()]);
+      await Promise.all([bob.close(), mia.close(), ata?.close().catch(() => undefined)]);
       await testnet.destroy();
       rmSync(base, { recursive: true, force: true });
     },

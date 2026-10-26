@@ -6,7 +6,7 @@ import { splitImages } from '@beluga/shared/attachment-links.js';
 import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR, type SteeredMessage, isLimitNotice } from '@beluga/shared/claude-notices.js';
 import { CONTINUE_PROMPT, type RunFailure, decodeFailure, failureTitle } from '@beluga/shared/run-failure.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Button, Dot, Tip, claudeColor, cx } from '../components/ui.js';
+import { Avatar, Button, Dot, Tip, claudeColor, cx, personColor } from '../components/ui.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { sendSteerNow, stopClaude } from '../lib/commands.js';
 import { copyText } from '../lib/copy.js';
@@ -123,7 +123,7 @@ function Delivery({ request, channel }: { request: string; channel: string }) {
 }
 
 /** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. `steer`: steered in, not read yet. */
-export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: { item: ChatItem; continued: boolean; mine: boolean; steer?: SteeredMessage | undefined }) {
+export const ChatRow = memo(function ChatRow({ item, continued, ends = true, mine, steer }: { item: ChatItem; continued: boolean; ends?: boolean; mine: boolean; steer?: SteeredMessage | undefined }) {
   countRender(`chat:${item.id}`);
   const prefs = usePrefs();
   // Screenshots and other images sent with the message show as pictures, under its words.
@@ -151,6 +151,33 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: {
             <ImageGrid images={images} />
             {steer ? <SteerWaiting steer={steer} /> : null}
             {item.request && item.channel ? <Delivery request={item.request} channel={item.channel} /> : null}
+          </div>
+        </div>
+      </ActionsContext>
+    );
+  // A friend's words in a shared worktree (BLG-210): a bubble of their colour on the left, their name
+  // above the run and their picture at its end, as in a chat with friends.
+  if (!item.byAgent)
+    return (
+      <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
+        <div ref={row} className={cx(s.message, s.theirs, continued && s.continued, steer && s.unread)} data-steer={steer ? 'waiting' : undefined} style={{ ['--person' as string]: personColor(item.from) }}>
+          <div className={cx(s.gutter, s.gutterEnd)}>{ends ? <Avatar name={item.name} id={item.from} size={26} /> : null}</div>
+          <div className={cx(s.body, s.theirsBody)}>
+            {continued ? null : (
+              <div className={s.meta}>
+                <span className={s.author}>{item.name}</span>
+                {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
+              </div>
+            )}
+            {text ? (
+              <div className={cx(s.theirBubble, ends && s.theirTail)}>
+                <Folding>
+                  <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} tasks={mine} />
+                </Folding>
+              </div>
+            ) : null}
+            <ImageGrid images={images} />
+            {steer ? <SteerWaiting steer={steer} /> : null}
           </div>
         </div>
       </ActionsContext>

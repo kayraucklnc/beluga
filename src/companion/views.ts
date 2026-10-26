@@ -12,7 +12,8 @@ import { branchState } from '../core/branch-state.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
 import { shortVersion } from '../net/mesh/features.js';
-import type { MessageView } from '../net/mesh/views.js';
+import type { MessageView, PersonView } from '../net/mesh/views.js';
+import { chatPeople, claudePill, offlineNote, waitingIn, waitingLabel } from '../core/chat-people.js';
 import type { Usage } from '../protocol.js';
 import {
   type BranchView,
@@ -1165,6 +1166,10 @@ function chatTaskOf(state: DomainState, m: MessageView): ChatMessageView['task']
   const title = t.direction === 'sent' ? `To ${targetLabel(t)}` : `From ${t.peerName}${t.by === 'agent' ? '’s Claude' : ''}`;
   const summary = t.result?.summary ? plainLine(stripCode(t.result.summary).text, 600) : '';
   const files = (t.result?.files ?? []).map((f) => clip(f.name, 200)).slice(0, 8);
+  // Whose it is, as the Mac's chat heads it (BLG-210): "Your Claude · asked ata’s Claude", "mia’s Claude · asked your Mac".
+  const sent = t.direction === 'sent';
+  const owner = t.by === 'agent' ? (sent ? 'Your Claude' : `${t.peerName}’s Claude`) : sent ? 'You' : t.peerName;
+  const who = `${owner} · asked ${sent ? targetLabel(t) : t.kind === 'ask' ? 'your Claude' : 'your Mac'}`;
   return {
     id: clip(t.id, 200),
     title: clip(title, 200),
@@ -1173,6 +1178,8 @@ function chatTaskOf(state: DomainState, m: MessageView): ChatMessageView['task']
     tone: stateTone(t),
     ...(summary ? { summary: clip(summary, 600) } : {}),
     ...(files.length ? { files } : {}),
+    who: clip(who, 200),
+    ...(t.secret && !isFinal(t.state) ? { secret: true } : {}),
   };
 }
 
@@ -1199,6 +1206,9 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
   const dm = conversation.startsWith('dm:') ? net.friends.find((f) => `dm:${f.peerId}` === conversation) : undefined;
   const group = conversation.startsWith('group:') ? net.groups.find((g) => `group:${g.id}` === conversation) : undefined;
   const { messages, more } = chatMessages(state, ctx, conversation);
+  const people = chatPeopleOf(state, conversation, dm, group);
+  const waiting = waitingIn({ conversation, tasks: state.gateway.tasks, approvals: state.approvals });
+  const note = offlineNote(people);
   return {
     topic,
     name: clip(dm?.name ?? group?.name ?? 'Chat', 100),
@@ -1206,15 +1216,38 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
     messages,
     more,
     live: (net.live?.[conversation] ?? []).slice(0, 20).map((l) => clip(`${l.name}'s Claude`, 100)),
-    members: chatMembers(state, dm, group),
+    members: chatMembers(state, dm, group, people),
+    ...(waiting.length ? { waiting: waiting.slice(0, 10).map((w) => ({ text: clip(waitingLabel(w), 300), you: w.on === 'you', ...(w.target.kind === 'task' ? { task: clip(w.target.id, 200) } : {}) })) } : {}),
+    ...(note ? { note: clip(note, 200) } : {}),
   };
 }
 
-/** Whose Claude a chat message can ask: you first, then the friend (a DM) or the group's members. */
-function chatMembers(state: DomainState, dm: { peerId: string; name: string } | undefined, group: { members: readonly { peerId: string; name: string; self: boolean }[] } | undefined): ChatView['members'] {
-  const me = { peerId: clip(myId(state), 200), name: clip(myName(state), 64), me: true };
+/** Who's in a chat and what their Claudes do (BLG-210), as the Mac's header says it. */
+function chatPeopleOf(state: DomainState, conversation: string, dm: PersonView | undefined, group: { members: readonly (PersonView & { self: boolean })[] } | undefined) {
+  const net = state.network;
+  const others = dm ? [dm] : (group?.members ?? []).filter((m) => !m.self);
+  const run = [...state.log].reverse().find((l) => l.type === 'agent' && l.channel === conversation && l.owner === state.selfId && isRunning(l.status) && l.status !== 'queued' && l.status !== 'awaiting_approval');
+  const doing = run?.type === 'agent' ? (run.steps.at(-1) ?? run.prompt) : undefined;
+  const now = Date.now();
+  return chatPeople({
+    conversation,
+    self: { peerId: net.self?.peerId ?? myId(state), name: myName(state), ...(net.self ? { presence: net.self.appearOffline ? 'offline' : net.self.presence.state } : {}) },
+    others,
+    live: (net.live?.[conversation] ?? []).filter((l) => now - l.since < 3 * 60_000),
+    tasks: state.gateway.tasks,
+    myRun: { working: Boolean(run), ...(doing ? { doing } : {}) },
+  });
+}
+
+/** Whose Claude a chat message can ask: you first, then the friend (a DM) or the group's members; each with presence and their Claude's state (1.20). */
+function chatMembers(state: DomainState, dm: { peerId: string; name: string } | undefined, group: { members: readonly { peerId: string; name: string; self: boolean }[] } | undefined, people: ReturnType<typeof chatPeopleOf>): ChatView['members'] {
+  const extra = (peerId: string, mine: boolean) => {
+    const p = people.find((x) => (mine ? x.me : x.peerId === peerId));
+    return p ? { presence: p.presence, claude: clip(claudePill(p), 80) } : {};
+  };
+  const me = { peerId: clip(myId(state), 200), name: clip(myName(state), 64), me: true, ...extra(myId(state), true) };
   const others = dm ? [{ peerId: dm.peerId, name: dm.name }] : (group?.members ?? []).filter((m) => !m.self && m.peerId !== me.peerId).map((m) => ({ peerId: m.peerId, name: m.name }));
-  return [me, ...others.slice(0, 199).map((m) => ({ peerId: clip(m.peerId, 200), name: clip(m.name, 64) }))];
+  return [me, ...others.slice(0, 199).map((m) => ({ peerId: clip(m.peerId, 200), name: clip(m.name, 64), ...extra(m.peerId, false) }))];
 }
 
 export function peopleView(state: DomainState): PeopleView {
