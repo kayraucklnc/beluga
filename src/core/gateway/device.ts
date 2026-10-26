@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,6 +27,8 @@ export interface SystemPort {
   exec(cmd: string, args: readonly string[], timeoutMs?: number): Promise<ExecResult>;
   /** Like exec, but stdout/stderr are raw bytes (a screenshot, a file): used by adb exec-out (phone-adb.ts). */
   execBytes?(cmd: string, args: readonly string[], timeoutMs?: number): Promise<ExecBytesResult>;
+  /** A long-running command's stdout as it comes (a phone's screen video over adb), until it ends or stop(). */
+  stream?(cmd: string, args: readonly string[], onData: (chunk: Buffer) => void, onEnd: (code: number | null, stderr: string) => void): { stop(): void };
   readdir(dir: string): Promise<readonly string[]>;
   readonly os: Pick<typeof os, 'platform' | 'release' | 'cpus' | 'totalmem' | 'freemem' | 'networkInterfaces' | 'uptime' | 'arch' | 'homedir'>;
 }
@@ -46,6 +48,21 @@ export const realSystem: SystemPort = {
         resolve({ code, stdout: (stdout as Buffer) ?? Buffer.alloc(0), stderr: (stderr as Buffer) ?? Buffer.from(err ? err.message : '') });
       });
     }),
+  stream: (cmd, args, onData, onEnd) => {
+    const child = spawn(cmd, [...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let ended = false;
+    const end = (code: number | null, why = ''): void => {
+      if (ended) return;
+      ended = true;
+      onEnd(code, (stderr || why).trim().slice(0, 500));
+    };
+    child.stdout.on('data', (chunk: Buffer) => onData(chunk));
+    child.stderr.on('data', (chunk: Buffer) => void (stderr.length < 2000 && (stderr += chunk.toString('utf8'))));
+    child.on('error', (err) => end(null, err.message));
+    child.on('close', (code) => end(code));
+    return { stop: () => void child.kill('SIGTERM') };
+  },
   readdir: (dir) => fs.readdir(dir).catch(() => []),
   os,
 };

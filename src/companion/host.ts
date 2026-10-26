@@ -48,7 +48,7 @@ import {
   VIEW_TURNS,
   parsePhoneFrame,
 } from './protocol.js';
-import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type TunnelEnd, type TunnelSide, type VideoPiece, phoneErrorText } from './phone-control.js';
+import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type TunnelEnd, type TunnelSide, type VideoPiece, phoneErrorText } from './phone-control.js';
 import { type Macro, PhoneMacros } from './phone-macros.js';
 import { type SystemPort, realSystem } from '../core/gateway/device.js';
 import { type Delivery, NO_PUSH, type Nudge, type Pusher, deliver } from './push.js';
@@ -241,6 +241,12 @@ class PhoneLink implements PhoneLinkHandle {
     const v = this.hello?.v;
     const speaks = Boolean(v && (v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE.video)));
     return speaks && this.control?.video === true;
+  }
+
+  /** Can this phone prove it's the one at a Wireless-debugging address (1.19)? */
+  get proofs(): boolean {
+    const v = this.hello?.v;
+    return Boolean(v && (v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE.proof)));
   }
 
   /** Take the screen's video until the returned stop(); the last taker wins. */
@@ -564,6 +570,21 @@ export class CompanionHost {
 
   pairStart(): Promise<PairingInfo> {
     return this.pairing.start();
+  }
+
+  /** Pair the phone on the USB cable (BLG-190): a pairing opens here and on the phone, the four pictures as ever. */
+  async pairOverCable(): Promise<string> {
+    const info = await this.pairing.start();
+    await this.control.openPairingOnCable(info.link);
+    return 'The phone opened the pairing: check its four pictures match the ones here, then Pair.';
+  }
+  /** Open Developer options (or About phone) on a linked phone, for turning on USB debugging. */
+  showPhoneSettings(deviceId: string, which: 'developer' | 'about'): Promise<void> {
+    return this.control.showSettings(deviceId, which);
+  }
+  /** Look for a phone on this Mac's USB (the daemon's). */
+  watchCable(): void {
+    this.control.watchCable();
   }
 
   pairApprove(): { id: string } {
@@ -995,6 +1016,10 @@ export class CompanionHost {
   pairPhoneAdb(deviceId: string): Promise<string> {
     return this.control.pairAdb(deviceId);
   }
+  /** A phone's Wireless debugging on (over its cable) or off (Settings › Phone › Over Wi‑Fi). */
+  phoneWifiDebugging(deviceId: string, on: boolean): Promise<string> {
+    return this.control.setWifiDebugging(deviceId, on);
+  }
   /** One phone action from the Mac UI (the mirror's tap/type, a button). */
   phoneAction(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
     return this.control.action(deviceId, op, args);
@@ -1016,8 +1041,9 @@ export class CompanionHost {
     onFrame: (f: { b64: string; mime: string; w: number; h: number }) => void,
     onStatus: (s: MirrorStatus) => void,
     onVideo?: (p: VideoPiece) => void,
+    onTouch?: (t: PhoneTouch) => void,
   ): () => void {
-    return this.control.startMirror(deviceId, opts, onFrame, onStatus, onVideo);
+    return this.control.startMirror(deviceId, opts, onFrame, onStatus, onVideo, onTouch);
   }
 
   // ---- the DHT node

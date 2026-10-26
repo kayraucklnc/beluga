@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Device from 'expo-device';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowRight, ChevronLeft, Keyboard, ScanLine } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -49,6 +49,14 @@ export default function Pair() {
   const scanned = useRef(false);
 
   useEffect(() => () => run.current?.cancel(), []);
+
+  // Opened with a pairing link (the Mac sent it over the USB cable, BLG-190): pair as if it was scanned.
+  const { link: given } = useLocalSearchParams<{ link?: string }>();
+  useEffect(() => {
+    if (!given || scanned.current || !DEVICE_LINK.test(given)) return;
+    scanned.current = true;
+    start('bare', { link: given });
+  }, [given]);
 
   const start = (mode: Mode, input: { link?: string; code?: string }) => {
     run.current?.cancel();

@@ -5,12 +5,12 @@ import type { View } from '../../../../src/core/store.js';
  * get, and how older window preferences carry over. No DOM here, so it's tested on its own.
  */
 
-export type PanelTab = 'changes' | 'files' | 'terminal' | 'info' | 'history' | 'scratch' | 'background';
+export type PanelTab = 'changes' | 'files' | 'terminal' | 'info' | 'history' | 'scratch' | 'background' | 'phone';
 
-/** Every tab in its fixed place: ⌥⌘1 is always Changes, ⌥⌘4 always Info, ⌥⌘5 History, ⌥⌘6 Scratch, ⌥⌘7 Background. */
-export const PANEL_TABS: readonly PanelTab[] = ['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background'];
+/** Every tab in its fixed place: ⌥⌘1 is always Changes, ⌥⌘4 always Info, ⌥⌘5 History, ⌥⌘6 Scratch, ⌥⌘7 Background, ⌥⌘8 Phone. */
+export const PANEL_TABS: readonly PanelTab[] = ['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background', 'phone'];
 
-export const PANEL_LABELS: Record<PanelTab, string> = { changes: 'Changes', files: 'Files', terminal: 'Terminal', info: 'Info', history: 'History', scratch: 'Scratch', background: 'Background' };
+export const PANEL_LABELS: Record<PanelTab, string> = { changes: 'Changes', files: 'Files', terminal: 'Terminal', info: 'Info', history: 'History', scratch: 'Scratch', background: 'Background', phone: 'Phone' };
 
 /**
  * The panel is two panes, one above the other, each with its own tabs: by default what Claude
@@ -24,8 +24,8 @@ export interface PanelLayout {
 }
 
 /** The tabs with a place of their own (every one of them is in exactly one pane). */
-export const SLOTS: readonly PanelTab[] = ['changes', 'files', 'scratch', 'info', 'terminal', 'background'];
-export const DEFAULT_LAYOUT: PanelLayout = { top: ['changes', 'files', 'scratch', 'info'], bottom: ['terminal', 'background'] };
+export const SLOTS: readonly PanelTab[] = ['changes', 'files', 'scratch', 'info', 'terminal', 'background', 'phone'];
+export const DEFAULT_LAYOUT: PanelLayout = { top: ['changes', 'files', 'scratch', 'info', 'phone'], bottom: ['terminal', 'background'] };
 
 /** The tab a view lives in: History is inside Changes. */
 export const slotOf = (tab: PanelTab): PanelTab => (tab === 'history' ? 'changes' : tab);
@@ -92,11 +92,20 @@ export type TerminalPlace = 'drawer' | 'panel';
 /** What kind of workspace (a chat has no git, so no Changes). */
 type WsKind = 'chat' | 'main' | 'worktree' | string;
 
-/** The panel's tabs for what's on screen, in their fixed order. */
-export function panelTabsFor(view: View, wsKind?: WsKind): PanelTab[] {
+/**
+ * The panel's tabs for what's on screen, in their fixed order. With a phone paired (`phone`), its
+ * live mirror is a tab too (BLG-186): beside any chat, so you can watch what Claude does on it.
+ * Not on the Phone page, which is the mirror already.
+ */
+export function panelTabsFor(view: View, wsKind?: WsKind, phone = false): PanelTab[] {
+  const tabs = tabsOfView(view, wsKind);
+  return phone && tabs.length && view.kind !== 'phone' ? [...tabs, 'phone'] : tabs;
+}
+
+function tabsOfView(view: View, wsKind?: WsKind): PanelTab[] {
   // Scratch: what Claude saves to the workspace's .beluga/scratch/ while it works, live.
   // Background: the commands Claude and its agents run there in the background (dev servers, tests), live.
-  if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : [...PANEL_TABS];
+  if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : PANEL_TABS.filter((t) => t !== 'phone');
   // A project's home (and its History page): the project's history too.
   if (view.kind === 'project') return ['terminal', 'info', 'history'];
   // A plan's page is the plan and its chat, side by side; the Tasks board, a task's page and the plans have the whole window.
@@ -148,7 +157,7 @@ export const clampShare = (v: number, min: number, max: number): number => Math.
 /** The bottom drawer works under any conversation or page, but not over the Terminal view or a friend's workspace. */
 export const drawerFits = (view: View): boolean => view.kind !== 'terminal' && view.kind !== 'shared';
 
-/** The ⌥⌘ digit for a tab (1–7). */
+/** The ⌥⌘ digit for a tab (1–8). */
 export const panelDigit = (tab: PanelTab): number => PANEL_TABS.indexOf(tab) + 1;
 
 /**

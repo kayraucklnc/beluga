@@ -85,7 +85,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'panel-info':
     case 'panel-history':
     case 'panel-scratch':
-    case 'panel-background': {
+    case 'panel-background':
+    case 'panel-phone': {
       const tab = id.slice('panel-'.length) as PanelTab;
       if (!PANEL_TABS.includes(tab)) return;
       return byMenu(`panel-${tab}`, () => {

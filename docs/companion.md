@@ -622,7 +622,7 @@ look at the screen, tap, type, open apps, install a build, read logs, debug. Onl
 only your own runs; never a friend's Claude, never a guest. Off by default.
 
 - **Routes, best first** (`src/companion/phone-control.ts`, `PhoneControl.reach`). USB; Wireless
-  debugging on the same Wi‑Fi; Wireless debugging carried through the Beluga link from any network;
+  debugging carried through the Beluga link (from any network, and the only way it's reached, BLG-187);
   or, when debugging is off, the app's **Accessibility service**. Each tool picks the best route it
   has; the ones that need adb (shell, logs, install) say so plainly when only Accessibility is there.
 - **adb** (`src/companion/phone-adb.ts`). Found at `~/Library/Android/sdk/platform-tools/adb`, on
@@ -638,6 +638,43 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   `ACTION_SET_TEXT`), presses back/home/recents (global actions), opens apps and links, and takes a
   screenshot (`takeScreenshot`, API 30+, no MediaProjection prompt). The Mac asks with `req`, the
   app answers with `reply`. `FLAG_SECURE` screens capture black; the tool says so rather than lying.
+- **Over adb, the mirror is video too** (BLG-185). With USB, Wireless debugging or debugging
+  through the link, the Mac streams Android's own `screenrecord --output-format=h264` (sized to
+  1280 px, 6 Mbit/s on a cable, 4 on Wi‑Fi, 2.5 through the link; started again after its
+  3 minutes), cut into pictures by `src/companion/phone-video.ts` (`AnnexBSplitter`): nothing to
+  allow on the phone, and the same player. A still screen sends nothing, and that's fine. Before,
+  each picture was a 1.9 MB `screencap` PNG (~0.75 s on a Galaxy S24+); now the first picture
+  comes in ~0.5 s and each change after it at once. The mirror's own taps go by the Accessibility
+  service when it's on (instant gestures), and an action's route is reused for 3 s.
+- **Wireless debugging, safely** (BLG-187, BLG-189). A phone's adb is a full shell, so the Mac
+  never trusts an address on the network or a name announced over mDNS. Two ways, the first that
+  works: **straight over the same Wi‑Fi** (fastest), to the address and port the paired phone gave
+  over the link, used only once the device there proves it's that phone: the Mac sends the app a
+  one-time code over the link (`proof`, 1.19), the app keeps it in its own files folder, and the
+  Mac reads it back with `adb shell cat` over the new connection (again each minute); or **through
+  the link**: a local tunnel the paired phone's app carries, end-to-end encrypted to its keys, to its
+  own debugging port. Many networks (dorms, campuses, cafés) keep devices apart: the straight way is
+  then `blocked`, Settings › Phone says so in a sentence ("this Wi‑Fi keeps devices apart, so through
+  Beluga's link instead"), and it's tried again on another network or after 5 minutes. Settings ›
+  Phone › Over Wi‑Fi: **Use over Wi‑Fi** (on a cable: `settings put global adb_wifi_enabled 1`;
+  Android asks "Allow wireless debugging on this network?", behind the lock screen if it's locked;
+  tap Allow, not Always) and **Turn Off**; turned on by Beluga, it goes off after 15 minutes unused.
+  The phone's own switch and its notification's **Stop** cut every route, adb's included, and the
+  Mac keeps that no on the device record (`DeviceRecord.stopped`). adb in Claude's Bash only at Full.
+- **A phone on the cable** (BLG-190). The daemon looks at macOS's own USB list every 4 s
+  (`ioreg -p IOUSB`, read-only; Android vendors or "Android" in the name) and asks adb only once a
+  phone is there. Settings › Phone › **On the cable** says what's next: USB debugging is off (the
+  steps, and **Open on the Phone**, which shows its Developer options or About phone through its
+  Beluga, `open {settings}`, 1.19); "tap Allow on Allow USB debugging?"; or ready. A phone with
+  Beluga that isn't paired with this Mac (matched by its device name) gets **Pair over the Cable**:
+  a pairing opens here and the Mac opens it on the phone (`am start … beluga://device#…`, which the
+  app routes to its pairing screen, `app/+native-intent.tsx`); the four pictures are checked as ever.
+- **The phone beside the chat** (BLG-186). The right panel has a **Phone** tab (⌥⌘8) wherever it
+  shows, while an Android phone is paired: the same live mirror, fitted to the panel, beside any
+  conversation or Your Mac. What Claude does shows on it as it happens: a ripple where it taps, a
+  trail along a swipe, a caption ("Claude pressed Back"; never what it typed), from `phone_touch`
+  frames; and the tab has a dot while Claude is acting (`PhoneControlView.busy`, 15 s after its last
+  move). The Phone page's Ask Claude opens Your Mac with the Phone tab beside it.
 - **The mirror on the Mac** (Your phone, BLG-173/BLG-184). Live H.264 video when the phone can
   (`control.video`, 1.18): the Mac asks with `req mirror {on, max, fps, kbps}`; the first time,
   the phone shows Android's "Start now" sheet (MediaProjection, from a see-through screen, or a

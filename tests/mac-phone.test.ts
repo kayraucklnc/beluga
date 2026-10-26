@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, leftText, markOf, seenText } from '../packages/mac/src/phone/phone-model.js';
+import { ago, leftText, markOf, seenText, touchCaption } from '../packages/mac/src/phone/phone-model.js';
 import { avcC, codecOf, splitNals, toAvcc } from '../packages/mac/src/phone/h264.js';
 
 const NOW = 1_760_000_000_000;
@@ -45,5 +45,15 @@ describe('the mirror’s live video (BLG-184)', () => {
   it('rewrites a piece as one length-prefixed sample, without its parameter sets', () => {
     const sample = toAvcc(splitNals(keyFrame));
     expect([...sample]).toEqual([0, 0, 0, idr.length, ...idr]);
+  });
+});
+
+describe('what Claude does on the phone, in words (BLG-186)', () => {
+  it('says the move, never what was typed', () => {
+    expect(touchCaption({ op: 'tap', x: 1, y: 2 })).toBe('Claude tapped');
+    expect(touchCaption({ op: 'key', what: 'back' })).toBe('Claude pressed Back');
+    expect(touchCaption({ op: 'scroll', what: 'down' })).toBe('Claude scrolled down');
+    expect(touchCaption({ op: 'open', what: 'com.instagram.android' })).toBe('Claude opened com.instagram.android');
+    expect(touchCaption({ op: 'type' })).toBe('Claude typed');
   });
 });

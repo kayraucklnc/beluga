@@ -171,6 +171,8 @@ export function launchCompanion(opts: CompanionLaunch): () => Promise<void> {
   });
   attachCompanion(opts.session, host);
   void host.start().catch((err: unknown) => opts.log?.(`companion: could not start: ${String(err)}`));
+  // A phone on this Mac's USB: set up by itself, or what to switch on said in Settings › Phone (BLG-190).
+  if (!opts.demo) host.watchCable();
   return async () => {
     outputs.stop();
     detachCompanion(opts.session);

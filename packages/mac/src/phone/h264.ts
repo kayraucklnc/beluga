@@ -72,6 +72,8 @@ export function toAvcc(nals: readonly Uint8Array[]): Uint8Array {
   return out;
 }
 
+let canPlay: Promise<boolean> | undefined;
+
 export interface VideoPiece {
   readonly b64: string;
   readonly key: boolean;
@@ -96,9 +98,17 @@ export class H264Player {
     this.ctx = canvas.getContext('2d');
   }
 
-  /** This screen can decode H.264 with WebCodecs. */
-  static supported(): boolean {
-    return typeof VideoDecoder !== 'undefined' && typeof EncodedVideoChunk !== 'undefined';
+  /** This screen can decode H.264 with WebCodecs (some have WebCodecs but not H.264). Asked once. */
+  static supported(): Promise<boolean> {
+    canPlay ??= (async () => {
+      if (typeof VideoDecoder === 'undefined' || typeof EncodedVideoChunk === 'undefined') return false;
+      try {
+        return (await VideoDecoder.isConfigSupported({ codec: 'avc1.42e01f' })).supported === true;
+      } catch {
+        return false;
+      }
+    })();
+    return canPlay;
   }
 
   push(piece: VideoPiece): void {

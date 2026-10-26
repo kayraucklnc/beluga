@@ -29,6 +29,8 @@ interface Runtime {
    * and comes back with Esc. Showing or hiding it yourself meanwhile forgets this (your choice stays).
    */
   readonly panelBack?: boolean;
+  /** An Android phone is paired: the panel has its Phone tab (BLG-186). */
+  readonly phone?: boolean;
 }
 
 let runtime: Runtime = { termFocus: 0 };
@@ -53,7 +55,12 @@ const workspaceOf = (state: PanelState): Workspace | undefined => (state.view.ki
 /** Uncommitted files or commits ahead of its base. */
 export const hasChanges = (ws: Workspace | undefined): boolean => (ws?.status?.changed ?? 0) + (ws?.status?.ahead ?? 0) > 0;
 
-export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
+export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind, runtime.phone).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
+
+/** Whether a phone is paired, so the panel offers its Phone tab (set from the shared state as it changes). */
+export const setPhoneTab = (on: boolean): void => {
+  if (Boolean(runtime.phone) !== on) patch({ phone: on });
+};
 
 /** A pane's tabs for what's on screen, in your order. */
 export const paneTabsOf = (state: PanelState, pane: PaneId, prefs: UiPrefs = getPrefs()): PanelTab[] => paneTabs(prefs.panelLayout, pane, tabsOf(state));

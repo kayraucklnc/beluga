@@ -72,6 +72,41 @@ export class Adb {
     if (text.code !== 0) throw new Error(text.stderr.trim().slice(0, 200) || `adb exited ${text.code}`);
     return Buffer.from(text.stdout.replace(/\s+/g, ''), 'base64');
   }
+
+  /** `adb exec-out` streamed as it comes (a screen video), until it ends or stop(); undefined without streaming. */
+  stream(args: readonly string[], onData: (chunk: Buffer) => void, onEnd: (code: number | null, stderr: string) => void): { stop(): void } | undefined {
+    return this.sys.stream?.(this.adbPath, ['-s', this.serial, 'exec-out', ...args], onData, onEnd);
+  }
+
+  /** The screen's size in the pixels taps use (`wm size`: the override when there is one, as Samsung's FHD+ is). */
+  async screenSize(): Promise<{ w: number; h: number } | undefined> {
+    const res = await this.shell('wm size', 6_000).catch(() => undefined);
+    return res ? parseWmSize(res.stdout) : undefined;
+  }
+}
+
+/** USB vendors that make Android phones (Samsung, Google, Xiaomi, OnePlus, Motorola, Huawei, Sony, LG, OPPO/Realme, vivo, Asus, HTC, Lenovo, ZTE, Nothing). */
+const ANDROID_VENDORS: ReadonlySet<number> = new Set([0x04e8, 0x18d1, 0x2717, 0x2a70, 0x22b8, 0x12d1, 0x0fce, 0x1004, 0x22d9, 0x2d95, 0x0b05, 0x0bb4, 0x17ef, 0x19d2, 0x2b0e]);
+
+/**
+ * `ioreg -p IOUSB -l -w0` → the Android phones on this Mac's USB, seen by macOS itself: so a phone
+ * shows even while USB debugging is off and adb can't see it (BLG-190). Its name ("SAMSUNG Android")
+ * and serial (the same one adb shows, when it does).
+ */
+export function parseUsbPhones(ioreg: string): Array<{ name: string; serial?: string }> {
+  return ioreg.split(/\+-o /).slice(1).flatMap((entry) => {
+    const vendor = Number(/"idVendor" = (\d+)/.exec(entry)?.[1] ?? NaN);
+    const product = /"USB Product Name" = "([^"]*)"/.exec(entry)?.[1] ?? '';
+    if (!ANDROID_VENDORS.has(vendor) && !/android/i.test(product)) return [];
+    const serial = /"USB Serial Number" = "([^"]*)"/.exec(entry)?.[1];
+    return [{ name: product.replace(/_/g, ' ').trim() || 'An Android phone', ...(serial ? { serial } : {}) }];
+  });
+}
+
+/** `wm size` → the size taps use: "Override size" when set, else "Physical size". */
+export function parseWmSize(stdout: string): { w: number; h: number } | undefined {
+  const m = /Override size: (\d+)x(\d+)/.exec(stdout) ?? /Physical size: (\d+)x(\d+)/.exec(stdout);
+  return m ? { w: Number(m[1]), h: Number(m[2]) } : undefined;
 }
 
 /** `adb devices -l` → the serials attached now, with how each is connected. */
@@ -85,8 +120,10 @@ export function parseDevices(stdout: string): Array<{ serial: string; state: str
       const [serial, state, ...rest] = line.split(/\s+/);
       if (!serial || !state) return [];
       const info = rest.join(' ');
-      // A Wi-Fi/tunnel device is `ip:port`; a USB one has a `usb:` field and no colon in the serial.
-      const usb = /\busb:/.test(info) || (!serial.includes(':') && !/\bemulator\b/.test(serial));
+      // A Wi-Fi/tunnel device is `ip:port`, or adb's own mDNS name (`adb-<serial>-…._adb-tls-connect._tcp`);
+      // a USB one has a `usb:` field and no colon in the serial.
+      const wireless = serial.includes(':') || serial.includes('._adb-tls-connect.');
+      const usb = /\busb:/.test(info) || (!wireless && !/\bemulator\b/.test(serial));
       return [{ serial, state, usb }];
     });
 }

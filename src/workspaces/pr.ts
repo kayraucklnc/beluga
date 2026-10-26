@@ -16,7 +16,10 @@ export const DEFAULT_PR_PROMPT = `Open a pull request for the work in this works
 1. Look at everything that changed compared to {{base}} (git log {{base}}..HEAD and git diff {{base}}).
 2. If there are uncommitted changes that belong to this work, commit them with a clear conventional-commit
    message. Never commit secrets, .env files or unrelated changes.
-3. Push {{branch}} to origin (set the upstream).
+3. Push {{branch}} to origin (set the upstream). If git rejects it as non-fast-forward because the
+   branch's last pull request was already merged and GitHub's copy is exactly that pull request's head
+   (gh pr view {{branch}} --json state,headRefOid), push with --force-with-lease={{branch}}:<that sha>.
+   Never force-push otherwise: say what's on GitHub that isn't here instead.
 4. Write the pull request so a reviewer understands it in 30 seconds:
    - Title: short and imperative, under 70 characters (for example "Add session auth to the payments API").
    - Description, short and easy to read:
@@ -28,7 +31,7 @@ export const DEFAULT_PR_PROMPT = `Open a pull request for the work in this works
      The commands or steps to check it.
      Mention anything risky, unfinished or worth a closer look.
 5. Create it with: gh pr create --base {{baseBranch}} --head {{branch}} --title "<title>" --body-file <file>
-   (write the body to a temporary file first). If a pull request for {{branch}} already exists,
+   (write the body to a temporary file first). If an open pull request for {{branch}} already exists,
    push the new commits and update its title and description with gh pr edit instead.
 6. Reply with the pull request URL and a one-paragraph explanation of the change.`;
 
@@ -241,6 +244,54 @@ const PR_FIELDS = 'number,url,state,title,isDraft,statusCheckRollup,reviewDecisi
 /** How many PRs one `gh pr list` asks for. */
 export const PR_LIST_LIMIT = 60;
 
+/**
+ * Push a worktree's branch for its pull request. A branch whose last PR was squash-merged and that
+ * carried on from the base (Beluga moves it there after a merge) no longer follows GitHub's copy,
+ * so git refuses (non-fast-forward). When GitHub's copy is exactly that merged PR's head, nothing
+ * there is new: it's replaced, with a lease on that very commit so anything pushed since is never
+ * lost. Any other refusal says git's reason, not its first line ("To https://github.com/…").
+ */
+export async function pushForPr(dir: string, head: string): Promise<'pushed' | 'replaced'> {
+  try {
+    await run('git', ['push', '-u', 'origin', `${head}:${head}`], dir, 120_000);
+    return 'pushed';
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    if (!/non-fast-forward|\[rejected\]|fetch first/.test(why)) throw new Error(pushWhy(why));
+    const remote = (await run('git', ['ls-remote', 'origin', `refs/heads/${head}`], dir, 30_000).catch(() => '')).trim().split(/\s+/)[0];
+    const last = await mergedHead(dir, head);
+    if (!remote || !last || last !== remote) throw new Error(`GitHub has commits on ${head} that this worktree doesn’t: bring them in first (git pull), or check who pushed there`);
+    await run('git', ['push', '-u', `--force-with-lease=${head}:${remote}`, 'origin', `${head}:${head}`], dir, 120_000).catch((again: unknown) => {
+      throw new Error(pushWhy(again instanceof Error ? again.message : String(again)));
+    });
+    return 'replaced';
+  }
+}
+
+/** The head commit of the branch's last pull request, if it was merged (gh's newest PR for the branch). */
+async function mergedHead(dir: string, head: string): Promise<string | undefined> {
+  const out = await run(gh(), ['pr', 'view', head, '--json', 'state,headRefOid'], dir).catch(() => undefined);
+  if (!out) return undefined;
+  try {
+    const pr = JSON.parse(out) as { state?: string; headRefOid?: string };
+    return pr.state === 'MERGED' && typeof pr.headRefOid === 'string' ? pr.headRefOid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Why `git push` failed, in a line: the refusal ("! [rejected] … (non-fast-forward)") or the error
+ * ("fatal: …", "error: …", "remote: …"), never "To https://…" or a hint.
+ */
+export function pushWhy(stderr: string): string {
+  const lines = stderr.split('\n').map((l) => l.trim()).filter(Boolean);
+  const refused = lines.find((l) => /^!\s*\[(remote )?rejected\]/.test(l));
+  if (refused && /non-fast-forward|fetch first/.test(refused)) return 'GitHub’s copy of the branch has commits this worktree doesn’t (non-fast-forward)';
+  const line = refused ?? lines.find((l) => /^(fatal|error|remote):/i.test(l) && !/failed to push some refs/.test(l)) ?? lines.find((l) => !/^(To |hint:)/.test(l)) ?? lines[0];
+  return (line ?? 'git push failed').replace(/^!\s*/, '').slice(0, 300);
+}
+
 /** The pull request for a branch, if there is one. Throws when gh couldn't tell (offline, rate limit…). */
 export async function findPr(dir: string, branch: string): Promise<PullRequest | undefined> {
   if (!(await hasGh())) return undefined;
@@ -391,7 +442,7 @@ export async function unpushedCommits(dir: string, branch: string, remote = 'ori
 /** Push `head` and open a pull request for it into `base` (a plan's branch → main) → the pull request. */
 export async function createPr(dir: string, pr: { readonly base: string; readonly head: string; readonly title: string; readonly body: string; readonly draft?: boolean }): Promise<PullRequest> {
   if (!(await hasGh())) throw new Error('Opening a pull request needs the GitHub CLI (gh), signed in');
-  await run('git', ['push', '-u', 'origin', `${pr.head}:${pr.head}`], dir, 120_000);
+  await pushForPr(dir, pr.head);
   const existing = await findPr(dir, pr.head).catch(() => undefined);
   if (existing?.state === 'OPEN') return existing;
   await run(gh(), ['pr', 'create', '--base', pr.base, '--head', pr.head, '--title', pr.title, '--body', pr.body, ...(pr.draft ? ['--draft'] : [])], dir, 60_000);

@@ -1,4 +1,4 @@
-import { type DragEvent, type KeyboardEvent, memo, Suspense, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type KeyboardEvent, lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { runId, setupId } from '@beluga/shared/terminal-keys.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
@@ -6,7 +6,7 @@ import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../components/ui.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
-import { currentTab, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, showPanelTab, tabShowing, tabsOf, useWorkspaceTabBridge } from '../lib/panel.js';
+import { currentTab, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, setPhoneTab, showPanelTab, tabShowing, tabsOf, usePanelRuntime, useWorkspaceTabBridge } from '../lib/panel.js';
 import { PANEL_DEFAULT, PANEL_LABELS, type PaneId, type PanelTab, SPLIT_MAX, SPLIT_MIN, PANES_DEFAULT, clampPanelWidth, clampShare, paneKey, panelDigit, panelFits, slotOf, viewsOf } from '../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { useMaking } from '../lib/making.js';
@@ -20,6 +20,8 @@ import { ScratchTab, useScratchNewest } from './panel/ScratchTab.js';
 import { BackgroundTab, useBackgroundRunning } from './panel/BackgroundTab.js';
 import s from './panel/panel.module.css';
 
+const PhonePanel = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhonePanel })));
+
 const ICONS: Record<PanelTab, IconName> = {
   changes: 'diff',
   files: 'folder',
@@ -28,6 +30,7 @@ const ICONS: Record<PanelTab, IconName> = {
   history: 'clock',
   scratch: 'pulse',
   background: 'play',
+  phone: 'phone',
 };
 const SLIDE_MS = 200;
 const STEP = 24;
@@ -52,6 +55,8 @@ function useBadges(): Badges {
   const running = (k: string): boolean => k in terminals && !(k in exits);
   const failed = ws ? [runId(ws.id), setupId(ws.id)].some((k) => (exits[k] ?? 0) !== 0) : false;
   const background = useBackgroundRunning(ws);
+  // Claude is acting on the phone right now: a dot on the Phone tab, whatever you're looking at.
+  const phoneBusy = useApp((st) => st.companion.devices.some((d) => d.control?.busy === true));
   // Something Claude saved to Scratch since you last looked: a dot until you do.
   const newest = useScratchNewest(ws?.id);
   const scratchSeen = useRef(new Map<string, number>());
@@ -59,6 +64,7 @@ function useBadges(): Badges {
   if (ws && newest !== undefined && (lookingScratch || !scratchSeen.current.has(ws.id))) scratchSeen.current.set(ws.id, newest);
   const freshScratch = ws && newest !== undefined ? newest > (scratchSeen.current.get(ws.id) ?? newest) : false;
   return {
+    ...(phoneBusy ? { phone: { tone: 'accent' as const } } : {}),
     ...(freshScratch ? { scratch: { tone: 'accent' as const } } : {}),
     ...(background ? { background: { tone: 'ok' as const } } : {}),
     ...(changed
@@ -307,8 +313,18 @@ const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId:
       const target = wsId ?? projectId;
       return target ? <HistoryTab key={target} target={target} /> : null;
     }
+    case 'phone':
+      return <PhonePanel />;
   }
 });
+
+/** The Phone tab is there while an Android phone is paired (BLG-186). */
+function usePhoneTabBridge(): void {
+  const paired = useApp((st) => st.companion.devices.some((d) => d.platform !== 'ios'));
+  useEffect(() => setPhoneTab(paired), [paired]);
+  // Re-draw when it comes or goes (the tabs are worked out from it).
+  usePanelRuntime((r) => r.phone);
+}
 
 /**
  * Opening a file yourself (a link in the chat, Open File in a diff) shows it in the Files tab.
@@ -336,6 +352,7 @@ function useFileFollow(): void {
 export function RightPanel() {
   const { client } = useBeluga();
   useWorkspaceTabBridge(client);
+  usePhoneTabBridge();
   useFileFollow();
   const prefs = usePrefs();
   const view = useApp((st) => st.view);
