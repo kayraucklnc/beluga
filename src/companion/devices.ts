@@ -20,6 +20,8 @@ export const DeviceRecord = z.object({
   push: z.object({ platform: z.enum(['fcm', 'apns']), token: z.string().max(4096), relayKey: z.string().max(200) }).optional(),
   /** How freely your Claude may use this phone (BLG-150, Settings › Phone); off by default. */
   use: z.enum(PHONE_USE).optional(),
+  /** Its adb serial, as seen on a USB cable: its Wireless debugging is found over mDNS by it (BLG-187). */
+  adbSerial: z.string().max(100).regex(/^[\w.-]+$/).optional(),
 });
 export type DeviceRecord = z.infer<typeof DeviceRecord>;
 
@@ -61,7 +63,7 @@ export class DeviceBook {
     return gone;
   }
 
-  update(id: string, patch: Partial<Pick<DeviceRecord, 'lastSeen' | 'app' | 'push' | 'path' | 'note' | 'use'>>): void {
+  update(id: string, patch: Partial<Pick<DeviceRecord, 'lastSeen' | 'app' | 'push' | 'path' | 'note' | 'use' | 'adbSerial'>>): void {
     const current = this.get(id);
     if (!current) return;
     this.save(this.list.map((r) => (r === current ? { ...r, ...patch } : r)));

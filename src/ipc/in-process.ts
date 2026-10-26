@@ -85,7 +85,7 @@ export class InProcessClient implements BelugaClient {
 
   watchPhone(): PhoneMirror {
     // The in-process client (terminal UI, tests) has no phone mirror.
-    return { onFrame: () => () => {}, onVideo: () => () => {}, onStatus: () => () => {}, close: () => {} };
+    return { onFrame: () => () => {}, onVideo: () => () => {}, onTouch: () => () => {}, onStatus: () => () => {}, close: () => {} };
   }
 
   close(): void {

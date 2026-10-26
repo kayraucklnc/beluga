@@ -72,6 +72,35 @@ export class Adb {
     if (text.code !== 0) throw new Error(text.stderr.trim().slice(0, 200) || `adb exited ${text.code}`);
     return Buffer.from(text.stdout.replace(/\s+/g, ''), 'base64');
   }
+
+  /** `adb exec-out` streamed as it comes (a screen video), until it ends or stop(); undefined without streaming. */
+  stream(args: readonly string[], onData: (chunk: Buffer) => void, onEnd: (code: number | null, stderr: string) => void): { stop(): void } | undefined {
+    return this.sys.stream?.(this.adbPath, ['-s', this.serial, 'exec-out', ...args], onData, onEnd);
+  }
+
+  /** The screen's size in the pixels taps use (`wm size`: the override when there is one, as Samsung's FHD+ is). */
+  async screenSize(): Promise<{ w: number; h: number } | undefined> {
+    const res = await this.shell('wm size', 6_000).catch(() => undefined);
+    return res ? parseWmSize(res.stdout) : undefined;
+  }
+}
+
+/**
+ * `adb mdns services` → each phone's debugging services this Mac hears on the network: its name
+ * (`adb-<serial>-<random>`), the service (`_adb-tls-connect._tcp` to connect, `_adb-tls-pairing._tcp`
+ * to pair) and where.
+ */
+export function parseMdns(stdout: string): Array<{ name: string; service: string; addr: string }> {
+  return stdout.split('\n').flatMap((line) => {
+    const m = /^\s*(\S+)\s+(_adb[\w.-]*?)\.?\s+(\d+\.\d+\.\d+\.\d+:\d+)\s*$/.exec(line);
+    return m ? [{ name: m[1]!, service: m[2]!, addr: m[3]! }] : [];
+  });
+}
+
+/** `wm size` → the size taps use: "Override size" when set, else "Physical size". */
+export function parseWmSize(stdout: string): { w: number; h: number } | undefined {
+  const m = /Override size: (\d+)x(\d+)/.exec(stdout) ?? /Physical size: (\d+)x(\d+)/.exec(stdout);
+  return m ? { w: Number(m[1]), h: Number(m[2]) } : undefined;
 }
 
 /** `adb devices -l` → the serials attached now, with how each is connected. */
@@ -85,8 +114,10 @@ export function parseDevices(stdout: string): Array<{ serial: string; state: str
       const [serial, state, ...rest] = line.split(/\s+/);
       if (!serial || !state) return [];
       const info = rest.join(' ');
-      // A Wi-Fi/tunnel device is `ip:port`; a USB one has a `usb:` field and no colon in the serial.
-      const usb = /\busb:/.test(info) || (!serial.includes(':') && !/\bemulator\b/.test(serial));
+      // A Wi-Fi/tunnel device is `ip:port`, or adb's own mDNS name (`adb-<serial>-…._adb-tls-connect._tcp`);
+      // a USB one has a `usb:` field and no colon in the serial.
+      const wireless = serial.includes(':') || serial.includes('._adb-tls-connect.');
+      const usb = /\busb:/.test(info) || (!wireless && !/\bemulator\b/.test(serial));
       return [{ serial, state, usb }];
     });
 }

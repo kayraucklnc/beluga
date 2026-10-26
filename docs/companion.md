@@ -629,6 +629,26 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   `ACTION_SET_TEXT`), presses back/home/recents (global actions), opens apps and links, and takes a
   screenshot (`takeScreenshot`, API 30+, no MediaProjection prompt). The Mac asks with `req`, the
   app answers with `reply`. `FLAG_SECURE` screens capture black; the tool says so rather than lying.
+- **Over adb, the mirror is video too** (BLG-185). With USB, Wireless debugging or debugging
+  through the link, the Mac streams Android's own `screenrecord --output-format=h264` (sized to
+  1280 px, 6 Mbit/s on a cable, 4 on Wi‑Fi, 2.5 through the link; started again after its
+  3 minutes), cut into pictures by `src/companion/phone-video.ts` (`AnnexBSplitter`): nothing to
+  allow on the phone, and the same player. A still screen sends nothing, and that's fine. Before,
+  each picture was a 1.9 MB `screencap` PNG (~0.75 s on a Galaxy S24+); now the first picture
+  comes in ~0.5 s and each change after it at once. The mirror's own taps go by the Accessibility
+  service when it's on (instant gestures), and an action's route is reused for 3 s.
+- **Wireless debugging without a code** (BLG-187). The phone's USB serial is kept on its record
+  (`DeviceRecord.adbSerial`) the first time it's on a cable; unplugged, the Mac finds its
+  Wireless debugging over mDNS (`adb mdns services`, `adb-<serial>-…`) and connects (a key the phone
+  allowed on the cable needs no pairing code). Settings › Phone › **Use over Wi‑Fi** (while on a
+  cable, `companion.phone.wifi`) turns Wireless debugging on with `settings put global
+  adb_wifi_enabled 1` and connects; Android may ask "Allow wireless debugging on this network?".
+- **The phone beside the chat** (BLG-186). The right panel has a **Phone** tab (⌥⌘8) wherever it
+  shows, while an Android phone is paired: the same live mirror, fitted to the panel, beside any
+  conversation or Your Mac. What Claude does shows on it as it happens: a ripple where it taps, a
+  trail along a swipe, a caption ("Claude pressed Back"; never what it typed), from `phone_touch`
+  frames; and the tab has a dot while Claude is acting (`PhoneControlView.busy`, 15 s after its last
+  move). The Phone page's Ask Claude opens Your Mac with the Phone tab beside it.
 - **The mirror on the Mac** (Your phone, BLG-173/BLG-184). Live H.264 video when the phone can
   (`control.video`, 1.18): the Mac asks with `req mirror {on, max, fps, kbps}`; the first time,
   the phone shows Android's "Start now" sheet (MediaProjection, from a see-through screen, or a

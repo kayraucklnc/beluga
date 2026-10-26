@@ -214,6 +214,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.devices.remove` | ✓ the Phone popover › a phone › Remove (its link drops at once, its key is refused from then on) |
 | `companion.phone.use` | ✓ Settings › Phone › Let Claude use this phone: Off · Ask each time · Use · Full (BLG-150) |
 | `companion.phone.pairAdb` | ✓ Settings › Phone › Connect, once the phone shows a Wireless-debugging pairing code (runs `adb pair`) |
+| `companion.phone.wifi` | ✓ Settings › Phone › Over Wi‑Fi › Use over Wi‑Fi, while the phone is on a cable: turns on its Wireless debugging and connects (BLG-187) |
 | `companion.phone.act` | ✓ the Your phone page's live mirror: click to tap, drag to swipe, the hardware-key buttons, the type line (BLG-171) |
 | `companion.phone.macros` | ✓ the Your phone page's Macros strip: the saved flows (BLG-175) |
 | `companion.phone.macroRun` | ✓ the Your phone page's Macros strip › Run |

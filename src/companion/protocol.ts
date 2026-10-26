@@ -1031,6 +1031,8 @@ export interface PhoneControlView {
   readonly serial?: string;
   /** The phone's model, as it said. */
   readonly model?: string;
+  /** Claude is acting on it now (its last tap, swipe or key was moments ago): the Mac's Phone tab shows a dot. */
+  readonly busy?: boolean;
   /** What's wrong or what's next, in words, when there's something to say. */
   readonly note?: string;
 }

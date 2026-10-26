@@ -41,16 +41,16 @@ describe('the right panel’s two panes', () => {
 
   it('a tab dragged across stays there, before the tab it was dropped on', () => {
     const moved = moveTab(DEFAULT_LAYOUT, 'info', 'bottom', 'background');
-    expect(moved).toEqual({ top: ['changes', 'files', 'scratch'], bottom: ['terminal', 'info', 'background'] });
+    expect(moved).toEqual({ top: ['changes', 'files', 'scratch', 'phone'], bottom: ['terminal', 'info', 'background'] });
     expect(paneOf(moved, 'info')).toBe('bottom');
     // History moves with Changes.
     expect(moveTab(DEFAULT_LAYOUT, 'history', 'bottom').bottom).toEqual(['terminal', 'background', 'changes']);
-    expect(moveTab(DEFAULT_LAYOUT, 'files', 'top')).toEqual({ top: ['changes', 'scratch', 'info', 'files'], bottom: ['terminal', 'background'] });
+    expect(moveTab(DEFAULT_LAYOUT, 'files', 'top')).toEqual({ top: ['changes', 'scratch', 'info', 'phone', 'files'], bottom: ['terminal', 'background'] });
   });
 
   it('a saved layout is made whole: every tab once, nothing unknown', () => {
     expect(normalizeLayout(undefined)).toEqual(DEFAULT_LAYOUT);
-    expect(normalizeLayout({ top: ['terminal', 'nope', 'terminal'], bottom: ['terminal', 'files'] })).toEqual({ top: ['terminal', 'changes', 'scratch', 'info'], bottom: ['files', 'background'] });
+    expect(normalizeLayout({ top: ['terminal', 'nope', 'terminal'], bottom: ['terminal', 'files'] })).toEqual({ top: ['terminal', 'changes', 'scratch', 'info', 'phone'], bottom: ['files', 'background'] });
     expect(paneKey(ws, 'bottom')).toBe('ws:w1|bottom');
   });
 });
@@ -75,6 +75,14 @@ describe('the right panel’s tabs', () => {
     expect(panelTabsFor({ kind: 'shared', owner: 'o', id: 'x', tab: 'chat' })).toEqual(['info']);
     expect(panelTabsFor({ kind: 'terminal' })).toEqual(['info']);
     expect(panelTabsFor(room)).toEqual(['terminal', 'info']);
+  });
+  it('with a phone paired, its mirror is a tab beside any chat, but not on the Phone page or a plan', () => {
+    expect(panelTabsFor(ws, 'worktree', true).at(-1)).toBe('phone');
+    expect(panelTabsFor({ kind: 'assistant' }, undefined, true)).toEqual(['terminal', 'info', 'phone']);
+    expect(panelTabsFor({ kind: 'phone' }, undefined, true)).toEqual(['terminal', 'info']);
+    expect(panelTabsFor({ kind: 'plan', id: 'p1' }, undefined, true)).toEqual([]);
+    expect(panelTabsFor(ws, 'worktree')).not.toContain('phone');
+    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor(room, undefined, true))).toEqual(['info', 'phone']);
   });
 
   it('opens on the tab you last picked there, else Changes when there are changes, else Info', () => {

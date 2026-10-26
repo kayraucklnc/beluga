@@ -7,7 +7,7 @@ import type { PtyProcess, TerminalManager } from '../terminal/index.js';
 import { ClientRegistry, type ConnectedClient } from './clients.js';
 import { dispatchCall } from './dispatch.js';
 import { companionOf } from '../companion/registry.js';
-import type { MirrorStatus, VideoPiece } from '../companion/phone-control.js';
+import type { MirrorStatus, PhoneTouch, VideoPiece } from '../companion/phone-control.js';
 
 export interface DaemonServerOptions {
   readonly session: Session;
@@ -253,6 +253,7 @@ export class DaemonServer {
               (f: { b64: string; mime: string; w: number; h: number }) => send({ t: 'phone_frame', device: frame.device, b64: f.b64, mime: f.mime, w: f.w, h: f.h }),
               (s: MirrorStatus) => send({ t: 'phone_mirror', device: frame.device, on: s.on, ...(s.route ? { route: s.route } : {}), ...(s.error ? { error: s.error } : {}), ...(s.video ? { video: s.video } : {}), ...(s.note ? { note: s.note } : {}) }),
               (p: VideoPiece) => send({ t: 'phone_video', device: frame.device, b64: p.b64, key: p.key, ts: p.ts, w: p.w, h: p.h, sw: p.sw, sh: p.sh }),
+              (touch: PhoneTouch) => send({ t: 'phone_touch', device: frame.device, touch }),
             ),
           );
           return;

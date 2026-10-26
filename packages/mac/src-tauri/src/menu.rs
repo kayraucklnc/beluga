@@ -144,6 +144,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
                 "Background",
                 Some("Alt+CmdOrCtrl+7"),
             )?,
+            &item(app, "panel-phone", "Phone", Some("Alt+CmdOrCtrl+8"))?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "toggle-dock", "Toggle Terminal", Some("CmdOrCtrl+J"))?,
             &PredefinedMenuItem::separator(app)?,

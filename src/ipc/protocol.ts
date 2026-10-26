@@ -62,11 +62,23 @@ export type DaemonFrame =
   | { readonly t: 'phone_frame'; readonly device: string; readonly b64: string; readonly mime: string; readonly w: number; readonly h: number }
   // A piece of the phone's screen as live video (BLG-184): H.264 Annex B, `w`×`h` of a `sw`×`sh` screen.
   | { readonly t: 'phone_video'; readonly device: string; readonly b64: string; readonly key: boolean; readonly ts: number; readonly w: number; readonly h: number; readonly sw: number; readonly sh: number }
+  // Something Claude just did on the phone (BLG-186): where a tap landed, a swipe's path, a key; never what was typed.
+  | { readonly t: 'phone_touch'; readonly device: string; readonly touch: PhoneTouchData }
   // How the mirror is doing: streaming (with its route, and whether video is asked for or flowing), or stopped with a reason.
   | { readonly t: 'phone_mirror'; readonly device: string; readonly on: boolean; readonly route?: string; readonly error?: string; readonly video?: 'asking' | 'on'; readonly note?: string }
   | { readonly t: 'clients'; readonly count: number }
   | { readonly t: 'pong' }
   | { readonly t: 'bye'; readonly reason: string };
+
+/** A touch as the mirror draws it (src/companion/phone-control.ts PhoneTouch). */
+export interface PhoneTouchData {
+  readonly op: 'tap' | 'long_press' | 'swipe' | 'type' | 'key' | 'scroll' | 'open';
+  readonly x?: number;
+  readonly y?: number;
+  readonly x2?: number;
+  readonly y2?: number;
+  readonly what?: string;
+}
 
 export const encodeFrame = (frame: ClientFrame | DaemonFrame): string => encode(frame);
 

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PhoneMirrorStatus } from '../../../../src/ipc/client.js';
+import type { PhoneMirrorStatus, PhoneTouchData } from '../../../../src/ipc/client.js';
 import type { DeviceView, PhoneUse } from '../../../../src/companion/protocol.js';
 import type { Macro } from '../../../../src/companion/phone-macros.js';
 import { Icon } from '../components/Icon.js';
-import { Button, Empty, cx } from '../components/ui.js';
+import { Button, Empty, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { openSettings } from '../lib/native-routes.js';
+import { showPanelTab } from '../lib/panel.js';
 import { sameDeep } from '../lib/stable.js';
 import { H264Player } from './h264.js';
+import { touchCaption } from './phone-model.js';
 import s from './phone-view.module.css';
 
 /**
@@ -17,6 +19,8 @@ import s from './phone-view.module.css';
  * jump to ask your Mac's Claude to do something. The mirror streams from the daemon
  * (client.watchPhone): live H.264 video drawn by H264Player when the phone streams (BLG-184),
  * pictures until then; taps go back as companion.phone.act. Shown only when a phone is paired.
+ * The same mirror is the right panel's Phone tab, beside any chat (BLG-186), and both show what
+ * Claude does on the phone as it does it.
  */
 
 const LEVELS: ReadonlyArray<{ value: PhoneUse; label: string }> = [
@@ -40,6 +44,14 @@ export function PhoneView() {
   const use = phone.control?.use ?? 'off';
   if (use === 'off') return <SetUp phone={phone} />;
   return <Mirror key={phone.id} phone={phone} />;
+}
+
+/** The right panel's Phone tab (BLG-186): the same live mirror beside the chat, to watch what Claude does on it. */
+export function PhonePanel() {
+  const phone = useAndroidPhone();
+  if (!phone) return <Empty icon="phone" title="No phone" detail="Pair an Android phone to see it here." />;
+  if ((phone.control?.use ?? 'off') === 'off') return <SetUp phone={phone} />;
+  return <Mirror key={phone.id} phone={phone} compact />;
 }
 
 /** Before Claude may use it: pick a level right here, or open Settings. */
@@ -69,7 +81,19 @@ function SetUp({ phone }: { phone: DeviceView }) {
   );
 }
 
-function Mirror({ phone }: { phone: DeviceView }) {
+/** What Claude did on the phone, drawn on the mirror for a moment (BLG-186). */
+interface Shown extends PhoneTouchData {
+  readonly id: number;
+}
+const TOUCH_MS = 900;
+const CAPTION_MS = 1800;
+
+/**
+ * The live mirror. Full size on the Phone page; `compact` in the right panel's Phone tab, beside
+ * the chat (BLG-186): no name or macros there, the keys and the type line fitted to its width,
+ * and a way to the full page.
+ */
+function Mirror({ phone, compact = false }: { phone: DeviceView; compact?: boolean }) {
   const { client } = useBeluga();
   const actions = useActions();
   const [frame, setFrame] = useState<{ url: string; w: number; h: number }>();
@@ -77,16 +101,30 @@ function Mirror({ phone }: { phone: DeviceView }) {
   const [video, setVideo] = useState<{ w: number; h: number }>();
   const [status, setStatus] = useState<PhoneMirrorStatus>();
   const [typing, setTyping] = useState('');
-  const imgRef = useRef<HTMLImageElement>(null);
+  const [touches, setTouches] = useState<readonly Shown[]>([]);
+  const [caption, setCaption] = useState<{ id: number; text: string }>();
+  const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const down = useRef<{ x: number; y: number; t: number } | null>(null);
 
+  // Smooth live video when this screen decodes H.264 (pictures until it flows, or instead).
+  const [canPlay, setCanPlay] = useState<boolean>();
+  useEffect(() => void H264Player.supported().then(setCanPlay), []);
+
   useEffect(() => {
-    // Smooth live video when this screen decodes H.264 (pictures until it flows, or instead).
-    const canPlay = H264Player.supported();
+    if (canPlay === undefined) return;
     const mirror = client.watchPhone(phone.id, { fps: 6, video: canPlay });
     let player: H264Player | undefined;
     let screen = { w: 0, h: 0 };
+    let seq = 0;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    const later = (ms: number, run: () => void): void => {
+      const t = setTimeout(() => {
+        timers.delete(t);
+        run();
+      }, ms);
+      timers.add(t);
+    };
     const offF = mirror.onFrame((f) => {
       // Pictures again (the video stalled or stopped): show them instead.
       setVideo(undefined);
@@ -102,22 +140,38 @@ function Mirror({ phone }: { phone: DeviceView }) {
       player ??= new H264Player(canvas, () => setVideo((prev) => (prev && prev.w === screen.w && prev.h === screen.h ? prev : screen)));
       player.push(p);
     });
+    // What Claude does meanwhile: a ripple where it taps, a trail where it swipes, and a word.
+    const offT = mirror.onTouch((t) => {
+      const id = ++seq;
+      if (t.x !== undefined && t.y !== undefined) {
+        setTouches((now) => [...now.slice(-4), { ...t, id }]);
+        later(TOUCH_MS, () => setTouches((now) => now.filter((x) => x.id !== id)));
+      }
+      setCaption({ id, text: touchCaption(t) });
+      later(CAPTION_MS, () => setCaption((now) => (now?.id === id ? undefined : now)));
+    });
     const offS = mirror.onStatus((srv) => setStatus(srv));
     return () => {
       offF();
       offV();
+      offT();
       offS();
       mirror.close();
       player?.close();
+      for (const t of timers) clearTimeout(t);
       setVideo(undefined);
+      setTouches([]);
+      setCaption(undefined);
       setFrame((prev) => (prev ? (URL.revokeObjectURL(prev.url), undefined) : undefined));
     };
-  }, [client, phone.id]);
+  }, [client, phone.id, canPlay]);
 
-  /** Map a mouse point to the phone's device pixels, using what's shown and the screen's real size. */
+  /** The screen's size in its own pixels (taps and Claude's touches are in those). */
+  const size = video ?? frame;
+
+  /** Map a mouse point to the phone's device pixels, using where the screen is drawn. */
   const toDevice = (clientX: number, clientY: number): { x: number; y: number } | undefined => {
-    const el = video ? canvasRef.current : imgRef.current;
-    const size = video ?? frame;
+    const el = boxRef.current;
     if (!el || !size) return undefined;
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return undefined;
@@ -127,6 +181,7 @@ function Mirror({ phone }: { phone: DeviceView }) {
   };
 
   const act = (op: string, args: Record<string, unknown>): Promise<unknown> => client.api.companion['phone.act'](phone.id, op as never, args);
+  const press = (key: string) => (): void => void act('key', { key }).catch(() => undefined);
 
   const onUp = (e: React.MouseEvent): void => {
     const start = down.current;
@@ -156,6 +211,12 @@ function Mirror({ phone }: { phone: DeviceView }) {
     void act('type', { text, ...(enter ? { enter: true } : {}) }).catch(() => setTyping((now) => now || text));
   };
 
+  /** Ask Claude with the phone beside the chat: Your Mac, its Phone tab open. */
+  const askClaude = (): void => {
+    showPanelTab({ view: { kind: 'assistant' }, projects: client.store.getState().projects }, 'phone');
+    actions.run({ type: 'view', view: { kind: 'assistant' } });
+  };
+
   const touch = {
     draggable: false,
     onMouseDown: (e: React.MouseEvent) => (down.current = { x: e.clientX, y: e.clientY, t: Date.now() }),
@@ -164,19 +225,23 @@ function Mirror({ phone }: { phone: DeviceView }) {
   };
   const route = status?.route ? ROUTE_WORDS[status.route] ?? status.route : undefined;
   const line = status?.video === 'on' && video
-    ? 'Live video'
+    ? `Live video${route ? ` · ${route}` : ''}`
     : status?.video === 'asking'
       ? 'Tap “Start now” on your phone for smooth video'
       : status?.on
         ? `Live · ${route ?? ''}${status.note ? ` · ${status.note}` : ''}`
         : status?.error ?? 'Connecting…';
   return (
-    <div className={s.page}>
+    <div className={cx(s.page, compact && s.compact)}>
       <header className={s.head}>
-        <span className={s.name}>
-          <Icon name="phone" size={14} /> {phone.name}
+        {compact ? null : (
+          <span className={s.name}>
+            <Icon name="phone" size={14} /> {phone.name}
+          </span>
+        )}
+        <span className={cx(s.dim, s.line)} title={line}>
+          {line}
         </span>
-        <span className={s.dim}>{line}</span>
         <span className={s.spacer} />
         <span className={s.levelBar}>
           {LEVELS.map((l) => (
@@ -185,53 +250,86 @@ function Mirror({ phone }: { phone: DeviceView }) {
             </button>
           ))}
         </span>
+        {compact ? <IconButton icon="expand" label="Open Your Phone" onClick={() => actions.run({ type: 'view', view: { kind: 'phone' } })} /> : null}
       </header>
 
-      <Macros />
+      {compact ? null : <Macros />}
 
       <div className={s.stage} onWheel={onWheel}>
-        {/* The video's canvas is always there (pieces can come before the first picture), shown once it draws. */}
-        <canvas ref={canvasRef} className={cx(s.screen, !video && s.hidden)} aria-label="Your phone's screen, live" {...touch} />
-        {video ? null : frame ? (
-          <img ref={imgRef} src={frame.url} className={s.screen} alt="Your phone's screen" {...touch} />
-        ) : (
-          <div className={s.waiting}>
-            <span className={s.spinner} aria-hidden="true" />
-            {status?.error ?? 'Waking the mirror…'}
+        <div className={s.fit}>
+          {/* The video's canvas is always there (pieces can come before the first picture), shown once it draws. */}
+          <div ref={boxRef} className={cx(s.screenBox, !size && s.hidden)} style={size ? ({ '--ratio': size.w / size.h } as React.CSSProperties) : undefined}>
+            <canvas ref={canvasRef} className={cx(s.screen, !video && s.hidden)} aria-label="Your phone's screen, live" {...touch} />
+            {video || !frame ? null : <img src={frame.url} className={s.screen} alt="Your phone's screen" {...touch} />}
+            {size ? <Touches touches={touches} size={size} /> : null}
+            {caption ? (
+              <span key={caption.id} className={s.caption}>
+                {caption.text}
+              </span>
+            ) : null}
           </div>
-        )}
+          {size ? null : (
+            <div className={s.waiting}>
+              <span className={s.spinner} aria-hidden="true" />
+              {status?.error ?? 'Waking the mirror…'}
+            </div>
+          )}
+        </div>
       </div>
 
       <footer className={s.controls}>
         <div className={s.keys}>
-          <Button size="small" variant="quiet" onClick={() => void act('key', { key: 'back' }).catch(() => undefined)} title="Back">
+          <Button size="small" variant="quiet" onClick={press('back')} title="Back">
             <Icon name="back" size={16} />
           </Button>
-          <Button size="small" variant="quiet" onClick={() => void act('key', { key: 'home' }).catch(() => undefined)} title="Home">
+          <Button size="small" variant="quiet" onClick={press('home')} title="Home">
             Home
           </Button>
-          <Button size="small" variant="quiet" onClick={() => void act('key', { key: 'recents' }).catch(() => undefined)} title="Recent apps">
+          <Button size="small" variant="quiet" onClick={press('recents')} title="Recent apps">
             Recents
           </Button>
         </div>
         <input
           className={s.type}
           value={typing}
-          placeholder="Type on the phone…"
+          placeholder={compact ? 'Type on the phone, ⏎ to send' : 'Type on the phone…'}
           onChange={(e) => setTyping(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') sendText(true);
           }}
         />
-        <Button size="small" onClick={() => sendText(false)} disabled={!typing.trim()}>
-          Send
-        </Button>
-        <span className={s.spacer} />
-        <Button size="small" variant="quiet" onClick={() => actions.run({ type: 'view', view: { kind: 'assistant' } })} title="Ask your Mac's Claude">
-          <Icon name="claude" size={14} /> Ask Claude
-        </Button>
+        {compact ? null : (
+          <>
+            <Button size="small" onClick={() => sendText(false)} disabled={!typing.trim()}>
+              Send
+            </Button>
+            <span className={s.spacer} />
+            <Button size="small" variant="quiet" onClick={askClaude} title="Ask your Mac's Claude, with the phone beside the chat">
+              <Icon name="claude" size={14} /> Ask Claude
+            </Button>
+          </>
+        )}
       </footer>
     </div>
+  );
+}
+
+/** Claude's touches on the screen: a ripple where it tapped, a trail along a swipe (in the screen's own pixels). */
+function Touches({ touches, size }: { touches: readonly Shown[]; size: { w: number; h: number } }) {
+  const r = size.w / 16;
+  return (
+    <svg className={s.touches} viewBox={`0 0 ${size.w} ${size.h}`} preserveAspectRatio="none" aria-hidden="true">
+      {touches.map((t) =>
+        t.op === 'swipe' && t.x2 !== undefined && t.y2 !== undefined ? (
+          <g key={t.id}>
+            <line className={s.trail} x1={t.x} y1={t.y} x2={t.x2} y2={t.y2} strokeWidth={size.w / 60} />
+            <circle className={s.ripple} cx={t.x2} cy={t.y2} r={r * 0.7} strokeWidth={size.w / 200} />
+          </g>
+        ) : (
+          <circle key={t.id} className={s.ripple} cx={t.x} cy={t.y} r={r} strokeWidth={size.w / 200} />
+        ),
+      )}
+    </svg>
   );
 }
 

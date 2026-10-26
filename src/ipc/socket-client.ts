@@ -4,7 +4,7 @@ import { type Action, type DomainState, reduceDomain } from '../core/store.js';
 import type { PtyExit } from '../terminal/pty-host.js';
 import type { PtyLink } from '../terminal/emulator.js';
 import type { Args, Method } from './api.js';
-import { type ApiProxy, type ClientKind, type BelugaClient, type PhoneMirror, type PhoneMirrorStatus, type PhoneVideoPiece, apiProxy } from './client.js';
+import { type ApiProxy, type ClientKind, type BelugaClient, type PhoneMirror, type PhoneMirrorStatus, type PhoneTouchData, type PhoneVideoPiece, apiProxy } from './client.js';
 import type { Result } from './handlers.js';
 import { type Cap, type ClientFrame, type DaemonFrame, IPC_VERSION, encodeFrame, parseDaemonFrame } from './protocol.js';
 
@@ -134,6 +134,7 @@ class SocketPhoneMirror implements PhoneMirror {
   private readonly frameListeners = new Set<(f: PhoneFrameData) => void>();
   private readonly statusListeners = new Set<(s: PhoneMirrorStatus) => void>();
   private readonly videoListeners = new Set<(p: PhoneVideoPiece) => void>();
+  private readonly touchListeners = new Set<(t: PhoneTouchData) => void>();
 
   constructor(
     private readonly device: string,
@@ -149,6 +150,10 @@ class SocketPhoneMirror implements PhoneMirror {
     this.videoListeners.add(listener);
     return () => void this.videoListeners.delete(listener);
   }
+  onTouch(listener: (t: PhoneTouchData) => void): () => void {
+    this.touchListeners.add(listener);
+    return () => void this.touchListeners.delete(listener);
+  }
   onStatus(listener: (s: PhoneMirrorStatus) => void): () => void {
     this.statusListeners.add(listener);
     return () => void this.statusListeners.delete(listener);
@@ -162,6 +167,9 @@ class SocketPhoneMirror implements PhoneMirror {
   }
   video(p: PhoneVideoPiece): void {
     for (const l of [...this.videoListeners]) l(p);
+  }
+  touch(t: PhoneTouchData): void {
+    for (const l of [...this.touchListeners]) l(t);
   }
   status(s: PhoneMirrorStatus): void {
     for (const l of [...this.statusListeners]) l(s);
@@ -342,6 +350,9 @@ export class SocketClient implements BelugaClient {
         return;
       case 'phone_video':
         this.phones.get(frame.device)?.video({ b64: frame.b64, key: frame.key, ts: frame.ts, w: frame.w, h: frame.h, sw: frame.sw, sh: frame.sh });
+        return;
+      case 'phone_touch':
+        this.phones.get(frame.device)?.touch(frame.touch);
         return;
       case 'phone_mirror':
         this.phones.get(frame.device)?.status({ on: frame.on, ...(frame.route ? { route: frame.route } : {}), ...(frame.error ? { error: frame.error } : {}), ...(frame.video ? { video: frame.video } : {}), ...(frame.note ? { note: frame.note } : {}) });

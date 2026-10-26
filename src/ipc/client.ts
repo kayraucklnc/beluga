@@ -13,9 +13,14 @@ export interface PhoneMirror {
   onFrame(listener: (f: { b64: string; mime: string; w: number; h: number }) => void): () => void;
   /** Live video pieces (when watched with `video`): H.264 Annex B, `w`×`h` of a `sw`×`sh` screen. */
   onVideo(listener: (p: PhoneVideoPiece) => void): () => void;
+  /** What Claude does on the phone meanwhile (BLG-186), in the screen's pixels. */
+  onTouch(listener: (t: PhoneTouchData) => void): () => void;
   onStatus(listener: (s: PhoneMirrorStatus) => void): () => void;
   close(): void;
 }
+
+export type { PhoneTouchData } from './protocol.js';
+import type { PhoneTouchData } from './protocol.js';
 
 export interface PhoneVideoPiece {
   readonly b64: string;

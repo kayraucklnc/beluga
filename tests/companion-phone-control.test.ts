@@ -1,8 +1,9 @@
 import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { ExecBytesResult, ExecResult, SystemPort } from '../src/core/gateway/device.js';
-import { adbCandidates, parseDevices } from '../src/companion/phone-adb.js';
-import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type VideoPiece, describeScreen, describeUiautomator, parseNotifications, phoneErrorText } from '../src/companion/phone-control.js';
+import { adbCandidates, parseDevices, parseMdns, parseWmSize } from '../src/companion/phone-adb.js';
+import { AnnexBSplitter, videoSize } from '../src/companion/phone-video.js';
+import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type VideoPiece, describeScreen, describeUiautomator, parseNotifications, phoneErrorText } from '../src/companion/phone-control.js';
 import { DeviceBook, type DeviceRecord } from '../src/companion/devices.js';
 import { type DeviceCert, MacFrame, PhoneFrame, type PhoneControl as PhoneControlState, type PhoneOp, type ScreenView } from '../src/companion/protocol.js';
 import { mkdtempSync } from 'node:fs';
@@ -173,9 +174,9 @@ describe('mirror and action (BLG-171)', () => {
   // A 1×1 PNG (valid IHDR: 1×1), so pngSize reads 1×1.
   const onePng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCA', 'base64');
 
-  it('action() taps over adb', async () => {
+  it('action() taps over adb when the Accessibility service is off', async () => {
     const { sys, calls } = fakeSys([{ match: /devices -l/, out: 'List\nR5 device usb:1\n' }]);
-    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/fake/adb' });
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control({ accessibility: false })), onChange: () => {}, adbPath: '/fake/adb' });
     await ctl.action(id, 'tap', { x: 5, y: 9 });
     expect(calls.some((c) => /shell input tap 5 9/.test(c))).toBe(true);
   });
@@ -302,6 +303,179 @@ describe('a smooth mirror (BLG-184)', () => {
     expect(PhoneFrame.safeParse({ t: 'vid_end', reason: 'Not allowed on the phone' }).success).toBe(true);
     expect(MacFrame.safeParse({ t: 'vid_ack', seq: 3 }).success).toBe(true);
     expect(MacFrame.safeParse({ t: 'req', id: 1, op: 'mirror', args: { on: true } }).success).toBe(true);
+  });
+});
+
+// ---- BLG-185/186/187: video over adb, quick taps, Claude's touches, Wi-Fi debugging found by name
+
+/** Annex B units: a start code (4-byte for parameter sets, 3-byte for pictures, as encoders write them) and the unit. */
+const unit = (bytes: number[], long = false): number[] => [...(long ? [0, 0, 0, 1] : [0, 0, 1]), ...bytes];
+const SPS_U = [0x67, 0x42, 0xc0, 0x1f, 0xda];
+const PPS_U = [0x68, 0xce, 0x3c, 0x80];
+// A key picture and a following one (first_mb_in_slice 0: the byte after the header has its top bit set).
+const IDR_U = [0x65, 0x88, 0x84, 0x21, 0x10];
+const P_U = [0x41, 0x9a, 0x22, 0x33];
+
+/** A SystemPort whose `stream` plays `chunks` (a phone's screenrecord), then stays open until stop(). */
+function streamingSys(script: Array<{ match: RegExp; out?: string; code?: number; bytes?: Buffer }>, chunks: Buffer[]): { sys: SystemPort; calls: string[]; stopped: () => boolean } {
+  const base = fakeSys(script);
+  let stopped = false;
+  const sys: SystemPort = {
+    ...base.sys,
+    stream: (_cmd, args, onData) => {
+      base.calls.push(args.join(' '));
+      let i = 0;
+      const tick = setInterval(() => {
+        if (stopped || i >= chunks.length) return clearInterval(tick);
+        onData(chunks[i++]!);
+      }, 30);
+      return { stop: () => void (stopped = true) };
+    },
+  };
+  return { sys, calls: base.calls, stopped: () => stopped };
+}
+
+describe('the mirror over adb plays video (BLG-185)', () => {
+  it('cuts a screenrecord stream into pictures, the SPS/PPS ahead of each key frame, whatever the chunks', async () => {
+    const pieces: Array<{ bytes: number[]; key: boolean }> = [];
+    const split = new AnnexBSplitter((bytes, key) => pieces.push({ bytes: [...bytes], key }), 20);
+    const stream = Buffer.from([...unit(SPS_U, true), ...unit(PPS_U, true), ...unit(IDR_U), ...unit(P_U), ...unit(P_U)]);
+    // In awkward pieces, as adb hands them over.
+    for (const at of [3, 9, 17, 22]) split.push(stream.subarray([0, 3, 9, 17, 22].at([3, 9, 17, 22].indexOf(at))!, at));
+    split.push(stream.subarray(22));
+    await new Promise((r) => setTimeout(r, 60));
+    expect(pieces.map((p) => p.key)).toEqual([true, false, false]);
+    expect(pieces[0]!.bytes).toEqual([...unit(SPS_U, true), ...unit(PPS_U, true), ...unit(IDR_U)]);
+    // The last picture isn't held back until the screen changes again: a pause lets it go.
+    expect(pieces[2]!.bytes).toEqual(unit(P_U));
+    split.close();
+  });
+
+  it('after a picture cut short, waits for the next key frame', async () => {
+    const pieces: boolean[] = [];
+    const split = new AnnexBSplitter((_b, key) => pieces.push(key), 10);
+    split.push(Buffer.from([...unit(SPS_U, true), ...unit(PPS_U, true), ...unit(IDR_U)]));
+    await new Promise((r) => setTimeout(r, 30));
+    // The rest of that picture came late (no start code): broken until a key frame.
+    split.push(Buffer.from([0x11, 0x22, ...unit(P_U), ...unit(P_U)]));
+    await new Promise((r) => setTimeout(r, 30));
+    split.push(Buffer.from([...unit(IDR_U), ...unit(P_U)]));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(pieces).toEqual([true, true, false]);
+    split.close();
+  });
+
+  it('reads the screen’s size, the video’s size, and the phone on the network', () => {
+    expect(parseWmSize('Physical size: 1440x3120\n')).toEqual({ w: 1440, h: 3120 });
+    expect(parseWmSize('Physical size: 1440x3120\nOverride size: 1080x2340\n')).toEqual({ w: 1080, h: 2340 });
+    expect(videoSize({ w: 1440, h: 3120 }, 1280)).toEqual({ w: 592, h: 1280 });
+    expect(parseMdns('List of discovered mdns services\nadb-R5CX72-Ab1Cd2\t_adb-tls-connect._tcp\t172.17.12.32:37481\nadb-R5CX72-Ab1Cd2\t_adb-tls-pairing._tcp.\t172.17.12.32:41231\n')).toEqual([
+      { name: 'adb-R5CX72-Ab1Cd2', service: '_adb-tls-connect._tcp', addr: '172.17.12.32:37481' },
+      { name: 'adb-R5CX72-Ab1Cd2', service: '_adb-tls-pairing._tcp', addr: '172.17.12.32:41231' },
+    ]);
+    // adb's own name for a phone it reached over Wi-Fi isn't a USB one.
+    expect(parseDevices('List\nadb-R5CX72-Ab1Cd2._adb-tls-connect._tcp device product:x\n')[0]?.usb).toBe(false);
+  });
+
+  const id = 'ff'.padEnd(16, '0');
+  const device: DeviceRecord = { cert: cert('ff'), pairedAt: 1, use: 'use' };
+  const onePng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCA', 'base64');
+
+  it('streams screenrecord over USB instead of a picture each time, and stops it with the mirror', async () => {
+    const chunks = [Buffer.from([...unit(SPS_U, true), ...unit(PPS_U, true), ...unit(IDR_U)]), Buffer.from(unit(P_U)), Buffer.from(unit(P_U))];
+    const { sys, calls, stopped } = streamingSys(
+      [
+        { match: /devices -l/, out: 'List\nR5CX72 device usb:1-1\n' },
+        { match: /wm size/, out: 'Physical size: 1440x3120\n' },
+        { match: /exec-out screencap/, bytes: onePng },
+      ],
+      chunks,
+    );
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/fake/adb' });
+    const pieces: VideoPiece[] = [];
+    const statuses: MirrorStatus[] = [];
+    const stop = ctl.startMirror(id, { fps: 30, video: true }, () => {}, (st) => statuses.push(st), (p) => pieces.push(p));
+    await sleep(400);
+    const record = calls.find((c) => /screenrecord/.test(c));
+    expect(record).toContain('--output-format=h264 --size 592x1280 --bit-rate 6000000');
+    expect(pieces.map((p) => p.key)).toEqual([true, false, false]);
+    expect(pieces[0]).toMatchObject({ w: 592, h: 1280, sw: 1440, sh: 3120 });
+    expect(statuses.at(-1)).toMatchObject({ on: true, route: 'usb', video: 'on' });
+    // A still screen sends nothing over adb, and that's fine: no pictures while the stream runs.
+    const shots = calls.filter((c) => /screencap/.test(c)).length;
+    await sleep(400);
+    expect(calls.filter((c) => /screencap/.test(c)).length).toBe(shots);
+    // The phone was remembered by its USB serial, to find its Wi-Fi debugging later.
+    expect(book([device]).get(id)).toBeDefined();
+    stop();
+    expect(stopped()).toBe(true);
+  });
+
+  it('the mirror’s own taps go by the Accessibility service when it’s on, and the route is reused', async () => {
+    const { sys, calls } = fakeSys([{ match: /devices -l/, out: 'List\nR5CX72 device usb:1-1\n' }]);
+    const link = fakeLink(id, control());
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => link, onChange: () => {}, adbPath: '/fake/adb' });
+    await ctl.action(id, 'tap', { x: 5, y: 9 });
+    await ctl.action(id, 'swipe', { x1: 1, y1: 2, x2: 3, y2: 4 });
+    expect(link.reqs.map((r) => r.op)).toEqual(['tap', 'swipe']);
+    expect(calls.some((c) => /input tap/.test(c))).toBe(false);
+    expect(calls.filter((c) => /devices -l/.test(c))).toHaveLength(1);
+  });
+
+  it('shows the mirrors what Claude does, and counts the phone busy a while', async () => {
+    const { sys } = fakeSys([{ match: /version/, code: 1 }]);
+    const link = fakeLink(id, control());
+    let changes = 0;
+    const devices = book([device]);
+    const ctl = new PhoneControl({ sys, devices, link: () => link, onChange: () => void changes++, home: '/nope' });
+    const seen: PhoneTouch[] = [];
+    const off = ctl.onTouch(id, (t) => seen.push(t));
+    const kit = ctl.toolsFor()!;
+    expect(ctl.controlView(id).busy).toBeUndefined();
+    await kit.tools.tap({ x: 100, y: 200 });
+    await kit.tools.swipe({ x1: 1, y1: 2, x2: 3, y2: 4 });
+    await kit.tools.type({ text: 'secret' });
+    await kit.tools.key('back');
+    expect(seen).toEqual([{ op: 'tap', x: 100, y: 200 }, { op: 'swipe', x: 1, y: 2, x2: 3, y2: 4 }, { op: 'type' }, { op: 'key', what: 'back' }]);
+    expect(JSON.stringify(seen)).not.toContain('secret');
+    expect(ctl.controlView(id).busy).toBe(true);
+    expect(changes).toBeGreaterThan(0);
+    off();
+  });
+});
+
+describe('Wireless debugging found by name (BLG-187)', () => {
+  const id = 'ab'.padEnd(16, '0');
+
+  it('connects over the same Wi‑Fi to where this Mac hears the phone, by the USB serial it once had', async () => {
+    const device: DeviceRecord = { cert: cert('ab'), pairedAt: 1, use: 'use', adbSerial: 'R5CX72' };
+    const { sys, calls } = fakeSys([
+      { match: /devices -l/, out: 'List\n' },
+      { match: /mdns services/, out: 'List of discovered mdns services\nadb-R5CX72-Ab1Cd2\t_adb-tls-connect._tcp\t172.17.12.32:37481\n' },
+      { match: /connect 172\.17\.12\.32:37481/, out: 'connected to 172.17.12.32:37481' },
+    ]);
+    // An app that doesn't say its debugging port (or hasn't found it yet).
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/fake/adb' });
+    const r = await ctl.reach(id);
+    expect(r?.route).toBe('wifi');
+    expect(r?.adb?.serial).toBe('172.17.12.32:37481');
+    expect(calls.some((c) => /connect 172\.17\.12\.32:37481/.test(c))).toBe(true);
+  });
+
+  it('Use over Wi‑Fi turns on Wireless debugging over the cable and connects', async () => {
+    const device: DeviceRecord = { cert: cert('ab'), pairedAt: 1, use: 'use' };
+    const { sys, calls } = fakeSys([
+      { match: /devices -l/, out: 'List\nR5CX72 device usb:1-1\n' },
+      { match: /mdns services/, out: 'adb-R5CX72-Ab1Cd2\t_adb-tls-connect._tcp\t172.17.12.32:37481\n' },
+      { match: /connect 172\.17\.12\.32:37481/, out: 'connected to 172.17.12.32:37481' },
+    ]);
+    const devices = book([device]);
+    const ctl = new PhoneControl({ sys, devices, link: () => fakeLink(id, control()), onChange: () => {}, adbPath: '/fake/adb' });
+    const said = await ctl.overWifi(id);
+    expect(said).toContain('172.17.12.32:37481');
+    expect(calls.some((c) => /shell settings put global adb_wifi_enabled 1/.test(c))).toBe(true);
+    expect(devices.get(id)?.adbSerial).toBe('R5CX72');
+    expect(ctl.controlView(id).adb).toBe('connected');
   });
 });
 

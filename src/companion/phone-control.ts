@@ -5,9 +5,10 @@ import { z } from 'zod';
 import type { SystemPort } from '../core/gateway/device.js';
 import type { PhoneTools } from '../agent/types.js';
 import { phoneBrief } from '../agent/phone-tools.js';
-import { Adb, adbCandidates, findAdb, parseDevices } from './phone-adb.js';
+import { Adb, adbCandidates, findAdb, parseDevices, parseMdns } from './phone-adb.js';
 import type { DeviceBook } from './devices.js';
 import { type Macro, MacroStep, type PhoneMacros } from './phone-macros.js';
+import { type VideoPiece, adbScreenVideo } from './phone-video.js';
 import {
   type AdbView,
   type MirrorView,
@@ -48,16 +49,21 @@ export interface PhoneLinkHandle {
   watchVideo?(onPiece: (p: VideoPiece) => void, onEnd: (reason?: string) => void): () => void;
 }
 
-/** A piece of the phone's screen video (the `vid` frame): H.264 Annex B, `w`×`h` of a `sw`×`sh` screen. */
-export interface VideoPiece {
-  readonly seq: number;
-  readonly b64: string;
-  readonly key: boolean;
-  readonly ts: number;
-  readonly w: number;
-  readonly h: number;
-  readonly sw: number;
-  readonly sh: number;
+export type { VideoPiece } from './phone-video.js';
+
+/**
+ * Something Claude just did on the phone, for the mirror to show where (BLG-186): a tap or a long
+ * press at x, y, a swipe from x, y to x2, y2, or a key, typing, scrolling or opening (no place).
+ * What was typed is never in it.
+ */
+export interface PhoneTouch {
+  readonly op: 'tap' | 'long_press' | 'swipe' | 'type' | 'key' | 'scroll' | 'open';
+  readonly x?: number;
+  readonly y?: number;
+  readonly x2?: number;
+  readonly y2?: number;
+  /** A few words for the caption: the key ("back"), the direction, the app. */
+  readonly what?: string;
 }
 
 /** How the mirror is doing: live by a route, with video asked for or flowing, or stopped with why. */
@@ -117,8 +123,17 @@ const ROUTE_RECHECK_MS = 5_000;
 const VIDEO_MAX = 1280;
 const VIDEO_FPS = 30;
 const VIDEO_KBPS = 2500;
-/** Video this quiet (the phone sends even a still screen a few times a second) has stalled: pictures again. */
+/** Over a USB cable, or straight over the same Wi-Fi, there's room for a sharper picture. */
+const VIDEO_KBPS_USB = 6000;
+const VIDEO_KBPS_WIFI = 4000;
+/** The app's video this quiet (it sends even a still screen a few times a second) has stalled: pictures again. */
 const VIDEO_STALL_MS = 2_000;
+/** An action's route is reused this long (finding it runs adb). */
+const REACH_KEEP_MS = 3_000;
+/** Claude counts as using the phone this long after its last action (the Phone tab's dot). */
+const BUSY_MS = 15_000;
+/** The mirror's own taps and keys: the Accessibility service's gestures are instant, adb's `input` starts a program each time. */
+const QUICK_OPS: ReadonlySet<PhoneOp> = new Set(['tap', 'long_press', 'swipe', 'type', 'key', 'scroll']);
 
 /**
  * A phone's error as a sentence. The app's native side fails through Expo, which wraps the cause:
@@ -204,26 +219,73 @@ export class PhoneControl {
 
   /**
    * Make sure the Mac's adb is connected to this phone over Wi-Fi (same network) or through the
-   * link, and return its serial — or undefined if debugging isn't reachable.
+   * link, and return its serial — or undefined if debugging isn't reachable. On the same Wi-Fi the
+   * phone is found two ways: the address and port its app says, or (BLG-187) its debugging service
+   * this Mac hears over mDNS, named after the USB serial it once had on a cable. A Mac whose adb
+   * key the phone allowed on that cable needs no pairing code.
    */
   private async adbSerial(deviceId: string, state: PhoneControlState | undefined): Promise<string | undefined> {
     const adb = await this.ensureAdb();
-    if (!adb || !state?.adb.on) return undefined;
-    const attached = await this.attached();
+    if (!adb) return undefined;
+    const usbName = this.deps.devices.get(deviceId)?.adbSerial;
+    if (!state?.adb.on && !usbName) return undefined;
+    const attached = (await this.attached()).filter((d) => d.state === 'device' && !d.usb);
     const known = this.serials.get(deviceId);
-    if (known && attached.some((d) => d.serial === known && d.state === 'device')) return known;
-    // Over the same Wi-Fi: connect straight to the phone's address and port.
-    if (state.wifi?.ip && state.adb.port) {
+    if (known && attached.some((d) => d.serial === known)) return known;
+    // adb itself may already be on it (it reconnects to phones it heard over mDNS).
+    const auto = usbName ? attached.find((d) => d.serial.startsWith(`adb-${usbName}-`)) : undefined;
+    if (auto) return this.remember(deviceId, auto.serial);
+    // Over the same Wi-Fi: connect straight to the phone's address and port…
+    if (state?.adb.on && state.wifi?.ip && state.adb.port) {
       const serial = await this.connect(adb.path, `${state.wifi.ip}:${state.adb.port}`);
       if (serial) return this.remember(deviceId, serial);
     }
+    // …or to where this Mac hears it.
+    const heard = await this.heard(deviceId);
+    if (heard) {
+      const serial = await this.connect(adb.path, heard);
+      if (serial) return this.remember(deviceId, serial);
+    }
     // From anywhere: a local tunnel the link carries to the phone's debugging port.
-    const port = await this.tunnelPort(deviceId);
+    const port = state?.adb.on ? await this.tunnelPort(deviceId) : undefined;
     if (port) {
       const serial = await this.connect(adb.path, `127.0.0.1:${port}`);
       if (serial) return this.remember(deviceId, serial);
     }
     return undefined;
+  }
+
+  /** Where this Mac hears the phone's Wireless debugging over mDNS (`ip:port`), by its USB serial. */
+  private async heard(deviceId: string): Promise<string | undefined> {
+    const adb = this.adb;
+    const usbName = this.deps.devices.get(deviceId)?.adbSerial;
+    if (!adb || !usbName) return undefined;
+    const res = await this.deps.sys.exec(adb.path, ['mdns', 'services'], 5_000).catch(() => undefined);
+    return parseMdns(res?.stdout ?? '').find((s) => s.service === '_adb-tls-connect._tcp' && s.name.startsWith(`adb-${usbName}-`))?.addr;
+  }
+
+  /**
+   * Turn on the phone's Wireless debugging over its cable and connect to it (BLG-187), so Claude
+   * and the mirror carry on once it's unplugged: on the same Wi-Fi directly, elsewhere through the
+   * link. Android may ask "Allow wireless debugging on this network?" on the phone first.
+   */
+  async overWifi(deviceId: string): Promise<string> {
+    const r = await this.need(deviceId, 'act');
+    if (r.route !== 'usb' || !r.adb) throw new Error('Plug the phone in with a cable first (once is enough).');
+    const on = await r.adb.shell('settings put global adb_wifi_enabled 1', 8_000);
+    if (on.code !== 0) throw new Error(on.stderr.trim().slice(0, 200) || 'The phone didn’t turn on Wireless debugging.');
+    for (let i = 0; i < 20; i++) {
+      await delay(1000);
+      const addr = await this.heard(deviceId);
+      const serial = addr ? await this.connect(r.adb.adbPath, addr) : undefined;
+      if (serial) {
+        this.remember(deviceId, serial);
+        this.reached.delete(deviceId);
+        this.deps.onChange();
+        return `Connected over Wi‑Fi too (${addr}). Unplug it whenever you like.`;
+      }
+    }
+    throw new Error('Wireless debugging didn’t come up. On the phone, tap Allow if it asks about this network, and be on Wi‑Fi.');
   }
 
   private remember(deviceId: string, serial: string): string {
@@ -261,14 +323,13 @@ export class PhoneControl {
     const adb = await this.ensureAdb();
     if (adb) {
       const usb = await this.usbSerial(state);
-      if (usb) return { route: 'usb', adb: new Adb(this.deps.sys, adb.path, usb), ...(link ? { link } : {}) };
-      const serial = state?.wifi?.ip ? await this.adbSerial(deviceId, state) : undefined;
-      if (serial) return { route: serial.startsWith('127.0.0.1') ? 'link' : 'wifi', adb: new Adb(this.deps.sys, adb.path, serial), ...(link ? { link } : {}) };
-      // Still try the tunnel even without a known Wi-Fi IP (debugging reachable only over the link).
-      if (state?.adb.on && link) {
-        const serial2 = await this.adbSerial(deviceId, state);
-        if (serial2) return { route: 'link', adb: new Adb(this.deps.sys, adb.path, serial2), link };
+      if (usb) {
+        // Its USB serial names its Wireless debugging on the network: kept, to find it unplugged.
+        if (this.deps.devices.get(deviceId)?.adbSerial !== usb) this.deps.devices.update(deviceId, { adbSerial: usb });
+        return { route: 'usb', adb: new Adb(this.deps.sys, adb.path, usb), ...(link ? { link } : {}) };
       }
+      const serial = await this.adbSerial(deviceId, state);
+      if (serial) return { route: serial.startsWith('127.0.0.1') ? 'link' : 'wifi', adb: new Adb(this.deps.sys, adb.path, serial), ...(link ? { link } : {}) };
     }
     // No adb: the app's Accessibility service, if it's on and allowed.
     if (link?.control?.allowed && link.control.accessibility) return { route: 'accessibility', link };
@@ -292,9 +353,9 @@ export class PhoneControl {
     const state = link?.control;
     const serial = this.serials.get(deviceId);
     const connected = Boolean(serial);
-    const adbStage: PhoneControlView['adb'] = !state?.adb.on ? 'off' : connected ? 'connected' : state.adb.pairing ? 'unpaired' : 'ready';
+    const adbStage: PhoneControlView['adb'] = connected ? 'connected' : !state?.adb.on ? 'off' : state.adb.pairing ? 'unpaired' : 'ready';
     const usb = this.lastUsb.get(deviceId) ?? false;
-    const routes = this.routesOf(state, usb, Boolean(state?.wifi?.ip) && connected && !serial?.startsWith('127.0.0.1'), connected && Boolean(serial?.startsWith('127.0.0.1')) || (state?.adb.on ?? false));
+    const routes = this.routesOf(state, usb, connected && !serial?.startsWith('127.0.0.1'), (connected && Boolean(serial?.startsWith('127.0.0.1'))) || (state?.adb.on ?? false));
     return {
       use,
       ...(state ? { allowed: state.allowed, accessibility: state.accessibility, screenshots: state.screenshots } : {}),
@@ -304,6 +365,7 @@ export class PhoneControl {
       ...(serial ? { serial } : {}),
       ...(state?.device.model ? { model: state.device.model } : {}),
       ...(this.noteFor(state, routes, use) ? { note: this.noteFor(state, routes, use)! } : {}),
+      ...(this.busy(deviceId) ? { busy: true } : {}),
     };
   }
   private lastUsb = new Map<string, boolean>();
@@ -476,14 +538,15 @@ export class PhoneControl {
   }
 
   /**
-   * A live mirror of the phone's screen (BLG-173). With `video` (the screen can decode H.264) and a
-   * phone that streams (1.18, BLG-184), it asks for live video: the phone's own screen capture and
-   * hardware encoder, the pieces to `onVideo`. Until that flows (the user taps "Start now" on the
-   * phone), or if it stops, it shows pictures instead, at about `fps`, to `onFrame`: over adb a
-   * full-resolution `screencap` PNG; over the Accessibility link a downscaled JPEG, at most one per
-   * SHOT_GAP_MS (Android refuses faster). One picture is in flight at a time, so a slow phone just
-   * lowers the rate rather than piling up. The route is found once and re-checked every few
-   * seconds, not per picture (finding it runs adb).
+   * A live mirror of the phone's screen (BLG-173). With `video` (the screen can decode H.264) it
+   * plays live video to `onVideo`: over adb, Android's own `screenrecord` (BLG-185, nothing to
+   * allow on the phone); without adb, the app's screen capture and hardware encoder (1.18,
+   * BLG-184; the user taps "Start now" once). Until video flows, or if it stops, it shows pictures
+   * instead, at about `fps`, to `onFrame`: over adb a full-resolution `screencap` PNG; over the
+   * Accessibility link a downscaled JPEG, at most one per SHOT_GAP_MS (Android refuses faster). One
+   * picture is in flight at a time, so a slow phone just lowers the rate rather than piling up. The
+   * route is found once and re-checked every few seconds, not per picture (finding it runs adb).
+   * `onTouch` hears what Claude does on the phone meanwhile (BLG-186), to show it where it lands.
    */
   startMirror(
     deviceId: string,
@@ -491,42 +554,65 @@ export class PhoneControl {
     onFrame: (f: { b64: string; mime: string; w: number; h: number }) => void,
     onStatus: (s: MirrorStatus) => void,
     onVideo?: (p: VideoPiece) => void,
+    onTouch?: (t: PhoneTouch) => void,
   ): () => void {
     let stopped = false;
     const fps = Math.min(opts.fps ?? 6, 30);
     const interval = 1000 / fps;
+    const wantVideo = Boolean(opts.video && onVideo);
     let route: PhoneRoute | undefined;
     let video: MirrorStatus['video'];
     let note: string | undefined;
     const say = (on: boolean, error?: string): void => onStatus({ on, ...(route ? { route } : {}), ...(video ? { video } : {}), ...(note ? { note } : {}), ...(error ? { error } : {}) });
+    const offTouch = onTouch ? this.onTouch(deviceId, onTouch) : undefined;
 
-    // ---- live video, when both ends can
+    // ---- live video
+    let pieceAt = 0;
+    const piece = (p: VideoPiece): void => {
+      if (stopped) return;
+      pieceAt = Date.now();
+      if (video !== 'on') {
+        video = 'on';
+        note = undefined;
+        say(true);
+      }
+      onVideo?.(p);
+    };
+    /** The video stopped (the phone said no, Stop, or adb's stream ended): pictures again, with a word why. */
+    const ended = (reason?: string): void => {
+      if (stopped) return;
+      video = undefined;
+      note = reason;
+      say(true);
+    };
+
+    // Over adb: screenrecord, while it runs (a still screen sends nothing, and that's fine).
+    let adbVideo: { stop(): void } | undefined;
+    let adbTried = false;
+    const startAdbVideo = async (adb: Adb, via: PhoneRoute): Promise<void> => {
+      adbTried = true;
+      const kbps = via === 'usb' ? VIDEO_KBPS_USB : via === 'wifi' ? VIDEO_KBPS_WIFI : VIDEO_KBPS;
+      const v = await adbScreenVideo(adb, { max: VIDEO_MAX, kbps }, piece, (error) => {
+        adbVideo = undefined;
+        this.logLine(`mirror video over adb: ${error}`);
+        // Not a word for the user: the app's video or pictures carry on.
+        if (video === 'on') ended();
+      }).catch((err: unknown) => {
+        this.logLine(`mirror video over adb: ${err instanceof Error ? err.message : String(err)}`);
+        return undefined;
+      });
+      if (stopped) v?.stop();
+      else adbVideo = v;
+    };
+
+    // From the app: its screen capture (asks "Start now" the first time).
     let videoLink: PhoneLinkHandle | undefined;
     let unwatch: (() => void) | undefined;
-    let pieceAt = 0;
-    const flowing = (): boolean => video === 'on' && Date.now() - pieceAt < VIDEO_STALL_MS;
-    const startVideo = async (link: PhoneLinkHandle): Promise<void> => {
-      if (!link.watchVideo || !onVideo) return;
+    const startAppVideo = async (link: PhoneLinkHandle): Promise<void> => {
+      if (!link.watchVideo) return;
       unwatch?.();
       videoLink = link;
-      unwatch = link.watchVideo(
-        (p) => {
-          if (stopped) return;
-          pieceAt = Date.now();
-          if (video !== 'on') {
-            video = 'on';
-            note = undefined;
-            say(true);
-          }
-          onVideo(p);
-        },
-        (reason) => {
-          if (stopped) return;
-          video = undefined;
-          note = reason ? phoneErrorText(reason) : undefined;
-          say(true);
-        },
-      );
+      unwatch = link.watchVideo(piece, (reason) => ended(reason ? phoneErrorText(reason) : undefined));
       try {
         const res = (await link.request('mirror', { on: true, max: VIDEO_MAX, fps: VIDEO_FPS, kbps: VIDEO_KBPS }, 10_000)) as MirrorView;
         if (!stopped && res.state === 'asking' && video !== 'on') {
@@ -537,19 +623,19 @@ export class PhoneControl {
         this.logLine(`mirror video: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
-    /** Ask for video from a link that can (again after the phone reconnects; never again after a no). */
-    const armVideo = (): void => {
+    /** Ask the app for video from a link that can (again after the phone reconnects; never again after a no). */
+    const armAppVideo = (): void => {
       const link = this.deps.link(deviceId);
-      if (!opts.video || !onVideo || !link?.video || link === videoLink || this.howUsed(deviceId) === 'off') return;
-      void startVideo(link);
+      if (!wantVideo || !link?.video || link === videoLink || this.howUsed(deviceId) === 'off') return;
+      void startAppVideo(link);
     };
+    const flowing = (): boolean => video === 'on' && (adbVideo !== undefined || Date.now() - pieceAt < VIDEO_STALL_MS);
 
     // ---- pictures, until the video flows (and whenever it doesn't)
     const loop = async (): Promise<void> => {
       let r: Reach | undefined;
       let checkedAt = 0;
       while (!stopped) {
-        armVideo();
         if (flowing()) {
           await delay(250);
           continue;
@@ -562,9 +648,16 @@ export class PhoneControl {
           }
           if (!r) throw new Error(this.noteFor(this.deps.link(deviceId)?.control, [], this.howUsed(deviceId)) ?? 'The phone isn’t reachable');
           if (r.route !== route) {
+            // A new route (a cable plugged in or out): adb's video may work now, or not any more.
             route = r.route;
+            adbVideo?.stop();
+            adbVideo = undefined;
+            adbTried = false;
             say(true);
           }
+          // Video over adb first (nothing to allow), else from the app.
+          if (wantVideo && r.adb && !adbTried) void startAdbVideo(r.adb, r.route);
+          else if (!r.adb || (adbTried && !adbVideo)) armAppVideo();
           if (r.adb) {
             const png = await r.adb.execOutBytes(['screencap', '-p'], 8_000);
             if (png.length && !flowing()) {
@@ -597,10 +690,42 @@ export class PhoneControl {
     void loop();
     return () => {
       stopped = true;
+      offTouch?.();
+      adbVideo?.stop();
       unwatch?.();
       if (videoLink) void videoLink.request('mirror', { on: false }, 5_000).catch(() => undefined);
       onStatus({ on: false });
     };
+  }
+
+  // ---- what Claude does on the phone (BLG-186)
+
+  private readonly touchers = new Map<string, Set<(t: PhoneTouch) => void>>();
+  private readonly busyAt = new Map<string, number>();
+  private readonly busyTimers = new Map<string, NodeJS.Timeout>();
+
+  /** Hear what Claude does on this phone (the mirrors watching it) until the returned stop(). */
+  onTouch(deviceId: string, fn: (t: PhoneTouch) => void): () => void {
+    const set = this.touchers.get(deviceId) ?? new Set();
+    set.add(fn);
+    this.touchers.set(deviceId, set);
+    return () => void set.delete(fn);
+  }
+
+  /** Claude is doing this on the phone now: the mirrors show it, and the phone counts as busy a while. */
+  private claudeDid(deviceId: string, t: PhoneTouch): void {
+    for (const fn of [...(this.touchers.get(deviceId) ?? [])]) fn(t);
+    const was = this.busy(deviceId);
+    this.busyAt.set(deviceId, Date.now());
+    clearTimeout(this.busyTimers.get(deviceId));
+    const timer = setTimeout(() => this.deps.onChange(), BUSY_MS + 50);
+    timer.unref();
+    this.busyTimers.set(deviceId, timer);
+    if (!was) this.deps.onChange();
+  }
+
+  private busy(deviceId: string): boolean {
+    return Date.now() - (this.busyAt.get(deviceId) ?? 0) < BUSY_MS;
   }
 
   /** Elements on screen now with where to tap them, for find-by-text (macros, BLG-175). */
@@ -713,6 +838,10 @@ export class PhoneControl {
 
   /** One action for the Mac UI (the mirror's tap/type/scroll, or a button), by op. */
   async action(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
+    // A person poking at the mirror wants it to answer at once: the Accessibility service's gestures
+    // are instant, where adb's `input` starts a program on the phone each time.
+    const r = QUICK_OPS.has(op) ? await this.need(deviceId, 'act') : undefined;
+    if (r?.link?.control?.accessibility) return this.viaLink(deviceId, r.link, op, args);
     switch (op) {
       case 'tap':
         return this.tap(deviceId, args as { x: number; y: number; node?: number });
@@ -735,13 +864,27 @@ export class PhoneControl {
 
   // ---- helpers
 
-  /** The reach for an action of this kind, after the use level has allowed it. */
+  /** The reach for an action of this kind, after the use level has allowed it (reused a few seconds: finding it runs adb). */
   private async need(deviceId: string, kind: 'look' | 'act' | 'shell'): Promise<Reach> {
     const use = this.howUsed(deviceId);
     if (use === 'off') throw new Error('This phone is off for Claude (turn it on in Settings › Phone).');
+    const kept = this.reached.get(deviceId);
+    if (kept && Date.now() - kept.at < REACH_KEEP_MS && kept.r.link === this.deps.link(deviceId)) return kept.r;
     const r = await this.reach(deviceId);
     if (!r) throw new Error(this.noteFor(this.deps.link(deviceId)?.control, [], use) ?? 'Can’t reach this phone right now.');
+    this.reached.set(deviceId, { r, at: Date.now() });
     return r;
+  }
+  private readonly reached = new Map<string, { r: Reach; at: number }>();
+
+  /** An op through the Accessibility service; a failure forgets the kept route (it may have changed). */
+  private async viaLink(deviceId: string, link: PhoneLinkHandle, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
+    try {
+      return await link.request(op, args);
+    } catch (err) {
+      this.reached.delete(deviceId);
+      throw err;
+    }
   }
 
   /** Do an acting op by the route we have: adb when present, else the Accessibility service. */
@@ -750,12 +893,18 @@ export class PhoneControl {
     // A node of the last screen is only meaningful to the Accessibility service: prefer the link then.
     const preferLink = typeof args.node === 'number' && r.link?.control?.accessibility;
     if (r.adb && !preferLink && !OP_NEEDS_ADB.has(op)) {
-      const res = await viaAdb(r.adb);
-      if (res && res.code !== 0 && res.stderr.trim()) throw new Error(res.stderr.trim().slice(0, 200));
+      const res = await viaAdb(r.adb).catch((err: unknown) => {
+        this.reached.delete(deviceId);
+        throw err;
+      });
+      if (res && res.code !== 0 && res.stderr.trim()) {
+        this.reached.delete(deviceId);
+        throw new Error(res.stderr.trim().slice(0, 200));
+      }
       return;
     }
     if (!r.link?.control?.accessibility) throw new Error('Can’t act on this phone right now.');
-    await r.link.request(op, args);
+    await this.viaLink(deviceId, r.link, op, args);
   }
 
   /** The local adb-over-link tunnel's port for a phone (started on demand), or undefined. */
@@ -862,6 +1011,7 @@ export class PhoneControl {
     }
     this.serials.delete(deviceId);
     this.lastUsb.delete(deviceId);
+    this.reached.delete(deviceId);
   }
 
   stop(): void {
@@ -914,12 +1064,13 @@ export class PhoneControl {
         return { text: `Screenshot of the phone.${saved} Say in a line what it shows.`, image: { data: shot.image.toString('base64'), mimeType: shot.mime } };
       },
       screen: async () => (await ctl.screen(deviceId)).text,
-      tap: async (a) => (await ctl.tap(deviceId, a), ok(`Tapped ${a.node !== undefined ? `#${a.node}` : `${a.x},${a.y}`}.`)),
-      swipe: async (a) => (await ctl.swipe(deviceId, a), ok('Swiped.')),
-      type: async (a) => (await ctl.type(deviceId, a), ok(`Typed${a.enter ? ' and pressed enter' : ''}.`)),
-      key: async (key) => (await ctl.key(deviceId, key), ok(`Pressed ${key}.`)),
-      scroll: async (a) => (await ctl.scroll(deviceId, a), ok(`Scrolled ${a.dir}.`)),
-      open: async (a) => ctl.open(deviceId, a),
+      // Each action shows on the mirrors as it happens (BLG-186): where a tap lands, a swipe's path.
+      tap: async (a) => (ctl.claudeDid(deviceId, { op: 'tap', x: a.x, y: a.y }), await ctl.tap(deviceId, a), ok(`Tapped ${a.node !== undefined ? `#${a.node}` : `${a.x},${a.y}`}.`)),
+      swipe: async (a) => (ctl.claudeDid(deviceId, { op: 'swipe', x: a.x1, y: a.y1, x2: a.x2, y2: a.y2 }), await ctl.swipe(deviceId, a), ok('Swiped.')),
+      type: async (a) => (ctl.claudeDid(deviceId, { op: 'type' }), await ctl.type(deviceId, a), ok(`Typed${a.enter ? ' and pressed enter' : ''}.`)),
+      key: async (key) => (ctl.claudeDid(deviceId, { op: 'key', what: key }), await ctl.key(deviceId, key), ok(`Pressed ${key}.`)),
+      scroll: async (a) => (ctl.claudeDid(deviceId, { op: 'scroll', what: a.dir }), await ctl.scroll(deviceId, a), ok(`Scrolled ${a.dir}.`)),
+      open: async (a) => (ctl.claudeDid(deviceId, { op: 'open', what: a.package ?? 'a link' }), ctl.open(deviceId, a)),
       apps: async () => {
         const list = await ctl.apps(deviceId);
         return list.map((x) => `${x.label}${x.label === x.pkg ? '' : ` (${x.pkg})`}`).join('\n') || 'No apps listed.';

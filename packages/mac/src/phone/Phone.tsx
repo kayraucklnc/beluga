@@ -48,6 +48,7 @@ function PhoneClaude({ d }: { d: DeviceView }) {
       <Row label="Let Claude use this phone" detail={route ? `Reached by ${ROUTE_WORDS[route] ?? route}.` : (c.note ?? 'Not reachable right now.')}>
         <Select label="Let Claude use this phone" value={c.use} onChange={(v) => void client.api.companion['phone.use'](d.id, v as PhoneUse)} options={USE_OPTIONS.map((o) => ({ ...o }))} />
       </Row>
+      {c.use !== 'off' && c.usb && c.adb !== 'connected' ? <OverWifi id={d.id} /> : null}
       {c.use !== 'off' && c.adb === 'unpaired' ? (
         <Row label="Wireless debugging" detail="On the phone, open Wireless debugging › Pair device with pairing code, then type the six digits into Beluga’s notification.">
           <Button size="small" onClick={() => void quietly(client, client.api.companion['phone.pairAdb'](d.id))}>
@@ -56,6 +57,31 @@ function PhoneClaude({ d }: { d: DeviceView }) {
         </Row>
       ) : null}
     </div>
+  );
+}
+
+/** On a cable now: turn on Wireless debugging so Claude and the mirror carry on unplugged (BLG-187). */
+function OverWifi({ id }: { id: string }) {
+  const { client } = useBeluga();
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string>();
+  const go = async (): Promise<void> => {
+    setBusy(true);
+    setSaid(undefined);
+    try {
+      setSaid(await client.api.companion['phone.wifi'](id));
+    } catch (err) {
+      setSaid(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Row label="Over Wi‑Fi" detail={said ?? 'It’s on a cable now. Turn on its Wireless debugging and Claude and the mirror keep working when you unplug it: straight over the same Wi‑Fi, or through Beluga from anywhere. Tap Allow on the phone if it asks.'}>
+      <Button size="small" disabled={busy} onClick={() => void go()}>
+        {busy ? 'Connecting…' : 'Use over Wi‑Fi'}
+      </Button>
+    </Row>
   );
 }
 

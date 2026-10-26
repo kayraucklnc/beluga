@@ -32,6 +32,8 @@ export const COMPANION_API = {
   'companion.phone.use': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), z.enum(PHONE_USE)]) },
   // Pair this Mac's adb with the phone, using the code it sent (Wireless debugging › Pair with code).
   'companion.phone.pairAdb': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/)]) },
+  // While it's on a cable: turn on the phone's Wireless debugging and connect, so it carries on unplugged (BLG-187).
+  'companion.phone.wifi': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/)]) },
   // One action on the phone from the Mac UI (the live mirror's tap/type, a button): op + its args.
   'companion.phone.act': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), PhoneOp, z.record(z.string(), z.unknown())]) },
   // Saved phone flows (BLG-175): the list, run one by name, delete one.

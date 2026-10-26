@@ -48,7 +48,7 @@ import {
   VIEW_TURNS,
   parsePhoneFrame,
 } from './protocol.js';
-import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type TunnelEnd, type TunnelSide, type VideoPiece, phoneErrorText } from './phone-control.js';
+import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type TunnelEnd, type TunnelSide, type VideoPiece, phoneErrorText } from './phone-control.js';
 import { type Macro, PhoneMacros } from './phone-macros.js';
 import { type SystemPort, realSystem } from '../core/gateway/device.js';
 import { type Delivery, NO_PUSH, type Nudge, type Pusher, deliver } from './push.js';
@@ -995,6 +995,10 @@ export class CompanionHost {
   pairPhoneAdb(deviceId: string): Promise<string> {
     return this.control.pairAdb(deviceId);
   }
+  /** Turn on a phone's Wireless debugging over its cable and connect (Settings › Phone › Use over Wi‑Fi). */
+  phoneOverWifi(deviceId: string): Promise<string> {
+    return this.control.overWifi(deviceId);
+  }
   /** One phone action from the Mac UI (the mirror's tap/type, a button). */
   phoneAction(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
     return this.control.action(deviceId, op, args);
@@ -1016,8 +1020,9 @@ export class CompanionHost {
     onFrame: (f: { b64: string; mime: string; w: number; h: number }) => void,
     onStatus: (s: MirrorStatus) => void,
     onVideo?: (p: VideoPiece) => void,
+    onTouch?: (t: PhoneTouch) => void,
   ): () => void {
-    return this.control.startMirror(deviceId, opts, onFrame, onStatus, onVideo);
+    return this.control.startMirror(deviceId, opts, onFrame, onStatus, onVideo, onTouch);
   }
 
   // ---- the DHT node

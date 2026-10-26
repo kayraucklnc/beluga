@@ -27,6 +27,7 @@ export const COMPANION_HANDLERS = {
   'companion.devices.remove': (s, id) => needCompanion(s).removeDevice(id),
   'companion.phone.use': (s, id, use) => needCompanion(s).setPhoneUse(id, use),
   'companion.phone.pairAdb': (s, id) => needCompanion(s).pairPhoneAdb(id),
+  'companion.phone.wifi': (s, id) => needCompanion(s).phoneOverWifi(id),
   'companion.phone.act': (s, id, op, args) => needCompanion(s).phoneAction(id, op, args),
   'companion.phone.macros': (s) => needCompanion(s).listPhoneMacros(),
   'companion.phone.macroRun': (s, name) => needCompanion(s).runPhoneMacro(name),
