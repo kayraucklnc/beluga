@@ -3,7 +3,7 @@ import { cannotTake } from '@beluga/net/mesh/features.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { Avatar, Button } from '../../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
-import { presenceOf } from '../../layout/shared-presence.js';
+import { presenceOf } from '@beluga/core/friend-share-people.js';
 import { Select } from '../settings-controls.js';
 import { Section, Sheet, Tag } from './parts.js';
 import s from './sharing.module.css';

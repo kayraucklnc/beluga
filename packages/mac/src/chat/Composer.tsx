@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { waitingNote } from '@beluga/core/friend-share-people.js';
 import { type AppState, type View, channelOf, peerName } from '@beluga/core/store.js';
 import { localDirKey } from '@beluga/core/local-key.js';
 import { workspaceMentions } from '@beluga/core/mentions.js';
@@ -79,6 +80,8 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
   }
   if (v.kind === 'shared') {
     const w = state.shared.find((x) => x.id === v.id);
+    const waiting = waitingNote(state, v.id);
+    if (waiting) return waiting;
     return w?.role === 'view' ? `You're following ${w.name}` : `Message ${w?.name ?? 'the workspace'}`;
   }
   return state.peers.length <= 1 ? 'Message your Claude' : 'Message the room';

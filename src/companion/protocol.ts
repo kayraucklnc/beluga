@@ -430,6 +430,8 @@ export const ConvView = z.object({
   branch: BranchView.optional(),
   /** 1.15: the plan this conversation writes and runs (its home): its page, name, state and progress. */
   plan: z.object({ topic: Topic, title: z.string().max(300), state: z.string().max(20), done: z.number().int(), total: z.number().int(), milestones: z.number().int() }).optional(),
+  /** A friend's worktree shared over the network whose owner's Mac is offline: what the message box says (what you send waits for it). */
+  waiting: z.string().max(200).optional(),
 });
 export type ConvView = z.infer<typeof ConvView>;
 

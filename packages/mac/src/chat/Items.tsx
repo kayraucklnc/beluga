@@ -103,6 +103,25 @@ function SteerWaiting({ steer }: { steer: SteeredMessage }) {
   );
 }
 
+/**
+ * Under a message to a friend's worktree while their Mac was offline: it waits (and goes when it's
+ * back), then says it was delivered. Nothing for messages that went at once.
+ */
+function Delivery({ request, channel }: { request: string; channel: string }) {
+  const state = useApp((st) => st.delivery[request]);
+  const owner = useApp((st) => {
+    const w = st.shared.find((x) => `ws:${x.id}` === channel);
+    return w ? (st.network.friends.find((f) => f.peerId === w.owner)?.name ?? 'their') : 'their';
+  });
+  if (!state) return null;
+  return (
+    <div className={s.steerWaiting} data-delivery={state} role="status">
+      <Icon name={state === 'waiting' ? 'clock' : 'check'} size={11} />
+      <span>{state === 'waiting' ? `Waiting for ${owner}'s Mac · it goes when it's back` : 'Delivered'}</span>
+    </div>
+  );
+}
+
 /** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. `steer`: steered in, not read yet. */
 export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: { item: ChatItem; continued: boolean; mine: boolean; steer?: SteeredMessage | undefined }) {
   countRender(`chat:${item.id}`);
@@ -131,6 +150,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: {
             ) : null}
             <ImageGrid images={images} />
             {steer ? <SteerWaiting steer={steer} /> : null}
+            {item.request && item.channel ? <Delivery request={item.request} channel={item.channel} /> : null}
           </div>
         </div>
       </ActionsContext>

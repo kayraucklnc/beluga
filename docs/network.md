@@ -462,6 +462,21 @@ in `~/.beluga/project-shares.json`.
   you give a room is never reachable this way. `as`: a message the worktree's owner passes on from someone else in it.
 - `folder {name, label, writable, active}`: a folder you share with them (see below).
 
+**A worktree, live for everyone in it.** Anyone it's shared with to work in (`contribute`) talks to its Claude, which
+runs on the owner's Mac: their message goes to the owner as `chat` plus `agent_request`, and the owner's Mac takes it as a
+room request from someone invited into that workspace (`canPost`; the owner's policy and tool approvals as usual; a
+request for another project, or into a worktree not shared with them, is declined). Its Claude's turn goes back to
+everyone in it (`agent_event`), and so does the owner's own chat. The owner's Mac passes each person's message on to
+the others (`as`), so people who aren't friends with each other still see it all. Someone who only follows along
+(`view`) reads but can't ask; their Mac refuses, and the owner's would too.
+
+The worktree's header shows each person in it, its owner first, with how they're doing (online, away, offline, "needs
+an update" when their Beluga can't link with yours; someone who isn't your friend isn't known), on the owner's Mac too
+(`core/friend-share-people.ts`). While the owner's Mac is offline the message box says "ata's Mac is offline: your
+message goes when it's back"; a message sent then shows "Waiting for ata's Mac" under it, then "Delivered" once their
+Mac took it (`delivery` in the state). The phone lists the worktree in its work view under "ata · bob-api", chats there
+the same way, and its message box says the same (`ConvView.waiting`).
+
 **Never dropped** (`courier.ts`). Messages, requests to a Claude, its questions and answers, the project's state and the
 steps of a run that matter (queued, started, waiting for approval, done, failed, declined) wait in
 `~/.beluga/share-outbox.json` until the friend's Mac acknowledges them: sent again every 20 s while you're linked, at

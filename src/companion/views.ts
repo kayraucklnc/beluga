@@ -1,4 +1,5 @@
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
+import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
 import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
@@ -877,7 +878,14 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...(queue.length ? { queue } : {}),
     ...mergeOf(state, ctx, channel),
     ...(plan && planT ? { plan: planBand(state, plan, planT) } : {}),
+    ...waitingOf(state, channel),
   };
+}
+
+/** A friend's worktree whose Mac is offline: the message box says so (what you send waits for it). */
+function waitingOf(state: DomainState, channel: string): { waiting?: string } {
+  const note = channel.startsWith('ws:') ? waitingNote(state, channel.slice(3)) : undefined;
+  return note ? { waiting: clip(note, 200) } : {};
 }
 
 function planBand(state: DomainState, plan: Plan, topic: Topic): NonNullable<ConvView['plan']> {

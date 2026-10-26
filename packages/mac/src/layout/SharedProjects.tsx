@@ -10,7 +10,7 @@ import { sameDeep } from '../lib/stable.js';
 import { signalOf } from './attention-model.js';
 import { SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { Row } from './sidebar-parts.js';
-import { presenceOf } from './shared-presence.js';
+import { presenceOf } from '@beluga/core/friend-share-people.js';
 import side from './Sidebar.module.css';
 import g from './project-groups.module.css';
 import s from './shared-projects.module.css';

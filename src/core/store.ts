@@ -641,9 +641,12 @@ export function stampAction<A extends Action>(action: A): A {
   }
 }
 
-export const peerName = (state: Pick<DomainState, 'peers' | 'self'> & { readonly network?: Pick<DomainState['network'], 'friends'> }, peerId: string): string =>
+/** Someone's name: in the room, yourself, a friend, or someone in a project a friend shared with you. */
+export const peerName = (state: Pick<DomainState, 'peers' | 'self'> & { readonly network?: Pick<DomainState['network'], 'friends'>; readonly sharedProjects?: DomainState['sharedProjects'] }, peerId: string): string =>
   state.peers.find((p) => p.peerId === peerId)?.name ??
-  (state.self?.peerId === peerId ? state.self.name : (state.network?.friends.find((f) => f.peerId === peerId)?.name ?? peerId.slice(0, 6)));
+  (state.self?.peerId === peerId
+    ? state.self.name
+    : (state.network?.friends.find((f) => f.peerId === peerId)?.name ?? state.sharedProjects?.flatMap((p) => p.members).find((m) => m.peerId === peerId)?.name ?? peerId.slice(0, 6)));
 
 const sameLoc = (a: Location | undefined, b: Location): boolean =>
   Boolean(a) && a?.owner === b.owner && a.share === b.share && a.path === b.path;

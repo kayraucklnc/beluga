@@ -21,6 +21,7 @@ import { NotificationBell } from './NotificationCenter.js';
 import { ContinueButton } from '../chat/AskBanner.js';
 import { useConversationHeader } from '../network/ConversationHeader.js';
 import { ContextNote } from '../chat/ContextMeter.js';
+import { PeopleHere } from './PeopleHere.js';
 import s from './Toolbar.module.css';
 
 /** Room the title keeps, and the window buttons on the right (search, bell, panel). */
@@ -179,6 +180,8 @@ export function Toolbar() {
         }
         right={
           <>
+            {/* Friends you shared it with over the network, each with how they're doing. */}
+            <PeopleHere wsId={ws.id} />
             {branch ? <BranchControl wsId={ws.id} branch={branch} fold={fold} /> : null}
             {/* A main folder is questions only: what it needs next is a worktree to work in. */}
             {ws.askOnly && !planForHome(state.plans, `ws:${ws.id}`) ? (
@@ -214,7 +217,7 @@ export function Toolbar() {
   if (view.kind === 'shared') {
     const w = state.shared.find((x) => x.id === view.id);
     const ui = beluga.ui;
-    const owner = state.peers.find((p) => p.peerId === view.owner)?.name ?? 'Someone';
+    const owner = state.peers.find((p) => p.peerId === view.owner)?.name ?? state.network.friends.find((f) => f.peerId === view.owner)?.name ?? 'Someone';
     return (
       <Shell
         headerRef={headerRef}
@@ -232,7 +235,12 @@ export function Toolbar() {
             ]}
           />
         }
-        right={<IconButton icon="people" label={`About ${w?.name ?? 'this workspace'}: who's here, leave`} onClick={() => ui.openMenu({ kind: 'shared', owner: view.owner, id: view.id })} />}
+        right={
+          <>
+            <PeopleHere wsId={view.id} />
+            <IconButton icon="people" label={`About ${w?.name ?? 'this workspace'}: who's here, leave`} onClick={() => ui.openMenu({ kind: 'shared', owner: view.owner, id: view.id })} />
+          </>
+        }
       />
     );
   }
