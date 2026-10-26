@@ -140,12 +140,22 @@ async function micAllowed(): Promise<boolean> {
   return r === PermissionsAndroid.RESULTS.GRANTED;
 }
 
+/**
+ * The native recorder lets go of its AudioRecord on its own thread a read after stop (a buffer,
+ * ~64 ms) and then nulls it: started again before that, the old thread releases the new recorder
+ * and the app dies on a null one. So a new start waits for the last stop to settle.
+ */
+const SETTLE_MS = 300;
+let settled: Promise<void> = Promise.resolve();
+
 /** The microphone: 16 kHz 16-bit mono from the native recorder, as floats. */
 function micSource(): AudioSource {
   let on = false;
   return {
     async start(push) {
-      LiveAudioStream.init({ sampleRate: SAMPLE_RATE, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 2048, wavFile: '' });
+      await settled;
+      // Rejects when Android won't give the microphone (another app has it): an error, not silence.
+      await LiveAudioStream.init({ sampleRate: SAMPLE_RATE, channels: 1, bitsPerSample: 16, audioSource: 6, bufferSize: 2048, wavFile: '' });
       LiveAudioStream.on('data', (b64: string) => on && push(floatsOf(fromB64(b64))));
       on = true;
       LiveAudioStream.start();
@@ -153,7 +163,8 @@ function micSource(): AudioSource {
     stop() {
       if (!on) return;
       on = false;
-      void Promise.resolve(LiveAudioStream.stop()).catch(() => {});
+      LiveAudioStream.stop();
+      settled = new Promise((r) => setTimeout(r, SETTLE_MS));
     },
   };
 }

@@ -153,6 +153,8 @@ export function useVoiceSession(platform: VoicePlatform, on: { readonly text: (w
         // A phrase of noise (a click, a cough) isn't worth writing down.
         for (const cut of cutter.push(chunk.subarray(0, room))) if (cut.speechMs >= 200) writeDown(cut.start, cut.end);
       });
+      // Cancelled (or the screen left) while the microphone was starting: let go of it.
+      if (mine !== s.run) return source.stop();
       s.timer = setTimeout(() => finish('edit'), MAX_SECONDS * 1000);
       show({ phase: 'listening', since: Date.now(), phrases: [], where: choice.where });
     } catch (e) {
