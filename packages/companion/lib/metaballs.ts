@@ -21,11 +21,16 @@ export const SPIN = 3.2;
 /** Grid cells across the canvas: a smooth outline at this size, cheap enough for every frame. */
 const N = 48;
 
-/** The satellites' angles, a step on: their own speed, plus the writing-down spin (`spin` scales it; the preview tunes it to loop). */
-export function advance(angles: readonly number[], dt: number, writing: number, spin: number = SPIN): number[] {
+/**
+ * The satellites' angles, a step on: their own speed, plus the writing-down spin (`spin` scales it; the preview tunes it to loop).
+ * SPIN is read in the body, never as a default parameter: the worklets plugin doesn't capture what a
+ * default refers to, so on the UI thread it was undefined and the voice screen crashed.
+ */
+export function advance(angles: readonly number[], dt: number, writing: number, spin?: number): number[] {
   'worklet';
+  const s = spin ?? SPIN;
   const out: number[] = [];
-  for (let k = 0; k < 4; k++) out.push(angles[k]! + dt * (ORBIT[k]! * OMEGA + writing * spin * (k % 2 === 0 ? 1 : -1)));
+  for (let k = 0; k < 4; k++) out.push(angles[k]! + dt * (ORBIT[k]! * OMEGA + writing * s * (k % 2 === 0 ? 1 : -1)));
   return out;
 }
 
