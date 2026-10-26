@@ -19,6 +19,11 @@ import { ISSUE_STATUSES } from '../board/model.js';
  *   (append-only; `drop`: lines its author took back when it folded two quick changes into one),
  *   and how it was born (the first time). A snapshot is the same message with everything.
  * - `digest`: a hash of every field's clock, sent when a link comes up; a different one gets a snapshot.
+ *
+ * Plans you choose to share (plan-share.ts, BLG-225):
+ * - `plan`: a plan's draft (or what was approved) as its owner has it now, with everyone's reviews;
+ *   the newest replaces one still waiting. `plan_gone`: no longer shared (or deleted).
+ * - `review`: a teammate's comment, approval or suggested changes (the plan's own edit ops).
  */
 
 export const hex32 = z.string().regex(/^[0-9a-f]{32}$/);
@@ -81,6 +86,27 @@ export function fieldValue(name: string): z.ZodType | undefined {
   return undefined;
 }
 
+const PlanTaskSchema = z
+  .object({ id: z.string().max(60), title: words(200), goal: words(4000).optional(), context: words(8000).optional(), acceptance: z.array(words(400)).max(20), blockedBy: z.array(z.string().max(60)).max(40), parent: z.string().max(60).optional(), touches: z.array(words(200)).max(20).optional(), assignee: z.enum(['claude', 'me']).optional(), estimate: z.number().optional(), priority: z.string().max(20).optional(), labels: z.array(words(32)).max(12).optional(), issueId: z.string().max(40).optional() })
+  .passthrough();
+export const PlanBodySchema = z.object({
+  title: words(200),
+  goal: words(8000),
+  milestones: z.array(z.object({ id: z.string().max(60), title: words(200), goal: words(4000).optional(), criteria: z.array(words(400)).max(40), tasks: z.array(PlanTaskSchema).max(80), dependsOn: z.array(z.string().max(60)).max(12).optional() }).passthrough()).max(12),
+});
+export const ReviewSchema = z.object({
+  id: z.string().regex(/^[\w-]{8,40}$/),
+  by: peerId,
+  name: words(80),
+  kind: z.enum(['comment', 'approve', 'suggest']),
+  text: words(8000).optional(),
+  ops: z.array(z.unknown()).max(40).optional(),
+  rev: z.number().int().min(0),
+  at: z.number().int().min(0),
+  settled: z.enum(['applied', 'dismissed']).optional(),
+});
+export const SharedPlanSchema = z.object({ id: z.string().regex(/^[\w-]{1,60}$/), title: words(200), body: PlanBodySchema, rev: z.number().int().min(0), status: z.enum(['draft', 'active', 'done']), reviews: z.array(ReviewSchema).max(200) });
+
 export const TeamMsg = z.discriminatedUnion('k', [
   z.object({ k: z.literal('repos'), prints: z.array(hex32).max(500) }),
   z.object({ k: z.literal('invite'), print: hex32, link: linkId, project: name }),
@@ -89,6 +115,9 @@ export const TeamMsg = z.discriminatedUnion('k', [
   z.object({ k: z.literal('leave'), link: linkId }),
   z.object({ k: z.literal('ops'), link: linkId, tasks: z.array(TaskDelta).max(50) }),
   z.object({ k: z.literal('digest'), link: linkId, hash: z.string().regex(/^[0-9a-f]{64}$/) }),
+  z.object({ k: z.literal('plan'), link: linkId, plan: SharedPlanSchema }),
+  z.object({ k: z.literal('plan_gone'), link: linkId, id: z.string().max(60) }),
+  z.object({ k: z.literal('review'), link: linkId, plan: z.string().max(60), review: ReviewSchema.omit({ by: true, name: true, settled: true }) }),
 ]);
 export type TeamMsg = z.infer<typeof TeamMsg>;
 

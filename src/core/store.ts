@@ -316,6 +316,8 @@ export type View =
   /** Plans (Mac app): one project's plans, and one plan's page (its graph, outline and conversation). */
   | { readonly kind: 'plans'; readonly projectId?: string }
   | { readonly kind: 'plan'; readonly id: string; readonly task?: string }
+  /** A plan draft a teammate shared with you (core/team): read-only, to review, comment, suggest or approve. */
+  | { readonly kind: 'team_plan'; readonly owner: string; readonly id: string }
 
   /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
   | { readonly kind: 'worktrees'; readonly projectId?: string };

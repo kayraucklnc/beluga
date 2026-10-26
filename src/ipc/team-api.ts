@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PlanOpSchema } from './plans-api.js';
 
 /**
  * Team boards in the API (see api.ts): friends on the same GitHub repository who said yes keep
@@ -8,6 +9,8 @@ import { z } from 'zod';
 
 const peerId = z.string().regex(/^[\w-]{32}$/);
 const projectId = z.string().min(1).max(200);
+const planId = z.string().min(1).max(60);
+const reviewId = z.string().regex(/^[\w-]{8,40}$/);
 
 export const TEAM_API = {
   // An offer to team up on a project: Team Up (true) or Not Now (false). Nothing is shared until both say yes.
@@ -16,4 +19,11 @@ export const TEAM_API = {
   'team.leave': { args: z.tuple([projectId, peerId.optional()]) },
   // A task a teammate gave you: you've seen it (it leaves your inbox; it stays yours).
   'team.ackAssignment': { args: z.tuple([z.string().min(1).max(40)]) },
+  // Share Plan with Team (true) or Stop Sharing (false): teammates see its draft read-only, with live changes.
+  'team.sharePlan': { args: z.tuple([planId, z.boolean()]) },
+  // Your word on a plan a teammate shared with you: a comment, an approval, or changes you suggest (the plan's edit ops).
+  'team.reviewPlan': { args: z.tuple([peerId, planId, z.object({ kind: z.enum(['comment', 'approve', 'suggest']), text: z.string().max(8000).optional(), ops: z.array(PlanOpSchema).min(1).max(40).optional() })]) },
+  // A teammate's suggested changes to your plan: in (as your edit), or set aside.
+  'team.applySuggestion': { args: z.tuple([planId, reviewId]) },
+  'team.dismissSuggestion': { args: z.tuple([planId, reviewId]) },
 } as const;

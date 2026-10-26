@@ -26,6 +26,7 @@ import { PlanDecisions } from '../plans/decisions.js';
 import { launchTeam } from '../team/launch.js';
 import { TeamBoardSync } from '../team/board-sync.js';
 import { TeamAssign } from '../team/assign.js';
+import { TeamPlans } from '../team/plan-share.js';
 import { gatewayOf } from '../gateway/registry.js';
 
 /**
@@ -145,7 +146,9 @@ export function launchBoard(host: BoardHost): () => void {
         if (!gw) throw new Error('requests to Claudes need the Beluga app');
         return gw.ask({ person: peerId, ask, summary, by: 'person', ...(project ? { project } : {}) }).id;
       };
-      return [teamSync, new TeamAssign(team, { board, sync: teamSync, askClaude, dir: teamDir })];
+      // Plans you choose to share with the team: teammates review them, you apply what you like.
+      const teamPlans = new TeamPlans(team, { edit: (id, ops) => void planWork.edit(id, ops), dir: teamDir });
+      return [teamSync, new TeamAssign(team, { board, sync: teamSync, askClaude, dir: teamDir }), teamPlans];
     },
   });
   let stopSeed = (): void => undefined;

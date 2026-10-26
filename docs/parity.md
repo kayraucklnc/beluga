@@ -432,6 +432,10 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `issues.comment` | ✓ an issue's ⋯ › Post the Findings on GitHub… (after an investigation; asks first, shows what goes) |
 | `team.answer` | ✓ the offer strip on a project's home and at the top of its Tasks (Team Up; ••• › Not Now, or Take Back while you wait for them); the phone's card (Team Up / Not Now) |
 | `team.ackAssignment` | ✓ Got It on the strip a task a teammate gave you shows on its page; the phone's card (Got It) |
+| `team.sharePlan` | ✓ a plan's ••• › Share Plan with Team / Stop Sharing with Team (only in a project worked on as a team) |
+| `team.reviewPlan` | ✓ a teammate's shared plan (Plans › Shared by Your Team): Approve, Comment, and Suggest a Change… on a task or milestone; the phone's card (Approve, or words as a comment) |
+| `team.applySuggestion` | ✓ Apply on a suggestion in Team Reviews on your plan's page; the phone's card (Apply) |
+| `team.dismissSuggestion` | ✓ ••• › Set Aside on a suggestion in Team Reviews; the phone's card (Set Aside) |
 | `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates) |
 | `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (Claude plans in the conversation you're in) |

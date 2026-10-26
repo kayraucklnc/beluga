@@ -408,6 +408,50 @@ function assignedItems(state: DomainState): NeedsYou[] {
   });
 }
 
+/**
+ * Shared plans (BLG-225): a plan a teammate shared that you haven't approved (Approve, or words as a
+ * comment), and a teammate's suggested change to a plan of yours (Apply / Set Aside).
+ */
+function sharedPlanItems(state: DomainState): NeedsYou[] {
+  const self = myId(state);
+  const theirs = state.team.plans
+    .filter((p) => p.status === 'draft' && !p.reviews.some((r) => r.by === self && r.kind === 'approve' && r.rev === p.rev))
+    .map((p) => ({
+      id: `team-plan:${p.owner}:${p.id}:${p.rev}`,
+      kind: 'decision' as const,
+      title: clip(`${p.ownerName} shared the plan “${p.title}”: approve it?`, 500),
+      detail: clip(
+        [plainLine(p.body.goal, 2000), ...p.body.milestones.map((m, i) => `${i + 1}. ${m.title} (${m.tasks.length} task${m.tasks.length === 1 ? '' : 's'})`)].filter(Boolean).join('\n'),
+        64_000,
+      ),
+      from: clip(p.ownerName, 100),
+      askedAt: p.updatedAt,
+      freeText: true,
+      actions: [{ label: 'Approve', tone: 'main' as const, method: 'team.reviewPlan', args: [p.owner, p.id, { kind: 'approve' }] }],
+      answer: { method: 'team.reviewPlan', args: [p.owner, p.id, { kind: 'comment', text: '' }], slot: [2, 'text'], text: true, picks: false, label: 'Comment' },
+    }));
+  const mine = Object.values(state.team.planShares).flatMap((share) => {
+    const plan = state.plans.plans.find((p) => p.id === share.planId);
+    if (!plan) return [];
+    return share.reviews
+      .filter((r) => r.kind === 'suggest' && !r.settled)
+      .map((r) => ({
+        id: `team-suggest:${r.id}`,
+        kind: 'decision' as const,
+        title: clip(`${r.name} suggests ${r.ops?.length === 1 ? 'a change' : `${r.ops?.length ?? 0} changes`} to “${planTitle(plan)}”`, 500),
+        ...(r.text ? { detail: clip(r.text, 64_000) } : {}),
+        from: clip(r.name, 100),
+        ...(planTopic(plan.id) ? { topic: planTopic(plan.id)! } : {}),
+        askedAt: r.at,
+        actions: [
+          { label: 'Apply', tone: 'main' as const, method: 'team.applySuggestion', args: [plan.id, r.id] },
+          { label: 'Set Aside', tone: 'danger' as const, method: 'team.dismissSuggestion', args: [plan.id, r.id] },
+        ],
+      }));
+  });
+  return [...theirs, ...mine];
+}
+
 /** Everything waiting for you, oldest first: approvals, Claude's questions, friends' requests, plan decisions. */
 export function needsYou(state: DomainState): NeedsYou[] {
   const items = [
@@ -420,6 +464,7 @@ export function needsYou(state: DomainState): NeedsYou[] {
     ...offerItems(state),
     ...teamOfferItems(state),
     ...assignedItems(state),
+    ...sharedPlanItems(state),
   ];
   // Oldest first; what has no time (Claude's questions) counts as just asked.
   const at = (n: NeedsYou): number => n.askedAt ?? Number.MAX_SAFE_INTEGER;
