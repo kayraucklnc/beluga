@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { asks } from '../../net/mesh/extras.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
+import { assistantOf } from '../assistant/registry.js';
 import { belugaHome } from '../home.js';
 import { watchNetwork } from '../network.js';
 import type { Session } from '../session.js';
@@ -51,6 +52,9 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
     mesh,
     files,
     answer: session?.backend?.answerChat ? (req) => session.backend!.answerChat!(req) : undefined,
+    // You asking your own Claude: a real turn with its tools, in this chat (BLG-207).
+    // It works in Your Mac's folder: only where that is (the Mac app's daemon).
+    ...(session?.backend ? { act: (conversation: string, prompt: string) => session.host.runChat(conversation, prompt), canAct: () => Boolean(assistantOf(session)) } : {}),
     policy: () => store.getState().prefs.chatClaude,
     trustOf: (peerId) => trustOf(store.getState(), peerId),
     model: () => store.getState().prefs.model,

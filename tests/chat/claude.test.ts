@@ -263,3 +263,53 @@ describe('chat state', () => {
     expect(st.network.main).toBeUndefined();
   });
 });
+
+describe('acting from any chat (BLG-207)', () => {
+  it('you asking your own Claude is a real turn with its tools in that chat; a friend asking it stays toolless', async () => {
+    const [ann, bob] = await Promise.all([net.add('ann7'), net.add('bob7')]);
+    await befriend(ann, bob);
+    const conv = `dm:${id(bob)}`;
+    const turns: Array<{ conversation: string; prompt: string }> = [];
+    const asked: ChatAnswerRequest[] = [];
+    const claude = new ChatClaude({
+      mesh: ann.mesh,
+      answer: async (req) => (asked.push(req), 'no tools here'),
+      act: async (conversation, prompt) => (turns.push({ conversation, prompt }), 'Asked bob’s Claude; its card is in your chat.'),
+      policy: () => 'everyone',
+      trustOf: () => 'ask',
+    });
+    const mine = ann.mesh.post(conv, 'ask bob for the build log', { ask: { to: [id(ann)] } });
+    await settle(() => answers(ann, conv, mine.id).length === 1);
+    expect(answers(ann, conv, mine.id)[0]!.text).toBe('Asked bob’s Claude; its card is in your chat.');
+    expect(turns).toHaveLength(1);
+    expect(turns[0]!.conversation).toBe(conv);
+    expect(turns[0]!.prompt).toContain('you have your tools here');
+    expect(turns[0]!.prompt).toContain('ask bob for the build log');
+    expect(turns[0]!.prompt).not.toContain('You have no tools in this chat');
+    expect(asked).toHaveLength(0);
+    // Bob asks ann's Claude: the toolless answer, as before.
+    const theirs = bob.mesh.post(`dm:${id(ann)}`, 'what is ann up to?', { ask: { to: [id(ann)] } });
+    await settle(() => answers(ann, conv, theirs.id).length === 1);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.system).toContain('You have no tools in this chat');
+    expect(turns).toHaveLength(1);
+    // A result coming back for a request it made here carries on in the chat, answering your last message.
+    claude.continueWith(conv, '[beluga] bob’s Claude replied (task t_abcdefghijk)');
+    await settle(() => turns.length === 2);
+    await settle(() => answers(ann, conv, mine.id).length === 2);
+    claude.stop();
+  });
+
+  it('without a way to act (no Mac app), your own asks are answered without tools as before', async () => {
+    const [ann, bob] = await Promise.all([net.add('ann8'), net.add('bob8')]);
+    await befriend(ann, bob);
+    const conv = `dm:${id(bob)}`;
+    const asked: ChatAnswerRequest[] = [];
+    const claude = new ChatClaude({ mesh: ann.mesh, answer: async (req) => (asked.push(req), 'ok'), act: async () => 'acted', canAct: () => false, policy: () => 'everyone', trustOf: () => 'ask' });
+    const mine = ann.mesh.post(conv, 'hello', { ask: { to: [id(ann)] } });
+    await settle(() => answers(ann, conv, mine.id).length === 1);
+    expect(answers(ann, conv, mine.id)[0]!.text).toBe('ok');
+    expect(asked[0]!.system).toContain('You have no tools in this chat');
+    claude.stop();
+  });
+});

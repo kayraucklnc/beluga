@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
 import { currentQuestion } from '@beluga/ui/collab-actions.js';
 import { isDecisionQid } from '@beluga/core/plans/decisions.js';
@@ -19,13 +19,13 @@ import s from './attention.module.css';
  * What needs you right now, just above the box you type in: an approval, Claude's question or
  * plan, someone at the door, a new person to choose a trust level for.
  */
-export function Attention() {
+export function Attention({ channel }: { channel?: string } = {}) {
   // People at the door and new people to trust belong to the room; approvals reach you anywhere.
   const inRoom = useApp((st) => st.view.kind === 'room');
   return (
     <div className={s.stack}>
-      <Approvals />
-      <Question />
+      <Approvals {...(channel ? { channel } : {})} />
+      <Question {...(channel ? { channel } : {})} />
       {inRoom ? <Knock /> : null}
       {inRoom ? <BefriendHost /> : null}
       {inRoom ? <TrustPrompt /> : null}
@@ -33,9 +33,14 @@ export function Attention() {
   );
 }
 
-function Approvals() {
+/**
+ * `channel`: in a friends' chat (BLG-207), only what holds up your Claude there; a friend's request
+ * is answered on its card in the chat instead.
+ */
+function Approvals({ channel }: { channel?: string }) {
   const api = useApi();
-  const approvals = useApp((st) => st.approvals);
+  const all = useApp((st) => st.approvals);
+  const approvals = useMemo(() => (channel ? all.filter((a) => a.channel === channel && !a.task) : all), [all, channel]);
   const first = approvals[0];
   const now = useNow(Boolean(first?.askedAt));
   const [showAll, setShowAll] = useState(false);
@@ -119,12 +124,13 @@ function Approvals() {
   );
 }
 
-function Question() {
+function Question({ channel }: { channel?: string }) {
   const actions = useActions();
   const { ui } = useBeluga();
   const state = useApp((st) => st);
-  const q = state.questions[0];
-  if (!q || q.channel !== channelOf(state.view)) return null;
+  const first = state.questions[0];
+  const q = channel ? state.questions.find((x) => x.channel === channel) : first?.channel === channelOf(state.view) ? first : undefined;
+  if (!q) return null;
   const owner = state.peers.find((p) => p.peerId === q.owner)?.name;
   if (q.question.kind === 'plan') {
     return (

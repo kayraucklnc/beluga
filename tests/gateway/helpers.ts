@@ -48,6 +48,8 @@ export interface Pending {
   readonly task?: string;
   /** Only Allow once / Decline (a secret). */
   readonly once?: boolean;
+  /** The chat the request's card is in (BLG-207). */
+  readonly conversation?: string;
   answer(a: Answer): void;
   withdrawn: boolean;
 }
@@ -96,7 +98,7 @@ export async function node(net: Crowd, name: string, extra: Partial<GatewayDeps>
     approve: (kind, title, detail, peer, taskId, opts) => {
       let resolve!: (a: Answer) => void;
       const answer = new Promise<Answer>((r) => (resolve = r));
-      const p: Pending = { kind, title, detail, peer, ...(taskId ? { task: taskId } : {}), ...(opts?.once ? { once: true } : {}), answer: (a) => resolve(a), withdrawn: false };
+      const p: Pending = { kind, title, detail, peer, ...(taskId ? { task: taskId } : {}), ...(opts?.once ? { once: true } : {}), ...(opts?.conversation ? { conversation: opts.conversation } : {}), answer: (a) => resolve(a), withdrawn: false };
       approvals.push(p);
       return {
         answer,

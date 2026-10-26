@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { chatMessages } from '../../src/companion/views.js';
-import type { NoticeEvent } from '../../src/core/notify.js';
+import { chatMessages, needsYou } from '../../src/companion/views.js';
+import { type NoticeEvent, detectNotices, placeName } from '../../src/core/notify.js';
+import { type Approval, initialState } from '../../src/core/store.js';
 import { parseExtras } from '../../src/net/mesh/extras.js';
 import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Node, node, task } from './helpers.js';
@@ -72,6 +73,26 @@ describe('a task’s card in the chat both people share', () => {
     kay.trust(bob.id, 'trusted');
     const t = kay.gw.ask({ person: 'bobH', ask: 'hello', by: 'person', conversation: 'group:0123456789abcdef0123456789abcdef' });
     expect(task(kay, t.id)?.chat).toBe(`dm:${bob.id}`);
+  }, 60_000);
+});
+
+describe('approvals in the chat (BLG-207)', () => {
+  it('a request from a chat is approved there: its approval, notification and phone item point at that chat', async () => {
+    const kay = await node(net, 'kayA7');
+    const bob = await node(net, 'bobA7');
+    await befriend(kay.person, bob.person);
+    const t = kay.gw.ask({ person: 'bobA7', ask: 'read the README', by: 'person' });
+    await settle(() => bob.approvals.length === 1);
+    expect(bob.approvals[0]).toMatchObject({ task: t.id, conversation: `dm:${kay.id}` });
+    bob.approvals[0]!.answer('no');
+    await settle(() => task(kay, t.id)?.state === 'declined');
+    // The approval as Beluga keeps it: the notice opens the chat, the phone's item opens it too.
+    const state = initialState('room');
+    const approval: Approval = { id: 'a1', kind: 'request', title: "kayA7 wants to: read the README", detail: '', peer: kay.id, task: t.id, channel: `dm:${kay.id}` };
+    const next = { ...state, network: { ...state.network, friends: [{ peerId: kay.id, name: 'kayA7' } as never] }, approvals: [approval] };
+    expect(detectNotices(state, next)[0]).toMatchObject({ tag: 'approval', channel: `dm:${kay.id}` });
+    expect(needsYou(next).find((n) => n.id === 'approval:a1')?.topic).toBe(`chat:dm:${kay.id}`);
+    expect(placeName(next, `dm:${kay.id}`)).toBe('your chat with kayA7');
   }, 60_000);
 });
 

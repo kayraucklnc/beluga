@@ -160,7 +160,7 @@ export interface Approval {
   readonly task?: string;
   /** Only Allow once / Decline: a friend's request for a secret (trust, rules and Always never cover it). */
   readonly once?: boolean;
-  /** The conversation it holds up, when that's a workspace ("ws:<id>"): the sidebar marks it as needing you. */
+  /** The conversation it holds up, when that's a workspace ("ws:<id>") or a friends' chat ("dm:<peerId>", "group:<id>"): the sidebar marks it as needing you, and the chat shows it. */
   readonly channel?: string;
 }
 

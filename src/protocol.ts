@@ -58,7 +58,8 @@ export type PeerInfo = z.infer<typeof PeerInfo>;
  * Mac"'s chats ("mac:assistant", "mac:assistant:<id>", core/assistant). Your own messages to your Claude are parsed by this too
  * (session's loopback), so a channel it refuses never reaches Claude.
  */
-export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|ws:[\w:.-]{1,80})$/).default('room');
+// `dm:`/`group:`: your own Claude acting in a friends' chat (BLG-207); its events only go to you.
+export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|ws:[\w:.-]{1,80}|dm:[\w-]{8,64}|group:[\w-]{1,80})$/).default('room');
 
 export const ChatBody = z.object({
   kind: z.literal('chat'),

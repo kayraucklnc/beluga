@@ -1,4 +1,6 @@
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
 import { asks } from '../../net/mesh/extras.js';
@@ -40,6 +42,14 @@ export interface ChatClaudeOptions {
   readonly files?: ChatFiles;
   /** Your Claude's answer (undefined: this Beluga has no Claude to answer with). */
   readonly answer: ((req: ChatAnswerRequest) => Promise<string>) | undefined;
+  /**
+   * Your own asks of your own Claude (BLG-207): a real turn with its tools in this conversation
+   * (agent-host runChat), its final answer back for the chat. Missing: they're answered like
+   * anyone's, without tools.
+   */
+  readonly act?: (conversation: string, prompt: string) => Promise<string>;
+  /** Whether `act` can run now (default: yes). */
+  readonly canAct?: () => boolean;
   readonly policy: () => ChatClaudePolicy;
   readonly trustOf: (peerId: string) => TrustLevel;
   /** Is this person your friend? (default: the mesh says) */
@@ -84,6 +94,11 @@ export class ChatClaude {
     this.off = () => opts.mesh.off('message', onMessage);
   }
 
+  /** Your own asks can be real turns with tools here and now. */
+  acts(): boolean {
+    return Boolean(this.opts.act && (this.opts.canAct?.() ?? true));
+  }
+
   private get now(): number {
     return (this.opts.now ?? Date.now)();
   }
@@ -94,7 +109,7 @@ export class ChatClaude {
     if (m.claude || !asks(m, me) || m.status === 'locked') return 'not asked';
     if (this.handledSet.has(m.id)) return 'answered';
     if (this.now - m.ts > FRESH_MS) return 'stale';
-    if (!this.opts.answer) return 'no claude';
+    if (!this.opts.answer && !(m.from === me && this.acts())) return 'no claude';
     if (m.from !== me) {
       const level = this.opts.trustOf(m.from);
       const policy = this.opts.policy();
@@ -157,13 +172,15 @@ export class ChatClaude {
     const beat = setInterval(() => this.live(conversation, m.id, 'thinking'), HEARTBEAT_MS);
     beat.unref?.();
     try {
-      const request = await this.request(m, job.abort.signal);
-      const answer = await this.opts.answer!(request);
+      // You asked your own Claude: a real turn, with its tools (BLG-207). Anyone else: one answer, no tools.
+      const acting = m.from === mesh.peerId && this.acts();
+      const request = await this.request(m, job.abort.signal, acting);
+      const answer = acting ? await this.opts.act!(conversation, `${request.system}\n\n${request.prompt}`) : await this.opts.answer!(request);
       if (this.stopped || job.abort.signal.aborted) return;
       // Still in the conversation? (you may have left the group, or they unfriended you, meanwhile)
       if (!mesh.conversations().includes(conversation)) return;
       // What needs this Mac comes back as a request the asker's Mac offers to send (gateway), on the last part.
-      const { text, request: offer } = parseRequest(answer);
+      const { text, request: offer } = acting ? { text: answer } : parseRequest(answer);
       const parts = splitAnswer(text);
       parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
     } catch (err) {
@@ -174,8 +191,33 @@ export class ChatClaude {
     }
   }
 
+  /**
+   * A turn of your Claude that Beluga starts in a chat itself (BLG-207): a friend's result or their
+   * Claude's question came back for a request it made from here. It takes it with its tools, and its
+   * answer goes into the chat, as one to your latest message there.
+   */
+  continueWith(conversation: string, prompt: string): void {
+    const { mesh } = this.opts;
+    if (this.stopped || !this.opts.act || !this.acts() || !mesh.conversations().includes(conversation)) return;
+    const all = mesh.conversation(conversation);
+    const about = [...all].reverse().find((m) => m.mine && !m.claude)?.id ?? all.at(-1)?.id ?? 'beluga';
+    this.live(conversation, about, 'thinking');
+    void this.opts
+      .act(conversation, prompt)
+      .then((answer) => {
+        if (this.stopped || !mesh.conversations().includes(conversation)) return;
+        for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: about } });
+      })
+      .catch((err: unknown) => {
+        if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t carry on: ${err instanceof Error ? err.message : String(err)}`);
+      })
+      .finally(() => {
+        if (!this.stopped) this.live(conversation, about, 'idle');
+      });
+  }
+
   /** The history, the files and the question, as your Claude will read them. */
-  private async request(m: MessageView, signal: AbortSignal): Promise<ChatAnswerRequest> {
+  private async request(m: MessageView, signal: AbortSignal, tools = false): Promise<ChatAnswerRequest> {
     const { mesh } = this.opts;
     const all = mesh.conversation(m.conversation);
     const at = all.findIndex((x) => x.id === m.id);
@@ -184,9 +226,24 @@ export class ChatClaude {
     const friend = m.conversation.startsWith('dm:') ? mesh.nameFor(m.conversation.slice(3)) : undefined;
     const people = group ? group.members.map((p) => (p.self ? owner : p.name)) : [owner, friend ?? 'a friend'];
     const asker = m.mine ? owner : m.name;
-    const { files, images } = await this.readFiles(m.files ?? []);
+    const read = await this.readFiles(m.files ?? []);
+    // With tools, pictures are files it opens itself (Read) rather than images in the prompt: a copy
+    // outside Beluga's home (which stays private to every Claude), as anything else you show it.
+    const pictures: PromptFile[] = [];
+    if (tools) {
+      for (const i of read.images) {
+        const file = (m.files ?? []).find((f) => f.name === i.name);
+        if (!file) continue;
+        const copy = path.join(os.tmpdir(), 'beluga-chat-pictures', `${file.sha.slice(0, 16)}-${file.name}`);
+        await fs.mkdir(path.dirname(copy), { recursive: true });
+        await fs.writeFile(copy, Buffer.from(i.b64, 'base64'));
+        pictures.push({ file, missing: `a picture: open it with Read at ${copy}` });
+      }
+    }
+    const files = [...read.files, ...pictures];
+    const images = tools ? [] : read.images;
     return {
-      system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all' }),
+      system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all', ...(tools ? { tools: true } : {}) }),
       prompt: userPrompt({
         history: historyLines(at >= 0 ? all.slice(0, at) : all, owner),
         ask: m,

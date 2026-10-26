@@ -90,6 +90,9 @@ const firstLine = (text: string, max = 140): string => {
 export function placeName(state: DomainState, channel: string): string {
   if (channel === 'room') return state.peers.length > 1 ? 'the group chat' : 'your chat';
   if (isAssistant(channel)) return ASSISTANT_TITLE;
+  // A friends' chat (your Claude acts there when you ask it, BLG-207).
+  if (channel.startsWith('dm:')) return `your chat with ${state.network.friends.find((f) => f.peerId === channel.slice(3))?.name ?? 'a friend'}`;
+  if (channel.startsWith('group:')) return state.network.groups.find((g) => g.id === channel.slice(6))?.name ?? 'a channel';
   const id = channel.slice(3);
   const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) ?? state.shared.find((w) => w.id === id);
   return ws?.name ?? 'a workspace';
@@ -317,7 +320,8 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     for (const a of next.approvals) {
       if (seen.has(a.id)) continue;
       // An approval a plan's task asks for opens the plan there.
-      const inPlan = a.channel !== undefined && planOfChannel(next, a.channel) ? { channel: a.channel } : {};
+      // One in a friends' chat (a request that came from there, your Claude working there) opens that chat.
+      const inPlan = a.channel !== undefined && (planOfChannel(next, a.channel) || /^(dm|group):/.test(a.channel)) ? { channel: a.channel } : {};
       out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.once ? { once: true } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
     }
   }

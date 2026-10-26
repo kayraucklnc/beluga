@@ -238,6 +238,8 @@ export class AgentHost {
   private readonly seenRequests: string[] = [];
   /** Tool approvals waiting → the conversation whose run asked for them. */
   private readonly toolApprovals = new Map<string, string>();
+  /** Turns in friends' chats waiting for their answer (runChat), by request id. */
+  private readonly chatWaiters = new Map<string, { resolve: (text: string) => void; reject: (err: Error) => void }>();
   /** Waiting for a conversation's current run to end (see idle). */
   private readonly idleWaiters = new Map<string, Array<() => void>>();
   /** Final agent events that could not be sent while disconnected. */
@@ -461,6 +463,20 @@ export class AgentHost {
     const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: randomUUID(), prompt: prompt.slice(0, MAX_TEXT), viaAgent: false, channel, urgent: false, plan };
     this.deps.questions.track(body.requestId, this.selfId, channel);
     void this.onAgentRequest(from, body);
+  }
+
+  /**
+   * Your own Claude takes a turn in a friends' chat (`dm:`/`group:`, BLG-207), with its tools (it
+   * works in Your Mac's folder: see assistant.forChat), and the answer comes back here for the chat.
+   * It goes in that chat's lane like any run of yours; a stop or a failure is an error.
+   */
+  runChat(channel: string, prompt: string): Promise<string> {
+    const requestId = randomUUID();
+    const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent: false, channel, urgent: false, plan: false };
+    this.deps.questions.track(requestId, this.selfId, channel);
+    const answer = new Promise<string>((resolve, reject) => this.chatWaiters.set(requestId, { resolve, reject }));
+    void this.onAgentRequest(this.selfId, body);
+    return answer;
   }
 
   /**
@@ -695,6 +711,13 @@ export class AgentHost {
 
   private emitAgent(requestId: string, requester: string, event: BodyOf<'agent_event'>['event'], text = '', channel = 'room', slotWait?: SlotWait): void {
     const final = event === 'done' || event === 'error' || event === 'denied';
+    // A turn in a friends' chat (runChat): its answer goes back for the chat.
+    const waiter = final ? this.chatWaiters.get(requestId) : undefined;
+    if (waiter) {
+      this.chatWaiters.delete(requestId);
+      if (event === 'done') waiter.resolve(text);
+      else waiter.reject(new Error(text || 'It stopped'));
+    }
     const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel, ...(slotWait ? { slotWait } : {}) };
     // Workspace conversations are private: events go to you and the people you invited, never to the room.
     const targets = channel === 'room' ? [{ keep: final }] : [this.selfId, ...this.deps.sharing.recipients(channel)].map((to) => ({ to }));
@@ -987,7 +1010,7 @@ export class AgentHost {
         if (peer) this.approvalsBy.set(peer, Math.max(0, (this.approvalsBy.get(peer) ?? 1) - 1));
         resolve(answer);
       });
-      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(meta.project ? { project: meta.project } : {}), ...(meta.once ? { once: true } : {}), ...(channel.startsWith('ws:') ? { channel } : {}) } });
+      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(meta.project ? { project: meta.project } : {}), ...(meta.once ? { once: true } : {}), ...(/^(ws|dm|group):/.test(channel) ? { channel } : {}) } });
     });
   }
 
@@ -1014,6 +1037,8 @@ export class AgentHost {
     if (body.channel !== 'room' && !place) {
       const why = isAssistant(body.channel)
         ? 'Your Mac’s assistant needs the Beluga app.'
+        : /^(dm|group):/.test(body.channel)
+          ? 'Your Claude acts in chats only in the Beluga app, and only when you ask it.'
         : this.deps.workspaces?.inChannel(body.channel)?.kind === 'main'
           ? 'The main folder has no conversation of its own: start a new chat in the project.'
           : 'That workspace is archived or missing.';

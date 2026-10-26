@@ -32,6 +32,8 @@ export type Answer = 'yes' | 'no' | 'always';
 /** How an approval is asked: `once` offers only Allow once / Decline (a secret: nothing covers it next time). */
 export interface ApproveOpts {
   readonly once?: boolean;
+  /** The chat the request is in (its card is there, BLG-207): the approval and its notification point at it. */
+  readonly conversation?: string;
 }
 
 /** A question for you (an approval card) that can be withdrawn. */
@@ -372,7 +374,8 @@ export class TaskServer {
 
   private async ask(task: TaskView, kind: 'request' | 'tool', title: string, detail: string, opts: ApproveOpts = {}): Promise<Decision> {
     this.update(task.id, { state: 'awaiting_approval' }, kind === 'tool' ? title : undefined);
-    const pending = this.ctx.approve(kind, title, detail, task.peerId, kind === 'request' ? task.id : undefined, opts);
+    const chat = this.current(task).chat;
+    const pending = this.ctx.approve(kind, title, detail, task.peerId, kind === 'request' ? task.id : undefined, { ...opts, ...(chat ? { conversation: chat } : {}) });
     this.approvals.set(task.id, pending.withdraw);
     let fromSheet!: (d: Decision) => void;
     const sheet = new Promise<Decision>((resolve) => (fromSheet = resolve));

@@ -118,7 +118,8 @@ export function usageViews(usage: Usage | undefined): UsageView[] {
 
 function approvalItem(state: DomainState, a: Approval): NeedsYou {
   const from = a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : 'your Claude';
-  const topic = a.channel ? convTopic(a.channel) : undefined;
+  // A friends' chat opens that chat (a request from there, your Claude working there: BLG-207).
+  const topic = a.channel ? (/^(dm|group):/.test(a.channel) ? chatTopic(a.channel) : convTopic(a.channel)) : undefined;
   return {
     id: `approval:${a.id}`,
     kind: a.kind === 'request' ? 'request' : 'approval',
@@ -246,6 +247,7 @@ function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
         title: clip(t.secret ? `${t.peerName} wants ${t.secret.label}` : t.summary ? `${t.peerName}: ${t.summary}` : `${t.peerName} asks your Claude`, 500),
         detail: clip(plainLine(t.ask, 64_000), 64_000),
         from: clip(t.peerName, 100),
+        ...(t.chat && chatTopic(t.chat) ? { topic: chatTopic(t.chat)! } : {}),
         askedAt: t.createdAt,
         actions: [
           { label: t.secret ? 'Allow once' : 'Approve', tone: 'main', method: 'gateway.decide', args: [t.id, { answer: 'yes' }] },

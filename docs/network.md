@@ -231,6 +231,20 @@ their own allowance on the link (64 MB/s, bursts of 128 MB), so a transfer doesn
 other times they count like anything else. On a local link a 128 MB file takes about 2 s. A direct message
 with only files carries "📎 name" as its text for Macs that don't know about files yet.
 
+**Your Claude acts when you ask it** (BLG-207). When you ask your own Claude in a DM or a channel (Ask Claude
+› yours, or @-mentioning it), it takes a real turn with its tools, not the toolless answer below: your own run
+in that chat's lane (`AgentHost.runChat`, channel `dm:<peerId>` / `group:<id>`), working in Your Mac's folder
+(`~/.beluga/assistant/work`, `MacAssistant.forChat`; no saved session: each ask carries the chat as below), with
+your usual approvals, the Mac tools and the gateway's (`who_can`, `ask_person`, `run_on`, `get_file`,
+`wait_for`…), whose tasks belong to that chat. Its final answer goes into the chat as "<owner>’s Claude".
+When a friend's result or their Claude's question comes back after its turn ended, it carries on in the
+chat and answers there (`ChatClaude.continueWith`). In the conversation, above the message box, you see its
+tool approvals and questions, and its "Ask Alice's Claude?" cards (and any request whose card is in your DM
+with that person); a friend's request that came from this chat is approved on its card. Approvals of
+requests from a chat point at it (`Approval.channel`), so their notification and the phone's item open the
+chat. Without the Mac app (no Your Mac) your own asks are answered without tools as before. Friends' asks
+of your Claude are unchanged:
+
 **Claudes, only when asked.** Nobody's Claude reads along. The Ask Claude menu under the message box asks
 your Claude, everyone's, or one person's, for that one message. The message may have no words: the Claudes
 then read the conversation and answer what's being discussed (older Macs get "✳ Asked Claude to read the

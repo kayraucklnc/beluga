@@ -166,11 +166,21 @@ function Result({ task }: { task: TaskView }) {
 }
 
 /** A friend's request waiting for you: Approve, Always (a rule for requests like it), Decline, or the full sheet. */
-function Approve({ task }: { task: TaskView }) {
+function Approve({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   const api = useApi();
   const call = useCall();
   const waiting = useApp((st) => st.approvals.some((x) => x.task === task.id || x.title === approvalTitle(task)));
   const answer = (decision: 'yes' | 'always' | 'no'): Promise<unknown> => api.gateway.decide(task.id, { answer: decision, scope: 'this', command: 'this', expiry: 'never' });
+  // In a friends' chat the card is where you answer: there's no approval above the message box there.
+  if (!waiting && inChat)
+    return (
+      <div className={s.actions}>
+        <span className={s.hint}>Waiting for your answer.</span>
+        <Button variant="quiet" icon="eye" onClick={() => openRequest(task.id)}>
+          Review…
+        </Button>
+      </div>
+    );
   if (!waiting) return <div className={s.hint}>Waiting for your answer above the message box.</div>;
   return (
     <div className={s.actions}>
@@ -275,15 +285,16 @@ function Confirm({ task }: { task: TaskView }) {
 }
 
 /** A task card placed in a conversation, lined up with the messages. */
-export function LogTaskCard({ task }: { task: TaskView }) {
+export function LogTaskCard({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   return (
     <div className={s.inLog}>
-      <TaskCard task={task} />
+      <TaskCard task={task} {...(inChat ? { inChat } : {})} />
     </div>
   );
 }
 
-export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
+/** `inChat`: in a friends' chat (BLG-207), where the card itself is where you answer. */
+export const TaskCard = memo(function TaskCard({ task, inChat }: { task: TaskView; inChat?: boolean }) {
   const api = useApi();
   const call = useCall();
   const live = !isFinal(task.state) && task.state !== 'confirm';
@@ -323,7 +334,7 @@ export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
           ) : null}
           {sent && task.question ? <Question task={task} /> : null}
           <Result task={task} />
-          {!sent && task.state === 'awaiting_approval' ? <Approve task={task} /> : null}
+          {!sent && task.state === 'awaiting_approval' ? <Approve task={task} {...(inChat ? { inChat } : {})} /> : null}
           {live && !(!sent && task.state === 'awaiting_approval') ? (
             <div className={s.actions}>
               <Button size="small" variant="quiet" icon="stop" onClick={() => call(sent ? 'cancel it' : 'stop it', api.gateway.cancel(task.id))}>

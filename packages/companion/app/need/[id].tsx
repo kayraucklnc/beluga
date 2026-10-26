@@ -4,7 +4,7 @@ import { KeyboardLift } from '../../components/KeyboardLift';
 import { Infinity as Always, MessageSquare, Monitor, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
 import { Platform, ScrollView, TextInput, View } from 'react-native';
-import { convHref } from '../../components/Conv';
+import { chatHref, convHref } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace, plainOf, sendOwn } from '../../components/Needs';
 import { Sheet } from '../../components/Sheet';
 import { Card, Hairline, Press, Row, T } from '../../components/ui';
@@ -53,7 +53,7 @@ export default function Need() {
                   label={n.topic.startsWith('plan:') ? 'Open the plan' : 'Open the conversation'}
                   onPress={() => {
                     const t = n.topic!;
-                    close(() => router.push(t.startsWith('plan:') ? `/plan/${t.slice(5)}` : convHref(t)));
+                    close(() => router.push(t.startsWith('plan:') ? `/plan/${t.slice(5)}` : t.startsWith('chat:') ? chatHref(t) : convHref(t)));
                   }}
                 />
               ) : null}

@@ -7,6 +7,8 @@ import { Avatar, Button, Empty, claudeColor, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { LogTaskCard } from '../gateway/TaskCard.js';
+import { Attention } from '../chat/Attention.js';
+import { isFinal } from '@beluga/core/gateway/model.js';
 import { usePrefs } from '../lib/prefs.js';
 import { Markdown } from '../chat/Markdown.js';
 import { plainText } from '../chat/message-menu.js';
@@ -200,7 +202,7 @@ function RequestOffer({ m }: { m: MessageView }) {
  */
 function TaskMessage({ id, plain }: { id: string; plain: ReactElement }) {
   const task = useApp((st) => st.gateway.tasks.find((t) => t.id === id));
-  return task ? <LogTaskCard task={task} /> : plain;
+  return task ? <LogTaskCard task={task} inChat /> : plain;
 }
 
 /** The start of a conversation: who it's with, and that it stays between you. */
@@ -375,6 +377,10 @@ function Conversation({ id }: { id: string }) {
     [friend?.peerId, friend?.name, group?.members],
   );
   const world = useMemo(() => channelWorld(me, people), [me, people]);
+  // Your Claude, asked here, waits for your OK to ask someone ("Ask Alice's Claude?"), or asked
+  // someone whose card is in your DM with them (not in this channel): shown here until it's over.
+  const tasks = useApp((st) => st.gateway.tasks);
+  const asking = useMemo(() => tasks.filter((t) => t.direction === 'sent' && t.conversation === id && t.chat !== id && !isFinal(t.state)), [tasks, id]);
 
   if (!net.enabled) {
     return (
@@ -435,6 +441,9 @@ function Conversation({ id }: { id: string }) {
             </div>
           );
         })}
+        {asking.map((t) => (
+          <LogTaskCard key={t.id} task={t} inChat />
+        ))}
         <LiveRow id={id} {...(me ? { me: me.peerId } : {})} />
       </div>
       {drop.over ? (
@@ -454,7 +463,11 @@ function Conversation({ id }: { id: string }) {
           </div>
         </div>
       ) : (
-        <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(me ? { me } : {})} {...(group?.admin ? { addPeople: () => openNet({ kind: 'add_people', groupId: group.id }) } : {})} />
+        <>
+          {/* What holds up your Claude working here: its tool approvals and questions (BLG-207). */}
+          <Attention channel={id} />
+          <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(me ? { me } : {})} {...(group?.admin ? { addPeople: () => openNet({ kind: 'add_people', groupId: group.id }) } : {})} />
+        </>
       )}
     </div>
   );
