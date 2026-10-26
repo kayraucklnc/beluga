@@ -28,6 +28,8 @@ const TasksView = lazy(() => import('../tasks/TasksView.js').then((m) => ({ defa
 const TaskPage = lazy(() => import('../tasks/TaskPage.js').then((m) => ({ default: m.TaskPage })));
 const IssuesView = lazy(() => import('../issues/IssuesView.js').then((m) => ({ default: m.IssuesView })));
 const IssuePage = lazy(() => import('../issues/IssuePage.js').then((m) => ({ default: m.IssuePage })));
+const ActionsView = lazy(() => import('../ci/ActionsView.js').then((m) => ({ default: m.ActionsView })));
+const RunPage = lazy(() => import('../ci/RunPage.js').then((m) => ({ default: m.RunPage })));
 const PlansView = lazy(() => import('../plans/PlansView.js').then((m) => ({ default: m.PlansView })));
 const PlanPage = lazy(() => import('../plans/PlanPage.js').then((m) => ({ default: m.PlanPage })));
 const PhoneView = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhoneView })));
@@ -88,6 +90,10 @@ function Route() {
       return <WorkFrame page="issues"><IssuesView /></WorkFrame>;
     case 'gh_issue':
       return <IssuePage key={`${view.projectId}#${view.number}`} projectId={view.projectId} number={view.number} />;
+    case 'actions':
+      return <WorkFrame page="actions"><ActionsView /></WorkFrame>;
+    case 'gh_run':
+      return <RunPage key={`${view.projectId}#${view.runId}`} projectId={view.projectId} runId={view.runId} />;
     case 'plans':
       return <WorkFrame page="plans"><PlansView /></WorkFrame>;
     case 'plan':

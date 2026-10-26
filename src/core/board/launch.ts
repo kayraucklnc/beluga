@@ -11,6 +11,10 @@ import { GitHubIssues } from '../issues/issues.js';
 import { ghIssueSource, runGhCli } from '../issues/gh.js';
 import { demoIssueSource, demoRepo } from '../issues/demo.js';
 import { attachIssues, detachIssues } from '../issues/registry.js';
+import { GitHubCi } from '../ci/ci.js';
+import { ghCiSource } from '../ci/gh.js';
+import { demoCiSource } from '../ci/demo.js';
+import { attachCi, detachCi } from '../ci/registry.js';
 import { Board } from './board.js';
 import { seedDemoBoard } from './demo.js';
 import { TaskSync, attachSync, detachSync } from './sync/sync.js';
@@ -87,6 +91,15 @@ export function launchBoard(host: BoardHost): () => void {
     },
   });
   attachIssues(session, issues);
+  // A project's GitHub Actions: its runs as they go, and its workflows. The demo's play out live.
+  const ci = new GitHubCi({
+    store,
+    repoOf: async (id) => (host.demo ? (projectOf(id) ? demoRepo(projectOf(id)!.name) : undefined) : session.workspaces?.mainSync.githubRepo(id)),
+    ...(host.demo ? { localFiles: false } : { knownHost: (h: string) => h === 'github.com' || ghHosts().includes(h) }),
+    ghReady: async (h) => host.demo || runGhCli(['auth', 'status', '--hostname', h]).then(() => true, () => false),
+    source: host.demo ? demoCiSource() : ghCiSource(runGhCli),
+  });
+  attachCi(session, ci);
   // Two-way sync with Linear, per project. The demo has a pretend Linear and keeps keys in memory only;
   // BELUGA_LINEAR_API points the real one at a fake Linear.
   const linearBase = belugaEnv('LINEAR_API');
@@ -162,6 +175,7 @@ export function launchBoard(host: BoardHost): () => void {
     detachPlans(session);
     planWork.stop();
     detachIssues(session);
+    detachCi(session);
     detachSync(session);
     sync.stop();
     detachBoard(session);

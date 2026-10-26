@@ -72,6 +72,7 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
 | `links` | up to 8 `{label, href}`: a URL, an absolute path, or a path in the workspace |
 | `emphasis` | `true` marks what matters (an accent ring) |
 | `fields` | a database's columns: `{name, type?, key?: "pk" \| "fk", note?}` |
+| `items` | a node's own steps, drawn inside it in order: `{label, status?, note?}` (a CI job's steps, a pipeline stage's tasks); up to 40 |
 | `image` | an `image` node's picture: an absolute path on this Mac (shown only in your own and your Claude's messages) |
 | `value` | a `metric` node's number ("87%") |
 

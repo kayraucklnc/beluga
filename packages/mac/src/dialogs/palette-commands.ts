@@ -86,6 +86,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
           { id: 'plans:open', label: 'Go to Plans', icon: 'flag' as const, hint: 'Your plans, project by project', keywords: ['plans', 'milestones', 'roadmap'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'plans' } }) },
           { id: 'tasks:open', label: 'Go to Tasks', icon: 'task' as const, hint: 'Every project’s board', keywords: ['tasks', 'board', 'issues', 'backlog', 'kanban'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'tasks' } }) },
           { id: 'issues:open', label: 'Go to Issues', icon: 'issue' as const, hint: 'A project’s GitHub issues: Claude investigates, fixes, or writes them up as tasks', keywords: ['issues', 'github', 'bugs', 'triage', 'investigate', 'fix'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'issues' } }) },
+          { id: 'actions:open', label: 'Go to Actions', icon: 'pulse' as const, hint: 'A project’s GitHub Actions: runs as they go, and each workflow as a graph', keywords: ['actions', 'github', 'ci', 'workflows', 'runs', 'builds', 'checks', 'pipeline'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'actions' } }) },
         ]
       : []),
     cmd('template', 'template-new', 'New Template…', 'wand', () => openSheet({ kind: 'template' }), 'A way to start a task you do often'),

@@ -5,7 +5,7 @@ import { useBeluga } from '../../lib/beluga.js';
 import { imageSource, localImage } from '../../chat/md-images.js';
 import { openLightbox, useImage } from '../../chat/images.js';
 import type { Side } from './graph-model.js';
-import { KindIcon, StatusPill } from './marks.js';
+import { KindIcon, StatusMark, StatusPill } from './marks.js';
 import g from './graph.module.css';
 
 /**
@@ -52,6 +52,29 @@ function Head({ node }: { node: GraphNode }) {
 
 const initialOf = (label: string): string => (label.trim()[0] ?? '?').toUpperCase();
 
+/** How many of a node's steps show before "+N more" (all of them are in its details). */
+const ITEMS_SHOWN = 10;
+
+/**
+ * A node's own steps, in order, each with its status's mark: what a CI job runs, a stage's tasks.
+ * The one going now stands out; what's left fades.
+ */
+function Items({ items }: { items: NonNullable<GraphNode['items']> }) {
+  const shown = items.slice(0, ITEMS_SHOWN);
+  return (
+    <ol className={g.items}>
+      {shown.map((it, i) => (
+        <li key={`${i}:${it.label}`} className={g.item} data-status={it.status}>
+          {it.status ? <StatusMark status={it.status} /> : <span className={g.itemDot} aria-hidden="true" />}
+          <span className={g.itemLabel}>{it.label}</span>
+          {it.note ? <span className={g.itemNote}>{it.note}</span> : null}
+        </li>
+      ))}
+      {items.length > shown.length ? <li className={g.itemMore}>+{items.length - shown.length} more</li> : null}
+    </ol>
+  );
+}
+
 /** Most kinds: an icon, a name, a line under it, a tag and a status. */
 export const CardNode = memo(function CardNode({ data }: NodeProps<FlowNode>) {
   const { node } = data;
@@ -70,6 +93,7 @@ export const CardNode = memo(function CardNode({ data }: NodeProps<FlowNode>) {
       ) : (
         <Head node={node} />
       )}
+      {node.items?.length ? <Items items={node.items} /> : null}
       {node.status ? (
         <div className={g.foot}>
           <StatusPill status={node.status} />

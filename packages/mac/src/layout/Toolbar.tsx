@@ -286,6 +286,23 @@ export function Toolbar() {
 
   if (view.kind === 'issues') return <Shell headerRef={headerRef} title={<span className={s.name}>Issues</span>} subtitle={<span className={s.meta}>From GitHub · Claude investigates, fixes, or writes them up as tasks</span>} />;
 
+  if (view.kind === 'actions') return <Shell headerRef={headerRef} title={<span className={s.name}>Actions</span>} subtitle={<span className={s.meta}>From GitHub · runs as they go, and each workflow as a graph</span>} />;
+
+  if (view.kind === 'gh_run') {
+    const project = state.projects.find((p) => p.id === view.projectId);
+    return (
+      <Shell
+        headerRef={headerRef}
+        title={
+          <>
+            <span className={s.crumb}>{project?.name ?? 'Actions'}</span>
+            <span className={s.name}>Workflow Run</span>
+          </>
+        }
+      />
+    );
+  }
+
   if (view.kind === 'gh_issue') {
     const project = state.projects.find((p) => p.id === view.projectId);
     return (

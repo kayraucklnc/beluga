@@ -9,17 +9,17 @@ import { projectOfView } from '../tasks/use-tasks.js';
 import w from './work.module.css';
 
 /**
- * Work: Tasks, Issues and Plans behind one sidebar row (BLG-197), so the sidebar stays short.
+ * Work: Tasks, Issues, Actions and Plans behind one sidebar row (BLG-197), so the sidebar stays short.
  * The row opens the one you used last; a switch over each list moves between them. Running plans
  * still show under the row.
  */
 
-export type WorkPage = 'tasks' | 'issues' | 'plans';
+export type WorkPage = 'tasks' | 'issues' | 'actions' | 'plans';
 
 const KEY = 'beluga.work.last';
 const lastPage = (): WorkPage => {
   const v = typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY);
-  return v === 'issues' || v === 'plans' ? v : 'tasks';
+  return v === 'issues' || v === 'actions' || v === 'plans' ? v : 'tasks';
 };
 const remember = (p: WorkPage): void => {
   try {
@@ -33,6 +33,7 @@ const remember = (p: WorkPage): void => {
 export function workPageOf(view: View): WorkPage | undefined {
   if (view.kind === 'tasks' || view.kind === 'task') return 'tasks';
   if (view.kind === 'issues' || view.kind === 'gh_issue') return 'issues';
+  if (view.kind === 'actions' || view.kind === 'gh_run') return 'actions';
   if (view.kind === 'plans' || view.kind === 'plan') return 'plans';
   return undefined;
 }
@@ -63,7 +64,7 @@ export function WorkNav() {
       <Row
         icon={<Icon name="task" size={14} />}
         label="Work"
-        detail={running ? `Tasks, issues and plans · ${running} plan${running === 1 ? '' : 's'} running` : 'Tasks, issues and plans'}
+        detail={running ? `Tasks, issues, actions and plans · ${running} plan${running === 1 ? '' : 's'} running` : 'Tasks, issues, actions and plans'}
         selected={page !== undefined}
         onClick={() => open(pick())}
       />
@@ -72,13 +73,13 @@ export function WorkNav() {
   );
 }
 
-/** The switch over Tasks, Issues and Plans: the three lists of Work. */
+/** The switch over Tasks, Issues, Actions and Plans: the lists of Work. */
 export function WorkSwitch({ page }: { page: WorkPage }) {
   const open = useOpenWork();
   const board = useApp((s) => s.board.enabled);
   const plans = useApp((s) => s.plans.enabled);
   const options = [
-    ...(board ? [{ value: 'tasks' as const, label: 'Tasks', icon: 'task' as const }, { value: 'issues' as const, label: 'Issues', icon: 'issue' as const }] : []),
+    ...(board ? [{ value: 'tasks' as const, label: 'Tasks', icon: 'task' as const }, { value: 'issues' as const, label: 'Issues', icon: 'issue' as const }, { value: 'actions' as const, label: 'Actions', icon: 'pulse' as const }] : []),
     ...(plans ? [{ value: 'plans' as const, label: 'Plans', icon: 'flag' as const }] : []),
   ];
   if (options.length < 2) return null;

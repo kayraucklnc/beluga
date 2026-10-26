@@ -20,7 +20,7 @@ import g from './graph.module.css';
 
 const FlowGraph = lazy(() => import('./FlowGraph.js'));
 
-export const GraphBlock = memo(function GraphBlock({ code, live = false, localImages = false }: { code: string; live?: boolean; localImages?: boolean }) {
+export const GraphBlock = memo(function GraphBlock({ code, live = false, localImages = false, shapeKey }: { code: string; live?: boolean; localImages?: boolean; /** See FlowGraph: the graph changes in place while this stays the same. */ shapeKey?: string }) {
   const parsed = useMemo(() => parseGraph(code), [code]);
   if (!parsed.ok) {
     if (parsed.incomplete && live) {
@@ -40,7 +40,7 @@ export const GraphBlock = memo(function GraphBlock({ code, live = false, localIm
       </figure>
     );
   }
-  return <GraphCard graph={parsed.graph} code={code} warnings={parsed.warnings} localImages={localImages} />;
+  return <GraphCard graph={parsed.graph} code={code} warnings={parsed.warnings} localImages={localImages} {...(shapeKey ? { shapeKey } : {})} />;
 });
 
 function useWidth(): [React.RefObject<HTMLElement | null>, number] {
@@ -60,11 +60,11 @@ function useWidth(): [React.RefObject<HTMLElement | null>, number] {
   return [ref, width];
 }
 
-function GraphCard({ graph, code, warnings, localImages }: { graph: Graph; code: string; warnings: readonly string[]; localImages: boolean }) {
+function GraphCard({ graph, code, warnings, localImages, shapeKey }: { graph: Graph; code: string; warnings: readonly string[]; localImages: boolean; shapeKey?: string }) {
   const { client } = useBeluga();
   const [full, setFull] = useState(false);
   const [ref, width] = useWidth();
-  const [laid, setLaid] = useState<Size | undefined>(() => cachedLayout(code, 'inline')?.bounds);
+  const [laid, setLaid] = useState<Size | undefined>(() => cachedLayout(shapeKey ?? code, 'inline')?.bounds);
   const height = laid ? fittedHeight(laid, width) : inlineHeight(graph, width);
   const parts = graph.nodes.filter((n) => n.type !== 'group').length;
   const copy = (): void => void copyText(JSON.stringify(JSON.parse(code), null, 2)).then(() => toast(client, 'Copied the graph as JSON', 'success'));
@@ -92,18 +92,18 @@ function GraphCard({ graph, code, warnings, localImages }: { graph: Graph; code:
         </figcaption>
         <div className={g.inlineFrame} style={{ height }}>
           <Suspense fallback={<div className={g.overlayNote}>Laying out…</div>}>
-            <FlowGraph graph={graph} mode="inline" localImages={localImages} onExpand={() => setFull(true)} onCopy={copy} onLaidOut={setLaid} cacheKey={code} />
+            <FlowGraph graph={graph} mode="inline" localImages={localImages} onExpand={() => setFull(true)} onCopy={copy} onLaidOut={setLaid} cacheKey={shapeKey ?? code} {...(shapeKey ? { shapeKey } : {})} />
           </Suspense>
         </div>
       </figure>
       </ActionsContext>
-      {full ? <FullWindow graph={graph} code={code} localImages={localImages} onClose={() => setFull(false)} onCopy={copy} /> : null}
+      {full ? <FullWindow graph={graph} code={shapeKey ?? code} localImages={localImages} onClose={() => setFull(false)} onCopy={copy} {...(shapeKey ? { shapeKey } : {})} /> : null}
     </>
   );
 }
 
 /** The graph in the whole window: a minimap, zoom buttons and room for its details. Esc closes. */
-function FullWindow({ graph, code, localImages, onClose, onCopy }: { graph: Graph; code: string; localImages: boolean; onClose: () => void; onCopy: () => void }) {
+function FullWindow({ graph, code, localImages, onClose, onCopy, shapeKey }: { graph: Graph; code: string; localImages: boolean; onClose: () => void; onCopy: () => void; shapeKey?: string }) {
   return (
     <Dialog.Root open onOpenChange={(open) => (open ? undefined : onClose())}>
       <Dialog.Portal>
@@ -122,7 +122,7 @@ function FullWindow({ graph, code, localImages, onClose, onCopy }: { graph: Grap
           </header>
           <div className={g.fullFrame}>
             <Suspense fallback={<div className={g.overlayNote}>Laying out…</div>}>
-              <FlowGraph graph={graph} mode="full" localImages={localImages} onCopy={onCopy} cacheKey={code} />
+              <FlowGraph graph={graph} mode="full" localImages={localImages} onCopy={onCopy} cacheKey={code} {...(shapeKey ? { shapeKey } : {})} />
             </Suspense>
           </div>
         </Dialog.Content>

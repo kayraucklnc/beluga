@@ -57,7 +57,7 @@ export function projectOfView(state: AppState): string | undefined {
           : view.projectId
         : view.kind === 'task'
           ? state.board.issues.find((i) => i.id === view.id)?.projectId
-          : view.kind === 'tasks' || view.kind === 'plans' || view.kind === 'issues' || view.kind === 'gh_issue'
+          : view.kind === 'tasks' || view.kind === 'plans' || view.kind === 'issues' || view.kind === 'gh_issue' || view.kind === 'actions' || view.kind === 'gh_run'
             ? view.projectId
             : view.kind === 'plan'
               ? state.plans.plans.find((p) => p.id === view.id)?.projectId
@@ -81,10 +81,12 @@ export function useRememberProject(): void {
 let cameFrom: View | undefined;
 
 /** Places a task's Back returns to; anything else (a dialog-like view, a draft) goes to the Tasks list. */
-const RETURNABLE: ReadonlySet<View['kind']> = new Set(['tasks', 'plans', 'plan', 'workspace', 'overview', 'project', 'requests', 'issues', 'gh_issue']);
+const RETURNABLE: ReadonlySet<View['kind']> = new Set(['tasks', 'plans', 'plan', 'workspace', 'overview', 'project', 'requests', 'issues', 'gh_issue', 'actions', 'gh_run']);
 
 /** Where you were before the GitHub issue you're on (Issues, a project's home, a task, a conversation). */
 let issueCameFrom: View | undefined;
+/** Where you were before the workflow run you're on (Actions, a project's home, a worktree). */
+let runCameFrom: View | undefined;
 
 function useRememberWayBack(): void {
   const view = useApp((s) => s.view);
@@ -95,6 +97,7 @@ function useRememberWayBack(): void {
     // Between an issue and its task, back and forth, each keeps the way it came: Back never bounces between the two.
     if (view.kind === 'task' && prev.kind !== 'task' && !(prev.kind === 'gh_issue' && sameView(issueCameFrom, view))) cameFrom = RETURNABLE.has(prev.kind) ? prev : undefined;
     if (view.kind === 'gh_issue' && prev.kind !== 'gh_issue' && !(prev.kind === 'task' && sameView(cameFrom, view))) issueCameFrom = RETURNABLE.has(prev.kind) || prev.kind === 'task' ? prev : undefined;
+    if (view.kind === 'gh_run' && prev.kind !== 'gh_run') runCameFrom = RETURNABLE.has(prev.kind) ? prev : undefined;
   }, [view]);
 }
 
@@ -111,6 +114,9 @@ export const wayBack = (projectId: string): View => cameFrom ?? { kind: 'tasks',
 
 /** Where Back on a GitHub issue goes: where you came from, else its project's Issues. */
 export const issueWayBack = (projectId: string): View => issueCameFrom ?? { kind: 'issues', projectId };
+
+/** Where Back on a workflow run goes: where you came from, else its project's Actions. */
+export const runWayBack = (projectId: string): View => runCameFrom ?? { kind: 'actions', projectId };
 
 // ---- the view's prefs, per window
 

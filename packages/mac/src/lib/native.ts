@@ -38,6 +38,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
   if (GO[id]) return actions.run({ type: 'view', view: { kind: GO[id]! } });
   // Go › Issues: the GitHub issues of the project you're in.
   if (id === 'go-issues') return actions.run({ type: 'view', view: { kind: 'issues' } });
+  // Go › Actions: its GitHub Actions.
+  if (id === 'go-actions') return actions.run({ type: 'view', view: { kind: 'actions' } });
   // Friends, groups and your status (Add a Friend…, the menu bar's status items).
   if (runNetworkMenuItem(id, client)) return;
   // A friend's request in the menu-bar menu: Approve / Always / Decline / Review….
