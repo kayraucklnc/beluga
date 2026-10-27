@@ -22,7 +22,7 @@ import { useApp, useBeluga } from './lib/beluga.js';
 import { setPrefs, usePrefs, zoom } from './lib/prefs.js';
 import { byKey, showPanelTab, togglePanel, toggleTerminal } from './lib/panel.js';
 import { PANEL_LABELS, PANEL_TABS } from './lib/panel-model.js';
-import { joinRoom, useMenuState, useNative, useNotificationTaps, useTrayStatus, useWindowFocus } from './lib/native.js';
+import { joinRoom, useMenuState, useNative, useNotificationTaps, useTrayStatus, useTraySpout, useWindowFocus } from './lib/native.js';
 import { AddProjectSheet } from './dialogs/AddProjectSheet.js';
 import { UndoToast } from './lib/undo-toast.js';
 import { brandText } from './lib/brand.js';
@@ -240,6 +240,7 @@ export function App() {
   useSettingsWindow();
   useNative(client, ui, actions, setJoining);
   useTrayStatus(client);
+  useTraySpout();
   useMenuState(client);
   useWindowFocus(client);
   useNotificationTaps(client, ui, actions);
