@@ -305,6 +305,8 @@ export const PHONE: Record<Method, Side> = {
   'board.settleGone': 'mac',
   'board.setAutoTasks': 'mac',
   'board.setPrefix': 'mac',
+  'board.createLabel': 'mac',
+  'board.removeLabel': 'mac',
   // Connecting a tracker is a key and settings: the Mac's.
   'board.syncTeams': 'mac',
   'board.syncConnect': 'mac',

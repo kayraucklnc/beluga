@@ -6,6 +6,8 @@
  * Browser-safe: the Mac app runs it. See docs/tasks-and-plans.md.
  */
 
+import type { LabelDef } from './labels.js';
+
 export const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled'] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 
@@ -286,6 +288,8 @@ export interface BoardProject {
   readonly prefix: string;
   /** The next task's number. */
   readonly next: number;
+  /** Labels people added to this project's set, after the built-in ones (see labels.ts). */
+  readonly labels?: readonly LabelDef[];
 }
 
 export interface BoardState {
@@ -418,6 +422,9 @@ export const openBlockers = (board: BoardState, issue: Issue): Issue[] => issue.
 export const blocking = (board: BoardState, issue: Issue): Issue[] => board.issues.filter((i) => i.blockedBy.includes(issue.id));
 
 export const childrenOf = (board: BoardState, issue: Issue): Issue[] => board.issues.filter((i) => i.parent === issue.id).sort(byRank);
+
+/** An epic: a task with sub-tasks (worked out from the board, never stored). */
+export const isEpic = (board: Pick<BoardState, 'issues'>, issue: Pick<Issue, 'id'>): boolean => board.issues.some((i) => i.parent === issue.id);
 
 /** Sub-tasks done out of all of them (not counting canceled ones). */
 export function progressOf(board: BoardState, issue: Issue): { readonly done: number; readonly total: number } {

@@ -70,6 +70,8 @@ export const BOARD_HANDLERS = {
   },
   'board.setAutoTasks': (s, on) => needBoard(s).board.setAutoTasks(on),
   'board.setPrefix': (s, projectId, prefix) => needBoard(s).board.setPrefix(projectId, prefix),
+  'board.createLabel': (s, projectId, label) => needBoard(s).board.createLabel(projectId, label),
+  'board.removeLabel': (s, projectId, name) => needBoard(s).board.removeLabel(projectId, name),
   'board.syncTeams': (s, provider, key) => answer(() => syncOf(s).teams(provider, key)),
   'board.syncConnect': (s, projectId, input) => answer(() => syncOf(s).connect(projectId, input)),
   'board.syncDisconnect': (s, projectId) => syncOf(s).disconnect(projectId),
