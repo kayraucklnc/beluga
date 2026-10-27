@@ -157,6 +157,8 @@ export const API = {
   'sharing.unshareFriend': args(FriendUnshare),
   // Leave a project a friend shared with you (owner, project id).
   'sharing.leaveProject': args(id, id),
+  // Make (or try again to make) your own copy of a project a friend shares with you whole (owner, project id).
+  'sharing.copyProject': args(id, id),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),

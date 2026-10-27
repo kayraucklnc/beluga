@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cannotTake } from '../../src/net/mesh/features.js';
 import { createDemoWorkspaces } from '../../src/demo.js';
@@ -15,6 +16,7 @@ afterEach(async () => {
   net = undefined;
 });
 
+const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 const chatSeen = (m: Mac, channel: string, text: string) => m.store.getState().log.some((l) => l.type === 'chat' && l.channel === channel && l.text === text);
 
 describe('sharing a project with a friend over the network', () => {
@@ -87,4 +89,31 @@ describe('sharing a project with a friend over the network', () => {
     expect(cannotTake('Ata', { version: '0.6.0+mac.1.1.0', can: ['chat.files', 'task.ask'] }, 'share.project')).toBe("Ata's Beluga 1.1.0 can't open shared projects yet. Ask Ata to update Beluga.");
     expect(cannotTake('Ata', { version: '0.6.3+mac.1.3.0', can: ['share.project'] }, 'share.project')).toBeUndefined();
   }, 20_000);
+
+  it('shared whole, the friend gets their own copy of it: a bundle from the owner when it can’t be cloned (BLG-258)', async () => {
+    net = await crowd();
+    const ata = await mac(net, 'ata', { workspaces: await createDemoWorkspaces() });
+    const kay = await mac(net, 'kay', { workspaces: await createDemoWorkspaces() });
+    macs.push(ata, kay);
+    await befriend(ata.person, kay.person);
+    const project = ata.store.getState().projects.find((p) => p.name === 'bob-api')!;
+    const branches = git(project.root, 'branch', '--format=%(refname:short)').split('\n').sort();
+
+    ata.session.sharing.shareWithFriend({ peerId: kay.id, projectId: project.id, role: 'contribute' });
+    const shared = await settle(() => kay.store.getState().sharedProjects.find((p) => p.id === project.id && p.copy?.state === 'ready'), 40_000);
+    const copy = shared!.copy!;
+    expect(copy.path).toMatch(/copies\/ata\/bob-api$/);
+    expect(git(copy.path!, 'branch', '--format=%(refname:short)').split('\n').sort()).toEqual(branches);
+    // It's one of kay's projects now.
+    expect(kay.store.getState().projects.some((p) => p.id === copy.projectId && p.root === copy.path)).toBe(true);
+
+    // A worktree shared on its own is followed, not copied.
+    const one = await ata.session.workspaces!.manager.createWorktree(project.id, 'only-this');
+    await ata.session.workspaces!.refresh();
+    const other = ata.store.getState().projects.find((p) => p.name === 'landing')!;
+    const ws = other.workspaces.find((w) => w.kind !== 'main' && !w.archived) ?? one;
+    ata.session.sharing.shareWithFriend({ peerId: kay.id, workspaceId: ws.id, role: 'view' });
+    const single = await settle(() => kay.store.getState().sharedProjects.find((p) => p.worktrees.some((w) => w.id === ws.id)));
+    expect(single!.copy).toBeUndefined();
+  }, 60_000);
 });

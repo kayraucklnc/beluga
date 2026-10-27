@@ -12,10 +12,6 @@
   border-radius: 50%;
   box-shadow: 0 0 0 1.5px var(--bg-sidebar-solid);
 }
-.whose {
-  color: var(--text-3);
-  font-weight: 400;
-}
 /* Its owner's Mac is offline: still there, a little quieter. */
 .away {
   opacity: 0.72;

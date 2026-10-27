@@ -10,16 +10,17 @@ import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { sameDeep } from '../lib/stable.js';
 import { signalOf } from './attention-model.js';
 import { SignalMark, nameClass, signalClass } from './signal-marks.js';
-import { Row } from './sidebar-parts.js';
+import { Row, Section } from './sidebar-parts.js';
 import { presenceOf } from '@beluga/core/friend-share-people.js';
 import side from './Sidebar.module.css';
 import g from './project-groups.module.css';
 import s from './shared-projects.module.css';
 
 /**
- * Projects friends shared with you over the network, in Projects with your own: one row per
- * project, the owner's avatar on its icon and "ata's" beside it, its worktrees nested under it as
- * yours are. It stays while the owner's Mac is offline ("ata is offline"); what you say there waits.
+ * What friends shared with you, apart from your own projects: a section per friend ("Ata's
+ * conversations"), one row per project with the owner's avatar on its icon, its worktrees nested
+ * under it as yours are. It stays while the owner's Mac is offline ("ata is offline"). A project
+ * shared whole is also copied to this Mac (BLG-258): its row says where, and opens your copy.
  */
 
 const foldKey = (p: Pick<SharedProject, 'owner' | 'id'>): string => `shared:${p.owner}/${p.id}`;
@@ -63,8 +64,28 @@ function SharedProjectBlock({ p, room = false }: { p: SharedProject; room?: bool
     const done = room ? Promise.all(p.worktrees.map((w) => api.sharing.leave(p.owner, w.id))) : api.sharing.leaveProject(p.owner, p.id);
     void done.catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
   };
-  const items: ActionItem[] = [{ label: 'Leave Project', icon: 'x', danger: true, onSelect: leave }];
-  const detail = room ? `${p.ownerName}'s · in your room` : owner.state === 'offline' ? `${p.ownerName} is offline` : owner.state === 'update' ? `${p.ownerName}'s Beluga needs an update` : `${p.ownerName}'s · ${p.role === 'contribute' ? 'you can work here' : 'you can follow along'}`;
+  const copy = p.copy;
+  const copyAgain = (): void => void api.sharing.copyProject(p.owner, p.id).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  const items: ActionItem[] = [
+    ...(copy?.state === 'ready' && copy.projectId ? [{ label: 'Open Your Copy', icon: 'folder' as const, onSelect: () => actions.run({ type: 'view', view: { kind: 'project', id: copy.projectId! } }) }] : []),
+    ...(copy?.state === 'failed' ? [{ label: 'Copy to This Mac Again', icon: 'download' as const, onSelect: copyAgain }] : []),
+    { label: 'Leave Project', icon: 'x', danger: true, onSelect: leave },
+  ];
+  const detail = room
+    ? 'in your room'
+    : owner.state === 'offline'
+      ? `${p.ownerName} is offline`
+      : owner.state === 'update'
+        ? `${p.ownerName}'s Beluga needs an update`
+        : copy?.state === 'copying'
+          ? 'Copying to this Mac…'
+          : copy?.state === 'failed'
+            ? 'Couldn’t copy it here'
+            : copy?.state === 'ready'
+              ? `Your copy: ${tilde(copy.path ?? '')}`
+              : p.role === 'contribute'
+                ? 'you can work here'
+                : 'you can follow along';
   const shown = open ? rows : rows.filter((r) => r.w.id === here);
   return (
     <>
@@ -86,10 +107,7 @@ function SharedProjectBlock({ p, room = false }: { p: SharedProject; room?: bool
             </span>
           }
           label={
-            <span>
-              {p.name}
-              <span className={s.whose}> · {p.ownerName}'s</span>
-            </span>
+            <span>{p.name}</span>
           }
           detail={detail}
           onClick={toggle}
@@ -116,7 +134,7 @@ function SharedProjectBlock({ p, room = false }: { p: SharedProject; room?: bool
             aria-label={w.name}
             icon={<Icon name={w.branch ? 'branch' : 'chat'} size={13} />}
             label={<span className={nameClass(signal)}>{w.name}</span>}
-            detail={signal.tip || (w.branch ? `${p.ownerName}'s ${w.branch}` : `${p.ownerName}'s chat`)}
+            detail={signal.tip || (w.branch ? w.branch : 'chat')}
             onClick={() => actions.run({ type: 'open_shared', owner: p.owner, id: w.id, tab: 'chat' })}
             trailing={<SignalMark signal={signal} />}
           />
@@ -126,19 +144,26 @@ function SharedProjectBlock({ p, room = false }: { p: SharedProject; room?: bool
   );
 }
 
+const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~');
+
+/** One section per friend who shared something with you: "Ata's conversations". */
 export function SharedProjects() {
   const projects = useApp((st) => st.sharedProjects);
   const room = useApp((st) => roomProjects(st), sameDeep);
-  if (!projects.length && !room.length) return null;
+  const all = [...projects.map((p) => ({ p, room: false })), ...room.map((p) => ({ p, room: true }))];
+  const owners = [...new Map(all.map(({ p }) => [p.owner, p.ownerName])).entries()];
   return (
-    <div role="group" aria-label="Shared with you">
-      {projects.map((p) => (
-        <SharedProjectBlock key={foldKey(p)} p={p} />
+    <>
+      {owners.map(([owner, name]) => (
+        <Section key={owner} id={`shared:${owner}`} title={`${name}’s conversations`}>
+          {all
+            .filter(({ p }) => p.owner === owner)
+            .map(({ p, room: inRoom }) => (
+              <SharedProjectBlock key={foldKey(p)} p={p} room={inRoom} />
+            ))}
+        </Section>
       ))}
-      {room.map((p) => (
-        <SharedProjectBlock key={foldKey(p)} p={p} room />
-      ))}
-    </div>
+    </>
   );
 }
 

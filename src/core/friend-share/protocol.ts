@@ -13,6 +13,9 @@ import { z } from 'zod';
  *   its Claude and what that Claude does, its files), checked on arrival as if it came from the
  *   room. `as`: a chat the owner passes on from someone else in the worktree.
  * - `folder`: a folder the owner shares with them (`active: false`: no longer).
+ * - A whole project's `project` carries `copy` (with the repository's https address when it has
+ *   one): the friend makes their own copy (copy.ts). When they can't clone it, `copy_request` asks
+ *   the owner's Mac for a bundle of it, and `copy_ready` says where to fetch it (or `copy_failed`).
  */
 
 const id = z.string().regex(/^[\w:.-]{1,80}$/);
@@ -32,7 +35,11 @@ export const ShareMsg = z.discriminatedUnion('k', [
     role,
     worktrees: z.array(z.object({ id, name: text(200), branch: text(200).optional() })).max(200),
     members: z.array(z.object({ peerId, name: text(80), role })).max(100),
+    copy: z.object({ url: z.string().regex(/^https:\/\/[\w.~/-]{4,500}$/).optional() }).optional(),
   }),
+  z.object({ k: z.literal('copy_request'), id }),
+  z.object({ k: z.literal('copy_ready'), id, share: id, size: z.number().int().min(0) }),
+  z.object({ k: z.literal('copy_failed'), id, error: text(300) }),
   z.object({ k: z.literal('unshare'), id }),
   z.object({ k: z.literal('leave'), id }),
   z.object({

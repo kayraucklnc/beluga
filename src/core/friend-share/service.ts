@@ -1,15 +1,19 @@
+import { randomBytes } from 'node:crypto';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { type BelugaInfo, type Feature, SHARE_FEATURES, cannotTake } from '../../net/mesh/features.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
-import { Body, type BodyInput, type WsRole } from '../../protocol.js';
+import { Body, type BodyInput, MAX_DOWNLOAD_BYTES, type WsRole } from '../../protocol.js';
 import { shareNameOf } from '../../shared/share-names.js';
 import type { Project } from '../../workspaces/types.js';
-import type { FriendFolder, ProjectGrant, SharedProject } from '../friend-share-store.js';
+import { fetchBytes } from '../downloads.js';
+import type { FriendFolder, ProjectGrant, SharedCopy, SharedProject } from '../friend-share-store.js';
 import { readProjectIcon } from '../project-icons.js';
 import type { Session } from '../session.js';
 import type { Action, Store } from '../store.js';
 import { clean, peerName } from '../store.js';
 import { type FriendShareInput, type FriendSharing, historyFor, saidBy } from '../workspace-sharing.js';
+import { COPY_TTL_MS, cloneFrom, cloneFromBundle, cloneUrl, copiesHome, copyTarget, packProject } from './copy.js';
 import { ShareCourier } from './courier.js';
 import { HISTORY_ITEMS, HISTORY_TEXT, type ShareMsg } from './protocol.js';
 
@@ -49,6 +53,9 @@ type HistoryItem = { readonly from: string; readonly text: string; readonly ts: 
 /** A project a friend shared with you, as kept on disk: with each worktree's recent conversation. */
 interface Received extends SharedProject {
   readonly history: Readonly<Record<string, readonly HistoryItem[]>>;
+  /** Shared whole (you get a copy), and where to clone it from. */
+  readonly whole?: boolean;
+  readonly url?: string;
 }
 
 /** What one friend has of one of your projects: its last state and the worktrees whose history went. */
@@ -73,6 +80,7 @@ const INBOUND_KEPT = 500;
 const ICON_MAX = 120_000;
 
 const wsOf = (channel: string | undefined): string | undefined => (channel?.startsWith('ws:') ? channel.slice(3) : undefined);
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const keyOf = (owner: string, id: string): string => `${owner}/${id}`;
 const liveWorktrees = (p: Project) => p.workspaces.filter((w) => !w.archived && !w.pending && !w.external && w.kind !== 'main');
 
@@ -82,6 +90,8 @@ export interface FriendSharesOptions {
   readonly mesh: FriendMesh;
   /** Where its files live (normally ~/.beluga). */
   readonly dir: string;
+  /** Where copies of projects shared whole go (normally ~/Beluga). */
+  readonly copies?: string;
 }
 
 export class FriendShares implements FriendSharing {
@@ -95,6 +105,13 @@ export class FriendShares implements FriendSharing {
   private readonly inbound = new Set<string>();
   private readonly offs: Array<() => void> = [];
   private saveTimer: NodeJS.Timeout | undefined;
+  /** Each project's https address to clone from (null: none), looked up once (BLG-258). */
+  private repos: Record<string, string | null> = {};
+  private readonly lookingUp = new Set<string>();
+  /** Bundles of your projects waiting for a friend to fetch them (share name → that friend). */
+  private readonly outgoing = new Map<string, string>();
+  /** Bundles of friends' projects you're fetching (share name → its owner). */
+  private readonly incoming = new Map<string, string>();
 
   constructor(private readonly opts: FriendSharesOptions) {
     this.courier = new ShareCourier(opts.mesh, path.join(opts.dir, 'share-outbox.json'), (to, m) => this.acked(to, m));
@@ -263,6 +280,7 @@ export class FriendShares implements FriendSharing {
           role: grant.role,
           worktrees: worktrees.map((w) => ({ id: w.id, name: w.name.slice(0, 200), ...(w.branch ? { branch: w.branch.slice(0, 200) } : {}) })),
           members,
+          ...(grant.only ? {} : this.copyFor(project)),
         };
         const sig = JSON.stringify(msg);
         const fresh = worktrees.filter((w) => !had?.ws.includes(w.id));
@@ -274,6 +292,50 @@ export class FriendShares implements FriendSharing {
       }
     }
     if (changed) this.saveOwn();
+  }
+
+  /**
+   * What a whole project's message says about copying it: where to clone it from, once that's
+   * looked up (the message goes again when it is).
+   */
+  private copyFor(project: Project): Pick<Extract<ShareMsg, { k: 'project' }>, 'copy'> {
+    const url = this.repos[project.id];
+    if (url !== undefined) return { copy: url ? { url } : {} };
+    const manager = this.opts.session.workspaces?.manager;
+    if (manager && !this.lookingUp.has(project.id)) {
+      this.lookingUp.add(project.id);
+      void manager
+        .remoteOf(project.id)
+        .then((remote) => {
+          this.repos = { ...this.repos, [project.id]: cloneUrl(remote) ?? null };
+          this.resync();
+        })
+        .finally(() => this.lookingUp.delete(project.id));
+    }
+    return {};
+  }
+
+  /** A friend you share a project with whole couldn't clone it: pack it and offer them the bundle. */
+  private async onCopyRequest(from: string, id: string): Promise<void> {
+    const grant = this.grants[id]?.[from];
+    const project = this.state.projects.find((p) => p.id === id);
+    if (!grant || grant.only || !project?.root) return void this.courier.send(from, { k: 'copy_failed', id, error: 'That project isn’t shared with you whole' }, { reliable: true });
+    const share = `copy-${randomBytes(8).toString('hex')}`;
+    const dir = path.join(this.opts.dir, 'outbox', share);
+    try {
+      const { size } = await packProject(project.root, dir);
+      this.opts.session.shareService.upsert({ name: share, root: dir, writable: false, private: true, allowed: [from] });
+      this.outgoing.set(share, from);
+      setTimeout(() => {
+        this.outgoing.delete(share);
+        this.opts.session.shareService.remove(share);
+        void fs.rm(dir, { recursive: true, force: true });
+      }, COPY_TTL_MS).unref();
+      this.courier.send(from, { k: 'copy_ready', id, share, size }, { reliable: true });
+    } catch (err) {
+      void fs.rm(dir, { recursive: true, force: true });
+      this.courier.send(from, { k: 'copy_failed', id, error: errorText(err).slice(0, 300) }, { reliable: true });
+    }
   }
 
   private historyOf(wsId: string): HistoryItem[] {
@@ -330,6 +392,7 @@ export class FriendShares implements FriendSharing {
   /** A folder (or a worktree's folder) shared between you and them over the network. */
   private shareBetween(share: string, peerId: string): boolean {
     if (this.folders[share]?.peers.includes(peerId)) return true;
+    if (this.outgoing.get(share) === peerId || this.incoming.get(share) === peerId) return true;
     if (this.friendFolders[keyOf(peerId, share)]) return true;
     const ws = share.startsWith('ws-') ? Object.values(this.sent[peerId] ?? {}).some((s) => s.ws.some((id) => shareNameOf(id) === share)) : false;
     return ws || Object.values(this.received).some((p) => p.owner === peerId && p.worktrees.some((w) => shareNameOf(w.id) === share));
@@ -374,6 +437,12 @@ export class FriendShares implements FriendSharing {
         return this.onBody(from, m, got.id);
       case 'folder':
         return this.onFolder(from, m);
+      case 'copy_request':
+        return void this.onCopyRequest(from, m.id);
+      case 'copy_ready':
+        return void this.onCopyReady(from, m);
+      case 'copy_failed':
+        return this.setCopy(from, m.id, { state: 'failed', error: clean(m.error) });
     }
   }
 
@@ -432,6 +501,8 @@ export class FriendShares implements FriendSharing {
       worktrees,
       members: m.members.map((x) => ({ peerId: x.peerId, name: clean(x.name), role: x.role })),
       updatedAt: Date.now(),
+      ...(before?.copy ? { copy: before.copy } : {}),
+      ...(m.copy ? { whole: true, ...(m.copy.url ? { url: m.copy.url } : {}) } : {}),
       history: Object.fromEntries(Object.entries(before?.history ?? {}).filter(([ws]) => worktrees.some((w) => w.id === ws))),
     };
     this.received = { ...this.received, [key]: next };
@@ -439,6 +510,72 @@ export class FriendShares implements FriendSharing {
     this.saveReceived();
     this.publishReceived(false);
     if (!before) this.opts.session.toast(`${ownerName} shared ${next.name} with you${m.role === 'view' ? ' (to follow along)' : ''}. It's in Projects`, 'success');
+    // Shared whole: you get your own copy of it, once (Get a Copy tries again after a failure).
+    if (m.copy && !next.copy) void this.makeCopy(from, m.id);
+  }
+
+  // ---------------------------------------------------------------- your copy (BLG-258)
+
+  /**
+   * Make your own copy of a project a friend shares with you whole: the one you already have when
+   * its repository is in your Projects, else a clone of it, else a bundle from their Mac.
+   */
+  async makeCopy(owner: string, id: string): Promise<void> {
+    const rec = this.received[keyOf(owner, id)];
+    if (!rec?.whole || rec.copy?.state === 'copying' || rec.copy?.state === 'ready') return;
+    const manager = this.opts.session.workspaces?.manager;
+    if (!manager) return;
+    const have = rec.url ? await manager.projectForRemote(rec.url).catch(() => undefined) : undefined;
+    if (have) return this.setCopy(owner, id, { state: 'ready', path: have.root, projectId: have.id });
+    const dest = copyTarget(rec.ownerName, rec.name, this.opts.copies ?? copiesHome());
+    this.setCopy(owner, id, { state: 'copying', path: dest });
+    if (rec.url) {
+      try {
+        await cloneFrom(rec.url, dest);
+        return void (await this.copied(owner, id, dest));
+      } catch {
+        // Not one you can read (private, or no access): their Mac sends it instead.
+      }
+    }
+    const why = cannotTake(rec.ownerName, this.opts.mesh.belugaOf(owner), 'share.copy', this.opts.mesh.isLinked(owner));
+    if (why) return this.setCopy(owner, id, { state: 'failed', error: why });
+    this.courier.send(owner, { k: 'copy_request', id }, { reliable: true });
+  }
+
+  private async onCopyReady(from: string, m: Extract<ShareMsg, { k: 'copy_ready' }>): Promise<void> {
+    const rec = this.received[keyOf(from, m.id)];
+    const dest = rec?.copy?.state === 'copying' ? rec.copy.path : undefined;
+    if (!rec || !dest || m.size > MAX_DOWNLOAD_BYTES) return;
+    this.incoming.set(m.share, from);
+    try {
+      const bytes = await fetchBytes({ owner: from, share: m.share, path: 'project.bundle' }, (to, b) => this.opts.session.files.request(to, b), MAX_DOWNLOAD_BYTES);
+      await cloneFromBundle(bytes, dest, rec.url);
+      await this.copied(from, m.id, dest);
+    } catch (err) {
+      this.setCopy(from, m.id, { state: 'failed', path: dest, error: errorText(err) });
+    } finally {
+      this.incoming.delete(m.share);
+    }
+  }
+
+  /** The copy is made: into your Projects with it. */
+  private async copied(owner: string, id: string, dest: string): Promise<void> {
+    const ctl = this.opts.session.workspaces;
+    const projectId = ctl?.manager.addProject(dest);
+    await ctl?.refresh();
+    this.setCopy(owner, id, { state: 'ready', path: dest, ...(projectId ? { projectId } : {}) });
+    const rec = this.received[keyOf(owner, id)];
+    if (rec) this.opts.session.toast(`Your copy of ${rec.name} is in ${dest.replace(/^\/Users\/[^/]+/, '~')}`, 'success');
+  }
+
+  private setCopy(owner: string, id: string, copy: SharedCopy): void {
+    const key = keyOf(owner, id);
+    const rec = this.received[key];
+    if (!rec) return;
+    this.received = { ...this.received, [key]: { ...rec, copy } };
+    this.saveReceived();
+    this.publishReceived(false);
+    if (copy.state === 'failed') this.opts.session.toast(`Couldn’t copy ${rec.name}: ${copy.error ?? 'it didn’t work'}`, 'warn');
   }
 
   private onUnshare(from: string, id: string): void {
@@ -528,7 +665,7 @@ export class FriendShares implements FriendSharing {
   /** Into the shared state: one row per project, and each worktree as a workspace shared with you. */
   private publishReceived(startup: boolean): void {
     const all = Object.values(this.received);
-    this.dispatch({ type: 'fshare_projects', projects: all.map(({ history: _h, ...p }) => p) });
+    this.dispatch({ type: 'fshare_projects', projects: all.map(({ history: _h, whole: _w, url: _u, ...p }) => p) });
     for (const p of all) {
       for (const w of p.worktrees) {
         const known = this.state.shared.find((s) => s.id === w.id && s.owner === p.owner);

@@ -113,6 +113,7 @@ export const HANDLERS = {
   'sharing.shareWithFriend': (s, share) => s.sharing.shareWithFriend(share),
   'sharing.unshareFriend': (s, share) => s.sharing.unshareFriend(share),
   'sharing.leaveProject': (s, owner, projectId) => needFriendShares(s).leave(owner, projectId),
+  'sharing.copyProject': (s, owner, projectId) => needFriendShares(s).makeCopy(owner, projectId),
 
   'invites.create': async (s, opts) => {
     const link = await s.invites.create(opts);
