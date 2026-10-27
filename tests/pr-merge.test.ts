@@ -96,7 +96,7 @@ describe('parsePr: merge fields', () => {
 });
 
 /** A Workbench with one worktree whose PR lives in a stubbed GitHub: merging changes what gh pr view says next. */
-function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => PullRequest | Error, unpushed = 0) {
+function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => PullRequest | Error, unpushed = 0, pushFails?: Error) {
   const store = new Store(initialState('t', 'ask'));
   const ws: Record<string, unknown> = { id: 'auth', name: 'auth', kind: 'worktree', branch: 'klaud/auth', path: '/code/auth', projectId: 'p1', status: { changed: 0, ahead: 2, behind: 0 } };
   const manager = { list: [{ id: 'p1', workspaces: [ws] }], find: (id: string) => (id === ws.id ? ws : undefined), setMergeWait: (_id: string, wait: unknown) => void (ws.mergeWhenReady = wait) };
@@ -107,6 +107,7 @@ function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => P
   const toasts: Array<{ text: string; level?: string }> = [];
   const notices: NoticeEvent[] = [];
   const views: string[] = [];
+  const pushes: string[] = [];
   const wb = new Workbench({
     store,
     controller: { manager, refresh: async () => undefined } as unknown as WorkspaceController,
@@ -120,6 +121,12 @@ function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => P
     findPr: async (_dir, branch) => (views.push(branch), github),
     remoteRef: () => undefined,
     unpushedCommits: async () => unpushed,
+    pushForPr: async (_dir, head) => {
+      if (pushFails) throw pushFails;
+      pushes.push(head);
+      unpushed = 0;
+      return 'pushed';
+    },
     mergePr: async (dir, number, opts) => {
       merges.push({ dir, number, opts });
       const next = answer(opts);
@@ -132,7 +139,7 @@ function bench(start: PullRequest | undefined, answer: (opts: MergeOptions) => P
   if (start) store.dispatch({ type: 'pr', id: 'auth', pr: start });
   const github$ = (next: PullRequest | undefined): void => void (github = next);
   const later = (ms: number): void => void (clock += ms);
-  return { wb, store, ws, merges, deleted, toasts, notices, views, github: github$, later, pr: () => store.getState().prs.auth };
+  return { wb, store, ws, merges, pushes, deleted, toasts, notices, views, github: github$, later, pr: () => store.getState().prs.auth };
 }
 
 describe('Workbench.mergePr', () => {
@@ -219,16 +226,27 @@ describe('Workbench.mergePr', () => {
     expect(await b.wb.mergePr('auth', { method: 'rebase' })).toMatchObject({ ok: false, reason: 'conflicts' });
   });
 
-  it('won’t merge while commits here aren’t on GitHub: they’d be left out of the merge', async () => {
+  it('pushes commits that aren’t on GitHub yet before merging, so the merge has them', async () => {
+    const b = bench(pr(), () => pr({ state: 'MERGED' }), 5);
+    expect(await b.wb.mergePr('auth', { method: 'squash' })).toMatchObject({ ok: true, result: 'merged' });
+    expect(b.pushes).toEqual(['klaud/auth']);
+    expect(b.merges).toHaveLength(1);
+    expect(b.toasts.some((t) => /^Pushing 5 commits to klaud\/auth before merging PR #42/.test(t.text))).toBe(true);
+    const auto = bench(pr({ checks: 'pending' }), () => pr({ state: 'MERGED' }), 1);
+    expect(await auto.wb.mergePr('auth', { method: 'squash', auto: true })).toMatchObject({ ok: true, result: 'queued' });
+    expect(auto.pushes).toEqual(['klaud/auth']);
+    expect(auto.ws.mergeWhenReady).toBeDefined();
+  });
+
+  it('won’t merge when that push fails: the commits would be left out', async () => {
     for (const auto of [false, true]) {
-      const b = bench(pr(), () => pr({ state: 'MERGED' }), 5);
+      const b = bench(pr(), () => pr({ state: 'MERGED' }), 2, new Error('GitHub has commits on klaud/auth that this worktree doesn’t: bring them in first (git pull), or check who pushed there'));
       const out = await b.wb.mergePr('auth', { method: 'squash', ...(auto ? { auto } : {}) });
-      expect(out).toMatchObject({ ok: false, reason: 'unpushed', message: '5 commits in auth aren’t on GitHub yet: push klaud/auth first, or PR #42 merges without them' });
+      expect(out).toMatchObject({ ok: false, reason: 'unpushed', message: expect.stringMatching(/^Couldn’t push 2 commits in auth, so PR #42 isn’t merged .*: GitHub has commits on klaud\/auth/) });
       expect(b.merges).toEqual([]);
       expect(b.ws.mergeWhenReady).toBeUndefined();
       expect(b.toasts.at(-1)?.level).toBe('error');
     }
-    expect(await bench(pr(), () => pr(), 1).wb.mergePr('auth', { method: 'merge' })).toMatchObject({ message: expect.stringMatching(/^1 commit in auth isn’t on GitHub yet: .* without it$/) });
   });
 
   it('does nothing without an open PR, or while one merge is under way', async () => {

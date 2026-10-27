@@ -8,7 +8,7 @@ import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
-import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, listPrs, useHttpsRemote, mergePr, prStep, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, listPrs, useHttpsRemote, mergePr, prStep, pushForPr, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
 import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -52,6 +52,7 @@ export interface WorkbenchDeps {
   readonly prStep?: (dir: string, number: number, step: PrStepKind) => Promise<void>;
   /** Push and open a pull request without Claude (tests stand in for gh). */
   readonly createPr?: typeof createPr;
+  readonly pushForPr?: typeof pushForPr;
   readonly disableAutoMerge?: (dir: string, number: number) => Promise<void>;
   /** Where a branch was last pushed to (its remote-tracking ref), to notice pushes. */
   readonly remoteRef?: (dir: string, branch: string) => string | undefined;
@@ -530,13 +531,28 @@ export class Workbench {
     };
     if (!ws?.branch || !pr) return fail('no_pr', 'This worktree has no pull request to merge yet');
     if (pr.state !== 'OPEN') return fail('closed', pr.state === 'MERGED' ? `PR #${pr.number} is already merged` : `PR #${pr.number} is closed`);
-    // GitHub merges what it has: commits made here since the last push would be left behind, and lost with the worktree.
-    const unpushed = await (this.deps.unpushedCommits ?? unpushedCommits)(ws.path, ws.branch);
-    if (unpushed > 0) return fail('unpushed', `${unpushed === 1 ? '1 commit' : `${unpushed} commits`} in ${ws.name} ${unpushed === 1 ? 'isn’t' : 'aren’t'} on GitHub yet: push ${ws.branch} first, or PR #${pr.number} merges without ${unpushed === 1 ? 'it' : 'them'}`);
     if (this.merging.has(id)) return fail('busy', `PR #${pr.number} is already being merged`);
-    if (opts.auto) return this.mergeWhenReady(ws, pr, opts);
     this.merging.add(id);
     try {
+      // GitHub merges what it has: commits made here since the last push would be left behind, and lost with the worktree. Push them first.
+      const unpushed = await (this.deps.unpushedCommits ?? unpushedCommits)(ws.path, ws.branch);
+      if (unpushed > 0) {
+        const commits = unpushed === 1 ? '1 commit' : `${unpushed} commits`;
+        this.deps.toast(`Pushing ${commits} to ${ws.branch} before merging PR #${pr.number}…`);
+        try {
+          await (this.deps.pushForPr ?? pushForPr)(ws.path, ws.branch);
+        } catch (err) {
+          const trouble = await this.troubleOf(ws, err);
+          if (trouble) {
+            this.deps.toast(trouble.title, 'warn');
+            return { ok: false, reason: 'github', message: troubleLine(trouble), trouble };
+          }
+          return fail('unpushed', `Couldn’t push ${commits} in ${ws.name}, so PR #${pr.number} isn’t merged (it would leave ${unpushed === 1 ? 'it' : 'them'} out): ${firstLine(err)}`);
+        }
+        this.troubles.delete(id);
+        this.pushedAt.set(id, this.now());
+      }
+      if (opts.auto) return await this.mergeWhenReady(ws, pr, opts);
       try {
         await (this.deps.mergePr ?? mergePr)(ws.path, pr.number, opts);
       } catch (err) {
