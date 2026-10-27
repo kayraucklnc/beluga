@@ -92,6 +92,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     ...(state.sentinel.enabled
       ? [
           { id: 'sentinel:open', label: 'Go to Sentinel', icon: 'sentinel' as const, hint: 'Watchers that run Claude, a script or a notification on a schedule', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'every morning', 'brief', 'recurring'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'sentinel' } }) },
+          { id: 'dashboard:open', label: 'Go to Dashboard', icon: 'gauge' as const, hint: 'The numbers your sentinels keep, as tiles', keywords: ['dashboard', 'numbers', 'metrics', 'kpi', 'stats', 'revenue', 'subscribers'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'dashboard' } }) },
           { id: 'sentinel:new', label: 'New Sentinel…', icon: 'sentinel' as const, hint: 'Say what it should do, start from a recipe, or build it yourself', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'recipe', 'automate'], run: () => openSheet({ kind: 'new_sentinel' }) },
         ]
       : []),

@@ -80,8 +80,8 @@ function deltaDir(d: Stat['delta']): number {
   return Number.isFinite(n) ? Math.sign(n) : 0;
 }
 
-/** A sparkline: the trend's shape, its last point marked. */
-function Spark({ values, good }: { values: readonly number[]; good: boolean | undefined }) {
+/** A sparkline: the trend's shape, its last point marked (Sentinel's number tiles draw it too). */
+export function Spark({ values, good }: { values: readonly number[]; good: boolean | undefined }) {
   const w = 120;
   const h = 32;
   const min = Math.min(...values);

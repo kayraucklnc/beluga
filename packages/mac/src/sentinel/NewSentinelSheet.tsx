@@ -116,17 +116,31 @@ export function NewSentinelSheet({ projectId, way: first = 'describe', close }: 
           !recipes ? (
             <div className={s.empty}>Reading the recipes…</div>
           ) : (
-            <div className={s.recipes} role="list" aria-label="Recipes">
-              {recipes.map((r) => (
-                <button key={r.id} type="button" role="listitem" className={s.recipe} aria-busy={busy === r.id} disabled={Boolean(busy)} onClick={() => void pick(r)} data-recipe={r.id}>
-                  <Icon name={iconOf(r.icon)} size={14} />
-                  <span className={s.recipeName}>{r.name}</span>
-                  <span className={s.recipeWhen} title={recipeWhen(r)}>
-                    {recipeWhen(r)}
-                  </span>
-                  <span className={s.recipeLine}>{r.line}</span>
-                </button>
-              ))}
+            <div className={s.recipeLists}>
+              {(
+                [
+                  ['Recipes', recipes.filter((r) => r.group !== 'numbers')],
+                  ['Keep the numbers', recipes.filter((r) => r.group === 'numbers')],
+                ] as const
+              ).map(([label, list]) =>
+                list.length ? (
+                  <div key={label}>
+                    {label !== 'Recipes' ? <div className={s.recipeGroup}>Numbers: they show on the sentinel’s page and your Dashboard</div> : null}
+                    <div className={s.recipes} role="list" aria-label={label}>
+                      {list.map((r) => (
+                        <button key={r.id} type="button" role="listitem" className={s.recipe} aria-busy={busy === r.id} disabled={Boolean(busy)} onClick={() => void pick(r)} data-recipe={r.id}>
+                          <Icon name={iconOf(r.icon)} size={14} />
+                          <span className={s.recipeName}>{r.name}</span>
+                          <span className={s.recipeWhen} title={recipeWhen(r)}>
+                            {recipeWhen(r)}
+                          </span>
+                          <span className={s.recipeLine}>{r.line}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null,
+              )}
             </div>
           )
         ) : (

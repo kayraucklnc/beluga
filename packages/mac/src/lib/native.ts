@@ -42,6 +42,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
   if (id === 'go-actions') return actions.run({ type: 'view', view: { kind: 'actions' } });
   // Go › Sentinel: every watcher.
   if (id === 'go-sentinel') return actions.run({ type: 'view', view: { kind: 'sentinel' } });
+  if (id === 'go-dashboard') return actions.run({ type: 'view', view: { kind: 'dashboard' } });
   // Friends, groups and your status (Add a Friend…, the menu bar's status items).
   if (runNetworkMenuItem(id, client)) return;
   // A friend's request in the menu-bar menu: Approve / Always / Decline / Review….

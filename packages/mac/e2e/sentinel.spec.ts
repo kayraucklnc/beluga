@@ -2,10 +2,12 @@ import path from 'node:path';
 import { expect, test, type Page } from './fixtures.js';
 
 /**
- * Sentinel (docs/sentinel.md §3) on the demo's six sentinels: the list, Morning brief's page and
+ * Sentinel (docs/sentinel.md §3) on the demo's ten sentinels: the list, Morning brief's page and
  * Run Now, a run's page with its report, the merge waiting on Fix what broke, and the event
  * triggers (Uptime guard's page, the webhook's URL), then a recipe made and turned on (Nightly
- * tests, with the sentinel that runs after it fails). Screenshots in light and dark go to
+ * tests, with the sentinel that runs after it fails); then numbers (§10): Stripe revenue's Numbers
+ * card and its chart over time, the Keep the numbers step, and the Dashboard (tabs, compare, Refresh,
+ * Add a Tile with its preview, dragging a tile, Describe it). Screenshots in light and dark go to
  * .beluga/scratch/sentinel-*.png.
  */
 
@@ -16,7 +18,8 @@ const main = (page: Page) => page.locator('main');
 async function shoot(page: Page, name: string): Promise<void> {
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
-    await page.waitForTimeout(150);
+    // Charts draw in for a moment (recharts' animation): the picture waits for them.
+    await page.waitForTimeout((await page.locator('.recharts-surface').count()) ? 1600 : 150);
     await page.screenshot({ path: path.join(shots, `sentinel-${name}-${scheme}.png`) });
   }
   await page.emulateMedia({ colorScheme: 'light' });
@@ -33,7 +36,7 @@ test.describe.configure({ mode: 'serial' });
 test('the list shows the demo’s sentinels, grouped by project, with their last runs', async ({ page }) => {
   await openList(page);
   const rows = main(page).locator('[data-sentinel]');
-  await expect(rows).toHaveCount(6);
+  await expect(rows).toHaveCount(10);
   await expect(main(page).getByRole('row', { name: /^Morning brief, Every day at 7:00/ })).toContainText('Done');
   await expect(main(page).getByRole('row', { name: /^Nightly tests/ })).toContainText('Paused after 3 failures in a row');
   await expect(main(page).getByRole('row', { name: /^Fix what broke/ })).toContainText('Needs you');
@@ -41,9 +44,9 @@ test('the list shows the demo’s sentinels, grouped by project, with their last
   await expect(main(page).getByRole('row', { name: /^Watch the web/ })).toContainText('Running');
   await expect(main(page).getByRole('row', { name: /^Watch the web/ })).not.toContainText('Failed');
   await page.getByRole('tab', { name: /Paused/ }).click();
-  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveCount(2);
   await page.getByRole('tab', { name: /^All/ }).click();
-  await expect(rows).toHaveCount(6);
+  await expect(rows).toHaveCount(10);
   await shoot(page, 'list');
 });
 
@@ -193,8 +196,11 @@ test('a recipe: the eleven to start from, Nightly tests made with the sentinel t
   await main(page).getByRole('button', { name: 'New Sentinel' }).first().click();
   const sheet = page.getByRole('dialog', { name: 'New Sentinel' });
   await sheet.getByRole('tab', { name: /Recipe/ }).click();
-  const recipes = sheet.getByRole('list', { name: 'Recipes' });
+  const recipes = sheet.getByRole('list', { name: 'Recipes', exact: true });
   await expect(recipes.getByRole('listitem')).toHaveCount(11);
+  // And six that keep numbers, apart.
+  await expect(sheet.getByRole('list', { name: 'Keep the numbers' }).getByRole('listitem')).toHaveCount(6);
+  await expect(sheet.locator('[data-recipe="site-speed"]')).toContainText('Every 3 hours');
   await expect(recipes.locator('[data-recipe="fix-and-ship"]')).toContainText('When Sentry sees a new issue');
   await expect(recipes.locator('[data-recipe="review-new-prs"]')).toContainText('When a pull request opens');
   await sheet.getByRole('combobox', { name: 'Where it works' }).click();
@@ -218,4 +224,128 @@ test('a recipe: the eleven to start from, Nightly tests made with the sentinel t
   await expect(steps.locator('[data-step]')).toHaveCount(3);
   await expect(steps.locator('[data-step="pr"]')).toBeVisible();
   await shoot(page, 'recipe-after');
+});
+
+// ---------------------------------------------------------------- numbers and dashboards (§10)
+
+test('a sentinel’s Numbers: tiles with their change, compare, a chart over time whose point opens its run', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('row', { name: /^Stripe revenue/ }).click();
+  const numbers = main(page).getByTestId('sentinel-numbers');
+  await expect(numbers.getByRole('listitem')).toHaveCount(3);
+  const revenue = numbers.locator('[data-metric="revenue"]');
+  await expect(revenue).toContainText('$3,412');
+  await expect(revenue).toContainText('+$232 (+7.3%)');
+  await expect(revenue.locator('[data-tone="good"]')).toBeVisible();
+  // Fewer failed payments is good: down from 3 to 1 shows green.
+  await expect(numbers.locator('[data-metric="failed-payments"] [data-tone="good"]')).toContainText('−2');
+  await numbers.getByRole('tab', { name: 'Last week' }).click();
+  await expect(revenue).toContainText('+$602 (+21.4%)');
+  await expect(revenue).toContainText('vs last week');
+  await numbers.getByRole('tab', { name: 'Previous' }).click();
+  await revenue.getByRole('button').click();
+  const chart = numbers.getByTestId('sentinel-number-chart');
+  await expect(chart).toContainText('Revenue over time');
+  await expect(chart).toContainText('8 points');
+  await expect(chart.locator('.recharts-surface')).toBeVisible();
+  await numbers.scrollIntoViewIfNeeded();
+  await chart.scrollIntoViewIfNeeded();
+  await shoot(page, 'numbers');
+  // A point opens its run.
+  const box = (await chart.locator('.recharts-surface').boundingBox())!;
+  await page.mouse.move(box.x + box.width - 30, box.y + box.height / 2, { steps: 4 });
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('$3,412');
+  await page.mouse.click(box.x + box.width - 30, box.y + box.height / 2);
+  await expect(main(page).locator('[data-run-page]')).toBeVisible();
+  await expect(main(page).getByText(/^Stripe revenue · ran by schedule/)).toBeVisible();
+});
+
+test('Keep the numbers on a page: what it reads, each number with where it is, its unit and which way is good', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('row', { name: /^Site speed/ }).click();
+  const steps = main(page).getByRole('region', { name: 'Steps' });
+  const measure = steps.locator('[data-step="measure"]');
+  await expect(measure).toContainText('Keep the numbers · Keeps Home page from the step before');
+  await measure.getByRole('button', { name: 'Show its fields' }).click();
+  await expect(measure.getByRole('combobox', { name: 'What it reads' })).toContainText('The step before');
+  await expect(measure.getByRole('textbox', { name: 'Number 1’s label' })).toHaveValue('Home page');
+  await expect(measure.getByRole('combobox', { name: 'Number 1’s unit' })).toContainText('Milliseconds');
+  await expect(measure.getByRole('combobox', { name: 'Which way number 1 is good' })).toContainText('Down is good');
+  // Its numbers: about 380 ms, a load time where down is good.
+  await expect(main(page).getByTestId('sentinel-numbers').locator('[data-metric="home"]')).toContainText(/\d{3} ms/);
+  await shoot(page, 'measure-step');
+});
+
+test('the Dashboard: tabs, tiles that say paused quietly, compare, Refresh one at a time', async ({ page }) => {
+  await page.goto('/');
+  const row = sidebar(page).getByRole('button', { name: /^Dashboard/ });
+  // Its line (the row's hint): how many numbers sentinels keep.
+  await expect(row).toHaveAttribute('title', '7 numbers · 2 dashboards');
+  await row.click();
+  const board = main(page).locator('[data-dashboard]');
+  await expect(board).toBeVisible({ timeout: 20_000 });
+  await expect(main(page).getByRole('tab', { name: 'Revenue' })).toHaveAttribute('aria-selected', 'true');
+  await expect(main(page).getByRole('tab', { name: 'Ops' })).toBeVisible();
+  const tiles = board.locator('[data-tile]');
+  await expect(tiles).toHaveCount(11);
+  await expect(board.locator('[data-kind="number"]').first()).toContainText('$3,412');
+  // Subscribers pins its own compare: last week.
+  await expect(board.locator('[data-kind="number"]').nth(3)).toContainText('vs last week');
+  await expect(board.locator('[data-kind="chart"]').first().locator('.recharts-surface')).toBeVisible();
+  // Last job run is paused: its table says so, quietly, and still shows its rows.
+  const jobs = board.locator('[data-kind="table"]');
+  await expect(jobs).toHaveAttribute('data-state', 'paused');
+  await expect(jobs).toContainText('paused');
+  await expect(jobs).toContainText('deploy landing');
+  await expect(board.locator('[data-kind="text"]')).toContainText('$3,412 yesterday');
+  await shoot(page, 'dashboard');
+  await main(page).getByRole('tablist', { name: 'Compare every tile with' }).getByRole('tab', { name: 'Last week' }).click();
+  await expect(board.locator('[data-kind="number"]').first()).toContainText('vs last week');
+  await main(page).getByRole('tablist', { name: 'Compare every tile with' }).getByRole('tab', { name: 'Previous' }).click();
+  // Refresh runs its sentinels one at a time (Last job run is paused: three run).
+  await main(page).getByRole('button', { name: 'Refresh' }).click();
+  await expect(main(page).getByTestId('dashboard-fetching')).toContainText(/Fetching… \d of 3/);
+  await shoot(page, 'dashboard-fetching');
+  await expect(main(page).getByTestId('dashboard-fetching')).toHaveCount(0, { timeout: 40_000 });
+  await main(page).getByRole('tab', { name: 'Ops' }).click();
+  await expect(board.locator('[data-tile]')).toHaveCount(4);
+});
+
+test('Add a Tile with its preview, then dragged into place; Describe it builds one', async ({ page }) => {
+  await page.goto('/');
+  await sidebar(page).getByRole('button', { name: /^Dashboard/ }).click();
+  await main(page).getByRole('tab', { name: 'Ops' }).click();
+  const board = main(page).locator('[data-dashboard]');
+  await expect(board.locator('[data-tile]')).toHaveCount(4);
+  await main(page).getByRole('button', { name: 'Add a Tile' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Add a Tile' });
+  await sheet.getByRole('radio', { name: /YouTube subscribers/ }).click();
+  await expect(sheet.getByTestId('tile-preview')).toContainText(/12,3\d\d/);
+  await shoot(page, 'add-tile');
+  await sheet.getByRole('tab', { name: 'Chart' }).click();
+  await sheet.getByRole('checkbox', { name: /Views/ }).click();
+  await expect(sheet.getByTestId('tile-preview').locator('.recharts-surface')).toBeVisible();
+  await sheet.getByRole('tab', { name: 'Number' }).click();
+  await sheet.getByRole('button', { name: 'Add Tile' }).click();
+  await expect(board.locator('[data-tile]')).toHaveCount(5);
+  const last = board.locator('[data-tile]').last();
+  await expect(last).toContainText('YouTube subscribers');
+  // Drag it to the front (the board's drag: a press, a move past a few pixels, a drop).
+  const from = (await last.boundingBox())!;
+  const to = (await board.locator('[data-tile]').first().boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2 - 10, from.y + 10, { steps: 3 });
+  await page.mouse.move(to.x + 8, to.y + 10, { steps: 8 });
+  await page.mouse.up();
+  await expect(board.locator('[data-tile]').first()).toContainText('YouTube subscribers');
+  // Describe it: the demo's Claude puts the numbers the words name on it.
+  await main(page).getByRole('button', { name: /New Dashboard/ }).first().click();
+  await expect(main(page).getByRole('tab', { name: 'Dashboard 3' })).toHaveAttribute('aria-selected', 'true');
+  await main(page).getByRole('textbox', { name: 'Describe what the dashboard should show' }).fill('revenue and failed payments, compared to last week');
+  await main(page).getByRole('button', { name: 'Describe It' }).click();
+  await expect(main(page).getByRole('status').filter({ hasText: 'Added' })).toContainText('Revenue', { timeout: 30_000 });
+  await expect(board.locator('[data-tile]')).toHaveCount(2);
+  await expect(board.locator('[data-kind="number"]').first()).toContainText('vs last week');
+  await shoot(page, 'dashboard-described');
 });

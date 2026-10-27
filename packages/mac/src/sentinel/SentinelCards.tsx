@@ -60,6 +60,7 @@ import {
   withEvery,
 } from './sentinel-model.js';
 import { EventControls } from './EventControls.js';
+import { MeasureFields } from './MeasureFields.js';
 import { useDraft } from './use-draft.js';
 import s from './sentinel.module.css';
 
@@ -332,6 +333,7 @@ function StepItem({
           {step.kind === 'message' ? <MessageFields step={step} change={change} /> : null}
           {step.kind === 'friend' ? <FriendFields step={step} change={change} /> : null}
           {step.kind === 'trigger' ? <TriggerFields step={step} item={item} change={change} /> : null}
+          {step.kind === 'measure' ? <MeasureFields step={step} change={change} /> : null}
         </div>
       ) : null}
     </div>

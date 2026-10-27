@@ -76,9 +76,9 @@ export default defineConfig({
   plugins: [react(), daemonEndpoint(), pdfjsAssets()],
   resolve: { alias: { '@beluga': path.join(repo, 'src') } },
   clearScreen: false,
-  // Loaded only when the first graph shows (components/graph): bundled up front, so that moment
-  // doesn't make the dev server reload the page.
-  optimizeDeps: { include: ['@xyflow/react', 'elkjs/lib/elk-api.js', 'elkjs/lib/elk.bundled.js', 'elkjs/lib/elk-worker.min.js'] },
+  // Loaded only when the first graph or chart shows (components/graph, components/views/Chart):
+  // bundled up front, so that moment doesn't make the dev server reload the page.
+  optimizeDeps: { include: ['@xyflow/react', 'elkjs/lib/elk-api.js', 'elkjs/lib/elk.bundled.js', 'elkjs/lib/elk-worker.min.js', 'recharts'] },
   worker: { format: 'es' },
   server: { port: 1420, strictPort: true, fs: { allow: [repo] } },
   build: {

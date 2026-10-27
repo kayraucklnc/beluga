@@ -277,6 +277,10 @@ export function Toolbar() {
     );
   }
 
+  if (view.kind === 'dashboard') {
+    const d = state.sentinel.dashboards?.find((x) => x.id === view.id) ?? state.sentinel.dashboards?.[0];
+    return <Shell headerRef={headerRef} title={<span className={s.name}>Dashboard</span>} subtitle={<span className={s.meta}>{d ? `${d.name} · the numbers your sentinels keep` : 'The numbers your sentinels keep'}</span>} />;
+  }
   if (view.kind === 'sentinel') return <Shell headerRef={headerRef} title={<span className={s.name}>Sentinel</span>} subtitle={<span className={s.meta}>Watchers that run on a schedule or when you press Run, and leave a report</span>} />;
 
   if (view.kind === 'sentinel_page' || view.kind === 'sentinel_run') {

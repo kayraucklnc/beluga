@@ -12,6 +12,7 @@ import { SwipeBackEdge } from '../tasks/SwipeBackEdge.js';
 import { ago } from '../tasks/tasks-model.js';
 import { ClaudeMark, Disc, RunPill } from './marks.js';
 import { StepsCard, WhenCard } from './SentinelCards.js';
+import { NumbersCard } from './NumbersCard.js';
 import {
   MAC_SCOPE,
   NOTIFY_LABEL,
@@ -68,6 +69,7 @@ function Page({ item }: { item: Sentinel }) {
           <Banners item={item} />
           <WhenCard item={item} save={save} />
           <StepsCard item={item} save={save} />
+          <NumbersCard item={item} />
           <History item={item} />
         </div>
         <Properties item={item} save={save} />

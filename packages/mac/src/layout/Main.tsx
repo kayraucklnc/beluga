@@ -35,6 +35,7 @@ const PlanPage = lazy(() => import('../plans/PlanPage.js').then((m) => ({ defaul
 const SentinelView = lazy(() => import('../sentinel/SentinelView.js').then((m) => ({ default: m.SentinelView })));
 const SentinelPage = lazy(() => import('../sentinel/SentinelPage.js').then((m) => ({ default: m.SentinelPage })));
 const SentinelRunPage = lazy(() => import('../sentinel/RunPage.js').then((m) => ({ default: m.RunPage })));
+const DashboardPage = lazy(() => import('../sentinel/DashboardPage.js').then((m) => ({ default: m.DashboardPage })));
 const PhoneView = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhoneView })));
 
 /** A worktree being made: its page shows at once, and becomes its conversation when git is done. */
@@ -109,6 +110,8 @@ function Route() {
       return <SentinelPage key={view.id} id={view.id} />;
     case 'sentinel_run':
       return <SentinelRunPage key={view.runId} runId={view.runId} />;
+    case 'dashboard':
+      return <DashboardPage {...(view.id ? { id: view.id } : {})} />;
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':

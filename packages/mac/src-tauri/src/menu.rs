@@ -170,6 +170,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item(app, "go-actions", "Actions", None)?,
             // Sentinel: watchers on a schedule (docs/sentinel.md).
             &item(app, "go-sentinel", "Sentinel", None)?,
+            // Its Dashboard: the numbers sentinels keep (docs/sentinel.md §10).
+            &item(app, "go-dashboard", "Dashboard", None)?,
             &item(app, "go-room", "Chat", Some("Alt+3"))?,
             &item(app, "go-search", "Search", Some("Alt+4"))?,
             &item(app, "go-usage", "Usage", Some("Alt+5"))?,

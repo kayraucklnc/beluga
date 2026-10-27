@@ -38,6 +38,8 @@ export type NativeSheet =
   | { readonly kind: 'new_plan'; readonly projectId?: string }
   /** A new sentinel (docs/sentinel.md §3): from a recipe, or built yourself; `projectId` 'mac' is Your Mac. */
   | { readonly kind: 'new_sentinel'; readonly projectId?: string; readonly way?: 'describe' | 'recipe' | 'build' }
+  /** Add a Tile to a dashboard (docs/sentinel.md §10). */
+  | { readonly kind: 'add_tile'; readonly dashboardId: string }
   /** Your planning style (how you like plans cut). */
   | { readonly kind: 'plan_style' }
   /** Not yet: what a milestone still needs, for the plan's head Claude. */
