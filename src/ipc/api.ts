@@ -157,6 +157,14 @@ export const API = {
   'sharing.unshareFriend': args(FriendUnshare),
   // Leave a project a friend shared with you (owner, project id).
   'sharing.leaveProject': args(id, id),
+  // Make (or try again to make) your own copy of a project a friend shares with you whole (owner, project id).
+  'sharing.copyProject': args(id, id),
+  // A friend's shared worktree's scratch folder, for your Scratch tab (owner, worktree id).
+  'sharing.scratch': args(id, id),
+  // Scrolling back in a friend's shared worktree: its page of conversation before what you have (owner, worktree id).
+  'sharing.earlier': args(id, id),
+  // Say it in a friend's worktree but to your own Claude, in your copy of the project (owner, worktree id, message).
+  'sharing.runHere': args(id, id, z.string().min(1).max(100_000)),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),

@@ -90,6 +90,33 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
   return state.peers.length <= 1 ? 'Message your Claude' : 'Message the room';
 }
 
+/** Where what you say in a friend's worktree runs (BLG-260): on their Mac (as ever) or in your own copy. */
+type RunOn = 'owner' | 'here';
+const runOnChoice = new Map<string, RunOn>();
+
+/** In a friend's worktree you have a copy of: "Runs on Ata's Mac" or "on This Mac", one click to switch. */
+function RunOnChip({ wsId, ownerName, value, onChange }: { wsId: string; ownerName: string; value: RunOn; onChange: (v: RunOn) => void }) {
+  const pick = (v: RunOn): void => {
+    runOnChoice.set(wsId, v);
+    onChange(v);
+  };
+  return (
+    <ActionsDropdown
+      align="start"
+      items={[
+        { label: `${ownerName}’s Mac`, hint: `Their Claude, in their worktree`, icon: 'people', checked: value === 'owner', onSelect: () => pick('owner') },
+        { label: 'This Mac', hint: 'Your Claude, in your copy, on the same branch', icon: 'laptop', checked: value === 'here', onSelect: () => pick('here') },
+      ]}
+    >
+      <button type="button" className={cx(s.chip, value === 'here' && s.chipOn)} aria-label={`Runs on ${value === 'here' ? 'this Mac' : `${ownerName}’s Mac`}`}>
+        <Icon name={value === 'here' ? 'laptop' : 'people'} size={12} />
+        {value === 'here' ? 'This Mac' : `${ownerName}’s Mac`}
+        <Icon name="chevronDown" size={9} />
+      </button>
+    </ActionsDropdown>
+  );
+}
+
 export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const { ui, client } = useBeluga();
   const api = useApi();
@@ -156,7 +183,15 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   // `burning` is the fire itself; without it, only the confetti and pixels fly.
   const effects = !shared && effectsOn(prefs.maxFire, state.prefs.effort);
   const burning = effects && prefs.maxFire.show !== 'off';
-  const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
+  // A friend's worktree you have a copy of (its project shared whole): you pick where it runs.
+  const sharedWs = state.view.kind === 'shared' ? state.shared.find((w) => w.id === (state.view as { id: string }).id && w.via === 'mesh') : undefined;
+  const copyOf = sharedWs ? state.sharedProjects.find((p) => p.owner === sharedWs.owner && p.id === sharedWs.projectId)?.copy : undefined;
+  const canRunHere = Boolean(sharedWs && copyOf?.state === 'ready');
+  const [runOnState, setRunOn] = useState<RunOn>('owner');
+  const runOn: RunOn = canRunHere && sharedWs ? (runOnChoice.get(sharedWs.id) ?? runOnState) : 'owner';
+  // Following along, or the owner's Mac can't hear you right now (offline, or an old Beluga): the box is locked,
+  // unless what you say goes to your own Claude in your copy.
+  const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && runOn !== 'here' && (sharedWs?.role === 'view' || Boolean(waitingNote(state, state.view.id)));
   // A new worktree: the branch it starts from and its name (empty: named from the task).
   const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
   const [worktree, setWorktreeState] = useState<WorktreeChoice>(() => (draftProject && worktreeChoices.get(draftProject)) || { name: '' });
@@ -255,6 +290,12 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
   };
   const deliver = (text: string, urgent: boolean): void => {
+    if (readOnly) return;
+    if (runOn === 'here' && sharedWs && !text.startsWith('/')) {
+      set('');
+      void api.sharing.runHere(sharedWs.owner, sharedWs.id, text).catch((err: unknown) => toast(client, `Couldn’t start it here: ${errorText(err)}`, 'error'));
+      return;
+    }
     // /invite adds a friend, or adds friends to what's on screen (BLG-203): done here, where the view is known.
     if (handleInvite(client, ui, text)) return;
     if (draftProject && !text.startsWith('/')) return createWorktree(draftProject, text);
@@ -492,6 +533,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               </button>
             </ActionsDropdown>
           ) : null}
+          {canRunHere && sharedWs ? <RunOnChip wsId={sharedWs.id} ownerName={state.sharedProjects.find((p) => p.owner === sharedWs.owner)?.ownerName ?? 'Their'} value={runOn} onChange={setRunOn} /> : null}
           {!shared ? <ModelPicker channel={channel} /> : null}
           {!shared && channel !== 'draft' ? <McpChip /> : null}
           {burning && state.prefs.effort === 'max' ? (

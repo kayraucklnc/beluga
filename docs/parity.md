@@ -181,6 +181,10 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `sharing.shareWithFriend` | ✓ project ••• › Share with… (pick friends and a role) · `/invite @friend` in a project or worktree · a team project's conversation ••• › Share with Team ▸ (a teammate, or Everyone on the Team: that one worktree, live) |
 | `sharing.unshareFriend` | ✓ Share with… › No access · a team project's conversation ••• › Stop Sharing (or untick a teammate under Share with Team ▸) |
 | `sharing.leaveProject` | ✓ a shared project's ••• › Leave Project |
+| `sharing.copyProject` | ✓ a shared project's ••• › Copy to This Mac Again (it copies by itself when shared whole) |
+| `sharing.scratch` | ✓ a friend's worktree's Scratch tab |
+| `sharing.earlier` | ✓ scrolling back in a friend's worktree |
+| `sharing.runHere` | ✓ a friend's worktree's "Runs on" chip › This Mac |
 | `invites.create` | ✓ |
 | `invites.revoke` | ✓ |
 | `invites.copyLink` | ✓ |

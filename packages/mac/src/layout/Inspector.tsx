@@ -199,7 +199,7 @@ function WorkspaceDetails({ id }: { id: string }) {
       <Panel title="Working here" action={<Button size="small" variant="quiet" icon="plus" onClick={() => actions.run({ type: 'ws', id: ws.id, action: 'share' })} />}>
         {members.length ? (
           members.map(([peerId, role]) => {
-            const name = state.peers.find((p) => p.peerId === peerId)?.name ?? 'someone';
+            const name = state.peers.find((p) => p.peerId === peerId)?.name ?? state.network.friends.find((f) => f.peerId === peerId)?.name ?? 'someone';
             return (
               <button key={peerId} type="button" className={`${s.person} ${r.personRow}`} onClick={(e) => openPerson(ui, state.peers.findIndex((p) => p.peerId === peerId), e.currentTarget)}>
                 <Avatar name={name} id={peerId} size={18} />

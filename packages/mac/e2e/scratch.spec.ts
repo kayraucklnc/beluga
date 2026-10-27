@@ -121,10 +121,9 @@ test('Scratch: a calm empty state before anything lands, saying when Claude work
   await page.keyboard.press('Meta+Alt+6');
   await expect(tab(page, 'Scratch')).toHaveAttribute('aria-selected', 'true');
 
-  // Nothing yet, Claude idle: a calm empty state (not a loading outline), and both folders named.
+  // Nothing yet, Claude idle: a calm empty state (not a loading outline), no list of folder paths.
   await expect(panel(page).getByText('Nothing in scratch yet')).toBeVisible();
-  await expect(panel(page)).toContainText('.beluga/scratch/');
-  await expect(panel(page)).toContainText('.context/');
+  await expect(panel(page)).not.toContainText('.beluga/scratch/');
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-idle.png') });
 
   // Claude starts: the empty state says so.

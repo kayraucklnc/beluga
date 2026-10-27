@@ -42,7 +42,7 @@ interface Listing {
  * The folder's files, looked at again every moment while the window is in front. It changes only
  * when they do; a late answer never replaces a newer one; a failed look keeps what's on screen.
  */
-function useScratch(wsId: string): Listing | undefined | null {
+function useScratch(wsId: string, owner?: string): Listing | undefined | null {
   const api = useApi();
   const [list, setList] = useState<Listing | null>();
   useEffect(() => {
@@ -54,7 +54,7 @@ function useScratch(wsId: string): Listing | undefined | null {
     const look = (): void => {
       if (document.visibilityState !== 'visible') return;
       const n = ++asked;
-      api.workspaces.scratch(wsId).then(
+      (owner ? api.sharing.scratch(owner, wsId) : api.workspaces.scratch(wsId)).then(
         (res) => {
           if (!alive || n < shown) return;
           shown = n;
@@ -76,7 +76,7 @@ function useScratch(wsId: string): Listing | undefined | null {
       alive = false;
       clearInterval(timer);
     };
-  }, [wsId]);
+  }, [wsId, owner]);
   return list;
 }
 
@@ -84,7 +84,7 @@ function useScratch(wsId: string): Listing | undefined | null {
 const NEWEST_MS = 4000;
 
 /** When Claude last saved something to this workspace's scratch folder (0: nothing there; undefined: not looked yet). */
-export function useScratchNewest(wsId: string | undefined): number | undefined {
+export function useScratchNewest(wsId: string | undefined, owner?: string): number | undefined {
   const api = useApi();
   const [newest, setNewest] = useState<number>();
   useEffect(() => {
@@ -93,7 +93,7 @@ export function useScratchNewest(wsId: string | undefined): number | undefined {
     let alive = true;
     const look = (): void => {
       if (document.visibilityState !== 'visible') return;
-      api.workspaces.scratch(wsId).then(
+      (owner ? api.sharing.scratch(owner, wsId) : api.workspaces.scratch(wsId)).then(
         (res) => alive && setNewest(Math.max(0, ...(res?.files ?? []).map((f) => f.mtime))),
         () => undefined,
       );
@@ -104,7 +104,7 @@ export function useScratchNewest(wsId: string | undefined): number | undefined {
       alive = false;
       clearInterval(timer);
     };
-  }, [wsId]);
+  }, [wsId, owner]);
   return newest;
 }
 
@@ -162,12 +162,12 @@ function useFollowEnd(body: RefObject<HTMLDivElement | null>, content: RefObject
   return { follow, onScroll, followEnd };
 }
 
-function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEntry; root: string; onClose: () => void }) {
+function Preview({ wsId, owner, file, root, onClose }: { wsId: string; owner?: string; file: ScratchEntry; root: string; onClose: () => void }) {
   const api = useApi();
   const { client } = useBeluga();
   const selfId = useApp((st) => st.selfId);
   const now = useNow();
-  const at: Location = { owner: selfId, share: shareNameOf(wsId), path: file.path };
+  const at: Location = { owner: owner ?? selfId, share: shareNameOf(wsId), path: file.path };
   const name = file.path.split('/').pop() ?? file.path;
   const local = `${root}/${file.path}`;
   const body = useRef<HTMLDivElement>(null);
@@ -183,7 +183,7 @@ function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEnt
         <span className={s.previewDir}>{timeAgo(file.mtime, Math.max(now, Date.now()))}</span>
         <span className={s.flex} />
         {isViewable(file.path) ? null : <IconButton icon="toEnd" label="Follow the End" active={follow} onClick={followEnd} />}
-        <IconButton icon="external" label="Open With Its App" onClick={() => void openWithDefaultApp(client, local)} />
+        {owner ? null : <IconButton icon="external" label="Open With Its App" onClick={() => void openWithDefaultApp(client, local)} />}
         <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => void api.files.open(at).then(() => openFocus('file', wsId))} />
         <IconButton icon="x" label="Close" keys="Esc" onClick={onClose} />
       </div>
@@ -197,12 +197,13 @@ function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEnt
   );
 }
 
-export function ScratchTab({ wsId }: { wsId: string }) {
+/** `owner`: a friend's worktree shared with you, listed and read over the link (BLG-259). */
+export function ScratchTab({ wsId, owner }: { wsId: string; owner?: string }) {
   const { client } = useBeluga();
   const prefs = usePrefs();
   const on = useApp((st) => st.prefs.scratchFolder);
   const working = useApp((st) => signalOf(st, `ws:${wsId}`, wsId).working);
-  const list = useScratch(wsId);
+  const list = useScratch(wsId, owner);
   const now = useNow();
   const [picked, setPicked] = useState<string>();
   const [closed, setClosed] = useState(false);
@@ -247,7 +248,7 @@ export function ScratchTab({ wsId }: { wsId: string }) {
   const state = scratchState(list);
   if (state === 'loading') return <ScratchSkeleton />;
   if (state === 'missing' || !list) return <Empty icon="alert" title="No folder to look in" detail="This workspace’s folder is missing." />;
-  if (state === 'empty') return <ScratchEmpty working={working} folders={SHOWN_SCRATCH_DIRS} off={!on} dir={list.dir} onReveal={() => void revealInFinder(client, list.dir)} />;
+  if (state === 'empty') return <ScratchEmpty working={working} off={!owner && !on} dir={list.dir} {...(owner ? {} : { onReveal: () => void revealInFinder(client, list.dir) })} />;
   const split = clampShare(prefs.panelSplit, SPLIT_MIN, SPLIT_MAX);
   return (
     <div ref={box} className={s.stack}>
@@ -267,7 +268,7 @@ export function ScratchTab({ wsId }: { wsId: string }) {
             >
               <IconButton icon={sort === 'viewable' ? 'eye' : 'clock'} label={sort === 'viewable' ? 'Sorted: viewable first' : 'Sorted: newest first'} />
             </ActionsDropdown>
-            <IconButton icon="folder" label="Show in Finder" onClick={() => void revealInFinder(client, list.dir)} />
+            {owner ? null : <IconButton icon="folder" label="Show in Finder" onClick={() => void revealInFinder(client, list.dir)} />}
           </div>
         </div>
         {working ? <NextFileRow /> : null}
@@ -312,7 +313,7 @@ export function ScratchTab({ wsId }: { wsId: string }) {
             onReset={() => setPrefs({ panelSplit: SPLIT_DEFAULT })}
             onStep={(dir) => setPrefs({ panelSplit: clampShare(split - dir * 0.04, SPLIT_MIN, SPLIT_MAX) })}
           />
-          <Preview wsId={wsId} file={file} root={root} onClose={() => setClosed(true)} />
+          <Preview wsId={wsId} {...(owner ? { owner } : {})} file={file} root={root} onClose={() => setClosed(true)} />
         </>
       ) : null}
     </div>

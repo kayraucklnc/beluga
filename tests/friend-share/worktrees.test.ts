@@ -1,4 +1,7 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { remoteScratch } from '../../src/core/friend-share/scratch.js';
 import { conversations, convView, workView } from '../../src/companion/views.js';
 import { peopleHere, waitingNote } from '../../src/core/friend-share-people.js';
 import { createDemoWorkspaces } from '../../src/demo.js';
@@ -75,8 +78,8 @@ describe('a worktree shared over the network', () => {
     const { ata, kay, channel, wsId } = await sharedWorktree();
     await ata.stop();
     await settle(() => kay.store.getState().network.friends.find((f) => f.peerId === ata.id)?.online === false);
-    expect(waitingNote(kay.store.getState(), wsId)).toBe("ata's Mac is offline: your message goes when it's back");
-    expect(convView(kay.store.getState(), ctx, `conv:${channel}`).waiting).toBe("ata's Mac is offline: your message goes when it's back");
+    expect(waitingNote(kay.store.getState(), wsId)).toBe("You can't chat with this while ata's Mac is offline");
+    expect(convView(kay.store.getState(), ctx, `conv:${channel}`).waiting).toBe("You can't chat with this while ata's Mac is offline");
 
     expect(kay.session.submit('while you were away', { channel })).toBe(true);
     const waiting = await settle(() => Object.entries(kay.store.getState().delivery).find(([, s]) => s === 'waiting'));
@@ -104,5 +107,51 @@ describe('a worktree shared over the network', () => {
     kay.session.send({ kind: 'agent_request', requestId: 'r-by-hand-1', prompt: 'by hand', viaAgent: false, channel, urgent: false, plan: false }, { to: ata.id });
     await settle(() => kay.store.getState().log.find((l) => l.type === 'agent' && l.requestId === 'r-by-hand-1' && l.status === 'denied'));
     expect(ata.runs).toHaveLength(0);
+  }, 60_000);
+
+  it('its scratch folder shows on the friend’s Mac too, newest first, read over the link (BLG-259)', async () => {
+    const { ata, kay, wsId } = await sharedWorktree();
+    const ws = ata.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === wsId)!;
+    const dir = path.join(ws.path, '.beluga', 'scratch', 'shots');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'old.txt'), 'old');
+    await new Promise((r) => setTimeout(r, 20));
+    writeFileSync(path.join(ws.path, '.beluga', 'scratch', 'notes.md'), '# notes');
+    const list = await remoteScratch(ata.id, wsId, (at, o) => kay.session.listFiles(at, o));
+    expect(list.files.map((f) => f.path)).toEqual(['.beluga/scratch/notes.md', '.beluga/scratch/shots/old.txt']);
+    expect(list.files.every((f) => f.mtime > 0)).toBe(true);
+    expect(await kay.session.readFile({ owner: ata.id, share: `ws-${wsId}`, path: '.beluga/scratch/notes.md' })).toMatchObject({ content: '# notes' });
+  }, 60_000);
+
+  it('its whole conversation reaches the friend a page at a time as they scroll back, oldest on top (BLG-259)', async () => {
+    net = await crowd();
+    const ata = await mac(net, 'ata', { workspaces: await createDemoWorkspaces() });
+    const kay = await mac(net, 'kay');
+    macs.push(ata, kay);
+    await befriend(ata.person, kay.person);
+    const project = ata.store.getState().projects.find((p) => p.name === 'bob-api')!;
+    const ws = project.workspaces.find((w) => !w.archived && !w.external && w.kind === 'worktree')!;
+    const channel = `ws:${ws.id}`;
+    const t0 = Date.now() - 1_000_000;
+    ata.session.workspaces!.manager.saveHistory(
+      ws.id,
+      Array.from({ length: 150 }, (_, i) => ({ id: `old-${i}`, type: 'chat', channel, from: ata.id, text: `line ${i}`, ts: t0 + i * 1000, byAgent: false })),
+    );
+    ata.session.sharing.shareWithFriend({ peerId: kay.id, workspaceId: ws.id, role: 'view' });
+    // Each line reads "<who>: <text>"; what was said is what's checked.
+    const lines = (): string[] => kay.store.getState().log.filter((l) => l.channel === channel && l.type === 'system').map((l) => (l as { text: string }).text.replace(/^[^:]*: /, ''));
+    await settle(() => lines().length === 60);
+    expect(lines()[0]).toBe('line 90');
+    expect(kay.store.getState().shared.find((w) => w.id === ws.id)?.earlier).toBe(true);
+
+    expect(kay.shares.earlier(ata.id, ws.id)).toBe(true);
+    await settle(() => lines().length === 120);
+    expect(lines()[0]).toBe('line 30');
+    expect(lines()[119]).toBe('line 149');
+    kay.shares.earlier(ata.id, ws.id);
+    await settle(() => lines().length === 150);
+    expect(lines()[0]).toBe('line 0');
+    await settle(() => !kay.store.getState().shared.find((w) => w.id === ws.id)?.earlier);
+    expect(kay.shares.earlier(ata.id, ws.id)).toBe(false);
   }, 60_000);
 });

@@ -42,13 +42,12 @@ export function ScratchSkeleton() {
 
 interface ScratchEmptyProps {
   readonly working: boolean;
-  /** The folders shown here, from the workspace's root. */
-  readonly folders: readonly string[];
   /** Claude is given no scratch folder (Settings › Claude). */
   readonly off: boolean;
   /** Beluga's own folder (where Show in Finder goes). */
   readonly dir: string;
-  readonly onReveal: () => void;
+  /** Show in Finder (not for a friend's worktree: it's on their Mac). */
+  readonly onReveal?: () => void;
 }
 
 /** The app's beluga, quiet, over the empty state. */
@@ -61,7 +60,7 @@ function BelugaMark() {
 }
 
 /** Looked, and nothing's there yet: what will land here, and where it is. */
-export function ScratchEmpty({ working, folders, off, dir, onReveal }: ScratchEmptyProps) {
+export function ScratchEmpty({ working, off, dir, onReveal }: ScratchEmptyProps) {
   return (
     <div className={k.empty}>
       <Empty
@@ -77,10 +76,11 @@ export function ScratchEmpty({ working, folders, off, dir, onReveal }: ScratchEm
                 <span>Claude is working · its files show up here as they’re saved</span>
               </div>
             ) : null}
-            <Button icon="folder" title={dir} onClick={onReveal}>
+            {onReveal ? (
+              <Button icon="folder" title={dir} onClick={onReveal}>
               Show in Finder
             </Button>
-            {off ? null : <div className={k.emptyFolders}>{folders.map((f) => `${f}/`).join('  ·  ')}</div>}
+            ) : null}
           </>
         }
       />

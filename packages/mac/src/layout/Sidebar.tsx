@@ -155,11 +155,12 @@ export function Sidebar() {
 
         <Section id="projects" title="Projects" action={<ProjectsAddMenu />}>
           <Projects />
-          {/* Friends' projects shared over the network: with yours, the owner's avatar on each. */}
-          <SharedProjects />
           {/* Housekeeping for every project's worktrees: after the projects, out of the daily places above. */}
           <WorktreesNav />
         </Section>
+
+        {/* What friends shared with you: a section each, "Ata's conversations", apart from your own. */}
+        <SharedProjects />
 
         <FriendsSection />
         <GroupsSection />

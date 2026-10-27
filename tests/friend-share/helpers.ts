@@ -57,7 +57,7 @@ export async function mac(net: Crowd, name: string, opts: { workspaces?: Workspa
   const boot = (): FriendShares => {
     person.mesh.on('change', sync);
     sync();
-    const s = new FriendShares({ session, store, mesh: person.mesh, dir: person.dir });
+    const s = new FriendShares({ session, store, mesh: person.mesh, dir: person.dir, copies: path.join(root, 'copies') });
     s.start();
     return s;
   };

@@ -34,10 +34,10 @@ const HISTORY_ITEMS = 60;
 const wsIdOf = (channel: string): string | undefined => (channel.startsWith('ws:') ? channel.slice(3) : undefined);
 
 /** A short, plain-text version of the recent conversation for someone joining. */
-export function historyFor(log: readonly LogItem[], channel: string, nameOf: (id: string) => string): Array<{ from: string; text: string; ts: number; byAgent: boolean }> {
+export function historyFor(log: readonly LogItem[], channel: string, nameOf: (id: string) => string, limit = HISTORY_ITEMS): Array<{ from: string; text: string; ts: number; byAgent: boolean }> {
   return log
     .filter((l) => l.channel === channel && (l.type === 'chat' || (l.type === 'agent' && l.status === 'done')))
-    .slice(-HISTORY_ITEMS)
+    .slice(-limit)
     .map((l) =>
       l.type === 'chat'
         ? { from: nameOf(l.from), text: l.text.slice(0, 8000), ts: l.ts, byAgent: l.byAgent }

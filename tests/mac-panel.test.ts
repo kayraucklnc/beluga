@@ -68,11 +68,11 @@ describe('the right panel’s tabs', () => {
     expect(panelFits({ kind: 'tasks' })).toBe(false);
     expect(panelTabsFor({ kind: 'tasks' })).toEqual([]);
   });
-  it('a workspace has every tab; a chat has no Changes; a friend’s workspace and the Terminal view only Info', () => {
+  it('a workspace has every tab; a chat has no Changes; a friend’s workspace Info and its Scratch; the Terminal view only Info', () => {
     expect(panelTabsFor(ws, 'worktree')).toEqual(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background']);
     expect(panelTabsFor({ kind: 'project', id: 'p' })).toEqual(['terminal', 'info', 'history']);
     expect(panelTabsFor(ws, 'chat')).toEqual(['files', 'terminal', 'info', 'scratch', 'background']);
-    expect(panelTabsFor({ kind: 'shared', owner: 'o', id: 'x', tab: 'chat' })).toEqual(['info']);
+    expect(panelTabsFor({ kind: 'shared', owner: 'o', id: 'x', tab: 'chat' })).toEqual(['info', 'scratch']);
     expect(panelTabsFor({ kind: 'terminal' })).toEqual(['info']);
     expect(panelTabsFor(room)).toEqual(['terminal', 'info']);
   });

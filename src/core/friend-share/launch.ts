@@ -39,7 +39,7 @@ export function launchFriendShares(host: FriendShareHost): () => void {
     services.delete(session);
     current = undefined;
     if (!service) return;
-    current = new FriendShares({ session, store, mesh: service.mesh, dir });
+    current = new FriendShares({ session, store, mesh: service.mesh, dir, ...(host.demo ? { copies: path.join(dir, 'copies') } : {}) });
     current.start();
     services.set(session, current);
   });

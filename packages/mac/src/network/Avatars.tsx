@@ -13,14 +13,15 @@ export function PresenceDot({ state, size = 9, label }: { state: PresenceState; 
 
 /** Someone's avatar with their presence in the corner. */
 export function PersonAvatar({ name, id, state, size = 22 }: { name: string; id: string; state?: PresenceState; size?: number }) {
-  const dot = Math.min(16, Math.max(6, Math.round(size * 0.38)));
-  // A tiny avatar (a chat tab) gets a thinner ring tucked closer, so the dot doesn't swallow it.
+  // A tiny avatar (a chat tab) gets a smaller dot tucked inside its corner: one hanging off the
+  // bottom right drags the whole icon low and left of the name beside it.
   const small = size < 18;
+  const dot = small ? 5 : Math.min(16, Math.max(6, Math.round(size * 0.38)));
   return (
     <span className={s.avatarWrap} style={{ width: size, height: size }}>
       <Avatar name={name} id={id} size={size} />
       {state ? (
-        <span className={s.avatarDot} style={small ? { padding: 1, right: -1.5, bottom: -1.5 } : undefined}>
+        <span className={s.avatarDot} style={small ? { padding: 1, right: -1, bottom: -1 } : undefined}>
           <PresenceDot state={state} size={dot} label={`${name}: ${STATE_LABEL[state]}`} />
         </span>
       ) : null}
