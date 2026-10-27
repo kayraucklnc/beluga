@@ -2,6 +2,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { folderSize } from './disk.js';
+import { removeWorktreeKeepingBranch } from './others.js';
 import { ArchiveError, LONG_MS, RAW_ARGS, RAW_ENV, assertSettled, fingerprint, git, gitLiteral, ignoredByProject, ignoredIn, pack, run, snapshot, submoduleOnlyHere, submodulesIn, tryGit, unpackKeeping, untrackedDirs } from './archive-git.js';
 import { type RegenRule, regenRule, remakeSteps } from './regenerable.js';
 
@@ -175,8 +176,9 @@ async function checkKeepable(dir: string): Promise<{ submodules: boolean; empty:
  */
 async function removeFolder(repo: string, dir: string): Promise<boolean> {
   try {
-    await git(repo, ['worktree', 'remove', '--force', dir], undefined, LONG_MS);
-    return false;
+    // Set aside and deleted in the background: deleting a big folder in place froze the Mac.
+    await removeWorktreeKeepingBranch(repo, dir, true);
+    return existsSync(dir);
   } catch {
     await run('chmod', ['-R', 'u+w', dir], { cwd: repo, timeoutMs: LONG_MS }).catch(() => undefined);
     // Not rmSync: a big folder (node_modules) would freeze the daemon, and every window with it.

@@ -13,6 +13,7 @@ import { migrateMainConversations } from './main-migration.js';
 import { stopTestProcesses } from './test-procs.js';
 import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWorktree, dropArchive, freeSpace, planArchive, previewOf, readManifest, restoreWorktree } from './archive.js';
 import { worktreeOrigin } from './origin.js';
+import { deleteFolderInBackground, removeWorktreeKeepingBranch, sweepSetAside } from './others.js';
 import { moveToTrash } from './trash.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { MergeWait, Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
@@ -361,7 +362,13 @@ export class WorkspaceManager {
   }
 
   private startRefresh(): Promise<readonly Project[]> {
-    const run: Promise<readonly Project[]> = this.scan().finally(() => {
+    const run: Promise<readonly Project[]> = this.scan()
+      .then((projects) => {
+        // Worktree folders an earlier background delete couldn't finish sit next to the ones still here.
+        void sweepSetAside(new Set(projects.flatMap((p) => p.workspaces.filter((w) => w.kind === 'worktree').map((w) => path.dirname(w.path)))));
+        return projects;
+      })
+      .finally(() => {
       if (this.refreshing === run) this.refreshing = undefined;
     });
     this.refreshing = run;
@@ -887,11 +894,12 @@ export class WorkspaceManager {
       // (its uncommitted work isn't ours to discard) and keep its branch.
       const foreign = ws.external || !real(ws.path).startsWith(real(this.store.workspacesDir) + path.sep);
       if (!ws.archived) await stopTestProcesses(ws.path, { leaving: true }).catch(() => 0);
-      if (!ws.archived && existsSync(ws.path) && (await isWorktreeOf(ws.projectRoot, ws.path))) await g.removeWorktree(ws.projectRoot, ws.path, !foreign);
+      // Set aside and deleted in the background: a big folder deleted in place froze the Mac (see removeWorktreeKeepingBranch).
+      if (!ws.archived && existsSync(ws.path) && (await isWorktreeOf(ws.projectRoot, ws.path))) await removeWorktreeKeepingBranch(ws.projectRoot, ws.path, !foreign);
       else if (!ws.archived) {
         // Git already let the folder go (an earlier delete stopped halfway): `worktree remove` would only say
         // "is not a working tree", so take what's left away here. Another tool's folder only when it's empty.
-        if (existsSync(ws.path) && (!foreign || !readdirSync(ws.path).length)) rmSync(ws.path, { recursive: true, force: true });
+        if (existsSync(ws.path) && (!foreign || !readdirSync(ws.path).length)) await deleteFolderInBackground(ws.path).catch(() => rmSync(ws.path, { recursive: true, force: true }));
         // Folder deleted by hand: forget it in git too, or the branch stays "checked out" and the worktree comes back.
         await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);
       }
@@ -922,7 +930,7 @@ export class WorkspaceManager {
         continue;
       }
       try {
-        await g.removeWorktree(project.root, ws.path, false);
+        await removeWorktreeKeepingBranch(project.root, ws.path, false);
         removed++;
       } catch {
         kept++;

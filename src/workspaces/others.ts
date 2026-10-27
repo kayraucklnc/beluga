@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, rename, rm, stat } from 'node:fs/promises';
+import { readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import * as g from './git.js';
 
@@ -133,6 +133,31 @@ function deleteInBackground(dir: string): void {
   deleting.add(job);
 }
 
+const SET_ASIDE = /^\..+\.removing-\d+$/;
+const asideOf = (dir: string): string => path.join(path.dirname(dir), `.${path.basename(dir)}.removing-${Date.now()}`);
+
+/** Delete a folder that isn't a worktree (any more) without waiting: set aside, then deleted in the background. */
+export async function deleteFolderInBackground(dir: string): Promise<void> {
+  if (!existsSync(dir)) return;
+  const aside = asideOf(dir);
+  await rename(dir, aside);
+  deleteInBackground(aside);
+}
+
+/**
+ * Finish what an earlier background delete couldn't (something still wrote in it, or Beluga quit
+ * first): the set-aside folders in these folders. Each folder looked in once per run.
+ */
+const swept = new Set<string>();
+export async function sweepSetAside(parents: Iterable<string>): Promise<void> {
+  for (const parent of parents) {
+    if (swept.has(parent)) continue;
+    swept.add(parent);
+    const names = await readdir(parent).catch(() => [] as string[]);
+    for (const name of names) if (SET_ASIDE.test(name)) deleteInBackground(path.join(parent, name));
+  }
+}
+
 /** Git would remove it as is: nothing uncommitted or untracked, no submodules, not locked. */
 async function cleanEnough(dir: string): Promise<boolean> {
   const admin = await adminDir(dir);
@@ -158,11 +183,11 @@ export async function removeWorktreeKeepingBranch(repo: string, dir: string, for
   }
   // Git's own checks still decide what may go without `force`: it refuses with its own message.
   if (!force && !(await cleanEnough(dir))) return g.removeWorktree(repo, dir, false);
-  const aside = path.join(path.dirname(dir), `.${path.basename(dir)}.removing-${Date.now()}`);
+  const aside = asideOf(dir);
   try {
     await rename(dir, aside);
   } catch {
-    return g.removeWorktree(repo, dir, force); // another disk, or something holds it: the slow way
+    return g.removeWorktree(repo, dir, force); // something holds it: the slow way
   }
   try {
     await g.removeWorktree(repo, dir, true);

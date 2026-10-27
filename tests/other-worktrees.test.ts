@@ -11,7 +11,7 @@ process.env.CLAUDE_CONFIG_DIR = CLAUDE_HOME;
 const { encodeProjectDir, findConversation, listConversations, pathVariants, samePath, sessionTitle } = await import('../src/agent/claude-sessions.js');
 const { findCreators, worktreeAddTargets } = await import('../src/agent/worktree-creators.js');
 const { describeOrigin, sourceFromPath, worktreeOrigin } = await import('../src/workspaces/origin.js');
-const { deletesSettled, removeWorktreeKeepingBranch, staleReason, worktreeFacts } = await import('../src/workspaces/others.js');
+const { deletesSettled, removeWorktreeKeepingBranch, staleReason, sweepSetAside, worktreeFacts } = await import('../src/workspaces/others.js');
 const { parseConductorRows, inConductorRoot } = await import('../src/workspaces/conductor.js');
 const { OtherWorktrees } = await import('../src/core/other-worktrees.js');
 const { WorkspaceManager } = await import('../src/workspaces/manager.js');
@@ -294,6 +294,16 @@ describe('worktrees from other tools, end to end in a real repo', () => {
     writeFileSync(path.join(base, 'dirty2', 'wip.txt'), 'x');
     await expect(removeWorktreeKeepingBranch(repo, path.join(base, 'dirty2'), false)).rejects.toThrow();
     expect(existsSync(path.join(base, 'dirty2', 'wip.txt'))).toBe(true);
+  });
+
+  it('finishes deleting what an earlier background delete left, and only that', async () => {
+    mkdirSync(path.join(base, '.old.removing-123', 'node_modules'), { recursive: true });
+    mkdirSync(path.join(base, '.keep-me'));
+    await sweepSetAside([base]);
+    await deletesSettled();
+    expect(existsSync(path.join(base, '.old.removing-123'))).toBe(false);
+    expect(existsSync(path.join(base, '.keep-me'))).toBe(true);
+    expect(existsSync(path.join(base, 'busy'))).toBe(true);
   });
 
   it("deleting one you've talked in from Beluga never deletes its branch or forces it", async () => {
