@@ -34,9 +34,12 @@ describe('mergePr / deleteRemoteBranch (gh stubbed)', () => {
     exec.impl = () => ({ stdout: '' });
     await mergePr('/code/auth', 42, { method: 'squash' });
     await mergePr('/code/auth', 42, { method: 'rebase', auto: true });
+    // Pinned to a commit (the sentinel's merge gate): GitHub refuses if the head moved.
+    await mergePr('/code/auth', 42, { method: 'squash', matchHead: 'abc123' });
     expect(exec.calls).toEqual([
       { cmd: 'gh', args: ['pr', 'merge', '42', '--squash'], cwd: '/code/auth' },
       { cmd: 'gh', args: ['pr', 'merge', '42', '--rebase', '--auto'], cwd: '/code/auth' },
+      { cmd: 'gh', args: ['pr', 'merge', '42', '--squash', '--match-head-commit', 'abc123'], cwd: '/code/auth' },
     ]);
   });
 
@@ -88,6 +91,7 @@ describe('parsePr: merge fields', () => {
     expect(parsePr(JSON.stringify({ number: 1, url: 'u', state: 'OPEN', mergeable: 'CONFLICTING', autoMergeRequest: { mergeMethod: 'SQUASH' } }))).toMatchObject({ conflicts: true, autoMerge: true });
     expect(parsePr(JSON.stringify({ number: 1, url: 'u', state: 'OPEN', mergeable: 'MERGEABLE', autoMergeRequest: null }))).not.toHaveProperty('conflicts');
     expect(parsePr(JSON.stringify({ number: 1, url: 'u', state: 'MERGED', mergeable: 'CONFLICTING', autoMergeRequest: {} }))).not.toHaveProperty('autoMerge');
+    expect(parsePr(JSON.stringify({ number: 1, url: 'u', state: 'OPEN', headRefOid: 'abc123' }))).toMatchObject({ head: 'abc123' });
   });
 });
 

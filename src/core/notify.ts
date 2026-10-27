@@ -12,7 +12,7 @@ import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
 
 /** What exactly happened, when the kind alone doesn't say (screens pick an icon by it). */
-export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test';
+export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test' | 'sentinel';
 
 export interface NoticeEvent {
   readonly kind: NoticeKind;

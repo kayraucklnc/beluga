@@ -32,6 +32,9 @@ const ALWAYS_OK = new Set([
   ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__beluga__${n}`),
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).
   ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
+  // Sentinels (core/sentinel): only your own runs have them; a new one starts paused until you turn it on,
+  // and a change to what one can do pauses it. sentinel_remove isn't here: deleting one asks you.
+  ...['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_update', 'sentinel_run', 'sentinel_pause'].map((n) => `mcp__beluga_sentinel__${n}`),
   // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
   ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).

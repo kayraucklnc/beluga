@@ -781,6 +781,36 @@ Then protect \`/api/payments\`.",
         "actions": [
           {
             "args": [
+              "run_f1",
+              "merge",
+            ],
+            "label": "Merge",
+            "method": "sentinel.decide",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "run_f1",
+              "skip",
+            ],
+            "label": "Not Now",
+            "method": "sentinel.decide",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000075,
+        "detail": "Checks passed · Claude’s review: ship, a two-line fix with a test
+Pull request #53",
+        "from": "Fix what broke",
+        "id": "sentinel:run_f1",
+        "kind": "decision",
+        "title": "Merge the fix for #48?",
+        "topic": "sentinel:sn_fix",
+      },
+      {
+        "actions": [
+          {
+            "args": [
               "q1",
               {
                 "answers": {
@@ -1176,6 +1206,128 @@ Then protect \`/api/payments\`.",
         "title": "Add auth",
         "topic": "plan:pl_auth",
         "total": 1,
+      },
+    ],
+  },
+  "sentinel:sn_fix": {
+    "icon": "wrench",
+    "id": "sn_fix",
+    "last": {
+      "at": 1760000000070,
+      "headline": "Merge the fix for #48?",
+      "state": "needs-you",
+    },
+    "live": true,
+    "name": "Fix what broke",
+    "needsYou": [
+      {
+        "actions": [
+          {
+            "args": [
+              "run_f1",
+              "merge",
+            ],
+            "label": "Merge",
+            "method": "sentinel.decide",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "run_f1",
+              "skip",
+            ],
+            "label": "Not Now",
+            "method": "sentinel.decide",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000075,
+        "detail": "Checks passed · Claude’s review: ship, a two-line fix with a test
+Pull request #53",
+        "from": "Fix what broke",
+        "id": "sentinel:run_f1",
+        "kind": "decision",
+        "title": "Merge the fix for #48?",
+        "topic": "sentinel:sn_fix",
+      },
+    ],
+    "paused": false,
+    "project": "landing",
+    "projectId": "p1",
+    "runs": [
+      {
+        "by": "CI failed on main",
+        "headline": "Merge the fix for #48?",
+        "id": "run_f1",
+        "pr": {
+          "number": 53,
+          "url": "https://github.com/acme/landing/pull/53",
+        },
+        "startedAt": 1760000000070,
+        "state": "needs-you",
+        "step": "Merge if acceptable",
+      },
+    ],
+    "sentence": "Only when you press Run",
+    "steps": [
+      {
+        "kind": "claude",
+        "name": "Find and fix it",
+      },
+      {
+        "kind": "pr",
+        "name": "Open a pull request",
+      },
+      {
+        "kind": "merge",
+        "name": "Merge if acceptable",
+      },
+    ],
+    "topic": "sentinel:sn_fix",
+  },
+  "sentinels": {
+    "enabled": true,
+    "recent": [
+      {
+        "at": 1760000000060,
+        "id": "run_b1",
+        "sentinelId": "sn_brief",
+        "state": "done",
+      },
+    ],
+    "sentinels": [
+      {
+        "icon": "calendar",
+        "id": "sn_brief",
+        "last": {
+          "at": 1760000000060,
+          "headline": "3 commits landed, CI is green",
+          "state": "done",
+        },
+        "live": false,
+        "name": "Morning brief",
+        "nextAt": 1760086400000,
+        "paused": false,
+        "project": "landing",
+        "projectId": "p1",
+        "sentence": "Every day at 7:00",
+        "topic": "sentinel:sn_brief",
+      },
+      {
+        "icon": "wrench",
+        "id": "sn_fix",
+        "last": {
+          "at": 1760000000070,
+          "headline": "Merge the fix for #48?",
+          "state": "needs-you",
+        },
+        "live": true,
+        "name": "Fix what broke",
+        "paused": false,
+        "project": "landing",
+        "projectId": "p1",
+        "sentence": "Only when you press Run",
+        "topic": "sentinel:sn_fix",
       },
     ],
   },

@@ -16,6 +16,7 @@ import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceC
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
 import { type FriendShareAction, type FriendShareSlice, initialFriendShare, reduceFriendShare } from './friend-share-store.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
+import { type SentinelAction, type SentinelSlice, initialSentinel, reduceSentinel } from './sentinel/model.js';
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type TeamAction, type TeamSlice, initialTeam, reduceTeam } from './team/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
@@ -323,7 +324,11 @@ export type View =
   | { readonly kind: 'team_plan'; readonly owner: string; readonly id: string }
 
   /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
-  | { readonly kind: 'worktrees'; readonly projectId?: string };
+  | { readonly kind: 'worktrees'; readonly projectId?: string }
+  /** Sentinel (Mac app, docs/sentinel.md): every sentinel (one project's, or Your Mac's: `projectId` 'mac'), one sentinel's page, and one run. */
+  | { readonly kind: 'sentinel'; readonly projectId?: string }
+  | { readonly kind: 'sentinel_page'; readonly id: string }
+  | { readonly kind: 'sentinel_run'; readonly runId: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
@@ -386,7 +391,7 @@ export interface MyShare {
  * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice, FriendShareSlice, TeamSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, SentinelSlice, PlansSlice, CompanionSlice, FriendShareSlice, TeamSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -546,6 +551,7 @@ export type Action =
   | GatewayAction
   | FriendShareAction
   | BoardAction
+  | SentinelAction
   | PlansAction
   | TeamAction
   | SupportAction;
@@ -625,6 +631,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialGateway,
     ...initialFriendShare,
     ...initialBoard,
+    ...initialSentinel,
     ...initialPlans,
     ...initialTeam,
     companion: { devices: [] },
@@ -1088,6 +1095,15 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'board_sync':
     case 'board_off':
       return { ...state, ...reduceBoard(state, action) };
+    case 'sentinel_init':
+    case 'sentinel_put':
+    case 'sentinel_remove':
+    case 'sentinel_run':
+    case 'sentinel_ask':
+    case 'sentinel_trouble':
+    case 'sentinel_webhook':
+    case 'sentinel_off':
+      return { ...state, ...reduceSentinel(state, action) };
     case 'plans_init':
     case 'plan_put':
     case 'plan_remove':

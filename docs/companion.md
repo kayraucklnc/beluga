@@ -215,6 +215,12 @@ step records of the turn, else the transcript Claude Code keeps of it) and, once
 it gave back, through `stripCode` like any answer of Claude's (never its prompt, its tools' input or
 output, or a file). A sub-agent Claude Code still sees working stays `running` in the view though its
 turn ended (one left working in the background). An older Mac's sheet shows the view's steps.
+1.21 (BLG-237) brought Sentinel (`SINCE.sentinel`, docs/sentinel.md): `sentinels` (every sentinel,
+its schedule in words, paused, its last run and next one) and `sentinel:<id>` (its steps by name,
+its last 30 runs with each report as an output ref, and its run waiting for your Merge). Run Now,
+Pause / Turn On and a run's report text are `sentinel.run` / `pause` / `runGet`; a merge waiting is
+a `decision` with Merge and Not Now (`sentinel.decide`); a run that ended where the sentinel
+notifies the phone is a `done` nudge collapsed as `sentinel:<id>`.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 

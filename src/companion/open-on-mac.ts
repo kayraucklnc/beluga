@@ -10,7 +10,7 @@ import { viewFor } from '../client/screen.js';
  */
 
 export interface OpenTarget {
-  /** A phone topic: `conv:…`, `plan:…`, `task:…`, `chat:…`, or a list (`work`, `plans`, `tasks`, `chats`, `people`, `home`). */
+  /** A phone topic: `conv:…`, `plan:…`, `task:…`, `chat:…`, `sentinel:…`, or a list (`work`, `plans`, `tasks`, `sentinels`, `chats`, `people`, `home`). */
   readonly topic?: string;
   /** A needs-you item's id, when it has no topic of its own ("request:<task>", "knock:<peer>", "join:<group>:<peer>"). */
   readonly need?: string;
@@ -48,6 +48,11 @@ export function macViewFor(state: DomainState, target: OpenTarget): View | undef
       return state.board.issues.some((i) => i.id === id) ? { kind: 'task', id } : undefined;
     }
     if (topic.startsWith('chat:')) return { kind: 'conversation', id: topic.slice(5) };
+    if (topic.startsWith('sentinel:')) {
+      const id = topic.slice('sentinel:'.length);
+      return state.sentinel.items.some((i) => i.id === id) ? { kind: 'sentinel_page', id } : undefined;
+    }
+    if (topic === 'sentinels') return { kind: 'sentinel' };
     if (topic === 'tasks') return { kind: 'tasks' };
     if (topic === 'plans') return { kind: 'plans' };
     if (topic === 'work' || topic === 'home') return { kind: 'overview' };

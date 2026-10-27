@@ -647,6 +647,7 @@ class Store {
   }
   private knows(topic: Topic): boolean {
     if (isMacTopic(topic)) return this.supports('assistant');
+    if (topic === 'sentinels' || topic.startsWith('sentinel:')) return this.supports('sentinel');
     return topic === 'tasks' || topic.startsWith('task:') ? this.supports('tasks') : true;
   }
 

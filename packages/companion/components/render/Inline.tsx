@@ -1,10 +1,10 @@
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { ArrowDownRight, ArrowRight, ArrowUpRight, GitBranch, Workflow } from 'lucide-react-native';
+import { ArrowDownRight, ArrowRight, ArrowUpRight, GitBranch, Shield, Workflow } from 'lucide-react-native';
 import { Text, View } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
-import { useView } from '../../lib/hooks';
-import type { PlansView, WorkView } from '../../lib/link/protocol';
+import { useSupports, useView } from '../../lib/hooks';
+import type { PlansView, SentinelsView, WorkView } from '../../lib/link/protocol';
 import { type InlineElement, parseColor, readInline, relative, toneOf } from '../../lib/render';
 import { store } from '../../lib/store';
 import { color, ink, tint, type } from '../../lib/theme';
@@ -14,7 +14,7 @@ import { TaskChip } from './TaskChip';
 /**
  * The inline elements of docs/views.md, inside a sentence: an inline code span the Mac draws as
  * something (a color, a badge, key caps, progress, a change, a sparkline, a time, a task, a
- * worktree or a plan Your Mac started) is drawn
+ * worktree or a plan Your Mac started, a sentinel) is drawn
  * as it here, read by the same model (src/shared/render/inline-model.ts). Anything else stays code.
  */
 
@@ -114,6 +114,8 @@ export function InlineThing({ el }: { readonly el: InlineElement }) {
       return <WorktreeChip id={el.id} />;
     case 'plan':
       return <PlanChip id={el.id} />;
+    case 'sentinel':
+      return <SentinelChip id={el.id} />;
   }
 }
 
@@ -141,6 +143,21 @@ function PlanChip({ id }: { readonly id: string }) {
       <Workflow color={ink.butter} size={12} strokeWidth={2.4} />
       <Text numberOfLines={1} style={{ ...type.caption, color: ink.butter, fontWeight: '700', maxWidth: 180 }}>
         {plan?.title ?? 'Plan'}
+      </Text>
+    </Press>
+  );
+}
+
+/** A sentinel Claude set up or names (`sentinel:<id>`, 1.21): its name from Sentinel (live); a tap opens it. */
+function SentinelChip({ id }: { readonly id: string }) {
+  const on = useSupports('sentinel');
+  const list = useView<SentinelsView>(on ? 'sentinels' : undefined);
+  const s = list?.data.sentinels.find((x) => x.id === id);
+  return (
+    <Press haptics={false} disabled={!on} onPress={() => router.push(`/sentinel/${encodeURIComponent(id)}`)} style={[pill, { backgroundColor: tint.sky }]}>
+      <Shield color={ink.sky} size={12} strokeWidth={2.4} />
+      <Text numberOfLines={1} style={{ ...type.caption, color: ink.sky, fontWeight: '700', maxWidth: 180 }}>
+        {s?.name ?? 'Sentinel'}
       </Text>
     </Press>
   );

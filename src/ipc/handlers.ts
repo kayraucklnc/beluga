@@ -19,6 +19,7 @@ import { CLAUDE_CODE_HANDLERS } from './claude-code-handlers.js';
 import { STEPS_HANDLERS } from './steps-handlers.js';
 import { GATEWAY_HANDLERS } from './gateway-handlers.js';
 import { BOARD_HANDLERS } from './board-handlers.js';
+import { SENTINEL_HANDLERS } from './sentinel-handlers.js';
 import { PLANS_HANDLERS } from './plans-handlers.js';
 import { ISSUES_HANDLERS } from './issues-handlers.js';
 import { CI_HANDLERS } from './ci-handlers.js';
@@ -305,6 +306,7 @@ export const HANDLERS = {
   ...STEPS_HANDLERS,
   ...GATEWAY_HANDLERS,
   ...BOARD_HANDLERS,
+  ...SENTINEL_HANDLERS,
   ...PLANS_HANDLERS,
   ...ISSUES_HANDLERS,
   ...CI_HANDLERS,

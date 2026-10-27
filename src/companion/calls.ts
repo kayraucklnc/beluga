@@ -24,7 +24,9 @@ export const IconResult = z.object({ sum: z.string(), mime: z.string(), b64: z.s
 export const TaskDraftResult = z.object({ title: z.string(), goal: z.string(), acceptance: z.array(z.string()), labels: z.array(z.string()), priority: z.enum(['urgent', 'high', 'medium', 'low']).optional() });
 export type TaskDraftResult = z.infer<typeof TaskDraftResult>;
 /** What `put` answers: a piece taken, then the file's ref. */
-export const PutResult = z.union([z.object({ received: z.number().int().min(0) }), z.object({ ref: z.string() })]);
+/** A sentinel's run as the phone reads it (src/core/sentinel/model.ts RunSummary; more fields pass through). */
+export const SentinelRunResult = z.object({ id: z.string(), sentinelId: z.string(), state: z.string(), startedAt: z.number(), headline: z.string() }).passthrough();
+export const PutResult =z.union([z.object({ received: z.number().int().min(0) }), z.object({ ref: z.string() })]);
 
 export const PhoneCalls = {
   'session.submit': entry('session.submit', done),
@@ -127,6 +129,13 @@ export const PhoneCalls = {
   'companion.voice': entry('companion.voice', VoiceMacView),
   'companion.voicePrepare': entry('companion.voicePrepare', VoiceMacView),
   'companion.transcribe': entry('companion.transcribe', TranscriptView),
+  // Sentinel (docs/sentinel.md): Run Now, Pause / Resume, a sentinel's runs, one run with its
+  // report, and Merge / Not Now on a run waiting for you.
+  'sentinel.run': entry('sentinel.run', SentinelRunResult),
+  'sentinel.pause': entry('sentinel.pause', done),
+  'sentinel.runs': entry('sentinel.runs', z.array(SentinelRunResult)),
+  'sentinel.runGet': entry('sentinel.runGet', z.object({ run: SentinelRunResult, sentinel: z.object({ id: z.string(), name: z.string() }).optional(), report: z.string().optional() }).passthrough()),
+  'sentinel.decide': entry('sentinel.decide', SentinelRunResult),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;

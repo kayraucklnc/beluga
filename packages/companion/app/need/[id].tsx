@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { openOnMac } from '../../lib/mac';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Infinity as Always, MessageSquare, Monitor, Workflow } from 'lucide-react-native';
+import { Infinity as Always, MessageSquare, Monitor, Shield, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
 import { Platform, ScrollView, TextInput, View } from 'react-native';
 import { chatHref, convHref } from '../../components/Conv';
@@ -48,12 +48,12 @@ export default function Need() {
               {n.topic ? (
                 <Row
                   first={!always}
-                  Icon={n.topic.startsWith('plan:') ? Workflow : MessageSquare}
+                  Icon={n.topic.startsWith('plan:') ? Workflow : n.topic.startsWith('sentinel:') ? Shield : MessageSquare}
                   tone="sky"
-                  label={n.topic.startsWith('plan:') ? 'Open the plan' : 'Open the conversation'}
+                  label={n.topic.startsWith('plan:') ? 'Open the plan' : n.topic.startsWith('sentinel:') ? 'Open the sentinel' : 'Open the conversation'}
                   onPress={() => {
                     const t = n.topic!;
-                    close(() => router.push(t.startsWith('plan:') ? `/plan/${t.slice(5)}` : t.startsWith('chat:') ? chatHref(t) : convHref(t)));
+                    close(() => router.push(t.startsWith('plan:') ? `/plan/${t.slice(5)}` : t.startsWith('sentinel:') ? `/sentinel/${encodeURIComponent(t.slice(9))}` : t.startsWith('chat:') ? chatHref(t) : convHref(t)));
                   }}
                 />
               ) : null}

@@ -178,6 +178,7 @@ export function Toasts() {
               store.dismissToast(t.id);
               if (t.topic?.startsWith('conv:')) router.push(`/conv/${encodeURIComponent(t.topic.slice(5))}`);
               else if (t.topic?.startsWith('chat:')) router.push(`/chat/${encodeURIComponent(t.topic.slice(5))}`);
+              else if (t.topic?.startsWith('sentinel:')) router.push(`/sentinel/${encodeURIComponent(t.topic.slice(9))}`);
             }}
           >
             <Card r={18} style={{ paddingVertical: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>

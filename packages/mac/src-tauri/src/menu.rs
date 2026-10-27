@@ -168,6 +168,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item(app, "go-issues", "Issues", None)?,
             // Its GitHub Actions: runs as they go, workflows as graphs.
             &item(app, "go-actions", "Actions", None)?,
+            // Sentinel: watchers on a schedule (docs/sentinel.md).
+            &item(app, "go-sentinel", "Sentinel", None)?,
             &item(app, "go-room", "Chat", Some("Alt+3"))?,
             &item(app, "go-search", "Search", Some("Alt+4"))?,
             &item(app, "go-usage", "Usage", Some("Alt+5"))?,

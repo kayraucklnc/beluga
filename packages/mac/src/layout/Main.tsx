@@ -32,6 +32,9 @@ const ActionsView = lazy(() => import('../ci/ActionsView.js').then((m) => ({ def
 const RunPage = lazy(() => import('../ci/RunPage.js').then((m) => ({ default: m.RunPage })));
 const PlansView = lazy(() => import('../plans/PlansView.js').then((m) => ({ default: m.PlansView })));
 const PlanPage = lazy(() => import('../plans/PlanPage.js').then((m) => ({ default: m.PlanPage })));
+const SentinelView = lazy(() => import('../sentinel/SentinelView.js').then((m) => ({ default: m.SentinelView })));
+const SentinelPage = lazy(() => import('../sentinel/SentinelPage.js').then((m) => ({ default: m.SentinelPage })));
+const RunPage = lazy(() => import('../sentinel/RunPage.js').then((m) => ({ default: m.RunPage })));
 const PhoneView = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhoneView })));
 
 /** A worktree being made: its page shows at once, and becomes its conversation when git is done. */
@@ -100,6 +103,12 @@ function Route() {
       return <PlanPage key={view.id} id={view.id} task={view.task} />;
     case 'team_plan':
       return <WorkFrame page="plans"><SharedPlanPage key={`${view.owner}/${view.id}`} owner={view.owner} id={view.id} /></WorkFrame>;
+    case 'sentinel':
+      return <SentinelView />;
+    case 'sentinel_page':
+      return <SentinelPage key={view.id} id={view.id} />;
+    case 'sentinel_run':
+      return <RunPage key={view.runId} runId={view.runId} />;
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':

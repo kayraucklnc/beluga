@@ -277,6 +277,25 @@ export function Toolbar() {
     );
   }
 
+  if (view.kind === 'sentinel') return <Shell headerRef={headerRef} title={<span className={s.name}>Sentinel</span>} subtitle={<span className={s.meta}>Watchers that run on a schedule or when you press Run, and leave a report</span>} />;
+
+  if (view.kind === 'sentinel_page' || view.kind === 'sentinel_run') {
+    const run = view.kind === 'sentinel_run' ? state.sentinel.runs.find((r) => r.id === view.runId) : undefined;
+    const item = state.sentinel.items.find((x) => x.id === (view.kind === 'sentinel_page' ? view.id : run?.sentinelId));
+    const project = item?.projectId ? state.projects.find((p) => p.id === item.projectId) : undefined;
+    return (
+      <Shell
+        headerRef={headerRef}
+        title={
+          <>
+            <span className={s.crumb}>{project?.name ?? (item ? 'Your Mac' : 'Sentinel')}</span>
+            <span className={s.name}>{view.kind === 'sentinel_run' ? `${item?.name ?? 'Sentinel'} · Run` : (item?.name ?? 'Sentinel')}</span>
+          </>
+        }
+      />
+    );
+  }
+
   if (view.kind === 'tasks') {
     // One project's tasks (its name is the switcher at the top of the view).
     return <Shell headerRef={headerRef} title={<span className={s.name}>Tasks</span>} />;

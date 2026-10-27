@@ -94,6 +94,9 @@ export interface AgentRunInput {
   /** Your phone (core/phone): tools to act on your own paired phone, and what Claude is told about it. */
   readonly phoneTools?: PhoneTools;
   readonly phoneBrief?: string;
+  /** Your own runs: sentinels (core/sentinel), and what Claude is told (a sentinel run's brief, or a short note). */
+  readonly sentinelTools?: SentinelTools;
+  readonly sentinelBrief?: string;
 }
 
 /** What Claude writes down about a piece of work: the task in its own words, never the request pasted in. */
@@ -107,6 +110,27 @@ export interface TaskDefinition {
   readonly estimate?: 1 | 2 | 3 | 5 | 8;
   readonly priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
   readonly labels?: readonly string[];
+}
+
+/** Sentinels as Claude's tools (agent/sentinel-tools.ts, server `beluga_sentinel`): each answers in words. */
+export interface SentinelTools {
+  /** Inside a sentinel run only: nothing to do this time, the run ends as skipped with the reason. */
+  stop?(reason: string): string;
+  list(): string;
+  /** A new sentinel from a draft (it starts paused; the answer links it as `sentinel:<id>`). */
+  create(draft: import('../core/sentinel/tool-draft.js').ToolDraft): string;
+  /** Runs one that's on (never a paused one). */
+  run(ref: string): string;
+  /** Pause-only: turning a sentinel on is the user's (the Mac or the phone), never Claude's. */
+  pause(ref: string): string;
+  /** The whole sentinel, as material. */
+  get(ref: string): string;
+  /** Change it (a change to what it can do pauses one that was on). */
+  update(ref: string, patch: import('../core/sentinel/tool-draft.js').ToolPatch): string;
+  /** Delete it (through your approval: never in ALWAYS_OK). */
+  remove(ref: string): string;
+  /** This conversation changes that sentinel (sentinel.ask): its id. */
+  readonly asking?: string;
 }
 
 /** A plan as Claude's tools (agent/plan-tools.ts, server `beluga_plan`): each answers in words. */
@@ -333,6 +357,8 @@ export interface AgentBackend {
   workOutScripts?(dir: string, want: { setup: boolean; run: boolean }): Promise<WorkedOutScripts | undefined>;
   /** A task written from a description: title, goal, criteria, labels from the board's own (Sonnet). */
   draftTask?(text: string, ctx: DraftContext): Promise<TaskDraft | undefined>;
+  /** A pull request reviewed before a sentinel merges it: ship or hold, in one sentence (a small model, read-only). */
+  reviewPr?(input: import('./pr-reviewer.js').PrReviewInput): Promise<import('./pr-reviewer.js').PrReview | undefined>;
   /** Models this Claude Code offers, for the model picker. */
   listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
 }
