@@ -12,6 +12,7 @@ import { ACCENTS, type Accent, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EnvironmentSettings } from './EnvironmentSettings.js';
 import { ContextSettings } from './ContextSettings.js';
 import { ParallelSettings } from './ParallelSettings.js';
+import { McpSettings } from './McpSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { VoiceSettings } from './VoiceSettings.js';
@@ -192,6 +193,7 @@ function ClaudePane() {
           <Switch label="Self approval" on={p.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
         </Row>
       </Group>
+      <McpSettings />
       <Group title="In the chat">
         <Row label="Sub-agents">
           <Select

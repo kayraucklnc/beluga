@@ -30,6 +30,8 @@ import { ViewShelf, createViewTools } from './view-tools.js';
 import { createTaskTools } from './task-tools.js';
 import { createMacTools } from './mac-tools.js';
 import { createPhoneTools } from './phone-tools.js';
+import { ownerMcpServers } from './owner-mcp.js';
+import { McpConnect, claudeMcpSession } from './mcp-connect.js';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, RunProcess, Steer } from './types.js';
 import { keepLines, trackedSpawn } from './claude-process.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
@@ -157,6 +159,7 @@ function showThinking(q: unknown): void {
  */
 export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
   let sessionId: string | undefined;
+  const mcp = new McpConnect(claudeMcpSession(opts.claudePath));
 
   return {
     async run(input: AgentRunInput): Promise<string> {
@@ -205,7 +208,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
+        // Your own MCP servers first, so a name of Beluga's always means Beluga's.
+        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -535,6 +539,11 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     workOutScripts: (dir: string, want: { setup: boolean; run: boolean }) => workOutScripts(dir, want, { claudePath: opts.claudePath }),
     draftTask: (text, ctx) => draftTask(text, ctx, { cwd: opts.cwd, ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
     reviewPr: (input) => reviewPr(input, { ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
+
+    // Your MCP servers (BLG-251): the room's folder first, where Claude Code starts, then your projects'.
+    mcpServers: (projects) => mcp.list([opts.cwd, ...projects]),
+    mcpSignIn: (projects, name) => mcp.signIn([opts.cwd, ...projects], name),
+    mcpSignedIn: (name) => mcp.signedIn(name),
 
     /** Ask Claude Code which models it offers (no prompt is sent). */
     async listModels() {

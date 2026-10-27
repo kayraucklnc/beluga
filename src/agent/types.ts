@@ -30,6 +30,8 @@ export interface AgentRunInput {
   readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Your environment variables for this run, over Beluga's own (only for runs you asked for). */
   readonly env?: Readonly<Record<string, string>>;
+  /** Your own runs: your own MCP servers from Claude Code (agent/owner-mcp.ts); never a friend's or a guest's. */
+  readonly ownerMcp?: boolean;
   /** Auto-compact threshold (percent) for Claude Code's own compaction; unset: auto-compact is off. */
   readonly autoCompactAt?: number;
   /** A folder (relative to the run's folder, git-ignored) for screenshots and scratch output; the owner watches it live. */
@@ -400,6 +402,12 @@ export interface AgentBackend {
   reviewPr?(input: import('./pr-reviewer.js').PrReviewInput): Promise<import('./pr-reviewer.js').PrReview | undefined>;
   /** Models this Claude Code offers, for the model picker. */
   listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
+  /** Your MCP servers for these project folders, with how each is now (agent/mcp-connect.ts). */
+  mcpServers?(projects: readonly string[]): Promise<readonly import('../shared/mcp.js').McpServerRow[]>;
+  /** Start signing in to one of them: the page to open in your browser. */
+  mcpSignIn?(projects: readonly string[], name: string): Promise<import('../shared/mcp.js').McpSignIn>;
+  /** Waits for that sign-in: true once connected, false when it gave up, undefined when none is waiting. */
+  mcpSignedIn?(name: string): Promise<boolean | undefined>;
 }
 
 /** One person as the agent sees them in list_peers. */

@@ -1166,6 +1166,8 @@ export class AgentHost {
           if (send) lane.waiting = lane.waiting.filter((w) => !this.sendFollowUp(lane, w.from, w.body));
         },
         ...this.modelFor(place?.model),
+        // Your MCP servers (your logins: Figma, Linear…) are for runs you asked for, never a friend's.
+        ...(from === this.selfId ? { ownerMcp: true } : {}),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
         // Your own runs also get adb on PATH (and ANDROID_SERIAL) when a phone is set up, so Bash can drive it (BLG-174).
         ...(from === this.selfId && (this.deps.envFor || phone?.env) ? { env: { ...this.deps.envFor?.(body.channel, place?.cwd), ...(phone?.env ?? {}), ...tag } } : worktree ? { env: tag } : {}),
