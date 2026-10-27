@@ -1,5 +1,6 @@
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { type ButtonHTMLAttributes, type ReactNode, forwardRef } from 'react';
+import { useAvatarUrl } from '../lib/avatars.js';
 import { DotMatrix } from './DotMatrix.js';
 import { Icon, type IconName } from './Icon.js';
 import s from './ui.module.css';
@@ -115,9 +116,14 @@ const NOBODY = new Set(['claude-code']);
  */
 export const claudeColor = (owner: string | undefined): string | undefined => (owner && !NOBODY.has(owner) ? personColor(owner) : undefined);
 
-/** A person's initial in their color; their Claude gets its mark (the Beluga prompt), tinted the same. */
+/**
+ * A person's profile picture (lib/avatars.ts), or their initial in their color until there is one;
+ * their Claude gets its mark (the Beluga prompt), tinted the same.
+ */
 export function Avatar({ name, id, claude, size = 22 }: { name: string; id: string; claude?: boolean; size?: number }) {
+  const picture = useAvatarUrl(id, claude);
   const tint = claude ? claudeColor(id) : undefined;
+  if (picture) return <img className={cx(s.avatar, s.avatarPicture)} src={picture} width={size} height={size} alt="" draggable={false} aria-hidden="true" />;
   return (
     <span
       className={cx(s.avatar, claude && s.avatarClaude)}

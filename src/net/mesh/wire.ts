@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AVATAR_MAX } from './avatars.js';
 import { NameSchema, PeerIdSchema, PresenceSchema, ProfileSchema } from './schemas.js';
 
 /**
@@ -17,7 +18,10 @@ const msgId = z.string().regex(/^[\w-]{8,64}$/);
 const tid = z.number().int().min(0).max(2 ** 31);
 
 export const LinkMessage = z.discriminatedUnion('t', [
-  /** `app`, `can`: their Beluga's version and what it does (net/mesh/features.ts); Macs from before them send neither. */
+  /**
+   * `app`, `can`: their Beluga's version and what it does (net/mesh/features.ts); Macs from before them send neither.
+   * `avatar`: the checksum of their profile picture (net/mesh/avatars.ts); said again when it changes, left out when there's none.
+   */
   z.object({
     t: z.literal('hello'),
     proto: z.number().int(),
@@ -25,6 +29,7 @@ export const LinkMessage = z.discriminatedUnion('t', [
     presence: PresenceSchema,
     app: z.string().max(64).optional(),
     can: z.array(z.string().max(40)).max(64).optional(),
+    avatar: hex64.optional(),
   }),
   z.object({ t: z.literal('presence'), presence: PresenceSchema }),
   /** A direct message (end-to-end: the link is a Noise channel between the two of you). */
@@ -35,6 +40,9 @@ export const LinkMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('f_get'), rid: msgId, sha: hex64, g: groupId.optional(), off: z.number().int().min(0), len: z.number().int().min(1).max(FILE_PIECE) }),
   z.object({ t: z.literal('f_data'), rid: msgId, off: z.number().int().min(0), d: z.string().max(Math.ceil(FILE_PIECE / 3) * 4) }),
   z.object({ t: z.literal('f_err'), rid: msgId, off: z.number().int().min(0), e: z.string().max(200) }),
+  /** Profile pictures: ask for the one someone said is theirs; they answer with its bytes (base64), or nothing. */
+  z.object({ t: z.literal('av_get'), sha: hex64 }),
+  z.object({ t: z.literal('av_data'), sha: hex64, d: z.string().max(Math.ceil(AVATAR_MAX / 3) * 4) }),
   z.object({ t: z.literal('dm_ack'), id: msgId }),
   /** The newest entries I have of a group we're both in. */
   z.object({ t: z.literal('g_heads'), group: groupId, heads: z.array(hex64).max(64) }),

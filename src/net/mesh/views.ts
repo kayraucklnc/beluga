@@ -28,6 +28,8 @@ export interface PersonView {
   readonly beluga?: { readonly version: string; readonly can: readonly string[] };
   /** Your two Macs speak different network versions, so they can't link: who needs to update. */
   readonly update?: 'them' | 'you';
+  /** Their profile picture's checksum, once it's here (`network.avatar.get` gives its bytes). */
+  readonly avatar?: string;
 }
 
 /** A file shared in a chat: who has it is found by its checksum; the bytes come Mac to Mac. */
@@ -173,6 +175,8 @@ export interface NetworkSelf {
   /** What you chose (others see "offline" while you appear offline). */
   readonly presence: Presence;
   readonly appearOffline: boolean;
+  /** Your profile picture's checksum, if you set one. */
+  readonly avatar?: string;
 }
 
 /** Everything about the network except the messages (they're kept per conversation). */

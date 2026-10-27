@@ -240,6 +240,9 @@ export const PHONE: Record<Method, Side> = {
   'network.groups.decline': 'phone',
   'network.presence.set': 'phone',
   'network.presence.get': 'phone',
+  // Setting your picture is the Mac's (Settings); the phone can show everyone's.
+  'network.avatar.set': 'mac',
+  'network.avatar.get': 'phone',
   'network.post': 'phone',
   'network.files.add': 'mac',
   'network.files.addData': 'phone',

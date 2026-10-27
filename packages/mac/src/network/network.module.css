@@ -77,8 +77,9 @@
   opacity: 0.55;
 }
 
-.stack {
+.avatarStack {
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
 }
 .stackItem {

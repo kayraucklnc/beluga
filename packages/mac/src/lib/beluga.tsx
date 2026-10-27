@@ -79,6 +79,11 @@ export function BelugaProvider({ client, children }: { client: SocketClient; chi
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/** The same, or undefined outside a BelugaProvider (parts that also draw in previews and tests). */
+export function useMaybeBeluga(): Beluga | undefined {
+  return useContext(Ctx) ?? undefined;
+}
+
 export function useBeluga(): Beluga {
   const k = useContext(Ctx);
   if (!k) throw new Error('useBeluga outside BelugaProvider');
@@ -136,6 +141,13 @@ export function useApp<T>(pick: (s: AppState) => T, equal?: (a: T, b: T) => bool
     return next;
   });
 }
+
+/** useApp outside a BelugaProvider too: `fallback` there. */
+export function useMaybeApp<T>(pick: (s: AppState) => T, fallback: T): T {
+  const store = useContext(Ctx)?.client.store;
+  return useSyncExternalStore(store ? viewSubscribe(store) : noSubscribe, () => (store ? pick(store.getState()) : fallback));
+}
+const noSubscribe = (): (() => void) => () => undefined;
 
 export function useUi<T>(pick: (s: MacUi) => T): T {
   const { ui } = useBeluga();
