@@ -36,7 +36,7 @@ test('a card says who is on it, and moves while their Claude works', async ({ pa
   await expect(page.getByRole('button', { name: 'Stop Claude' })).toBeVisible({ timeout: 10_000 });
   if (SHOT) await page.screenshot({ path: `${SHOT}-conv.png` });
   column = await openBoard(page);
-  await expect(card()).toContainText(/You · (?!on it)/, { timeout: 15_000 });
+  await expect(card()).toContainText(/You · working/, { timeout: 15_000 });
   if (SHOT) {
     await page.mouse.move(0, 0);
     // Frames of the card for a GIF (the ring turning, the line moving).

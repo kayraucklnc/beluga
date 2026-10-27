@@ -131,9 +131,9 @@ export function OnItLine({ issue, self }: { issue: Issue; self: { readonly id: s
   const worktree = useApp((s) => (last && STATUS_INFO[issue.status].open && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
   const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined));
+  // What it's doing is only in the tooltip, as of now: the card just says working (no ticking step and timer on every card).
   const pulse = running ? pulseOf(run, false, undefined) : undefined;
-  const now = useClock(pulse?.kind === 'working' || pulse?.kind === 'command');
-  const doing = pulse ? pulseWords(pulse, now).sub : undefined;
+  const doing = pulse ? pulseWords(pulse, Date.now()).sub : undefined;
   const mates = useApp((s) => (STATUS_INFO[issue.status].open ? workingOn(s.team, issue.id) : NONE), sameDeep);
   const people = onIt(self, { here: Boolean(worktree), running }, mates);
   if (!people.length) return null;
@@ -149,7 +149,7 @@ export function OnItLine({ issue, self }: { issue: Issue; self: { readonly id: s
           </Tip>
         ))}
       </span>
-      <span className={t.onItWords}>{onItWords(people, doing)}</span>
+      <span className={t.onItWords}>{onItWords(people)}</span>
       {live ? <span className={t.onItSheen} aria-hidden="true" /> : null}
     </div>
   );

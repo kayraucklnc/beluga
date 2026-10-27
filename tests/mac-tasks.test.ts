@@ -117,7 +117,6 @@ describe('the Tasks view', () => {
     expect(onIt(me, { here: false, running: false }, [])).toEqual([]);
     const both = onIt(me, { here: true, running: true }, [{ peerId: 'p-me', name: 'Kay' }, { peerId: 'p-ata', name: 'ata' }]);
     expect(both.map((p) => [p.name, p.you, p.running])).toEqual([['Kay', true, true], ['ata', false, false]]);
-    expect(onItWords(both, 'Running npm test')).toBe('You and ata · Running npm test');
     expect(onItWords(both)).toBe('You and ata · working');
     expect(onItWords(onIt(me, { here: false, running: false }, [{ peerId: 'p-ata', name: 'ata' }]))).toBe('ata · on it');
     expect(onItWords(onIt(me, { here: false, running: false }, [{ peerId: 'a', name: 'a' }, { peerId: 'b', name: 'b' }, { peerId: 'c', name: 'c' }]))).toBe('a, b and 1 more · on it');

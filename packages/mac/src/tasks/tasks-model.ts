@@ -260,12 +260,12 @@ export function onIt(self: Person, mine: { readonly here: boolean; readonly runn
   return [...you, ...mates.filter((m) => m.peerId !== self.id).map((m) => ({ peerId: m.peerId, name: m.name, you: false, running: Boolean(m.running) }))];
 }
 
-/** "You · Running npm test", "Ata · working", "You and Ata · on it": a card's line for who's on it. */
-export function onItWords(people: readonly OnIt[], doing?: string): string {
+/** "You · working", "You and Ata · on it": a card's line for who's on it (what Claude is doing stays in the tooltip). */
+export function onItWords(people: readonly OnIt[]): string {
   if (!people.length) return '';
   const names = people.map((p) => (p.you ? 'You' : p.name));
   const who = names.length <= 2 ? names.join(' and ') : `${names[0]}, ${names[1]} and ${names.length - 2} more`;
-  return `${who} · ${doing || (people.some((p) => p.running) ? 'working' : 'on it')}`;
+  return `${who} · ${people.some((p) => p.running) ? 'working' : 'on it'}`;
 }
 
 /** One face's tooltip: whose Claude is at work, or whose worktree has it. */
