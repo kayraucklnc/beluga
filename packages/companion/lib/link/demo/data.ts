@@ -351,6 +351,31 @@ export function makeWorld(now = Date.now()): DemoWorld {
     ],
   };
 
+  // ---- the Sentinel chat (1.23, docs/sentinel.md §12): a question about the week, and Claude's answer
+  const sentinelChat: ConvView = {
+    topic: 'conv:sentinel-chat:main',
+    title: 'Sentinel chat',
+    project: 'Sentinel',
+    more: false,
+    canSend: true,
+    working: false,
+    needsYou: [],
+    turns: [
+      { id: 'sc1', who: 'you', name: 'You', ts: now - 50 * MIN, prose: { text: 'What did my sentinels find this week?', code: [] } },
+      {
+        id: 'sc2',
+        who: 'claude',
+        name: 'Claude',
+        ts: now - 50 * MIN,
+        endTs: now - 49 * MIN,
+        status: 'done',
+        steps: 2,
+        trail: [{ tool: 'tool', text: 'Listed your sentinels' }, { tool: 'tool', text: 'Read the numbers they keep' }],
+        prose: { text: 'A good week, with one thing to look at:\n\n- **Revenue** is up: $3,412 yesterday, the best day this week, and 6 new subscriptions.\n- **Site speed** slowed to about 610 ms for a day after Tuesday’s deploy, and is back near 380 ms.\n- **Nightly tests** is paused after three failures in a row: the checkout test times out on CI only.\n\nWant me to put the open pull requests on the Ops dashboard too?', code: [] },
+      },
+    ],
+  };
+
   // ---- tables Claude wrote as text, and an answer with many outputs (BLG-71)
   const forecastAnswer = [
     'October is tracking your Sept 30 forecast almost exactly: **$24,480** against **$24,500** (-0.1%). The first two weeks ran ahead; the third dipped when two annual plans renewed later than expected.',
@@ -435,7 +460,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     ],
   };
 
-  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now), loginBug, widgetPlanning, assistant, forecast].map((c) => [c.topic, c]));
+  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now), loginBug, widgetPlanning, assistant, forecast, sentinelChat].map((c) => [c.topic, c]));
 
   // ---- what needs you, one of each kind (and one this phone doesn't know)
   // Shaped exactly as src/companion/views.ts makes them (the same methods, args and templates).

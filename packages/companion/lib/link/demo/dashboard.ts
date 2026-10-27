@@ -35,8 +35,10 @@ interface Metric {
 type Ref = readonly [sentinelId: string, metric: string];
 interface Tile {
   id: string;
-  kind: 'number' | 'chart' | 'table' | 'text' | 'divider';
+  kind: 'number' | 'chart' | 'table' | 'output' | 'text' | 'divider';
   width: 1 | 2 | 3;
+  /** An output tile's latest export, as the Mac works it out (1.23). */
+  output?: DashboardTileView['output'];
   title?: string;
   metric?: Ref;
   metrics?: Ref[];
@@ -182,6 +184,8 @@ export function makeNumbers(now = Date.now()): DemoNumbers {
         t({ kind: 'chart', chart: 'area', metrics: [['sn_stripe', 'revenue']], title: 'Revenue this week' }),
         t({ kind: 'chart', chart: 'line', metrics: [['sn_yt', 'subscribers']] }),
         t({ kind: 'divider', title: 'What Claude said' }),
+        t({ kind: 'output', sentinelId: 'sn_stripe', title: 'Add it up', output: { look: 'markdown', text: '$3,412 yesterday, 6 new subscriptions, 1 failed payment\n\n- 20 charges, the largest $348\n- 1 declined card, nothing disputed' } }),
+        t({ kind: 'output', sentinelId: 'sn_yt', title: 'YouTube’s answer', output: { look: 'tree', text: JSON.stringify({ kind: 'youtube#channelListResponse', items: [{ id: 'UCdemo', statistics: { viewCount: '1482210', subscriberCount: '12304', videoCount: '213' } }] }, null, 2) } }),
         t({ kind: 'text', sentinelId: 'sn_stripe' }),
         t({ kind: 'table', metric: ['sn_jobs', 'last-jobs'] }),
       ],
@@ -322,6 +326,7 @@ function tileView(n: DemoNumbers, t: Tile, sentinels: Sentinels): DashboardTileV
     const columns = (m.columns?.length ? m.columns : Object.keys(m.rows[0] ?? {})).slice(0, 20);
     return { ...base, table: { columns, rows: m.rows.slice(0, 50).map((r) => columns.map((c) => r[c] ?? null)), total: m.rows.length }, ...(m.rowsAt ? { at: Math.round(m.rowsAt) } : {}) };
   }
+  if (t.kind === 'output') return { ...base, ...(t.output ? { output: t.output } : {}) };
   if (t.kind === 'text' && sn) {
     const last = sn.runs.find((r) => r.endedAt !== undefined);
     return { ...base, ...(last ? { text: last.headline.split('\n')[0]!, runId: last.id, at: Math.round(last.endedAt ?? last.startedAt) } : {}) };

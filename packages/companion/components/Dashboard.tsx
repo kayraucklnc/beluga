@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
-import { ChevronDown, ChevronRight, LayoutDashboard, Pin } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, LayoutDashboard, MessagesSquare, Pin } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { useSupports, useView } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
 import type { DashboardTileView, SentinelsView, Topic } from '../lib/link/protocol';
-import { type Column, parseView } from '../lib/render';
+import { type Column, parseView, readJson } from '../lib/render';
+import { convHref, Prose } from './Conv';
+import { JsonTree } from './render/JsonTree';
 import { store } from '../lib/store';
 import { color, radius, tint, type } from '../lib/theme';
 import { ChartView } from './render/Chart';
@@ -13,11 +15,12 @@ import { Spark } from './render/Inline';
 import { Card, Hairline, haptic, Press, Row, T } from './ui';
 
 /**
- * Numbers and dashboards on the phone (BLG-244, docs/sentinel.md §10): the tiles a Mac works out
- * (`DashboardView`), drawn with the phone's own parts: a number as a stat tile (its change in the
- * good / bad / quiet tone, a sparkline), a chart with the views' chart, a table's first rows, the
- * last headline of a sentinel, a divider. Home's row of three numbers and the list's Dashboards
- * rows live here too.
+ * Sentinel's dashboard on the phone (BLG-244, BLG-246, docs/sentinel.md §10): the tiles a Mac works
+ * out (`DashboardView`), drawn with the phone's own parts: a number as a stat tile (its change in
+ * the good / bad / quiet tone, a sparkline), a series with the views' chart (over time, or a kept
+ * array), a table's first rows, a step's latest output (what Claude wrote, a service's JSON as a
+ * tree or a table), the last headline of a sentinel, a divider. Home's row of three numbers, the
+ * Sentinel screen's Dashboards rows and its Chat row live here too.
  */
 
 export const dashboardHref = (id: string): string => `/dashboard/${encodeURIComponent(id)}`;
@@ -38,7 +41,7 @@ export const compareOf = (k: string | undefined): CompareKey => (COMPARES.find((
 export const toneInkOf = (tone: string | undefined): string => (tone === 'good' ? color.ok : tone === 'bad' ? color.error : color.text3);
 
 /** What a tile that can't draw says, quietly. */
-const STATE_WORDS: Record<string, string> = { paused: 'paused', gone: 'gone', waiting: 'waiting for its first run' };
+const STATE_WORDS: Record<string, string> = { paused: 'paused', draft: 'a draft: turn it on', gone: 'gone', waiting: 'waiting for its first run' };
 const stateWords = (state: string): string | undefined => (state === 'ok' ? undefined : (STATE_WORDS[state] ?? state));
 
 function TileHead({ t, right }: { readonly t: DashboardTileView; readonly right?: React.ReactNode }) {
@@ -109,6 +112,13 @@ function ChartTile({ t }: { readonly t: DashboardTileView }) {
   const view = useMemo(() => {
     const c = t.chart;
     if (!c?.series.length) return undefined;
+    const kind = c.kind === 'area' || c.kind === 'bar' ? c.kind : 'line';
+    // A kept array (1.23): each point's label along the bottom.
+    if (c.labels?.length) {
+      const s0 = c.series[0]!;
+      const parsed = parseView(JSON.stringify({ type: 'chart', chart: kind, x: 'x', y: [{ key: 'y', label: s0.label }], columns: [{ key: 'x', type: 'text' }, unitColumn('y', s0.label, c.unit)], data: s0.points.map(([i, v]) => ({ x: c.labels![i] ?? String(i + 1), y: v })), height: 170 }), 'chart');
+      return parsed.ok ? parsed.view : undefined;
+    }
     const byAt = new Map<number, Record<string, string | number | null>>();
     c.series.forEach((s, i) => {
       for (const [at, v] of s.points) {
@@ -118,7 +128,6 @@ function ChartTile({ t }: { readonly t: DashboardTileView }) {
       }
     });
     const rows = [...byAt.entries()].sort((a, b) => a[0] - b[0]).map(([, r]) => r);
-    const kind = c.kind === 'area' || c.kind === 'bar' ? c.kind : 'line';
     const parsed = parseView(
       JSON.stringify({
         type: 'chart',
@@ -146,9 +155,9 @@ function ChartTile({ t }: { readonly t: DashboardTileView }) {
 const FIRST_ROWS = 5;
 const cellText = (c: string | number | boolean | null): string => (c === null ? '' : typeof c === 'boolean' ? (c ? 'yes' : 'no') : typeof c === 'number' ? c.toLocaleString() : c);
 
-function TableTile({ t }: { readonly t: DashboardTileView }) {
+function TableTile({ t, rows: given }: { readonly t: DashboardTileView; readonly rows?: DashboardTileView['table'] }) {
   const [all, setAll] = useState(false);
-  const tb = t.table;
+  const tb = given ?? t.table;
   if (!tb) {
     return (
       <View style={box()}>
@@ -253,6 +262,57 @@ function TextTile({ t }: { readonly t: DashboardTileView }) {
   );
 }
 
+// ---- a step's latest output: what Claude wrote, a service's answer (a tree, or a table), text
+
+/** A JSON list of objects as a table's columns and rows (an output tile shown as a table). */
+function jsonTable(text: string): DashboardTileView['table'] | undefined {
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const list = Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v as Record<string, unknown>).find(Array.isArray) : undefined;
+  const rows = (list ?? []).filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object' && !Array.isArray(r));
+  if (!rows.length) return undefined;
+  const columns = [...new Set(rows.slice(0, 50).flatMap((r) => Object.keys(r)))].slice(0, 12);
+  const cell = (x: unknown): string | number | boolean | null => (x === null || x === undefined ? null : typeof x === 'number' || typeof x === 'boolean' ? x : typeof x === 'string' ? x.slice(0, 300) : JSON.stringify(x).slice(0, 300));
+  return { columns, rows: rows.slice(0, 50).map((r) => columns.map((c) => cell(r[c]))), total: rows.length };
+}
+
+function OutputTile({ t }: { readonly t: DashboardTileView }) {
+  const o = t.output;
+  const sentinel = t.topic?.startsWith('sentinel:') ? t.topic : undefined;
+  const doc = useMemo(() => (o && (o.look === 'tree' || o.look === 'table') ? readJson(o.text) : undefined), [o]);
+  const table = useMemo(() => (o?.look === 'table' ? jsonTable(o.text) : undefined), [o]);
+  if (o?.look === 'table' && table) return <TableTile t={t} rows={table} />;
+  return (
+    <View style={[box(), { opacity: t.state === 'ok' ? 1 : 0.8 }]}>
+      <TileHead t={t} />
+      {!o ? (
+        <T v="caption">{t.state === 'ok' ? 'No output yet: it shows after its step runs' : ''}</T>
+      ) : doc ? (
+        <JsonTree doc={doc} text={o.text} />
+      ) : o.look === 'markdown' ? (
+        <Prose prose={{ text: o.text, code: [] }} size={14.5} />
+      ) : (
+        <T v="callout" c={color.text2} selectable numberOfLines={t.tall ? 40 : 14}>
+          {o.text}
+        </T>
+      )}
+      {o?.cut ? <T v="caption">Shortened: the run on your Mac has all of it.</T> : null}
+      {sentinel ? (
+        <Press haptics={false} onPress={() => (haptic.tap(), router.push(sentinelPath(sentinel) as never))} accessibilityLabel={`Open ${t.sentinel ?? 'the sentinel'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}>
+          <T v="caption" c={color.info} style={{ fontWeight: '600' }}>
+            {t.sentinel ?? 'Its sentinel'}
+          </T>
+          <ChevronRight color={color.info} size={14} />
+        </Press>
+      ) : null}
+    </View>
+  );
+}
+
 // ---- the tiles, two columns on the phone: numbers half width, the rest full
 
 export function Tiles({ tiles, compare }: { readonly tiles: readonly DashboardTileView[]; readonly compare: CompareKey }) {
@@ -273,7 +333,7 @@ export function Tiles({ tiles, compare }: { readonly tiles: readonly DashboardTi
               );
             return (
               <View key={t.id} style={full}>
-                {t.kind === 'chart' ? <ChartTile t={t} /> : t.kind === 'table' ? <TableTile t={t} /> : t.kind === 'text' ? <TextTile t={t} /> : (
+                {t.kind === 'chart' || t.kind === 'series' ? <ChartTile t={t} /> : t.kind === 'table' ? <TableTile t={t} /> : t.kind === 'output' ? <OutputTile t={t} /> : t.kind === 'text' ? <TextTile t={t} /> : (
                   <View style={box()}>
                     <TileHead t={t} />
                     <T v="caption">Update Beluga on this phone to see this tile.</T>
@@ -361,6 +421,25 @@ export function DashboardRows() {
         {list.map((d, i) => (
           <Row key={d.id} first={i === 0} Icon={LayoutDashboard} tone="sky" label={d.name} {...(first && first.dashboard.id === d.id ? { sub: first.items.map((x) => `${x.label} ${x.value}`).join(' · ') } : {})} onPress={() => router.push(dashboardHref(d.id) as never)} />
         ))}
+      </Card>
+    </View>
+  );
+}
+
+// ---- the Sentinel screen's Chat: the Sentinel chat's open conversation (1.23, docs/sentinel.md §12)
+
+export function SentinelChatRow() {
+  const on = useSupports('sentinelChat');
+  const view = useView<SentinelsView>(on ? 'sentinels' : undefined);
+  const chat = view?.data.chat;
+  if (!on || !chat) return null;
+  return (
+    <View style={{ gap: 10 }}>
+      <T v="eyebrow" style={{ paddingHorizontal: 20 }}>
+        Chat
+      </T>
+      <Card style={{ marginHorizontal: 16 }}>
+        <Row first Icon={MessagesSquare} tone="lavender" label={chat.title} sub={chat.working ? 'Claude is working…' : (chat.last ?? 'Ask about your sentinels, or tell Claude what to watch')} onPress={() => router.push(convHref(chat.topic) as never)} />
       </Card>
     </View>
   );

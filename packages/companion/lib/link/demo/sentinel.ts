@@ -112,7 +112,8 @@ export function sentinelsView(d: DemoSentinels): SentinelsView {
     .flatMap((s) => s.runs.filter((r) => !isLive(r.state) && r.endedAt).map((r) => ({ id: r.id, sentinelId: s.summary.id, state: r.state, at: r.endedAt! })))
     .sort((a, b) => b.at - a.at)
     .slice(0, 20);
-  return { enabled: true, sentinels: d.items.map(summaryOf), recent, ...numbersOf(d.numbers, d.items) };
+  // The Sentinel chat's open conversation (1.23): the demo world's `conv:sentinel-chat:main`.
+  return { enabled: true, sentinels: d.items.map(summaryOf), recent, ...numbersOf(d.numbers, d.items), chat: { topic: 'conv:sentinel-chat:main', title: 'What did my sentinels find this week?', last: 'A good week, with one thing to look at: Site speed slowed for a day after Tuesday’s deploy.', lastAt: Date.now() - 49 * 60_000, working: false } };
 }
 
 export function sentinelPage(d: DemoSentinels, topic: Topic, needs: readonly NeedsYou[]): SentinelPageView | undefined {
