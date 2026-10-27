@@ -224,3 +224,57 @@ Built in, each `{ id, name, icon, line, sentinel: SentinelDraft }`; the window s
 | 2 | Steps `http` (with service presets), `pr`, `merge` (the gate, needs-you on Mac and phone), `message`, `friend`, `trigger`; the `after` trigger; Claude sets it up and changes it (`sentinel.ask`, `sentinel_update` / `sentinel_remove` / `sentinel_get`, the page's box, Describe it); access Ship. | 1 |
 | 3 | Event triggers: `beluga`, `github`, `stripe`, `uptime`, `sentry`, `webhook` (the tunnel), each with its cursor, its sentence and its page controls. | 1 |
 | 4 | All recipes with their prompts, e2e with screenshots, the README section and GIF, release notes, `docs/parity.md` complete. | 2, 3 |
+| 5 | Numbers and dashboards (§10): the `measure` step, metrics kept per sentinel, the Numbers card, the Dashboard page and its tiles, compare periods, Claude's `dashboard_*` tools, the phone's dashboard. | 1 |
+| 6 | Pipelines (§11): the steps drawn as a graph with live status, What Runs After What across sentinels, the run graph on a run's page. | 2 |
+
+---
+
+## 10. Numbers and dashboards (BLG-244)
+
+A sentinel that runs every day and fetches a number is most of a dashboard. The rest is keeping the numbers and a page to arrange them. The window says **Numbers** (on a sentinel's page) and **Dashboard** (the page); the code says `metric` and `dashboard`.
+
+### The `measure` step (window: **Keep the numbers**)
+
+A step that turns what a sentinel found into named numbers (or rows) and keeps them with the run's time.
+
+| `from` | What it reads | Fields |
+|---|---|---|
+| `previous` | The previous step's output: a bare number, JSON, CSV, or "name: value" lines | `pick`: metric name → JSON path or column (`$.subscribers`, `rows[0].count`, `customers`); empty `pick` takes every top-level number |
+| `source` | A view source, the same JSON views use (`sqlite`, `postgres`, `http`, `command`, `script`, `file`), run by the daemon with your environment | the source, and `pick` as above; a query that returns rows keeps the rows too (`rows`, up to 200), so "the last person who ran a job" is a table, not a number |
+| `claude` | Claude's step calls `sentinel_measure(name, value, unit?)` while it works ("look up the channel's subscribers and keep the number") | nothing: the Claude step before it does the measuring; the `measure` step only names and formats what came |
+
+Each metric: `name` (stable, `subscribers`), `label` ("YouTube subscribers"), `unit` (`count` · `currency:USD` · `percent` · `ms` · `bytes` · plain), `kind` (`number` · `rows`). Values are kept in `~/.beluga/sentinel/metrics/<sentinelId>/<name>.jsonl` (`{ at, value | rows, runId }`), one line per run, pruned to two years or 20 000 points. The state carries each metric's last 90 points and its last rows (`sentinel.metrics[sentinelId][name]`), never the files.
+
+**Compared to when.** Every number is shown with its change: against the previous run by default, or **vs yesterday · vs last week · vs last month** (the nearest point at or before then). A metric says which way is good (`better: 'up' | 'down' | 'none'`), so a drop in failed payments is green.
+
+### Numbers on a sentinel's page
+
+A **Numbers** card above History when the sentinel has metrics: each metric as a stat tile (`stats` view: label, value with its unit, the delta with its tone, a sparkline of the last 30 points), rows as a table that pages, and a compare `Segmented` (previous · yesterday · last week · last month) for the whole card. Clicking a tile opens a chart over time (`line` view) with the runs as points; a point opens its run.
+
+### The Dashboard page
+
+**Dashboard** sits under Sentinel in the sidebar (and ⌘K: Go to Dashboard). It's **your own selection**: tiles from any sentinel, any project, in one grid.
+
+- **Tiles**: a number (stat tile), a chart (one or several metrics over time, `line`/`area`/`bar`), a table (a `rows` metric), a text tile (the last run's headline, or a run's report), and a divider with a title. A tile names its sentinel and metric; one from a paused or deleted sentinel shows "paused" or "gone" quietly.
+- **Arranging**: tiles are 1, 2 or 3 columns wide, dragged into place (the board's drag); the grid is 6 columns; everything saves at once in `~/.beluga/dashboards.json`. Several dashboards (tabs at the top: "Revenue", "Ops", "Everything"); the first is made for you with every metric as a tile when the first metric arrives.
+- **Compare** at the top of the page sets every tile at once (previous · yesterday · last week · last month); a tile can pin its own.
+- **Fresh**: tiles update as sentinels run. **Refresh** runs every sentinel the dashboard draws from (Run Now on each, in order, one at a time) and shows "Fetching… 2 of 3".
+- **Add a tile**: a sheet listing metrics by sentinel and project, with a preview; or **Describe it** ("subscribers and failed payments side by side, compared to last week; a chart of signups this month") which Claude builds with its tools.
+- **Claude's tools** (`beluga_dashboard`, your own runs only): `dashboard_list`, `dashboard_add_tile(dashboard, tile)`, `dashboard_update_tile`, `dashboard_remove_tile`, `dashboard_create(name)`, `metric_list`, `metric_read(sentinel, name, since)` (so "what were subscribers a month ago" works in any chat), `sentinel_measure` (inside a run).
+- **The phone**: a `dashboard:<id>` topic and screen drawing the same tiles with the phone's native views (stats, chart, table already render there), the compare chips, pull to refresh = Refresh. Home shows the first dashboard's first three numbers as a row.
+- **Sharing**: tiles never carry secrets (a source's query, URL and headers stay on the sentinel). A dashboard can be exported as Markdown with views (Copy as Markdown) and, later, shared with a friend read-only over the friends' link.
+
+### Recipes for numbers
+
+**Customers this week** (postgres count, daily), **YouTube subscribers** (Call a service with `$YOUTUBE_KEY` → Keep the numbers `$.items[0].statistics.subscriberCount`, daily), **Stripe revenue** (from the Earnings connection, daily: revenue, new subscriptions, failed payments), **Last job run** (a query: who ran what last, as rows, hourly), **Site speed** (a script that times the home page, every 3 hours, `ms`, better: down), **Open issues and PRs** (gh counts, daily).
+
+---
+
+## 11. Pipelines (BLG-245)
+
+A sentinel whose steps are `script → script → http → claude → pr` is a pipeline, and a developer wants to see it as one.
+
+- **The steps as a graph** on a sentinel's page: a `beluga-graph` of its steps left to right, each node the step's kind and name, edges carrying what moves ("stdout", "JSON", "the diff"), and the run's live status on each node (the graph engine's `status`: active, done, failed, todo). It sits above the Steps card as a strip (fold it with a click); a node click unfolds that step in the list.
+- **The run's graph** on a run's page: the same graph with that run's states and durations, so a failed run shows where in red.
+- **What Runs After What**: a view in the Sentinel list's display `Segmented` (rows · graph, like Tasks' What Waits on What): every sentinel as a node, `after` and `trigger` edges between them, event sources (GitHub, Stripe, a URL, a webhook) as `external` nodes feeding in, dashboards as `storage` nodes fed by `measure` steps. The team's CI/CD, drawn.
+- Nothing new in the daemon beyond `sentinel.graph(id)` and `sentinel.runGraph(runId)` returning graph JSON built from the model (pure, tested), and the list's graph from the slice on the Mac.
