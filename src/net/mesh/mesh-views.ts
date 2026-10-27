@@ -22,6 +22,8 @@ export interface ViewContext {
   readonly belugaOf?: (peerId: string) => BelugaInfo | undefined;
   /** Your Macs speak different network versions: who needs to update. */
   readonly updateOf?: (peerId: string) => 'them' | 'you' | undefined;
+  /** Their profile picture's checksum, once its bytes are here. */
+  readonly avatarOf?: (peerId: string) => string | undefined;
 }
 
 export function person(ctx: ViewContext, peerId: string, name: string): PersonView {
@@ -29,7 +31,8 @@ export function person(ctx: ViewContext, peerId: string, name: string): PersonVi
   const presence = link ? (ctx.presenceOf(peerId) ?? ONLINE) : { state: 'offline' as const };
   const beluga = ctx.belugaOf?.(peerId);
   const update = ctx.updateOf?.(peerId);
-  return { peerId, name, online: Boolean(link) && presence.state !== 'offline', presence, ...(link ? { via: link.via } : {}), ...(beluga ? { beluga } : {}), ...(update ? { update } : {}) };
+  const avatar = ctx.avatarOf?.(peerId);
+  return { peerId, name, online: Boolean(link) && presence.state !== 'offline', presence, ...(link ? { via: link.via } : {}), ...(beluga ? { beluga } : {}), ...(update ? { update } : {}), ...(avatar ? { avatar } : {}) };
 }
 
 export function dmView(ctx: ViewContext, peerId: string, dm: Dm, status: DmStatus): MessageView {

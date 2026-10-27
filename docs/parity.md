@@ -378,6 +378,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `network.groups.decline` | ✓ group info › Asking to Join › Decline |
 | `network.presence.set` | ✓ your status (sidebar footer, menu bar, palette), Away when idle |
 | `network.presence.get` | ✓ the shared state’s `network.self` (no call needed) |
+| `network.avatar.set` | ✓ Settings › General, your picture beside your name |
+| `network.avatar.get` | ✓ every avatar (chats, headers, tasks, team), cached as data URLs |
 | `network.read` | ✓ opening a conversation reads it (the `conversation` view is shown); Mark as Read on a group |
 | `network.post` | ✓ a conversation's message box: words, files waiting in the box, and the Ask Claude menu (yours, everyone's, one person's); Send Again on an undelivered one |
 | `network.files.add` | ✓ the paper clip (Open panel), files dropped anywhere on a conversation |

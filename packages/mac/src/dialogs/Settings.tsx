@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
 import { EFFORTS } from '@beluga/shared/settings-schema.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
@@ -44,6 +44,80 @@ const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> 
   { id: 'about', label: 'About', icon: 'globe' },
 ];
 
+/** Your profile picture: friends and people in your groups get it once and keep it (net/mesh/avatars.ts). */
+function PictureRow() {
+  const api = useApi();
+  const me = useApp((st) => st.network.self);
+  const on = useApp((st) => st.network.enabled);
+  const fallbackName = useApp((st) => st.self?.name ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const input = useRef<HTMLInputElement>(null);
+  const run = (b64: string | null): void => {
+    setBusy(true);
+    setError(undefined);
+    api.network['avatar.set'](b64).then(
+      () => setBusy(false),
+      (err: unknown) => {
+        setBusy(false);
+        setError(err instanceof Error ? err.message : String(err));
+      },
+    );
+  };
+  const pick = async (file: File | undefined): Promise<void> => {
+    if (!file) return;
+    try {
+      run(await squarePicture(file));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const detail = !on ? 'Turn on the Beluga network to share a picture.' : (error ?? 'Friends and people in your groups see it, and keep a copy.');
+  return (
+    <Row label="Your picture" detail={detail}>
+      <span className={s.pictureRow}>
+        {me ? <Avatar name={me.name || fallbackName} id={me.peerId} size={32} /> : null}
+        <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/heic" hidden onChange={(e) => void pick(e.target.files?.[0]).finally(() => (e.target.value = ''))} />
+        <Button size="small" icon="image" disabled={!on || busy} onClick={() => input.current?.click()}>
+          {me?.avatar ? 'Change…' : 'Choose…'}
+        </Button>
+        {me?.avatar ? (
+          <Button size="small" variant="quiet" disabled={busy} onClick={() => run(null)}>
+            Remove
+          </Button>
+        ) : null}
+      </span>
+    </Row>
+  );
+}
+
+/** A picture cropped to its middle square and shrunk to 256 px, small enough to send (base64). */
+async function squarePicture(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file).catch(() => {
+    throw new Error("That picture couldn't be opened. Try a PNG or JPEG.");
+  });
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = Math.min(256, side);
+  const g = canvas.getContext('2d');
+  if (!g) throw new Error("That picture couldn't be drawn");
+  g.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const encode = (type: string, quality: number): Promise<Blob | null> => new Promise((done) => canvas.toBlob(done, type, quality));
+  // WebP where the browser writes it (WebKit doesn't: JPEG there), a little rougher until it fits.
+  for (const quality of [0.88, 0.78, 0.65, 0.5]) {
+    let blob = await encode('image/webp', quality);
+    if (blob?.type !== 'image/webp') blob = await encode('image/jpeg', quality);
+    if (blob && blob.size <= 90 * 1024) {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let bin = '';
+      for (const b of bytes) bin += String.fromCharCode(b);
+      return btoa(bin);
+    }
+  }
+  throw new Error('That picture is too big to send, even shrunk');
+}
+
 function General() {
   const api = useApi();
   const state = useApp((st) => st);
@@ -62,6 +136,7 @@ function General() {
             <input id="settings-name" aria-label="Your name" className={s.text} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name !== state.self?.name && void api.session.rename(name)} />
           </form>
         </Row>
+        <PictureRow />
         <Row label="Friends' requests for your Claude" detail="For people you haven't picked a trust level for.">
           <Select
             label="Default policy"

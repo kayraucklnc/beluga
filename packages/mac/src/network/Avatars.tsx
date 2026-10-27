@@ -48,7 +48,7 @@ export function AvatarStack({ people, size = 22, max = 4 }: { people: ReadonlyAr
   const shown = people.slice(0, max);
   const rest = people.length - shown.length;
   return (
-    <span className={s.stack} aria-hidden="true">
+    <span className={s.avatarStack} aria-hidden="true">
       {shown.map((p) => (
         <span key={p.peerId} className={s.stackItem}>
           <Avatar name={p.name} id={p.peerId} size={size} />
