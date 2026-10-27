@@ -554,6 +554,174 @@ Then protect \`/api/payments\`.",
     ],
     "working": true,
   },
+  "dashboard:db_rev": {
+    "compare": "previous",
+    "dashboards": [
+      {
+        "id": "db_rev",
+        "name": "Revenue",
+        "topic": "dashboard:db_rev",
+      },
+    ],
+    "id": "db_rev",
+    "name": "Revenue",
+    "refreshing": {
+      "done": 1,
+      "sentinel": "Morning brief",
+      "total": 2,
+    },
+    "tiles": [
+      {
+        "at": 1760000000060,
+        "deltas": {
+          "day": {
+            "change": "−3 (−25%)",
+            "tone": "good",
+          },
+          "month": {
+            "tone": "none",
+          },
+          "previous": {
+            "change": "−3 (−25%)",
+            "tone": "good",
+          },
+          "week": {
+            "change": "−5 (−35.7%)",
+            "tone": "good",
+          },
+        },
+        "id": "t1",
+        "kind": "number",
+        "pinned": "week",
+        "runId": "run_b1",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "title": "Open issues",
+        "topic": "sentinel:sn_brief",
+        "trend": [
+          14,
+          12,
+          9,
+        ],
+        "value": "9",
+        "width": 1,
+      },
+      {
+        "at": 1760000000060,
+        "deltas": {
+          "day": {
+            "tone": "none",
+          },
+          "month": {
+            "tone": "none",
+          },
+          "previous": {
+            "tone": "none",
+          },
+          "week": {
+            "tone": "none",
+          },
+        },
+        "id": "t2",
+        "kind": "number",
+        "runId": "run_b1",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "title": "Revenue",
+        "topic": "sentinel:sn_brief",
+        "trend": [
+          3400,
+        ],
+        "value": "$3,400",
+        "width": 1,
+      },
+      {
+        "chart": {
+          "kind": "line",
+          "series": [
+            {
+              "label": "Open issues",
+              "points": [
+                [
+                  1759395200000,
+                  14,
+                ],
+                [
+                  1759913600000,
+                  12,
+                ],
+                [
+                  1760000000060,
+                  9,
+                ],
+              ],
+            },
+          ],
+          "unit": "count",
+        },
+        "id": "t3",
+        "kind": "chart",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "title": "Open issues",
+        "topic": "sentinel:sn_brief",
+        "width": 3,
+      },
+      {
+        "at": 1760000000060,
+        "id": "t4",
+        "kind": "table",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "table": {
+          "columns": [
+            "who",
+            "job",
+          ],
+          "rows": [
+            [
+              "lena",
+              "deploy",
+            ],
+            [
+              "bob",
+              "tests",
+            ],
+          ],
+          "total": 2,
+        },
+        "title": "Last jobs",
+        "topic": "sentinel:sn_brief",
+        "width": 3,
+      },
+      {
+        "at": 1760000000060,
+        "id": "t5",
+        "kind": "text",
+        "runId": "run_b1",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "text": "3 commits landed, CI is green",
+        "title": "Morning brief",
+        "topic": "sentinel:sn_brief",
+        "width": 2,
+      },
+      {
+        "id": "t6",
+        "kind": "number",
+        "state": "gone",
+        "title": "x",
+        "width": 1,
+      },
+      {
+        "id": "t7",
+        "kind": "divider",
+        "state": "ok",
+        "title": "Money",
+        "width": 3,
+      },
+    ],
+  },
   "home": {
     "assistant": {
       "fresh": 1,
@@ -776,6 +944,36 @@ Then protect \`/api/payments\`.",
         "kind": "decision",
         "title": "Approve the plan “Add auth”?",
         "topic": "plan:pl_auth",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "run_f1",
+              "merge",
+            ],
+            "label": "Merge",
+            "method": "sentinel.decide",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "run_f1",
+              "skip",
+            ],
+            "label": "Not Now",
+            "method": "sentinel.decide",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000075,
+        "detail": "Checks passed · Claude’s review: ship, a two-line fix with a test
+Pull request #53",
+        "from": "Fix what broke",
+        "id": "sentinel:run_f1",
+        "kind": "decision",
+        "title": "Merge the fix for #48?",
+        "topic": "sentinel:sn_fix",
       },
       {
         "actions": [
@@ -1176,6 +1374,160 @@ Then protect \`/api/payments\`.",
         "title": "Add auth",
         "topic": "plan:pl_auth",
         "total": 1,
+      },
+    ],
+  },
+  "sentinel:sn_fix": {
+    "icon": "wrench",
+    "id": "sn_fix",
+    "last": {
+      "at": 1760000000070,
+      "headline": "Merge the fix for #48?",
+      "state": "needs-you",
+    },
+    "live": true,
+    "name": "Fix what broke",
+    "needsYou": [
+      {
+        "actions": [
+          {
+            "args": [
+              "run_f1",
+              "merge",
+            ],
+            "label": "Merge",
+            "method": "sentinel.decide",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "run_f1",
+              "skip",
+            ],
+            "label": "Not Now",
+            "method": "sentinel.decide",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000075,
+        "detail": "Checks passed · Claude’s review: ship, a two-line fix with a test
+Pull request #53",
+        "from": "Fix what broke",
+        "id": "sentinel:run_f1",
+        "kind": "decision",
+        "title": "Merge the fix for #48?",
+        "topic": "sentinel:sn_fix",
+      },
+    ],
+    "paused": false,
+    "project": "landing",
+    "projectId": "p1",
+    "runs": [
+      {
+        "by": "CI failed on main",
+        "headline": "Merge the fix for #48?",
+        "id": "run_f1",
+        "pr": {
+          "number": 53,
+          "url": "https://github.com/acme/landing/pull/53",
+        },
+        "startedAt": 1760000000070,
+        "state": "needs-you",
+        "step": "Merge if acceptable",
+      },
+    ],
+    "sentence": "Only when you press Run",
+    "steps": [
+      {
+        "kind": "claude",
+        "name": "Find and fix it",
+      },
+      {
+        "kind": "pr",
+        "name": "Open a pull request",
+      },
+      {
+        "kind": "merge",
+        "name": "Merge if acceptable",
+      },
+    ],
+    "topic": "sentinel:sn_fix",
+  },
+  "sentinels": {
+    "chat": {
+      "title": "Sentinel chat",
+      "topic": "conv:sentinel-chat:main",
+      "working": false,
+    },
+    "dashboards": [
+      {
+        "id": "db_rev",
+        "name": "Revenue",
+        "topic": "dashboard:db_rev",
+      },
+    ],
+    "enabled": true,
+    "numbers": {
+      "dashboard": {
+        "id": "db_rev",
+        "name": "Revenue",
+        "topic": "dashboard:db_rev",
+      },
+      "items": [
+        {
+          "change": "−5 (−35.7%)",
+          "label": "Open issues",
+          "tone": "good",
+          "value": "9",
+        },
+        {
+          "label": "Revenue",
+          "tone": "none",
+          "value": "$3,400",
+        },
+      ],
+    },
+    "recent": [
+      {
+        "at": 1760000000060,
+        "id": "run_b1",
+        "sentinelId": "sn_brief",
+        "state": "done",
+      },
+    ],
+    "sentinels": [
+      {
+        "icon": "calendar",
+        "id": "sn_brief",
+        "last": {
+          "at": 1760000000060,
+          "headline": "3 commits landed, CI is green",
+          "state": "done",
+        },
+        "live": false,
+        "name": "Morning brief",
+        "nextAt": 1760086400000,
+        "paused": false,
+        "project": "landing",
+        "projectId": "p1",
+        "sentence": "Every day at 7:00",
+        "topic": "sentinel:sn_brief",
+      },
+      {
+        "icon": "wrench",
+        "id": "sn_fix",
+        "last": {
+          "at": 1760000000070,
+          "headline": "Merge the fix for #48?",
+          "state": "needs-you",
+        },
+        "live": true,
+        "name": "Fix what broke",
+        "paused": false,
+        "project": "landing",
+        "projectId": "p1",
+        "sentence": "Only when you press Run",
+        "topic": "sentinel:sn_fix",
       },
     ],
   },

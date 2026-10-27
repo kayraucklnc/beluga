@@ -139,6 +139,23 @@ While Claude and its sub-agents work, they save what they produce along the way 
 
 ---
 
+## Sentinel: Claude keeps watch
+
+A **sentinel** runs when something is due or happens, does a few steps in order, and leaves a report. Every morning at seven, Claude reads what changed and writes a brief for your phone. When CI fails, Claude fixes it and opens a pull request. When Sentry sees a new error, Claude investigates, fixes it, and merges once the checks pass and you've tapped Merge. It runs on your Mac, as you, with your Claude and your logins.
+
+<p align="center">
+  <img src="assets/mac/sentinel.gif" alt="The Sentinel list with six watchers and their last runs; New Sentinel's eleven recipes; Nightly tests made from its recipe and turned on; Morning brief's page and Run Now; a run's report; and a fix waiting for Merge" width="900">
+</p>
+
+- **When**: on a schedule (every day at 7:00, every Monday, every 3 hours), by hand, after another sentinel, or when something happens: a task done or a pull request opened in Beluga, a failed workflow or a new issue on GitHub, a failed payment in Stripe, a site that stops answering, a new error in Sentry, or a post to its own webhook URL.
+- **Steps**: ask Claude (in the project, a fresh worktree, or Your Mac), run a script, call a service, open a pull request, merge if acceptable, notify you, message a chat, ask a friend's Claude, run another sentinel.
+- **Eleven recipes** to start from: Morning brief, Fix what broke, Fix it and ship it, Nightly tests, Dependency updates, Release notes, Issues to tasks, Uptime guard, Failed payments, Watch the web, Review new pull requests. Or describe what you want and your Claude sets it up, here or in any chat.
+- **Sentinel's dashboard**: a Keep the numbers step keeps what a sentinel found (a number, a whole series, rows, or a step's output) with each run; Sentinel's Dashboard tab picks up anything a run produced as tiles: numbers with their change since the run before, yesterday, last week or last month, series, tables, what Claude wrote, an API's answer. Describe a tile and Claude adds it, setting up a draft sentinel that fetches it when none does yet; on the Mac and the phone.
+- **The Sentinel chat**: talk to the whole of Sentinel ("what did my sentinels find this week?", "watch my open pull requests"); your Claude knows how Sentinel works and sees it as it is, makes and changes sentinels and tiles, and asks you before it deletes anything.
+- **Safe by default**: a new sentinel starts paused. Look, Work and Ship say how far Claude may go; a merge needs green checks, a reviewer's ship and your Merge, on the Mac or the phone. Time limits, runs per day, and a pause after three failures in a row. [More](docs/sentinel.md)
+
+---
+
 ## 👀 A real Mac app
 
 <p align="center">

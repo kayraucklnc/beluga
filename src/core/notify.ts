@@ -1,6 +1,7 @@
 import type { NotifySettings } from './settings.js';
 import { type DomainState, type LogItem, type Store, isRunning } from './store.js';
 import { dndActive } from '../shared/quiet.js';
+import { isSentinelChat } from './sentinel/model.js';
 import { loudestKind, type SoundChoice, type SoundPrefs, soundFor, volumeOf } from '../shared/notify-sound.js';
 import { type Issue, issueForWorkspace } from './board/model.js';
 import { type Plan, planById, planForHome, planTitle } from './plans/model.js';
@@ -12,7 +13,7 @@ import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
 
 /** What exactly happened, when the kind alone doesn't say (screens pick an icon by it). */
-export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test';
+export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test' | 'sentinel';
 
 export interface NoticeEvent {
   readonly kind: NoticeKind;
@@ -90,6 +91,7 @@ const firstLine = (text: string, max = 140): string => {
 export function placeName(state: DomainState, channel: string): string {
   if (channel === 'room') return state.peers.length > 1 ? 'the group chat' : 'your chat';
   if (isAssistant(channel)) return ASSISTANT_TITLE;
+  if (isSentinelChat(channel)) return 'the Sentinel chat';
   // A friends' chat (your Claude acts there when you ask it, BLG-207).
   if (channel.startsWith('dm:')) return `your chat with ${state.network.friends.find((f) => f.peerId === channel.slice(3))?.name ?? 'a friend'}`;
   if (channel.startsWith('group:')) return state.network.groups.find((g) => g.id === channel.slice(6))?.name ?? 'a channel';
@@ -207,6 +209,8 @@ function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
   const out: NoticeEvent[] = [];
   for (const item of next.log.slice(-RECENT_LOG)) {
     if (item.type !== 'agent' || !isFinal(item.status)) continue;
+    // The Sentinel chat is quiet: you're looking at it when you use it (docs/sentinel.md §12).
+    if (isSentinelChat(item.channel)) continue;
     const old = before.get(item.id);
     if (!old || isFinal(old.status)) continue;
     const mine = item.owner === selfId;

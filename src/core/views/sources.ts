@@ -502,6 +502,9 @@ export function useViewEnv(env: ViewEnv): void {
   viewEnv = env;
 }
 
+/** Your variables for a command run in `cwd` (as a view's command gets them): sentinels' scripts use them too. */
+export const commandEnv = (cwd?: string): Record<string, string> => viewEnv.commands(cwd);
+
 /** A variable from your Beluga environment (Settings), else Beluga's own. */
 function envValue(name: string): string | undefined {
   return loadEnvFile().global[name] ?? process.env[name];

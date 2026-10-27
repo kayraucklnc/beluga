@@ -33,6 +33,8 @@ export default function Root() {
       if (typeof topic !== 'string') return;
       if (topic.startsWith('conv:')) router.push(`/conv/${encodeURIComponent(topic.slice(5))}`);
       else if (topic.startsWith('chat:')) router.push(`/chat/${encodeURIComponent(topic.slice(5))}`);
+      else if (topic.startsWith('sentinel:')) router.push(`/sentinel/${encodeURIComponent(topic.slice(9))}`);
+      else if (topic.startsWith('dashboard:')) router.push(`/dashboard/${encodeURIComponent(topic.slice(10))}`);
     };
     const sub = Notifications.addNotificationResponseReceivedListener((r) => open(r.notification.request.content.data?.topic));
     return () => sub.remove();

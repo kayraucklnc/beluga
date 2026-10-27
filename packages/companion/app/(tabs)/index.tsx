@@ -8,6 +8,8 @@ import { ConvCard, convHref, StepTicker } from '../../components/Conv';
 import { MacChatsSheet } from '../../components/MacChats';
 import { Mark } from '../../components/Mark';
 import { NeedsStack } from '../../components/Needs';
+import { NumbersHome } from '../../components/Dashboard';
+import { SentinelHome } from '../../components/Sentinels';
 import { AwayBand, Screen, StatusShade, useScrolled } from '../../components/Screen';
 import { UsageCard, UsageSheet } from '../../components/Usage';
 import { Card, IconBadge, Pill, Press, Section, T } from '../../components/ui';
@@ -28,6 +30,7 @@ export default function Home() {
   const link = useLink();
   const home = useView<HomeView>('home');
   const plans = useView<PlansView>('plans');
+  const sentinelOn = useSupports('sentinel');
   const h = home?.data;
   const needs = useVisibleNeeds(h?.needsYou);
   const running = plans?.data.plans.filter((p) => p.state === 'running') ?? [];
@@ -137,6 +140,9 @@ export default function Home() {
                 </Press>
               </Section>
             ) : null}
+
+            {sentinelOn ? <SentinelHome /> : null}
+            {sentinelOn ? <NumbersHome /> : null}
 
             {h.usage.length ? (
               <Section title="Usage">

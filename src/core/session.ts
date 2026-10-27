@@ -663,6 +663,11 @@ export class Session {
     return this.agent?.draftTask ? this.agent.draftTask(text, ctx).catch(() => undefined) : undefined;
   }
 
+  /** A pull request reviewed before a sentinel merges it (undefined without your Claude, or on trouble). */
+  async reviewPr(input: import('../agent/pr-reviewer.js').PrReviewInput): Promise<import('../agent/pr-reviewer.js').PrReview | undefined> {
+    return this.agent?.reviewPr ? this.agent.reviewPr(input).catch(() => undefined) : undefined;
+  }
+
   /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */
   setPlanMode(channel: string, on: boolean): void {
     // A plan's own conversation: its head Claude runs the plan, and stopping to have a plan of its own approved would stall it.

@@ -440,6 +440,42 @@ export const PHONE: Record<Method, Side> = {
   'voice.transcribe': 'mac',
   // Settings › Terminal › Import from…, and the welcome's terminal step: Mac settings only.
   'terminalImport.detect': 'mac',
+  // Sentinel (docs/sentinel.md): the phone runs one, pauses or resumes it, reads its runs and
+  // reports, and answers a run waiting for a merge. Making and changing sentinels is the Mac's.
+  'sentinel.run': 'phone',
+  'sentinel.pause': 'phone',
+  'sentinel.runs': 'phone',
+  'sentinel.runGet': 'phone',
+  'sentinel.decide': 'phone',
+  'sentinel.create': 'mac',
+  'sentinel.update': 'mac',
+  'sentinel.remove': 'mac',
+  'sentinel.duplicate': 'mac',
+  'sentinel.stop': 'mac',
+  // Claude changing a sentinel (the page's box, Describe it) is the Mac's: the phone has no editor.
+  'sentinel.ask': 'mac',
+  'sentinel.recipes': 'mac',
+  'sentinel.setRunAtOnce': 'mac',
+  'sentinel.rotateSecret': 'mac',
+  'sentinel.webhookUrl': 'mac',
+  // Numbers and dashboards (docs/sentinel.md §10): the phone reads a number over time and pulls a
+  // dashboard to refresh it (Run Now on its sentinels); arranging dashboards is the Mac's.
+  'sentinel.metricRead': 'phone',
+  'dashboard.refresh': 'phone',
+  'dashboard.create': 'mac',
+  'dashboard.update': 'mac',
+  'dashboard.remove': 'mac',
+  'dashboard.addTile': 'mac',
+  'dashboard.updateTile': 'mac',
+  'dashboard.removeTile': 'mac',
+  'dashboard.moveTile': 'mac',
+  'dashboard.ask': 'mac',
+  // The Sentinel chat (docs/sentinel.md §12): the phone writes and answers in the open one through
+  // companion.ask, as in any conversation it can write in; managing the chats is the Mac's.
+  'sentinel.chatNew': 'mac',
+  'sentinel.chatOpen': 'mac',
+  'sentinel.chatClear': 'mac',
+  'sentinel.chatDelete': 'mac',
 };
 
 /** A method the phone may call (unknown names are not). */

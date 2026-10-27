@@ -65,6 +65,8 @@ export interface PullRequest {
   readonly autoMerge?: boolean;
   /** GitHub's merge state, when it stands in the way (open PRs only): behind its base (the base needs merging in first), or blocked by the base's rules. */
   readonly mergeState?: 'behind' | 'blocked';
+  /** Its head commit (headRefOid). */
+  readonly head?: string;
 }
 
 export interface SetupRun {

@@ -61,7 +61,13 @@ export function projectOfView(state: AppState): string | undefined {
             ? view.projectId
             : view.kind === 'plan'
               ? state.plans.plans.find((p) => p.id === view.id)?.projectId
-              : undefined;
+              : view.kind === 'sentinel'
+                ? view.projectId
+                : view.kind === 'sentinel_page'
+                  ? state.sentinel.items.find((s) => s.id === view.id)?.projectId
+                  : view.kind === 'sentinel_run'
+                    ? state.sentinel.items.find((s) => s.id === state.sentinel.runs.find((r) => r.id === view.runId)?.sentinelId)?.projectId
+                    : undefined;
   // Only real projects (chats not tied to one don't have tasks).
   return id && state.projects.some((p) => p.id === id && p.root) ? id : undefined;
 }
@@ -81,7 +87,7 @@ export function useRememberProject(): void {
 let cameFrom: View | undefined;
 
 /** Places a task's Back returns to; anything else (a dialog-like view, a draft) goes to the Tasks list. */
-const RETURNABLE: ReadonlySet<View['kind']> = new Set(['tasks', 'plans', 'plan', 'workspace', 'overview', 'project', 'requests', 'issues', 'gh_issue', 'actions', 'gh_run']);
+const RETURNABLE: ReadonlySet<View['kind']> = new Set(['tasks', 'plans', 'plan', 'workspace', 'overview', 'project', 'requests', 'issues', 'gh_issue', 'actions', 'gh_run', 'sentinel', 'sentinel_page', 'sentinel_run', 'dashboard', 'sentinel_chat']);
 
 /** Where you were before the GitHub issue you're on (Issues, a project's home, a task, a conversation). */
 let issueCameFrom: View | undefined;

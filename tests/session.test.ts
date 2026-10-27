@@ -183,6 +183,26 @@ describe('Session', () => {
     expect(agentItems(kay.state())[0]).toMatchObject({ text: 'finished', steps: ['Bash ls'] });
   });
 
+  it('deleting a sentinel or a dashboard asks you first, even when your Claude never asks: once, no Always', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: async (input) => {
+        const ls = await input.canUseTool('Bash', { command: 'ls' });
+        const gone = await input.canUseTool('mcp__beluga_sentinel__sentinel_remove', { id: 'sn_x' });
+        return `${ls ? 'ran' : 'asked'} ${gone ? 'deleted' : 'kept'}`;
+      },
+    });
+    await room(kay);
+    // The default: your Claude doesn't ask (Bash just runs), but a delete still does.
+    expect(kay.state().prefs.selfApproval).toBe('never');
+    kay.session.submit('@claude delete the nightly sentinel');
+    await waitFor(() => kay.state().approvals[0]?.kind === 'tool');
+    expect(kay.state().approvals[0]).toMatchObject({ once: true, title: expect.stringMatching(/sentinel_remove/) });
+    kay.session.answerApproval('no');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
+    expect(agentItems(kay.state())[0]).toMatchObject({ text: 'ran kept' });
+  });
+
   it('surfaces agent failures and stop requests', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay', {

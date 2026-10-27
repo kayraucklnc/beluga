@@ -52,7 +52,7 @@ import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch,
 import { type Macro, PhoneMacros } from './phone-macros.js';
 import { type SystemPort, realSystem } from '../core/gateway/device.js';
 import { type Delivery, NO_PUSH, type Nudge, type Pusher, deliver } from './push.js';
-import { type ConvOutput, type ViewContext, channelOf, chatMessages, convTopic, convTurns, needsYou, phoneChannel, viewOf } from './views.js';
+import { type ConvOutput, type ViewContext, channelOf, chatMessages, convTopic, convTurns, needsYou, phoneChannel, sentinelDone, viewOf } from './views.js';
 
 /**
  * Your Mac's side of the phone link (docs/companion.md, "The link"). Its own DHT node listens at
@@ -967,6 +967,12 @@ export class CompanionHost {
     // stays connected in the background (BLG-128), since one in front sees it already.
     if (prev && prev !== state) {
       const told = new Set(nudges.flatMap((n) => (n.collapse?.startsWith('done:') ? [n.collapse] : [])));
+      // A sentinel's run that ended, where it notifies the phone (docs/sentinel.md §4): one nudge per
+      // sentinel (collapsed), and its Claude step's chat isn't told again as a run that finished.
+      for (const d of sentinelDone(prev, state)) {
+        nudges.push({ kind: 'done', title: d.title, body: d.body, ...(d.topic ? { topic: d.topic } : {}), priority: 'normal', collapse: d.topic ?? `sentinel:${d.run}` });
+        if (d.channel) told.add(`done:${d.channel}`);
+      }
       for (const e of detectNotices(prev, state)) {
         if ((e.kind !== 'done' && e.kind !== 'problems') || e.tag === 'test' || !e.channel || told.has(`done:${e.channel}`)) continue;
         const topic = convTopic(e.channel);

@@ -250,6 +250,7 @@ interface GhPr {
   mergeable?: string;
   mergeStateStatus?: string;
   autoMergeRequest?: unknown;
+  headRefOid?: string;
 }
 
 function toPr(raw: GhPr): PullRequest | undefined {
@@ -269,6 +270,7 @@ function toPr(raw: GhPr): PullRequest | undefined {
     ...(review ? { review } : {}),
     ...(open && raw.mergeable === 'CONFLICTING' ? { conflicts: true } : {}),
     ...(open && raw.autoMergeRequest ? { autoMerge: true } : {}),
+    ...(typeof raw.headRefOid === 'string' && raw.headRefOid ? { head: raw.headRefOid } : {}),
     ...(open && raw.mergeStateStatus === 'BEHIND' ? { mergeState: 'behind' as const } : open && raw.mergeStateStatus === 'BLOCKED' ? { mergeState: 'blocked' as const } : {}),
   };
 }
@@ -305,7 +307,7 @@ export function parsePrList(json: string): Map<string, PullRequest> | undefined 
   return out;
 }
 
-const PR_FIELDS = 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision,mergeable,mergeStateStatus,autoMergeRequest';
+const PR_FIELDS = 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision,mergeable,mergeStateStatus,autoMergeRequest,headRefOid';
 /** How many PRs one `gh pr list` asks for. */
 export const PR_LIST_LIMIT = 60;
 
@@ -418,6 +420,8 @@ export interface MergeOptions {
   readonly deleteBranch?: boolean;
   /** Merge now even though checks or reviews haven't passed (`gh pr merge --admin`: needs admin rights on the repository). */
   readonly admin?: boolean;
+  /** Merge only if the pull request's head is still this commit (`gh pr merge --match-head-commit`): what was checked and reviewed. */
+  readonly matchHead?: string;
 }
 
 /** Why GitHub said no to a merge. */
@@ -443,7 +447,12 @@ export function explainMergeError(error: string, method: MergeMethod = 'squash')
 
 /** Merge a pull request on GitHub (`gh pr merge`), or ask GitHub to once its requirements pass (`auto`), or now past them (`admin`). Throws gh's error. */
 export async function mergePr(dir: string, number: number, opts: MergeOptions): Promise<void> {
-  await run(gh(), ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.admin ? ['--admin'] : opts.auto ? ['--auto'] : [])], dir, 60_000);
+  await run(gh(), mergeArgs(number, opts), dir, 60_000);
+}
+
+/** `gh pr merge`'s arguments. */
+export function mergeArgs(number: number, opts: MergeOptions): string[] {
+  return ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.admin ? ['--admin'] : opts.auto ? ['--auto'] : []), ...(opts.matchHead ? ['--match-head-commit', opts.matchHead] : [])];
 }
 
 /** Turn off GitHub's auto-merge on a pull request (`gh pr merge --disable-auto`). Throws gh's error. */

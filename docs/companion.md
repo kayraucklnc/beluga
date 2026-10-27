@@ -215,6 +215,25 @@ step records of the turn, else the transcript Claude Code keeps of it) and, once
 it gave back, through `stripCode` like any answer of Claude's (never its prompt, its tools' input or
 output, or a file). A sub-agent Claude Code still sees working stays `running` in the view though its
 turn ended (one left working in the background). An older Mac's sheet shows the view's steps.
+1.21 (BLG-237) brought Sentinel (`SINCE.sentinel`, docs/sentinel.md): `sentinels` (every sentinel,
+its schedule in words, paused, its last run and next one) and `sentinel:<id>` (its steps by name,
+its last 30 runs with each report as an output ref, and its run waiting for your Merge). Run Now,
+Pause / Turn On and a run's report text are `sentinel.run` / `pause` / `runGet`; a merge waiting is
+a `decision` with Merge and Not Now (`sentinel.decide`); a run that ended where the sentinel
+notifies the phone is a `done` nudge collapsed as `sentinel:<id>`.
+1.22 (BLG-244) brought numbers and dashboards (`SINCE.dashboard`, docs/sentinel.md §10):
+`dashboard:<id>` (its tiles worked out on the Mac: a number with its change for every compare and a
+sparkline, a chart's series, a table's first rows, a text tile's headline; paused or gone said
+quietly; a Refresh going, "Fetching… 2 of 3"), and in `sentinels` the dashboards and the first
+one's first three numbers for Home. Pull to refresh is `dashboard.refresh`; a number over time is
+`sentinel.metricRead`. Tiles never carry a source, a query or a key.
+1.23 (BLG-246) brought Sentinel's own dashboard and its chat (`SINCE.sentinelChat`, docs/sentinel.md
+§10 and §12): tiles of kind `series` (numbers over time keep coming as `chart`, so an older phone
+draws them; a kept array comes with its points' `labels`) and `output` (a step's latest export:
+Markdown without its code, or JSON for a tree or a table), a tile's real size (`span`, `tall`;
+`width` stays 1 to 3), the `draft` state, and in `sentinels` the Sentinel chat's open conversation
+(`chat`), a `conv:sentinel-chat:<id>` topic the phone writes and answers in as any conversation. A
+delete Claude asks for there is an `approval` like any other.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 

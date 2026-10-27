@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RefTable } from '../src/companion/files.js';
-import { ChatsView, ChatView, ConvView, HomeView, PeopleView, PlansView, PlanView, TaskPageView, TasksView, type Topic, WorkView, viewSchema } from '../src/companion/protocol.js';
-import { type ViewContext, convTurns, homeView, needsYou, viewOf } from '../src/companion/views.js';
+import { ChatsView, ChatView, ConvView, DashboardView, HomeView, PeopleView, PlansView, PlanView, SentinelPageView, SentinelsView, TaskPageView, TasksView, type Topic, WorkView, viewSchema } from '../src/companion/protocol.js';
+import { type ViewContext, convTurns, homeView, needsYou, sentinelDone, viewOf } from '../src/companion/views.js';
+import { NO_SENTINEL, type Sentinel, type SentinelState } from '../src/core/sentinel/model.js';
 import { type Action, type DomainState, Store, initialState } from '../src/core/store.js';
 import type { Plan } from '../src/core/plans/model.js';
 import type { Issue } from '../src/core/board/model.js';
@@ -76,6 +77,86 @@ function issue(id: string, key: string, title: string, status: Issue['status'], 
     ...extra,
   };
 }
+
+const sentinel = (id: string, name: string, extra: Partial<Sentinel> = {}): Sentinel => ({
+  id,
+  name,
+  icon: 'calendar',
+  projectId: 'p1',
+  trigger: { kind: 'schedule', every: 'day', at: '07:00', missed: 'catch-up' },
+  steps: [],
+  access: 'look',
+  limits: { minutes: 30, pauseAfter: 3 },
+  notify: 'both',
+  paused: false,
+  failures: 0,
+  createdAt: T0,
+  updatedAt: T0,
+  ...extra,
+});
+
+/** Sentinel (docs/sentinel.md): a morning brief that ran, and a fix waiting for your Merge. */
+const SENTINELS: SentinelState = {
+  ...NO_SENTINEL,
+  enabled: true,
+  items: [
+    sentinel('sn_brief', 'Morning brief', { steps: [{ id: 's1', kind: 'claude', name: 'Read what changed', where: 'project', prompt: 'Write my brief' }, { id: 's2', kind: 'notify', name: 'Tell me', phone: true }] }),
+    sentinel('sn_fix', 'Fix what broke', {
+      icon: 'wrench',
+      access: 'ship',
+      trigger: { kind: 'manual' },
+      steps: [
+        { id: 'f1', kind: 'claude', name: 'Find and fix it', where: 'worktree', prompt: 'Fix it' },
+        { id: 'f2', kind: 'pr', name: 'Open a pull request' },
+        { id: 'f3', kind: 'merge', name: 'Merge if acceptable', require: { checks: true, approval: true }, method: 'squash' },
+      ],
+    }),
+  ],
+  runs: [
+    { id: 'run_b1', sentinelId: 'sn_brief', by: 'schedule', trigger: { kind: 'schedule', summary: 'Every day at 7:00' }, state: 'done', startedAt: T0 + 50, endedAt: T0 + 60, headline: '3 commits landed, CI is **green**', steps: [{ id: 's1', state: 'done' }, { id: 's2', state: 'done' }], tasks: [], report: '/Users/k/.beluga/sentinel/runs/run_b1/report.md' },
+    {
+      id: 'run_f1',
+      sentinelId: 'sn_fix',
+      by: 'event',
+      trigger: { kind: 'manual', summary: 'CI failed on main' },
+      state: 'needs-you',
+      startedAt: T0 + 70,
+      headline: 'Merge the fix for #48?',
+      steps: [{ id: 'f1', state: 'done' }, { id: 'f2', state: 'done' }, { id: 'f3', state: 'running', startedAt: T0 + 75, why: 'Checks passed · Claude’s review: ship, a two-line fix with a test' }],
+      pr: { number: 53, url: 'https://github.com/acme/landing/pull/53' },
+      tasks: [],
+    },
+  ],
+  live: { run_f1: { stepId: 'f3', state: 'needs-you' } },
+  nextAt: { sn_brief: T0 + 86_400_000 },
+  // Numbers (§10): the brief keeps open issues; a deleted sentinel's tile says gone.
+  metrics: {
+    sn_brief: {
+      issues: { sentinelId: 'sn_brief', name: 'issues', label: 'Open issues', unit: 'count', better: 'down', kind: 'number', points: [{ at: T0 - 7 * 86_400_000, value: 14, runId: 'run_b0' }, { at: T0 - 86_400_000, value: 12, runId: 'run_b0' }, { at: T0 + 60, value: 9, runId: 'run_b1' }] },
+      revenue: { sentinelId: 'sn_brief', name: 'revenue', label: 'Revenue', unit: 'currency:USD', better: 'up', kind: 'number', points: [{ at: T0 + 60, value: 3400, runId: 'run_b1' }] },
+      jobs: { sentinelId: 'sn_brief', name: 'jobs', label: 'Last jobs', unit: 'count', better: 'none', kind: 'rows', points: [{ at: T0 + 60, value: 2, runId: 'run_b1' }], rows: [{ who: 'lena', job: 'deploy' }, { who: 'bob', job: 'tests' }], columns: ['who', 'job'], rowsAt: T0 + 60 },
+    },
+  },
+  dashboards: [
+    {
+      id: 'db_rev',
+      name: 'Revenue',
+      compare: 'previous',
+      tiles: [
+        { id: 't1', kind: 'number', width: 1, metric: { sentinelId: 'sn_brief', metric: 'issues' }, compare: 'week' },
+        { id: 't2', kind: 'number', width: 1, metric: { sentinelId: 'sn_brief', metric: 'revenue' } },
+        { id: 't3', kind: 'series', width: 3, chart: 'line', metrics: [{ sentinelId: 'sn_brief', metric: 'issues' }] },
+        { id: 't4', kind: 'table', width: 3, metric: { sentinelId: 'sn_brief', metric: 'jobs' } },
+        { id: 't5', kind: 'text', width: 2, sentinelId: 'sn_brief', text: 'headline' },
+        { id: 't6', kind: 'number', width: 1, metric: { sentinelId: 'sn_gone', metric: 'x' } },
+        { id: 't7', kind: 'divider', width: 3, title: 'Money' },
+      ],
+      createdAt: T0,
+      updatedAt: T0,
+    },
+  ],
+  refreshing: { db_rev: { done: 1, total: 2, sentinelId: 'sn_brief' } },
+};
 
 function demoState(): DomainState {
   const store = new Store(initialState('kayra’s room'));
@@ -201,6 +282,7 @@ function demoState(): DomainState {
   });
   run({ type: 'net_message', message: { id: 'm1abcdefgh', conversation: `dm:${BOB}`, from: BOB, name: 'bob', text: 'see\n```js\nx()\n```\nhere', ts: T0 + 30, mine: false } });
   run({ type: 'net_message', message: { id: 'm2abcdefgh', conversation: `dm:${BOB}`, from: ME, name: 'kayra', text: 'on it', ts: T0 + 31, mine: true } });
+  run({ type: 'sentinel_init', state: SENTINELS });
   return store.getState();
 }
 
@@ -226,7 +308,7 @@ function context(): ViewContext {
 }
 
 const ICON = 'abcdef0123456789abcdef01';
-const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:mac:assistant', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1'];
+const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:mac:assistant', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1', 'sentinels', 'sentinel:sn_fix', 'dashboard:db_rev'];
 
 describe('the views of a known Mac', () => {
   const state = demoState();
@@ -243,7 +325,7 @@ describe('the views of a known Mac', () => {
   it('home: you, your allowance, what needs you with its buttons, what runs, outputs', () => {
     const home = HomeView.parse(homeView(state, ctx));
     expect(home.usage).toEqual([{ provider: 'Claude Code', plan: 'max', windows: [{ label: '5 hours', pct: 12, resetsAt: T0 + 3_600_000 }, { label: 'Week', pct: 38 }], updatedAt: T0 }]);
-    expect(home.needsYou.map((n) => n.id)).toEqual(['approval:ap1', 'confirm:t_confirm000001', 'request:t_request00001', 'knock:' + ZOE, 'join:' + GROUP + ':' + ZOE, 'plan:pl_auth:approve:3', 'question:q1', 'question:q2']);
+    expect(home.needsYou.map((n) => n.id)).toEqual(['approval:ap1', 'confirm:t_confirm000001', 'request:t_request00001', 'knock:' + ZOE, 'join:' + GROUP + ':' + ZOE, 'plan:pl_auth:approve:3', 'sentinel:run_f1', 'question:q1', 'question:q2']);
     const knock = home.needsYou.find((n) => n.id.startsWith('knock:'))!;
     expect(knock.actions.map((a) => [a.method, a.args])).toEqual([
       ['invites.letIn', [ZOE]],
@@ -465,6 +547,68 @@ describe('the views of a known Mac', () => {
     const calm = ChatView.parse(viewOf(state, ctx, `chat:${conv}`));
     expect(calm.waiting).toBeUndefined();
     expect(calm.note).toBeUndefined();
+  });
+
+  it('sentinel: a merge waiting for you is a decision with Merge and Not Now', () => {
+    const item = needsYou(state).find((n) => n.id === 'sentinel:run_f1')!;
+    expect(item).toMatchObject({ kind: 'decision', title: 'Merge the fix for #48?', from: 'Fix what broke', topic: 'sentinel:sn_fix', askedAt: T0 + 75 });
+    expect(item.detail).toBe('Checks passed · Claude’s review: ship, a two-line fix with a test\nPull request #53');
+    expect(item.actions).toEqual([
+      { label: 'Merge', tone: 'main', method: 'sentinel.decide', args: ['run_f1', 'merge'] },
+      { label: 'Not Now', tone: 'danger', method: 'sentinel.decide', args: ['run_f1', 'skip'] },
+    ]);
+  });
+
+  it('sentinel: the list with sentences and last runs, and a page with its runs and report', () => {
+    const list = SentinelsView.parse(viewOf(state, ctx, 'sentinels'));
+    expect(list.sentinels.map((x) => [x.name, x.sentence, x.last?.state, x.last?.headline, x.live, x.project])).toEqual([
+      ['Morning brief', 'Every day at 7:00', 'done', '3 commits landed, CI is green', false, 'landing'],
+      ['Fix what broke', 'Only when you press Run', 'needs-you', 'Merge the fix for #48?', true, 'landing'],
+    ]);
+    expect(list.sentinels[0]!.nextAt).toBe(T0 + 86_400_000);
+    expect(list.recent).toEqual([{ id: 'run_b1', sentinelId: 'sn_brief', state: 'done', at: T0 + 60 }]);
+    const brief = SentinelPageView.parse(viewOf(state, ctx, 'sentinel:sn_brief'));
+    expect(brief.runs[0]).toMatchObject({ id: 'run_b1', by: 'schedule', state: 'done', report: { name: 'report.md', kind: 'markdown' } });
+    const fix = SentinelPageView.parse(viewOf(state, ctx, 'sentinel:sn_fix'));
+    expect(fix.runs[0]).toMatchObject({ by: 'CI failed on main', step: 'Merge if acceptable', pr: { number: 53 } });
+    expect(fix.needsYou.map((n) => n.id)).toEqual(['sentinel:run_f1']);
+    expect(fix.steps.map((x) => x.kind)).toEqual(['claude', 'pr', 'merge']);
+    expect(viewOf(state, ctx, 'sentinel:nope')).toBeUndefined();
+    // An event trigger that can't watch says why (BLG-239); a paused one doesn't.
+    const troubled = { ...state, sentinel: { ...SENTINELS, troubles: { sn_brief: 'Sign in to GitHub first: run gh auth login in a terminal' } } };
+    expect(SentinelsView.parse(viewOf(troubled, ctx, 'sentinels')).sentinels[0]!.trouble).toBe('Sign in to GitHub first: run gh auth login in a terminal');
+    expect(SentinelPageView.parse(viewOf(troubled, ctx, 'sentinel:sn_brief')).trouble).toBe('Sign in to GitHub first: run gh auth login in a terminal');
+    expect(list.sentinels[0]!.trouble).toBeUndefined();
+  });
+
+  it('dashboard: tiles worked out with every compare, quiet states, Refresh going; Home’s first three numbers', () => {
+    const d = DashboardView.parse(viewOf(state, ctx, 'dashboard:db_rev'));
+    expect(d).toMatchObject({ id: 'db_rev', name: 'Revenue', compare: 'previous', refreshing: { done: 1, total: 2, sentinel: 'Morning brief' }, dashboards: [{ id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }] });
+    const [issues, revenue, chart, table, text, gone, divider] = d.tiles;
+    expect(issues).toMatchObject({ kind: 'number', title: 'Open issues', state: 'ok', value: '9', pinned: 'week', sentinel: 'Morning brief', topic: 'sentinel:sn_brief', trend: [14, 12, 9], runId: 'run_b1' });
+    // Fewer open issues is good: green either way back.
+    expect(issues!.deltas).toEqual({ previous: { change: '−3 (−25%)', tone: 'good' }, day: { change: '−3 (−25%)', tone: 'good' }, week: { change: '−5 (−35.7%)', tone: 'good' }, month: { tone: 'none' } });
+    expect(revenue).toMatchObject({ value: '$3,400', deltas: { previous: { tone: 'none' } } });
+    expect(chart!.chart).toEqual({ kind: 'line', unit: 'count', series: [{ label: 'Open issues', points: [[T0 - 7 * 86_400_000, 14], [T0 - 86_400_000, 12], [T0 + 60, 9]] }] });
+    expect(table!.table).toEqual({ columns: ['who', 'job'], rows: [['lena', 'deploy'], ['bob', 'tests']], total: 2 });
+    expect(text).toMatchObject({ title: 'Morning brief', text: '3 commits landed, CI is green', runId: 'run_b1' });
+    expect(gone).toEqual({ id: 't6', kind: 'number', width: 1, title: 'x', state: 'gone' });
+    expect(divider).toMatchObject({ kind: 'divider', title: 'Money', width: 3 });
+    expect(viewOf(state, ctx, 'dashboard:nope')).toBeUndefined();
+    const list = SentinelsView.parse(viewOf(state, ctx, 'sentinels'));
+    expect(list.dashboards).toEqual([{ id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }]);
+    expect(list.numbers).toEqual({ dashboard: { id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }, items: [{ label: 'Open issues', value: '9', change: '−5 (−35.7%)', tone: 'good' }, { label: 'Revenue', value: '$3,400', tone: 'none' }] });
+  });
+
+  it('sentinel: a run that ended where the sentinel notifies the phone is told once', () => {
+    const going = { ...SENTINELS, runs: [...SENTINELS.runs, { id: 'run_b2', sentinelId: 'sn_brief', by: 'you' as const, trigger: { kind: 'manual' as const, summary: 'You pressed Run' }, state: 'running' as const, startedAt: T0 + 90, headline: '', steps: [], tasks: [] }] };
+    const before = { ...state, sentinel: going };
+    const after = { ...state, sentinel: { ...going, runs: going.runs.map((r) => (r.id === 'run_b2' ? { ...r, state: 'done' as const, endedAt: T0 + 99, headline: 'Quiet day' } : r)) } };
+    expect(sentinelDone(before, after)).toEqual([{ title: 'Morning brief', body: 'Quiet day', topic: 'sentinel:sn_brief', run: 'run_b2' }]);
+    // Already ended before: nothing new; a sentinel that tells only the Mac: nothing for the phone.
+    expect(sentinelDone(after, after)).toEqual([]);
+    const macOnly = (st: DomainState): DomainState => ({ ...st, sentinel: { ...st.sentinel, items: st.sentinel.items.map((i) => ({ ...i, notify: 'mac' as const, steps: [] })) } });
+    expect(sentinelDone(macOnly(before), macOnly(after))).toEqual([]);
   });
 
   it('every needs-you action is a call the phone may make', async () => {

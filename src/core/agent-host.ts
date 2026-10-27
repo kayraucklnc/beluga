@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, AgentPlace, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer } from '../agent/types.js';
+import { ALWAYS_ASK_YOU } from '../agent/policy.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
@@ -58,6 +59,12 @@ export interface AgentHostDeps {
   readonly isGuest?: (peerId: string) => boolean;
   /** The task board for a run in this conversation (your own runs): its tools and the task's brief. */
   readonly board?: (channel: string, from: string, opts: { readonly plan: boolean }) => import('./board/work.js').RunBoard | undefined;
+  /** The Sentinel chat (core/sentinel/chat.ts, your own runs): where its Claude runs, its own folder and session. */
+  readonly sentinelChat?: (channel: string, from: string) => AgentPlace | undefined;
+  /** What a tool that always asks you (policy ALWAYS_ASK_YOU: deleting a sentinel or a dashboard) says on its card, in words. */
+  readonly confirmTool?: (toolName: string, input: Record<string, unknown>) => { readonly title: string; readonly detail: string } | undefined;
+  /** Sentinels (your own runs): their tools, and a sentinel run's brief in its Claude step's conversation (core/sentinel). */
+  readonly sentinel?: (channel: string, from: string) => { readonly tools: import('../agent/types.js').SentinelTools; readonly dashboard?: import('../agent/types.js').DashboardTools; readonly brief: string; readonly inRun: boolean } | undefined;
   /** A plan's home conversation (your own runs): its plan tools and what Claude is told about the plan (core/plans). */
   readonly plans?: (channel: string, from: string) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string } | undefined;
   /** "Your Mac" (core/assistant), your own runs in its conversation: where it runs, its tools, what Claude is told. */
@@ -1012,7 +1019,7 @@ export class AgentHost {
         if (peer) this.approvalsBy.set(peer, Math.max(0, (this.approvalsBy.get(peer) ?? 1) - 1));
         resolve(answer);
       });
-      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(meta.project ? { project: meta.project } : {}), ...(meta.once ? { once: true } : {}), ...(/^(ws|dm|group):/.test(channel) ? { channel } : {}) } });
+      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(meta.project ? { project: meta.project } : {}), ...(meta.once ? { once: true } : {}), ...(/^(ws|dm|group|sentinel-chat):/.test(channel) ? { channel } : {}) } });
     });
   }
 
@@ -1028,7 +1035,9 @@ export class AgentHost {
     // A friend's request in your project gets a fresh conversation in its main folder: questions only.
     // "Your Mac": its own folder and session, and its tools (your runs only: nobody else can write there).
     const mac = root ? undefined : this.deps.assistant?.(body.channel, from);
-    const place = root ? { cwd: root, additionalDirectories: [], autoEdit: false, onSession: () => undefined, askOnly: { project: body.project ?? '' } } : (mac?.place ?? this.deps.workspaces?.place(body.channel));
+    // The Sentinel chat: its own folder and session (your runs only).
+    const sentinelChat = root || mac ? undefined : this.deps.sentinelChat?.(body.channel, from);
+    const place = root ? { cwd: root, additionalDirectories: [], autoEdit: false, onSession: () => undefined, askOnly: { project: body.project ?? '' } } : (mac?.place ?? sentinelChat ?? this.deps.workspaces?.place(body.channel));
     let markFinished: () => void = () => undefined;
     /** Claude Code's process for this run (see gone), and whether the run is over. */
     let proc: RunProcess | undefined;
@@ -1065,7 +1074,9 @@ export class AgentHost {
       // Not for guests, nor in a main folder (questions only) unless planning there: a run doing a task gets it, and the tools to keep it true.
       // (In a plan's conversation, planning is the plan's: no single task to define.)
       const planFirst = body.plan && !plans?.tools;
-      const board = (place?.askOnly && (!planFirst || place.syncMain)) || from !== this.selfId ? undefined : this.deps.board?.(body.channel, from, { plan: planFirst });
+      // Sentinels (your own runs): a sentinel run's Claude step gets its brief, and the task tools even in a main folder (it makes tasks there).
+      const sentinel = from === this.selfId && !place?.syncMain ? this.deps.sentinel?.(body.channel, from) : undefined;
+      const board = (place?.askOnly && !sentinel?.inRun && (!planFirst || place.syncMain)) || from !== this.selfId ? undefined : this.deps.board?.(body.channel, from, { plan: planFirst });
       // A run stopped but not ending (wedged) has its Claude Code killed after a moment (at once
       // when it's gone already). Stopped for a newer message, it's then left behind so that message
       // starts: never while its Claude Code could still work in this folder.
@@ -1109,6 +1120,7 @@ export class AgentHost {
         ...(plans?.brief ? { planBrief: plans.brief } : {}),
         ...(mac ? { macTools: mac.tools, macBrief: mac.brief } : {}),
         ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
+        ...(sentinel ? { sentinelTools: sentinel.tools, sentinelBrief: sentinel.brief, ...(sentinel.dashboard ? { dashboardTools: sentinel.dashboard } : {}) } : {}),
         prompt: this.promptOf(body),
         requesterName,
         viaAgent: body.viaAgent,
@@ -1221,6 +1233,12 @@ export class AgentHost {
       const use = this.deps.phoneUse?.() ?? 'off';
       if (use !== 'ask') return true; // 'off'/unreachable: the tool itself explains; 'use'/'full': just run
       const answer = await this.ask('tool', `Claude wants to use your phone (${toolName.replace('mcp__beluga_phone__', '')})`, JSON.stringify(input).slice(0, 2000), requester, channel);
+      return answer !== 'no';
+    }
+    // Deleting a sentinel or a dashboard asks you first, even when your Claude never asks otherwise: once, no Always.
+    if (requester === this.selfId && ALWAYS_ASK_YOU.has(toolName)) {
+      const words = this.deps.confirmTool?.(toolName, input);
+      const answer = await this.ask('tool', words?.title ?? `Your Claude wants to use ${toolName}`, words?.detail ?? JSON.stringify(input), requester, channel, { once: true });
       return answer !== 'no';
     }
     // Your own Claude doesn't nag you (unless you asked it to); fully trusted friends don't either.

@@ -32,6 +32,13 @@ const ALWAYS_OK = new Set([
   ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__beluga__${n}`),
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).
   ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
+  // Sentinels (core/sentinel): only your own runs have them; a new one starts paused until you turn it on,
+  // and a change to what one can do pauses it. sentinel_remove isn't here: deleting one asks you.
+  ...['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_update', 'sentinel_run', 'sentinel_pause'].map((n) => `mcp__beluga_sentinel__${n}`),
+  // Dashboards and numbers (core/sentinel, §10): only your own runs have them; they arrange your
+  // dashboards' tiles and read the numbers (a tile removed takes nothing kept with it).
+  // dashboard_remove isn't here: deleting a dashboard asks you.
+  ...['sentinel_measure', 'dashboard_list', 'dashboard_create', 'dashboard_update', 'dashboard_add_tile', 'dashboard_update_tile', 'dashboard_move_tile', 'dashboard_remove_tile', 'metric_list', 'metric_read'].map((n) => `mcp__beluga_dashboard__${n}`),
   // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
   ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
@@ -43,6 +50,13 @@ const ALWAYS_OK = new Set([
   // to 'ask', then the owner-approval gate honours the phone's own setting (Off · Ask · Use · Full).
   ...['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info', 'phone_pull', 'phone_notifications', 'phone_macro_list'].map((n) => `mcp__beluga_phone__${n}`),
 ]);
+
+/**
+ * Tools that delete something of yours for good (a sentinel, a dashboard, docs/sentinel.md §12):
+ * your own Claude asks you first even when it otherwise never asks (Approvals › Never), once, with
+ * no Always. The card reaches the phone as any approval does.
+ */
+export const ALWAYS_ASK_YOU: ReadonlySet<string> = new Set(['mcp__beluga_sentinel__sentinel_remove', 'mcp__beluga_dashboard__dashboard_remove']);
 
 /**
  * Shell commands that mention credential stores are refused outright. A name counts when it isn't

@@ -1,6 +1,7 @@
 import type { AppState } from '../../../../src/core/store.js';
 import { type Plan, planTitle } from '../../../../src/core/plans/model.js';
 import { isLivePlan, isPlanOwned, planConversations, planOwnerOf } from '../../../../src/core/plans/owner.js';
+import { type Sentinel, sentinelChannels, sentinelOfChannel } from '../../../../src/core/sentinel/model.js';
 import { activityOf } from '../../../../src/ui/workspace-models.js';
 import type { Project, Workspace } from '../../../../src/workspaces/types.js';
 
@@ -29,7 +30,7 @@ export interface Signal {
 
 export const IDLE_SIGNAL: Signal = { level: 'idle', unread: 0, working: false, tip: '' };
 
-type Source = Pick<AppState, 'log' | 'unread' | 'questions' | 'approvals' | 'conflicts' | 'prs' | 'claudeCode' | 'plans' | 'board'>;
+type Source = Pick<AppState, 'log' | 'unread' | 'questions' | 'approvals' | 'conflicts' | 'prs' | 'claudeCode' | 'plans' | 'board' | 'sentinel'>;
 
 const NEED_TIPS: Record<Need, string> = {
   approval: 'Claude needs your approval',
@@ -97,8 +98,16 @@ export function tally(signals: readonly Signal[]): Tally {
   };
 }
 
-/** The conversations a project's row stands for: its live worktrees and chats (the main folder isn't listed), a plan's own not on their own. */
-const projectConversations = (state: Pick<Source, 'plans' | 'board'>, p: Project): readonly Workspace[] => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && !isPlanOwned(state, w.id));
+/**
+ * A conversation a sentinel's run made (its Claude step's chat or worktree): the sentinel's, not
+ * yours. It stays out of Unread, the tallies and the Dock (the Sentinel row's live dot says
+ * something ran), except while it needs you: then it's one entry, the sentinel's (sentinelEntries).
+ */
+export const isSentinelOwned = (state: Pick<Source, 'sentinel'>, channel: string | undefined): boolean => sentinelOfChannel(state.sentinel, channel) !== undefined;
+
+/** The conversations a project's row stands for: its live worktrees and chats (the main folder isn't listed), a plan's own and a sentinel run's not on their own. */
+const projectConversations = (state: Pick<Source, 'plans' | 'board' | 'sentinel'>, p: Project): readonly Workspace[] =>
+  p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && !isPlanOwned(state, w.id) && !isSentinelOwned(state, `ws:${w.id}`));
 
 /** A project's live plans (each one item, however many tasks it runs). */
 export const projectPlans = (state: Pick<Source, 'plans'>, p: Project): readonly Plan[] => state.plans.plans.filter((x) => x.projectId === p.id && isLivePlan(x));
@@ -195,11 +204,44 @@ export type UnreadEntry = {
   | { readonly kind: 'group'; readonly groupId: string }
   /** A plan, once for its home and all its tasks' conversations (`channels`); `at`: where it waits on you. */
   | { readonly kind: 'plan'; readonly plan: Plan; readonly project?: Project; readonly channels: readonly string[]; readonly at?: PlanNeed }
+  /** A sentinel run's conversation that needs you ("Morning brief asks a question"): `at` is that conversation, `channels` all of the sentinel's. */
+  | { readonly kind: 'sentinel'; readonly sentinel: Sentinel; readonly runId: string; readonly at: string; readonly project?: Project; readonly channels: readonly string[] }
 );
 
 type ListSource = Source & Pick<AppState, 'projects' | 'shared' | 'network'>;
 
 const counts = (x: Signal): boolean => x.level === 'needs' || x.unread > 0;
+
+/**
+ * Sentinel runs' conversations that need you (an approval, a question): one entry per sentinel,
+ * "Morning brief asks a question", that opens the run's chat. News there (Claude finished) is never
+ * an entry: only needing you is.
+ */
+export function sentinelEntries(state: ListSource): UnreadEntry[] {
+  const bySentinel = new Map<string, { channels: string[]; first?: { channel: string; runId: string; need: Need } }>();
+  for (const [channel, owner] of sentinelChannels(state.sentinel)) {
+    const e = bySentinel.get(owner.sentinel.id) ?? { channels: [] };
+    e.channels.push(channel);
+    if (!e.first) {
+      const ws = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+      const need = needOf(state, channel, ws);
+      // Only what Claude asks there: a quiet worktree's checks or conflicts are the run page's.
+      if (need === 'approval' || need === 'question' || need === 'plan') e.first = { channel, runId: owner.runId, need };
+    }
+    bySentinel.set(owner.sentinel.id, e);
+  }
+  const out: UnreadEntry[] = [];
+  for (const [id, e] of bySentinel) {
+    if (!e.first) continue;
+    const sentinel = state.sentinel.items.find((i) => i.id === id)!;
+    const project = sentinel.projectId ? state.projects.find((p) => p.id === sentinel.projectId && p.root) : undefined;
+    const unread = state.unread[e.first.channel] ?? 0;
+    const working = activityOf(state.log, e.first.channel).running;
+    const signal: Signal = { level: 'needs', unread, need: e.first.need, working, tip: `${sentinel.name} ${NEED_WORDS[e.first.need]}` };
+    out.push({ kind: 'sentinel', channel: `sentinel:${id}`, name: sentinel.name, sentinel, runId: e.first.runId, at: e.first.channel, ...(project ? { project } : {}), channels: e.channels, signal, ts: activityOf(state.log, e.first.channel).lastTs ?? 0 });
+  }
+  return out;
+}
 
 /** Every conversation with news or something waiting for you: what needs you first, then the latest. */
 export function unreadEntries(state: ListSource): UnreadEntry[] {
@@ -218,6 +260,7 @@ export function unreadEntries(state: ListSource): UnreadEntry[] {
       out.push({ kind: 'plan', channel: `plan:${plan.id}`, name: planTitle(plan), plan, ...(p.root ? { project: p } : {}), channels, ...(at ? { at } : {}), signal, ts });
     }
   }
+  out.push(...sentinelEntries(state));
   for (const w of state.shared) {
     const signal = signalOf(state, `ws:${w.id}`);
     if (counts(signal)) out.push({ kind: 'shared', channel: `ws:${w.id}`, name: w.name, owner: w.owner, id: w.id, signal, ts: activityOf(state.log, `ws:${w.id}`).lastTs ?? 0 });
@@ -250,10 +293,11 @@ export function workingCount(state: Pick<AppState, 'log' | 'selfId'>): number {
  */
 export function dockCount(state: ListSource & Pick<AppState, 'inbox' | 'knocks'>): number {
   const entries = unreadEntries(state);
-  const listed = new Set(entries.flatMap((e) => (e.kind === 'plan' ? e.channels : [e.channel])));
+  const listed = new Set(entries.flatMap((e) => (e.kind === 'plan' || e.kind === 'sentinel' ? e.channels : [e.channel])));
   const inListed = (channel: string | undefined): boolean => channel !== undefined && listed.has(channel);
   const covered = new Set([...state.approvals.filter((a) => inListed(a.channel)).map((a) => a.id), ...state.questions.filter((q) => inListed(q.channel)).map((q) => q.qid)]);
-  const notices = state.inbox.filter((n) => !n.read && !inListed(n.channel) && !(n.ref !== undefined && covered.has(n.ref)));
+  // A sentinel run's conversation counts only while it needs you (its entry, above): its notices never.
+  const notices = state.inbox.filter((n) => !n.read && !inListed(n.channel) && !isSentinelOwned(state, n.channel) && !(n.ref !== undefined && covered.has(n.ref)));
   const noted = new Set(notices.flatMap((n) => (n.ref === undefined ? [] : [n.ref])));
   const waiting = [...state.approvals.map((a) => a.id), ...state.questions.map((q) => q.qid)].filter((id) => !covered.has(id) && !noted.has(id)).length;
   return entries.length + notices.length + waiting + state.knocks.length;
