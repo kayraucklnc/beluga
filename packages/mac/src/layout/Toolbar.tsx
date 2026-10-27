@@ -159,7 +159,7 @@ export function Toolbar() {
           <>
             {live ? (
               <span className={cx(s.meta, s.metaState, s[`tone_${st.tone}`])}>
-                <Dot tone={st.tone === 'claude' ? 'claude' : st.tone === 'muted' ? 'muted' : st.tone} live={st.tone === 'claude'} />
+                <Dot tone={st.tone === 'claude' ? (ws.kind === 'worktree' ? 'worktree' : 'claude') : st.tone === 'muted' ? 'muted' : st.tone} live={st.tone === 'claude'} />
                 {st.label}
               </span>
             ) : null}

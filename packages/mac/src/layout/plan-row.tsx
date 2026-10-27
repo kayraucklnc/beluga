@@ -66,9 +66,14 @@ export function PlanRow({ plan, indent }: { plan: Plan; indent: number }) {
               </span>
             ) : null}
             {needs ? <DotMark tone={status.tone === 'error' ? 'error' : 'warn'} signal="needs" /> : inside.inside && !unread && !selected ? <DotMark tone="muted" signal="inside" /> : null}
-            <span className={m.mark} data-signal={working ? 'working' : undefined}>
-              <ProgressRing share={view.total ? view.done / view.total : 0} live={working} />
-            </span>
+            {/* Tasks running: the plan's orbit (how far it got stays in the tooltip); otherwise how far, as a ring. */}
+            {working ? (
+              <DotMark tone="plan" live signal="working" />
+            ) : (
+              <span className={m.mark}>
+                <ProgressRing share={view.total ? view.done / view.total : 0} />
+              </span>
+            )}
           </>
         }
       />

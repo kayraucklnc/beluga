@@ -67,7 +67,7 @@ function PlanItemRow(props: RowBase & { now: number }) {
         </span>
         <span className={s.branch}>plan</span>
         <span className={cx(s.state, s[`tone_${tone}`])}>
-          <Dot tone={tone} live={item.rank === 2} />
+          <Dot tone={tone === 'claude' ? 'plan' : tone} live={item.rank === 2} />
           {plan.tip || 'Plan'}
         </span>
         <span className={s.extra} title={item.last}>
@@ -106,7 +106,7 @@ function WorkspaceItemRow(props: RowBase & { now: number }) {
         </span>
         <span className={s.branch}>{w.branch ?? (w.kind === 'chat' ? 'chat' : '')}</span>
         <span className={cx(s.state, s[`tone_${st.tone}`])}>
-          <Dot tone={st.tone} live={act.running} />
+          <Dot tone={act.running && w.kind === 'worktree' ? 'worktree' : st.tone} live={act.running} />
           {st.label}
         </span>
         <span className={s.extra} title={item.last}>

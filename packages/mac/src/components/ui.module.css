@@ -213,6 +213,12 @@
 .dot_subagent {
   background: var(--subagent);
 }
+.dot_worktree {
+  background: var(--worktree);
+}
+.dot_plan {
+  background: var(--plan);
+}
 .dot_muted {
   background: var(--text-3);
   opacity: 0.6;
@@ -235,6 +241,12 @@
 }
 .live_subagent {
   color: var(--subagent);
+}
+.live_worktree {
+  color: var(--worktree);
+}
+.live_plan {
+  color: var(--plan);
 }
 .live_muted {
   color: var(--text-3);

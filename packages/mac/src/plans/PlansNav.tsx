@@ -36,7 +36,7 @@ export function ProgressRing({ share, live }: { share: number; live?: boolean })
 }
 
 /**
- * One plan as a sidebar row: its name, a progress ring (in Claude’s color while tasks run), and a dot when it
+ * One plan as a sidebar row: its name, a progress ring (in the plan color while tasks run), and a dot when it
  * needs you (why, in the tooltip). Clicking opens the plan. Used under Plans, and under a project.
  */
 function PlanSideRow({ plan, indent = 0 }: { plan: Plan; indent?: number }) {
@@ -62,7 +62,7 @@ function PlanSideRow({ plan, indent = 0 }: { plan: Plan; indent?: number }) {
       label={title}
       detail={tip}
       onClick={() => open(plan.id)}
-      trailing={needs ? <DotMark tone={status.tone === 'error' ? 'error' : 'warn'} signal="needs" /> : working ? <DotMark tone="claude" live signal="working" /> : null}
+      trailing={needs ? <DotMark tone={status.tone === 'error' ? 'error' : 'warn'} signal="needs" /> : working ? <DotMark tone="plan" live signal="working" /> : null}
     />
   );
 }

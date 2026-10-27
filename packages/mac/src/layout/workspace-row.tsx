@@ -157,7 +157,7 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent, fold }: { w
                   {fold.count}
                 </span>
               ) : null}
-              <SignalMark signal={signal} fallback={quiet} />
+              <SignalMark signal={signal} fallback={quiet} working={ws.kind === 'worktree' ? 'worktree' : 'claude'} />
             </>
           )
         }
