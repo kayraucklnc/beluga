@@ -1,5 +1,6 @@
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import * as g from './git.js';
 
@@ -108,12 +109,91 @@ export async function worktreeFacts(ws: { readonly path: string; readonly branch
   };
 }
 
+/** Folders set aside by removeWorktreeKeepingBranch, still being deleted. */
+const deleting = new Set<Promise<void>>();
+
+/** Resolves once every folder set aside so far is deleted (or given up on). */
+export const deletesSettled = (): Promise<void> => Promise.all([...deleting]).then(() => undefined);
+
+const run = (cmd: string, args: readonly string[]): Promise<void> =>
+  new Promise((resolve, reject) => execFile(cmd, [...args], (err) => (err ? reject(err) : resolve())));
+
+/**
+ * Delete a folder nobody uses any more, at the lowest disk priority (macOS's background QoS,
+ * else nice): a worktree's node_modules can be hundreds of thousands of files, and deleting
+ * them at full speed stalls the whole Mac. Read-only files (some package caches) are made
+ * writable for a second try; whatever still can't go is left where it was set aside.
+ */
+function deleteInBackground(dir: string): void {
+  const rmrf = (): Promise<void> => (process.platform === 'darwin' ? run('/usr/sbin/taskpolicy', ['-b', '/bin/rm', '-rf', dir]) : run('nice', ['-n', '19', 'rm', '-rf', dir])).catch(() => rm(dir, { recursive: true, force: true }));
+  const job: Promise<void> = rmrf()
+    .catch(() => run('chmod', ['-R', 'u+w', dir]).then(rmrf))
+    .catch(() => undefined)
+    .finally(() => deleting.delete(job));
+  deleting.add(job);
+}
+
+const SET_ASIDE = /^\..+\.removing-\d+$/;
+const asideOf = (dir: string): string => path.join(path.dirname(dir), `.${path.basename(dir)}.removing-${Date.now()}`);
+
+/** Delete a folder that isn't a worktree (any more) without waiting: set aside, then deleted in the background. */
+export async function deleteFolderInBackground(dir: string): Promise<void> {
+  if (!existsSync(dir)) return;
+  const aside = asideOf(dir);
+  await rename(dir, aside);
+  deleteInBackground(aside);
+}
+
+/**
+ * Finish what an earlier background delete couldn't (something still wrote in it, or Beluga quit
+ * first): the set-aside folders in these folders. Each folder looked in once per run.
+ */
+const swept = new Set<string>();
+export async function sweepSetAside(parents: Iterable<string>): Promise<void> {
+  for (const parent of parents) {
+    if (swept.has(parent)) continue;
+    swept.add(parent);
+    const names = await readdir(parent).catch(() => [] as string[]);
+    for (const name of names) if (SET_ASIDE.test(name)) deleteInBackground(path.join(parent, name));
+  }
+}
+
+/** Git would remove it as is: nothing uncommitted or untracked, no submodules, not locked. */
+async function cleanEnough(dir: string): Promise<boolean> {
+  const admin = await adminDir(dir);
+  if (!admin || existsSync(path.join(admin, 'locked')) || existsSync(path.join(dir, '.gitmodules'))) return false;
+  const status = await tryGit(dir, ['status', '--porcelain', '--ignore-submodules=none']);
+  return status !== undefined && !status.trim();
+}
+
 /**
  * Remove a worktree's folder and git's record of it; its branch stays. Refuses when it has
  * uncommitted changes unless `force` (you confirmed losing them).
+ *
+ * Quick whatever its size: the folder is renamed aside (instant on the same disk), git forgets
+ * it, and the files are deleted in the background. Letting `git worktree remove` delete a big
+ * folder took minutes, slowed the Mac down, and its time limit could stop it halfway ("Directory
+ * not empty").
  */
 export async function removeWorktreeKeepingBranch(repo: string, dir: string, force: boolean): Promise<void> {
-  if (existsSync(dir)) return g.removeWorktree(repo, dir, force);
-  // Folder already gone: newer git removes the record directly; older git only prunes.
-  await g.removeWorktree(repo, dir).catch(() => g.git(repo, ['worktree', 'prune']));
+  if (!existsSync(dir)) {
+    // Folder already gone: newer git removes the record directly; older git only prunes.
+    await g.removeWorktree(repo, dir).catch(() => g.git(repo, ['worktree', 'prune']));
+    return;
+  }
+  // Git's own checks still decide what may go without `force`: it refuses with its own message.
+  if (!force && !(await cleanEnough(dir))) return g.removeWorktree(repo, dir, false);
+  const aside = asideOf(dir);
+  try {
+    await rename(dir, aside);
+  } catch {
+    return g.removeWorktree(repo, dir, force); // something holds it: the slow way
+  }
+  try {
+    await g.removeWorktree(repo, dir, true);
+  } catch (err) {
+    await rename(aside, dir).catch(() => undefined); // git still lists it: put it back
+    throw err;
+  }
+  deleteInBackground(aside);
 }
