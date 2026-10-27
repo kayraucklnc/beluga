@@ -151,13 +151,15 @@ describe('TerminalSession input', () => {
 
   it('writeKey() encodes Ink keys', async () => {
     const s = interactive();
+    // Typed once the shell is up (a busy CI machine starts it slowly; keys sent before can be lost).
+    await waitText(s, '$');
     s.writeKey('e', {});
     s.writeKey('c', {});
     s.writeKey('h', {});
     s.writeKey('o', {});
     for (const ch of ' ok') s.writeKey(ch, {});
     s.writeKey('', { return: true });
-    await waitFor(() => screen(s).some((l) => l.trim() === 'ok'));
+    await waitFor(() => screen(s).some((l) => l.trim() === 'ok'), 5000);
   });
 
   it('notifies listeners, throttled, and supports unsubscribe', async () => {
