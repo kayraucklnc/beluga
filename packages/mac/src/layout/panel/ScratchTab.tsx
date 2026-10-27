@@ -184,6 +184,7 @@ function Preview({ wsId, owner, file, root, onClose }: { wsId: string; owner?: s
         <span className={s.flex} />
         {isViewable(file.path) ? null : <IconButton icon="toEnd" label="Follow the End" active={follow} onClick={followEnd} />}
         {owner ? null : <IconButton icon="external" label="Open With Its App" onClick={() => void openWithDefaultApp(client, local)} />}
+        {owner ? null : <IconButton icon="folder" label="Show in Finder" onClick={() => void revealInFinder(client, local)} />}
         <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => void api.files.open(at).then(() => openFocus('file', wsId))} />
         <IconButton icon="x" label="Close" keys="Esc" onClick={onClose} />
       </div>
@@ -268,7 +269,7 @@ export function ScratchTab({ wsId, owner }: { wsId: string; owner?: string }) {
             >
               <IconButton icon={sort === 'viewable' ? 'eye' : 'clock'} label={sort === 'viewable' ? 'Sorted: viewable first' : 'Sorted: newest first'} />
             </ActionsDropdown>
-            {owner ? null : <IconButton icon="folder" label="Show in Finder" onClick={() => void revealInFinder(client, list.dir)} />}
+            {owner ? null : <IconButton icon="folder" label="Show Folder in Finder" onClick={() => void revealInFinder(client, list.dir)} />}
           </div>
         </div>
         {working ? <NextFileRow /> : null}
