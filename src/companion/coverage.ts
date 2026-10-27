@@ -268,6 +268,9 @@ export const PHONE: Record<Method, Side> = {
   'claudeCode.output': 'phone',
   'claudeCode.taskOutput': 'phone',
   'claudeCode.skills': 'mac',
+  'claudeCode.mcpServers': 'mac',
+  'claudeCode.mcpSignIn': 'mac',
+  'claudeCode.mcpSignedIn': 'mac',
   // A step's details are code (commands, diffs); the phone gets steps in words in its views.
   'agent.steps': 'mac',
   'agent.step': 'mac',

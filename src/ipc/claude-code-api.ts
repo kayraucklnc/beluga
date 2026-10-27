@@ -10,6 +10,7 @@ const sessionId = z.string().regex(/^[0-9a-f-]{8,64}$/i);
 const agentId = z.string().regex(/^[\w-]{1,64}$/);
 const seq = z.number().int().min(0);
 const filePath = z.string().min(2).max(4096).refine((p) => p.startsWith('/') && !p.includes('\0'), 'a full path');
+const mcpName = z.string().min(1).max(200);
 const Page = z.object({ before: seq.optional(), after: seq.optional(), limit: z.number().int().min(1).max(200).optional() }).strict();
 
 export const CLAUDE_CODE_API = {
@@ -27,4 +28,10 @@ export const CLAUDE_CODE_API = {
   'claudeCode.taskOutput': { args: z.tuple([sessionId, agentId.optional(), agentId]) },
   // The skills and custom commands Claude can use in a conversation (its folder's, yours, your plugins') → ClaudeSkill[].
   'claudeCode.skills': { args: z.tuple([z.string().min(1).max(200)]) },
+  // Your MCP servers (yours, your projects', your plugins', claude.ai's) and how each is now → McpServerRow[].
+  'claudeCode.mcpServers': { args: z.tuple([]) },
+  // Start signing in to one (Claude Code's name for it) → McpSignIn: the page for your browser, or why not.
+  'claudeCode.mcpSignIn': { args: z.tuple([mcpName]) },
+  // Wait for that sign-in to finish → true once connected, false when it gave up, undefined when none is waiting.
+  'claudeCode.mcpSignedIn': { args: z.tuple([mcpName]) },
 } as const;

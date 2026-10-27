@@ -18,20 +18,42 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
  * A project's .mcp.json is left out: it sits in the folder friends may write to.
  */
 export function ownerMcpServers(cwd: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): Record<string, McpServerConfig> {
+  return Object.fromEntries(ownerMcpEntries([cwd], env, home).map((e) => [e.name, e.config]));
+}
+
+/** Where one of your servers comes from (Settings › Claude says so beside it). */
+export interface OwnerMcpEntry {
+  readonly name: string;
+  readonly config: McpServerConfig;
+  readonly from: 'user' | 'project' | 'plugin';
+  /** from 'plugin': the plugin's name. */
+  readonly plugin?: string;
+  /** from 'project': the folder it's set for. */
+  readonly project?: string;
+}
+
+/**
+ * Your servers for these folders: the ones everywhere, then each folder's own (a later folder's
+ * server of the same name wins, as the folder's own wins over yours). One a folder turned off is
+ * left out there, but still comes for the other folders.
+ */
+export function ownerMcpEntries(cwds: readonly string[], env: NodeJS.ProcessEnv = process.env, home = os.homedir()): OwnerMcpEntry[] {
   const configDir = env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
   const global = readJson(env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(home, '.claude.json'));
   const projects = asRecord(global?.projects) ?? {};
-  const local = [...new Set([cwd, mainCheckout(cwd)].filter((p): p is string => Boolean(p)).map((p) => path.resolve(p)))]
-    .map((p) => asRecord(projects[p]))
-    .filter((p): p is Record<string, unknown> => Boolean(p));
-  const off = new Set(local.flatMap((p) => (Array.isArray(p.disabledMcpServers) ? p.disabledMcpServers.filter((n): n is string => typeof n === 'string') : [])));
-  const servers: Record<string, McpServerConfig> = {
-    ...pluginServers(configDir, env),
-    ...serversIn(global?.mcpServers, env),
-    ...Object.assign({}, ...local.map((p) => serversIn(p.mcpServers, env))),
-  };
-  for (const name of off) delete servers[name];
-  return servers;
+  const everywhere = new Map<string, OwnerMcpEntry>();
+  for (const [name, config] of Object.entries(pluginServers(configDir, env))) everywhere.set(name, { name, config, from: 'plugin', plugin: name.split(':')[1] });
+  for (const [name, config] of Object.entries(serversIn(global?.mcpServers, env))) everywhere.set(name, { name, config, from: 'user' });
+  const out = new Map<string, OwnerMcpEntry>();
+  for (const cwd of cwds) {
+    const local = [...new Set([cwd, mainCheckout(cwd)].filter((p): p is string => Boolean(p)).map((p) => path.resolve(p)))]
+      .map((p) => [p, asRecord(projects[p])] as const)
+      .filter((p): p is readonly [string, Record<string, unknown>] => Boolean(p[1]));
+    const offHere = new Set(local.flatMap(([, p]) => (Array.isArray(p.disabledMcpServers) ? p.disabledMcpServers.filter((n): n is string => typeof n === 'string') : [])));
+    for (const [name, entry] of everywhere) if (!offHere.has(name) && !out.has(name)) out.set(name, entry);
+    for (const [project, p] of local) for (const [name, config] of Object.entries(serversIn(p.mcpServers, env))) if (!offHere.has(name)) out.set(name, { name, config, from: 'project', project });
+  }
+  return [...out.values()];
 }
 
 /** The MCP servers of the plugins you turned on, from where Claude Code installed them. */

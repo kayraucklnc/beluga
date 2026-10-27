@@ -501,6 +501,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `claudeCode.output` | ✓ looking at one of them: pictures inline (GIFs animate), videos playing inline up to 64 MB, text with secrets redacted (only files that agent made or looked at) |
 | `claudeCode.taskOutput` | ✓ following a background command or watch Claude or a sub-agent started (the panel's Background tab, below the terminal; a sub-agent's Background): the end of its output, live, cleaned of terminal codes and secrets; its own log when it writes to one |
 | `claudeCode.skills` | ✓ the message box's / list: the skills and custom commands Claude can use in this conversation (the project's, yours, your plugins'), each with its description |
+| `claudeCode.mcpServers` | ✓ Settings › Claude › MCP servers: your servers (yours, your projects', your plugins', claude.ai's), where each comes from and whether it's connected |
+| `claudeCode.mcpSignIn` | ✓ Settings › Claude › MCP servers › Sign In…: opens the server's sign-in page in your browser |
+| `claudeCode.mcpSignedIn` | ✓ Settings › Claude › MCP servers: the row waits for the browser, then says whether you're signed in |
 | `agent.steps` | ✓ a Claude card's steps as disclosure rows (an icon per tool, ✓/✗, how long it took), thinking as “Thought for 12s”, sub-agents' steps |
 | `agent.step` | ✓ opening a step on a Claude card: Bash's command and output (colours kept), the file read, an edit's diff, a search's matches, a page fetched, an MCP tool's input and output as JSON, the thinking |
 | `view.fetch` | ✓ a live table, chart, stats or code view in a conversation fetching its next page, sorted or searched, or refreshing it (docs/views.md) |

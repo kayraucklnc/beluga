@@ -1,4 +1,5 @@
 import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
+import type { McpServerRow } from '../shared/mcp.js';
 import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
 import { cleanPlanTitle, slugify } from './namer.js';
 import { type DraftContext, type TaskDraft, firstLineTitle } from './task-drafter.js';
@@ -671,9 +672,38 @@ function mockPlanTitle(goal: string): string | undefined {
   return cleanPlanTitle(top.sort(([, a], [, b]) => a.at - b.at).map(([w]) => w).join(' '));
 }
 
+/** The demo's MCP servers (Settings › Claude): one of each kind, two waiting for a sign-in. */
+const DEMO_MCP: readonly McpServerRow[] = [
+  { name: 'figma', label: 'figma', from: 'user', status: 'needs-auth', canSignIn: true },
+  { name: 'plugin:context7:context7', label: 'context7', from: 'plugin', where: 'context7', status: 'connected', canSignIn: false },
+  { name: 'linear', label: 'linear', from: 'project', where: 'bob-api', status: 'needs-auth', canSignIn: true },
+  { name: 'plugin:ratel:ratel', label: 'ratel', from: 'plugin', where: 'ratel', status: 'failed', error: 'npx exited (code 1)', canSignIn: false },
+  { name: 'claude.ai Gmail', label: 'Gmail', from: 'claude.ai', status: 'connected', canSignIn: false },
+];
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   const context = new MockContext();
+  let mcp = DEMO_MCP;
+  const signing = new Map<string, Promise<boolean>>();
   return {
+    mcpServers: async () => {
+      await new Promise((r) => setTimeout(r, 300 * pace));
+      return mcp;
+    },
+    // The sign-in page is a stand-in; you're "back from the browser" a moment later.
+    mcpSignIn: async (_projects, name) => {
+      if (!mcp.some((m) => m.name === name && m.canSignIn)) return { error: `No MCP server named ${name}.` };
+      signing.set(
+        name,
+        new Promise((r) => setTimeout(r, 1200 * pace)).then(() => {
+          mcp = mcp.map((m) => (m.name === name ? { ...m, status: 'connected', canSignIn: false } : m));
+          signing.delete(name);
+          return true;
+        }),
+      );
+      return { url: `https://example.com/oauth/${encodeURIComponent(name)}` };
+    },
+    mcpSignedIn: (name) => signing.get(name) ?? Promise.resolve(undefined),
     nameTask: async (prompt) => {
       await new Promise((r) => setTimeout(r, 600 * pace));
       return slugify(prompt);
