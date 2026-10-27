@@ -28,6 +28,8 @@ export interface SharedWorkspace {
   readonly via?: 'mesh';
   /** Over the network: the owner's project it belongs to. */
   readonly projectId?: string;
+  /** Over the network: there's earlier conversation to scroll back to (BLG-259). */
+  readonly earlier?: boolean;
 }
 
 export interface RosterEntry {

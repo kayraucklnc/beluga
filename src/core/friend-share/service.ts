@@ -10,7 +10,7 @@ import { fetchBytes } from '../downloads.js';
 import type { FriendFolder, ProjectGrant, SharedCopy, SharedProject } from '../friend-share-store.js';
 import { readProjectIcon } from '../project-icons.js';
 import type { Session } from '../session.js';
-import type { Action, Store } from '../store.js';
+import type { Action, LogItem, Store } from '../store.js';
 import { clean, peerName } from '../store.js';
 import { type FriendShareInput, type FriendSharing, historyFor, saidBy } from '../workspace-sharing.js';
 import { COPY_TTL_MS, cloneFrom, cloneFromBundle, cloneUrl, copiesHome, copyTarget, packProject } from './copy.js';
@@ -53,6 +53,8 @@ type HistoryItem = { readonly from: string; readonly text: string; readonly ts: 
 /** A project a friend shared with you, as kept on disk: with each worktree's recent conversation. */
 interface Received extends SharedProject {
   readonly history: Readonly<Record<string, readonly HistoryItem[]>>;
+  /** Worktrees whose earlier conversation hasn't all come yet. */
+  readonly more?: Readonly<Record<string, boolean>>;
   /** Shared whole (you get a copy), and where to clone it from. */
   readonly whole?: boolean;
   readonly url?: string;
@@ -77,6 +79,8 @@ const RESULTS = new Set<Body['kind']>(['fs_list_result', 'fs_read_result', 'fs_c
 /** A Claude's steps as they stream only go to who's linked now; these wait for an offline Mac. */
 const KEPT_EVENTS = new Set(['queued', 'awaiting_approval', 'started', 'done', 'error', 'denied', 'answered']);
 const INBOUND_KEPT = 500;
+/** A friend's worktree's conversation kept on your Mac (the pages you scrolled back to, and what's said since). */
+const HISTORY_KEPT = 2000;
 const ICON_MAX = 120_000;
 
 const wsOf = (channel: string | undefined): string | undefined => (channel?.startsWith('ws:') ? channel.slice(3) : undefined);
@@ -287,7 +291,7 @@ export class FriendShares implements FriendSharing {
         if (had?.sig === sig && !fresh.length) continue;
         changed = true;
         if (had?.sig !== sig) this.courier.send(peerId, msg, { reliable: true, key: `project:${projectId}` });
-        for (const w of fresh) this.courier.send(peerId, { k: 'history', ws: w.id, items: this.historyOf(w.id) }, { reliable: true });
+        for (const w of fresh) this.courier.send(peerId, { k: 'history', ws: w.id, ...this.historyPage(w.id) }, { reliable: true });
         this.sent = { ...this.sent, [peerId]: { ...this.sent[peerId], [projectId]: { sig, ws: worktrees.map((w) => w.id) } } };
       }
     }
@@ -338,12 +342,34 @@ export class FriendShares implements FriendSharing {
     }
   }
 
-  private historyOf(wsId: string): HistoryItem[] {
+  /**
+   * A page of a worktree's conversation, the newest before `before` (or the newest of all): from
+   * what's saved on disk and what's said this session, so the whole of it can be scrolled back to.
+   */
+  private historyPage(wsId: string, before = Infinity): { items: HistoryItem[]; more: boolean } {
     const state = this.state;
-    return historyFor(state.log, `ws:${wsId}`, (id) => peerName(state, id))
-      .filter((h) => h.text.trim())
-      .slice(-HISTORY_ITEMS)
+    const channel = `ws:${wsId}`;
+    const live = state.log.filter((l) => l.channel === channel);
+    let saved: LogItem[] = [];
+    try {
+      saved = this.opts.session.workspaces?.manager.loadHistory<LogItem>(wsId) ?? [];
+    } catch {
+      // Only what's on screen, then.
+    }
+    const ids = new Set(live.map((l) => l.id));
+    const all = historyFor([...saved.filter((l) => !ids.has(l.id)), ...live], channel, (id) => peerName(state, id), Number.MAX_SAFE_INTEGER)
+      .filter((h) => h.text.trim() && h.ts < before)
       .map((h) => ({ from: h.from.slice(0, 120), text: h.text.slice(0, HISTORY_TEXT), ts: Math.max(0, Math.floor(h.ts)), byAgent: h.byAgent }));
+    return { items: all.slice(-HISTORY_ITEMS), more: all.length > HISTORY_ITEMS };
+  }
+
+  /** Scrolling back in a friend's worktree: ask its owner for the page before what you have. */
+  earlier(owner: string, wsId: string): boolean {
+    const rec = this.receivedWs(wsId);
+    if (!rec || rec.owner !== owner || !rec.more?.[wsId]) return false;
+    if (cannotTake(rec.ownerName, this.opts.mesh.belugaOf(owner), 'share.history', this.opts.mesh.isLinked(owner))) return false;
+    const first = rec.history[wsId]?.[0];
+    return this.courier.send(owner, { k: 'history_request', ws: wsId, before: first?.ts ?? Date.now() }, { reliable: false });
   }
 
   // ---------------------------------------------------------------- the link
@@ -433,6 +459,9 @@ export class FriendShares implements FriendSharing {
         return;
       case 'history':
         return this.onHistory(from, m);
+      case 'history_request':
+        if (this.grantedTo(m.ws, from)) this.courier.send(from, { k: 'history', ws: m.ws, before: m.before, ...this.historyPage(m.ws, m.before) }, { reliable: false });
+        return;
       case 'body':
         return this.onBody(from, m, got.id);
       case 'folder':
@@ -611,9 +640,24 @@ export class FriendShares implements FriendSharing {
     const rec = this.receivedWs(m.ws);
     if (!rec || rec.owner !== from) return;
     const items = m.items.map((h) => ({ from: clean(h.from), text: clean(h.text), ts: h.ts, byAgent: h.byAgent }));
-    this.received = { ...this.received, [keyOf(rec.owner, rec.id)]: { ...rec, history: { ...rec.history, [m.ws]: items } } };
+    const more = { ...rec.more, [m.ws]: Boolean(m.more) };
+    if (m.before === undefined) {
+      this.received = { ...this.received, [keyOf(rec.owner, rec.id)]: { ...rec, more, history: { ...rec.history, [m.ws]: items } } };
+      this.saveReceived();
+      this.publishReceived(false);
+      return this.injectHistory(rec.owner, m.ws, items);
+    }
+    // A page from further back: before what you have, above what's on screen.
+    const have = rec.history[m.ws] ?? [];
+    const first = have[0]?.ts ?? Infinity;
+    const older = items.filter((h) => h.ts < first);
+    this.received = { ...this.received, [keyOf(rec.owner, rec.id)]: { ...rec, more, history: { ...rec.history, [m.ws]: [...older, ...have].slice(-HISTORY_KEPT) } } };
     this.saveReceived();
-    this.injectHistory(rec.owner, m.ws, items);
+    this.publishReceived(false);
+    const channel = `ws:${m.ws}`;
+    const state = this.state;
+    const lines: LogItem[] = older.map((h, i) => ({ id: `fh-${m.ws}-${h.ts}-${i}`, type: 'system', channel, text: `${h.from}: ${h.text}`, ts: h.ts, level: 'info', said: saidBy(state, rec.owner, h) }));
+    this.dispatch({ type: 'history', channel, items: [...lines, ...state.log.filter((l) => l.channel === channel)] });
   }
 
   /** A worktree's earlier conversation, as lines of who said what (as a room invite brings it). */
@@ -647,7 +691,7 @@ export class FriendShares implements FriendSharing {
     if (action.type === 'chat') item = { from: peerName(this.state, action.from), text: action.text.slice(0, HISTORY_TEXT), ts: action.ts, byAgent: action.byAgent };
     if (action.type === 'agent_event' && action.event === 'done' && action.text.trim()) item = { from: `${peerName(this.state, action.owner)}'s Claude`, text: action.text.slice(0, HISTORY_TEXT), ts: action.ts, byAgent: true };
     if (!item) return;
-    const history = [...(rec.history[ws] ?? []), item].slice(-HISTORY_ITEMS);
+    const history = [...(rec.history[ws] ?? []), item].slice(-HISTORY_KEPT);
     this.received = { ...this.received, [keyOf(rec.owner, rec.id)]: { ...rec, history: { ...rec.history, [ws]: history } } };
     this.saveReceived();
   }
@@ -665,11 +709,11 @@ export class FriendShares implements FriendSharing {
   /** Into the shared state: one row per project, and each worktree as a workspace shared with you. */
   private publishReceived(startup: boolean): void {
     const all = Object.values(this.received);
-    this.dispatch({ type: 'fshare_projects', projects: all.map(({ history: _h, whole: _w, url: _u, ...p }) => p) });
+    this.dispatch({ type: 'fshare_projects', projects: all.map(({ history: _h, whole: _w, url: _u, more: _m, ...p }) => p) });
     for (const p of all) {
       for (const w of p.worktrees) {
         const known = this.state.shared.find((s) => s.id === w.id && s.owner === p.owner);
-        const ws = { owner: p.owner, id: w.id, name: w.name, project: p.name, ...(w.branch ? { branch: w.branch } : {}), role: p.role, share: shareNameOf(w.id), via: 'mesh' as const, projectId: p.id };
+        const ws = { owner: p.owner, id: w.id, name: w.name, project: p.name, ...(w.branch ? { branch: w.branch } : {}), role: p.role, share: shareNameOf(w.id), via: 'mesh' as const, projectId: p.id, ...(p.more?.[w.id] ? { earlier: true } : {}) };
         if (!known || JSON.stringify(known) !== JSON.stringify(ws)) this.dispatch({ type: 'shared_add', ws });
         this.dispatch({ type: 'roster', id: w.id, members: p.members.map((m) => ({ peerId: m.peerId, role: m.role })) });
         const items = p.history[w.id];

@@ -161,6 +161,8 @@ export const API = {
   'sharing.copyProject': args(id, id),
   // A friend's shared worktree's scratch folder, for your Scratch tab (owner, worktree id).
   'sharing.scratch': args(id, id),
+  // Scrolling back in a friend's shared worktree: its page of conversation before what you have (owner, worktree id).
+  'sharing.earlier': args(id, id),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),

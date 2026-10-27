@@ -77,6 +77,7 @@ export const PHONE: Record<Method, Side> = {
   'sharing.leaveProject': 'mac',
   'sharing.copyProject': 'mac',
   'sharing.scratch': 'mac',
+  'sharing.earlier': 'mac',
   'invites.create': 'mac',
   'invites.revoke': 'mac',
   'invites.copyLink': 'mac',

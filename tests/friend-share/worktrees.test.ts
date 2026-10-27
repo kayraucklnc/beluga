@@ -122,4 +122,36 @@ describe('a worktree shared over the network', () => {
     expect(list.files.every((f) => f.mtime > 0)).toBe(true);
     expect(await kay.session.readFile({ owner: ata.id, share: `ws-${wsId}`, path: '.beluga/scratch/notes.md' })).toMatchObject({ content: '# notes' });
   }, 60_000);
+
+  it('its whole conversation reaches the friend a page at a time as they scroll back, oldest on top (BLG-259)', async () => {
+    net = await crowd();
+    const ata = await mac(net, 'ata', { workspaces: await createDemoWorkspaces() });
+    const kay = await mac(net, 'kay');
+    macs.push(ata, kay);
+    await befriend(ata.person, kay.person);
+    const project = ata.store.getState().projects.find((p) => p.name === 'bob-api')!;
+    const ws = project.workspaces.find((w) => !w.archived && !w.external && w.kind === 'worktree')!;
+    const channel = `ws:${ws.id}`;
+    const t0 = Date.now() - 1_000_000;
+    ata.session.workspaces!.manager.saveHistory(
+      ws.id,
+      Array.from({ length: 150 }, (_, i) => ({ id: `old-${i}`, type: 'chat', channel, from: ata.id, text: `line ${i}`, ts: t0 + i * 1000, byAgent: false })),
+    );
+    ata.session.sharing.shareWithFriend({ peerId: kay.id, workspaceId: ws.id, role: 'view' });
+    // Each line reads "<who>: <text>"; what was said is what's checked.
+    const lines = (): string[] => kay.store.getState().log.filter((l) => l.channel === channel && l.type === 'system').map((l) => (l as { text: string }).text.replace(/^[^:]*: /, ''));
+    await settle(() => lines().length === 60);
+    expect(lines()[0]).toBe('line 90');
+    expect(kay.store.getState().shared.find((w) => w.id === ws.id)?.earlier).toBe(true);
+
+    expect(kay.shares.earlier(ata.id, ws.id)).toBe(true);
+    await settle(() => lines().length === 120);
+    expect(lines()[0]).toBe('line 30');
+    expect(lines()[119]).toBe('line 149');
+    kay.shares.earlier(ata.id, ws.id);
+    await settle(() => lines().length === 150);
+    expect(lines()[0]).toBe('line 0');
+    await settle(() => !kay.store.getState().shared.find((w) => w.id === ws.id)?.earlier);
+    expect(kay.shares.earlier(ata.id, ws.id)).toBe(false);
+  }, 60_000);
 });
