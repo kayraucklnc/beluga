@@ -31,6 +31,7 @@ import {
   type MergeView,
   type NeedsYou,
   type OutputView,
+  type ProseView,
   type PeopleView,
   type PlansView,
   type PlanView,
@@ -60,6 +61,28 @@ import { slotWaitDetail } from '../shared/run-slots.js';
 
 /** Words for a turn: code taken out (strip.ts), math typeset (math-svg.ts). */
 const proseOf = (markdown: string) => withMath(stripCode(markdown));
+
+/** A picture in Claude's words: `![alt](src)`, or `![alt](<src with spaces>)`. */
+const PICTURE = /!\[([^\]\n]*)\]\((?:<([^>\n]+)>|([^)\s]+))\)/g;
+
+/**
+ * Pictures Claude showed by their path on this Mac (`![Home](/…/.beluga/scratch/home.png)`) as a
+ * ref the phone fetches (`![Home](out:…)`): the phone can't open a Mac path, and saw only "!Home".
+ * The ref is handed out by the same rules as any output (pictures, never secrets), checked again
+ * when it's fetched; anything else (a web picture, a path that isn't one) is left as written.
+ */
+export function withPictures(prose: ProseView, refs: ViewContext['refs'], cwd?: string): ProseView {
+  if (!prose.text.includes('![')) return prose;
+  const text = prose.text.replace(PICTURE, (all, alt: string, angled: string | undefined, bare: string | undefined) => {
+    let p = (angled ?? bare ?? '').replace(/^file:\/\//, '').replace(/^~(?=\/)/, process.env.HOME ?? '~');
+    try {
+      p = decodeURI(p);
+    } catch {}
+    const out = p.startsWith('/') ? refs.output(p, cwd ? { cwd } : {}) : undefined;
+    return out?.kind === 'image' ? `![${alt}](${out.ref})` : all;
+  });
+  return text === prose.text ? prose : { ...prose, text };
+}
 
 /**
  * What the phone sees: small, finished views of the Mac's shared state, one per topic
@@ -769,11 +792,11 @@ function withSteers(items: readonly LogItem[]): Array<{ item: LogItem; steer?: S
   return items.flatMap((item) => (notes.has(item.id) ? [] : [{ item, ...(waiting.has(item.id) ? { steer: waiting.get(item.id)! } : {}) }]));
 }
 
-function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[], cc: ReadonlyMap<string, CcAgent> = new Map(), steer?: SteeredMessage): TurnView | undefined {
+function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[], cc: ReadonlyMap<string, CcAgent> = new Map(), steer?: SteeredMessage, pictures: (prose: ProseView) => ProseView = (p) => p): TurnView | undefined {
   const me = myId(state);
   if (item.type === 'chat') {
     const who = item.byAgent ? 'claude' : item.from === me ? 'you' : 'friend';
-    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose: proseOf(item.text), ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}) };
+    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose: who === 'claude' ? pictures(proseOf(item.text)) : proseOf(item.text), ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}) };
   }
   if (item.type === 'system') {
     // Earlier lines of a shared workspace's conversation ("bob: …") read as that person's turn.
@@ -802,7 +825,7 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
     id: item.id,
     who: 'claude',
     name: clip(item.owner === me || !item.owner ? 'Claude' : `${item.ownerName}'s Claude`, 100),
-    prose: proseOf(item.text),
+    prose: pictures(proseOf(item.text)),
     ts: item.ts,
     ...(status ? { status } : {}),
     ...(step ? { step } : {}),
@@ -975,7 +998,8 @@ export function convTurns(state: DomainState, ctx: ViewContext, named: string, o
   const task = taskOf(state, channel);
   const outputs = task ? [] : outputsOf(ctx, conv);
   const cc = ccAgents(state, channel);
-  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(withSteers(itemsOf(state, channel)).flatMap(({ item, steer }) => (turnOf(state, item, outputs, cc, steer) ?? [])), outputs);
+  const pictures = (p: ProseView) => withPictures(p, ctx.refs, 'cwd' in conv ? conv.cwd : undefined);
+  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(withSteers(itemsOf(state, channel)).flatMap(({ item, steer }) => (turnOf(state, item, outputs, cc, steer, pictures) ?? [])), outputs);
   const end = opts.before ? all.findIndex((t) => t.id === opts.before) : all.length;
   const upto = end < 0 ? all.length : end;
   const limit = opts.limit ?? VIEW_TURNS;

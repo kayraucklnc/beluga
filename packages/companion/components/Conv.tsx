@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
-import { Bot, Check, ChevronRight, CircleAlert, Hourglass, Images, MessageSquare } from 'lucide-react-native';
+import { Bot, Check, ChevronRight, CircleAlert, Hourglass, ImageIcon, Images, MessageSquare } from 'lucide-react-native';
 import { ProjectMark } from './ProjectMark';
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type ReactNode, useState } from 'react';
 import { Image } from 'expo-image';
-import { Linking, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Text, View } from 'react-native';
+import { openOutput } from './Outputs';
 import { Block } from './render/Block';
 import { CodeChip } from './render/CodeChip';
 import { InlineThing } from './render/Inline';
@@ -12,7 +13,7 @@ import { TASK_LINK_SCHEME, linkTaskKeys, readInline, splitInlineMath, tableView 
 import { TaskChip, type TaskRef, useTaskIndex } from './render/TaskChip';
 import { InlineMath, type MathMap } from './render/MathBlock';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
-import { ago } from '../lib/hooks';
+import { ago, useFile } from '../lib/hooks';
 import type { ConvSummary, ProseView, SubAgentView, Topic } from '../lib/link/protocol';
 import { color, tint, type } from '../lib/theme';
 import { Card, IconBadge, Press, T, type Tone, toneInk } from './ui';
@@ -46,7 +47,7 @@ function inline(s: string, base: Base, math?: MathMap, tasks?: ReadonlyMap<strin
 
 function pieces(s: string, base: Base, math: MathMap | undefined, tasks: ReadonlyMap<string, TaskRef> | undefined, bold: boolean): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = bold ? /(`[^`]+`|\[[^\]\n]+\]\([^)\s]+\))/g : /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]\n]+\]\([^)\s]+\))/g;
+  const re = bold ? /(`[^`]+`|!?\[[^\]\n]+\]\([^)\s]+\))/g : /(\*\*[^*]+\*\*|`[^`]+`|!?\[[^\]\n]+\]\([^)\s]+\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -56,8 +57,9 @@ function pieces(s: string, base: Base, math: MathMap | undefined, tasks: Readonl
     const tok = m[0];
     // Bold: its words, and what's inside it (a task chip, code, a link) drawn as anywhere else.
     if (tok.startsWith('**')) out.push(<Text key={i++} style={[base, { fontWeight: '700', color: color.text }]}>{pieces(tok.slice(2, -2), base, math, tasks, true)}</Text>);
-    else if (tok.startsWith('[')) {
-      const lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok)!;
+    else if (tok.startsWith('[') || tok.startsWith('![')) {
+      // A picture inside a sentence reads as its words, like a link (no stray "!").
+      const lm = /^!?\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok)!;
       const href = lm[2]!;
       // A task key (linkTaskKeys): its chip. A web link opens; anything else (a path on the Mac) reads as its words.
       if (href.startsWith(TASK_LINK_SCHEME)) {
@@ -119,7 +121,8 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at, tasks:
     const marker = /^\s*\[\[code:(\d+)\]\]\s*$/.exec(line);
     const bullet = /^\s*(?:[-*]|\d+\.) (.*)/.exec(line);
     const heading = /^#{1,3} (.*)/.exec(line) ?? /^\*\*([^*]+)\*\*:?$/.exec(line);
-    const img = /^\s*!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)\s*$/.exec(line);
+    // A picture on a line of its own: from the web, a file on the Mac (its ref), or a Mac path an older Mac left as written.
+    const img = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/.exec(line);
     if (/^\s*\|.*\|\s*$/.test(line) && isRule(lines[li + 1] ?? '')) {
       // A table: its heading, the rule, and the rows after it.
       const t: string[] = [line];
@@ -128,7 +131,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at, tasks:
       blocks.push({ kind: 'table', lines: t });
     } else if (!line.trim()) blocks.push({ kind: 'p', lines: [] });
     else if (marker) blocks.push({ kind: 'code', n: Number(marker[1]) });
-    else if (img) blocks.push({ kind: 'img', alt: img[1]!, src: img[2]! });
+    else if (img) blocks.push({ kind: 'img', alt: img[1]!, src: (img[2] ?? img[3])! });
     else if (heading) blocks.push({ kind: 'h', text: heading[1]! });
     else if (bullet) {
       if (last?.kind === 'ul') last.items.push(bullet[1]!);
@@ -161,7 +164,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at, tasks:
             </Text>
           );
         }
-        if (b.kind === 'img') return <WebImage key={bi} src={b.src} alt={b.alt} />;
+        if (b.kind === 'img') return /^https?:\/\//.test(b.src) ? <WebImage key={bi} src={b.src} alt={b.alt} /> : b.src.startsWith('out:') ? <MacImage key={bi} refId={b.src} alt={b.alt} /> : <MacImage key={bi} alt={b.alt || b.src.split('/').pop() || 'Picture'} />;
         if (b.kind === 'h') {
           return (
             <Text key={bi} style={[base, { fontWeight: '700', marginTop: bi ? 4 : 0, marginBottom: -3 }]}>
@@ -206,6 +209,33 @@ function WebImage({ src, alt }: { readonly src: string; readonly alt: string }) 
   );
 }
 
+
+/**
+ * A picture Claude showed from a file on the Mac (`![alt](out:…)`, views.ts withPictures): fetched
+ * by ref like any output, thumb here, the full one in the viewer on a tap, at its own shape. No ref
+ * (a Mac before this, or a path the phone may not see): a quiet tile with its name, never "!alt".
+ */
+function MacImage({ refId, alt }: { readonly refId?: string; readonly alt: string }) {
+  const file = useFile(refId, 'thumb');
+  const [aspect, setAspect] = useState(16 / 10);
+  const open = () => refId && openOutput({ ref: refId, name: alt || 'Picture', kind: 'image' }, []);
+  return (
+    <Press haptics={false} disabled={!refId || !file?.uri} onPress={open} accessibilityLabel={alt} style={{ borderRadius: 14, overflow: 'hidden', backgroundColor: color.sunken }}>
+      {file?.uri ? (
+        <Image source={{ uri: file.uri }} style={{ width: '100%', aspectRatio: aspect }} contentFit="cover" transition={200} onLoad={(e) => e.source.width && e.source.height && setAspect(Math.max(0.5, Math.min(3, e.source.width / e.source.height)))} />
+      ) : (
+        <View style={{ width: '100%', aspectRatio: 16 / 10, alignItems: 'center', justifyContent: 'center' }}>
+          {refId && file?.status !== 'error' ? <ActivityIndicator color={color.text3} /> : <ImageIcon color={color.text3} size={22} />}
+        </View>
+      )}
+      {alt || !refId ? (
+        <T v="caption" style={{ padding: 8 }}>
+          {refId ? alt : `${alt} · on the Mac`}
+        </T>
+      ) : null}
+    </Press>
+  );
+}
 
 /** The live step: a calm dot, and each new step rolls up into place (counts change in place). */
 export function StepTicker({ step, tone = 'peach', size = 13.5 }: { readonly step?: string; readonly tone?: Tone; readonly size?: number }) {
