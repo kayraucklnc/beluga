@@ -351,6 +351,59 @@ export async function pushForPr(dir: string, head: string, opts: { readonly http
   }
 }
 
+export type BaseMergeResult = { readonly ok: true; readonly how: 'fast_forward' | 'merge_commit'; readonly sha: string } | { readonly ok: false; readonly reason: 'conflict'; readonly files: readonly string[] } | { readonly ok: false; readonly reason: 'moved' };
+
+/**
+ * Merge a worktree's branch straight into origin's `base`, with no pull request: the latest
+ * origin/<base> is fetched, then fast-forwarded to `head` when it can be, or else a merge commit
+ * (origin/<base> first, `head` second) is made with `git merge-tree`, so no checkout, not even the
+ * main folder's, changes. Then it's pushed, never forced: someone pushing to `base` in between
+ * ('moved') or a conflict leaves GitHub as it was.
+ */
+export async function mergeToBase(dir: string, head: string, base: string, opts: { readonly https?: boolean } = {}): Promise<BaseMergeResult> {
+  const url = opts.https ? httpsRemoteOf((await run('git', ['remote', 'get-url', 'origin'], dir, 5000)).trim()) : undefined;
+  if (opts.https && !url) throw new Error('origin isn’t an SSH address Beluga can push to over HTTPS');
+  const to = url ?? 'origin';
+  const pre = url ? ghCredentials() : [];
+  const tracking = `refs/remotes/origin/${base}`;
+  try {
+    await run('git', [...pre, 'fetch', to, `+refs/heads/${base}:${tracking}`], dir, 120_000);
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    throw new PushError(pushWhy(raw), raw);
+  }
+  const theirs = (await run('git', ['rev-parse', tracking], dir, 5000)).trim();
+  const ours = (await run('git', ['rev-parse', head], dir, 5000)).trim();
+  const ancestor = await run('git', ['merge-base', '--is-ancestor', theirs, ours], dir, 10_000).then(
+    () => true,
+    () => false,
+  );
+  let sha = ours;
+  if (!ancestor) {
+    const tree = await gitOut(['merge-tree', '--write-tree', '--name-only', '--no-messages', theirs, ours], dir);
+    const [oid, ...files] = tree.stdout.split('\n').filter(Boolean);
+    if (tree.code === 1) return { ok: false, reason: 'conflict', files };
+    if (tree.code !== 0 || !oid) throw new Error(tree.stderr.trim() || 'git merge-tree failed');
+    sha = (await run('git', ['commit-tree', oid, '-p', theirs, '-p', ours, '-m', `Merge branch '${head}' into ${base}`], dir, 10_000)).trim();
+  }
+  try {
+    await run('git', [...pre, 'push', to, `${sha}:refs/heads/${base}`], dir, 120_000);
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    if (/non-fast-forward|\[rejected\]|fetch first/.test(raw)) return { ok: false, reason: 'moved' };
+    throw new PushError(pushWhy(raw), raw);
+  }
+  // So the branch reads as landed straight away, before the next fetch.
+  await run('git', ['update-ref', tracking, sha], dir, 5000).catch(() => undefined);
+  return { ok: true, how: ancestor ? 'fast_forward' : 'merge_commit', sha };
+}
+
+/** Run git and keep its exit code and both outputs (merge-tree says "conflicts" with exit 1 on stdout). */
+const gitOut = (args: readonly string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> =>
+  new Promise((resolve) => {
+    execFile('git', [...args], { cwd, timeout: 60_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, ...QUIET_ENV } }, (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === 'number' ? err.code : -1) : 0, stdout, stderr }));
+  });
+
 /** A failed push: git's reason in a line, and all it said (to tell SSH or login trouble from the rest). */
 export class PushError extends Error {
   constructor(

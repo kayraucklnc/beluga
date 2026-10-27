@@ -9,6 +9,7 @@ import { useActions } from '../lib/actions.js';
 import { useApi } from '../lib/beluga.js';
 import { MERGE_METHODS } from '../lib/pr-checks.js';
 import { showGitTrouble } from '../lib/git-trouble.js';
+import { openSheet } from '../lib/sheets.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { useWsBusy, whileBusy } from '../lib/ws-busy.js';
 import s from './BranchControl.module.css';
@@ -17,9 +18,9 @@ const PILL_ICON: Record<BranchTone, IconName> = { merged: 'merge', ok: 'check', 
 
 export type BranchFold = 'none' | 'pill' | 'all';
 
-const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merge', merge: 'merge', merge_auto: 'clock', cancel_auto: 'x', update_branch: 'refresh', mark_ready: 'check', open_pr: 'pr', continue_after_merge: 'branch', archive: 'archive', delete: 'x', commit: 'commit', pr: 'pr', pr_draft: 'pr' };
+const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merge', merge: 'merge', merge_base: 'merge', merge_auto: 'clock', cancel_auto: 'x', update_branch: 'refresh', mark_ready: 'check', open_pr: 'pr', continue_after_merge: 'branch', archive: 'archive', delete: 'x', commit: 'commit', pr: 'pr', pr_draft: 'pr' };
 
-const STEP_SHORT: Partial<Record<BranchStep['id'], string>> = { pr: 'Create PR', open_pr: 'Open PR', pr_draft: 'Draft PR', pr_claude: 'Create PR', pr_custom: 'Create PR', merge_pr: 'Merge', merge: 'Merge', merge_auto: 'Auto-merge', merge_admin: 'Merge', cancel_auto: 'Cancel', update_branch: 'Update', mark_ready: 'Ready', review_claude: 'Review', fix_checks: 'Fix', resolve_pr: 'Resolve', merge_claude: 'Resolve' };
+const STEP_SHORT: Partial<Record<BranchStep['id'], string>> = { pr: 'Create PR', open_pr: 'Open PR', pr_draft: 'Draft PR', pr_claude: 'Create PR', pr_custom: 'Create PR', merge_pr: 'Merge', merge: 'Merge', merge_base: 'Merge', merge_auto: 'Auto-merge', merge_admin: 'Merge', cancel_auto: 'Cancel', update_branch: 'Update', mark_ready: 'Ready', review_claude: 'Review', fix_checks: 'Fix', resolve_pr: 'Resolve', merge_claude: 'Resolve' };
 
 /** A step in a word or two, for the folded toolbar: the icon alone didn't say enough ("PR" alone didn't either). */
 export const shortLabel = (step: BranchStep): string => STEP_SHORT[step.id] ?? step.label.replace(/…$/, '').split(' ')[0]!;
@@ -80,6 +81,15 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
         return void whileBusy(wsId, async () => showGitTrouble(wsId, await api.workbench.quickPr(wsId, step.id === 'pr_draft' ? { draft: true } : {}), step.id === 'pr_draft' ? 'pr_draft' : 'pr'));
       case 'pr_claude':
         return void api.workbench.createPr(wsId);
+      case 'merge_base':
+        // It pushes to the shared branch, which isn't easily undone: say so first.
+        return openSheet({
+          kind: 'confirm',
+          title: `Merge ${branch.branch} into ${branch.into}?`,
+          message: `No pull request: ${step.hint.replace(/^No pull request: /, '')}. Everyone pulling ${branch.into} gets it; your main folder isn’t touched.`,
+          confirm: `Merge into ${branch.into}`,
+          run: () => void whileBusy(wsId, async () => showGitTrouble(wsId, await api.workbench.mergeToBase(wsId), 'merge_base')),
+        });
       default:
         return actions.run({ type: 'ws', id: wsId, action: step.id });
     }

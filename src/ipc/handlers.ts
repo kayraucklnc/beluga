@@ -207,6 +207,7 @@ export const HANDLERS = {
   'workbench.setModel': (s, channel, value) => (s.workbench ? s.workbench.setModel(channel, value) : s.setPrefs({ model: value || undefined })),
   'workbench.createPr': (s, id, extra) => bench(s)?.createPr(id, extra),
   'workbench.quickPr': (s, id, opts) => bench(s)?.quickPr(id, opts),
+  'workbench.mergeToBase': (s, id, opts) => bench(s)?.mergeToBase(id, opts),
   'workbench.gitFix': (s, id, fix, retry) => bench(s)?.gitFix(id, fix, retry),
   'workbench.fixChecks': (s, id) => bench(s)?.fixChecks(id),
   'workbench.resolvePrConflicts': (s, id) => bench(s)?.resolvePrConflicts(id),

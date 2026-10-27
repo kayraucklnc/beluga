@@ -48,6 +48,7 @@ export type BranchStepId =
   | 'pr_custom'
   | 'pr_draft'
   | 'merge'
+  | 'merge_base'
   | 'continue_after_merge'
   | 'archive'
   | 'delete';
@@ -197,6 +198,7 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
           { id: 'pr_claude', label: 'Create PR with Claude', hint: 'Claude commits what belongs, then writes the title and description: what, why, how to test', claude: true },
           { id: 'pr_custom', label: 'Create PR with Instructions…', hint: 'Tell Claude anything extra for this one (a draft, an issue to mention…)', claude: true },
           { id: 'pr_draft', label: 'Create Draft PR', hint: `Like Create PR, as a draft: it can’t merge until it’s marked ready` },
+          { id: 'merge_base', label: `Merge into ${into}…`, hint: `No pull request: ${changed ? 'commits what’s left, ' : ''}merges ${ws.branch} into origin/${into} and pushes it there` },
         ]
       : [];
   if (pr?.state === 'CLOSED' && !changed && !ahead) return at('closed', 'PR closed', 'muted', `PR #${pr.number} was closed without merging`, planned ? [] : [archive, remove]);
