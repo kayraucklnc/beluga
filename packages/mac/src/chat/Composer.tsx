@@ -28,7 +28,7 @@ import { useMentionWorld, worktreeOf } from './Mention.js';
 import { useSkills } from './use-skills.js';
 import { MentionedTasks } from './MentionedTasks.js';
 import { DictationStrip, MicButton } from './Dictation.js';
-import { useDictationTarget } from '../lib/dictation.js';
+import { dictatingInto, useDictation, useDictationTarget } from '../lib/dictation.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
@@ -316,6 +316,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   };
   // Speaking instead of typing (Settings › Voice): the words come here when this is the box you're in; Send right away sends them as ↩ would.
   useDictationTarget(ref, () => send(false));
+  const dictation = useDictation();
+  const talking = dictation.kind !== 'off' && dictatingInto(ref.current);
   /** A queued message pulled back to edit: into the box, ahead of anything already there. */
   const editQueued = async (sent: string): Promise<void> => {
     // Its images wait above the box again, each an "[image N]" in the words (not the link it went as).
@@ -502,7 +504,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ) : null}
           <span className={s.flex} />
           {channel !== 'draft' ? <ContextMeter channel={channel} /> : null}
-          {compose.busy ? (
+          {/* While you talk, only your voice's control shows: two square buttons side by side stopped Claude by mistake. */}
+          {compose.busy && !talking ? (
             <Tip label="Stop Claude here · your queued messages come back to the box" keys={`${mod()}.`}>
               <button type="button" className={s.stop} aria-label="Stop Claude" onClick={() => stopClaude({ client, ui, actions }, channel)}>
                 <span className={s.stopMark} />
@@ -534,7 +537,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </div>
           ) : (
             <Tip label={prefs.sendWith === 'enter' ? 'Send · Shift+Return for a new line' : `Send · ${mod()}Return`} keys={prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`}>
-              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady, burning && prefs.maxFire.border && buffer.trim() && m.hot)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
+              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
                 <Icon name="send" size={14} />
               </button>
             </Tip>

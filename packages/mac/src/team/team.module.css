@@ -28,13 +28,23 @@
   line-height: 1.4;
 }
 
-/* Teammates on a project row: their avatars, small, after the name. */
+/* Teammates on a project row: a small people icon, with a green dot when one of them is online. */
 .badge {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
   color: var(--text-3);
   margin-right: 2px;
+}
+.badgeOnline {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 1.5px var(--bg-sidebar, var(--bg));
 }
 
 /* "Ata is working on this": a quiet line with their avatar. */

@@ -79,12 +79,6 @@
   z-index: 3;
 }
 
-/* The send button takes the heat too. */
-.max .hot {
-  background: linear-gradient(135deg, var(--f1, #3fa2ff), var(--f0, #2346c8));
-  color: white;
-}
-
 /* A small flame by the box's tools: you're on Max. */
 .tag {
   display: inline-flex;
