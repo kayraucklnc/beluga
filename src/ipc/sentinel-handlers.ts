@@ -27,4 +27,5 @@ export const SENTINEL_HANDLERS = {
   'sentinel.rotateSecret': (s, id) => needSentinel(s).rotateSecret(id),
   // Its address with the secret ({ url }), or why there's none now ({ why }): never in the state.
   'sentinel.webhookUrl': (s, id) => needSentinel(s).webhookUrl(id),
+  'sentinel.metricRead': (s, id, name, since) => needSentinel(s).metricRead(id, name, since),
 } satisfies SentinelHandlers;

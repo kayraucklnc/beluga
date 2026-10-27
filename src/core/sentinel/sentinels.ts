@@ -1,21 +1,31 @@
 import { randomBytes } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import os from 'node:os';
-import type { SentinelTools } from '../../agent/types.js';
+import type { DashboardTools, SentinelTools, ToolTile } from '../../agent/types.js';
+import type { Row, Source } from '../../shared/view-spec.js';
 import type { NoticeEvent } from '../notify.js';
 import type { Action, Store } from '../store.js';
 import { filterIssues, isOpen } from '../board/model.js';
 import { describeList } from '../board/prompt.js';
 import { planTitle } from '../plans/model.js';
 import { dueNow, nextRunAt } from './clock.js';
+import { type Dashboard, type MetricRef, TILE_INFO, dashboardSentinels } from './dashboard-model.js';
+import { Dashboards, type TileInput, type TilePatch } from './dashboards.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
+import { MetricFiles } from './metric-files.js';
+import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, labelOf, metricName, pointOf, toNumber } from './metrics.js';
 import {
   APPROVAL_MS,
   CLAUDE_CHANGED,
   DEFAULT_LIMITS,
   KEEP_IN_STATE,
   MAX_RUN_AT_ONCE,
+  type DashboardRefresh,
   type Limits,
+  type MetricSeries,
+  type MetricUnit,
+  POINTS_IN_STATE,
+  ROWS_KEPT,
   type Recipe,
   type Run,
   type RunBy,
@@ -46,10 +56,10 @@ import {
   toSummary,
 } from './model.js';
 import { redactSecrets } from '../../shared/steps.js';
-import { describeSentinels, sentinelAskBrief, sentinelMaterial, sentinelNote } from './prompt.js';
+import { dashboardAskBrief, describeSentinels, sentinelAskBrief, sentinelMaterial, sentinelNote } from './prompt.js';
 import { RECIPES } from './recipes.js';
 import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, SentinelRunner, type YourAnswer, mergePinned, runSentinelShell } from './runner.js';
-import { StepInputSchema } from './schema.js';
+import { MetricUnitSchema, StepInputSchema } from './schema.js';
 import type { ToolDraft, ToolPatch, ToolStep } from './tool-draft.js';
 import { Triggers, isEventTrigger } from './triggers/index.js';
 import type { TriggerDeps, TriggerEvent } from './triggers/types.js';
@@ -96,6 +106,10 @@ export interface SentinelsDeps {
    * them no event trigger watches (the tests that don't test them, a CLI without the app).
    */
   readonly triggers?: Omit<TriggerDeps, 'store' | 'selfId'>;
+  /** Variables only Call a service steps get (the project's Earnings key as $STRIPE_EARNINGS_KEY). */
+  readonly serviceEnv?: (projectId: string | undefined) => Record<string, string>;
+  /** A view source run as you (Keep the numbers from a source): core/views/sources.ts fetchSource. */
+  readonly fetchSource?: (source: Source, cwd: string, signal: AbortSignal) => Promise<{ readonly rows: readonly Row[]; readonly columns: readonly string[] } | string>;
 }
 
 const TICK_MS = 30_000;
@@ -116,6 +130,8 @@ const startOfDay = (at: number): number => {
 
 export interface RunSentinel {
   readonly tools: SentinelTools;
+  /** Dashboards and numbers (sentinel_measure inside a run). */
+  readonly dashboard: DashboardTools;
   readonly brief: string;
   /** This conversation is a sentinel run's Claude step (it gets the task tools, even in a main folder). */
   readonly inRun: boolean;
@@ -157,6 +173,16 @@ export class Sentinels {
   private troubles: Record<string, string> = {};
   private webhook: WebhookState = { ready: false };
   private readonly triggers: Triggers | undefined;
+  /** The numbers' files (~/.beluga/sentinel/metrics), and each metric as the state shows it. */
+  private readonly metricFiles: MetricFiles;
+  private metrics: Record<string, Record<string, MetricSeries>> = {};
+  readonly dashboards: Dashboards;
+  private refreshing: Record<string, DashboardRefresh> = {};
+  /** Conversations where your Claude builds a dashboard (Describe it), and which. */
+  private readonly dashboardChannels = new Map<string, string>();
+  private dashboardAsks: Record<string, SentinelAsk> = {};
+  /** Waiting for a run to end (a dashboard's Refresh), by run. */
+  private readonly endWaiters = new Map<string, Array<() => void>>();
 
   constructor(private readonly deps: SentinelsDeps) {
     this.now = deps.now ?? Date.now;
@@ -177,6 +203,11 @@ export class Sentinels {
     if (!data.lossy) this.sweepFolders();
     // What didn't read is kept beside it now: sentinel.json is written again without it.
     else this.save();
+    this.metricFiles = new MetricFiles(deps.dir, this.now);
+    this.loadMetrics(!data.lossy);
+    this.dashboards = new Dashboards(deps.dir, this.now, (all) => {
+      if (!this.closed) deps.store.dispatch({ type: 'sentinel_dashboards', dashboards: all });
+    }, deps.saveDelayMs ?? 300);
     this.runner = new SentinelRunner({
       now: this.now,
       ...(deps.claude ? { claude: deps.claude } : {}),
@@ -200,6 +231,9 @@ export class Sentinels {
       ...(deps.pollMs !== undefined ? { pollMs: deps.pollMs } : {}),
       startOther: (id, from, output) => this.startFrom(id, from, output),
       waitForYou: (active) => this.waitForYou(active),
+      ...(deps.fetchSource ? { fetchSource: deps.fetchSource } : {}),
+      ...(deps.serviceEnv ? { serviceEnv: deps.serviceEnv } : {}),
+      keep: (active, measured) => this.keepNumbers(active.sentinel, active.run.id, measured),
     });
     this.expireWaiting();
     for (const item of this.items) this.ensureSecret(item);
@@ -259,7 +293,7 @@ export class Sentinels {
       const at = this.nextAtOf(s);
       if (at !== undefined) nextAt[s.id] = at;
     }
-    return { enabled: true, items: this.items, runs: index, live, runAtOnce: this.runAtOnce, nextAt, asks: this.asks, troubles: this.troubles, webhook: this.webhook };
+    return { enabled: true, items: this.items, runs: index, live, runAtOnce: this.runAtOnce, nextAt, asks: this.asks, troubles: this.troubles, webhook: this.webhook, metrics: this.metrics, dashboards: this.dashboards.list(), refreshing: this.refreshing, dashboardAsks: this.dashboardAsks };
   }
 
   list = (): readonly Sentinel[] => this.items;
@@ -395,6 +429,10 @@ export class Sentinels {
     const { [s.id]: _trouble, ...troubles } = this.troubles;
     this.troubles = troubles;
     this.forgetCursor(s.id);
+    // Its numbers go with it; its tiles stay and say "gone" until you remove them.
+    const { [s.id]: _metrics, ...metrics } = this.metrics;
+    this.metrics = metrics;
+    this.metricFiles.remove(s.id);
     this.triggers?.sync(this.items);
     this.deps.store.dispatch({ type: 'sentinel_remove', id: s.id });
     this.save();
@@ -649,12 +687,16 @@ export class Sentinels {
   forRun(channel: string, from: string): RunSentinel | undefined {
     if (from !== this.deps.selfId()) return undefined;
     const active = [...this.active.values()].find((a) => a.claude?.channel === channel);
-    if (active?.claude) return { tools: this.toolsFor(active), brief: active.claude.brief, inRun: true };
+    if (active?.claude) return { tools: this.toolsFor(active), dashboard: this.dashboardTools(active), brief: active.claude.brief, inRun: true };
     // A conversation where your Claude changes a sentinel (sentinel.ask): the sentinel as material.
     const asked = this.askChannels.get(channel);
     const sentinel = asked ? this.items.find((i) => i.id === asked) : undefined;
-    if (sentinel) return { tools: this.toolsFor(undefined, sentinel.id), brief: sentinelAskBrief(sentinel, this.items, RECIPES), inRun: false };
-    return { tools: this.toolsFor(undefined), brief: sentinelNote(), inRun: false };
+    if (sentinel) return { tools: this.toolsFor(undefined, sentinel.id), dashboard: this.dashboardTools(undefined), brief: sentinelAskBrief(sentinel, this.items, RECIPES), inRun: false };
+    // One where it builds a dashboard (Describe it): the dashboard and the numbers as material.
+    const building = this.dashboardChannels.get(channel);
+    const dashboard = building ? this.dashboards.get(building) : undefined;
+    if (dashboard) return { tools: this.toolsFor(undefined), dashboard: this.dashboardTools(undefined, dashboard.id), brief: dashboardAskBrief(dashboard, this.metricList()), inRun: false };
+    return { tools: this.toolsFor(undefined), dashboard: this.dashboardTools(undefined), brief: sentinelNote(), inRun: false };
   }
 
   /**
@@ -766,6 +808,9 @@ export class Sentinels {
     this.active.clear();
     this.queued.clear();
     this.file.flush();
+    this.dashboards.flush();
+    for (const waiters of this.endWaiters.values()) for (const w of waiters) w();
+    this.endWaiters.clear();
   }
 
   // ------------------------------------------------------------------ inside
@@ -1023,6 +1068,11 @@ export class Sentinels {
     this.runs = at >= 0 ? this.runs.map((r, n) => (n === at ? summary : r)) : [...this.runs, summary];
     this.deps.store.dispatch({ type: 'sentinel_run', run: summary });
     this.save();
+    if (!isLive(summary.state)) {
+      const waiters = this.endWaiters.get(summary.id);
+      this.endWaiters.delete(summary.id);
+      for (const w of waiters ?? []) w();
+    }
   }
 
   private prune(): void {
@@ -1090,6 +1140,253 @@ export class Sentinels {
     const worktrees = projects.flatMap((p) => p.workspaces.filter((w) => w.kind === 'worktree' && !w.archived).map((w) => `${p.name}/${w.name}${w.branch ? ` (${w.branch})` : ''}`)).join('\n');
     const plans = st.plans.plans.filter((p) => (!projectId || p.projectId === projectId) && p.status !== 'done').map((p) => `${planTitle(p)} · ${p.status}`).join('\n');
     return { tasks, worktrees, plans };
+  }
+
+  // ------------------------------------------------------------------ numbers and dashboards (§10)
+
+  /** Each sentinel's metrics from their files: the last 90 points and the last rows. A sentinel that's gone has its numbers swept (not after a lossy load). */
+  private loadMetrics(sweep: boolean): void {
+    const ids = new Set(this.items.map((i) => i.id));
+    for (const { sentinelId, names } of this.metricFiles.list()) {
+      if (!ids.has(sentinelId)) {
+        if (sweep) this.metricFiles.remove(sentinelId);
+        continue;
+      }
+      const meta = this.metricFiles.meta(sentinelId);
+      for (const name of names) {
+        const lines = this.metricFiles.read(sentinelId, name);
+        if (!lines.length) continue;
+        const m = meta[name];
+        const lastRows = [...lines].reverse().find((l) => l.rows);
+        this.metrics[sentinelId] = {
+          ...this.metrics[sentinelId],
+          [name]: {
+            sentinelId,
+            name,
+            label: m?.label ?? labelOf(name),
+            unit: m?.unit ?? 'count',
+            better: m?.better ?? 'up',
+            kind: m?.kind ?? (lastRows ? 'rows' : 'number'),
+            points: lines.slice(-POINTS_IN_STATE).map(pointOf),
+            ...(lastRows?.rows ? { rows: lastRows.rows, columns: lastRows.columns ?? Object.keys(lastRows.rows[0] ?? {}), rowsAt: lastRows.at, rowsRunId: lastRows.runId } : {}),
+          },
+        };
+      }
+    }
+  }
+
+  /** A run's numbers, kept: in their files, in the state, and (the first ever) on a dashboard made for you. */
+  private keepNumbers(s: Sentinel, runId: string, measured: readonly Measured[]): void {
+    if (!this.items.some((i) => i.id === s.id)) return;
+    const at = this.now();
+    for (const m of measured) {
+      const name = metricName(m.name);
+      const was = this.metrics[s.id]?.[name];
+      const rows = m.rows ? cellRows(m.rows as Record<string, unknown>[]).slice(0, ROWS_KEPT) : undefined;
+      const kind = rows ? 'rows' : 'number';
+      if (!rows && m.value === undefined) continue;
+      const meta = { label: oneLine(m.label ?? was?.label ?? labelOf(m.name), 80), unit: m.unit ?? was?.unit ?? 'count', better: m.better ?? was?.better ?? (kind === 'rows' ? 'none' : 'up'), kind } as const;
+      this.metricFiles.setMeta(s.id, name, meta);
+      const line: MetricLine = rows ? { at, runId, rows, columns: m.columns?.length ? [...m.columns] : Object.keys(rows[0] ?? {}) } : { at, runId, value: m.value! };
+      this.metricFiles.append(s.id, name, line);
+      const series: MetricSeries = {
+        sentinelId: s.id,
+        name,
+        ...meta,
+        points: [...(was?.points ?? []), pointOf(line)].slice(-POINTS_IN_STATE),
+        ...(rows ? { rows, columns: line.columns ?? [], rowsAt: at, rowsRunId: runId } : was?.rows ? { rows: was.rows, columns: was.columns ?? [], ...(was.rowsAt ? { rowsAt: was.rowsAt } : {}), ...(was.rowsRunId ? { rowsRunId: was.rowsRunId } : {}) } : {}),
+      };
+      this.metrics = { ...this.metrics, [s.id]: { ...this.metrics[s.id], [name]: series } };
+      this.deps.store.dispatch({ type: 'sentinel_metric', metric: series });
+    }
+    this.dashboards.autoMake(this.allMetrics());
+  }
+
+  /** Every metric in the state, sentinel by sentinel. */
+  private allMetrics(): MetricSeries[] {
+    return this.items.flatMap((i) => Object.values(this.metrics[i.id] ?? {}));
+  }
+
+  /** metric_list: each sentinel's numbers, with their last value. */
+  private metricList(): string {
+    const all = this.allMetrics();
+    if (!all.length) return 'No numbers kept yet: a sentinel keeps them with a Keep the numbers step.';
+    return this.items
+      .filter((i) => this.metrics[i.id])
+      .map((i) => {
+        const lines = Object.values(this.metrics[i.id]!).map((m) => {
+          const last = m.points.at(-1);
+          const now = m.kind === 'rows' ? `${m.rows?.length ?? 0} rows (columns ${(m.columns ?? []).join(', ')})` : last ? formatMetric(last.value, m.unit) : 'none yet';
+          return `  - ${m.name}: ${m.label} · ${m.kind === 'rows' ? 'rows' : `${m.unit}, better ${m.better}`} · last ${now}${last ? ` on ${new Date(last.at).toLocaleDateString()}` : ''} · ${m.points.length} recent points`;
+        });
+        return [`${i.name} (id ${i.id}, ${i.paused ? 'paused' : 'on'}, \`sentinel:${i.id}\`):`, ...lines].join('\n');
+      })
+      .join('\n');
+  }
+
+  /** A metric's points since then (the whole file: two years at most), oldest first. */
+  metricRead(sentinel: string, name: string, since?: number): { readonly metric: MetricSeries; readonly lines: MetricLine[] } {
+    const s = this.need(sentinel);
+    const metric = this.metrics[s.id]?.[name] ?? Object.values(this.metrics[s.id] ?? {}).find((m) => m.label.toLowerCase() === name.trim().toLowerCase());
+    if (!metric) throw new Error(`“${s.name}” keeps no number called ${name}${this.metrics[s.id] ? ` (it keeps ${Object.keys(this.metrics[s.id]!).join(', ')})` : ''}`);
+    return { metric, lines: this.metricFiles.read(s.id, metric.name, since) };
+  }
+
+  /**
+   * Refresh: Run Now on each sentinel a dashboard draws from, in order, one at a time (a paused one
+   * is left as it is), the state saying how far ("Fetching… 2 of 3"). → how many it runs; it goes on
+   * by itself.
+   */
+  refresh(ref: string): { readonly total: number } {
+    const d = this.dashboards.need(ref);
+    if (this.refreshing[d.id]) return { total: this.refreshing[d.id]!.total };
+    const ids = dashboardSentinels(d).filter((id) => this.items.some((i) => i.id === id && !i.paused));
+    if (!ids.length) return { total: 0 };
+    const set = (r: DashboardRefresh | undefined): void => {
+      if (r) this.refreshing = { ...this.refreshing, [d.id]: r };
+      else {
+        const { [d.id]: _was, ...rest } = this.refreshing;
+        this.refreshing = rest;
+      }
+      if (!this.closed) this.deps.store.dispatch({ type: 'sentinel_refresh', id: d.id, ...(r ? { refreshing: r } : {}) });
+    };
+    void (async () => {
+      for (const [n, id] of ids.entries()) {
+        if (this.closed) return;
+        set({ done: n, total: ids.length, sentinelId: id });
+        let run: RunSummary;
+        try {
+          run = this.start(id, 'you');
+        } catch {
+          continue;
+        }
+        if (isLive(run.state)) await new Promise<void>((resolve) => this.endWaiters.set(run.id, [...(this.endWaiters.get(run.id) ?? []), resolve]));
+      }
+      set(undefined);
+    })();
+    return { total: ids.length };
+  }
+
+  /**
+   * Describe it: your Claude builds a dashboard from your words, in a chat on Your Mac, told the
+   * dashboard and every number there is, with its dashboard tools. → the conversation.
+   */
+  dashboardAsk(ref: string, text: string): { readonly channel: string } {
+    const d = this.dashboards.need(ref);
+    const claude = this.deps.claude;
+    const place = this.deps.places?.macChat();
+    if (!claude || !place) throw new Error('Asking Claude needs the Beluga app with your Claude on');
+    const words = text.trim();
+    if (!words) throw new Error('Say what it should show');
+    if (this.dashboardAsks[d.id]?.state === 'writing') throw new Error(`Claude is building “${d.name}” already: wait for it, or open its chat`);
+    const { channel } = place;
+    this.dashboardChannels.set(channel, d.id);
+    const ask: SentinelAsk = { channel, startedAt: this.now(), state: 'writing', text: firstLine(words, 200) };
+    const setAsk = (a: SentinelAsk): void => {
+      if (!this.dashboards.get(d.id) || this.closed) return;
+      this.dashboardAsks = { ...this.dashboardAsks, [d.id]: a };
+      this.deps.store.dispatch({ type: 'sentinel_dashboard_ask', id: d.id, ask: a });
+    };
+    setAsk(ask);
+    const requestId = claude.ask(words, channel, words);
+    if (!requestId) {
+      setAsk({ ...ask, state: 'failed', answer: 'Your Claude couldn’t be asked there', endedAt: this.now() });
+      throw new Error('Your Claude couldn’t be asked there');
+    }
+    let over = false;
+    const timer = setTimeout(() => {
+      over = true;
+      claude.cancel(requestId, 'Stopped by Beluga: Claude took too long');
+      setAsk({ ...ask, state: 'failed', answer: TOOK_TOO_LONG, endedAt: this.now() });
+    }, DEFAULT_LIMITS.minutes * 60_000);
+    timer.unref?.();
+    void claude.wait(requestId).then(
+      (answer) => {
+        clearTimeout(timer);
+        if (!over) setAsk({ ...ask, state: 'done', answer: clipLines(answer), endedAt: this.now() });
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        if (!over) setAsk({ ...ask, state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'Claude stopped', endedAt: this.now() });
+      },
+    );
+    return { channel };
+  }
+
+  /** The demo's history: numbers as if a run had kept them (now: the demo's clock travels back). */
+  demoKeep(ref: string, runId: string, measured: readonly Measured[]): void {
+    this.keepNumbers(this.need(ref), runId, measured);
+  }
+
+  /** Dashboards and numbers as Claude's tools: sentinels by id or name; sentinel_measure inside a run only. */
+  private dashboardTools(active: ActiveRun | undefined, building?: string): DashboardTools {
+    const ref = (sentinel: string, metric: string): MetricRef => {
+      const s = this.need(sentinel);
+      const name = this.metrics[s.id]?.[metric] ? metric : (Object.values(this.metrics[s.id] ?? {}).find((m) => m.label.toLowerCase() === metric.trim().toLowerCase())?.name ?? metricName(metric));
+      return { sentinelId: s.id, metric: name };
+    };
+    const tileInput = (t: Partial<ToolTile>): Omit<TileInput, 'kind'> => ({
+      ...(t.width ? { width: t.width } : {}),
+      ...(t.title !== undefined ? { title: t.title } : {}),
+      ...(t.sentinel && t.metric ? { metric: ref(t.sentinel, t.metric) } : {}),
+      ...(t.metrics?.length ? { metrics: t.metrics.map((m) => ref(m.sentinel, m.metric)) } : t.kind === 'chart' && t.sentinel && t.metric ? { metrics: [ref(t.sentinel, t.metric)] } : {}),
+      ...(t.chart ? { chart: t.chart } : {}),
+      ...(t.kind === 'text' && t.sentinel ? { sentinelId: this.need(t.sentinel).id } : {}),
+      ...(t.text ? { text: t.text } : {}),
+      ...(t.compare ? { compare: t.compare } : {}),
+    });
+    const describe = (d: Dashboard): string => {
+      const tiles = d.tiles.map((t) => {
+        const refs = t.metric ? [t.metric] : (t.metrics ?? []);
+        const what = t.kind === 'divider' ? `“${t.title ?? ''}”` : t.kind === 'text' ? `${this.get(t.sentinelId ?? '')?.name ?? 'a sentinel that’s gone'} (${t.text ?? 'headline'})` : refs.map((r) => `${this.get(r.sentinelId)?.name ?? 'gone'}/${r.metric}`).join(', ');
+        return `  - ${t.id}: ${TILE_INFO[t.kind].label.toLowerCase()} ${what}, ${t.width} wide${t.compare ? `, ${COMPARE_WORDS[t.compare]}` : ''}`;
+      });
+      return [`${d.name} (id ${d.id}) · ${COMPARE_WORDS[d.compare]} · ${d.tiles.length} ${d.tiles.length === 1 ? 'tile' : 'tiles'}`, ...tiles].join('\n');
+    };
+    return {
+      ...(building ? { building } : {}),
+      ...(active
+        ? {
+            measure: (name: string, value: number | string, unit?: string, label?: string) => {
+              const n = toNumber(value);
+              if (n === undefined) throw new Error(`${String(value)} isn’t a number: keep only real numbers you found`);
+              const u = unit === undefined ? undefined : MetricUnitSchema.safeParse(unit);
+              if (u && !u.success) throw new Error('unit is count, currency:USD (any currency code), percent, ms, bytes or plain');
+              const m: Measured = { name: metricName(name), value: n, ...(u?.success ? { unit: u.data as MetricUnit } : {}), ...(label?.trim() ? { label: oneLine(label, 80) } : {}) };
+              active.measured = [...(active.measured ?? []).filter((x) => x.name !== m.name), m];
+              const keeps = active.sentinel.steps.some((st) => st.kind === 'measure' && st.from === 'claude');
+              return `Noted ${m.label ?? labelOf(m.name)} = ${formatMetric(n, m.unit)}.${keeps ? ' The Keep the numbers step keeps it when you’re done.' : ' This sentinel has no Keep the numbers step from Claude, so it isn’t kept: say so in your report.'}`;
+            },
+          }
+        : {}),
+      list: () => (this.dashboards.list().length ? this.dashboards.list().map(describe).join('\n') : 'No dashboards yet: dashboard_create makes one.'),
+      create: (name: string) => {
+        const d = this.dashboards.create(name);
+        return `Made the dashboard “${d.name}” (id ${d.id}); add tiles with dashboard_add_tile.`;
+      },
+      addTile: (dashboard: string, t: ToolTile) => {
+        const { tile, dashboard: d } = this.dashboards.addTile(dashboard, { kind: t.kind, ...tileInput(t) });
+        return `Added ${TILE_INFO[tile.kind].label.toLowerCase()} (tile ${tile.id}) to “${d.name}”; it has ${d.tiles.length} ${d.tiles.length === 1 ? 'tile' : 'tiles'} now.`;
+      },
+      updateTile: (dashboard: string, tileId: string, patch) => {
+        const was = this.dashboards.need(dashboard).tiles.find((t) => t.id === tileId);
+        const { compare, ...rest } = patch;
+        const input: TilePatch = { ...tileInput({ kind: was?.kind ?? 'number', ...rest }), ...(compare !== undefined ? { compare } : {}) };
+        const d = this.dashboards.updateTile(dashboard, tileId, input);
+        return `Changed tile ${tileId} on “${d.name}”.`;
+      },
+      removeTile: (dashboard: string, tileId: string) => {
+        const d = this.dashboards.removeTile(dashboard, tileId);
+        return `Removed tile ${tileId} from “${d.name}”.`;
+      },
+      metricList: () => this.metricList(),
+      metricRead: (sentinel: string, name: string, since?: string) => {
+        const from = since ? sinceOf(since, this.now()) : undefined;
+        if (since && from === undefined) throw new Error('since is a date (2026-09-01) or a time back (7d, 4w, 3 months)');
+        const { metric, lines } = this.metricRead(sentinel, name, from);
+        return describePoints(metric, lines);
+      },
+    };
   }
 
   // ------------------------------------------------------------------ Claude's tools
@@ -1184,4 +1481,22 @@ export function fromToolDraft(d: ToolDraft): SentinelDraft {
 function clipLines(text: string): string {
   const lines = text.split('\n').map((l) => l.replace(/^#+\s*/, '').trim()).filter(Boolean).slice(0, 3).join('\n');
   return lines.length > 600 ? `${lines.slice(0, 599)}…` : lines;
+}
+
+/** "2026-09-01", "7d", "4 weeks", "3 months", "1y" → that time (none: it doesn't read). */
+export function sinceOf(text: string, now: number): number | undefined {
+  const t = text.trim().toLowerCase();
+  const rel = /^(\d+)\s*(d|days?|w|weeks?|m|months?|y|years?)( ago)?$/.exec(t);
+  if (rel) {
+    const n = Number(rel[1]);
+    const unit = rel[2]![0];
+    const d = new Date(now);
+    if (unit === 'd') d.setDate(d.getDate() - n);
+    else if (unit === 'w') d.setDate(d.getDate() - 7 * n);
+    else if (unit === 'm') d.setMonth(d.getMonth() - n);
+    else d.setFullYear(d.getFullYear() - n);
+    return d.getTime();
+  }
+  const at = Date.parse(t);
+  return Number.isFinite(at) ? at : undefined;
 }

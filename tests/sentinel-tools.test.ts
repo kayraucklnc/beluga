@@ -104,7 +104,7 @@ describe('the sentinel.* API', () => {
     expect(updated.projectId).toBeUndefined();
     const copy = SENTINEL_HANDLERS['sentinel.duplicate'](session, made.id);
     expect(copy).toMatchObject({ name: 'Renamed copy', paused: true });
-    expect(SENTINEL_HANDLERS['sentinel.recipes'](session).map((r) => r.id)).toEqual(['morning-brief', 'fix-what-broke', 'fix-and-ship', 'nightly-tests', 'dependency-updates', 'release-notes', 'issues-to-tasks', 'uptime-guard', 'failed-payments', 'watch-the-web', 'review-new-prs']);
+    expect(SENTINEL_HANDLERS['sentinel.recipes'](session).map((r) => r.id)).toEqual(['morning-brief', 'fix-what-broke', 'fix-and-ship', 'nightly-tests', 'dependency-updates', 'release-notes', 'issues-to-tasks', 'uptime-guard', 'failed-payments', 'watch-the-web', 'review-new-prs', 'customers-this-week', 'youtube-subscribers', 'stripe-revenue', 'last-job-run', 'site-speed', 'open-issues-prs']);
     expect(SENTINEL_HANDLERS['sentinel.setRunAtOnce'](session, 3)).toBe(3);
     expect(() => (SENTINEL_HANDLERS['sentinel.rotateSecret'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('doesn’t start from a webhook');
     expect(() => (SENTINEL_HANDLERS['sentinel.webhookUrl'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('doesn’t start from a webhook');
@@ -119,7 +119,7 @@ describe('the sentinel.* API', () => {
 
   it('the phone may run, pause, read runs and decide; the rest is the Mac’s', () => {
     const methods = Object.keys(API).filter((m) => m.startsWith('sentinel.'));
-    expect(methods.filter((m) => PHONE[m as keyof typeof PHONE] === 'phone').sort()).toEqual(['sentinel.decide', 'sentinel.pause', 'sentinel.run', 'sentinel.runGet', 'sentinel.runs']);
+    expect(methods.filter((m) => PHONE[m as keyof typeof PHONE] === 'phone').sort()).toEqual(['sentinel.decide', 'sentinel.metricRead', 'sentinel.pause', 'sentinel.run', 'sentinel.runGet', 'sentinel.runs']);
   });
 });
 
@@ -133,12 +133,13 @@ describe('recipes', () => {
     for (const r of RECIPES) expect(s.sentinels.create({ ...r.sentinel, projectId: 'api' })).toMatchObject({ recipe: r.id, paused: true });
   });
 
-  it('are the design’s eleven, each with what its steps need, and the second sentinel runs after the first', () => {
-    expect(RECIPES).toHaveLength(11);
+  it('are the design’s eleven and six for numbers, each with what its steps need, and the second sentinel runs after the first', () => {
+    expect(RECIPES).toHaveLength(17);
+    expect(RECIPES.filter((r) => r.group === 'numbers').map((r) => r.id)).toEqual(['customers-this-week', 'youtube-subscribers', 'stripe-revenue', 'last-job-run', 'site-speed', 'open-issues-prs']);
     for (const r of RECIPES) {
       const steps = r.sentinel.steps ?? [];
-      // Every recipe ends by telling you, and what it does fits the access it asks for.
-      expect(steps.at(-1)?.kind).toBe('notify');
+      // Every recipe ends by telling you (one for numbers, by keeping them), and what it does fits the access it asks for.
+      expect(steps.at(-1)?.kind).toBe(r.group === 'numbers' ? 'measure' : 'notify');
       for (const st of steps) expect(accessAllows(r.sentinel.access ?? 'look', st.kind, st.kind === 'claude' ? st.where : undefined)).toBe(true);
       // A pull request needs the worktree a Claude step before it made.
       const pr = steps.findIndex((st) => st.kind === 'pr');
@@ -159,7 +160,7 @@ describe('recipes', () => {
 });
 
 describe('the demo', () => {
-  it('seeds six sentinels with their history', async () => {
+  it('seeds ten sentinels with their history, four of them keeping numbers on two dashboards', async () => {
     const { demoGitHub, seedDemoSentinel } = await import('../src/core/sentinel/demo.js');
     const s = setup({ github: demoGitHub() });
     let back = 0;
@@ -173,6 +174,20 @@ describe('the demo', () => {
       ['Watch the web', false],
       ['Uptime guard', false],
       ['GitHub pushes', false],
+      ['Stripe revenue', false],
+      ['YouTube subscribers', false],
+      ['Site speed', false],
+      ['Last job run', true],
+    ]);
+    // A week of numbers, and the dashboards made by hand (none made for you).
+    const revenue = st.metrics![st.items[6]!.id]!.revenue!;
+    expect(revenue.points.map((p) => p.value)).toEqual([2810, 3020, 2950, 3240, 3105, 3390, 3180, 3412]);
+    expect(revenue.points.at(-1)!.runId).toBe(st.runs.filter((r) => r.sentinelId === st.items[6]!.id).at(-1)!.id);
+    expect(st.metrics![st.items[8]!.id]!.home!.points).toHaveLength(57);
+    expect(st.metrics![st.items[9]!.id]!['last-jobs']!.rows).toHaveLength(6);
+    expect(st.dashboards!.map((d) => [d.name, d.tiles.length])).toEqual([
+      ['Revenue', 11],
+      ['Ops', 4],
     ]);
     // Uptime guard went down and came back: a pair of runs, by the event, in that order.
     const guard = st.items[4]!;

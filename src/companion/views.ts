@@ -11,6 +11,8 @@ import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
 import { type RunSummary, type Sentinel, type SentinelState, firstLine, isLive, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById } from '../core/sentinel/model.js';
+import { type Dashboard, type Tile, metricOf, tileCompare, tileMetrics, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
+import { COMPARE, changeText, deltaOf, formatMetric } from '../core/sentinel/metrics.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
 import { shortVersion } from '../net/mesh/features.js';
@@ -36,6 +38,8 @@ import {
   type SentinelRunView,
   type SentinelSummary,
   type SentinelsView,
+  type DashboardTileView,
+  type DashboardView,
   type StepView,
   type SubAgentView,
   TASK_OTHERS,
@@ -102,6 +106,7 @@ export const chatTopic = (conversation: string): Topic | undefined => valid(`cha
 export const planTopic = (id: string): Topic | undefined => valid(`plan:${id}`);
 export const taskTopic = (id: string): Topic | undefined => valid(`task:${id}`);
 export const sentinelTopic = (id: string): Topic | undefined => valid(`sentinel:${id}`);
+export const dashboardTopic = (id: string): Topic | undefined => valid(`dashboard:${id}`);
 /** The channel a `conv:` topic names. */
 export const channelOf = (topic: string): string | undefined => (topic.startsWith('conv:') ? topic.slice(5) : undefined);
 
@@ -1285,7 +1290,86 @@ export function sentinelsView(state: DomainState): SentinelsView {
     .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
     .slice(0, RECENT_RUNS)
     .map((r) => ({ id: clip(r.id, 200), sentinelId: clip(r.sentinelId, 200), state: r.state, at: Math.round(r.endedAt!) }));
-  return { enabled: true, sentinels: s.items.slice(0, 200).flatMap((sn) => sentinelSummary(state, s, sn) ?? []), recent };
+  const dashboards = dashboardRefs(s);
+  const numbers = homeNumbers(s);
+  return { enabled: true, sentinels: s.items.slice(0, 200).flatMap((sn) => sentinelSummary(state, s, sn) ?? []), recent, ...(dashboards.length ? { dashboards } : {}), ...(numbers ? { numbers } : {}) };
+}
+
+// ---- Dashboards (docs/sentinel.md §10): the numbers sentinels keep, as tiles
+
+function dashboardRefs(s: SentinelState): DashboardView['dashboards'] {
+  return (s.dashboards ?? []).slice(0, 30).flatMap((d) => {
+    const topic = dashboardTopic(d.id);
+    return topic ? [{ id: clip(d.id, 200), name: clip(d.name, 100), topic }] : [];
+  });
+}
+
+/** Home's row: the first dashboard's first three numbers that have a value. */
+function homeNumbers(s: SentinelState): SentinelsView['numbers'] {
+  const d = s.dashboards?.[0];
+  const topic = d ? dashboardTopic(d.id) : undefined;
+  if (!d || !topic) return undefined;
+  const items = d.tiles
+    .filter((t) => t.kind === 'number' && tileStateIn(s, t) !== 'gone')
+    .flatMap((t) => {
+      const m = metricOf(s, t.metric);
+      const delta = m ? deltaOf(m.points, tileCompare(d, t), m.better) : undefined;
+      if (!m || !delta) return [];
+      const change = changeText(delta, m.unit);
+      return [{ label: clip(tileTitle(s, t), 100), value: clip(formatMetric(delta.value, m.unit), 60), ...(change ? { change: clip(change, 60) } : {}), tone: delta.tone }];
+    })
+    .slice(0, 3);
+  return items.length ? { dashboard: { id: clip(d.id, 200), name: clip(d.name, 100), topic }, items } : undefined;
+}
+
+/** A tile with what it shows worked out (a number's change for every compare; a chart's series; a table's first rows). */
+function tileView(s: SentinelState, d: Dashboard, t: Tile): DashboardTileView {
+  const state = tileStateIn(s, t);
+  const ms = tileMetrics(s, t);
+  const sentinelId = t.metric?.sentinelId ?? t.metrics?.[0]?.sentinelId ?? t.sentinelId;
+  const sn = sentinelId ? sentinelById(s, sentinelId) : undefined;
+  const topic = sn ? sentinelTopic(sn.id) : undefined;
+  const base: DashboardTileView = { id: clip(t.id, 200), kind: t.kind, width: t.width, title: clip(tileTitle(s, t), 100), state, ...(sn ? { sentinel: clip(sn.name, 100) } : {}), ...(topic ? { topic } : {}), ...(t.compare ? { pinned: t.compare } : {}) };
+  if (state === 'gone') return base;
+  const m = ms[0];
+  if (t.kind === 'number' && m) {
+    const last = m.points.at(-1);
+    const deltas = Object.fromEntries(
+      COMPARE.map((c) => {
+        const dl = deltaOf(m.points, c, m.better);
+        const change = changeText(dl, m.unit);
+        return [c, { ...(change ? { change: clip(change, 60) } : {}), tone: dl?.tone ?? 'none' }];
+      }),
+    );
+    return { ...base, ...(last ? { value: clip(formatMetric(last.value, m.unit), 60), at: Math.round(last.at), runId: clip(last.runId, 200) } : {}), deltas, trend: m.points.slice(-30).map((p) => p.value) };
+  }
+  if (t.kind === 'chart' && ms.length) return { ...base, chart: { kind: t.chart ?? 'line', unit: m!.unit, series: ms.slice(0, 8).map((x) => ({ label: clip(x.label, 100), points: x.points.slice(-90).map((p) => [Math.round(p.at), p.value] as [number, number]) })) } };
+  if (t.kind === 'table' && m?.rows) {
+    const columns = (m.columns?.length ? m.columns : Object.keys(m.rows[0] ?? {})).slice(0, 20);
+    const cell = (v: unknown): string | number | boolean | null => (v === null || v === undefined ? null : typeof v === 'number' || typeof v === 'boolean' ? v : clip(String(v), 300));
+    return { ...base, table: { columns: columns.map((c) => clip(c, 80)), rows: m.rows.slice(0, 50).map((r) => columns.map((c) => cell(r[c]))), total: m.rows.length }, ...(m.rowsAt ? { at: Math.round(m.rowsAt) } : {}) };
+  }
+  if (t.kind === 'text' && sn) {
+    const last = lastRunOf(s, sn.id);
+    return { ...base, ...(last ? { text: firstLine(last.headline, 2000), runId: clip(last.id, 200), at: Math.round(last.endedAt ?? last.startedAt) } : {}) };
+  }
+  return base;
+}
+
+export function dashboardView(state: DomainState, id: string): DashboardView | undefined {
+  const s = state.sentinel;
+  const d = s.enabled ? s.dashboards?.find((x) => x.id === id) : undefined;
+  if (!d) return undefined;
+  const r = s.refreshing?.[d.id];
+  const running = r?.sentinelId ? sentinelById(s, r.sentinelId)?.name : undefined;
+  return {
+    id: clip(d.id, 200),
+    name: clip(d.name, 100),
+    compare: d.compare,
+    tiles: d.tiles.slice(0, 60).map((t) => tileView(s, d, t)),
+    ...(r ? { refreshing: { done: r.done, total: r.total, ...(running ? { sentinel: clip(running, 100) } : {}) } } : {}),
+    dashboards: dashboardRefs(s),
+  };
 }
 
 /** Who ran it, in words ("schedule", "you", "after Nightly tests"). */
@@ -1523,5 +1607,6 @@ export function viewOf(state: DomainState, ctx: ViewContext, topic: Topic): unkn
   if (topic.startsWith('task:')) return taskPageView(state, topic.slice('task:'.length), ctx);
   if (topic === 'sentinels') return sentinelsView(state);
   if (topic.startsWith('sentinel:')) return sentinelPageView(state, topic.slice('sentinel:'.length), ctx);
+  if (topic.startsWith('dashboard:')) return dashboardView(state, topic.slice('dashboard:'.length));
   return undefined;
 }

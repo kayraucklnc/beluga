@@ -97,6 +97,8 @@ export interface AgentRunInput {
   /** Your own runs: sentinels (core/sentinel), and what Claude is told (a sentinel run's brief, or a short note). */
   readonly sentinelTools?: SentinelTools;
   readonly sentinelBrief?: string;
+  /** Your own runs: dashboards and the numbers sentinels keep (server `beluga_dashboard`; sentinel_measure inside a run). */
+  readonly dashboardTools?: DashboardTools;
 }
 
 /** What Claude writes down about a piece of work: the task in its own words, never the request pasted in. */
@@ -131,6 +133,34 @@ export interface SentinelTools {
   remove(ref: string): string;
   /** This conversation changes that sentinel (sentinel.ask): its id. */
   readonly asking?: string;
+}
+
+/** A tile as Claude gives it (dashboard_add_tile): sentinels by id or name. */
+export interface ToolTile {
+  readonly kind: 'number' | 'chart' | 'table' | 'text' | 'divider';
+  readonly width?: 1 | 2 | 3;
+  readonly title?: string;
+  readonly sentinel?: string;
+  readonly metric?: string;
+  readonly metrics?: ReadonlyArray<{ readonly sentinel: string; readonly metric: string }>;
+  readonly chart?: 'line' | 'area' | 'bar';
+  readonly text?: 'headline' | 'report';
+  readonly compare?: 'previous' | 'day' | 'week' | 'month';
+}
+
+/** Dashboards and numbers as Claude's tools (agent/dashboard-tools.ts, server `beluga_dashboard`): each answers in words. */
+export interface DashboardTools {
+  /** Inside a sentinel run only: keep a number this run found. */
+  measure?(name: string, value: number | string, unit?: string, label?: string): string;
+  list(): string;
+  create(name: string): string;
+  addTile(dashboard: string, tile: ToolTile): string;
+  updateTile(dashboard: string, tileId: string, patch: Omit<Partial<ToolTile>, 'kind' | 'compare'> & { readonly compare?: ToolTile['compare'] | null }): string;
+  removeTile(dashboard: string, tileId: string): string;
+  metricList(): string;
+  metricRead(sentinel: string, name: string, since?: string): string;
+  /** This conversation builds that dashboard (Describe it): its id. */
+  readonly building?: string;
 }
 
 /** A plan as Claude's tools (agent/plan-tools.ts, server `beluga_plan`): each answers in words. */

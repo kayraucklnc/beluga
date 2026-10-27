@@ -12,6 +12,7 @@ import { STEPS_API } from './steps-api.js';
 import { GATEWAY_API } from './gateway-api.js';
 import { BOARD_API } from './board-api.js';
 import { CI_API } from './ci-api.js';
+import { DASHBOARD_API } from './dashboard-api.js';
 import { SENTINEL_API } from './sentinel-api.js';
 import { PLANS_API } from './plans-api.js';
 import { ISSUES_API } from './issues-api.js';
@@ -348,6 +349,8 @@ export const API = {
   ...BOARD_API,
   // ---- Sentinel: watchers on a schedule or by hand, their runs and reports (sentinel-api.ts)
   ...SENTINEL_API,
+  // ---- Dashboards: the numbers sentinels keep, arranged in tiles (dashboard-api.ts)
+  ...DASHBOARD_API,
   ...PLANS_API,
   // ---- a project's GitHub issues, and handing one to Claude (issues-api.ts)
   ...ISSUES_API,

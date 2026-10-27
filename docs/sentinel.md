@@ -245,7 +245,9 @@ A step that turns what a sentinel found into named numbers (or rows) and keeps t
 
 Each metric: `name` (stable, `subscribers`), `label` ("YouTube subscribers"), `unit` (`count` · `currency:USD` · `percent` · `ms` · `bytes` · plain), `kind` (`number` · `rows`). Values are kept in `~/.beluga/sentinel/metrics/<sentinelId>/<name>.jsonl` (`{ at, value | rows, runId }`), one line per run, pruned to two years or 20 000 points. The state carries each metric's last 90 points and its last rows (`sentinel.metrics[sentinelId][name]`), never the files.
 
-**Compared to when.** Every number is shown with its change: against the previous run by default, or **vs yesterday · vs last week · vs last month** (the nearest point at or before then). A metric says which way is good (`better: 'up' | 'down' | 'none'`), so a drop in failed payments is green.
+**Compared to when.** Every number is shown with its change: against the previous run by default, or **vs yesterday · vs last week · vs last month** (the nearest point at or before then, with an hour's grace: a run a few minutes late a week on is still a week ago; a month is a calendar month). A metric says which way is good (`better: 'up' | 'down' | 'none'`), so a drop in failed payments is green.
+
+**How it's built** (phase 5). The pure part is `metrics.ts` (reading an output, `pickPath`, `measureFrom`, `baselineOf` / `deltaOf`, the words, `prunePoints`) and `dashboard-model.ts` (tiles, their state, `gridLanding`, the first dashboard's tiles, Markdown), both browser-safe; the files are `metric-files.ts` (a line per run, `meta.json` beside them with each metric's label, unit and `better`; a file is rewritten once it's 200 lines past its limit) and `dashboards.ts`. A name the step can't find fails the step and says which (the rest is kept). A step that names no metric keeps every top-level number. A `measure` step from a source counts as a guarded step: Claude adding or changing one pauses the sentinel. `sentinel_measure` and the dashboard tools are the `beluga_dashboard` server (`agent/dashboard-tools.ts`), in `ALWAYS_OK`. A Call a service step also gets the project's Earnings key as `$STRIPE_EARNINGS_KEY` (the Stripe revenue recipe), redacted from what comes back like any `$VAR`. A deleted sentinel's numbers go with it; its tiles stay and say "gone" until you remove them.
 
 ### Numbers on a sentinel's page
 
@@ -266,7 +268,9 @@ A **Numbers** card above History when the sentinel has metrics: each metric as a
 
 ### Recipes for numbers
 
-**Customers this week** (postgres count, daily), **YouTube subscribers** (Call a service with `$YOUTUBE_KEY` → Keep the numbers `$.items[0].statistics.subscriberCount`, daily), **Stripe revenue** (from the Earnings connection, daily: revenue, new subscriptions, failed payments), **Last job run** (a query: who ran what last, as rows, hourly), **Site speed** (a script that times the home page, every 3 hours, `ms`, better: down), **Open issues and PRs** (gh counts, daily).
+**Customers this week** (postgres count, daily), **YouTube subscribers** (Call a service with `$YOUTUBE_KEY` → Keep the numbers `$.items[0].statistics.subscriberCount`, daily), **Stripe revenue** (from the Earnings connection, daily: revenue, new subscriptions, failed payments), **Last job run** (a query: who ran what last, as rows, hourly), **Site speed** (a script that times the home page, every 3 hours, `ms`, better: down), **Open issues and PRs** (gh counts, daily). Stripe revenue calls Stripe's events with `$STRIPE_EARNINGS_KEY`, and its Claude step adds the last day up and keeps the three numbers with `sentinel_measure` (Stripe has no "yesterday's revenue" to read). New Sentinel lists these six apart, under Keep the numbers.
+
+**Demo.** Stripe revenue, YouTube subscribers and Site speed with a week of points (Site speed every 3 hours, slower for a day after a deploy), Last job run's rows (paused: its tiles say so), on two dashboards, Revenue and Ops. Run Now and Refresh work offline: the demo answers YouTube and Stripe, and the demo Claude keeps Stripe's numbers with `sentinel_measure`; Describe It puts the numbers your words name on the dashboard.
 
 ---
 

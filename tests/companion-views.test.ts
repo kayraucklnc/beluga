@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RefTable } from '../src/companion/files.js';
-import { ChatsView, ChatView, ConvView, HomeView, PeopleView, PlansView, PlanView, SentinelPageView, SentinelsView, TaskPageView, TasksView, type Topic, WorkView, viewSchema } from '../src/companion/protocol.js';
+import { ChatsView, ChatView, ConvView, DashboardView, HomeView, PeopleView, PlansView, PlanView, SentinelPageView, SentinelsView, TaskPageView, TasksView, type Topic, WorkView, viewSchema } from '../src/companion/protocol.js';
 import { type ViewContext, convTurns, homeView, needsYou, sentinelDone, viewOf } from '../src/companion/views.js';
 import { NO_SENTINEL, type Sentinel, type SentinelState } from '../src/core/sentinel/model.js';
 import { type Action, type DomainState, Store, initialState } from '../src/core/store.js';
@@ -129,6 +129,33 @@ const SENTINELS: SentinelState = {
   ],
   live: { run_f1: { stepId: 'f3', state: 'needs-you' } },
   nextAt: { sn_brief: T0 + 86_400_000 },
+  // Numbers (§10): the brief keeps open issues; a deleted sentinel's tile says gone.
+  metrics: {
+    sn_brief: {
+      issues: { sentinelId: 'sn_brief', name: 'issues', label: 'Open issues', unit: 'count', better: 'down', kind: 'number', points: [{ at: T0 - 7 * 86_400_000, value: 14, runId: 'run_b0' }, { at: T0 - 86_400_000, value: 12, runId: 'run_b0' }, { at: T0 + 60, value: 9, runId: 'run_b1' }] },
+      revenue: { sentinelId: 'sn_brief', name: 'revenue', label: 'Revenue', unit: 'currency:USD', better: 'up', kind: 'number', points: [{ at: T0 + 60, value: 3400, runId: 'run_b1' }] },
+      jobs: { sentinelId: 'sn_brief', name: 'jobs', label: 'Last jobs', unit: 'count', better: 'none', kind: 'rows', points: [{ at: T0 + 60, value: 2, runId: 'run_b1' }], rows: [{ who: 'lena', job: 'deploy' }, { who: 'bob', job: 'tests' }], columns: ['who', 'job'], rowsAt: T0 + 60 },
+    },
+  },
+  dashboards: [
+    {
+      id: 'db_rev',
+      name: 'Revenue',
+      compare: 'previous',
+      tiles: [
+        { id: 't1', kind: 'number', width: 1, metric: { sentinelId: 'sn_brief', metric: 'issues' }, compare: 'week' },
+        { id: 't2', kind: 'number', width: 1, metric: { sentinelId: 'sn_brief', metric: 'revenue' } },
+        { id: 't3', kind: 'chart', width: 3, chart: 'line', metrics: [{ sentinelId: 'sn_brief', metric: 'issues' }] },
+        { id: 't4', kind: 'table', width: 3, metric: { sentinelId: 'sn_brief', metric: 'jobs' } },
+        { id: 't5', kind: 'text', width: 2, sentinelId: 'sn_brief', text: 'headline' },
+        { id: 't6', kind: 'number', width: 1, metric: { sentinelId: 'sn_gone', metric: 'x' } },
+        { id: 't7', kind: 'divider', width: 3, title: 'Money' },
+      ],
+      createdAt: T0,
+      updatedAt: T0,
+    },
+  ],
+  refreshing: { db_rev: { done: 1, total: 2, sentinelId: 'sn_brief' } },
 };
 
 function demoState(): DomainState {
@@ -281,7 +308,7 @@ function context(): ViewContext {
 }
 
 const ICON = 'abcdef0123456789abcdef01';
-const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:mac:assistant', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1', 'sentinels', 'sentinel:sn_fix'];
+const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:mac:assistant', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1', 'sentinels', 'sentinel:sn_fix', 'dashboard:db_rev'];
 
 describe('the views of a known Mac', () => {
   const state = demoState();
@@ -552,6 +579,25 @@ describe('the views of a known Mac', () => {
     expect(SentinelsView.parse(viewOf(troubled, ctx, 'sentinels')).sentinels[0]!.trouble).toBe('Sign in to GitHub first: run gh auth login in a terminal');
     expect(SentinelPageView.parse(viewOf(troubled, ctx, 'sentinel:sn_brief')).trouble).toBe('Sign in to GitHub first: run gh auth login in a terminal');
     expect(list.sentinels[0]!.trouble).toBeUndefined();
+  });
+
+  it('dashboard: tiles worked out with every compare, quiet states, Refresh going; Home’s first three numbers', () => {
+    const d = DashboardView.parse(viewOf(state, ctx, 'dashboard:db_rev'));
+    expect(d).toMatchObject({ id: 'db_rev', name: 'Revenue', compare: 'previous', refreshing: { done: 1, total: 2, sentinel: 'Morning brief' }, dashboards: [{ id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }] });
+    const [issues, revenue, chart, table, text, gone, divider] = d.tiles;
+    expect(issues).toMatchObject({ kind: 'number', title: 'Open issues', state: 'ok', value: '9', pinned: 'week', sentinel: 'Morning brief', topic: 'sentinel:sn_brief', trend: [14, 12, 9], runId: 'run_b1' });
+    // Fewer open issues is good: green either way back.
+    expect(issues!.deltas).toEqual({ previous: { change: '−3 (−25%)', tone: 'good' }, day: { change: '−3 (−25%)', tone: 'good' }, week: { change: '−5 (−35.7%)', tone: 'good' }, month: { tone: 'none' } });
+    expect(revenue).toMatchObject({ value: '$3,400', deltas: { previous: { tone: 'none' } } });
+    expect(chart!.chart).toEqual({ kind: 'line', unit: 'count', series: [{ label: 'Open issues', points: [[T0 - 7 * 86_400_000, 14], [T0 - 86_400_000, 12], [T0 + 60, 9]] }] });
+    expect(table!.table).toEqual({ columns: ['who', 'job'], rows: [['lena', 'deploy'], ['bob', 'tests']], total: 2 });
+    expect(text).toMatchObject({ title: 'Morning brief', text: '3 commits landed, CI is green', runId: 'run_b1' });
+    expect(gone).toEqual({ id: 't6', kind: 'number', width: 1, title: 'x', state: 'gone' });
+    expect(divider).toMatchObject({ kind: 'divider', title: 'Money', width: 3 });
+    expect(viewOf(state, ctx, 'dashboard:nope')).toBeUndefined();
+    const list = SentinelsView.parse(viewOf(state, ctx, 'sentinels'));
+    expect(list.dashboards).toEqual([{ id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }]);
+    expect(list.numbers).toEqual({ dashboard: { id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }, items: [{ label: 'Open issues', value: '9', change: '−5 (−35.7%)', tone: 'good' }, { label: 'Revenue', value: '$3,400', tone: 'none' }] });
   });
 
   it('sentinel: a run that ended where the sentinel notifies the phone is told once', () => {

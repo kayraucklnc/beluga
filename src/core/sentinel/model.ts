@@ -1,3 +1,6 @@
+import type { Row, Source } from '../../shared/view-spec.js';
+import type { Dashboard } from './dashboard-model.js';
+
 /**
  * Sentinel (docs/sentinel.md): watchers that run on a schedule, by hand, or when something
  * happens, do a short list of steps and leave a report. The types, the state slice every screen
@@ -91,7 +94,7 @@ export type Trigger = ScheduleTrigger | ManualTrigger | AfterTrigger | BelugaTri
 
 // ---------------------------------------------------------------- steps
 
-export const STEP_KINDS = ['claude', 'script', 'notify', 'http', 'pr', 'merge', 'message', 'friend', 'trigger'] as const;
+export const STEP_KINDS = ['claude', 'script', 'notify', 'http', 'pr', 'merge', 'message', 'friend', 'trigger', 'measure'] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
 
 interface StepBase {
@@ -172,7 +175,48 @@ export interface TriggerStep extends StepBase {
   readonly sentinelId: string;
 }
 
-export type Step = ClaudeStep | ScriptStep | NotifyStep | HttpStep | PrStep | MergeStep | MessageStep | FriendStep | TriggerStep;
+// ---------------------------------------------------------------- numbers (§10)
+
+/** How a number is shown: a count, money in a currency ("currency:USD"), a percent, a time, a size, or plain. */
+export type MetricUnit = 'count' | 'percent' | 'ms' | 'bytes' | 'plain' | `currency:${string}`;
+export const METRIC_UNITS: readonly MetricUnit[] = ['count', 'currency:USD', 'currency:EUR', 'percent', 'ms', 'bytes', 'plain'];
+/** Which way is good: a drop in failed payments is green. */
+export const BETTER = ['up', 'down', 'none'] as const;
+export type Better = (typeof BETTER)[number];
+export const MEASURE_FROM = ['previous', 'source', 'claude'] as const;
+export type MeasureFrom = (typeof MEASURE_FROM)[number];
+
+/** One number (or a table of rows) a measure step keeps. */
+export interface MetricSpec {
+  /** Stable, the file's name: "subscribers". */
+  readonly name: string;
+  /** What the window shows ("YouTube subscribers"; the name, said nicely, when none). */
+  readonly label?: string;
+  /** Where it is: a JSON path ("$.items[0].statistics.subscriberCount", "rows[0].count") or a column ("customers"); none: its name. */
+  readonly pick?: string;
+  readonly unit?: MetricUnit;
+  readonly better?: Better;
+  /** A number (the default), or the rows themselves ("who ran what last"). */
+  readonly kind?: 'number' | 'rows';
+}
+
+/** Rows a rows metric keeps from a run, at most (and by default). */
+export const ROWS_KEPT = 200;
+
+/** Phase 5 (§10): Keep the numbers. */
+export interface MeasureStep extends StepBase {
+  readonly kind: 'measure';
+  /** The previous step's output, a view source the daemon runs, or what Claude kept with sentinel_measure. */
+  readonly from: MeasureFrom;
+  /** For `source`: the same JSON views use (sqlite, postgres, http, command, file). Never in a tile. */
+  readonly source?: Source;
+  /** What it keeps (none: every top-level number, or everything Claude measured). */
+  readonly metrics: readonly MetricSpec[];
+  /** Rows kept per run for a rows metric (200 by default, at most). */
+  readonly keep?: number;
+}
+
+export type Step = ClaudeStep | ScriptStep | NotifyStep | HttpStep | PrStep | MergeStep | MessageStep | FriendStep | TriggerStep | MeasureStep;
 
 // ---------------------------------------------------------------- a sentinel
 
@@ -252,6 +296,8 @@ export interface Recipe {
   readonly sentinel: SentinelDraft;
   /** A second sentinel made with it, that runs after it (`on`): Nightly tests, then Fix the nightly failure. */
   readonly then?: { readonly on: AfterTrigger['on']; readonly sentinel: SentinelDraft };
+  /** Recipes that keep numbers (§10) are listed apart, under Numbers. */
+  readonly group?: 'numbers';
 }
 
 // ---------------------------------------------------------------- runs
@@ -395,6 +441,47 @@ export interface SentinelState {
   readonly troubles?: Readonly<Record<string, string>>;
   /** The webhook sentinels' tunnel (one for all of them): up or not, and its address (never a secret). */
   readonly webhook?: WebhookState;
+  /** The numbers sentinels keep (§10), by sentinel, then by name: the last 90 points each, never the files. */
+  readonly metrics?: Readonly<Record<string, Readonly<Record<string, MetricSeries>>>>;
+  /** Your dashboards (~/.beluga/dashboards.json), in their tabs' order. */
+  readonly dashboards?: readonly Dashboard[];
+  /** A dashboard's Refresh going now: how far ("Fetching… 2 of 3"), by dashboard. */
+  readonly refreshing?: Readonly<Record<string, DashboardRefresh>>;
+  /** Your Claude building a dashboard (its Describe it), by dashboard. */
+  readonly dashboardAsks?: Readonly<Record<string, SentinelAsk>>;
+}
+
+/** A point of a number: when its run kept it, and which run. */
+export interface MetricPoint {
+  readonly at: number;
+  readonly value: number;
+  readonly runId: string;
+}
+
+/** A metric as the screens see it: what it is, its last points (oldest first) and, for rows, its last rows. */
+export interface MetricSeries {
+  readonly sentinelId: string;
+  readonly name: string;
+  readonly label: string;
+  readonly unit: MetricUnit;
+  readonly better: Better;
+  readonly kind: 'number' | 'rows';
+  /** The last POINTS_IN_STATE (a rows metric's: how many rows each run had). */
+  readonly points: readonly MetricPoint[];
+  readonly rows?: readonly Row[];
+  readonly columns?: readonly string[];
+  readonly rowsAt?: number;
+  readonly rowsRunId?: string;
+}
+
+/** Points per metric in the state (the files keep two years). */
+export const POINTS_IN_STATE = 90;
+
+export interface DashboardRefresh {
+  readonly done: number;
+  readonly total: number;
+  /** The sentinel running now. */
+  readonly sentinelId?: string;
 }
 
 /** The tunnel webhook sentinels share: open only while one is on. `url` is its base (no path, no secret). */
@@ -452,9 +539,17 @@ export type SentinelAction =
   | { type: 'sentinel_trouble'; id: string; trouble?: string }
   /** The webhook tunnel opened, closed or moved. */
   | { type: 'sentinel_webhook'; webhook: WebhookState }
+  /** A metric kept a new point (or rows), or was made. */
+  | { type: 'sentinel_metric'; metric: MetricSeries }
+  /** The dashboards changed (all of them: they're small). */
+  | { type: 'sentinel_dashboards'; dashboards: readonly Dashboard[] }
+  /** A dashboard's Refresh moved on, or ended (none). */
+  | { type: 'sentinel_refresh'; id: string; refreshing?: DashboardRefresh }
+  /** Your Claude building a dashboard: began, or ended (none: forgotten). */
+  | { type: 'sentinel_dashboard_ask'; id: string; ask?: SentinelAsk }
   | { type: 'sentinel_off' };
 
-export const SENTINEL_ACTIONS: ReadonlySet<string> = new Set(['sentinel_init', 'sentinel_put', 'sentinel_remove', 'sentinel_run', 'sentinel_ask', 'sentinel_trouble', 'sentinel_webhook', 'sentinel_off']);
+export const SENTINEL_ACTIONS: ReadonlySet<string> = new Set(['sentinel_init', 'sentinel_put', 'sentinel_remove', 'sentinel_run', 'sentinel_ask', 'sentinel_trouble', 'sentinel_webhook', 'sentinel_metric', 'sentinel_dashboards', 'sentinel_refresh', 'sentinel_dashboard_ask', 'sentinel_off']);
 
 /** The step a live run is on: the running one, else the first still waiting. */
 const liveStep = (run: RunSummary): string | undefined => (run.steps.find((s) => s.state === 'running') ?? run.steps.find((s) => s.state === 'waiting'))?.id;
@@ -490,7 +585,23 @@ export function reduceSentinel(state: SentinelSlice, action: SentinelAction): Se
       const live = Object.fromEntries(Object.entries(s.live).filter(([id]) => !gone.has(id)));
       const { [action.id]: _ask, ...asks } = s.asks ?? {};
       const { [action.id]: _trouble, ...troubles } = s.troubles ?? {};
-      return { sentinel: { ...s, items: s.items.filter((i) => i.id !== action.id), runs: s.runs.filter((r) => r.sentinelId !== action.id), nextAt, live, asks, troubles } };
+      const { [action.id]: _metrics, ...metrics } = s.metrics ?? {};
+      return { sentinel: { ...s, items: s.items.filter((i) => i.id !== action.id), runs: s.runs.filter((r) => r.sentinelId !== action.id), nextAt, live, asks, troubles, metrics } };
+    }
+    case 'sentinel_metric': {
+      const m = action.metric;
+      const all = s.metrics ?? {};
+      return { sentinel: { ...s, metrics: { ...all, [m.sentinelId]: { ...all[m.sentinelId], [m.name]: m } } } };
+    }
+    case 'sentinel_dashboards':
+      return { sentinel: { ...s, dashboards: action.dashboards } };
+    case 'sentinel_refresh': {
+      const { [action.id]: _was, ...refreshing } = s.refreshing ?? {};
+      return { sentinel: { ...s, refreshing: action.refreshing ? { ...refreshing, [action.id]: action.refreshing } : refreshing } };
+    }
+    case 'sentinel_dashboard_ask': {
+      const { [action.id]: _was, ...asks } = s.dashboardAsks ?? {};
+      return { sentinel: { ...s, dashboardAsks: action.ask ? { ...asks, [action.id]: action.ask } : asks } };
     }
     case 'sentinel_trouble': {
       const { [action.id]: _was, ...troubles } = s.troubles ?? {};
@@ -611,7 +722,7 @@ export const TRIGGER_INFO: Readonly<Record<TriggerKind, { readonly label: string
   webhook: { label: 'When something posts to its URL', phase: 3 },
 };
 
-export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; readonly hint: string; readonly needs: Access; readonly phase: 1 | 2 | 3 }>> = {
+export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; readonly hint: string; readonly needs: Access; readonly phase: 1 | 2 | 3 | 5 }>> = {
   claude: { label: 'Ask Claude', hint: 'Claude reads, writes a brief, fixes, makes tasks', needs: 'look', phase: 1 },
   script: { label: 'Run a script', hint: 'One shell line or a script, in the project or your home folder', needs: 'look', phase: 1 },
   notify: { label: 'Notify me', hint: 'On the Mac, and the phone if you like, with the report', needs: 'look', phase: 1 },
@@ -621,10 +732,11 @@ export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; read
   message: { label: 'Message a chat', hint: 'A friend or a group, as you', needs: 'look', phase: 2 },
   friend: { label: 'Ask a friend’s Claude', hint: 'As you; their trust applies', needs: 'look', phase: 2 },
   trigger: { label: 'Run another sentinel', hint: 'Starts it with this run’s last output', needs: 'look', phase: 2 },
+  measure: { label: 'Keep the numbers', hint: 'Numbers or rows from the step before, a source, or Claude, kept over time', needs: 'look', phase: 5 },
 };
 
-/** The steps and triggers this Beluga runs (phase 3: every one); later ones show, but a run says they aren't available yet. */
-export const SENTINEL_PHASE = 3;
+/** The steps and triggers this Beluga runs (phase 5: every one); later ones show, but a run says they aren't available yet. */
+export const SENTINEL_PHASE = 5;
 export const stepAvailable = (kind: StepKind): boolean => STEP_INFO[kind].phase <= SENTINEL_PHASE;
 export const triggerAvailable = (kind: TriggerKind): boolean => TRIGGER_INFO[kind].phase <= SENTINEL_PHASE;
 
@@ -651,6 +763,9 @@ export const CLAUDE_CHANGED_BANNER = 'Claude changed what this sentinel can do. 
 
 /** Steps whose change by Claude pauses the sentinel (they run things, call out, or ship). */
 export const GUARDED_STEPS: ReadonlySet<StepKind> = new Set(['script', 'http', 'pr', 'merge']);
+
+/** A guarded step, or a Keep the numbers step that runs a source (a query, a command, a request). */
+const isGuarded = (st: Step): boolean => GUARDED_STEPS.has(st.kind) || (st.kind === 'measure' && st.from === 'source');
 
 /** A step's content, without its id and name (what it does, not what it's called). */
 const stepContent = (st: Step): string => {
@@ -703,8 +818,8 @@ export function claudeWidened(was: Pick<Sentinel, 'steps' | 'access'> & Partial<
   if (RANK[next.access] > RANK[was.access]) return true;
   if ((next.projectId ?? '') !== (was.projectId ?? '')) return true;
   if (was.trigger && next.trigger && triggerTarget(was.trigger) !== triggerTarget(next.trigger)) return true;
-  const before = new Set(was.steps.filter((st) => GUARDED_STEPS.has(st.kind)).map(stepContent));
-  if (next.steps.some((st) => GUARDED_STEPS.has(st.kind) && !before.has(stepContent(st)))) return true;
+  const before = new Set(was.steps.filter(isGuarded).map(stepContent));
+  if (next.steps.some((st) => isGuarded(st) && !before.has(stepContent(st)))) return true;
   const reached = new Set(was.steps.map(stepTarget).filter((t) => t !== undefined));
   return next.steps.some((st) => {
     const t = stepTarget(st);
@@ -916,6 +1031,12 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
     case 'trigger': {
       const name = nameOf(step.sentinelId);
       return name ? `Runs “${name}”` : 'Runs another sentinel';
+    }
+    case 'measure': {
+      const names = step.metrics.map((m) => m.label || m.name).filter(Boolean);
+      const what = names.length ? (names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', ')) : step.from === 'claude' ? 'the numbers Claude measures' : 'every number';
+      const from = step.from === 'previous' ? ' from the step before' : step.from === 'source' ? ` from ${step.source ? `a ${step.source.kind} source` : 'a source (pick one)'}` : '';
+      return `Keeps ${what}${step.from === 'claude' && names.length ? ' that Claude measures' : from}`;
     }
   }
 }

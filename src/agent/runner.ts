@@ -7,6 +7,7 @@ import { buildGraphAppend } from './graph-prompt.js';
 import { buildViewAppend } from './view-prompt.js';
 import { createBoardTools } from './board-tools.js';
 import { createPlanTools } from './plan-tools.js';
+import { createDashboardTools } from './dashboard-tools.js';
 import { createSentinelTools } from './sentinel-tools.js';
 import { SECRET_DECLINED, decideTool, denyReason } from './policy.js';
 import { buildSyncMainAppend, syncProbes } from './sync-main.js';
@@ -89,8 +90,8 @@ function phoneServer(input: AgentRunInput): { beluga_phone?: ReturnType<typeof c
 }
 
 /** Your own runs get sentinels (core/sentinel): list, set up, run, pause; inside a run, stop it. */
-function sentinelServer(input: AgentRunInput): { beluga_sentinel?: ReturnType<typeof createSentinelTools> } {
-  return input.sentinelTools ? { beluga_sentinel: createSentinelTools(input.sentinelTools) } : {};
+function sentinelServer(input: AgentRunInput): { beluga_sentinel?: ReturnType<typeof createSentinelTools>; beluga_dashboard?: ReturnType<typeof createDashboardTools> } {
+  return { ...(input.sentinelTools ? { beluga_sentinel: createSentinelTools(input.sentinelTools) } : {}), ...(input.dashboardTools ? { beluga_dashboard: createDashboardTools(input.dashboardTools) } : {}) };
 }
 
 /** A plan's home conversation gets the plan's tools (core/plans). */

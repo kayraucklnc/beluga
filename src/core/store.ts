@@ -328,7 +328,9 @@ export type View =
   /** Sentinel (Mac app, docs/sentinel.md): every sentinel (one project's, or Your Mac's: `projectId` 'mac'), one sentinel's page, and one run. */
   | { readonly kind: 'sentinel'; readonly projectId?: string }
   | { readonly kind: 'sentinel_page'; readonly id: string }
-  | { readonly kind: 'sentinel_run'; readonly runId: string };
+  | { readonly kind: 'sentinel_run'; readonly runId: string }
+  /** Dashboard (docs/sentinel.md §10): your dashboards, one open (none: the first). */
+  | { readonly kind: 'dashboard'; readonly id?: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
@@ -1102,6 +1104,10 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'sentinel_ask':
     case 'sentinel_trouble':
     case 'sentinel_webhook':
+    case 'sentinel_metric':
+    case 'sentinel_dashboards':
+    case 'sentinel_refresh':
+    case 'sentinel_dashboard_ask':
     case 'sentinel_off':
       return { ...state, ...reduceSentinel(state, action) };
     case 'plans_init':

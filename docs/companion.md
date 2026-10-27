@@ -221,6 +221,12 @@ its last 30 runs with each report as an output ref, and its run waiting for your
 Pause / Turn On and a run's report text are `sentinel.run` / `pause` / `runGet`; a merge waiting is
 a `decision` with Merge and Not Now (`sentinel.decide`); a run that ended where the sentinel
 notifies the phone is a `done` nudge collapsed as `sentinel:<id>`.
+1.22 (BLG-244) brought numbers and dashboards (`SINCE.dashboard`, docs/sentinel.md §10):
+`dashboard:<id>` (its tiles worked out on the Mac: a number with its change for every compare and a
+sparkline, a chart's series, a table's first rows, a text tile's headline; paused or gone said
+quietly; a Refresh going, "Fetching… 2 of 3"), and in `sentinels` the dashboards and the first
+one's first three numbers for Home. Pull to refresh is `dashboard.refresh`; a number over time is
+`sentinel.metricRead`. Tiles never carry a source, a query or a key.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 

@@ -37,4 +37,6 @@ export const SENTINEL_API = {
   // A webhook sentinel's secret, new (the old URL stops at once); its URL with the secret, or why there's none now → { url?, why? }.
   'sentinel.rotateSecret': { args: z.tuple([id]) },
   'sentinel.webhookUrl': { args: z.tuple([id]) },
+  // A sentinel's number over time (two years at most; since a time) → { metric, lines }, oldest first.
+  'sentinel.metricRead': { args: z.tuple([id, z.string().min(1).max(80), z.number().optional()]) },
 } as const;

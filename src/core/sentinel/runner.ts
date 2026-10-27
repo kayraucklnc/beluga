@@ -8,6 +8,7 @@ import {
   type ClaudeStep,
   type FriendStep,
   type HttpStep,
+  type MeasureStep,
   type MergeStep,
   type MessageStep,
   type NotifyStep,
@@ -27,6 +28,8 @@ import {
   firstLine,
   stepAvailable,
 } from './model.js';
+import type { Row, Source } from '../../shared/view-spec.js';
+import { type Measured, formatMetric, labelOf, measureFrom, readOutput } from './metrics.js';
 import { sentinelRunPrompt, stepMaterial } from './prompt.js';
 import { type RenderContext, dateText, jsonInside, render } from './render.js';
 
@@ -182,6 +185,12 @@ export interface RunnerDeps {
   readonly waitForYou?: (active: ActiveRun) => Promise<YourAnswer>;
   /** How often pending checks are looked at again (PR_FAST_MS, 15 s). */
   readonly pollMs?: number;
+  /** A view source, run by the daemon with your environment (Keep the numbers from a source) → its rows, or why not in words. */
+  readonly fetchSource?: (source: Source, cwd: string, signal: AbortSignal) => Promise<{ readonly rows: readonly Row[]; readonly columns: readonly string[] } | string>;
+  /** Variables only Call a service steps get, from Beluga's own connections (the project's Earnings key as $STRIPE_EARNINGS_KEY). */
+  readonly serviceEnv?: (projectId: string | undefined) => Record<string, string>;
+  /** Keep a run's numbers (the files, the state, the first dashboard) → their names as kept. */
+  readonly keep?: (active: ActiveRun, measured: readonly Measured[]) => void;
 }
 
 const CANCEL_GRACE_MS = 10_000;
@@ -230,6 +239,8 @@ export interface ActiveRun {
   answer?: (choice: 'merge' | 'skip') => Promise<void>;
   /** The pull request it merged. */
   merged?: number;
+  /** What its Claude kept with sentinel_measure, for a Keep the numbers step after it. */
+  measured?: Measured[];
 }
 
 /** Kept on the run and in the state; the whole output is in the run's folder. */
@@ -280,6 +291,7 @@ export class SentinelRunner {
     let end: { readonly state: Run['state']; readonly why?: string; readonly headline?: string } | undefined;
     let report: string | undefined;
     let lastScript: { readonly ms: number; readonly exit?: number } | undefined;
+    let keptLine: string | undefined;
     for (let i = 0; i < sentinel.steps.length && !end; i++) {
       const step = sentinel.steps[i]!;
       if (active.abort.signal.aborted) {
@@ -324,6 +336,7 @@ export class SentinelRunner {
         case 'done':
           setStep(i, { state: 'done', endedAt, ...kept, ...channel });
           if (step.kind === 'claude') report = output;
+          if (step.kind === 'measure' && output) keptLine = firstLine(output);
           break;
         case 'skip':
           setStep(i, { state: 'done', endedAt, ...kept, ...channel, why: result.reason });
@@ -361,7 +374,9 @@ export class SentinelRunner {
         ? `Merged #${active.merged}`
         : report !== undefined && firstLine(report)
         ? firstLine(report)
-        : lastScript && !sentinel.steps.some((s) => s.kind === 'claude')
+        : keptLine
+          ? keptLine
+          : lastScript && !sentinel.steps.some((s) => s.kind === 'claude')
           ? `Script ran · ${seconds(lastScript.ms)} · exit ${lastScript.exit ?? '?'}`
           : sentinel.steps.length
             ? `Done · ${sentinel.steps.length} ${sentinel.steps.length === 1 ? 'step' : 'steps'}`
@@ -399,6 +414,8 @@ export class SentinelRunner {
         return this.friendStep(active, step, outputs);
       case 'trigger':
         return Promise.resolve(this.triggerStep(active, step, outputs));
+      case 'measure':
+        return this.measureStep(active, step, outputs);
       default:
         return Promise.resolve({ kind: 'failed', why: `${STEP_INFO[(step as Step).kind].label} isn’t available yet (step ${index + 1})` });
     }
@@ -417,7 +434,7 @@ export class SentinelRunner {
   // ---------------------------------------------------------------- Call a service
 
   private async httpStep(active: ActiveRun, step: HttpStep, outputs: Outputs): Promise<StepEnd> {
-    const env = this.deps.envFor(this.cwdOf(active.sentinel));
+    const env = { ...this.deps.serviceEnv?.(active.sentinel.projectId), ...this.deps.envFor(this.cwdOf(active.sentinel)) };
     // Your variables go in first, into what you wrote only: an earlier output saying "$GROQBOT_KEY"
     // is never filled in (and sent somewhere).
     const secrets: string[] = [];
@@ -696,6 +713,54 @@ export class SentinelRunner {
       const data = t.data === undefined ? '' : `\n\n${JSON.stringify(t.data, null, 2)}`;
       return { kind: 'done', output: `${t.summary ?? ''}${data}`.trim() || `${who} answered` };
     }
+  }
+
+  // ---------------------------------------------------------------- Keep the numbers (§10)
+
+  /**
+   * Named numbers (or rows) from the step before's output, a view source, or what Claude kept with
+   * sentinel_measure, kept with the run's time. A name it can't find fails the step (it says which);
+   * its output is what it kept, in words.
+   */
+  private async measureStep(active: ActiveRun, step: MeasureStep, outputs: Outputs): Promise<StepEnd> {
+    const keep = this.deps.keep;
+    if (!keep) return { kind: 'failed', why: 'keeping numbers needs the Beluga app' };
+    let found: Measured[];
+    let missing: string[] = [];
+    if (step.from === 'claude') {
+      const said = active.measured ?? [];
+      // Named ones keep their label, unit and which way is good; Claude's own come as Claude said.
+      const named = new Map(step.metrics.map((m) => [m.name, m]));
+      found = said.map((m) => {
+        const spec = named.get(m.name);
+        return spec ? { ...m, ...(spec.label ? { label: spec.label } : {}), ...(spec.unit ? { unit: spec.unit } : {}), ...(spec.better ? { better: spec.better } : {}) } : m;
+      });
+      missing = step.metrics.filter((m) => !said.some((x) => x.name === m.name)).map((m) => m.name);
+      if (!found.length) return { kind: 'failed', why: 'Claude kept no numbers: its step calls sentinel_measure for each one it finds' };
+    } else {
+      let data: unknown;
+      if (step.from === 'source') {
+        if (!step.source) return { kind: 'failed', why: 'it has no source yet: pick one' };
+        const fetch = this.deps.fetchSource;
+        if (!fetch) return { kind: 'failed', why: 'sources need the Beluga app' };
+        const got = await race(fetch(step.source, this.cwdOf(active.sentinel), active.abort.signal).catch((err: unknown) => (err instanceof Error ? err.message : String(err))), this.remaining(active), active.abort.signal);
+        if (got.kind === 'timeout') return { kind: 'timeout' };
+        if (got.kind === 'aborted') return { kind: 'stopped' };
+        if (typeof got.value === 'string') return { kind: 'failed', why: `the source didn’t answer: ${firstLine(got.value, 200)}` };
+        data = got.value.rows;
+      } else {
+        const before = outputs.at(-1);
+        if (!before) return { kind: 'failed', why: 'there’s no step before it to read: put it after the step that finds the numbers' };
+        data = readOutput(before.output);
+      }
+      ({ found, missing } = measureFrom(data, step.metrics, step.keep));
+      if (!found.length) return { kind: 'failed', why: step.metrics.length ? `found none of ${step.metrics.map((m) => m.name).join(', ')} in ${step.from === 'source' ? 'the source’s rows' : 'the step before’s output'}` : 'found no numbers to keep' };
+    }
+    keep(active, found);
+    const said = found.map((m) => `${m.label ?? labelOf(m.name)}: ${m.value !== undefined ? formatMetric(m.value, m.unit) : `${m.rows?.length ?? 0} rows`}`);
+    const output = `Kept ${said.join(' · ')}${missing.length ? `\nNot found: ${missing.join(', ')}` : ''}`;
+    if (missing.length) return { kind: 'failed', why: `didn’t find ${missing.join(', ')} (the rest was kept)`, output };
+    return { kind: 'done', output };
   }
 
   // ---------------------------------------------------------------- Run another sentinel

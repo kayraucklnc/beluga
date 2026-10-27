@@ -554,6 +554,174 @@ Then protect \`/api/payments\`.",
     ],
     "working": true,
   },
+  "dashboard:db_rev": {
+    "compare": "previous",
+    "dashboards": [
+      {
+        "id": "db_rev",
+        "name": "Revenue",
+        "topic": "dashboard:db_rev",
+      },
+    ],
+    "id": "db_rev",
+    "name": "Revenue",
+    "refreshing": {
+      "done": 1,
+      "sentinel": "Morning brief",
+      "total": 2,
+    },
+    "tiles": [
+      {
+        "at": 1760000000060,
+        "deltas": {
+          "day": {
+            "change": "−3 (−25%)",
+            "tone": "good",
+          },
+          "month": {
+            "tone": "none",
+          },
+          "previous": {
+            "change": "−3 (−25%)",
+            "tone": "good",
+          },
+          "week": {
+            "change": "−5 (−35.7%)",
+            "tone": "good",
+          },
+        },
+        "id": "t1",
+        "kind": "number",
+        "pinned": "week",
+        "runId": "run_b1",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "title": "Open issues",
+        "topic": "sentinel:sn_brief",
+        "trend": [
+          14,
+          12,
+          9,
+        ],
+        "value": "9",
+        "width": 1,
+      },
+      {
+        "at": 1760000000060,
+        "deltas": {
+          "day": {
+            "tone": "none",
+          },
+          "month": {
+            "tone": "none",
+          },
+          "previous": {
+            "tone": "none",
+          },
+          "week": {
+            "tone": "none",
+          },
+        },
+        "id": "t2",
+        "kind": "number",
+        "runId": "run_b1",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "title": "Revenue",
+        "topic": "sentinel:sn_brief",
+        "trend": [
+          3400,
+        ],
+        "value": "$3,400",
+        "width": 1,
+      },
+      {
+        "chart": {
+          "kind": "line",
+          "series": [
+            {
+              "label": "Open issues",
+              "points": [
+                [
+                  1759395200000,
+                  14,
+                ],
+                [
+                  1759913600000,
+                  12,
+                ],
+                [
+                  1760000000060,
+                  9,
+                ],
+              ],
+            },
+          ],
+          "unit": "count",
+        },
+        "id": "t3",
+        "kind": "chart",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "title": "Open issues",
+        "topic": "sentinel:sn_brief",
+        "width": 3,
+      },
+      {
+        "at": 1760000000060,
+        "id": "t4",
+        "kind": "table",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "table": {
+          "columns": [
+            "who",
+            "job",
+          ],
+          "rows": [
+            [
+              "lena",
+              "deploy",
+            ],
+            [
+              "bob",
+              "tests",
+            ],
+          ],
+          "total": 2,
+        },
+        "title": "Last jobs",
+        "topic": "sentinel:sn_brief",
+        "width": 3,
+      },
+      {
+        "at": 1760000000060,
+        "id": "t5",
+        "kind": "text",
+        "runId": "run_b1",
+        "sentinel": "Morning brief",
+        "state": "ok",
+        "text": "3 commits landed, CI is green",
+        "title": "Morning brief",
+        "topic": "sentinel:sn_brief",
+        "width": 2,
+      },
+      {
+        "id": "t6",
+        "kind": "number",
+        "state": "gone",
+        "title": "x",
+        "width": 1,
+      },
+      {
+        "id": "t7",
+        "kind": "divider",
+        "state": "ok",
+        "title": "Money",
+        "width": 3,
+      },
+    ],
+  },
   "home": {
     "assistant": {
       "fresh": 1,
@@ -1286,7 +1454,34 @@ Pull request #53",
     "topic": "sentinel:sn_fix",
   },
   "sentinels": {
+    "dashboards": [
+      {
+        "id": "db_rev",
+        "name": "Revenue",
+        "topic": "dashboard:db_rev",
+      },
+    ],
     "enabled": true,
+    "numbers": {
+      "dashboard": {
+        "id": "db_rev",
+        "name": "Revenue",
+        "topic": "dashboard:db_rev",
+      },
+      "items": [
+        {
+          "change": "−5 (−35.7%)",
+          "label": "Open issues",
+          "tone": "good",
+          "value": "9",
+        },
+        {
+          "label": "Revenue",
+          "tone": "none",
+          "value": "$3,400",
+        },
+      ],
+    },
     "recent": [
       {
         "at": 1760000000060,

@@ -436,6 +436,57 @@ async function mockSentinel(input: AgentRunInput, pace: number): Promise<string>
 }
 
 /**
+ * The demo's Claude in a sentinel run that keeps numbers (Stripe revenue): it reads what the step
+ * before brought and keeps the numbers its brief names with sentinel_measure.
+ */
+async function mockMeasure(input: AgentRunInput, tools: NonNullable<AgentRunInput['dashboardTools']>, pace: number): Promise<string> {
+  const keeps = /it keeps ([^.]+)\./.exec(input.sentinelBrief ?? '')?.[1] ?? '';
+  const names = [...keeps.matchAll(/([a-z0-9-]+)(?: \(([^)]+)\))?/g)].map((m) => ({ name: m[1]!, unit: m[2] }));
+  const seed = new Date().getDate();
+  const value = (name: string): number => (/revenue/.test(name) ? 3_200 + ((seed * 37) % 400) : /fail/.test(name) ? seed % 3 : /sub/.test(name) ? 3 + (seed % 6) : 10 + (seed % 20));
+  await sleep(700 * pace, input.signal);
+  input.onEvent('tool', 'Read the events');
+  const kept: string[] = [];
+  for (const n of names.length ? names : [{ name: 'value', unit: undefined }]) {
+    await sleep(350 * pace, input.signal);
+    input.onEvent('tool', 'mcp__beluga_dashboard__sentinel_measure');
+    tools.measure!(n.name, value(n.name), n.unit);
+    kept.push(`${value(n.name).toLocaleString('en-US')} ${n.name.replace(/-/g, ' ')}`);
+  }
+  return `${kept.join(', ')}\n\nAdded up from the last day’s events.`;
+}
+
+/** The demo's Claude building a dashboard from words: a tile for each number the words name (or the first few), and a chart of the first. */
+async function mockDashboardAsk(input: AgentRunInput, tools: NonNullable<AgentRunInput['dashboardTools']>, id: string, pace: number): Promise<string> {
+  const said = input.prompt.toLowerCase();
+  await sleep(600 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_dashboard__metric_list');
+  // "Shop (id sn_x, on, …):" then "  - name: Label · …" lines.
+  const found: Array<{ sentinel: string; metric: string; label: string }> = [];
+  let sentinel = '';
+  for (const line of tools.metricList().split('\n')) {
+    const head = /\(id (sn_\w+),/.exec(line);
+    if (head) sentinel = head[1]!;
+    const m = /^\s+- ([a-z0-9-]+): ([^·]+?) · (?!rows)/.exec(line);
+    if (m && sentinel) found.push({ sentinel, metric: m[1]!, label: m[2]!.trim() });
+  }
+  const wanted = found.filter((f) => said.split(/[^a-z]+/).some((w) => w.length > 3 && (f.label.toLowerCase().includes(w.replace(/s$/, '')) || f.metric.includes(w.replace(/s$/, '')))));
+  const tiles = (wanted.length ? wanted : found.slice(0, 3)).slice(0, 6);
+  const compare = /last week|week/.test(said) ? ('week' as const) : /yesterday/.test(said) ? ('day' as const) : /month/.test(said) ? ('month' as const) : undefined;
+  for (const t of tiles) {
+    await sleep(400 * pace, input.signal);
+    input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_add_tile');
+    tools.addTile(id, { kind: 'number', sentinel: t.sentinel, metric: t.metric, ...(compare ? { compare } : {}) });
+  }
+  if (tiles[0] && /chart|graph|over time|trend/.test(said)) {
+    input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_add_tile');
+    tools.addTile(id, { kind: 'chart', width: 3, metrics: [{ sentinel: tiles[0].sentinel, metric: tiles[0].metric }] });
+  }
+  await sleep(300 * pace, input.signal);
+  return tiles.length ? `Added ${tiles.map((t) => t.label).join(', ')}${compare ? `, compared with ${compare === 'day' ? 'yesterday' : `last ${compare}`}` : ''}.` : 'There are no numbers kept yet: a sentinel with a Keep the numbers step keeps them.';
+}
+
+/**
  * The demo's Claude setting a sentinel up from words (Describe it, the page's box): when it runs
  * from the time and days the words name, an Ask Claude step with them as its prompt, and a Notify.
  */
@@ -571,7 +622,9 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     // Updating main (the one thing a main-folder run may change): what real Claude would report.
     if (input.place?.syncMain) return mockSyncMain(input, input.place.syncMain, pace);
     // A sentinel's run (core/sentinel): its brief, before the main folder's "move it to a worktree".
-    if (input.sentinelBrief && input.sentinelTools?.stop) return mockSentinel(input, pace);
+    if (input.sentinelBrief && input.sentinelTools?.stop) return input.dashboardTools?.measure && /sentinel_measure/.test(input.sentinelBrief) ? mockMeasure(input, input.dashboardTools, pace) : mockSentinel(input, pace);
+    // Building a dashboard (its Describe it): the numbers that match the words, as tiles.
+    if (input.dashboardTools?.building) return mockDashboardAsk(input, input.dashboardTools, input.dashboardTools.building, pace);
     // Changing a sentinel (sentinel.ask): it reads the words, fills the sentinel in with its tools.
     if (input.sentinelTools?.asking) return mockSentinelAsk(input, input.sentinelTools, input.sentinelTools.asking, pace);
     // A plan's conversation: Claude writes, revises and checks the plan with its tools.

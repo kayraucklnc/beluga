@@ -56,7 +56,7 @@ export const LATER = 'Comes with a later update';
 
 // ---------------------------------------------------------------- icons
 
-const SENTINEL_ICONS: ReadonlySet<string> = new Set(['calendar', 'check', 'refresh', 'tag', 'issue', 'wrench', 'globe', 'eye', 'bell', 'terminal', 'flag', 'pr', 'coin', 'pulse', 'task', 'claude', 'clock', 'hand', 'sentinel', 'laptop', 'search', 'chartLine', 'merge', 'link', 'alert']);
+const SENTINEL_ICONS: ReadonlySet<string> = new Set(['calendar', 'check', 'refresh', 'tag', 'issue', 'wrench', 'globe', 'eye', 'bell', 'terminal', 'flag', 'pr', 'coin', 'pulse', 'task', 'claude', 'clock', 'hand', 'sentinel', 'laptop', 'search', 'chartLine', 'merge', 'link', 'alert', 'people', 'play', 'gauge']);
 
 /** A sentinel's (or a recipe's) icon: the name it carries when the window has it, else the shield. */
 export const iconOf = (name: string | undefined): IconName => (name && SENTINEL_ICONS.has(name) ? (name as IconName) : 'sentinel');
@@ -83,6 +83,7 @@ export const STEP_ICON: Readonly<Record<StepKind, IconName>> = {
   message: 'chat',
   friend: 'people',
   trigger: 'play',
+  measure: 'gauge',
 };
 
 // ---------------------------------------------------------------- times
@@ -605,7 +606,7 @@ export interface StepChoice {
   readonly disabled: boolean;
 }
 
-/** Add a step: the nine kinds, each with why it can't be added when it can't (a later update, or the access). */
+/** Add a step: the ten kinds, each with why it can't be added when it can't (a later update, or the access). */
 export function stepChoices(access: Access): StepChoice[] {
   return (Object.keys(STEP_INFO) as StepKind[]).map((kind) => {
     const info = STEP_INFO[kind];
@@ -636,6 +637,8 @@ export function newStep(kind: StepKind): StepDraft {
       return { kind: 'friend', name: 'Ask a friend’s Claude', peerId: '', prompt: '' };
     case 'trigger':
       return { kind: 'trigger', name: 'Run another sentinel', sentinelId: '' };
+    case 'measure':
+      return { kind: 'measure', name: 'Keep the numbers', from: 'previous', metrics: [] };
   }
 }
 

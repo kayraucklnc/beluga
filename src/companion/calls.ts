@@ -136,6 +136,9 @@ export const PhoneCalls = {
   'sentinel.runs': entry('sentinel.runs', z.array(SentinelRunResult)),
   'sentinel.runGet': entry('sentinel.runGet', z.object({ run: SentinelRunResult, sentinel: z.object({ id: z.string(), name: z.string() }).optional(), report: z.string().optional() }).passthrough()),
   'sentinel.decide': entry('sentinel.decide', SentinelRunResult),
+  // 1.22 (BLG-244): a number over time (its points, oldest first), and pull to refresh a dashboard.
+  'sentinel.metricRead': entry('sentinel.metricRead', z.object({ metric: z.object({ name: z.string(), label: z.string(), unit: z.string() }).passthrough(), lines: z.array(z.object({ at: z.number(), runId: z.string(), value: z.number().optional() }).passthrough()) })),
+  'dashboard.refresh': entry('dashboard.refresh', z.object({ total: z.number() })),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;

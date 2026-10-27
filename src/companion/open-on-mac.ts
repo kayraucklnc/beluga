@@ -53,6 +53,10 @@ export function macViewFor(state: DomainState, target: OpenTarget): View | undef
       return state.sentinel.items.some((i) => i.id === id) ? { kind: 'sentinel_page', id } : undefined;
     }
     if (topic === 'sentinels') return { kind: 'sentinel' };
+    if (topic.startsWith('dashboard:')) {
+      const id = topic.slice('dashboard:'.length);
+      return state.sentinel.dashboards?.some((d) => d.id === id) ? { kind: 'dashboard', id } : undefined;
+    }
     if (topic === 'tasks') return { kind: 'tasks' };
     if (topic === 'plans') return { kind: 'plans' };
     if (topic === 'work' || topic === 'home') return { kind: 'overview' };

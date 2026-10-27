@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { ACCESS, BELUGA_EVENTS, GITHUB_EVENTS, NOTIFY_WHERE, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
+import { SourceSchema } from '../../shared/view-spec.js';
+import { CHART_TILE_KINDS, TILE_KINDS } from './dashboard-model.js';
+import { COMPARE } from './metrics.js';
+import { ACCESS, BELUGA_EVENTS, BETTER, GITHUB_EVENTS, MEASURE_FROM, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 
 /**
  * Sentinels as zod checks: what the API takes (sentinel-api.ts), what sentinel.json holds, and
@@ -37,6 +40,20 @@ export const TriggerSchema = z.discriminatedUnion('kind', [
 const stepId = z.string().min(1).max(40).optional();
 const stepName = z.string().max(80).optional();
 
+/** A metric's unit: count, percent, ms, bytes, plain, or currency:<ISO code>. */
+export const MetricUnitSchema = z.union([z.enum(['count', 'percent', 'ms', 'bytes', 'plain']), z.custom<`currency:${string}`>((v) => typeof v === 'string' && /^currency:[A-Za-z]{3}$/.test(v), 'A currency like currency:USD')]);
+export const MetricNameSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}$/, 'A name like subscribers or failed-payments');
+
+/** One number (or rows) a Keep the numbers step keeps. */
+export const MetricSpecSchema = z.object({
+  name: MetricNameSchema,
+  label: z.string().max(80).optional(),
+  pick: z.string().max(400).optional(),
+  unit: MetricUnitSchema.optional(),
+  better: z.enum(BETTER).optional(),
+  kind: z.enum(['number', 'rows']).optional(),
+});
+
 /** A step as given: ids and names are filled in when missing. */
 export const StepInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: text(20_000), where: z.enum(['project', 'worktree', 'mac']).default('project'), model: text(80).optional(), effort: text(20).optional() }),
@@ -61,6 +78,8 @@ export const StepInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('message'), id: stepId, name: stepName, to: z.string().regex(/^((dm|group):[\w-]{1,80})?$/, 'A chat: dm:<peer> or group:<id>').default(''), text: text(8000).default('') }),
   z.object({ kind: z.literal('friend'), id: stepId, name: stepName, peerId: z.string().max(80).default(''), prompt: text(20_000).default(''), project: text(200).optional() }),
   z.object({ kind: z.literal('trigger'), id: stepId, name: stepName, sentinelId: z.string().max(80).default('') }),
+  // Its source may be filled in later (none: a run says to pick one).
+  z.object({ kind: z.literal('measure'), id: stepId, name: stepName, from: z.enum(MEASURE_FROM).default('previous'), source: SourceSchema.optional(), metrics: z.array(MetricSpecSchema).max(40).default([]), keep: z.number().int().min(1).max(ROWS_KEPT).optional() }),
 ]);
 
 export const LimitsSchema = z.object({
@@ -133,4 +152,46 @@ export const SentinelFileSchema = z.object({
   secrets: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)).default({}).catch({}),
   // The secrets GitHub signs a webhook sentinel's posts with (its form's Secret): the same, apart from the URL's.
   signingSecrets: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)).default({}).catch({}),
+});
+
+// ---------------------------------------------------------------- dashboards (§10)
+
+const MetricRefSchema = z.object({ sentinelId: id, metric: MetricNameSchema });
+
+/** A tile as given (Add a Tile, Claude's dashboard_add_tile): its id is made when missing. */
+export const TileInputSchema = z.object({
+  id: z.string().min(1).max(40).optional(),
+  kind: z.enum(TILE_KINDS),
+  width: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  title: z.string().max(80).optional(),
+  metric: MetricRefSchema.optional(),
+  metrics: z.array(MetricRefSchema).max(8).optional(),
+  chart: z.enum(CHART_TILE_KINDS).optional(),
+  sentinelId: id.optional(),
+  text: z.enum(['headline', 'report']).optional(),
+  compare: z.enum(COMPARE).optional(),
+});
+
+/** A tile's change: anything but its id and kind (compare null: the dashboard's again). */
+export const TilePatchSchema = TileInputSchema.omit({ id: true, kind: true }).extend({ compare: z.enum(COMPARE).nullable().optional() }).partial();
+
+export const DashboardPatchSchema = z.object({ name: z.string().trim().min(1).max(60).optional(), compare: z.enum(COMPARE).optional() });
+
+export const SavedDashboardSchema = z
+  .object({
+    id,
+    name: z.string().min(1).max(60),
+    compare: z.enum(COMPARE).default('previous'),
+    tiles: z.array(TileInputSchema.extend({ id: z.string().min(1).max(40), width: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1) })).default([]),
+    auto: z.boolean().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .passthrough();
+
+/** ~/.beluga/dashboards.json: your dashboards, and whether the first was made for you already (so it isn't made again). */
+export const DashboardFileSchema = z.object({
+  version: z.literal(1),
+  made: z.boolean().default(false),
+  dashboards: z.array(z.unknown()).default([]),
 });

@@ -35,6 +35,9 @@ const ALWAYS_OK = new Set([
   // Sentinels (core/sentinel): only your own runs have them; a new one starts paused until you turn it on,
   // and a change to what one can do pauses it. sentinel_remove isn't here: deleting one asks you.
   ...['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_update', 'sentinel_run', 'sentinel_pause'].map((n) => `mcp__beluga_sentinel__${n}`),
+  // Dashboards and numbers (core/sentinel, §10): only your own runs have them; they arrange your
+  // dashboards' tiles and read the numbers (a tile removed takes nothing kept with it).
+  ...['sentinel_measure', 'dashboard_list', 'dashboard_create', 'dashboard_add_tile', 'dashboard_update_tile', 'dashboard_remove_tile', 'metric_list', 'metric_read'].map((n) => `mcp__beluga_dashboard__${n}`),
   // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
   ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).

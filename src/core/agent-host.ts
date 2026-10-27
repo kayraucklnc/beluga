@@ -59,7 +59,7 @@ export interface AgentHostDeps {
   /** The task board for a run in this conversation (your own runs): its tools and the task's brief. */
   readonly board?: (channel: string, from: string, opts: { readonly plan: boolean }) => import('./board/work.js').RunBoard | undefined;
   /** Sentinels (your own runs): their tools, and a sentinel run's brief in its Claude step's conversation (core/sentinel). */
-  readonly sentinel?: (channel: string, from: string) => { readonly tools: import('../agent/types.js').SentinelTools; readonly brief: string; readonly inRun: boolean } | undefined;
+  readonly sentinel?: (channel: string, from: string) => { readonly tools: import('../agent/types.js').SentinelTools; readonly dashboard?: import('../agent/types.js').DashboardTools; readonly brief: string; readonly inRun: boolean } | undefined;
   /** A plan's home conversation (your own runs): its plan tools and what Claude is told about the plan (core/plans). */
   readonly plans?: (channel: string, from: string) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string } | undefined;
   /** "Your Mac" (core/assistant), your own runs in its conversation: where it runs, its tools, what Claude is told. */
@@ -1113,7 +1113,7 @@ export class AgentHost {
         ...(plans?.brief ? { planBrief: plans.brief } : {}),
         ...(mac ? { macTools: mac.tools, macBrief: mac.brief } : {}),
         ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
-        ...(sentinel ? { sentinelTools: sentinel.tools, sentinelBrief: sentinel.brief } : {}),
+        ...(sentinel ? { sentinelTools: sentinel.tools, sentinelBrief: sentinel.brief, ...(sentinel.dashboard ? { dashboardTools: sentinel.dashboard } : {}) } : {}),
         prompt: this.promptOf(body),
         requesterName,
         viaAgent: body.viaAgent,

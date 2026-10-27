@@ -3,7 +3,8 @@ import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import { assistantOf } from '../assistant/registry.js';
 import { assistantChannel } from '../../shared/assistant.js';
-import { commandEnv } from '../views/sources.js';
+import { commandEnv, fetchSource } from '../views/sources.js';
+import type { Source } from '../../shared/view-spec.js';
 import { gatewayOf } from '../gateway/registry.js';
 import { isFinal } from '../gateway/model.js';
 import { networkOf } from '../network.js';
@@ -13,7 +14,7 @@ import type { PullRequest } from '../work-store.js';
 import { runGhCli } from '../issues/gh.js';
 import { loadStripeFile } from '../stripe-earnings.js';
 import { openTunnel, waitUntilReachable } from '../../net/tunnel.js';
-import { demoGitHub, demoTriggers, seedDemoSentinel } from './demo.js';
+import { demoGitHub, demoServices, demoTriggers, seedDemoSentinel } from './demo.js';
 import type { FetchLike, TriggerDeps, WebhookTunnel } from './triggers/types.js';
 import { attachSentinel, detachSentinel } from './registry.js';
 import type { PrLook, PrPlace, SentinelChat, SentinelClaude, SentinelFriends, SentinelGitHub, SentinelPlaces } from './runner.js';
@@ -36,6 +37,7 @@ export function launchSentinel(host: SentinelHost): () => void {
   // The demo's history is made "in the past".
   let back = 0;
   const claude = ownClaude(session, store);
+  const services = host.demo ? demoServices() : undefined;
   const sentinels = new Sentinels({
     store,
     dir: host.demo ? null : belugaHome(),
@@ -51,6 +53,15 @@ export function launchSentinel(host: SentinelHost): () => void {
     friends: friends(session),
     // The demo's GitHub, Stripe, Sentry, sites and tunnel answer without the network.
     triggers: host.demo ? demoTriggers(store) : triggers(session, store),
+    fetchSource: sourceRows,
+    ...(services ? { fetch: services.fetch } : {}),
+    // The Stripe revenue recipe calls Stripe with the key Earnings keeps for the project.
+    serviceEnv: (projectId) => {
+      if (services) return services.env;
+      const root = projectId ? store.getState().projects.find((p) => p.id === projectId)?.root : undefined;
+      const key = root && !host.demo ? loadStripeFile().projects[root]?.key : undefined;
+      return key ? { STRIPE_EARNINGS_KEY: key } : {};
+    },
   });
   attachSentinel(session, sentinels);
   const stopSeed = host.demo && !sentinels.list().length ? seedDemoSentinel(store, sentinels, (ms) => (back = ms)) : () => undefined;
@@ -61,6 +72,18 @@ export function launchSentinel(host: SentinelHost): () => void {
     sentinels.stopAll();
     store.dispatch({ type: 'sentinel_off' });
   };
+}
+
+/**
+ * A Keep the numbers step's source, run as views run theirs (your environment, the source's own
+ * checks: never a credential file), fresh each run. It's your own sentinel's, so it doesn't wait for a
+ * yes the way a command in a chat does; a change by your Claude to it pauses the sentinel instead.
+ */
+async function sourceRows(source: Source, cwd: string): Promise<{ readonly rows: readonly import('../../shared/view-spec.js').Row[]; readonly columns: readonly string[] } | string> {
+  const got = await fetchSource(source, { offset: 0, limit: 5000 }, { cwd, confirm: true, fresh: true });
+  if ('needsApproval' in got) return `it needs your yes first: ${got.what}`;
+  if ('notKept' in got) return 'nothing came back';
+  return { rows: got.rows, columns: got.columns };
 }
 
 /** Where the event triggers look: gh, the web, Earnings' Stripe keys, your variables, a Cloudflare quick tunnel. */

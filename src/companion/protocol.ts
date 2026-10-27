@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 21 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 22 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -46,9 +46,12 @@ export const COMPANION_PROTO = { major: 1, minor: 21 } as const;
  * 1.21 (BLG-237): Sentinel, your watchers (docs/sentinel.md): the `sentinels` and `sentinel:<id>`
  * topics (`SentinelsView`, `SentinelPageView`), Run Now, Pause / Turn On and a run's report
  * (`sentinel.run` / `pause` / `runs` / `runGet`), and a run waiting for your Merge as a `decision`
- * (`sentinel.decide`).
+ * (`sentinel.decide`). 1.22 (BLG-244): numbers and dashboards (docs/sentinel.md §10): the
+ * `dashboard:<id>` topic (`DashboardView`, its tiles worked out on the Mac with every compare),
+ * pull to refresh (`dashboard.refresh`), a number over time (`sentinel.metricRead`), and in
+ * `SentinelsView` the dashboards and the first one's first three numbers for Home.
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -101,6 +104,8 @@ export const Topic = z.union([
   /** 1.21: every sentinel, and one sentinel's page with its runs. */
   z.literal('sentinels'),
   z.string().regex(/^sentinel:[\w.-]{1,200}$/),
+  /** 1.22: one dashboard with its tiles. */
+  z.string().regex(/^dashboard:[\w.-]{1,200}$/),
 ]);
 export type Topic = z.infer<typeof Topic>;
 
@@ -581,12 +586,25 @@ export const SentinelSummary = z.object({
 });
 export type SentinelSummary = z.infer<typeof SentinelSummary>;
 
+/** 1.22: how a number moved, in words, with its tone by which way is good (src/core/sentinel/metrics.ts). */
+export const NumberTone = z.union([z.enum(['good', 'bad', 'flat', 'none']), z.string().max(10)]);
+export const NumberDelta = z.object({ change: z.string().max(60).optional(), tone: NumberTone });
+/** 1.22: what a number is compared with (one a phone doesn't know is shown as the dashboard's). */
+export const CompareKind = z.union([z.enum(['previous', 'day', 'week', 'month']), z.string().max(10)]);
+
+/** 1.22: a dashboard in a list (its tab). */
+export const DashboardRef = z.object({ id, name: z.string().max(100), topic: Topic });
+
 /** 1.21: every sentinel, and the latest runs that ended across them (newest first), for Home's "2 ran since you looked". */
 export const SentinelsView = z.object({
   /** Sentinel runs on this Mac (the Mac app's daemon). */
   enabled: z.boolean(),
   sentinels: z.array(SentinelSummary).max(200),
   recent: z.array(z.object({ id, sentinelId: id, state: SentinelRunState, at: ts })).max(50),
+  /** 1.22: your dashboards, in their tabs' order. */
+  dashboards: z.array(DashboardRef).max(30).optional(),
+  /** 1.22: Home's row: the first dashboard's first three numbers, compared as that dashboard says. */
+  numbers: z.object({ dashboard: DashboardRef, items: z.array(z.object({ label: z.string().max(100), value: z.string().max(60), change: z.string().max(60).optional(), tone: NumberTone })).max(3) }).optional(),
 });
 export type SentinelsView = z.infer<typeof SentinelsView>;
 
@@ -617,6 +635,45 @@ export const SentinelPageView = SentinelSummary.extend({
   needsYou: z.array(NeedsYou).max(10),
 });
 export type SentinelPageView = z.infer<typeof SentinelPageView>;
+
+/**
+ * 1.22 (BLG-244): a dashboard's tile as the phone draws it, worked out on the Mac: its title, the
+ * sentinel it's from (paused or gone said quietly), and for its kind: a number with its change for
+ * every compare (the phone's chips pick one; `pinned` is the tile's own), a chart's series, a
+ * table's rows, a text's headline (or its report through `sentinel.runGet` with `runId`). A tile
+ * never carries a source, a query or a key.
+ */
+export const DashboardTileView = z.object({
+  id,
+  kind: z.union([z.enum(['number', 'chart', 'table', 'text', 'divider']), z.string().max(20)]),
+  width: z.number().int().min(1).max(3),
+  title: z.string().max(100),
+  state: z.union([z.enum(['ok', 'paused', 'gone', 'waiting']), z.string().max(20)]),
+  sentinel: z.string().max(100).optional(),
+  topic: Topic.optional(),
+  value: z.string().max(60).optional(),
+  deltas: z.record(z.string().max(10), NumberDelta).optional(),
+  pinned: CompareKind.optional(),
+  /** The last points (a sparkline), oldest first. */
+  trend: z.array(z.number()).max(90).optional(),
+  chart: z.object({ kind: z.string().max(10), unit: z.string().max(20), series: z.array(z.object({ label: z.string().max(100), points: z.array(z.tuple([ts, z.number()])).max(90) })).max(8) }).optional(),
+  table: z.object({ columns: z.array(z.string().max(80)).max(20), rows: z.array(z.array(z.union([z.string().max(300), z.number(), z.boolean(), z.null()])).max(20)).max(50), total: z.number().int().min(0) }).optional(),
+  text: z.string().max(2000).optional(),
+  runId: z.string().max(200).optional(),
+  at: ts.optional(),
+});
+export type DashboardTileView = z.infer<typeof DashboardTileView>;
+
+/** 1.22: one dashboard: its tiles in order, what it compares with, a Refresh going ("Fetching… 2 of 3"), and every dashboard (its tabs). */
+export const DashboardView = z.object({
+  id,
+  name: z.string().max(100),
+  compare: CompareKind,
+  tiles: z.array(DashboardTileView).max(60),
+  refreshing: z.object({ done: z.number().int().min(0), total: z.number().int().min(0), sentinel: z.string().max(100).optional() }).optional(),
+  dashboards: z.array(DashboardRef).max(30),
+});
+export type DashboardView = z.infer<typeof DashboardView>;
 
 export const ChatMessageView = z.object({
   id,
@@ -1055,6 +1112,7 @@ export function viewSchema(topic: Topic): z.ZodType {
   if (topic.startsWith('task:')) return TaskPageView;
   if (topic === 'sentinels') return SentinelsView;
   if (topic.startsWith('sentinel:')) return SentinelPageView;
+  if (topic.startsWith('dashboard:')) return DashboardView;
   return ChatView;
 }
 

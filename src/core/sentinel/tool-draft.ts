@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ACCESS, BELUGA_EVENTS, GITHUB_EVENTS, NOTIFY_WHERE, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
-import { LimitsSchema, ScheduleTriggerSchema } from './schema.js';
+import { SourceSchema } from '../../shared/view-spec.js';
+import { LimitsSchema, MetricSpecSchema, ScheduleTriggerSchema } from './schema.js';
 
 /**
  * What Claude's sentinel_create and sentinel_update take (agent/sentinel-tools.ts): a sentinel in
@@ -45,6 +46,17 @@ const TOOL_STEP = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('message'), id: stepId, name: stepName, to: z.string().regex(/^(dm|group):[\w-]{1,80}$/).describe('dm:<peerId> or group:<id>'), text: z.string().min(1).max(8000) }),
   z.object({ kind: z.literal('friend'), id: stepId, name: stepName, peerId: z.string().min(1).max(80), prompt: z.string().min(1).max(20_000), project: z.string().max(200).optional() }),
   z.object({ kind: z.literal('trigger'), id: stepId, name: stepName, sentinelId: z.string().min(1).max(80) }),
+  z
+    .object({
+      kind: z.literal('measure'),
+      id: stepId,
+      name: stepName,
+      from: z.enum(['previous', 'source', 'claude']).describe('previous: the step before’s output (a number, JSON, CSV, "name: value" lines); source: a view source run here (sqlite, postgres, http, command); claude: what the Claude step before kept with sentinel_measure'),
+      source: SourceSchema.optional().describe('For from: source, the same JSON a view’s source takes; secrets only as $VAR'),
+      metrics: z.array(MetricSpecSchema).max(40).optional().describe('Each: name (subscribers), label, pick (a JSON path like $.items[0].statistics.subscriberCount, or a column), unit (count, currency:USD, percent, ms, bytes, plain), better (up, down, none), kind (number, or rows for a table). None: every top-level number'),
+      keep: z.number().int().min(1).max(200).optional().describe('Rows kept per run for a rows metric (200)'),
+    })
+    .describe('Keep the numbers: they show on the sentinel’s page and dashboards, compared with the past'),
 ]);
 
 export const TOOL_DRAFT_SHAPE = {

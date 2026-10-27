@@ -458,6 +458,18 @@ export const PHONE: Record<Method, Side> = {
   'sentinel.setRunAtOnce': 'mac',
   'sentinel.rotateSecret': 'mac',
   'sentinel.webhookUrl': 'mac',
+  // Numbers and dashboards (docs/sentinel.md §10): the phone reads a number over time and pulls a
+  // dashboard to refresh it (Run Now on its sentinels); arranging dashboards is the Mac's.
+  'sentinel.metricRead': 'phone',
+  'dashboard.refresh': 'phone',
+  'dashboard.create': 'mac',
+  'dashboard.update': 'mac',
+  'dashboard.remove': 'mac',
+  'dashboard.addTile': 'mac',
+  'dashboard.updateTile': 'mac',
+  'dashboard.removeTile': 'mac',
+  'dashboard.moveTile': 'mac',
+  'dashboard.ask': 'mac',
 };
 
 /** A method the phone may call (unknown names are not). */
