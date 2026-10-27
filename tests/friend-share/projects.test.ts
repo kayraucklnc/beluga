@@ -107,6 +107,16 @@ describe('sharing a project with a friend over the network', () => {
     // It's one of kay's projects now.
     expect(kay.store.getState().projects.some((p) => p.id === copy.projectId && p.root === copy.path)).toBe(true);
 
+    // In one of ata's worktrees, kay can run it on this Mac instead: a worktree of hers on the same branch, in her copy.
+    const theirs = project.workspaces.find((w) => w.kind === 'worktree' && !w.archived && !w.external && w.branch)!;
+    const localId = await kay.shares.runHere(ata.id, theirs.id, 'try it here');
+    const local = kay.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === localId)!;
+    expect(local.branch).toBe(theirs.branch);
+    await settle(() => kay.runs.some((r) => r.prompt.includes('try it here')));
+    expect(ata.runs.some((r) => r.prompt.includes('try it here'))).toBe(false);
+    // Again: the same worktree, not a new one.
+    expect(await kay.shares.runHere(ata.id, theirs.id, 'and again')).toBe(localId);
+
     // A worktree shared on its own is followed, not copied.
     const one = await ata.session.workspaces!.manager.createWorktree(project.id, 'only-this');
     await ata.session.workspaces!.refresh();

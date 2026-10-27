@@ -9,6 +9,8 @@ import type { Project } from '../../workspaces/types.js';
 import { fetchBytes } from '../downloads.js';
 import type { FriendFolder, ProjectGrant, SharedCopy, SharedProject } from '../friend-share-store.js';
 import { readProjectIcon } from '../project-icons.js';
+import { safeRef } from '../remote-work.js';
+import { git } from '../../workspaces/git.js';
 import type { Session } from '../session.js';
 import type { Action, LogItem, Store } from '../store.js';
 import { clean, peerName } from '../store.js';
@@ -595,6 +597,38 @@ export class FriendShares implements FriendSharing {
     this.setCopy(owner, id, { state: 'ready', path: dest, ...(projectId ? { projectId } : {}) });
     const rec = this.received[keyOf(owner, id)];
     if (rec) this.opts.session.toast(`Your copy of ${rec.name} is in ${dest.replace(/^\/Users\/[^/]+/, '~')}`, 'success');
+  }
+
+  /**
+   * Say something in a friend's worktree, but to your own Claude in your copy (BLG-260): a
+   * worktree of yours on the same branch (made the first time, the branch fetched when you
+   * don't have it), opened, with the message sent there. Returns its id.
+   */
+  async runHere(owner: string, wsId: string, prompt: string): Promise<string> {
+    const rec = this.receivedWs(wsId);
+    const shared = rec?.worktrees.find((w) => w.id === wsId);
+    if (!rec || rec.owner !== owner || !shared) throw new Error('That worktree isn’t shared with you');
+    const ctl = this.opts.session.workspaces;
+    const project = rec.copy?.state === 'ready' ? this.state.projects.find((p) => p.id === rec.copy?.projectId) : undefined;
+    if (!ctl || !project?.root) throw new Error(`You don’t have a copy of ${rec.name} on this Mac yet`);
+    const want = shared.branch && safeRef(shared.branch) ? shared.branch : undefined;
+    let ws = want ? project.workspaces.find((w) => w.kind === 'worktree' && !w.archived && w.branch === want) : undefined;
+    if (!ws) {
+      const has = async (b: string): Promise<boolean> => Boolean(await git(project.root, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`]).catch(() => ''));
+      if (want && !(await has(want))) await git(project.root, ['fetch', '--quiet', 'origin', `${want}:${want}`], 120_000).catch(() => undefined);
+      const current = (await git(project.root, ['branch', '--show-current']).catch(() => '')).trim();
+      // Their branch, unless it's what your main folder has checked out (or it never came): a branch of your own from it.
+      let branch = want && want !== current && (await has(want)) ? want : undefined;
+      if (!branch) {
+        branch = await ctl.manager.freeBranchName(project.root, shared.name);
+        await git(project.root, ['branch', '--no-track', branch, want && (await has(want)) ? want : 'HEAD']);
+      }
+      ws = await ctl.manager.createWorktreeOn(project.id, shared.name, branch, {}, { copyEnv: false });
+      await ctl.refresh();
+    }
+    ctl.open(ws.id);
+    this.opts.session.submit(prompt, { channel: `ws:${ws.id}` });
+    return ws.id;
   }
 
   private setCopy(owner: string, id: string, copy: SharedCopy): void {
