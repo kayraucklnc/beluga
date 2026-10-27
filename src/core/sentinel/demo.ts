@@ -154,6 +154,7 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
   const fix = sentinels.create({
     name: 'Fix what broke',
     icon: 'wrench',
+    recipe: 'fix-what-broke',
     projectId: api,
     trigger: { kind: 'github', what: 'workflow-failed', minutes: 2 },
     access: 'ship',
@@ -242,6 +243,7 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
   const web = sentinels.create({
     name: 'Watch the web',
     icon: 'globe',
+    recipe: 'watch-the-web',
     projectId: landing,
     trigger: { kind: 'schedule', every: 'day', at: '06:00', missed: 'catch-up' },
     access: 'look',
@@ -264,6 +266,7 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
   const guard = sentinels.create({
     name: 'Uptime guard',
     icon: 'pulse',
+    recipe: 'uptime-guard',
     projectId: landing,
     trigger: { kind: 'uptime', url: 'https://landing.example.com', minutes: 5 },
     access: 'look',

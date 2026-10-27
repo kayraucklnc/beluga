@@ -4,8 +4,8 @@ import { Field, FormSheet, Popup, TextArea, TextInput } from '../components/Form
 import { Segmented } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { projectOfView } from '../tasks/use-tasks.js';
-import { Disc } from './marks.js';
-import { MAC_SCOPE, describedName, iconOf } from './sentinel-model.js';
+import { Icon } from '../components/Icon.js';
+import { MAC_SCOPE, describedName, iconOf, recipeWhen } from './sentinel-model.js';
 import { useSentinelActions } from './use-sentinel.js';
 import s from './sentinel.module.css';
 
@@ -62,11 +62,16 @@ export function NewSentinelSheet({ projectId, way: first = 'describe', close }: 
     a.open(made.id);
     await a.act(() => a.api.ask(made.id, text));
   };
+  /** A recipe: its sentinel filled in (paused), and the one that runs after it when it has one. */
   const pick = async (r: Recipe): Promise<void> => {
     if (busy) return;
     setBusy(r.id);
-    await make(r.sentinel);
+    const made = await a.act(() => a.create({ ...r.sentinel, projectId: where }));
+    if (made && r.then) await a.act(() => a.create({ ...r.then!.sentinel, projectId: where, trigger: { kind: 'after', sentinelId: made.id, on: r.then!.on } }));
     setBusy(undefined);
+    if (!made) return;
+    close();
+    a.open(made.id);
   };
 
   const projectName = project === MAC_SCOPE ? 'Your Mac' : projects.find((p) => p.id === project)?.name;
@@ -114,8 +119,11 @@ export function NewSentinelSheet({ projectId, way: first = 'describe', close }: 
             <div className={s.recipes} role="list" aria-label="Recipes">
               {recipes.map((r) => (
                 <button key={r.id} type="button" role="listitem" className={s.recipe} aria-busy={busy === r.id} disabled={Boolean(busy)} onClick={() => void pick(r)} data-recipe={r.id}>
-                  <Disc icon={iconOf(r.icon)} tone={r.sentinel.trigger?.kind === 'schedule' ? 'clock' : 'claude'} size={30} />
+                  <Icon name={iconOf(r.icon)} size={14} />
                   <span className={s.recipeName}>{r.name}</span>
+                  <span className={s.recipeWhen} title={recipeWhen(r)}>
+                    {recipeWhen(r)}
+                  </span>
                   <span className={s.recipeLine}>{r.line}</span>
                 </button>
               ))}

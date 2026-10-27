@@ -4,7 +4,8 @@ import { expect, test, type Page } from './fixtures.js';
 /**
  * Sentinel (docs/sentinel.md §3) on the demo's six sentinels: the list, Morning brief's page and
  * Run Now, a run's page with its report, the merge waiting on Fix what broke, and the event
- * triggers (Uptime guard's page, the webhook's URL). Screenshots in light and dark go to
+ * triggers (Uptime guard's page, the webhook's URL), then a recipe made and turned on (Nightly
+ * tests, with the sentinel that runs after it fails). Screenshots in light and dark go to
  * .beluga/scratch/sentinel-*.png.
  */
 
@@ -184,4 +185,37 @@ test('a webhook: its URL with Copy, the signature, Rotate Secret asks first', as
   await confirm.getByRole('button', { name: 'Rotate Secret' }).click();
   await expect(url).not.toHaveValue(before);
   await expect(url).toHaveValue(/\/[0-9a-f]{64}$/);
+});
+
+test('a recipe: the eleven to start from, Nightly tests made with the sentinel that fixes it, turned on', async ({ page }) => {
+  await openList(page);
+  const before = await main(page).locator('[data-sentinel]').count();
+  await main(page).getByRole('button', { name: 'New Sentinel' }).first().click();
+  const sheet = page.getByRole('dialog', { name: 'New Sentinel' });
+  await sheet.getByRole('tab', { name: /Recipe/ }).click();
+  const recipes = sheet.getByRole('list', { name: 'Recipes' });
+  await expect(recipes.getByRole('listitem')).toHaveCount(11);
+  await expect(recipes.locator('[data-recipe="fix-and-ship"]')).toContainText('When Sentry sees a new issue');
+  await expect(recipes.locator('[data-recipe="review-new-prs"]')).toContainText('When a pull request opens');
+  await sheet.getByRole('combobox', { name: 'Where it works' }).click();
+  await page.getByRole('option', { name: 'bob-api' }).click();
+  await shoot(page, 'recipes');
+  await recipes.locator('[data-recipe="nightly-tests"]').click();
+  // Its page, filled in and paused: Turn On is the main button.
+  await expect(main(page).locator('[data-sentinel-page]')).toBeVisible();
+  await expect(main(page).getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Nightly tests');
+  await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('Every day at 2:00');
+  await expect(main(page).getByRole('region', { name: 'Steps' }).getByRole('textbox', { name: 'Step 1’s name' })).toHaveValue('Run the tests');
+  await main(page).getByRole('button', { name: 'Turn On' }).first().click();
+  await expect(main(page).getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await shoot(page, 'recipe-on');
+  // The second sentinel came with it, waiting for the first to fail (paused until you turn it on too).
+  await openList(page);
+  await expect(main(page).locator('[data-sentinel]')).toHaveCount(before + 2);
+  await expect(main(page).getByRole('row', { name: /^Fix the nightly failure, After “Nightly tests” fails/ })).toBeVisible();
+  await main(page).getByRole('row', { name: /^Fix the nightly failure/ }).click();
+  const steps = main(page).getByRole('region', { name: 'Steps' });
+  await expect(steps.locator('[data-step]')).toHaveCount(3);
+  await expect(steps.locator('[data-step="pr"]')).toBeVisible();
+  await shoot(page, 'recipe-after');
 });

@@ -18,6 +18,7 @@ import {
   type ScheduleTrigger,
   type Sentinel,
   type SentinelState,
+  type Recipe,
   type Step,
   type StepDraft,
   type StepKind,
@@ -676,6 +677,11 @@ export function accessSentence(access: Access, steps: readonly Step[]): string {
   if (access === 'ship' && steps.some((st) => st.kind === 'merge' && !st.require.approval)) return 'Claude can change code in a worktree, open pull requests, and merge by itself when the checks pass';
   return ACCESS_INFO[access].sentence;
 }
+
+// ---------------------------------------------------------------- New Sentinel
+
+/** A recipe's row in New Sentinel: when it runs, in the sentence its page will show. */
+export const recipeWhen = (r: Recipe): string => (r.sentinel.trigger ? scheduleSentence(r.sentinel.trigger) : TRIGGER_INFO.manual.label);
 
 // ---------------------------------------------------------------- Claude changing it (the page's box)
 

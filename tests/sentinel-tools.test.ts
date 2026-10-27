@@ -3,6 +3,7 @@ import { SENTINEL_TOOL_NAMES, createSentinelToolDefs } from '../src/agent/sentin
 import { decideTool } from '../src/agent/policy.js';
 import { attachSentinel } from '../src/core/sentinel/registry.js';
 import { RECIPES } from '../src/core/sentinel/recipes.js';
+import { accessAllows, scheduleSentence } from '../src/core/sentinel/model.js';
 import { SentinelDraftSchema } from '../src/core/sentinel/schema.js';
 import type { Session } from '../src/core/session.js';
 import { API, parseArgs } from '../src/ipc/api.js';
@@ -103,7 +104,7 @@ describe('the sentinel.* API', () => {
     expect(updated.projectId).toBeUndefined();
     const copy = SENTINEL_HANDLERS['sentinel.duplicate'](session, made.id);
     expect(copy).toMatchObject({ name: 'Renamed copy', paused: true });
-    expect(SENTINEL_HANDLERS['sentinel.recipes'](session).map((r) => r.id)).toEqual(['morning-brief', 'nightly-tests', 'dependency-updates', 'release-notes', 'issues-to-tasks', 'watch-the-web']);
+    expect(SENTINEL_HANDLERS['sentinel.recipes'](session).map((r) => r.id)).toEqual(['morning-brief', 'fix-what-broke', 'fix-and-ship', 'nightly-tests', 'dependency-updates', 'release-notes', 'issues-to-tasks', 'uptime-guard', 'failed-payments', 'watch-the-web', 'review-new-prs']);
     expect(SENTINEL_HANDLERS['sentinel.setRunAtOnce'](session, 3)).toBe(3);
     expect(() => (SENTINEL_HANDLERS['sentinel.rotateSecret'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('doesn’t start from a webhook');
     expect(() => (SENTINEL_HANDLERS['sentinel.webhookUrl'] as (s: Session, ...a: unknown[]) => unknown)(session, made.id)).toThrow('doesn’t start from a webhook');
@@ -130,6 +131,30 @@ describe('recipes', () => {
     }
     const s = setup();
     for (const r of RECIPES) expect(s.sentinels.create({ ...r.sentinel, projectId: 'api' })).toMatchObject({ recipe: r.id, paused: true });
+  });
+
+  it('are the design’s eleven, each with what its steps need, and the second sentinel runs after the first', () => {
+    expect(RECIPES).toHaveLength(11);
+    for (const r of RECIPES) {
+      const steps = r.sentinel.steps ?? [];
+      // Every recipe ends by telling you, and what it does fits the access it asks for.
+      expect(steps.at(-1)?.kind).toBe('notify');
+      for (const st of steps) expect(accessAllows(r.sentinel.access ?? 'look', st.kind, st.kind === 'claude' ? st.where : undefined)).toBe(true);
+      // A pull request needs the worktree a Claude step before it made.
+      const pr = steps.findIndex((st) => st.kind === 'pr');
+      if (pr >= 0) expect(steps.slice(0, pr).some((st) => st.kind === 'claude' && st.where === 'worktree')).toBe(true);
+      // Material from outside is never instructions.
+      for (const st of steps) if (st.kind === 'claude' && /\{\{(trigger\.json|previous)\}\}/.test(st.prompt)) expect(st.prompt).toMatch(/material/);
+    }
+    expect(RECIPES.find((r) => r.id === 'fix-and-ship')?.sentinel.steps?.find((st) => st.kind === 'merge')).toMatchObject({ require: { checks: true, approval: true } });
+    // Groqbot's address stays a placeholder until its API is settled.
+    expect(RECIPES.find((r) => r.id === 'watch-the-web')?.sentinel.steps?.[0]).toMatchObject({ kind: 'http', preset: 'groqbot', url: '' });
+    const nightly = RECIPES.find((r) => r.id === 'nightly-tests')!;
+    expect(nightly.then?.on).toBe('failure');
+    const s = setup();
+    const first = s.sentinels.create({ ...nightly.sentinel, projectId: 'api' });
+    const fixer = s.sentinels.create({ ...nightly.then!.sentinel, projectId: 'api', trigger: { kind: 'after', sentinelId: first.id, on: 'failure' } });
+    expect(scheduleSentence(fixer.trigger, (id) => s.sentinels.get(id)?.name)).toBe('After “Nightly tests” fails');
   });
 });
 

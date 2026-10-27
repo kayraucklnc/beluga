@@ -250,6 +250,8 @@ export interface Recipe {
   /** One line for its card. */
   readonly line: string;
   readonly sentinel: SentinelDraft;
+  /** A second sentinel made with it, that runs after it (`on`): Nightly tests, then Fix the nightly failure. */
+  readonly then?: { readonly on: AfterTrigger['on']; readonly sentinel: SentinelDraft };
 }
 
 // ---------------------------------------------------------------- runs

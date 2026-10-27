@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { ACCESS, ACCESS_INFO, type Access, CLAUDE_CHANGED, CLAUDE_CHANGED_BANNER, NOTIFY_WHERE, type RunSummary, type Sentinel, type SentinelPatch, TIME_LIMITS, accessRank, runsOf, scheduleSentence } from '@beluga/core/sentinel/model.js';
+import { recipeById } from '@beluga/core/sentinel/recipes.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
@@ -9,7 +10,7 @@ import { useApp } from '../lib/beluga.js';
 import { useSwipeBack } from '../tasks/use-swipe-back.js';
 import { SwipeBackEdge } from '../tasks/SwipeBackEdge.js';
 import { ago } from '../tasks/tasks-model.js';
-import { Disc, RunPill } from './marks.js';
+import { ClaudeMark, Disc, RunPill } from './marks.js';
 import { StepsCard, WhenCard } from './SentinelCards.js';
 import {
   MAC_SCOPE,
@@ -170,7 +171,7 @@ function AskBox({ item }: { item: Sentinel }) {
   return (
     <section className={s.ask} aria-label="Ask Claude" data-testid="sentinel-ask">
       <div className={s.askRow}>
-        <Icon name="claude" size={14} />
+        <ClaudeMark />
         <input
           className={s.askInput}
           value={text}
@@ -211,7 +212,7 @@ function Banners({ item }: { item: Sentinel }) {
   if (item.paused && item.pausedWhy === CLAUDE_CHANGED) {
     return (
       <div className={s.banner} data-tone="info" role="status" data-testid="sentinel-claude-changed">
-        <Icon name="claude" size={14} />
+        <ClaudeMark />
         <span className={s.bannerText}>{CLAUDE_CHANGED_BANNER}</span>
         <Button size="small" variant="primary" onClick={() => void a.setPaused(item, false)}>
           Turn On
@@ -381,7 +382,7 @@ function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatc
       </Prop>
       {item.recipe ? (
         <Prop label="Recipe" quiet>
-          <span className={t.propStatic}>{item.recipe}</span>
+          <span className={t.propStatic}>{recipeById(item.recipe)?.name ?? item.recipe}</span>
         </Prop>
       ) : null}
       <Prop label="Created" quiet>

@@ -42,6 +42,15 @@ export function StepChips({ steps }: { steps: ReadonlyArray<{ readonly kind: Ste
   );
 }
 
+/** Claude's mark as the steps show it (a round copper chip): the page's ask box and Claude's banner. */
+export function ClaudeMark() {
+  return (
+    <span className={s.chip} data-kind="claude" aria-hidden="true">
+      <Icon name="claude" size={11} />
+    </span>
+  );
+}
+
 /** A run's state as a pill (Running breathes with the live clock). */
 export function RunPill({ state }: { state: RunState }) {
   const info = RUN_STATE_INFO[state];

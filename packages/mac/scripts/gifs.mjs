@@ -207,6 +207,60 @@ const SCENES = {
       await page.waitForTimeout(3200);
     },
   },
+  /** Sentinel (docs/sentinel.md): the list, a recipe made and turned on, Run Now, a run's report, and a fix waiting for Merge. */
+  sentinel: {
+    viewport: { width: 1280, height: 800 },
+    async run(page) {
+      const main = page.locator('main');
+      const list = async () => {
+        await side(page).getByRole('button', { name: /^Sentinel/ }).click();
+        await main.locator('[data-sentinel]').first().waitFor({ timeout: 30_000 });
+      };
+      await list();
+      await page.waitForTimeout(2200);
+      // A recipe: Nightly tests in bob-api, then Turn On.
+      await main.getByRole('button', { name: 'New Sentinel' }).first().click();
+      const sheet = page.getByRole('dialog', { name: 'New Sentinel' });
+      await sheet.getByRole('tab', { name: /Recipe/ }).click();
+      await sheet.getByRole('combobox', { name: 'Where it works' }).click();
+      await page.getByRole('option', { name: 'bob-api' }).click();
+      await page.waitForTimeout(1200);
+      for (const id of ['morning-brief', 'fix-and-ship', 'nightly-tests']) {
+        await sheet.locator(`[data-recipe="${id}"]`).hover();
+        await page.waitForTimeout(600);
+      }
+      await sheet.locator('[data-recipe="nightly-tests"]').click();
+      await main.locator('[data-sentinel-page]').waitFor();
+      await page.waitForTimeout(1800);
+      await main.getByRole('button', { name: 'Turn On' }).first().click();
+      await page.waitForTimeout(1600);
+      // Morning brief: Run Now, and the run's report.
+      await list();
+      await main.getByRole('row', { name: /^Morning brief/ }).click();
+      await page.waitForTimeout(1400);
+      const history = main.getByRole('region', { name: 'History' });
+      const before = await history.locator('[data-run]').count();
+      await main.getByRole('button', { name: 'Run Now' }).click();
+      await history.locator('[data-run]').nth(before).waitFor({ timeout: 30_000 });
+      await history.locator('[data-run]').first().filter({ hasText: 'Done' }).waitFor({ timeout: 60_000 });
+      await page.waitForTimeout(1200);
+      await history.locator('[data-run]').first().click();
+      await main.getByRole('region', { name: 'Report' }).waitFor();
+      await page.waitForTimeout(2600);
+      // Fix what broke: the fix for #48 waits for your Merge.
+      await list();
+      await main.getByRole('row', { name: /^Fix what broke/ }).click();
+      await main.getByRole('region', { name: 'History' }).locator('[data-run]').filter({ hasText: 'Needs you' }).first().click();
+      const decide = main.getByTestId('sentinel-decide');
+      await decide.waitFor();
+      await page.waitForTimeout(2000);
+      await decide.getByRole('button', { name: 'Merge' }).hover();
+      await page.waitForTimeout(700);
+      await decide.getByRole('button', { name: 'Merge' }).click();
+      await main.getByRole('heading', { name: /^Merged #/ }).waitFor({ timeout: 30_000 });
+      await page.waitForTimeout(2400);
+    },
+  },
   /** The Scratch tab: what Claude and its sub-agents save while they work (screenshots, test logs, JSON), live. */
   scratch: {
     viewport: { width: 1280, height: 800 },
