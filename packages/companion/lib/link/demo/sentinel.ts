@@ -1,4 +1,5 @@
 import type { NeedsYou, SentinelPageView, SentinelRunView, SentinelSummary, SentinelsView, Topic } from '../protocol';
+import { type DemoNumbers, makeNumbers, numbersOf } from './dashboard';
 
 /**
  * The demo Mac's sentinels (1.21), as src/core/sentinel/demo.ts seeds the Mac's: a Morning brief
@@ -24,6 +25,8 @@ interface DemoSentinel {
 
 export interface DemoSentinels {
   items: DemoSentinel[];
+  /** 1.22: the numbers four of them keep, and the dashboards that show them (./dashboard.ts). */
+  numbers: DemoNumbers;
 }
 
 /** The day `daysAgo` before today at hh:mm. */
@@ -91,7 +94,8 @@ export function makeSentinels(): DemoSentinels {
     ],
     runs: [{ id: 'run_web1', by: 'you', state: 'running', headline: '', startedAt: start, step: 'Turn it into tasks' }],
   };
-  return { items: [brief, fix, nightly, web] };
+  const numbers = makeNumbers(now);
+  return { items: [brief, fix, nightly, web, ...numbers.sentinels], numbers };
 }
 
 const isLive = (state: string): boolean => state === 'queued' || state === 'running' || state === 'needs-you';
@@ -108,7 +112,7 @@ export function sentinelsView(d: DemoSentinels): SentinelsView {
     .flatMap((s) => s.runs.filter((r) => !isLive(r.state) && r.endedAt).map((r) => ({ id: r.id, sentinelId: s.summary.id, state: r.state, at: r.endedAt! })))
     .sort((a, b) => b.at - a.at)
     .slice(0, 20);
-  return { enabled: true, sentinels: d.items.map(summaryOf), recent };
+  return { enabled: true, sentinels: d.items.map(summaryOf), recent, ...numbersOf(d.numbers, d.items) };
 }
 
 export function sentinelPage(d: DemoSentinels, topic: Topic, needs: readonly NeedsYou[]): SentinelPageView | undefined {

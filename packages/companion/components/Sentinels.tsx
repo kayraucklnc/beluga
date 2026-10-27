@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
-import { Activity, Bell, Bot, Calendar, Check, CircleDot, CirclePause, Clock, Coins, Eye, FileText, GitMerge, GitPullRequest, Globe, Hand, Loader, type LucideIcon, MessageSquare, Minus, Play, RefreshCw, Shield, SquareTerminal, Tag, Terminal, TriangleAlert, Users, Wrench, X } from 'lucide-react-native';
+import { Activity, Bell, Bot, Calendar, Check, CircleDot, CirclePause, Clock, Coins, Eye, FileText, Gauge, GitMerge, GitPullRequest, Globe, Hand, Loader, type LucideIcon, MessageSquare, Minus, Play, RefreshCw, Shield, SquareTerminal, Tag, Terminal, TriangleAlert, Users, Wrench, X } from 'lucide-react-native';
 import { View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { ago, useSupports, useView } from '../lib/hooks';
@@ -17,7 +17,7 @@ import { Card, Hairline, IconBadge, Pill, Press, T, type Tone, toneBg, toneInk }
  */
 
 /** A sentinel's icon by the name the Mac gives it; one the phone doesn't know is the shield. */
-const ICONS: Record<string, LucideIcon> = { calendar: Calendar, wrench: Wrench, check: Check, globe: Globe, clock: Clock, hand: Hand, bell: Bell, shield: Shield, merge: GitMerge, pr: GitPullRequest, chat: MessageSquare, users: Users, terminal: Terminal, file: FileText, bot: Bot, alert: TriangleAlert, refresh: RefreshCw, tag: Tag, issue: CircleDot, pulse: Activity, coin: Coins, eye: Eye, claude: SquareTerminal };
+const ICONS: Record<string, LucideIcon> = { calendar: Calendar, wrench: Wrench, check: Check, globe: Globe, clock: Clock, hand: Hand, bell: Bell, shield: Shield, merge: GitMerge, pr: GitPullRequest, chat: MessageSquare, users: Users, terminal: Terminal, file: FileText, bot: Bot, alert: TriangleAlert, refresh: RefreshCw, tag: Tag, issue: CircleDot, pulse: Activity, coin: Coins, eye: Eye, claude: SquareTerminal, play: Play, gauge: Gauge };
 export const sentinelIcon = (name: string): LucideIcon => ICONS[name] ?? Shield;
 
 /** A run's state as a pill: the Mac's words (RUN_STATE_INFO) in the phone's pastels. */
@@ -33,7 +33,7 @@ const RUN: Record<string, { label: string; tone: Tone; Icon: LucideIcon }> = {
 export const runStateOf = (state: string) => RUN[state] ?? { label: state, tone: 'plain' as Tone, Icon: CircleDot };
 
 /** A step's kind as an icon (the page's "what it does"); Ask Claude gets Claude's mark, as the Avatar draws it. */
-const STEP: Record<string, LucideIcon> = { claude: SquareTerminal, script: Terminal, notify: Bell, http: Globe, pr: GitPullRequest, merge: GitMerge, message: MessageSquare, friend: Users, trigger: Play };
+const STEP: Record<string, LucideIcon> = { claude: SquareTerminal, script: Terminal, notify: Bell, http: Globe, pr: GitPullRequest, merge: GitMerge, message: MessageSquare, friend: Users, trigger: Play, measure: Gauge };
 export const stepIcon = (kind: string): LucideIcon => STEP[kind] ?? CircleDot;
 
 /** When you last looked at your sentinels (kv): Home counts the runs that ended since. */

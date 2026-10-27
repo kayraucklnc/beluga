@@ -35,7 +35,7 @@ const xLabel = (c: Cell | undefined, col: Column | undefined, time: boolean): st
   return col ? formatCell(c, col) : String(c);
 };
 
-export function ChartView({ view, columns, rows, tall }: { readonly view: ViewSpec; readonly columns: readonly Column[]; readonly rows: readonly Row[]; /** Full screen: taller. */ readonly tall?: boolean }) {
+export function ChartView({ view, columns, rows, tall, fit }: { readonly view: ViewSpec; readonly columns: readonly Column[]; readonly rows: readonly Row[]; /** Full screen: taller. */ readonly tall?: boolean; /** A line's axis fits its values instead of starting at zero (a dashboard's number over time). */ readonly fit?: boolean }) {
   const [w, setW] = useState(0);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const [at, setAt] = useState<number | undefined>();
@@ -83,17 +83,22 @@ export function ChartView({ view, columns, rows, tall }: { readonly view: ViewSp
       </View>
     );
   } else if (w > 0 && data.length) {
-    const left = 40;
     const right = 8;
     const top = 8;
     const bottom = 22;
-    const iw = Math.max(10, w - left - right);
     const ih = h - top - bottom;
     const stacked = view.stacked && kind !== 'line' && kind !== 'scatter';
     const values = data.flatMap((r) => (stacked ? [shown.reduce((a, s) => a + (num(r[s.key]) ?? 0), 0)] : shown.map((s) => num(r[s.key]) ?? 0)));
-    const lo = Math.min(0, ...values);
-    const hi = Math.max(1e-9, ...values);
+    const fitted = fit && kind === 'line' && values.length > 1;
+    const vLo = Math.min(...values);
+    const vHi = Math.max(...values);
+    const pad = (vHi - vLo || Math.abs(vHi) || 1) * 0.12;
+    const lo = fitted ? vLo - pad : Math.min(0, ...values);
+    const hi = fitted ? vHi + pad : Math.max(1e-9, ...values);
     const yTicks = ticks(lo, hi);
+    // Room for the longest tick label ("$3,000", "600 ms"), at least 40.
+    const left = Math.max(40, Math.min(90, 10 + 6.2 * Math.max(...yTicks.map((t) => fmtY(t).length))));
+    const iw = Math.max(10, w - left - right);
     const y0 = Math.min(lo, yTicks[0] ?? lo);
     const y1 = Math.max(hi, yTicks.at(-1) ?? hi);
     const Y = (v: number): number => top + ih - ((v - y0) / (y1 - y0 || 1)) * ih;

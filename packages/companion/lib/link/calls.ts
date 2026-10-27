@@ -118,6 +118,9 @@ export const calls = {
   sentinelRun: (id: string, name: string): Call => make('sentinel.run', [id], `Run ${short(name)}`),
   sentinelPause: (id: string, paused: boolean, name: string): Call => make('sentinel.pause', [id, paused], `${paused ? 'Pause' : 'Turn on'} ${short(name)}`),
   sentinelRunGet: (runId: string): Call => make('sentinel.runGet', [runId], 'Read the report'),
+  /** 1.22 (BLG-244): Refresh a dashboard (Run Now on each sentinel it draws from, one at a time) → { total }; a number over time. */
+  dashboardRefresh: (id: string, name: string): Call => make('dashboard.refresh', [id], `Refresh ${short(name)}`),
+  metricRead: (sentinelId: string, name: string, since?: number): Call => make('sentinel.metricRead', since === undefined ? [sentinelId, name] : [sentinelId, name, since], 'Read a number'),
   /** This phone signs out on the Mac (its certificate goes). */
   signOut: (): Call => make('companion.signOut', [], 'Sign out'),
 

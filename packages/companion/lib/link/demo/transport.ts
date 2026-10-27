@@ -26,6 +26,7 @@ import type { ViewQuery } from '../../render';
 import { DEMO_IMAGES } from './images.generated';
 import { DemoShell, demoAttach, demoFind, demoFolder, demoRead } from './worktree';
 import { makeSentinels, runOf, sentinelNeeds, sentinelOf, sentinelPage, sentinelsView } from './sentinel';
+import { dashboardSentinels, dashboardView } from './dashboard';
 
 
 /** What the demo Mac "hears", phrase by phrase (it has no model; the phone's voice UI shows it arriving). */
@@ -219,6 +220,7 @@ export class DemoTransport implements Transport {
     if (topic.startsWith('task:')) return w.tasks.find((t) => t.topic === topic);
     if (topic === 'sentinels') return sentinelsView(this.sentinels);
     if (topic.startsWith('sentinel:')) return sentinelPage(this.sentinels, topic, w.needs);
+    if (topic.startsWith('dashboard:')) return dashboardView(this.sentinels.numbers, this.sentinels.items, topic.slice('dashboard:'.length));
     if (topic === 'plans') return { plans: w.plans.map((p) => ({ id: p.id, title: p.title, state: p.state, topic: p.topic, ...count(p) })) } satisfies PlansView;
     if (topic === 'chats') return { chats: [...w.chats].map(([t, c]) => ({ topic: t, name: c.name, kind: c.kind, last: lastLine(c.messages.at(-1)), lastAt: c.messages.at(-1)?.ts, unread: c.unread })).sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0)) };
     if (topic === 'people') return { people: w.people };
@@ -832,6 +834,33 @@ export class DemoTransport implements Transport {
           this.touch(found.s.summary.topic, 'sentinels');
         }
         return ok(found ? { ...found.r, sentinelId: found.s.summary.id } : null);
+      }
+      // ---- Dashboards (1.22): Refresh runs each sentinel it draws from, one at a time ("Fetching… 2 of 3")
+      case 'dashboard.refresh': {
+        const n = this.sentinels.numbers;
+        const dashId = str(0);
+        if (!n.dashboards.some((d) => d.id === dashId)) return this.frames.emit({ t: 'result', id, ok: false, error: 'No such dashboard' });
+        const ids = dashboardSentinels(n, this.sentinels.items, dashId);
+        const topic = `dashboard:${dashId}` as Topic;
+        if (n.refreshing[dashId]) return ok({ total: n.refreshing[dashId]!.total });
+        const step = (done: number): void => {
+          if (done >= ids.length) {
+            delete n.refreshing[dashId];
+            this.touch(topic);
+            return;
+          }
+          n.refreshing[dashId] = { done, total: ids.length, sentinelId: ids[done]! };
+          this.touch(topic);
+          this.later(1400, () => step(done + 1));
+        };
+        step(0);
+        return ok({ total: ids.length });
+      }
+      case 'sentinel.metricRead': {
+        const m = this.sentinels.numbers.metrics.find((x) => x.sentinelId === str(0) && x.name === str(1));
+        if (!m) return this.frames.emit({ t: 'result', id, ok: false, error: 'No such number' });
+        const since = typeof args[2] === 'number' ? args[2] : 0;
+        return ok({ metric: { name: m.name, label: m.label, unit: m.unit, better: m.better }, lines: m.points.filter((p) => p.at >= since).map((p) => ({ at: p.at, runId: p.runId, value: p.value })) });
       }
       // ---- saved files (BLG-124): the demo's conversations are never archived
       case 'companion.gone':

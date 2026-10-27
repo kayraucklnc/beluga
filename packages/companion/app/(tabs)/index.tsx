@@ -8,6 +8,7 @@ import { ConvCard, convHref, StepTicker } from '../../components/Conv';
 import { MacChatsSheet } from '../../components/MacChats';
 import { Mark } from '../../components/Mark';
 import { NeedsStack } from '../../components/Needs';
+import { NumbersHome } from '../../components/Dashboard';
 import { SentinelHome } from '../../components/Sentinels';
 import { AwayBand, Screen, StatusShade, useScrolled } from '../../components/Screen';
 import { UsageCard, UsageSheet } from '../../components/Usage';
@@ -141,6 +142,7 @@ export default function Home() {
             ) : null}
 
             {sentinelOn ? <SentinelHome /> : null}
+            {sentinelOn ? <NumbersHome /> : null}
 
             {h.usage.length ? (
               <Section title="Usage">
