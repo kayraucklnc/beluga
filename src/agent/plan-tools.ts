@@ -1,5 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { DEFAULT_LABELS } from '../core/board/labels.js';
 import type { BodyInput, MilestoneInput, PlanOp, TaskInput } from '../core/plans/edit.js';
 import type { PlanTools } from './types.js';
 
@@ -27,7 +28,7 @@ const TASK = z.object({
   parent: z.string().max(40).optional().describe('A sub-task’s parent (id, same milestone)'),
   priority: PRIORITY.optional(),
   estimate: ESTIMATE.optional().describe('1 an hour, 2 half a day, 3 a day, 5 a few days, 8 a week (split it)'),
-  labels: z.array(z.string().max(32)).max(6).optional(),
+  labels: z.array(z.string().max(32)).max(6).optional().describe(`From the board's set only: ${DEFAULT_LABELS.map((l) => l.name).join(', ')}, and any the project added`),
   touches: z.array(z.string().max(200)).max(20).optional().describe('Files or folders it changes (parallel tasks shouldn’t share them)'),
   assignee: z.enum(['claude', 'me']).optional().describe('claude (default), or me: only the user can do it'),
   decision: z
