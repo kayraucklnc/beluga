@@ -106,19 +106,19 @@ export function projectToShow(board: BoardState, projects: ReadonlyArray<{ reado
 
 /**
  * Whether you work alone on a project: nobody else around (no one in the room, no friends) and no
- * task there for anyone but you or your Claude. Then who a task is for isn't shown at all.
+ * task there for anyone but you. Then who a task is for isn't shown at all.
  */
 export function isSolo(board: BoardState, projectId: string | undefined, selfId: string, others: number): boolean {
   if (others > 0) return false;
-  return !board.issues.some((i) => i.projectId === projectId && i.assignee && (i.assignee.kind === 'person' ? i.assignee.id !== selfId : i.assignee.owner !== selfId));
+  return !board.issues.some((i) => i.projectId === projectId && i.assignee && i.assignee.id !== selfId);
 }
 
-/** The people (and Claudes) a project's tasks are for, for the filter: you first, then the rest by name. */
+/** The people a project's tasks are for, for the filter: you first, then the rest by name. */
 export function assigneesIn(board: BoardState, projectId: string | undefined, selfId: string): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
   const seen = new Map<string, Assignee>();
   for (const i of board.issues) if (i.projectId === projectId && i.assignee) seen.set(assigneeKey(i.assignee), i.assignee);
-  const label = (a: Assignee): string => (a.kind === 'person' ? (a.id === selfId ? 'You' : a.name) : a.owner === selfId ? 'Your Claude' : `${a.ownerName}’s Claude`);
-  const mine = (a: Assignee): number => ((a.kind === 'person' ? a.id : a.owner) === selfId ? 0 : 1);
+  const label = (a: Assignee): string => (a.id === selfId ? 'You' : a.name);
+  const mine = (a: Assignee): number => (a.id === selfId ? 0 : 1);
   return [...seen.entries()].map(([key, assignee]) => ({ key, label: label(assignee), assignee })).sort((x, y) => mine(x.assignee) - mine(y.assignee) || x.label.localeCompare(y.label));
 }
 
@@ -127,17 +127,16 @@ export interface Person {
   readonly name: string;
 }
 
-/** Who a task can be for: you, your Claude, then people you know. Never their Claudes (BLG-262): you ask those in a chat with them. */
+/** Who a task can be for: you, then people you know. Never a Claude (BLG-278): who works on it shows on the card. */
 export function assigneeChoices(self: Person, people: readonly Person[]): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
   const others = people.filter((p) => p.id !== self.id).sort((a, b) => a.name.localeCompare(b.name));
   return [
     { key: `person:${self.id}`, label: 'You', assignee: { kind: 'person', id: self.id, name: self.name } },
-    { key: `claude:${self.id}`, label: 'Your Claude', assignee: { kind: 'claude', owner: self.id, ownerName: self.name } },
     ...others.map((p) => ({ key: `person:${p.id}`, label: p.name, assignee: { kind: 'person', id: p.id, name: p.name } as Assignee })),
   ];
 }
 
-export const assigneeKey = (a: Assignee | undefined): string => (!a ? '' : a.kind === 'person' ? `person:${a.id}` : `claude:${a.owner}`);
+export const assigneeKey = (a: Assignee | undefined): string => (a ? `person:${a.id}` : '');
 
 /** A status on the graph: blocked when an unfinished task waits on another unfinished one; the backlog and canceled say so in words. */
 function graphStatus(board: BoardState, issue: Issue): Pick<GraphNode, 'status' | 'sublabel'> {
@@ -246,3 +245,29 @@ export function toggleCheck(text: string, index: number): string {
     })
     .join('\n');
 }
+
+/** Someone on a task now (BLG-278): one of their worktrees does it; `running`: their Claude is at work there. */
+export interface OnIt {
+  readonly peerId: string;
+  readonly name: string;
+  readonly you: boolean;
+  readonly running: boolean;
+}
+
+/** Who's on a task now, you first: separate from who it's for, and live. */
+export function onIt(self: Person, mine: { readonly here: boolean; readonly running: boolean }, mates: ReadonlyArray<{ readonly peerId: string; readonly name: string; readonly running?: boolean }>): OnIt[] {
+  const you: OnIt[] = mine.here ? [{ peerId: self.id, name: self.name, you: true, running: mine.running }] : [];
+  return [...you, ...mates.filter((m) => m.peerId !== self.id).map((m) => ({ peerId: m.peerId, name: m.name, you: false, running: Boolean(m.running) }))];
+}
+
+/** "You · working", "You and Ata · on it": a card's line for who's on it (what Claude is doing stays in the tooltip). */
+export function onItWords(people: readonly OnIt[]): string {
+  if (!people.length) return '';
+  const names = people.map((p) => (p.you ? 'You' : p.name));
+  const who = names.length <= 2 ? names.join(' and ') : `${names[0]}, ${names[1]} and ${names.length - 2} more`;
+  return `${who} · ${people.some((p) => p.running) ? 'working' : 'on it'}`;
+}
+
+/** One face's tooltip: whose Claude is at work, or whose worktree has it. */
+export const onItTip = (p: OnIt, doing?: string): string =>
+  p.running ? (p.you ? `Your Claude is working${doing ? `: ${doing}` : ''}` : `${p.name}’s Claude is working on it`) : p.you ? 'Your worktree has it' : `${p.name} is on it`;

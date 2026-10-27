@@ -800,7 +800,7 @@ function demoTasks(now: number): TaskPageView[] {
       title: 'Make pairing feel like the Mac',
       status: 'in_progress',
       priority: 'high',
-      assignee: 'your Claude',
+      assignee: 'you',
       projectId: 'beluga',
       project: 'beluga',
       conv: 'conv:beluga.onboarding',
@@ -826,7 +826,7 @@ function demoTasks(now: number): TaskPageView[] {
       title: 'Beluga Push relay on Cloudflare',
       status: 'in_review',
       priority: 'urgent',
-      assignee: 'your Claude',
+      assignee: 'you',
       projectId: 'beluga',
       project: 'beluga',
       conv: 'conv:beluga.push',
@@ -843,7 +843,7 @@ function demoTasks(now: number): TaskPageView[] {
     task({ id: 'iss-ios', key: 'BLG-47', title: 'Port the link worklet to iOS', status: 'todo', priority: 'medium', projectId: 'beluga', project: 'beluga', goal: goal('The same app on iOS: Keychain, APNs and the service extension.') }),
     task({ id: 'iss-widget', key: 'BLG-51', title: 'A home-screen widget for usage', status: 'backlog', priority: 'low', projectId: 'beluga', project: 'beluga' }),
     task({ id: 'iss-docs', key: 'BLG-30', title: 'Docs for the companion protocol', status: 'done', priority: 'medium', assignee: 'you', projectId: 'beluga', project: 'beluga', updatedAt: now - 26 * HOUR }),
-    task({ id: 'iss-radar', key: 'PXW-12', title: 'Radar tiles flicker on zoom', status: 'in_review', priority: 'high', assignee: 'your Claude', projectId: 'pixel-weather', project: 'pixel-weather', conv: 'conv:weather.radar', checks: { done: 1, total: 1 }, acceptance: [{ text: 'No flicker while pinching', state: 'done' }] }),
+    task({ id: 'iss-radar', key: 'PXW-12', title: 'Radar tiles flicker on zoom', status: 'in_review', priority: 'high', assignee: 'you', projectId: 'pixel-weather', project: 'pixel-weather', conv: 'conv:weather.radar', checks: { done: 1, total: 1 }, acceptance: [{ text: 'No flicker while pinching', state: 'done' }] }),
     task({ id: 'iss-offline', key: 'PXW-14', title: 'Offline maps for a region', status: 'todo', priority: 'high', assignee: 'Mia', projectId: 'pixel-weather', project: 'pixel-weather' }),
   ];
 }

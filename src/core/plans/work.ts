@@ -151,7 +151,7 @@ export class PlansWork {
     const plan = this.plans.need(id);
     let applied: ReturnType<typeof applyDraft>;
     try {
-      applied = applyDraft(plan, this.deps.board.board, { by, me: this.deps.board.me(), claude: this.deps.board.myClaude() });
+      applied = applyDraft(plan, this.deps.board.board, { by, me: this.deps.board.me() });
     } catch (err) {
       // What was made stays linked to the draft, so approving again doesn't make it twice.
       if (err instanceof ApplyError) this.plans.linkDraft(id, err.linked);

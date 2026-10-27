@@ -140,3 +140,37 @@ describe('teammates never online together', () => {
     await settle(() => !ata.team.courier.pending(kay.id, (m) => m.k === 'ops'));
   }, 90_000);
 });
+
+describe('who’s on a task while a teammate is away (BLG-278)', () => {
+  it('is never a change they are missing, and only the newest waits for them', async () => {
+    net = await crowd();
+    const live = new Set<string>();
+    const running = new Set<string>();
+    const parts: PartsFor = ({ team, board, dir }) => [new TeamBoardSync(team, { board, live: (id) => live.has(id), running: (id) => running.has(id), dir })];
+    const ata = await teamMac(net, 'ata', [{ id: 'pa', name: 'api', repo: 'acme/api' }], parts);
+    const kay = await teamMac(net, 'kay', [{ id: 'pk', name: 'api', repo: 'acme/api' }], parts);
+    macs.push(ata, kay);
+    const t = ata.board.create({ projectId: 'pa', title: 'Shared' }, personOf(ata));
+    await befriend(ata.person, kay.person);
+    await teamUp(ata, 'pa', kay, 'pk');
+    await settle(() => kay.board.get(t.id));
+    await kay.stop();
+    await settle(() => ata.person.friend(kay.id)?.online === false);
+    // Ata starts on it and their Claude starts and stops, twice: who's on it, nothing of the task.
+    live.add('ws-1');
+    ata.board.linkWorktree(t.id, 'ws-1', { name: 'shared' }, personOf(ata));
+    const event = (e: 'started' | 'done') => ata.store.dispatch({ type: 'agent_event', owner: ata.id, requestId: `r-${e}`, requester: ata.id, event: e, text: '', ts: 1, channel: 'ws:ws-1' });
+    for (let i = 0; i < 2; i++) {
+      running.add('ws-1');
+      event('started');
+      running.delete('ws-1');
+      event('done');
+    }
+    const ops = () => ata.team.courier.waitingFor((m) => m.k === 'ops').filter((w) => w.to === kay.id);
+    expect(ops().length).toBe(1);
+    expect(ata.store.getState().team.waiting[t.id]).toBeUndefined();
+    // A real change still says kay doesn't have it.
+    ata.board.update(t.id, { title: 'Renamed' }, personOf(ata));
+    await settle(() => ata.store.getState().team.waiting[t.id]?.some((w) => w.peerId === kay.id));
+  }, 60_000);
+});

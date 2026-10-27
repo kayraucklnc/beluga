@@ -15,7 +15,6 @@ import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, mileston
 export interface ApplyActors {
   readonly by: Actor;
   readonly me: Assignee;
-  readonly claude: Assignee;
 }
 
 export interface Applied {
@@ -65,7 +64,8 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
   for (const { task, milestone } of allTasks(draft)) {
     const link = { id: plan.id, milestone: milestone.id, task: task.id };
     const fresh = waiting.has(milestone.id) ? 'backlog' : 'todo';
-    const assignee = task.assignee === 'me' ? actors.me : actors.claude;
+    // Yours is assigned to you; Claude's is no one's (a task is for a person, BLG-278): who's on it shows while it runs.
+    const assignee = task.assignee === 'me' ? actors.me : undefined;
     const existing = issueOf.get(task.id);
     if (!existing) {
       const made = board.create(
@@ -73,7 +73,7 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
           projectId: plan.projectId,
           title: task.title,
           status: fresh,
-          assignee,
+          ...(assignee ? { assignee } : {}),
           ...(task.priority ? { priority: task.priority } : {}),
           ...(task.estimate ? { estimate: task.estimate } : {}),
           ...(task.labels?.length ? { labels: task.labels } : {}),

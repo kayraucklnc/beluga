@@ -104,7 +104,7 @@ export function LabelMark({ def, label }: { def: LabelDef | undefined; label: st
   );
 }
 
-/** Who a task is for: a person's initial, or their Claude's mark, in their color. */
+/** Who a task is for: a person's avatar (a task is for a person, never a Claude: BLG-278). */
 export function AssigneeMark({ assignee, selfId, size = 18 }: { assignee: Assignee | undefined; selfId: string; size?: number }) {
   if (!assignee) {
     return (
@@ -115,11 +115,11 @@ export function AssigneeMark({ assignee, selfId, size = 18 }: { assignee: Assign
       </Tip>
     );
   }
-  const name = assignee.kind === 'person' ? (assignee.id === selfId ? 'You' : assignee.name) : assignee.owner === selfId ? 'Your Claude' : `${assignee.ownerName}’s Claude`;
+  const name = assignee.id === selfId ? 'You' : assignee.name;
   return (
     <Tip label={name}>
       <span className={t.assignee} aria-label={name}>
-        {assignee.kind === 'person' ? <Avatar name={assignee.name} id={assignee.id} size={size} /> : <Avatar name={assignee.ownerName} id={assignee.owner} claude size={size} />}
+        <Avatar name={assignee.name} id={assignee.id} size={size} />
       </span>
     </Tip>
   );

@@ -4,17 +4,18 @@ import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
 import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, childrenOf, isArchived, isOpen, isStartable, issueById, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
-import { Dot, IconButton, Tip, cx } from '../components/ui.js';
+import { Avatar, Dot, IconButton, Tip, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga, toast } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { useClock } from '../plans/use-plans.js';
 import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
-import { doneCount, dueText } from './tasks-model.js';
+import { doneCount, dueText, onIt, onItTip, onItWords } from './tasks-model.js';
 import type { LogItem } from '@beluga/core/store.js';
 import { useTaskActions } from './use-tasks.js';
-import { teammatesOf } from '@beluga/core/team/model.js';
+import { teammatesOf, workingOn } from '@beluga/core/team/model.js';
+import { sameDeep } from '../lib/stable.js';
 import { askAboutTask } from '../network/chat-model.js';
 import { draftIn } from '../network/NetComposer.js';
 import { IssueMark } from '../issues/task-bits.js';
@@ -30,8 +31,8 @@ function liveOf(log: readonly LogItem[]): ReturnType<typeof liveFrom> {
   return live;
 }
 
-/** What a row and a card show besides the title: sub-tasks done, what blocks it, its worktree, labels, due date, pull request. */
-export function IssueMeta({ issue, compact, labels = true, progress: ring = true }: { issue: Issue; compact?: boolean; labels?: boolean; progress?: boolean }) {
+/** What a row and a card show besides the title: sub-tasks done, what blocks it, its worktree, labels, due date, pull request. `presence`: whether Claude at work there shows here (a card shows it under itself, in OnItLine). */
+export function IssueMeta({ issue, compact, labels = true, progress: ring = true, presence = true }: { issue: Issue; compact?: boolean; labels?: boolean; progress?: boolean; presence?: boolean }) {
   // Only what this issue shows, as plain values: a change elsewhere on the board doesn't render every card again.
   const done = useApp((s) => progressOf(s.board, issue).done);
   const total = useApp((s) => progressOf(s.board, issue).total);
@@ -111,7 +112,7 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
           {due.text}
         </span>
       ) : null}
-      {running ? (
+      {!presence ? null : running ? (
         <Tip label={doing ? `Claude: ${doing}` : 'Claude is working on it'}>
           <span className={t.working}>
             <Dot tone="claude" live />
@@ -128,6 +129,40 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
       {issue.pr ? <PrChip pr={issue.pr} /> : null}
       {waiting.length ? <WaitingLine waiting={waiting} /> : null}
     </span>
+  );
+}
+
+/**
+ * Who's on a task right now, under its card (BLG-278): their avatars, a soft ring turning round each
+ * one whose Claude is at work, and a line moving along the card's bottom edge while any is. Who it's
+ * for is the avatar on top; this is who's doing it (you, from your worktree; teammates, from theirs).
+ */
+export function OnItLine({ issue, self }: { issue: Issue; self: { readonly id: string; readonly name: string } }) {
+  const last = worktreeOf(issue);
+  const worktree = useApp((s) => (last && STATUS_INFO[issue.status].open && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
+  const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
+  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined));
+  // What it's doing is only in the tooltip, as of now: the card just says working (no ticking step and timer on every card).
+  const pulse = running ? pulseOf(run, false, undefined) : undefined;
+  const doing = pulse ? pulseWords(pulse, Date.now()).sub : undefined;
+  const mates = useApp((s) => (STATUS_INFO[issue.status].open ? workingOn(s.team, issue.id) : NONE), sameDeep);
+  const people = onIt(self, { here: Boolean(worktree), running }, mates);
+  if (!people.length) return null;
+  const live = people.some((p) => p.running);
+  return (
+    <div className={t.onIt}>
+      <span className={t.onItFaces}>
+        {people.slice(0, 3).map((p) => (
+          <Tip key={p.peerId} label={onItTip(p, p.you ? doing : undefined)}>
+            <span className={cx(t.onItFace, p.running && t.onItLive)} aria-label={onItTip(p, p.you ? doing : undefined)}>
+              <Avatar name={p.name} id={p.peerId} size={16} />
+            </span>
+          </Tip>
+        ))}
+      </span>
+      <span className={t.onItWords}>{onItWords(people)}</span>
+      {live ? <span className={t.onItSheen} aria-hidden="true" /> : null}
+    </div>
   );
 }
 

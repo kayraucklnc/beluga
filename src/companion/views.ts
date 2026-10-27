@@ -779,11 +779,11 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
 /** The board's tasks the phone shows: not archived, of a project you have. */
 const boardIssues = (state: DomainState): Issue[] => (state.board.enabled ? state.board.issues.filter((i) => !isArchived(i) && state.projects.some((p) => p.id === i.projectId)) : []);
 
-/** "you", "your Claude", "Mia", "Mia's Claude": who has it, from where you look. */
+/** "you", "Mia": who has it, from where you look (a task is for a person, BLG-278). */
 const assigneeWords = (state: DomainState, i: Issue): string | undefined => {
   if (!i.assignee) return undefined;
   const name = assigneeName(i.assignee, myId(state));
-  return clip(name === 'You' ? 'you' : name === 'Your Claude' ? 'your Claude' : name, 80);
+  return clip(name === 'You' ? 'you' : name, 80);
 };
 
 /** The conversation of the worktree doing a task, when it's one the phone can open. */

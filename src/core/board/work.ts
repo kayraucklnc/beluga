@@ -143,7 +143,7 @@ export class BoardWork {
     return { kind: 'person', id: this.deps.selfId(), name: this.deps.selfName() };
   }
 
-  myClaude(): Actor & Assignee {
+  myClaude(): Actor {
     return { kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName() };
   }
 
@@ -236,8 +236,9 @@ export class BoardWork {
     const now = this.board.need(issue.id);
     const patch: IssuePatch = {
       ...(now.status === 'backlog' || now.status === 'todo' ? { status: 'in_progress' as const } : {}),
-      // Your Claude does it now (when it was nobody's, or yours); someone else's stays theirs.
-      ...((opts.claude || opts.prompt) && (!now.assignee || (now.assignee.kind === 'person' && now.assignee.id === this.deps.selfId())) ? { assignee: this.myClaude() } : {}),
+      // You took it on (when it was nobody's): it's yours. Someone else's stays theirs; that you work on it shows on its own.
+      // A plan's task stays no one's: the plan's Claude does it (one given to a person waits for them).
+      ...((opts.claude || opts.prompt) && !now.assignee && !now.plan ? { assignee: this.me() } : {}),
     };
     if (Object.keys(patch).length) this.board.update(issue.id, patch, this.me());
     if (opts.prompt) this.deps.askClaude(opts.prompt(this.board.need(issue.id), ws), `${WS}${ws.id}`, opts.shown);
@@ -279,7 +280,6 @@ export class BoardWork {
   linkShared(ref: string, ws: Pick<Workspace, 'id' | 'branch' | 'name'>): Issue {
     const issue = this.board.need(ref);
     if (!issue.worktrees.includes(ws.id) || issue.worktrees.at(-1) !== ws.id) this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name, shared: true }, this.me());
-    if (!this.board.need(issue.id).assignee) this.board.update(issue.id, { assignee: this.myClaude() }, this.me());
     return this.board.need(issue.id);
   }
 
@@ -345,7 +345,7 @@ export class BoardWork {
           projectId,
           title: def.title,
           status: inWorktree ? 'in_progress' : 'todo',
-          assignee: this.myClaude(),
+          assignee: this.me(),
           ...(def.priority ? { priority: def.priority } : {}),
           ...(def.estimate ? { estimate: def.estimate } : {}),
           ...(def.labels?.length ? { labels: def.labels } : {}),
@@ -430,7 +430,7 @@ export class BoardWork {
     }
     // Only when you asked for a task per worktree (tasks come from plans). Claude writes its brief: what you said isn't pasted in.
     if (!this.board.autoTasksOn || !this.deps.store.getState().projects.some((p) => p.id === ws.projectId && p.root)) return;
-    const issue = this.board.create({ projectId: ws.projectId, title: titleFromName(ws.name), autoTitle: true, status: 'in_progress', assignee: this.myClaude() }, beluga, 'worktree');
+    const issue = this.board.create({ projectId: ws.projectId, title: titleFromName(ws.name), autoTitle: true, status: 'in_progress', assignee: this.me() }, beluga, 'worktree');
     this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, beluga);
   }
 
@@ -496,8 +496,8 @@ export class BoardWork {
       const dropped = unknown.filter((l) => !had.includes(l));
       return dropped.length ? `. Left out ${dropped.join(', ')}: labels come from the board's set (${set.map((l) => l.name).join(', ')}); people add new ones` : '';
     };
-    const assign = (to: 'me' | 'claude' | 'nobody' | undefined): Assignee | null | undefined =>
-      to === 'me' ? { kind: 'person', id: this.deps.selfId(), name: this.deps.selfName() } : to === 'claude' ? this.myClaude() : to === 'nobody' ? null : undefined;
+    // A task is for a person (BLG-278): "claude" (an older tool call) means the user's.
+    const assign = (to: 'me' | 'claude' | 'nobody' | undefined): Assignee | null | undefined => (to === 'me' || to === 'claude' ? this.me() : to === 'nobody' ? null : undefined);
     const where = (issue: Issue): string | undefined => {
       const w = issue.worktrees.at(-1);
       const place = w ? this.workspaces().find((x) => x.id === w && !x.archived) : undefined;

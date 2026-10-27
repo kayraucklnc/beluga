@@ -52,11 +52,11 @@ describe('worktrees open tasks', () => {
     expect(store.getState().board.issues).toHaveLength(0);
   });
 
-  it('asked to, a new worktree opens a task for it, with Claude on it; what you say there is not pasted in as its goal', async () => {
+  it('asked to, a new worktree opens a task for it, yours; what you say there is not pasted in as its goal', async () => {
     const { store, board, open } = setup({ autoTasks: true });
     open(ws('w1', 'api', 'add-rate-limiting'));
     const issue = issueForWorkspace(store.getState().board, 'w1')!;
-    expect(issue).toMatchObject({ key: 'BOB-1', title: 'Add rate limiting', autoTitle: true, status: 'in_progress', origin: 'worktree', assignee: { kind: 'claude', owner: 'p-me' }, branch: 'beluga/add-rate-limiting' });
+    expect(issue).toMatchObject({ key: 'BOB-1', title: 'Add rate limiting', autoTitle: true, status: 'in_progress', origin: 'worktree', assignee: { kind: 'person', id: 'p-me' }, branch: 'beluga/add-rate-limiting' });
     store.dispatch({ type: 'chat', id: 'c1', from: 'p-me', text: 'what is this made out of?', ts: 1, byAgent: false, channel: 'ws:w1' });
     await tick();
     expect(board.need('BOB-1').brief.goal).toBeUndefined();
@@ -116,7 +116,7 @@ describe('starting a task’s worktree', () => {
     const t = board.create({ projectId: 'api', title: 'Refund endpoint', status: 'todo', brief: { goal: 'Admins refund orders.', acceptance: '- [ ] Partial refunds' } }, work.me());
     const id = await work.start(t.key, { claude: true });
     const now = board.need(t.key);
-    expect(now).toMatchObject({ status: 'in_progress', worktrees: [id], assignee: { kind: 'claude' } });
+    expect(now).toMatchObject({ status: 'in_progress', worktrees: [id], assignee: { kind: 'person', id: 'p-me' } });
     // Linked to the task, not a new task of its own.
     expect(board.list()).toHaveLength(1);
     expect(asked).toEqual([[startPrompt(now), `ws:${id}`]]);
@@ -124,7 +124,7 @@ describe('starting a task’s worktree', () => {
     expect(asked[0]![0]).toContain('- [ ] Partial refunds');
   });
 
-  it('Start (BLG-55): a branch from its key and title, In Progress, your Claude on it (even if it was yours), told the whole brief', async () => {
+  it('Start (BLG-55): a branch from its key and title, In Progress, still yours (a task is for a person, BLG-278), told the whole brief', async () => {
     const { store, board, work, asked } = setup();
     const t = board.create(
       { projectId: 'api', title: 'Refund endpoint', status: 'backlog', assignee: work.me(), brief: { goal: 'Admins refund orders.', acceptance: '- [ ] Partial refunds', context: 'Stripe refunds API.', decisions: '- Refunds go through the queue' } },
@@ -133,7 +133,7 @@ describe('starting a task’s worktree', () => {
     const id = await work.start(t.key, { claude: true });
     const w = store.getState().projects.flatMap((p) => p.workspaces).find((x) => x.id === id)!;
     expect(w).toMatchObject({ projectId: 'api', name: 'bob-1-refund-endpoint' });
-    expect(board.need(t.key)).toMatchObject({ status: 'in_progress', worktrees: [id], branch: 'beluga/bob-1-refund-endpoint', assignee: { kind: 'claude', owner: 'p-me' } });
+    expect(board.need(t.key)).toMatchObject({ status: 'in_progress', worktrees: [id], branch: 'beluga/bob-1-refund-endpoint', assignee: { kind: 'person', id: 'p-me' } });
     const [prompt, channel] = asked[0]!;
     expect(channel).toBe(`ws:${id}`);
     expect(prompt).toContain("You're working on BOB-1");

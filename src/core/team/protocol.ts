@@ -78,11 +78,11 @@ export const FIELD_VALUES: Readonly<Record<string, z.ZodType>> = {
   github: z.object({ repo: z.string().max(200), host: z.string().max(200).optional(), number: z.number().int().positive(), url: z.string().max(500), step: z.enum(['investigate', 'fix']).optional(), investigated: z.boolean().optional() }).nullable(),
   deleted: z.boolean(),
 };
-/** A field's value checker: the fixed ones, a brief section, or someone working on it. */
+/** A field's value checker: the fixed ones, a brief section, or someone working on it (their Claude running there: additive, BLG-278). */
 export function fieldValue(name: string): z.ZodType | undefined {
   if (FIELD_VALUES[name]) return FIELD_VALUES[name];
   if (/^brief\.(goal|context|acceptance|decisions|questions|handoff)$/.test(name)) return z.string().max(20_000);
-  if (/^working\.[\w-]{32}$/.test(name)) return z.literal(true).nullable();
+  if (/^(working|running)\.[\w-]{32}$/.test(name)) return z.literal(true).nullable();
   return undefined;
 }
 

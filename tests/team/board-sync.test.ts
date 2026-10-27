@@ -17,7 +17,8 @@ afterEach(async () => {
 
 /** Worktrees that count as live on a Mac (the rest are gone). */
 const liveWs = new Set<string>();
-const withSync: PartsFor = ({ team, board, dir }) => [new TeamBoardSync(team, { board, live: (id) => liveWs.has(id), dir })];
+const runWs = new Set<string>();
+const withSync: PartsFor = ({ team, board, dir }) => [new TeamBoardSync(team, { board, live: (id) => liveWs.has(id), running: (id) => runWs.has(id), dir })];
 
 async function teamUp(a: TeamMac, pa: string, b: TeamMac, pb: string): Promise<void> {
   await settle(() => a.store.getState().team.offers.find((o) => o.peerId === b.id && o.projectId === pa) && b.store.getState().team.offers.find((o) => o.peerId === a.id && o.projectId === pb));
@@ -86,6 +87,15 @@ describe('a team board over the network', () => {
     expect(issue(kay, a2.id)!.worktrees).toEqual([]);
     expect(issue(kay, a2.id)!.branch).toBeUndefined();
     expect(issue(kay, a2.id)!.activity.some((a) => a.kind === 'worktree' || a.text.includes('docs-pass'))).toBe(false);
+
+    // Ata's Claude at work there: kay's card shows it moving, and still when it stops (BLG-278).
+    const event = (e: 'started' | 'done') => ata.store.dispatch({ type: 'agent_event', owner: ata.id, requestId: 'r1', requester: ata.id, event: e, text: '', ts: 1, channel: 'ws:ws-ata-1' });
+    runWs.add('ws-ata-1');
+    event('started');
+    await settle(() => kay.store.getState().team.working[a2.id]?.some((w) => w.peerId === ata.id && w.running));
+    runWs.delete('ws-ata-1');
+    event('done');
+    await settle(() => kay.store.getState().team.working[a2.id]?.some((w) => w.peerId === ata.id && !w.running));
 
     // Deleting goes for everyone.
     ata.board.remove(a2.id);

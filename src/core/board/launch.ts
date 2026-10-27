@@ -21,7 +21,7 @@ import { TaskSync, attachSync, detachSync } from './sync/sync.js';
 import { demoLinear } from './sync/demo.js';
 import { belugaEnv } from '../beluga-env.js';
 import { attachBoard, detachBoard } from './registry.js';
-import { BoardWork } from './work.js';
+import { BoardWork, busyChannels } from './work.js';
 import { Plans } from '../plans/plans.js';
 import { PlansWork } from '../plans/work.js';
 import { attachPlans, detachPlans } from '../plans/registry.js';
@@ -151,7 +151,14 @@ export function launchBoard(host: BoardHost): () => void {
     parts: (team) => {
       const live = (id: string): boolean => store.getState().projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived));
       const teamDir = host.demo ? null : dir;
-      const teamSync = new TeamBoardSync(team, { board, live, dir: teamDir });
+      // Whose Claude is at work where, worked out once per log.
+      let busy: { log: unknown; set: Set<string> } | undefined;
+      const running = (id: string): boolean => {
+        const log = store.getState().log;
+        if (busy?.log !== log) busy = { log, set: busyChannels(log) };
+        return busy.set.has(`ws:${id}`);
+      };
+      const teamSync = new TeamBoardSync(team, { board, live, running, dir: teamDir });
       // Plans you choose to share with the team: teammates review them, you apply what you like.
       const teamPlans = new TeamPlans(team, { edit: (id, ops) => void planWork.edit(id, ops), dir: teamDir });
       return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans];

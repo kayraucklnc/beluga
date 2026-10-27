@@ -11,11 +11,11 @@ import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, EpicBar, IssueMeta, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, useIssueMenu } from './parts.js';
 import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
-import { useBoard, useOthers, useSelfId, useTaskActions } from './use-tasks.js';
+import { useBoard, useOthers, useSelf, useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -423,6 +423,7 @@ const Column = memo(function Column({
 
 /** What a card shows (on the board, and lifted under the pointer). */
 const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue; selfId: string; solo: boolean }) {
+  const self = useSelf();
   const epic = useApp((s) => isEpic(s.board, issue));
   return (
     <>
@@ -440,8 +441,9 @@ const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue;
         {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
       </div>
       <div className={cx(t.cardTitle, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</div>
-      <IssueMeta issue={issue} compact progress={!epic} />
+      <IssueMeta issue={issue} compact progress={!epic} presence={false} />
       {epic ? <EpicBar issue={issue} /> : null}
+      <OnItLine issue={issue} self={self} />
     </>
   );
 });

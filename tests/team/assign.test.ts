@@ -3,8 +3,6 @@ import { needsYou, tasksView } from '../../src/companion/views.js';
 import { filterIssues } from '../../src/core/board/model.js';
 import type { TaskView } from '../../src/core/gateway/model.js';
 import { TeamAssign } from '../../src/core/team/assign.js';
-import type { Assignee } from '../../src/core/board/model.js';
-import { ownClaudeOnly } from '../../src/ipc/board-handlers.js';
 import { TeamBoardSync } from '../../src/core/team/board-sync.js';
 import { TASK_FEATURES } from '../../src/net/mesh/features.js';
 import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
@@ -65,16 +63,6 @@ describe('assigning team tasks', () => {
     // Both boards say who has it.
     expect(tasksView(ata.store.getState()).projects[0]?.groups.flatMap((g) => g.tasks).find((x) => x.id === t.id)?.assignee).toBe('kay');
   }, 60_000);
-
-  it('a teammate’s Claude can’t be given a task: you ask it in a chat with them', () => {
-    const kay: Assignee = { kind: 'claude', owner: 'p-kay', ownerName: 'kay' };
-    expect(() => ownClaudeOnly(kay, 'p-ata')).toThrow(/ask it in a chat with kay/);
-    // Your own Claude, a person, no one, or a task already theirs (left as it is): fine.
-    expect(() => ownClaudeOnly({ kind: 'claude', owner: 'p-ata', ownerName: 'ata' }, 'p-ata')).not.toThrow();
-    expect(() => ownClaudeOnly({ kind: 'person', id: 'p-kay', name: 'kay' }, 'p-ata')).not.toThrow();
-    expect(() => ownClaudeOnly(null, 'p-ata')).not.toThrow();
-    expect(() => ownClaudeOnly(kay, 'p-ata', kay)).not.toThrow();
-  });
 
   it('a task given to a teammate’s Claude before still takes its answer: proof and a note for both', async () => {
     const [ata, kay] = await pair();
