@@ -159,6 +159,8 @@ export const API = {
   'sharing.leaveProject': args(id, id),
   // Make (or try again to make) your own copy of a project a friend shares with you whole (owner, project id).
   'sharing.copyProject': args(id, id),
+  // A friend's shared worktree's scratch folder, for your Scratch tab (owner, worktree id).
+  'sharing.scratch': args(id, id),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),

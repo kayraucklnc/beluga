@@ -175,7 +175,7 @@ export class RoomFiles {
   serveFs(from: string, body: BodyOf<'fs_list'> | BodyOf<'fs_read'> | BodyOf<'fs_fetch'>): Promise<void> {
     if (body.kind === 'fs_fetch') return this.serveChunk(from, body);
     if (body.kind === 'fs_list') {
-      return this.reply(from, body.reqId, async () => ({ kind: 'fs_list_result', reqId: body.reqId, ok: true, entries: await this.deps.shares.list(body.share, body.path, from === this.selfId) }), 'fs_list_result');
+      return this.reply(from, body.reqId, async () => ({ kind: 'fs_list_result', reqId: body.reqId, ok: true, entries: await this.deps.shares.list(body.share, body.path, from === this.selfId, body.times === true) }), 'fs_list_result');
     }
     this.deps.shares.watchFile(body.share, body.path);
     return this.reply(from, body.reqId, async () => ({ kind: 'fs_read_result', reqId: body.reqId, ok: true, ...(await this.deps.shares.read(body.share, body.path, from === this.selfId)) }), 'fs_read_result');
@@ -264,8 +264,8 @@ export class RoomFiles {
     return { mediaType, bytes: await fetchBytes(at, (to, b) => this.request(to, b), max) };
   }
 
-  async listFiles(at: Location): Promise<readonly FsEntry[]> {
-    const res = await this.request<BodyOf<'fs_list_result'>>(at.owner, { kind: 'fs_list', reqId: randomUUID(), share: at.share, path: at.path });
+  async listFiles(at: Location, opts: { times?: boolean } = {}): Promise<readonly FsEntry[]> {
+    const res = await this.request<BodyOf<'fs_list_result'>>(at.owner, { kind: 'fs_list', reqId: randomUUID(), share: at.share, path: at.path, ...(opts.times ? { times: true } : {}) });
     return res.entries ?? [];
   }
 

@@ -111,8 +111,9 @@ function tabsOfView(view: View, wsKind?: WsKind): PanelTab[] {
   if (view.kind === 'project') return ['terminal', 'info', 'history'];
   // A plan's page is the plan and its chat, side by side; the Tasks board, a task's page and the plans have the whole window.
   if (!panelFits(view)) return [];
-  // A shared workspace's shell is its owner's; the Terminal view is already all shells.
-  if (view.kind === 'shared' || view.kind === 'terminal') return ['info'];
+  // A shared workspace's shell is its owner's (its Scratch you see, read over the link); the Terminal view is already all shells.
+  if (view.kind === 'shared') return ['info', 'scratch'];
+  if (view.kind === 'terminal') return ['info'];
   return ['terminal', 'info'];
 }
 

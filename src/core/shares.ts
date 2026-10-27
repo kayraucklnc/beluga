@@ -259,7 +259,7 @@ export class ShareService {
   }
 
   /** `owner`: you, looking at your own files (your .env files show too). */
-  async list(shareName: string, relPath: string, owner = false): Promise<FsEntry[]> {
+  async list(shareName: string, relPath: string, owner = false, times = false): Promise<FsEntry[]> {
     const share = this.find(shareName);
     const dir = resolveInShare(share, relPath, owner);
     const dirents = await fs.readdir(dir, { withFileTypes: true });
@@ -278,7 +278,7 @@ export class ShareService {
         }
         const stat = await fs.stat(target).catch(() => undefined);
         if (!stat) return undefined;
-        return { name: d.name, dir: stat.isDirectory(), size: stat.isDirectory() ? 0 : stat.size };
+        return { name: d.name, dir: stat.isDirectory(), size: stat.isDirectory() ? 0 : stat.size, ...(times ? { mtime: Math.round(stat.mtimeMs) } : {}) };
       }),
     );
     return entries

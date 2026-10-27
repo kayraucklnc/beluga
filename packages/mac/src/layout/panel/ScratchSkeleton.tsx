@@ -46,7 +46,8 @@ interface ScratchEmptyProps {
   readonly off: boolean;
   /** Beluga's own folder (where Show in Finder goes). */
   readonly dir: string;
-  readonly onReveal: () => void;
+  /** Show in Finder (not for a friend's worktree: it's on their Mac). */
+  readonly onReveal?: () => void;
 }
 
 /** The app's beluga, quiet, over the empty state. */
@@ -75,9 +76,11 @@ export function ScratchEmpty({ working, off, dir, onReveal }: ScratchEmptyProps)
                 <span>Claude is working · its files show up here as they’re saved</span>
               </div>
             ) : null}
-            <Button icon="folder" title={dir} onClick={onReveal}>
+            {onReveal ? (
+              <Button icon="folder" title={dir} onClick={onReveal}>
               Show in Finder
             </Button>
+            ) : null}
           </>
         }
       />

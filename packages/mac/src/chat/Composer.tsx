@@ -156,7 +156,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   // `burning` is the fire itself; without it, only the confetti and pixels fly.
   const effects = !shared && effectsOn(prefs.maxFire, state.prefs.effort);
   const burning = effects && prefs.maxFire.show !== 'off';
-  const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
+  // Following along, or the owner's Mac can't hear you right now (offline, or an old Beluga): the box is locked.
+  const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && (state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view' || Boolean(waitingNote(state, state.view.id)));
   // A new worktree: the branch it starts from and its name (empty: named from the task).
   const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
   const [worktree, setWorktreeState] = useState<WorktreeChoice>(() => (draftProject && worktreeChoices.get(draftProject)) || { name: '' });
@@ -255,6 +256,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
   };
   const deliver = (text: string, urgent: boolean): void => {
+    if (readOnly) return;
     // /invite adds a friend, or adds friends to what's on screen (BLG-203): done here, where the view is known.
     if (handleInvite(client, ui, text)) return;
     if (draftProject && !text.startsWith('/')) return createWorktree(draftProject, text);

@@ -37,3 +37,35 @@
   background: transparent;
   box-shadow: inset 0 0 0 1px #c9c9cf, 0 0 0 1.5px var(--bg);
 }
+
+/* Above your own shared worktree's chat: who sees it, quietly (BLG-259). */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 14px;
+  border-bottom: 0.5px solid var(--hairline);
+  background: color-mix(in srgb, var(--bg-sunken) 70%, var(--bg));
+  font-size: 0.88rem;
+  overflow: hidden;
+}
+.stripPeople {
+  display: inline-flex;
+  gap: 3px;
+  flex: none;
+}
+.stripPeople .dot {
+  width: 6px;
+  height: 6px;
+}
+.stripText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+.stripDetail {
+  color: var(--text-3);
+}

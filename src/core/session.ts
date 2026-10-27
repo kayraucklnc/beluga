@@ -709,8 +709,8 @@ export class Session {
     this.files.downloadSpec(spec);
   }
 
-  listFiles(at: Location): Promise<readonly FsEntry[]> {
-    return this.files.listFiles(at);
+  listFiles(at: Location, opts: { times?: boolean } = {}): Promise<readonly FsEntry[]> {
+    return this.files.listFiles(at, opts);
   }
 
   readFile(at: Location): Promise<{ content: string; truncated: boolean }> {
