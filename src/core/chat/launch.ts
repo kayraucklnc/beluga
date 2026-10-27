@@ -13,6 +13,7 @@ import { trustOf } from '../trust.js';
 import { ChatClaude } from './claude.js';
 import { ChatFiles } from './files.js';
 import { MainChannel } from './main-channel.js';
+import { localMentions } from '../team/mentions.js';
 
 /**
  * Chats for the daemon (the Mac app's Beluga), whenever the network is on: files in chats,
@@ -58,6 +59,7 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
     policy: () => store.getState().prefs.chatClaude,
     trustOf: (peerId) => trustOf(store.getState(), peerId),
     model: () => store.getState().prefs.model,
+    localize: (text) => localMentions(text, store.getState().board.issues),
     handledFile: path.join(opts.dir, 'chat-claude.json'),
     onLive: (conversation, id, state) => store.dispatch({ type: 'net_live', conversation, state, live: { peerId: mesh.peerId, name: nameOf(mesh.peerId), for: id, since: Date.now() } }),
     onProblem: (conversation, text) => session?.notifier.notify({ kind: 'problems', title: 'Your Claude couldn’t answer', body: text, channel: conversation }),

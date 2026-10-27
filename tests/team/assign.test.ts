@@ -3,12 +3,14 @@ import { needsYou, tasksView } from '../../src/companion/views.js';
 import { filterIssues } from '../../src/core/board/model.js';
 import type { TaskView } from '../../src/core/gateway/model.js';
 import { TeamAssign } from '../../src/core/team/assign.js';
+import type { Assignee } from '../../src/core/board/model.js';
+import { ownClaudeOnly } from '../../src/ipc/board-handlers.js';
 import { TeamBoardSync } from '../../src/core/team/board-sync.js';
 import { TASK_FEATURES } from '../../src/net/mesh/features.js';
 import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type PartsFor, type TeamMac, personOf, teamMac } from './helpers.js';
 
-/** BLG-223: assigning a team task to a teammate or their Claude reaches them as a notification. */
+/** BLG-223: assigning a team task to a teammate reaches them as a notification. Their Claude is asked in a chat, never given a task (BLG-262). */
 
 let net: Crowd | undefined;
 const macs: TeamMac[] = [];
@@ -19,15 +21,9 @@ afterEach(async () => {
   net = undefined;
 });
 
-/** What each Mac's gateway was asked (a stand-in: the gateway's own tests cover the request itself). */
-const asks: Array<{ from: string; peerId: string; ask: string; summary: string; project: string | undefined }> = [];
-const parts: PartsFor = ({ team, board, dir, name }) => {
+const parts: PartsFor = ({ team, board, dir }) => {
   const sync = new TeamBoardSync(team, { board, live: () => false, dir });
-  const askClaude = (peerId: string, ask: string, summary: string, project: string | undefined): string => {
-    asks.push({ from: name, peerId, ask, summary, project });
-    return `t_${asks.length}`;
-  };
-  return [sync, new TeamAssign(team, { board, sync, askClaude, dir })];
+  return [sync, new TeamAssign(team, { board, sync, dir })];
 };
 
 async function pair(): Promise<[TeamMac, TeamMac]> {
@@ -59,9 +55,8 @@ describe('assigning team tasks', () => {
     expect(kay.notices.find((n) => n.tag === 'task')?.title).toBe(`ata gave you ${kay.board.get(t.id)!.key}`);
     const card = needsYou(kay.store.getState()).find((n) => n.id === `team-task:${t.id}`);
     expect(card?.actions[0]).toMatchObject({ label: 'Got It', method: 'team.ackAssignment' });
-    // Ata's own Mac doesn't notify ata, and isn't asked anything.
+    // Ata's own Mac doesn't notify ata.
     expect(ata.notices.some((n) => n.tag === 'task')).toBe(false);
-    expect(asks).toHaveLength(0);
 
     // Seen: out of the inbox, still kay's.
     kay.team.part(TeamAssign).ack(t.id);
@@ -71,36 +66,26 @@ describe('assigning team tasks', () => {
     expect(tasksView(ata.store.getState()).projects[0]?.groups.flatMap((g) => g.tasks).find((x) => x.id === t.id)?.assignee).toBe('kay');
   }, 60_000);
 
-  it('to a teammate’s Claude: a request with the brief from the Mac that assigned it; the result lands on the task for both', async () => {
-    asks.length = 0;
+  it('a teammate’s Claude can’t be given a task: you ask it in a chat with them', () => {
+    const kay: Assignee = { kind: 'claude', owner: 'p-kay', ownerName: 'kay' };
+    expect(() => ownClaudeOnly(kay, 'p-ata')).toThrow(/ask it in a chat with kay/);
+    // Your own Claude, a person, no one, or a task already theirs (left as it is): fine.
+    expect(() => ownClaudeOnly({ kind: 'claude', owner: 'p-ata', ownerName: 'ata' }, 'p-ata')).not.toThrow();
+    expect(() => ownClaudeOnly({ kind: 'person', id: 'p-kay', name: 'kay' }, 'p-ata')).not.toThrow();
+    expect(() => ownClaudeOnly(null, 'p-ata')).not.toThrow();
+    expect(() => ownClaudeOnly(kay, 'p-ata', kay)).not.toThrow();
+  });
+
+  it('a task given to a teammate’s Claude before still takes its answer: proof and a note for both', async () => {
     const [ata, kay] = await pair();
-    const t = ata.board.create({ projectId: 'pa', title: 'Add rate limits', brief: { goal: 'Stop abuse', acceptance: '- [ ] 429 after 100 calls' } }, personOf(ata));
+    const t = ata.board.create({ projectId: 'pa', title: 'Add rate limits' }, personOf(ata));
     await settle(() => kay.board.get(t.id));
-    ata.board.update(t.id, { assignee: { kind: 'claude', owner: kay.id, ownerName: 'kay' } }, personOf(ata));
-
-    await settle(() => asks.length === 1);
-    expect(asks[0]).toMatchObject({ from: 'ata', peerId: kay.id, project: 'kays-api' });
-    expect(asks[0]!.ask).toContain('Stop abuse');
-    expect(asks[0]!.ask).toContain('429 after 100 calls');
-    // Kay hears their Claude was given it (the request itself asks kay, as usual).
-    await settle(() => kay.notices.find((n) => n.tag === 'task' && n.title.includes('your Claude')));
-    // Kay's Mac never sends one of its own.
-    expect(asks.every((a) => a.from === 'ata')).toBe(true);
-
-    // The answer comes back on ata's gateway: proof and a note on the task, and the note reaches kay.
+    // A request sent the old way, saved on ata's Mac (team-asks.json).
+    (ata.team.part(TeamAssign) as unknown as { asked: unknown[] }).asked = [{ task: 't_1', issueId: t.id, peerId: kay.id, at: 1 }];
     const done = { id: 't_1', direction: 'sent', peerId: kay.id, peerName: 'kay', kind: 'ask', ask: '', needs: [], by: 'person', state: 'done', steps: [], createdAt: 1, updatedAt: 2, result: { status: 'done', summary: 'Added a limiter in middleware.ts; tests pass', files: [], log: [] } } as unknown as TaskView;
     ata.store.dispatch({ type: 'gw_task', task: done });
     const here = ata.board.get(t.id)!;
     expect(here.proof.at(-1)).toMatchObject({ kind: 'text', title: "What kay's Claude did", by: { kind: 'claude', owner: kay.id } });
-    expect(here.activity.at(-1)).toMatchObject({ kind: 'note', body: 'Added a limiter in middleware.ts; tests pass' });
     await settle(() => kay.board.get(t.id)?.activity.some((a) => a.body === 'Added a limiter in middleware.ts; tests pass'));
-
-    // A teammate whose Beluga doesn't take requests right now: a note on the task says so, nothing is sent.
-    kay.person.mesh.offer(TASK_FEATURES, false);
-    await settle(() => !ata.person.mesh.belugaOf(kay.id)?.can.includes('task.ask'));
-    ata.board.update(t.id, { assignee: null }, personOf(ata));
-    ata.board.update(t.id, { assignee: { kind: 'claude', owner: kay.id, ownerName: 'kay' } }, personOf(ata));
-    expect(asks).toHaveLength(1);
-    expect(ata.board.get(t.id)!.activity.at(-1)?.body).toMatch(/kay's Beluga isn't taking requests right now/);
   }, 60_000);
 });

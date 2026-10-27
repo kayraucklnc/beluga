@@ -2,6 +2,7 @@ import { isSecretPath } from '../core/shares.js';
 import { needBoard } from '../core/board/registry.js';
 import { syncOf } from '../core/board/sync/sync.js';
 import type { Session } from '../core/session.js';
+import type { Assignee } from '../core/board/model.js';
 import type { Args, Method } from './api.js';
 
 /** What each `board.*` method does (see board-api.ts): you act as yourself. */
@@ -9,15 +10,30 @@ import type { Args, Method } from './api.js';
 type BoardMethod = Extract<Method, `board.${string}`>;
 type BoardHandlers = { readonly [M in BoardMethod]: (s: Session, ...args: Args<M>) => unknown };
 
+/**
+ * A task can be for you, your Claude or a teammate, never a teammate's Claude (BLG-262): you ask
+ * their Claude in a chat with them, where they see it and answer it. Unchanged is fine (a task
+ * given before keeps saying so until someone changes it).
+ */
+const selfOf = (me: Assignee): string => (me.kind === 'person' ? me.id : me.owner);
+
+export function ownClaudeOnly(assignee: Assignee | null | undefined, self: string, was?: Assignee): void {
+  if (assignee?.kind !== 'claude' || assignee.owner === self) return;
+  if (was?.kind === 'claude' && was.owner === assignee.owner) return;
+  throw new Error(`A task can’t be given to ${assignee.ownerName}’s Claude: ask it in a chat with ${assignee.ownerName} (type @ to mention the task)`);
+}
+
 export const BOARD_HANDLERS = {
   'board.create': (s, input) => {
     const work = needBoard(s);
+    ownClaudeOnly(input.assignee, selfOf(work.me()));
     const { goal, describe, title, ...rest } = input;
     if (!title?.trim() && describe) return work.createDescribed(rest, describe);
     return work.board.create({ ...rest, title: title ?? '', ...(goal?.trim() ? { brief: { goal } } : {}) }, work.me());
   },
   'board.update': (s, ref, patch) => {
     const work = needBoard(s);
+    ownClaudeOnly(patch.assignee, selfOf(work.me()), work.board.get(ref)?.assignee);
     return work.board.update(ref, patch, work.me());
   },
   'board.move': (s, ref, status, between) => {

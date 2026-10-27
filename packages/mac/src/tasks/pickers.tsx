@@ -42,7 +42,7 @@ export function PriorityPicker({ issue, children, align }: { issue: Issue; child
   );
 }
 
-/** Who a task is for: you, your Claude, people you know and their Claudes, or no one. */
+/** Who a task is for: you, your Claude, people you know, or no one. */
 export function AssigneePicker({ value, onChange, children, align }: { value: Assignee | undefined; onChange: (a: Assignee | null) => void; children: ReactNode; align?: 'start' | 'end' }) {
   const self = useSelf();
   const people = usePeople();
@@ -60,7 +60,7 @@ export function AssigneePicker({ value, onChange, children, align }: { value: As
           label: c.label,
           section: c.assignee.kind === 'claude' && c.assignee.owner === self.id ? undefined : c.assignee.kind === 'person' && c.assignee.id === self.id ? undefined : 'People',
           mark: c.assignee.kind === 'person' ? <Avatar name={c.assignee.name} id={c.assignee.id} size={16} /> : <Avatar name={c.assignee.ownerName} id={c.assignee.owner} claude size={16} />,
-          ...(c.assignee.kind === 'claude' ? { hint: c.assignee.owner === self.id ? 'Works on it in its worktree' : 'Asked on their Mac (with their approval)' } : {}),
+          ...(c.assignee.kind === 'claude' ? { hint: 'Works on it in its worktree' } : {}),
         })),
       ]}
       chosen={[assigneeKey(value)]}
