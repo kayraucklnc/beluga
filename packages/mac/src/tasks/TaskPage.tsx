@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById, worktreeDoing } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isEpic, progressOf, isFinished, issueById, worktreeDoing } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
@@ -102,6 +102,7 @@ function Header({ issue }: { issue: Issue }) {
         </ActionsDropdown>
       </nav>
       <header className={t.pageHead}>
+        {isEpic(board, issue) ? <EpicLine issue={issue} /> : null}
         <Title issue={issue} />
         <WorkingOn issueId={issue.id} />
         <AssignedToYou issueId={issue.id} />
@@ -111,6 +112,19 @@ function Header({ issue }: { issue: Issue }) {
         {isArchived(issue) ? null : <NextStep issue={issue} />}
       </header>
     </>
+  );
+}
+
+/** Above an epic's title: that it is one, and how far its sub-tasks are. */
+function EpicLine({ issue }: { issue: Issue }) {
+  const board = useBoard();
+  const { done, total } = progressOf(board, issue);
+  return (
+    <div className={t.pageEpic}>
+      <Icon name="epic" size={12} />
+      Epic
+      {total ? <span className={t.epicCount}>· {done} of {total} sub-tasks done</span> : null}
+    </div>
   );
 }
 
@@ -416,7 +430,7 @@ function Properties({ issue }: { issue: Issue }) {
       <Prop label="Labels">
         <div className={t.propLabels}>
           {issue.labels.map((l) => (
-            <LabelChip key={l} label={l} onRemove={() => void act(() => api.update(issue.id, { labels: issue.labels.filter((x) => x !== l) }))} />
+            <LabelChip key={l} label={l} projectId={issue.projectId} onRemove={() => void act(() => api.update(issue.id, { labels: issue.labels.filter((x) => x !== l) }))} />
           ))}
           <LabelsPicker issue={issue} align="end">
             <button type="button" className={cx(t.propValue, t.propAdd)}>

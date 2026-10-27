@@ -81,3 +81,86 @@
 :global([data-theme='dark']) .stepOn {
   background: color-mix(in srgb, var(--bg-raised) 80%, white 8%);
 }
+
+/* New Label: a preview beside the name, a grid of icons, a row of named colors. */
+.labelPreview {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 22px;
+  padding: 0 9px 0 7px;
+  border-radius: 11px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  background: hsl(var(--hue, 212) var(--sat, 50%) 50% / 0.11);
+}
+.iconGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.iconPick {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-2);
+  cursor: default;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.iconPick:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.iconPick:focus-visible,
+.swatch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.iconPickOn {
+  background: hsl(var(--hue) var(--sat) 50% / 0.14);
+  color: hsl(var(--hue) var(--sat) 42%);
+}
+:global([data-theme='dark']) .iconPickOn {
+  color: hsl(var(--hue) var(--sat) 70%);
+}
+.colorRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: hsl(var(--hue) var(--sat) 62%);
+  cursor: default;
+}
+.swatchOn {
+  box-shadow:
+    0 0 0 2px var(--bg-raised),
+    0 0 0 3.5px hsl(var(--hue) var(--sat) 50%);
+}
+.colorName {
+  margin-left: 4px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.ownLabels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.ownLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.92rem;
+}

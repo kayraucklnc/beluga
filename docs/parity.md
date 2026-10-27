@@ -422,7 +422,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
 | `board.createLabel` | ✓ a task's Labels menu › New Label… (a name, an icon, a color) |
-| `board.removeLabel` | ✓ a task's Labels menu › Manage Labels: a project label's remove button |
+| `board.removeLabel` | ✓ the New Label sheet: a project label's remove button (under Labels of this project) |
 | `board.syncTeams` | ✓ Tasks › ⋯ › Sync with Linear… (the sheet checks the key and lists its teams) |
 | `board.syncConnect` | ✓ the Sync with Linear sheet › Connect (a team, Autosync, Also Send Open Tasks) |
 | `board.syncDisconnect` | ✓ the Sync with Linear sheet › Disconnect… |

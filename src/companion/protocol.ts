@@ -523,6 +523,10 @@ export const TaskSummary = z.object({
   pr: z.object({ number: z.number().int().min(0), state: z.string().max(20) }).optional(),
   /** Teammates on the same repository working on it now (core/team): "Ata is working on this". */
   working: z.string().max(200).optional(),
+  /** It's an epic (a task with sub-tasks): how many of them are done, of all but canceled ones. */
+  epic: z.object({ done: z.number().int().min(0), total: z.number().int().min(0) }).optional(),
+  /** The epic it's part of: its key. */
+  epicKey: z.string().max(40).optional(),
   updatedAt: ts,
 });
 export type TaskSummary = z.infer<typeof TaskSummary>;
