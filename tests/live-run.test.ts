@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 
 /** A scripted Claude Code: for each prompt it reads, it yields the next scripted turn (a promise in it: waited for). */
 type Turn = (prompt: string) => Array<object | Promise<object>>;
-const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options; interrupt?: () => void; queue?: unknown; models: Array<{ model: string | undefined; afterPrompts: number }> } = { turns: [], extra: [], prompts: [], models: [] };
+const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options; interrupt?: () => void; queue?: unknown; exitAfter?: string; models: Array<{ model: string | undefined; afterPrompts: number }> } = { turns: [], extra: [], prompts: [], models: [] };
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
   ...(await original<object>()),
@@ -27,6 +27,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
           // Turns Claude starts by itself once a background agent is done.
           for (const extra of script.extra.splice(0)) for (const m of extra) yield m;
         }
+        if (script.exitAfter) throw new Error(script.exitAfter);
       })(),
       {
         interrupt: async () => script.interrupt?.(),
@@ -315,6 +316,35 @@ describe('Send now: a steered message Claude hasn’t read yet, answered at once
     expect(script.prompts).toHaveLength(2);
     expect(script.prompts[1]).toContain('look at the retries first');
     script.interrupt = undefined;
+  });
+
+  it('Claude Code took it in before it stopped: not taken as read, sent again and answered; exit 1 once let go is no crash', async () => {
+    let steer: Steer | undefined;
+    const got: string[] = [];
+    script.prompts = [];
+    const items = (): Array<{ uuid: string }> => (script.queue as { items: Array<{ uuid: string }> }).items;
+    script.turns = [
+      () => [
+        { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'npm run build' } }] } },
+        // Claude Code had read the steered message off its input; the stopped turn lists it.
+        new Promise<object>((resolve) => (script.interrupt = () => resolve({ ...result(''), subtype: 'error_during_execution', user_message_uuids: items().splice(0).map((i) => i.uuid) }))),
+      ],
+      () => [text('on it'), result('on it')],
+    ];
+    // As Claude Code does when its last turn was stopped: exit 1 once its input ends.
+    script.exitAfter = 'Claude Code process exited with code 1';
+    const input = runInput({ onSteer: (s) => void (steer = s) });
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    for (let i = 0; i < 50 && !steer?.status?.().tool; i++) await new Promise((r) => setTimeout(r, 5));
+    const followUp = { prompt: 'do the docs too', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'f') };
+    expect(steer!(followUp)).toBe(true);
+    const note = 'Interrupted: npm run build to read your message';
+    expect(await steer!.force!(followUp, note)).toBe(true);
+    expect(await running).toBe(note);
+    expect(got).toEqual(['f started', 'f:on it']);
+    expect(script.prompts[1]).toContain('do the docs too');
+    script.interrupt = undefined;
+    script.exitAfter = undefined;
   });
 
   it('nothing to force for a message the run never took as a steer', async () => {

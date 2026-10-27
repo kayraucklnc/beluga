@@ -179,6 +179,14 @@ export class TurnRouter {
     if (p) p.steer = true;
   }
 
+  /** Out of line, unanswered (it's sent again under a new id). False: not waiting any more. */
+  drop(uuid: string): boolean {
+    const at = this.pending.findIndex((x) => x.uuid === uuid);
+    if (at === -1) return false;
+    this.pending.splice(at, 1);
+    return true;
+  }
+
   /** `uuid`: the prompt's id (see PromptQueue.push); `steer`: sent while Claude works, to be folded in. */
   queue(route: TurnRoute, uuid?: string, steer = false): void {
     this.pending.push({ route, ...(uuid ? { uuid } : {}), steer });
