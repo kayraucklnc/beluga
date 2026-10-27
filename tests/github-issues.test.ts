@@ -249,7 +249,7 @@ describe('handing an issue to Claude', () => {
     // The conversation shows a short line; Claude gets the issue and the instructions.
     expect(shown).toEqual(['Investigate #48 “Login returns 500 when the email has a plus sign”: find out why it happens and reproduce it, without fixing it yet.']);
     const task = board.need(out.key);
-    expect(task).toMatchObject({ title: 'Login returns 500 when the email has a plus sign', origin: 'github', status: 'in_progress', labels: ['bug'], assignee: { kind: 'claude' } });
+    expect(task).toMatchObject({ title: 'Login returns 500 when the email has a plus sign', origin: 'github', status: 'in_progress', labels: ['bug'], assignee: { kind: 'person' } });
     expect(task.github).toEqual({ repo: 'acme/bob-api', number: 48, url: 'https://github.com/acme/bob-api/issues/48', step: 'investigate', investigated: true });
     expect(task.brief.goal).toMatch(/#48/);
     expect(task.brief.context).toContain('> Signing in with');

@@ -658,7 +658,7 @@ export class DemoTransport implements Transport {
         t.status = 'in_progress';
         t.conv = topic;
         t.worktree = `${t.key.toLowerCase()}-${t.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24)}`;
-        t.assignee = 'your Claude';
+        t.assignee ??= 'you';
         t.activity = [...t.activity, { id: `s${Date.now()}`, at: Date.now(), who: 'Beluga', text: `its work is being done in worktree ${t.worktree}` }];
         this.touch(t.topic, 'tasks', 'work');
         return ok(topic.replace(/^conv:/, '').replace(/^ws:/, ''));

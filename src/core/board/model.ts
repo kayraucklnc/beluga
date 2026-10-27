@@ -79,8 +79,14 @@ export function renamedActors(value: unknown): unknown {
   return Object.fromEntries(entries.map(([k, v]) => [k, renamedActors(v)]));
 }
 
-/** Who a task is for: a person, or someone's Claude. */
-export type Assignee = { readonly kind: 'person'; readonly id: string; readonly name: string } | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string };
+/** Who a task is for: a person, never a Claude (BLG-278). Who works on it right now shows on its own. */
+export type Assignee = { readonly kind: 'person'; readonly id: string; readonly name: string };
+
+/** How older boards, older teammates and the activity history may still say it: someone's Claude. */
+export type AnyAssignee = Assignee | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string };
+
+/** A task given to someone's Claude (before BLG-278) is that person's. */
+export const personOf = (a: AnyAssignee): Assignee => (a.kind === 'person' ? a : { kind: 'person', id: a.owner, name: a.ownerName });
 
 export interface BriefRevision {
   readonly id: string;
@@ -103,8 +109,8 @@ export interface Activity {
   /** In words ("moved this to In Review", "opened PR #42"); a comment's or note's text is `body`. */
   readonly text: string;
   readonly body?: string;
-  /** Who it was assigned to (screens say "you" and "your Claude" from where they look). */
-  readonly assignee?: Assignee | null;
+  /** Who it was assigned to (screens say "you" from where they look; older entries may name a Claude). */
+  readonly assignee?: AnyAssignee | null;
   /**
    * What the field was before this run of changes (quick changes to one field by one person
    * become one line: clicking through estimates leaves "estimated this at 5 points", once).
@@ -440,8 +446,8 @@ export function rankBetween(before: number | undefined, after: number | undefine
   return (before + after) / 2;
 }
 
-/** Whether a task is yours: assigned to you, or to your Claude. */
-export const isMine = (issue: Issue, selfId: string): boolean => (issue.assignee?.kind === 'person' && issue.assignee.id === selfId) || (issue.assignee?.kind === 'claude' && issue.assignee.owner === selfId);
+/** Whether a task is yours: assigned to you. */
+export const isMine = (issue: Issue, selfId: string): boolean => issue.assignee?.id === selfId;
 
 export interface IssueFilter {
   /** Every scope but `archived` leaves archived tasks out. */
@@ -506,7 +512,7 @@ export function actorName(actor: Actor, selfId: string): string {
   }
 }
 
-export function assigneeName(assignee: Assignee | undefined, selfId: string): string {
+export function assigneeName(assignee: AnyAssignee | undefined, selfId: string): string {
   if (!assignee) return 'No one';
   return assignee.kind === 'person' ? (assignee.id === selfId ? 'You' : assignee.name) : assignee.owner === selfId ? 'Your Claude' : `${assignee.ownerName}’s Claude`;
 }

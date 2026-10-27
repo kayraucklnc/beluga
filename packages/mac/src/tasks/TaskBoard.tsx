@@ -9,9 +9,9 @@ import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, IssueMeta, OnItLine, useIssueMenu } from './parts.js';
 import { isSolo } from './tasks-model.js';
-import { useBoard, useOthers, useSelfId, useTaskActions } from './use-tasks.js';
+import { useBoard, useOthers, useSelf, useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -419,6 +419,7 @@ const Column = memo(function Column({
 
 /** What a card shows (on the board, and lifted under the pointer). */
 const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue; selfId: string; solo: boolean }) {
+  const self = useSelf();
   return (
     <>
       <div className={t.cardTop}>
@@ -428,7 +429,8 @@ const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue;
         {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
       </div>
       <div className={cx(t.cardTitle, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</div>
-      <IssueMeta issue={issue} compact />
+      <IssueMeta issue={issue} compact presence={false} />
+      <OnItLine issue={issue} self={self} />
     </>
   );
 });

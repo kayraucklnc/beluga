@@ -78,7 +78,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
     me,
   );
   when(3 * DAY + 20 * HOUR);
-  const fixtures = board.create({ projectId: at.api, title: 'Stripe test-mode fixtures', status: 'todo', priority: 'medium', parent: epic.id, labels: ['payments'], assignee: claude }, me);
+  const fixtures = board.create({ projectId: at.api, title: 'Stripe test-mode fixtures', status: 'todo', priority: 'medium', parent: epic.id, labels: ['payments'], assignee: me }, me);
   when(3 * DAY + 2 * HOUR);
   board.update(fixtures.id, { status: 'in_progress' }, claude);
   when(2 * DAY + 18 * HOUR);
@@ -102,7 +102,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
     me,
   );
   when(2 * DAY + 3 * HOUR);
-  board.update(auth.id, { assignee: claude }, me);
+  board.update(auth.id, { assignee: me }, me);
   board.linkWorktree(auth.id, at.auth.id, { ...(at.auth.branch ? { branch: at.auth.branch } : {}), name: at.auth.name }, me);
   board.update(auth.id, { status: 'in_progress' }, me);
   when(2 * DAY + 2 * HOUR);
@@ -135,7 +135,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
     me,
   );
   when(DAY + 6 * HOUR);
-  board.update(retries.id, { assignee: claude }, me);
+  board.update(retries.id, { assignee: me }, me);
   board.linkWorktree(retries.id, at.retries.id, { ...(at.retries.branch ? { branch: at.retries.branch } : {}), name: at.retries.name }, me);
   board.update(retries.id, { status: 'in_progress' }, me);
   when(DAY + 5 * HOUR);

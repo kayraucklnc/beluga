@@ -100,8 +100,8 @@ export interface TeamState {
   readonly offers: readonly TeamOffer[];
   /** Project id → its team. */
   readonly teams: Readonly<Record<string, ProjectTeam>>;
-  /** Task id → teammates working on it now ("Ata is working on this"). */
-  readonly working: Readonly<Record<string, ReadonlyArray<{ readonly peerId: string; readonly name: string }>>>;
+  /** Task id → teammates working on it now ("Ata is working on this"); `running`: their Claude is at work there. */
+  readonly working: Readonly<Record<string, ReadonlyArray<{ readonly peerId: string; readonly name: string; readonly running?: true }>>>;
   readonly assigned: readonly TeamAssignment[];
   readonly plans: readonly SharedPlan[];
   /** Plan id → who it's shared with and their reviews. */
@@ -132,7 +132,7 @@ export function reduceTeam(state: TeamSlice, action: TeamAction): TeamSlice {
 export const teammatesOf = (team: TeamState, projectId: string): readonly Teammate[] => team.teams[projectId]?.mates ?? [];
 
 /** Teammates working on a task now. */
-export const workingOn = (team: TeamState, issueId: string): ReadonlyArray<{ readonly peerId: string; readonly name: string }> => team.working[issueId] ?? [];
+export const workingOn = (team: TeamState, issueId: string): ReadonlyArray<{ readonly peerId: string; readonly name: string; readonly running?: true }> => team.working[issueId] ?? [];
 
 /** "Ata is working on this", "Ata and Mia are working on this". */
 export function workingWords(names: readonly string[]): string | undefined {
@@ -166,8 +166,7 @@ export function teammateOn(team: TeamState, issue: Pick<Issue, 'id' | 'projectId
   const doing = workingOn(team, issue.id).find((p) => p.peerId !== self);
   if (doing) return { peerId: doing.peerId, name: doing.name, words: `${doing.name} is ${what}` };
   const a = issue.assignee;
-  if (a?.kind === 'person' && a.id !== self && mates.some((m) => m.peerId === a.id)) return { peerId: a.id, name: a.name, words: `${a.name} has it${issue.github ? ` (#${issue.github.number})` : ''}` };
-  if (a?.kind === 'claude' && a.owner !== self && mates.some((m) => m.peerId === a.owner)) return { peerId: a.owner, name: a.ownerName, words: `${a.ownerName}’s Claude has it${issue.github ? ` (#${issue.github.number})` : ''}` };
+  if (a && a.id !== self && mates.some((m) => m.peerId === a.id)) return { peerId: a.id, name: a.name, words: `${a.name} has it${issue.github ? ` (#${issue.github.number})` : ''}` };
   return undefined;
 }
 

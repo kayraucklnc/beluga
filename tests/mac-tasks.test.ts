@@ -5,7 +5,7 @@ import { Store, initialState } from '../src/core/store.js';
 import { createMockBackend } from '../src/agent/mock.js';
 import type { RoomBridge } from '../src/agent/types.js';
 import { BoardWork } from '../src/core/board/work.js';
-import { DEFAULT_TASKS_PREFS, assigneeChoices, fromV1TasksPrefs, assigneeKey, assigneesIn, checklist, connected, dueText, isFor, isSolo, projectToShow, readTasksPrefs, scopeCounts, scoped, statusesFor, taskGraph, toggleCheck } from '../packages/mac/src/tasks/tasks-model.js';
+import { DEFAULT_TASKS_PREFS, assigneeChoices, fromV1TasksPrefs, assigneeKey, assigneesIn, checklist, connected, dueText, isFor, isSolo, onIt, onItTip, onItWords, projectToShow, readTasksPrefs, scopeCounts, scoped, statusesFor, taskGraph, toggleCheck } from '../packages/mac/src/tasks/tasks-model.js';
 import { parseGraph } from '../src/shared/graph-spec.js';
 import type { Project } from '../src/workspaces/types.js';
 
@@ -63,12 +63,12 @@ describe('the Tasks view', () => {
 
   it('counts a project’s open tasks per scope, for everyone or someone', () => {
     const { store, b } = board();
-    b.create({ projectId: 'api', title: 'A', assignee: { kind: 'claude', owner: 'p-me', ownerName: 'Kay' }, status: 'in_progress' }, me);
+    b.create({ projectId: 'api', title: 'A', assignee: { kind: 'person', id: 'p-me', name: 'Kay' }, status: 'in_progress' }, me);
     b.create({ projectId: 'api', title: 'B', status: 'backlog' }, me);
     b.create({ projectId: 'api', title: 'C', status: 'done' }, me);
     const s = store.getState().board;
     expect(scopeCounts(s, 'api', '', 'p-me')).toEqual({ active: 1, backlog: 1, all: 2, archived: 0 });
-    expect(scopeCounts(s, 'api', 'claude:p-me', 'p-me')).toEqual({ active: 1, backlog: 0, all: 1, archived: 0 });
+    expect(scopeCounts(s, 'api', 'person:p-me', 'p-me')).toEqual({ active: 1, backlog: 0, all: 1, archived: 0 });
     expect(scopeCounts(s, 'api', 'nobody', 'p-me')).toEqual({ active: 0, backlog: 1, all: 1, archived: 0 });
   });
 
@@ -93,7 +93,7 @@ describe('the Tasks view', () => {
 
   it('alone on a project: no one else around and nothing for anyone else', () => {
     const { store, b } = board();
-    b.create({ projectId: 'api', title: 'Mine', assignee: { kind: 'claude', owner: 'p-me', ownerName: 'Kay' } }, me);
+    b.create({ projectId: 'api', title: 'Mine', assignee: { kind: 'person', id: 'p-me', name: 'Kay' } }, me);
     expect(isSolo(store.getState().board, 'api', 'p-me', 0)).toBe(true);
     expect(isSolo(store.getState().board, 'api', 'p-me', 2)).toBe(false);
     b.create({ projectId: 'api', title: 'Theirs', assignee: { kind: 'person', id: 'p-bob', name: 'bob' } }, me);
@@ -104,22 +104,36 @@ describe('the Tasks view', () => {
     const { store, b } = board();
     const bob = { kind: 'person' as const, id: 'p-bob', name: 'bob' };
     const t1 = b.create({ projectId: 'api', title: 'A', assignee: bob }, me);
-    b.create({ projectId: 'api', title: 'B', assignee: { kind: 'claude', owner: 'p-me', ownerName: 'Kay' } }, me);
+    b.create({ projectId: 'api', title: 'B', assignee: { kind: 'person', id: 'p-me', name: 'Kay' } }, me);
     b.create({ projectId: 'api', title: 'C' }, me);
     const s = store.getState().board;
-    expect(assigneesIn(s, 'api', 'p-me').map((p) => p.label)).toEqual(['Your Claude', 'bob']);
+    expect(assigneesIn(s, 'api', 'p-me').map((p) => p.label)).toEqual(['You', 'bob']);
     expect(isFor(b.need(t1.key), 'person:p-bob')).toBe(true);
     expect(isFor(b.need(t1.key), 'nobody')).toBe(false);
   });
 
-  it('offers you, your Claude, then people, never their Claudes (BLG-262)', () => {
+  it('who is on a task now, apart from who it is for: you first, teammates, whose Claude is at work (BLG-278)', () => {
+    const me = { id: 'p-me', name: 'Kay' };
+    expect(onIt(me, { here: false, running: false }, [])).toEqual([]);
+    const both = onIt(me, { here: true, running: true }, [{ peerId: 'p-me', name: 'Kay' }, { peerId: 'p-ata', name: 'ata' }]);
+    expect(both.map((p) => [p.name, p.you, p.running])).toEqual([['Kay', true, true], ['ata', false, false]]);
+    expect(onItWords(both, 'Running npm test')).toBe('You and ata · Running npm test');
+    expect(onItWords(both)).toBe('You and ata · working');
+    expect(onItWords(onIt(me, { here: false, running: false }, [{ peerId: 'p-ata', name: 'ata' }]))).toBe('ata · on it');
+    expect(onItWords(onIt(me, { here: false, running: false }, [{ peerId: 'a', name: 'a' }, { peerId: 'b', name: 'b' }, { peerId: 'c', name: 'c' }]))).toBe('a, b and 1 more · on it');
+    expect(onItTip(both[0]!, 'Running npm test')).toBe('Your Claude is working: Running npm test');
+    expect(onItTip({ ...both[1]!, running: true })).toBe('ata’s Claude is working on it');
+  });
+
+  it('offers you, then people, never a Claude (BLG-278)', () => {
     const choices = assigneeChoices({ id: 'p-me', name: 'Kay' }, [
       { id: 'p-mia', name: 'mia' },
       { id: 'p-bob', name: 'bob' },
       { id: 'p-me', name: 'Kay' },
     ]);
-    expect(choices.map((c) => c.label)).toEqual(['You', 'Your Claude', 'bob', 'mia']);
-    expect(assigneeKey(choices[1]!.assignee)).toBe('claude:p-me');
+    expect(choices.map((c) => c.label)).toEqual(['You', 'bob', 'mia']);
+    expect(choices.every((c) => c.assignee.kind === 'person')).toBe(true);
+    expect(assigneeKey(choices[0]!.assignee)).toBe('person:p-me');
     expect(assigneeKey(undefined)).toBe('');
   });
 

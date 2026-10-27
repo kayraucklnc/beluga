@@ -56,7 +56,7 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 | `key` | `BOB-12`: a per-project prefix (from the project's name, changeable with `board.setPrefix`) and a counter |
 | `title`, `status` | Backlog · Ready · In Progress · In Review · Done · Canceled (the board's columns) |
 | `priority`, `labels`, `estimate`, `due` | Linear's set (estimates 1, 2, 3, 5, 8) |
-| `assignee` | you, a friend (peer id), **your Claude**, or **a friend's Claude** |
+| `assignee` | a person: you or a friend (peer id), never a Claude (BLG-278; an older one for someone's Claude reads as theirs). Who's on it now shows on its own, under its card |
 | `parent` | sub-tasks; a task can't sit under itself or its own sub-tasks |
 | `blockedBy`, `related` | what must be done first (its other side is "blocks"; a loop is refused), and related tasks |
 | `worktrees`, `branch`, `pr` | the worktrees doing it (the current one last), its branch, and its pull request as the workbench last saw it |
@@ -152,6 +152,7 @@ Two friends who each have the same GitHub repository as a project on their own M
 - **Tasks** in the sidebar, and ⌘K › New Task… / Go to Tasks.
 - **The bar:** the project switcher, Active · Backlog · All · Archive (each with its count), **whose tasks** (Everyone, You, Your Claude, each person and their Claude, No one yet), a filter (⌘F), List · Board · What Waits on What, ⋯, and **New Task** (⌘N, or C).
 - **Alone, no assignees.** On a project where you work alone (nobody else in the room, no friends, nothing assigned to anyone else), who a task is for isn't shown anywhere: not in rows, cards, a task's page or the New Task sheet. Every task is yours and your Claude's; Start is how it gets worked on.
+- **Who's on it, under the card (BLG-278).** Who a task is for is a person; who works on it right now is shown apart, as a line under its board card: the avatars of whoever has a worktree doing it (you, and teammates on a teamed project), with what your Claude is doing. While someone's Claude is at work there, a ring turns round their avatar and a soft line moves along the card's bottom edge (still under reduced motion). Teammates learn it from `working.<peer>` and `running.<peer>` on the team board.
 - **List:** grouped by status (groups fold; + adds a task there). A row's priority, status and assignee are menus of their own (1–9 pick); the rest of the row opens the task. ↑↓ and Return; right-click for Open, Start (or Start Worktree Only; Open Worktree when a worktree does or carries it), Status ▸, Priority ▸, Add Sub-task…, Copy Key, Delete Task….
 - **Board:** a column per status; drag a card to another column or up and down (a line shows where it lands).
 - **What Waits on What:** the tasks tied to others as a graph (the graph engine): a task with sub-tasks is a box around them, blockers point at what they hold up, in the problem color until they're done. Double-click, or Open Task in its details, opens it.

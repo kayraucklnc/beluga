@@ -3,7 +3,7 @@ import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Board } from '../board/board.js';
 import { type Activity, type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, isArchived, worktreeDoing } from '../board/model.js';
 import type { Action } from '../store.js';
-import { type Field, LOCAL_ACTS, type SharedTask, canon, digest, fieldsOf, fromBoard, maxClock, merge, onBoard } from './crdt.js';
+import { type Field, LOCAL_ACTS, type SharedTask, canon, digest, fieldsOf, fromBoard, isPresence, maxClock, merge, onBoard } from './crdt.js';
 import type { TeamState } from './model.js';
 import { type TaskDelta, type TeamMsg, fieldValue } from './protocol.js';
 import type { TeamBoards, TeamLink, TeamPart } from './service.js';
@@ -32,6 +32,8 @@ export interface BoardSyncDeps {
   readonly board: Board;
   /** A workspace is still here and not archived. */
   readonly live: (workspaceId: string) => boolean;
+  /** Its Claude is at work there now (BLG-278: teammates see the task moving). */
+  readonly running?: (workspaceId: string) => boolean;
   /** Where team-board.json lives; null: memory only. */
   readonly dir: string | null;
 }
@@ -45,6 +47,8 @@ export interface TeamChange {
 }
 
 const BATCH_TASKS = 40;
+/** What a Claude says while it works (words, steps, counts): never a start or a stop. */
+const QUIET_EVENTS: ReadonlySet<string> = new Set(['text', 'tool', 'progress', 'sub']);
 const BATCH_BYTES = 700_000;
 const SNAPSHOT_ACTS = 60;
 
@@ -55,6 +59,8 @@ export class TeamBoardSync implements TeamPart {
   private readonly listeners: Array<(c: TeamChange) => void> = [];
   private readonly reconciled = new Set<string>();
   private readonly locals: Array<(issue: Issue, changed: Readonly<Record<string, Field>>) => void> = [];
+  /** My worktrees whose Claude was at work when last told (only a change goes out). */
+  private runs = new Set<string>();
 
   constructor(
     private readonly team: TeamBoards,
@@ -132,17 +138,34 @@ export class TeamBoardSync implements TeamPart {
     // it here (a parent's sub-tasks reaching Done) reads as a change, and goes out like any other.
     if (action.type === 'board_issue') this.observe(action.issue, true);
     if (action.type === 'board_remove') this.removed(action.id);
+    // A Claude starting or stopping (not every word or step it says): its tasks say so to the team.
+    if (action.type === 'agent_event' && !QUIET_EVENTS.has(action.event)) this.runsChanged();
+  }
+
+  private runsChanged(): void {
+    const running = this.deps.running;
+    if (!running) return;
+    const doing = new Map<string, Issue[]>();
+    for (const issue of this.deps.board.list()) {
+      if (!this.team.teamed(issue.projectId)) continue;
+      const ws = worktreeDoing(issue, this.deps.live);
+      if (ws) doing.set(ws, [...(doing.get(ws) ?? []), issue]);
+    }
+    const now = new Set([...doing.keys()].filter((ws) => running(ws)));
+    const flipped = [...new Set([...now, ...this.runs])].filter((ws) => now.has(ws) !== this.runs.has(ws));
+    this.runs = now;
+    for (const ws of flipped) for (const issue of doing.get(ws) ?? []) this.observe(issue, true);
   }
 
   view(): Partial<TeamState> {
-    const working: Record<string, Array<{ peerId: string; name: string }>> = {};
+    const working: Record<string, Array<{ peerId: string; name: string; running?: true }>> = {};
     for (const byId of Object.values(this.tasks)) {
       for (const t of Object.values(byId)) {
         for (const [name, f] of Object.entries(t.fields)) {
           if (!name.startsWith('working.') || f.v !== true) continue;
           const peerId = name.slice(8);
           if (peerId === this.self) continue;
-          (working[t.id] ??= []).push({ peerId, name: this.team.nameOf(peerId) });
+          (working[t.id] ??= []).push({ peerId, name: this.team.nameOf(peerId), ...(t.fields[`running.${peerId}`]?.v === true ? { running: true as const } : {}) });
         }
       }
     }
@@ -168,14 +191,14 @@ export class TeamBoardSync implements TeamPart {
     const byId = this.tasks[issue.projectId];
     if (!byId || !this.team.teamed(issue.projectId)) return;
     const rec = byId[issue.id];
-    const doing = worktreeDoing(issue, this.deps.live) !== undefined;
-    const mine = fieldsOf(issue, this.self, doing);
+    const ws = worktreeDoing(issue, this.deps.live);
+    const mine = fieldsOf(issue, this.self, ws !== undefined, ws !== undefined && (this.deps.running?.(ws) ?? false));
     const changed: Record<string, Field> = {};
     for (const [name, value] of Object.entries(mine)) {
       const cur = rec?.fields[name];
       if (cur && canon(onBoard(name, cur.v, this.has)) === canon(value)) continue;
       // Nothing of mine to say yet (no one works on it, no deletion): only once it's something.
-      if (!cur && (value === null || value === false) && name.startsWith('working.')) continue;
+      if (!cur && (value === null || value === false) && isPresence(name)) continue;
       const v = cur ? fromBoard(name, value, cur.v, this.has) : value;
       if (cur && canon(v) === canon(cur.v)) continue;
       changed[name] = { v, l: this.tick(issue.projectId), a: this.self };
@@ -222,8 +245,8 @@ export class TeamBoardSync implements TeamPart {
     for (const [name, f] of Object.entries(d.fields)) {
       const check = fieldValue(name);
       if (!check?.safeParse(f.v).success) continue;
-      if (name.startsWith('working.') && name.slice(8) !== f.a) continue;
-      if (name === `working.${this.self}`) continue;
+      if (isPresence(name) && name.slice(8) !== f.a) continue;
+      if (name === `working.${this.self}` || name === `running.${this.self}`) continue;
       fields[name] = f;
     }
     const other = this.deps.board.get(d.id);
@@ -293,7 +316,7 @@ export class TeamBoardSync implements TeamPart {
           brief[name.slice(6) as BriefSection] = typeof v === 'string' ? v : '';
           by = { kind: 'person', id: f.a, name: this.team.nameOf(f.a) };
         } else if (name === 'estimate' || name === 'due' || name === 'assignee' || name === 'parent' || name === 'github') patch[name] = v ?? undefined;
-        else if (name !== 'deleted' && !name.startsWith('working.')) patch[name] = v;
+        else if (name !== 'deleted' && !isPresence(name)) patch[name] = v;
       }
       if (Object.keys(brief).length) patch.brief = brief;
       if (!Object.keys(patch).length && !added.length && !dropped.length) return existing;

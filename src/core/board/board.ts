@@ -8,6 +8,7 @@ import { unexplained } from './criteria.js';
 import { dropKeptFile, dropProofFolder, keepProofFile, keepProofFiles, letGoProofFile } from './proof-files.js';
 import {
   type Activity,
+  type AnyAssignee,
   type ActivityKind,
   type Actor,
   type Assignee,
@@ -39,6 +40,7 @@ import {
   isOpen,
   prefixFor,
   rankBetween,
+  personOf,
   renamedActors,
   worktreeOf,
 } from './model.js';
@@ -148,8 +150,9 @@ const oneLine = (text: string, max: number): string => text.replace(/\s+/g, ' ')
 const cleanLabels = (labels: readonly string[]): string[] => [...new Set(labels.map((l) => oneLine(l, 32).toLowerCase()).filter(Boolean))].slice(0, MAX_LABELS);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-const actorWords = (a: Assignee): string => (a.kind === 'person' ? a.name : `${a.ownerName}’s Claude`);
-const assigneeId = (a: Assignee | undefined): string => (!a ? '' : a.kind === 'person' ? `person:${a.id}` : `claude:${a.owner}`);
+const assigneeId = (a: Assignee | undefined): string => (a ? `person:${a.id}` : '');
+/** Whoever it's given to, a person: one given to someone's Claude (an older Mac, an older teammate) is theirs. */
+const personIn = (a: Assignee | null | undefined): Assignee | null | undefined => (a ? personOf(a as AnyAssignee) : a);
 const statusText = (from: string, to: string): string => `moved this from ${from} to ${to}`;
 /** How far along a status is, for a parent following its sub-tasks (Canceled isn't on the way). */
 const STAGE: Readonly<Record<IssueStatus, number>> = { backlog: 0, todo: 1, in_progress: 2, in_review: 3, in_plan: 3, done: 4, canceled: -1 };
@@ -281,7 +284,7 @@ export class Board {
       labels: cleanLabels(input.labels ?? []),
       ...(input.estimate ? { estimate: input.estimate } : {}),
       ...(input.due && DAY.test(input.due) ? { due: input.due } : {}),
-      ...(input.assignee ? { assignee: input.assignee } : {}),
+      ...(input.assignee ? { assignee: personOf(input.assignee as AnyAssignee) } : {}),
       ...(parent ? { parent: parent.id } : {}),
       ...(input.plan ? { plan: input.plan } : {}),
       ...(input.github ? { github: input.github } : {}),
@@ -331,9 +334,10 @@ export class Board {
       next.priority = patch.priority;
       notes.push({ kind: 'priority', text: patch.priority === 'none' ? 'removed the priority' : `set the priority to ${PRIORITY_INFO[patch.priority].label}`, was: issue.priority, now: patch.priority });
     }
-    if (patch.assignee !== undefined && !sameAssignee(patch.assignee ?? undefined, issue.assignee)) {
-      next.assignee = patch.assignee ?? undefined;
-      notes.push({ kind: 'assignee', text: patch.assignee ? `assigned this to ${actorWords(patch.assignee)}` : 'unassigned this', assignee: patch.assignee ?? null, was: assigneeId(issue.assignee), now: assigneeId(patch.assignee ?? undefined) });
+    const assignee = personIn(patch.assignee);
+    if (assignee !== undefined && !sameAssignee(assignee ?? undefined, issue.assignee)) {
+      next.assignee = assignee ?? undefined;
+      notes.push({ kind: 'assignee', text: assignee ? `assigned this to ${assignee.name}` : 'unassigned this', assignee, was: assigneeId(issue.assignee), now: assigneeId(assignee ?? undefined) });
     }
     if (patch.labels) {
       const labels = cleanLabels(patch.labels);
@@ -781,7 +785,7 @@ export class Board {
   applyTeam(ref: string, patch: Partial<Pick<Issue, 'title' | 'status' | 'priority' | 'labels' | 'estimate' | 'due' | 'assignee' | 'parent' | 'blockedBy' | 'related' | 'github'>> & { readonly brief?: Partial<Record<BriefSection, string>> }, add: readonly Activity[], drop: readonly string[], by: Actor): Issue {
     const issue = this.need(ref);
     const { brief: briefPatch, ...fields } = patch;
-    const next: Record<string, unknown> = { ...fields };
+    const next: Record<string, unknown> = { ...fields, ...(fields.assignee ? { assignee: personIn(fields.assignee) } : {}) };
     if (fields.status && fields.status !== issue.status) {
       next.rank = this.lastRank(fields.status);
       if (issue.needsChecks) next.needsChecks = undefined;
@@ -950,7 +954,7 @@ export class Board {
       if (!r.success) return [];
       // A draft cut short by a restart: the first line stays the title.
       const { drafting: _, ...issue } = r.data as unknown as Issue;
-      return [issue as Issue];
+      return [(issue.assignee ? { ...issue, assignee: personOf(issue.assignee as AnyAssignee) } : issue) as Issue];
     });
     // Tasks that don't read any more are kept beside it, not lost.
     if (dropped.length) {
@@ -1008,6 +1012,5 @@ function keepRevisions(revisions: readonly BriefRevision[]): BriefRevision[] {
 const followsWorktree = (issue: Issue, workspaceId: string): boolean => issue.worktrees.at(-1) === workspaceId || issue.carriedBy === workspaceId;
 
 function sameAssignee(a: Assignee | undefined, b: Assignee | undefined): boolean {
-  if (!a || !b) return a === b;
-  return a.kind === b.kind && (a.kind === 'person' ? a.id === (b as typeof a).id : a.owner === (b as Extract<Assignee, { kind: 'claude' }>).owner);
+  return !a || !b ? a === b : a.id === b.id;
 }

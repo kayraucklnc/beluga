@@ -208,7 +208,7 @@ function demoState(): DomainState {
     ],
   });
   // The board: tasks in two states, one with a worktree, a brief and a comment.
-  run({ type: 'board_init', state: { enabled: true, autoTasks: false, projects: { p1: { prefix: 'LND', next: 3 } }, issues: [issue('i1', 'LND-1', 'Protect the payment routes', 'in_review', { worktrees: ['w1'] }), issue('i2', 'LND-2', 'Retry failed webhooks', 'todo', { priority: 'high', assignee: { kind: 'claude', owner: ME, ownerName: 'kayra' } })] } });
+  run({ type: 'board_init', state: { enabled: true, autoTasks: false, projects: { p1: { prefix: 'LND', next: 3 } }, issues: [issue('i1', 'LND-1', 'Protect the payment routes', 'in_review', { worktrees: ['w1'] }), issue('i2', 'LND-2', 'Retry failed webhooks', 'todo', { priority: 'high', assignee: { kind: 'person', id: ME, name: 'kayra' } })] } });
   // What waits for you.
   run({ type: 'approval_add', approval: { id: 'ap1', kind: 'tool', title: 'Run rm -rf dist?', detail: 'Bash rm -rf dist', askedAt: T0 + 15, timeoutMs: 60_000, channel: 'ws:w2' } });
   run({
@@ -397,7 +397,7 @@ describe('the views of a known Mac', () => {
     expect(tasks.projects.map((p) => [p.id, p.icon, p.groups.map((g) => [g.status, g.tasks.map((t) => t.key)])])).toEqual([
       ['p1', ICON, [['in_review', ['LND-1']], ['todo', ['LND-2']]]],
     ]);
-    expect(tasks.projects[0]!.groups[1]!.tasks[0]).toMatchObject({ topic: 'task:i2', priority: 'high', assignee: 'your Claude', checks: { done: 1, total: 3 } });
+    expect(tasks.projects[0]!.groups[1]!.tasks[0]).toMatchObject({ topic: 'task:i2', priority: 'high', assignee: 'you', checks: { done: 1, total: 3 } });
     const page = TaskPageView.parse(viewOf(state, ctx, 'task:i1'));
     expect(page).toMatchObject({ key: 'LND-1', status: 'in_review', conv: 'conv:ws:w1', worktree: 'auth', project: 'landing' });
     expect(page.goal).toEqual({ text: 'Only signed-in users pay:\n\n[[code:0]]', code: [{ lang: 'ts', lines: 1 }] });

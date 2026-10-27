@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BRIEF_SECTIONS, ISSUE_STATUSES, PRIORITIES, SYNC_PROVIDERS } from '../core/board/model.js';
+import { BRIEF_SECTIONS, ISSUE_STATUSES, PRIORITIES, SYNC_PROVIDERS, personOf } from '../core/board/model.js';
 
 /**
  * Tasks (the board) in the API (see api.ts): the Mac app's Tasks view and task pages. You act
@@ -12,7 +12,8 @@ const status = z.enum(ISSUE_STATUSES);
 const priority = z.enum(PRIORITIES);
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const peer = z.string().min(1).max(80);
-const assignee = z.union([z.object({ kind: z.literal('person'), id: peer, name: z.string().min(1).max(64) }), z.object({ kind: z.literal('claude'), owner: peer, ownerName: z.string().min(1).max(64) })]);
+// A task is for a person (BLG-278); someone's Claude (an older screen) means them.
+const assignee = z.union([z.object({ kind: z.literal('person'), id: peer, name: z.string().min(1).max(64) }), z.object({ kind: z.literal('claude'), owner: peer, ownerName: z.string().min(1).max(64) })]).transform(personOf);
 const labels = z.array(z.string().min(1).max(32)).max(12);
 const provider = z.enum(SYNC_PROVIDERS);
 // The core checks the key's exact shape and says what's wrong.

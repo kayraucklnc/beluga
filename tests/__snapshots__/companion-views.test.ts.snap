@@ -1643,7 +1643,7 @@ Pull request #53",
             "status": "todo",
             "tasks": [
               {
-                "assignee": "your Claude",
+                "assignee": "you",
                 "checks": {
                   "done": 1,
                   "total": 3,

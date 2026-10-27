@@ -58,9 +58,8 @@ export function AssigneePicker({ value, onChange, children, align }: { value: As
         ...choices.map((c) => ({
           value: c.key,
           label: c.label,
-          section: c.assignee.kind === 'claude' && c.assignee.owner === self.id ? undefined : c.assignee.kind === 'person' && c.assignee.id === self.id ? undefined : 'People',
-          mark: c.assignee.kind === 'person' ? <Avatar name={c.assignee.name} id={c.assignee.id} size={16} /> : <Avatar name={c.assignee.ownerName} id={c.assignee.owner} claude size={16} />,
-          ...(c.assignee.kind === 'claude' ? { hint: 'Works on it in its worktree' } : {}),
+          section: c.assignee.id === self.id ? undefined : 'People',
+          mark: <Avatar name={c.assignee.name} id={c.assignee.id} size={16} />,
         })),
       ]}
       chosen={[assigneeKey(value)]}

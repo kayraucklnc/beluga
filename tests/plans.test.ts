@@ -201,7 +201,9 @@ describe('a draft stays off the board until approved', () => {
     expect(issues).toHaveLength(5);
     const byTitle = (t: string) => issues.find((i) => i.title === t)!;
     // The milestone being worked on is Ready (todo); later ones wait in the Backlog.
-    expect(byTitle('Auth on payment routes')).toMatchObject({ status: 'todo', origin: 'plan', estimate: 3, plan: { id: plan.id, milestone: 'safe', task: 'auth' }, assignee: { kind: 'claude' } });
+    expect(byTitle('Auth on payment routes')).toMatchObject({ status: 'todo', origin: 'plan', estimate: 3, plan: { id: plan.id, milestone: 'safe', task: 'auth' } });
+    // Claude's plan tasks are no one's (a task is for a person, BLG-278); yours are yours.
+    expect(byTitle('Auth on payment routes').assignee).toBeUndefined();
     expect(byTitle('Refund endpoint').status).toBe('backlog');
     expect(byTitle('Live keys').assignee).toMatchObject({ kind: 'person', id: 'p-me' });
     expect(byTitle('Receipts once').blockedBy).toEqual([byTitle('Idempotent webhooks').id]);

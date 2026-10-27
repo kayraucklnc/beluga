@@ -11,7 +11,8 @@ import { type Activity, type Actor, BRIEF_SECTIONS, type Issue } from '../board/
  *
  * What travels is the task's words and state only: worktrees, branches, pull requests, proof
  * files and run details stay on the Mac they belong to. "Ata is working on this" is a field of
- * Ata's own (`working.<peerId>`), true while one of Ata's worktrees does it.
+ * Ata's own (`working.<peerId>`), true while one of Ata's worktrees does it; `running.<peerId>`
+ * is true while Ata's Claude is at work there right now (BLG-278: the card shows it moving).
  */
 
 export interface Field {
@@ -120,8 +121,11 @@ export function digest(tasks: readonly SharedTask[]): string {
 
 // ---- a board task as fields, and back
 
-/** The fields a task has on this Mac (`working`: one of my worktrees does it now). */
-export function fieldsOf(issue: Issue, self: string, working: boolean): Record<string, unknown> {
+/** Someone's own presence on a task (`working.<peerId>`, `running.<peerId>`): only they say it, and it never reaches the board. */
+export const isPresence = (name: string): boolean => name.startsWith('working.') || name.startsWith('running.');
+
+/** The fields a task has on this Mac (`working`: one of my worktrees does it now; `running`: its Claude is at work). */
+export function fieldsOf(issue: Issue, self: string, working: boolean, running = false): Record<string, unknown> {
   const out: Record<string, unknown> = {
     title: issue.title,
     status: issue.status,
@@ -136,6 +140,7 @@ export function fieldsOf(issue: Issue, self: string, working: boolean): Record<s
     github: issue.github ?? null,
     deleted: false,
     [`working.${self}`]: working ? true : null,
+    [`running.${self}`]: working && running ? true : null,
   };
   for (const s of BRIEF_SECTIONS) out[`brief.${s}`] = issue.brief[s] ?? '';
   return out;

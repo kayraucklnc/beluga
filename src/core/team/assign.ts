@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Board } from '../board/board.js';
-import type { Actor, Assignee, Issue } from '../board/model.js';
+import { type Actor, type AnyAssignee, type Issue, personOf } from '../board/model.js';
 import type { TaskView } from '../gateway/model.js';
 import { isFinal } from '../gateway/model.js';
 import type { Action } from '../store.js';
@@ -11,13 +11,13 @@ import type { TeamAssignment, TeamState } from './model.js';
 import type { TeamBoards, TeamPart } from './service.js';
 
 /**
- * Giving a team task to a teammate or their Claude (BLG-223).
+ * Giving a team task to a teammate (BLG-223). A task is for a person, never a Claude (BLG-278).
  *
  * - **To a teammate:** the assignee travels with the board. On their Mac it's in My Tasks, and a
  *   teammate's change that makes it theirs notifies them and waits in their inbox (`assigned`; the
  *   phone's NeedsYou card, Got It) until they've seen it.
  * - **Not to a teammate's Claude** (BLG-262): giving one a task only pinged them to start, so it's
- *   gone (board-handlers.ts refuses it). You ask their Claude in a chat with them, @-mentioning the
+ *   gone (the board makes one given to someone's Claude theirs). You ask their Claude in a chat with them, @-mentioning the
  *   task. A request sent before that still lands on the task when it's answered: its summary and
  *   files as proof, and a note from their Claude (the note travels with the board).
  *
@@ -72,7 +72,7 @@ export class TeamAssign implements TeamPart {
       const self = this.team.self;
       const gone = this.inbox.filter((a) => {
         const i = this.deps.board.get(a.issueId);
-        return !i || !((i.assignee?.kind === 'person' && i.assignee.id === self) || (i.assignee?.kind === 'claude' && i.assignee.owner === self));
+        return !i || i.assignee?.id !== self;
       });
       if (gone.length) {
         this.inbox = this.inbox.filter((a) => !gone.includes(a));
@@ -82,23 +82,18 @@ export class TeamAssign implements TeamPart {
     }
   }
 
-  /** A teammate gave it to you (or your Claude). */
+  /** A teammate gave it to you (an older teammate's "your Claude" is you too). */
   private theirs(issue: Issue, f: Field, by: string): void {
     const self = this.team.self;
-    const a = f.v as Assignee | null;
-    if (!a) return;
-    const toMe = a.kind === 'person' && a.id === self;
-    const toMyClaude = a.kind === 'claude' && a.owner === self;
-    if (!toMe && !toMyClaude) return;
+    const a = f.v ? personOf(f.v as AnyAssignee) : null;
+    if (a?.id !== self) return;
     // Only who set it counts (a teammate passing it on isn't who gave it).
     const giver = f.a === self ? by : f.a;
     const name = this.team.nameOf(giver);
-    if (toMe) {
-      this.inbox = [...this.inbox.filter((x) => x.issueId !== issue.id), { issueId: issue.id, key: issue.key, title: issue.title, projectId: issue.projectId, byId: giver, by: name, at: this.team.now() }].slice(-50);
-      this.save();
-      this.team.publish();
-    }
-    this.team.deps.notify?.({ kind: 'needsYou', tag: 'task', title: toMe ? `${name} gave you ${issue.key}` : `${name} gave your Claude ${issue.key}`, body: toMe ? issue.title : `${issue.title}. Their request comes to you as usual.`, ...(toMe ? { need: `team-task:${issue.id}` } : {}), key: `team-assign:${issue.id}:${f.l}:${f.a}` });
+    this.inbox = [...this.inbox.filter((x) => x.issueId !== issue.id), { issueId: issue.id, key: issue.key, title: issue.title, projectId: issue.projectId, byId: giver, by: name, at: this.team.now() }].slice(-50);
+    this.save();
+    this.team.publish();
+    this.team.deps.notify?.({ kind: 'needsYou', tag: 'task', title: `${name} gave you ${issue.key}`, body: issue.title, need: `team-task:${issue.id}`, key: `team-assign:${issue.id}:${f.l}:${f.a}` });
   }
 
   /** Their Claude's answer to a request sent before BLG-262: proof and a note on the task. */
