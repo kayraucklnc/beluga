@@ -1,7 +1,7 @@
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
-import { OFFER_DETAIL, offerWords, workingOn, workingWords } from '../core/team/model.js';
+import { OFFER_DETAIL, offerWords, waitingOn, waitingWords, workingOn, workingWords } from '../core/team/model.js';
 import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived, isEpic, issueById, progressOf as boardProgress } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
@@ -801,6 +801,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
   const conv = taskConv(state, i);
   const who = assigneeWords(state, i);
   const working = workingWords(workingOn(state.team, i.id).map((p) => p.name));
+  const waiting = waitingWords(waitingOn(state.team, i.id));
   const epicKey = i.parent ? issueById(state.board, i.parent)?.key : undefined;
   return {
     id: clip(i.id, 200),
@@ -814,6 +815,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
     ...(conv ? { conv } : {}),
     ...(i.pr ? { pr: { number: i.pr.number, state: i.pr.state } } : {}),
     ...(working ? { working: clip(working, 200) } : {}),
+    ...(waiting ? { waiting: clip(waiting, 240) } : {}),
     ...(isEpic(state.board, i) ? { epic: boardProgress(state.board, i) } : {}),
     ...(epicKey ? { epicKey: clip(epicKey, 40) } : {}),
     updatedAt: Math.round(i.updatedAt),
