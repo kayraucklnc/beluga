@@ -66,6 +66,9 @@
   --info: #2f6cb3;
   /* Claude's sub-agents at work: violet, apart from the main Claude's copper. */
   --subagent: #7656c9;
+  /* The bigger work at work: a worktree in teal, a plan in pink (each with its own loader). */
+  --worktree: #24877f;
+  --plan: #b84d8a;
   --code-bg: #f4f4f6;
   --term-bg: #fbfbfc;
 }
@@ -95,6 +98,8 @@
   --error: #ef7a72;
   --info: #79aef0;
   --subagent: #ab93f3;
+  --worktree: #66c6bb;
+  --plan: #e892c3;
   --code-bg: #242427;
   --term-bg: #17171a;
 }

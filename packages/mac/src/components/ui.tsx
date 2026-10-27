@@ -88,10 +88,13 @@ export function Badge({ count, urgent }: { count: number; urgent?: boolean }) {
   return <span className={cx(s.badge, urgent && s.badgeUrgent)}>{count > 99 ? '99+' : count}</span>;
 }
 
-/** A status dot. `live` pulses softly (Claude is working). `subagent`: one of Claude's sub-agents, in its own color. */
-export function Dot({ tone, live }: { tone: 'ok' | 'warn' | 'error' | 'info' | 'claude' | 'subagent' | 'muted'; live?: boolean }) {
+/**
+ * A status dot. `live` pulses softly (Claude is working). `subagent`: one of Claude's sub-agents, in
+ * its own color. `worktree` and `plan`: the bigger work, each in its color with the orbiting loader.
+ */
+export function Dot({ tone, live }: { tone: 'ok' | 'warn' | 'error' | 'info' | 'claude' | 'subagent' | 'worktree' | 'plan' | 'muted'; live?: boolean }) {
   // At work: the dot matrix, in the dot's color (no pulsing ring).
-  if (live) return <DotMatrix className={s[`live_${tone}`]} size={13} />;
+  if (live) return <DotMatrix className={s[`live_${tone}`]} size={13} pattern={tone === 'worktree' || tone === 'plan' ? 'orbit' : 'petals'} />;
   return <span className={cx(s.dot, s[`dot_${tone}`])} aria-hidden="true" />;
 }
 

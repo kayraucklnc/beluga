@@ -48,8 +48,11 @@ export function DotMark({ tone, live, signal }: { tone: Parameters<typeof Dot>[0
   );
 }
 
-/** A conversation's mark. `fallback`: what an idle row shows instead (its git state, say). */
-export function SignalMark({ signal, fallback = null }: { signal: Signal; fallback?: ReactNode }) {
+/**
+ * A conversation's mark. `fallback`: what an idle row shows instead (its git state, say). `working`:
+ * whose loader it shows at work (a worktree's own, teal and orbiting; Claude's otherwise).
+ */
+export function SignalMark({ signal, fallback = null, working = 'claude' }: { signal: Signal; fallback?: ReactNode; working?: 'claude' | 'worktree' }) {
   switch (signal.level) {
     case 'needs':
       return <NeedMark need={signal.need} />;
@@ -60,7 +63,7 @@ export function SignalMark({ signal, fallback = null }: { signal: Signal; fallba
         </span>
       );
     case 'working':
-      return <DotMark tone="claude" live signal="working" />;
+      return <DotMark tone={working} live signal="working" />;
     default:
       return <>{fallback}</>;
   }
