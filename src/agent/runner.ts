@@ -30,6 +30,7 @@ import { ViewShelf, createViewTools } from './view-tools.js';
 import { createTaskTools } from './task-tools.js';
 import { createMacTools } from './mac-tools.js';
 import { createPhoneTools } from './phone-tools.js';
+import { ownerMcpServers } from './owner-mcp.js';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, RunProcess, Steer } from './types.js';
 import { keepLines, trackedSpawn } from './claude-process.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
@@ -205,7 +206,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
+        // Your own MCP servers first, so a name of Beluga's always means Beluga's.
+        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {

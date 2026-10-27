@@ -30,6 +30,8 @@ export interface AgentRunInput {
   readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Your environment variables for this run, over Beluga's own (only for runs you asked for). */
   readonly env?: Readonly<Record<string, string>>;
+  /** Your own runs: your own MCP servers from Claude Code (agent/owner-mcp.ts); never a friend's or a guest's. */
+  readonly ownerMcp?: boolean;
   /** Auto-compact threshold (percent) for Claude Code's own compaction; unset: auto-compact is off. */
   readonly autoCompactAt?: number;
   /** A folder (relative to the run's folder, git-ignored) for screenshots and scratch output; the owner watches it live. */
