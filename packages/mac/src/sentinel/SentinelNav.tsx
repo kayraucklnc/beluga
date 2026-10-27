@@ -4,15 +4,14 @@ import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/beluga.js';
 import { Row } from '../layout/sidebar-parts.js';
 import { sameDeep } from '../lib/stable.js';
-import { anyRunning, sidebarLine } from './sentinel-model.js';
-import { dashboardLine } from './numbers-model.js';
+import { anyRunning, isSentinelView, sidebarLine } from './sentinel-model.js';
 import s from './sentinel-nav.module.css';
 
-/** Views that are Sentinel's (the row is selected on each). */
-export const isSentinelView = (kind: string): boolean => kind === 'sentinel' || kind === 'sentinel_page' || kind === 'sentinel_run';
+export { isSentinelView };
 
 /**
- * The sidebar's Sentinel row, always there under Work. Its line (the row's hint): how many watch
+ * The sidebar's Sentinel row, always there under Work: the one row for the whole section (its
+ * Sentinels, Dashboard and Chat tabs are on its page). Its line (the row's hint): how many watch
  * and when the next runs, or "Paused after 3 failures" with the problem mark; a live dot while a run goes.
  */
 export function SentinelNav() {
@@ -27,18 +26,8 @@ export function SentinelNav() {
       onClick={() => actions.run({ type: 'view', view: { kind: 'sentinel' } })}
       trailing={live ? <Dot tone="claude" live /> : line.problem ? <Icon name="alert" size={12} className={s.alert} /> : null}
       data-sentinel-row=""
+      aria-current={selected ? 'page' : undefined}
       data-problem={line.problem || undefined}
     />
   );
-}
-
-/**
- * The sidebar's Dashboard row, under Sentinel (docs/sentinel.md §10): how many numbers sentinels
- * keep, or "Fetching… 2 of 3" while a Refresh goes. Shown once Sentinel runs here.
- */
-export function DashboardNav() {
-  const actions = useActions();
-  const { line, selected, on } = useApp((st) => ({ line: dashboardLine(st.sentinel), selected: st.view.kind === 'dashboard', on: st.sentinel.enabled }), sameDeep);
-  if (!on) return null;
-  return <Row icon={<Icon name="gauge" size={14} />} label="Dashboard" detail={line} selected={selected} onClick={() => actions.run({ type: 'view', view: { kind: 'dashboard' } })} data-dashboard-row="" />;
 }

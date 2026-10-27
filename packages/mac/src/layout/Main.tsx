@@ -36,6 +36,8 @@ const SentinelView = lazy(() => import('../sentinel/SentinelView.js').then((m) =
 const SentinelPage = lazy(() => import('../sentinel/SentinelPage.js').then((m) => ({ default: m.SentinelPage })));
 const SentinelRunPage = lazy(() => import('../sentinel/RunPage.js').then((m) => ({ default: m.RunPage })));
 const DashboardPage = lazy(() => import('../sentinel/DashboardPage.js').then((m) => ({ default: m.DashboardPage })));
+const SentinelChatTab = lazy(() => import('../sentinel/SentinelChat.js').then((m) => ({ default: m.SentinelChat })));
+const SentinelSection = lazy(() => import('../sentinel/SentinelSection.js').then((m) => ({ default: m.SentinelSection })));
 const PhoneView = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhoneView })));
 
 /** A worktree being made: its page shows at once, and becomes its conversation when git is done. */
@@ -104,14 +106,17 @@ function Route() {
       return <PlanPage key={view.id} id={view.id} task={view.task} />;
     case 'team_plan':
       return <WorkFrame page="plans"><SharedPlanPage key={`${view.owner}/${view.id}`} owner={view.owner} id={view.id} /></WorkFrame>;
+    // Sentinel's three tabs (docs/sentinel.md §10): the list, the Dashboard and the Chat.
     case 'sentinel':
-      return <SentinelView />;
+      return <SentinelSection tab="sentinels"><SentinelView /></SentinelSection>;
     case 'sentinel_page':
       return <SentinelPage key={view.id} id={view.id} />;
     case 'sentinel_run':
       return <SentinelRunPage key={view.runId} runId={view.runId} />;
     case 'dashboard':
-      return <DashboardPage {...(view.id ? { id: view.id } : {})} />;
+      return <SentinelSection tab="dashboard"><DashboardPage {...(view.id ? { id: view.id } : {})} /></SentinelSection>;
+    case 'sentinel_chat':
+      return <SentinelSection tab="chat"><SentinelChatTab key={view.chat ?? 'main'} /></SentinelSection>;
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':

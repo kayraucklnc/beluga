@@ -92,7 +92,8 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     ...(state.sentinel.enabled
       ? [
           { id: 'sentinel:open', label: 'Go to Sentinel', icon: 'sentinel' as const, hint: 'Watchers that run Claude, a script or a notification on a schedule', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'every morning', 'brief', 'recurring'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'sentinel' } }) },
-          { id: 'dashboard:open', label: 'Go to Dashboard', icon: 'gauge' as const, hint: 'The numbers your sentinels keep, as tiles', keywords: ['dashboard', 'numbers', 'metrics', 'kpi', 'stats', 'revenue', 'subscribers'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'dashboard' } }) },
+          { id: 'dashboard:open', label: 'Go to Dashboard', icon: 'gauge' as const, hint: 'Sentinel’s dashboard: what your sentinels keep, as tiles', keywords: ['dashboard', 'numbers', 'metrics', 'kpi', 'stats', 'revenue', 'subscribers', 'tiles'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'dashboard' } }) },
+          { id: 'sentinel:chat', label: 'Go to Sentinel Chat', icon: 'chat' as const, hint: 'Talk to your Claude about all of Sentinel', keywords: ['sentinel', 'chat', 'ask', 'watchers'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'sentinel_chat', ...(ctx.state.sentinel.chats?.active ? { chat: ctx.state.sentinel.chats.active } : {}) } }) },
           { id: 'sentinel:new', label: 'New Sentinel…', icon: 'sentinel' as const, hint: 'Say what it should do, start from a recipe, or build it yourself', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'recipe', 'automate'], run: () => openSheet({ kind: 'new_sentinel' }) },
         ]
       : []),

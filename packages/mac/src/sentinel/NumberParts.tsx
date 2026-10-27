@@ -7,7 +7,7 @@ import { DataTable } from '../components/views/Table.js';
 import { useViewData } from '../components/views/use-view-data.js';
 import { Segmented, cx } from '../components/ui.js';
 import type { Compare } from '@beluga/core/sentinel/metrics.js';
-import { COMPARE_CHOICES, type NumberWords, chartViewOf, tableViewOf } from './numbers-model.js';
+import { COMPARE_CHOICES, type NumberWords, chartViewOf, seriesViewOf, tableViewOf } from './numbers-model.js';
 import v from '../components/views/views.module.css';
 import n from './numbers.module.css';
 
@@ -81,8 +81,18 @@ function ChartBody({ view, kind, onRun }: { view: View; kind: 'line' | 'area' | 
   );
 }
 
-/** A rows metric as the chat's table, a page at a time. */
-export function RowsTable({ metric, pageSize = 8 }: { metric: MetricSeries; pageSize?: number }) {
+/** A series metric's latest array, as the chat's chart (each point's label along the bottom). */
+export function SeriesChart({ metric, kind = 'bar', height = 220 }: { metric: MetricSeries; kind?: 'line' | 'area' | 'bar'; height?: number }) {
+  const view = useMemo(() => {
+    const r = readView(seriesViewOf(metric, kind, height));
+    return r.ok ? r.view : undefined;
+  }, [metric, kind, height]);
+  if (!view) return null;
+  return <ChartBody view={view} kind={kind} />;
+}
+
+/** A rows metric (or a list from a step's output) as the chat's table, a page at a time. */
+export function RowsTable({ metric, pageSize = 8 }: { metric: Pick<MetricSeries, 'rows' | 'columns'>; pageSize?: number }) {
   const view = useMemo(() => {
     const r = readView(tableViewOf(metric, pageSize));
     return r.ok ? r.view : undefined;

@@ -20,7 +20,7 @@ const FROM: ReadonlyArray<{ readonly value: MeasureFrom; readonly label: string;
   { value: 'claude', label: 'What Claude keeps', description: 'The Claude step before calls sentinel_measure for each one' },
 ];
 
-type UnitChoice = MetricUnit | 'rows';
+type UnitChoice = MetricUnit | 'rows' | 'series' | 'output';
 const UNITS: ReadonlyArray<{ readonly value: UnitChoice; readonly label: string }> = [
   { value: 'count', label: 'A count' },
   { value: 'currency:USD', label: 'Dollars' },
@@ -31,6 +31,8 @@ const UNITS: ReadonlyArray<{ readonly value: UnitChoice; readonly label: string 
   { value: 'bytes', label: 'Bytes' },
   { value: 'plain', label: 'A plain number' },
   { value: 'rows', label: 'Rows (a table)' },
+  { value: 'series', label: 'A series (a whole array)' },
+  { value: 'output', label: 'The output itself' },
 ];
 const BETTER: ReadonlyArray<{ readonly value: Better; readonly label: string; readonly description: string }> = [
   { value: 'up', label: 'Up is good', description: 'A rise shows green' },
@@ -46,7 +48,7 @@ const SOURCE_KINDS: ReadonlyArray<{ readonly value: Source['kind']; readonly lab
 ];
 const KEEP = [20, 50, 100, ROWS_KEPT] as const;
 
-const unitOf = (m: MetricSpec): UnitChoice => (m.kind === 'rows' ? 'rows' : (m.unit ?? 'count'));
+const unitOf = (m: MetricSpec): UnitChoice => (m.kind === 'rows' || m.kind === 'series' || m.kind === 'output' ? m.kind : (m.unit ?? 'count'));
 
 function newSource(kind: Source['kind']): Source {
   switch (kind) {
@@ -144,9 +146,9 @@ function MetricRow({ m, index, from, change, remove }: { m: MetricSpec; index: n
         size="small"
         value={unit}
         options={UNITS.some((u) => u.value === unit) ? UNITS : [...UNITS, { value: unit, label: unit }]}
-        onChange={(u) => change(u === 'rows' ? { kind: 'rows', unit: undefined, better: 'none' } : { kind: undefined, unit: u })}
+        onChange={(u) => change(u === 'rows' || u === 'output' ? { kind: u, unit: undefined, better: 'none' } : u === 'series' ? { kind: 'series', unit: undefined } : { kind: undefined, unit: u })}
       />
-      {m.kind === 'rows' ? <span /> : <Select<Better> label={`Which way number ${index + 1} is good`} size="small" value={m.better ?? 'up'} options={BETTER} onChange={(better) => change({ better })} />}
+      {m.kind === 'rows' || m.kind === 'output' ? <span /> : <Select<Better> label={`Which way number ${index + 1} is good`} size="small" value={m.better ?? 'up'} options={BETTER} onChange={(better) => change({ better })} />}
       <IconButton icon="x" label={`Remove ${m.label || m.name}`} onClick={remove} />
     </div>
   );

@@ -720,6 +720,14 @@ export function askLine(ask: SentinelAsk | undefined, live: { readonly running: 
   return { who: 'done', text: ask.answer || 'Done' };
 }
 
+/** Claude's words with each `sentinel:<id>` it names said by name (“Open pull requests”), as a one-line status shows them. */
+export function namedLine(text: string, nameOf: (id: string) => string | undefined): string {
+  return text.replace(/`sentinel:([\w-]+)`/g, (m, id: string) => {
+    const name = nameOf(id);
+    return name ? `“${name}”` : m;
+  });
+}
+
 /** A tool step in plain words ("mcp__beluga_sentinel__sentinel_update" → "changing the sentinel"). */
 function toolWords(line: string): string {
   if (/sentinel_update/.test(line)) return 'changing the sentinel';
@@ -777,3 +785,15 @@ export const withModel = (steps: readonly Step[], model: string): Step[] =>
 export const hasChat = (run: Pick<RunSummary, 'channel' | 'steps'>): boolean => Boolean(run.channel ?? run.steps.some((s) => s.channel));
 
 export const isRunning = (state: RunState): boolean => state === 'running' || state === 'queued';
+
+// ---------------------------------------------------------------- the section's tabs (docs/sentinel.md §10)
+
+/** Sentinel's three tabs, each a view: the list, the Dashboard, the Chat. */
+export type SentinelTab = 'sentinels' | 'dashboard' | 'chat';
+
+/** Views that are Sentinel's: the sidebar's row is selected, the toolbar says Sentinel, they get the whole window. */
+export const SENTINEL_VIEWS: ReadonlySet<string> = new Set(['sentinel', 'dashboard', 'sentinel_chat', 'sentinel_page', 'sentinel_run']);
+export const isSentinelView = (kind: string): boolean => SENTINEL_VIEWS.has(kind);
+
+/** The tab a Sentinel view is on (a sentinel's page and a run's page are the list's). */
+export const sentinelTabOf = (kind: string): SentinelTab => (kind === 'dashboard' ? 'dashboard' : kind === 'sentinel_chat' ? 'chat' : 'sentinels');

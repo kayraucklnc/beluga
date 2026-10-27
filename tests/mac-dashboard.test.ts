@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { readView } from '../src/shared/view-spec.js';
 import type { Dashboard } from '../src/core/sentinel/dashboard-model.js';
 import { NO_SENTINEL, type MetricSeries, type SentinelState } from '../src/core/sentinel/model.js';
-import { COMPARE_CHOICES, chartRows, chartViewOf, dashboardLine, metricChoices, metricsOf, numberWords, refreshLine, tableViewOf, tileCaption, tileNote, tileWords } from '../packages/mac/src/sentinel/numbers-model.js';
+import { COMPARE_CHOICES, chartRows, chartViewOf, draftsOf, jsonFence, metricChoices, metricsOf, numberWords, outputTable, refreshLine, seriesViewOf, stepChoices, tableViewOf, tileCaption, tileNote, tileWords } from '../packages/mac/src/sentinel/numbers-model.js';
+import { isSentinelView, namedLine, sentinelTabOf } from '../packages/mac/src/sentinel/sentinel-model.js';
+import { panelFits } from '../packages/mac/src/lib/panel-model.js';
 
 /** Numbers on the Mac (docs/sentinel.md §10): a number tile's words, charts and tables as the chat's views, Add a Tile's list, the sidebar's line. */
 
@@ -44,7 +46,7 @@ const board: Dashboard = {
   tiles: [
     { id: 'a', kind: 'number', width: 1, metric: { sentinelId: 'sn_s', metric: 'revenue' }, compare: 'week' },
     { id: 'b', kind: 'number', width: 1, metric: { sentinelId: 'sn_s', metric: 'failed' } },
-    { id: 'c', kind: 'chart', width: 3, metrics: [{ sentinelId: 'sn_s', metric: 'revenue' }, { sentinelId: 'sn_p', metric: 'home' }] },
+    { id: 'c', kind: 'series', width: 3, metrics: [{ sentinelId: 'sn_s', metric: 'revenue' }, { sentinelId: 'sn_p', metric: 'home' }] },
     { id: 'd', kind: 'table', width: 3, metric: { sentinelId: 'sn_j', metric: 'jobs' } },
     { id: 'e', kind: 'text', width: 2, sentinelId: 'sn_s' },
     { id: 'f', kind: 'divider', width: 3, title: 'Money' },
@@ -100,11 +102,27 @@ describe('numbers on the Mac', () => {
     ]);
   });
 
-  it('the sidebar’s Dashboard line', () => {
-    expect(dashboardLine({ metrics: {} })).toBe('No numbers yet');
-    expect(dashboardLine({ metrics: {}, dashboards: [board] })).toBe('Waiting for the first number');
-    expect(dashboardLine(state)).toBe('4 numbers');
-    expect(dashboardLine({ ...state, dashboards: [board, { ...board, id: 'db2' }] })).toBe('4 numbers · 2 dashboards');
-    expect(dashboardLine({ ...state, refreshing: { db: { done: 1, total: 2 } } })).toBe('Fetching… 2 of 2');
+  it('Sentinel is one section with three tabs, each a view of its own: the sidebar’s row, the toolbar and the whole window are Sentinel’s', () => {
+    for (const kind of ['sentinel', 'dashboard', 'sentinel_chat', 'sentinel_page', 'sentinel_run']) expect(isSentinelView(kind)).toBe(true);
+    expect(isSentinelView('tasks')).toBe(false);
+    expect([sentinelTabOf('sentinel'), sentinelTabOf('dashboard'), sentinelTabOf('sentinel_chat'), sentinelTabOf('sentinel_page')]).toEqual(['sentinels', 'dashboard', 'chat', 'sentinels']);
+    expect([panelFits({ kind: 'dashboard' }), panelFits({ kind: 'sentinel_chat' }), panelFits({ kind: 'room' })]).toEqual([false, false, true]);
+  });
+
+  it('a kept array as a chart, a step’s output as a tree or a table, the steps an output can show, the drafts Claude made', () => {
+    const byDay: MetricSeries = { ...revenue, name: 'by-day', label: 'Signups by day', unit: 'count', kind: 'series', series: [{ x: 'Mon', y: 18 }, { x: 'Tue', y: 22 }], rowsRunId: 'r9' };
+    const chart = readView(seriesViewOf(byDay, 'bar', 180));
+    expect(chart.ok && { chart: chart.view.chart, x: chart.view.x, rows: chart.view.rows.length, height: chart.view.height }).toEqual({ chart: 'bar', x: 'x', rows: 2, height: 180 });
+    expect(jsonFence('{"a":1}')).toBe('```json\n{\n  "a": 1\n}\n```');
+    expect(outputTable([{ a: 1, b: { c: 2 } }, { a: 3 }])).toEqual({ columns: ['a', 'b'], rows: [{ a: 1, b: '{"c":2}' }, { a: 3, b: null }] });
+    const withSteps: SentinelState = { ...state, items: [{ ...state.items[0]!, steps: [{ id: 'st_1', kind: 'http', name: 'Ask Stripe', method: 'GET', url: 'https://api.stripe.com', headers: {}, timeoutSec: 30 }, { id: 'st_2', kind: 'notify', name: 'Tell me', phone: false }] }] };
+    expect(stepChoices(withSteps, () => 'bob-api').map((c) => [c.label, c.kind])).toEqual([['Ask Stripe', 'http']]);
+    const out: Dashboard['tiles'][number] = { id: 'o', kind: 'output', width: 3, step: { sentinelId: 'sn_s', stepId: 'st_1' } };
+    expect(tileWords({ ...withSteps, outputs: { sn_s: { st_1: { runId: 'r7', at: T, format: 'json', text: '{"a":1}' } } } }, board, out)).toEqual({ title: 'Ask Stripe', text: '```json\n{\n  "a": 1\n}\n```' });
+    const asked: SentinelState = { ...state, items: [...state.items, sentinel('sn_new', 'Open pull requests', { paused: true })], dashboardAsks: { db: { channel: 'c', startedAt: 0, state: 'done', text: 'the open PR count', made: ['sn_new', 'sn_s'] } } };
+    expect(draftsOf(asked, 'db')).toEqual([{ id: 'sn_new', name: 'Open pull requests' }]);
+    expect(tileCaption(asked, { id: 'n', kind: 'number', width: 1, metric: { sentinelId: 'sn_new', metric: 'open-prs' } }).state).toBe('draft');
+    expect(tileNote('draft')).toBe('draft: turn it on');
+    expect(namedLine('I set up `sentinel:sn_new` and `sentinel:sn_x`.', (id) => (id === 'sn_new' ? 'Open pull requests' : undefined))).toBe('I set up “Open pull requests” and `sentinel:sn_x`.');
   });
 });

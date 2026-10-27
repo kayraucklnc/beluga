@@ -20,7 +20,7 @@ import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
 import { RequestsNav } from '../gateway/RequestsNav.js';
 import { WorkNav } from '../work/WorkNav.js';
-import { DashboardNav, SentinelNav } from '../sentinel/SentinelNav.js';
+import { SentinelNav } from '../sentinel/SentinelNav.js';
 import { AssistantNav } from './AssistantNav.js';
 import { PhoneNav } from '../phone/PhoneNav.js';
 import { footerStatus } from '../views/room/connection-model.js';
@@ -129,7 +129,7 @@ export function Sidebar() {
               />
             );
             // Overview, Work (Tasks, GitHub's issues and Plans in one row, BLG-197), Sentinel and its Dashboard, then Chat.
-            return n.kind === 'overview' ? [row, <WorkNav key="work" />, <SentinelNav key="sentinel" />, <DashboardNav key="dashboard" />] : row;
+            return n.kind === 'overview' ? [row, <WorkNav key="work" />, <SentinelNav key="sentinel" />] : row;
           })}
           {/* Files: folders friends share with you (over the network), and the room's (BLG-205). */}
           <Row

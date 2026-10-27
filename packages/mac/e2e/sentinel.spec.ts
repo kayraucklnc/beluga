@@ -2,13 +2,14 @@ import path from 'node:path';
 import { expect, test, type Page } from './fixtures.js';
 
 /**
- * Sentinel (docs/sentinel.md §3) on the demo's ten sentinels: the list, Morning brief's page and
+ * Sentinel (docs/sentinel.md §3) on the demo's eleven sentinels: the list, Morning brief's page and
  * Run Now, a run's page with its report, the merge waiting on Fix what broke, and the event
  * triggers (Uptime guard's page, the webhook's URL), then a recipe made and turned on (Nightly
  * tests, with the sentinel that runs after it fails); then numbers (§10): Stripe revenue's Numbers
- * card and its chart over time, the Keep the numbers step, and the Dashboard (tabs, compare, Refresh,
- * Add a Tile with its preview, dragging a tile, Describe it). Screenshots in light and dark go to
- * .beluga/scratch/sentinel-*.png.
+ * card and its chart over time, the Keep the numbers step; then the section's three tabs
+ * (Sentinels · Dashboard · Chat), the Dashboard with every kind of tile, Add a Tile by description
+ * making a draft sentinel, and the Sentinel chat (§12) with a delete that asks first. Screenshots
+ * in light and dark go to .beluga/scratch/sentinel-*.png.
  */
 
 const shots = path.join(import.meta.dirname, '..', '..', '..', '.beluga', 'scratch');
@@ -36,7 +37,7 @@ test.describe.configure({ mode: 'serial' });
 test('the list shows the demo’s sentinels, grouped by project, with their last runs', async ({ page }) => {
   await openList(page);
   const rows = main(page).locator('[data-sentinel]');
-  await expect(rows).toHaveCount(10);
+  await expect(rows).toHaveCount(11);
   await expect(main(page).getByRole('row', { name: /^Morning brief, Every day at 7:00/ })).toContainText('Done');
   await expect(main(page).getByRole('row', { name: /^Nightly tests/ })).toContainText('Paused after 3 failures in a row');
   await expect(main(page).getByRole('row', { name: /^Fix what broke/ })).toContainText('Needs you');
@@ -46,7 +47,7 @@ test('the list shows the demo’s sentinels, grouped by project, with their last
   await page.getByRole('tab', { name: /Paused/ }).click();
   await expect(rows).toHaveCount(2);
   await page.getByRole('tab', { name: /^All/ }).click();
-  await expect(rows).toHaveCount(10);
+  await expect(rows).toHaveCount(11);
   await shoot(page, 'list');
 });
 
@@ -276,76 +277,150 @@ test('Keep the numbers on a page: what it reads, each number with where it is, i
   await shoot(page, 'measure-step');
 });
 
-test('the Dashboard: tabs, tiles that say paused quietly, compare, Refresh one at a time', async ({ page }) => {
-  await page.goto('/');
-  const row = sidebar(page).getByRole('button', { name: /^Dashboard/ });
-  // Its line (the row's hint): how many numbers sentinels keep.
-  await expect(row).toHaveAttribute('title', '7 numbers · 2 dashboards');
-  await row.click();
+test('one Sentinel row, three tabs: Sentinels · Dashboard · Chat; the old Dashboard links land on its tab', async ({ page }) => {
+  await openList(page);
+  // No Dashboard row of its own in the sidebar: it's Sentinel's.
+  await expect(sidebar(page).getByRole('button', { name: /^Dashboard/ })).toHaveCount(0);
+  const tabs = main(page).getByRole('tablist', { name: 'Sentinel' });
+  await expect(tabs.getByRole('tab', { name: 'Sentinels' })).toHaveAttribute('aria-selected', 'true');
+  await tabs.getByRole('tab', { name: 'Dashboard' }).click();
+  await expect(main(page).locator('[data-dashboard]')).toBeVisible({ timeout: 20_000 });
+  await expect(tabs.getByRole('tab', { name: 'Dashboard' })).toHaveAttribute('aria-selected', 'true');
+  // The sidebar's Sentinel row stays selected on every tab.
+  await expect(sidebar(page).getByRole('button', { name: /^Sentinel/ })).toHaveAttribute('aria-current', /.+/);
+  await tabs.getByRole('tab', { name: 'Chat' }).click();
+  await expect(main(page).locator('[data-sentinel-chat]')).toBeVisible();
+  await tabs.getByRole('tab', { name: 'Sentinels' }).click();
+  await expect(main(page).locator('[data-sentinel]').first()).toBeVisible();
+  // ⌘K › Go to Dashboard still works: it lands on the tab.
+  await page.keyboard.press('Meta+k');
+  await page.keyboard.type('Go to Dashboard');
+  await page.keyboard.press('Enter');
+  await expect(main(page).locator('[data-sentinel-tab="dashboard"]')).toBeVisible();
+});
+
+test('the Dashboard: every kind of tile (numbers, series, a table, outputs from Claude and from an API, text, dividers), compare, Refresh', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Dashboard' }).click();
   const board = main(page).locator('[data-dashboard]');
   await expect(board).toBeVisible({ timeout: 20_000 });
-  await expect(main(page).getByRole('tab', { name: 'Revenue' })).toHaveAttribute('aria-selected', 'true');
-  await expect(main(page).getByRole('tab', { name: 'Ops' })).toBeVisible();
-  const tiles = board.locator('[data-tile]');
-  await expect(tiles).toHaveCount(11);
+  const boards = main(page).getByRole('tablist', { name: 'Dashboards' });
+  await expect(boards.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  await expect(boards.getByRole('tab', { name: 'Revenue' })).toBeVisible();
+  await expect(boards.getByRole('tab', { name: 'Ops' })).toBeVisible();
+  for (const kind of ['number', 'series', 'table', 'output', 'text', 'divider']) await expect(board.locator(`[data-kind="${kind}"]`).first()).toBeVisible();
   await expect(board.locator('[data-kind="number"]').first()).toContainText('$3,412');
-  // Subscribers pins its own compare: last week.
-  await expect(board.locator('[data-kind="number"]').nth(3)).toContainText('vs last week');
-  await expect(board.locator('[data-kind="chart"]').first().locator('.recharts-surface')).toBeVisible();
+  // A series over time and a kept array (signups by day, as bars).
+  await expect(board.locator('[data-kind="series"]')).toHaveCount(2);
+  await expect(board.locator('[data-kind="series"]').nth(1)).toContainText('Signups by day');
+  await expect(board.locator('[data-kind="series"]').nth(1).locator('.recharts-surface')).toBeVisible();
+  // Outputs: the Morning brief's Claude step as Markdown, YouTube's answer as a JSON tree; each links its run.
+  const brief = board.locator('[data-kind="output"]').filter({ hasText: 'This morning’s brief' });
+  await expect(brief.locator('[data-look="markdown"]')).toContainText('3 commits landed');
+  const youtube = board.locator('[data-kind="output"]').filter({ hasText: 'YouTube’s answer' });
+  await expect(youtube.locator('[data-look="tree"]')).toContainText('subscriberCount');
+  await expect(youtube.getByRole('button', { name: /Open the run/ })).toBeVisible();
+  await expect(brief).toHaveAttribute('data-h', '2');
   // Last job run is paused: its table says so, quietly, and still shows its rows.
   const jobs = board.locator('[data-kind="table"]');
   await expect(jobs).toHaveAttribute('data-state', 'paused');
-  await expect(jobs).toContainText('paused');
   await expect(jobs).toContainText('deploy landing');
   await expect(board.locator('[data-kind="text"]')).toContainText('$3,412 yesterday');
   await shoot(page, 'dashboard');
+  await brief.scrollIntoViewIfNeeded();
+  await shoot(page, 'dashboard-outputs');
+  // A tile's ⋯: Show as a table turns YouTube's answer into rows.
+  await youtube.hover();
+  await youtube.getByRole('button', { name: /^More for / }).click();
+  // By the keyboard (the grid redraws as the demo's runs go on, so a hovered submenu can move under the pointer).
+  await page.getByRole('menuitem', { name: 'Show as' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.getByRole('menuitem', { name: 'A table' }).or(page.getByRole('menuitemcheckbox', { name: 'A table' })).focus();
+  await page.keyboard.press('Enter');
+  await expect(youtube.locator('[data-look="table"]')).toContainText('youtube#channel');
   await main(page).getByRole('tablist', { name: 'Compare every tile with' }).getByRole('tab', { name: 'Last week' }).click();
   await expect(board.locator('[data-kind="number"]').first()).toContainText('vs last week');
   await main(page).getByRole('tablist', { name: 'Compare every tile with' }).getByRole('tab', { name: 'Previous' }).click();
-  // Refresh runs its sentinels one at a time (Last job run is paused: three run).
-  await main(page).getByRole('button', { name: 'Refresh' }).click();
-  await expect(main(page).getByTestId('dashboard-fetching')).toContainText(/Fetching… \d of 3/);
-  await shoot(page, 'dashboard-fetching');
-  await expect(main(page).getByTestId('dashboard-fetching')).toHaveCount(0, { timeout: 40_000 });
-  await main(page).getByRole('tab', { name: 'Ops' }).click();
+  // Refresh on Ops runs its sentinels one at a time (Last job run is paused: two run).
+  await boards.getByRole('tab', { name: 'Ops' }).click();
   await expect(board.locator('[data-tile]')).toHaveCount(4);
+  await main(page).getByRole('button', { name: 'Refresh' }).click();
+  await expect(main(page).getByTestId('dashboard-fetching')).toContainText(/Fetching… \d of 2/);
+  await expect(main(page).getByTestId('dashboard-fetching')).toHaveCount(0, { timeout: 40_000 });
 });
 
-test('Add a Tile with its preview, then dragged into place; Describe it builds one', async ({ page }) => {
-  await page.goto('/');
-  await sidebar(page).getByRole('button', { name: /^Dashboard/ }).click();
-  await main(page).getByRole('tab', { name: 'Ops' }).click();
+test('Add a Tile takes a description: Claude adds it, and sets up a draft sentinel when nothing fetches it yet', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Dashboard' }).click();
   const board = main(page).locator('[data-dashboard]');
+  await main(page).getByRole('tablist', { name: 'Dashboards' }).getByRole('tab', { name: 'Ops' }).click();
   await expect(board.locator('[data-tile]')).toHaveCount(4);
   await main(page).getByRole('button', { name: 'Add a Tile' }).click();
   const sheet = page.getByRole('dialog', { name: 'Add a Tile' });
-  await sheet.getByRole('radio', { name: /YouTube subscribers/ }).click();
-  await expect(sheet.getByTestId('tile-preview')).toContainText(/12,3\d\d/);
-  await shoot(page, 'add-tile');
-  await sheet.getByRole('tab', { name: 'Chart' }).click();
-  await sheet.getByRole('checkbox', { name: /Views/ }).click();
-  await expect(sheet.getByTestId('tile-preview').locator('.recharts-surface')).toBeVisible();
-  await sheet.getByRole('tab', { name: 'Number' }).click();
-  await sheet.getByRole('button', { name: 'Add Tile' }).click();
+  await expect(sheet.getByRole('tab', { name: /Describe it/ })).toHaveAttribute('aria-selected', 'true');
+  await sheet.getByRole('textbox', { name: 'What should it show?' }).fill('the open PR count');
+  await shoot(page, 'add-tile-describe');
+  await sheet.getByRole('button', { name: 'Ask Claude' }).click();
+  // Nothing kept it: Claude set up a draft that fetches it, and the tile says so until it's on.
+  const draft = main(page).getByTestId('dashboard-draft');
+  await expect(draft).toContainText('Open pull requests', { timeout: 30_000 });
+  await expect(draft).toContainText('nothing runs until you turn it on');
   await expect(board.locator('[data-tile]')).toHaveCount(5);
-  const last = board.locator('[data-tile]').last();
-  await expect(last).toContainText('YouTube subscribers');
-  // Drag it to the front (the board's drag: a press, a move past a few pixels, a drop).
-  const from = (await last.boundingBox())!;
-  const to = (await board.locator('[data-tile]').first().boundingBox())!;
-  await page.mouse.move(from.x + from.width / 2, from.y + 12);
-  await page.mouse.down();
-  await page.mouse.move(from.x + from.width / 2 - 10, from.y + 10, { steps: 3 });
-  await page.mouse.move(to.x + 8, to.y + 10, { steps: 8 });
-  await page.mouse.up();
-  await expect(board.locator('[data-tile]').first()).toContainText('YouTube subscribers');
-  // Describe it: the demo's Claude puts the numbers the words name on it.
-  await main(page).getByRole('button', { name: /New Dashboard/ }).first().click();
-  await expect(main(page).getByRole('tab', { name: 'Dashboard 3' })).toHaveAttribute('aria-selected', 'true');
-  await main(page).getByRole('textbox', { name: 'Describe what the dashboard should show' }).fill('revenue and failed payments, compared to last week');
-  await main(page).getByRole('button', { name: 'Describe It' }).click();
-  await expect(main(page).getByRole('status').filter({ hasText: 'Added' })).toContainText('Revenue', { timeout: 30_000 });
-  await expect(board.locator('[data-tile]')).toHaveCount(2);
-  await expect(board.locator('[data-kind="number"]').first()).toContainText('vs last week');
-  await shoot(page, 'dashboard-described');
+  await expect(board.locator('[data-tile]').last()).toHaveAttribute('data-state', 'draft');
+  await expect(board.locator('[data-tile]').last()).toContainText('draft: turn it on');
+  await expect(main(page).getByTestId('dashboard-ask')).toContainText('set up');
+  await shoot(page, 'add-tile-draft');
+  // Review opens the draft: paused, with its steps; nothing ran.
+  await draft.getByRole('button', { name: 'Review' }).click();
+  await expect(main(page).getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Open pull requests');
+  await expect(main(page).getByRole('region', { name: 'Steps' }).locator('[data-step="measure"]')).toBeVisible();
+  await expect(main(page).getByRole('button', { name: 'Turn On' }).first()).toBeVisible();
+  // Pick it yourself is one tap away: a series of a kept array, sized.
+  await main(page).getByRole('button', { name: /^Back/ }).first().click().catch(() => undefined);
+  await openList(page);
+  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Dashboard' }).click();
+  await main(page).getByRole('tablist', { name: 'Dashboards' }).getByRole('tab', { name: 'Ops' }).click();
+  await main(page).getByRole('button', { name: 'Add a Tile' }).click();
+  await sheet.getByRole('tab', { name: /Pick it yourself/ }).click();
+  await sheet.getByRole('tab', { name: 'Series' }).click();
+  await sheet.getByRole('checkbox', { name: /Signups by day/ }).or(sheet.getByRole('radio', { name: /Signups by day/ })).click();
+  await expect(sheet.getByTestId('tile-preview').locator('.recharts-surface')).toBeVisible();
+  await shoot(page, 'add-tile-pick');
+  await sheet.getByRole('button', { name: 'Add Tile' }).click();
+  await expect(board.locator('[data-tile]')).toHaveCount(6);
+});
+
+test('the Sentinel chat: its own conversation about all of Sentinel; a delete asks first; Clear and New Chat', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Chat' }).click();
+  const chat = main(page).locator('[data-sentinel-chat]');
+  await expect(chat).toBeVisible();
+  // The demo's short exchange.
+  await expect(chat).toContainText('What did my sentinels find this week?');
+  await expect(chat).toContainText('Site speed slowed');
+  await shoot(page, 'chat');
+  // Quiet: it isn't one of the sidebar's chats, nor in Unread.
+  await expect(sidebar(page)).not.toContainText('What did my sentinels find');
+  // Ask it to delete a sentinel: it asks you first, in the chat (and on the phone).
+  const box = chat.getByRole('textbox').last();
+  await box.fill('Delete the Site speed sentinel');
+  await box.press('Enter');
+  const card = chat.getByRole('alertdialog', { name: 'Approval needed' });
+  await expect(card).toContainText('Your Claude wants to delete the sentinel “Site speed”', { timeout: 30_000 });
+  await expect(card.getByRole('button', { name: 'Allow once' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Always' })).toHaveCount(0);
+  await shoot(page, 'chat-delete-asks');
+  await card.getByRole('button', { name: 'Decline' }).click();
+  await expect(chat).toContainText('You said no, so “Site speed” keeps watching.', { timeout: 30_000 });
+  // It still watches.
+  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Sentinels' }).click();
+  await expect(main(page).getByRole('row', { name: /^Site speed/ })).toBeVisible();
+  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Chat' }).click();
+  // Clear empties it (the chat stays); New Chat makes another beside it, the picker goes between them.
+  await chat.getByRole('button', { name: 'More for this chat' }).click();
+  await page.getByRole('menuitem', { name: /^Clear/ }).click();
+  await expect(chat.getByText('Talk to Sentinel')).toBeVisible();
+  await chat.getByRole('button', { name: 'New Chat' }).click();
+  await expect(main(page).locator('[data-sentinel-chat]')).not.toHaveAttribute('data-sentinel-chat', 'main');
+  await expect(main(page).getByRole('button', { name: /^Chat: / })).toBeVisible();
 });

@@ -1,4 +1,5 @@
 import type { View } from '../../../../src/core/store.js';
+import { isSentinelView } from '../sentinel/sentinel-model.js';
 
 /**
  * The right panel, as plain data: which tabs a view has, which one it opens on, how wide it may
@@ -119,8 +120,8 @@ function tabsOfView(view: View, wsKind?: WsKind): PanelTab[] {
  * The right panel shows beside this view: not on a plan's page (its right side is its chat), nor
  * on the Tasks board, a task's page, the plans or Sentinel's pages: nothing in it is about them, so they get the whole window.
  */
-const WHOLE_WINDOW: ReadonlySet<View['kind']> = new Set(['plan', 'plans', 'tasks', 'task', 'gh_issue', 'gh_run', 'sentinel', 'sentinel_page', 'sentinel_run', 'dashboard']);
-export const panelFits = (view: View): boolean => !WHOLE_WINDOW.has(view.kind);
+const WHOLE_WINDOW: ReadonlySet<View['kind']> = new Set(['plan', 'plans', 'tasks', 'task', 'gh_issue', 'gh_run']);
+export const panelFits = (view: View): boolean => !WHOLE_WINDOW.has(view.kind) && !isSentinelView(view.kind);
 
 /** Where a view's last tab is remembered: per workspace, one for everything else. */
 export const panelKey = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : 'app');
