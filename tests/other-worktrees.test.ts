@@ -297,13 +297,15 @@ describe('worktrees from other tools, end to end in a real repo', () => {
   });
 
   it('finishes deleting what an earlier background delete left, and only that', async () => {
-    mkdirSync(path.join(base, '.old.removing-123', 'node_modules'), { recursive: true });
-    mkdirSync(path.join(base, '.keep-me'));
-    await sweepSetAside([base]);
+    const parent = path.join(base, 'wts'); // not looked in yet this run (refresh already swept base)
+    mkdirSync(path.join(parent, '.old.removing-123', 'node_modules'), { recursive: true });
+    mkdirSync(path.join(parent, '.keep-me'));
+    mkdirSync(path.join(parent, 'work'));
+    await sweepSetAside([parent]);
     await deletesSettled();
-    expect(existsSync(path.join(base, '.old.removing-123'))).toBe(false);
-    expect(existsSync(path.join(base, '.keep-me'))).toBe(true);
-    expect(existsSync(path.join(base, 'busy'))).toBe(true);
+    expect(existsSync(path.join(parent, '.old.removing-123'))).toBe(false);
+    expect(existsSync(path.join(parent, '.keep-me'))).toBe(true);
+    expect(existsSync(path.join(parent, 'work'))).toBe(true);
   });
 
   it("deleting one you've talked in from Beluga never deletes its branch or forces it", async () => {
