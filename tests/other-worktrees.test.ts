@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -11,7 +11,7 @@ process.env.CLAUDE_CONFIG_DIR = CLAUDE_HOME;
 const { encodeProjectDir, findConversation, listConversations, pathVariants, samePath, sessionTitle } = await import('../src/agent/claude-sessions.js');
 const { findCreators, worktreeAddTargets } = await import('../src/agent/worktree-creators.js');
 const { describeOrigin, sourceFromPath, worktreeOrigin } = await import('../src/workspaces/origin.js');
-const { staleReason, worktreeFacts } = await import('../src/workspaces/others.js');
+const { deletesSettled, removeWorktreeKeepingBranch, staleReason, worktreeFacts } = await import('../src/workspaces/others.js');
 const { parseConductorRows, inConductorRoot } = await import('../src/workspaces/conductor.js');
 const { OtherWorktrees } = await import('../src/core/other-worktrees.js');
 const { WorkspaceManager } = await import('../src/workspaces/manager.js');
@@ -278,6 +278,22 @@ describe('worktrees from other tools, end to end in a real repo', () => {
     expect(await others.remove(dirty.id, true)).toBe(true);
     expect(existsSync(dirty.path)).toBe(false);
     expect(sh(repo, 'branch', '--list', 'dirty')).toContain('dirty');
+  });
+
+  it('sets the folder aside at once and deletes it in the background; a dirty one without force is still refused by git', async () => {
+    const dirty = ext('dirty');
+    writeFileSync(path.join(dirty.path, 'node_modules.txt'), 'x'.repeat(1000));
+    await removeWorktreeKeepingBranch(repo, dirty.path, true);
+    expect(existsSync(dirty.path)).toBe(false);
+    expect(sh(repo, 'worktree', 'list')).not.toContain(dirty.path);
+    await deletesSettled();
+    expect(readdirSync(base).filter((n) => n.includes('.removing-'))).toEqual([]);
+    expect(sh(repo, 'branch', '--list', 'dirty')).toContain('dirty');
+    // Without force, git's own refusal stands: the folder stays where it was.
+    sh(repo, 'worktree', 'add', '-q', '-b', 'dirty2', path.join(base, 'dirty2'));
+    writeFileSync(path.join(base, 'dirty2', 'wip.txt'), 'x');
+    await expect(removeWorktreeKeepingBranch(repo, path.join(base, 'dirty2'), false)).rejects.toThrow();
+    expect(existsSync(path.join(base, 'dirty2', 'wip.txt'))).toBe(true);
   });
 
   it("deleting one you've talked in from Beluga never deletes its branch or forces it", async () => {
