@@ -22,6 +22,8 @@ export interface Outgoing {
   readonly expiresAt: number;
   /** When it was last handed to a link or the room (resent if no ack comes). */
   readonly sentAt?: number;
+  /** When it went to their mailbox (BLG-272: they and you weren't online together). */
+  readonly mailedAt?: number;
 }
 
 const TasksFile = z.object({ version: z.literal(1), tasks: z.array(z.unknown()), cards: z.record(z.string(), z.unknown()).default({}), pending: z.record(z.string(), z.unknown()).default({}) });
@@ -100,6 +102,11 @@ export class TaskBook {
   /** It was handed over (resent later if no ack comes). */
   handed(frameId: string, at = Date.now()): void {
     this.saveOutbox(this.outbox.map((o) => (o.frame.f === frameId ? { ...o, sentAt: at } : o)));
+  }
+
+  /** It's in their mailbox. */
+  mailed(frameId: string, at = Date.now()): void {
+    this.saveOutbox(this.outbox.map((o) => (o.frame.f === frameId ? { ...o, mailedAt: at } : o)));
   }
 
   /** They got it. */

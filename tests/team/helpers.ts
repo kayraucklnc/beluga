@@ -3,6 +3,7 @@ import { Board } from '../../src/core/board/board.js';
 import { Store, initialState } from '../../src/core/store.js';
 import { TeamBoards, type TeamPart } from '../../src/core/team/service.js';
 import type { Project } from '../../src/workspaces/types.js';
+import type { MeshOptions } from '../../src/net/mesh/mesh.js';
 import type { Crowd, Person } from '../mesh/helpers.js';
 
 /**
@@ -34,8 +35,8 @@ export interface TeamMac {
 
 export type PartsFor = (m: { team: TeamBoards; store: Store; board: Board; name: string; id: string; dir: string }) => readonly TeamPart[];
 
-export async function teamMac(net: Crowd, name: string, projects: readonly RepoProject[], parts: PartsFor = () => []): Promise<TeamMac> {
-  const person = await net.add(name);
+export async function teamMac(net: Crowd, name: string, projects: readonly RepoProject[], parts: PartsFor = () => [], extra: Partial<MeshOptions> = {}): Promise<TeamMac> {
+  const person = await net.add(name, extra);
   const store = new Store(initialState('test', 'ask'));
   const list = projects.map((p) => ({ id: p.id, name: p.name, root: `/tmp/${name}/${p.name}`, base: 'origin/main', workspaces: [] }) as unknown as Project);
   store.dispatch({ type: 'projects', projects: list });

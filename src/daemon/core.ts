@@ -10,7 +10,7 @@ import { DEFAULT_LINK } from '../core/project-invites.js';
 import { type SessionOptions, Session } from '../core/session.js';
 import { loadSettings, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
-import { networkSwitch } from '../core/network.js';
+import { leaveNetwork, networkSwitch } from '../core/network.js';
 import { launchBoard } from '../core/board/launch.js';
 import { launchSentinel } from '../core/sentinel/launch.js';
 import { launchAssistant } from '../core/assistant/launch.js';
@@ -368,6 +368,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (closing) return;
     closing = true;
     closeAllTunnels();
+    await leaveNetwork(session);
     stopGateway();
     stopChat();
     stopFriendShares();

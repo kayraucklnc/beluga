@@ -120,7 +120,7 @@ export interface Candidate {
 
 /** A gateway mesh: the port, and a way to hear its frames and new links (see launch.ts). */
 export interface MeshNode extends MeshPort {
-  listen(handlers: { readonly frame: (from: string, payload: unknown) => void; readonly link: (peerId: string) => void }): () => void;
+  listen(handlers: { readonly frame: (from: string, payload: unknown) => void; readonly link: (peerId: string) => void; readonly leaving?: () => Promise<unknown> }): () => void;
 }
 
 const TICK_MS = 10_000;
@@ -250,6 +250,7 @@ export class Gateway {
     this.mesh = mesh;
     const off = mesh.listen({
       frame: (from, payload) => this.onFrame(from, 'mesh', payload),
+      leaving: () => this.courier.mailAll(),
       link: (peerId) => {
         this.courier.flush(peerId, true);
         this.told.delete(peerId);

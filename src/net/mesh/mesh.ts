@@ -13,6 +13,7 @@ import { MAX_TEXT } from './groups/engine.js';
 import { GroupHub } from './groups/hub.js';
 import { InvitationBook, type InvitationRecord, newInvitation, parseTicket } from './invitations.js';
 import { type MeshKeys, meshKeys } from './keys.js';
+import { type MailChannel, Mailbox, type MailboxOptions } from './mailbox.js';
 import { CLOSE, type MeshLink } from './link.js';
 import { type Contacts, DEFAULT_TIMING, LinkManager, type LinkManagerOptions, type Timing } from './links.js';
 import { type ViewContext, dmView, friendView, groupMessageView, groupView, invitationView } from './mesh-views.js';
@@ -21,6 +22,7 @@ import { ONLINE, current, loadPresence, savePresence, shown } from './presence.j
 import { NameSchema, type Profile } from './schemas.js';
 import { type ChatExtras, type ChatFile, type FriendView, type GroupView, type InvitationView, type MessageView, type NetworkSummary, type Presence, dmConversation, groupConversation } from './views.js';
 import { type LinkMessage, PROTO } from './wire.js';
+import { isLate } from '../patient-timer.js';
 
 /**
  * Your Mac on the Beluga network: no server and no host. It listens at an address derived from
@@ -47,6 +49,8 @@ export interface MeshOptions {
   readonly blocked?: (peerId: string) => boolean;
   /** This Beluga's version, said in every hello (core/version.ts). */
   readonly app?: string;
+  /** Where frames wait for a friend you're never online with at the same time (mailbox.ts); none: only links. */
+  readonly mailbox?: MailboxOptions;
 }
 
 /** What using an invitation got you. */
@@ -75,6 +79,8 @@ interface MeshEvents {
 export type FileFrame = Extract<LinkMessage, { t: 'f_get' | 'f_data' | 'f_err' }>;
 
 const MAX_FRAME = 2 * 1024 * 1024;
+/** How long leaving waits for the mailbox before it goes anyway. */
+const LEAVING_MS = 4_000;
 const HISTORY_PAGE = 50;
 
 export class Mesh extends EventEmitter<MeshEvents> {
@@ -99,6 +105,11 @@ export class Mesh extends EventEmitter<MeshEvents> {
   private wanted = new Map<string, Profile>();
   private byAddress = new Map<string, string>();
   private ticker: NodeJS.Timeout | undefined;
+  private lastTick = Date.now();
+  private readonly mailbox: Mailbox | undefined;
+  private mailCheckedAt = 0;
+  /** What to mail before this Mac leaves the network (each outbox: everything still waiting). */
+  private readonly leavingHooks = new Set<() => Promise<unknown>>();
   private untilTimer: NodeJS.Timeout | undefined;
   private closed = false;
   /** Who you're pulling chat files from now (set by core/chat/files.ts). */
@@ -171,6 +182,16 @@ export class Mesh extends EventEmitter<MeshEvents> {
       },
       onChange: () => this.emit('change'),
     });
+    this.mailbox = opts.mailbox?.url
+      ? new Mailbox(keys, opts.mailbox, {
+          cardOf: (peerId) => this.friends.get(peerId)?.card,
+          deliver: (from, t, p) => {
+            if (!this.friends.has(from)) return;
+            if (t === 'gw') this.emit('gateway', from, p);
+            else this.emit(t, from, p);
+          },
+        })
+      : undefined;
     this.rebuildContacts();
   }
 
@@ -193,6 +214,8 @@ export class Mesh extends EventEmitter<MeshEvents> {
     mesh.ticker.unref();
     mesh.scheduleUntil();
     mesh.links.refresh();
+    // What friends left while this Mac was off.
+    if (mesh.mailbox) setTimeout(() => void mesh.checkMail(), 1_000).unref();
     return mesh;
   }
 
@@ -440,6 +463,42 @@ export class Mesh extends EventEmitter<MeshEvents> {
     return true;
   }
 
+  /** A frame nobody took goes to the friend's mailbox after this long (undefined: there's no mailbox). */
+  get mailAfterMs(): number | undefined {
+    return this.mailbox?.afterMs;
+  }
+
+  /** Leave a frame in a friend's mailbox (mailbox.ts); false when there's none or it didn't take it. */
+  mail(peerId: string, t: MailChannel, payload: unknown): Promise<boolean> {
+    if (!this.mailbox || !this.friends.has(peerId) || this.closed) return Promise.resolve(false);
+    return this.mailbox.post(peerId, t, payload);
+  }
+
+  /** Run `fn` (an outbox mailing what still waits) before this Mac leaves the network; returns how to stop. */
+  onLeaving(fn: () => Promise<unknown>): () => void {
+    this.leavingHooks.add(fn);
+    return () => void this.leavingHooks.delete(fn);
+  }
+
+  /**
+   * About to go (quitting, the network turned off): whatever no friend has acknowledged yet goes
+   * to their mailboxes now, rather than waiting here until both of you happen to be online.
+   * Their acknowledgements are in your mailbox when you're back, and clear your outbox then.
+   */
+  async leaving(timeoutMs = LEAVING_MS): Promise<void> {
+    if (!this.mailbox || this.closed || !this.leavingHooks.size) return;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([Promise.allSettled([...this.leavingHooks].map((fn) => fn())), new Promise((r) => (timer = setTimeout(r, timeoutMs)))]);
+    clearTimeout(timer);
+  }
+
+  /** Take what friends left in your mailbox now; how many frames it handed on. */
+  checkMail(): Promise<number> {
+    if (!this.mailbox || this.closed) return Promise.resolve(0);
+    this.mailCheckedAt = Date.now();
+    return this.mailbox.check();
+  }
+
   /** Hand a team boards frame to a friend's link; false when they're not linked now. */
   sendTeam(peerId: string, payload: unknown): boolean {
     const link = this.links.get(peerId);
@@ -482,6 +541,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   async close(): Promise<void> {
     if (this.closed) return;
+    await this.leaving();
     this.closed = true;
     clearInterval(this.ticker);
     clearTimeout(this.untilTimer);
@@ -704,6 +764,11 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   private tick(): void {
     if (this.closed) return;
+    const now = Date.now();
+    // A tick much later than planned: the Mac slept. Friends may have left mail meanwhile.
+    const woke = isLate(now - this.lastTick, this.timing.syncMs);
+    this.lastTick = now;
+    if (this.mailbox && (woke || (now - this.mailCheckedAt >= this.mailbox.checkMs && this.friends.all().some((f) => !this.isLinked(f.peerId))))) void this.checkMail();
     this.groups.tick();
     for (const dm of this.dms.expire()) this.emit('message', dmView(this.ctx, dm.to, dm, this.dms.status(dm.to)));
     this.links.refresh();

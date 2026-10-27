@@ -119,6 +119,28 @@ Direct messages to an offline friend wait in your outbox (`~/.beluga/outbox.json
 are sent when a link comes up; the receiver acknowledges and de-duplicates. Group entries are
 held by every member, so you catch up from whoever is online.
 
+### The mailbox (BLG-272)
+
+A friend you're never online with at the same time would never get what waits in your outbox, so
+team board changes, sharing frames and tasks between Claudes also go through a mailbox: a
+Cloudflare Worker (`packages/mailbox`, rules in `src/net/mailbox/handler.ts`, client in
+`src/net/mesh/mailbox.ts`).
+
+- **When something goes there.** A frame nobody acknowledged for `mailboxAfterMin` minutes
+  (default 2) while its friend isn't linked; and on quitting (or turning the network off), all of
+  what still waits at once (`Mesh.leaving`, called before any service stops). Each frame is mailed once.
+- **What the mailbox sees.** It's sealed to the friend's box key and signed by you: the Worker
+  checks the signature and keeps it 7 days; it learns who wrote to whom, when and how much, never what.
+  Only its owner can take or delete their mail. A Mac opens mail only from friends.
+- **Taking mail.** On start, after the Mac wakes (a late tick), and every 3 minutes while any
+  friend is offline; nothing while everyone is linked. What it takes is handed on as if it came
+  over the link, and acknowledged back over the link, or by mail when the sender is offline.
+- **Clearing your outbox.** Only an acknowledgement does: a frame stays in your outbox until then,
+  and still goes over the link when one comes up. A frame that arrives twice is dropped (frame
+  ids; board changes merge; a task request is known by its id).
+- **Settings.** `mailbox`: another mailbox's URL, or `"off"` (also `BELUGA_MAILBOX`); `mailboxAfterMin`.
+  No default mailbox until Beluga's is deployed (`DEFAULT_MAILBOX_URL`).
+
 ## Presence
 
 `{ state: online | away | dnd | offline, note?, until? }`, sent on link up and on change.

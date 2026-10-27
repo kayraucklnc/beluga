@@ -10,7 +10,7 @@ import type { Session } from '../session.js';
 import type { Action, Store } from '../store.js';
 import { clean, peerName } from '../store.js';
 import { type FriendShareInput, type FriendSharing, historyFor, saidBy } from '../workspace-sharing.js';
-import { ShareCourier } from './courier.js';
+import { ShareCourier, type ShareMesh } from './courier.js';
 import { HISTORY_ITEMS, HISTORY_TEXT, type ShareMsg } from './protocol.js';
 
 /**
@@ -29,8 +29,8 @@ import { HISTORY_ITEMS, HISTORY_TEXT, type ShareMsg } from './protocol.js';
  * share with you, and each worktree's recent conversation), `share-outbox.json` (what waits).
  */
 
-/** What the service needs from the mesh node (net/mesh/mesh.ts). */
-export interface FriendMesh {
+/** What the service needs from the mesh node (net/mesh/mesh.ts); its mailbox comes through ShareMesh. */
+export interface FriendMesh extends Pick<ShareMesh, 'mail' | 'mailAfterMs' | 'onLeaving'> {
   readonly peerId: string;
   isFriend(peerId: string): boolean;
   isLinked(peerId: string): boolean;
@@ -128,6 +128,7 @@ export class FriendShares implements FriendSharing {
     });
     mesh.offer(SHARE_FEATURES, true);
     this.offs.push(() => mesh.offer(SHARE_FEATURES, false));
+    if (mesh.onLeaving) this.offs.push(mesh.onLeaving(() => this.courier.mailAll()));
     this.courier.start();
     this.publishGrants();
     this.publishReceived(true);
