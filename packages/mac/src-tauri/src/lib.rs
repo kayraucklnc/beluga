@@ -8,6 +8,8 @@ mod daemon;
 mod focus;
 mod menu;
 mod popup;
+#[cfg(target_os = "macos")]
+mod power;
 mod privacy;
 mod rename;
 mod requests;
@@ -265,6 +267,9 @@ pub fn run() {
                 }
             }
             menu::tray(&handle)?;
+            // About to sleep: the daemon mails what friends haven't taken first (BLG-277).
+            #[cfg(target_os = "macos")]
+            power::watch();
             // Banners (and their sound) even while Beluga is in front.
             sounds::present_in_front();
             // A friend's request on a notification: Review… / Approve / Always Allow / Decline.

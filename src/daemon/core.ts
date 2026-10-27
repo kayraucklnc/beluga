@@ -207,6 +207,8 @@ export interface Core {
   start(): void;
   /** Leave the room and stop everything. */
   stop(): Promise<void>;
+  /** The Mac is about to sleep: mail what friends haven't taken (BLG-277). */
+  sleeping(): Promise<void>;
 }
 
 /** Build Beluga's core for this config (hosting a room, or joining one). */
@@ -385,5 +387,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     await room.hub?.close();
   };
 
-  return { config, session, store, terminals, room: room.room, workspacesHome: workspaces.store.home, start, stop };
+  /** The Mac is about to sleep (BLG-277): what friends haven't taken goes to their mailboxes now. */
+  const sleeping = (): Promise<void> => leaveNetwork(session);
+  return { config, session, store, terminals, room: room.room, workspacesHome: workspaces.store.home, start, stop, sleeping };
 }

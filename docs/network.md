@@ -129,6 +129,12 @@ Cloudflare Worker (`packages/mailbox`, rules in `src/net/mailbox/handler.ts`, cl
 - **When something goes there.** A frame nobody acknowledged for `mailboxAfterMin` minutes
   (default 2) while its friend isn't linked; and on quitting (or turning the network off), all of
   what still waits at once (`Mesh.leaving`, called before any service stops). Each frame is mailed once.
+- **Before the Mac sleeps (BLG-277).** The Mac app hears IOKit's "will sleep" (`src-tauri/src/power.rs`),
+  sends the daemon SIGUSR2, and holds the sleep until the daemon has mailed (it writes
+  `~/.beluga/slept.at`), 5 s at most. A closed lid strands nothing.
+- **On the task (BLG-273).** A team task whose latest change a teammate's Mac hasn't acknowledged shows
+  a small paper plane on its card and row (state `team.waiting`), and on its page who and where:
+  in their mailbox, or waiting for their Mac. Nothing shows once everyone has it.
 - **What the mailbox sees.** It's sealed to the friend's box key and signed by you: the Worker
   checks the signature and keeps it 7 days; it learns who wrote to whom, when and how much, never what.
   Only its owner can take or delete their mail. A Mac opens mail only from friends.
