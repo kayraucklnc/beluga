@@ -127,16 +127,13 @@ export interface Person {
   readonly name: string;
 }
 
-/** Who a task can be for: you, your Claude, then people you know (and their Claudes). */
+/** Who a task can be for: you, your Claude, then people you know. Never their Claudes (BLG-262): you ask those in a chat with them. */
 export function assigneeChoices(self: Person, people: readonly Person[]): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
   const others = people.filter((p) => p.id !== self.id).sort((a, b) => a.name.localeCompare(b.name));
   return [
     { key: `person:${self.id}`, label: 'You', assignee: { kind: 'person', id: self.id, name: self.name } },
     { key: `claude:${self.id}`, label: 'Your Claude', assignee: { kind: 'claude', owner: self.id, ownerName: self.name } },
-    ...others.flatMap((p) => [
-      { key: `person:${p.id}`, label: p.name, assignee: { kind: 'person', id: p.id, name: p.name } as Assignee },
-      { key: `claude:${p.id}`, label: `${p.name}’s Claude`, assignee: { kind: 'claude', owner: p.id, ownerName: p.name } as Assignee },
-    ]),
+    ...others.map((p) => ({ key: `person:${p.id}`, label: p.name, assignee: { kind: 'person', id: p.id, name: p.name } as Assignee })),
   ];
 }
 

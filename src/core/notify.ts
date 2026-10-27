@@ -8,6 +8,7 @@ import { type Plan, planById, planForHome, planTitle } from './plans/model.js';
 import { type MilestoneView, planView } from './plans/progress.js';
 import { isDecisionQid } from './plans/decisions.js';
 import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
+import { allNeeds, needMatches } from '../companion/needs-you.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
@@ -33,6 +34,12 @@ export interface NoticeEvent {
   /** The plan it's about (its id), and the plan's task (its id there): opening it goes to the plan at that task. */
   readonly plan?: string;
   readonly planTask?: string;
+  /**
+   * What waits for you that it's about: a needs-you item's id (companion/needs-you.ts), or the
+   * start of one (`gwq:<task>`). The bell answers it in place and opens where it lives; answered,
+   * the notice is read (BLG-255).
+   */
+  readonly need?: string;
   /** What happened, once: a notice with the same key is never raised again (a plan's milestone passing…). */
   readonly key?: string;
   /** Worth a desktop notification even while a screen in front shows its conversation (a long run of yours ended there). */
@@ -69,6 +76,9 @@ export function presenceQuiet(state: Pick<DomainState, 'network'>): boolean {
   const self = state.network.self;
   return Boolean(self && (self.appearOffline || self.presence.state === 'dnd'));
 }
+
+/** Where what waits for you lives (companion/needs-you.ts reads these). */
+const WAITING = ['approvals', 'questions', 'gateway', 'plans', 'board', 'knocks', 'network', 'team', 'sentinel'] as const satisfies ReadonlyArray<keyof DomainState>;
 
 /** Runs that end like this were your own doing, so they're not worth a notification. */
 const QUIET_ERRORS = /^(Interrupted by a newer message|Cancelled by owner|Stopped by owner)/;
@@ -193,7 +203,7 @@ function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
       }
       if (yoursToPass(m) && !yoursToPass(was.get(id))) {
         const body = run.check?.verdict === 'pass' ? 'Claude checked it: pass it to go on' : 'Its tasks are finished: pass it to go on';
-        out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${m.milestone.title}” is ready for you`, body, ...at, key: `plan:${plan.id}:${id}:yours:${run.checkAsked ?? 0}:${run.check?.at ?? 0}` });
+        out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${m.milestone.title}” is ready for you`, body, ...at, need: `plan:${plan.id}:pass:${id}`, key: `plan:${plan.id}:${id}:yours:${run.checkAsked ?? 0}:${run.check?.at ?? 0}` });
       }
     }
   }
@@ -440,6 +450,7 @@ export class Notifier {
     // Opening a conversation reads its notices; answering something reads the notice about it.
     if (prev.attention !== next.attention) this.markSeen(next);
     if (prev.approvals !== next.approvals || prev.questions !== next.questions) this.markAnswered(next);
+    if (WAITING.some((k) => prev[k] !== next[k]) && next.inbox.some((n) => !n.read && n.need !== undefined)) this.markSettled(prev, next);
     const events = detectNotices(prev, next, this.now());
     if (events.length) this.handle(events, next);
   }
@@ -453,6 +464,17 @@ export class Notifier {
   private markAnswered(state: DomainState): void {
     const open = new Set([...state.approvals.map((a) => a.id), ...state.questions.map((q) => q.qid)]);
     for (const n of state.inbox) if (!n.read && n.ref !== undefined && !open.has(n.ref)) this.deps.store.dispatch({ type: 'notice_read', id: n.id });
+  }
+
+  /** A notice about something that waited for you (a team-up, a friend's question…) is read once it's settled, here or on another screen. */
+  private markSettled(prev: DomainState, next: DomainState): void {
+    const was = allNeeds(prev).map((x) => x.id);
+    const now = allNeeds(next).map((x) => x.id);
+    for (const n of next.inbox) {
+      const need = n.need;
+      if (n.read || need === undefined) continue;
+      if (was.some((id) => needMatches(id, need)) && !now.some((id) => needMatches(id, need))) this.deps.store.dispatch({ type: 'notice_read', id: n.id });
+    }
   }
 
   private handle(events: readonly NoticeEvent[], state: DomainState, direct = false): void {
@@ -472,10 +494,10 @@ export class Notifier {
         else if (e.watched && prefs.doneHere !== false && desktop && !e.quiet) this.queue.push(e);
         continue;
       }
-      const { kind, tag, ref, title, body, channel, plan, planTask, key } = e;
+      const { kind, tag, ref, title, body, channel, plan, planTask, need, key } = e;
       // A plan's task speaking quietly: it's in the inbox under the plan, already read.
       const read = Boolean(e.quiet && plan);
-      this.deps.store.dispatch({ type: 'notice_add', notice: { kind, ...(tag ? { tag } : {}), ...(ref ? { ref } : {}), title, body, channel, ...(plan ? { plan } : {}), ...(planTask ? { planTask } : {}), ...(key ? { key } : {}) }, ...(read ? { read } : {}) });
+      this.deps.store.dispatch({ type: 'notice_add', notice: { kind, ...(tag ? { tag } : {}), ...(ref ? { ref } : {}), title, body, channel, ...(plan ? { plan } : {}), ...(planTask ? { planTask } : {}), ...(need ? { need } : {}), ...(key ? { key } : {}) }, ...(read ? { read } : {}) });
       // You're in Beluga, looking at another conversation: a friend's message shows in the window.
       if (state.attention.front && isNetworkMessage(e) && !e.quiet && !dndActive(prefs, this.now())) this.banners.push(e);
       else if (desktop && !e.quiet) this.queue.push(e);

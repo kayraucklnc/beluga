@@ -609,7 +609,7 @@ export class SentinelRunner {
       const headline = hold ? `${n}: Claude says hold. Merge it anyway?` : `Merge ${n}?`;
       const since = this.deps.now();
       live.run({ state: 'needs-you', headline, waitingSince: since });
-      this.deps.notify({ kind: 'needsYou', tag: 'sentinel', title: `${active.sentinel.name}: merge ${n}?`, body: why, key: `${active.run.id}:merge`, ...(active.run.channel ? { channel: active.run.channel } : {}) });
+      this.deps.notify({ kind: 'needsYou', tag: 'sentinel', title: `${active.sentinel.name}: merge ${n}?`, body: why, need: `sentinel:${active.run.id}`, key: `${active.run.id}:merge`, ...(active.run.channel ? { channel: active.run.channel } : {}) });
       const asked = await race(wait(active), APPROVAL_MS + 60_000, signal);
       // The time it waited for you doesn't count against its time limit.
       active.deadline += this.deps.now() - since;

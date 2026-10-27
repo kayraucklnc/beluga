@@ -30,6 +30,8 @@ const ENTRIES = [
   'src/ui/keymap.ts',
   'src/ui/compose.ts',
   'src/shared/attachment-links.ts',
+  'src/companion/needs-you.ts',
+  'src/companion/open-on-mac.ts',
 ];
 // Pure packages that run anywhere (string-width measures text the same way in both clients).
 const ALLOWED_PACKAGES = new Set(['zod', 'string-width']);

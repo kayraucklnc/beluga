@@ -7,6 +7,7 @@ import type { Timing } from '../net/mesh/links.js';
 import type { Store } from './store.js';
 import { belugaEnv } from './beluga-env.js';
 import { installedVersion } from './version.js';
+import { localMentions } from './team/mentions.js';
 
 /**
  * The Beluga network as a core service: starts your Mac's mesh node (src/net/mesh) next to
@@ -106,14 +107,19 @@ export async function startNetwork(opts: NetworkOptions): Promise<NetworkService
   };
   let stopped = false;
   mesh.on('change', push);
+  // A team task a message names, by this Mac's own key (core/team/mentions.ts).
+  const local = <M extends { readonly text: string }>(m: M): M => {
+    const text = localMentions(m.text, store.getState().board.issues);
+    return text === m.text ? m : { ...m, text };
+  };
   mesh.on('message', (message) => {
-    store.dispatch({ type: 'net_message', message });
+    store.dispatch({ type: 'net_message', message: local(message) });
     if (store.getState().attention.shown.includes(message.conversation)) mesh.markRead(message.conversation);
   });
   const offAction = store.onAction((action) => {
     if (action.type === 'attention') readShown();
   });
-  store.dispatch({ type: 'net_messages', messages: mesh.recent() });
+  store.dispatch({ type: 'net_messages', messages: Object.fromEntries(Object.entries(mesh.recent()).map(([c, list]) => [c, list.map((m) => local(m))])) });
   store.dispatch({ type: 'net_summary', summary: mesh.summary() });
   readShown();
   const service: NetworkService = {

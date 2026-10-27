@@ -322,13 +322,16 @@ test('queues messages while Claude works, reorders them, and sends one now', asy
 
 const bell = (page: Page) => page.getByRole('button', { name: /^Notifications/ }).first();
 const centre = (page: Page) => page.getByRole('dialog', { name: 'Notifications' });
+/** What happened, under Today and Earlier (not what waits for you). */
+const history = (page: Page) => centre(page).getByRole('region', { name: /^(Today|Earlier)$/ }).getByRole('listitem');
 
 /** Open the centre and empty it, so each test starts from nothing. */
 async function emptyCentre(page: Page): Promise<void> {
   await bell(page).click();
   const clear = centre(page).getByRole('button', { name: 'Clear all' });
   if (await clear.isEnabled()) await clear.click();
-  await expect(centre(page).getByText('You’re all caught up')).toBeVisible();
+  // What waits for you (the demo's knock, its merge) stays: answered, not cleared.
+  await expect(history(page)).toHaveCount(0);
   await page.keyboard.press('Escape');
 }
 
@@ -358,22 +361,39 @@ test('marks everything read, one unread again, and clears', async ({ page }) => 
   await sendTestNotification(page);
   await sendTestNotification(page);
   await bell(page).click();
-  await expect(centre(page).getByRole('listitem')).toHaveCount(2);
+  await expect(history(page)).toHaveCount(2);
   await centre(page).getByRole('button', { name: 'Mark all read' }).click();
   await expect(bell(page)).not.toHaveAccessibleName(/new/);
   await centre(page).getByRole('tab', { name: /Unread/ }).click();
-  await expect(centre(page).getByText('Nothing unread')).toBeVisible();
+  await expect(history(page)).toHaveCount(0);
   await centre(page).getByRole('tab', { name: 'All' }).click();
   // Hover a notification for read/unread and ×.
-  const first = centre(page).getByRole('listitem').first();
+  const first = history(page).first();
   await first.hover();
   await first.getByRole('button', { name: 'Mark as unread' }).click();
   await expect(bell(page)).toHaveAccessibleName(/1 new/);
   await first.hover();
   await first.getByRole('button', { name: 'Clear' }).click();
-  await expect(centre(page).getByRole('listitem')).toHaveCount(1);
+  await expect(history(page)).toHaveCount(1);
   await centre(page).getByRole('button', { name: 'Clear all' }).click();
-  await expect(centre(page).getByText('You’re all caught up')).toBeVisible();
+  await expect(history(page)).toHaveCount(0);
+});
+
+test('what waits for you is answered in the bell, and opens where it lives', async ({ page }) => {
+  await bell(page).click();
+  const waiting = centre(page).getByRole('region', { name: 'Waiting for you' });
+  await expect(bell(page)).toHaveAccessibleName(/2 waiting for you/);
+  // Someone at the door: let in right here.
+  const knock = waiting.getByRole('listitem').filter({ hasText: 'zoe wants to come in' });
+  await expect(knock).toContainText('Room');
+  if (process.env.SHOTS) await centre(page).screenshot({ path: `${process.env.SHOTS}/bell-waiting.png` });
+  await knock.getByRole('button', { name: 'Let in' }).click();
+  await expect(knock).toHaveCount(0);
+  await expect(bell(page)).toHaveAccessibleName(/1 waiting for you/);
+  // A merge held for you: clicking it opens the run, where it waits.
+  await waiting.getByRole('button', { name: /Merge the fix for #48\?/ }).click();
+  await expect(centre(page)).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Merge', exact: true }).first()).toBeVisible();
 });
 
 test('clicking a notification goes where it happened', async ({ page }) => {

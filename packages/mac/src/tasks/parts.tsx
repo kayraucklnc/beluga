@@ -14,6 +14,9 @@ import { LabelChip, PrChip } from './marks.js';
 import { doneCount, dueText } from './tasks-model.js';
 import type { LogItem } from '@beluga/core/store.js';
 import { useTaskActions } from './use-tasks.js';
+import { teammatesOf } from '@beluga/core/team/model.js';
+import { askAboutTask } from '../network/chat-model.js';
+import { draftIn } from '../network/NetComposer.js';
 import { IssueMark } from '../issues/task-bits.js';
 import t from './tasks.module.css';
 
@@ -122,6 +125,29 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const { api, act, open, openWorktree } = useTaskActions();
   const { client } = useBeluga();
   const projects = useApp((s) => s.projects);
+  const team = useApp((s) => s.team);
+  const friends = useApp((s) => s.network.friends);
+  /** Your chat with a teammate, the task in the box (BLG-263: you ask, nothing is given to their Claude). */
+  const askIn = (issue: Issue): ActionItem[] => {
+    const mates = teammatesOf(team, issue.projectId).filter((m) => friends.some((f) => f.peerId === m.peerId));
+    if (!mates.length) return [];
+    const go = (peerId: string, text: string): void => {
+      draftIn(`dm:${peerId}`, text);
+      client.store.dispatch({ type: 'view', view: { kind: 'conversation', id: `dm:${peerId}` } });
+    };
+    return [
+      {
+        label: 'Ask in a Chat',
+        icon: 'chat',
+        separate: true,
+        submenu: mates.flatMap((m) => [
+          { label: `${m.name}’s Claude`, hint: `@claude:… @${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, true)) },
+          { label: m.name, hint: `@${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, false)) },
+        ]),
+        onSelect: () => undefined,
+      },
+    ];
+  };
   return (issue) => {
     // Only a worktree that's still here (an archived one can be restored from its page): its own, or one carrying its work.
     const worktree = worktreeDoing(issue, (id) => projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived)));
@@ -147,6 +173,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
           : []),
       // Finished (or canceled) work starts again only deliberately: back to Ready, then Start.
       ...(startable ? [] : [{ label: 'Reopen the Task', icon: 'refresh' as const, onSelect: () => void act(() => api.update(issue.id, { status: 'todo' }), `Reopened ${issue.key}`) }]),
+      ...askIn(issue),
       {
         label: 'Status',
         separate: true,

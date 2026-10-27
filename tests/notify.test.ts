@@ -615,3 +615,19 @@ describe('plans: you hear from the plan, not each task', () => {
     });
   });
 });
+
+describe('a notice about something that waits for you (BLG-255)', () => {
+  it('is read once that request is answered, wherever it was answered', () => {
+    const store = new Store(base());
+    const notifier = new Notifier({ store, desktop: vi.fn() });
+    store.dispatch({ type: 'net_offer', offer: { peerId: 'rae', name: 'rae', dir: 'in', at: 5, expiresAt: Date.now() + 60_000 } });
+    notifier.notify({ kind: 'needsYou', tag: 'invited', title: 'rae wants to add you as a friend', body: '', need: 'friend:rae' });
+    expect(store.getState().inbox).toMatchObject([{ need: 'friend:rae', read: false }]);
+    // Something else changes: still waiting, still unread.
+    store.dispatch({ type: 'net_offer', offer: { peerId: 'zed', name: 'zed', dir: 'in', at: 6, expiresAt: Date.now() + 60_000 } });
+    expect(store.getState().inbox[0]!.read).toBe(false);
+    store.dispatch({ type: 'net_offer_gone', peerId: 'rae', dir: 'in' });
+    expect(store.getState().inbox[0]!.read).toBe(true);
+    notifier.stop();
+  });
+});

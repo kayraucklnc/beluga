@@ -59,6 +59,8 @@ export interface ChatClaudeOptions {
   readonly onLive?: (conversation: string, id: string, state: 'thinking' | 'idle') => void;
   /** Something you should know (your Claude couldn't answer). */
   readonly onProblem?: (conversation: string, text: string) => void;
+  /** Words as this Mac reads them (a team task by its own key: core/team/mentions.ts). */
+  readonly localize?: (text: string) => string;
   /** Where answered asks are remembered. */
   readonly handledFile?: string;
   readonly now?: () => number;
@@ -217,9 +219,12 @@ export class ChatClaude {
   }
 
   /** The history, the files and the question, as your Claude will read them. */
-  private async request(m: MessageView, signal: AbortSignal, tools = false): Promise<ChatAnswerRequest> {
+  private async request(asked: MessageView, signal: AbortSignal, tools = false): Promise<ChatAnswerRequest> {
     const { mesh } = this.opts;
-    const all = mesh.conversation(m.conversation);
+    const local = this.opts.localize;
+    const words = <V extends MessageView>(x: V): V => (local ? { ...x, text: local(x.text) } : x);
+    const m = words(asked);
+    const all = mesh.conversation(m.conversation).map(words);
     const at = all.findIndex((x) => x.id === m.id);
     const owner = mesh.summary().self?.name ?? 'me';
     const group = m.conversation.startsWith('group:') ? mesh.summary().groups.find((g) => `group:${g.id}` === m.conversation) : undefined;

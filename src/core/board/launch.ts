@@ -31,7 +31,6 @@ import { launchTeam } from '../team/launch.js';
 import { TeamBoardSync } from '../team/board-sync.js';
 import { TeamAssign } from '../team/assign.js';
 import { TeamPlans } from '../team/plan-share.js';
-import { gatewayOf } from '../gateway/registry.js';
 
 /**
  * Start the board and plans for the daemon (the Mac app's Beluga): tasks in ~/.beluga/board.json,
@@ -153,15 +152,9 @@ export function launchBoard(host: BoardHost): () => void {
       const live = (id: string): boolean => store.getState().projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived));
       const teamDir = host.demo ? null : dir;
       const teamSync = new TeamBoardSync(team, { board, live, dir: teamDir });
-      // A task given to a teammate's Claude goes to it as a request from you (the gateway: their trust and approvals apply).
-      const askClaude = (peerId: string, ask: string, summary: string, project: string | undefined): string => {
-        const gw = gatewayOf(session);
-        if (!gw) throw new Error('requests to Claudes need the Beluga app');
-        return gw.ask({ person: peerId, ask, summary, by: 'person', ...(project ? { project } : {}) }).id;
-      };
       // Plans you choose to share with the team: teammates review them, you apply what you like.
       const teamPlans = new TeamPlans(team, { edit: (id, ops) => void planWork.edit(id, ops), dir: teamDir });
-      return [teamSync, new TeamAssign(team, { board, sync: teamSync, askClaude, dir: teamDir }), teamPlans];
+      return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans];
     },
   });
   let stopSeed = (): void => undefined;

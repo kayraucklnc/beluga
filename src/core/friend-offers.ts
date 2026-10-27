@@ -60,7 +60,7 @@ export function receiveFriendOffer(host: OfferHost, from: string, body: BodyOf<'
   const fresh = !map.has(from);
   map.set(from, { link: body.link, expiresAt: body.expiresAt });
   host.store.dispatch({ type: 'net_offer', offer: { peerId: from, name, dir: 'in', at: Date.now(), expiresAt: body.expiresAt } });
-  if (fresh) host.notify?.({ kind: 'needsYou', tag: 'invited', title: `${name} wants to add you as a friend`, body: 'Accept to talk, share and ask each other’s Claude over the Beluga network', key: `friend-offer:${from}:${body.expiresAt}` });
+  if (fresh) host.notify?.({ kind: 'needsYou', tag: 'invited', title: `${name} wants to add you as a friend`, body: 'Accept to talk, share and ask each other’s Claude over the Beluga network', need: `friend:${from}`, key: `friend-offer:${from}:${body.expiresAt}` });
 }
 
 /** Accept (you're friends once your Macs pair) or turn down someone's friend request. */
