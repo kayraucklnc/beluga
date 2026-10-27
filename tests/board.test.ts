@@ -498,6 +498,37 @@ describe('a parent following its sub-tasks', () => {
     board.update(held.key, { status: 'todo' }, me);
     expect(board.need(held.key).status).toBe('todo');
   });
+
+  it('a parent carried by the worktree its sub-tasks are done in follows them to In Review and Done; one with its own worktree or pull request stays at In Progress', () => {
+    const { board } = setup();
+    const shared = board.create({ projectId: 'api', title: 'Sidebar fixes' }, claude);
+    board.carry(shared.key, { id: 'w1' }, () => false);
+    const kids = ['A', 'B'].map((title) => board.create({ projectId: 'api', title, parent: shared.key }, claude));
+    for (const k of kids) {
+      board.carry(k.key, { id: 'w1' }, () => false);
+      board.update(k.key, { status: 'in_review' }, claude);
+    }
+    expect(board.need(shared.key).status).toBe('in_review');
+    board.prChanged('w1', { number: 9, url: 'https://github.com/o/r/pull/9', state: 'MERGED', title: 'Sidebar fixes', draft: false, checks: 'passing' });
+    expect([shared, ...kids].map((i) => board.need(i.key).status)).toEqual(['done', 'done', 'done']);
+
+    const own = board.create({ projectId: 'api', title: 'Own' }, claude);
+    board.linkWorktree(own.key, 'w2', {}, claude);
+    const elsewhere = board.create({ projectId: 'api', title: 'C', parent: own.key }, claude);
+    board.carry(elsewhere.key, { id: 'w3' }, () => false);
+    board.update(elsewhere.key, { status: 'in_review' }, claude);
+    expect(board.need(own.key).status).toBe('in_progress');
+
+    const pr = { number: 4, url: 'https://github.com/o/r/pull/4', state: 'OPEN', title: 'Own PR', draft: true, checks: 'pending' } as const;
+    const byPr = board.create({ projectId: 'api', title: 'By PR' }, claude);
+    board.update(byPr.key, { status: 'in_progress' }, claude);
+    board.linkWorktree(byPr.key, 'w4', {}, claude);
+    board.prChanged('w4', pr);
+    const d = board.create({ projectId: 'api', title: 'D', status: 'in_review', parent: byPr.key }, claude);
+    expect(board.need(byPr.key).status).toBe('in_progress');
+    board.update(d.key, { status: 'done' }, claude);
+    expect(board.need(byPr.key).status).toBe('in_progress');
+  });
 });
 
 describe('the archive', () => {
