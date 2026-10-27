@@ -739,6 +739,7 @@ export class SentinelRunner {
       if (!found.length) return { kind: 'failed', why: 'Claude kept no numbers: its step calls sentinel_measure for each one it finds' };
     } else {
       let data: unknown;
+      let raw: string | undefined;
       if (step.from === 'source') {
         if (!step.source) return { kind: 'failed', why: 'it has no source yet: pick one' };
         const fetch = this.deps.fetchSource;
@@ -752,12 +753,13 @@ export class SentinelRunner {
         const before = outputs.at(-1);
         if (!before) return { kind: 'failed', why: 'there’s no step before it to read: put it after the step that finds the numbers' };
         data = readOutput(before.output);
+        raw = before.output;
       }
-      ({ found, missing } = measureFrom(data, step.metrics, step.keep));
+      ({ found, missing } = measureFrom(data, step.metrics, step.keep, raw));
       if (!found.length) return { kind: 'failed', why: step.metrics.length ? `found none of ${step.metrics.map((m) => m.name).join(', ')} in ${step.from === 'source' ? 'the source’s rows' : 'the step before’s output'}` : 'found no numbers to keep' };
     }
     keep(active, found);
-    const said = found.map((m) => `${m.label ?? labelOf(m.name)}: ${m.value !== undefined ? formatMetric(m.value, m.unit) : `${m.rows?.length ?? 0} rows`}`);
+    const said = found.map((m) => `${m.label ?? labelOf(m.name)}: ${m.value !== undefined ? formatMetric(m.value, m.unit) : m.series ? `${m.series.length} points` : m.output ? `its output (${m.output.format === 'json' ? 'JSON' : m.output.format === 'markdown' ? 'Markdown' : 'text'})` : `${m.rows?.length ?? 0} rows`}`);
     const output = `Kept ${said.join(' · ')}${missing.length ? `\nNot found: ${missing.join(', ')}` : ''}`;
     if (missing.length) return { kind: 'failed', why: `didn’t find ${missing.join(', ')} (the rest was kept)`, output };
     return { kind: 'done', output };

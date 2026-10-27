@@ -45,7 +45,7 @@ describe('beluga_sentinel', () => {
       steps: [{ kind: 'claude', name: 'Triage', where: 'project', prompt: 'Read new issues and make tasks' }, { kind: 'notify', name: 'Tell me' }],
     });
     const made = s.sentinels.list()[0]!;
-    expect(res.content[0]!.text).toBe(`Made “Issues to tasks” (Every weekday at 8:00), paused: \`sentinel:${made.id}\`. It runs once the user turns it on from its page (you can’t).`);
+    expect(res.content[0]!.text).toBe(`Made “Issues to tasks” (Every weekday at 8:00), paused: \`sentinel:${made.id}\`. Its steps: Triage (step ${made.steps[0]!.id}), Tell me (step ${made.steps[1]!.id}). It runs once the user turns it on from its page (you can’t).`);
     expect(made).toMatchObject({ projectId: 'api', paused: true, access: 'look', steps: [{ kind: 'claude', name: 'Triage' }, { kind: 'notify', phone: false }] });
     const bad = await call(defs, 'sentinel_create', { name: 'X', project: 'nope', trigger: { kind: 'manual' }, steps: [{ kind: 'notify', name: 'n' }] });
     expect(bad).toMatchObject({ isError: true, content: [{ text: "There's no project nope" }] });
@@ -160,7 +160,7 @@ describe('recipes', () => {
 });
 
 describe('the demo', () => {
-  it('seeds ten sentinels with their history, four of them keeping numbers on two dashboards', async () => {
+  it('seeds eleven sentinels with their history, five of them keeping numbers on three dashboards (Overview with every kind of tile), and the Sentinel chat', async () => {
     const { demoGitHub, seedDemoSentinel } = await import('../src/core/sentinel/demo.js');
     const s = setup({ github: demoGitHub() });
     let back = 0;
@@ -178,6 +178,7 @@ describe('the demo', () => {
       ['YouTube subscribers', false],
       ['Site speed', false],
       ['Last job run', true],
+      ['Signups by day', false],
     ]);
     // A week of numbers, and the dashboards made by hand (none made for you).
     const revenue = st.metrics![st.items[6]!.id]!.revenue!;
@@ -186,9 +187,22 @@ describe('the demo', () => {
     expect(st.metrics![st.items[8]!.id]!.home!.points).toHaveLength(57);
     expect(st.metrics![st.items[9]!.id]!['last-jobs']!.rows).toHaveLength(6);
     expect(st.dashboards!.map((d) => [d.name, d.tiles.length])).toEqual([
+      ['Overview', 14],
       ['Revenue', 11],
       ['Ops', 4],
     ]);
+    // Overview shows every kind of tile; its outputs are the Morning brief's Claude step (Markdown) and YouTube's answer (JSON).
+    const overview = st.dashboards![0]!;
+    expect([...new Set(overview.tiles.map((t) => t.kind))].sort()).toEqual(['divider', 'number', 'output', 'series', 'table', 'text']);
+    const outputs = overview.tiles.filter((t) => t.kind === 'output').map((t) => st.outputs?.[t.step!.sentinelId]?.[t.step!.stepId]);
+    expect(outputs.map((o) => o?.format)).toEqual(['markdown', 'json']);
+    expect(outputs[1]!.text).toContain('"subscriberCount": "12304"');
+    const signups = st.metrics![st.items[10]!.id]!['signups-by-day']!;
+    expect(signups).toMatchObject({ kind: 'series', label: 'Signups by day' });
+    expect(signups.series).toHaveLength(14);
+    // The Sentinel chat starts with a short exchange.
+    const chat = s.store.getState().log.filter((l) => l.channel === 'sentinel-chat:main');
+    expect(chat.map((l) => l.type)).toEqual(['chat', 'agent']);
     // Uptime guard went down and came back: a pair of runs, by the event, in that order.
     const guard = st.items[4]!;
     expect(st.runs.filter((r) => r.sentinelId === guard.id).map((r) => [r.by, r.trigger.summary])).toEqual([

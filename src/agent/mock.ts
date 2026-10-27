@@ -471,6 +471,9 @@ async function mockDashboardAsk(input: AgentRunInput, tools: NonNullable<AgentRu
     if (m && sentinel) found.push({ sentinel, metric: m[1]!, label: m[2]!.trim() });
   }
   const wanted = found.filter((f) => said.split(/[^a-z]+/).some((w) => w.length > 3 && (f.label.toLowerCase().includes(w.replace(/s$/, '')) || f.metric.includes(w.replace(/s$/, '')))));
+  // Something nothing keeps yet ("the open PR count"): a draft sentinel that fetches it, then its tile.
+  const fetches = /\b(pr|prs|pull requests?|open issues?|count of|how many)\b/.test(said) && !wanted.length;
+  if (fetches && input.sentinelTools) return mockFetchTile(input, input.sentinelTools, tools, id, pace);
   const tiles = (wanted.length ? wanted : found.slice(0, 3)).slice(0, 6);
   const compare = /last week|week/.test(said) ? ('week' as const) : /yesterday/.test(said) ? ('day' as const) : /month/.test(said) ? ('month' as const) : undefined;
   for (const t of tiles) {
@@ -480,10 +483,94 @@ async function mockDashboardAsk(input: AgentRunInput, tools: NonNullable<AgentRu
   }
   if (tiles[0] && /chart|graph|over time|trend/.test(said)) {
     input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_add_tile');
-    tools.addTile(id, { kind: 'chart', width: 3, metrics: [{ sentinel: tiles[0].sentinel, metric: tiles[0].metric }] });
+    tools.addTile(id, { kind: 'series', width: 3, metrics: [{ sentinel: tiles[0].sentinel, metric: tiles[0].metric }] });
   }
   await sleep(300 * pace, input.signal);
   return tiles.length ? `Added ${tiles.map((t) => t.label).join(', ')}${compare ? `, compared with ${compare === 'day' ? 'yesterday' : `last ${compare}`}` : ''}.` : 'There are no numbers kept yet: a sentinel with a Keep the numbers step keeps them.';
+}
+
+/**
+ * The demo's Claude adding a tile for something no sentinel fetches yet: a draft sentinel that
+ * counts the open pull requests every morning (paused until you turn it on), and its number tile.
+ */
+async function mockFetchTile(input: AgentRunInput, sentinels: NonNullable<AgentRunInput['sentinelTools']>, tools: NonNullable<AgentRunInput['dashboardTools']>, id: string, pace: number): Promise<string> {
+  const issues = /issue/.test(input.prompt.toLowerCase());
+  const what = issues ? { name: 'Open issues', metric: 'open-issues', label: 'Open issues', cmd: 'gh issue list --state open --json number --jq length' } : { name: 'Open pull requests', metric: 'open-prs', label: 'Open pull requests', cmd: 'gh pr list --state open --json number --jq length' };
+  await sleep(500 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_list');
+  await sleep(600 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_create');
+  const made = sentinels.create({
+    name: what.name,
+    trigger: { kind: 'schedule', every: 'day', at: '09:00', missed: 'catch-up' },
+    steps: [
+      { kind: 'script', name: 'Count them', command: what.cmd, cwd: 'project', timeoutSec: 60 },
+      { kind: 'measure', name: 'Keep the number', from: 'previous', metrics: [{ name: what.metric, label: what.label, unit: 'count', better: 'down' }] },
+    ],
+  } as unknown as Parameters<typeof sentinels.create>[0]);
+  const sid = /`sentinel:([\w-]+)`/.exec(made)?.[1] ?? what.name;
+  await sleep(400 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_add_tile');
+  tools.addTile(id, { kind: 'number', sentinel: sid, metric: what.metric, title: what.label });
+  await sleep(300 * pace, input.signal);
+  return `Nothing kept ${what.label.toLowerCase()} yet, so I set up \`sentinel:${sid}\`: every day at 9:00 it counts them with gh and keeps the number. It’s a draft: turn it on and the tile fills in after its first run.`;
+}
+
+/**
+ * The demo's Sentinel chat (docs/sentinel.md §12): it reads Sentinel as it is (sentinel_list), and
+ * pauses, runs or deletes the sentinel the words name; a delete asks you first, as the real one does.
+ */
+async function mockSentinelChat(input: AgentRunInput, tools: NonNullable<AgentRunInput['sentinelTools']>, dash: AgentRunInput['dashboardTools'], pace: number): Promise<string> {
+  const said = input.prompt.toLowerCase();
+  await sleep(500 * pace, input.signal);
+  input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_list');
+  const list = tools.list();
+  // "Morning brief · Every day at 7:00 · watching · Look · last run done: … · `sentinel:sn_x`"
+  const items = list.split('\n').flatMap((l) => {
+    const m = /^(.+?) · (.+?) · (.+?) · .*`sentinel:([\w-]+)`/.exec(l);
+    return m ? [{ name: m[1]!, when: m[2]!, state: m[3]!, id: m[4]!, line: l }] : [];
+  });
+  const named = items.filter((x) => said.includes(x.name.toLowerCase()) || x.name.toLowerCase().split(/\s+/).some((w) => w.length > 4 && said.includes(w)));
+  const target = named[0];
+  if (/\b(delete|remove)\b/.test(said) && /dashboard/.test(said) && dash) {
+    const boards = dash.list().split('\n').flatMap((l) => {
+      const m = /^(.+?) \(id (db_\w+)\)/.exec(l);
+      return m ? [{ name: m[1]!, id: m[2]! }] : [];
+    });
+    const d = boards.find((b) => said.includes(b.name.toLowerCase()));
+    if (!d) return `Which dashboard? There are ${boards.map((b) => b.name).join(', ') || 'none'}.`;
+    input.onEvent('tool', 'mcp__beluga_dashboard__dashboard_remove');
+    if (!(await input.canUseTool('mcp__beluga_dashboard__dashboard_remove', { dashboard: d.id }))) return `You said no, so “${d.name}” stays.`;
+    dash.remove(d.id);
+    return `Deleted the dashboard “${d.name}”. Its numbers stay with their sentinels.`;
+  }
+  if (/\b(delete|remove)\b/.test(said)) {
+    if (!target) return `Which one? You have ${items.map((x) => x.name).join(', ') || 'no sentinels yet'}.`;
+    await sleep(400 * pace, input.signal);
+    input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_remove');
+    if (!(await input.canUseTool('mcp__beluga_sentinel__sentinel_remove', { id: target.id }))) return `You said no, so “${target.name}” keeps watching.`;
+    tools.remove(target.id);
+    return `Deleted “${target.name}”. It stopped watching; its runs’ reports go with the next clean-up.`;
+  }
+  if (/\bpause\b/.test(said) && target) {
+    input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_pause');
+    return tools.pause(target.id).replace(/^“/, 'Done: “');
+  }
+  if (/\brun\b/.test(said) && target) {
+    input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_run');
+    return `${tools.run(target.id)}. Its tiles update when it’s done.`;
+  }
+  await sleep(500 * pace, input.signal);
+  if (dash) input.onEvent('tool', 'mcp__beluga_dashboard__metric_list');
+  const on = items.filter((x) => x.state === 'watching');
+  const off = items.filter((x) => x.state !== 'watching');
+  return [
+    `${on.length} of your ${items.length} sentinels are watching${off.length ? `; ${off.map((x) => x.name).join(', ')} ${off.length === 1 ? 'is' : 'are'} paused` : ''}.`,
+    '',
+    ...on.slice(0, 6).map((x) => `- **${x.name}** · ${x.when.toLowerCase()} \`sentinel:${x.id}\``),
+    '',
+    'Ask me to change one, add a tile for something, or set up a new watcher.',
+  ].join('\n');
 }
 
 /**
@@ -625,6 +712,8 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     if (input.sentinelBrief && input.sentinelTools?.stop) return input.dashboardTools?.measure && /sentinel_measure/.test(input.sentinelBrief) ? mockMeasure(input, input.dashboardTools, pace) : mockSentinel(input, pace);
     // Building a dashboard (its Describe it): the numbers that match the words, as tiles.
     if (input.dashboardTools?.building) return mockDashboardAsk(input, input.dashboardTools, input.dashboardTools.building, pace);
+    // The Sentinel chat: it reads Sentinel and acts on the sentinel the words name.
+    if (input.sentinelTools && /You are the Sentinel chat/.test(input.sentinelBrief ?? '')) return mockSentinelChat(input, input.sentinelTools, input.dashboardTools, pace);
     // Changing a sentinel (sentinel.ask): it reads the words, fills the sentinel in with its tools.
     if (input.sentinelTools?.asking) return mockSentinelAsk(input, input.sentinelTools, input.sentinelTools.asking, pace);
     // A plan's conversation: Claude writes, revises and checks the plan with its tools.

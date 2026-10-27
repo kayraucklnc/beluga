@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 22 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 23 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -49,9 +49,14 @@ export const COMPANION_PROTO = { major: 1, minor: 22 } as const;
  * (`sentinel.decide`). 1.22 (BLG-244): numbers and dashboards (docs/sentinel.md §10): the
  * `dashboard:<id>` topic (`DashboardView`, its tiles worked out on the Mac with every compare),
  * pull to refresh (`dashboard.refresh`), a number over time (`sentinel.metricRead`), and in
- * `SentinelsView` the dashboards and the first one's first three numbers for Home.
+ * `SentinelsView` the dashboards and the first one's first three numbers for Home. 1.23 (BLG-246):
+ * Sentinel's own dashboard and its chat (docs/sentinel.md §10, §12): tiles of kind `series` (an
+ * older phone's `chart` still comes as `chart`) and `output` (a step's latest export, `output`),
+ * a tile's real size (`span`, `tall`; `width` stays 1 to 3 for older phones), the `draft` state,
+ * and `SentinelsView.chat`, the Sentinel chat's open conversation (a `conv:sentinel-chat:<id>`
+ * topic the phone writes in as any conversation).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -605,6 +610,8 @@ export const SentinelsView = z.object({
   dashboards: z.array(DashboardRef).max(30).optional(),
   /** 1.22: Home's row: the first dashboard's first three numbers, compared as that dashboard says. */
   numbers: z.object({ dashboard: DashboardRef, items: z.array(z.object({ label: z.string().max(100), value: z.string().max(60), change: z.string().max(60).optional(), tone: NumberTone })).max(3) }).optional(),
+  /** 1.23: the Sentinel chat's open conversation (docs/sentinel.md §12): its topic, name, last line, and whether Claude works in it. */
+  chat: z.object({ topic: Topic, title: z.string().max(100), last: z.string().max(300).optional(), lastAt: ts.optional(), working: z.boolean() }).optional(),
 });
 export type SentinelsView = z.infer<typeof SentinelsView>;
 
@@ -645,10 +652,14 @@ export type SentinelPageView = z.infer<typeof SentinelPageView>;
  */
 export const DashboardTileView = z.object({
   id,
-  kind: z.union([z.enum(['number', 'chart', 'table', 'text', 'divider']), z.string().max(20)]),
+  kind: z.union([z.enum(['number', 'chart', 'series', 'table', 'output', 'text', 'divider']), z.string().max(20)]),
+  /** Columns of six, 1 to 3 (what an older phone reads; `span` is the real one). */
   width: z.number().int().min(1).max(3),
+  /** 1.23: its real width, 1 to 6 columns, and whether it's tall. */
+  span: z.number().int().min(1).max(6).optional(),
+  tall: z.boolean().optional(),
   title: z.string().max(100),
-  state: z.union([z.enum(['ok', 'paused', 'gone', 'waiting']), z.string().max(20)]),
+  state: z.union([z.enum(['ok', 'paused', 'draft', 'gone', 'waiting']), z.string().max(20)]),
   sentinel: z.string().max(100).optional(),
   topic: Topic.optional(),
   value: z.string().max(60).optional(),
@@ -656,7 +667,15 @@ export const DashboardTileView = z.object({
   pinned: CompareKind.optional(),
   /** The last points (a sparkline), oldest first. */
   trend: z.array(z.number()).max(90).optional(),
-  chart: z.object({ kind: z.string().max(10), unit: z.string().max(20), series: z.array(z.object({ label: z.string().max(100), points: z.array(z.tuple([ts, z.number()])).max(90) })).max(8) }).optional(),
+  chart: z.object({
+    kind: z.string().max(10),
+    unit: z.string().max(20),
+    series: z.array(z.object({ label: z.string().max(100), points: z.array(z.tuple([ts, z.number()])).max(90) })).max(8),
+    /** 1.23: a kept array (a series tile of a `series` metric): each point's label; the points' first number is its place. */
+    labels: z.array(z.string().max(80)).max(90).optional(),
+  }).optional(),
+  /** 1.23: an output tile: how it reads (`markdown`, `tree`, `table`, `text`), the text (Markdown without its code, or JSON), and whether it was cut. */
+  output: z.object({ look: z.union([z.enum(['markdown', 'tree', 'table', 'text']), z.string().max(10)]), text: z.string().max(16_000), cut: z.boolean().optional() }).optional(),
   table: z.object({ columns: z.array(z.string().max(80)).max(20), rows: z.array(z.array(z.union([z.string().max(300), z.number(), z.boolean(), z.null()])).max(20)).max(50), total: z.number().int().min(0) }).optional(),
   text: z.string().max(2000).optional(),
   runId: z.string().max(200).optional(),

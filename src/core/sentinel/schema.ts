@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { SourceSchema } from '../../shared/view-spec.js';
-import { CHART_TILE_KINDS, TILE_KINDS } from './dashboard-model.js';
+import { CHART_TILE_KINDS, LEGACY_TILE_KINDS, OUTPUT_SHOWS, TILE_KINDS } from './dashboard-model.js';
 import { COMPARE } from './metrics.js';
-import { ACCESS, BELUGA_EVENTS, BETTER, GITHUB_EVENTS, MEASURE_FROM, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
+import { ACCESS, BELUGA_EVENTS, BETTER, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 
 /**
  * Sentinels as zod checks: what the API takes (sentinel-api.ts), what sentinel.json holds, and
@@ -44,14 +44,17 @@ const stepName = z.string().max(80).optional();
 export const MetricUnitSchema = z.union([z.enum(['count', 'percent', 'ms', 'bytes', 'plain']), z.custom<`currency:${string}`>((v) => typeof v === 'string' && /^currency:[A-Za-z]{3}$/.test(v), 'A currency like currency:USD')]);
 export const MetricNameSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}$/, 'A name like subscribers or failed-payments');
 
-/** One number (or rows) a Keep the numbers step keeps. */
+/** One number (or a series, rows, or an output) a Keep the numbers step keeps. */
 export const MetricSpecSchema = z.object({
   name: MetricNameSchema,
   label: z.string().max(80).optional(),
   pick: z.string().max(400).optional(),
   unit: MetricUnitSchema.optional(),
   better: z.enum(BETTER).optional(),
-  kind: z.enum(['number', 'rows']).optional(),
+  kind: z.enum(METRIC_KINDS).optional(),
+  // A series of rows: the label column and the value column.
+  x: z.string().max(80).optional(),
+  y: z.string().max(80).optional(),
 });
 
 /** A step as given: ids and names are filled in when missing. */
@@ -157,16 +160,24 @@ export const SentinelFileSchema = z.object({
 // ---------------------------------------------------------------- dashboards (§10)
 
 const MetricRefSchema = z.object({ sentinelId: id, metric: MetricNameSchema });
+const StepRefSchema = z.object({ sentinelId: id, stepId: z.string().min(1).max(40) });
+
+/** A tile's kind: one of TILE_KINDS, or an older name for one (`chart` is a series tile now). */
+export const TileKindSchema = z.preprocess((v) => (typeof v === 'string' && LEGACY_TILE_KINDS[v] ? LEGACY_TILE_KINDS[v] : v), z.enum(TILE_KINDS));
+export const TileWidthSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(6)]);
 
 /** A tile as given (Add a Tile, Claude's dashboard_add_tile): its id is made when missing. */
 export const TileInputSchema = z.object({
   id: z.string().min(1).max(40).optional(),
-  kind: z.enum(TILE_KINDS),
-  width: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  kind: TileKindSchema,
+  width: TileWidthSchema.optional(),
+  height: z.union([z.literal(1), z.literal(2)]).optional(),
   title: z.string().max(80).optional(),
   metric: MetricRefSchema.optional(),
   metrics: z.array(MetricRefSchema).max(8).optional(),
   chart: z.enum(CHART_TILE_KINDS).optional(),
+  step: StepRefSchema.optional(),
+  show: z.enum(OUTPUT_SHOWS).optional(),
   sentinelId: id.optional(),
   text: z.enum(['headline', 'report']).optional(),
   compare: z.enum(COMPARE).optional(),
@@ -182,7 +193,7 @@ export const SavedDashboardSchema = z
     id,
     name: z.string().min(1).max(60),
     compare: z.enum(COMPARE).default('previous'),
-    tiles: z.array(TileInputSchema.extend({ id: z.string().min(1).max(40), width: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1) })).default([]),
+    tiles: z.array(TileInputSchema.extend({ id: z.string().min(1).max(40), width: TileWidthSchema.default(1) })).default([]),
     auto: z.boolean().optional(),
     createdAt: z.number(),
     updatedAt: z.number(),

@@ -227,6 +227,13 @@ sparkline, a chart's series, a table's first rows, a text tile's headline; pause
 quietly; a Refresh going, "Fetching… 2 of 3"), and in `sentinels` the dashboards and the first
 one's first three numbers for Home. Pull to refresh is `dashboard.refresh`; a number over time is
 `sentinel.metricRead`. Tiles never carry a source, a query or a key.
+1.23 (BLG-246) brought Sentinel's own dashboard and its chat (`SINCE.sentinelChat`, docs/sentinel.md
+§10 and §12): tiles of kind `series` (numbers over time keep coming as `chart`, so an older phone
+draws them; a kept array comes with its points' `labels`) and `output` (a step's latest export:
+Markdown without its code, or JSON for a tree or a table), a tile's real size (`span`, `tall`;
+`width` stays 1 to 3), the `draft` state, and in `sentinels` the Sentinel chat's open conversation
+(`chat`), a `conv:sentinel-chat:<id>` topic the phone writes and answers in as any conversation. A
+delete Claude asks for there is an `approval` like any other.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 

@@ -194,7 +194,7 @@ describe('the measure step', () => {
     // The first number made the first dashboard, once.
     expect(st.dashboards).toHaveLength(1);
     expect(st.dashboards![0]).toMatchObject({ name: 'Everything', auto: true, compare: 'previous' });
-    expect(st.dashboards![0]!.tiles.map((t) => t.kind)).toEqual(['number', 'chart']);
+    expect(st.dashboards![0]!.tiles.map((t) => t.kind)).toEqual(['number', 'series']);
     s.sentinels.dashboards.remove(st.dashboards![0]!.id);
     const again = s.sentinels.start(made.id, 'you');
     await until(() => s.sentinels.runGet(again.id).run.state === 'done');
@@ -282,16 +282,17 @@ describe('dashboards', () => {
     const made = d.autoMake([{ sentinelId: 'sn_a', name: 'subscribers', kind: 'number' }, { sentinelId: 'sn_b', name: 'last-jobs', kind: 'rows' }])!;
     expect(made.tiles.map((t) => [t.kind, t.width])).toEqual([
       ['number', 1],
-      ['chart', 3],
+      ['series', 3],
       ['table', 3],
     ]);
     const ops = d.create('Ops');
     expect(() => d.addTile(ops.id, { kind: 'number' })).toThrow(/needs its metric/);
     const a = d.addTile('ops', { kind: 'number', metric: { sentinelId: 'sn_a', metric: 'subscribers' } }).tile;
     const b = d.addTile(ops.id, { kind: 'divider', title: 'Money', width: 1 }, 0).tile;
-    expect(b.width).toBe(3);
+    expect(b.width).toBe(6);
+    // `chart` is what a series tile was called: still taken, as a series.
     const c = d.addTile(ops.id, { kind: 'chart', metric: { sentinelId: 'sn_a', metric: 'subscribers' } }).tile;
-    expect(c).toMatchObject({ chart: 'line', width: 3, metrics: [{ sentinelId: 'sn_a', metric: 'subscribers' }] });
+    expect(c).toMatchObject({ kind: 'series', chart: 'line', width: 3, metric: { sentinelId: 'sn_a', metric: 'subscribers' } });
     d.updateTile(ops.id, a.id, { width: 2, compare: 'week' });
     expect(d.get(ops.id)!.tiles.find((t) => t.id === a.id)).toMatchObject({ width: 2, compare: 'week' });
     d.updateTile(ops.id, a.id, { compare: null });
@@ -367,7 +368,8 @@ describe('beluga_dashboard', () => {
     const forRun = s.sentinels.forRun('ws:else', 'p-me')!;
     const defs = createDashboardToolDefs(forRun.dashboard);
     expect(defs.map((d) => `mcp__beluga_dashboard__${d.name}`)).toEqual(DASHBOARD_TOOL_NAMES.slice(1));
-    for (const name of DASHBOARD_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false })).toBe('allow');
+    // Deleting a dashboard asks (ALWAYS_ASK_YOU); everything else just runs.
+    for (const name of DASHBOARD_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false })).toBe(name.endsWith('dashboard_remove') ? 'ask' : 'allow');
     expect(s.sentinels.forRun('ws:else', 'p-friend')).toBeUndefined();
     expect(forRun.brief).toMatch(/metric_read\(sentinel, name, since\)/);
   });
@@ -391,7 +393,7 @@ describe('beluga_dashboard', () => {
     expect(await text('dashboard_update_tile', { dashboard: money.id, tile: money.tiles[0]!.id, width: 2, compare: null })).toMatch(/^Changed tile/);
     expect(s.sentinels.dashboards.get(money.id)!.tiles[0]).toMatchObject({ width: 2, metric: { metric: 'revenue' } });
     expect(s.sentinels.dashboards.get(money.id)!.tiles[0]!.compare).toBeUndefined();
-    expect(await text('dashboard_list', {})).toMatch(/Money \(id db_\w+\) · vs the run before · 2 tiles\n {2}- tl_\w+: a number Shop\/revenue, 2 wide\n {2}- tl_\w+: a chart Shop\/customers, Shop\/revenue, 3 wide/);
+    expect(await text('dashboard_list', {})).toMatch(/Money \(id db_\w+\) · vs the run before · 2 tiles\n {2}- tl_\w+: a number Shop\/revenue, 2 wide\n {2}- tl_\w+: a series Shop\/customers, Shop\/revenue, 3 wide, line/);
     expect(await text('dashboard_remove_tile', { dashboard: 'Money', tile: money.tiles[1]!.id })).toMatch(/^Removed tile/);
     expect(await text('metric_read', { sentinel: 'Shop', name: 'customers', since: '7d' })).toMatch(/^Customers: 1 point, oldest first\.\n\d{4}-\d\d-\d\d \d\d:\d\d {2}41$/);
     expect(await call('metric_read', { sentinel: 'Shop', name: 'customers', since: 'whenever' })).toMatchObject({ isError: true });

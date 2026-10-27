@@ -196,9 +196,27 @@ export interface MetricSpec {
   readonly pick?: string;
   readonly unit?: MetricUnit;
   readonly better?: Better;
-  /** A number (the default), or the rows themselves ("who ran what last"). */
-  readonly kind?: 'number' | 'rows';
+  /**
+   * A number (the default); a whole array kept as a series ("revenue per day"); the rows themselves
+   * ("who ran what last"); or the step's raw output, or the picked part of it (an API's answer, a
+   * Claude session's result).
+   */
+  readonly kind?: MetricKind;
+  /** A series of rows: the column that labels each point (the first text column when none). */
+  readonly x?: string;
+  /** A series of rows: the column with each point's value (the first number column when none). */
+  readonly y?: string;
 }
+
+export const METRIC_KINDS = ['number', 'series', 'rows', 'output'] as const;
+export type MetricKind = (typeof METRIC_KINDS)[number];
+
+/** Points a series metric keeps from a run, at most. */
+export const SERIES_KEPT = 500;
+/** An output metric's text, at most (the run's folder has the whole step output). */
+export const OUTPUT_METRIC_MAX = 16 * 1024;
+/** Lines an output metric's file keeps (the newest). */
+export const OUTPUT_LINES_KEPT = 30;
 
 /** Rows a rows metric keeps from a run, at most (and by default). */
 export const ROWS_KEPT = 200;
@@ -449,6 +467,64 @@ export interface SentinelState {
   readonly refreshing?: Readonly<Record<string, DashboardRefresh>>;
   /** Your Claude building a dashboard (its Describe it), by dashboard. */
   readonly dashboardAsks?: Readonly<Record<string, SentinelAsk>>;
+  /** The latest output of each step an output tile names (§10), by sentinel, then by step: 12 KB at most each. */
+  readonly outputs?: Readonly<Record<string, Readonly<Record<string, StepOutput>>>>;
+  /** The Sentinel chat's conversations (§12), and the one open. */
+  readonly chats?: SentinelChats;
+}
+
+/** What a step said last, as an output tile shows it: Markdown (a Claude step), JSON (a service's answer) or text. */
+export type OutputFormat = 'markdown' | 'json' | 'text';
+
+/** A step's latest output, kept for the tiles that show it. */
+export interface StepOutput {
+  readonly runId: string;
+  readonly at: number;
+  readonly format: OutputFormat;
+  readonly text: string;
+  /** It was longer: the run's page has all of it. */
+  readonly cut?: boolean;
+}
+
+/** A step's output in the state, at most. */
+export const STEP_OUTPUT_IN_STATE = 12 * 1024;
+
+/** One of the Sentinel chat's conversations. */
+export interface SentinelChat {
+  readonly id: string;
+  readonly channel: string;
+  readonly createdAt: number;
+}
+
+export interface SentinelChats {
+  readonly chats: readonly SentinelChat[];
+  readonly active: string;
+}
+
+/** The Sentinel chat's channels: `sentinel-chat:<id>` (§12). */
+export const SENTINEL_CHAT_PREFIX = 'sentinel-chat:';
+/** The first chat's id: there is always one to write in. */
+export const FIRST_SENTINEL_CHAT = 'main';
+export const SENTINEL_CHAT_ID = /^[a-z0-9]{1,24}$/;
+export const sentinelChatChannel = (id: string): string => `${SENTINEL_CHAT_PREFIX}${id}`;
+/** The chat a channel is, if it's one of the Sentinel chat's. */
+export function sentinelChatOf(channel: string | undefined): string | undefined {
+  if (!channel?.startsWith(SENTINEL_CHAT_PREFIX)) return undefined;
+  const id = channel.slice(SENTINEL_CHAT_PREFIX.length);
+  return SENTINEL_CHAT_ID.test(id) ? id : undefined;
+}
+export const isSentinelChat = (channel: string | undefined): boolean => sentinelChatOf(channel) !== undefined;
+/** The open chat's channel (the first chat's when there are none yet). */
+export const activeSentinelChat = (c: SentinelChats | undefined): string => {
+  const chat = c?.chats.find((x) => x.id === c.active) ?? c?.chats[0];
+  return chat?.channel ?? sentinelChatChannel(FIRST_SENTINEL_CHAT);
+};
+/** A chat's name: the first line you wrote in it, short; "New chat" until then. */
+export function sentinelChatTitle(channel: string, log: ReadonlyArray<{ readonly channel: string; readonly type: string; readonly byAgent?: boolean; readonly text?: string }>, max = 40): string {
+  const first = log.find((l) => l.channel === channel && l.type === 'chat' && !l.byAgent && l.text?.trim());
+  const line = first?.text?.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  if (!line) return 'New chat';
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 }
 
 /** A point of a number: when its run kept it, and which run. */
@@ -465,13 +541,24 @@ export interface MetricSeries {
   readonly label: string;
   readonly unit: MetricUnit;
   readonly better: Better;
-  readonly kind: 'number' | 'rows';
-  /** The last POINTS_IN_STATE (a rows metric's: how many rows each run had). */
+  readonly kind: MetricKind;
+  /** The last POINTS_IN_STATE (a rows or series metric's: how many each run had; an output's: 0). */
   readonly points: readonly MetricPoint[];
   readonly rows?: readonly Row[];
   readonly columns?: readonly string[];
+  /** A series metric's latest array, in order. */
+  readonly series?: readonly SeriesPoint[];
+  /** An output metric's latest output. */
+  readonly output?: { readonly text: string; readonly format: OutputFormat };
+  /** When the latest rows, series or output were kept, and by which run. */
   readonly rowsAt?: number;
   readonly rowsRunId?: string;
+}
+
+/** One point of a series: its label ("Mon", "2026-10-01", "3") and its value. */
+export interface SeriesPoint {
+  readonly x: string;
+  readonly y: number;
 }
 
 /** Points per metric in the state (the files keep two years). */
@@ -511,6 +598,8 @@ export interface SentinelAsk {
   /** Claude's answer once done (its first lines), or what went wrong. */
   readonly answer?: string;
   readonly endedAt?: number;
+  /** Sentinels your Claude made while it worked (Add a Tile by description: drafts that fetch what it shows), paused until you turn them on. */
+  readonly made?: readonly string[];
 }
 
 export interface SentinelSlice {
@@ -547,9 +636,13 @@ export type SentinelAction =
   | { type: 'sentinel_refresh'; id: string; refreshing?: DashboardRefresh }
   /** Your Claude building a dashboard: began, or ended (none: forgotten). */
   | { type: 'sentinel_dashboard_ask'; id: string; ask?: SentinelAsk }
+  /** A step's latest output an output tile shows (none: no tile shows it any more). */
+  | { type: 'sentinel_output'; sentinelId: string; stepId: string; output?: StepOutput }
+  /** The Sentinel chat's conversations changed. */
+  | { type: 'sentinel_chats'; chats: SentinelChats }
   | { type: 'sentinel_off' };
 
-export const SENTINEL_ACTIONS: ReadonlySet<string> = new Set(['sentinel_init', 'sentinel_put', 'sentinel_remove', 'sentinel_run', 'sentinel_ask', 'sentinel_trouble', 'sentinel_webhook', 'sentinel_metric', 'sentinel_dashboards', 'sentinel_refresh', 'sentinel_dashboard_ask', 'sentinel_off']);
+export const SENTINEL_ACTIONS: ReadonlySet<string> = new Set(['sentinel_init', 'sentinel_put', 'sentinel_remove', 'sentinel_run', 'sentinel_ask', 'sentinel_trouble', 'sentinel_webhook', 'sentinel_metric', 'sentinel_dashboards', 'sentinel_refresh', 'sentinel_dashboard_ask', 'sentinel_output', 'sentinel_chats', 'sentinel_off']);
 
 /** The step a live run is on: the running one, else the first still waiting. */
 const liveStep = (run: RunSummary): string | undefined => (run.steps.find((s) => s.state === 'running') ?? run.steps.find((s) => s.state === 'waiting'))?.id;
@@ -586,7 +679,8 @@ export function reduceSentinel(state: SentinelSlice, action: SentinelAction): Se
       const { [action.id]: _ask, ...asks } = s.asks ?? {};
       const { [action.id]: _trouble, ...troubles } = s.troubles ?? {};
       const { [action.id]: _metrics, ...metrics } = s.metrics ?? {};
-      return { sentinel: { ...s, items: s.items.filter((i) => i.id !== action.id), runs: s.runs.filter((r) => r.sentinelId !== action.id), nextAt, live, asks, troubles, metrics } };
+      const { [action.id]: _outputs, ...outputs } = s.outputs ?? {};
+      return { sentinel: { ...s, items: s.items.filter((i) => i.id !== action.id), runs: s.runs.filter((r) => r.sentinelId !== action.id), nextAt, live, asks, troubles, metrics, outputs } };
     }
     case 'sentinel_metric': {
       const m = action.metric;
@@ -599,6 +693,15 @@ export function reduceSentinel(state: SentinelSlice, action: SentinelAction): Se
       const { [action.id]: _was, ...refreshing } = s.refreshing ?? {};
       return { sentinel: { ...s, refreshing: action.refreshing ? { ...refreshing, [action.id]: action.refreshing } : refreshing } };
     }
+    case 'sentinel_output': {
+      const all = s.outputs ?? {};
+      const { [action.stepId]: _was, ...rest } = all[action.sentinelId] ?? {};
+      const mine = action.output ? { ...rest, [action.stepId]: action.output } : rest;
+      const { [action.sentinelId]: _old, ...others } = all;
+      return { sentinel: { ...s, outputs: Object.keys(mine).length ? { ...others, [action.sentinelId]: mine } : others } };
+    }
+    case 'sentinel_chats':
+      return { sentinel: { ...s, chats: action.chats } };
     case 'sentinel_dashboard_ask': {
       const { [action.id]: _was, ...asks } = s.dashboardAsks ?? {};
       return { sentinel: { ...s, dashboardAsks: action.ask ? { ...asks, [action.id]: action.ask } : asks } };

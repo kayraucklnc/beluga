@@ -470,6 +470,12 @@ export const PHONE: Record<Method, Side> = {
   'dashboard.removeTile': 'mac',
   'dashboard.moveTile': 'mac',
   'dashboard.ask': 'mac',
+  // The Sentinel chat (docs/sentinel.md §12): the phone writes and answers in the open one through
+  // companion.ask, as in any conversation it can write in; managing the chats is the Mac's.
+  'sentinel.chatNew': 'mac',
+  'sentinel.chatOpen': 'mac',
+  'sentinel.chatClear': 'mac',
+  'sentinel.chatDelete': 'mac',
 };
 
 /** A method the phone may call (unknown names are not). */

@@ -145,7 +145,7 @@ const SENTINELS: SentinelState = {
       tiles: [
         { id: 't1', kind: 'number', width: 1, metric: { sentinelId: 'sn_brief', metric: 'issues' }, compare: 'week' },
         { id: 't2', kind: 'number', width: 1, metric: { sentinelId: 'sn_brief', metric: 'revenue' } },
-        { id: 't3', kind: 'chart', width: 3, chart: 'line', metrics: [{ sentinelId: 'sn_brief', metric: 'issues' }] },
+        { id: 't3', kind: 'series', width: 3, chart: 'line', metrics: [{ sentinelId: 'sn_brief', metric: 'issues' }] },
         { id: 't4', kind: 'table', width: 3, metric: { sentinelId: 'sn_brief', metric: 'jobs' } },
         { id: 't5', kind: 'text', width: 2, sentinelId: 'sn_brief', text: 'headline' },
         { id: 't6', kind: 'number', width: 1, metric: { sentinelId: 'sn_gone', metric: 'x' } },

@@ -1,4 +1,6 @@
 import { fromPhone } from '../core/client-context.js';
+import { busyChannels } from '../core/board/work.js';
+import { sentinelChatChannel } from '../core/sentinel/model.js';
 import { needSentinel } from '../core/sentinel/registry.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
@@ -28,4 +30,19 @@ export const SENTINEL_HANDLERS = {
   // Its address with the secret ({ url }), or why there's none now ({ why }): never in the state.
   'sentinel.webhookUrl': (s, id) => needSentinel(s).webhookUrl(id),
   'sentinel.metricRead': (s, id, name, since) => needSentinel(s).metricRead(id, name, since),
+  'sentinel.chatNew': (s) => needSentinel(s).chatNew(),
+  'sentinel.chatOpen': (s, id) => needSentinel(s).chatOpen(id),
+  'sentinel.chatClear': (s, id) => {
+    const channel = sentinelChatChannel(id);
+    // Its Claude stops first: nothing it says after lands in the cleared chat.
+    if (busyChannels(s.store.getState().log).has(channel)) s.host.stopRun(channel);
+    s.host.forgetContext(channel);
+    needSentinel(s).chatClear(id);
+  },
+  'sentinel.chatDelete': async (s, id) => {
+    const channel = sentinelChatChannel(id);
+    if (busyChannels(s.store.getState().log).has(channel)) s.host.stopRun(channel);
+    s.host.forgetContext(channel);
+    await needSentinel(s).chatDelete(id);
+  },
 } satisfies SentinelHandlers;

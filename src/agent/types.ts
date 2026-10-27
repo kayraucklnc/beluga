@@ -135,15 +135,19 @@ export interface SentinelTools {
   readonly asking?: string;
 }
 
-/** A tile as Claude gives it (dashboard_add_tile): sentinels by id or name. */
+/** A tile as Claude gives it (dashboard_add_tile): sentinels by id or name, a step by its id or name. */
 export interface ToolTile {
-  readonly kind: 'number' | 'chart' | 'table' | 'text' | 'divider';
-  readonly width?: 1 | 2 | 3;
+  readonly kind: 'number' | 'series' | 'table' | 'output' | 'text' | 'divider';
+  readonly width?: 1 | 2 | 3 | 4 | 6;
+  readonly height?: 1 | 2;
   readonly title?: string;
   readonly sentinel?: string;
   readonly metric?: string;
   readonly metrics?: ReadonlyArray<{ readonly sentinel: string; readonly metric: string }>;
   readonly chart?: 'line' | 'area' | 'bar';
+  /** An output tile's step (its id or name). */
+  readonly step?: string;
+  readonly show?: 'auto' | 'markdown' | 'tree' | 'table' | 'text';
   readonly text?: 'headline' | 'report';
   readonly compare?: 'previous' | 'day' | 'week' | 'month';
 }
@@ -154,6 +158,11 @@ export interface DashboardTools {
   measure?(name: string, value: number | string, unit?: string, label?: string): string;
   list(): string;
   create(name: string): string;
+  /** Rename it, or change what every tile compares with. */
+  update(dashboard: string, patch: { readonly name?: string; readonly compare?: ToolTile['compare'] }): string;
+  /** Delete it (through your approval: never in ALWAYS_OK). */
+  remove(dashboard: string): string;
+  moveTile(dashboard: string, tileId: string, index: number): string;
   addTile(dashboard: string, tile: ToolTile): string;
   updateTile(dashboard: string, tileId: string, patch: Omit<Partial<ToolTile>, 'kind' | 'compare'> & { readonly compare?: ToolTile['compare'] | null }): string;
   removeTile(dashboard: string, tileId: string): string;

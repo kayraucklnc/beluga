@@ -16,7 +16,7 @@ import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceC
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
 import { type FriendShareAction, type FriendShareSlice, initialFriendShare, reduceFriendShare } from './friend-share-store.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
-import { type SentinelAction, type SentinelSlice, initialSentinel, reduceSentinel } from './sentinel/model.js';
+import { FIRST_SENTINEL_CHAT, type SentinelAction, type SentinelSlice, initialSentinel, reduceSentinel, sentinelChatChannel } from './sentinel/model.js';
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type TeamAction, type TeamSlice, initialTeam, reduceTeam } from './team/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
@@ -329,8 +329,10 @@ export type View =
   | { readonly kind: 'sentinel'; readonly projectId?: string }
   | { readonly kind: 'sentinel_page'; readonly id: string }
   | { readonly kind: 'sentinel_run'; readonly runId: string }
-  /** Dashboard (docs/sentinel.md §10): your dashboards, one open (none: the first). */
-  | { readonly kind: 'dashboard'; readonly id?: string };
+  /** Sentinel › Dashboard (docs/sentinel.md §10): your dashboards, one open (none: the first). */
+  | { readonly kind: 'dashboard'; readonly id?: string }
+  /** Sentinel › Chat (docs/sentinel.md §12): one of the Sentinel chat's conversations (none: the first). */
+  | { readonly kind: 'sentinel_chat'; readonly chat?: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
@@ -359,11 +361,21 @@ export interface Compaction {
 }
 
 export const channelOf = (view: View): string =>
-  view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'assistant' ? (view.chat ? assistantChannel(view.chat) : activeAssistantChannel(NO_ASSISTANT_CHATS)) : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
+  view.kind === 'workspace' || view.kind === 'shared'
+    ? `ws:${view.id}`
+    : view.kind === 'assistant'
+      ? view.chat
+        ? assistantChannel(view.chat)
+        : activeAssistantChannel(NO_ASSISTANT_CHATS)
+      : view.kind === 'sentinel_chat'
+        ? sentinelChatChannel(view.chat ?? FIRST_SENTINEL_CHAT)
+        : view.kind === 'draft' || view.kind === 'draft_worktree'
+          ? 'draft'
+          : 'room';
 
 /** The conversation a view shows, if any (Overview, Search, Terminal… show none, so the chat's unread count stays). */
 export const shownChannel = (view: View): string | undefined =>
-  view.kind === 'conversation' ? view.id : view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' || view.kind === 'assistant' ? channelOf(view) : undefined;
+  view.kind === 'conversation' ? view.id : view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' || view.kind === 'assistant' || view.kind === 'sentinel_chat' ? channelOf(view) : undefined;
 
 /** What the screens attached to this computer's Beluga are looking at (all of them together). */
 export interface Attention {
@@ -1108,6 +1120,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'sentinel_dashboards':
     case 'sentinel_refresh':
     case 'sentinel_dashboard_ask':
+    case 'sentinel_output':
+    case 'sentinel_chats':
     case 'sentinel_off':
       return { ...state, ...reduceSentinel(state, action) };
     case 'plans_init':

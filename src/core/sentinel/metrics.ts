@@ -1,14 +1,15 @@
 import { type Row, parseText, toCell, toRows } from '../../shared/view-spec.js';
-import { type Better, type MetricPoint, type MetricSeries, type MetricSpec, type MetricUnit, ROWS_KEPT } from './model.js';
+import { type Better, type MetricPoint, type MetricSeries, type MetricSpec, type MetricUnit, OUTPUT_METRIC_MAX, type OutputFormat, ROWS_KEPT, SERIES_KEPT, type SeriesPoint } from './model.js';
 
 /**
  * Numbers (docs/sentinel.md §10), the pure part: reading what a step said (a bare number, JSON,
- * CSV, "name: value" lines), picking named numbers out of it, comparing a number with the past
+ * CSV, "name: value" lines), picking named values out of it (a number, a whole array as a series,
+ * rows, or the output itself), comparing a number with the past
  * (the previous run, yesterday, last week, last month), the change in words with its tone, and
  * keeping the files to two years or 20 000 points. Browser-safe: the screens use it too.
  */
 
-/** One value a measure step kept: a number, or rows. */
+/** One value a measure step kept: a number, a series, rows, or an output. */
 export interface Measured {
   readonly name: string;
   readonly label?: string;
@@ -17,6 +18,8 @@ export interface Measured {
   readonly value?: number;
   readonly rows?: readonly Row[];
   readonly columns?: readonly string[];
+  readonly series?: readonly SeriesPoint[];
+  readonly output?: { readonly text: string; readonly format: OutputFormat };
 }
 
 /** A line of a metric's file (~/.beluga/sentinel/metrics/<sentinel>/<name>.jsonl). */
@@ -26,6 +29,8 @@ export interface MetricLine {
   readonly value?: number;
   readonly rows?: readonly Row[];
   readonly columns?: readonly string[];
+  readonly series?: readonly SeriesPoint[];
+  readonly output?: { readonly text: string; readonly format: OutputFormat };
 }
 
 export const KEEP_POINTS = 20_000;
@@ -135,6 +140,55 @@ function everyNumber(data: unknown): Measured[] {
   }).slice(0, 40);
 }
 
+/**
+ * A series from a picked value: an array of numbers (labelled 1, 2, 3…), of rows (the `x` column
+ * labels each point, the `y` column is its value; the first text and the first number column when
+ * unset), or an object of numbers ({ "Mon": 3, "Tue": 5 }).
+ */
+export function seriesOf(v: unknown, x?: string, y?: string, keep = SERIES_KEPT): SeriesPoint[] | undefined {
+  const cap = (pts: SeriesPoint[]): SeriesPoint[] | undefined => (pts.length ? pts.slice(0, keep) : undefined);
+  if (typeof v === 'string') {
+    const data = readOutput(v);
+    return typeof data === 'string' ? undefined : seriesOf(data, x, y, keep);
+  }
+  if (Array.isArray(v)) {
+    if (v.every((n) => toNumber(n) !== undefined)) return cap(v.map((n, i) => ({ x: String(i + 1), y: toNumber(n)! })));
+    const rows = v.filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object' && !Array.isArray(r));
+    if (!rows.length) return undefined;
+    const keys = Object.keys(rows[0]!);
+    const yKey = y ?? keys.find((k) => typeof rows[0]![k] !== 'boolean' && toNumber(rows[0]![k]) !== undefined);
+    const xKey = x ?? keys.find((k) => k !== yKey && typeof rows[0]![k] === 'string' && toNumber(rows[0]![k]) === undefined) ?? keys.find((k) => k !== yKey);
+    if (!yKey) return undefined;
+    return cap(rows.flatMap((r, i) => {
+      const n = toNumber(r[yKey]);
+      return n === undefined ? [] : [{ x: xKey !== undefined && r[xKey] !== undefined && r[xKey] !== null ? String(r[xKey]).slice(0, 80) : String(i + 1), y: n }];
+    }));
+  }
+  if (v && typeof v === 'object') return cap(Object.entries(v as Record<string, unknown>).flatMap(([k, n]) => (toNumber(n) === undefined || typeof n === 'boolean' ? [] : [{ x: k.slice(0, 80), y: toNumber(n)! }])));
+  return undefined;
+}
+
+/** An output kept as a metric: the picked part (JSON as JSON), or the whole text, cut at 16 KB. */
+export function outputOf(v: unknown, raw: string | undefined): { readonly text: string; readonly format: OutputFormat } | undefined {
+  if (v === undefined || v === null) return raw?.trim() ? { text: raw.slice(0, OUTPUT_METRIC_MAX), format: textFormat(raw) } : undefined;
+  if (typeof v === 'string') return v.trim() ? { text: v.slice(0, OUTPUT_METRIC_MAX), format: textFormat(v) } : undefined;
+  const json = JSON.stringify(v, null, 2) ?? '';
+  return { text: json.length > OUTPUT_METRIC_MAX ? JSON.stringify(v).slice(0, OUTPUT_METRIC_MAX) : json, format: 'json' };
+}
+
+const textFormat = (t: string): OutputFormat => {
+  const s = t.trim();
+  if (/^[[{]/.test(s)) {
+    try {
+      JSON.parse(s);
+      return 'json';
+    } catch {
+      // Text after all.
+    }
+  }
+  return /(^|\n)(#{1,4} |[-*] )|\*\*/.test(s) ? 'markdown' : 'text';
+};
+
 /** Rows from a picked value: an array of rows, an object (one row), or text (CSV). */
 function rowsOf(v: unknown, keep: number): { rows: Row[]; columns: string[] } | undefined {
   if (v === undefined || v === null) return undefined;
@@ -146,14 +200,28 @@ function rowsOf(v: unknown, keep: number): { rows: Row[]; columns: string[] } | 
  * What a measure step keeps from data: each named metric (its number, or its rows), or every
  * top-level number when it names none. → what it found, and the names it couldn't find.
  */
-export function measureFrom(data: unknown, specs: readonly MetricSpec[], keep = ROWS_KEPT): { readonly found: Measured[]; readonly missing: string[] } {
+export function measureFrom(data: unknown, specs: readonly MetricSpec[], keep = ROWS_KEPT, raw?: string): { readonly found: Measured[]; readonly missing: string[] } {
   if (!specs.length) return { found: everyNumber(data), missing: [] };
   const found: Measured[] = [];
   const missing: string[] = [];
   const cap = Math.max(1, Math.min(ROWS_KEPT, keep));
   for (const spec of specs) {
-    const v = pickPath(data, spec.pick ?? (spec.kind === 'rows' ? '' : spec.name));
+    // A rows, series or output metric with no path takes the whole thing; a number its own name.
+    const whole = spec.kind === 'rows' || spec.kind === 'series' || spec.kind === 'output';
+    const v = pickPath(data, spec.pick ?? (whole ? '' : spec.name));
     const base = { name: spec.name, ...(spec.label ? { label: spec.label } : {}), ...(spec.unit ? { unit: spec.unit } : {}), ...(spec.better ? { better: spec.better } : {}) };
+    if (spec.kind === 'output') {
+      const o = outputOf(spec.pick?.trim() ? v : undefined, spec.pick?.trim() ? undefined : (raw ?? (typeof data === 'string' ? data : JSON.stringify(data, null, 2))));
+      if (o) found.push({ ...base, output: o });
+      else missing.push(spec.name);
+      continue;
+    }
+    if (spec.kind === 'series') {
+      const pts = seriesOf(v, spec.x, spec.y);
+      if (pts?.length) found.push({ ...base, series: pts });
+      else missing.push(spec.name);
+      continue;
+    }
     if (spec.kind === 'rows') {
       const r = rowsOf(v, cap);
       if (r?.rows.length) found.push({ ...base, rows: r.rows, columns: r.columns });
@@ -300,8 +368,8 @@ export function prunePoints<L extends { readonly at: number }>(lines: readonly L
   return fresh.length > keep ? fresh.slice(fresh.length - keep) : [...fresh];
 }
 
-/** A file's lines as points (a rows line counts its rows). */
-export const pointOf = (l: MetricLine): MetricPoint => ({ at: l.at, value: l.value ?? l.rows?.length ?? 0, runId: l.runId });
+/** A file's lines as points (a rows or series line counts its rows or points; an output's is 0). */
+export const pointOf = (l: MetricLine): MetricPoint => ({ at: l.at, value: l.value ?? l.rows?.length ?? l.series?.length ?? 0, runId: l.runId });
 
 /** A line of a metric's file, read back (one that doesn't read is skipped). */
 export function readLine(text: string): MetricLine | undefined {
@@ -310,6 +378,8 @@ export function readLine(text: string): MetricLine | undefined {
     if (typeof v.at !== 'number' || typeof v.runId !== 'string') return undefined;
     if (typeof v.value === 'number') return { at: v.at, runId: v.runId, value: v.value };
     if (Array.isArray(v.rows)) return { at: v.at, runId: v.runId, rows: v.rows, ...(Array.isArray(v.columns) ? { columns: v.columns } : {}) };
+    if (Array.isArray(v.series)) return { at: v.at, runId: v.runId, series: v.series.filter((p) => p && typeof p.x === 'string' && typeof p.y === 'number') };
+    if (v.output && typeof v.output.text === 'string') return { at: v.at, runId: v.runId, output: { text: v.output.text, format: v.output.format === 'json' || v.output.format === 'markdown' ? v.output.format : 'text' } };
   } catch {
     // A torn last line (Beluga closed while writing): skipped.
   }
@@ -326,6 +396,6 @@ export function describePoints(m: Pick<MetricSeries, 'label' | 'unit'>, lines: r
   };
   return [
     `${m.label}: ${lines.length} ${lines.length === 1 ? 'point' : 'points'}${shown.length < lines.length ? ` (the last ${shown.length})` : ''}, oldest first.`,
-    ...shown.map((l) => `${day(l.at)}  ${l.value !== undefined ? formatMetric(l.value, m.unit) : `${l.rows?.length ?? 0} rows${l.rows?.[0] ? `, first: ${JSON.stringify(l.rows[0]).slice(0, 200)}` : ''}`}`),
+    ...shown.map((l) => `${day(l.at)}  ${l.value !== undefined ? formatMetric(l.value, m.unit) : l.series ? `${l.series.length} points: ${l.series.slice(0, 12).map((p) => `${p.x} ${formatMetric(p.y, m.unit)}`).join(', ')}${l.series.length > 12 ? '…' : ''}` : l.output ? `output (${l.output.format}): ${l.output.text.replace(/\s+/g, ' ').slice(0, 200)}` : `${l.rows?.length ?? 0} rows${l.rows?.[0] ? `, first: ${JSON.stringify(l.rows[0]).slice(0, 200)}` : ''}`}`),
   ].join('\n');
 }

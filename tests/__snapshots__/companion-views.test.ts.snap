@@ -1454,6 +1454,11 @@ Pull request #53",
     "topic": "sentinel:sn_fix",
   },
   "sentinels": {
+    "chat": {
+      "title": "Sentinel chat",
+      "topic": "conv:sentinel-chat:main",
+      "working": false,
+    },
     "dashboards": [
       {
         "id": "db_rev",

@@ -9,7 +9,9 @@ import { filterIssues, isOpen } from '../board/model.js';
 import { describeList } from '../board/prompt.js';
 import { planTitle } from '../plans/model.js';
 import { dueNow, nextRunAt } from './clock.js';
-import { type Dashboard, type MetricRef, TILE_INFO, dashboardSentinels } from './dashboard-model.js';
+import type { AgentPlace } from '../../agent/types.js';
+import { SentinelChats } from './chat.js';
+import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_INFO, dashboardSentinels, outputFormat, outputSteps } from './dashboard-model.js';
 import { Dashboards, type TileInput, type TilePatch } from './dashboards.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
 import { MetricFiles } from './metric-files.js';
@@ -20,6 +22,10 @@ import {
   DEFAULT_LIMITS,
   KEEP_IN_STATE,
   MAX_RUN_AT_ONCE,
+  OUTPUT_LINES_KEPT,
+  STEP_OUTPUT_IN_STATE,
+  type StepOutput,
+  isSentinelChat,
   type DashboardRefresh,
   type Limits,
   type MetricSeries,
@@ -56,7 +62,7 @@ import {
   toSummary,
 } from './model.js';
 import { redactSecrets } from '../../shared/steps.js';
-import { dashboardAskBrief, describeSentinels, sentinelAskBrief, sentinelMaterial, sentinelNote } from './prompt.js';
+import { dashboardAskBrief, describeSentinels, sentinelAskBrief, sentinelChatBrief, sentinelMaterial, sentinelNote } from './prompt.js';
 import { RECIPES } from './recipes.js';
 import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, SentinelRunner, type YourAnswer, mergePinned, runSentinelShell } from './runner.js';
 import { MetricUnitSchema, StepInputSchema } from './schema.js';
@@ -183,6 +189,10 @@ export class Sentinels {
   private dashboardAsks: Record<string, SentinelAsk> = {};
   /** Waiting for a run to end (a dashboard's Refresh), by run. */
   private readonly endWaiters = new Map<string, Array<() => void>>();
+  /** The latest output of each step an output tile names, by sentinel, then step. */
+  private outputs: Record<string, Record<string, StepOutput>> = {};
+  /** The Sentinel chat's conversations (§12). */
+  readonly chats: SentinelChats;
 
   constructor(private readonly deps: SentinelsDeps) {
     this.now = deps.now ?? Date.now;
@@ -206,8 +216,13 @@ export class Sentinels {
     this.metricFiles = new MetricFiles(deps.dir, this.now);
     this.loadMetrics(!data.lossy);
     this.dashboards = new Dashboards(deps.dir, this.now, (all) => {
-      if (!this.closed) deps.store.dispatch({ type: 'sentinel_dashboards', dashboards: all });
+      if (this.closed) return;
+      deps.store.dispatch({ type: 'sentinel_dashboards', dashboards: all });
+      // An output tile added (or the last one of a step removed): its step's latest output follows.
+      this.syncOutputs();
     }, deps.saveDelayMs ?? 300);
+    this.chats = new SentinelChats({ store: deps.store, dir: deps.dir, selfId: deps.selfId, now: this.now });
+    this.syncOutputs(undefined, false);
     this.runner = new SentinelRunner({
       now: this.now,
       ...(deps.claude ? { claude: deps.claude } : {}),
@@ -293,7 +308,7 @@ export class Sentinels {
       const at = this.nextAtOf(s);
       if (at !== undefined) nextAt[s.id] = at;
     }
-    return { enabled: true, items: this.items, runs: index, live, runAtOnce: this.runAtOnce, nextAt, asks: this.asks, troubles: this.troubles, webhook: this.webhook, metrics: this.metrics, dashboards: this.dashboards.list(), refreshing: this.refreshing, dashboardAsks: this.dashboardAsks };
+    return { enabled: true, items: this.items, runs: index, live, runAtOnce: this.runAtOnce, nextAt, asks: this.asks, troubles: this.troubles, webhook: this.webhook, metrics: this.metrics, dashboards: this.dashboards.list(), refreshing: this.refreshing, dashboardAsks: this.dashboardAsks, outputs: this.outputs, chats: this.chats.state() };
   }
 
   list = (): readonly Sentinel[] => this.items;
@@ -433,6 +448,8 @@ export class Sentinels {
     const { [s.id]: _metrics, ...metrics } = this.metrics;
     this.metrics = metrics;
     this.metricFiles.remove(s.id);
+    const { [s.id]: _outputs, ...outputs } = this.outputs;
+    this.outputs = outputs;
     this.triggers?.sync(this.items);
     this.deps.store.dispatch({ type: 'sentinel_remove', id: s.id });
     this.save();
@@ -692,11 +709,48 @@ export class Sentinels {
     const asked = this.askChannels.get(channel);
     const sentinel = asked ? this.items.find((i) => i.id === asked) : undefined;
     if (sentinel) return { tools: this.toolsFor(undefined, sentinel.id), dashboard: this.dashboardTools(undefined), brief: sentinelAskBrief(sentinel, this.items, RECIPES), inRun: false };
-    // One where it builds a dashboard (Describe it): the dashboard and the numbers as material.
+    // One where it builds a dashboard (Add a Tile by description): the dashboard, the numbers and the
+    // sentinels as material; a sentinel it makes to fetch what nothing keeps yet is noted as the ask's.
     const building = this.dashboardChannels.get(channel);
     const dashboard = building ? this.dashboards.get(building) : undefined;
-    if (dashboard) return { tools: this.toolsFor(undefined), dashboard: this.dashboardTools(undefined, dashboard.id), brief: dashboardAskBrief(dashboard, this.metricList()), inRun: false };
+    if (dashboard) return { tools: this.toolsFor(undefined, undefined, (id) => this.madeFor(dashboard.id, id)), dashboard: this.dashboardTools(undefined, dashboard.id), brief: dashboardAskBrief(dashboard, this.metricList(), this.items, RECIPES), inRun: false };
+    // The Sentinel chat (§12): how Sentinel works, and all of it as it is now.
+    if (isSentinelChat(channel)) return { tools: this.toolsFor(undefined), dashboard: this.dashboardTools(undefined), brief: sentinelChatBrief(this.items, this.dashboards.list(), this.metricList(), RECIPES, (sn) => this.lastLine(sn)), inRun: false };
     return { tools: this.toolsFor(undefined), dashboard: this.dashboardTools(undefined), brief: sentinelNote(), inRun: false };
+  }
+
+  /** Where the Sentinel chat's Claude runs (its own folder and session), your runs only. */
+  chatPlace(channel: string, from: string): AgentPlace | undefined {
+    return isSentinelChat(channel) ? this.chats.place(channel, from) : undefined;
+  }
+
+  /** What the card says when your Claude wants to delete a sentinel or a dashboard (it always asks you). */
+  confirmWords(toolName: string, input: Record<string, unknown>): { readonly title: string; readonly detail: string } | undefined {
+    if (toolName === 'mcp__beluga_sentinel__sentinel_remove') {
+      const s = this.get(String(input.id ?? ''));
+      return { title: `Your Claude wants to delete the sentinel “${s?.name ?? String(input.id ?? 'a sentinel')}”`, detail: s ? `${scheduleSentence(s.trigger, (id) => this.get(id)?.name)} · ${s.steps.length} ${s.steps.length === 1 ? 'step' : 'steps'}. It stops watching, a run going now stops, and its numbers go with it.` : 'There’s no such sentinel: Decline.' };
+    }
+    if (toolName === 'mcp__beluga_dashboard__dashboard_remove') {
+      const d = this.dashboards.get(String(input.dashboard ?? ''));
+      return { title: `Your Claude wants to delete the dashboard “${d?.name ?? String(input.dashboard ?? 'a dashboard')}”`, detail: d ? `${d.tiles.length} ${d.tiles.length === 1 ? 'tile' : 'tiles'} go; the numbers stay with their sentinels.` : 'There’s no such dashboard: Decline.' };
+    }
+    return undefined;
+  }
+
+  /** A sentinel's last run and next one, in a few words (sentinel_list, the chat's material). */
+  private lastLine(s: Sentinel): string {
+    const last = lastRunOf(this.state(), s.id);
+    const next = this.nextAtOf(s);
+    return `${last ? ` · last run ${last.state}${last.headline ? `: ${last.headline}` : ''}` : ' · never ran'}${next ? ` · next ${new Date(next).toLocaleString()}` : ''}`;
+  }
+
+  /** A sentinel your Claude made while building a dashboard: the ask says so (the draft to turn on). */
+  private madeFor(dashboardId: string, sentinelId: string): void {
+    const ask = this.dashboardAsks[dashboardId];
+    if (!ask) return;
+    const next = { ...ask, made: [...(ask.made ?? []), sentinelId] };
+    this.dashboardAsks = { ...this.dashboardAsks, [dashboardId]: next };
+    if (!this.closed) this.deps.store.dispatch({ type: 'sentinel_dashboard_ask', id: dashboardId, ask: next });
   }
 
   /**
@@ -809,6 +863,7 @@ export class Sentinels {
     this.queued.clear();
     this.file.flush();
     this.dashboards.flush();
+    this.chats.stop();
     for (const waiters of this.endWaiters.values()) for (const w of waiters) w();
     this.endWaiters.clear();
   }
@@ -1069,6 +1124,7 @@ export class Sentinels {
     this.deps.store.dispatch({ type: 'sentinel_run', run: summary });
     this.save();
     if (!isLive(summary.state)) {
+      if (this.outputs && this.dashboards) this.syncOutputs(summary.sentinelId);
       const waiters = this.endWaiters.get(summary.id);
       this.endWaiters.delete(summary.id);
       for (const w of waiters ?? []) w();
@@ -1157,7 +1213,7 @@ export class Sentinels {
         const lines = this.metricFiles.read(sentinelId, name);
         if (!lines.length) continue;
         const m = meta[name];
-        const lastRows = [...lines].reverse().find((l) => l.rows);
+        const lastRows = [...lines].reverse().find((l) => l.rows || l.series || l.output);
         this.metrics[sentinelId] = {
           ...this.metrics[sentinelId],
           [name]: {
@@ -1166,9 +1222,12 @@ export class Sentinels {
             label: m?.label ?? labelOf(name),
             unit: m?.unit ?? 'count',
             better: m?.better ?? 'up',
-            kind: m?.kind ?? (lastRows ? 'rows' : 'number'),
+            kind: m?.kind ?? (lastRows?.rows ? 'rows' : lastRows?.series ? 'series' : lastRows?.output ? 'output' : 'number'),
             points: lines.slice(-POINTS_IN_STATE).map(pointOf),
-            ...(lastRows?.rows ? { rows: lastRows.rows, columns: lastRows.columns ?? Object.keys(lastRows.rows[0] ?? {}), rowsAt: lastRows.at, rowsRunId: lastRows.runId } : {}),
+            ...(lastRows?.rows ? { rows: lastRows.rows, columns: lastRows.columns ?? Object.keys(lastRows.rows[0] ?? {}) } : {}),
+            ...(lastRows?.series ? { series: lastRows.series } : {}),
+            ...(lastRows?.output ? { output: lastRows.output } : {}),
+            ...(lastRows ? { rowsAt: lastRows.at, rowsRunId: lastRows.runId } : {}),
           },
         };
       }
@@ -1183,18 +1242,25 @@ export class Sentinels {
       const name = metricName(m.name);
       const was = this.metrics[s.id]?.[name];
       const rows = m.rows ? cellRows(m.rows as Record<string, unknown>[]).slice(0, ROWS_KEPT) : undefined;
-      const kind = rows ? 'rows' : 'number';
-      if (!rows && m.value === undefined) continue;
-      const meta = { label: oneLine(m.label ?? was?.label ?? labelOf(m.name), 80), unit: m.unit ?? was?.unit ?? 'count', better: m.better ?? was?.better ?? (kind === 'rows' ? 'none' : 'up'), kind } as const;
+      // An output is kept as said (it was redacted with the step's output); a series as its points.
+      const output = m.output ? { text: redactSecrets(m.output.text), format: m.output.format } : undefined;
+      const pts = m.series?.length ? m.series : undefined;
+      const kind = rows ? 'rows' : pts ? 'series' : output ? 'output' : 'number';
+      if (!rows && !pts && !output && m.value === undefined) continue;
+      const meta = { label: oneLine(m.label ?? was?.label ?? labelOf(m.name), 80), unit: m.unit ?? was?.unit ?? 'count', better: m.better ?? was?.better ?? (kind === 'number' || kind === 'series' ? 'up' : 'none'), kind } as const;
       this.metricFiles.setMeta(s.id, name, meta);
-      const line: MetricLine = rows ? { at, runId, rows, columns: m.columns?.length ? [...m.columns] : Object.keys(rows[0] ?? {}) } : { at, runId, value: m.value! };
-      this.metricFiles.append(s.id, name, line);
+      const line: MetricLine = rows ? { at, runId, rows, columns: m.columns?.length ? [...m.columns] : Object.keys(rows[0] ?? {}) } : pts ? { at, runId, series: pts } : output ? { at, runId, output } : { at, runId, value: m.value! };
+      this.metricFiles.append(s.id, name, line, kind === 'output' ? OUTPUT_LINES_KEPT : undefined);
+      // The latest rows, series or output: this run's, or what the metric had (it was a number before).
+      const latest = rows ? { rows, columns: line.columns ?? [] } : pts ? { series: pts } : output ? { output } : undefined;
+      const kept = latest ?? (was && (was.rows || was.series || was.output) ? { ...(was.rows ? { rows: was.rows, columns: was.columns ?? [] } : {}), ...(was.series ? { series: was.series } : {}), ...(was.output ? { output: was.output } : {}) } : undefined);
+      const when = latest ? { rowsAt: at, rowsRunId: runId } : { ...(was?.rowsAt ? { rowsAt: was.rowsAt } : {}), ...(was?.rowsRunId ? { rowsRunId: was.rowsRunId } : {}) };
       const series: MetricSeries = {
         sentinelId: s.id,
         name,
         ...meta,
         points: [...(was?.points ?? []), pointOf(line)].slice(-POINTS_IN_STATE),
-        ...(rows ? { rows, columns: line.columns ?? [], rowsAt: at, rowsRunId: runId } : was?.rows ? { rows: was.rows, columns: was.columns ?? [], ...(was.rowsAt ? { rowsAt: was.rowsAt } : {}), ...(was.rowsRunId ? { rowsRunId: was.rowsRunId } : {}) } : {}),
+        ...(kept ? { ...kept, ...when } : {}),
       };
       this.metrics = { ...this.metrics, [s.id]: { ...this.metrics[s.id], [name]: series } };
       this.deps.store.dispatch({ type: 'sentinel_metric', metric: series });
@@ -1216,8 +1282,8 @@ export class Sentinels {
       .map((i) => {
         const lines = Object.values(this.metrics[i.id]!).map((m) => {
           const last = m.points.at(-1);
-          const now = m.kind === 'rows' ? `${m.rows?.length ?? 0} rows (columns ${(m.columns ?? []).join(', ')})` : last ? formatMetric(last.value, m.unit) : 'none yet';
-          return `  - ${m.name}: ${m.label} · ${m.kind === 'rows' ? 'rows' : `${m.unit}, better ${m.better}`} · last ${now}${last ? ` on ${new Date(last.at).toLocaleDateString()}` : ''} · ${m.points.length} recent points`;
+          const now = m.kind === 'rows' ? `${m.rows?.length ?? 0} rows (columns ${(m.columns ?? []).join(', ')})` : m.kind === 'series' ? `${m.series?.length ?? 0} points` : m.kind === 'output' ? `an output (${m.output?.format ?? 'text'})` : last ? formatMetric(last.value, m.unit) : 'none yet';
+          return `  - ${m.name}: ${m.label} · ${m.kind === 'number' ? `${m.unit}, better ${m.better}` : m.kind} · last ${now}${last ? ` on ${new Date(last.at).toLocaleDateString()}` : ''} · ${m.points.length} recent points`;
         });
         return [`${i.name} (id ${i.id}, ${i.paused ? 'paused' : 'on'}, \`sentinel:${i.id}\`):`, ...lines].join('\n');
       })
@@ -1288,6 +1354,8 @@ export class Sentinels {
       this.deps.store.dispatch({ type: 'sentinel_dashboard_ask', id: d.id, ask: a });
     };
     setAsk(ask);
+    // What it is now: the sentinels Claude made meanwhile stay on it when it ends.
+    const latest = (): SentinelAsk => (this.dashboardAsks[d.id]?.channel === channel ? this.dashboardAsks[d.id]! : ask);
     const requestId = claude.ask(words, channel, words);
     if (!requestId) {
       setAsk({ ...ask, state: 'failed', answer: 'Your Claude couldn’t be asked there', endedAt: this.now() });
@@ -1297,21 +1365,81 @@ export class Sentinels {
     const timer = setTimeout(() => {
       over = true;
       claude.cancel(requestId, 'Stopped by Beluga: Claude took too long');
-      setAsk({ ...ask, state: 'failed', answer: TOOK_TOO_LONG, endedAt: this.now() });
+      setAsk({ ...latest(), state: 'failed', answer: TOOK_TOO_LONG, endedAt: this.now() });
     }, DEFAULT_LIMITS.minutes * 60_000);
     timer.unref?.();
     void claude.wait(requestId).then(
       (answer) => {
         clearTimeout(timer);
-        if (!over) setAsk({ ...ask, state: 'done', answer: clipLines(answer), endedAt: this.now() });
+        if (!over) setAsk({ ...latest(), state: 'done', answer: clipLines(answer), endedAt: this.now() });
       },
       (err: unknown) => {
         clearTimeout(timer);
-        if (!over) setAsk({ ...ask, state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'Claude stopped', endedAt: this.now() });
+        if (!over) setAsk({ ...latest(), state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'Claude stopped', endedAt: this.now() });
       },
     );
     return { channel };
   }
+
+  // ------------------------------------------------------------------ outputs (output tiles, §10)
+
+  /**
+   * The latest output of every step an output tile names, kept in the state (12 KB at most each,
+   * from the run's folder, redacted as every run output is): all of them, or one sentinel's after its
+   * run ended. Steps no tile names any more are let go.
+   */
+  private syncOutputs(only?: string, tell = true): void {
+    const wanted = outputSteps(this.dashboards.list());
+    const keys = new Set(wanted.map((r) => `${r.sentinelId}/${r.stepId}`));
+    for (const [sid, steps] of Object.entries(this.outputs)) for (const stepId of Object.keys(steps)) if (!keys.has(`${sid}/${stepId}`)) this.setOutput(sid, stepId, undefined, tell);
+    for (const r of wanted) {
+      if (only && r.sentinelId !== only) continue;
+      const next = this.latestOutput(r);
+      const was = this.outputs[r.sentinelId]?.[r.stepId];
+      if (next?.runId === was?.runId && next?.text === was?.text) continue;
+      this.setOutput(r.sentinelId, r.stepId, next, tell);
+    }
+  }
+
+  private setOutput(sentinelId: string, stepId: string, output: StepOutput | undefined, tell: boolean): void {
+    const { [stepId]: _was, ...rest } = this.outputs[sentinelId] ?? {};
+    const mine = output ? { ...rest, [stepId]: output } : rest;
+    const { [sentinelId]: _old, ...others } = this.outputs;
+    this.outputs = Object.keys(mine).length ? { ...others, [sentinelId]: mine } : others;
+    if (tell && !this.closed) this.deps.store.dispatch({ type: 'sentinel_output', sentinelId, stepId, ...(output ? { output } : {}) });
+  }
+
+  /** A step's output from the newest run that ended where that step was done. */
+  private latestOutput(r: StepRef): StepOutput | undefined {
+    const s = this.items.find((i) => i.id === r.sentinelId);
+    const step = s?.steps.find((st) => st.id === r.stepId);
+    if (!s || !step || !OUTPUT_STEP_KINDS.has(step.kind)) return undefined;
+    for (let i = this.runs.length - 1; i >= 0; i--) {
+      const run = this.runs[i]!;
+      if (run.sentinelId !== s.id || isLive(run.state)) continue;
+      const at = run.steps.findIndex((x) => x.id === r.stepId);
+      const st = at >= 0 ? run.steps[at] : undefined;
+      if (!st || st.state !== 'done') continue;
+      const text = this.folders.read(run.id, `step-${at + 1}.txt`);
+      if (!text?.trim()) continue;
+      const clean = redactSecrets(text);
+      return { runId: run.id, at: st.endedAt ?? run.endedAt ?? run.startedAt, format: outputFormat(clean, step.kind), text: clean.slice(0, STEP_OUTPUT_IN_STATE), ...(clean.length > STEP_OUTPUT_IN_STATE ? { cut: true } : {}) };
+    }
+    return undefined;
+  }
+
+  // ------------------------------------------------------------------ the Sentinel chat (§12)
+
+  chatNew = (): { readonly id: string; readonly channel: string } => {
+    const id = this.chats.newChat();
+    return { id, channel: this.chats.state().chats.find((c) => c.id === id)!.channel };
+  };
+
+  chatOpen = (id: string): void => this.chats.openChat(id);
+
+  chatClear = (id: string): void => this.chats.clear(id);
+
+  chatDelete = (id: string): Promise<void> => this.chats.deleteChat(id);
 
   /** The demo's history: numbers as if a run had kept them (now: the demo's clock travels back). */
   demoKeep(ref: string, runId: string, measured: readonly Measured[]): void {
@@ -1325,12 +1453,23 @@ export class Sentinels {
       const name = this.metrics[s.id]?.[metric] ? metric : (Object.values(this.metrics[s.id] ?? {}).find((m) => m.label.toLowerCase() === metric.trim().toLowerCase())?.name ?? metricName(metric));
       return { sentinelId: s.id, metric: name };
     };
+    /** A sentinel's step by its id or name (an output tile's). */
+    const stepRef = (sentinel: string, step: string): StepRef => {
+      const s = this.need(sentinel);
+      const st = s.steps.find((x) => x.id === step) ?? s.steps.find((x) => x.name.toLowerCase() === step.trim().toLowerCase()) ?? (/^(claude|http|script)$/.test(step) ? [...s.steps].reverse().find((x) => x.kind === step) : undefined);
+      if (!st) throw new Error(`“${s.name}” has no step ${step} (its steps: ${s.steps.map((x) => `${x.name} (${x.id}, ${x.kind})`).join(', ') || 'none'})`);
+      if (!OUTPUT_STEP_KINDS.has(st.kind)) throw new Error(`An output tile shows what an Ask Claude, Call a service or Run a script step said; “${st.name}” is ${STEP_INFO[st.kind].label}`);
+      return { sentinelId: s.id, stepId: st.id };
+    };
     const tileInput = (t: Partial<ToolTile>): Omit<TileInput, 'kind'> => ({
       ...(t.width ? { width: t.width } : {}),
+      ...(t.height ? { height: t.height } : {}),
       ...(t.title !== undefined ? { title: t.title } : {}),
       ...(t.sentinel && t.metric ? { metric: ref(t.sentinel, t.metric) } : {}),
-      ...(t.metrics?.length ? { metrics: t.metrics.map((m) => ref(m.sentinel, m.metric)) } : t.kind === 'chart' && t.sentinel && t.metric ? { metrics: [ref(t.sentinel, t.metric)] } : {}),
+      ...(t.metrics?.length ? { metrics: t.metrics.map((m) => ref(m.sentinel, m.metric)) } : {}),
       ...(t.chart ? { chart: t.chart } : {}),
+      ...(t.kind === 'output' && t.sentinel && t.step ? { step: stepRef(t.sentinel, t.step) } : {}),
+      ...(t.show ? { show: t.show } : {}),
       ...(t.kind === 'text' && t.sentinel ? { sentinelId: this.need(t.sentinel).id } : {}),
       ...(t.text ? { text: t.text } : {}),
       ...(t.compare ? { compare: t.compare } : {}),
@@ -1338,8 +1477,9 @@ export class Sentinels {
     const describe = (d: Dashboard): string => {
       const tiles = d.tiles.map((t) => {
         const refs = t.metric ? [t.metric] : (t.metrics ?? []);
-        const what = t.kind === 'divider' ? `“${t.title ?? ''}”` : t.kind === 'text' ? `${this.get(t.sentinelId ?? '')?.name ?? 'a sentinel that’s gone'} (${t.text ?? 'headline'})` : refs.map((r) => `${this.get(r.sentinelId)?.name ?? 'gone'}/${r.metric}`).join(', ');
-        return `  - ${t.id}: ${TILE_INFO[t.kind].label.toLowerCase()} ${what}, ${t.width} wide${t.compare ? `, ${COMPARE_WORDS[t.compare]}` : ''}`;
+        const stepName = t.step ? this.get(t.step.sentinelId)?.steps.find((x) => x.id === t.step!.stepId)?.name : undefined;
+        const what = t.kind === 'divider' ? `“${t.title ?? ''}”` : t.kind === 'text' ? `${this.get(t.sentinelId ?? '')?.name ?? 'a sentinel that’s gone'} (${t.text ?? 'headline'})` : t.step ? `${this.get(t.step.sentinelId)?.name ?? 'gone'}, step “${stepName ?? 'gone'}” (${t.step.stepId})` : refs.map((r) => `${this.get(r.sentinelId)?.name ?? 'gone'}/${r.metric}`).join(', ');
+        return `  - ${t.id}: ${TILE_INFO[t.kind].label.toLowerCase()} ${what}${t.title ? ` titled “${t.title}”` : ''}, ${t.width} wide${t.height === 2 ? ', tall' : ''}${t.chart && t.kind === 'series' ? `, ${t.chart}` : ''}${t.compare ? `, ${COMPARE_WORDS[t.compare]}` : ''}`;
       });
       return [`${d.name} (id ${d.id}) · ${COMPARE_WORDS[d.compare]} · ${d.tiles.length} ${d.tiles.length === 1 ? 'tile' : 'tiles'}`, ...tiles].join('\n');
     };
@@ -1363,6 +1503,20 @@ export class Sentinels {
       create: (name: string) => {
         const d = this.dashboards.create(name);
         return `Made the dashboard “${d.name}” (id ${d.id}); add tiles with dashboard_add_tile.`;
+      },
+      update: (dashboard: string, patch: { readonly name?: string; readonly compare?: Dashboard['compare'] }) => {
+        const d = this.dashboards.update(dashboard, patch);
+        return `“${d.name}” (id ${d.id}) now compares ${COMPARE_WORDS[d.compare]}.`;
+      },
+      // Through the user's approval (never in ALWAYS_OK): the tiles go, the numbers stay.
+      remove: (dashboard: string) => {
+        const d = this.dashboards.need(dashboard);
+        this.dashboards.remove(d.id);
+        return `Deleted the dashboard “${d.name}”. Its numbers stay with their sentinels.`;
+      },
+      moveTile: (dashboard: string, tileId: string, index: number) => {
+        const d = this.dashboards.moveTile(dashboard, tileId, index);
+        return `Moved tile ${tileId} to place ${d.tiles.findIndex((t) => t.id === tileId) + 1} of ${d.tiles.length} on “${d.name}”.`;
       },
       addTile: (dashboard: string, t: ToolTile) => {
         const { tile, dashboard: d } = this.dashboards.addTile(dashboard, { kind: t.kind, ...tileInput(t) });
@@ -1391,7 +1545,7 @@ export class Sentinels {
 
   // ------------------------------------------------------------------ Claude's tools
 
-  private toolsFor(active: ActiveRun | undefined, asking?: string): SentinelTools {
+  private toolsFor(active: ActiveRun | undefined, asking?: string, onMade?: (sentinelId: string) => void): SentinelTools {
     const line = (s: Sentinel): string => {
       const last = lastRunOf(this.state(), s.id);
       const next = this.nextAtOf(s);
@@ -1411,7 +1565,8 @@ export class Sentinels {
       create: (d: ToolDraft) => {
         const { name: _n, ...refs } = this.fromToolPatch({ trigger: d.trigger, steps: d.steps });
         const s = this.create({ ...fromToolDraft(d), ...refs });
-        return `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. It runs once the user turns it on from its page (you can’t).`;
+        onMade?.(s.id);
+        return `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. Its steps: ${s.steps.map((st) => `${st.name} (step ${st.id})`).join(', ') || 'none'}. It runs once the user turns it on from its page (you can’t).`;
       },
       run: (ref: string) => {
         const s = this.need(ref);

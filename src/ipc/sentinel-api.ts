@@ -8,6 +8,7 @@ import { SentinelDraftSchema, SentinelPatchSchema } from '../core/sentinel/schem
  */
 
 const id = z.string().min(1).max(80);
+const chat = z.string().regex(/^[a-z0-9]{1,24}$/);
 
 export const SENTINEL_API = {
   // A new sentinel (paused until you turn it on) → the sentinel.
@@ -39,4 +40,12 @@ export const SENTINEL_API = {
   'sentinel.webhookUrl': { args: z.tuple([id]) },
   // A sentinel's number over time (two years at most; since a time) → { metric, lines }, oldest first.
   'sentinel.metricRead': { args: z.tuple([id, z.string().min(1).max(80), z.number().optional()]) },
+  // The Sentinel chat (docs/sentinel.md §12): a new conversation beside the others, open now → { id, channel }.
+  'sentinel.chatNew': { args: z.tuple([]) },
+  // Open one (the phone's Chat is the open one).
+  'sentinel.chatOpen': { args: z.tuple([chat]) },
+  // Clear: its messages go and its Claude starts afresh; the chat stays.
+  'sentinel.chatClear': { args: z.tuple([chat]) },
+  // Delete it for good (its Claude stops first): the one beside it opens, or a fresh first one.
+  'sentinel.chatDelete': { args: z.tuple([chat]) },
 } as const;

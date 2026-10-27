@@ -10,8 +10,8 @@ import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
-import { type RunSummary, type Sentinel, type SentinelState, firstLine, isLive, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById } from '../core/sentinel/model.js';
-import { type Dashboard, type Tile, metricOf, tileCompare, tileMetrics, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
+import { type RunSummary, type Sentinel, type SentinelState, activeSentinelChat, firstLine, isLive, isSentinelChat, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById, sentinelChatTitle } from '../core/sentinel/model.js';
+import { type Dashboard, type Tile, metricOf, outputLook, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
 import { COMPARE, changeText, deltaOf, formatMetric } from '../core/sentinel/metrics.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
@@ -983,9 +983,18 @@ export function convTurns(state: DomainState, ctx: ViewContext, named: string, o
   return { turns, more: upto > turns.length };
 }
 
+/** The Sentinel chat's conversations (docs/sentinel.md §12): openable and writable, never listed with the others. */
+function sentinelChatConversation(state: DomainState, channel: string): Conversation | undefined {
+  if (!isSentinelChat(channel) || !state.sentinel.enabled) return undefined;
+  const chats = state.sentinel.chats?.chats ?? [];
+  if (chats.length && !chats.some((c) => c.channel === channel)) return undefined;
+  const title = sentinelChatTitle(channel, state.log, 60);
+  return { channel, title: title === 'New chat' ? 'Sentinel chat' : `Sentinel · ${title}`, project: 'Sentinel', mine: true };
+}
+
 export function convView(state: DomainState, ctx: ViewContext, topic: Topic): ConvView {
   const channel = phoneChannel(state, channelOf(topic) ?? '');
-  const conv = conversations(state).find((c) => c.channel === channel);
+  const conv = conversations(state).find((c) => c.channel === channel) ?? sentinelChatConversation(state, channel);
   const { turns, more } = convTurns(state, ctx, channel);
   const real = convTopic(channel);
   // The plan it's the home of: its decisions (approve, pass a milestone) are asked here too, as on the Mac.
@@ -1292,7 +1301,26 @@ export function sentinelsView(state: DomainState): SentinelsView {
     .map((r) => ({ id: clip(r.id, 200), sentinelId: clip(r.sentinelId, 200), state: r.state, at: Math.round(r.endedAt!) }));
   const dashboards = dashboardRefs(s);
   const numbers = homeNumbers(s);
-  return { enabled: true, sentinels: s.items.slice(0, 200).flatMap((sn) => sentinelSummary(state, s, sn) ?? []), recent, ...(dashboards.length ? { dashboards } : {}), ...(numbers ? { numbers } : {}) };
+  const chat = sentinelChatSummary(state);
+  return { enabled: true, sentinels: s.items.slice(0, 200).flatMap((sn) => sentinelSummary(state, s, sn) ?? []), recent, ...(dashboards.length ? { dashboards } : {}), ...(numbers ? { numbers } : {}), ...(chat ? { chat } : {}) };
+}
+
+/** The Sentinel chat's open conversation, for the phone's Sentinel screen: its topic, name, last line, and whether Claude works there. */
+function sentinelChatSummary(state: DomainState): SentinelsView['chat'] {
+  const channel = activeSentinelChat(state.sentinel.chats);
+  const topic = convTopic(channel);
+  if (!topic) return undefined;
+  const items = itemsOf(state, channel);
+  const last = [...items].reverse().find((l) => (l.type === 'chat' || l.type === 'agent') && 'text' in l && typeof l.text === 'string' && l.text.trim());
+  const title = sentinelChatTitle(channel, state.log, 60);
+  const words = last && 'text' in last && typeof last.text === 'string' ? clip(plainLine(stripCode(last.text).text, 300), 300) : undefined;
+  return {
+    topic,
+    title: clip(title === 'New chat' ? 'Sentinel chat' : title, 100),
+    ...(words ? { last: words } : {}),
+    ...(last ? { lastAt: Math.round(last.ts) } : {}),
+    working: items.some((l) => l.type === 'agent' && isRunning(l.status)),
+  };
 }
 
 // ---- Dashboards (docs/sentinel.md §10): the numbers sentinels keep, as tiles
@@ -1329,7 +1357,12 @@ function tileView(s: SentinelState, d: Dashboard, t: Tile): DashboardTileView {
   const sentinelId = t.metric?.sentinelId ?? t.metrics?.[0]?.sentinelId ?? t.sentinelId;
   const sn = sentinelId ? sentinelById(s, sentinelId) : undefined;
   const topic = sn ? sentinelTopic(sn.id) : undefined;
-  const base: DashboardTileView = { id: clip(t.id, 200), kind: t.kind, width: t.width, title: clip(tileTitle(s, t), 100), state, ...(sn ? { sentinel: clip(sn.name, 100) } : {}), ...(topic ? { topic } : {}), ...(t.compare ? { pinned: t.compare } : {}) };
+  const sentinelOfTile = t.step?.sentinelId ?? sentinelId;
+  const owner = sentinelOfTile ? sentinelById(s, sentinelOfTile) : undefined;
+  const ownerTopic = owner ? sentinelTopic(owner.id) : undefined;
+  // A series of numbers over time keeps the phone's `chart` kind (an older phone draws it as before).
+  const kind = t.kind === 'series' && !ms.some((x) => x.kind === 'series') ? 'chart' : t.kind;
+  const base: DashboardTileView = { id: clip(t.id, 200), kind, width: Math.min(3, t.width), ...(t.width > 3 ? { span: t.width } : {}), ...(t.height === 2 ? { tall: true } : {}), title: clip(tileTitle(s, t), 100), state, ...(owner ? { sentinel: clip(owner.name, 100) } : sn ? { sentinel: clip(sn.name, 100) } : {}), ...(ownerTopic ? { topic: ownerTopic } : topic ? { topic } : {}), ...(t.compare ? { pinned: t.compare } : {}) };
   if (state === 'gone') return base;
   const m = ms[0];
   if (t.kind === 'number' && m) {
@@ -1343,7 +1376,20 @@ function tileView(s: SentinelState, d: Dashboard, t: Tile): DashboardTileView {
     );
     return { ...base, ...(last ? { value: clip(formatMetric(last.value, m.unit), 60), at: Math.round(last.at), runId: clip(last.runId, 200) } : {}), deltas, trend: m.points.slice(-30).map((p) => p.value) };
   }
-  if (t.kind === 'chart' && ms.length) return { ...base, chart: { kind: t.chart ?? 'line', unit: m!.unit, series: ms.slice(0, 8).map((x) => ({ label: clip(x.label, 100), points: x.points.slice(-90).map((p) => [Math.round(p.at), p.value] as [number, number]) })) } };
+  if (t.kind === 'series' && m?.kind === 'series' && m.series?.length) {
+    // A kept array: each point's place as its x, its label beside it.
+    const pts = m.series.slice(0, 90);
+    return { ...base, chart: { kind: t.chart ?? 'bar', unit: m.unit, series: [{ label: clip(m.label, 100), points: pts.map((p, i) => [i, p.y] as [number, number]) }], labels: pts.map((p) => clip(p.x, 80)) }, ...(m.rowsAt ? { at: Math.round(m.rowsAt) } : {}), ...(m.rowsRunId ? { runId: clip(m.rowsRunId, 200) } : {}) };
+  }
+  if (t.kind === 'series' && ms.length) return { ...base, chart: { kind: t.chart ?? 'line', unit: m!.unit, series: ms.slice(0, 8).map((x) => ({ label: clip(x.label, 100), points: x.points.slice(-90).map((p) => [Math.round(p.at), p.value] as [number, number]) })) } };
+  if (t.kind === 'output') {
+    const o = tileOutput(s, t);
+    if (!o) return base;
+    const look = outputLook(o, t.show);
+    // What Claude wrote goes without its code, as Claude's answers do on the phone; JSON is data.
+    const text = look === 'markdown' ? stripCode(o.text).text : o.text;
+    return { ...base, output: { look, text: clip(text, 16_000), ...(o.cut || text.length > 16_000 ? { cut: true } : {}) }, ...(o.runId ? { runId: clip(o.runId, 200) } : {}), ...(o.at ? { at: Math.round(o.at) } : {}) };
+  }
   if (t.kind === 'table' && m?.rows) {
     const columns = (m.columns?.length ? m.columns : Object.keys(m.rows[0] ?? {})).slice(0, 20);
     const cell = (v: unknown): string | number | boolean | null => (v === null || v === undefined ? null : typeof v === 'number' || typeof v === 'boolean' ? v : clip(String(v), 300));

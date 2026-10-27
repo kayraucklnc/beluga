@@ -177,22 +177,27 @@ export class Dashboards {
 /** A tile from what was given: checked, with its id, its kind's width, and what its kind needs. */
 export function tileOf(input: TileInput): Tile {
   const t = TileInputSchema.parse(input);
-  const base = { id: t.id ?? short('tl'), kind: t.kind, width: t.width ?? DEFAULT_WIDTH[t.kind], ...(t.title?.trim() ? { title: oneLine(t.title, 80) } : {}), ...(t.compare ? { compare: t.compare } : {}) };
+  const base = { id: t.id ?? short('tl'), kind: t.kind, width: t.width ?? DEFAULT_WIDTH[t.kind], ...(t.height === 2 && t.kind !== 'divider' ? { height: 2 as const } : {}), ...(t.title?.trim() ? { title: oneLine(t.title, 80) } : {}), ...(t.compare && t.kind !== 'divider' ? { compare: t.compare } : {}) };
   switch (t.kind) {
     case 'number':
     case 'table':
       if (!t.metric) throw new Error(`A ${t.kind === 'number' ? 'number' : 'table'} tile needs its metric (a sentinel and a metric’s name)`);
       return { ...base, metric: t.metric };
-    case 'chart': {
+    case 'series': {
+      // Several metrics over time, or one (a number's points, or a series metric's kept array).
       const metrics = t.metrics?.length ? t.metrics : t.metric ? [t.metric] : [];
-      if (!metrics.length) throw new Error('A chart tile needs one metric or more');
-      return { ...base, metrics, chart: t.chart ?? 'line' };
+      if (!metrics.length) throw new Error('A series tile needs one metric or more');
+      return { ...base, ...(metrics.length === 1 && !t.metrics?.length ? { metric: metrics[0]! } : { metrics }), chart: t.chart ?? 'line' };
     }
+    case 'output':
+      if (t.step) return { ...base, step: t.step, ...(t.show && t.show !== 'auto' ? { show: t.show } : {}) };
+      if (t.metric) return { ...base, metric: t.metric, ...(t.show && t.show !== 'auto' ? { show: t.show } : {}) };
+      throw new Error('An output tile needs its step (a sentinel and one of its steps) or an output metric');
     case 'text':
       if (!t.sentinelId) throw new Error('A text tile needs its sentinel');
       return { ...base, sentinelId: t.sentinelId, text: t.text ?? 'headline' };
     case 'divider':
-      return { ...base, width: 3 };
+      return { ...base, width: 6 };
   }
 }
 

@@ -2,12 +2,12 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renam
 import path from 'node:path';
 import { readJson, safeName, writeJson } from '../../net/mesh/files.js';
 import { KEEP_MS, KEEP_POINTS, type MetricLine, prunePoints, readLine } from './metrics.js';
-import type { Better, MetricUnit } from './model.js';
+import type { Better, MetricKind, MetricUnit } from './model.js';
 
 /**
  * Where numbers live (docs/sentinel.md §10): ~/.beluga/sentinel/metrics/<sentinelId>/<name>.jsonl,
- * one line per run (`{ at, value | rows, runId }`), readable only by you, kept to two years or
- * 20 000 points; what each metric is (its label, unit, which way is good) beside them in
+ * one line per run (`{ at, value | series | rows | output, runId }`), readable only by you, kept to
+ * two years or 20 000 points (an output metric its last 30); what each metric is (its label, unit, which way is good) beside them in
  * meta.json. Without a folder (tests, the demo) everything stays in memory.
  */
 
@@ -15,7 +15,7 @@ export interface MetricMeta {
   readonly label: string;
   readonly unit: MetricUnit;
   readonly better: Better;
-  readonly kind: 'number' | 'rows';
+  readonly kind: MetricKind;
 }
 
 /** How many lines a file may grow past its limit before it's rewritten (so pruning isn't every run). */
@@ -116,11 +116,11 @@ export class MetricFiles {
   }
 
   /** A run's point, added; the file is pruned (two years, 20 000 points) once it's grown past that. */
-  append(sentinelId: string, name: string, line: MetricLine): void {
+  append(sentinelId: string, name: string, line: MetricLine, keep = KEEP_POINTS): void {
     const file = this.fileOf(sentinelId, name);
     if (!file) {
       const m = this.memory.get(sentinelId) ?? new Map<string, MetricLine[]>();
-      m.set(name, prunePoints([...(m.get(name) ?? []), line], this.now()));
+      m.set(name, prunePoints([...(m.get(name) ?? []), line], this.now(), keep));
       this.memory.set(sentinelId, m);
       return;
     }
@@ -132,17 +132,17 @@ export class MetricFiles {
       const c = this.counts.get(file) ?? { n: 0, oldest: line.at };
       const next = { n: c.n + 1, oldest: Math.min(c.oldest, line.at) };
       this.counts.set(file, next);
-      if (next.n > KEEP_POINTS + SLACK || next.oldest < this.now() - KEEP_MS - 24 * 60 * 60_000) this.prune(sentinelId, name);
+      if (next.n > keep + Math.min(SLACK, keep) || next.oldest < this.now() - KEEP_MS - 24 * 60 * 60_000) this.prune(sentinelId, name, keep);
     } catch {
       // A full disk: this point isn't kept, the state still shows it.
     }
   }
 
   /** Rewrite a metric's file with what's kept (atomically: a new file, then renamed over). */
-  prune(sentinelId: string, name: string): void {
+  prune(sentinelId: string, name: string, keep = KEEP_POINTS): void {
     const file = this.fileOf(sentinelId, name);
     if (!file) return;
-    const kept = prunePoints(this.read(sentinelId, name), this.now());
+    const kept = prunePoints(this.read(sentinelId, name), this.now(), keep);
     try {
       const tmp = `${file}.tmp-${process.pid}`;
       writeFileSync(tmp, kept.map((l) => `${JSON.stringify(l)}\n`).join(''), { mode: 0o600 });

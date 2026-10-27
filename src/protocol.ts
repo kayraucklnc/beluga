@@ -59,7 +59,8 @@ export type PeerInfo = z.infer<typeof PeerInfo>;
  * (session's loopback), so a channel it refuses never reaches Claude.
  */
 // `dm:`/`group:`: your own Claude acting in a friends' chat (BLG-207); its events only go to you.
-export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|ws:[\w:.-]{1,80}|dm:[\w-]{8,64}|group:[\w-]{1,80})$/).default('room');
+// `sentinel-chat:<id>`: the Sentinel chat (docs/sentinel.md §12), yours only; its events only go to you.
+export const Channel = z.string().regex(/^(room|mac:assistant(:[a-z0-9]{1,24})?|sentinel-chat:[a-z0-9]{1,24}|ws:[\w:.-]{1,80}|dm:[\w-]{8,64}|group:[\w-]{1,80})$/).default('room');
 
 export const ChatBody = z.object({
   kind: z.literal('chat'),
