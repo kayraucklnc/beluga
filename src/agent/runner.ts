@@ -393,6 +393,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       };
       /** Messages steered into a running turn, by the prompt id they went in with (see force). */
       const steered = new WeakMap<FollowUp, string>();
+      /** The message Send now stops the turn for: never taken as answered by the turn it stopped. */
+      let forced: { uuid: string; followUp: FollowUp } | undefined;
       const steerIn = (followUp: FollowUp): boolean => {
         const between = turns.between;
         const uuid = deliver(followUp, true);
@@ -408,12 +410,14 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         const uuid = steered.get(followUp);
         if (!uuid || prompts.closed || turns.between || interrupting !== undefined || !turns.unsteer(uuid)) return false;
         interrupting = note;
+        forced = { uuid, followUp };
         try {
           let timer: NodeJS.Timeout | undefined;
           const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('interrupt timed out')), INTERRUPT_TIMEOUT_MS)));
           await Promise.race([q.interrupt(), late]).finally(() => clearTimeout(timer));
         } catch {
           interrupting = undefined;
+          forced = undefined;
           turns.resteer(uuid);
           if (turns.between) settle();
           return false;
@@ -507,7 +511,12 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
               turn.onEvent('text', note);
               // Its result can come after the message was sent and list it: the message still gets its own turn.
               const own = interruptFor;
-              turns.end(true, said, own ? took?.filter((uuid) => uuid !== own) : took);
+              const now = forced;
+              forced = undefined;
+              turns.end(true, said, took?.filter((uuid) => uuid !== own && uuid !== now?.uuid));
+              // Send now: Claude Code took the message in before it stopped, so it starts no turn for
+              // it (it said nothing more and the run went quiet). Sent again, it's answered next.
+              if (now && took?.includes(now.uuid) && turns.drop(now.uuid)) deliver(now.followUp, false);
               if (turns.waiting) {
                 interrupting = undefined;
                 interruptFor = undefined;
@@ -521,8 +530,11 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         failed = false;
       } catch (err) {
         if (err instanceof RunFailedError || abortController.signal.aborted) throw err;
+        // Done, and let go: Claude Code exits 1 when its last turn was one that was stopped (Send now,
+        // a steer's interrupt). Every turn has been answered by then, so that's no crash.
+        if (prompts.closed) failed = false;
         // Claude Code itself failed ("process exited with code 1"): say how, in words.
-        throw new RunFailedError(classifyRun({ error: err instanceof Error ? err.message : String(err), ...(failedResult ? { result: failedResult } : {}), ...ends() }));
+        else throw new RunFailedError(classifyRun({ error: err instanceof Error ? err.message : String(err), ...(failedResult ? { result: failedResult } : {}), ...ends() }));
       } finally {
         recorder.finish(failed || abortController.signal.aborted);
         finish();
