@@ -523,6 +523,8 @@ export const TaskSummary = z.object({
   pr: z.object({ number: z.number().int().min(0), state: z.string().max(20) }).optional(),
   /** Teammates on the same repository working on it now (core/team): "Ata is working on this". */
   working: z.string().max(200).optional(),
+  /** Teammates who don't have its latest change yet (BLG-273): "Ata doesn't have the latest yet". */
+  waiting: z.string().max(240).optional(),
   updatedAt: ts,
 });
 export type TaskSummary = z.infer<typeof TaskSummary>;

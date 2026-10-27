@@ -86,7 +86,11 @@ describe('teammates never online together', () => {
     ata.board.update(t.id, { title: 'Changed while kay was away', priority: 'high' }, personOf(ata));
     const waits = () => ata.team.courier.pending(kay.id, (m) => m.k === 'ops');
     expect(waits()).toBe(true);
+    // BLG-273: the task says kay doesn't have it yet, then that it's in kay's mailbox.
+    const waitingOn = () => ata.store.getState().team.waiting[t.id];
+    await settle(() => waitingOn()?.some((w) => w.peerId === kay.id && !w.mailed));
     ata.team.courier.flush();
+    await settle(() => waitingOn()?.some((w) => w.peerId === kay.id && w.mailed));
     await settle(() => mb.boxes.get(kay.id) && [...(mb.boxes.get(kay.id) as unknown as { items: Map<string, unknown> }).items.values()].length > 0);
     await ata.stop();
 
@@ -103,6 +107,8 @@ describe('teammates never online together', () => {
     await ata.start();
     await settle(() => !ata.team.courier.pending(kay.id, (m) => m.k === 'ops'));
     expect(ata.person.friend(kay.id)?.online).toBe(false);
+    // Everyone has it: nothing on the task any more.
+    await settle(() => !ata.store.getState().team.waiting[t.id]);
   }, 90_000);
 
   it('quitting mails what waits at once, without waiting for the timer', async () => {

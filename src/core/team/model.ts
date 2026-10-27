@@ -94,6 +94,16 @@ export interface MyPlanShare {
   readonly reviews: readonly PlanReview[];
 }
 
+/** A teammate whose Mac hasn't taken a task's latest change yet. */
+export interface TeamWaiting {
+  readonly peerId: string;
+  readonly name: string;
+  /** When the oldest change they don't have was made. */
+  readonly since: number;
+  /** It's in their mailbox (they'll get it when their Mac is next on, even if yours isn't). */
+  readonly mailed: boolean;
+}
+
 export interface TeamState {
   /** Team boards run (the daemon, while the network is on). */
   readonly enabled: boolean;
@@ -102,6 +112,8 @@ export interface TeamState {
   readonly teams: Readonly<Record<string, ProjectTeam>>;
   /** Task id → teammates working on it now ("Ata is working on this"). */
   readonly working: Readonly<Record<string, ReadonlyArray<{ readonly peerId: string; readonly name: string }>>>;
+  /** Task id → teammates who don't have its latest change yet (BLG-273); a task everyone has isn't here. */
+  readonly waiting: Readonly<Record<string, readonly TeamWaiting[]>>;
   readonly assigned: readonly TeamAssignment[];
   readonly plans: readonly SharedPlan[];
   /** Plan id → who it's shared with and their reviews. */
@@ -112,7 +124,7 @@ export interface TeamSlice {
   readonly team: TeamState;
 }
 
-export const NO_TEAM: TeamState = { enabled: false, offers: [], teams: {}, working: {}, assigned: [], plans: [], planShares: {} };
+export const NO_TEAM: TeamState = { enabled: false, offers: [], teams: {}, working: {}, waiting: {}, assigned: [], plans: [], planShares: {} };
 export const initialTeam: TeamSlice = { team: NO_TEAM };
 
 export type TeamAction = { type: 'team_state'; state: TeamState } | { type: 'team_off' };
@@ -133,6 +145,20 @@ export const teammatesOf = (team: TeamState, projectId: string): readonly Teamma
 
 /** Teammates working on a task now. */
 export const workingOn = (team: TeamState, issueId: string): ReadonlyArray<{ readonly peerId: string; readonly name: string }> => team.working[issueId] ?? [];
+
+/** Teammates who don't have a task's latest change yet. */
+export const waitingOn = (team: TeamState, issueId: string): readonly TeamWaiting[] => team.waiting?.[issueId] ?? [];
+
+/** "Ata doesn't have the latest yet", "Ata and Mia don't have…"; undefined when everyone does. */
+export function waitingWords(people: readonly Pick<TeamWaiting, 'name'>[]): string | undefined {
+  if (!people.length) return undefined;
+  const names = people.map((p) => p.name);
+  const who = names.length === 1 ? names[0]! : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return `${who} ${names.length === 1 ? 'doesn’t' : 'don’t'} have the latest yet`;
+}
+
+/** How one teammate's copy stands: "In Ata's mailbox: they'll get it when they're back", "Waiting for Ata to come online". */
+export const waitingDetail = (w: Pick<TeamWaiting, 'name' | 'mailed'>): string => (w.mailed ? `In ${w.name}’s mailbox: their Mac gets it when it’s next on` : `Waiting for ${w.name}’s Mac to come online`);
 
 /** "Ata is working on this", "Ata and Mia are working on this". */
 export function workingWords(names: readonly string[]): string | undefined {

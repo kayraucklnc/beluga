@@ -56,6 +56,54 @@
   font-size: 12px;
 }
 
+/* Not every teammate has the latest yet (BLG-273): a quiet paper plane, gone once they do. */
+.waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: color-mix(in srgb, var(--warn) 70%, var(--text-3));
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.waitingCount {
+  font-weight: 600;
+}
+.waitingFor {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.waitingFor summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  color: color-mix(in srgb, var(--warn) 70%, var(--text-2));
+}
+.waitingFor summary::-webkit-details-marker {
+  display: none;
+}
+.waitingFor ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.waitingFor li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.waitingWho {
+  flex: 1;
+  min-width: 0;
+}
+.waitingSince {
+  color: var(--text-3);
+}
+
 .list {
   display: flex;
   flex-direction: column;

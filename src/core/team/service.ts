@@ -125,7 +125,10 @@ export class TeamBoards {
     this.courier = new Courier<TeamMsg>(
       { isLinked: (p) => mesh.isLinked(p), send: (p, payload) => mesh.sendTeam(p, payload), parse: parseTeamFrame, mail: (p, payload) => mesh.mail?.(p, 'team', payload) ?? Promise.resolve(false), mailAfterMs: () => mesh.mailAfterMs },
       deps.dir ? path.join(deps.dir, 'team-outbox.json') : undefined,
+      // Who has which change shows on the tasks (BLG-273).
+      () => this.publish(),
     );
+    this.courier.onMailed = () => this.publish();
   }
 
   get self(): string {
@@ -478,7 +481,7 @@ export class TeamBoards {
       const t = teams[link.projectId] ?? { projectId: link.projectId, repo: this.repos.get(link.projectId)?.label ?? this.projectName(link.projectId), mates: [] };
       teams[link.projectId] = { ...t, mates: [...t.mates, { peerId: link.peerId, name: mesh.nameFor(link.peerId), since: link.since }] };
     }
-    let state: TeamState = { enabled: true, offers, teams, working: {}, assigned: [], plans: [], planShares: {} };
+    let state: TeamState = { enabled: true, offers, teams, working: {}, waiting: {}, assigned: [], plans: [], planShares: {} };
     for (const p of this.parts) state = { ...state, ...p.view?.() };
     const before = this.deps.store.getState().team;
     if (JSON.stringify(before) !== JSON.stringify(state)) this.deps.store.dispatch({ type: 'team_state', state });

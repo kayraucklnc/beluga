@@ -10,6 +10,7 @@ import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
+import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
 import { useBoard, useOthers, useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -424,6 +425,7 @@ const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue;
       <div className={t.cardTop}>
         <span className={t.key}>{issue.key}</span>
         <span className={t.grow} />
+        <WaitingMark issueId={issue.id} />
         <PriorityIcon priority={issue.priority} labelled />
         {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
       </div>

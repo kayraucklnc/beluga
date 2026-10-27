@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowRightLeft, Check, CircleSlash, GitBranch, GitPullRequest, MessageSquare, Monitor, Play, User } from 'lucide-react-native';
+import { ArrowRightLeft, Check, CircleSlash, GitBranch, GitPullRequest, MessageSquare, Monitor, Play, Send, User } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
@@ -77,6 +77,7 @@ export default function Task() {
                 {pr && t.priority !== 'none' ? <Pill label={pr.label} tone={pr.tone} /> : null}
                 <Pill label={t.assignee ?? 'No one'} Icon={User} tone={t.assignee ? 'lavender' : 'plain'} />
                 {t.working ? <Pill label={t.working} Icon={User} tone="mint" /> : null}
+                {t.waiting ? <Pill label={t.waiting} Icon={Send} tone="butter" /> : null}
                 {t.checks ? <Pill label={`${t.checks.done} of ${t.checks.total} checked`} Icon={Check} tone={t.checks.done === t.checks.total ? 'mint' : 'plain'} /> : null}
               </View>
 

@@ -1,4 +1,5 @@
-import { OFFER_DETAIL, offerWords, teamShareChoices, teammateOn, teammatesOf, workingOn, workingWords } from '@beluga/core/team/model.js';
+import { OFFER_DETAIL, offerWords, teamShareChoices, teammateOn, teammatesOf, waitingDetail, waitingOn, waitingWords, workingOn, workingWords } from '@beluga/core/team/model.js';
+import { ago } from '../tasks/tasks-model.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { Avatar, Button, IconButton, Tip } from '../components/ui.js';
@@ -106,6 +107,49 @@ export function WorkingMark({ issueId }: { issueId: string }) {
     <span className={s.badge} title={words} aria-label={words} role="img">
       <AvatarStack people={people} size={14} max={2} />
     </span>
+  );
+}
+
+/**
+ * A teammate doesn't have this task's latest change yet (BLG-273): a small paper plane on the card
+ * and the row, nothing at all once everyone has it. Hover says who.
+ */
+export function WaitingMark({ issueId }: { issueId: string }) {
+  const people = useApp((st) => waitingOn(st.team, issueId), sameDeep);
+  const words = waitingWords(people);
+  if (!words) return null;
+  const mailed = people.every((p) => p.mailed);
+  return (
+    <Tip label={`${words}. ${mailed ? 'It’s in their mailbox.' : 'It goes when their Mac is on.'}`}>
+      <span className={s.waiting} aria-label={words} role="img">
+        <Icon name="send" size={11} />
+        {people.length > 1 ? <span className={s.waitingCount}>{people.length}</span> : null}
+      </span>
+    </Tip>
+  );
+}
+
+/** On a task's page: who doesn't have the latest yet, and where it is for each of them. */
+export function WaitingFor({ issueId }: { issueId: string }) {
+  const people = useApp((st) => waitingOn(st.team, issueId), sameDeep);
+  const words = waitingWords(people);
+  if (!words) return null;
+  return (
+    <details className={s.waitingFor}>
+      <summary>
+        <Icon name="send" size={12} />
+        {words}
+      </summary>
+      <ul>
+        {people.map((p) => (
+          <li key={p.peerId}>
+            <Avatar name={p.name} id={p.peerId} size={16} />
+            <span className={s.waitingWho}>{waitingDetail(p)}</span>
+            <span className={s.waitingSince}>changed {ago(p.since)}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
