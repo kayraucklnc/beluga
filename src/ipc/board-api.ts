@@ -64,7 +64,7 @@ export const BOARD_API = {
   'board.comment': { args: z.tuple([ref, z.string().min(1).max(8000)]) },
   // What waits on what: blocked_by, blocks, related; false takes it back.
   'board.relate': { args: z.tuple([ref, z.enum(['blocked_by', 'blocks', 'related']), ref, z.boolean()]) },
-  'board.addProof': { args: z.tuple([ref, z.object({ kind: z.enum(['image', 'url', 'file', 'graph', 'text']), title: z.string().min(1).max(120), path: z.string().min(1).max(4096).optional(), url: z.string().url().max(2000).optional(), body: z.string().max(60_000).optional() })]) },
+  'board.addProof': { args: z.tuple([ref, z.object({ kind: z.enum(['image', 'url', 'file', 'graph', 'text']), title: z.string().min(1).max(120), path: z.string().min(1).max(4096).optional(), url: z.string().url().max(2000).optional(), body: z.string().max(60_000).optional(), context: z.boolean().optional() })]) },
   'board.removeProof': { args: z.tuple([ref, z.string().min(1).max(40)]) },
   'board.remove': { args: z.tuple([ref]) },
   // Start a worktree for a task (and open it); with claude, your Claude starts on it there → the workspace id.

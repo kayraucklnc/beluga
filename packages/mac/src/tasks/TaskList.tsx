@@ -9,6 +9,7 @@ import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
+import { taskDropProps } from './use-task-drop.js';
 import { setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
 import { WorkingMark } from '../team/Team.js';
@@ -86,6 +87,7 @@ const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; curso
         role="row"
         tabIndex={-1}
         data-issue={issue.id}
+        {...taskDropProps(issue)}
         className={cx(t.row, cursor && t.rowCursor)}
         onClick={() => open(issue)}
         onMouseDown={onCursor}

@@ -13,6 +13,7 @@ import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, 
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { ArchiveDoneButton, EpicBar, IssueMeta, useIssueMenu } from './parts.js';
 import { isSolo } from './tasks-model.js';
+import { taskDropProps } from './use-task-drop.js';
 import { useBoard, useOthers, useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
@@ -472,6 +473,7 @@ const Card = memo(function Card({
         role="button"
         tabIndex={0}
         aria-label={`${issue.key} ${issue.title}`}
+        {...taskDropProps(issue)}
         onPointerDown={(e) => onPress(e, issue, index)}
         onClick={() => {
           // The click that ends a drag isn't a click.

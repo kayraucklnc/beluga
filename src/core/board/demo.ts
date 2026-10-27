@@ -183,6 +183,8 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   when(DAY + 3 * HOUR);
   board.linkWorktree(hero.id, at.hero.id, { ...(at.hero.branch ? { branch: at.hero.branch } : {}), name: at.hero.name }, me);
   board.update(hero.id, { status: 'in_progress' }, me);
+  // A file you dropped on the task for the work: the brand brief.
+  board.addProof(hero.id, { kind: 'file', title: 'brand-brief.pdf', path: path.join(at.hero.path, 'docs', 'brand-brief.pdf'), context: true }, me);
   when(DAY + 2 * HOUR);
   board.addProof(hero.id, { kind: 'image', title: 'Hero, desktop', path: path.join(at.hero.path, 'public', 'hero-shot.png') }, claude);
   board.addProof(hero.id, { kind: 'file', title: 'Hero copy', path: path.join(at.hero.path, 'content', 'hero.md') }, claude);

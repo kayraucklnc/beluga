@@ -559,9 +559,11 @@ export class Board {
     const made: Proof = { ...given, title, id: short('p'), at: this.now(), by };
     // Its file is copied now, so it outlives the worktree it was made in.
     const item = this.deps.dir ? keepProofFile(made, issue.id, this.deps.dir) : made;
-    const kept = [...issue.proof, item];
-    if (this.deps.dir) for (const old of kept.slice(0, -KEEP_PROOF)) dropKeptFile(this.deps.dir, old.path);
-    return this.change(issue, { proof: kept.slice(-KEEP_PROOF) }, [this.entry(by, 'proof', `added proof: ${title}`)]);
+    // Only proof is trimmed to the newest KEEP_PROOF: files someone added for the work stay.
+    const all = [...issue.proof, item];
+    const over = new Set(all.filter((p) => !p.context).slice(0, -KEEP_PROOF));
+    if (this.deps.dir) for (const old of over) dropKeptFile(this.deps.dir, old.path);
+    return this.change(issue, { proof: all.filter((p) => !over.has(p)) }, [this.entry(by, 'proof', item.context ? `added a file: ${title}` : `added proof: ${title}`)]);
   }
 
   removeProof(ref: string, proofId: string, by: Actor): Issue {
@@ -569,7 +571,7 @@ export class Board {
     const gone = issue.proof.find((p) => p.id === proofId);
     if (!gone) return issue;
     if (this.deps.dir) dropKeptFile(this.deps.dir, gone.path);
-    return this.change(issue, { proof: issue.proof.filter((p) => p.id !== proofId) }, [this.entry(by, 'proof', `removed proof: ${gone.title}`)]);
+    return this.change(issue, { proof: issue.proof.filter((p) => p.id !== proofId) }, [this.entry(by, 'proof', gone.context ? `removed a file: ${gone.title}` : `removed proof: ${gone.title}`)]);
   }
 
   /**
