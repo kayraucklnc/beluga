@@ -5,6 +5,7 @@ import { Avatar, Button, IconButton, Tip } from '../components/ui.js';
 import { AvatarStack } from '../network/Avatars.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
+import { shownState } from '../network/net-model.js';
 import type { AppState } from '@beluga/core/store.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import s from './team.module.css';
@@ -53,15 +54,23 @@ export function TeamOffers({ projectId }: { projectId: string }) {
   );
 }
 
-/** A project's teammates as small avatars (the team badge on its row). */
+/**
+ * A project has teammates: one small people icon on its row, not a dot per person (they'd pile up).
+ * A green dot on it when at least one of them is online; names in its tip.
+ */
 export function TeamBadge({ projectId }: { projectId: string }) {
   const team = useApp((st) => st.team.teams[projectId], sameDeep);
+  const online = useApp((st) => (team ? team.mates.filter((m) => st.network.friends.some((f) => f.peerId === m.peerId && shownState(f) === 'online')).map((m) => m.name) : []), sameDeep);
   if (!team?.mates.length) return null;
   const names = team.mates.map((m) => m.name).join(', ');
+  const tip = `Team on ${team.repo}: you and ${names}${online.length ? ` · ${online.join(', ')} online` : ''}`;
   return (
-    <span className={s.badge} title={`Team on ${team.repo}: you and ${names}`} aria-label={`Team on ${team.repo} with ${names}`} role="img">
-      <AvatarStack people={team.mates} size={13} max={3} />
-    </span>
+    <Tip label={tip}>
+      <span className={s.badge} aria-label={tip} role="img">
+        <Icon name="people" size={12} />
+        {online.length ? <span className={s.badgeOnline} /> : null}
+      </span>
+    </Tip>
   );
 }
 

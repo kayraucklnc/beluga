@@ -222,7 +222,8 @@ export function stateOf(state: AppState, ws: Workspace, frame: number, now = Dat
   if (ws.archived) return { label: 'Archived', color: theme.muted, icon: glyph.ring, tone: 'muted' };
   if (ws.kind === 'chat') return { label: act.lastTs ? `Chat · ${ago(act.lastTs, now)}` : 'New chat', color: theme.muted, icon: '◇', tone: 'muted' };
   const st = ws.status;
-  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.warn, icon: glyph.dot, tone: 'warn' };
+  // Work in progress, not a problem: quiet, like the branch pill (no warning dot on the row).
+  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.muted, icon: glyph.dot, tone: 'muted' };
   if (ws.kind === 'worktree' && state.prs[ws.id]?.state === 'MERGED') return { label: 'Merged on GitHub', color: theme.ok, icon: glyph.dot, tone: 'ok' };
   if (ws.kind === 'worktree' && st?.landed && state.prs[ws.id]?.state !== 'OPEN') return { label: 'Merged', color: theme.ok, icon: glyph.dot, tone: 'ok' };
   if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot, tone: 'info' };

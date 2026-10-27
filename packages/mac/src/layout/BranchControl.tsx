@@ -19,10 +19,16 @@ export type BranchFold = 'none' | 'pill' | 'all';
 
 const STEP_ICON: Partial<Record<BranchStep['id'], IconName>> = { merge_pr: 'merge', merge: 'merge', merge_auto: 'clock', cancel_auto: 'x', update_branch: 'refresh', mark_ready: 'check', open_pr: 'pr', continue_after_merge: 'branch', archive: 'archive', delete: 'x', commit: 'commit', pr: 'pr', pr_draft: 'pr' };
 
-const STEP_SHORT: Partial<Record<BranchStep['id'], string>> = { pr: 'PR', open_pr: 'PR', pr_draft: 'Draft', pr_claude: 'PR', pr_custom: 'PR', merge_pr: 'Merge', merge: 'Merge', merge_auto: 'Auto-merge', merge_admin: 'Merge', cancel_auto: 'Cancel', update_branch: 'Update', mark_ready: 'Ready', review_claude: 'Review', fix_checks: 'Fix', resolve_pr: 'Resolve', merge_claude: 'Resolve' };
+const STEP_SHORT: Partial<Record<BranchStep['id'], string>> = { pr: 'Create PR', open_pr: 'Open PR', pr_draft: 'Draft PR', pr_claude: 'Create PR', pr_custom: 'Create PR', merge_pr: 'Merge', merge: 'Merge', merge_auto: 'Auto-merge', merge_admin: 'Merge', cancel_auto: 'Cancel', update_branch: 'Update', mark_ready: 'Ready', review_claude: 'Review', fix_checks: 'Fix', resolve_pr: 'Resolve', merge_claude: 'Resolve' };
 
-/** A step in one word, for the folded toolbar: the icon alone didn't say enough. */
+/** A step in a word or two, for the folded toolbar: the icon alone didn't say enough ("PR" alone didn't either). */
 export const shortLabel = (step: BranchStep): string => STEP_SHORT[step.id] ?? step.label.replace(/…$/, '').split(' ')[0]!;
+
+/**
+ * Folded, a quiet pill (no pull request, nothing to fix: "3 changes") is only an icon that reads as
+ * a warning, so it goes: its words move to the step's tip.
+ */
+export const pillHidden = (branch: BranchState, fold: BranchFold): boolean => fold !== 'none' && !branch.pr && Boolean(branch.steps[0]) && (branch.tone === 'muted' || branch.tone === 'info');
 
 /**
  * The top of a worktree: where its branch stands, as a pill you can read from across the room
@@ -87,6 +93,7 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
     ...methods,
     ...rest.map((step, i) => ({ label: labelOf(step), hint: step.claude ? `Claude · ${step.hint}` : step.hint, icon: iconOf(step), ...(step.danger ? { danger: true } : {}), separate: i === 0 && methods.length > 0, onSelect: () => requestAnimationFrame(() => run(step)) })),
   ];
+  const hidePill = pillHidden(branch, fold);
   const variant = main && (main.id === 'merge_pr' || main.id === 'merge') ? 'merge' : 'primary';
   const pill = (
     <span className={cx(s.pill, s[`pill_${branch.tone}`])} data-branch-state={branch.kind}>
@@ -98,18 +105,20 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
 
   return (
     <span className={s.wrap} role="group" aria-label={`Branch: ${branch.label}`}>
-      <Tip label={`${fold === 'none' ? '' : `${branch.label}: `}${branch.detail}${branch.pr ? ' · open the pull request' : ''}`}>
-        {branch.pr ? (
-          <button type="button" className={s.pillButton} onClick={() => actions.run({ type: 'ws', id: wsId, action: 'pr' })}>
-            {pill}
-          </button>
-        ) : (
-          pill
-        )}
-      </Tip>
+      {hidePill ? null : (
+        <Tip label={`${fold === 'none' ? '' : `${branch.label}: `}${branch.detail}${branch.pr ? ' · open the pull request' : ''}`}>
+          {branch.pr ? (
+            <button type="button" className={s.pillButton} onClick={() => actions.run({ type: 'ws', id: wsId, action: 'pr' })}>
+              {pill}
+            </button>
+          ) : (
+            pill
+          )}
+        </Tip>
+      )}
       {main ? (
         <span className={s.split}>
-          <Tip label={`${fold === 'all' ? `${labelOf(main)}: ` : ''}${main.claude ? `Claude · ${main.hint}` : main.hint}`}>
+          <Tip label={`${hidePill ? `${branch.detail} · ` : ''}${fold === 'all' ? `${labelOf(main)}: ` : ''}${main.claude ? `Claude · ${main.hint}` : main.hint}`}>
             <Button variant={variant} icon={iconOf(main)} aria-label={fold === 'all' ? labelOf(main) : undefined} className={cx(s.main, items.length > 0 && s.mainSplit, branch.tone === 'error' && s.mainError, branch.tone === 'merged' && s.mainMerged)} disabled={busy} data-branch-step={main.id} data-tool-ws={wsId} onClick={() => run(main)}>
               {busy ? (fold === 'all' ? '…' : 'Working…') : fold === 'all' ? shortLabel(main) : labelOf(main)}
             </Button>

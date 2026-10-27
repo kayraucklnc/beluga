@@ -200,7 +200,8 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
         ]
       : [];
   if (pr?.state === 'CLOSED' && !changed && !ahead) return at('closed', 'PR closed', 'muted', `PR #${pr.number} was closed without merging`, planned ? [] : [archive, remove]);
-  if (changed) return at('uncommitted', plural(changed, 'change'), 'warn', `${plural(changed, 'uncommitted change')}${ahead ? ` and ${plural(ahead, 'commit')}` : ''} not in ${into} yet`, github ? [ship, ...prWays, commit] : [commit, ship]);
+  // Work in progress, not a problem: a quiet grey pill, never a warning (Kayra: a small thing stays small).
+  if (changed) return at('uncommitted', plural(changed, 'change'), 'muted', `${plural(changed, 'uncommitted change')}${ahead ? ` and ${plural(ahead, 'commit')}` : ''} not in ${into} yet`, github ? [ship, ...prWays, commit] : [commit, ship]);
   if (ahead) return at('unshipped', github ? `${plural(ahead, 'commit')} · no PR` : 'Ready to merge', github ? 'info' : 'ok', `${plural(ahead, 'commit')} on ${ws.branch} not in ${into} yet`, [ship, ...prWays]);
   return at('clean', 'No changes', 'muted', `Nothing on ${ws.branch} that isn’t in ${into}`, []);
 }
