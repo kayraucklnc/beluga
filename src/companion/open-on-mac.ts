@@ -64,10 +64,31 @@ export function macViewFor(state: DomainState, target: OpenTarget): View | undef
     return undefined;
   }
   const need = target.need ?? '';
+  return need ? (needView(state, need) ?? { kind: 'overview' }) : undefined;
+}
+
+/**
+ * Where a needs-you item (companion/needs-you.ts) is answered on the Mac, by its id: the page with
+ * its buttons, when that's a page of its own (a team-up on Tasks, a sentinel's run, a shared plan).
+ * Undefined: its topic says where (a conversation, a plan), or it has no page (a friend request: the sidebar).
+ */
+export function needView(state: DomainState, need: string): View | undefined {
   // A friend's request and the tasks between Claudes live in Requests; someone at the door, the room.
   if (need.startsWith('request:') || need.startsWith('confirm:') || need.startsWith('gwq:')) return { kind: 'requests' };
   if (need.startsWith('knock:')) return { kind: 'room' };
+  const approval = /^approval:(.+)$/.exec(need);
+  if (approval) return state.approvals.find((a) => a.id === approval[1])?.task ? { kind: 'requests' } : undefined;
   const join = /^join:([^:]+):/.exec(need);
   if (join) return { kind: 'conversation', id: `group:${join[1]}` };
-  return need ? { kind: 'overview' } : undefined;
+  const team = /^team:[^:]+:(.+)$/.exec(need);
+  if (team) return { kind: 'tasks', projectId: team[1]! };
+  const task = /^team-task:(.+)$/.exec(need);
+  if (task) return state.board.issues.some((i) => i.id === task[1]) ? { kind: 'task', id: task[1]! } : { kind: 'tasks' };
+  const shared = /^team-plan:([^:]+):([^:]+)/.exec(need);
+  if (shared) return { kind: 'team_plan', owner: shared[1]!, id: shared[2]! };
+  const run = /^sentinel:(.+)$/.exec(need);
+  if (run) return state.sentinel.runs.some((r) => r.id === run[1]) ? { kind: 'sentinel_run', runId: run[1]! } : { kind: 'sentinel' };
+  const plan = /^plan:([^:]+):/.exec(need);
+  if (plan) return state.plans.plans.some((p) => p.id === plan[1]) ? { kind: 'plan', id: plan[1]! } : undefined;
+  return undefined;
 }

@@ -355,7 +355,7 @@ export class TeamBoards {
         if (this.offers[keyOf(peerId, projectId)]) continue;
         this.offers = { ...this.offers, [keyOf(peerId, projectId)]: { peerId, projectId, state: 'found', at: this.now() } };
         changed = true;
-        this.deps.notify?.({ kind: 'people', tag: 'invited', title: `${this.nameOf(peerId)} also works on ${repo.label}`, body: 'Team up to keep your tasks for it in step. Nothing is shared until you both say yes.', key: `team-offer:${peerId}:${projectId}` });
+        this.deps.notify?.({ kind: 'people', tag: 'invited', title: `${this.nameOf(peerId)} also works on ${repo.label}`, body: 'Team up to keep your tasks for it in step. Nothing is shared until you both say yes.', need: `team:${peerId}:${projectId}`, key: `team-offer:${peerId}:${projectId}` });
       }
     }
     if (changed) {
@@ -385,7 +385,7 @@ export class TeamBoards {
     this.save();
     this.publish();
     const repo = this.repos.get(projectId)?.label ?? this.projectName(projectId);
-    this.deps.notify?.({ kind: 'needsYou', tag: 'invited', title: `${this.nameOf(from)} wants to team up on ${repo}`, body: 'Your tasks for it would stay in step. Chats stay on your own Mac.', key: `team-invite:${link}` });
+    this.deps.notify?.({ kind: 'needsYou', tag: 'invited', title: `${this.nameOf(from)} wants to team up on ${repo}`, body: 'Your tasks for it would stay in step. Chats stay on your own Mac.', need: `team:${from}:${projectId}`, key: `team-invite:${link}` });
   }
 
   private onAccept(from: string, print: string, link: string, theirProject: string): void {

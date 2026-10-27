@@ -360,7 +360,7 @@ export class Gateway {
       ...(input.conversation ? { conversation: input.conversation } : {}),
     });
     if (confirm) {
-      this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your Claude wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s Claude'}`, body: oneLine(input.summary?.trim() || ask, 140), ...(input.conversation ? { channel: input.conversation } : {}) });
+      this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your Claude wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s Claude'}`, body: oneLine(input.summary?.trim() || ask, 140), need: `confirm:${task.id}`, ...(input.conversation ? { channel: input.conversation } : {}) });
       const timer = setTimeout(() => this.confirm(task.id, false, undefined, 'Not sent: nobody answered in time'), this.deps.confirmTimeoutMs ?? DEFAULT_CONFIRM_MS);
       timer.unref();
       this.confirmTimers.set(task.id, timer);
@@ -454,7 +454,7 @@ export class Gateway {
     if (!skip && !answers.some((a) => a.trim())) throw new Error('Give an answer (or skip)');
     // Your Claude's answer tells them something: if you never saw this task, you see the answer first.
     if (by === 'agent' && !skip && !task.confirmed) {
-      this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `Your Claude wants to answer ${task.peerName}'s Claude`, body: oneLine(answers.join(' · '), 140), ...(task.conversation ? { channel: task.conversation } : {}) });
+      this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `Your Claude wants to answer ${task.peerName}'s Claude`, body: oneLine(answers.join(' · '), 140), need: `gwq:${task.id}`, ...(task.conversation ? { channel: task.conversation } : {}) });
       return this.put({ ...task, answerDraft: { qid: q.qid, answers: answers.map((a) => a.slice(0, 4000)) }, updatedAt: this.now() });
     }
     const record = skip ? undefined : Object.fromEntries(q.questions.map((item, i) => [item.question, (answers[i] ?? '').trim().slice(0, 4000)]).filter(([, a]) => a));
@@ -789,7 +789,7 @@ export class Gateway {
       else this.askClaude(next);
       return;
     }
-    this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `${next.peerName}'s Claude has a question`, body: oneLine(msg.questions[0]!.question, 140) });
+    this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `${next.peerName}'s Claude has a question`, body: oneLine(msg.questions[0]!.question, 140), need: `gwq:${next.id}`, ...(next.conversation ? { channel: next.conversation } : {}) });
   }
 
   /** Start a turn of your Claude with the question (once per question). */

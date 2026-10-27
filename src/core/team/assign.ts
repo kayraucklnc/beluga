@@ -117,7 +117,7 @@ export class TeamAssign implements TeamPart {
       this.save();
       this.team.publish();
     }
-    this.team.deps.notify?.({ kind: 'needsYou', tag: 'task', title: toMe ? `${name} gave you ${issue.key}` : `${name} gave your Claude ${issue.key}`, body: toMe ? issue.title : `${issue.title}. Their request comes to you as usual.`, key: `team-assign:${issue.id}:${f.l}:${f.a}` });
+    this.team.deps.notify?.({ kind: 'needsYou', tag: 'task', title: toMe ? `${name} gave you ${issue.key}` : `${name} gave your Claude ${issue.key}`, body: toMe ? issue.title : `${issue.title}. Their request comes to you as usual.`, ...(toMe ? { need: `team-task:${issue.id}` } : {}), key: `team-assign:${issue.id}:${f.l}:${f.a}` });
   }
 
   /** You gave it to a teammate's Claude here: it goes to them as a request. */

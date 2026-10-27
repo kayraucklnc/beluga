@@ -18,6 +18,8 @@ export interface Notice {
   /** The plan it's about (and its task there, by id): the bell groups a plan's quiet notices under it. */
   readonly plan?: string;
   readonly planTask?: string;
+  /** What waits for you that it's about (see NoticeEvent.need). */
+  readonly need?: string;
   /** What happened, once (see NoticeEvent.key). */
   readonly key?: string;
   readonly ts: number;
