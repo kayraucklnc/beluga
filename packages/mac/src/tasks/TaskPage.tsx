@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isEpic, progressOf, isFinished, issueById, worktreeDoing } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isEpic, progressOf, isFinished, issueById, taskProof, worktreeDoing } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
@@ -13,7 +13,8 @@ import { Brief } from './Brief.js';
 import { AssigneeMark, LabelChip, PrChip, PriorityIcon, StatusIcon } from './marks.js';
 import { useIssueMenu } from './parts.js';
 import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker } from './pickers.js';
-import { ProofList, Relations, SubTasks } from './TaskSections.js';
+import { FilesList, ProofList, Relations, SubTasks } from './TaskSections.js';
+import { taskDropProps, useTaskFileDrop } from './use-task-drop.js';
 import { unexplained } from '@beluga/core/board/criteria.js';
 import { ago, dueText } from './tasks-model.js';
 import { openSheet } from '../lib/sheets.js';
@@ -45,9 +46,12 @@ function IssuePage({ issue }: { issue: Issue }) {
   const wrap = useRef<HTMLDivElement>(null);
   const { back } = useTaskActions();
   const swipe = useSwipeBack(wrap, () => back(issue.projectId));
-  const proofFirst = isFinished(issue.status) && issue.proof.length > 0;
+  const proofFirst = isFinished(issue.status) && taskProof(issue).length > 0;
+  // Files dropped anywhere on the page are added to the task.
+  const dropping = useTaskFileDrop();
   return (
-    <div ref={wrap} className={t.pageWrap}>
+    <div ref={wrap} className={t.pageWrap} {...taskDropProps(issue)}>
+    {dropping}
     <SwipeBackEdge progress={swipe} />
     <div className={t.page}>
       <div className={t.pageMain}>
@@ -55,6 +59,7 @@ function IssuePage({ issue }: { issue: Issue }) {
         {/* Finished work: what shows it works comes first (BLG-13). */}
         {proofFirst ? <ProofList issue={issue} /> : null}
         <Brief issue={issue} />
+        <FilesList issue={issue} />
         <SubTasks issue={issue} />
         <Relations issue={issue} />
         {proofFirst ? null : <ProofList issue={issue} />}

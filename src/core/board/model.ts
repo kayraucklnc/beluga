@@ -134,9 +134,18 @@ export interface Proof {
   readonly url?: string;
   /** An beluga-graph's JSON, or text. */
   readonly body?: string;
+  /**
+   * A file someone added for the work to use (dropped on the task, say): not proof that it works.
+   * Listed under Files on its page and given to the Claude doing the task; kept like proof.
+   */
+  readonly context?: boolean;
   readonly at: number;
   readonly by: Actor;
 }
+
+/** A task's files (added for the work to use) and its proof (that shows the work), apart. */
+export const taskFiles = (issue: Pick<Issue, 'proof'>): readonly Proof[] => issue.proof.filter((p) => p.context);
+export const taskProof = (issue: Pick<Issue, 'proof'>): readonly Proof[] => issue.proof.filter((p) => !p.context);
 
 /** The pull request a task's worktree opened (as the workbench last saw it). */
 export interface IssuePr {
