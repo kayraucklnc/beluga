@@ -47,7 +47,8 @@
 .avatarWrap {
   position: relative;
   flex: none;
-  display: inline-block;
+  /* Flex, not inline-block: an inline avatar sits on the text baseline and slips below the box. */
+  display: inline-flex;
 }
 .avatarDot {
   position: absolute;
