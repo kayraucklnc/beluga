@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { DEFAULT_FIRE, type FireLook, fireLookOf } from '../chat/fire-look.js';
+import { DEFAULT_MENU_BAR, type MenuBarLook, menuBarLookOf } from '../menubar/menubar-look.js';
 import { type TermThemePref, themeOf } from './terminal-import-model.js';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
@@ -79,6 +80,8 @@ export interface UiPrefs {
   readonly planTaskChats: readonly string[];
   /** How the message box burns on Max effort (Settings › Max Fire). */
   readonly maxFire: FireLook;
+  /** The menu-bar whale: what its number counts and when it spouts (Settings › Menu Bar). */
+  readonly menuBar: MenuBarLook;
   /** Settings › Voice (BLG-146): the model that writes down what you say ('suggested': Beluga picks for the language). */
   readonly voiceModel: 'suggested' | 'whisper-turbo' | 'parakeet';
   /** The language you speak ('auto': the model tells). */
@@ -146,6 +149,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   groupIcons: {},
   planTaskChats: [],
   maxFire: DEFAULT_FIRE,
+  menuBar: DEFAULT_MENU_BAR,
   voiceModel: 'suggested',
   voiceLanguage: 'auto',
   voiceShortcut: 'Alt+Space',
@@ -160,7 +164,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), termTheme: themeOf(saved.termTheme) };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme) };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -181,14 +185,14 @@ export function setPrefs(patch: Partial<UiPrefs>): void {
   for (const l of [...listeners]) l();
 }
 
+/** Hear about every change to the preferences (returns the way to stop). */
+export function subscribePrefs(l: () => void): () => void {
+  listeners.add(l);
+  return () => void listeners.delete(l);
+}
+
 export function usePrefs(): UiPrefs {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => void listeners.delete(l);
-    },
-    getPrefs,
-  );
+  return useSyncExternalStore(subscribePrefs, getPrefs);
 }
 
 const dark = (): boolean => window.matchMedia('(prefers-color-scheme: dark)').matches;

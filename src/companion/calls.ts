@@ -68,6 +68,7 @@ export const PhoneCalls = {
   'network.groups.decline': entry('network.groups.decline', done),
   'network.presence.set': entry('network.presence.set', done),
   'network.presence.get': entry('network.presence.get', done),
+  'network.avatar.get': entry('network.avatar.get', z.object({ mime: z.string(), b64: z.string() }).passthrough().optional()),
   'network.post': entry('network.post', done),
   'network.files.addData': entry('network.files.addData', done),
   'network.files.download': entry('network.files.download', done),

@@ -1,3 +1,4 @@
+import { NewLabelSheet } from '../../tasks/NewLabelSheet.js';
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
 import { NewSentinelSheet } from '../../sentinel/NewSentinelSheet.js';
 import { AddTileSheet } from '../../sentinel/AddTileSheet.js';
@@ -182,6 +183,8 @@ export function NativeSheets() {
       return <ShareProjectSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_task':
       return <NewTaskSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
+    case 'new_label':
+      return <NewLabelSheet key={sheet.projectId} projectId={sheet.projectId} {...(sheet.issueId ? { issueId: sheet.issueId } : {})} close={close} />;
     case 'task_sync':
       return <SyncSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_plan':

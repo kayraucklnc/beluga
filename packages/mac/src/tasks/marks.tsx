@@ -1,12 +1,15 @@
+import type { CSSProperties } from 'react';
+import { LABEL_COLOR_INFO, type LabelDef, labelDef, labelTitle } from '@beluga/core/board/labels.js';
 import { type Assignee, type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, labelHue } from '@beluga/core/board/model.js';
 import type { IssuePr } from '@beluga/core/board/model.js';
-import { Icon } from '../components/Icon.js';
+import { Icon, type IconName } from '../components/Icon.js';
+import { useApp } from '../lib/beluga.js';
 import { Avatar, Tip, cx } from '../components/ui.js';
 import t from './tasks.module.css';
 
 /**
  * The small marks tasks are read by, the same everywhere (lists, cards, pages, menus): a status
- * ring that fills as work goes on, priority bars, label chips, who it's for, a pull request.
+ * ring that fills as work goes on, priority bars, label chips (an icon in a color), who it's for, a pull request.
  */
 
 /** A ring that fills: dashed for the backlog, empty to do, half in progress, most in review, a tick when done. */
@@ -66,23 +69,39 @@ export function PriorityIcon({ priority, size = 14, labelled }: { priority: Prio
   );
 }
 
-export function LabelChip({ label, onRemove }: { label: string; onRemove?: () => void }) {
-  return (
-    <span className={t.label} style={{ ['--hue' as string]: String(labelHue(label)) }}>
-      <span className={t.labelDot} aria-hidden="true" />
-      {label}
+/** How a label looks: its icon and color from the project's set, or a plain tag for one that isn't in it. */
+function labelLook(def: LabelDef | undefined, label: string): { readonly icon: IconName; readonly style: CSSProperties } {
+  if (!def) return { icon: 'tag', style: { ['--hue' as string]: String(labelHue(label)), ['--sat' as string]: '30%' } };
+  const c = LABEL_COLOR_INFO[def.color];
+  return { icon: def.icon, style: { ['--hue' as string]: String(c.hue), ['--sat' as string]: `${c.sat}%` } };
+}
+
+/** A label: its icon in its color, and its name ("Bug"); one outside the set is a plain outlined tag. */
+export function LabelChip({ label, projectId, onRemove, iconOnly }: { label: string; projectId: string; onRemove?: () => void; iconOnly?: boolean }) {
+  const def = useApp((s) => labelDef(s.board, projectId, label));
+  const look = labelLook(def, label);
+  const chip = (
+    <span className={cx(t.label, def ? t.labelKnown : t.labelOther, iconOnly && t.labelIconOnly)} style={look.style} aria-label={iconOnly ? labelTitle(label) : undefined}>
+      <Icon name={look.icon} size={11} className={t.labelIcon} />
+      {iconOnly ? null : labelTitle(label)}
       {onRemove ? (
-        <button type="button" className={t.labelRemove} aria-label={`Remove ${label}`} onClick={onRemove}>
+        <button type="button" className={t.labelRemove} aria-label={`Remove ${labelTitle(label)}`} onClick={onRemove}>
           <Icon name="x" size={9} />
         </button>
       ) : null}
     </span>
   );
+  return iconOnly ? <Tip label={def?.hint ? `${labelTitle(label)}: ${def.hint}` : labelTitle(label)}>{chip}</Tip> : chip;
 }
 
-/** A label's color alone (menus). */
-export function LabelDot({ label }: { label: string }) {
-  return <span className={t.labelDotAlone} style={{ ['--hue' as string]: String(labelHue(label)) }} aria-hidden="true" />;
+/** A label's icon in its color alone (menus). */
+export function LabelMark({ def, label }: { def: LabelDef | undefined; label: string }) {
+  const look = labelLook(def, label);
+  return (
+    <span className={t.labelMark} style={look.style} aria-hidden="true">
+      <Icon name={look.icon} size={13} />
+    </span>
+  );
 }
 
 /** Who a task is for: a person's avatar (a task is for a person, never a Claude: BLG-278). */

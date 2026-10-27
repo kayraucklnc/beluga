@@ -1,5 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { DEFAULT_LABELS } from '../core/board/labels.js';
 import type { BoardTools } from './types.js';
 
 /**
@@ -25,6 +26,14 @@ function guarded(fn: () => string): Promise<{ content: Array<{ type: 'text'; tex
   }
 }
 
+/** Labels come from the board's set: the built-in ones (named here) and any the project added (the brief lists them). */
+const LABELS = (max: number) =>
+  z
+    .array(z.string().max(32))
+    .max(max)
+    .optional()
+    .describe(`From the board's set only: ${DEFAULT_LABELS.map((l) => l.name).join(', ')}, and any the project added. Never make one up; "important" only when it matters most`);
+
 export function createBoardToolDefs(board: BoardTools) {
   return [
     tool(
@@ -39,7 +48,7 @@ export function createBoardToolDefs(board: BoardTools) {
         questions: items(10).optional().describe('What is still unclear'),
         estimate: ESTIMATE.optional(),
         priority: PRIORITY.optional(),
-        labels: z.array(z.string().max(32)).max(6).optional(),
+        labels: LABELS(6),
       },
       (a) =>
         guarded(() =>
@@ -79,7 +88,7 @@ export function createBoardToolDefs(board: BoardTools) {
         blocked_by: z.array(z.string().max(40)).max(10).optional().describe('Keys of tasks that must be done first'),
         status: z.enum(['backlog', 'todo']).optional(),
         priority: PRIORITY.optional(),
-        labels: z.array(z.string().max(32)).max(8).optional(),
+        labels: LABELS(8),
       },
       (a) =>
         guarded(() =>
@@ -103,7 +112,7 @@ export function createBoardToolDefs(board: BoardTools) {
     tool(
       'task_update',
       'Change a task: its title, status, priority, estimate, labels (the full list), or who it’s for (me: the user; nobody). A task is for a person, never a Claude. Mark a task done or canceled only when the user asked or said its work shipped (its sub-tasks still open go Done with it). in_review is refused while an acceptance criterion is neither ticked nor explained.',
-      { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), estimate: ESTIMATE.optional(), labels: z.array(z.string().max(32)).max(12).optional(), assign: z.enum(['me', 'nobody']).optional() },
+      { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), estimate: ESTIMATE.optional(), labels: LABELS(12), assign: z.enum(['me', 'nobody']).optional() },
       (a) =>
         guarded(() =>
           board.update(a.key, {

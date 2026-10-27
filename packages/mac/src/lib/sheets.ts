@@ -32,6 +32,8 @@ export type NativeSheet =
   | { readonly kind: 'delete_project'; readonly projectId: string }
   /** A new task (in a project, a status, under a parent). */
   | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('../../../../src/core/board/model.js').IssueStatus; readonly parent?: string }
+  /** A new label in a project's set (a name, an icon, a color), put on a task too when it's opened from one; and its own labels, to remove. */
+  | { readonly kind: 'new_label'; readonly projectId: string; readonly issueId?: string }
   /** Sync a project's tasks with Linear: connect a key and a team, or see how it syncs. */
   | { readonly kind: 'task_sync'; readonly projectId: string }
   /** A new plan with Claude: what it's for, the project (unset: pick one), how far it runs on its own. */

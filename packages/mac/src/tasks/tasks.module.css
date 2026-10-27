@@ -91,6 +91,37 @@
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
   white-space: nowrap;
 }
+/* A label from the set: its icon in its color on a soft wash of it. One outside the set: outlined, a plain tag. */
+.labelKnown {
+  box-shadow: none;
+  background: hsl(var(--hue) var(--sat) 50% / 0.11);
+  color: var(--text);
+}
+.labelIcon {
+  flex: none;
+  color: hsl(var(--hue) var(--sat) 45%);
+}
+:global([data-theme='dark']) .labelIcon,
+:global([data-theme='dark']) .labelMark {
+  color: hsl(var(--hue) var(--sat) 68%);
+}
+:global([data-theme='dark']) .labelKnown {
+  background: hsl(var(--hue) var(--sat) 60% / 0.16);
+}
+.labelOther .labelIcon {
+  color: var(--text-3);
+}
+/* On a card: just the icon (its name in the tooltip). */
+.labelIconOnly {
+  width: 20px;
+  padding: 0;
+  justify-content: center;
+}
+.labelMark {
+  display: inline-grid;
+  place-items: center;
+  color: hsl(var(--hue) var(--sat) 45%);
+}
 .labelDot,
 .labelDotAlone {
   width: 7px;
@@ -727,6 +758,109 @@
     opacity: 0.5;
   }
 }
+/*
+ * An epic (a task with sub-tasks) is a little deck: two card edges peek out under it, an Epic tag
+ * by its key, a stronger title and a bar of its sub-tasks done across the bottom.
+ */
+.cardEpic {
+  margin-bottom: 7px;
+  box-shadow:
+    0 0 0 1px var(--hairline-strong),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 0 -2px var(--bg-raised),
+    0 4px 0 -1px var(--hairline-strong),
+    0 8px 0 -4px var(--bg-raised),
+    0 8px 0 -3px var(--hairline-strong);
+}
+.cardEpic:hover,
+.boardDragging .cardEpic:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--text) 22%, transparent),
+    0 4px 0 -2px var(--bg-raised),
+    0 4px 0 -1px color-mix(in srgb, var(--text) 16%, transparent),
+    0 8px 0 -4px var(--bg-raised),
+    0 8px 0 -3px color-mix(in srgb, var(--text) 12%, transparent),
+    0 10px 18px -10px rgba(0, 0, 0, 0.18);
+}
+.cardEpic:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 4px 0 -2px var(--bg-raised),
+    0 4px 0 -1px var(--hairline-strong),
+    0 8px 0 -4px var(--bg-raised),
+    0 8px 0 -3px var(--hairline-strong);
+}
+.cardEpic .cardTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.epicTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 17px;
+  padding: 0 6px 0 5px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--epic);
+  background: color-mix(in srgb, var(--epic) 12%, transparent);
+}
+.epicBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.epicTrack {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--epic) 14%, transparent);
+  overflow: hidden;
+}
+.epicFill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--epic);
+  transition: width var(--dur) var(--ease-out);
+}
+.epicCount {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* A sub-task says which epic it's in. */
+.epicOf {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--epic) 80%, var(--text-2));
+  font-variant-numeric: tabular-nums;
+}
+/* In the list and on its page: the epic's mark beside the title. */
+.epicMark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  color: var(--epic);
+}
+.pageEpic {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--epic);
+}
+.pageEpic .epicCount {
+  font-weight: 400;
+}
+
 /* The drag: the lifted card under the pointer, and the room the others make for it. */
 .cardSlot {
   position: relative;
@@ -2024,4 +2158,48 @@
   .syncSpin {
     animation: none;
   }
+}
+
+/* Files dragged from Finder over a task (its page, card or row): dropping adds them to it. */
+.fileDrop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  pointer-events: none;
+}
+.fileDrop::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--accent) 7%, color-mix(in srgb, var(--bg) 70%, transparent));
+}
+.fileDropSmall {
+  padding: 2px;
+}
+.fileDropSmall::before {
+  inset: -2px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.fileDropLabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 1px var(--hairline), 0 6px 20px rgb(0 0 0 / 0.18);
+  color: var(--accent);
+  font-weight: 600;
+}
+.fileDropSmall .fileDropLabel {
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
 }

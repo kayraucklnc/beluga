@@ -56,6 +56,11 @@ export const NETWORK_API = {
   // `offline` means appear offline (you keep receiving).
   'network.presence.set': { args: z.tuple([Presence]) },
   'network.presence.get': { args: z.tuple([]) },
+  // Your profile picture (base64 of a PNG, JPEG, WebP or GIF up to 96 KB; null takes it away): friends and people
+  // in your groups get it once and keep it. → its checksum.
+  'network.avatar.set': { args: z.tuple([z.string().max(140_000).nullable()]) },
+  // A profile picture's bytes to show (a `PersonView.avatar` or `NetworkSelf.avatar`): → { mime, b64 }.
+  'network.avatar.get': { args: z.tuple([sha]) },
   // Write in a conversation: text, files (added first with files.add / files.addData), and whose Claudes should answer.
   'network.post': { args: z.tuple([conversation, Post]) },
   // Take files in to share them (checksummed and cloned; folders are refused): → what a message says about each.

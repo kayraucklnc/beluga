@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Store } from '../store.js';
 import { unexplained } from './criteria.js';
+import { LABEL_COLORS, LABEL_ICONS, LABEL_NAME, type LabelColor, type LabelDef, type LabelIcon, MAX_CUSTOM_LABELS, cleanLabelName, inSet, labelsFor } from './labels.js';
 import { dropKeptFile, dropProofFolder, keepProofFile, keepProofFiles, letGoProofFile } from './proof-files.js';
 import {
   type Activity,
@@ -112,11 +113,23 @@ const MAX_SECTION = 20_000;
 const MAX_COMMENT = 8_000;
 const MAX_LABELS = 12;
 
+const SavedLabel = z.object({ name: z.string().regex(LABEL_NAME), icon: z.enum(LABEL_ICONS), color: z.enum(LABEL_COLORS), hint: z.string().max(80).optional() });
+
 const BoardFile = z.object({
   version: z.literal(1),
   // Renamed from autoTasks when it turned off by default (tasks come from plans now): the old key is ignored.
   worktreeTasks: z.boolean().default(false),
-  projects: z.record(z.string(), z.object({ prefix: z.string().min(1).max(8), next: z.number().int().positive() })).default({}),
+  projects: z
+    .record(
+      z.string(),
+      z.object({
+        prefix: z.string().min(1).max(8),
+        next: z.number().int().positive(),
+        // A label that doesn't read any more is left out, not the board.
+        labels: z.array(z.unknown()).optional().transform((list) => list?.flatMap((l) => { const r = SavedLabel.safeParse(l); return r.success ? [r.data as LabelDef] : []; })),
+      }),
+    )
+    .default({}),
   issues: z.array(z.unknown()).default([]),
 });
 
@@ -281,7 +294,7 @@ export class Board {
       ...(input.drafting ? { drafting: true } : {}),
       status,
       priority: input.priority ?? 'none',
-      labels: cleanLabels(input.labels ?? []),
+      labels: this.allowedLabels(input.projectId, input.labels ?? [], [], by, origin),
       ...(input.estimate ? { estimate: input.estimate } : {}),
       ...(input.due && DAY.test(input.due) ? { due: input.due } : {}),
       ...(input.assignee ? { assignee: personOf(input.assignee as AnyAssignee) } : {}),
@@ -340,7 +353,7 @@ export class Board {
       notes.push({ kind: 'assignee', text: assignee ? `assigned this to ${assignee.name}` : 'unassigned this', assignee, was: assigneeId(issue.assignee), now: assigneeId(assignee ?? undefined) });
     }
     if (patch.labels) {
-      const labels = cleanLabels(patch.labels);
+      const labels = this.allowedLabels(issue.projectId, patch.labels, issue.labels, by);
       if (labels.join('\0') !== issue.labels.join('\0')) {
         const added = labels.filter((l) => !issue.labels.includes(l));
         const removed = issue.labels.filter((l) => !labels.includes(l));
@@ -410,7 +423,7 @@ export class Board {
         drafting: undefined,
         ...(title && !renamed ? { title } : {}),
         brief,
-        labels: cleanLabels([...issue.labels, ...draft.labels]),
+        labels: cleanLabels([...issue.labels, ...inSet(labelsFor(this.state(), issue.projectId), draft.labels).known]),
         ...(draft.priority && issue.priority === 'none' ? { priority: draft.priority } : {}),
       },
       [this.entry(by, 'brief', 'wrote the title and goal')],
@@ -550,9 +563,11 @@ export class Board {
     const made: Proof = { ...given, title, id: short('p'), at: this.now(), by };
     // Its file is copied now, so it outlives the worktree it was made in.
     const item = this.deps.dir ? keepProofFile(made, issue.id, this.deps.dir) : made;
-    const kept = [...issue.proof, item];
-    if (this.deps.dir) for (const old of kept.slice(0, -KEEP_PROOF)) dropKeptFile(this.deps.dir, old.path);
-    return this.change(issue, { proof: kept.slice(-KEEP_PROOF) }, [this.entry(by, 'proof', `added proof: ${title}`)]);
+    // Only proof is trimmed to the newest KEEP_PROOF: files someone added for the work stay.
+    const all = [...issue.proof, item];
+    const over = new Set(all.filter((p) => !p.context).slice(0, -KEEP_PROOF));
+    if (this.deps.dir) for (const old of over) dropKeptFile(this.deps.dir, old.path);
+    return this.change(issue, { proof: all.filter((p) => !over.has(p)) }, [this.entry(by, 'proof', item.context ? `added a file: ${title}` : `added proof: ${title}`)]);
   }
 
   removeProof(ref: string, proofId: string, by: Actor): Issue {
@@ -560,7 +575,7 @@ export class Board {
     const gone = issue.proof.find((p) => p.id === proofId);
     if (!gone) return issue;
     if (this.deps.dir) dropKeptFile(this.deps.dir, gone.path);
-    return this.change(issue, { proof: issue.proof.filter((p) => p.id !== proofId) }, [this.entry(by, 'proof', `removed proof: ${gone.title}`)]);
+    return this.change(issue, { proof: issue.proof.filter((p) => p.id !== proofId) }, [this.entry(by, 'proof', gone.context ? `removed a file: ${gone.title}` : `removed proof: ${gone.title}`)]);
   }
 
   /**
@@ -830,6 +845,32 @@ export class Board {
     this.save();
   }
 
+  /** A label added to a project's set (after the built-in ones): its name, icon and color. */
+  createLabel(projectId: string, input: { readonly name: string; readonly icon: LabelIcon; readonly color: LabelColor; readonly hint?: string }): LabelDef {
+    const name = cleanLabelName(input.name);
+    if (!LABEL_NAME.test(name)) throw new Error('A label is one or two short words (letters, digits and dashes)');
+    if (labelsFor(this.state(), projectId).some((l) => l.name === name)) throw new Error(`There’s a label called ${name} already`);
+    const project = this.projectFor(projectId);
+    const own = project.labels ?? [];
+    if (own.length >= MAX_CUSTOM_LABELS) throw new Error(`A project has ${MAX_CUSTOM_LABELS} labels of its own at most: a few that mean something`);
+    const hint = input.hint ? oneLine(input.hint, 80) : '';
+    const label: LabelDef = { name, icon: input.icon, color: input.color, ...(hint ? { hint } : {}) };
+    this.projects = { ...this.projects, [projectId]: { ...project, labels: [...own, label] } };
+    this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
+    this.save();
+    return label;
+  }
+
+  /** A project's own label out of its set (tasks that have it keep it, shown plainly, until someone removes it). */
+  removeLabel(projectId: string, name: string): void {
+    const project = this.projects[projectId];
+    const own = project?.labels ?? [];
+    if (!project || !own.some((l) => l.name === name)) throw new Error('Only a label the project added can be removed');
+    this.projects = { ...this.projects, [projectId]: { ...project, labels: own.filter((l) => l.name !== name) } };
+    this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
+    this.save();
+  }
+
   /** Write anything waiting now (on the way out). */
   flush(): void {
     if (!this.saveTimer) return;
@@ -847,6 +888,18 @@ export class Board {
     if (!name) throw new Error('That project isn’t here');
     const taken = new Set([...Object.values(this.projects).map((p) => p.prefix), ...this.issues.map((i) => i.key.replace(/-\d+$/, ''))]);
     return { prefix: prefixFor(name, taken), next: 1 };
+  }
+
+  /**
+   * The labels a change may set: Claude (and a plan Claude wrote) only picks from the project's
+   * set, keeping any the task had already; people pick from the set on screen, and sync brings
+   * the tracker's own.
+   */
+  private allowedLabels(projectId: string, wanted: readonly string[], had: readonly string[], by: Actor, origin?: Issue['origin']): string[] {
+    const labels = cleanLabels(wanted);
+    if (by.kind !== 'claude' && origin !== 'plan' && origin !== 'claude') return labels;
+    const set = new Set([...labelsFor(this.state(), projectId).map((l) => l.name), ...had]);
+    return labels.filter((l) => set.has(l));
   }
 
   private entry(by: Actor, kind: ActivityKind, text: string, body?: string, at = this.now(), assignee?: Assignee | null, change?: { readonly was: string; readonly now: string }): Activity {

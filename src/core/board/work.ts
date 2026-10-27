@@ -8,6 +8,7 @@ import type { WorkspaceController, WorktreeEvent } from '../workspace-controller
 import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
 import { needsChecksText, unexplained } from './criteria.js';
+import { inSet, labelsFor } from './labels.js';
 import { briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
 import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isArchived, isFinished, isOpen, issueForWorkspace, titleFromName, worktreeDoing } from './model.js';
 
@@ -148,7 +149,7 @@ export class BoardWork {
 
   /**
    * A task from a description: on the board at once under its first line, while your Claude writes
-   * its title, goal, criteria and labels (the board's own first); they fill in when it's done.
+   * its title, goal, criteria and labels (from the project's set); they fill in when it's done.
    */
   /**
    * What your Claude writes for a task described in words, without adding it yet (the phone shows
@@ -160,7 +161,7 @@ export class BoardWork {
     const title = firstLineTitle(text);
     const plain: TaskDraft = { title, goal: text, acceptance: [], labels: [] };
     if (!this.deps.draftTask) return plain;
-    const labels = [...new Set(this.board.list().flatMap((i) => i.labels))].sort();
+    const labels = labelsFor(this.board.state(), projectId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
     return (await this.deps.draftTask(text, { labels, ...(project ? { project } : {}) }).catch(() => undefined)) ?? plain;
   }
@@ -186,7 +187,7 @@ export class BoardWork {
     // Without your Claude: the first line, and what was said as the goal if it says more.
     if (!draft) return this.board.create({ ...input, title, ...(text.replace(/\s+/g, ' ') !== title ? { brief: { goal: text } } : {}) }, this.me(), opts.origin);
     const issue = this.board.create({ ...input, title, drafting: true }, this.me(), opts.origin);
-    const labels = [...new Set(this.board.list().flatMap((i) => i.labels))].sort();
+    const labels = labelsFor(this.board.state(), issue.projectId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === issue.projectId)?.name;
     const done = draft(text, { labels, ...(project ? { project } : {}), ...(opts.look ? { look: opts.look } : {}) })
       .catch(() => undefined)
@@ -488,6 +489,13 @@ export class BoardWork {
       if (!p) throw new Error(`There's no project called ${name}`);
       return p.id;
     };
+    // Labels come from the project's set: what wasn't in it is said, with the set, so Claude picks again.
+    const leftOut = (projectId: string, wanted: readonly string[] | undefined, had: readonly string[] = []): string => {
+      const set = labelsFor(state(), projectId);
+      const { unknown } = inSet(set, wanted ?? []);
+      const dropped = unknown.filter((l) => !had.includes(l));
+      return dropped.length ? `. Left out ${dropped.join(', ')}: labels come from the board's set (${set.map((l) => l.name).join(', ')}); people add new ones` : '';
+    };
     // A task is for a person (BLG-278): "claude" (an older tool call) means the user's.
     const assign = (to: 'me' | 'claude' | 'nobody' | undefined): Assignee | null | undefined => (to === 'me' || to === 'claude' ? this.me() : to === 'nobody' ? null : undefined);
     const where = (issue: Issue): string | undefined => {
@@ -522,7 +530,7 @@ export class BoardWork {
           ...(projectId ? { projectId } : {}),
           ...(f.query ? { query: f.query } : {}),
         });
-        return describeList(f.scope === 'all' || f.scope === 'mine' ? found : found.filter((i) => isOpen(i.status)));
+        return describeList(f.scope === 'all' || f.scope === 'mine' ? found : found.filter((i) => isOpen(i.status)), state());
       },
       create: (input) => {
         const projectId = input.project ? projectByName(input.project) : input.parent ? board.need(input.parent).projectId : (current?.projectId ?? wsProject());
@@ -549,7 +557,7 @@ export class BoardWork {
           by(),
           'claude',
         );
-        return `Created ${issue.key}: ${issue.title} (${issue.status})`;
+        return `Created ${issue.key}: ${issue.title} (${issue.status})${leftOut(projectId, input.labels)}`;
       },
       update: (key, patch) => {
         const issue = pick(key);
@@ -563,7 +571,7 @@ export class BoardWork {
         // Moved along from a worktree that isn't doing it: that worktree's pull request ships it (see Board.carry).
         if (patch.status === 'in_progress' || patch.status === 'in_review') this.carryHere(channel, issue.id);
         const next = board.update(issue.id, { ...(patch.title ? { title: patch.title } : {}), ...(patch.status ? { status: patch.status } : {}), ...(patch.priority ? { priority: patch.priority } : {}), ...(patch.labels ? { labels: patch.labels } : {}), ...(patch.estimate !== undefined ? { estimate: patch.estimate } : {}), ...(assignee !== undefined ? { assignee } : {}) }, by());
-        return `${next.key} is now: ${next.title} · ${next.status} · priority ${next.priority}${next.estimate ? ` · ${next.estimate} points` : ''}`;
+        return `${next.key} is now: ${next.title} · ${next.status} · priority ${next.priority}${next.estimate ? ` · ${next.estimate} points` : ''}${next.labels.length ? ` · labels ${next.labels.join(', ')}` : ''}${leftOut(next.projectId, patch.labels, issue.labels)}`;
       },
       editBrief: (key, section, content, reason, mode) => {
         if (!BRIEF_SECTIONS.includes(section)) throw new Error(`Sections: ${BRIEF_SECTIONS.join(', ')}`);

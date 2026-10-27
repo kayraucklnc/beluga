@@ -1,5 +1,6 @@
 import type { Board } from '../board/board.js';
 import { criteria, criterionLine } from '../board/criteria.js';
+import { labelsFor } from '../board/labels.js';
 import { type Actor, type Assignee, type BriefSection, type Issue, isOpen } from '../board/model.js';
 import { PlanError } from './edit.js';
 import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, milestoneDeps, taskById } from './model.js';
@@ -30,6 +31,11 @@ export class ApplyError extends Error {
     super(message);
   }
 }
+
+const inPlanSet = (board: Board, issue: Issue, labels: readonly string[]): string[] => {
+  const set = new Set(labelsFor(board.state(), issue.projectId).map((l) => l.name));
+  return labels.map((l) => l.toLowerCase()).filter((l) => set.has(l) || issue.labels.includes(l));
+};
 
 export function applyDraft(plan: Plan, board: Board, actors: ApplyActors): Applied {
   const linked = new Map<string, string>();
@@ -94,7 +100,8 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
         ...(old && differs('title') ? { title: task.title } : {}),
         ...(task.priority && differs('priority') ? { priority: task.priority } : {}),
         ...(task.estimate && differs('estimate') ? { estimate: task.estimate } : {}),
-        ...(task.labels && old && differs('labels') ? { labels: task.labels } : {}),
+        // Claude wrote the plan: its labels come from the project's set (and any the task already had).
+        ...(task.labels && old && differs('labels') ? { labels: inPlanSet(board, existing, task.labels) } : {}),
         ...((notStarted && moved && existing.status !== fresh) || revived ? { status: fresh } : {}),
       },
       actors.by,

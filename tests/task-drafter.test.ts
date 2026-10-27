@@ -32,14 +32,15 @@ function setup(draftTask?: (text: string, ctx: DraftContext) => Promise<TaskDraf
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe('the draft out of what the model says', () => {
-  it('reads the JSON object, keeps the board’s own labels in its spelling, and drops a null priority', () => {
+  it('reads the JSON object, keeps only labels from the set (in its spelling), and drops a null priority', () => {
     const raw = 'Here it is:\n{"title": "Rate-limit the login endpoint", "goal": "Stop brute force.", "acceptance": ["429 after 10 tries"], "labels": ["Security", "brand-new"], "priority": null}';
-    expect(parseTaskDraft(raw, ['security', 'api'])).toEqual({ title: 'Rate-limit the login endpoint', goal: 'Stop brute force.', acceptance: ['429 after 10 tries'], labels: ['security', 'brand-new'] });
+    expect(parseTaskDraft(raw, ['security', 'api'])).toEqual({ title: 'Rate-limit the login endpoint', goal: 'Stop brute force.', acceptance: ['429 after 10 tries'], labels: ['security'] });
   });
 
-  it('a label board gets new labels: two at most, short and lowercase', () => {
-    const raw = '{"title": "x", "goal": "y", "labels": ["Dark Mode", "mac", "chat", "This is not a label at all, it is a sentence"]}';
-    expect(parseTaskDraft(raw, [])!.labels).toEqual(['dark-mode', 'mac']);
+  it('never makes up a label: people add those', () => {
+    const raw = '{"title": "x", "goal": "y", "labels": ["Dark Mode", "mac", "Bug"]}';
+    expect(parseTaskDraft(raw, [])!.labels).toEqual([]);
+    expect(parseTaskDraft(raw, ['bug', 'dark-mode'])!.labels).toEqual(['dark-mode', 'bug']);
   });
 
   it('nothing usable: no draft', () => {
@@ -79,12 +80,13 @@ describe('board.create with a description', () => {
     board.create({ projectId: 'api', title: 'Old', labels: ['security', 'api'] }, work.me());
     const issue = work.createDescribed({ projectId: 'api', status: 'in_progress', labels: ['api'] }, 'please cache the exchange rates\nthey are slow');
     expect(issue).toMatchObject({ title: 'please cache the exchange rates', status: 'in_progress', drafting: true });
-    expect(asked[0]![1]).toEqual({ project: 'bob-api', labels: ['api', 'security'] });
-    finish({ title: 'Cache the exchange rates', goal: 'Fetch once an hour.', acceptance: ['Rates at most an hour old'], labels: ['security'], priority: 'high' });
+    // It picks from the project's set: the built-in labels (and the project's own).
+    expect(asked[0]![1]).toEqual({ project: 'bob-api', labels: ['bug', 'important', 'feature', 'design', 'docs', 'chore'] });
+    finish({ title: 'Cache the exchange rates', goal: 'Fetch once an hour.', acceptance: ['Rates at most an hour old'], labels: ['feature', 'made-up'], priority: 'high' });
     await settle();
     const done = board.need(issue.id);
     expect(done.drafting).toBeUndefined();
-    expect(done).toMatchObject({ title: 'Cache the exchange rates', labels: ['api', 'security'], priority: 'high', brief: { goal: 'Fetch once an hour.', acceptance: '- [ ] Rates at most an hour old' } });
+    expect(done).toMatchObject({ title: 'Cache the exchange rates', labels: ['api', 'feature'], priority: 'high', brief: { goal: 'Fetch once an hour.', acceptance: '- [ ] Rates at most an hour old' } });
     expect(done.activity.at(-1)).toMatchObject({ by: { kind: 'claude' }, text: 'wrote the title and goal' });
   });
 
