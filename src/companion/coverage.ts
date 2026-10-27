@@ -160,6 +160,7 @@ export const PHONE: Record<Method, Side> = {
   'workbench.setModel': 'mac',
   'workbench.createPr': 'mac',
   'workbench.quickPr': 'mac',
+  'workbench.mergeToBase': 'mac',
   'workbench.gitFix': 'mac',
   'workbench.fixChecks': 'mac',
   'workbench.resolvePrConflicts': 'mac',
