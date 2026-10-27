@@ -16,6 +16,7 @@ import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { ModelPicker } from './ModelPicker.js';
 import { ContextMeter } from './ContextMeter.js';
+import { McpChip } from './McpChip.js';
 import { QueueTray } from './QueueTray.js';
 import { expectClaude, launchFlight } from './flight.js';
 import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
@@ -490,6 +491,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </ActionsDropdown>
           ) : null}
           {!shared ? <ModelPicker channel={channel} /> : null}
+          {!shared && channel !== 'draft' ? <McpChip /> : null}
           {burning && state.prefs.effort === 'max' ? (
             <Tip label="Max effort: Claude thinks as hard as it can">
               <span className={m.tag}>
