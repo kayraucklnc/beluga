@@ -247,7 +247,7 @@ export function ScratchTab({ wsId }: { wsId: string }) {
   const state = scratchState(list);
   if (state === 'loading') return <ScratchSkeleton />;
   if (state === 'missing' || !list) return <Empty icon="alert" title="No folder to look in" detail="This workspace’s folder is missing." />;
-  if (state === 'empty') return <ScratchEmpty working={working} folders={SHOWN_SCRATCH_DIRS} off={!on} dir={list.dir} onReveal={() => void revealInFinder(client, list.dir)} />;
+  if (state === 'empty') return <ScratchEmpty working={working} off={!on} dir={list.dir} onReveal={() => void revealInFinder(client, list.dir)} />;
   const split = clampShare(prefs.panelSplit, SPLIT_MIN, SPLIT_MAX);
   return (
     <div ref={box} className={s.stack}>

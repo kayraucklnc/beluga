@@ -495,6 +495,9 @@ function Conversation({ id }: { id: string }) {
   const lastMine = [...messages].reverse().find((m) => m.mine)?.id;
   // A friend's Claude answering you can offer to do it on their Mac (RequestOffer).
   const mineIds = new Set(messages.filter((m) => m.mine).map((m) => m.id));
+  // A request sent from a friend's Claude's answer (RequestOffer) has its card under that answer:
+  // its own message would be the same card again, so it isn't drawn twice.
+  const offered = new Set(Object.values(sentRequests()));
   const nameOf = (peerId: string): string => net.friends.find((f) => f.peerId === peerId)?.name ?? group?.members.find((m) => m.peerId === peerId)?.name ?? 'someone';
   const title = group ? channelName(net, group) : (friend?.name ?? '');
   const note = offlineNote(here);
@@ -520,11 +523,11 @@ function Conversation({ id }: { id: string }) {
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              {m.task ? <TaskMessage id={m.task.id} plain={plain} {...(me ? { me } : {})} /> : plain}
+              {m.task ? offered.has(m.task.id) ? null : <TaskMessage id={m.task.id} plain={plain} {...(me ? { me } : {})} /> : plain}
             </div>
           );
         })}
-        {asking.map((t) => (
+        {asking.filter((t) => !offered.has(t.id)).map((t) => (
           <TaskRow key={t.id} task={t} {...(me ? { me } : {})} />
         ))}
         <LiveRow id={id} {...(me ? { me: me.peerId } : {})} />

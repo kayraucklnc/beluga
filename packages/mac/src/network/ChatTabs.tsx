@@ -47,10 +47,10 @@ function tabInfo(id: string, net: NetworkState): { name: string; unread: number;
   const target = conversationOf(id);
   if (target?.kind === 'dm') {
     const f = net.friends.find((x) => x.peerId === target.peerId);
-    return f ? { name: f.name, unread: f.unread, icon: <PersonAvatar name={f.name} id={f.peerId} state={shownState(f)} size={14} /> } : undefined;
+    return f ? { name: f.name, unread: f.unread, icon: <PersonAvatar name={f.name} id={f.peerId} state={shownState(f)} size={16} /> } : undefined;
   }
   const g = target ? net.groups.find((x) => x.id === target.groupId) : undefined;
-  return g ? { name: channelName(net, g), unread: g.active ? g.unread : 0, icon: <GroupAvatar name={g.name} id={g.id} size={14} muted={!g.active} /> } : undefined;
+  return g ? { name: channelName(net, g), unread: g.active ? g.unread : 0, icon: <GroupAvatar name={g.name} id={g.id} size={16} muted={!g.active} /> } : undefined;
 }
 
 export function ChatTabs({ shown }: { shown: string }) {

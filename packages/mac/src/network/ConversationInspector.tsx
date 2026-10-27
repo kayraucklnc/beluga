@@ -48,12 +48,10 @@ function FriendAccess({ peerId, name }: { peerId: string; name: string }) {
     void api.people.setTrust(peerId, v).catch((err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't change it: ${err instanceof Error ? err.message : String(err)}`, level: 'error' }));
   return (
     <Panel title="Trust">
-      <Field label="Trust">
+      <div className={s.wide}>
         <Select<TrustLevel> label={`Trust ${name}`} value={level} onChange={set} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_INFO[l].label, description: TRUST_INFO[l].detail }))} />
-      </Field>
-      <div className={s.fieldLabel} style={{ padding: '0 0 6px', whiteSpace: 'normal' }}>
-        {TRUST_INFO[level].detail}
       </div>
+      <p className={s.note}>{TRUST_INFO[level].detail}</p>
       {gateway ? <PersonRules peerId={peerId} compact /> : null}
     </Panel>
   );

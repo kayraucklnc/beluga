@@ -80,11 +80,6 @@
   color: var(--claude);
   font-size: 0.86rem;
 }
-.emptyFolders {
-  margin-top: 10px;
-  color: var(--text-3);
-  font-size: 0.8rem;
-}
 
 /* Loading: a light sweeps across the bars, and the tile breathes. */
 .live .bar,
