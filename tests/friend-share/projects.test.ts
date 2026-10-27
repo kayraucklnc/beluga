@@ -100,7 +100,7 @@ describe('sharing a project with a friend over the network', () => {
     const branches = git(project.root, 'branch', '--format=%(refname:short)').split('\n').sort();
 
     ata.session.sharing.shareWithFriend({ peerId: kay.id, projectId: project.id, role: 'contribute' });
-    const shared = await settle(() => kay.store.getState().sharedProjects.find((p) => p.id === project.id && p.copy?.state === 'ready'), 40_000);
+    const shared = await settle(() => kay.store.getState().sharedProjects.find((p) => p.id === project.id && p.copy?.state === 'ready'));
     const copy = shared!.copy!;
     expect(copy.path).toMatch(/copies\/ata\/bob-api$/);
     expect(git(copy.path!, 'branch', '--format=%(refname:short)').split('\n').sort()).toEqual(branches);
