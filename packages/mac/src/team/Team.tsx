@@ -111,7 +111,7 @@ export function WorkingMark({ issueId }: { issueId: string }) {
 }
 
 /**
- * A teammate doesn't have this task's latest change yet (BLG-273): a small paper plane on the card
+ * A teammate doesn't have this task's latest change yet (BLG-273): a small clock on the card
  * and the row, nothing at all once everyone has it. Hover says who.
  */
 export function WaitingMark({ issueId }: { issueId: string }) {
@@ -122,7 +122,7 @@ export function WaitingMark({ issueId }: { issueId: string }) {
   return (
     <Tip label={`${words}. ${mailed ? 'It’s in their mailbox.' : 'It goes when their Mac is on.'}`}>
       <span className={s.waiting} aria-label={words} role="img">
-        <Icon name="send" size={11} />
+        <Icon name="clock" size={12} />
         {people.length > 1 ? <span className={s.waitingCount}>{people.length}</span> : null}
       </span>
     </Tip>
@@ -137,7 +137,7 @@ export function WaitingFor({ issueId }: { issueId: string }) {
   return (
     <details className={s.waitingFor}>
       <summary>
-        <Icon name="send" size={12} />
+        <Icon name="clock" size={12} />
         {words}
       </summary>
       <ul>

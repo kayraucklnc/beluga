@@ -133,7 +133,7 @@ Cloudflare Worker (`packages/mailbox`, rules in `src/net/mailbox/handler.ts`, cl
   sends the daemon SIGUSR2, and holds the sleep until the daemon has mailed (it writes
   `~/.beluga/slept.at`), 5 s at most. A closed lid strands nothing.
 - **On the task (BLG-273).** A team task whose latest change a teammate's Mac hasn't acknowledged shows
-  a small paper plane on its card and row (state `team.waiting`), and on its page who and where:
+  a small clock on its card and row (state `team.waiting`), and on its page who and where:
   in their mailbox, or waiting for their Mac. Nothing shows once everyone has it.
 - **What the mailbox sees.** It's sealed to the friend's box key and signed by you: the Worker
   checks the signature and keeps it 7 days; it learns who wrote to whom, when and how much, never what.

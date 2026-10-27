@@ -56,7 +56,7 @@
   font-size: 12px;
 }
 
-/* Not every teammate has the latest yet (BLG-273): a quiet paper plane, gone once they do. */
+/* Not every teammate has the latest yet (BLG-273): a quiet clock, gone once they do. */
 .waiting {
   display: inline-flex;
   align-items: center;
