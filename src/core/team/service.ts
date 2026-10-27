@@ -37,6 +37,12 @@ export interface TeamMesh {
   nameFor(peerId: string): string;
   belugaOf(peerId: string): BelugaInfo | undefined;
   sendTeam(peerId: string, payload: unknown): boolean;
+  /** Mail what still waits before this Mac leaves the network. */
+  onLeaving?(fn: () => Promise<unknown>): () => void;
+  /** Leave a frame in their mailbox (BLG-272; none: no mailbox). */
+  mail?(peerId: string, t: 'team', payload: unknown): Promise<boolean>;
+  /** How long a frame waits for their link before it's mailed (undefined: no mailbox). */
+  readonly mailAfterMs?: number | undefined;
   offer(features: readonly Feature[], on: boolean): void;
   on(event: 'team', fn: (from: string, payload: unknown) => void): unknown;
   on(event: 'link', fn: (peerId: string) => void): unknown;
@@ -115,7 +121,14 @@ export class TeamBoards {
 
   constructor(readonly deps: TeamDeps) {
     this.now = deps.now ?? Date.now;
-    this.courier = new Courier<TeamMsg>({ isLinked: (p) => deps.mesh.isLinked(p), send: (p, payload) => deps.mesh.sendTeam(p, payload), parse: parseTeamFrame }, deps.dir ? path.join(deps.dir, 'team-outbox.json') : undefined);
+    const { mesh } = deps;
+    this.courier = new Courier<TeamMsg>(
+      { isLinked: (p) => mesh.isLinked(p), send: (p, payload) => mesh.sendTeam(p, payload), parse: parseTeamFrame, mail: (p, payload) => mesh.mail?.(p, 'team', payload) ?? Promise.resolve(false), mailAfterMs: () => mesh.mailAfterMs },
+      deps.dir ? path.join(deps.dir, 'team-outbox.json') : undefined,
+      // Who has which change shows on the tasks (BLG-273).
+      () => this.publish(),
+    );
+    this.courier.onMailed = () => this.publish();
   }
 
   get self(): string {
@@ -148,6 +161,7 @@ export class TeamBoards {
     this.offs.push(store.onAction((action) => this.onAction(action)));
     mesh.offer(TEAM_FEATURES, true);
     this.offs.push(() => mesh.offer(TEAM_FEATURES, false));
+    if (mesh.onLeaving) this.offs.push(mesh.onLeaving(() => this.courier.mailAll()));
     this.courier.start();
     for (const link of Object.values(this.links)) for (const p of this.parts) p.joined?.(link, false);
     this.publish();
@@ -467,7 +481,7 @@ export class TeamBoards {
       const t = teams[link.projectId] ?? { projectId: link.projectId, repo: this.repos.get(link.projectId)?.label ?? this.projectName(link.projectId), mates: [] };
       teams[link.projectId] = { ...t, mates: [...t.mates, { peerId: link.peerId, name: mesh.nameFor(link.peerId), since: link.since }] };
     }
-    let state: TeamState = { enabled: true, offers, teams, working: {}, assigned: [], plans: [], planShares: {} };
+    let state: TeamState = { enabled: true, offers, teams, working: {}, waiting: {}, assigned: [], plans: [], planShares: {} };
     for (const p of this.parts) state = { ...state, ...p.view?.() };
     const before = this.deps.store.getState().team;
     if (JSON.stringify(before) !== JSON.stringify(state)) this.deps.store.dispatch({ type: 'team_state', state });

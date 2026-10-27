@@ -42,14 +42,20 @@ export function meshNode(mesh: Mesh): MeshNode {
     belugaOf: (id) => mesh.belugaOf(id),
     post: (conversation, text, extras) => void mesh.post(conversation, text, extras),
     shares: (conversation, id) => mesh.shares(conversation, id),
-    listen: ({ frame, link }) => {
+    mail: (id, t, payload) => mesh.mail(id, t, payload),
+    get mailAfterMs() {
+      return mesh.mailAfterMs;
+    },
+    listen: ({ frame, link, leaving }) => {
       mesh.on('gateway', frame);
       mesh.on('link', link);
+      const offLeaving = leaving ? mesh.onLeaving(leaving) : () => undefined;
       // Friends' Macs learn this one takes requests now (and no longer, once it stops listening).
       mesh.offer(TASK_FEATURES, true);
       return () => {
         mesh.off('gateway', frame);
         mesh.off('link', link);
+        offLeaving();
         mesh.offer(TASK_FEATURES, false);
       };
     },

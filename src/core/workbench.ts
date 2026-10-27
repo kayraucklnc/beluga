@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { type PtyProcess, type TerminalManager, listShells, scriptShell } from '../terminal/index.js';
 import { type ShellChoice, shellArgs } from '../shared/shells.js';
@@ -1018,8 +1019,9 @@ export class Workbench {
    * run by itself, and again whenever it changes. A command that doesn't fit the project (an
    * install with no package.json, the wrong package manager) is skipped or corrected, and remembered.
    */
-  runSetup(wsId: string, auto = false): void {
-    const ws = this.manager.find(wsId);
+  runSetup(wsId: string, auto = false, known?: Workspace): void {
+    // `known`: the worktree just made, in case the list is between refreshes and doesn't show it yet.
+    const ws = this.manager.find(wsId) ?? known;
     const project = ws ? this.manager.list.find((p) => p.id === ws.projectId) : undefined;
     // Read now, not from the last refresh: what Claude just worked out counts.
     const setup = project ? this.manager.scripts(project.id).setup : undefined;
@@ -1165,8 +1167,9 @@ export class Workbench {
    * that out first (once: it's remembered for the next ones).
    */
   onWorktreeCreated(ws: Workspace): void {
+    // Still there (not deleted while Claude looked): the list, or its folder if the list is mid-refresh.
     const setup = (): void => {
-      if (this.deps.store.getState().prefs.autoSetup && this.manager.find(ws.id)) this.runSetup(ws.id, true);
+      if (this.deps.store.getState().prefs.autoSetup && (this.manager.find(ws.id) || existsSync(ws.path))) this.runSetup(ws.id, true, ws);
     };
     const looking = this.workOut(ws);
     if (looking) void looking.then(setup);

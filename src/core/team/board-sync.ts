@@ -4,7 +4,7 @@ import type { Board } from '../board/board.js';
 import { type Activity, type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, isArchived, worktreeDoing } from '../board/model.js';
 import type { Action } from '../store.js';
 import { type Field, LOCAL_ACTS, type SharedTask, canon, digest, fieldsOf, fromBoard, isPresence, maxClock, merge, onBoard } from './crdt.js';
-import type { TeamState } from './model.js';
+import type { TeamState, TeamWaiting } from './model.js';
 import { type TaskDelta, type TeamMsg, fieldValue } from './protocol.js';
 import type { TeamBoards, TeamLink, TeamPart } from './service.js';
 
@@ -46,11 +46,16 @@ export interface TeamChange {
   readonly fresh: boolean;
 }
 
+/** A delta that only says who's on a task now (`working.*`, `running.*`): nothing of the task itself. */
+const presenceOnly = (d: TaskDelta): boolean => !d.acts.length && !d.drop?.length && !d.born && Object.keys(d.fields).length > 0 && Object.keys(d.fields).every(isPresence);
+
 const BATCH_TASKS = 40;
 /** What a Claude says while it works (words, steps, counts): never a start or a stop. */
 const QUIET_EVENTS: ReadonlySet<string> = new Set(['text', 'tool', 'progress', 'sub']);
 const BATCH_BYTES = 700_000;
 const SNAPSHOT_ACTS = 60;
+/** A linked teammate who hasn't acknowledged for this long counts as not having it. */
+const SLOW_ACK_MS = 30_000;
 
 export class TeamBoardSync implements TeamPart {
   private clocks: Record<string, number> = {};
@@ -169,7 +174,30 @@ export class TeamBoardSync implements TeamPart {
         }
       }
     }
-    return { working };
+    return { working, waiting: this.waiting() };
+  }
+
+  /**
+   * Per task, the teammates whose Mac hasn't acknowledged a change of it yet (from the outbox).
+   * Someone linked now normally acknowledges at once, so only a change waiting a while counts for them.
+   */
+  private waiting(): Record<string, TeamWaiting[]> {
+    const now = Date.now();
+    const out: Record<string, TeamWaiting[]> = {};
+    for (const w of this.team.courier.waitingFor((m) => m.k === 'ops')) {
+      if (w.m.k !== 'ops') continue;
+      if (this.team.deps.mesh.isLinked(w.to) && now - w.since < SLOW_ACK_MS) continue;
+      for (const d of w.m.tasks) {
+        // Who's on it isn't a change they're missing.
+        if (presenceOnly(d)) continue;
+        const list = (out[d.id] ??= []);
+        const i = list.findIndex((x) => x.peerId === w.to);
+        const had = list[i];
+        if (!had) list.push({ peerId: w.to, name: this.team.nameOf(w.to), since: w.since, mailed: w.mailed });
+        else list[i] = { ...had, since: Math.min(had.since, w.since), mailed: had.mailed && w.mailed };
+      }
+    }
+    return out;
   }
 
   stop(): void {
@@ -218,7 +246,9 @@ export class TeamBoardSync implements TeamPart {
     this.save();
     if (!send) return;
     const delta: TaskDelta = { id: issue.id, fields: changed, acts: [...added] as TaskDelta['acts'], ...(drop.length ? { drop } : {}), ...(rec ? {} : { born }) };
-    for (const link of this.team.linksOf(issue.projectId)) this.team.send(link.peerId, { k: 'ops', link: link.id, tasks: [delta] });
+    // Only who's on it now (no change of the task's own): the newest replaces what still waits for them.
+    const key = presenceOnly(delta) ? `presence:${issue.id}` : undefined;
+    for (const link of this.team.linksOf(issue.projectId)) this.team.send(link.peerId, { k: 'ops', link: link.id, tasks: [delta] }, key);
     this.team.publish();
     if (Object.keys(changed).length) for (const fn of this.locals) fn(issue, changed);
   }

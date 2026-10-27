@@ -207,7 +207,11 @@ describe('setup and run scripts', () => {
     await waitFor(() => kay.state().approvals.length >= 1, 4000);
     expect(kay.state().approvals[0]?.title).toBe("Claude worked out app's setup for new worktrees");
     kay.session.answerApproval('always');
-    await waitFor(() => kay.state().setup[one!.id]?.status === 'done' && kay.state().setup[two!.id]?.status === 'done', 20_000);
+    // Flaky on CI's runners only (BLG-268 PR): if it hangs again, say how far each worktree got.
+    await waitFor(() => kay.state().setup[one!.id]?.status === 'done' && kay.state().setup[two!.id]?.status === 'done', 20_000).catch((err: unknown) => {
+      const at = (id: string) => ({ setup: kay.state().setup[id], listed: Boolean(kay.workspaces.find(id)), terminal: terminals.get(setupId(id))?.backlog().slice(-300) });
+      throw new Error(`${String(err)}: ${JSON.stringify({ one: at(one!.id), two: at(two!.id), approvals: kay.state().approvals.map((a) => a.title) })}`);
+    });
     // Remembered: the next worktree just sets up, without asking Claude again.
     const three = await kay.session.workspaces!.newWorktree(id, 'three');
     await waitFor(() => kay.state().setup[three!.id]?.status === 'done', 20_000);

@@ -1,0 +1,13 @@
+{
+  "name": "beluga-mailbox",
+  "private": true,
+  "description": "Beluga's mailbox: a Cloudflare Worker that keeps sealed frames for friends who aren't online together (BLG-272).",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -115,6 +115,10 @@ export const Settings = z.object({
   earningsCurrency: z.string().regex(/^[a-z]{3}$/).optional(),
   /** Be on the Beluga network (friends, groups, presence) while the Mac app's daemon runs. Off by default for now. */
   network: z.boolean().optional(),
+  /** Where frames wait for a friend you're never online with at the same time (BLG-272): a mailbox's https URL, or "off". Unset: Beluga's own. */
+  mailbox: z.union([z.string().url().max(300), z.literal('off')]).optional(),
+  /** Minutes a frame waits for a friend's link before it goes to their mailbox. */
+  mailboxAfterMin: z.number().min(0).max(24 * 60).optional(),
   /** "Ask me for…": a short note friends' Claudes see on your card (the gateway, Mac app). */
   askMeFor: z.string().max(280).optional(),
   /** Friends your Claude may ask without checking with you first ("Always" on its "Ask X's Claude?" card), by peer id. */

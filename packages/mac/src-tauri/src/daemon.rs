@@ -83,7 +83,7 @@ fn home_in(set: Option<PathBuf>, user_home: &std::path::Path) -> PathBuf {
 }
 
 /// Send a signal to a process (0 only checks that it's there and ours).
-fn signal(pid: u32, sig: i32) -> bool {
+pub fn signal(pid: u32, sig: i32) -> bool {
     // Never 0 (our whole process group) or 1 (the system's first process).
     let Ok(pid) = i32::try_from(pid) else {
         return false;
