@@ -1,7 +1,7 @@
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { liveFrom } from '@beluga/core/plans/progress.js';
 import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isArchived, isOpen, isStartable, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, childrenOf, isArchived, isOpen, isStartable, issueById, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, IconButton, Tip, cx } from '../components/ui.js';
@@ -31,11 +31,14 @@ function liveOf(log: readonly LogItem[]): ReturnType<typeof liveFrom> {
 }
 
 /** What a row and a card show besides the title: sub-tasks done, what blocks it, its worktree, labels, due date, pull request. */
-export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; compact?: boolean; labels?: boolean }) {
+export function IssueMeta({ issue, compact, labels = true, progress: ring = true }: { issue: Issue; compact?: boolean; labels?: boolean; progress?: boolean }) {
   // Only what this issue shows, as plain values: a change elsewhere on the board doesn't render every card again.
   const done = useApp((s) => progressOf(s.board, issue).done);
   const total = useApp((s) => progressOf(s.board, issue).total);
   const progress = { done, total };
+  // The epic it's part of (its parent).
+  const epicKey = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.key : undefined));
+  const epicTitle = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.title : undefined));
   const blocked = useApp((s) => openBlockers(s.board, issue).length);
   const waitsOn = useApp((s) => openBlockers(s.board, issue).map((b) => `${b.key} ${b.title}`).join(', '));
   const blockedBy = useApp((s) => openBlockers(s.board, issue).map((b) => b.key).join(', '));
@@ -81,7 +84,15 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
           </span>
         </Tip>
       ) : null}
-      {progress.total ? (
+      {epicKey ? (
+        <Tip label={`Part of the epic ${epicKey} ${epicTitle ?? ''}`}>
+          <span className={t.epicOf}>
+            <Icon name="epic" size={11} />
+            {epicKey}
+          </span>
+        </Tip>
+      ) : null}
+      {ring && progress.total ? (
         <Tip label={`${progress.done} of ${progress.total} sub-tasks done`}>
           <span className={t.progress}>
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -93,7 +104,7 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
         </Tip>
       ) : null}
       <IssueMark issue={issue} compact={compact} />
-      {labels ? issue.labels.slice(0, compact ? 2 : 4).map((l) => <LabelChip key={l} label={l} />) : null}
+      {labels ? issue.labels.slice(0, compact ? 3 : 4).map((l) => <LabelChip key={l} label={l} projectId={issue.projectId} iconOnly={compact} />) : null}
       {due ? (
         <span className={cx(t.due, due.late && STATUS_INFO[issue.status].open && t.dueLate)}>
           <Icon name="calendar" size={11} />
@@ -116,6 +127,22 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
       ) : null}
       {issue.pr ? <PrChip pr={issue.pr} /> : null}
       {waiting.length ? <WaitingLine waiting={waiting} /> : null}
+    </span>
+  );
+}
+
+/** An epic's sub-tasks done, as a bar across its card (canceled ones left out). */
+export function EpicBar({ issue }: { issue: Issue }) {
+  const done = useApp((s) => progressOf(s.board, issue).done);
+  const total = useApp((s) => progressOf(s.board, issue).total);
+  const all = useApp((s) => childrenOf(s.board, issue).length);
+  const words = total ? `${done} of ${total} done` : `${all} sub-task${all === 1 ? '' : 's'}, all canceled`;
+  return (
+    <span className={t.epicBar} role="img" aria-label={`Sub-tasks: ${words}`}>
+      <span className={t.epicTrack}>
+        <span className={t.epicFill} style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+      </span>
+      <span className={t.epicCount}>{words}</span>
     </span>
   );
 }

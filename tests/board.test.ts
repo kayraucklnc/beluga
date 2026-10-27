@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
-import { type Actor, type Issue, filterIssues, issueForWorkspace } from '../src/core/board/model.js';
+import { labelDef, labelsFor } from '../src/core/board/labels.js';
+import { type Actor, type Issue, filterIssues, isEpic, issueForWorkspace } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -553,5 +554,45 @@ describe('the archive', () => {
     expect(board.emptyArchive()).toBe(1);
     expect(board.get(a.key)).toBeUndefined();
     expect(board.create({ projectId: 'api', title: 'Next' }, me).key).toBe('BOB-2');
+  });
+});
+
+describe('labels come from a set (BLG-269)', () => {
+  it('every board has the built-in labels; a project adds its own on purpose, and they are saved', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-board-'));
+    dirs.push(dir);
+    const first = setup({ dir });
+    expect(labelsFor(first.board.state(), 'api').map((l) => l.name)).toEqual(['bug', 'important', 'feature', 'design', 'docs', 'chore']);
+    expect(first.board.createLabel('api', { name: 'Dark Mode', icon: 'star', color: 'purple' })).toEqual({ name: 'dark-mode', icon: 'star', color: 'purple' });
+    expect(() => first.board.createLabel('api', { name: 'bug', icon: 'bug', color: 'red' })).toThrow(/already/);
+    expect(() => first.board.createLabel('api', { name: 'not a label, a sentence really', icon: 'tag', color: 'red' })).toThrow(/short words/);
+    // The screens hear of it (board_meta).
+    expect(labelsFor(first.store.getState().board, 'api').at(-1)?.name).toBe('dark-mode');
+    expect(labelsFor(first.board.state(), 'land')).toHaveLength(6);
+    first.board.flush();
+    const again = setup({ dir });
+    expect(labelDef(again.board.state(), 'api', 'dark-mode')).toEqual({ name: 'dark-mode', icon: 'star', color: 'purple' });
+    again.board.removeLabel('api', 'dark-mode');
+    expect(labelDef(again.board.state(), 'api', 'dark-mode')).toBeUndefined();
+    expect(() => again.board.removeLabel('api', 'bug')).toThrow(/Only a label the project added/);
+  });
+
+  it('Claude only sets labels from the set, and keeps the ones a task already had', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'Old', labels: ['legacy'] }, me);
+    expect(board.update(t.key, { labels: ['legacy', 'bug', 'made-up'] }, claude).labels).toEqual(['legacy', 'bug']);
+    expect(board.create({ projectId: 'api', title: 'New', labels: ['important', 'whatever'] }, claude, 'claude').labels).toEqual(['important']);
+    // People pick from the set on screen; sync brings a tracker's own.
+    expect(board.create({ projectId: 'api', title: 'Synced', labels: ['billing'] }, { kind: 'beluga' }, 'sync').labels).toEqual(['billing']);
+  });
+});
+
+describe('epics (BLG-267)', () => {
+  it('a task with sub-tasks is an epic', () => {
+    const { board } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Auth' }, me);
+    expect(isEpic(board.state(), epic)).toBe(false);
+    board.create({ projectId: 'api', title: 'Login', parent: epic.key }, me);
+    expect(isEpic(board.state(), epic)).toBe(true);
   });
 });

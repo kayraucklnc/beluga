@@ -61,6 +61,9 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
 
   // ---- bob-api: the payments launch
   when(4 * DAY);
+  // Two labels of its own, beside the built-in ones (bug, important, feature…).
+  board.createLabel(at.api, { name: 'payments', icon: 'bolt', color: 'teal', hint: 'Checkout, webhooks and refunds' });
+  board.createLabel(at.api, { name: 'security', icon: 'lock', color: 'pink', hint: 'Who can do what' });
   const epic = board.create(
     {
       projectId: at.api,
@@ -68,7 +71,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
       status: 'in_progress',
       priority: 'high',
       assignee: me,
-      labels: ['payments', 'launch'],
+      labels: ['payments', 'important'],
       brief: {
         goal: 'Take card payments for the launch: checkout, webhooks that mark orders paid, and refunds.',
         context: 'Stripe PaymentIntents. Orders live in Postgres (`orders`). The API is Express (`src/server.ts`).',
@@ -93,7 +96,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
       status: 'todo',
       priority: 'urgent',
       parent: epic.id,
-      labels: ['security', 'api'],
+      labels: ['security', 'feature'],
       brief: {
         goal: 'Only signed-in users can reach `/api/payments/*`.',
         acceptance: '- [x] `requireUser()` rejects missing sessions with 401\n- [x] Payment routes use it\n- [ ] Expired sessions are rejected too — not done: next turn, see the handoff\n- [ ] Tests for missing, expired and valid sessions — deferred: the expired one comes with that fix',
@@ -126,7 +129,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
       status: 'todo',
       priority: 'high',
       parent: epic.id,
-      labels: ['payments', 'reliability'],
+      labels: ['payments', 'bug'],
       brief: {
         goal: 'A webhook Stripe retries is handled once: no order marked paid twice, no second receipt.',
         acceptance: '- [ ] Each `event.id` is handled at most once\n- [ ] Failures retry with backoff, 5 attempts\n- [ ] A test replays the same event three times',
@@ -153,9 +156,9 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   board.create({ projectId: at.api, title: 'Rate-limit the login endpoint', status: 'todo', priority: 'medium', labels: ['security'], assignee: bob, brief: { goal: '10 tries a minute per IP, then 429.' } }, bob);
   when(3 * DAY);
   board.create({ projectId: at.api, title: 'Move secrets to the keychain', status: 'backlog', priority: 'low', labels: ['security'] }, me);
-  board.create({ projectId: at.api, title: 'Preview environments for pull requests', status: 'backlog', labels: ['infra'] }, bob);
+  board.create({ projectId: at.api, title: 'Preview environments for pull requests', status: 'backlog', labels: ['chore'] }, bob);
   when(4 * DAY);
-  const graphql = board.create({ projectId: at.api, title: 'GraphQL experiment', status: 'backlog', labels: ['api'] }, me);
+  const graphql = board.create({ projectId: at.api, title: 'GraphQL experiment', status: 'backlog', labels: ['feature'] }, me);
   when(2 * DAY + 4 * HOUR);
   board.comment(graphql.id, 'Not before launch: REST covers everything the web app needs.', me);
   board.update(graphql.id, { status: 'canceled' }, me);
@@ -169,7 +172,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
       status: 'todo',
       priority: 'high',
       assignee: me,
-      labels: ['design', 'launch'],
+      labels: ['design', 'important'],
       brief: {
         goal: 'A hero that says what Beluga is in one line, with a real screenshot.',
         acceptance: '- [x] New headline and line under it\n- [x] Screenshot of the app\n- [ ] Looks right on phones\n- [ ] mia signs off on the copy',
@@ -186,7 +189,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   when(20 * HOUR);
   board.comment(hero.id, 'Love the screenshot. “Build together” might undersell the Claude part, though?', mia);
   when(3 * HOUR);
-  const pricing = board.create({ projectId: at.landing, title: 'Pricing page copy', status: 'todo', priority: 'medium', assignee: mia, labels: ['copy'] }, mia);
+  const pricing = board.create({ projectId: at.landing, title: 'Pricing page copy', status: 'todo', priority: 'medium', assignee: mia, labels: ['docs'] }, mia);
   board.relate(pricing.id, 'blocked_by', hero.id, true, mia);
   when(2 * HOUR);
   board.create({ projectId: at.landing, title: 'Open Graph images for every page', status: 'backlog', labels: ['design'] }, me);

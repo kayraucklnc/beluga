@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { type ReactNode, useMemo, useState } from 'react';
-import { Icon } from '../components/Icon.js';
+import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import m from '../components/SpecMenu.module.css';
 import t from './tasks.module.css';
@@ -8,7 +8,7 @@ import t from './tasks.module.css';
 /**
  * A pop-up menu that picks a value: each choice with its own mark (a status ring, priority bars,
  * someone's avatar), a checkmark on what's chosen, a number key for the first nine, and a
- * filter field when the list is long (or new values can be typed, like labels).
+ * filter field when the list is long, and actions under the choices ("New Label…").
  */
 
 export interface Pick<T extends string> {
@@ -30,13 +30,15 @@ export interface PickMenuProps<T extends string> {
   readonly multiple?: boolean;
   /** A filter field (on by default past 8 choices). */
   readonly search?: boolean;
-  /** Typing a new value offers "Create …" (labels). */
+  /** Typing a new value offers "Create …". */
   readonly onCreate?: (text: string) => void;
+  /** Under the choices, after a line ("New Label…"): each closes the menu. */
+  readonly actions?: ReadonlyArray<{ readonly label: string; readonly icon: IconName; readonly onSelect: () => void }>;
   readonly align?: 'start' | 'end';
   readonly placeholder?: string;
 }
 
-export function PickMenu<T extends string>({ label, choices, chosen, onPick, children, multiple, search, onCreate, align = 'start', placeholder }: PickMenuProps<T>) {
+export function PickMenu<T extends string>({ label, choices, chosen, onPick, children, multiple, search, onCreate, actions, align = 'start', placeholder }: PickMenuProps<T>) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const searchable = search ?? (choices.length > 8 || Boolean(onCreate));
@@ -137,6 +139,17 @@ export function PickMenu<T extends string>({ label, choices, chosen, onPick, chi
             </Dropdown.Item>
           ) : null}
           {!shown.length && !(onCreate && q) ? <div className={t.pickEmpty}>Nothing matches</div> : null}
+          {actions?.length ? <Dropdown.Separator className={m.separator} /> : null}
+          {actions?.map((a) => (
+            <Dropdown.Item key={a.label} className={m.item} onSelect={a.onSelect}>
+              <span className={m.line}>
+                <span className={t.pickMark}>
+                  <Icon name={a.icon} size={12} />
+                </span>
+                <span className={m.label}>{a.label}</span>
+              </span>
+            </Dropdown.Item>
+          ))}
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>

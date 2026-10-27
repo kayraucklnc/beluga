@@ -10,12 +10,7 @@ const LOOK_TURNS = 30;
 export const LOOK_TOOLS = ['Read', 'Grep', 'Glob'] as const;
 const MAX_TEXT = 8000;
 const DRAFT_PRIORITIES = ['urgent', 'high', 'medium', 'low'] as const;
-/** New labels a draft may bring (the board's own come first). */
-export const NEW_LABELS = 2;
-/** A new label: one or two short lowercase words ("mac", "bug", "dark-mode"). */
-const LABEL = /^[a-z0-9][a-z0-9-]{0,19}$/;
-
-/** What a task's describer knows besides the words: the project, and the labels the board already uses. */
+/** What a task's describer knows besides the words: the project, and its labels (the set it picks from). */
 export interface DraftContext {
   readonly project?: string;
   readonly labels: readonly string[];
@@ -33,7 +28,7 @@ export interface TaskDraft {
   /** Only after a look at the code: where it is and what's likely behind it (Markdown). */
   readonly context?: string;
   readonly acceptance: readonly string[];
-  /** The board's own labels that fit, and at most NEW_LABELS new ones when none do. */
+  /** Labels from the project's set that fit (never new ones: people add those). */
   readonly labels: readonly string[];
   /** Only when the words say how much it matters. */
   readonly priority?: (typeof DRAFT_PRIORITIES)[number];
@@ -48,7 +43,7 @@ const Draft = z.object({
   priority: z.enum(DRAFT_PRIORITIES).nullish(),
 });
 
-/** The draft out of what the model said (its JSON object): the board's labels in its own spelling, and a couple of new short ones at most. */
+/** The draft out of what the model said (its JSON object): only labels from the set, in its spelling. */
 export function parseTaskDraft(raw: string, known: readonly string[]): TaskDraft | undefined {
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
@@ -64,9 +59,7 @@ export function parseTaskDraft(raw: string, known: readonly string[]): TaskDraft
   const { title, goal, context, acceptance, labels, priority } = parsed.data;
   const byLower = new Map(known.map((l) => [l.toLowerCase(), l]));
   const said = labels.map((l) => l.trim().toLowerCase().replace(/\s+/g, '-'));
-  const own = said.flatMap((l) => byLower.get(l) ?? []);
-  const fresh = said.filter((l) => !byLower.has(l) && LABEL.test(l)).slice(0, NEW_LABELS);
-  const kept = [...new Set([...own, ...fresh])];
+  const kept = [...new Set(said.flatMap((l) => byLower.get(l) ?? []))];
   return { title: title.replace(/\s+/g, ' ').replace(/^["“]|["”.]$/g, ''), goal, ...(context ? { context } : {}), acceptance, labels: kept, ...(priority ? { priority } : {}) };
 }
 
@@ -80,7 +73,7 @@ export function firstLineTitle(text: string): string {
 export function draftPrompt(text: string, ctx: DraftContext): string {
   return [
     ctx.project ? `Project: ${ctx.project}` : '',
-    `Labels this board already uses: ${ctx.labels.length ? ctx.labels.join(', ') : '(none)'}`,
+    `Labels to pick from: ${ctx.labels.length ? ctx.labels.join(', ') : '(none)'}`,
     `What they want:\n"""\n${text.slice(0, MAX_TEXT)}\n"""`,
     ctx.look ? 'Look at the code first, then write the task.' : 'Write the task.',
   ]
@@ -94,8 +87,8 @@ const SYSTEM = [
   'title: an imperative, at most 8 words, no period ("Rate-limit the login endpoint").',
   'goal: 1 to 3 sentences of Markdown: what it is for and what done looks like.',
   'acceptance: 1 to 5 short, checkable criteria.',
-  'labels: 1 to 3 that clearly fit. Prefer the labels the board already uses; when none fit, make up to 2 new ones,',
-  'short and lowercase, about the area or kind of work ("mac", "chat", "bug", "tasks"). Never one for the priority.',
+  'labels: 0 to 2 from the labels to pick from that clearly fit ("bug" for something broken, "important" only when',
+  'their words say it matters most). Never make up a new one: people add labels. None fit: an empty list.',
   "priority: only when their words say how much it matters; otherwise null.",
 ].join('\n');
 
