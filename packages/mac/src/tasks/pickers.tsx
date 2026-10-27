@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
+import { labelTitle, labelsFor } from '@beluga/core/board/labels.js';
 import { type Assignee, type Issue, type IssueStatus, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, type Priority, STATUS_INFO } from '@beluga/core/board/model.js';
 import { Avatar } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
+import { openSheet } from '../lib/sheets.js';
 import { PickMenu } from './PickMenu.js';
-import { LabelDot, PriorityIcon, StatusIcon } from './marks.js';
+import { LabelMark, PriorityIcon, StatusIcon } from './marks.js';
 import { assigneeChoices, assigneeKey } from './tasks-model.js';
 import { useBoard, usePeople, useSelf, useTaskActions } from './use-tasks.js';
 
@@ -42,7 +44,7 @@ export function PriorityPicker({ issue, children, align }: { issue: Issue; child
   );
 }
 
-/** Who a task is for: you, your Claude, people you know and their Claudes, or no one. */
+/** Who a task is for: you, your Claude, people you know, or no one. */
 export function AssigneePicker({ value, onChange, children, align }: { value: Assignee | undefined; onChange: (a: Assignee | null) => void; children: ReactNode; align?: 'start' | 'end' }) {
   const self = useSelf();
   const people = usePeople();
@@ -60,7 +62,7 @@ export function AssigneePicker({ value, onChange, children, align }: { value: As
           label: c.label,
           section: c.assignee.kind === 'claude' && c.assignee.owner === self.id ? undefined : c.assignee.kind === 'person' && c.assignee.id === self.id ? undefined : 'People',
           mark: c.assignee.kind === 'person' ? <Avatar name={c.assignee.name} id={c.assignee.id} size={16} /> : <Avatar name={c.assignee.ownerName} id={c.assignee.owner} claude size={16} />,
-          ...(c.assignee.kind === 'claude' ? { hint: c.assignee.owner === self.id ? 'Works on it in its worktree' : 'Asked on their Mac (with their approval)' } : {}),
+          ...(c.assignee.kind === 'claude' ? { hint: 'Works on it in its worktree' } : {}),
         })),
       ]}
       chosen={[assigneeKey(value)]}
@@ -71,22 +73,30 @@ export function AssigneePicker({ value, onChange, children, align }: { value: As
   );
 }
 
-/** Labels: tick the ones a task has, or type a new one. */
+/**
+ * Labels: tick the ones a task has, from the project's set (each with its icon and color). Typing
+ * only finds one; a new label is made on purpose, with New Label…. Labels a task has that aren't in
+ * the set (from before, from Linear) show under their own heading so they can be taken off.
+ */
 export function LabelsPicker({ issue, children, align }: { issue: Issue; children: ReactNode; align?: 'start' | 'end' }) {
   const board = useBoard();
   const { api, act } = useTaskActions();
-  const known = [...new Set([...board.issues.flatMap((i) => i.labels), ...issue.labels])].sort();
-  const set = (labels: readonly string[]): void => void act(() => api.update(issue.id, { labels: [...labels] }));
+  const set = labelsFor(board, issue.projectId);
+  const others = issue.labels.filter((l) => !set.some((d) => d.name === l));
+  const save = (labels: readonly string[]): void => void act(() => api.update(issue.id, { labels: [...labels] }));
   return (
     <PickMenu<string>
       label="Labels"
       align={align}
       multiple
-      search
-      choices={known.map((l) => ({ value: l, label: l, mark: <LabelDot label={l} /> }))}
+      search={set.length + others.length > 8}
+      choices={[
+        ...set.map((d) => ({ value: d.name, label: labelTitle(d.name), mark: <LabelMark def={d} label={d.name} />, ...(d.hint ? { hint: d.hint } : {}) })),
+        ...others.map((l) => ({ value: l, label: labelTitle(l), section: 'Not in the set', mark: <LabelMark def={undefined} label={l} /> })),
+      ]}
       chosen={issue.labels}
-      onPick={(l) => set(issue.labels.includes(l) ? issue.labels.filter((x) => x !== l) : [...issue.labels, l])}
-      onCreate={(text) => set([...issue.labels, text.toLowerCase()])}
+      onPick={(l) => save(issue.labels.includes(l) ? issue.labels.filter((x) => x !== l) : [...issue.labels, l])}
+      actions={[{ label: 'New Label…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_label', projectId: issue.projectId, issueId: issue.id }) }]}
     >
       {children}
     </PickMenu>

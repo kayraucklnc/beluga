@@ -1,0 +1,426 @@
+import type { Approval, DomainState } from '../core/store.js';
+import { OFFER_DETAIL, offerWords } from '../core/team/model.js';
+import type { PendingQuestion } from '../core/collab-store.js';
+import type { TaskView as GwTask } from '../core/gateway/model.js';
+import { parseDecisionQid } from '../core/plans/decisions.js';
+import { type Plan, planTitle } from '../core/plans/model.js';
+import { firstLine, sentinelById } from '../core/sentinel/model.js';
+import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
+import { type NeedsYou, Topic } from './protocol.js';
+import { plainLine, stripCode } from './strip.js';
+
+/**
+ * Everything waiting for you, each with the API calls its buttons make: the phone's Needs You
+ * (views.ts) and the Mac's bell (BLG-255) draw this same list, so the two never disagree about
+ * what waits or how it's answered. Browser-safe (tests/browser-safe.test.ts): the Mac loads it.
+ */
+
+export const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
+const valid = (t: string): Topic | undefined => (Topic.safeParse(t).success ? (t as Topic) : undefined);
+
+/** A conversation's topic (`room` → `conv:room`, `ws:<id>` → `conv:ws:<id>`). */
+export const convTopic = (channel: string): Topic | undefined => valid(`conv:${channel}`);
+export const chatTopic = (conversation: string): Topic | undefined => valid(`chat:${conversation}`);
+export const planTopic = (id: string): Topic | undefined => valid(`plan:${id}`);
+export const taskTopic = (id: string): Topic | undefined => valid(`task:${id}`);
+export const sentinelTopic = (id: string): Topic | undefined => valid(`sentinel:${id}`);
+export const dashboardTopic = (id: string): Topic | undefined => valid(`dashboard:${id}`);
+
+export const nameOf = (state: DomainState, peerId: string | undefined): string | undefined =>
+  peerId ? (state.peers.find((p) => p.peerId === peerId)?.name ?? state.network.friends.find((f) => f.peerId === peerId)?.name) : undefined;
+
+export const myId = (state: DomainState): string => state.selfId || state.self?.peerId || state.network.self?.peerId || 'me';
+
+function approvalItem(state: DomainState, a: Approval): NeedsYou {
+  const from = a.peer ? `${nameOf(state, a.peer) ?? 'a friend'}` : 'your Claude';
+  // A friends' chat opens that chat (a request from there, your Claude working there: BLG-207).
+  const topic = a.channel ? (/^(dm|group):/.test(a.channel) ? chatTopic(a.channel) : convTopic(a.channel)) : undefined;
+  return {
+    id: `approval:${a.id}`,
+    kind: a.kind === 'request' ? 'request' : 'approval',
+    title: clip(a.title, 500),
+    ...(a.detail ? { detail: clip(plainLine(a.detail, 64_000), 64_000) } : {}),
+    from,
+    ...(topic ? { topic } : {}),
+    ...(a.askedAt !== undefined ? { askedAt: a.askedAt } : {}),
+    ...(a.timeoutMs !== undefined ? { timeoutMs: a.timeoutMs } : {}),
+    actions: [
+      { label: a.once ? 'Allow once' : 'Approve', tone: 'main', method: 'host.answerApproval', args: ['yes', a.id] },
+      { label: 'Decline', tone: 'danger', method: 'host.answerApproval', args: ['no', a.id] },
+      // A friend's request for a secret is asked each time: no Always.
+      ...(a.once ? [] : [{ label: 'Always', tone: 'plain' as const, method: 'host.answerApproval', args: ['always', a.id] }]),
+    ],
+  };
+}
+
+/** Claude's question (or plan to approve), or a plan task waiting on your decision. */
+function questionItem(state: DomainState, q: PendingQuestion): NeedsYou {
+  const topic = convTopic(q.channel);
+  const owner = q.owner === myId(state) || !q.owner ? 'your Claude' : `${nameOf(state, q.owner) ?? 'a friend'}'s Claude`;
+  const base = { id: `question:${q.qid}`, from: owner, ...(topic ? { topic } : {}) };
+  if (q.question.kind === 'plan') {
+    return {
+      ...base,
+      kind: 'question',
+      title: 'Claude has a plan for you to approve',
+      detail: clip(stripCode(q.question.plan).text, 64_000),
+      freeText: true,
+      actions: [
+        { label: 'Approve', tone: 'main', method: 'questions.answer', args: [q.qid, { kind: 'plan', approve: true, feedback: '' }] },
+        { label: 'Keep planning', tone: 'danger', method: 'questions.answer', args: [q.qid, { kind: 'plan', approve: false, feedback: '' }] },
+      ],
+      // Your words: what to change in the plan (it keeps planning with them).
+      answer: { method: 'questions.answer', args: [q.qid, { kind: 'plan', approve: false, feedback: '' }], slot: [1, 'feedback'], text: true, picks: false, label: 'Send changes' },
+    };
+  }
+  const [first, ...rest] = q.question.questions.filter((x) => !(x.question in q.picked));
+  const head = first ?? q.question.questions[0]!;
+  const decision = parseDecisionQid(q.qid);
+  const plan = decision ? state.plans.plans.find((p) => p.id === decision.plan) : undefined;
+  const planT = plan ? planTopic(plan.id) : undefined;
+  // Answers to the earlier questions of this prompt (picked one at a time with questions.pick).
+  const picked = Object.fromEntries(Object.entries(q.picked).filter(([k]) => !k.endsWith('#multi')));
+  const last = !rest.length;
+  const single = last && !head.multiSelect && head.options.length > 0 && head.options.length <= 3;
+  // Several picks (joined with ", " as the Mac does) or your own words go where `slot` says: the
+  // last question sends every answer (questions.answer); an earlier one is kept with questions.pick.
+  const answer: NonNullable<NeedsYou['answer']> = last
+    ? { method: 'questions.answer', args: [q.qid, { kind: 'answers', answers: { ...picked, [head.question]: '' } }], slot: [1, 'answers', head.question], join: ', ', text: true, picks: head.options.length > 0, label: 'Send' }
+    : { method: 'questions.pick', args: [q.qid, head.question, ''], slot: [2], join: ', ', text: true, picks: head.options.length > 0, label: 'Next' };
+  return {
+    ...base,
+    kind: decision ? 'decision' : 'question',
+    ...(decision ? { from: plan ? `the plan “${clip(planTitle(plan), 80)}”` : 'a plan' } : {}),
+    ...(decision && planT ? { topic: planT } : {}),
+    title: clip(plainLine(head.question, 500), 500),
+    ...(rest.length ? { detail: clip(rest.map((r) => plainLine(r.question, 1000)).join('\n'), 64_000) } : {}),
+    choices: head.options.slice(0, 12).map((o) => ({ label: clip(o.label, 200), ...(o.description ? { description: clip(o.description, 1000) } : {}) })),
+    multi: head.multiSelect,
+    freeText: true,
+    // One question with a few options: a button each (the phone sends the rest, multi-select or words, itself).
+    actions: [
+      ...(single ? head.options.map((o) => ({ label: clip(o.label, 40), tone: 'plain' as const, method: 'questions.answer', args: [q.qid, { kind: 'answers', answers: { ...picked, [head.question]: o.label } }] })) : []),
+      { label: 'Skip', tone: 'danger', method: 'questions.answer', args: [q.qid, { kind: 'skip' }] },
+    ],
+    answer,
+  };
+}
+
+function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
+  const topic = t.conversation ? convTopic(t.conversation) : t.direction === 'sent' ? convTopic(`task:${t.id}`) : undefined;
+  const at = topic ? { topic } : {};
+  if (t.direction === 'sent' && t.state === 'confirm') {
+    return [
+      {
+        id: `confirm:${t.id}`,
+        kind: 'confirm',
+        title: `Ask ${clip(t.peerName, 60)}'s Claude?`,
+        detail: clip(plainLine(t.ask, 64_000), 64_000),
+        from: 'your Claude',
+        ...at,
+        askedAt: t.createdAt,
+        actions: [
+          { label: 'Ask', tone: 'main', method: 'gateway.confirm', args: [t.id, true] },
+          // Send it, and let your Claude ask them without checking from now on.
+          { label: 'Always', tone: 'plain', method: 'gateway.confirm', args: [t.id, true, '', true] },
+          { label: 'Not now', tone: 'danger', method: 'gateway.confirm', args: [t.id, false] },
+        ],
+      },
+    ];
+  }
+  if (t.direction === 'sent' && t.question) {
+    const head = t.question.questions[0];
+    if (!head) return [];
+    const single = t.question.questions.length === 1 && !head.multiSelect && head.options.length > 0 && head.options.length <= 3;
+    return [
+      {
+        id: `gwq:${t.id}:${t.question.qid}`,
+        kind: 'question',
+        title: clip(plainLine(head.question, 500), 500),
+        detail: clip(plainLine(t.summary ?? t.ask, 64_000), 64_000),
+        from: `${clip(t.peerName, 60)}'s Claude`,
+        ...at,
+        askedAt: t.question.askedAt,
+        choices: head.options.slice(0, 12).map((o) => ({ label: clip(o.label, 200), ...(o.description ? { description: clip(o.description, 1000) } : {}) })),
+        multi: head.multiSelect,
+        // One question: picks or words go in the answer list. Several at once: only on the Mac (or Skip).
+        freeText: t.question.questions.length === 1,
+        actions: [
+          ...(single ? head.options.map((o) => ({ label: clip(o.label, 40), tone: 'plain' as const, method: 'gateway.answer', args: [t.id, [o.label]] })) : []),
+          { label: 'Skip', tone: 'danger', method: 'gateway.answer', args: [t.id, 'skip'] },
+        ],
+        ...(t.question.questions.length === 1 ? { answer: { method: 'gateway.answer', args: [t.id, ['']], slot: [1, 0], join: ', ', text: true, picks: head.options.length > 0, label: 'Send' } } : {}),
+      },
+    ];
+  }
+  // A friend's request: its approval card (approvals) already stands for it when there is one.
+  if (t.direction === 'received' && t.state === 'awaiting_approval' && !state.approvals.some((a) => a.task === t.id)) {
+    return [
+      {
+        id: `request:${t.id}`,
+        kind: 'request',
+        title: clip(t.secret ? `${t.peerName} wants ${t.secret.label}` : t.summary ? `${t.peerName}: ${t.summary}` : `${t.peerName} asks your Claude`, 500),
+        detail: clip(plainLine(t.ask, 64_000), 64_000),
+        from: clip(t.peerName, 100),
+        ...(t.chat && chatTopic(t.chat) ? { topic: chatTopic(t.chat)! } : {}),
+        askedAt: t.createdAt,
+        actions: [
+          { label: t.secret ? 'Allow once' : 'Approve', tone: 'main', method: 'gateway.decide', args: [t.id, { answer: 'yes' }] },
+          { label: 'Decline', tone: 'danger', method: 'gateway.decide', args: [t.id, { answer: 'no' }] },
+          ...(t.secret ? [] : [{ label: 'Always', tone: 'plain' as const, method: 'gateway.decide', args: [t.id, { answer: 'always' }] }]),
+        ],
+      },
+    ];
+  }
+  return [];
+}
+
+/** What a plan waits for from you: approving its draft, or passing a milestone at its gate. */
+function planItems(plan: Plan, progress: PlanProgress): NeedsYou[] {
+  const title = clip(planTitle(plan), 200);
+  const topic = planTopic(plan.id);
+  const at = { ...(topic ? { topic } : {}), from: 'your plan' };
+  const next = progress.next;
+  // Claude is still writing the first plan: nothing to approve yet (the Mac's Approve Plan waits too).
+  if (next.kind === 'approve' && !progress.body?.milestones.length) return [];
+  if (next.kind === 'approve' || next.kind === 'review_changes') {
+    return [
+      {
+        id: `plan:${plan.id}:approve:${plan.draftRev}`,
+        kind: 'decision',
+        title: next.kind === 'approve' ? `Approve the plan “${title}”?` : `Approve the changes to “${title}”?`,
+        ...(plan.draft?.goal ? { detail: clip(plainLine(plan.draft.goal, 4000), 4000) } : {}),
+        ...at,
+        askedAt: plan.updatedAt,
+        actions: [
+          { label: 'Approve', tone: 'main', method: 'plans.approve', args: [plan.id] },
+          { label: 'Discard', tone: 'danger', method: 'plans.discard', args: [plan.id] },
+        ],
+      },
+    ];
+  }
+  if (next.kind === 'pass') {
+    const m = next.milestone.milestone;
+    return [
+      {
+        id: `plan:${plan.id}:pass:${m.id}`,
+        kind: 'decision',
+        title: `“${clip(m.title, 200)}” is ready: pass it?`,
+        detail: clip(m.criteria.join('\n'), 64_000),
+        ...at,
+        // Send it back takes your words (the answer template).
+        freeText: true,
+        actions: [
+          { label: 'Pass', tone: 'main', method: 'plans.pass', args: [plan.id, m.id] },
+          { label: 'Check again', tone: 'plain', method: 'plans.recheck', args: [plan.id, m.id] },
+        ],
+        answer: { method: 'plans.sendBack', args: [plan.id, m.id, ''], slot: [2], text: true, picks: false, label: 'Send back' },
+      },
+    ];
+  }
+  return [];
+}
+
+export const progressOf = (state: DomainState, plan: Plan): PlanProgress => planView(plan, state.board);
+
+/** Someone came to the door with a link you made: let them in (with what the link offers) or turn them away. */
+function knockItems(state: DomainState): NeedsYou[] {
+  return state.knocks.map((k) => {
+    const name = nameOf(state, k.peerId) ?? state.guests[k.peerId]?.name ?? 'Someone';
+    const link = state.links.find((l) => l.id === k.linkId);
+    return {
+      id: `knock:${k.peerId}`,
+      kind: 'request',
+      title: clip(`${name} wants to come in`, 500),
+      detail: clip(link ? `With your link to ${link.label}` : 'With one of your links', 64_000),
+      from: clip(name, 100),
+      ...(k.ts ? { askedAt: k.ts } : {}),
+      actions: [
+        { label: 'Let in', tone: 'main', method: 'invites.letIn', args: [k.peerId] },
+        { label: 'Turn away', tone: 'danger', method: 'invites.decline', args: [k.peerId] },
+      ],
+    };
+  });
+}
+
+/** People asking to join a channel you run (you're its admin). */
+function joinItems(state: DomainState): NeedsYou[] {
+  return state.network.groups
+    .filter((g) => g.admin && g.active)
+    .flatMap((g) =>
+      g.requests.map((r) => {
+        const topic = chatTopic(`group:${g.id}`);
+        return {
+          id: `join:${g.id}:${r.peerId}`,
+          kind: 'request',
+          title: clip(`${r.name} asks to join ${g.name}`, 500),
+          from: clip(r.name, 100),
+          ...(topic ? { topic } : {}),
+          askedAt: r.ts,
+          actions: [
+            { label: 'Let in', tone: 'main' as const, method: 'network.groups.approve', args: [g.id, r.peerId] },
+            { label: 'Decline', tone: 'danger' as const, method: 'network.groups.decline', args: [g.id, r.peerId] },
+          ],
+        };
+      }),
+    );
+}
+
+/** Someone in your room asks to be friends on the Beluga network (BLG-202). */
+function offerItems(state: DomainState): NeedsYou[] {
+  return (state.network.offers ?? [])
+    .filter((o) => o.dir === 'in')
+    .map((o) => ({
+      id: `friend:${o.peerId}`,
+      kind: 'request' as const,
+      title: clip(`${o.name} wants to add you as a friend`, 500),
+      detail: 'You’re in the same room. As friends you can talk, share and ask each other’s Claude, with nobody hosting',
+      from: clip(o.name, 100),
+      askedAt: o.at,
+      actions: [
+        { label: 'Accept', tone: 'main' as const, method: 'network.friends.answerOffer', args: [o.peerId, true] },
+        { label: 'Not now', tone: 'danger' as const, method: 'network.friends.answerOffer', args: [o.peerId, false] },
+      ],
+    }));
+}
+
+/** A friend on the same GitHub repository: team up on it (BLG-221). Only offers waiting on you. */
+function teamOfferItems(state: DomainState): NeedsYou[] {
+  return state.team.offers
+    .filter((o) => o.state !== 'asked')
+    .map((o) => ({
+      id: `team:${o.peerId}:${o.projectId}`,
+      kind: 'request' as const,
+      title: clip(`${offerWords(o)}. Team up?`, 500),
+      detail: OFFER_DETAIL,
+      from: clip(o.name, 100),
+      askedAt: o.at,
+      actions: [
+        { label: 'Team Up', tone: 'main' as const, method: 'team.answer', args: [o.peerId, o.projectId, true] },
+        { label: 'Not Now', tone: 'danger' as const, method: 'team.answer', args: [o.peerId, o.projectId, false] },
+      ],
+    }));
+}
+
+/** A teammate gave you a task (BLG-223): it waits until you've seen it. */
+function assignedItems(state: DomainState): NeedsYou[] {
+  return state.team.assigned.flatMap((a) => {
+    const topic = taskTopic(a.issueId);
+    return [
+      {
+        id: `team-task:${a.issueId}`,
+        kind: 'request' as const,
+        title: clip(`${a.by} gave you ${a.key}: ${a.title}`, 500),
+        detail: 'It’s in your tasks, on your board for this repository.',
+        from: clip(a.by, 100),
+        ...(topic ? { topic } : {}),
+        askedAt: a.at,
+        actions: [{ label: 'Got It', tone: 'main' as const, method: 'team.ackAssignment', args: [a.issueId] }],
+      },
+    ];
+  });
+}
+
+/**
+ * Shared plans (BLG-225): a plan a teammate shared that you haven't approved (Approve, or words as a
+ * comment), and a teammate's suggested change to a plan of yours (Apply / Set Aside).
+ */
+function sharedPlanItems(state: DomainState): NeedsYou[] {
+  const self = myId(state);
+  const theirs = state.team.plans
+    .filter((p) => p.status === 'draft' && !p.reviews.some((r) => r.by === self && r.kind === 'approve' && r.rev === p.rev))
+    .map((p) => ({
+      id: `team-plan:${p.owner}:${p.id}:${p.rev}`,
+      kind: 'decision' as const,
+      title: clip(`${p.ownerName} shared the plan “${p.title}”: approve it?`, 500),
+      detail: clip(
+        [plainLine(p.body.goal, 2000), ...p.body.milestones.map((m, i) => `${i + 1}. ${m.title} (${m.tasks.length} task${m.tasks.length === 1 ? '' : 's'})`)].filter(Boolean).join('\n'),
+        64_000,
+      ),
+      from: clip(p.ownerName, 100),
+      askedAt: p.updatedAt,
+      freeText: true,
+      actions: [{ label: 'Approve', tone: 'main' as const, method: 'team.reviewPlan', args: [p.owner, p.id, { kind: 'approve' }] }],
+      answer: { method: 'team.reviewPlan', args: [p.owner, p.id, { kind: 'comment', text: '' }], slot: [2, 'text'], text: true, picks: false, label: 'Comment' },
+    }));
+  const mine = Object.values(state.team.planShares).flatMap((share) => {
+    const plan = state.plans.plans.find((p) => p.id === share.planId);
+    if (!plan) return [];
+    return share.reviews
+      .filter((r) => r.kind === 'suggest' && !r.settled)
+      .map((r) => ({
+        id: `team-suggest:${r.id}`,
+        kind: 'decision' as const,
+        title: clip(`${r.name} suggests ${r.ops?.length === 1 ? 'a change' : `${r.ops?.length ?? 0} changes`} to “${planTitle(plan)}”`, 500),
+        ...(r.text ? { detail: clip(r.text, 64_000) } : {}),
+        from: clip(r.name, 100),
+        ...(planTopic(plan.id) ? { topic: planTopic(plan.id)! } : {}),
+        askedAt: r.at,
+        actions: [
+          { label: 'Apply', tone: 'main' as const, method: 'team.applySuggestion', args: [plan.id, r.id] },
+          { label: 'Set Aside', tone: 'danger' as const, method: 'team.dismissSuggestion', args: [plan.id, r.id] },
+        ],
+      }));
+  });
+  return [...theirs, ...mine];
+}
+
+/**
+ * Sentinel runs waiting for you (docs/sentinel.md §5): a merge that passed its checks and review,
+ * held for your Merge. The detail is the merge step's own line (the checks, Claude's review).
+ */
+function sentinelItems(state: DomainState): NeedsYou[] {
+  const s = state.sentinel;
+  if (!s.enabled) return [];
+  return s.runs.flatMap((r) => {
+    const sn = r.state === 'needs-you' ? sentinelById(s, r.sentinelId) : undefined;
+    if (!sn) return [];
+    const at = sn.steps.findIndex((st) => st.kind === 'merge');
+    const step = at >= 0 ? (r.steps.find((x) => x.id === sn.steps[at]!.id) ?? r.steps[at]) : undefined;
+    const detail = [step?.why ? firstLine(step.why, 2000) : '', r.pr ? `Pull request #${r.pr.number}` : ''].filter(Boolean).join('\n');
+    const topic = sentinelTopic(sn.id);
+    return [
+      {
+        id: `sentinel:${r.id}`,
+        kind: 'decision' as const,
+        title: clip(firstLine(r.headline, 500) || `${sn.name} waits for you`, 500),
+        ...(detail ? { detail: clip(detail, 64_000) } : {}),
+        from: clip(sn.name, 100),
+        ...(topic ? { topic } : {}),
+        askedAt: Math.round(step?.startedAt ?? r.startedAt),
+        actions: [
+          { label: 'Merge', tone: 'main' as const, method: 'sentinel.decide', args: [r.id, 'merge'] },
+          { label: 'Not Now', tone: 'danger' as const, method: 'sentinel.decide', args: [r.id, 'skip'] },
+        ],
+      },
+    ];
+  });
+}
+
+/** Everything waiting for you, in no order and uncut (needsYou sorts and keeps 50). */
+export function allNeeds(state: DomainState): NeedsYou[] {
+  return [
+    ...state.approvals.map((a) => approvalItem(state, a)),
+    ...state.questions.map((q) => questionItem(state, q)),
+    ...state.gateway.tasks.flatMap((t) => gatewayItems(state, t)),
+    ...state.plans.plans.filter((p) => p.status !== 'done').flatMap((p) => planItems(p, progressOf(state, p))),
+    ...knockItems(state),
+    ...joinItems(state),
+    ...offerItems(state),
+    ...teamOfferItems(state),
+    ...assignedItems(state),
+    ...sharedPlanItems(state),
+    ...sentinelItems(state),
+  ];
+}
+
+/** A notice's `need` names this item: its id, or the start of it (`gwq:<task>` for that task's question). */
+export const needMatches = (id: string, need: string): boolean => id === need || id.startsWith(`${need}:`);
+
+/** Everything waiting for you, oldest first: approvals, Claude's questions, friends' requests, plan decisions. */
+export function needsYou(state: DomainState): NeedsYou[] {
+  const items = allNeeds(state);
+  // Oldest first; what has no time (Claude's questions) counts as just asked.
+  const at = (n: NeedsYou): number => n.askedAt ?? Number.MAX_SAFE_INTEGER;
+  return items.sort((a, b) => at(a) - at(b)).slice(0, 50);
+}

@@ -112,13 +112,13 @@ describe('the Tasks view', () => {
     expect(isFor(b.need(t1.key), 'nobody')).toBe(false);
   });
 
-  it('offers you, your Claude, then people and their Claudes', () => {
+  it('offers you, your Claude, then people, never their Claudes (BLG-262)', () => {
     const choices = assigneeChoices({ id: 'p-me', name: 'Kay' }, [
       { id: 'p-mia', name: 'mia' },
       { id: 'p-bob', name: 'bob' },
       { id: 'p-me', name: 'Kay' },
     ]);
-    expect(choices.map((c) => c.label)).toEqual(['You', 'Your Claude', 'bob', 'bob’s Claude', 'mia', 'mia’s Claude']);
+    expect(choices.map((c) => c.label)).toEqual(['You', 'Your Claude', 'bob', 'mia']);
     expect(assigneeKey(choices[1]!.assignee)).toBe('claude:p-me');
     expect(assigneeKey(undefined)).toBe('');
   });

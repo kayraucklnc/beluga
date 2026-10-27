@@ -281,6 +281,22 @@ test('a file proof opens over the task page within 300 ms; ⌘-click and Show in
   await expect(page.getByRole('region', { name: 'hero.md' })).toBeVisible();
 });
 
+test('files added to a task show under Files, apart from proof, and open over the page', async ({ page }) => {
+  await page.goto('/');
+  const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
+  await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
+  await page.getByRole('button', { name: /New hero for the launch/ }).first().click();
+  const files = page.getByRole('region', { name: 'Files' });
+  await expect(files.getByRole('button', { name: 'brand-brief.pdf', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Proof' })).not.toContainText('brand-brief.pdf');
+  // The page takes Finder drops for its task.
+  await expect(page.locator('[data-task-drop][data-task-key]').first()).toBeAttached();
+  await files.getByRole('button', { name: 'brand-brief.pdf', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'brand-brief.pdf' })).toBeVisible();
+  await page.keyboard.press('Escape');
+});
+
 test('a narrow window: the bar wraps and New Task stays in reach; a task’s properties go on top', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 760 });
   await openTasks(page);

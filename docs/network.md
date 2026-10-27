@@ -60,7 +60,7 @@ the one dialed by the lower address); a reconnection after a restart replaces th
 at once. A relayed link is retried directly now and then and replaced once that works. Each link has a heartbeat (dropped after 3 missed),
 2 MB frames and token-bucket limits on messages and bytes. Messages are versioned JSON (`hello` carries
 `proto: 1`; unknown kinds are ignored): `hello`, `presence`, `dm`/`dm_ack`,
-`g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`, `gw` (the gateway), `share`
+`av_get`/`av_data` (profile pictures), `g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`, `gw` (the gateway), `share`
 (sharing with friends), `team` (team boards: friends on the same GitHub repository, see docs/tasks-and-plans.md phase 3).
 
 **Versions and features.** `hello` also carries the Beluga version (`app`) and what this Mac does (`can`,
@@ -156,6 +156,18 @@ screen's job (`network.presence.set`): the Mac app sets Away after 10 minutes wi
 system's idle time) when you chose Online, and Online again when you're back. New messages notify
 through the shared Notifier (the `mentions` kind), silently on Do Not Disturb or while you appear
 offline.
+
+## Profile pictures (BLG-276)
+
+Your picture is set in Settings › General (`network.avatar.set`). The Mac crops it square and shrinks
+it to 256 px first; the daemon keeps PNG, JPEG, WebP or GIF up to 96 KB, by checksum, under
+`~/.beluga/avatars/` (`src/net/mesh/avatars.ts`, with `index.json` saying which is yours and which one
+each person said is theirs last). `hello` carries its checksum (`avatar`) and is sent again when it
+changes. Someone who doesn't have that picture yet asks once (`av_get { sha }`) and gets its bytes
+(`av_data { sha, d }`); a Mac only answers for its own current picture, and the receiver keeps it only
+if it's the checksum that person announced, it hashes to it, and it is a small picture. Views carry the
+checksum (`PersonView.avatar`, `NetworkSelf.avatar`) and screens get the bytes with `network.avatar.get`,
+so a picture crosses the network once per change and still shows while its owner is away.
 
 ## Friends from your room (BLG-202)
 

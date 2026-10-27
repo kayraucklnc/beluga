@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
-import { type Actor, type Issue, filterIssues, issueForWorkspace } from '../src/core/board/model.js';
+import { labelDef, labelsFor } from '../src/core/board/labels.js';
+import { type Actor, type Issue, filterIssues, isEpic, issueForWorkspace } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -498,6 +499,37 @@ describe('a parent following its sub-tasks', () => {
     board.update(held.key, { status: 'todo' }, me);
     expect(board.need(held.key).status).toBe('todo');
   });
+
+  it('a parent carried by the worktree its sub-tasks are done in follows them to In Review and Done; one with its own worktree or pull request stays at In Progress', () => {
+    const { board } = setup();
+    const shared = board.create({ projectId: 'api', title: 'Sidebar fixes' }, claude);
+    board.carry(shared.key, { id: 'w1' }, () => false);
+    const kids = ['A', 'B'].map((title) => board.create({ projectId: 'api', title, parent: shared.key }, claude));
+    for (const k of kids) {
+      board.carry(k.key, { id: 'w1' }, () => false);
+      board.update(k.key, { status: 'in_review' }, claude);
+    }
+    expect(board.need(shared.key).status).toBe('in_review');
+    board.prChanged('w1', { number: 9, url: 'https://github.com/o/r/pull/9', state: 'MERGED', title: 'Sidebar fixes', draft: false, checks: 'passing' });
+    expect([shared, ...kids].map((i) => board.need(i.key).status)).toEqual(['done', 'done', 'done']);
+
+    const own = board.create({ projectId: 'api', title: 'Own' }, claude);
+    board.linkWorktree(own.key, 'w2', {}, claude);
+    const elsewhere = board.create({ projectId: 'api', title: 'C', parent: own.key }, claude);
+    board.carry(elsewhere.key, { id: 'w3' }, () => false);
+    board.update(elsewhere.key, { status: 'in_review' }, claude);
+    expect(board.need(own.key).status).toBe('in_progress');
+
+    const pr = { number: 4, url: 'https://github.com/o/r/pull/4', state: 'OPEN', title: 'Own PR', draft: true, checks: 'pending' } as const;
+    const byPr = board.create({ projectId: 'api', title: 'By PR' }, claude);
+    board.update(byPr.key, { status: 'in_progress' }, claude);
+    board.linkWorktree(byPr.key, 'w4', {}, claude);
+    board.prChanged('w4', pr);
+    const d = board.create({ projectId: 'api', title: 'D', status: 'in_review', parent: byPr.key }, claude);
+    expect(board.need(byPr.key).status).toBe('in_progress');
+    board.update(d.key, { status: 'done' }, claude);
+    expect(board.need(byPr.key).status).toBe('in_progress');
+  });
 });
 
 describe('the archive', () => {
@@ -522,5 +554,45 @@ describe('the archive', () => {
     expect(board.emptyArchive()).toBe(1);
     expect(board.get(a.key)).toBeUndefined();
     expect(board.create({ projectId: 'api', title: 'Next' }, me).key).toBe('BOB-2');
+  });
+});
+
+describe('labels come from a set (BLG-269)', () => {
+  it('every board has the built-in labels; a project adds its own on purpose, and they are saved', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-board-'));
+    dirs.push(dir);
+    const first = setup({ dir });
+    expect(labelsFor(first.board.state(), 'api').map((l) => l.name)).toEqual(['bug', 'important', 'feature', 'design', 'docs', 'chore']);
+    expect(first.board.createLabel('api', { name: 'Dark Mode', icon: 'star', color: 'purple' })).toEqual({ name: 'dark-mode', icon: 'star', color: 'purple' });
+    expect(() => first.board.createLabel('api', { name: 'bug', icon: 'bug', color: 'red' })).toThrow(/already/);
+    expect(() => first.board.createLabel('api', { name: 'not a label, a sentence really', icon: 'tag', color: 'red' })).toThrow(/short words/);
+    // The screens hear of it (board_meta).
+    expect(labelsFor(first.store.getState().board, 'api').at(-1)?.name).toBe('dark-mode');
+    expect(labelsFor(first.board.state(), 'land')).toHaveLength(6);
+    first.board.flush();
+    const again = setup({ dir });
+    expect(labelDef(again.board.state(), 'api', 'dark-mode')).toEqual({ name: 'dark-mode', icon: 'star', color: 'purple' });
+    again.board.removeLabel('api', 'dark-mode');
+    expect(labelDef(again.board.state(), 'api', 'dark-mode')).toBeUndefined();
+    expect(() => again.board.removeLabel('api', 'bug')).toThrow(/Only a label the project added/);
+  });
+
+  it('Claude only sets labels from the set, and keeps the ones a task already had', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'Old', labels: ['legacy'] }, me);
+    expect(board.update(t.key, { labels: ['legacy', 'bug', 'made-up'] }, claude).labels).toEqual(['legacy', 'bug']);
+    expect(board.create({ projectId: 'api', title: 'New', labels: ['important', 'whatever'] }, claude, 'claude').labels).toEqual(['important']);
+    // People pick from the set on screen; sync brings a tracker's own.
+    expect(board.create({ projectId: 'api', title: 'Synced', labels: ['billing'] }, { kind: 'beluga' }, 'sync').labels).toEqual(['billing']);
+  });
+});
+
+describe('epics (BLG-267)', () => {
+  it('a task with sub-tasks is an epic', () => {
+    const { board } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Auth' }, me);
+    expect(isEpic(board.state(), epic)).toBe(false);
+    board.create({ projectId: 'api', title: 'Login', parent: epic.key }, me);
+    expect(isEpic(board.state(), epic)).toBe(true);
   });
 });

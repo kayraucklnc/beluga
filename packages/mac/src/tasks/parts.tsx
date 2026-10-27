@@ -1,7 +1,7 @@
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { liveFrom } from '@beluga/core/plans/progress.js';
 import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isArchived, isOpen, isStartable, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, childrenOf, isArchived, isOpen, isStartable, issueById, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, IconButton, Tip, cx } from '../components/ui.js';
@@ -14,6 +14,9 @@ import { LabelChip, PrChip } from './marks.js';
 import { doneCount, dueText } from './tasks-model.js';
 import type { LogItem } from '@beluga/core/store.js';
 import { useTaskActions } from './use-tasks.js';
+import { teammatesOf } from '@beluga/core/team/model.js';
+import { askAboutTask } from '../network/chat-model.js';
+import { draftIn } from '../network/NetComposer.js';
 import { IssueMark } from '../issues/task-bits.js';
 import t from './tasks.module.css';
 
@@ -28,11 +31,14 @@ function liveOf(log: readonly LogItem[]): ReturnType<typeof liveFrom> {
 }
 
 /** What a row and a card show besides the title: sub-tasks done, what blocks it, its worktree, labels, due date, pull request. */
-export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; compact?: boolean; labels?: boolean }) {
+export function IssueMeta({ issue, compact, labels = true, progress: ring = true }: { issue: Issue; compact?: boolean; labels?: boolean; progress?: boolean }) {
   // Only what this issue shows, as plain values: a change elsewhere on the board doesn't render every card again.
   const done = useApp((s) => progressOf(s.board, issue).done);
   const total = useApp((s) => progressOf(s.board, issue).total);
   const progress = { done, total };
+  // The epic it's part of (its parent).
+  const epicKey = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.key : undefined));
+  const epicTitle = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.title : undefined));
   const blocked = useApp((s) => openBlockers(s.board, issue).length);
   const waitsOn = useApp((s) => openBlockers(s.board, issue).map((b) => `${b.key} ${b.title}`).join(', '));
   const blockedBy = useApp((s) => openBlockers(s.board, issue).map((b) => b.key).join(', '));
@@ -78,7 +84,15 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
           </span>
         </Tip>
       ) : null}
-      {progress.total ? (
+      {epicKey ? (
+        <Tip label={`Part of the epic ${epicKey} ${epicTitle ?? ''}`}>
+          <span className={t.epicOf}>
+            <Icon name="epic" size={11} />
+            {epicKey}
+          </span>
+        </Tip>
+      ) : null}
+      {ring && progress.total ? (
         <Tip label={`${progress.done} of ${progress.total} sub-tasks done`}>
           <span className={t.progress}>
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -90,7 +104,7 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
         </Tip>
       ) : null}
       <IssueMark issue={issue} compact={compact} />
-      {labels ? issue.labels.slice(0, compact ? 2 : 4).map((l) => <LabelChip key={l} label={l} />) : null}
+      {labels ? issue.labels.slice(0, compact ? 3 : 4).map((l) => <LabelChip key={l} label={l} projectId={issue.projectId} iconOnly={compact} />) : null}
       {due ? (
         <span className={cx(t.due, due.late && STATUS_INFO[issue.status].open && t.dueLate)}>
           <Icon name="calendar" size={11} />
@@ -117,11 +131,50 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
   );
 }
 
+/** An epic's sub-tasks done, as a bar across its card (canceled ones left out). */
+export function EpicBar({ issue }: { issue: Issue }) {
+  const done = useApp((s) => progressOf(s.board, issue).done);
+  const total = useApp((s) => progressOf(s.board, issue).total);
+  const all = useApp((s) => childrenOf(s.board, issue).length);
+  const words = total ? `${done} of ${total} done` : `${all} sub-task${all === 1 ? '' : 's'}, all canceled`;
+  return (
+    <span className={t.epicBar} role="img" aria-label={`Sub-tasks: ${words}`}>
+      <span className={t.epicTrack}>
+        <span className={t.epicFill} style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+      </span>
+      <span className={t.epicCount}>{words}</span>
+    </span>
+  );
+}
+
 /** Right-click (and ⋯) on a task: open it, its worktree, start one (or reopen a finished one), change it, copy, delete. */
 export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const { api, act, open, openWorktree } = useTaskActions();
   const { client } = useBeluga();
   const projects = useApp((s) => s.projects);
+  const team = useApp((s) => s.team);
+  const friends = useApp((s) => s.network.friends);
+  /** Your chat with a teammate, the task in the box (BLG-263: you ask, nothing is given to their Claude). */
+  const askIn = (issue: Issue): ActionItem[] => {
+    const mates = teammatesOf(team, issue.projectId).filter((m) => friends.some((f) => f.peerId === m.peerId));
+    if (!mates.length) return [];
+    const go = (peerId: string, text: string): void => {
+      draftIn(`dm:${peerId}`, text);
+      client.store.dispatch({ type: 'view', view: { kind: 'conversation', id: `dm:${peerId}` } });
+    };
+    return [
+      {
+        label: 'Ask in a Chat',
+        icon: 'chat',
+        separate: true,
+        submenu: mates.flatMap((m) => [
+          { label: `${m.name}’s Claude`, hint: `@claude:… @${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, true)) },
+          { label: m.name, hint: `@${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, false)) },
+        ]),
+        onSelect: () => undefined,
+      },
+    ];
+  };
   return (issue) => {
     // Only a worktree that's still here (an archived one can be restored from its page): its own, or one carrying its work.
     const worktree = worktreeDoing(issue, (id) => projects.some((p) => p.workspaces.some((w) => w.id === id && !w.archived)));
@@ -147,6 +200,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
           : []),
       // Finished (or canceled) work starts again only deliberately: back to Ready, then Start.
       ...(startable ? [] : [{ label: 'Reopen the Task', icon: 'refresh' as const, onSelect: () => void act(() => api.update(issue.id, { status: 'todo' }), `Reopened ${issue.key}`) }]),
+      ...askIn(issue),
       {
         label: 'Status',
         separate: true,

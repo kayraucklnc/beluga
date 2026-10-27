@@ -184,7 +184,7 @@ export class TeamPlans implements TeamPart {
     };
     this.save();
     this.team.publish();
-    if (!before) this.team.deps.notify?.({ kind: 'needsYou', tag: 'plan', title: `${ownerName} shared the plan “${clean(p.title)}” with you`, body: 'Read it, comment, suggest changes or approve.', key: `team-plan:${link.peerId}:${p.id}` });
+    if (!before) this.team.deps.notify?.({ kind: 'needsYou', tag: 'plan', title: `${ownerName} shared the plan “${clean(p.title)}” with you`, body: 'Read it, comment, suggest changes or approve.', need: `team-plan:${link.peerId}:${p.id}`, key: `team-plan:${link.peerId}:${p.id}` });
   }
 
   private forget(owner: string, id: string): void {
@@ -208,7 +208,7 @@ export class TeamPlans implements TeamPart {
     this.team.publish();
     const title = planTitle(plan);
     const what = r.kind === 'approve' ? `${name} approved “${title}”` : r.kind === 'suggest' ? `${name} suggests ${r.ops?.length === 1 ? 'a change' : `${r.ops?.length ?? 0} changes`} to “${title}”` : `${name} commented on “${title}”`;
-    this.team.deps.notify?.({ kind: r.kind === 'suggest' ? 'needsYou' : 'people', tag: 'plan', title: what, body: r.text?.slice(0, 200) ?? (r.kind === 'suggest' ? 'Apply it in one click on the plan’s page.' : ''), plan: planId, key: `team-review:${r.id}` });
+    this.team.deps.notify?.({ kind: r.kind === 'suggest' ? 'needsYou' : 'people', tag: 'plan', title: what, body: r.text?.slice(0, 200) ?? (r.kind === 'suggest' ? 'Apply it in one click on the plan’s page.' : ''), plan: planId, ...(r.kind === 'suggest' ? { need: `team-suggest:${r.id}` } : {}), key: `team-review:${r.id}` });
   }
 
   joined(link: TeamLink, fresh: boolean): void {

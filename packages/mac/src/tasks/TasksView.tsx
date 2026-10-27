@@ -11,6 +11,7 @@ import { TaskList } from './TaskList.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { PickMenu } from './PickMenu.js';
 import { type Display, SCOPES, ago, type Scope, assigneesIn, connected, doneCount, projectToShow, scopeCounts, scoped, statusesFor, taskGraph } from './tasks-model.js';
+import { useTaskFileDrop } from './use-task-drop.js';
 import { setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
 import { TeamOffers } from '../team/Team.js';
@@ -25,6 +26,8 @@ const FlowGraph = lazy(() => import('../components/graph/FlowGraph.js'));
  * emptied for good from here.
  */
 export function TasksView() {
+  // Files dropped on a card or a row are added to its task.
+  const dropping = useTaskFileDrop();
   const board = useBoard();
   const selfId = useSelfId();
   const prefs = useTasksPrefs();
@@ -90,6 +93,7 @@ export function TasksView() {
   const none = !board.issues.some((i) => i.projectId === project);
   return (
     <div className={t.view}>
+      {dropping}
       <div className={t.bar}>
         <div className={cx(t.barGroup, t.barFilters)}>
         <PickMenu<string>

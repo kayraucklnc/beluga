@@ -58,13 +58,16 @@ export function peopleHere(state: HereState, wsId: string): PersonHere[] {
     .map(([peerId, role]) => ({ peerId, name: nameOf(state, peerId), owner: false, role, ...presenceOf(state, peerId) }));
 }
 
-/** What the message box says while a friend's worktree can't hear you (undefined when it can). */
+/**
+ * What the message box says while a friend's worktree can't hear you (undefined when it can): the
+ * Mac app locks the box then (BLG-259), so nobody talks to a Claude that isn't there.
+ */
 export function waitingNote(state: HereState, wsId: string): string | undefined {
   const shared = state.shared.find((w) => w.id === wsId && w.via === 'mesh');
   if (!shared || shared.role !== 'contribute') return undefined;
   const owner = presenceOf(state, shared.owner);
   const who = nameOf(state, shared.owner);
-  if (owner.state === 'offline') return `${who}'s Mac is offline: your message goes when it's back`;
-  if (owner.state === 'update') return `${who}'s Beluga needs an update: your message goes once it can reach it`;
+  if (owner.state === 'offline') return `You can't chat with this while ${who}'s Mac is offline`;
+  if (owner.state === 'update') return `You can't chat with this until ${who} updates Beluga`;
   return undefined;
 }

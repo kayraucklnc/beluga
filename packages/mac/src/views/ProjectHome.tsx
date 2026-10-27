@@ -34,6 +34,8 @@ import { branchOptions } from "../chat/WorktreeDraft.js";
 import { useBoxSuggestions } from "../chat/BoxSuggestions.js";
 import { useAttachments } from "../chat/use-attachments.js";
 import { MentionHighlighter } from "../chat/MentionHighlighter.js";
+import { DictationStrip, MicButton } from "../chat/Dictation.js";
+import { useDictationTarget } from "../lib/dictation.js";
 import { HomeHistory } from "./history/HomeHistory.js";
 import { EarningsSection } from "./project/EarningsSection.js";
 import { GitHubRow } from "./project/GitHubRow.js";
@@ -352,6 +354,8 @@ function HomeComposer({ project }: { project: Project }) {
       setBusy(false);
     }
   };
+  // Speaking instead of typing (Settings › Voice), as in every chat's box.
+  useDictationTarget(ref, () => void send());
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (box.onKey(e)) return;
@@ -411,6 +415,7 @@ function HomeComposer({ project }: { project: Project }) {
         {att.images.length || att.files.length ? (
           <div className={s.waiting}>{att.waiting}</div>
         ) : null}
+        <DictationStrip box={ref} />
         <div className={c.inputWrap}>
           <MentionHighlighter
             text={text}
@@ -506,6 +511,7 @@ function HomeComposer({ project }: { project: Project }) {
               />
             </label>
           ) : null}
+          <MicButton box={ref} />
           <Tip
             label={
               worktree

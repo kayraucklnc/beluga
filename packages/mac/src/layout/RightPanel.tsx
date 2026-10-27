@@ -280,7 +280,7 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
               <div className={s.loading} />
             ) : (
               <Suspense fallback={<div className={s.loading} />}>
-                <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id } : {})} />
+                <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id } : {})} {...(view.kind === 'shared' ? { sharedWs: { id: view.id, owner: view.owner } } : {})} />
               </Suspense>
             )}
           </div>
@@ -291,7 +291,7 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
 }
 
 /** The tab's content. Memoized: the panel re-renders as the conversation streams; its tabs only when their own data changes. */
-const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId: string | undefined; projectId?: string }) {
+const Body = memo(function Body({ tab, wsId, projectId, sharedWs }: { tab: PanelTab; wsId: string | undefined; projectId?: string; sharedWs?: { id: string; owner: string } }) {
   switch (tab) {
     case 'changes':
       return wsId ? <ChangesTab key={wsId} wsId={wsId} /> : null;
@@ -306,7 +306,7 @@ const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId:
         </div>
       );
     case 'scratch':
-      return wsId ? <ScratchTab key={wsId} wsId={wsId} /> : null;
+      return wsId ? <ScratchTab key={wsId} wsId={wsId} /> : sharedWs ? <ScratchTab key={sharedWs.id} wsId={sharedWs.id} owner={sharedWs.owner} /> : null;
     case 'background':
       return wsId ? <BackgroundTab key={wsId} wsId={wsId} /> : null;
     case 'history': {

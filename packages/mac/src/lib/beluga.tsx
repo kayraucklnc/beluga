@@ -43,7 +43,7 @@ export const recipientPrefix = (to: Recipient): string => (to.claude ? (to.self 
 /** "bob's Claude", "your Claude", "bob". */
 export const recipientLabel = (to: Recipient): string => (to.claude ? (to.self ? 'your Claude' : `${to.name}’s Claude`) : to.name);
 
-export type SettingsPane = 'general' | 'appearance' | 'claude' | 'notifications' | 'workspaces' | 'terminal' | 'fire' | 'environment' | 'people' | 'phone' | 'voice' | 'about';
+export type SettingsPane = 'general' | 'appearance' | 'claude' | 'notifications' | 'workspaces' | 'terminal' | 'fire' | 'menubar' | 'environment' | 'people' | 'phone' | 'voice' | 'about';
 
 type Listener = () => void;
 
@@ -77,6 +77,11 @@ export function BelugaProvider({ client, children }: { client: SocketClient; chi
   const ui = useRef(new UiStore()).current;
   const value = useMemo(() => ({ client, ui }), [client, ui]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** The same, or undefined outside a BelugaProvider (parts that also draw in previews and tests). */
+export function useMaybeBeluga(): Beluga | undefined {
+  return useContext(Ctx) ?? undefined;
 }
 
 export function useBeluga(): Beluga {
@@ -136,6 +141,13 @@ export function useApp<T>(pick: (s: AppState) => T, equal?: (a: T, b: T) => bool
     return next;
   });
 }
+
+/** useApp outside a BelugaProvider too: `fallback` there. */
+export function useMaybeApp<T>(pick: (s: AppState) => T, fallback: T): T {
+  const store = useContext(Ctx)?.client.store;
+  return useSyncExternalStore(store ? viewSubscribe(store) : noSubscribe, () => (store ? pick(store.getState()) : fallback));
+}
+const noSubscribe = (): (() => void) => () => undefined;
 
 export function useUi<T>(pick: (s: MacUi) => T): T {
   const { ui } = useBeluga();

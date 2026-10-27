@@ -2,6 +2,11 @@ import type { ChatFile, GroupView, LiveClaude, MessageView, NetworkState } from 
 import { type Suggestion, friendMention, typedMention } from '../../../../src/ui/suggest.js';
 import { MENTION, type MentionWorld } from '../chat/mentions.js';
 import { continues } from './net-model.js';
+import { type TaskMention, matchTasks } from '../../../../src/shared/task-refs.js';
+import type { Issue } from '../../../../src/core/board/model.js';
+import { isOpen } from '../../../../src/core/board/model.js';
+import type { TeamState } from '../../../../src/core/team/model.js';
+import { sharedTasks } from '../../../../src/core/team/mentions.js';
 
 /**
  * What the chats say and decide, as plain functions (no React, no daemon): whose Claude a
@@ -30,7 +35,7 @@ export interface Member {
 }
 
 /** How a person is written after @: "Mia Chen" → "MiaChen". */
-const handle = (name: string): string => friendMention(name).slice(1);
+export const handle = (name: string): string => friendMention(name).slice(1);
 
 /** What / at the start of a channel's message box offers. */
 type ChannelCommand = 'claude' | 'claudes' | 'files' | 'add-people';
@@ -49,9 +54,10 @@ const COMMANDS: ReadonlyArray<{ name: ChannelCommand; hint: string; when?: 'othe
 
 /**
  * What to list for the words in a channel's box: "/" at the start → the channel's commands;
- * "@…" → your Claude, each member's Claude, everyone's, then the people themselves.
+ * "@…" → your Claude, each member's Claude, everyone's, the people themselves, then the tasks of
+ * repositories you're teamed up on with them (`tasks`, BLG-263: you ask their Claude about one here).
  */
-export function channelSuggestions(text: string, ctx: { people: readonly Member[]; admin?: boolean; friends?: readonly Member[] }): ChannelSuggestion[] {
+export function channelSuggestions(text: string, ctx: { people: readonly Member[]; admin?: boolean; friends?: readonly Member[]; tasks?: readonly TaskMention[] }): ChannelSuggestion[] {
   if (/^\/[\w-]*$/.test(text)) {
     const typed = text.slice(1).toLowerCase();
     const commands: ChannelSuggestion[] = COMMANDS.filter((c) => c.name.startsWith(typed) && (c.when !== 'others' || ctx.people.length > 0) && (c.when !== 'admin' || ctx.admin)).map((c) => ({ label: `/${c.name}`, hint: c.hint, value: '', enter: 'complete', command: c.name }));
@@ -75,9 +81,24 @@ export function channelSuggestions(text: string, ctx: { people: readonly Member[
     ...ctx.people.filter((p) => handle(p.name)).map((p) => ({ label: p.name, insert: `@${handle(p.name)}`, hint: 'the person, not their Claude' })),
   ];
   const t = typed.toLowerCase();
-  return options
+  const named: ChannelSuggestion[] = options
     .filter((o) => o.insert.slice(1).toLowerCase().startsWith(t) || o.label.toLowerCase().startsWith(t))
     .map((o) => ({ label: o.label, hint: `${o.insert} · ${o.hint}`, value: `${before}${o.insert} `, enter: 'complete' }));
+  const tasks: ChannelSuggestion[] = matchTasks(typed, ctx.tasks ?? []).map((task) => ({ label: `@${task.key}`, hint: task.title, value: `${before}@${task.key} `, enter: 'complete' }));
+  return [...named, ...tasks];
+}
+
+/**
+ * A team task, from its menu, to a teammate (BLG-263): your chat with them, the words ready to
+ * send. Their Claude ("@claude:ata @BLG-12 ") or them ("@BLG-12 "): never a task given to it.
+ */
+export function askAboutTask(key: string, name: string, claude: boolean): string {
+  return claude ? `@claude:${handle(name)} @${key} ` : `@${key} `;
+}
+
+/** The tasks a chat with these people can name (BLG-263): the live ones of repositories you're teamed up on with them. */
+export function channelTasks(issues: readonly Issue[], team: Pick<TeamState, 'teams'>, people: readonly Member[]): TaskMention[] {
+  return sharedTasks(issues, team, people.map((p) => p.peerId)).map((i) => ({ key: i.key, title: i.title, status: i.status, open: isOpen(i.status) }));
 }
 
 /** Code (fenced or `inline`) isn't asking anyone. */
@@ -104,12 +125,13 @@ export function mergeAsk(a: 'all' | readonly string[] | undefined, b: 'all' | re
   return [...new Set([...(a ?? []), ...(b ?? [])])];
 }
 
-/** What "@…" in a channel's messages names, for the pills: its members (you too, for "@claude:you"). */
-export const channelWorld = (me: Member | undefined, people: readonly Member[]): MentionWorld => ({
+/** What "@…" in a channel's messages names, for the pills: its members (you too, for "@claude:you"), and the tasks you share with them. */
+export const channelWorld = (me: Member | undefined, people: readonly Member[], tasks?: readonly TaskMention[]): MentionWorld => ({
   friends: people,
   peers: me ? [me, ...people] : people,
   projects: [],
   workspaces: [],
+  ...(tasks?.length ? { tasks } : {}),
 });
 
 /** Under a message that asked: "Asked everyone’s Claude", "Asked bob’s Claude", "Asked your Claude". */

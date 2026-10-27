@@ -1,0 +1,49 @@
+/* Settings › Menu Bar: the whale in a light and a dark menu bar, twice its real size. */
+.stage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--bg-sunken);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 9px;
+  background: #f4f4f6;
+  color: #1d1d1f;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08);
+}
+.dark {
+  background: #2a2b30;
+  color: #f2f2f4;
+  box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.08);
+}
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.whale {
+  display: inline-flex;
+  width: 45px;
+  height: 36px;
+}
+.title {
+  font-size: 26px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.means {
+  margin: 0 2px 16px;
+  color: var(--text-2);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}

@@ -16,12 +16,26 @@ import { useSuggestions } from '../chat/Suggestions.js';
 import { usePastePaths } from '../chat/paste-paths.js';
 import { PendingTray } from './ChatFiles.js';
 import { addBlobs, addPaths, restorePending, takePending, usePending } from './attachments.js';
-import { type Ask, type ChannelSuggestion, askLabel, askTo, channelSuggestions, channelWorld, mentionedAsk, mergeAsk } from './chat-model.js';
+import { type Ask, type ChannelSuggestion, askLabel, askTo, channelSuggestions, channelTasks, channelWorld, mentionedAsk, mergeAsk } from './chat-model.js';
+import type { TaskMention } from '@beluga/shared/task-refs.js';
+
+/** The tasks this chat can name: those of repositories you're teamed up on with its people (BLG-263). */
+export function useChannelTasks(people: ReadonlyArray<{ readonly peerId: string; readonly name: string }>): readonly TaskMention[] {
+  const issues = useApp((st) => st.board.issues);
+  const team = useApp((st) => st.team);
+  return useMemo(() => channelTasks(issues, team, people), [issues, team, people]);
+}
 import c from '../chat/composer.module.css';
 import s from './network.module.css';
 
 /** What you were writing in each conversation (kept while the app runs, like Messages). */
 const drafts = new Map<string, string>();
+
+/** Start the words in a conversation's box (shown when it opens): after what's there, if anything. */
+export function draftIn(conversation: string, text: string): void {
+  const was = drafts.get(conversation)?.trim();
+  drafts.set(conversation, was ? `${was} ${text}` : text);
+}
 
 /** Put a quote in the message box of the conversation on screen. */
 export const QUOTE_EVENT = 'beluga:net-quote';
@@ -100,8 +114,9 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
   const picker = useRef<HTMLInputElement>(null);
   // @ and / as you type: the Claudes and people here, and the channel's commands.
   const friends = useApp((st) => st.network.friends);
-  const items = useMemo(() => (text ? channelSuggestions(text, { people, admin: Boolean(addPeople), friends }) : []), [text, people, addPeople, friends]);
-  const world = useMemo(() => channelWorld(me, people), [me, people]);
+  const tasks = useChannelTasks(people);
+  const items = useMemo(() => (text ? channelSuggestions(text, { people, admin: Boolean(addPeople), friends, tasks }) : []), [text, people, addPeople, friends, tasks]);
+  const world = useMemo(() => channelWorld(me, people, tasks), [me, people, tasks]);
   const write = (next: string): void => {
     setText(next);
     sug.reset();

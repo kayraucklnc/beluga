@@ -49,9 +49,9 @@ describe('branchState', () => {
 
   it('no PR: on GitHub Create PR opens one straight away (Claude’s ways under it); without GitHub it merges here', () => {
     const b = at(ws())!;
-    expect(b.steps.map((s) => s.id)).toEqual(['pr', 'pr_claude', 'pr_custom', 'pr_draft']);
+    expect(b.steps.map((s) => s.id)).toEqual(['pr', 'pr_claude', 'pr_custom', 'pr_draft', 'merge_base']);
     expect([b.steps[0]?.label, b.steps[0]?.claude]).toEqual(['Create PR', undefined]);
-    expect(at(ws({ status: { changed: 2, ahead: 0, behind: 0 } }))?.steps.map((s) => s.id)).toEqual(['pr', 'pr_claude', 'pr_custom', 'pr_draft', 'commit']);
+    expect(at(ws({ status: { changed: 2, ahead: 0, behind: 0 } }))?.steps.map((s) => s.id)).toEqual(['pr', 'pr_claude', 'pr_custom', 'pr_draft', 'merge_base', 'commit']);
     const local = at(ws(), undefined, { gh: false })!;
     expect([local.label, local.steps[0]?.id]).toEqual(['Ready to merge', 'merge']);
   });

@@ -29,6 +29,16 @@ test('clicking a project opens its home', async ({ page }) => {
   await expect(page.getByRole('tab', { name: 'New Worktree' })).toHaveAttribute('aria-selected', 'true');
 });
 
+test('the home box has a microphone beside Create Worktree', async ({ page }) => {
+  await openHome(page);
+  const section = page.getByRole('region', { name: 'Start something' });
+  const mic = section.getByRole('button', { name: 'Speak instead of typing' });
+  await expect(mic).toBeVisible();
+  await mic.hover();
+  await expect(page.getByText(/hold ⌥Space to talk/)).toBeVisible();
+  if (process.env.BELUGA_SHOTS) await section.screenshot({ path: `${process.env.BELUGA_SHOTS}/home-composer-mic.png` });
+});
+
 test('New Worktree from the home makes a worktree and starts Claude there', async ({ page }) => {
   await openHome(page);
   await page.getByLabel('Task for the new worktree').fill('Add request logging');

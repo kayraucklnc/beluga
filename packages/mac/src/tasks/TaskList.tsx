@@ -1,13 +1,15 @@
 import { type KeyboardEvent, memo, useEffect, useRef, useState } from 'react';
-import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from '@beluga/core/board/model.js';
+import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank, isEpic } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext } from '../components/SpecMenu.js';
-import { IconButton, cx } from '../components/ui.js';
+import { IconButton, Tip, cx } from '../components/ui.js';
+import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
+import { taskDropProps } from './use-task-drop.js';
 import { setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
 import { WaitingMark, WorkingMark } from '../team/Team.js';
@@ -78,12 +80,14 @@ const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; curso
   const { api, act, open } = useTaskActions();
   const menu = useIssueMenu();
   const stop = (e: { stopPropagation: () => void }): void => e.stopPropagation();
+  const epic = useApp((s) => isEpic(s.board, issue));
   return (
     <ActionsContext items={() => menu(issue)}>
       <div
         role="row"
         tabIndex={-1}
         data-issue={issue.id}
+        {...taskDropProps(issue)}
         className={cx(t.row, cursor && t.rowCursor)}
         onClick={() => open(issue)}
         onMouseDown={onCursor}
@@ -104,6 +108,13 @@ const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; curso
             </button>
           </StatusPicker>
         </span>
+        {epic ? (
+          <Tip label="Epic: a task with sub-tasks">
+            <span className={t.epicMark}>
+              <Icon name="epic" size={13} />
+            </span>
+          </Tip>
+        ) : null}
         <span className={cx(t.title, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</span>
         <IssueMeta issue={issue} />
         <WaitingMark issueId={issue.id} />

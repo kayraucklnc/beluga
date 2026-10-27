@@ -181,6 +181,10 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `sharing.shareWithFriend` | ✓ project ••• › Share with… (pick friends and a role) · `/invite @friend` in a project or worktree · a team project's conversation ••• › Share with Team ▸ (a teammate, or Everyone on the Team: that one worktree, live) |
 | `sharing.unshareFriend` | ✓ Share with… › No access · a team project's conversation ••• › Stop Sharing (or untick a teammate under Share with Team ▸) |
 | `sharing.leaveProject` | ✓ a shared project's ••• › Leave Project |
+| `sharing.copyProject` | ✓ a shared project's ••• › Copy to This Mac Again (it copies by itself when shared whole) |
+| `sharing.scratch` | ✓ a friend's worktree's Scratch tab |
+| `sharing.earlier` | ✓ scrolling back in a friend's worktree |
+| `sharing.runHere` | ✓ a friend's worktree's "Runs on" chip › This Mac |
 | `invites.create` | ✓ |
 | `invites.revoke` | ✓ |
 | `invites.copyLink` | ✓ |
@@ -305,6 +309,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.setModel` | ✓ |
 | `workbench.createPr` | ✓ |
 | `workbench.quickPr` | ✓ the toolbar's Create PR (and Create Draft PR under its chevron), the Changes panel's Create PR |
+| `workbench.mergeToBase` | ✓ the branch control's chevron › Merge into main… (no PR yet, on GitHub): asks first, then lands the branch on origin's base and pushes |
 | `workbench.gitFix` | ✓ the GitHub trouble card that a failed Create PR, Merge or Update Branch opens (Push over HTTPS, Log In to GitHub, Install GitHub CLI, the SSH steps under •••) |
 | `workbench.fixChecks` | ✓ |
 | `workbench.resolvePrConflicts` | ✓ Resolve Merge Conflicts… (toolbar, PR sheet, the PR strip above the chat) when GitHub says the PR conflicts |
@@ -373,6 +378,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `network.groups.decline` | ✓ group info › Asking to Join › Decline |
 | `network.presence.set` | ✓ your status (sidebar footer, menu bar, palette), Away when idle |
 | `network.presence.get` | ✓ the shared state’s `network.self` (no call needed) |
+| `network.avatar.set` | ✓ Settings › General, your picture beside your name |
+| `network.avatar.get` | ✓ every avatar (chats, headers, tasks, team), cached as data URLs |
 | `network.read` | ✓ opening a conversation reads it (the `conversation` view is shown); Mark as Read on a group |
 | `network.post` | ✓ a conversation's message box: words, files waiting in the box, and the Ask Claude menu (yours, everyone's, one person's); Send Again on an undelivered one |
 | `network.files.add` | ✓ the paper clip (Open panel), files dropped anywhere on a conversation |
@@ -421,6 +428,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.emptyArchive` | ✓ Tasks › Archive › Empty Archive |
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
+| `board.createLabel` | ✓ a task's Labels menu › New Label… (a name, an icon, a color) |
+| `board.removeLabel` | ✓ the New Label sheet: a project label's remove button (under Labels of this project) |
 | `board.syncTeams` | ✓ Tasks › ⋯ › Sync with Linear… (the sheet checks the key and lists its teams) |
 | `board.syncConnect` | ✓ the Sync with Linear sheet › Connect (a team, Autosync, Also Send Open Tasks) |
 | `board.syncDisconnect` | ✓ the Sync with Linear sheet › Disconnect… |

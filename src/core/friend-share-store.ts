@@ -27,6 +27,18 @@ export interface SharedProject {
   /** The others it's shared with (and their role), as the owner said. */
   readonly members: ReadonlyArray<{ readonly peerId: string; readonly name: string; readonly role: WsRole }>;
   readonly updatedAt: number;
+  /** Shared whole: your own copy of it (BLG-258), while it's made and once it's in your Projects. */
+  readonly copy?: SharedCopy;
+}
+
+/** Your copy of a project a friend shared whole: where it goes, and how far it got. */
+export interface SharedCopy {
+  readonly state: 'copying' | 'ready' | 'failed';
+  /** Its folder on this Mac. */
+  readonly path?: string;
+  /** Its id in your Projects, once it's there. */
+  readonly projectId?: string;
+  readonly error?: string;
 }
 
 /** Who one of your projects is shared with (owner side): `only` limits it to those worktrees. */

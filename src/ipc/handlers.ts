@@ -1,5 +1,6 @@
 import type { Session } from '../core/session.js';
 import { needFriendShares } from '../core/friend-share/launch.js';
+import { remoteScratch } from '../core/friend-share/scratch.js';
 import type { WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
@@ -113,6 +114,13 @@ export const HANDLERS = {
   'sharing.shareWithFriend': (s, share) => s.sharing.shareWithFriend(share),
   'sharing.unshareFriend': (s, share) => s.sharing.unshareFriend(share),
   'sharing.leaveProject': (s, owner, projectId) => needFriendShares(s).leave(owner, projectId),
+  'sharing.copyProject': (s, owner, projectId) => needFriendShares(s).makeCopy(owner, projectId),
+  'sharing.earlier': (s, owner, wsId) => needFriendShares(s).earlier(owner, wsId),
+  'sharing.runHere': (s, owner, wsId, prompt) => needFriendShares(s).runHere(owner, wsId, prompt),
+  'sharing.scratch': (s, owner, wsId) => {
+    if (!s.store.getState().shared.some((w) => w.owner === owner && w.id === wsId)) throw new Error('That worktree isn’t shared with you');
+    return remoteScratch(owner, wsId, (at, o) => s.listFiles(at, o));
+  },
 
   'invites.create': async (s, opts) => {
     const link = await s.invites.create(opts);
@@ -207,6 +215,7 @@ export const HANDLERS = {
   'workbench.setModel': (s, channel, value) => (s.workbench ? s.workbench.setModel(channel, value) : s.setPrefs({ model: value || undefined })),
   'workbench.createPr': (s, id, extra) => bench(s)?.createPr(id, extra),
   'workbench.quickPr': (s, id, opts) => bench(s)?.quickPr(id, opts),
+  'workbench.mergeToBase': (s, id, opts) => bench(s)?.mergeToBase(id, opts),
   'workbench.gitFix': (s, id, fix, retry) => bench(s)?.gitFix(id, fix, retry),
   'workbench.fixChecks': (s, id) => bench(s)?.fixChecks(id),
   'workbench.resolvePrConflicts': (s, id) => bench(s)?.resolvePrConflicts(id),

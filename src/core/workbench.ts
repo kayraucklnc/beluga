@@ -8,7 +8,7 @@ import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
-import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, listPrs, useHttpsRemote, mergePr, prStep, pushForPr, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, listPrs, useHttpsRemote, mergePr, mergeToBase, prStep, pushForPr, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
 import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -52,6 +52,7 @@ export interface WorkbenchDeps {
   readonly prStep?: (dir: string, number: number, step: PrStepKind) => Promise<void>;
   /** Push and open a pull request without Claude (tests stand in for gh). */
   readonly createPr?: typeof createPr;
+  readonly mergeToBase?: typeof mergeToBase;
   readonly pushForPr?: typeof pushForPr;
   readonly disableAutoMerge?: (dir: string, number: number) => Promise<void>;
   /** Where a branch was last pushed to (its remote-tracking ref), to notice pushes. */
@@ -157,8 +158,8 @@ export interface GitHubOutcome {
   readonly trouble?: GitTrouble;
 }
 
-/** What to do again once a fix worked: Create PR (as a draft), or nothing (say it's fixed). */
-export type GitRetry = 'pr' | 'pr_draft' | 'none';
+/** What to do again once a fix worked: Create PR (as a draft), Merge into its base, or nothing (say it's fixed). */
+export type GitRetry = 'pr' | 'pr_draft' | 'merge_base' | 'none';
 
 /** How long a terminal step (installing gh, logging in) may take before Beluga stops waiting for it. */
 const GITHUB_STEP_MS = 15 * 60_000;
@@ -351,6 +352,51 @@ export class Workbench {
     }
   }
 
+  /**
+   * Merge into its base, with no pull request: commits anything left (as the branch's name), then
+   * lands the branch on origin/<base> (fast-forward, or a merge commit) and pushes it there.
+   * Nothing in the main folder changes. Conflicts or a base that moved meanwhile push nothing.
+   */
+  async mergeToBase(id: string, opts: { readonly https?: boolean } = {}): Promise<GitHubOutcome> {
+    const ws = this.worktree(id);
+    if (!ws?.branch) return { ok: false, message: 'Only a worktree (a branch of its own) can merge' };
+    if (this.creatingPr.has(id)) return { ok: false, message: 'It’s already being pushed' };
+    this.creatingPr.add(id);
+    const branch = ws.branch;
+    const base = this.prBase(ws);
+    const warn = (message: string): GitHubOutcome => {
+      this.deps.toast(message, 'warn');
+      return { ok: false, message };
+    };
+    try {
+      this.deps.toast(`Merging ${branch} into origin/${base}…`);
+      try {
+        if ((ws.status?.changed ?? 0) > 0) await this.manager.commitAll(id, titleOfBranch(branch));
+      } catch (err) {
+        return warn(`Couldn’t commit what’s left: ${firstLine(err)}`);
+      }
+      let result: Awaited<ReturnType<typeof mergeToBase>>;
+      try {
+        result = await (this.deps.mergeToBase ?? mergeToBase)(ws.path, branch, base, opts);
+      } catch (err) {
+        return this.troubleOr(ws, err, `Couldn’t merge into origin/${base}`);
+      }
+      this.troubles.delete(id);
+      if (!result.ok) {
+        if (result.reason === 'moved') return warn(`Someone pushed to ${base} just now: nothing was pushed, try again`);
+        const files = result.files.slice(0, 3).join(', ') + (result.files.length > 3 ? '…' : '');
+        return warn(`${branch} conflicts with origin/${base} (${files}): nothing was pushed. Create a PR, or ask Claude to bring ${base} in first`);
+      }
+      void this.deps.controller.refresh();
+      void this.refreshPrs(id);
+      const message = `Merged ${branch} into ${base} on GitHub${result.how === 'fast_forward' ? '' : ' (a merge commit)'}`;
+      this.deps.toast(message, 'success');
+      return { ok: true, message };
+    } finally {
+      this.creatingPr.delete(id);
+    }
+  }
+
   /** A GitHub step's error as trouble reaching GitHub (with the fixes this Mac can use), if it is that. */
   private async troubleOf(ws: Workspace, err: unknown): Promise<GitTrouble | undefined> {
     const raw = rawOf(err);
@@ -386,6 +432,7 @@ export class Workbench {
     if (!ws?.branch) return { ok: false, message: 'Pull requests are for worktrees (a branch of their own)' };
     const draft = retry === 'pr_draft';
     const again = (https = false): Promise<GitHubOutcome> => {
+      if (retry === 'merge_base') return this.mergeToBase(id, https ? { https: true } : {});
       if (retry !== 'none') return this.quickPr(id, { ...(draft ? { draft: true } : {}), ...(https ? { https: true } : {}) });
       const message = 'GitHub is set up: try it again';
       this.deps.toast(message, 'success');

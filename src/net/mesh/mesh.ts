@@ -4,6 +4,7 @@ import path from 'node:path';
 import type DHT from 'hyperdht';
 import type { BootstrapNode } from 'hyperdht';
 import type { Identity } from '../crypto.js';
+import { AvatarBook } from './avatars.js';
 import { DmBook } from './dms.js';
 import { type BelugaInfo, type Feature, MESH_FEATURES } from './features.js';
 import { checkMessage, parseExtras, wireNote } from './extras.js';
@@ -32,7 +33,7 @@ import { isLate } from '../patient-timer.js';
  * offline, and tells people your status.
  *
  * Files under `dir` (normally ~/.beluga): friends.json, invitations.json, outbox.json, dms/,
- * groups/, presence.json, reads.json. Keys never leave this process; what screens see is views.ts.
+ * groups/, avatars/, presence.json, reads.json. Keys never leave this process; what screens see is views.ts.
  */
 
 export interface MeshOptions {
@@ -94,6 +95,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
   private presence: Presence;
   private readonly theirPresence = new Map<string, Presence>();
   private readonly helloNames = new Map<string, string>();
+  private readonly avatars: AvatarBook;
+  /** The picture asked of each person on this link (asked again on their next link if it didn't come). */
+  private readonly avatarAsked = new Map<string, string>();
   /** What each person's Beluga said about itself on its last link (kept while they're away). */
   private readonly theirBeluga = new Map<string, BelugaInfo>();
   /** People whose Mac speaks another network version, and who needs to update. */
@@ -126,6 +130,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
     this.friends = new FriendBook(path.join(opts.dir, 'friends.json'));
     this.invitations = new InvitationBook(path.join(opts.dir, 'invitations.json'));
     this.dms = new DmBook(opts.dir);
+    this.avatars = new AvatarBook(path.join(opts.dir, 'avatars'));
     this.presence = loadPresence(this.file('presence.json'));
     const reads = readJson(this.file('reads.json'));
     this.reads = reads && typeof reads === 'object' ? Object.fromEntries(Object.entries(reads).filter(([, v]) => typeof v === 'number' && Number.isInteger(v) && v >= 0)) : {};
@@ -162,6 +167,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
       onLink: (link) => this.linkUp(link),
       onUnlink: (peerId) => {
         this.theirPresence.delete(peerId);
+        this.avatarAsked.delete(peerId);
         this.emit('change');
       },
       onMessage: (link, msg) => this.onMessage(link, msg),
@@ -236,7 +242,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
   summary(): NetworkSummary {
     return {
       enabled: true,
-      self: { peerId: this.peerId, name: this.opts.name, presence: current(this.presence), appearOffline: current(this.presence).state === 'offline' },
+      self: { peerId: this.peerId, name: this.opts.name, presence: current(this.presence), appearOffline: current(this.presence).state === 'offline', ...(this.avatars.mine ? { avatar: this.avatars.mine } : {}) },
       friends: this.friendViews(),
       groups: this.groupViews(),
       invitations: this.invitations.all().map(invitationView),
@@ -572,6 +578,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
       belugaOf: (peerId) => this.theirBeluga.get(peerId),
       updateOf: (peerId) => this.mismatched.get(peerId),
       nameOf: (peerId) => this.nameOf(peerId),
+      avatarOf: (peerId) => this.avatarOf(peerId),
       readCount: (conversation) => this.reads[conversation] ?? 0,
     };
   }
@@ -582,6 +589,26 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   private nameOf(peerId: string): string {
     return this.friends.get(peerId)?.name ?? this.allowed.get(peerId)?.name ?? this.helloNames.get(peerId) ?? 'someone';
+  }
+
+  /** Someone's picture (yours too), once its bytes are here. */
+  private avatarOf(peerId: string): string | undefined {
+    const sha = peerId === this.peerId ? this.avatars.mine : this.avatars.theirs(peerId);
+    return sha && this.avatars.has(sha) ? sha : undefined;
+  }
+
+  /** Set your profile picture (undefined takes it away): everyone linked hears at once, and fetches it once. → its checksum. */
+  setAvatar(bytes: Uint8Array | undefined): string | undefined {
+    const sha = this.avatars.setMine(bytes);
+    if (!this.closed) for (const link of this.links.linked()) this.sendHello(link);
+    this.emit('change');
+    return sha;
+  }
+
+  /** A profile picture's bytes to show (yours, or one someone sent): → { mime, b64 }. */
+  avatar(sha: string): { mime: string; b64: string } | undefined {
+    const pic = this.avatars.read(sha);
+    return pic ? { mime: pic.mime, b64: pic.bytes.toString('base64') } : undefined;
   }
 
   private friendProfile(peerId: string): Profile {
@@ -663,7 +690,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
   }
 
   private sendHello(link: MeshLink): void {
-    link.send({ t: 'hello', proto: PROTO, name: this.opts.name, presence: shown(this.presence), app: this.opts.app ?? 'unknown', can: [...new Set([...MESH_FEATURES, ...this.offered])] });
+    link.send({ t: 'hello', proto: PROTO, name: this.opts.name, presence: shown(this.presence), app: this.opts.app ?? 'unknown', can: [...new Set([...MESH_FEATURES, ...this.offered])], ...(this.avatars.mine ? { avatar: this.avatars.mine } : {}) });
   }
 
   private linkUp(link: MeshLink): void {
@@ -693,7 +720,21 @@ export class Mesh extends EventEmitter<MeshEvents> {
         // The name they go by now (shown for people in your groups; friends keep the name you know them by).
         this.helloNames.set(from, msg.name);
         this.theirPresence.set(from, msg.presence);
+        this.avatars.announce(from, msg.avatar);
+        if (msg.avatar && !this.avatars.has(msg.avatar) && this.avatarAsked.get(from) !== msg.avatar) {
+          this.avatarAsked.set(from, msg.avatar);
+          link.send({ t: 'av_get', sha: msg.avatar });
+        }
         this.emit('change');
+        return;
+      case 'av_get': {
+        // Only your own picture, and only to people you're linked with (friends, people in your groups).
+        const pic = msg.sha === this.avatars.mine ? this.avatars.read(msg.sha) : undefined;
+        if (pic) link.send({ t: 'av_data', sha: msg.sha, d: pic.bytes.toString('base64') });
+        return;
+      }
+      case 'av_data':
+        if (this.avatars.receive(from, msg.sha, Buffer.from(msg.d, 'base64'))) this.emit('change');
         return;
       case 'presence':
         this.theirPresence.set(from, msg.presence);

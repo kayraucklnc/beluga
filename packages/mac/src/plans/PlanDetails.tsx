@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { type Criterion, criteria } from '@beluga/core/board/criteria.js';
 import type { Plan } from '@beluga/core/plans/model.js';
+import { taskProof } from '@beluga/core/board/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@beluga/core/plans/progress.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
@@ -185,7 +186,7 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
           </div>
         </section>
       ) : null}
-      {t.issue?.proof.length ? (
+      {t.issue && taskProof(t.issue).length ? (
         <section className={p.detailsSection} aria-label="Proof">
           <h4>Proof</h4>
           <ProofItems issue={t.issue} readOnly />

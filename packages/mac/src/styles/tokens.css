@@ -69,6 +69,8 @@
   /* The bigger work at work: a worktree in teal, a plan in pink (each with its own loader). */
   --worktree: #24877f;
   --plan: #b84d8a;
+  /* Epics (tasks with sub-tasks) on the board. */
+  --epic: #5a62cf;
   --code-bg: #f4f4f6;
   --term-bg: #fbfbfc;
 }
@@ -100,6 +102,7 @@
   --subagent: #ab93f3;
   --worktree: #66c6bb;
   --plan: #e892c3;
+  --epic: #a4aaf6;
   --code-bg: #242427;
   --term-bg: #17171a;
 }

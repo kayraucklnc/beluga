@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LABEL_COLORS, LABEL_ICONS } from '../core/board/labels.js';
 import { BRIEF_SECTIONS, ISSUE_STATUSES, PRIORITIES, SYNC_PROVIDERS } from '../core/board/model.js';
 
 /**
@@ -63,7 +64,7 @@ export const BOARD_API = {
   'board.comment': { args: z.tuple([ref, z.string().min(1).max(8000)]) },
   // What waits on what: blocked_by, blocks, related; false takes it back.
   'board.relate': { args: z.tuple([ref, z.enum(['blocked_by', 'blocks', 'related']), ref, z.boolean()]) },
-  'board.addProof': { args: z.tuple([ref, z.object({ kind: z.enum(['image', 'url', 'file', 'graph', 'text']), title: z.string().min(1).max(120), path: z.string().min(1).max(4096).optional(), url: z.string().url().max(2000).optional(), body: z.string().max(60_000).optional() })]) },
+  'board.addProof': { args: z.tuple([ref, z.object({ kind: z.enum(['image', 'url', 'file', 'graph', 'text']), title: z.string().min(1).max(120), path: z.string().min(1).max(4096).optional(), url: z.string().url().max(2000).optional(), body: z.string().max(60_000).optional(), context: z.boolean().optional() })]) },
   'board.removeProof': { args: z.tuple([ref, z.string().min(1).max(40)]) },
   'board.remove': { args: z.tuple([ref]) },
   // Start a worktree for a task (and open it); with claude, your Claude starts on it there → the workspace id.
@@ -79,6 +80,9 @@ export const BOARD_API = {
   'board.setAutoTasks': { args: z.tuple([z.boolean()]) },
   // What a project's task keys start with from now on ("BOB").
   'board.setPrefix': { args: z.tuple([projectId, z.string().min(2).max(6)]) },
+  // A label added to a project's set (its name, icon and color) → the label; and one of its own taken out.
+  'board.createLabel': { args: z.tuple([projectId, z.object({ name: z.string().min(1).max(32), icon: z.enum(LABEL_ICONS), color: z.enum(LABEL_COLORS), hint: z.string().max(80).optional() })]) },
+  'board.removeLabel': { args: z.tuple([projectId, z.string().min(1).max(32)]) },
   // Sync with another tracker (Linear), per project. Check a key → { ok: true, workspace?, teams } or { ok: false, error }.
   'board.syncTeams': { args: z.tuple([provider, trackerKey]) },
   // Link a project to a team (the key stays on this computer) and sync now → { ok: true, team } or { ok: false, error }.

@@ -14,7 +14,7 @@ import { usePrefs } from '../lib/prefs.js';
 import { Markdown } from '../chat/Markdown.js';
 import { plainText } from '../chat/message-menu.js';
 import { GroupAvatar, PersonAvatar } from './Avatars.js';
-import { ASK_EVENT, NetComposer, type Outgoing, QUOTE_EVENT } from './NetComposer.js';
+import { ASK_EVENT, NetComposer, type Outgoing, QUOTE_EVENT, useChannelTasks } from './NetComposer.js';
 import { MessageFiles } from './ChatFiles.js';
 import { ChatTabs } from './ChatTabs.js';
 import { addBlobs, addPaths } from './attachments.js';
@@ -454,7 +454,8 @@ function Conversation({ id }: { id: string }) {
     () => (friend ? [{ peerId: friend.peerId, name: friend.name }] : (group?.members.filter((m) => !m.self).map((m) => ({ peerId: m.peerId, name: m.name })) ?? [])),
     [friend?.peerId, friend?.name, group?.members],
   );
-  const world = useMemo(() => channelWorld(me, people), [me, people]);
+  const sharedTasks = useChannelTasks(people);
+  const world = useMemo(() => channelWorld(me, people, sharedTasks), [me, people, sharedTasks]);
   // Your Claude, asked here, waits for your OK to ask someone ("Ask Alice's Claude?"), or asked
   // someone whose card is in your DM with them (not in this channel): shown here until it's over.
   const tasks = useApp((st) => st.gateway.tasks);
@@ -495,6 +496,9 @@ function Conversation({ id }: { id: string }) {
   const lastMine = [...messages].reverse().find((m) => m.mine)?.id;
   // A friend's Claude answering you can offer to do it on their Mac (RequestOffer).
   const mineIds = new Set(messages.filter((m) => m.mine).map((m) => m.id));
+  // A request sent from a friend's Claude's answer (RequestOffer) has its card under that answer:
+  // its own message would be the same card again, so it isn't drawn twice.
+  const offered = new Set(Object.values(sentRequests()));
   const nameOf = (peerId: string): string => net.friends.find((f) => f.peerId === peerId)?.name ?? group?.members.find((m) => m.peerId === peerId)?.name ?? 'someone';
   const title = group ? channelName(net, group) : (friend?.name ?? '');
   const note = offlineNote(here);
@@ -520,11 +524,11 @@ function Conversation({ id }: { id: string }) {
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              {m.task ? <TaskMessage id={m.task.id} plain={plain} {...(me ? { me } : {})} /> : plain}
+              {m.task ? offered.has(m.task.id) ? null : <TaskMessage id={m.task.id} plain={plain} {...(me ? { me } : {})} /> : plain}
             </div>
           );
         })}
-        {asking.map((t) => (
+        {asking.filter((t) => !offered.has(t.id)).map((t) => (
           <TaskRow key={t.id} task={t} {...(me ? { me } : {})} />
         ))}
         <LiveRow id={id} {...(me ? { me: me.peerId } : {})} />

@@ -131,9 +131,11 @@ export const FsListBody = z.object({
   reqId: shortStr,
   share: shortStr,
   path: relPath,
+  /** Say when each file last changed (`mtime`): a friend's Scratch tab, newest first (BLG-259). */
+  times: z.boolean().optional(),
 });
 
-export const FsEntry = z.object({ name: z.string(), dir: z.boolean(), size: z.number() });
+export const FsEntry = z.object({ name: z.string(), dir: z.boolean(), size: z.number(), mtime: z.number().optional() });
 export type FsEntry = z.infer<typeof FsEntry>;
 
 export const FsListResultBody = z.object({

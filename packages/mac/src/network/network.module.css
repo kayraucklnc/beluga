@@ -77,8 +77,9 @@
   opacity: 0.55;
 }
 
-.stack {
+.avatarStack {
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
 }
 .stackItem {
@@ -1101,6 +1102,8 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  /* Up a pixel: centered on the name's letters, not its line box (which leaves room for descenders). */
+  margin-top: -1px;
 }
 .tabName {
   overflow: hidden;

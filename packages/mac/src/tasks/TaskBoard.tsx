@@ -1,17 +1,20 @@
 import { type PointerEvent as ReactPointerEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { animate, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from 'motion/react';
-import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from '@beluga/core/board/model.js';
+import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank, isEpic } from '@beluga/core/board/model.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
+import { Icon } from '../components/Icon.js';
 import { IconButton, cx } from '../components/ui.js';
+import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, EpicBar, IssueMeta, useIssueMenu } from './parts.js';
 import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
+import { taskDropProps } from './use-task-drop.js';
 import { useBoard, useOthers, useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
@@ -420,17 +423,25 @@ const Column = memo(function Column({
 
 /** What a card shows (on the board, and lifted under the pointer). */
 const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue; selfId: string; solo: boolean }) {
+  const epic = useApp((s) => isEpic(s.board, issue));
   return (
     <>
       <div className={t.cardTop}>
         <span className={t.key}>{issue.key}</span>
+        {epic ? (
+          <span className={t.epicTag}>
+            <Icon name="epic" size={11} />
+            Epic
+          </span>
+        ) : null}
         <span className={t.grow} />
         <WaitingMark issueId={issue.id} />
         <PriorityIcon priority={issue.priority} labelled />
         {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
       </div>
       <div className={cx(t.cardTitle, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</div>
-      <IssueMeta issue={issue} compact />
+      <IssueMeta issue={issue} compact progress={!epic} />
+      {epic ? <EpicBar issue={issue} /> : null}
     </>
   );
 });
@@ -456,13 +467,15 @@ const Card = memo(function Card({
   solo: boolean;
 }) {
   const { open } = useTaskActions();
+  const epic = useApp((s) => isEpic(s.board, issue));
   return (
     <ActionsContext items={() => menu(issue)}>
       <article
-        className={t.card}
+        className={cx(t.card, epic && t.cardEpic)}
         role="button"
         tabIndex={0}
         aria-label={`${issue.key} ${issue.title}`}
+        {...taskDropProps(issue)}
         onPointerDown={(e) => onPress(e, issue, index)}
         onClick={() => {
           // The click that ends a drag isn't a click.

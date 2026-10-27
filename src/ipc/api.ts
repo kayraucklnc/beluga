@@ -157,6 +157,14 @@ export const API = {
   'sharing.unshareFriend': args(FriendUnshare),
   // Leave a project a friend shared with you (owner, project id).
   'sharing.leaveProject': args(id, id),
+  // Make (or try again to make) your own copy of a project a friend shares with you whole (owner, project id).
+  'sharing.copyProject': args(id, id),
+  // A friend's shared worktree's scratch folder, for your Scratch tab (owner, worktree id).
+  'sharing.scratch': args(id, id),
+  // Scrolling back in a friend's shared worktree: its page of conversation before what you have (owner, worktree id).
+  'sharing.earlier': args(id, id),
+  // Say it in a friend's worktree but to your own Claude, in your copy of the project (owner, worktree id, message).
+  'sharing.runHere': args(id, id, z.string().min(1).max(100_000)),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),
@@ -265,8 +273,10 @@ export const API = {
   // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message, trouble? }.
   // https: push this once over HTTPS with gh's login (the SSH key isn't working; origin stays as it is).
   'workbench.quickPr': args(id, opt(z.object({ draft: opt(bool), https: opt(bool) }).strict())),
-  // A fix from a GitHub trouble card (BLG-213), then Create PR again ('pr', 'pr_draft') or nothing ('none') → { ok, message, trouble? }.
-  'workbench.gitFix': args(id, z.enum(['push_https', 'use_https', 'install_gh', 'gh_login', 'add_ssh_key', 'check_host', 'retry']), opt(z.enum(['pr', 'pr_draft', 'none']))),
+  // Merge into its base with no PR (BLG-265): commit what's left, land the branch on origin/<base> and push it there → { ok, message, trouble? }.
+  'workbench.mergeToBase': args(id, opt(z.object({ https: opt(bool) }).strict())),
+  // A fix from a GitHub trouble card (BLG-213), then Create PR again ('pr', 'pr_draft'), Merge into its base ('merge_base') or nothing ('none') → { ok, message, trouble? }.
+  'workbench.gitFix': args(id, z.enum(['push_https', 'use_https', 'install_gh', 'gh_login', 'add_ssh_key', 'check_host', 'retry']), opt(z.enum(['pr', 'pr_draft', 'merge_base', 'none']))),
   'workbench.fixChecks': args(id),
   'workbench.resolvePrConflicts': args(id),
   'workbench.continueAfterMerge': args(id),
