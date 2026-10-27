@@ -40,6 +40,7 @@ import {
   prefixFor,
   rankBetween,
   renamedActors,
+  worktreeOf,
 } from './model.js';
 
 /**
@@ -154,11 +155,23 @@ const statusText = (from: string, to: string): string => `moved this from ${from
 const STAGE: Readonly<Record<IssueStatus, number>> = { backlog: 0, todo: 1, in_progress: 2, in_review: 3, in_plan: 3, done: 4, canceled: -1 };
 
 /**
+ * The parent's worktree or pull request is its own, not the one its sub-tasks are done in: one
+ * worktree carrying the parent and its sub-tasks leaves it nothing of its own to move it along.
+ */
+function hasOwnWork(parent: Issue, kids: readonly Issue[]): boolean {
+  const where = worktreeOf(parent);
+  if (where) return !kids.some((k) => worktreeOf(k) === where);
+  return parent.pr !== undefined && !kids.some((k) => k.pr?.url === parent.pr!.url);
+}
+
+/**
  * Where a parent goes when its sub-tasks (Canceled ones left out) move: Done when they're all
  * Done, In Review when they're all in review or done, In Progress once one is under way; nowhere
  * while none has started. A parent with work of its own (a worktree, a pull request, carried by
- * one) follows that to review and Done, so its sub-tasks only take it as far as In Progress.
+ * one, not the one its sub-tasks share) follows that to review and Done, so its sub-tasks only
+ * take it as far as In Progress.
  */
+
 function rollUpTo(parent: Issue, kids: readonly Issue[]): { readonly to: IssueStatus; readonly why: string } | undefined {
   if (!kids.length) return undefined;
   const all = kids.length === 1 ? 'its sub-task is' : `all ${kids.length} sub-tasks are`;
@@ -170,8 +183,7 @@ function rollUpTo(parent: Issue, kids: readonly Issue[]): { readonly to: IssueSt
         ? { to: 'in_progress', why: STAGE[parent.status] > STAGE.in_progress ? 'a sub-task is open again' : 'a sub-task is under way' }
         : undefined;
   if (!next || next.to === parent.status) return undefined;
-  const ownWork = parent.worktrees.length > 0 || parent.pr !== undefined || parent.carriedBy !== undefined;
-  if (ownWork) {
+  if (hasOwnWork(parent, kids)) {
     if (STAGE[next.to] > STAGE.in_progress) next = { to: 'in_progress', why: `${all} ${next.to === 'done' ? 'done' : 'in review or done'}` };
     if (STAGE[next.to] <= STAGE[parent.status]) return undefined;
   }
