@@ -24,7 +24,7 @@ const TIMES = [
 ] as const;
 
 /** A slider with a word at each end, its track filled in the fire's colours (and, `shown`, its value at the end). */
-function Dial({ label, low, high, value, min = 0, max = 1, step = 0.05, colors, shown, onChange }: { label: string; low: string; high: string; value: number; min?: number; max?: number; step?: number; colors: readonly string[]; shown?: string; onChange: (v: number) => void }) {
+export function Dial({ label, low, high, value, min = 0, max = 1, step = 0.05, colors, shown, onChange }: { label: string; low: string; high: string; value: number; min?: number; max?: number; step?: number; colors: readonly string[]; shown?: string; onChange: (v: number) => void }) {
   return (
     <div className={cx(f.dial, shown !== undefined && f.shown)}>
       <span className={f.dialLabel}>{label}</span>

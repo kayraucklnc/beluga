@@ -12,6 +12,7 @@ mod privacy;
 mod rename;
 mod requests;
 mod sounds;
+mod spout;
 mod update_rules;
 mod updater;
 
@@ -79,16 +80,27 @@ fn set_menu_state(
 }
 
 /// What the menu-bar icon and the Dock icon say: how many things are new for you (unread
-/// notifications and what waits on you), and how many Claudes are working.
+/// notifications and what waits on you), and how many Claudes are working. `title` is what the
+/// menu bar shows beside the whale (Settings › Menu Bar picks it; "" shows nothing); without
+/// one, the count of what's new.
 #[tauri::command]
-fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32, unread: Option<u32>) {
+fn set_tray_status(
+    app: tauri::AppHandle,
+    waiting: u32,
+    working: u32,
+    unread: Option<u32>,
+    title: Option<String>,
+) {
     let unread = unread.unwrap_or(waiting);
     if let Some(tray) = app.tray_by_id("beluga") {
-        let _ = tray.set_title(if unread > 0 {
-            Some(unread.to_string())
-        } else {
-            None
+        let title = title.unwrap_or_else(|| {
+            if unread > 0 {
+                unread.to_string()
+            } else {
+                String::new()
+            }
         });
+        let _ = tray.set_title((!title.is_empty()).then_some(title));
         let _ = tray.set_tooltip(Some(tray_tip(waiting, working, unread)));
     }
     if let Some(window) = app.get_webview_window("main") {
@@ -220,6 +232,8 @@ pub fn run() {
             set_tray_status,
             set_tray_presence,
             requests::set_tray_requests,
+            spout::set_tray_spout,
+            spout::play_tray_spout,
             popup::set_request_popup,
             popup::request_popup_state,
             popup::request_popup_resize,
@@ -265,6 +279,7 @@ pub fn run() {
                 }
             }
             menu::tray(&handle)?;
+            spout::start(&handle);
             // Banners (and their sound) even while Beluga is in front.
             sounds::present_in_front();
             // A friend's request on a notification: Review… / Approve / Always Allow / Decline.
