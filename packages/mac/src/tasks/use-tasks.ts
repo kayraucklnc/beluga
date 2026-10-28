@@ -17,31 +17,22 @@ export function useSelf(): Person {
   return useMemo(() => ({ id, name }), [id, name]);
 }
 
-/** People you know: in this room, and friends on the network. */
-export function usePeople(): readonly Person[] {
-  const peers = useApp((s) => s.peers);
-  const friends = useApp((s) => s.network.friends);
-  return useMemo(() => {
-    const all = new Map<string, Person>();
-    for (const p of peers) if (!p.guest) all.set(p.peerId, { id: p.peerId, name: p.name });
-    for (const f of friends) all.set(f.peerId, { id: f.peerId, name: f.name });
-    return [...all.values()];
-  }, [peers, friends]);
+/** Who a project's tasks can be for besides you: its teammates (BLG-299), never any friend or room peer. */
+export function usePeople(projectId: string | undefined): readonly Person[] {
+  const mates = useApp((s) => (projectId ? s.team.teams[projectId]?.mates : undefined));
+  return useMemo(() => (mates ?? []).map((m) => ({ id: m.peerId, name: m.name })), [mates]);
 }
 
-/** How many other people you work with: in this room (not guests) and your friends. */
-export function useOthers(): number {
-  const selfId = useApp((s) => s.selfId);
-  const peers = useApp((s) => s.peers.filter((p) => p.peerId !== selfId && !p.guest).length);
-  const friends = useApp((s) => s.network.friends.length);
-  return peers + friends;
+/** How many teammates you have on a project. */
+export function useOthers(projectId: string | undefined): number {
+  return useApp((s) => (projectId ? (s.team.teams[projectId]?.mates.length ?? 0) : 0));
 }
 
 /** Whether you're alone on this project (then who a task is for isn't shown: see isSolo). */
 export function useSolo(projectId: string | undefined): boolean {
   const board = useBoard();
   const selfId = useSelfId();
-  const others = useOthers();
+  const others = useOthers(projectId);
   return isSolo(board, projectId, selfId, others);
 }
 

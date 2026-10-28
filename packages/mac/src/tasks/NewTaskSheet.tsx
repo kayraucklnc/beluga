@@ -23,7 +23,6 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const allProjects = useApp((s) => s.projects);
   const projects = useMemo(() => allProjects.filter((p) => p.root && !p.error), [allProjects]);
   const self = useSelf();
-  const people = usePeople();
   const { client } = useBeluga();
   const { api, act, open } = useTaskActions();
   const parentIssue = parent ? issueById(board, parent) : undefined;
@@ -36,6 +35,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const [project, setProject] = useState(firstProject);
   const column: IssueStatus = status ?? parentIssue?.status ?? (prefs.scope === 'backlog' ? 'backlog' : 'todo');
   const [priority, setPriority] = useState<Priority>('none');
+  const people = usePeople(project);
   const choices = assigneeChoices(self, people);
   const [assignee, setAssignee] = useState('');
   const [start, setStart] = useState(false);

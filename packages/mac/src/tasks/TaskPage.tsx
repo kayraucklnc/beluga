@@ -427,7 +427,7 @@ function Properties({ issue }: { issue: Issue }) {
         </PriorityPicker>
       </Prop>
       {solo ? null : <Prop label="Assignee">
-        <AssigneePicker value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
+        <AssigneePicker projectId={issue.projectId} value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
           <button type="button" className={t.propValue}>
             <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />
             {assigneeName(issue.assignee, selfId)}

@@ -17,6 +17,10 @@ import r from '../dialogs/native/room.module.css';
 import { ConversationDetails } from '../network/ConversationInspector.js';
 import { StatusIcon } from '../tasks/marks.js';
 import { ClaudeCodeInspector } from '../claude-code/Live.js';
+import { teammatesOf } from '@beluga/core/team/model.js';
+import { shownState } from '../network/net-model.js';
+import { openDm } from '../network/use-net.js';
+import { sameDeep } from '../lib/stable.js';
 import s from './Inspector.module.css';
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
@@ -122,6 +126,37 @@ function WorkspaceTasks({ id, projectId }: { id: string; projectId: string }) {
   );
 }
 
+/** The people you work on this project with (BLG-299): each opens your chat with them. */
+function ProjectTeam({ projectId }: { projectId: string }) {
+  const { client } = useBeluga();
+  const enabled = useApp((st) => st.team.enabled);
+  const mates = useApp((st) => teammatesOf(st.team, projectId), sameDeep);
+  const online = useApp((st) => mates.filter((m) => st.network.friends.some((f) => f.peerId === m.peerId && shownState(f) === 'online')).map((m) => m.peerId), sameDeep);
+  if (!enabled && !mates.length) return null;
+  return (
+    <Panel title={mates.length > 1 ? `Team · ${mates.length}` : 'Team'}>
+      {mates.length ? (
+        mates.map((m) => (
+          <Tip key={m.peerId} label={`Your chat with ${m.name}`}>
+            <button type="button" className={`${s.person} ${r.personRow}`} onClick={() => openDm(client, m.peerId)}>
+              <Avatar name={m.name} id={m.peerId} size={18} />
+              <span className={s.personName}>{m.name}</span>
+              {online.includes(m.peerId) ? (
+                <span className={s.dim}>
+                  <Dot tone="ok" /> online
+                </span>
+              ) : null}
+              <Icon name="chat" size={12} />
+            </button>
+          </Tip>
+        ))
+      ) : (
+        <div className={s.dim}>Only you. Team up with a friend who has this repository to share its tasks.</div>
+      )}
+    </Panel>
+  );
+}
+
 function WorkspaceDetails({ id }: { id: string }) {
   const api = useApi();
   const actions = useActions();
@@ -196,6 +231,7 @@ function WorkspaceDetails({ id }: { id: string }) {
           </div>
         </Panel>
       ) : null}
+      <ProjectTeam projectId={ws.projectId} />
       <Panel title="Working here" action={<Button size="small" variant="quiet" icon="plus" onClick={() => actions.run({ type: 'ws', id: ws.id, action: 'share' })} />}>
         {members.length ? (
           members.map(([peerId, role]) => {
@@ -305,7 +341,16 @@ export function Inspector() {
       <div className={s.scroll}>
         <NeedsYou />
         <ClaudeCodeInspector />
-        {view.kind === 'workspace' ? <WorkspaceDetails id={view.id} /> : view.kind === 'conversation' ? <ConversationDetails id={view.id} /> : <Room />}
+        {view.kind === 'workspace' ? (
+          <WorkspaceDetails id={view.id} />
+        ) : view.kind === 'conversation' ? (
+          <ConversationDetails id={view.id} />
+        ) : (
+          <>
+            {view.kind === 'project' ? <ProjectTeam projectId={view.id} /> : null}
+            <Room />
+          </>
+        )}
         <Inbox />
       </div>
     </aside>

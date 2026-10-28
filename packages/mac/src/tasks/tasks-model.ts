@@ -105,8 +105,7 @@ export function projectToShow(board: BoardState, projects: ReadonlyArray<{ reado
 }
 
 /**
- * Whether you work alone on a project: nobody else around (no one in the room, no friends) and no
- * task there for anyone but you. Then who a task is for isn't shown at all.
+ * Whether you work alone on a project: no teammates on it and no task there for anyone but you. Then who a task is for isn't shown at all.
  */
 export function isSolo(board: BoardState, projectId: string | undefined, selfId: string, others: number): boolean {
   if (others > 0) return false;
@@ -127,9 +126,13 @@ export interface Person {
   readonly name: string;
 }
 
-/** Who a task can be for: you, then people you know. Never a Claude (BLG-278): who works on it shows on the card. */
-export function assigneeChoices(self: Person, people: readonly Person[]): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
-  const others = people.filter((p) => p.id !== self.id).sort((a, b) => a.name.localeCompare(b.name));
+/**
+ * Who a task can be for: you, then the project's teammates (BLG-299). Never a Claude (BLG-278): who
+ * works on it shows on the card. Someone it's already for stays in the list, so it still reads right.
+ */
+export function assigneeChoices(self: Person, people: readonly Person[], current?: Assignee): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
+  const all = current && current.id !== self.id && !people.some((p) => p.id === current.id) ? [...people, { id: current.id, name: current.name }] : people;
+  const others = all.filter((p) => p.id !== self.id).sort((a, b) => a.name.localeCompare(b.name));
   return [
     { key: `person:${self.id}`, label: 'You', assignee: { kind: 'person', id: self.id, name: self.name } },
     ...others.map((p) => ({ key: `person:${p.id}`, label: p.name, assignee: { kind: 'person', id: p.id, name: p.name } as Assignee })),

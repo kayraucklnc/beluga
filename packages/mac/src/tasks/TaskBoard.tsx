@@ -15,7 +15,7 @@ import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, useIssueMenu } from '.
 import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
-import { useBoard, useOthers, useSelf, useSelfId, useTaskActions } from './use-tasks.js';
+import { useBoard, useSelf, useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -103,8 +103,8 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
   // What every card needs from the store, read here once: a card itself subscribes to nothing, so a change elsewhere doesn't render them all.
   const board = useBoard();
   const selfId = useSelfId();
-  const others = useOthers();
-  const soloIn = useMemo(() => [...new Set(issues.map((i) => i.projectId))].filter((p) => isSolo(board, p, selfId, others)).sort().join('\n'), [board, issues, selfId, others]);
+  const teams = useApp((s) => s.team.teams);
+  const soloIn = useMemo(() => [...new Set(issues.map((i) => i.projectId))].filter((p) => isSolo(board, p, selfId, teams[p]?.mates.length ?? 0)).sort().join('\n'), [board, issues, selfId, teams]);
   const issueMenu = useIssueMenu();
   const latest = useRef({ columns, statuses, api, act, issueMenu });
   latest.current = { columns, statuses, api, act, issueMenu };
