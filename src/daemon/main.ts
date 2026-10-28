@@ -128,6 +128,9 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
 /** Run the daemon as this process: signals stop it, problems are logged and shown, never fatal. */
 export async function runDaemon(config: Config, opts: DaemonOptions): Promise<void> {
   const log = (line: string): void => void process.stderr.write(`${new Date().toISOString()} ${line}\n`);
+  // Once the terminal or pipe it was started from is gone (EIO, EPIPE), every write fails: drop those lines.
+  // Unheard, each failed write was an uncaught error whose log line failed again, spinning a core (BLG-365).
+  process.stderr.on('error', () => {});
   const daemon = await startDaemon(config, { ...opts, log });
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(signal, () => void daemon.stop(`Got ${signal}`));
   // The Mac app's word that the Mac is about to sleep (BLG-277, src-tauri/src/power.rs): mail the

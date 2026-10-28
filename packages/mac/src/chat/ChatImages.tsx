@@ -56,7 +56,7 @@ const FIT_PAD = 24;
  */
 function Full({ image }: { image: ChatImage }) {
   const api = useApi();
-  const state = useImage(api, image);
+  const state = useImage(api, image, 'full');
   // A new picture is decoded before it replaces the one on screen.
   const pic = useDecoded(state.status === 'ready' ? state.url : undefined);
   const frame = useRef<HTMLDivElement>(null);

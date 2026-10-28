@@ -206,7 +206,7 @@ function Thumb({ src, local }: { src: string; local: boolean }) {
   useEffect(() => {
     if (web || !local || !(src.startsWith('/') || src.startsWith('~/'))) return;
     let alive = true;
-    loadImage(client.api, { href: `local:${src}`, owner: '', file: '', local: src }).then(
+    loadImage(client.api, { href: `local:${src}`, owner: '', file: '', local: src }, 'thumb').then(
       (u) => alive && setUrl(u),
       () => undefined,
     );

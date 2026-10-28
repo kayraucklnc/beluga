@@ -64,6 +64,9 @@ const easeInOut = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t 
 
 /** Blobs of heat the shader adds up (the most it takes). */
 const MAX_BLOBS = 96;
+/** Between frames while nothing's typed (30 a second), and while another app's window is in front (10). */
+const IDLE_FRAME_MS = 1000 / 30;
+const AWAY_FRAME_MS = 1000 / 10;
 /**
  * Pixel art: one pixel of the fire is this many CSS pixels. The fire is drawn at that size (one
  * shader run per pixel of it, a sixteenth of the screen's) and scaled up crisp by the canvas, so
@@ -311,6 +314,10 @@ export class MaxFire {
   private bits: Bit[] = [];
   private raf = 0;
   private last = 0;
+  /** The last frame drawn showed nothing (so the next empty one needn't be drawn). */
+  private drewOut = false;
+  /** Confetti is on the canvas (so it needs clearing). */
+  private confettiShown = false;
   private time = 0;
   /** The fire canvas's pixels per CSS pixel: the screen's, or one per CELL for pixel art. */
   private fireScale = 1;
@@ -427,11 +434,20 @@ export class MaxFire {
     if (this.raf) return;
     this.last = performance.now();
     const tick = (now: number): void => {
-      const dt = Math.min(3, (now - this.last) / 16.67);
+      this.raf = requestAnimationFrame(tick);
+      // Every frame (up to 120 a second) only while you type or confetti flies; a fire left
+      // burning is drawn at 30, and at 10 behind another app's window (it held a core, BLG-365).
+      const lively = this.bits.length > 0 || this.time - this.typedAt < 1.5;
+      const every = lively ? 0 : document.hasFocus() ? IDLE_FRAME_MS : AWAY_FRAME_MS;
+      if (now - this.last < every - 2) return;
+      const dt = Math.min(6, (now - this.last) / 16.67);
       this.last = now;
       this.step(dt);
+      // Nothing burning and nothing flying (out, or only while typing): the last frame stays as it is.
+      const out = this.amount < 0.004 && !this.blobs.length && !this.bits.length;
+      if (out && this.drewOut) return;
+      this.drewOut = out;
       this.draw();
-      this.raf = requestAnimationFrame(tick);
     };
     this.raf = requestAnimationFrame(tick);
   }
@@ -439,6 +455,8 @@ export class MaxFire {
   stop(): void {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.drewOut = false;
+    this.confettiShown = false;
     this.front.clearRect(0, 0, this.width, this.height);
     this.flame?.draw({ ...this.drawn(), rim: 0, blobs: [] });
   }
@@ -557,6 +575,8 @@ export class MaxFire {
 
   private drawConfetti(pixel: boolean): void {
     const g = this.front;
+    if (!this.bits.length && !this.confettiShown) return;
+    this.confettiShown = this.bits.length > 0;
     g.clearRect(0, 0, this.width, this.height);
     for (const b of this.bits) {
       g.globalAlpha = Math.min(1, b.life * 2);

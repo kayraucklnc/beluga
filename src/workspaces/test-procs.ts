@@ -39,7 +39,7 @@ export interface ProcRow {
 }
 
 /** A test runner, judged on the command with the worktree's own path taken out (it may say "playwright"). */
-const RUNNER = /(^|[\s/])(vitest|playwright|jest|e2e-lock\.mjs|chrome-headless-shell)(\.[cm]?js)?(\s|$)|node_modules\/(@playwright\/|playwright(-core)?\/|vitest\/)|ms-playwright|cli\.tsx daemon --keep-alive demo/;
+const RUNNER = /(^|[\s/])(vitest|playwright|jest|e2e-lock\.mjs|chrome-headless-shell)(\.[cm]?js)?(\s|$)|node_modules\/(@playwright\/|playwright(-core)?\/|vitest\/)|ms-playwright|cli\.[jt]sx? daemon (--keep-alive )?demo(\s|$)/;
 /** A dev server installed there: stopped when its worktree goes away, whoever started it. */
 const SERVER = /(^|[\s/])vite(\.[cm]?js)?(\s|$)/;
 /** A shell Claude Code's Bash tool runs a command in (still there: the command runs in the background). */
