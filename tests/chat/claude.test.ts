@@ -205,6 +205,8 @@ describe('what needs the owner’s Mac', () => {
     const friend = systemPrompt({ owner: 'rstagi', where: 'a direct message with kay', people: ['rstagi', 'kay'], asker: 'kay', askedAll: false });
     expect(friend).toContain('[[request needs=');
     expect(friend).toContain("rstagi's call");
+    // Beluga sends it as soon as it answers (BLG-353): it doesn't ask kay to confirm first.
+    expect(friend).toContain("kay already asked you, so don't ask them to confirm");
     const own = systemPrompt({ owner: 'kay', where: 'a direct message with rstagi', people: ['kay', 'rstagi'], asker: 'kay', askedAll: false });
     expect(own).not.toContain('[[request');
     expect(own).toContain('Your Mac');
@@ -212,7 +214,7 @@ describe('what needs the owner’s Mac', () => {
 
   it('takes the request line off the answer, with the needs it knows', () => {
     expect(parseRequest('Sure, I can grab it as a request.\n[[request needs=files, screen, wings: Send me your desktop wallpaper]]')).toEqual({ text: 'Sure, I can grab it as a request.', request: { ask: 'Send me your desktop wallpaper', needs: ['files', 'screen'] } });
-    expect(parseRequest('[[request: Run the tests]]')).toEqual({ text: 'I can do that as a request on my owner’s Mac.', request: { ask: 'Run the tests' } });
+    expect(parseRequest('[[request: Run the tests]]')).toEqual({ text: 'Sending it to my owner’s Mac as a request.', request: { ask: 'Run the tests' } });
     // Only at the end, and only that shape.
     expect(parseRequest('Use [[request: x]] like this, then go on.')).toEqual({ text: 'Use [[request: x]] like this, then go on.' });
   });

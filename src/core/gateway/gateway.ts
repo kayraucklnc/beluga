@@ -91,6 +91,8 @@ export interface AskInput {
   readonly by: 'agent' | 'person';
   /** The conversation your Claude asks from (its answer continues there). */
   readonly conversation?: string;
+  /** The friend's Claude's chat answer this request comes from (its message id). */
+  readonly answer?: string;
 }
 
 /** Someone your Claude could ask, as who_can shows them. */
@@ -359,6 +361,7 @@ export class Gateway {
       ...(input.timeoutSec ? { timeoutSec: input.timeoutSec } : {}),
       ...(input.path ? { path: input.path.trim() } : {}),
       ...(input.conversation ? { conversation: input.conversation } : {}),
+      ...(input.answer ? { answer: input.answer } : {}),
     });
     if (confirm) {
       this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your Claude wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s Claude'}`, body: oneLine(input.summary?.trim() || ask, 140), need: `confirm:${task.id}`, ...(input.conversation ? { channel: input.conversation } : {}) });
