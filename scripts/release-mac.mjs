@@ -12,6 +12,8 @@
 //   --skip-build       reuse what the last `npm run app:build` made
 //   --dry-run          build and write latest.json, but don't touch GitHub
 //   --force            release even if GitHub's latest release isn't older
+//   --ad-hoc           sign the app ad hoc instead of with the "Beluga Self-Signed" certificate
+//                      ($APPLE_SIGNING_IDENTITY picks another); updates then lose Screen Recording
 //   --key <file>       the updater's private key (default ~/.tauri/beluga-updater.key, else
 //                      ~/.tauri/klaud-updater.key from before the rename, or $TAURI_SIGNING_PRIVATE_KEY); its password, if any, from
 //                      $TAURI_SIGNING_PRIVATE_KEY_PASSWORD or <key>.password
@@ -98,6 +100,25 @@ function signingEnv(opts) {
   return { TAURI_SIGNING_PRIVATE_KEY: readFileSync(key, 'utf8').trim(), TAURI_SIGNING_PRIVATE_KEY_PASSWORD: password };
 }
 
+/** The certificate releases are signed with when $APPLE_SIGNING_IDENTITY doesn't name another. */
+export const CODE_SIGN_IDENTITY = 'Beluga Self-Signed';
+
+/**
+ * Whether a designated requirement (`codesign -d -r-`) pins one exact build. An ad-hoc signature's
+ * does (`cdhash H"…"`), so macOS forgets Screen Recording and the other privacy grants on every
+ * update; a certificate's names the identifier and the certificate, which stay the same.
+ */
+export const pinsOneBuild = (requirement) => /designated\s*=>\s*cdhash\b/.test(requirement);
+
+/** Sign the app with the same certificate every release, so the permissions people gave it survive updates. */
+function codeSignEnv(opts) {
+  if (process.env.APPLE_SIGNING_IDENTITY || opts.flags.has('ad-hoc')) return {};
+  if (!read('security', ['find-identity', '-v', '-p', 'codesigning']).includes(`"${CODE_SIGN_IDENTITY}"`)) {
+    throw new Error(`No "${CODE_SIGN_IDENTITY}" code-signing certificate in the keychain. See docs/updates.md, or pass --ad-hoc (every update then loses its Screen Recording permission).`);
+  }
+  return { APPLE_SIGNING_IDENTITY: CODE_SIGN_IDENTITY };
+}
+
 /** The version GitHub's latest release offers, if there is one with a latest.json. */
 function publishedVersion() {
   try {
@@ -133,7 +154,7 @@ function main() {
   const arch = archOf();
   if (!opts.flags.has('skip-build')) {
     console.log(`Building ${APP} ${version} (${arch}) with update signing…`);
-    run('npm', ['run', 'app:build'], { cwd: mac, env: { ...process.env, ...signingEnv(opts) } });
+    run('npm', ['run', 'app:build'], { cwd: mac, env: { ...process.env, ...signingEnv(opts), ...codeSignEnv(opts) } });
   }
 
   // The build names its files for tauri.conf.json's productName; the release names them for the app.
@@ -147,6 +168,12 @@ function main() {
     read('codesign', ['--verify', '--deep', '--strict', path.join(bundle, `macos/${built}.app`)]);
   } catch (e) {
     throw new Error(`${built}.app's code signature doesn't verify, so downloaded copies would say "damaged" (signingIdentity in tauri.conf.json):\n${e.stderr ?? e.message}`);
+  }
+  if (!opts.flags.has('ad-hoc')) {
+    const requirement = execFileSync('codesign', ['-d', '-r-', path.join(bundle, `macos/${built}.app`)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    if (pinsOneBuild(requirement.toString())) {
+      throw new Error(`${built}.app is ad-hoc signed, so updating to it would take away Screen Recording and the other permissions. Build it again without --skip-build (it signs with "${CODE_SIGN_IDENTITY}"), or pass --ad-hoc.`);
+    }
   }
 
   const out = path.join(bundle, 'release');

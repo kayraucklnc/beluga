@@ -9,11 +9,18 @@ interface ReleaseScript {
   dmgAsset(version: string, arch: string): string;
   assetUrl(tag: string, name: string): string;
   latestJson(o: { version: string; notes: string; pubDate: string; signature: string; url: string; arch: string }): unknown;
+  pinsOneBuild(requirement: string): boolean;
 }
 
 const script = (): Promise<ReleaseScript> => import('../scripts/release-mac.mjs' as string) as Promise<ReleaseScript>;
 
 describe('release-mac', () => {
+  it('tells an ad-hoc signature, which macOS forgets permissions for on every update, from a certificate', async () => {
+    const { pinsOneBuild } = await script();
+    expect(pinsOneBuild('# designated => cdhash H"819ee528739f948f8ecc64669f1150731f09e605"\n')).toBe(true);
+    expect(pinsOneBuild('designated => identifier "io.github.kayraucklnc.beluga" and certificate leaf = H"05e38bc1"\n')).toBe(false);
+  });
+
   it('only releases a version newer than what GitHub offers', async () => {
     const { isNewer } = await script();
     expect(isNewer('0.4.1', '0.4.0')).toBe(true);
