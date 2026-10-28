@@ -7,8 +7,8 @@ import s from './showcase.module.css';
 
 /**
  * What Sentinel can do, shown before it's explained (BLG-334): a few scenes drawn with Beluga's
- * own parts and made-up numbers (a board filling in, a note on your phone, a failing test fixed, a
- * pull request read, a site that went down), one line each, and Set This Up, which hands its words
+ * own parts and made-up numbers (a site down at night fixed by morning, a board filling in, a
+ * failing test fixed, a pull request read), one line each, and Set This Up, which hands its words
  * to Ask Sentinel. It moves on by itself every few seconds, holds while you point at it, and goes
  * by the dots or the arrow keys; with reduced motion it stays where you put it.
  */
@@ -29,6 +29,29 @@ const word = (label: string, value: string, change: string, vs: string, trend: n
 
 export const SLIDES: readonly Slide[] = [
   {
+    id: 'sleep',
+    icon: 'pulse',
+    line: 'Your site goes down at 3 a.m.; by morning a fix waits for your merge',
+    prompt: 'Watch my website every 5 minutes. When it stops answering, have Claude find out why on its own, open a task for it, fix it in a new worktree and open a pull request for me to merge, and tell me when it’s back.',
+    scene: () => (
+      <div className={s.sleep}>
+        <div className={s.uptimeLine}>
+          <span className={s.down} />
+          3:12 at night · example.com stopped answering
+        </div>
+        <div className={s.flow} data-four="">
+          <Stage icon="pulse" tone="rose" title="Spotted it" sub="no answer for 5 min" n={1} />
+          <Icon name="arrowRight" size={12} className={s.flowArrow} />
+          <Stage icon="claude" tone="peach" title="Claude looked" sub="the 3:05 deploy" n={2} />
+          <Icon name="arrowRight" size={12} className={s.flowArrow} />
+          <Stage icon="task" tone="sky" title="Opened a task" sub="roll back the cache" n={3} />
+          <Icon name="arrowRight" size={12} className={s.flowArrow} />
+          <Stage icon="merge" tone="mint" title="Ready to merge" sub="pull request #63" n={4} />
+        </div>
+      </div>
+    ),
+  },
+  {
     id: 'board',
     icon: 'gauge',
     line: 'Your numbers on one board, fresh every morning',
@@ -38,28 +61,6 @@ export const SLIDES: readonly Slide[] = [
         <NumberTile className={s.boardTile} w={word('Revenue', '$3,412', '+$232 (+7.3%)', 'vs yesterday', [2.6, 2.9, 2.7, 3.0, 3.1, 2.9, 3.2, 3.4])} />
         <NumberTile className={s.boardTile} w={word('Sign-ups', '35', '+6 (+21%)', 'vs yesterday', [18, 22, 19, 25, 31, 24, 29, 35])} />
         <NumberTile className={s.boardTile} w={word('Site speed', '372', '−30 ms', 'vs last week', [420, 410, 610, 450, 400, 390, 380, 372], 'good', 'ms')} />
-      </div>
-    ),
-  },
-  {
-    id: 'phone',
-    icon: 'phone',
-    line: 'A note on your phone with what needs you first',
-    prompt: 'Every weekday morning, tell me on my phone what changed in my projects and what needs me first.',
-    scene: () => (
-      <div className={s.phone}>
-        <div className={s.phoneTime}>7:00</div>
-        <div className={s.phoneDate}>Tuesday, October 28</div>
-        <div className={s.note}>
-          <span className={s.noteIcon}>
-            <Icon name="sentinel" size={13} />
-          </span>
-          <span className={s.noteText}>
-            <strong>Morning brief</strong>
-            <span>3 commits landed, 1 review waits on you, the tests pass</span>
-          </span>
-          <span className={s.noteWhen}>now</span>
-        </div>
       </div>
     ),
   },
@@ -100,28 +101,9 @@ export const SLIDES: readonly Slide[] = [
       </div>
     ),
   },
-  {
-    id: 'uptime',
-    icon: 'pulse',
-    line: 'Know the minute your site stops answering',
-    prompt: 'Check my website every 5 minutes and tell me on my phone the moment it stops answering, and when it’s back.',
-    scene: () => (
-      <div className={s.uptime}>
-        <div className={s.bars} aria-hidden="true">
-          {Array.from({ length: 36 }, (_, i) => (
-            <i key={i} data-down={i === 27 || i === 28 ? '' : undefined} style={{ animationDelay: `${i * 18}ms` }} />
-          ))}
-        </div>
-        <div className={s.uptimeLine}>
-          <span className={s.down} />
-          example.com stopped answering at 14:02 · back at 14:06
-        </div>
-      </div>
-    ),
-  },
 ];
 
-function Stage({ icon, tone, title, sub, n }: { icon: IconName; tone: 'rose' | 'peach' | 'mint'; title: string; sub: string; n: number }) {
+function Stage({ icon, tone, title, sub, n }: { icon: IconName; tone: 'rose' | 'peach' | 'sky' | 'mint'; title: string; sub: string; n: number }) {
   return (
     <div className={s.stage} data-tone={tone} style={{ animationDelay: `${n * 420}ms` }}>
       <span className={s.stageIcon}>

@@ -253,10 +253,13 @@ test('with nothing set up: what it can do as scenes, the box, ideas, and every r
   await expect(first).toContainText('Let Claude keep an eye on things');
   // Shown before it's explained: a few scenes, one line each, and the dots to go between them.
   const show = first.getByRole('region', { name: 'What Sentinel can do' });
-  await expect(show.locator('[data-slide="board"] [data-value]').first()).toHaveText('$3,412');
+  await expect(show.locator('[data-slide="sleep"]')).toContainText('Ready to merge');
+  await page.waitForTimeout(2200);
   await shoot(page, 'first');
   const dots = show.getByRole('tab');
-  await expect(dots).toHaveCount(5);
+  await expect(dots).toHaveCount(4);
+  // The night shift: down at 3 a.m., a task and a pull request ready by morning.
+  await expect(show.locator('[data-slide="sleep"]')).toContainText('Opened a task');
   await dots.nth(2).click();
   await expect(show.locator('[data-slide="fix"]')).toContainText('Ready to merge');
   await page.waitForTimeout(1400);

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Activity, Bell, Gauge, GitMerge, GitPullRequest, type LucideIcon, Sparkles, TriangleAlert, Wrench } from 'lucide-react-native';
+import { Activity, Bot, Gauge, GitMerge, GitPullRequest, type LucideIcon, ListTodo, Sparkles, TriangleAlert, Wrench } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -12,8 +12,8 @@ import { Button, Card, IconBadge, T, type Tone, toneBg, toneInk } from './ui';
 
 /**
  * What Sentinel can do, when nothing watches yet (BLG-334), as on the Mac's first visit: a few
- * scenes to swipe through (a board, a note on your phone, a failing test fixed, a pull request
- * read, a site that went down), one line each, and Set This Up, which asks the Sentinel chat. The
+ * scenes to swipe through (a site down at night fixed by morning, a board, a failing test fixed,
+ * a pull request read), one line each, and Set This Up, which asks the Sentinel chat. The
  * first idea below them has Claude look at your projects and suggest.
  */
 
@@ -51,6 +51,26 @@ const Step = ({ Icon, tone, title }: { Icon: LucideIcon; tone: Tone; title: stri
 
 const IDEAS: readonly Idea[] = [
   {
+    id: 'sleep',
+    Icon: Activity,
+    tone: 'rose',
+    line: 'Your site goes down at 3 a.m.; by morning a fix waits for your merge',
+    prompt: 'Watch my website every 5 minutes. When it stops answering, have Claude find out why on its own, open a task for it, fix it in a new worktree and open a pull request for me to merge, and tell me when it’s back.',
+    scene: () => (
+      <View style={{ gap: 8 }}>
+        <T v="caption" style={{ textAlign: 'center' }}>
+          3:12 at night · example.com stopped answering
+        </T>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <Step Icon={Activity} tone="rose" title="Spotted it" />
+          <Step Icon={Bot} tone="peach" title="Claude looked" />
+          <Step Icon={ListTodo} tone="sky" title="Opened a task" />
+          <Step Icon={GitMerge} tone="mint" title="Ready to merge" />
+        </View>
+      </View>
+    ),
+  },
+  {
     id: 'board',
     Icon: Gauge,
     tone: 'sky',
@@ -60,26 +80,6 @@ const IDEAS: readonly Idea[] = [
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Mini label="Revenue" value="$3,412" change="+7.3%" />
         <Mini label="Sign-ups" value="35" change="+21%" />
-      </View>
-    ),
-  },
-  {
-    id: 'phone',
-    Icon: Bell,
-    tone: 'lavender',
-    line: 'A note on your phone with what needs you first',
-    prompt: 'Every weekday morning, tell me on my phone what changed in my projects and what needs me first.',
-    scene: () => (
-      <View style={{ flexDirection: 'row', gap: 10, padding: 10, borderRadius: radius.m, backgroundColor: color.card, alignItems: 'center' }}>
-        <IconBadge Icon={Bell} tone="lavender" size={30} square />
-        <View style={{ flex: 1 }}>
-          <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
-            Morning brief
-          </T>
-          <T v="caption" numberOfLines={2}>
-            3 commits landed, 1 review waits on you
-          </T>
-        </View>
       </View>
     ),
   },
@@ -108,20 +108,6 @@ const IDEAS: readonly Idea[] = [
         <T v="caption" c={color.text}>
           Looks good. One thing: a retried webhook can refund twice. Check line 48.
         </T>
-      </View>
-    ),
-  },
-  {
-    id: 'uptime',
-    Icon: Activity,
-    tone: 'rose',
-    line: 'Know the minute your site stops answering',
-    prompt: 'Check my website every 5 minutes and tell me on my phone the moment it stops answering, and when it’s back.',
-    scene: () => (
-      <View style={{ flexDirection: 'row', gap: 3, height: 34, alignItems: 'flex-end' }}>
-        {Array.from({ length: 24 }, (_, i) => (
-          <View key={i} style={{ flex: 1, height: '100%', borderRadius: 3, backgroundColor: i === 17 || i === 18 ? toneInk('rose') : toneBg('mint') }} />
-        ))}
       </View>
     ),
   },
