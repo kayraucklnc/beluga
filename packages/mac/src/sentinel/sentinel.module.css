@@ -1042,11 +1042,12 @@
   min-height: 0;
 }
 .chatBar {
+  container: chatbar / inline-size;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
-  padding: 10px 12px 10px 16px;
+  padding: 10px 8px 10px 14px;
   border-bottom: 1px solid var(--hairline);
   flex-shrink: 0;
 }
@@ -1099,8 +1100,14 @@ button.chatName:hover {
   color: var(--subagent);
 }
 .chatTitle + .chatName {
-  color: var(--text-3);
-  font-weight: 400;
+  font-weight: 500;
+  color: var(--text-2);
+}
+/* A narrow panel: the claude mark stands for "Ask Sentinel", and the chat's name gets the room. */
+@container chatbar (max-width: 440px) {
+  .chatTitleText {
+    display: none;
+  }
 }
 
 /* ---------------------------------------------------------------- a Claude step's session, in its run (BLG-330) */

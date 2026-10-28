@@ -448,7 +448,7 @@ test('the Sentinel chat: its own conversation about all of Sentinel; a delete as
   await expect(chat.getByRole('button', { name: 'Suggest Some for Me' })).toBeVisible();
   await expect(chat.getByRole('button', { name: /^A Morning Brief for / })).toBeVisible();
   await shoot(page, 'chat-empty');
-  await chat.getByRole('button', { name: 'New Chat' }).click();
+  await chat.getByRole('button', { name: 'New Chat', exact: true }).click();
   await expect(main(page).locator('[data-sentinel-chat]')).not.toHaveAttribute('data-sentinel-chat', 'main');
   await expect(main(page).getByRole('button', { name: /^Chat: / })).toBeVisible();
 });

@@ -91,6 +91,8 @@ test('Ask Sentinel’s panel is resized by its edge, and its message box stays o
   await openSentinel(page);
   const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
   await expect(panel).toBeVisible();
+  // It slid in: measured once it's there.
+  await panel.evaluate((el) => Promise.allSettled(el.getAnimations({ subtree: true }).map((x) => x.finished)));
   // Narrow, the box's bar keeps one line: no chip wraps, nothing runs off the edge.
   const bar = panel.getByRole('button', { name: 'Model and effort' }).locator('..');
   const fits = async (): Promise<void> => {
@@ -115,6 +117,7 @@ test('Ask Sentinel’s panel is resized by its edge, and its message box stays o
   await panel.getByRole('button', { name: 'Close' }).click();
   await main(page).getByRole('button', { name: 'Ask Claude' }).click();
   await expect(panel).toBeVisible();
+  await panel.evaluate((el) => Promise.allSettled(el.getAnimations({ subtree: true }).map((x) => x.finished)));
   expect(Math.abs((await panel.boundingBox())!.width - wider)).toBeLessThan(2);
   // Narrowest, it still fits.
   const e2 = (await edge.boundingBox())!;
@@ -276,7 +279,10 @@ test('with nothing set up: what it can do as scenes, the box, ideas, and every r
   // The box asks Claude in the panel beside the page.
   await first.getByRole('textbox', { name: 'What should Beluga keep an eye on?' }).fill('Every morning, tell me what changed in bob-api');
   await first.getByRole('button', { name: 'Ask Claude' }).click();
+  // The panel slides in from the right, and the conversation goes on there.
+  await expect(panel.locator('[data-sentinel-chat]')).toBeVisible();
   await expect(panel).toContainText('Every morning, tell me what changed in bob-api');
+  await expect(panel.getByRole('button', { name: /^Chat: / })).toBeVisible();
   await panel.getByRole('button', { name: 'Close' }).click();
   // Every recipe is one tap away.
   await first.getByRole('button', { name: 'Every recipe' }).click();

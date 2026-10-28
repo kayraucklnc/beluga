@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
 import { FIRST_SENTINEL_CHAT, sentinelChatOf, sentinelChatTitle } from '@beluga/core/sentinel/model.js';
 import { activityOf } from '@beluga/ui/workspace-models.js';
@@ -64,9 +64,22 @@ const readWidth = (): number => {
 /** At most 60% of the window (and 760 pt), so the page beside it keeps room. */
 const fitWidth = (w: number, windowWidth: number): number => Math.round(Math.max(WIDTH_MIN, Math.min(w, Math.min(760, windowWidth * 0.6))));
 
-/** The panel Ask Sentinel docks in, on Sentinel's page and a sentinel's own: its left edge resizes it. */
+/**
+ * When the panel last went: going from Sentinel's page to a sentinel's (it docks again at once)
+ * doesn't slide it in again; opening it after it was closed does.
+ */
+let closedAt = 0;
+const REDOCK_MS = 600;
+
+/**
+ * The panel Ask Sentinel docks in, on Sentinel's page and a sentinel's own: its left edge resizes
+ * it. Opened (you asked from the page's own box, or Ask Claude), it slides in from the right, the
+ * page making room, and the conversation goes on there.
+ */
 export function AskPanel({ children }: { children: React.ReactNode }) {
   const panel = useRef<HTMLElement>(null);
+  const [opening, setOpening] = useState(() => Date.now() - closedAt > REDOCK_MS);
+  useEffect(() => () => void (closedAt = Date.now()), []);
   const windowWidth = useWindowWidth();
   const [width, setWidth] = useState(readWidth);
   const latest = useRef(width);
@@ -82,7 +95,7 @@ export function AskPanel({ children }: { children: React.ReactNode }) {
     }
   };
   return (
-    <aside ref={panel} className={home.panel} style={{ width: fitWidth(width, windowWidth) }} aria-label="Ask Sentinel">
+    <aside ref={panel} className={home.panel} data-opening={opening || undefined} onAnimationEnd={(e) => e.target === e.currentTarget && setOpening(false)} style={{ width: fitWidth(width, windowWidth) }} aria-label="Ask Sentinel">
       <ResizeHandle
         axis="x"
         label="Resize Ask Sentinel"
@@ -102,7 +115,10 @@ export function AskPanel({ children }: { children: React.ReactNode }) {
           keep(w);
         }}
       />
-      {children}
+      {/* Its own width while it slides in, so the chat doesn't squeeze and re-wrap on the way. */}
+      <div className={home.panelInner} style={{ width: fitWidth(width, windowWidth) }}>
+        {children}
+      </div>
     </aside>
   );
 }
@@ -162,28 +178,23 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
         {onClose ? (
           <span className={s.chatTitle}>
             <Icon name="claude" size={13} />
-            Ask Sentinel
+            <span className={s.chatTitleText}>Ask Sentinel</span>
           </span>
         ) : null}
-        {chats.length > 1 ? (
-          <PickMenu<string>
-            label="Chats"
-            choices={chats.map((c, i) => ({ value: c.id, label: names[i] ?? 'New chat', mark: <Icon name="chat" size={13} /> }))}
-            chosen={[id]}
-            onPick={open}
-          >
-            <button type="button" className={s.chatName} aria-label={`Chat: ${name}`}>
-              <Icon name="chat" size={13} />
-              <span>{name}</span>
-              <Icon name="chevronDown" size={10} />
-            </button>
-          </PickMenu>
-        ) : (
-          <span className={s.chatName} data-single="">
-            <Icon name="chat" size={13} />
+        {/* Always the picker (with New Chat in it), so going between chats never hides behind ⋯. */}
+        <PickMenu<string>
+          label="Chats"
+          choices={chats.map((c, i) => ({ value: c.id, label: names[i] ?? 'New chat', mark: <Icon name="chat" size={13} /> }))}
+          chosen={[id]}
+          onPick={open}
+          actions={[{ label: 'New Chat', icon: 'plus', onSelect: () => void fresh() }]}
+        >
+          <button type="button" className={s.chatName} aria-label={`Chat: ${name}`}>
+            {onClose ? null : <Icon name="chat" size={13} />}
             <span>{name}</span>
-          </span>
-        )}
+            <Icon name="chevronDown" size={10} />
+          </button>
+        </PickMenu>
         {busy ? <span className={s.chatBusy}>Claude is working</span> : null}
         <span className={s.grow} />
         <Tip label="A new conversation beside this one">

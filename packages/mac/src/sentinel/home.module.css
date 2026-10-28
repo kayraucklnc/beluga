@@ -22,6 +22,42 @@
   border-left: 1px solid var(--hairline);
   background: var(--bg);
 }
+/* Opening: it slides in from the right as the page makes room (still with reduced motion). */
+.panel[data-opening] {
+  overflow: hidden;
+  animation: askIn 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes askIn {
+  from {
+    width: 0;
+  }
+}
+.panel[data-opening] > .panelInner {
+  animation: askInner 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes askInner {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel[data-opening],
+  .panel[data-opening] > .panelInner {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .panel[data-opening],
+:root[data-motion='reduce'] .panel[data-opening] > .panelInner {
+  animation: none;
+}
+.panelInner {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
 /* Its left edge, dragged to resize: the panel's own border is the line; the handle only lights up. */
 .panel > .panelEdge {
   position: absolute;
