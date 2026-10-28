@@ -18,7 +18,8 @@ afterEach(async () => {
   net = undefined;
 });
 
-const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+// An identity of its own: CI has no global git user, so a commit would fail there.
+const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, encoding: 'utf8' }).trim();
 
 describe('handing a worktree to a friend outside your room', () => {
   it('their Claude takes it over: the branch, the work in progress, the note and the chat; you follow along', async () => {
