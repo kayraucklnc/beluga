@@ -28,6 +28,9 @@ describe('handing a worktree to a friend outside your room', () => {
     macs.push(ata, kay);
     await befriend(ata.person, kay.person);
     const project = ata.store.getState().projects.find((p) => p.name === 'bob-api')!;
+    // An identity of its own: CI has no git user, and the handoff commits the work in progress.
+    git(project.root!, 'config', 'user.email', 'ata@test');
+    git(project.root!, 'config', 'user.name', 'ata');
     // Kay has the same repository: a clone of ata's origin.
     const origin = git(project.root!, 'remote', 'get-url', 'origin');
     const clone = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-ho-kay-')), 'bob-api');
