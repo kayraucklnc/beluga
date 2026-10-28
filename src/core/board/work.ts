@@ -9,7 +9,7 @@ import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
-import { briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
+import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
 import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isArchived, isFinished, isOpen, issueForWorkspace, titleFromName, worktreeDoing } from './model.js';
 
 /**
@@ -161,9 +161,15 @@ export class BoardWork {
     const title = firstLineTitle(text);
     const plain: TaskDraft = { title, goal: text, acceptance: [], labels: [] };
     if (!this.deps.draftTask) return plain;
+    return (await this.deps.draftTask(text, this.draftContext(projectId)).catch(() => undefined)) ?? plain;
+  }
+
+  /** What the describer knows besides the words: the project's name, what it's about (BLG-298), and its labels. */
+  private draftContext(projectId: string, look?: string): DraftContext {
     const labels = labelsFor(this.board.state(), projectId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
-    return (await this.deps.draftTask(text, { labels, ...(project ? { project } : {}) }).catch(() => undefined)) ?? plain;
+    const about = this.board.state().projects[projectId]?.context?.text;
+    return { labels, ...(project ? { project } : {}), ...(about ? { about } : {}), ...(look ? { look } : {}) };
   }
 
   /** A draft (from draft, maybe changed) added as a task: its title, goal, criteria, labels and priority. */
@@ -187,9 +193,7 @@ export class BoardWork {
     // Without your Claude: the first line, and what was said as the goal if it says more.
     if (!draft) return this.board.create({ ...input, title, ...(text.replace(/\s+/g, ' ') !== title ? { brief: { goal: text } } : {}) }, this.me(), opts.origin);
     const issue = this.board.create({ ...input, title, drafting: true }, this.me(), opts.origin);
-    const labels = labelsFor(this.board.state(), issue.projectId).map((l) => l.name);
-    const project = this.deps.store.getState().projects.find((p) => p.id === issue.projectId)?.name;
-    const done = draft(text, { labels, ...(project ? { project } : {}), ...(opts.look ? { look: opts.look } : {}) })
+    const done = draft(text, this.draftContext(issue.projectId, opts.look))
       .catch(() => undefined)
       .then((d) => {
         try {
@@ -299,7 +303,9 @@ export class BoardWork {
     const issue = own ? own.current : channel.startsWith(WS) ? issueForWorkspace(this.board.state(), channel.slice(WS.length)) : undefined;
     const tools = this.toolsFor(channel, issue, Boolean(opts.plan));
     const parallel = this.parallelNote(channel, issue);
-    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
+    const projectId = this.runProject(channel, issue);
+    const about = projectId ? aboutPrompt(this.board.state(), projectId) : '';
+    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + about + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
     if (!opts.plan) return { tools, brief };
     this.pending.delete(channel);
     return {
@@ -363,10 +369,15 @@ export class BoardWork {
     return this.board.need(issue.id);
   }
 
+  /** The project a run is in: its task's, or its worktree's. */
+  private runProject(channel: string, current: Issue | undefined): string | undefined {
+    const wsId = channel.startsWith(WS) ? channel.slice(WS.length) : undefined;
+    return current?.projectId ?? (wsId ? this.workspaces().find((w) => w.id === wsId)?.projectId : undefined);
+  }
+
   /** Other tasks being worked on in this project right now: so Claudes working side by side know about each other. */
   private parallelNote(channel: string, current: Issue | undefined): string {
-    const wsId = channel.startsWith(WS) ? channel.slice(WS.length) : undefined;
-    const projectId = current?.projectId ?? (wsId ? this.workspaces().find((w) => w.id === wsId)?.projectId : undefined);
+    const projectId = this.runProject(channel, current);
     if (!projectId) return '';
     const state = this.deps.store.getState();
     const busy = busyChannels(state.log);

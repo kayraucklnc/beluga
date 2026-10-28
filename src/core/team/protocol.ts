@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ISSUE_STATUSES } from '../board/model.js';
+import { ISSUE_STATUSES, MAX_PROJECT_CONTEXT } from '../board/model.js';
 
 /**
  * What teammates' Macs say inside the mesh's `team` frame (a Noise link between two friends; see
@@ -24,6 +24,10 @@ import { ISSUE_STATUSES } from '../board/model.js';
  * - `plan`: a plan's draft (or what was approved) as its owner has it now, with everyone's reviews;
  *   the newest replaces one still waiting. `plan_gone`: no longer shared (or deleted).
  * - `review`: a teammate's comment, approval or suggested changes (the plan's own edit ops).
+ *
+ * The project's context (context-share.ts, BLG-298):
+ * - `context`: About This Project as the sender has it (`by`: who wrote it, `at`: when); the
+ *   newest wins on every Mac, and the newest replaces one still waiting.
  */
 
 export const hex32 = z.string().regex(/^[0-9a-f]{32}$/);
@@ -117,6 +121,7 @@ export const TeamMsg = z.discriminatedUnion('k', [
   z.object({ k: z.literal('digest'), link: linkId, hash: z.string().regex(/^[0-9a-f]{64}$/) }),
   z.object({ k: z.literal('plan'), link: linkId, plan: SharedPlanSchema }),
   z.object({ k: z.literal('plan_gone'), link: linkId, id: z.string().max(60) }),
+  z.object({ k: z.literal('context'), link: linkId, text: words(MAX_PROJECT_CONTEXT), by: words(80), at: z.number().int().min(0) }),
   z.object({ k: z.literal('review'), link: linkId, plan: z.string().max(60), review: ReviewSchema.omit({ by: true, name: true, settled: true }) }),
 ]);
 export type TeamMsg = z.infer<typeof TeamMsg>;

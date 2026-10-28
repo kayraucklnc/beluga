@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LABEL_COLORS, LABEL_ICONS } from '../core/board/labels.js';
-import { BRIEF_SECTIONS, ISSUE_STATUSES, PRIORITIES, SYNC_PROVIDERS, personOf } from '../core/board/model.js';
+import { BRIEF_SECTIONS, ISSUE_STATUSES, MAX_PROJECT_CONTEXT, PRIORITIES, SYNC_PROVIDERS, personOf } from '../core/board/model.js';
 
 /**
  * Tasks (the board) in the API (see api.ts): the Mac app's Tasks view and task pages. You act
@@ -84,6 +84,8 @@ export const BOARD_API = {
   // A label added to a project's set (its name, icon and color) → the label; and one of its own taken out.
   'board.createLabel': { args: z.tuple([projectId, z.object({ name: z.string().min(1).max(32), icon: z.enum(LABEL_ICONS), color: z.enum(LABEL_COLORS), hint: z.string().max(80).optional() })]) },
   'board.removeLabel': { args: z.tuple([projectId, z.string().min(1).max(32)]) },
+  // What the project is about, for Claude writing its tasks (empty: none); shared with its teammates (BLG-298).
+  'board.setContext': { args: z.tuple([projectId, z.string().max(MAX_PROJECT_CONTEXT)]) },
   // Sync with another tracker (Linear), per project. Check a key → { ok: true, workspace?, teams } or { ok: false, error }.
   'board.syncTeams': { args: z.tuple([provider, trackerKey]) },
   // Link a project to a team (the key stays on this computer) and sync now → { ok: true, team } or { ok: false, error }.

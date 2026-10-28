@@ -182,6 +182,7 @@ export function TasksView() {
         {sync ? <SyncPill sync={sync} onClick={() => openSheet({ kind: 'task_sync', projectId: here.id })} /> : null}
         <ActionsDropdown
           items={[
+            { label: 'About This Project…', icon: 'book', onSelect: () => openSheet({ kind: 'project_context', projectId: here.id }) },
             { label: sync ? 'Linear Sync…' : 'Sync with Linear…', icon: 'refresh', onSelect: () => openSheet({ kind: 'task_sync', projectId: here.id }) },
             ...(sync ? [{ label: 'Sync Now', disabled: Boolean(sync.syncing), onSelect: () => void act(() => api.syncNow(project)) }] : []),
             { label: 'Open a Task for Every New Worktree', separate: true, checked: board.autoTasks, onSelect: () => void act(() => api.setAutoTasks(!board.autoTasks)) },

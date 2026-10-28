@@ -30,6 +30,7 @@ import { PlanDecisions } from '../plans/decisions.js';
 import { launchTeam } from '../team/launch.js';
 import { TeamBoardSync } from '../team/board-sync.js';
 import { TeamAssign } from '../team/assign.js';
+import { TeamContext } from '../team/context-share.js';
 import { TeamPlans } from '../team/plan-share.js';
 
 /**
@@ -161,7 +162,8 @@ export function launchBoard(host: BoardHost): () => void {
       const teamSync = new TeamBoardSync(team, { board, live, running, dir: teamDir });
       // Plans you choose to share with the team: teammates review them, you apply what you like.
       const teamPlans = new TeamPlans(team, { edit: (id, ops) => void planWork.edit(id, ops), dir: teamDir });
-      return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans];
+      // What the project is about (for Claude writing tasks): one text for the whole team.
+      return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans, new TeamContext(team, board)];
     },
   });
   let stopSeed = (): void => undefined;

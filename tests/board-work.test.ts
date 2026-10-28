@@ -207,6 +207,15 @@ describe('Claude and the board', () => {
     expect(run.tools!.attachProof(undefined, { kind: 'url', title: 'Preview', url: 'https://preview.example' })).toBe('Attached “Preview” to BOB-2');
   });
 
+  it('runs in a project read what it is about, with or without a task (BLG-298)', () => {
+    const { board, work, open } = setup({ autoTasks: true });
+    open(ws('w1', 'api', 'add-auth'));
+    expect(work.forRun('ws:w1', 'p-me')!.brief).not.toContain('project_context');
+    board.setContext('api', 'Bob is a payments API for bakeries.', 'Kay');
+    expect(work.forRun('ws:w1', 'p-me')!.brief).toContain('<project_context>\nBob is a payments API for bakeries.\n</project_context>');
+    expect(work.forRun('room', 'p-me')!.brief).not.toContain('project_context');
+  });
+
   it('elsewhere: a note that the board is there, and tools that need a key', () => {
     const { work } = setup();
     const run = work.forRun('room', 'p-me')!;

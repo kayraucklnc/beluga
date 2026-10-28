@@ -305,7 +305,24 @@ export interface BoardProject {
   readonly next: number;
   /** Labels people added to this project's set, after the built-in ones (see labels.ts). */
   readonly labels?: readonly LabelDef[];
+  /** What the project is, for Claude writing its tasks (BLG-298): shared with its teammates. */
+  readonly context?: ProjectContext;
 }
+
+/**
+ * A few paragraphs about a project: what the app is, who it's for, how the code is laid out, its
+ * words. Claude reads it whenever it writes a task there, so a task makes sense without a look at
+ * the whole codebase. The newest edit wins, here and on teammates' Macs.
+ */
+export interface ProjectContext {
+  readonly text: string;
+  /** Who wrote it last (their name), and when. */
+  readonly by: string;
+  readonly at: number;
+}
+
+/** How long a project's context may be: enough to say what it is, short enough to go in every prompt. */
+export const MAX_PROJECT_CONTEXT = 6000;
 
 export interface BoardState {
   /** The board runs (the Mac app's daemon); off elsewhere. */

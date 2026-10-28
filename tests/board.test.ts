@@ -596,6 +596,33 @@ describe('labels come from a set (BLG-269)', () => {
   });
 });
 
+describe('what a project is about (BLG-298)', () => {
+  it('is saved with who wrote it; a teammate’s older copy loses, a newer one wins; emptied, it stays emptied', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-board-'));
+    dirs.push(dir);
+    const first = setup({ dir });
+    expect(first.board.setContext('api', 'A payments API.\r\n\nIn src/.', 'Kay')).toBe(true);
+    const mine = first.board.state().projects.api!.context!;
+    expect(mine).toMatchObject({ text: 'A payments API.\n\nIn src/.', by: 'Kay' });
+    // The screens hear of it.
+    expect(first.store.getState().board.projects.api?.context?.text).toBe(mine.text);
+    expect(first.board.setContext('api', 'A payments API.\n\nIn src/.', 'Kay')).toBe(false);
+    // From a teammate: older loses, newer wins.
+    expect(first.board.setContext('api', 'Old words', 'Ata', { at: mine.at - 1 })).toBe(false);
+    expect(first.board.setContext('api', 'Newer words', 'Ata', { at: mine.at + 5 })).toBe(true);
+    expect(first.board.state().projects.api!.context).toEqual({ text: 'Newer words', by: 'Ata', at: mine.at + 5 });
+    // Yours is newer than what's here, whatever the teammate's clock said.
+    first.board.setContext('api', '', 'Kay');
+    const cleared = first.board.state().projects.api!.context!;
+    expect(cleared.text).toBe('');
+    expect(cleared.at).toBeGreaterThan(mine.at + 5);
+    expect(first.board.setContext('api', 'Newer words', 'Ata', { at: mine.at + 5 })).toBe(false);
+    first.board.setContext('api', 'Kept', 'Kay');
+    first.board.flush();
+    expect(setup({ dir }).board.state().projects.api?.context).toMatchObject({ text: 'Kept', by: 'Kay' });
+  });
+});
+
 describe('epics (BLG-267)', () => {
   it('a task with sub-tasks is an epic', () => {
     const { board } = setup();
