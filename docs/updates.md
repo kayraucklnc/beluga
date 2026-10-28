@@ -86,6 +86,15 @@ Updates are signed with a minisign key, separate from Apple's Developer ID.
 - **Public key:** `plugins.updater.pubkey` in tauri.conf.json. An update that doesn't verify against it is never installed. `requireSignedVersion` is on, so the version in `latest.json` must also match the version that was signed.
 - **Private key:** `~/.tauri/beluga-updater.key` on the maintainer's Mac (mode 0600, no password; the release script also finds it under its name from before the rename). Never commit it or paste it anywhere. If it is lost, installed copies can't be updated any more, so keep a backup in a password manager.
 
+## The code-signing certificate
+
+macOS keeps Screen Recording and the other privacy permissions for an app's *designated requirement*. An ad-hoc signature's requirement is the hash of that one build (`designated => cdhash H"…"`), so each update would look like a new app and lose them. The release script therefore signs the app with the self-signed **Beluga Self-Signed** certificate in the maintainer's login keychain (`security find-identity -v -p codesigning`). The requirement then names the identifier and that certificate, and both stay the same from release to release. The script refuses to publish a build whose requirement is still a cdhash.
+
+- `$APPLE_SIGNING_IDENTITY` picks another certificate, for example a Developer ID once there is one (BLG-195). Moving to a new certificate makes everyone grant the permissions once more.
+- `--ad-hoc` releases without a certificate, the way releases up to 1.4.1 were signed, and updates lose their permissions again.
+- Keep a backup of the certificate and its private key (Keychain Access › Export, `.p12`) in a password manager. A new certificate means one more grant for everyone.
+- Gatekeeper treats it like an ad-hoc build: the first launch of a downloaded copy still needs Open Anyway. Updates through the app don't.
+
 ## Trying an update locally
 
 Debug builds can be pointed at a local server, so the whole flow can be tried without GitHub:
