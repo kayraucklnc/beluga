@@ -74,7 +74,7 @@ const IDEAS: readonly Idea[] = [
     id: 'board',
     Icon: Gauge,
     tone: 'sky',
-    line: 'Your numbers on one board, fresh every morning',
+    line: 'Your numbers on one board, and on your Mac’s desktop as widgets',
     prompt: 'Look at my projects and put the numbers that matter on a board: sales, sign-ups, how fast the site answers, open pull requests. Set up what keeps them fresh every morning.',
     scene: () => (
       <View style={{ flexDirection: 'row', gap: 8 }}>
