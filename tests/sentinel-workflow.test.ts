@@ -50,7 +50,7 @@ describe('a sentinel as a graph', () => {
   it('puts Claude’s worktree in a box, and lands results on dashboards and other sentinels', () => {
     expect(g.nodes.find((n) => n.id === 'step:st2')?.group).toBe('worktree');
     expect(g.nodes.some((n) => n.id === 'worktree' && n.type === 'group')).toBe(true);
-    expect(g.edges.find((e) => e.to === 'dashboard:db1')).toMatchObject({ from: 'step:st4', label: 'answer' });
+    expect(g.edges.find((e) => e.to === 'dashboard:db1')).toMatchObject({ from: 'step:st4', label: 'Answer' });
     expect(g.edges.find((e) => e.to === 'sentinel:sn_c')).toMatchObject({ from: 'step:st4', label: 'Retry on each row' });
     expect(g.edges.find((e) => e.to === 'sentinel:sn_b')).toMatchObject({ from: 'step:st5', label: 'when it fails' });
   });

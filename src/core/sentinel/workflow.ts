@@ -1,5 +1,6 @@
 import { type Graph, type GraphEdge, type GraphNode, type GraphStatus, type GraphStep, MAX_NODES, MAX_STEPS, cleanId } from '../../shared/graph-spec.js';
 import { type Dashboard, tileRefs } from './dashboard-model.js';
+import { labelOf } from './metrics.js';
 import { type RunSummary, type Sentinel, type Step, type StepKind, type StepState, ACCESS_INFO, SCRIPT_LANGUAGE_INFO, STEP_INFO, scheduleSentence, stepSentence } from './model.js';
 
 /**
@@ -142,7 +143,9 @@ export function sentinelGraph(s: Sentinel, opts: WorkflowOptions = {}): Graph {
       for (const r of tileRefs(t)) {
         if (r.sentinelId !== s.id) continue;
         const st = s.steps.find((x) => x.kind === 'measure' && x.metrics.some((m) => m.name === r.metric)) ?? s.steps.find((x) => x.kind === 'measure');
-        if (st) from.set(st.id, [...(from.get(st.id) ?? []), r.metric]);
+        // Said as the metric's label ("Failed payments"), not its file name.
+        const spec = st?.kind === 'measure' ? st.metrics.find((m) => m.name === r.metric) : undefined;
+        if (st) from.set(st.id, [...(from.get(st.id) ?? []), spec?.label ?? labelOf(r.metric)]);
       }
       if (t.step?.sentinelId === s.id) from.set(t.step.stepId, [...(from.get(t.step.stepId) ?? []), 'its output']);
     }
