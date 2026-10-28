@@ -41,8 +41,9 @@ export function ContinueSheet({ wsId, close }: { wsId: string; close: () => void
       icon="branch"
       intro="This chat becomes a worktree: Claude gets its own branch and folder, keeps the conversation and starts on the task."
       submitLabel="Continue"
-      onSubmit={async () => {
-        await api.workspaces.continueInWorktree(ws.id, { ...(task.trim() ? { task: task.trim() } : {}), ...(chosen !== project.base ? { base: chosen } : {}), ...(name.trim() ? { name: name.trim() } : {}) });
+      onSubmit={() => {
+        // Git fetches and makes the worktree behind the chat ("Making this chat a worktree…"); a failure comes back as a toast.
+        void api.workspaces.continueInWorktree(ws.id, { ...(task.trim() ? { task: task.trim() } : {}), ...(chosen !== project.base ? { base: chosen } : {}), ...(name.trim() ? { name: name.trim() } : {}) }).catch(() => undefined);
         close();
       }}
       onCancel={close}

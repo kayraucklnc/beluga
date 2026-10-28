@@ -162,7 +162,11 @@ describe('a chat in the main folder', () => {
     await kay.session.workspaces!.startChat(project.id, 'Where is the login code?');
     await waitFor(() => kay.runs.length === 1, 4000);
     const chat = kay.workspaces.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'chat')!;
-    const id = await kay.session.workspaces!.continueInWorktree(chat.id, async (p) => `named-${p.split(' ')[0]!.toLowerCase()}`, {});
+    const moving = kay.session.workspaces!.continueInWorktree(chat.id, async (p) => `named-${p.split(' ')[0]!.toLowerCase()}`, {});
+    // The sheet doesn't wait: Continue again while it's moving joins that move, it doesn't start another.
+    const again = kay.session.workspaces!.continueInWorktree(chat.id, async () => 'other', {});
+    const id = await moving;
+    expect(await again).toBe(id);
     expect(id?.name).toBe('named-where');
     await waitFor(() => kay.runs.length === 2, 4000);
     expect(kay.runs[1]!.prompt).toBe(CONTINUE_PROMPT);

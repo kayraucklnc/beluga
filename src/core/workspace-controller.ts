@@ -132,6 +132,8 @@ export class WorkspaceController {
   private readonly lanes = new Map<string, Promise<unknown>>();
   /** Archives running now, by workspace id: it shows as archived already, so Restore can come before it's done. */
   private readonly archiving = new Map<string, Promise<boolean>>();
+  /** Conversations moving to a new worktree now, by id: the sheet doesn't wait, so a second Continue joins the first. */
+  private readonly moving = new Map<string, Promise<Workspace | undefined>>();
 
   /** Hear about worktrees opening, merging, going and coming back. */
   onWorktree(listener: (event: WorktreeEvent) => void): () => void {
@@ -600,6 +602,18 @@ export class WorkspaceController {
    * `after` resolves (the run that asked for the move has finished, so its conversation is complete).
    */
   async continueInWorktree(id: string, nameTask: (prompt: string) => Promise<string>, opts: { task?: string; base?: string; name?: string; after?: Promise<void> } = {}): Promise<Workspace | undefined> {
+    const running = this.moving.get(id);
+    if (running) return running;
+    const job = this.continueNow(id, nameTask, opts);
+    this.moving.set(id, job);
+    try {
+      return await job;
+    } finally {
+      this.moving.delete(id);
+    }
+  }
+
+  private async continueNow(id: string, nameTask: (prompt: string) => Promise<string>, opts: { task?: string; base?: string; name?: string; after?: Promise<void> }): Promise<Workspace | undefined> {
     const source = this.deps.manager.find(id);
     const project = source && this.deps.manager.list.find((p) => p.id === source.projectId && p.root);
     if (!source || !project) {
