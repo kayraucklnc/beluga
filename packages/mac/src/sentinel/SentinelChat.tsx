@@ -18,20 +18,21 @@ import v from '../views/views.module.css';
 import s from './sentinel.module.css';
 
 /**
- * Sentinel › Chat (docs/sentinel.md §12): one conversation with your own Claude for the whole of
- * Sentinel. It is the app's own chat (the conversation, its approvals and questions, the message
- * box), with a slim bar: the chat's name (a picker when there are several), New Chat, and ⋯ with
- * Clear and Delete Chat…. Claude knows how Sentinel works and sees it as it is; deleting a sentinel
- * or a dashboard asks you first, in the card under the conversation (and on your phone).
+ * Ask Sentinel (docs/sentinel.md §12, BLG-306): one conversation with your own Claude for the whole
+ * of Sentinel, docked beside Sentinel's page. It is the app's own chat (the conversation, its
+ * approvals and questions, the message box), with a slim bar: the chat's name (a picker when there
+ * are several), New Chat, ⋯ with Clear and Delete Chat…, and × to close the panel. Claude knows how
+ * Sentinel works and sees it as it is; deleting a sentinel or a board asks you first, in the card
+ * under the conversation (and on your phone).
  */
 
 const STARTERS = [
+  { label: 'Brief Me Every Morning', icon: 'clock', prompt: 'Every weekday morning, tell me what changed in my projects and what needs me first, on my phone.' },
+  { label: 'Watch My Pull Requests', icon: 'branch', prompt: 'Set up a sentinel that counts my open pull requests every morning, and put the number on my board.' },
   { label: 'What Did They Find?', icon: 'sentinel', prompt: 'What did my sentinels find this week? Lead with anything that needs me.' },
-  { label: 'Watch My Pull Requests', icon: 'branch', prompt: 'Set up a sentinel that counts my open pull requests every morning, and put the number on my dashboard.' },
-  { label: 'Tidy the Dashboard', icon: 'gauge', prompt: 'Look at my dashboards and suggest how to arrange them better, then do it.' },
 ] as const;
 
-export function SentinelChat() {
+export function SentinelChat({ onClose }: { onClose?: () => void }) {
   const view = useApp((st) => st.view);
   const channel = channelOf(view);
   const id = sentinelChatOf(channel) ?? FIRST_SENTINEL_CHAT;
@@ -99,13 +100,12 @@ export function SentinelChat() {
         {busy ? <span className={s.chatBusy}>Claude is working</span> : null}
         <span className={s.grow} />
         <Tip label="A new conversation beside this one">
-          <Button size="small" icon="plus" onClick={() => void fresh()}>
-            New Chat
-          </Button>
+          <IconButton icon="plus" label="New Chat" onClick={() => void fresh()} />
         </Tip>
         <ActionsDropdown items={more}>
           <IconButton icon="more" label="More for this chat" />
         </ActionsDropdown>
+        {onClose ? <IconButton icon="x" label="Close" onClick={onClose} /> : null}
       </div>
       <div className={v.chat} data-drop-zone>
         <ChatLog
@@ -114,8 +114,8 @@ export function SentinelChat() {
           empty={
             <Empty
               icon="sentinel"
-              title="Talk to Sentinel"
-              detail="Your Claude for all of Sentinel: it knows your sentinels, dashboards and numbers. Ask what they found, set up a new watcher, add a tile, change one. It makes and changes things without asking; deleting asks you first."
+              title="Ask Sentinel"
+              detail="Say what to watch and Claude sets it up, paused for you to look over. It knows your sentinels, boards and numbers: ask what they found, change one, put something on the board. Deleting asks you first."
               action={
                 <EmptyActions>
                   {STARTERS.map((t) => (

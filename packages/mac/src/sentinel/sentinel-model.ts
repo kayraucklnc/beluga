@@ -786,14 +786,112 @@ export const hasChat = (run: Pick<RunSummary, 'channel' | 'steps'>): boolean => 
 
 export const isRunning = (state: RunState): boolean => state === 'running' || state === 'queued';
 
-// ---------------------------------------------------------------- the section's tabs (docs/sentinel.md §10)
+// ---------------------------------------------------------------- Sentinel's views (BLG-300)
 
-/** Sentinel's three tabs, each a view: the list, the Dashboard, the Chat. */
-export type SentinelTab = 'sentinels' | 'dashboard' | 'chat';
-
-/** Views that are Sentinel's: the sidebar's row is selected, the toolbar says Sentinel, they get the whole window. */
+/**
+ * Views that are Sentinel's: the sidebar's row is selected, the toolbar says Sentinel, they get the
+ * whole window. `sentinel`, `dashboard` and `sentinel_chat` are its one page (the board picked, the
+ * chat open beside it); a sentinel's page and a run's page open from it.
+ */
 export const SENTINEL_VIEWS: ReadonlySet<string> = new Set(['sentinel', 'dashboard', 'sentinel_chat', 'sentinel_page', 'sentinel_run']);
 export const isSentinelView = (kind: string): boolean => SENTINEL_VIEWS.has(kind);
 
-/** The tab a Sentinel view is on (a sentinel's page and a run's page are the list's). */
-export const sentinelTabOf = (kind: string): SentinelTab => (kind === 'dashboard' ? 'dashboard' : kind === 'sentinel_chat' ? 'chat' : 'sentinels');
+// ---------------------------------------------------------------- one page (BLG-300)
+
+/** What a sentinel does, in a few words: its steps' names in order ("Read what changed → Notify me"). */
+export const doesLine = (s: Pick<Sentinel, 'steps'>): string => (s.steps.length ? s.steps.map((st) => st.name).join(' → ') : 'No steps yet');
+
+/** A run as a dot in a row's strip: its state's tone, and what to say on hover. */
+export interface RunDot {
+  readonly id: string;
+  readonly state: RunState;
+  readonly label: string;
+}
+
+/** A sentinel's last `n` runs, oldest first (the row's dot strip). */
+export function dotsOf(state: Pick<SentinelState, 'runs'>, id: string, now: number, n = 12): RunDot[] {
+  return state.runs
+    .filter((r) => r.sentinelId === id)
+    .sort((a, b) => a.startedAt - b.startedAt)
+    .slice(-n)
+    .map((r) => ({ id: r.id, state: r.state, label: `${ago(r.startedAt, now)} · ${RUN_STATE_INFO[r.state].label}${r.headline ? ` · ${r.headline}` : ''}` }));
+}
+
+/** Something on Sentinel's page that waits for you, with what you'd do about it. */
+export type Need =
+  | { readonly kind: 'merge'; readonly key: string; readonly sentinel: Sentinel; readonly run: RunSummary; readonly title: string; readonly detail: string }
+  | { readonly kind: 'draft' | 'changed' | 'failing' | 'trouble'; readonly key: string; readonly sentinel: Sentinel; readonly title: string; readonly detail: string };
+
+/**
+ * What needs you, first on the page: runs waiting for your Merge, sentinels Claude changed (they
+ * wait to be turned on again), ones paused after failures, ones that can't watch, and drafts (made,
+ * never turned on nor run). Each once, the most pressing first.
+ */
+export function needsOf(state: SentinelState, scope?: string): Need[] {
+  const items = state.items.filter((s) => inScope(s, scope));
+  const out: Need[] = [];
+  const nameOf = nameOfIn(state);
+  for (const run of state.runs) {
+    if (run.state !== 'needs-you') continue;
+    const s = items.find((i) => i.id === run.sentinelId);
+    if (!s) continue;
+    out.push({ kind: 'merge', key: `run:${run.id}`, sentinel: s, run, title: run.pr ? `${s.name} wants to merge #${run.pr.number}` : `${s.name} waits for you`, detail: headlineOf(run) });
+  }
+  for (const s of items) {
+    if (s.paused && s.pausedWhy === CLAUDE_CHANGED) out.push({ kind: 'changed', key: `s:${s.id}`, sentinel: s, title: `Claude changed what “${s.name}” can do`, detail: 'Look it over, then turn it on again' });
+    else if (s.paused && s.pausedWhy) out.push({ kind: 'failing', key: `s:${s.id}`, sentinel: s, title: `${s.name}: ${pausedWords(s) ?? 'paused'}`, detail: headlineOf(lastRunOf(state, s.id) ?? { headline: '', state: 'failed' }) });
+    else if (!s.paused && troubleOf(state, s)) out.push({ kind: 'trouble', key: `s:${s.id}`, sentinel: s, title: `${s.name} can’t watch`, detail: troubleOf(state, s)! });
+  }
+  for (const s of items) {
+    if (s.paused && !s.pausedWhy && !lastRunOf(state, s.id)) out.push({ kind: 'draft', key: `s:${s.id}`, sentinel: s, title: `“${s.name}” is ready: look it over`, detail: [scheduleSentence(s.trigger, nameOf), doesLine(s)].join(' · ') });
+  }
+  return out;
+}
+
+/** The project dropdown: All, then only the projects that have sentinels (sidebar order), then Your Mac, each with its count. */
+export function scopesOf(items: readonly Sentinel[], projects: ReadonlyArray<{ readonly id: string; readonly name: string }>): Array<{ readonly value: string | undefined; readonly label: string; readonly count: number }> {
+  const known = new Set(projects.map((p) => p.id));
+  const mac = items.filter((s) => !s.projectId || !known.has(s.projectId)).length;
+  return [
+    { value: undefined, label: 'All projects', count: items.length },
+    ...projects.flatMap((p) => {
+      const count = items.filter((s) => s.projectId === p.id).length;
+      return count ? [{ value: p.id, label: p.name, count }] : [];
+    }),
+    ...(mac ? [{ value: MAC_SCOPE, label: 'Your Mac', count: mac }] : []),
+  ];
+}
+
+/** The starting points on an empty Sentinel, grouped by what you get. */
+export const START_GROUPS: ReadonlyArray<{ readonly label: string; readonly ids: readonly string[] }> = [
+  { label: 'Tell me', ids: ['morning-brief', 'uptime-guard', 'review-new-prs', 'issues-to-tasks', 'release-notes', 'failed-payments', 'watch-the-web'] },
+  { label: 'Fix it', ids: ['fix-what-broke', 'nightly-tests', 'dependency-updates', 'fix-and-ship'] },
+  { label: 'Keep a number', ids: ['stripe-revenue', 'open-issues-prs', 'site-speed', 'customers-this-week', 'youtube-subscribers', 'last-job-run'] },
+];
+
+/** The recipes in their groups, `per` at most in each (the rest are in New Sentinel › Recipe). */
+export function startingPoints(recipes: readonly Recipe[], per = 4): Array<{ readonly label: string; readonly recipes: readonly Recipe[] }> {
+  return START_GROUPS.map((g) => ({ label: g.label, recipes: g.ids.flatMap((id) => recipes.filter((r) => r.id === id)).slice(0, per) })).filter((g) => g.recipes.length);
+}
+
+/** The toolbar's line under Sentinel: how it's doing ("8 watching · next at 7:00 · 2 need you"), or what it is. */
+export function sentinelSubtitle(state: SentinelState): string {
+  if (!state.items.length) return 'Things Beluga keeps an eye on for you';
+  const needs = needsOf(state).length;
+  return [sidebarLine(state).text, ...(needs ? [`${needs} ${needs === 1 ? 'needs' : 'need'} you`] : [])].join(' · ');
+}
+
+/**
+ * What came back, as messages (At a glance): each sentinel's latest run that ended (or the one going
+ * now), newest first. One per sentinel, so one that runs every five minutes doesn't drown the rest.
+ */
+export function latestOf(state: Pick<SentinelState, 'items' | 'runs'>, scope: string | undefined, n = Infinity): Array<{ readonly sentinel: Sentinel; readonly run: RunSummary }> {
+  const out: Array<{ sentinel: Sentinel; run: RunSummary }> = [];
+  for (const s of state.items) {
+    if (!inScope(s, scope)) continue;
+    const runs = state.runs.filter((r) => r.sentinelId === s.id && r.state !== 'queued');
+    const run = runs.reduce<RunSummary | undefined>((best, r) => (!best || r.startedAt > best.startedAt ? r : best), undefined);
+    if (run) out.push({ sentinel: s, run });
+  }
+  return out.sort((a, b) => (b.run.endedAt ?? b.run.startedAt) - (a.run.endedAt ?? a.run.startedAt)).slice(0, n);
+}

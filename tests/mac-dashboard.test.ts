@@ -3,7 +3,7 @@ import { readView } from '../src/shared/view-spec.js';
 import type { Dashboard } from '../src/core/sentinel/dashboard-model.js';
 import { NO_SENTINEL, type MetricSeries, type SentinelState } from '../src/core/sentinel/model.js';
 import { COMPARE_CHOICES, chartRows, chartViewOf, draftsOf, jsonFence, metricChoices, metricsOf, numberWords, outputTable, refreshLine, seriesViewOf, stepChoices, tableViewOf, tileCaption, tileNote, tileWords } from '../packages/mac/src/sentinel/numbers-model.js';
-import { isSentinelView, namedLine, sentinelTabOf } from '../packages/mac/src/sentinel/sentinel-model.js';
+import { isSentinelView, namedLine } from '../packages/mac/src/sentinel/sentinel-model.js';
 import { panelFits } from '../packages/mac/src/lib/panel-model.js';
 
 /** Numbers on the Mac (docs/sentinel.md §10): a number tile's words, charts and tables as the chat's views, Add a Tile's list, the sidebar's line. */
@@ -102,10 +102,9 @@ describe('numbers on the Mac', () => {
     ]);
   });
 
-  it('Sentinel is one section with three tabs, each a view of its own: the sidebar’s row, the toolbar and the whole window are Sentinel’s', () => {
+  it('Sentinel is one page whose list, board and chat are views of their own: the sidebar’s row, the toolbar and the whole window are Sentinel’s', () => {
     for (const kind of ['sentinel', 'dashboard', 'sentinel_chat', 'sentinel_page', 'sentinel_run']) expect(isSentinelView(kind)).toBe(true);
     expect(isSentinelView('tasks')).toBe(false);
-    expect([sentinelTabOf('sentinel'), sentinelTabOf('dashboard'), sentinelTabOf('sentinel_chat'), sentinelTabOf('sentinel_page')]).toEqual(['sentinels', 'dashboard', 'chat', 'sentinels']);
     expect([panelFits({ kind: 'dashboard' }), panelFits({ kind: 'sentinel_chat' }), panelFits({ kind: 'room' })]).toEqual([false, false, true]);
   });
 

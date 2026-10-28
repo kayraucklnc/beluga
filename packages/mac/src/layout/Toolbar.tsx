@@ -25,6 +25,7 @@ import { PeopleHere } from './PeopleHere.js';
 import { PrivateMark, shareWithTeamItems } from '../team/Team.js';
 import s from './Toolbar.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
+import { sentinelSubtitle } from '../sentinel/sentinel-model.js';
 
 /** Room the title keeps, and the window buttons on the right (search, bell, panel). */
 const TITLE_MIN = 210;
@@ -278,13 +279,10 @@ export function Toolbar() {
     );
   }
 
-  // Sentinel's tabs are Sentinel's (isSentinelView): one title, the tab in the subtitle.
-  if (view.kind === 'dashboard') {
-    const d = state.sentinel.dashboards?.find((x) => x.id === view.id) ?? state.sentinel.dashboards?.[0];
-    return <Shell headerRef={headerRef} title={<span className={s.name}>Sentinel</span>} subtitle={<span className={s.meta}>{d ? `Dashboard · ${d.name} · what your sentinels keep and bring back` : 'Dashboard · what your sentinels keep and bring back'}</span>} />;
+  // Sentinel is one page (BLG-300): its list, its board and its chat say Sentinel, with how it's doing.
+  if (view.kind === 'sentinel' || view.kind === 'dashboard' || view.kind === 'sentinel_chat') {
+    return <Shell headerRef={headerRef} title={<span className={s.name}>Sentinel</span>} subtitle={<span className={s.meta}>{sentinelSubtitle(state.sentinel)}</span>} />;
   }
-  if (view.kind === 'sentinel_chat') return <Shell headerRef={headerRef} title={<span className={s.name}>Sentinel</span>} subtitle={<span className={s.meta}>Chat · your Claude for the whole of Sentinel: ask, set up, change</span>} />;
-  if (view.kind === 'sentinel') return <Shell headerRef={headerRef} title={<span className={s.name}>Sentinel</span>} subtitle={<span className={s.meta}>Watchers that run on a schedule or when you press Run, and leave a report</span>} />;
 
   if (view.kind === 'sentinel_page' || view.kind === 'sentinel_run') {
     const run = view.kind === 'sentinel_run' ? state.sentinel.runs.find((r) => r.id === view.runId) : undefined;

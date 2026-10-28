@@ -22,6 +22,12 @@ export type TileWidth = (typeof TILE_WIDTHS)[number];
 export const TILE_HEIGHTS = [1, 2] as const;
 export type TileHeight = (typeof TILE_HEIGHTS)[number];
 export const GRID_COLUMNS = 6;
+
+/** A tile dragged by its corner to span `columns` (fractional) lands on the nearest width there is. */
+export function snapWidth(columns: number): TileWidth {
+  const c = Math.min(GRID_COLUMNS, Math.max(1, columns));
+  return TILE_WIDTHS.reduce<TileWidth>((best, w) => (Math.abs(w - c) < Math.abs(best - c) ? w : best), 1);
+}
 /** How an output tile shows what the step said: as it reads (`auto`), Markdown, a JSON tree, a table, or plain text. */
 export const OUTPUT_SHOWS = ['auto', 'markdown', 'tree', 'table', 'text'] as const;
 export type OutputShow = (typeof OUTPUT_SHOWS)[number];
@@ -321,3 +327,6 @@ export const tileStateIn = (s: Pick<SentinelState, 'metrics' | 'items'> & Partia
     (id) => !s.runs || s.runs.some((r) => r.sentinelId === id) || Boolean(s.metrics?.[id]),
     (r) => !s.outputs || Boolean(s.outputs[r.sentinelId]?.[r.stepId]),
   );
+
+/** The sentinel a tile draws from (its metric's, its first metric's, its step's, or its own); none for a divider. */
+export const tileSentinelOf = (tile: Pick<Tile, 'metric' | 'metrics' | 'sentinelId' | 'step'>): string | undefined => tile.metric?.sentinelId ?? tile.metrics?.[0]?.sentinelId ?? tile.sentinelId ?? tile.step?.sentinelId;
