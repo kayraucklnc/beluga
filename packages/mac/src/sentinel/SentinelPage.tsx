@@ -9,6 +9,7 @@ import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
 import { SentinelChat } from './SentinelChat.js';
+import { Attention } from '../chat/Attention.js';
 import home from './home.module.css';
 import { useSwipeBack } from '../tasks/use-swipe-back.js';
 import { SwipeBackEdge } from '../tasks/SwipeBackEdge.js';
@@ -209,6 +210,7 @@ function AskBox({ item }: { item: Sentinel }) {
           </Button>
         </Tip>
       </div>
+      {ask ? <Attention channel={ask.channel} /> : null}
       {line && ask ? (
         <div className={s.askLine} data-who={line.who} role="status" aria-live="polite">
           {line.who === 'claude' ? <span className={s.askDot} aria-hidden="true" /> : <Icon name={line.who === 'done' ? 'check' : 'alert'} size={12} />}

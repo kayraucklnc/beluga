@@ -11,6 +11,8 @@ const cache = new Map<string, Promise<Icon>>();
 const listeners = new Set<(projectId: string) => void>();
 
 function load(client: BelugaClient, key: string): Promise<Icon> {
+  // No project (Your Mac's): no icon to ask for.
+  if (!key) return Promise.resolve(null);
   let p = cache.get(key);
   if (!p) {
     // "path:/…" is a folder that isn't a project yet.

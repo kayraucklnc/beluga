@@ -1,268 +1,284 @@
 import { useMemo, useState } from 'react';
-import { type ChartTileKind, type MetricRef, type StepRef, type TileHeight, type TileKind, type TileWidth, DEFAULT_WIDTH, TILE_INFO, TILE_WIDTHS, WIDTH_WORDS, metricOf } from '@beluga/core/sentinel/dashboard-model.js';
+import { type MetricRef, type StepRef, metricOf } from '@beluga/core/sentinel/dashboard-model.js';
 import type { Args } from '@beluga/ipc/api.js';
-import { Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
+import { FormSheet, TextInput } from '../components/FormSheet.js';
 import { Icon, type IconName } from '../components/Icon.js';
-import { Segmented } from '../components/ui.js';
+import { cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { MetricChart, NumberTile, RowsTable, SeriesChart } from './NumberParts.js';
-import { type MetricChoice, type StepChoice, metricChoices, numberWords, stepChoices } from './numbers-model.js';
+import { LOOK_WORDS, NEW_SOURCES, type NewSourceId, TILE_SIZES, type TileLook, type TileSizeId, looksFor, metricChoices, newSourceAsk, numberWords, sizeFor, stepChoices } from './numbers-model.js';
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
 import n from './numbers.module.css';
-import s from './sentinel.module.css';
+import x from './add-tile.module.css';
 
 /**
- * Add a Tile (docs/sentinel.md §10). It opens on one box: describe the tile ("my Stripe revenue
- * per day", "the open PR count", "last night's Claude review summary") and your Claude builds it,
- * setting up a draft sentinel that fetches it when nothing does yet. Pick it yourself is one tap
- * away: the kind, then a metric (every one any sentinel keeps, by project and sentinel) or a step
- * (for an output), its size and title, with the tile as it will look underneath. A tile names a
- * sentinel and a metric or a step, never its source.
+ * Add to the board (BLG-308). One box on top: say what you want to see and your Claude puts it
+ * together (setting up a draft sentinel that fetches it when none does yet). Or pick it below. On the
+ * left, what your sentinels already keep (numbers with their value now, kept arrays and rows, what a
+ * step said last, a sentinel's report) and somewhere new (Stripe, GitHub, a database, a URL, a
+ * script: Claude sets up the fetching for you). On the right, how to show it as pictures, its size as
+ * shapes, a title, and the tile as it will look. A tile names a sentinel and what it keeps, never its source.
  */
 
-type Way = 'describe' | 'pick';
-
-const WAYS: ReadonlyArray<{ readonly value: Way; readonly label: string; readonly icon: IconName; readonly hint: string }> = [
-  { value: 'describe', label: 'Describe it', icon: 'claude', hint: 'Say what it should show; Claude puts it together, and sets up a sentinel to fetch it when none does' },
-  { value: 'pick', label: 'Pick it yourself', icon: 'grid', hint: 'A number, a series, a table, a step’s output, text or a divider' },
-];
-
-const KINDS: ReadonlyArray<{ readonly value: TileKind; readonly label: string; readonly icon: IconName; readonly hint: string }> = [
-  { value: 'number', label: 'Number', icon: 'gauge', hint: TILE_INFO.number.hint },
-  { value: 'series', label: 'Series', icon: 'chartLine', hint: TILE_INFO.series.hint },
-  { value: 'table', label: 'Table', icon: 'table', hint: TILE_INFO.table.hint },
-  { value: 'output', label: 'Output', icon: 'file', hint: TILE_INFO.output.hint },
-  { value: 'text', label: 'Text', icon: 'outline', hint: TILE_INFO.text.hint },
-  { value: 'divider', label: 'Divider', icon: 'minus', hint: TILE_INFO.divider.hint },
-];
-
-const key = (r: MetricRef): string => `${r.sentinelId}/${r.metric}`;
-const stepKey = (r: StepRef): string => `${r.sentinelId}/${r.stepId}`;
-
-/** The metrics a kind picks from: numbers for a number, numbers or kept arrays for a series, rows for a table, outputs for an output. */
-const fits = (kind: TileKind, c: MetricChoice): boolean => (kind === 'number' ? c.kind === 'number' : kind === 'series' ? c.kind === 'number' || c.kind === 'series' : kind === 'table' ? c.kind === 'rows' : kind === 'output' ? c.kind === 'output' : false);
+type Pick =
+  | { readonly kind: 'metric'; readonly ref: MetricRef }
+  | { readonly kind: 'step'; readonly ref: StepRef; readonly label: string }
+  | { readonly kind: 'report'; readonly sentinelId: string; readonly label: string }
+  | { readonly kind: 'heading' }
+  | { readonly kind: 'new'; readonly source: NewSourceId };
 
 export function AddTileSheet({ dashboardId, close }: { dashboardId: string; close: () => void }) {
   const api = useApi();
   const a = useSentinelActions();
   const state = useSentinelState();
   const projects = useApp((st) => st.projects);
-  const d = state.dashboards?.find((x) => x.id === dashboardId);
-  const [way, setWay] = useState<Way>('describe');
+  const d = state.dashboards?.find((b) => b.id === dashboardId);
   const [words, setWords] = useState('');
-  const [kind, setKind] = useState<TileKind>('number');
-  const [picked, setPicked] = useState<readonly MetricRef[]>([]);
-  const [step, setStep] = useState<StepRef>();
-  const [sentinelId, setSentinelId] = useState<string>(state.items[0]?.id ?? '');
-  const [text, setText] = useState<'headline' | 'report'>('headline');
-  const [chart, setChart] = useState<ChartTileKind>('line');
-  const [width, setWidth] = useState<TileWidth | undefined>();
-  const [height, setHeight] = useState<TileHeight>(1);
+  const [pick, setPick] = useState<Pick>();
+  const [look, setLook] = useState<TileLook>('number');
+  const [size, setSize] = useState<TileSizeId>('small');
   const [title, setTitle] = useState('');
+  const [what, setWhat] = useState('');
   const projectName = (id: string | undefined): string => projects.find((p) => p.id === id)?.name ?? 'Your Mac';
-  const choices = useMemo(() => metricChoices(state, projectName, d), [state, projects, d]);
+  const metrics = useMemo(() => metricChoices(state, projectName, d), [state, projects, d]);
   const steps = useMemo(() => stepChoices(state, projectName), [state.items, projects]);
-  const shown = choices.filter((c) => fits(kind, c));
-  // A series draws several numbers over time, or one kept array on its own.
-  const many = kind === 'series' && !picked.some((r) => metricOf(state, r)?.kind === 'series');
-  const toggle = (c: MetricChoice): void =>
-    setPicked((now) => {
-      if (now.some((r) => key(r) === key(c.ref))) return now.filter((r) => key(r) !== key(c.ref));
-      if (kind === 'series' && c.kind === 'series') return [c.ref];
-      return many ? [...now.filter((r) => metricOf(state, r)?.kind !== 'series'), c.ref].slice(0, 8) : [c.ref];
-    });
-  const changeKind = (k: TileKind): void => {
-    setKind(k);
-    setWidth(undefined);
-    setPicked((now) => now.filter((r) => {
-      const c = choices.find((x) => key(x.ref) === key(r));
-      return c ? fits(k, c) : false;
-    }).slice(0, k === 'series' ? 8 : 1));
-    if (k === 'series') setChart((c) => c);
+  // Everything kept, by project and sentinel, as the list shows them.
+  const groups = useMemo(() => {
+    const out = new Map<string, { head: string; items: Array<{ pick: Pick; label: string; hint?: string; value?: string; icon: IconName; on?: boolean }> }>();
+    const add = (head: string, item: { pick: Pick; label: string; hint?: string; value?: string; icon: IconName; on?: boolean }): void => {
+      const g = out.get(head) ?? { head, items: [] };
+      g.items.push(item);
+      out.set(head, g);
+    };
+    for (const c of metrics) add(`${c.project} · ${c.sentinel}`, { pick: { kind: 'metric', ref: c.ref }, label: c.label, ...(c.value ? { value: c.value } : {}), icon: c.kind === 'rows' ? 'table' : c.kind === 'output' ? 'file' : 'chartLine', ...(c.onIt ? { on: true, hint: 'on this board' } : {}) });
+    for (const c of steps) add(`${c.project} · ${c.sentinel}`, { pick: { kind: 'step', ref: c.ref, label: c.label }, label: c.label, hint: c.kind === 'claude' ? 'what Claude wrote' : c.kind === 'http' ? 'the service’s answer' : 'what it printed', icon: c.kind === 'claude' ? 'claude' : c.kind === 'http' ? 'globe' : 'terminal' });
+    // What each sentinel said last, together at the end (one line each, not under every sentinel).
+    type Item = { pick: Pick; label: string; hint?: string; value?: string; icon: IconName; on?: boolean };
+    const said: Item[] = state.items.map((i) => ({ pick: { kind: 'report', sentinelId: i.id, label: i.name }, label: i.name, hint: `${projectName(i.projectId)} · its latest report`, icon: 'file' }));
+    return [...out.values(), ...(said.length ? [{ head: 'What a sentinel said last', items: said }] : [])];
+  }, [metrics, steps, state.items, projects]);
+
+  const keyOf = (p: Pick | undefined): string => (!p ? '' : p.kind === 'metric' ? `m:${p.ref.sentinelId}/${p.ref.metric}` : p.kind === 'step' ? `s:${p.ref.sentinelId}/${p.ref.stepId}` : p.kind === 'report' ? `r:${p.sentinelId}` : p.kind === 'new' ? `n:${p.source}` : 'h');
+  const metric = pick?.kind === 'metric' ? metricOf(state, pick.ref) : undefined;
+  const looks: readonly TileLook[] = pick?.kind === 'metric' ? looksFor(metric?.kind ?? 'number') : pick?.kind === 'step' || pick?.kind === 'report' ? ['text'] : [];
+  const choose = (p: Pick): void => {
+    setPick(p);
+    setWords('');
+    const first = p.kind === 'metric' ? looksFor(metricOf(state, p.ref)?.kind ?? 'number')[0]! : 'text';
+    setLook(first);
+    setSize(sizeFor(first));
   };
-  const w = width ?? DEFAULT_WIDTH[kind];
-  const ready = way === 'describe' ? Boolean(words.trim()) : kind === 'divider' ? Boolean(title.trim()) : kind === 'text' ? Boolean(sentinelId) : kind === 'output' ? Boolean(step) || picked.length > 0 : picked.length > 0;
-  const own = (): { title?: string; height?: TileHeight } => ({ ...(title.trim() ? { title: title.trim() } : {}), ...(height === 2 ? { height } : {}) });
-  const describe = async (): Promise<string | void> => {
-    const said = words.trim();
-    if (!said) return;
-    const went = await a.act(() => api.dashboard.ask(dashboardId, said));
-    if (!went) return 'Couldn’t ask Claude: see the message above';
-    close();
-  };
+  const shape = TILE_SIZES.find((t) => t.id === size)!;
+  const own = { ...(title.trim() ? { title: title.trim() } : {}), width: shape.w, ...(shape.h === 2 ? { height: 2 as const } : {}) };
+
+  const describing = Boolean(words.trim()) || pick?.kind === 'new';
+  const ready = words.trim() ? true : pick?.kind === 'new' ? Boolean(what.trim()) : pick?.kind === 'heading' ? Boolean(title.trim()) : Boolean(pick);
   const submit = async (): Promise<string | void> => {
-    if (way === 'describe') return describe();
-    const series = picked.length === 1 && metricOf(state, picked[0]!)?.kind === 'series';
+    // Words (or somewhere new): your Claude builds it, and sets up the fetching when nothing does yet.
+    if (describing) {
+      const said = pick?.kind === 'new' && !words.trim() ? newSourceAsk(pick.source, what) : words.trim();
+      const went = await a.act(() => api.dashboard.ask(dashboardId, said));
+      if (!went) return 'Couldn’t ask Claude: see the message above';
+      return close();
+    }
+    if (!pick) return;
     const tile: Args<'dashboard.addTile'>[1] =
-      kind === 'divider'
-        ? { kind, title: title.trim() }
-        : kind === 'text'
-          ? { kind, sentinelId, text, width: w, ...own() }
-          : kind === 'output'
-            ? step
-              ? { kind, step, width: w, ...own() }
-              : { kind, metric: picked[0]!, width: w, ...own() }
-            : kind === 'series'
-              ? { kind, ...(series ? { metric: picked[0]! } : { metrics: [...picked] }), chart, width: w, ...own() }
-              : { kind, metric: picked[0]!, width: w, ...own() };
+      pick.kind === 'heading'
+        ? { kind: 'divider', title: title.trim() }
+        : pick.kind === 'report'
+          ? { kind: 'text', sentinelId: pick.sentinelId, text: 'report', ...own }
+          : pick.kind === 'step'
+            ? { kind: 'output', step: pick.ref, ...own }
+            : pick.kind === 'metric'
+              ? look === 'number'
+                ? { kind: 'number', metric: pick.ref, ...own }
+                : look === 'table'
+                  ? { kind: 'table', metric: pick.ref, ...own }
+                  : look === 'text'
+                    ? { kind: 'output', metric: pick.ref, ...own }
+                    : { kind: 'series', ...(metric?.kind === 'series' ? { metric: pick.ref } : { metrics: [pick.ref] }), chart: look === 'bars' ? 'bar' : 'line', ...own }
+              : { kind: 'divider', title: title.trim() };
     const done = await a.act(() => api.dashboard.addTile(dashboardId, tile));
     if (!done) return 'Couldn’t add it: see the message above';
     close();
   };
-  // Grouped by project, then sentinel, as the list shows them.
-  const groups = useMemo(() => groupBy(shown, (c) => `${c.project} · ${c.sentinel}`), [shown]);
-  const stepGroups = useMemo(() => groupBy(steps, (c) => `${c.project} · ${c.sentinel}`), [steps]);
+
+  const newSource = pick?.kind === 'new' ? NEW_SOURCES.find((s) => s.id === pick.source) : undefined;
   return (
-    <FormSheet
-      title="Add a Tile"
-      icon="gauge"
-      intro={d ? `On “${d.name}”. A tile shows anything a sentinel keeps or brings back; drag it into place afterwards.` : undefined}
-      submitLabel={way === 'describe' ? 'Ask Claude' : 'Add Tile'}
-      canSubmit={ready}
-      width={640}
-      onCancel={close}
-      onSubmit={submit}
-    >
-      <div className={n.sheet}>
-        <div className={s.ways}>
-          <Segmented<Way> label="How to add it" value={way} onChange={setWay} options={WAYS} />
-        </div>
-        {way === 'describe' ? (
-          <Field label="What should it show?" htmlFor="tile-words" hint="Claude adds it from what your sentinels keep. When nothing fetches it yet, it sets up a sentinel that does: a draft you look over and turn on first.">
-            <TextArea id="tile-words" value={words} onChange={setWords} rows={3} maxLength={8000} placeholder="My Stripe revenue per day · the open PR count · last night’s Claude review summary" data-autofocus aria-label="What should it show?" />
-          </Field>
-        ) : (
-          <>
-            <div className={n.kinds}>
-              <Segmented<TileKind> label="What kind of tile" value={kind} onChange={changeKind} options={KINDS} />
-            </div>
-            {kind === 'output' ? (
-              <div className={n.picker} role="radiogroup" aria-label="Steps">
-                {stepGroups.map((g) => (
-                  <div key={g.head} role="presentation">
-                    <div className={n.group}>{g.head}</div>
-                    {g.items.map((c: StepChoice) => {
-                      const on = step !== undefined && stepKey(step) === stepKey(c.ref);
-                      return (
-                        <button key={stepKey(c.ref)} type="button" role="radio" aria-checked={on} className={n.pick} onClick={() => (setStep(c.ref), setPicked([]))} data-step={c.ref.stepId}>
-                          {on ? <Icon name="check" size={13} /> : <span />}
-                          <span className={n.pickName}>
-                            {c.label}
-                            <small>{c.hint}</small>
-                          </span>
-                          <span className={n.pickValue}>{c.kind === 'claude' ? 'Claude' : c.kind === 'http' ? 'Service' : 'Script'}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-                {groups.length ? <MetricPicks groups={groups} picked={picked} many={false} toggle={(c) => (toggle(c), setStep(undefined))} /> : null}
-                {!stepGroups.length && !groups.length ? <p className={n.quiet}>No sentinel has an Ask Claude, Call a service or Run a script step yet.</p> : null}
-              </div>
-            ) : kind === 'number' || kind === 'series' || kind === 'table' ? (
-              shown.length ? (
-                <div className={n.picker} role={many ? 'group' : 'radiogroup'} aria-label={kind === 'table' ? 'Tables' : 'Numbers'}>
-                  <MetricPicks groups={groups} picked={picked} many={many} toggle={toggle} />
+    <FormSheet title={`Add to ${d?.name ?? 'the board'}`} icon="gauge" submitLabel={describing ? 'Ask Claude' : `Add to ${d?.name ?? 'the Board'}`} canSubmit={ready} width={880} onCancel={close} onSubmit={submit}>
+      <div className={x.sheet}>
+        <textarea
+          className={x.describe}
+          value={words}
+          rows={1}
+          placeholder="Say what you want to see, or pick it below: “revenue per day”, “open pull requests”, “this morning’s brief”…"
+          aria-label="What should it show?"
+          data-autofocus
+          onChange={(e) => setWords(e.target.value)}
+        />
+        <div className={x.panes} data-dim={words.trim() ? '' : undefined}>
+          <div className={x.list} role="listbox" aria-label="What to show">
+            <div className={x.group}>Already kept</div>
+            {groups.length ? (
+              groups.map((g) => (
+                <div key={g.head} role="group" aria-label={g.head}>
+                  <div className={x.sub}>{g.head}</div>
+                  {g.items.map((it) => (
+                    <button key={keyOf(it.pick)} type="button" role="option" aria-selected={keyOf(pick) === keyOf(it.pick)} className={x.item} onClick={() => choose(it.pick)} data-pick={keyOf(it.pick)}>
+                      <Icon name={it.icon} size={13} />
+                      <span className={x.itemText}>
+                        {it.label}
+                        {it.hint ? <small>{it.hint}</small> : null}
+                      </span>
+                      {it.value ? <span className={x.value}>{it.value}</span> : null}
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                <p className={n.quiet}>{kind === 'table' ? 'No sentinel keeps rows yet: a Keep the numbers step of the kind Rows does.' : 'No numbers yet: a sentinel keeps them with a Keep the numbers step. Or describe the tile and Claude sets one up.'}</p>
-              )
-            ) : null}
-            {kind === 'text' ? (
+              ))
+            ) : (
+              <p className={x.quiet}>Nothing is kept yet. Pick somewhere new, or say what you want above.</p>
+            )}
+            <div className={x.group}>From somewhere new</div>
+            {NEW_SOURCES.map((src) => (
+              <button key={src.id} type="button" role="option" aria-selected={keyOf(pick) === `n:${src.id}`} className={x.item} onClick={() => (setPick({ kind: 'new', source: src.id }), setWhat(''))} data-source={src.id}>
+                <span className={x.mark} data-source={src.id}>
+                  <Icon name={src.id === 'stripe' ? 'coin' : src.id === 'github' ? 'pr' : src.id === 'database' ? 'table' : src.id === 'url' ? 'globe' : 'terminal'} size={11} />
+                </span>
+                <span className={x.itemText}>{src.label}</span>
+                <span className={x.value}>{src.hint}</span>
+              </button>
+            ))}
+            <div className={x.group}>Other</div>
+            <button type="button" role="option" aria-selected={pick?.kind === 'heading'} className={x.item} onClick={() => (setPick({ kind: 'heading' }), setWords(''))}>
+              <Icon name="minus" size={13} />
+              <span className={x.itemText}>A heading across the board</span>
+            </button>
+          </div>
+
+          <div className={x.right}>
+            {words.trim() ? (
+              <p className={x.quiet}>Claude puts it together from what your sentinels keep. When nothing fetches it yet, it sets up a sentinel that does: a draft you look over and turn on first.</p>
+            ) : !pick ? (
+              <p className={x.quiet}>Pick something on the left to see how it can look.</p>
+            ) : newSource ? (
               <>
-                <div className={n.row2}>
-                  <span className={n.row2Label}>Sentinel</span>
-                  <Popup label="Which sentinel" value={sentinelId} onChange={setSentinelId} options={state.items.map((i) => ({ value: i.id, label: i.name }))} />
+                <div className={x.k}>What from {newSource.label}?</div>
+                <div className={x.field}><TextInput value={what} onChange={setWhat} maxLength={400} placeholder={newSource.ideas[0]} aria-label={`What from ${newSource.label}?`} /></div>
+                <div className={x.ideas}>
+                  {newSource.ideas.map((idea) => (
+                    <button key={idea} type="button" className={x.idea} onClick={() => setWhat(idea)}>
+                      {idea}
+                    </button>
+                  ))}
                 </div>
-                <div className={n.row2}>
-                  <span className={n.row2Label}>Shows</span>
-                  <Popup<'headline' | 'report'> label="What it shows" value={text} onChange={setText} options={[{ value: 'headline', label: 'Its last headline' }, { value: 'report', label: 'Its last report' }]} />
-                </div>
+                <p className={x.quiet}>Claude sets up the sentinel that fetches it (paused, for you to turn on) with your project’s own keys, and adds its tile here.</p>
               </>
-            ) : null}
-            {kind === 'series' ? (
-              <div className={n.row2}>
-                <span className={n.row2Label}>Draw as</span>
-                <Popup<ChartTileKind> label="Draw as" value={chart} onChange={setChart} options={[{ value: 'line', label: 'Lines' }, { value: 'area', label: 'Areas' }, { value: 'bar', label: 'Bars' }]} />
-              </div>
-            ) : null}
-            {kind !== 'divider' ? (
-              <div className={n.row2}>
-                <span className={n.row2Label}>Size</span>
-                <Popup label="Width" value={String(w)} onChange={(v) => setWidth(Number(v) as TileWidth)} options={TILE_WIDTHS.map((x) => ({ value: String(x), label: WIDTH_WORDS[x] }))} />
-                <Popup label="Height" value={String(height)} onChange={(v) => setHeight(Number(v) as TileHeight)} options={[{ value: '1', label: 'Normal' }, { value: '2', label: 'Tall' }]} />
-              </div>
-            ) : null}
-            <div className={n.row2}>
-              <span className={n.row2Label}>Title</span>
-              <TextInput value={title} onChange={setTitle} maxLength={80} placeholder={kind === 'divider' ? 'Money' : kind === 'output' ? 'Its step’s name' : 'Its metric’s label'} aria-label="Title" />
-            </div>
-            <Preview kind={kind} picked={picked} chart={chart} title={title} />
-          </>
-        )}
+            ) : pick.kind === 'heading' ? (
+              <>
+                <div className={x.k}>Heading</div>
+                <div className={x.field}><TextInput value={title} onChange={setTitle} maxLength={80} placeholder="Money" aria-label="Heading" /></div>
+              </>
+            ) : (
+              <>
+                <div className={x.k}>Show it as</div>
+                <div className={x.looks} role="radiogroup" aria-label="Show it as">
+                  {looks.map((l) => (
+                    <button key={l} type="button" role="radio" aria-checked={look === l} className={x.look} onClick={() => (setLook(l), setSize(sizeFor(l)))}>
+                      <LookPicture look={l} />
+                      <span>{LOOK_WORDS[l]}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className={x.k}>Size</div>
+                <div className={x.sizes} role="radiogroup" aria-label="Size">
+                  {TILE_SIZES.map((t) => (
+                    <button key={t.id} type="button" role="radio" aria-checked={size === t.id} className={x.size} onClick={() => setSize(t.id)}>
+                      <span className={x.shape} style={{ width: t.w * 18 + (t.w - 1) * 3, height: t.h * 18 + (t.h - 1) * 3 }} />
+                      <span>{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className={x.k}>Title</div>
+                <div className={x.field}><TextInput value={title} onChange={setTitle} maxLength={80} placeholder={pick.kind === 'metric' ? (metric?.label ?? 'Its label') : pick.kind === 'step' || pick.kind === 'report' ? pick.label : ''} aria-label="Title" /></div>
+                <div className={x.k}>Preview</div>
+                <Preview pick={pick} look={look} title={title} wide={shape.w > 1} />
+                <p className={x.quiet}>Drag it into place on the board afterwards; drag its corner to resize.</p>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </FormSheet>
   );
 }
 
-function groupBy<T>(items: readonly T[], head: (t: T) => string): Array<{ readonly head: string; readonly items: T[] }> {
-  const out: Array<{ readonly head: string; readonly items: T[] }> = [];
-  for (const c of items) {
-    const h = head(c);
-    const g = out.at(-1);
-    if (g?.head === h) g.items.push(c);
-    else out.push({ head: h, items: [c] });
-  }
-  return out;
-}
-
-function MetricPicks({ groups, picked, many, toggle }: { groups: ReadonlyArray<{ readonly head: string; readonly items: MetricChoice[] }>; picked: readonly MetricRef[]; many: boolean; toggle: (c: MetricChoice) => void }) {
+/** A small picture of each look (the shape, not real data). */
+function LookPicture({ look }: { look: TileLook }) {
+  if (look === 'number')
+    return (
+      <svg width="56" height="26" aria-hidden="true">
+        <text x="0" y="19" fontSize="15" fontWeight="600" fill="currentColor">
+          3.4k
+        </text>
+        <polyline fill="none" stroke="var(--ok)" strokeWidth="1.5" points="38,20 44,14 50,16 56,7" />
+      </svg>
+    );
+  if (look === 'line')
+    return (
+      <svg width="56" height="26" aria-hidden="true">
+        <polyline fill="none" stroke="var(--accent)" strokeWidth="1.5" points="0,22 9,16 18,18 28,9 37,13 46,5 56,7" />
+      </svg>
+    );
+  if (look === 'bars')
+    return (
+      <svg width="56" height="26" aria-hidden="true">
+        <g fill="var(--accent)">
+          <rect x="2" y="14" width="7" height="12" rx="1" />
+          <rect x="13" y="8" width="7" height="18" rx="1" />
+          <rect x="24" y="12" width="7" height="14" rx="1" />
+          <rect x="35" y="3" width="7" height="23" rx="1" />
+          <rect x="46" y="10" width="7" height="16" rx="1" />
+        </g>
+      </svg>
+    );
+  if (look === 'table')
+    return (
+      <svg width="56" height="26" aria-hidden="true">
+        <g stroke="var(--hairline-strong)">
+          <line x1="0" y1="6" x2="56" y2="6" />
+          <line x1="0" y1="13" x2="56" y2="13" />
+          <line x1="0" y1="20" x2="56" y2="20" />
+          <line x1="20" y1="2" x2="20" y2="24" />
+        </g>
+      </svg>
+    );
   return (
-    <>
-      {groups.map((g) => (
-        <div key={g.head} role="presentation">
-          <div className={n.group}>{g.head}</div>
-          {g.items.map((c) => {
-            const on = picked.some((r) => key(r) === key(c.ref));
-            return (
-              <button key={key(c.ref)} type="button" role={many ? 'checkbox' : 'radio'} aria-checked={on} className={n.pick} onClick={() => toggle(c)} data-metric={c.ref.metric}>
-                {on ? <Icon name="check" size={13} /> : <span />}
-                <span className={n.pickName}>
-                  {c.label}
-                  {c.kind === 'series' ? <small>a kept array</small> : c.kind === 'output' ? <small>a kept output</small> : null}
-                  {c.onIt ? <small>on this dashboard</small> : null}
-                </span>
-                <span className={n.pickValue}>{c.value ?? '—'}</span>
-              </button>
-            );
-          })}
-        </div>
-      ))}
-    </>
+    <svg width="56" height="26" aria-hidden="true">
+      <g stroke="var(--hairline-strong)" strokeWidth="2" strokeLinecap="round">
+        <line x1="2" y1="6" x2="50" y2="6" />
+        <line x1="2" y1="13" x2="54" y2="13" />
+        <line x1="2" y1="20" x2="36" y2="20" />
+      </g>
+    </svg>
   );
 }
 
-function Preview({ kind, picked, chart, title }: { kind: TileKind; picked: readonly MetricRef[]; chart: ChartTileKind; title: string }) {
+function Preview({ pick, look, title, wide }: { pick: Pick; look: TileLook; title: string; wide: boolean }) {
   const state = useSentinelState();
-  const series = picked.flatMap((r) => metricOf(state, r) ?? []);
-  if (kind === 'divider' || kind === 'text' || kind === 'output' || !series.length) return null;
-  const first = series[0]!;
+  if (pick.kind !== 'metric') return <div className={cx(n.previewTile, x.previewText)}>{pick.kind === 'step' || pick.kind === 'report' ? 'Shows what it said last, and updates each time it runs.' : null}</div>;
+  const m = metricOf(state, pick.ref);
+  if (!m) return null;
   return (
-    <div className={n.preview} data-testid="tile-preview">
-      <div className={n.previewLabel}>Preview</div>
-      <div className={n.previewTile}>
-        {kind === 'number' ? (
-          <NumberTile w={numberWords(first, 'previous', title.trim() || first.label)} />
-        ) : kind === 'series' ? (
-          first.kind === 'series' ? (
-            <SeriesChart metric={first} kind={chart} height={160} />
-          ) : (
-            <MetricChart series={series} kind={chart} height={160} />
-          )
-        ) : (
-          <RowsTable metric={first} pageSize={4} />
-        )}
-      </div>
+    <div className={cx(n.previewTile, x.preview)} data-testid="tile-preview" data-wide={wide || undefined}>
+      {look === 'number' ? (
+        <NumberTile w={numberWords(m, 'previous', title.trim() || m.label)} />
+      ) : look === 'table' ? (
+        m.rows ? <RowsTable metric={m} pageSize={4} /> : null
+      ) : m.kind === 'series' ? (
+        <SeriesChart metric={m} kind={look === 'bars' ? 'bar' : 'line'} height={150} />
+      ) : (
+        <MetricChart series={[m]} kind={look === 'bars' ? 'bar' : 'line'} height={150} />
+      )}
     </div>
   );
 }

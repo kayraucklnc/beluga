@@ -373,8 +373,7 @@ test('Add a Tile takes a description: Claude adds it, and sets up a draft sentin
   await pickBoard(page, 'Ops');
   await expect(board.locator('[data-tile]')).toHaveCount(4);
   await main(page).getByRole('button', { name: 'Add to the board' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Add a Tile' });
-  await expect(sheet.getByRole('tab', { name: /Describe it/ })).toHaveAttribute('aria-selected', 'true');
+  const sheet = page.getByRole('dialog', { name: 'Add to Ops' });
   await sheet.getByRole('textbox', { name: 'What should it show?' }).fill('the open PR count');
   await shoot(page, 'add-tile-describe');
   await sheet.getByRole('button', { name: 'Ask Claude' }).click();
@@ -397,12 +396,20 @@ test('Add a Tile takes a description: Claude adds it, and sets up a draft sentin
   await openList(page);
   await pickBoard(page, 'Ops');
   await main(page).getByRole('button', { name: 'Add to the board' }).click();
-  await sheet.getByRole('tab', { name: /Pick it yourself/ }).click();
-  await sheet.getByRole('tab', { name: 'Series' }).click();
-  await sheet.getByRole('checkbox', { name: /Signups by day/ }).or(sheet.getByRole('radio', { name: /Signups by day/ })).click();
+  // Pick it: what's kept on the left, how it looks on the right (pictures, sizes as shapes, a preview).
+  await sheet.getByRole('option', { name: /^Signups by day/ }).first().click();
+  await expect(sheet.getByRole('radiogroup', { name: 'Show it as' }).getByRole('radio')).toHaveCount(2);
+  await sheet.getByRole('radio', { name: 'Bars' }).click();
+  await sheet.getByRole('radiogroup', { name: 'Size' }).getByRole('radio', { name: 'Big' }).click();
   await expect(sheet.getByTestId('tile-preview').locator('.recharts-surface')).toBeVisible();
   await shoot(page, 'add-tile-pick');
-  await sheet.getByRole('button', { name: 'Add Tile' }).click();
+  // Somewhere new asks what from it, with ideas.
+  await sheet.locator('[data-source="stripe"]').first().click();
+  await expect(sheet.getByRole('button', { name: 'Revenue per day' })).toBeVisible();
+  await shoot(page, 'add-tile-new');
+  await sheet.getByRole('option', { name: /^Signups by day/ }).first().click();
+  await sheet.getByRole('radio', { name: 'Bars' }).click();
+  await sheet.getByRole('button', { name: 'Add to Ops' }).click();
   await expect(board.locator('[data-tile]')).toHaveCount(6);
 });
 

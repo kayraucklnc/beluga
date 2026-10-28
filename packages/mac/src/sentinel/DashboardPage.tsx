@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, GRID_COLUMNS, TILE_WIDTHS, type TileHeight, type TileWidth, WIDTH_WORDS, dashboardMarkdown, snapWidth, tileSentinelOf, dashboardSentinels, gridLanding, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
 import { COMPARE, COMPARE_LABEL, COMPARE_WORDS, type Compare } from '@beluga/core/sentinel/metrics.js';
-import type { SentinelState } from '@beluga/core/sentinel/model.js';
+import type { MetricSeries, SentinelState } from '@beluga/core/sentinel/model.js';
 import type { Args } from '@beluga/ipc/api.js';
+import { Attention } from '../chat/Attention.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
@@ -15,10 +16,11 @@ import { isDrag } from '../tasks/board-drag.js';
 import { PickMenu } from '../tasks/PickMenu.js';
 import { ago } from '../tasks/tasks-model.js';
 import { ClaudeMark } from './marks.js';
-import { MetricChart, NumberTile, RowsTable, SeriesChart } from './NumberParts.js';
+import { FillChart, MetricChart, NumberTile, RowsTable, SeriesChart } from './NumberParts.js';
 import { draftsOf, jsonFence, numberWords, outputTable, refreshLine, tileCaption, tileNote, tileWords } from './numbers-model.js';
 import { askLine, inScope, namedLine } from './sentinel-model.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
+import { TINTS, setTintChoice, tintChoiceOf, useProjectTint } from './tint.js';
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
 import n from './numbers.module.css';
 
@@ -192,11 +194,11 @@ function Page({ d, all, onPick, scope, children }: { d: Dashboard; all: readonly
       </SectionHead>
       <AskLine d={d} />
       {scope ? (
-        <Grid d={d} state={state} tiles={d.tiles.filter((x) => x.kind !== 'divider' && inScope({ projectId: tileProject(state, x, projects)?.id }, scope) && tileProject(state, x, projects))} />
+        <Grid d={d} state={state} projects={projects} tiles={d.tiles.filter((x) => x.kind !== 'divider' && inScope({ projectId: tileProject(state, x, projects)?.id }, scope) && tileProject(state, x, projects))} />
       ) : grouped ? (
         <GroupedGrid d={d} state={state} projects={projects} />
       ) : (
-        <Grid d={d} state={state} marks={new Set(d.tiles.map((x) => tileProject(state, x, projects)?.name ?? '')).size > 1} projects={projects} />
+        <Grid d={d} state={state} projects={projects} />
       )}
       {children}
     </section>
@@ -244,6 +246,8 @@ function AskLine({ d }: { d: Dashboard }) {
           </Button>
         </div>
       ) : null}
+      {/* What Claude needs your OK for while it builds this (it works in a quiet chat of its own). */}
+      {ask ? <Attention channel={ask.channel} /> : null}
       {drafts.map((x) => (
         <div key={x.id} className={n.draft} data-testid="dashboard-draft" data-sentinel={x.id}>
           <ClaudeMark />
@@ -295,14 +299,14 @@ function GroupedGrid({ d, state, projects }: { d: Dashboard; state: SentinelStat
             {g.id ? <ProjectIcon id={g.id} name={g.name} size={14} /> : <Icon name="laptop" size={13} />}
             {g.name}
           </div>
-          <Grid d={d} state={state} tiles={g.tiles} />
+          <Grid d={d} state={state} tiles={g.tiles} projects={projects} />
         </div>
       ))}
     </>
   );
 }
 
-function Grid({ d, state, tiles: only, marks, projects = [] }: { d: Dashboard; state: SentinelState; tiles?: readonly Tile[]; marks?: boolean; projects?: ReadonlyArray<{ readonly id: string; readonly name: string }> }) {
+function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: SentinelState; tiles?: readonly Tile[]; projects?: ReadonlyArray<{ readonly id: string; readonly name: string }> }) {
   const api = useApi();
   const a = useSentinelActions();
   const grid = useRef<HTMLDivElement>(null);
@@ -355,24 +359,13 @@ function Grid({ d, state, tiles: only, marks, projects = [] }: { d: Dashboard; s
   const tiles = only ?? d.tiles;
   const rest = drag ? tiles.filter((x) => x.id !== drag.id) : tiles;
   const lifted = drag ? tiles.find((x) => x.id === drag.id) : undefined;
-  const markOf = (tile: Tile): React.ReactNode => {
-    if (!marks || tile.kind === 'divider') return null;
-    const p = tileProject(state, tile, projects);
-    if (!p) return null;
-    return (
-      <Tip label={`From ${p.sentinel} · ${p.name}`}>
-        <span className={n.source} aria-label={`From ${p.sentinel}, ${p.name}`}>
-          {p.id ? <ProjectIcon id={p.id} name={p.name} size={14} /> : <Icon name="laptop" size={12} />}
-        </span>
-      </Tip>
-    );
-  };
+
   const at = drag?.index;
   return (
     <div ref={grid} className={n.grid} role="list" aria-label={`${d.name}’s tiles`} onPointerMove={moveStart} onPointerUp={() => (start.current = undefined)}>
       {rest.map((tile, i) => (
         <TileSlot key={tile.id} before={at === i && lifted ? lifted : undefined}>
-          <TileCell d={d} tile={tile} state={state} mark={markOf(tile)} onPointerDown={(e) => down(e, tile.id)} />
+          <TileCell d={d} tile={tile} state={state} source={tileProject(state, tile, projects)} onPointerDown={(e) => down(e, tile.id)} />
         </TileSlot>
       ))}
       {lifted && at !== undefined && at >= rest.length ? <div className={n.gap} data-w={lifted.width} style={{ gridColumn: `span ${lifted.kind === 'divider' ? 6 : lifted.width}` }} /> : null}
@@ -405,7 +398,18 @@ const noop = (): void => undefined;
 const GAP = 10;
 const SHOW_WORDS: Readonly<Record<OutputShow, string>> = { auto: 'As it reads', markdown: 'Markdown', tree: 'A JSON tree', table: 'A table', text: 'Plain text' };
 
-function TileCell({ d, tile, state, mark, onPointerDown, ghost }: { d: Dashboard; tile: Tile; state: SentinelState; mark?: React.ReactNode; onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void; ghost?: boolean }) {
+type Source = ReturnType<typeof tileProject>;
+
+function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboard; tile: Tile; state: SentinelState; source?: Source; onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void; ghost?: boolean }) {
+  // Its project's logo in the corner, and a soft wash of the project's colour (changeable from ⋯ › Tint).
+  const tint = useProjectTint(source?.id, source?.name ?? '');
+  const mark = source ? (
+    <Tip label={`From ${source.sentinel} · ${source.name}`}>
+      <span className={n.source} aria-label={`From ${source.sentinel}, ${source.name}`}>
+        {source.id ? <ProjectIcon id={source.id} name={source.name} size={16} /> : <Icon name="laptop" size={13} />}
+      </span>
+    </Tip>
+  ) : null;
   const api = useApi();
   const a = useSentinelActions();
   const [renaming, setRenaming] = useState(false);
@@ -434,6 +438,22 @@ function TileCell({ d, tile, state, mark, onPointerDown, ghost }: { d: Dashboard
           ...(output?.runId ? [{ label: 'Open the Run', icon: 'arrowRight' as const, separate: true, onSelect: () => a.openRun(output.runId) }] : []),
           ...(sentinelId && cap.state !== 'gone' ? [{ label: 'Open Its Sentinel', icon: 'sentinel' as const, ...(output?.runId ? {} : { separate: true }), onSelect: () => a.open(sentinelId) }] : []),
         ]),
+    ...(source?.id
+      ? [
+          {
+            label: 'Tint',
+            icon: 'palette' as const,
+            hint: `For every tile from ${source.name}`,
+            separate: true,
+            onSelect: noop,
+            submenu: [
+              { label: 'From its icon', checked: tintChoiceOf(source.id) === 'auto', onSelect: () => setTintChoice(source.id!, 'auto') },
+              ...TINTS.map((t) => ({ label: t.label, swatch: t.color, checked: tintChoiceOf(source.id!) === t.id, onSelect: () => setTintChoice(source.id!, t.id) })),
+              { label: 'None', checked: tintChoiceOf(source.id) === 'none', onSelect: () => setTintChoice(source.id!, 'none') },
+            ],
+          },
+        ]
+      : []),
     { label: 'Remove Tile', danger: true, separate: true, onSelect: () => void a.act(() => api.dashboard.removeTile(d.id, tile.id)) },
   ];
   /** The corner: drag it across the grid's columns (it snaps to 1, 2, 3, 4 or 6 of 6) and down for tall. */
@@ -494,17 +514,17 @@ function TileCell({ d, tile, state, mark, onPointerDown, ghost }: { d: Dashboard
     </div>
   );
   return (
-    <div className={n.cell} data-tile={tile.id} data-kind={tile.kind} data-w={sizing?.w ?? tile.width} data-h={sizing?.h ?? tile.height ?? 1} data-sizing={sizing ? '' : undefined} data-state={cap.state} role="listitem" onPointerDown={onPointerDown}>
+    <div className={n.cell} data-tile={tile.id} data-kind={tile.kind} data-w={sizing?.w ?? tile.width} data-h={sizing?.h ?? tile.height ?? 1} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
       {tile.kind === 'number' ? null : head}
       <div className={n.cellBody}>
-        <TileBody d={d} tile={tile} state={state} compare={compare} note={note} more={tile.kind === 'number' ? <>{mark ? <span className={n.sourceEnd}>{mark}</span> : null}{more}</> : null} />
+        <TileBody d={d} tile={tile} state={state} compare={compare} note={note} lead={tile.kind === 'number' ? mark : null} more={tile.kind === 'number' ? more : null} />
       </div>
       {corner}
     </div>
   );
 }
 
-function TileBody({ d, tile, state, compare, note, more }: { d: Dashboard; tile: Tile; state: SentinelState; compare: Compare; note: string | undefined; more: React.ReactNode }) {
+function TileBody({ d, tile, state, compare, note, lead, more }: { d: Dashboard; tile: Tile; state: SentinelState; compare: Compare; note: string | undefined; lead?: React.ReactNode; more: React.ReactNode }) {
   const a = useSentinelActions();
   if (tile.kind === 'number') {
     const m = metricOf(state, tile.metric);
@@ -516,21 +536,7 @@ function TileBody({ d, tile, state, compare, note, more }: { d: Dashboard; tile:
           {more}
         </div>
       );
-    const w = numberWords(m, compare, tileCaption(state, tile).title);
-    const number = (
-      <NumberTile w={w} {...(note ? { note } : {})}>
-        {more}
-      </NumberTile>
-    );
-    // Given room, a number shows how it got here: its points over time, each opening its run.
-    const roomy = tile.width >= 3 || tile.height === 2;
-    if (!roomy || m.points.length < 2) return number;
-    return (
-      <div className={n.numberBig} data-look="chart">
-        {number}
-        <MetricChart series={[m]} kind="area" height={tile.height === 2 ? 220 : 120} onRun={(runId) => a.openRun(runId)} />
-      </div>
-    );
+    return <NumberFit m={m} compare={compare} title={tileCaption(state, tile).title} note={note} lead={lead} more={more} onRun={(runId) => a.openRun(runId)} />;
   }
   const tall = tile.height === 2;
   if (tile.kind === 'series') {
@@ -548,6 +554,24 @@ function TileBody({ d, tile, state, compare, note, more }: { d: Dashboard; tile:
   }
   if (tile.kind === 'output') return <OutputTile tile={tile} state={state} note={note} />;
   return <TextTile tile={tile} state={state} />;
+}
+
+/**
+ * A number that fits its tile: the value, its change and a sparkline when small; given more room
+ * (taller or wider), its points over time fill the rest and the sparkline steps aside. The value
+ * grows with the tile.
+ */
+function NumberFit({ m, compare, title, note, lead, more, onRun }: { m: MetricSeries; compare: Compare; title: string; note: string | undefined; lead?: React.ReactNode; more: React.ReactNode; onRun: (runId: string) => void }) {
+  const [filled, setFilled] = useState(false);
+  const series = useMemo(() => [m], [m]);
+  return (
+    <div className={n.numberFit} data-look={filled ? 'chart' : 'number'}>
+      <NumberTile w={numberWords(m, compare, title)} spark={!filled} lead={lead} {...(note ? { note } : {})}>
+        {more}
+      </NumberTile>
+      <FillChart series={series} onRun={onRun} onFit={setFilled} />
+    </div>
+  );
 }
 
 /** A tile's title, renamed in place (empty: its metric's or step's name again). */

@@ -102,6 +102,8 @@ export interface ActionItem {
   readonly separate?: boolean;
   /** A checkmark in front (the group a project is in). */
   readonly checked?: boolean;
+  /** A colour dot before the name (a choice of colours: a tile's tint). */
+  readonly swatch?: string;
   /** A submenu ("Move to Group ▸"): picking the row itself does nothing. */
   readonly submenu?: readonly ActionItem[];
   readonly onSelect: () => void;
@@ -148,6 +150,7 @@ function ActionRows({ items, Item, Separator, kit = DROPDOWN_SUB }: { items: rea
             <span className={s.line}>
               {/* A row with its own icon keeps it (a choice of icons); the check then goes after the name. */}
               {icons ? <span className={s.icon}>{it.icon ? <Icon name={it.icon} size={13} /> : it.checked ? <Icon name="check" size={12} /> : null}</span> : null}
+              {it.swatch ? <span className={s.swatch} style={{ background: it.swatch }} aria-hidden="true" /> : null}
               <span className={s.label}>{it.label}</span>
               {it.checked && it.icon ? <Icon name="check" size={12} className={s.trailingCheck} /> : null}
               {it.keys ? <kbd className={s.keys}>{it.keys}</kbd> : null}

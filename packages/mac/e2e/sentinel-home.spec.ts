@@ -118,6 +118,7 @@ test('a tile is resized by dragging its corner', async ({ page }) => {
   await page.mouse.move(again.x + tileBox.width * 1.2, again.y + 4, { steps: 6 });
   await page.mouse.up();
   await expect(tile).toHaveAttribute('data-w', '3');
+  // Wide, the number has its chart beside it; the sparkline steps aside.
   await expect(tile.locator('[data-look="chart"] .recharts-surface')).toBeVisible();
   await shoot(page, 'resized');
 });
@@ -132,6 +133,24 @@ test('what came back: each sentinel’s latest run as a message; tiles say where
   // A board that mixes projects marks each tile with its project.
   const glance = main(page).getByRole('region', { name: 'At a glance' });
   await expect(glance.locator('[data-tile][data-kind="number"]').first().getByLabel(/^From /)).toBeVisible();
+  // Each tile carries its project's colour; Tint in its ⋯ changes it for the project's tiles.
+  const revenue = glance.locator('[data-tile][data-kind="number"]').filter({ hasText: 'Revenue' }).first();
+  await expect(revenue).toHaveAttribute('data-tinted', '');
+  await revenue.hover();
+  await revenue.getByRole('button', { name: /^More for / }).click();
+  await page.getByRole('menuitem', { name: /^Tint/ }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.getByRole('menuitem', { name: 'None' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(revenue).not.toHaveAttribute('data-tinted', '');
+  await revenue.hover();
+  await revenue.getByRole('button', { name: /^More for / }).click();
+  await page.getByRole('menuitem', { name: /^Tint/ }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.getByRole('menuitem', { name: 'From its icon' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(revenue).toHaveAttribute('data-tinted', '');
+  await shoot(page, 'tinted');
   await glance.getByRole('article').first().scrollIntoViewIfNeeded();
   await shoot(page, 'came-back');
   // Picking a project shows its tiles and its messages only.
