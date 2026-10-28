@@ -86,6 +86,34 @@ test('⌘J shows the terminal in the right panel and runs a command in it', asyn
   await expect(term).toBeHidden();
 });
 
+test("the dock terminal takes the shell's keys: Tab completes after a click in its padding, ⌘← goes to the line's start", async ({ page }) => {
+  await openWorkspace(page);
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
+  await page.keyboard.press('Meta+J');
+  const term = page.getByRole('complementary', { name: 'Panel' }).getByRole('region', { name: 'Terminal' });
+  await expect(term).toBeVisible();
+  await expect(term.locator('.xterm-rows')).toContainText(/\S/, { timeout: 15_000 });
+  await composer(page).click();
+  // The padding around the text, not the text: the keyboard goes to the shell all the same.
+  const box = term.locator('.xterm').locator('..');
+  const width = (await box.boundingBox())!.width;
+  await box.click({ position: { x: width / 2, y: 3 } });
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await page.keyboard.type('echo $((6*7))tab-done > tab-probe-7731.txt\n');
+  await page.keyboard.type('cat tab-probe-77');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await expect(term.getByText('42tab-done').last()).toBeVisible({ timeout: 15_000 });
+  // Emacs keys, whatever the test's environment says (an EDITOR=vi there puts zsh in vi mode).
+  await page.keyboard.type('bindkey -e 2>/dev/null; clear\n');
+  await page.keyboard.type('cho line-$((6*7))');
+  await page.keyboard.press('Meta+ArrowLeft');
+  await page.keyboard.type('e');
+  await page.keyboard.press('Enter');
+  await expect(term.getByText('line-42').last()).toBeVisible({ timeout: 15_000 });
+  await page.keyboard.type('rm tab-probe-7731.txt\n');
+});
+
 test('picks a model and how hard Claude thinks', async ({ page }) => {
   await openWorkspace(page);
   await page.getByRole('button', { name: 'Model and effort' }).click();

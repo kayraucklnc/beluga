@@ -109,6 +109,8 @@ function useShortcuts() {
   const prefs = usePrefs();
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // In a terminal, keys without ⌘ are the shell's (⌥1 types there, ⌃K kills the line); only ⌃Tab still moves places.
+      if (!e.metaKey && (e.target as Element | null)?.closest?.('.xterm') && !(e.ctrlKey && e.key === 'Tab')) return;
       const cmd = e.metaKey || e.ctrlKey;
       const state = client.store.getState();
       // The Workspace and Conversation menus' keys (Stop ⌘., Commit ⇧⌘C, Find ⌘F…).
