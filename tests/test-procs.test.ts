@@ -15,6 +15,15 @@ describe('which processes are a worktree’s test runs', () => {
     expect(isTestRunner(`node ${W}/src/server.js`, W)).toBe(false);
   });
 
+  it('knows the demo daemon, however it was started; never the real one', () => {
+    const tsx = `node --require ${W}/node_modules/tsx/dist/preflight.cjs --import file://${W}/node_modules/tsx/dist/loader.mjs`;
+    expect(isTestRunner(`${tsx} src/cli.ts daemon --keep-alive demo`, W)).toBe(true);
+    expect(isTestRunner(`node ${W}/dist/cli.js daemon demo`, W)).toBe(true);
+    expect(isTestRunner('/Applications/Beluga.app/Contents/MacOS/node /Applications/Beluga.app/Contents/Resources/daemon/dist/cli.js daemon --keep-alive', W)).toBe(false);
+    // Started from a terminal in a worktree that's now going away: it goes too.
+    expect(testProcessesIn([row(30, 1, `${tsx} src/cli.ts daemon --keep-alive demo PWD=${W}`)], W, true)).toEqual([30]);
+  });
+
   it("stops what this worktree's Claude started, and what's under it; not the rest", () => {
     const tag = ` KLAUD_WORKTREE=${W}`;
     const rows = [
