@@ -45,9 +45,14 @@
 }
 .tileLabelText {
   min-width: 0;
+  /* Two lines before it's cut: a narrow tile still says what it counts. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
 .foot {
   flex-wrap: wrap;
@@ -56,8 +61,10 @@
 .delta {
   white-space: nowrap;
 }
+/* "nothing from yesterday": wraps in a narrow tile rather than running off its edge. */
 .vs {
-  white-space: nowrap;
+  min-width: 0;
+  line-height: 1.3;
 }
 .note {
   margin-left: auto;
@@ -208,6 +215,10 @@
 }
 
 /* Six columns; a tile spans its width (1, 2 or 3); a divider spans them all. Narrow windows: three. */
+/*
+ * Like widgets on a phone: six columns, and a tall tile takes two rows,
+ * so smaller ones sit beside it and under each other, packed with no holes (dense).
+ */
 .grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -215,16 +226,23 @@
   gap: 10px;
   container-type: inline-size;
 }
+/* A tile: a soft card, no heavy outline (a whisper of a hairline and shadow, like a widget). */
 .cell {
+  --cell-bg: var(--bg-raised);
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 110px;
-  border-radius: 12px;
-  background: var(--bg-raised);
-  box-shadow: inset 0 0 0 1px var(--hairline);
+  min-height: 116px;
+  border-radius: 16px;
+  background: var(--cell-bg);
+  box-shadow:
+    0 0 0 0.5px var(--hairline),
+    0 1px 2px rgba(0, 0, 0, 0.04);
   touch-action: none;
+}
+.cell[data-movable] {
+  cursor: grab;
 }
 .cell[data-w='1'] {
   grid-column: span 1;
@@ -241,9 +259,10 @@
 .cell[data-w='6'] {
   grid-column: span 6;
 }
-/* Tall: twice the room (a long report, a big chart). */
+/* Tall: two rows (a long report, a big chart, a number with its chart beside smaller tiles). */
 .cell[data-h='2'] {
-  min-height: 300px;
+  grid-row: span 2;
+  min-height: 242px;
 }
 .cell[data-kind='divider'] {
   grid-column: 1 / -1;
@@ -272,22 +291,41 @@
 .cell[data-state='gone'] .cellBody {
   opacity: 0.55;
 }
+/* Where a lifted tile lands: a quiet dashed well its size, in the page's greys. */
 .gap {
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 16px;
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
   min-height: 110px;
+  outline: 1px dashed var(--hairline-strong);
+  outline-offset: -4px;
 }
+/* The lifted tile: picked up a little (a touch larger, a soft shadow), following the pointer. */
 .ghost {
   position: fixed;
   z-index: 50;
   pointer-events: none;
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--bg-raised);
   box-shadow:
     0 0 0 1px var(--hairline-strong),
-    0 10px 28px -10px rgba(0, 0, 0, 0.28);
-  opacity: 0.96;
+    0 14px 32px -12px rgba(0, 0, 0, 0.3);
+  transform: scale(1.02);
+  animation: lift 0.16s ease-out;
+}
+.ghost > .cell {
+  height: 100%;
+}
+@keyframes lift {
+  from {
+    transform: scale(1);
+    box-shadow: 0 0 0 1px var(--hairline);
+  }
+}
+:root[data-dragging='tile'],
+:root[data-dragging='tile'] * {
+  cursor: grabbing !important;
+  user-select: none;
 }
 .cellHead {
   display: flex;
@@ -336,9 +374,22 @@
   padding: 0;
 }
 .cell[data-kind='number'] .tile {
-  border-radius: 12px;
+  border-radius: 16px;
   background: transparent;
   box-shadow: none;
+}
+/* A number's ⋯ floats in its corner on hover, so the title has the tile's whole width. */
+.cell[data-kind='number'] .tile > :first-child {
+  align-items: flex-start;
+}
+.cell[data-kind='number'] .cellMore {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--cell-bg);
+}
+.cell[data-kind='number'] .note {
+  line-height: 1.3;
 }
 .quiet {
   margin: auto;
@@ -679,38 +730,54 @@
   background: var(--bg-hover);
   color: var(--text-2);
 }
-/* The corner to drag: a soft notch, shown on hover. */
+/* The corner to drag: a small grip, shown on hover, with room around it to catch. */
 .resize {
   position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 14px;
-  height: 14px;
-  border-radius: 0 0 9px 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 0 0 16px 0;
   cursor: nwse-resize;
+  color: var(--text-3);
   opacity: 0;
-  background: linear-gradient(135deg, transparent 50%, var(--hairline-strong) 50%, var(--hairline-strong) 60%, transparent 60%, transparent 72%, var(--hairline-strong) 72%, var(--hairline-strong) 82%, transparent 82%);
+  transition: opacity var(--dur-fast), color var(--dur-fast);
+}
+.resize svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
 }
 .cell:hover .resize,
 .cell[data-sizing] .resize {
   opacity: 1;
 }
-.cell[data-sizing] {
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent);
+.resize:hover,
+.cell[data-sizing] .resize {
+  color: var(--text-2);
 }
 .sizing {
   position: absolute;
-  right: 22px;
+  right: 26px;
   bottom: 6px;
-  padding: 1px 7px;
+  padding: 1px 8px;
   border-radius: 999px;
   font-size: 11px;
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
-  color: var(--accent);
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 2px 6px rgba(0, 0, 0, 0.08);
+  color: var(--text-2);
   pointer-events: none;
 }
-:root[data-dragging='resize'] {
-  cursor: nwse-resize;
+:root[data-dragging='resize'],
+:root[data-dragging='resize'] * {
+  cursor: nwse-resize !important;
+  user-select: none;
 }
 
 /* Where a tile comes from (its project), when the board mixes projects. */
@@ -719,6 +786,18 @@
   flex: none;
   align-items: center;
   color: var(--text-3);
+}
+/* Quiet until you look at the tile: a project's logo is a hint of where it's from, not the headline. */
+.source img,
+.source > span {
+  filter: saturate(0.35);
+  opacity: 0.7;
+  transition: filter var(--dur-fast), opacity var(--dur-fast);
+}
+.cell:hover .source img,
+.cell:hover .source > span {
+  filter: none;
+  opacity: 1;
 }
 .sourceEnd {
   display: inline-flex;
@@ -771,8 +850,9 @@
   white-space: nowrap;
   transition: font-size 0.15s ease;
 }
+/* With its chart: bigger, but never wider than a narrow tile. */
 .numberFit[data-look='chart'] [data-value] {
-  font-size: clamp(24px, 8cqi, 44px);
+  font-size: clamp(17px, 11cqi, 44px);
 }
 .fill {
   position: relative;
@@ -795,8 +875,10 @@
 }
 /* A project's colour on its tiles: a soft wash and a hairline of it (Tint in the tile's ⋯). */
 .cell[data-tinted] {
-  background: color-mix(in srgb, var(--tint) 6%, var(--bg-raised));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 22%, var(--hairline));
+  --cell-bg: color-mix(in srgb, var(--tint) 3.5%, var(--bg-raised));
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--tint) 12%, var(--hairline)),
+    0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .cell[data-tinted] .areaFillArea {
   fill: color-mix(in srgb, var(--tint) 14%, transparent);
@@ -818,10 +900,13 @@
   stroke-width: 1.5;
 }
 
-/* A narrow number: the value has the room; its sparkline steps aside. */
+/* A narrow number: the value has the room; its sparkline steps aside, and its title may take a third line. */
 @container (max-width: 150px) {
   .numberFit [data-value] ~ * {
     display: none;
+  }
+  .tileLabelText {
+    -webkit-line-clamp: 3;
   }
 }
 /* Shown from its desktop widget: a ring of the accent for a moment. */

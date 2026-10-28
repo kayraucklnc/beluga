@@ -406,7 +406,7 @@ function ScriptFields({ step, change }: { step: ScriptStep; change: (patch: Part
       <div className={s.field}>
         <span className={s.fieldLabel}>Command</span>
         <TextInput value={command.text} onChange={command.change} onBlur={command.flush} mono placeholder="npm test" aria-label="Command" />
-        <span className={s.help}>One shell line or a script’s path; a non-zero exit stops the run. $VAR from Settings › Environment; $SENTINEL_PREVIOUS has the step before’s output.</span>
+        <span className={s.help}>One shell line or a script’s path; a non-zero exit stops the run. $VAR from Settings › Environment; $SENTINEL_PREVIOUS has the step before’s output, and $SENTINEL_PREVIOUS_FILE the file it’s in.</span>
       </div>
       <div className={s.controlRow}>
         <span className={s.controlLabel}>Runs in</span>

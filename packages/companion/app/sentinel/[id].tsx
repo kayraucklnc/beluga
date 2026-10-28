@@ -66,6 +66,11 @@ export default function SentinelPage() {
     );
   };
   const openRun = (r: SentinelRunView) => {
+    // Going now: its Claude's conversation, to watch it work (BLG-330).
+    if (r.chat && /^(queued|running)$/.test(r.state)) {
+      router.push(`/conv/${encodeURIComponent(r.chat)}`);
+      return;
+    }
     if (r.report) {
       router.push({ pathname: '/reader', params: { ref: r.report.ref, name: r.report.name } });
       return;
@@ -162,7 +167,7 @@ export default function SentinelPage() {
                   const st = runStateOf(r.state);
                   const shown = open === r.id;
                   const text = reports[r.id];
-                  const canOpen = !r.state.match(/^(queued|running)$/);
+                  const canOpen = !r.state.match(/^(queued|running)$/) || Boolean(r.chat);
                   return (
                     <Animated.View key={r.id} entering={FadeInDown.duration(200)} layout={LinearTransition.springify()}>
                       {i ? <Hairline style={{ marginLeft: 58 }} /> : null}
@@ -189,6 +194,13 @@ export default function SentinelPage() {
                               {text || 'This run left no report.'}
                             </T>
                           )}
+                          {r.chat ? (
+                            <Press onPress={() => router.push(`/conv/${encodeURIComponent(r.chat!)}`)} accessibilityLabel="Claude’s session" style={{ marginTop: 10, alignSelf: 'flex-start' }}>
+                              <T v="callout" c={color.info} style={{ fontWeight: '600' }}>
+                                Claude’s session
+                              </T>
+                            </Press>
+                          ) : null}
                         </View>
                       ) : null}
                     </Animated.View>

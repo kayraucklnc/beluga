@@ -1067,6 +1067,9 @@ function sentinelRunView(s: SentinelState, sn: Sentinel, r: RunSummary, ctx?: Vi
   const live = s.live[r.id]?.stepId;
   const step = live && isLive(r.state) ? sn.steps.find((st) => st.id === live)?.name : undefined;
   const report = r.report ? ctx?.refs.output(r.report, r.endedAt !== undefined ? { ts: r.endedAt } : {}) : undefined;
+  // Its Claude's conversation (the live one first): a workspace chat or Your Mac's, the ones the phone opens.
+  const chats = r.steps.filter((x) => x.channel && /^(ws:|mac:assistant)/.test(x.channel));
+  const chat = (chats.find((x) => x.state === 'running') ?? chats.at(-1))?.channel;
   return {
     id: clip(r.id, 200),
     by: runBy(s, r),
@@ -1078,6 +1081,7 @@ function sentinelRunView(s: SentinelState, sn: Sentinel, r: RunSummary, ctx?: Vi
     ...(r.pr ? { pr: { number: r.pr.number, url: clip(r.pr.url, 500) } } : {}),
     ...(step ? { step: clip(step, 100) } : {}),
     ...(report ? { report } : {}),
+    ...(chat ? { chat: clip(chat, 200) } : {}),
   };
 }
 

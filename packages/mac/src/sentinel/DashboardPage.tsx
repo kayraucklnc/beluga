@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activityOf } from '@beluga/ui/workspace-models.js';
-import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, GRID_COLUMNS, TILE_WIDTHS, type TileHeight, type TileWidth, WIDTH_WORDS, dashboardMarkdown, snapWidth, tileSentinelOf, dashboardSentinels, gridLanding, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
+import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, GRID_COLUMNS, TILE_WIDTHS, type TileHeight, type TileWidth, WIDTH_WORDS, dashboardMarkdown, moveTile, snapWidth, tileSentinelOf, dashboardSentinels, gridLanding, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
 import { COMPARE, COMPARE_LABEL, COMPARE_WORDS, type Compare } from '@beluga/core/sentinel/metrics.js';
 import type { MetricSeries, SentinelState } from '@beluga/core/sentinel/model.js';
 import type { Args } from '@beluga/ipc/api.js';
@@ -271,6 +271,8 @@ function AskLine({ d }: { d: Dashboard }) {
 
 interface Drag {
   readonly id: string;
+  /** Where it was lifted from (among the others): dropped back there, nothing moves. */
+  readonly from: number;
   readonly dx: number;
   readonly dy: number;
   readonly w: number;
@@ -314,6 +316,8 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
   const [drag, setDrag] = useState<Drag>();
   const start = useRef<{ id: string; x: number; y: number; box: DOMRect } | undefined>(undefined);
   const others = useRef<ReturnType<typeof boxesOf>>([]);
+  // Dropped: the board shows the new order at once, until the saved board comes back with it.
+  const [moved, setMoved] = useState<{ readonly id: string; readonly index: number; readonly tiles: readonly Tile[] }>();
 
   const boxesOf = (lifted: string) =>
     [...(grid.current?.querySelectorAll<HTMLElement>('[data-tile]') ?? [])]
@@ -328,17 +332,30 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
     const move = (e: PointerEvent): void => setDrag((now) => (now ? { ...now, x: e.clientX, y: e.clientY, index: gridLanding(e.clientX, e.clientY, others.current) } : now));
     const up = (): void => {
       setDrag((now) => {
-        if (now && now.index !== undefined) void a.act(() => api.dashboard.moveTile(d.id, now.id, now.index!));
+        if (now && now.index !== undefined && now.index !== now.from) {
+          const { id, index } = now;
+          setMoved({ id, index, tiles: d.tiles });
+          void a.act(() => api.dashboard.moveTile(d.id, id, index));
+        }
         return undefined;
       });
       start.current = undefined;
     };
+    // Escape puts it back where it was.
+    const key = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setDrag(undefined);
+      start.current = undefined;
+    };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up, { once: true });
+    window.addEventListener('keydown', key);
     document.documentElement.dataset.dragging = 'tile';
     return () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('keydown', key);
       delete document.documentElement.dataset.dragging;
     };
   }, [drag !== undefined, a, api, d.id]);
@@ -354,22 +371,27 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
     const s = start.current;
     if (!s || drag || !isDrag(e.clientX - s.x, e.clientY - s.y)) return;
     others.current = boxesOf(s.id);
-    setDrag({ id: s.id, dx: s.x - s.box.left, dy: s.y - s.box.top, w: s.box.width, h: s.box.height, x: e.clientX, y: e.clientY, index: undefined });
+    measure();
+    // Its place stays open where it was until the pointer goes somewhere else.
+    const from = tiles.findIndex((x) => x.id === s.id);
+    setDrag({ id: s.id, from, dx: s.x - s.box.left, dy: s.y - s.box.top, w: s.box.width, h: s.box.height, x: e.clientX, y: e.clientY, index: from });
   };
 
-  const tiles = only ?? d.tiles;
+  const tiles = only ?? (moved && moved.tiles === d.tiles ? moveTile(d.tiles, moved.id, moved.index) : d.tiles);
   const rest = drag ? tiles.filter((x) => x.id !== drag.id) : tiles;
   const lifted = drag ? tiles.find((x) => x.id === drag.id) : undefined;
+  const measure = useGlide(grid, `${rest.map((x) => `${x.id}:${x.width}:${x.height ?? 1}`).join(' ')}|${drag?.index ?? ''}`);
 
   const at = drag?.index;
+  const gapStyle = (tile: Tile): React.CSSProperties => ({ gridColumn: `span ${tile.kind === 'divider' ? 6 : tile.width}`, ...(drag ? { minHeight: drag.h } : {}) });
   return (
     <div ref={grid} className={n.grid} role="list" aria-label={`${d.name}’s tiles`} onPointerMove={moveStart} onPointerUp={() => (start.current = undefined)}>
       {rest.map((tile, i) => (
-        <TileSlot key={tile.id} before={at === i && lifted ? lifted : undefined}>
-          <TileCell d={d} tile={tile} state={state} source={tileProject(state, tile, projects)} onPointerDown={(e) => down(e, tile.id)} />
+        <TileSlot key={tile.id} before={at === i && lifted ? gapStyle(lifted) : undefined}>
+          <TileCell d={d} tile={tile} state={state} source={tileProject(state, tile, projects)} movable={!only} onPointerDown={(e) => down(e, tile.id)} />
         </TileSlot>
       ))}
-      {lifted && at !== undefined && at >= rest.length ? <div className={n.gap} data-w={lifted.width} style={{ gridColumn: `span ${lifted.kind === 'divider' ? 6 : lifted.width}` }} /> : null}
+      {lifted && at !== undefined && at >= rest.length ? <div className={n.gap} data-w={lifted.width} style={gapStyle(lifted)} /> : null}
       {lifted && drag ? (
         <div className={n.ghost} style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w, height: drag.h }} aria-hidden="true">
           <TileCell d={d} tile={lifted} state={state} ghost />
@@ -385,13 +407,78 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
   );
 }
 
-function TileSlot({ before, children }: { before: Tile | undefined; children: React.ReactNode }) {
+function TileSlot({ before, children }: { before: React.CSSProperties | undefined; children: React.ReactNode }) {
   return (
     <>
-      {before ? <div className={n.gap} style={{ gridColumn: `span ${before.kind === 'divider' ? 6 : before.width}` }} /> : null}
+      {before ? <div className={n.gap} style={before} /> : null}
       {children}
     </>
   );
+}
+
+const still = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Tiles move like widgets on a phone: when the order or a size changes (a tile lifted, the gap
+ * moving, a corner dragged past a size, a drop), each starts where and as big as it was and glides
+ * to its new place and size (FLIP), instead of jumping. Still with reduced motion.
+ */
+type Place = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+function useGlide(grid: React.RefObject<HTMLDivElement | null>, order: string): () => void {
+  const was = useRef(new Map<string, Place>());
+  const cells = (): HTMLElement[] => [...(grid.current?.querySelectorAll<HTMLElement>(':scope > [data-tile]') ?? [])];
+  // Each tile's place in the grid (not the window: scrolling moves nothing), as laid out (no glide under way).
+  const measure = (els: readonly HTMLElement[]): Map<string, Place> => {
+    const box = grid.current?.getBoundingClientRect();
+    return new Map(
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return [el.dataset.tile!, { x: r.left - (box?.left ?? 0), y: r.top - (box?.top ?? 0), w: r.width, h: r.height }] as const;
+      }),
+    );
+  };
+  const glide = (): void => {
+    const els = cells();
+    for (const el of els) for (const x of el.getAnimations()) if (x.id === 'glide') x.cancel();
+    const at = measure(els);
+    if (!still()) {
+      for (const el of els) {
+        const from = was.current.get(el.dataset.tile!);
+        const to = at.get(el.dataset.tile!);
+        if (!from || !to) continue;
+        const dx = from.x - to.x;
+        const dy = from.y - to.y;
+        const sized = Math.abs(from.w - to.w) >= 1 || Math.abs(from.h - to.h) >= 1;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && !sized) continue;
+        // A tile changing size grows or shrinks to it (its content lays out as it goes); the others slide.
+        const first: Keyframe = { transform: `translate(${dx}px, ${dy}px)`, ...(sized ? { width: `${from.w}px`, height: `${from.h}px` } : {}) };
+        const last: Keyframe = { transform: 'none', ...(sized ? { width: `${to.w}px`, height: `${to.h}px` } : {}) };
+        el.animate([first, last], { id: 'glide', duration: sized ? 260 : 220, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+      }
+    }
+    was.current = at;
+  };
+  useLayoutEffect(glide, [order]);
+  useEffect(() => {
+    const el = grid.current;
+    if (!el) return;
+    // A tile's size changing in place (its corner dragged past a size) glides too.
+    const sizes = new MutationObserver(glide);
+    sizes.observe(el, { subtree: true, attributes: true, attributeFilter: ['data-w', 'data-h'] });
+    // The window or the panel beside it changed the board's width: just learn the new places.
+    const room = new ResizeObserver(() => {
+      if (!cells().some((c) => c.getAnimations().some((x) => x.id === 'glide'))) was.current = measure(cells());
+    });
+    room.observe(el);
+    return () => {
+      sizes.disconnect();
+      room.disconnect();
+    };
+  }, [order]);
+  // Measured again just before a drag lifts a tile (a chart may have grown since).
+  return () => {
+    was.current = measure(cells());
+  };
 }
 
 const noop = (): void => undefined;
@@ -401,21 +488,25 @@ const SHOW_WORDS: Readonly<Record<OutputShow, string>> = { auto: 'As it reads', 
 
 type Source = ReturnType<typeof tileProject>;
 
-function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboard; tile: Tile; state: SentinelState; source?: Source; onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void; ghost?: boolean }) {
+function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d: Dashboard; tile: Tile; state: SentinelState; source?: Source; movable?: boolean; onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void; ghost?: boolean }) {
   // Its project's logo in the corner, and a soft wash of the project's colour (changeable from ⋯ › Tint).
   const tint = useProjectTint(source?.id, source?.name ?? '');
   const mark = source ? (
     <Tip label={`From ${source.sentinel} · ${source.name}`}>
       <span className={n.source} aria-label={`From ${source.sentinel}, ${source.name}`}>
-        {source.id ? <ProjectIcon id={source.id} name={source.name} size={16} /> : <Icon name="laptop" size={13} />}
+        {source.id ? <ProjectIcon id={source.id} name={source.name} size={14} /> : <Icon name="laptop" size={13} />}
       </span>
     </Tip>
   ) : null;
   const api = useApi();
   const a = useSentinelActions();
   const [renaming, setRenaming] = useState(false);
-  // Dragging its corner: the size it would land on, shown while the pointer moves.
+  // Dragging its corner: the size it takes, live, while the pointer moves (it and its neighbours glide).
   const [sizing, setSizing] = useState<{ readonly w: TileWidth; readonly h: TileHeight }>();
+  // Let go: the new size holds until the saved board comes back with it (no jump back and forth).
+  const [kept, setKept] = useState<{ readonly w: TileWidth; readonly h: TileHeight; readonly was: string }>();
+  const saved = `${tile.width}:${tile.height ?? 1}`;
+  const size = sizing ?? (kept && kept.was === saved ? kept : { w: tile.width, h: tile.height ?? 1 });
   // A desktop widget of this tile was clicked: the board scrolls to it and marks it for a moment.
   const [shown, setShown] = useState(false);
   const cellRef = useRef<HTMLDivElement>(null);
@@ -489,7 +580,11 @@ function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboa
       : []),
     { label: 'Remove Tile', danger: true, separate: true, onSelect: () => void a.act(() => api.dashboard.removeTile(d.id, tile.id)) },
   ];
-  /** The corner: drag it across the grid's columns (it snaps to 1, 2, 3, 4 or 6 of 6) and down for tall. */
+  /**
+   * The corner: drag it across the grid's columns (it snaps to 1, 2, 3, 4 or 6 of 6) and down for
+   * tall. Like a widget: past each size it grows or shrinks to it and the tiles around make room,
+   * gliding; it's saved when you let go. Escape puts it back as it was.
+   */
   const resize = (e: React.PointerEvent<HTMLElement>): void => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -503,23 +598,48 @@ function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboa
     let to = from;
     const move = (ev: PointerEvent): void => {
       const tall = from.h === 2 ? ev.clientY - box.top > box.height * 0.7 : ev.clientY - box.top > box.height * 1.4;
-      to = { w: snapWidth((ev.clientX - box.left + GAP) / column), h: tall ? 2 : 1 };
+      const next = { w: snapWidth((ev.clientX - box.left + GAP) / column), h: tall ? 2 : 1 } as const;
+      if (next.w === to.w && next.h === to.h) return;
+      to = next;
       setSizing(to);
     };
-    const up = (): void => {
+    const stop = (): void => {
       window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('keydown', key);
       delete document.documentElement.dataset.dragging;
       setSizing(undefined);
-      if (to.w !== from.w || to.h !== from.h) update({ width: to.w, height: to.h });
+    };
+    const up = (): void => {
+      stop();
+      if (to.w === from.w && to.h === from.h) return;
+      setKept({ ...to, was: `${from.w}:${from.h}` });
+      update({ width: to.w, height: to.h });
+    };
+    const key = (ev: KeyboardEvent): void => {
+      if (ev.key !== 'Escape') return;
+      ev.preventDefault();
+      stop();
     };
     document.documentElement.dataset.dragging = 'resize';
+    setSizing(from);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up, { once: true });
+    window.addEventListener('keydown', key);
   };
   const corner = ghost ? null : (
     <>
-      <span className={n.resize} data-resize="" onPointerDown={resize} role="separator" aria-label={`Resize ${cap.title || 'this tile'}: drag the corner`} title="Drag to resize" />
-      {sizing ? <span className={n.sizing}>{WIDTH_WORDS[sizing.w]}{sizing.h === 2 ? ' · tall' : ''}</span> : null}
+      <span className={n.resize} data-resize="" onPointerDown={resize} role="separator" aria-label={`Resize ${cap.title || 'this tile'}: drag the corner`} title="Drag to resize">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M9 3.5 3.5 9M9 7 7 9" />
+        </svg>
+      </span>
+      {sizing ? (
+        <span className={n.sizing} aria-hidden="true">
+          {WIDTH_WORDS[sizing.w].replace(/ \(.*\)$/, '')}
+          {sizing.h === 2 ? ' · tall' : ''}
+        </span>
+      ) : null}
     </>
   );
   const more = ghost ? null : (
@@ -547,7 +667,7 @@ function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboa
     </div>
   );
   return (
-    <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={sizing?.w ?? tile.width} data-h={sizing?.h ?? tile.height ?? 1} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
+    <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={size.w} data-h={size.h} data-movable={movable && !ghost ? '' : undefined} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
       {tile.kind === 'number' ? null : head}
       <div className={n.cellBody}>
         <TileBody d={d} tile={tile} state={state} compare={compare} note={note} lead={tile.kind === 'number' ? mark : null} more={tile.kind === 'number' ? more : null} />

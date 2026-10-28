@@ -640,6 +640,8 @@ export const SentinelRunView = z.object({
   pr: z.object({ number: z.number().int().min(0), url: z.string().max(500) }).optional(),
   step: z.string().max(100).optional(),
   report: OutputView.optional(),
+  /** BLG-330: its Claude step's conversation (a channel the phone's conversation screen opens), to watch it work. */
+  chat: z.string().max(200).optional(),
 });
 export type SentinelRunView = z.infer<typeof SentinelRunView>;
 

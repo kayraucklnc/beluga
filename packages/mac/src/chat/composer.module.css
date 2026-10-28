@@ -3,7 +3,9 @@
   max-width: var(--chat-max);
   width: 100%;
   margin: 0 auto;
-  padding: 0 24px 10px;
+  /* A side panel (Ask Sentinel) sets a slimmer margin. */
+  padding: 0 var(--composer-inset, 24px) 10px;
+  container: composer / inline-size;
 }
 .box {
   display: flex;
@@ -95,15 +97,35 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   padding: 4px 6px 6px 8px;
+}
+/* One line, always: controls keep their shape; only a chip marked to shrink (the model) gives way. */
+.bar > * {
+  flex-shrink: 0;
+}
+.bar > [data-shrink] {
+  flex-shrink: 1;
 }
 .flex {
   flex: 1;
+  flex-shrink: 1;
+  min-width: 0;
+}
+/* A narrow box: a chip's words step aside and its icon stays (the full name is in its menu and tooltip). */
+@container composer (max-width: 440px) {
+  .chipLabel {
+    display: none;
+  }
+  .bar {
+    gap: 2px;
+  }
 }
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
   height: 22px;
   padding: 0 8px;
   border-radius: 11px;
@@ -293,6 +315,7 @@
 }
 .split button {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 5px;
   padding: 0 10px;

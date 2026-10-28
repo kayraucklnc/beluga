@@ -178,19 +178,22 @@ export class RunFolders {
     return dir ? path.join(dir, name) : undefined;
   }
 
-  write(runId: string, name: string, text: string): void {
+  /** → whether it was kept (false: the disk said no). */
+  write(runId: string, name: string, text: string): boolean {
     const dir = this.folder(runId);
     if (!dir) {
       const files = this.memory.get(runId) ?? new Map<string, string>();
       files.set(name, text);
       this.memory.set(runId, files);
-      return;
+      return true;
     }
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       writeFileSync(path.join(dir, name), text, { mode: 0o600 });
+      return true;
     } catch {
       // Kept in the index without it.
+      return false;
     }
   }
 

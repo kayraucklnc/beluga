@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CLAUDE_CHANGED, FIRST_SENTINEL_CHAT, MAX_RUN_AT_ONCE, type Recipe, RUN_STATE_INFO, type RunSummary, type Sentinel, type SentinelState, lastRunOf, pausedWords, sentinelChatChannel } from '@beluga/core/sentinel/model.js';
+import { CLAUDE_CHANGED, FIRST_SENTINEL_CHAT, MAX_RUN_AT_ONCE, RUN_STATE_INFO, type RunSummary, type Sentinel, type SentinelState, lastRunOf, pausedWords, sentinelChatChannel } from '@beluga/core/sentinel/model.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { type ActionItem, ActionsContext, ActionsDropdown } from '../components/SpecMenu.js';
@@ -14,8 +14,9 @@ import { Board, SectionHead } from './DashboardPage.js';
 import { Disc, RunPill, TriggerDisc } from './marks.js';
 import { Markdown } from '../chat/Markdown.js';
 import { ago } from '../tasks/tasks-model.js';
-import { SentinelChat } from './SentinelChat.js';
-import { MAC_SCOPE, type Need, dotsOf, doesLine, durationText, filterSentinels, groupSentinels, headlineOf, iconOf, latestOf, needsOf, runDuration, recipeWhen, rowOf, scopesOf, startingPoints } from './sentinel-model.js';
+import { AskPanel, SentinelChat } from './SentinelChat.js';
+import { Showcase } from './Showcase.js';
+import { MAC_SCOPE, type Need, dotsOf, doesLine, durationText, filterSentinels, groupSentinels, headlineOf, iconOf, latestOf, needsOf, runDuration, rowOf, scopesOf } from './sentinel-model.js';
 import { sentinelMenu, useRunsFolder, useSentinelActions, useSentinelState, type SentinelActions } from './use-sentinel.js';
 import s from './home.module.css';
 
@@ -63,9 +64,9 @@ export function SentinelHome() {
     <div className={s.home} data-asking={asking || undefined}>
       <div className={s.page}>{state.items.length ? <Lived state={state} scope={scope} setScope={setScope} board={board} setBoard={setBoard} /> : <FirstVisit />}</div>
       {asking ? (
-        <aside className={s.panel} aria-label="Ask Sentinel">
+        <AskPanel>
           <SentinelChat key={view.chat ?? 'main'} onClose={close} />
-        </aside>
+        </AskPanel>
       ) : null}
     </div>
   );
@@ -409,63 +410,38 @@ const Message = memo(function Message({ sentinel, run, now, a }: { sentinel: Sen
 
 // ---------------------------------------------------------------- the first visit
 
-const WHEN: ReadonlyArray<readonly [Parameters<typeof Icon>[0]['name'], string]> = [
-  ['clock', 'Every morning at 7'],
-  ['pr', 'A pull request opens'],
-  ['pulse', 'Your site stops answering'],
-  ['link', 'Stripe, Sentry, GitHub, a webhook'],
-];
-const DOES: ReadonlyArray<readonly [Parameters<typeof Icon>[0]['name'], string]> = [
-  ['claude', 'Claude reads, fixes, reviews'],
-  ['terminal', 'Runs a script'],
-  ['globe', 'Fetches from an API'],
-  ['merge', 'Opens a pull request'],
-];
-const GETS: ReadonlyArray<readonly [Parameters<typeof Icon>[0]['name'], string]> = [
-  ['bell', 'A note on your phone'],
-  ['gauge', 'A number on your board'],
-  ['task', 'Tasks for what matters'],
-  ['file', 'A report to read'],
+/** One-tap ideas under the box: the first lets Claude look at your projects and suggest. */
+const IDEAS: ReadonlyArray<{ readonly label: string; readonly icon: Parameters<typeof Icon>[0]['name']; readonly prompt: string }> = [
+  { label: 'Suggest Some for Me', icon: 'sparkles', prompt: 'I’m new to Sentinel. Look at my projects and what they use, and suggest three watchers that would help me, each in one plain line. Set them up, with a board for their numbers, when I say yes.' },
+  { label: 'A Morning Brief', icon: 'clock', prompt: 'Every weekday morning, tell me on my phone what changed in my projects and what needs me first.' },
+  { label: 'Watch My Website', icon: 'pulse', prompt: 'Check my website every 5 minutes and tell me the moment it stops answering, and when it’s back.' },
+  { label: 'Fix Failing Tests', icon: 'wrench', prompt: 'When the tests fail on GitHub for one of my projects, have Claude fix it and open a pull request for me to merge.' },
 ];
 
-/** Nothing set up yet: what it's for, a box to say what you want, and starting points. */
+/**
+ * Nothing set up yet (BLG-334): shown before it's explained. What Sentinel can do as a few scenes,
+ * a box to say what you want, a few one-tap ideas (the first has Claude look and suggest), and every
+ * recipe one tap away. Under forty words before the scenes.
+ */
 function FirstVisit() {
   const ask = useAsk();
-  const a = useSentinelActions();
   const [words, setWords] = useState('');
-  const [recipes, setRecipes] = useState<readonly Recipe[]>([]);
-  const [busy, setBusy] = useState<string>();
-  useEffect(() => {
-    let alive = true;
-    void a.act(() => a.api.recipes()).then((r) => alive && setRecipes(r ?? []));
-    return () => {
-      alive = false;
-    };
-  }, [a]);
   const send = (): void => {
     if (!words.trim()) return;
     ask(words);
     setWords('');
   };
-  /** A starting point: made (paused) with the one that runs after it, and opened to look over. */
-  const pick = async (r: Recipe): Promise<void> => {
-    if (busy) return;
-    setBusy(r.id);
-    const made = await a.act(() => a.create({ ...r.sentinel }));
-    if (made && r.then) await a.act(() => a.create({ ...r.then!.sentinel, trigger: { kind: 'after', sentinelId: made.id, on: r.then!.on } }));
-    setBusy(undefined);
-    if (made) a.open(made.id);
-  };
   return (
     <div className={s.first} data-testid="sentinel-first">
-      <h1 className={s.firstTitle}>What should Beluga keep an eye on?</h1>
-      <p className={s.lede}>Say it in your own words. Claude sets it up, you look it over, then you turn it on.</p>
+      <h1 className={s.firstTitle}>Let Claude keep an eye on things</h1>
+      <p className={s.lede}>Say what you want in your own words. Claude sets it up; nothing runs until you turn it on.</p>
+      <Showcase onPick={(slide) => ask(slide.prompt)} />
       <div className={s.composer}>
         <textarea
           className={s.composerText}
           value={words}
           rows={2}
-          placeholder="Every morning, tell me what changed in my projects and what needs me first…"
+          placeholder="Every morning, tell me what changed and what needs me first…"
           aria-label="What should Beluga keep an eye on?"
           onChange={(e) => setWords(e.target.value)}
           onKeyDown={(e) => {
@@ -481,39 +457,15 @@ function FirstVisit() {
           <IconButton icon="send" label="Ask Claude" className={s.send} disabled={!words.trim()} onClick={send} />
         </div>
       </div>
-
-      <div className={s.flow} aria-label="How a sentinel works">
-        <FlowColumn title="When" icon="clock" items={WHEN} />
-        <span className={s.arrow} aria-hidden="true">
-          <Icon name="arrowRight" size={14} />
-        </span>
-        <FlowColumn title="Beluga does" icon="claude" items={DOES} />
-        <span className={s.arrow} aria-hidden="true">
-          <Icon name="arrowRight" size={14} />
-        </span>
-        <FlowColumn title="You get" icon="bell" items={GETS} />
-      </div>
-
-      <SectionHead title="Or start from one of these" />
-      <div className={s.starts}>
-        {startingPoints(recipes).map((g) => (
-          <div key={g.label} className={s.startGroup} role="list" aria-label={g.label}>
-            <div className={s.startLabel}>{g.label}</div>
-            {g.recipes.map((r) => (
-              <button key={r.id} type="button" role="listitem" className={s.start} disabled={Boolean(busy)} data-recipe={r.id} onClick={() => void pick(r)}>
-                <Icon name={iconOf(r.icon)} size={14} />
-                <span className={s.startText}>
-                  <strong>{busy === r.id ? 'Making it…' : r.name}</strong>
-                  <span>{r.line}</span>
-                </span>
-                <span className={s.startWhen}>{recipeWhen(r)}</span>
-              </button>
-            ))}
-          </div>
+      <div className={s.ideas} role="list" aria-label="Ideas">
+        {IDEAS.map((x, i) => (
+          <button key={x.label} type="button" role="listitem" className={s.idea} data-lead={i === 0 || undefined} onClick={() => ask(x.prompt)}>
+            <Icon name={x.icon} size={13} />
+            {x.label}
+          </button>
         ))}
       </div>
       <div className={s.firstFoot}>
-        <span>Each one starts paused: nothing runs until you turn it on, and Claude never does.</span>
         <button type="button" className={s.link} onClick={() => openSheet({ kind: 'new_sentinel', way: 'recipe' })}>
           Every recipe
         </button>
@@ -521,23 +473,6 @@ function FirstVisit() {
           Build one step by step
         </button>
       </div>
-    </div>
-  );
-}
-
-function FlowColumn({ title, icon, items }: { title: string; icon: Parameters<typeof Icon>[0]['name']; items: ReadonlyArray<readonly [Parameters<typeof Icon>[0]['name'], string]> }) {
-  return (
-    <div className={s.flowCol}>
-      <div className={s.flowTitle}>
-        <Icon name={icon} size={12} />
-        {title}
-      </div>
-      {items.map(([i, text]) => (
-        <div key={text} className={s.flowItem}>
-          <Icon name={i} size={13} />
-          {text}
-        </div>
-      ))}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import type { SentinelSummary, SentinelsView } from '../lib/link/protocol';
 import { kv } from '../lib/kv';
 import { color } from '../lib/theme';
 import { ProjectMark } from './ProjectMark';
+import { SentinelIdeas } from './SentinelIdeas';
 import { Card, Hairline, IconBadge, Pill, Press, T, type Tone, toneBg, toneInk } from './ui';
 
 /**
@@ -98,6 +99,7 @@ export function SentinelsList() {
   }
   if (!view) return <T v="callout" style={{ paddingHorizontal: 20 }}>Loading your sentinels…</T>;
   const list = view.data.sentinels;
+  if (!list.length && view.data.enabled) return <SentinelIdeas chat={view.data.chat?.topic} />;
   if (!list.length) {
     return (
       <Card style={{ marginHorizontal: 16, padding: 18 }}>

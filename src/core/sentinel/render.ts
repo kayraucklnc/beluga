@@ -22,11 +22,16 @@ export interface RenderContext {
   readonly plans?: string;
   /** The step before's name (for `material`). */
   readonly previousName?: string;
+  /** Where the step before's whole output is on disk (the run's folder; none in memory). */
+  readonly previousFile?: string;
+  /** Where earlier steps' whole outputs are, by their names. */
+  readonly stepFiles?: Readonly<Record<string, string>>;
   /**
    * Earlier outputs (and the trigger's payload) wrapped as material where they're filled in: a
-   * Claude step's prompt gets them in tags (prompt.ts stepMaterial), so they're never instructions.
+   * Claude step's prompt gets them in tags (prompt.ts stepMaterial), so they're never instructions;
+   * a big one there is its file's path and a preview (`file`: where it is, when it's on disk).
    */
-  readonly material?: (kind: 'step' | 'trigger', name: string, text: string) => string;
+  readonly material?: (kind: 'step' | 'trigger', name: string, text: string, file?: string) => string;
   /** Every value filled in goes through this (a JSON body gets them as JSON string contents). */
   readonly escape?: (text: string) => string;
 }
@@ -57,7 +62,7 @@ function valueOf(key: string, ctx: RenderContext): string | undefined {
       return ctx.material ? ctx.material('trigger', 'trigger', json) : json;
     }
     case 'previous':
-      return ctx.previous === undefined ? '' : ctx.material ? ctx.material('step', ctx.previousName ?? 'previous', ctx.previous) : ctx.previous;
+      return ctx.previous === undefined ? '' : ctx.material ? ctx.material('step', ctx.previousName ?? 'previous', ctx.previous, ctx.previousFile) : ctx.previous;
     case 'project':
       return ctx.project?.name ?? 'Your Mac';
     case 'project.path':
@@ -79,7 +84,7 @@ function valueOf(key: string, ctx: RenderContext): string | undefined {
   const found = Object.hasOwn(ctx.steps, step) ? step : Object.keys(ctx.steps).find((n) => n.toLowerCase() === lower);
   if (found === undefined) return undefined;
   const text = ctx.steps[found]!;
-  return ctx.material ? ctx.material('step', found, text) : text;
+  return ctx.material ? ctx.material('step', found, text, ctx.stepFiles?.[found]) : text;
 }
 
 /** "Mon 26 Oct 2026". */

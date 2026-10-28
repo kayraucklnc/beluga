@@ -12,13 +12,58 @@
   padding: 14px 24px 40px;
 }
 .panel {
+  position: relative;
   flex: none;
-  width: clamp(320px, 30%, 420px);
   display: flex;
+  /* The message box in it keeps a slimmer margin than the full-width chat's. */
+  --composer-inset: 12px;
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--hairline);
   background: var(--bg);
+}
+/* Opening: it slides in from the right as the page makes room (still with reduced motion). */
+.panel[data-opening] {
+  overflow: hidden;
+  animation: askIn 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes askIn {
+  from {
+    width: 0;
+  }
+}
+.panel[data-opening] > .panelInner {
+  animation: askInner 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes askInner {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel[data-opening],
+  .panel[data-opening] > .panelInner {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .panel[data-opening],
+:root[data-motion='reduce'] .panel[data-opening] > .panelInner {
+  animation: none;
+}
+.panelInner {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+/* Its left edge, dragged to resize: the panel's own border is the line; the handle only lights up. */
+.panel > .panelEdge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
 }
 .grow {
   flex: 1;
@@ -427,6 +472,48 @@
   font-size: 11px;
   color: var(--text-3);
   text-align: right;
+}
+/* One-tap ideas under the box: soft pills; the first (Claude suggests) in a light wash of the accent. */
+.ideas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.idea {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: default;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.idea svg {
+  color: var(--text-3);
+}
+.idea:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.idea[data-lead] {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-raised));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent) 28%, transparent);
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+}
+.idea[data-lead] svg {
+  color: inherit;
+}
+.first .composer {
+  margin-top: 18px;
 }
 .firstFoot {
   display: flex;

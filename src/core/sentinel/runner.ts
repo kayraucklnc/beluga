@@ -303,7 +303,7 @@ export class SentinelRunner {
     };
     const setStep = (i: number, patch: Partial<StepRun>): void => set({ steps: active.run.steps.map((s, n) => (n === i ? { ...s, ...patch } : s)) });
     set({ state: 'running' });
-    const outputs: Array<{ readonly name: string; readonly output: string }> = [];
+    const outputs: StepOutput[] = [];
     const lastClaude = sentinel.steps.map((s) => s.kind).lastIndexOf('claude');
     let end: { readonly state: Run['state']; readonly why?: string; readonly headline?: string } | undefined;
     let report: string | undefined;
@@ -338,9 +338,12 @@ export class SentinelRunner {
       else if (result.kind === 'skip') result = { ...result, reason: redactSecrets(result.reason) };
       const endedAt = this.deps.now();
       const output = result.output === undefined ? undefined : redactSecrets(result.output);
+      // Each step's whole output (its secrets redacted) is a file in the run's folder as it ends:
+      // the next steps get its path (a big one goes to Claude as the file, not pasted; BLG-331).
       if (output !== undefined) {
-        this.deps.folders.write(active.run.id, `step-${i + 1}.txt`, output);
-        outputs.push({ name: step.name, output });
+        const name = `step-${i + 1}.txt`;
+        const file = this.deps.folders.write(active.run.id, name, output) ? this.deps.folders.pathOf(active.run.id, name) : undefined;
+        outputs.push({ name: step.name, output, ...(file ? { file } : {}) });
       }
       const kept = output === undefined ? {} : { output: output.slice(0, OUTPUT_KEPT) };
       const channel = result.channel ? { channel: result.channel } : {};
@@ -699,8 +702,9 @@ export class SentinelRunner {
     const friends = this.deps.friends;
     if (!friends) return { kind: 'failed', why: 'asking a friend’s Claude needs the Beluga network: turn it on in Settings › Network' };
     if (!step.peerId) return { kind: 'failed', why: 'pick whose Claude it asks' };
-    // It goes to someone else's Mac: nothing that looks like a secret goes with it.
-    const ask = redactSecrets(render(step.prompt, { ...this.context(active, outputs), material: stepMaterial })).trim();
+    // It goes to someone else's Mac: nothing that looks like a secret goes with it, and outputs go
+    // whole (a path on this Mac means nothing there).
+    const ask = redactSecrets(render(step.prompt, { ...this.context(active, outputs), material: (kind, name, text) => stepMaterial(kind, name, text) })).trim();
     if (!ask) return { kind: 'failed', why: 'its question is empty' };
     const id = friends.ask({ person: step.peerId, ask, summary: `${active.sentinel.name}: ${firstLine(ask, 80)}`, ...(step.project ? { project: step.project } : {}) });
     const signal = active.abort.signal;
@@ -794,14 +798,15 @@ export class SentinelRunner {
   }
 
   /** What a step's templates see. */
-  context(active: ActiveRun, outputs: ReadonlyArray<{ readonly name: string; readonly output: string }>): RenderContext {
+  context(active: ActiveRun, outputs: Outputs): RenderContext {
     const s = active.sentinel;
     const project = s.projectId ? this.deps.project(s.projectId) : undefined;
     const own = this.deps.beluga(s.projectId);
     return {
       trigger: active.run.trigger,
-      ...(outputs.length ? { previous: outputs.at(-1)!.output, previousName: outputs.at(-1)!.name } : {}),
+      ...(outputs.length ? { previous: outputs.at(-1)!.output, previousName: outputs.at(-1)!.name, ...(outputs.at(-1)!.file ? { previousFile: outputs.at(-1)!.file } : {}) } : {}),
       steps: Object.fromEntries(outputs.map((o) => [o.name, o.output])),
+      stepFiles: filesByName(outputs),
       ...(project ? { project: { name: project.name, path: project.root } } : {}),
       date: dateText(this.deps.now()),
       sentinel: s.name,
@@ -832,13 +837,13 @@ export class SentinelRunner {
     return place;
   }
 
-  private async claudeStep(active: ActiveRun, step: ClaudeStep, outputs: ReadonlyArray<{ readonly name: string; readonly output: string }>, reports: boolean): Promise<StepEnd> {
+  private async claudeStep(active: ActiveRun, step: ClaudeStep, outputs: Outputs, reports: boolean): Promise<StepEnd> {
     const claude = this.deps.claude;
     if (!claude) return { kind: 'failed', why: 'your Claude isn’t on' };
     const place = await this.place(active, step);
     if (typeof place === 'string') return { kind: 'failed', why: place };
     const { channel } = place;
-    // Earlier outputs filled in are material in tags, never instructions.
+    // Earlier outputs filled in are material in tags, never instructions; a big one is its file and a preview.
     const prompt = render(step.prompt, { ...this.context(active, outputs), material: stepMaterial }).trim();
     if (!prompt) return { kind: 'failed', why: 'its prompt is empty', channel };
     const signal = active.abort.signal;
@@ -884,18 +889,21 @@ export class SentinelRunner {
     }
   }
 
-  private async scriptStep(active: ActiveRun, step: ScriptStep, outputs: ReadonlyArray<{ readonly name: string; readonly output: string }>): Promise<StepEnd> {
+  private async scriptStep(active: ActiveRun, step: ScriptStep, outputs: Outputs): Promise<StepEnd> {
     if (!step.command.trim()) return { kind: 'failed', why: 'its command is empty: fill it in' };
     const s = active.sentinel;
     const project = s.projectId ? this.deps.project(s.projectId) : undefined;
     const cwd = step.cwd === 'project' && project?.root ? project.root : this.deps.home;
     const previous = outputs.at(-1)?.output ?? '';
+    const previousFile = outputs.at(-1)?.file ?? '';
     const env = {
       ...this.deps.envFor(cwd),
       SENTINEL_RUN_DIR: this.deps.folders.folder(active.run.id) ?? '',
       // At most 64 KB of payload (an environment variable that big fails the spawn on macOS).
       SENTINEL_TRIGGER: JSON.stringify({ ...active.run.trigger, ...(active.run.trigger.payload !== undefined ? { payload: capPayload(active.run.trigger.payload) } : {}) }),
       SENTINEL_PREVIOUS: previous.length > PREVIOUS_MAX ? previous.slice(0, PREVIOUS_MAX) : previous,
+      // The whole of it, uncut, in the run's folder ('' when there's none, or it's kept in memory).
+      SENTINEL_PREVIOUS_FILE: previousFile,
     };
     const remaining = Math.max(0, active.deadline - this.deps.now());
     const own = Math.min(3600, Math.max(1, step.timeoutSec)) * 1000;
@@ -909,7 +917,7 @@ export class SentinelRunner {
     return { kind: 'done', output: res.output, ms: res.ms };
   }
 
-  private notifyStep(active: ActiveRun, step: NotifyStep, outputs: ReadonlyArray<{ readonly name: string; readonly output: string }>): StepEnd {
+  private notifyStep(active: ActiveRun, step: NotifyStep, outputs: Outputs): StepEnd {
     const ctx = this.context(active, outputs);
     // What a template fills in (the trigger's payload among it) may hold a secret: never in a notification.
     const title = firstLine(redactSecrets(render(step.title?.trim() || '{{sentinel}}', ctx)), 120) || active.sentinel.name;
@@ -969,7 +977,25 @@ export async function mergePinned(gh: SentinelGitHub, where: PrPlace, pr: PrRef,
 const capital = (text: string): string => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
 const lowerFirst = (text: string): string => (text && !/^[A-Z]{2}/.test(text) ? text[0]!.toLowerCase() + text.slice(1) : text);
 
-type Outputs = ReadonlyArray<{ readonly name: string; readonly output: string }>;
+/** A step's output as the next steps get it: its name, its text (secrets redacted), where its file is. */
+interface StepOutput {
+  readonly name: string;
+  readonly output: string;
+  /** Its whole output in the run's folder (none in memory, or the write failed). */
+  readonly file?: string;
+}
+
+type Outputs = ReadonlyArray<StepOutput>;
+
+/** Earlier outputs' files by their names, as `steps` has them (a later step of the same name wins, file or not). */
+function filesByName(outputs: Outputs): Record<string, string> {
+  const files = new Map<string, string>();
+  for (const o of outputs) {
+    if (o.file) files.set(o.name, o.file);
+    else files.delete(o.name);
+  }
+  return Object.fromEntries(files);
+}
 
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => {

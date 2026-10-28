@@ -1,0 +1,818 @@
+/*
+ * What Sentinel can do (Showcase.tsx): a stage that plays one short scene at a time, its line,
+ * Set This Up, and dots that fill as a scene plays. Soft pastels, real-looking little windows and
+ * widgets, things that rise, count and draw themselves; no glow, no neon, and nothing loops.
+ * Reduced motion shows each scene's last frame.
+ */
+
+.show {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  outline: none;
+}
+.screen {
+  position: relative;
+  height: 272px;
+  border-radius: 18px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  overflow: hidden;
+}
+.show:focus-visible .screen {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.scene {
+  position: absolute;
+  inset: 0;
+  animation: sceneIn 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes sceneIn {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+.line {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text);
+  animation: fade 0.4s ease;
+}
+.line svg {
+  flex: none;
+  color: var(--text-3);
+}
+.grow {
+  flex: 1;
+}
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.dot {
+  position: relative;
+  width: 18px;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+  overflow: hidden;
+  transition: width var(--dur) var(--ease-out);
+}
+.dotOn {
+  width: 34px;
+}
+/* The one playing fills as it plays (it holds while you point at it). */
+.dotOn span {
+  position: absolute;
+  inset: 0;
+  background: var(--text-3);
+  transform-origin: left;
+  animation: fill linear forwards;
+}
+.dot[data-held] span {
+  animation-play-state: paused;
+}
+
+/* ---------------------------------------------------------------- shared moves */
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02);
+  }
+}
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes vanish {
+  to {
+    opacity: 0;
+  }
+}
+/* Soft cards on the stage: a raised surface, a whisper of edge, a gentle drop. */
+.card {
+  border-radius: 14px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 0.5px var(--hairline),
+    0 10px 24px -14px rgba(0, 0, 0, 0.28);
+}
+.pop {
+  composes: card;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  font-size: 12px;
+  color: var(--text-2);
+  animation: pop 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.pop svg {
+  flex: none;
+  color: color-mix(in srgb, var(--info) 80%, var(--text));
+}
+.pop strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.pop span {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.popMint {
+  background: color-mix(in srgb, var(--ok) 12%, var(--bg-raised));
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--ok) 30%, var(--hairline)),
+    0 10px 24px -14px rgba(0, 0, 0, 0.28);
+}
+.popMint svg {
+  color: color-mix(in srgb, var(--ok) 85%, var(--text));
+}
+.windowDots,
+.browserBar i,
+.windowBar i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hairline-strong);
+}
+
+/* ---------------------------------------------------------------- the night shift */
+
+.night {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(170deg, #262a45 0%, #383660 60%, #4b4372 100%);
+}
+/* Morning comes: a pastel sky over the night. */
+.dawn {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(170deg, #cfe3f5 0%, #f3e1d8 62%, #f7d4c2 100%);
+  opacity: 0;
+  animation: appear 1.4s ease 5.4s forwards;
+}
+.stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 12% 18%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 28% 9%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1.3px 1.3px at 47% 22%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 63% 7%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.2px 1.2px at 81% 26%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 92% 12%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1px 1px at 38% 80%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1px 1px at 70% 88%, rgba(255, 255, 255, 0.3), transparent);
+  animation: vanish 1.2s ease 5.4s forwards;
+}
+.moon {
+  position: absolute;
+  top: 20px;
+  right: 44px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #f1ecdc;
+  box-shadow: inset -7px -3px 0 0 #d9d1ba;
+  animation: moonSet 1.4s ease 5.4s forwards;
+}
+@keyframes moonSet {
+  to {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+.sun {
+  position: absolute;
+  top: 18px;
+  right: 40px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #f6c48f;
+  opacity: 0;
+  transform: translateY(26px);
+  animation: sunRise 1.6s cubic-bezier(0.22, 1, 0.36, 1) 5.8s forwards;
+}
+@keyframes sunRise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.clock {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.clockNight {
+  color: rgba(255, 255, 255, 0.86);
+  animation: vanish 0.6s ease 5.6s forwards;
+}
+.clockDay {
+  position: absolute;
+  left: 0;
+  color: #3b3a4a;
+  opacity: 0;
+  animation: appear 0.6s ease 5.8s forwards;
+}
+.browser {
+  composes: card;
+  position: absolute;
+  left: 6%;
+  top: 70px;
+  width: 44%;
+  overflow: hidden;
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.2s backwards;
+}
+.browserBar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.browserBar span {
+  flex: 1;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.browserBody {
+  position: relative;
+  height: 118px;
+}
+.siteDown,
+.siteUp {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.siteDown {
+  background: color-mix(in srgb, var(--error) 7%, var(--bg-raised));
+  color: color-mix(in srgb, var(--error) 75%, var(--text));
+  animation:
+    downIn 0.5s ease 0.6s backwards,
+    vanish 0.5s ease 5.6s forwards;
+}
+@keyframes downIn {
+  0% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+.siteUp {
+  background: color-mix(in srgb, var(--ok) 9%, var(--bg-raised));
+  color: color-mix(in srgb, var(--ok) 80%, var(--text));
+  opacity: 0;
+  animation: appear 0.5s ease 5.8s forwards;
+}
+.story {
+  position: absolute;
+  left: 55%;
+  top: 70px;
+  width: 39%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent {
+  composes: card;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  animation: pop 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.agentMark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--claude) 16%, transparent);
+  color: color-mix(in srgb, var(--claude) 80%, var(--text));
+}
+.agentText {
+  position: relative;
+  flex: 1;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+}
+.typing {
+  display: inline-flex;
+  gap: 3px;
+  animation: vanish 0.2s ease 2.3s forwards;
+}
+.typing i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-3);
+  animation: think 0.9s ease-in-out 1.2s 2 alternate;
+}
+.typing i:nth-child(2) {
+  animation-delay: 1.35s;
+}
+.typing i:nth-child(3) {
+  animation-delay: 1.5s;
+}
+@keyframes think {
+  to {
+    opacity: 0.25;
+    transform: translateY(-2px);
+  }
+}
+.agentSaid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  animation: appear 0.4s ease 2.4s forwards;
+}
+
+/* ---------------------------------------------------------------- the board, and your desktop */
+
+.desktop {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--subagent) 22%, var(--bg-sunken)) 0%, color-mix(in srgb, var(--info) 16%, var(--bg-sunken)) 55%, color-mix(in srgb, var(--claude) 16%, var(--bg-sunken)) 100%);
+}
+.menubar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--bg-raised) 55%, transparent);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.window {
+  composes: card;
+  position: absolute;
+  left: 5%;
+  top: 40px;
+  width: 52%;
+  overflow: hidden;
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.windowBar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.windowBar span {
+  margin-left: 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 11px 8px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.tile strong,
+.widget strong {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.widget strong small {
+  margin-left: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.tileLabel {
+  font-size: 11px;
+  color: var(--text-2);
+}
+.up {
+  align-self: flex-start;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--ok) 80%, var(--text));
+}
+.spark {
+  width: 100%;
+  height: 34px;
+  margin-top: 6px;
+  overflow: visible;
+  animation: typeIn 1.3s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+.sparkLine {
+  fill: none;
+  stroke: color-mix(in srgb, var(--info) 80%, var(--text));
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.sparkFill {
+  fill: color-mix(in srgb, var(--info) 14%, transparent);
+}
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 34px;
+  margin-top: 6px;
+}
+.bars i {
+  flex: 1;
+  border-radius: 3px 3px 1px 1px;
+  background: color-mix(in srgb, var(--subagent) 55%, var(--bg-raised));
+  transform-origin: bottom;
+  animation: grow 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+/* Your Mac's desktop widgets: frosted, rounder, landing one after the other. */
+.widgets {
+  position: absolute;
+  right: 6%;
+  top: 40px;
+  width: 30%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.widget {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 12px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--bg-raised) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow:
+    0 0 0 0.5px var(--hairline),
+    0 14px 30px -16px rgba(0, 0, 0, 0.35);
+  animation: land 0.7s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes land {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.86);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.02);
+  }
+}
+.widgetSmall {
+  width: 70%;
+}
+.widgetHead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---------------------------------------------------------------- the fix */
+
+.fix {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: radial-gradient(90% 90% at 20% 10%, color-mix(in srgb, var(--error) 6%, transparent), transparent 60%), radial-gradient(90% 90% at 90% 90%, color-mix(in srgb, var(--ok) 8%, transparent), transparent 60%);
+}
+.checks {
+  composes: card;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 210px;
+  padding: 10px;
+  animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.checksHead {
+  margin: 0 4px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.check {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.check > svg {
+  color: color-mix(in srgb, var(--ok) 80%, var(--text));
+}
+.checkFlip {
+  font-weight: 600;
+  color: var(--text);
+  animation: badThenGood 3.6s ease forwards;
+}
+@keyframes badThenGood {
+  0%,
+  10% {
+    background: transparent;
+  }
+  18%,
+  85% {
+    background: color-mix(in srgb, var(--error) 10%, transparent);
+  }
+  100% {
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+  }
+}
+.checkBad,
+.checkGood {
+  display: grid;
+  place-items: center;
+  width: 12px;
+}
+.checkBad {
+  color: color-mix(in srgb, var(--error) 80%, var(--text));
+  animation: vanish 0.2s ease 3.1s forwards;
+}
+.checkGood {
+  position: absolute;
+  left: 8px;
+  color: color-mix(in srgb, var(--ok) 85%, var(--text));
+  opacity: 0;
+  animation: appear 0.3s ease 3.2s forwards;
+}
+.diff {
+  composes: card;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 250px;
+  padding: 10px 10px 12px;
+  animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.9s backwards;
+}
+.diffHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.diffHead svg {
+  color: color-mix(in srgb, var(--claude) 80%, var(--text));
+}
+.diffLine {
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  animation: typeIn 0.6s steps(14) backwards;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.diffLine b {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.diffLine[data-kind='del'] {
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--error) 50%, transparent);
+}
+.diffLine[data-kind='add'] {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+@keyframes typeIn {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.diffPop {
+  margin-top: 6px;
+}
+
+/* ---------------------------------------------------------------- the review */
+
+.review {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 24px;
+  background: radial-gradient(90% 90% at 80% 20%, color-mix(in srgb, var(--claude) 8%, transparent), transparent 60%);
+}
+.pr {
+  composes: card;
+  width: 300px;
+  padding: 10px 10px 12px;
+  animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.prHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 2px 8px;
+  font-size: 12px;
+}
+.prHead svg {
+  color: color-mix(in srgb, var(--ok) 80%, var(--text));
+}
+.prHead strong {
+  flex: 1;
+  font-weight: 600;
+}
+.prHead span {
+  color: var(--text-3);
+}
+.code {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.codeLine {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 5px;
+}
+.codeLine i {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hairline-strong);
+}
+.codeNum {
+  width: 16px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-3);
+  text-align: right;
+}
+/* The line Claude means: a soft wash sweeps across it, then the note lands beside it. */
+.codeLine[data-mark]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--claude) 16%, transparent);
+  transform-origin: left;
+  animation: fill 0.5s cubic-bezier(0.4, 0, 0.2, 1) 1.2s backwards;
+}
+.codeLine[data-mark] i {
+  background: color-mix(in srgb, var(--claude) 45%, var(--hairline-strong));
+}
+.comment {
+  composes: card;
+  width: 220px;
+  margin-left: -18px;
+  margin-top: 40px;
+  padding: 10px 12px;
+  border-radius: 4px 14px 14px 14px;
+  background: color-mix(in srgb, var(--claude) 9%, var(--bg-raised));
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  animation: pop 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.commentWho {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--claude) 75%, var(--text));
+}
+
+/* ---------------------------------------------------------------- reduced motion: the last frame */
+
+@media (prefers-reduced-motion: reduce) {
+  .scene,
+  .scene *,
+  .line,
+  .dotOn span {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+:root[data-motion='reduce'] .scene,
+:root[data-motion='reduce'] .scene *,
+:root[data-motion='reduce'] .line,
+:root[data-motion='reduce'] .dotOn span {
+  animation-duration: 1ms !important;
+  animation-delay: 0ms !important;
+}
