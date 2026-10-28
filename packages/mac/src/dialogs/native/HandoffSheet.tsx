@@ -3,7 +3,7 @@ import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Field, FormSheet, PickList, formStyles as f } from '../../components/FormSheet.js';
 import { Icon } from '../../components/Icon.js';
 import { Avatar } from '../../components/ui.js';
-import { useApp } from '../../lib/beluga.js';
+import { useApp, useBeluga } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
 import s from './menus.module.css';
@@ -11,6 +11,7 @@ import s from './menus.module.css';
 /** Hand a workspace to someone: who, and what happens, then one button. */
 export function HandoffSheet({ menu, close }: NativeMenuProps<'handoff'>) {
   const pick = usePick(menu);
+  const { ui } = useBeluga();
   const ws = useApp((st) => findWorkspace(st.projects, menu.id));
   const peers = useApp((st) => st.peers);
   const selfId = useApp((st) => st.self?.peerId);
@@ -33,8 +34,8 @@ export function HandoffSheet({ menu, close }: NativeMenuProps<'handoff'>) {
       width={540}
       footer={
         people.length ? undefined : (
-          <button type="button" className={f.linkButton} onClick={() => (close(), document.dispatchEvent(new CustomEvent('beluga:invite-room')))}>
-            Invite Someone…
+          <button type="button" className={f.linkButton} onClick={() => (close(), ui.openMenu({ kind: 'ws_share', id: ws.id }))}>
+            Share This Worktree Instead…
           </button>
         )
       }
@@ -51,7 +52,7 @@ export function HandoffSheet({ menu, close }: NativeMenuProps<'handoff'>) {
         ) : (
           <div className={s.note}>
             <Icon name="people" size={14} />
-            Nobody with Claude is in the room yet. Invite someone first.
+            Hand off goes to someone in your room. To work on just this worktree with a friend, share it with them instead.
           </div>
         )}
       </Field>

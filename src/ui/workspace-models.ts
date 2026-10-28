@@ -8,6 +8,7 @@ import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate } from './text.js';
 import { SPINNER, glyph, theme } from './theme.js';
+import { worktreeShareRows } from './worktree-share.js';
 
 /** Something clickable, in coordinates relative to the model's own top-left corner. */
 export interface Zone {
@@ -564,13 +565,13 @@ export function overviewModel(state: AppState, frame: number, width: number, now
  */
 /** "Share" (or "Shared · 2") opens who's in this workspace and lets you invite or remove people. */
 function sharedButton(state: AppState, wsId: string): WorkspaceButton {
-  const count = Object.keys(state.members[wsId] ?? {}).length;
-  const others = state.peers.filter((p) => p.peerId !== state.self?.peerId).length;
+  // Friends it's shared with over the network count too, not only the room's members (BLG-340).
+  const count = worktreeShareRows(state, wsId).filter((r) => r.access !== 'none').length;
   return {
     label: count ? `Shared · ${count}` : 'Share',
     action: 'share',
     tone: 'info',
-    hint: count ? `${count} ${count === 1 ? 'person is' : 'people are'} in this workspace: invite or remove people` : others ? 'Invite people in the room to work here with you' : 'Invite a friend to work here with you',
+    hint: count ? `${count} ${count === 1 ? 'person is' : 'people are'} in this workspace: invite or remove people` : 'Invite a friend to just this worktree: they see the chat and files and can ask your Claude here',
   };
 }
 
@@ -626,7 +627,7 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
                     hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
                     disabled: !ahead || changed > 0,
                   },
-              { label: 'Hand off', action: 'handoff', hint: friends ? "Someone else's Claude continues this on their computer" : 'Invite someone first; then they can take this over', disabled: !friends },
+              { label: 'Hand off', action: 'handoff', hint: friends ? "Someone else's Claude continues this on their computer" : 'Hand off goes to someone in your room. To work on just this worktree with a friend, use Share', disabled: !friends },
             ] as WorkspaceButton[])
           : []),
         ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so Claude has room to keep going' }] as WorkspaceButton[]) : []),

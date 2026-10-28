@@ -374,7 +374,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   function accept(picked: Suggestion): void {
     if (picked.enter === 'submit') {
       ui.patch({ buffer: '', cursor: 0 });
-      actions.submit(picked.value);
+      // A friend picked for "/invite": handled here like a typed one (BLG-340), not by the daemon.
+      if (!handleInvite(client, ui, picked.value)) actions.submit(picked.value);
       return;
     }
     set(picked.value);
