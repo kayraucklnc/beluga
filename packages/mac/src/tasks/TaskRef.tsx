@@ -111,15 +111,17 @@ function TaskCardRow({ taskKey }: { taskKey: string }) {
 
 /** A worktree Claude started (Your Mac: `worktree:<id>`): a pill with its name; a click opens its conversation. */
 export function WorktreeChip({ id }: { id: string }) {
-  const ws = useApp((s) => s.projects.flatMap((p) => p.workspaces.map((w) => ({ w, project: p.name }))).find((x) => x.w.id === id));
+  // Picks the store's own objects: a pick built fresh each time ({ w, project }) never settles, and React gives up (#185).
+  const project = useApp((s) => s.projects.find((p) => p.workspaces.some((w) => w.id === id)));
+  const w = project?.workspaces.find((x) => x.id === id);
   const actions = useActions();
-  if (!ws) return <Missing taskKey={id} label="worktree" />;
+  if (!project || !w) return <Missing taskKey={id} label="worktree" />;
   return (
-    <Tip label={`${ws.project} · ${ws.w.name}${ws.w.archived ? ' (archived)' : ''}. Click to open`}>
-      <button type="button" className={r.chip} onClick={() => actions.run({ type: 'open_ws', id })} aria-label={`Worktree ${ws.w.name} in ${ws.project}`}>
+    <Tip label={`${project.name} · ${w.name}${w.archived ? ' (archived)' : ''}. Click to open`}>
+      <button type="button" className={r.chip} onClick={() => actions.run({ type: 'open_ws', id })} aria-label={`Worktree ${w.name} in ${project.name}`}>
         <Icon name="branch" size={12} />
-        <span className={r.key}>{ws.project}</span>
-        <span className={r.chipTitle}>{ws.w.name}</span>
+        <span className={r.key}>{project.name}</span>
+        <span className={r.chipTitle}>{w.name}</span>
         <Icon name="arrowRight" size={10} className={r.chipGo} />
       </button>
     </Tip>
