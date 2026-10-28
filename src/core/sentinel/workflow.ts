@@ -39,6 +39,10 @@ function handsOn(st: Step): string {
       return 'their answer';
     case 'pr':
       return 'the pull request';
+    case 'merge':
+      return 'the merge';
+    case 'trigger':
+      return 'the run it started';
     default:
       return 'its line';
   }
@@ -97,7 +101,7 @@ export function sentinelGraph(s: Sentinel, opts: WorkflowOptions = {}): Graph {
     node({ id: cleanId(`sentinel:${id}`), type: 'service', label: (nameOf(id) ?? 'Another sentinel').slice(0, 80), sublabel: 'Another sentinel', links: [{ label: 'Open it', href: `sentinel:${id}` }] });
 
   // What starts it (another sentinel, for `after`).
-  const on = node({ id: 'on', type: 'actor', label: scheduleSentence(s.trigger, nameOf).slice(0, 80), sublabel: s.paused ? 'Paused' : 'Watching', ...(s.paused ? { status: 'idle' as const } : {}), details: `**Starts** ${scheduleSentence(s.trigger, nameOf)}\n\n**Access** ${ACCESS_INFO[s.access].label}: ${ACCESS_INFO[s.access].sentence}.` });
+  const on = node({ id: 'on', type: 'milestone', label: scheduleSentence(s.trigger, nameOf).slice(0, 80), sublabel: s.paused ? 'Paused' : 'Watching', ...(s.paused ? { status: 'idle' as const } : {}), details: `**Starts** ${scheduleSentence(s.trigger, nameOf)}\n\n**Access** ${ACCESS_INFO[s.access].label}: ${ACCESS_INFO[s.access].sentence}.` });
   if (s.trigger.kind === 'after' && s.trigger.sentinelId) edge({ from: other(s.trigger.sentinelId), to: on, label: s.trigger.on === 'success' ? 'when it succeeds' : s.trigger.on === 'failure' ? 'when it fails' : 'after it runs', kind: 'async' });
 
   // A worktree the run's Claude makes: its steps (and the pull request, the merge) inside one box.
@@ -144,7 +148,11 @@ export function sentinelGraph(s: Sentinel, opts: WorkflowOptions = {}): Graph {
     }
     if (!from.size) continue;
     const dash = node({ id: cleanId(`dashboard:${d.id}`), type: 'metric', label: d.name.slice(0, 80), sublabel: 'Dashboard', value: `${d.tiles.length} tiles`, links: [{ label: 'Open it', href: `dashboard:${d.id}` }] });
-    for (const [stepId, what] of from) edge({ from: cleanId(`step:${stepId}`), to: dash, label: [...new Set(what)].join(', ').slice(0, 60), kind: 'data' });
+    // Several numbers say how many (their names are in the tiles): a long list of names overlaps on the line.
+    for (const [stepId, what] of from) {
+      const names = [...new Set(what)];
+      edge({ from: cleanId(`step:${stepId}`), to: dash, label: names.length === 1 ? names[0]!.slice(0, 60) : `${names.length} numbers`, kind: 'data' });
+    }
   }
 
   // The sentinels that run after it.
