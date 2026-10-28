@@ -96,6 +96,8 @@ export interface TaskView {
   readonly conversation?: string;
   /** The chat both people see its card in (BLG-208): your DM with them (`dm:<peerId>`), or the channel it was asked from. */
   readonly chat?: string;
+  /** Sent: the friend's Claude's chat answer it came from (its message id): its card stays under that answer (BLG-353). */
+  readonly answer?: string;
   readonly state: TaskState;
   /** The latest steps (short lines). */
   readonly steps: readonly string[];

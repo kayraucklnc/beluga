@@ -1207,10 +1207,11 @@ function chatTaskOf(state: DomainState, m: MessageView): ChatMessageView['task']
   };
 }
 
-/** A friend's Claude, answering a message of yours, offers to do it on their Mac as a request. */
+/** A friend's Claude, answering a message of yours, offers to do it on their Mac as a request (unless your Mac sent it already: BLG-353). */
 function offerOf(state: DomainState, m: MessageView): ChatMessageView['offer'] {
   const request = m.claude?.request;
   if (!request || m.mine || !state.network.messages[m.conversation]?.some((x) => x.id === m.claude?.for && x.mine)) return undefined;
+  if (state.gateway.tasks.some((t) => t.answer === m.id)) return undefined;
   return { to: m.from, ask: clip(request.ask, 500), ...(request.needs?.length ? { needs: [...request.needs] } : {}) };
 }
 

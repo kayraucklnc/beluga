@@ -50,6 +50,8 @@ export const NotifySettings = z.object({
   mentions: z.boolean().default(true),
   /** Background work finishes: a task Claude runs in the background, a new worktree's setup. */
   background: z.boolean().default(true),
+  /** Sentinels: a run's result, a failure, one pausing itself (one waiting for you still tells, under needsYou). */
+  sentinels: z.boolean().default(true),
   /** A plan speaks for its tasks: you hear at milestones and when it needs you; its tasks' news goes quietly into the inbox. */
   planMilestones: z.boolean().default(true),
   /** When Claude needs you (a question, an approval, a decision, a milestone to pass): a card on top of whatever you're doing, as friends' requests get. */

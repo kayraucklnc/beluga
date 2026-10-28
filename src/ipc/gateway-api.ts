@@ -34,8 +34,8 @@ export const GATEWAY_API = {
   'gateway.cancel': { args: z.tuple([taskId]) },
   // Remove a task you sent from your lists (cancelled first while it's still going).
   'gateway.forget': { args: z.tuple([taskId]) },
-  // Ask someone's Claude yourself (from their card): → the task.
-  'gateway.ask': { args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(16_000), z.object({ needs: needs.optional(), project: z.string().min(1).max(80).optional() }).optional()]) },
+  // Ask someone's Claude yourself (from their card, or from their Claude's answer in a chat: `answer`): → the task.
+  'gateway.ask': { args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(16_000), z.object({ needs: needs.optional(), project: z.string().min(1).max(80).optional(), answer: z.object({ conversation: z.string().regex(/^(dm:[\w-]{32}|group:[0-9a-f]{32})$/), id: z.string().min(1).max(80) }).optional() }).optional()]) },
   // Your "Ask me for…" note (what friends' Claudes see on your card).
   'gateway.setNote': { args: z.tuple([z.string().max(280)]) },
   // Your answer to a friend's request waiting on you: once, always (the rule's scope and expiry), or no (a reason).
