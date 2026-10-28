@@ -82,10 +82,11 @@ export function buildScratchAppend(dir: string): string {
 export function buildKeepAppend(): string {
   return [
     '',
-    'Processes you start here (dev servers, watchers, test runs) are stopped when your turn ends. To leave one',
-    'running on purpose (the user asked to keep it up), start it with BELUGA_KEEP=1 in front, e.g.',
-    '`BELUGA_KEEP=1 npm run dev &`, and say in your answer that it is still running. Only a server or watcher the',
-    'user asked for: never a test run (vitest, playwright, an e2e run), which is always stopped.',
+    'Processes you start here (dev servers, watchers, test runs) are stopped when your turn ends. When the user',
+    'asks you to run or start a server, an app or a watcher (or to keep one up), keep it: start it with',
+    'BELUGA_KEEP=1 in front, e.g. `BELUGA_KEEP=1 npm run dev &` (run_in_background works too: Beluga keeps it',
+    'and tells you where its output goes), and say in your answer that it is still running. Not for one you only',
+    'started to check something yourself, and never a test run (vitest, playwright, an e2e run): always stopped.',
   ].join('\n');
 }
 

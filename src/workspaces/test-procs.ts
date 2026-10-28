@@ -154,6 +154,28 @@ export const KEEP_MARK = 'BELUGA_KEEP=1';
 /** Whether a Bash command asks to keep what it starts (`BELUGA_KEEP=1 npm run dev &`; the old KLAUD_KEEP=1 too). */
 export const keepsRunning = (command: unknown): boolean => typeof command === 'string' && /(^|[\s;&|(])(BELUGA|KLAUD)_KEEP=1(\s|$)/.test(command);
 
+/**
+ * A Bash call that asks to keep what it starts, made to: the mark exported, so whatever the command line runs
+ * carries it (`BELUGA_KEEP=1 cd app && npm run dev &` too); and, run in Claude Code's background (which
+ * Claude Code stops when it exits, at the turn's end), run detached instead, its output in `log`.
+ * Undefined when there's nothing to change.
+ */
+export function keptBashInput(tool: string, input: Readonly<Record<string, unknown>>, log: string): Record<string, unknown> | undefined {
+  const command = input.command;
+  if (tool !== 'Bash' || !keepsRunning(command) || typeof command !== 'string') return undefined;
+  const marked = `export ${KEEP_MARK}; `;
+  if (input.run_in_background !== true) return command.startsWith(marked) ? undefined : { ...input, command: marked + command };
+  // A shell of its own, not a ( subshell ): ps -E shows no environment for a fork that never exec'd, so its
+  // worktree tag would be lost and nothing could stop it when the worktree goes. And on one line: ps shows a
+  // command's newlines as they are, which would split its row in two.
+  const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+  return {
+    ...input,
+    run_in_background: false,
+    command: `${marked}mkdir -p "$(dirname ${q(log)})"; nohup "\${SHELL:-/bin/sh}" -c ${q(command)} > ${q(log)} 2>&1 < /dev/null & echo ${q(`Started, kept running past the turn. Its output: ${log}`)}`,
+  };
+}
+
 /** Whether the machine-wide e2e lock is held from this worktree (one small file read, no ps). */
 export function e2eLockedIn(dir: string): boolean {
   return lockedRun(path.resolve(dir)) !== undefined;

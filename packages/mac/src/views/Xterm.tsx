@@ -11,6 +11,9 @@ import { importedTheme, terminalOptions } from '../lib/terminal-look.js';
 import { openExternal } from '../lib/system.js';
 import s from '../views/terminal.module.css';
 
+/** ⌘← start of line (^A), ⌘→ end of line (^E), ⌘⌫ delete to the start (^U). */
+const MAC_LINE_KEYS: Readonly<Record<string, string>> = { ArrowLeft: '\x01', ArrowRight: '\x05', Backspace: '\x15' };
+
 const css = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 /** Beluga's colours for the window's appearance, with the ones you brought from another terminal over them. */
 const themeNow = () => ({ background: css('--term-bg') || css('--bg'), foreground: css('--text'), cursor: css('--accent') === 'AccentColor' ? css('--text') : css('--accent'), selectionBackground: 'rgba(120,140,190,0.35)', ...importedTheme(getPrefs()) });
@@ -62,6 +65,22 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
     const offData = link.onData((d) => term.write(d));
     const offExit = link.onExit((e) => term.write(`\r\n\x1b[2m[exited${e.code !== null ? ` with ${e.code}` : ''}]\x1b[0m\r\n`));
     const input = term.onData((d) => link.write(d));
+    // The Mac's line keys, as Terminal and iTerm send them: xterm leaves ⌘ keys to the app.
+    term.attachCustomKeyEventHandler((e) => {
+      const line = e.type === 'keydown' && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey ? MAC_LINE_KEYS[e.key] : undefined;
+      if (!line) return true;
+      e.preventDefault();
+      link.write(line);
+      return false;
+    });
+    // A click in the padding around the text types here too, so Tab completes instead of moving focus away.
+    const grab = (e: MouseEvent): void => {
+      if (e.button === 0 && !term.element?.contains(e.target as Node)) {
+        e.preventDefault();
+        term.focus();
+      }
+    };
+    el.addEventListener('mousedown', grab);
     link.resize(term.cols, term.rows);
     const refit = (): void => {
       try {
@@ -83,6 +102,7 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
     if (focus) term.focus();
     return () => {
       live.current = undefined;
+      el.removeEventListener('mousedown', grab);
       resize.disconnect();
       restyle.disconnect();
       input.dispose();
