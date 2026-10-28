@@ -7,7 +7,9 @@ const main = (page: Page) => page.locator('main');
 
 async function openTasks(page: Page): Promise<void> {
   await page.goto('/');
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  // Tasks lives under Work (BLG-197).
+  await sidebar(page).getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Tasks' }).click();
   await expect(page.getByRole('tablist', { name: 'Show' })).toBeVisible();
 }
 
@@ -164,6 +166,25 @@ test('a column’s +: describe it, pick a priority, Create; the card lands there
   const card = column.getByRole('button', { name: /Make the login page remember me$/ });
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card).not.toContainText('Claude is writing…');
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+});
+
+test('one New Task message asking for two tasks makes both on Create, no chat in between (BLG-319)', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+  const column = page.getByRole('list', { name: 'Board' }).getByRole('listitem', { name: /^Backlog/ });
+  await column.getByRole('button', { name: 'New Task in Backlog' }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Task' });
+  await expect(sheet).toContainText('Ask for several tasks');
+  await sheet.getByRole('textbox', { name: 'Describe the task' }).fill('Two things for the receipts:\n- add a total line to receipts\n- email receipts after checkout');
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: `${process.env.BELUGA_SHOTS}/new-task-several.png` });
+  await sheet.getByRole('button', { name: 'Create Task' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(column.getByRole('button', { name: /Add a total line to receipts$/ })).toBeVisible({ timeout: 15_000 });
+  await expect(column.getByRole('button', { name: /Email receipts after checkout$/ })).toBeVisible();
+  // Epics stand out on the board: a soft tint of the epic colour (BLG-320).
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: `${process.env.BELUGA_SHOTS}/board-epic-tint.png` });
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
 });
 
@@ -342,7 +363,8 @@ test('Tasks is one project at a time: the one you came from, and the switcher ch
   const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
   if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await sidebar(page).getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Tasks' }).click();
   await expect(page.getByRole('button', { name: 'Project: landing' })).toBeVisible();
   const list = page.getByRole('grid', { name: 'Tasks' });
   await expect(list).toContainText('New hero for the launch');
@@ -413,7 +435,7 @@ test('Done’s one click puts every Done task in the Archive; an archived task r
   if (process.env.ARCHIVE_SHOT) await page.screenshot({ path: `${process.env.ARCHIVE_SHOT}-3-archived-task.png` });
   await banner.getByRole('button', { name: 'Restore' }).click();
   await expect(banner).toHaveCount(0);
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await openTasks(page);
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await expect(page.getByRole('grid', { name: 'Tasks' }).getByRole('row', { name: /Stripe test-mode fixtures, Done/ })).toBeVisible();
 });

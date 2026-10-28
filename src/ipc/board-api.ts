@@ -22,7 +22,8 @@ const trackerKey = z.string().trim().min(1).max(400);
 
 export const BOARD_API = {
   // A new task (a sub-task with parent) → the task. With describe instead of a title, your Claude
-  // writes its title, goal and criteria (the first line stands in until it has).
+  // writes its title, goal and criteria (the first line stands in until it has); words asking for
+  // several tasks (or an epic), each for someone on the team, make them all (BLG-319).
   'board.create': {
     args: z.tuple([
       z.object({
