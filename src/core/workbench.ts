@@ -11,6 +11,7 @@ import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
 import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, listPrs, useHttpsRemote, mergePr, mergeToBase, prStep, pushForPr, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
 import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
+import { clonedSetup } from '../workspaces/setup-clone.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { SetupTools } from '../agent/types.js';
 import { buildSetupAppend } from '../agent/prompt.js';
@@ -1080,7 +1081,11 @@ export class Workbench {
   private startSetup(ws: Workspace, command: string, learn = true): void {
     const wsId = ws.id;
     this.closeTerminal(setupId(wsId));
-    const session = this.openSession(setupId(wsId), ws, command);
+    // Its npm installs copied from a checkout that already has them (BLG-366): not from one still setting up.
+    const setups = this.deps.store.getState().setup;
+    const project = this.manager.list.find((p) => p.id === ws.projectId);
+    const sources = project ? [project.root, ...project.workspaces.filter((w) => w.id !== wsId && !w.pending && setups[w.id]?.status !== 'running').map((w) => w.path)] : [];
+    const session = this.openSession(setupId(wsId), ws, clonedSetup(command, ws.path, sources) ?? command);
     if (!session) return;
     this.deps.store.dispatch({ type: 'setup', id: wsId, run: { status: 'running', command } });
     this.deps.toast(`Setting up ${ws.name}: ${command}`);
