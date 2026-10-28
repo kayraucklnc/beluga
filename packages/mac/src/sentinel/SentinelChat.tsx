@@ -28,11 +28,25 @@ import home from './home.module.css';
  * under the conversation (and on your phone).
  */
 
-const STARTERS = [
-  { label: 'Brief Me Every Morning', icon: 'clock', prompt: 'Every weekday morning, tell me what changed in my projects and what needs me first, on my phone.' },
-  { label: 'Watch My Pull Requests', icon: 'branch', prompt: 'Set up a sentinel that counts my open pull requests every morning, and put the number on my board.' },
-  { label: 'What Did They Find?', icon: 'sentinel', prompt: 'What did my sentinels find this week? Lead with anything that needs me.' },
-] as const;
+type Starter = { readonly label: string; readonly icon: Parameters<typeof Icon>[0]['name']; readonly prompt: string };
+
+/**
+ * What to ask, when you don't know (BLG-333): first, Claude looks and suggests; then offers that
+ * name your own projects; with sentinels already, what they found.
+ */
+function startersFor(projects: readonly string[], has: boolean): Starter[] {
+  const [one, two] = projects;
+  const all: Starter[] = [
+    { label: 'Suggest Some for Me', icon: 'sparkles', prompt: 'Look at my projects and what they use, and suggest three watchers that would help me, each in one plain line. Set them up, with a board for their numbers, when I say yes.' },
+    ...(has ? [{ label: 'What Did They Find?', icon: 'sentinel', prompt: 'What did my sentinels find this week? Lead with anything that needs me.' } satisfies Starter] : []),
+    one
+      ? ({ label: `A Morning Brief for ${one}`, icon: 'clock', prompt: `Every weekday morning, tell me on my phone what changed in ${one} and what needs me first.` } satisfies Starter)
+      : ({ label: 'A Morning Brief', icon: 'clock', prompt: 'Every weekday morning, tell me on my phone what changed and what needs me first.' } satisfies Starter),
+    ...(two ? [{ label: `Fix ${two}’s Failing Tests`, icon: 'wrench', prompt: `When the tests fail on GitHub for ${two}, have Claude fix it in a new worktree and open a pull request for me to merge.` } satisfies Starter] : []),
+    { label: 'Make Me a Board', icon: 'gauge', prompt: 'Make me a board with the numbers that matter for my projects, and set up what keeps them fresh.' },
+  ];
+  return all.slice(0, 4);
+}
 
 /** Ask Sentinel's width beside the page: dragged by its left edge, kept on this Mac. */
 const WIDTH = 'sentinel.ask.width';
@@ -110,6 +124,9 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
   const busy = useApp((st) => activityOf(st.log, channel).running);
   const has = useApp((st) => st.log.some((l) => l.channel === channel));
   const name = names[chats.findIndex((c) => c.id === id)] ?? 'New chat';
+  const projectNames = useApp((st) => st.projects.filter((p) => p.root && !p.error).map((p) => p.name).join('\n'));
+  const hasSentinels = useApp((st) => st.sentinel.items.length > 0);
+  const starters = useMemo(() => startersFor(projectNames ? projectNames.split('\n') : [], hasSentinels), [projectNames, hasSentinels]);
   const open = (chat: string): void => {
     void a.act(() => api.sentinel.chatOpen(chat));
     actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat, ...here } });
@@ -185,10 +202,10 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
             <Empty
               icon="sentinel"
               title="Ask Sentinel"
-              detail="Say what to watch and Claude sets it up, paused for you to look over. It knows your sentinels, boards and numbers: ask what they found, change one, put something on the board. Deleting asks you first."
+              detail="Say what you’d like watched, in your own words, or let Claude look at your projects and suggest."
               action={
                 <EmptyActions>
-                  {STARTERS.map((t) => (
+                  {starters.map((t) => (
                     <Button key={t.label} icon={t.icon} onClick={() => actions.submit(t.prompt)}>
                       {t.label}
                     </Button>

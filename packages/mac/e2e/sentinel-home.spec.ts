@@ -159,8 +159,8 @@ test('a tile is resized by dragging its corner', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(box.x + tileBox.width * 1.1, box.y + 4, { steps: 6 });
   await expect(tile).toHaveAttribute('data-sizing', '');
-  // The tile stays put while you drag; an outline shows where it lands.
-  await expect(tile).toHaveAttribute('data-w', '1');
+  // Like a widget: it takes the size as you drag, and the tiles around make room.
+  await expect(tile).toHaveAttribute('data-w', '2');
   await page.screenshot({ path: path.join(shots, 'home-resizing.png') });
   await page.mouse.up();
   await expect(tile).toHaveAttribute('data-w', '2');
@@ -239,7 +239,7 @@ test('what came back: each sentinel’s latest run as a message; tiles say where
   await expect(glance.locator('[data-tile]').filter({ hasText: 'Revenue' })).toHaveCount(0);
 });
 
-test('with nothing set up: what to ask, how it works, starting points', async ({ page }) => {
+test('with nothing set up: what it can do as scenes, the box, ideas, and every recipe a tap away', async ({ page }) => {
   await openSentinel(page);
   const rows = main(page).locator('[data-sentinel]');
   // Delete every sentinel, one by one, from its row's menu.
@@ -250,18 +250,32 @@ test('with nothing set up: what to ask, how it works, starting points', async ({
     await expect(rows).toHaveCount(left - 1, { timeout: 10_000 });
   }
   const first = main(page).getByTestId('sentinel-first');
-  await expect(first).toContainText('What should Beluga keep an eye on?');
-  await expect(first.getByRole('region', { name: 'How a sentinel works' }).or(first.locator('[aria-label="How a sentinel works"]'))).toContainText('You get');
-  await expect(first.getByRole('list', { name: 'Tell me' }).getByRole('listitem').first()).toBeVisible();
-  await expect(first.getByRole('list', { name: 'Keep a number' })).toContainText('Stripe revenue');
+  await expect(first).toContainText('Let Claude keep an eye on things');
+  // Shown before it's explained: a few scenes, one line each, and the dots to go between them.
+  const show = first.getByRole('region', { name: 'What Sentinel can do' });
+  await expect(show.locator('[data-slide="board"] [data-value]').first()).toHaveText('$3,412');
   await shoot(page, 'first');
-  // The composer asks Claude in the panel beside the page.
+  const dots = show.getByRole('tab');
+  await expect(dots).toHaveCount(5);
+  await dots.nth(2).click();
+  await expect(show.locator('[data-slide="fix"]')).toContainText('Ready to merge');
+  await page.waitForTimeout(1400);
+  await page.screenshot({ path: path.join(shots, 'home-first-fix.png') });
+  await show.press('ArrowRight');
+  await expect(show.locator('[data-slide="review"]')).toBeVisible();
+  // Set This Up hands the scene's words to Ask Sentinel.
+  await show.getByRole('button', { name: 'Set This Up' }).click();
+  const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
+  await expect(panel).toContainText('When a pull request opens');
+  await panel.getByRole('button', { name: 'Close' }).click();
+  // The ideas: the first has Claude look at your projects and suggest.
+  await expect(first.getByRole('list', { name: 'Ideas' }).getByRole('listitem').first()).toHaveText('Suggest Some for Me');
+  // The box asks Claude in the panel beside the page.
   await first.getByRole('textbox', { name: 'What should Beluga keep an eye on?' }).fill('Every morning, tell me what changed in bob-api');
   await first.getByRole('button', { name: 'Ask Claude' }).click();
-  const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
   await expect(panel).toContainText('Every morning, tell me what changed in bob-api');
-  // A starting point is made paused and opened.
   await panel.getByRole('button', { name: 'Close' }).click();
-  await first.locator('[data-recipe="morning-brief"]').click();
-  await expect(main(page).getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Morning brief');
+  // Every recipe is one tap away.
+  await first.getByRole('button', { name: 'Every recipe' }).click();
+  await expect(page.getByRole('dialog', { name: 'New Sentinel' }).locator('[data-recipe="morning-brief"]')).toBeVisible();
 });

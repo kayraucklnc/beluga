@@ -419,20 +419,28 @@ function TileSlot({ before, children }: { before: React.CSSProperties | undefine
 const still = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
- * Tiles glide to their new places when the order changes (a tile lifted, the gap moving, a drop)
- * instead of jumping: each starts where it was and slides home (FLIP). Still with reduced motion.
+ * Tiles move like widgets on a phone: when the order or a size changes (a tile lifted, the gap
+ * moving, a corner dragged past a size, a drop), each starts where and as big as it was and glides
+ * to its new place and size (FLIP), instead of jumping. Still with reduced motion.
  */
+type Place = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 function useGlide(grid: React.RefObject<HTMLDivElement | null>, order: string): () => void {
-  const was = useRef(new Map<string, { x: number; y: number }>());
-  // Each tile's place in the grid (not the window: scrolling moves nothing).
-  const places = (): { els: HTMLElement[]; at: Map<string, { x: number; y: number }> } => {
+  const was = useRef(new Map<string, Place>());
+  const cells = (): HTMLElement[] => [...(grid.current?.querySelectorAll<HTMLElement>(':scope > [data-tile]') ?? [])];
+  // Each tile's place in the grid (not the window: scrolling moves nothing), as laid out (no glide under way).
+  const measure = (els: readonly HTMLElement[]): Map<string, Place> => {
     const box = grid.current?.getBoundingClientRect();
-    const els = [...(grid.current?.querySelectorAll<HTMLElement>(':scope > [data-tile]') ?? [])];
-    return { els, at: new Map(els.map((el) => { const r = el.getBoundingClientRect(); return [el.dataset.tile!, { x: r.left - (box?.left ?? 0), y: r.top - (box?.top ?? 0) }] as const; })) };
+    return new Map(
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return [el.dataset.tile!, { x: r.left - (box?.left ?? 0), y: r.top - (box?.top ?? 0), w: r.width, h: r.height }] as const;
+      }),
+    );
   };
-  useLayoutEffect(() => {
-    for (const el of grid.current?.querySelectorAll<HTMLElement>(':scope > [data-tile]') ?? []) for (const x of el.getAnimations()) x.cancel();
-    const { els, at } = places();
+  const glide = (): void => {
+    const els = cells();
+    for (const el of els) for (const x of el.getAnimations()) if (x.id === 'glide') x.cancel();
+    const at = measure(els);
     if (!still()) {
       for (const el of els) {
         const from = was.current.get(el.dataset.tile!);
@@ -440,24 +448,42 @@ function useGlide(grid: React.RefObject<HTMLDivElement | null>, order: string): 
         if (!from || !to) continue;
         const dx = from.x - to.x;
         const dy = from.y - to.y;
-        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
-        el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+        const sized = Math.abs(from.w - to.w) >= 1 || Math.abs(from.h - to.h) >= 1;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && !sized) continue;
+        // A tile changing size grows or shrinks to it (its content lays out as it goes); the others slide.
+        const first: Keyframe = { transform: `translate(${dx}px, ${dy}px)`, ...(sized ? { width: `${from.w}px`, height: `${from.h}px` } : {}) };
+        const last: Keyframe = { transform: 'none', ...(sized ? { width: `${to.w}px`, height: `${to.h}px` } : {}) };
+        el.animate([first, last], { id: 'glide', duration: sized ? 260 : 220, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
       }
     }
     was.current = at;
+  };
+  useLayoutEffect(glide, [order]);
+  useEffect(() => {
+    const el = grid.current;
+    if (!el) return;
+    // A tile's size changing in place (its corner dragged past a size) glides too.
+    const sizes = new MutationObserver(glide);
+    sizes.observe(el, { subtree: true, attributes: true, attributeFilter: ['data-w', 'data-h'] });
+    // The window or the panel beside it changed the board's width: just learn the new places.
+    const room = new ResizeObserver(() => {
+      if (!cells().some((c) => c.getAnimations().some((x) => x.id === 'glide'))) was.current = measure(cells());
+    });
+    room.observe(el);
+    return () => {
+      sizes.disconnect();
+      room.disconnect();
+    };
   }, [order]);
-  // Measured again just before a drag lifts a tile (the window or a tile may have changed size since).
+  // Measured again just before a drag lifts a tile (a chart may have grown since).
   return () => {
-    was.current = places().at;
+    was.current = measure(cells());
   };
 }
 
 const noop = (): void => undefined;
 /** The grid's gap (numbers.module.css .grid), for working out a column's width. */
 const GAP = 10;
-/** A tile's least height, normal and tall (numbers.module.css .cell). */
-const NORMAL = 110;
-const TALL = 300;
 const SHOW_WORDS: Readonly<Record<OutputShow, string>> = { auto: 'As it reads', markdown: 'Markdown', tree: 'A JSON tree', table: 'A table', text: 'Plain text' };
 
 type Source = ReturnType<typeof tileProject>;
@@ -475,8 +501,12 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
   const api = useApi();
   const a = useSentinelActions();
   const [renaming, setRenaming] = useState(false);
-  // Dragging its corner: the size it would land on (and that outline's size on screen), shown while the pointer moves.
-  const [sizing, setSizing] = useState<{ readonly w: TileWidth; readonly h: TileHeight; readonly width: number; readonly height: number }>();
+  // Dragging its corner: the size it takes, live, while the pointer moves (it and its neighbours glide).
+  const [sizing, setSizing] = useState<{ readonly w: TileWidth; readonly h: TileHeight }>();
+  // Let go: the new size holds until the saved board comes back with it (no jump back and forth).
+  const [kept, setKept] = useState<{ readonly w: TileWidth; readonly h: TileHeight; readonly was: string }>();
+  const saved = `${tile.width}:${tile.height ?? 1}`;
+  const size = sizing ?? (kept && kept.was === saved ? kept : { w: tile.width, h: tile.height ?? 1 });
   // A desktop widget of this tile was clicked: the board scrolls to it and marks it for a moment.
   const [shown, setShown] = useState(false);
   const cellRef = useRef<HTMLDivElement>(null);
@@ -552,8 +582,8 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
   ];
   /**
    * The corner: drag it across the grid's columns (it snaps to 1, 2, 3, 4 or 6 of 6) and down for
-   * tall. The tile stays put while you drag; an outline shows the size it lands on, and the board
-   * moves once, when you let go. Escape leaves it as it was.
+   * tall. Like a widget: past each size it grows or shrinks to it and the tiles around make room,
+   * gliding; it's saved when you let go. Escape puts it back as it was.
    */
   const resize = (e: React.PointerEvent<HTMLElement>): void => {
     if (e.button !== 0) return;
@@ -563,16 +593,15 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
     const grid = cell?.parentElement;
     if (!cell || !grid) return;
     const box = cell.getBoundingClientRect();
-    const room = grid.getBoundingClientRect();
-    const column = (room.width + GAP) / GRID_COLUMNS;
+    const column = (grid.getBoundingClientRect().width + GAP) / GRID_COLUMNS;
     const from = { w: tile.width, h: tile.height ?? 1 };
-    const heightOf = (h: TileHeight): number => (h === from.h ? box.height : h === 2 ? Math.max(TALL, box.height * 2 + GAP) : Math.max(NORMAL, (box.height - GAP) / 2));
     let to = from;
     const move = (ev: PointerEvent): void => {
       const tall = from.h === 2 ? ev.clientY - box.top > box.height * 0.7 : ev.clientY - box.top > box.height * 1.4;
-      to = { w: snapWidth((ev.clientX - box.left + GAP) / column), h: tall ? 2 : 1 };
-      // Never drawn past the board's edge (a tile too wide for its row goes to the next one).
-      setSizing({ ...to, width: Math.min(to.w * column - GAP, room.right - box.left), height: heightOf(to.h) });
+      const next = { w: snapWidth((ev.clientX - box.left + GAP) / column), h: tall ? 2 : 1 } as const;
+      if (next.w === to.w && next.h === to.h) return;
+      to = next;
+      setSizing(to);
     };
     const stop = (): void => {
       window.removeEventListener('pointermove', move);
@@ -583,7 +612,9 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
     };
     const up = (): void => {
       stop();
-      if (to.w !== from.w || to.h !== from.h) update({ width: to.w, height: to.h });
+      if (to.w === from.w && to.h === from.h) return;
+      setKept({ ...to, was: `${from.w}:${from.h}` });
+      update({ width: to.w, height: to.h });
     };
     const key = (ev: KeyboardEvent): void => {
       if (ev.key !== 'Escape') return;
@@ -591,7 +622,7 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
       stop();
     };
     document.documentElement.dataset.dragging = 'resize';
-    setSizing({ ...from, width: box.width, height: box.height });
+    setSizing(from);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up, { once: true });
     window.addEventListener('keydown', key);
@@ -604,11 +635,9 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
         </svg>
       </span>
       {sizing ? (
-        <span className={n.sizeOutline} style={{ width: sizing.width, height: sizing.height }} aria-hidden="true">
-          <span className={n.sizing}>
-            {WIDTH_WORDS[sizing.w].replace(/ \(.*\)$/, '')}
-            {sizing.h === 2 ? ' · tall' : ''}
-          </span>
+        <span className={n.sizing} aria-hidden="true">
+          {WIDTH_WORDS[sizing.w].replace(/ \(.*\)$/, '')}
+          {sizing.h === 2 ? ' · tall' : ''}
         </span>
       ) : null}
     </>
@@ -638,7 +667,7 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
     </div>
   );
   return (
-    <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={tile.width} data-h={tile.height ?? 1} data-movable={movable && !ghost ? '' : undefined} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
+    <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={size.w} data-h={size.h} data-movable={movable && !ghost ? '' : undefined} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
       {tile.kind === 'number' ? null : head}
       <div className={n.cellBody}>
         <TileBody d={d} tile={tile} state={state} compare={compare} note={note} lead={tile.kind === 'number' ? mark : null} more={tile.kind === 'number' ? more : null} />

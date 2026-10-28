@@ -437,6 +437,48 @@
   color: var(--text-3);
   text-align: right;
 }
+/* One-tap ideas under the box: soft pills; the first (Claude suggests) in a light wash of the accent. */
+.ideas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.idea {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: default;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.idea svg {
+  color: var(--text-3);
+}
+.idea:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.idea[data-lead] {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-raised));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent) 28%, transparent);
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+}
+.idea[data-lead] svg {
+  color: inherit;
+}
+.first .composer {
+  margin-top: 18px;
+}
 .firstFoot {
   display: flex;
   gap: 16px;

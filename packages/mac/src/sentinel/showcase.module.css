@@ -1,0 +1,360 @@
+/*
+ * What Sentinel can do (Showcase.tsx): a quiet stage with one scene at a time, its line, Set This
+ * Up, and dots. Pastel washes and hairlines, no glow; each scene eases in once, nothing loops.
+ */
+
+.show {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  outline: none;
+}
+.screen {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 236px;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--info) 7%, transparent), transparent 60%),
+    radial-gradient(110% 90% at 100% 100%, color-mix(in srgb, var(--claude) 7%, transparent), transparent 60%),
+    var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  overflow: hidden;
+}
+.show:focus-visible .screen {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.scene {
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: sceneIn 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes sceneIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+.line {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text);
+  animation: fade 0.4s ease;
+}
+.line svg {
+  flex: none;
+  color: var(--text-3);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.dot {
+  position: relative;
+  width: 18px;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+  overflow: hidden;
+  transition: width var(--dur) var(--ease-out);
+}
+.dotOn {
+  width: 34px;
+}
+/* The one showing fills as its time passes (it holds while you point at it). */
+.dotOn span {
+  position: absolute;
+  inset: 0;
+  background: var(--text-3);
+  transform-origin: left;
+  animation: fill linear forwards;
+}
+.dot[data-held] span {
+  animation-play-state: paused;
+}
+@keyframes fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* ---- the board: three real stat tiles rising in */
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 168px));
+  gap: 10px;
+}
+.boardTile {
+  border-radius: 14px;
+  --view-surface: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline), 0 6px 18px -10px rgba(0, 0, 0, 0.16);
+  animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.boardTile:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.boardTile:nth-child(3) {
+  animation-delay: 0.24s;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* ---- the phone: a lock screen, and the note sliding down onto it */
+.phone {
+  width: 220px;
+  height: 196px;
+  padding: 18px 12px 0;
+  border-radius: 28px 28px 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--subagent) 16%, var(--bg-raised)), color-mix(in srgb, var(--info) 10%, var(--bg-raised)));
+  box-shadow: 0 0 0 4px var(--bg-raised), 0 0 0 4.5px var(--hairline-strong);
+  transform: translateY(26px);
+  text-align: center;
+}
+.phoneTime {
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text);
+}
+.phoneDate {
+  margin-bottom: 14px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-raised) 88%, transparent);
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.18);
+  text-align: left;
+  animation: drop 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.35s backwards;
+}
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.96);
+  }
+}
+.noteIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--info) 18%, var(--bg-raised));
+  color: color-mix(in srgb, var(--info) 80%, var(--text));
+}
+.noteText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-2);
+}
+.noteText strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.noteWhen {
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* ---- the fix: three stages lighting up in turn */
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.flowArrow {
+  flex: none;
+  color: var(--text-3);
+}
+.stage {
+  --tone: var(--error);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 150px;
+  padding: 12px 12px 11px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tone) 8%, var(--bg-raised));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--tone) 22%, var(--hairline));
+  font-size: 11.5px;
+  color: var(--text-2);
+  animation: light 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.stage[data-tone='peach'] {
+  --tone: var(--claude);
+}
+.stage[data-tone='mint'] {
+  --tone: var(--ok);
+}
+.stage strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.stageIcon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  color: color-mix(in srgb, var(--tone) 75%, var(--text));
+}
+@keyframes light {
+  from {
+    opacity: 0.25;
+    transform: scale(0.96);
+    filter: saturate(0);
+  }
+}
+
+/* ---- the review: a pull request and Claude's note under it */
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(380px, 100%);
+}
+.pr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  font-size: 12.5px;
+}
+.pr svg {
+  color: color-mix(in srgb, var(--ok) 80%, var(--text));
+}
+.prTitle {
+  flex: 1;
+  font-weight: 600;
+}
+.prNum {
+  color: var(--text-3);
+}
+.bubble {
+  margin-left: 22px;
+  padding: 10px 12px;
+  border-radius: 4px 14px 14px 14px;
+  background: color-mix(in srgb, var(--claude) 9%, var(--bg-raised));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--claude) 20%, var(--hairline));
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.4s backwards;
+}
+.bubbleWho {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--claude) 75%, var(--text));
+}
+
+/* ---- the site: a strip of checks, two that failed */
+.uptime {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 46px;
+}
+.bars i {
+  width: 7px;
+  height: 100%;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ok) 45%, var(--bg-raised));
+  animation: grow 0.35s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.bars i[data-down] {
+  background: color-mix(in srgb, var(--error) 55%, var(--bg-raised));
+}
+@keyframes grow {
+  from {
+    transform: scaleY(0.2);
+    opacity: 0;
+  }
+}
+.uptimeLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  font-size: 12px;
+  color: var(--text-2);
+  animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.7s backwards;
+}
+.down {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--error) 65%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene,
+  .scene *,
+  .line,
+  .dotOn span {
+    animation: none !important;
+  }
+}
+:root[data-motion='reduce'] .scene,
+:root[data-motion='reduce'] .scene *,
+:root[data-motion='reduce'] .line,
+:root[data-motion='reduce'] .dotOn span {
+  animation: none !important;
+}
