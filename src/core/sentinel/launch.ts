@@ -19,6 +19,8 @@ import type { FetchLike, TriggerDeps, WebhookTunnel } from './triggers/types.js'
 import { attachSentinel, detachSentinel } from './registry.js';
 import type { PrLook, PrPlace, SentinelChat, SentinelClaude, SentinelFriends, SentinelGitHub, SentinelPlaces } from './runner.js';
 import { Sentinels } from './sentinels.js';
+import { keepWidgetSnapshot } from './widgets.js';
+import path from 'node:path';
 
 /**
  * Start Sentinel for the daemon (the Mac app's Beluga): sentinels in ~/.beluga/sentinel.json,
@@ -65,7 +67,10 @@ export function launchSentinel(host: SentinelHost): () => void {
   });
   attachSentinel(session, sentinels);
   const stopSeed = host.demo && !sentinels.list().length ? seedDemoSentinel(store, sentinels, (ms) => (back = ms)) : () => undefined;
+  // The boards' tiles for the Mac's desktop widgets (BLG-309): never the demo's.
+  const stopWidgets = !host.demo && process.platform === 'darwin' ? keepWidgetSnapshot(store, path.join(belugaHome(), 'widgets'), (id) => store.getState().projects.find((p) => p.id === id)?.root) : () => undefined;
   return () => {
+    stopWidgets();
     stopSeed();
     claude.close();
     detachSentinel(session);

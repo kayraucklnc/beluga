@@ -17,6 +17,7 @@ mod sounds;
 mod spout;
 mod update_rules;
 mod updater;
+mod widgets;
 
 use std::collections::HashMap;
 use std::process::Child;
@@ -292,6 +293,8 @@ pub fn run() {
             }
             menu::tray(&handle)?;
             spout::start(&handle);
+            // The desktop widgets redraw when the boards' tiles change (BLG-309).
+            widgets::start(&handle);
             // About to sleep: the daemon mails what friends haven't taken first (BLG-277).
             #[cfg(target_os = "macos")]
             power::watch();

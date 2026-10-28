@@ -21,6 +21,7 @@ import { draftsOf, jsonFence, numberWords, outputTable, refreshLine, tileCaption
 import { askLine, inScope, namedLine } from './sentinel-model.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { TINTS, setTintChoice, tintChoiceOf, useProjectTint } from './tint.js';
+import { SHOW_TILE } from '../lib/widget-links.js';
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
 import n from './numbers.module.css';
 
@@ -415,6 +416,20 @@ function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboa
   const [renaming, setRenaming] = useState(false);
   // Dragging its corner: the size it would land on, shown while the pointer moves.
   const [sizing, setSizing] = useState<{ readonly w: TileWidth; readonly h: TileHeight }>();
+  // A desktop widget of this tile was clicked: the board scrolls to it and marks it for a moment.
+  const [shown, setShown] = useState(false);
+  const cellRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (ghost) return;
+    const on = (e: Event): void => {
+      if ((e as CustomEvent<string>).detail !== tile.id) return;
+      cellRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setShown(true);
+      setTimeout(() => setShown(false), 1600);
+    };
+    document.addEventListener(SHOW_TILE, on);
+    return () => document.removeEventListener(SHOW_TILE, on);
+  }, [tile.id, ghost]);
   const onRename = (): void => setRenaming(true);
   const cap = tileCaption(state, tile);
   const note = tileNote(cap.state);
@@ -437,6 +452,24 @@ function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboa
           ...(tile.kind === 'text' ? [{ label: 'Shows', icon: 'eye' as const, onSelect: noop, submenu: [{ label: 'Its last headline', checked: tile.text !== 'report', onSelect: () => update({ text: 'headline' }) }, { label: 'Its last report', checked: tile.text === 'report', onSelect: () => update({ text: 'report' }) }] }] : []),
           ...(output?.runId ? [{ label: 'Open the Run', icon: 'arrowRight' as const, separate: true, onSelect: () => a.openRun(output.runId) }] : []),
           ...(sentinelId && cap.state !== 'gone' ? [{ label: 'Open Its Sentinel', icon: 'sentinel' as const, ...(output?.runId ? {} : { separate: true }), onSelect: () => a.open(sentinelId) }] : []),
+        ]),
+    ...(tile.kind === 'divider'
+      ? []
+      : [
+          {
+            label: 'Add to Desktop…',
+            icon: 'laptop' as const,
+            hint: 'As a macOS widget that updates when its sentinel runs',
+            separate: true,
+            onSelect: () =>
+              openSheet({
+                kind: 'confirm',
+                title: `Put “${cap.title}” on your desktop`,
+                message: `Right-click your desktop and choose Edit Widgets, search for Beluga, and drag Board tile where you want it (small, medium or large). Then right-click the widget, choose Edit “Board tile”, and pick “${cap.title}” (${d.name}). It updates each time its sentinel runs, and clicking it opens this board. macOS doesn’t let an app place a widget itself.`,
+                confirm: 'Got It',
+                run: noop,
+              }),
+          },
         ]),
     ...(source?.id
       ? [
@@ -514,7 +547,7 @@ function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboa
     </div>
   );
   return (
-    <div className={n.cell} data-tile={tile.id} data-kind={tile.kind} data-w={sizing?.w ?? tile.width} data-h={sizing?.h ?? tile.height ?? 1} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
+    <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={sizing?.w ?? tile.width} data-h={sizing?.h ?? tile.height ?? 1} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
       {tile.kind === 'number' ? null : head}
       <div className={n.cellBody}>
         <TileBody d={d} tile={tile} state={state} compare={compare} note={note} lead={tile.kind === 'number' ? mark : null} more={tile.kind === 'number' ? more : null} />

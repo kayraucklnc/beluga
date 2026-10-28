@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Every macOS app extension is sandboxed; WidgetKit won't load one that isn't. -->
+  <key>com.apple.security.app-sandbox</key><true/>
+  <!-- Instead of an App Group (it needs a Team ID): read only the folder Beluga writes the tiles to. -->
+  <key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+  <array><string>/.beluga/widgets/</string></array>
+</dict>
+</plist>
