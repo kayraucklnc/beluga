@@ -163,7 +163,7 @@ export interface Approval {
   readonly task?: string;
   /** Only Allow once / Decline: a friend's request for a secret (trust, rules and Always never cover it). */
   readonly once?: boolean;
-  /** The conversation it holds up, when that's a workspace ("ws:<id>") or a friends' chat ("dm:<peerId>", "group:<id>"): the sidebar marks it as needing you, and the chat shows it. */
+  /** The conversation it holds up (a workspace "ws:<id>", Your Mac "mac:assistant:<id>", a friends' chat "dm:<peerId>" / "group:<id>", the Sentinel chat…): the sidebar marks it as needing you, the chat shows it, and Review in Beluga opens it. */
   readonly channel?: string;
 }
 

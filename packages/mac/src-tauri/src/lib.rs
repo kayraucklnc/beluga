@@ -166,7 +166,11 @@ fn tray_tip(waiting: u32, working: u32, unread: u32) -> String {
     parts.join(" · ")
 }
 
+/// Beluga to the front with its window: the app itself first (it may be hidden with ⌘H, and a
+/// hidden app's window can't take focus), then the window.
 fn focus_main(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -177,9 +181,6 @@ fn focus_main(app: &tauri::AppHandle) {
 /// The window to the front, asked by Beluga ("Open on your Mac" from the phone).
 #[tauri::command]
 fn focus_window(app: tauri::AppHandle) {
-    // Beluga itself first (it may be hidden with ⌘H), then its window.
-    #[cfg(target_os = "macos")]
-    let _ = app.show();
     focus_main(&app);
 }
 

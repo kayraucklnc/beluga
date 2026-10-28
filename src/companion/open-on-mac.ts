@@ -1,6 +1,7 @@
 import type { DomainState, View } from '../core/store.js';
 import { FIRST_CHAT, assistantChatOf } from '../shared/assistant.js';
 import { viewFor } from '../client/screen.js';
+import { sentinelChatOf } from '../core/sentinel/model.js';
 
 /**
  * "Open on your Mac" from the phone (BLG-40): what the Mac app's window shows for something the
@@ -29,6 +30,8 @@ export function macViewFor(state: DomainState, target: OpenTarget): View | undef
         if (state.assistant.chats.some((c) => c.id === chat)) return { kind: 'assistant', chat };
         return chat === FIRST_CHAT ? { kind: 'assistant' } : undefined;
       }
+      const sentinelChat = sentinelChatOf(channel);
+      if (sentinelChat) return { kind: 'sentinel_chat', chat: sentinelChat };
       if (channel.startsWith('task:')) return { kind: 'requests' };
       if (channel.startsWith('ws:')) {
         const id = channel.slice(3);

@@ -148,6 +148,9 @@ pub fn on_notification<R: Runtime>(app: &AppHandle<R>, performed: &ActionPerform
     };
     // Reviewing needs the window; answering doesn't.
     if action == "review" {
+        // Beluga itself first: a hidden app's window can't take focus.
+        #[cfg(target_os = "macos")]
+        let _ = app.show();
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.unminimize();
             let _ = w.show();
