@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import os from 'node:os';
 import type { DashboardTools, SentinelTools, ToolTile } from '../../agent/types.js';
-import type { Row, Source } from '../../shared/view-spec.js';
+import { type Row, type Source, SourceSchema } from '../../shared/view-spec.js';
 import type { NoticeEvent } from '../notify.js';
 import type { Action, Store } from '../store.js';
 import { filterIssues, isOpen } from '../board/model.js';
@@ -15,7 +15,8 @@ import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_I
 import { Dashboards, type TileInput, type TilePatch } from './dashboards.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
 import { MetricFiles } from './metric-files.js';
-import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, labelOf, metricName, pointOf, toNumber } from './metrics.js';
+import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, keptWords, labelOf, measureFrom, metricName, pointOf, toNumber } from './metrics.js';
+import { type SentinelTest, type SourcePreview, describePreviews, previewBroken, previewFailed, previewOf } from './preview.js';
 import {
   APPROVAL_MS,
   CLAUDE_CHANGED,
@@ -64,7 +65,7 @@ import {
 import { redactSecrets } from '../../shared/steps.js';
 import { dashboardAskBrief, describeSentinels, sentinelAskBrief, sentinelChatBrief, sentinelMaterial, sentinelNote } from './prompt.js';
 import { RECIPES } from './recipes.js';
-import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, SentinelRunner, type YourAnswer, mergePinned, runSentinelShell } from './runner.js';
+import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, type SourceFetch, SentinelRunner, type YourAnswer, mergePinned, runSentinelShell } from './runner.js';
 import { MetricUnitSchema, StepInputSchema } from './schema.js';
 import type { ToolDraft, ToolPatch, ToolStep } from './tool-draft.js';
 import { Triggers, isEventTrigger } from './triggers/index.js';
@@ -115,7 +116,7 @@ export interface SentinelsDeps {
   /** Variables only Call a service steps get (the project's Earnings key as $STRIPE_EARNINGS_KEY). */
   readonly serviceEnv?: (projectId: string | undefined) => Record<string, string>;
   /** A view source run as you (Keep the numbers from a source): core/views/sources.ts fetchSource. */
-  readonly fetchSource?: (source: Source, cwd: string, signal: AbortSignal) => Promise<{ readonly rows: readonly Row[]; readonly columns: readonly string[] } | string>;
+  readonly fetchSource?: SourceFetch;
 }
 
 const TICK_MS = 30_000;
@@ -125,6 +126,10 @@ const FIRST_TICK_MS = 10_000;
 /** A run over its runs per day says this. */
 const OVER_DAY = 'Over its runs per day';
 const MAX_SENTINELS = 200;
+/** How long one source may take when it's checked or tested (it's a run's step otherwise). */
+const CHECK_MS = 120_000;
+/** A step that isn't a source's, in a test run, says this. */
+export const NOT_IN_TEST = 'not run in a test: it runs when the sentinel is on, or on Run Now';
 /** The runs that count toward runs per day. */
 const COUNTS_PER_DAY: ReadonlySet<Run['state']> = new Set(['running', 'done', 'failed', 'stopped']);
 
@@ -193,6 +198,8 @@ export class Sentinels {
   private outputs: Record<string, Record<string, StepOutput>> = {};
   /** The Sentinel chat's conversations (§12). */
   readonly chats: SentinelChats;
+  /** Sentinels whose sources are being tested now (one test at a time each). */
+  private readonly testing = new Set<string>();
 
   constructor(private readonly deps: SentinelsDeps) {
     this.now = deps.now ?? Date.now;
@@ -823,6 +830,108 @@ export class Sentinels {
     const paused: Sentinel = { ...next, paused: true, pausedWhy: CLAUDE_CHANGED, updatedAt: this.now() };
     this.replace(paused);
     return { sentinel: paused, paused: true };
+  }
+
+  // ------------------------------------------------------------------ checking and testing sources (BLG-302, BLG-304)
+
+  /**
+   * Test a sentinel's sources without turning it on (paused or not): each Keep the numbers step that
+   * reads a source runs once, what it finds is kept (its tiles fill), and the run says it was a test.
+   * Nothing else runs: no Claude, script, service call, message or pull request, and nothing after it.
+   * Your Claude's test (`claude`) runs only what's read-only by itself (a command waits for your yes).
+   */
+  async test(ref: string, by: 'you' | 'claude'): Promise<SentinelTest> {
+    const s = this.need(ref);
+    if (this.active.has(s.id)) throw new Error(`“${s.name}” is running now: its run shows what it finds`);
+    if (!s.steps.some(isSourceStep)) {
+      return { previews: [], text: `“${s.name}” has no Keep the numbers step that reads a source, so a test has nothing to run: ${by === 'claude' ? 'the user’s Run Now runs all of it (paused or not)' : 'Run Now runs all of it, paused or not'}.` };
+    }
+    if (this.testing.has(s.id)) throw new Error(`“${s.name}” is being tested already`);
+    this.testing.add(s.id);
+    let checks: SourceCheck[];
+    try {
+      checks = await this.checkSources(s.steps, s.projectId, by === 'claude');
+    } finally {
+      this.testing.delete(s.id);
+    }
+    const now = this.items.find((i) => i.id === s.id);
+    if (!now) throw new Error(`“${s.name}” was deleted meanwhile`);
+    const run = this.recordTest(now, by, checks, by === 'claude' ? 'Your Claude tested its sources' : 'You tested its sources');
+    const previews = checks.map((c) => c.preview);
+    return { runId: run.id, previews, text: redactSecrets(`${run.headline}\n\n${describePreviews(previews)}`) };
+  }
+
+  /**
+   * Run sources once, read-only, as your Claude would (byClaude: nothing that needs your yes) or as you:
+   * each source step's rows as a preview, and the numbers its step would keep. `only`: those steps.
+   */
+  private async checkSources(steps: readonly Step[], projectId: string | undefined, byClaude: boolean, only?: ReadonlySet<string>): Promise<SourceCheck[]> {
+    const out: SourceCheck[] = [];
+    for (const st of steps) {
+      if (st.kind !== 'measure' || st.from !== 'source' || (only && !only.has(st.id))) continue;
+      out.push(await this.checkSource(st.source, projectId, byClaude, st.id, st.name, (rows) => measureFrom(rows, st.metrics, st.keep)));
+    }
+    return out;
+  }
+
+  /** One source, once: its preview (and what a step keeps from it, `measure`). */
+  private async checkSource(source: Source | undefined, projectId: string | undefined, byClaude: boolean, stepId: string, stepName: string, measure?: (rows: readonly Row[]) => { readonly found: Measured[]; readonly missing: string[] }, sample?: number): Promise<SourceCheck> {
+    if (!source) return { stepId, preview: previewFailed(stepId, stepName, 'failed', 'it has no source yet: give it one'), found: [] };
+    const fetch = this.deps.fetchSource;
+    if (!fetch) return { stepId, preview: previewFailed(stepId, stepName, 'not-checked', 'sources need the Beluga app'), found: [] };
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<string>((resolve) => {
+      timer = setTimeout(() => {
+        abort.abort();
+        resolve(`took longer than ${CHECK_MS / 60_000} minutes`);
+      }, CHECK_MS);
+      timer.unref?.();
+    });
+    const got = await Promise.race([fetch(source, this.cwdOfProject(projectId), abort.signal, { byClaude }).catch((err: unknown) => (err instanceof Error ? err.message : String(err))), timeout]).finally(() => clearTimeout(timer));
+    if (typeof got === 'string') return { stepId, preview: previewFailed(stepId, stepName, 'failed', redactSecrets(got)), found: [] };
+    if ('needsYes' in got) return { stepId, preview: previewFailed(stepId, stepName, 'not-checked', `it runs ${firstLine(got.needsYes, 200)}, which waits for the user’s yes: it runs on their Run Now`), found: [] };
+    const rows = cellRows(got.rows as Record<string, unknown>[]);
+    const m = measure?.(rows);
+    return { stepId, preview: previewOf(stepId, stepName, rows, got.columns, m ? { kept: m.found.map((f) => f.name), missing: m.missing } : undefined, sample), found: m?.found ?? [] };
+  }
+
+  /** A test as a run in the sentinel's history (by you or your Claude), its numbers kept; nothing follows it. */
+  private recordTest(s: Sentinel, by: 'you' | 'claude', checks: readonly SourceCheck[], summary: string): RunSummary {
+    const at = this.now();
+    const run = this.newRun(s, by, { kind: 'manual', summary }, 'running');
+    const byStep = new Map(checks.map((c) => [c.stepId, c]));
+    const measured: Measured[] = [];
+    let failed: string | undefined;
+    let kept: string | undefined;
+    const steps = s.steps.map((st, i): Run['steps'][number] => {
+      const c = byStep.get(st.id);
+      if (!c) return { id: st.id, state: 'skipped', why: NOT_IN_TEST };
+      const p = c.preview;
+      if (p.state === 'not-checked') return { id: st.id, state: 'skipped', startedAt: at, endedAt: at, why: p.why ?? 'not checked' };
+      measured.push(...c.found);
+      const output = c.found.length ? `${keptWords(c.found)}${p.missing?.length ? `\nNot found: ${p.missing.join(', ')}` : ''}` : undefined;
+      if (output) {
+        this.folders.write(run.id, `step-${i + 1}.txt`, output);
+        kept ??= firstLine(output);
+      }
+      const why = p.state === 'failed' ? `the source didn’t answer: ${p.why ?? ''}` : p.missing?.length ? (p.rows ? `didn’t find ${p.missing.join(', ')}${c.found.length ? ' (the rest was kept)' : ''}` : 'no rows came back') : undefined;
+      if (why) failed ??= `${st.name}: ${why}`;
+      return { id: st.id, state: why ? 'failed' : 'done', startedAt: at, endedAt: at, ...(output ? { output: output.slice(0, OUTPUT_KEPT) } : {}), ...(why ? { why } : {}) };
+    });
+    const state: Run['state'] = failed ? 'failed' : measured.length ? 'done' : 'skipped';
+    const headline = `Test: ${failed ? firstLine(failed, 120) : (kept ?? 'nothing to keep')}`;
+    const done: Run = { ...run, steps, state, headline: redactSecrets(headline), endedAt: this.now(), ...(failed ? { why: redactSecrets(failed) } : {}) };
+    this.record(done);
+    if (measured.length) this.keepNumbers(s, done.id, measured);
+    this.prune();
+    return toSummary(done);
+  }
+
+  /** The folder a sentinel's sources run in: its project's main folder, else your home. */
+  private cwdOfProject(projectId: string | undefined): string {
+    const p = projectId ? this.deps.store.getState().projects.find((x) => x.id === projectId) : undefined;
+    return p?.root || this.deps.home || os.homedir();
   }
 
   /** Recorded history (the demo): a run as if it had happened, with its outputs and report (the same id: that run, changed). */
@@ -1564,9 +1673,39 @@ export class Sentinels {
       list: () => describeSentinels(this.items, line),
       create: (d: ToolDraft) => {
         const { name: _n, ...refs } = this.fromToolPatch({ trigger: d.trigger, steps: d.steps });
-        const s = this.create({ ...fromToolDraft(d), ...refs });
-        onMade?.(s.id);
-        return `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. Its steps: ${s.steps.map((st) => `${st.name} (step ${st.id})`).join(', ') || 'none'}. It runs once the user turns it on from its page (you can’t).`;
+        const draft: SentinelDraft = { ...fromToolDraft(d), ...refs };
+        const made = (s: Sentinel): string => `Made “${s.name}” (${scheduleSentence(s.trigger)}), paused: \`sentinel:${s.id}\`. Its steps: ${s.steps.map((st) => `${st.name} (step ${st.id})`).join(', ') || 'none'}. It runs once the user turns it on from its page (you can’t).`;
+        if (!(draft.steps ?? []).some(isSourceStep)) {
+          const s = this.create(draft);
+          onMade?.(s.id);
+          return made(s);
+        }
+        // Its sources run once before it's saved: one that can't connect, or whose query fails, saves nothing.
+        return (async () => {
+          const projectId = this.projectIdOf(draft.projectId ?? undefined);
+          const steps = this.stepsOf(draft.steps ?? [], draft.access ?? 'look');
+          const checks = await this.checkSources(steps, projectId, true);
+          const broken = checks.filter((c) => previewBroken(c.preview));
+          if (broken.length) throw new Error(notSaved('Not saved', broken));
+          const s = this.create({ ...draft, steps });
+          onMade?.(s.id);
+          const run = this.recordTest(s, 'claude', checks, 'Your Claude checked it when setting it up');
+          return `${made(s)}\n\nIts ${checks.length === 1 ? 'source was' : 'sources were'} run once (a test run in its history${run.state === 'done' ? '; what it found is kept, so its tiles fill' : ''}). Show the user this preview before you say it’s done, and fix any flagged column (sentinel_update) or ask them what it means:\n\n${redactSecrets(describePreviews(checks.map((c) => c.preview)))}`;
+        })();
+      },
+      test: async (ref: string) => {
+        const s = this.need(ref);
+        if (active?.sentinel.id === s.id) throw new Error('This run is that sentinel’s: it can’t test itself');
+        const t = await this.test(s.id, 'claude');
+        return `${t.text}${t.runId ? `\n\nThis test is in “${s.name}”’s history (\`sentinel:${s.id}\`); it ${s.paused ? 'stays paused: only the user turns it on' : 'is on'}.` : ''}`;
+      },
+      trySource: async (source: unknown, project?: string) => {
+        const parsed = SourceSchema.safeParse(source);
+        if (!parsed.success) throw new Error(`Not a source: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'source'}: ${i.message}`).join('; ')}`);
+        const projectId = this.projectIdOf(project);
+        const c = await this.checkSource(parsed.data, projectId, true, 'try', 'The source', undefined, TRY_ROWS);
+        if (c.preview.state === 'failed') throw new Error(redactSecrets(describePreviews([c.preview])));
+        return redactSecrets(describePreviews([c.preview]));
       },
       run: (ref: string) => {
         const s = this.need(ref);
@@ -1587,9 +1726,29 @@ export class Sentinels {
       },
       update: (ref: string, patch: ToolPatch) => {
         if (active?.sentinel.id === this.get(ref)?.id) throw new Error('This run is that sentinel’s: it can’t change itself while it runs');
-        const { sentinel: s, paused } = this.claudeUpdate(ref, patch);
-        const changed = Object.keys(patch).filter((k) => patch[k as keyof ToolPatch] !== undefined);
-        return `Changed “${s.name}” (${changed.join(', ') || 'nothing'}): ${scheduleSentence(s.trigger, (id) => this.get(id)?.name)}; ${s.steps.length} ${s.steps.length === 1 ? 'step' : 'steps'}.${paused ? ' It changed what it can do, so it is paused now: the user turns it on again from its page (say so).' : s.paused ? ' It is paused: the user turns it on from its page.' : ''} \`sentinel:${s.id}\``;
+        const said = (s: Sentinel, paused: boolean): string => {
+          const changed = Object.keys(patch).filter((k) => patch[k as keyof ToolPatch] !== undefined);
+          return `Changed “${s.name}” (${changed.join(', ') || 'nothing'}): ${scheduleSentence(s.trigger, (id) => this.get(id)?.name)}; ${s.steps.length} ${s.steps.length === 1 ? 'step' : 'steps'}.${paused ? ' It changed what it can do, so it is paused now: the user turns it on again from its page (say so).' : s.paused ? ' It is paused: the user turns it on from its page.' : ''} \`sentinel:${s.id}\``;
+        };
+        const was = this.need(ref);
+        const next = this.fromToolPatch(patch);
+        const steps = next.steps ? this.stepsOf(next.steps, next.access ?? was.access) : undefined;
+        const moved = next.projectId !== undefined;
+        // The sources it adds or changes (all of them in another project) run once before it's saved.
+        const changed = (steps ?? (moved ? was.steps : [])).filter((st) => isSourceStep(st) && (moved || sourceOf(was.steps.find((w) => w.id === st.id)) !== sourceOf(st)));
+        if (!changed.length) {
+          const { sentinel: s, paused } = this.claudeUpdate(ref, patch);
+          return said(s, paused);
+        }
+        return (async () => {
+          const projectId = next.projectId === null ? undefined : next.projectId !== undefined ? this.projectIdOf(next.projectId) : was.projectId;
+          const checks = await this.checkSources(steps ?? was.steps, projectId, true, new Set(changed.map((st) => st.id)));
+          const broken = checks.filter((c) => previewBroken(c.preview));
+          if (broken.length) throw new Error(notSaved('Not changed', broken));
+          // The steps as checked (their ids kept), so what the preview says is what was saved.
+          const { sentinel: s, paused } = this.claudeUpdate(ref, steps ? { ...patch, steps: steps as unknown as ToolPatch['steps'] } : patch);
+          return `${said(s, paused)}\n\nThe ${checks.length === 1 ? 'source it changed was' : 'sources it changed were'} run once. Show the user this preview, and fix any flagged column or ask them what it means; sentinel_test keeps what it finds:\n\n${redactSecrets(describePreviews(checks.map((c) => c.preview)))}`;
+        })();
       },
       remove: (ref: string) => {
         const s = this.need(ref);
@@ -1608,6 +1767,27 @@ function limitsOf(l: Limits): Limits {
 }
 
 const oneLine = (text: string, max: number): string => text.replace(/\s+/g, ' ').trim().slice(0, max);
+
+/** Rows a source tried alone (sentinel_try_source) shows: enough for a table's columns. */
+const TRY_ROWS = 60;
+
+/** What a check compares to see that a source step changed: its source and what it keeps. */
+const sourceOf = (st: Step | undefined): string => (st?.kind === 'measure' ? JSON.stringify([st.source, st.metrics, st.keep]) : '');
+
+/** Setup refused: which sources didn't work, and what to do. */
+function notSaved(what: string, broken: readonly SourceCheck[]): string {
+  return `${what}: ${broken.length === 1 ? 'a source didn’t work' : `${broken.length} sources didn’t work`}.\n\n${redactSecrets(describePreviews(broken.map((c) => c.preview)))}\n\nFix the query (read the schema first) or the variables (Settings › Environment; leave a postgres source without url or env to use the project’s own), then call it again.`;
+}
+
+/** A Keep the numbers step that reads a source (the steps a check before saving, and a test, run). */
+const isSourceStep = (st: Pick<Step, 'kind'> & { readonly from?: string }): boolean => st.kind === 'measure' && st.from === 'source';
+
+/** One source checked: its step, its preview, and the numbers its step would keep. */
+interface SourceCheck {
+  readonly stepId: string;
+  readonly preview: SourcePreview;
+  readonly found: readonly Measured[];
+}
 
 /**
  * Claude's step as a step draft: what it left out is filled in (StepInputSchema's defaults). A

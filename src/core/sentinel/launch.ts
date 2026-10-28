@@ -78,10 +78,13 @@ export function launchSentinel(host: SentinelHost): () => void {
  * A Keep the numbers step's source, run as views run theirs (your environment, the source's own
  * checks: never a credential file), fresh each run. It's your own sentinel's, so it doesn't wait for a
  * yes the way a command in a chat does; a change by your Claude to it pauses the sentinel instead.
+ * Your Claude checking or testing one alone (`byClaude`: before saving, sentinel_test) runs what's
+ * read-only by itself (a database, a file, an address without your variables); a command, or an
+ * address that would carry one of your variables, waits for your yes (Run Now, or a view's Run).
  */
-async function sourceRows(source: Source, cwd: string): Promise<{ readonly rows: readonly import('../../shared/view-spec.js').Row[]; readonly columns: readonly string[] } | string> {
-  const got = await fetchSource(source, { offset: 0, limit: 5000 }, { cwd, confirm: true, fresh: true });
-  if ('needsApproval' in got) return `it needs your yes first: ${got.what}`;
+async function sourceRows(source: Source, cwd: string, _signal: AbortSignal, opts?: { readonly byClaude?: boolean }): Promise<{ readonly rows: readonly import('../../shared/view-spec.js').Row[]; readonly columns: readonly string[] } | { readonly needsYes: string } | string> {
+  const got = await fetchSource(source, { offset: 0, limit: 5000 }, { cwd, confirm: !opts?.byClaude, fresh: true });
+  if ('needsApproval' in got) return opts?.byClaude ? { needsYes: got.what } : `it needs your yes first: ${got.what}`;
   if ('notKept' in got) return 'nothing came back';
   return { rows: got.rows, columns: got.columns };
 }

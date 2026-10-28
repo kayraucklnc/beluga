@@ -20,6 +20,9 @@ export const SENTINEL_API = {
   'sentinel.duplicate': { args: z.tuple([id]) },
   // Run Now → the run (queued when one is going).
   'sentinel.run': { args: z.tuple([id]) },
+  // Test its sources once, paused or not, without turning it on (BLG-302): each Keep the numbers step
+  // that reads a source runs and keeps what it finds; nothing else runs → SentinelTest (core/sentinel/preview.ts).
+  'sentinel.test': { args: z.tuple([id]) },
   // Stop a run → whether one was going.
   'sentinel.stop': { args: z.tuple([id]) },
   // Pause it, or turn it on (Turn On, Resume).

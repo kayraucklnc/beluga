@@ -36,7 +36,9 @@ const ALWAYS_OK = new Set([
   ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
   // Sentinels (core/sentinel): only your own runs have them; a new one starts paused until you turn it on,
   // and a change to what one can do pauses it. sentinel_remove isn't here: deleting one asks you.
-  ...['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_update', 'sentinel_run', 'sentinel_pause'].map((n) => `mcp__beluga_sentinel__${n}`),
+  // sentinel_test and sentinel_try_source only read: a database read-only, a file, an address without your
+  // variables; a command (or an address carrying a $VAR) waits for your yes.
+  ...['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_update', 'sentinel_run', 'sentinel_test', 'sentinel_try_source', 'sentinel_pause'].map((n) => `mcp__beluga_sentinel__${n}`),
   // Dashboards and numbers (core/sentinel, §10): only your own runs have them; they arrange your
   // dashboards' tiles and read the numbers (a tile removed takes nothing kept with it).
   // dashboard_remove isn't here: deleting a dashboard asks you.

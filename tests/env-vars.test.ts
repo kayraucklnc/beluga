@@ -82,6 +82,30 @@ describe('EnvVars (kept by the core)', () => {
     expect(new EnvVars({ store, file }).envFor()).toEqual({ API_TOKEN: 'sk-secret-1' });
   });
 
+  it('reads env.json again when it changed on disk, so the next run uses it without a restart (BLG-302)', async () => {
+    const store = new Store(initialState('t'));
+    const file = path.join(dir, 'env.json');
+    let told = 0;
+    const env = new EnvVars({ store, file, onChange: () => told++ });
+    env.set(undefined, [{ key: 'DATABASE_URL', value: 'postgres://old' }]);
+    told = 0;
+    // Edited by hand (or by another Beluga) while this one runs.
+    writeFileSync(file, JSON.stringify({ global: { DATABASE_URL: 'postgres://new', DATABASE_POOLER_URL: 'postgres://pooler' } }));
+    const later = new Date(Date.now() + 5000);
+    (await import('node:fs')).utimesSync(file, later, later);
+    expect(env.viewEnv().vars).toEqual({ DATABASE_URL: 'postgres://new', DATABASE_POOLER_URL: 'postgres://pooler' });
+    expect(env.envFor()).toMatchObject({ DATABASE_URL: 'postgres://new' });
+    expect(store.getState().envKeys.global).toEqual(['DATABASE_URL', 'DATABASE_POOLER_URL']);
+    await Promise.resolve();
+    expect(told).toBe(1);
+    // A file that doesn't read (half-written, a typo) keeps the last good variables, and isn't overwritten by them.
+    writeFileSync(file, '{ "global": { "DATABASE_URL": ');
+    const later2 = new Date(Date.now() + 10_000);
+    (await import('node:fs')).utimesSync(file, later2, later2);
+    expect(env.envFor()).toMatchObject({ DATABASE_URL: 'postgres://new' });
+    expect(readFileSync(file, 'utf8')).toBe('{ "global": { "DATABASE_URL": ');
+  });
+
   it('refuses a bad name or a name used twice, keeping what was there', () => {
     const store = new Store(initialState('t'));
     const env = new EnvVars({ store, file: path.join(dir, 'env.json') });

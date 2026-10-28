@@ -23,7 +23,8 @@ import {
 import { mentionsSecret } from '../../agent/policy.js';
 import { isSecretPath } from '../shares.js';
 import { loadEnvFile } from '../env-vars.js';
-import { type DatabaseUrl, databaseUrl, scrubbed, unreachable } from './database-url.js';
+import { type FoundDatabase, databaseUrl, databaseUrlOf } from './database-url.js';
+import { PSQL_MISSING, type Psql, connectPostgres } from './postgres-connect.js';
 import { belugaHome } from '../home.js';
 import { keep, recall } from './kept.js';
 
@@ -437,8 +438,10 @@ async function sqlite(db: string, sql: string, timeout: number): Promise<Row[]> 
 
 async function postgres(source: Extract<Source, { kind: 'postgres' }>, sql: string, timeout: number, cwd: string | undefined): Promise<Row[]> {
   // Without "env" or "url": the project's own database (DATABASE_URL…, or Supabase's variables).
+  // Read each time: a change in Settings › Environment or env.json applies to the next run.
   const place = viewEnv.database(source.cwd ?? cwd);
-  const found = source.url && !source.env ? { url: source.url, from: 'its address' } : databaseUrl({ ...process.env, ...place.vars }, source.env);
+  const env = { ...process.env, ...place.vars };
+  const found = source.url && !source.env ? databaseUrlOf(source.url, 'its address', env) : databaseUrl(env, source.env);
   if ('problem' in found) throw new Error(`${found.problem}. Looked in ${place.where}.`);
   return queryPostgres(found, sql, timeout);
 }
@@ -458,36 +461,26 @@ export async function testDatabase(place: { readonly vars: Record<string, string
   }
 }
 
-/** Of a connection string and its fallbacks, the one that answered last time (no waiting on a dead address again). */
-const reachedBy = new Map<string, string>();
+/** psql, read-only: every statement in a read-only transaction; a dead address gives up soon. */
+const psql: Psql = async (url, sql, timeout) => {
+  try {
+    return await run('psql', ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-d', url, '-c', `SELECT coalesce(json_agg(t), '[]'::json) FROM (${sql}) t`], {
+      timeout,
+      env: { PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=' + timeout, PGCONNECT_TIMEOUT: '8' },
+    });
+  } catch (err) {
+    throw err instanceof Error && err.message === 'psql isn’t installed' ? new Error(PSQL_MISSING) : err;
+  }
+};
 
 /**
- * Run a query against the first address that answers (Supabase's direct address, then its
- * poolers). Errors never carry the connection string or its password.
+ * Run a query against the first address that answers (postgres-connect.ts: Supabase's direct
+ * address, then its session pooler, found if need be; the project's other passwords). Errors never
+ * carry the connection string or its password.
  */
-export async function queryPostgres(found: Extract<DatabaseUrl, { url: string }>, sql: string, timeout: number): Promise<Row[]> {
-  const all = [found.url, ...(found.more ?? [])];
-  const known = reachedBy.get(found.url);
-  const order = known && all.includes(known) ? [known, ...all.filter((u) => u !== known)] : all;
-  let last = '';
-  for (const url of order) {
-    try {
-      const out = await run('psql', ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-d', url, '-c', `SELECT coalesce(json_agg(t), '[]'::json) FROM (${sql}) t`], {
-        timeout,
-        // Read-only too: every statement runs in a read-only transaction. A dead address gives up soon.
-        env: { PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=' + timeout, PGCONNECT_TIMEOUT: '8' },
-      });
-      reachedBy.set(found.url, url);
-      return out.trim() ? toRows(JSON.parse(out)).rows : [];
-    } catch (err) {
-      const text = err instanceof Error ? err.message : String(err);
-      if (text === 'psql isn’t installed') throw new Error('psql isn’t on this Mac: install it with “brew install libpq” (or Postgres.app)');
-      last = order.reduce((t, u) => scrubbed(t, u), text);
-      if (!unreachable(text)) break;
-    }
-  }
-  const tried = order.length > 1 ? `, tried ${order.length} addresses` : '';
-  throw new Error(`${last} (connecting with ${found.from}${tried})${found.hint && unreachable(last) ? ` ${found.hint}` : ''}`);
+export async function queryPostgres(found: FoundDatabase, sql: string, timeout: number): Promise<Row[]> {
+  const out = await connectPostgres(found, sql, timeout, psql);
+  return out.trim() ? toRows(JSON.parse(out)).rows : [];
 }
 
 /** Your variables for a view shown there: for a database (and where they came from), and for a command. */

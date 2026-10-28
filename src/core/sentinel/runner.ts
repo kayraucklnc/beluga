@@ -29,7 +29,7 @@ import {
   stepAvailable,
 } from './model.js';
 import type { Row, Source } from '../../shared/view-spec.js';
-import { type Measured, formatMetric, labelOf, measureFrom, readOutput } from './metrics.js';
+import { type Measured, keptWords, measureFrom, readOutput } from './metrics.js';
 import { sentinelRunPrompt, stepMaterial } from './prompt.js';
 import { type RenderContext, dateText, jsonInside, render } from './render.js';
 
@@ -186,12 +186,24 @@ export interface RunnerDeps {
   /** How often pending checks are looked at again (PR_FAST_MS, 15 s). */
   readonly pollMs?: number;
   /** A view source, run by the daemon with your environment (Keep the numbers from a source) → its rows, or why not in words. */
-  readonly fetchSource?: (source: Source, cwd: string, signal: AbortSignal) => Promise<{ readonly rows: readonly Row[]; readonly columns: readonly string[] } | string>;
+  readonly fetchSource?: SourceFetch;
   /** Variables only Call a service steps get, from Beluga's own connections (the project's Earnings key as $STRIPE_EARNINGS_KEY). */
   readonly serviceEnv?: (projectId: string | undefined) => Record<string, string>;
   /** Keep a run's numbers (the files, the state, the first dashboard) → their names as kept. */
   readonly keep?: (active: ActiveRun, measured: readonly Measured[]) => void;
 }
+
+/**
+ * A view source run by the daemon with your environment → its rows, why not in words, or (asked by
+ * your Claude alone: `byClaude`) that it needs your yes first (a command, or an address that would
+ * carry one of your variables), with what it would run.
+ */
+export type SourceFetch = (
+  source: Source,
+  cwd: string,
+  signal: AbortSignal,
+  opts?: { readonly byClaude?: boolean },
+) => Promise<{ readonly rows: readonly Row[]; readonly columns: readonly string[] } | { readonly needsYes: string } | string>;
 
 const CANCEL_GRACE_MS = 10_000;
 const POLL_MS = 15_000;
@@ -264,6 +276,11 @@ interface Live {
 }
 
 const seconds = (ms: number): string => (ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : ms < 120_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
+/** A message's first line as it is, cut to `max`. */
+const lineOf = (text: string, max: number): string => {
+  const line = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+};
 const tail = (text: string, max = 400): string => {
   const t = text.trim();
   return t.length <= max ? t : `…${t.slice(t.length - max)}`;
@@ -747,7 +764,9 @@ export class SentinelRunner {
         const got = await race(fetch(step.source, this.cwdOf(active.sentinel), active.abort.signal).catch((err: unknown) => (err instanceof Error ? err.message : String(err))), this.remaining(active), active.abort.signal);
         if (got.kind === 'timeout') return { kind: 'timeout' };
         if (got.kind === 'aborted') return { kind: 'stopped' };
-        if (typeof got.value === 'string') return { kind: 'failed', why: `the source didn’t answer: ${firstLine(got.value, 200)}` };
+        // As it was said (not firstLine: that takes Markdown marks out, and the variables' names keep theirs).
+        if (typeof got.value === 'string') return { kind: 'failed', why: `the source didn’t answer: ${lineOf(got.value, 700)}` };
+        if ('needsYes' in got.value) return { kind: 'failed', why: `it needs your yes first: ${got.value.needsYes}` };
         data = got.value.rows;
       } else {
         const before = outputs.at(-1);
@@ -759,8 +778,7 @@ export class SentinelRunner {
       if (!found.length) return { kind: 'failed', why: step.metrics.length ? `found none of ${step.metrics.map((m) => m.name).join(', ')} in ${step.from === 'source' ? 'the source’s rows' : 'the step before’s output'}` : 'found no numbers to keep' };
     }
     keep(active, found);
-    const said = found.map((m) => `${m.label ?? labelOf(m.name)}: ${m.value !== undefined ? formatMetric(m.value, m.unit) : m.series ? `${m.series.length} points` : m.output ? `its output (${m.output.format === 'json' ? 'JSON' : m.output.format === 'markdown' ? 'Markdown' : 'text'})` : `${m.rows?.length ?? 0} rows`}`);
-    const output = `Kept ${said.join(' · ')}${missing.length ? `\nNot found: ${missing.join(', ')}` : ''}`;
+    const output = `${keptWords(found)}${missing.length ? `\nNot found: ${missing.join(', ')}` : ''}`;
     if (missing.length) return { kind: 'failed', why: `didn’t find ${missing.join(', ')} (the rest was kept)`, output };
     return { kind: 'done', output };
   }

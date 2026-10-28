@@ -34,11 +34,32 @@ const MAX_DOTENV_BYTES = 256 * 1024;
 export const envPath = (): string => path.join(belugaHome(), 'env.json');
 
 export function loadEnvFile(file: string = envPath()): EnvFile {
+  return readEnvFile(file) ?? EMPTY;
+}
+
+/** env.json as it is: none there is empty; one that doesn't read (half-written, mistyped by hand) is undefined. */
+function readEnvFile(file: string): EnvFile | undefined {
+  let text: string;
   try {
-    const parsed = EnvFile.safeParse(JSON.parse(readFileSync(file, 'utf8')));
-    return parsed.success ? parsed.data : EMPTY;
+    text = readFileSync(file, 'utf8');
   } catch {
     return EMPTY;
+  }
+  try {
+    const parsed = EnvFile.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** When env.json last changed (its time and size), or none. */
+function stampOf(file: string): string {
+  try {
+    const st = statSync(file);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return 'none';
   }
 }
 
@@ -100,11 +121,47 @@ export interface EnvVarsDeps {
 const inside = (dir: string, root: string): boolean => dir === root || dir.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
 
 export class EnvVars {
-  private data: EnvFile;
+  private kept: EnvFile;
+  /** env.json's time and size when it was read or written here. */
+  private stamp: string;
 
   constructor(private readonly deps: EnvVarsDeps) {
-    this.data = loadEnvFile(deps.file);
+    this.stamp = stampOf(this.file);
+    this.kept = loadEnvFile(this.file);
     this.publish();
+  }
+
+  private get file(): string {
+    return this.deps.file ?? envPath();
+  }
+
+  /**
+   * The variables, read again when env.json changed on disk (edited by hand, or by another Beluga),
+   * so a run uses them at once without a restart (BLG-302). A file that doesn't read keeps the last good ones.
+   */
+  private get data(): EnvFile {
+    const now = stampOf(this.file);
+    if (now !== this.stamp) {
+      this.stamp = now;
+      const fresh = readEnvFile(this.file);
+      if (fresh) {
+        this.kept = fresh;
+        this.publish();
+        // Told after this read: the terminals' check reads the variables again.
+        queueMicrotask(() => this.deps.onChange?.());
+      }
+    }
+    return this.kept;
+  }
+
+  private set data(next: EnvFile) {
+    this.kept = next;
+  }
+
+  /** Write the variables, and remember the file as written (it isn't read back as a change). */
+  private save(): void {
+    saveEnvFile(this.kept, this.deps.file);
+    this.stamp = stampOf(this.file);
   }
 
   private get projects(): readonly Project[] {
@@ -117,8 +174,8 @@ export class EnvVars {
 
   /** Tell screens the names (never the values). */
   private publish(): void {
-    const projects = Object.fromEntries(Object.entries(this.data.projects).map(([root, p]) => [root, { keys: Object.keys(p.vars), dotenv: p.dotenv }]));
-    const keys: EnvKeys = { global: Object.keys(this.data.global), projects };
+    const projects = Object.fromEntries(Object.entries(this.kept.projects).map(([root, p]) => [root, { keys: Object.keys(p.vars), dotenv: p.dotenv }]));
+    const keys: EnvKeys = { global: Object.keys(this.kept.global), projects };
     this.deps.store.dispatch({ type: 'env_keys', keys });
   }
 
@@ -138,7 +195,7 @@ export class EnvVars {
       if (!project) throw new Error('That project is gone');
       this.data = { ...this.data, projects: this.withProject(project.root, { claudeDotenv: on }) };
     }
-    saveEnvFile(this.data, this.deps.file);
+    this.save();
   }
 
   /** The projects with one changed (and dropped when there's nothing left to keep). */
@@ -156,7 +213,7 @@ export class EnvVars {
       if (scope === 'everywhere') this.data = { ...this.data, claudeDotenv: true };
       else if (project) this.data = { ...this.data, projects: this.withProject(project.root, { claudeDotenv: true }) };
       else return;
-      saveEnvFile(this.data, this.deps.file);
+      this.save();
     },
   };
 
@@ -177,7 +234,7 @@ export class EnvVars {
       if (!project) throw new Error('That project is gone');
       this.data = { ...this.data, projects: this.withProject(project.root, { vars, ...(dotenv !== undefined ? { dotenv } : {}) }) };
     }
-    saveEnvFile(this.data, this.deps.file);
+    this.save();
     this.publish();
     this.deps.onChange?.();
   }
