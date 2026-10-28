@@ -7,7 +7,8 @@ import { formatMetric, metricWords } from './metrics.js';
 import type { SentinelState } from './model.js';
 
 /**
- * Board tiles as macOS widgets (BLG-309). The daemon keeps a small snapshot of every tile in
+ * Board tiles as macOS widgets (BLG-309), and the phone's Home-screen widgets (BLG-361: the same
+ * snapshot goes to it as the `widgets` view, src/companion/views.ts). The daemon keeps a small snapshot of every tile in
  * ~/.beluga/widgets/tiles.json, already in words (the widget only reads and draws), and each
  * project's icon beside it. The widget is sandboxed and may read only that folder; Beluga's window
  * watches the file and asks macOS to redraw the widgets when it changes. Nothing else of ~/.beluga
@@ -19,6 +20,9 @@ export const WIDGETS_VERSION = 1;
 export interface WidgetTile {
   /** "<dashboardId>/<tileId>". */
   readonly id: string;
+  /** Its board and its own id there (the phone's widget opens it: BLG-361). */
+  readonly dashboard: string;
+  readonly tile: string;
   readonly board: string;
   readonly title: string;
   /** How the widget draws it: a number (value, change, sparkline), a chart, or text. */
@@ -114,6 +118,8 @@ function widgetTile(s: SentinelState, d: Dashboard, t: Tile, projectOf: (project
   const state = tileStateIn(s, t);
   const base = {
     id: `${d.id}/${t.id}`,
+    dashboard: d.id,
+    tile: t.id,
     board: d.name,
     title: tileTitle(s, t),
     tone: 'none' as const,

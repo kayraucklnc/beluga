@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { Monitor, RefreshCw } from 'lucide-react-native';
+import { ChartSpline, Grid2x2Plus, Hash, Monitor, RefreshCw, Text } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -9,6 +9,7 @@ import { Options } from '../../components/Options';
 import { Segments } from '../../components/Segments';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { More, T } from '../../components/ui';
+import { homeWidgets } from '../../modules/home-widgets';
 import { useSupports, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { DashboardView, Topic } from '../../lib/link/protocol';
@@ -36,6 +37,10 @@ export default function DashboardPage() {
   const [compare, setCompare] = useState<CompareKey | undefined>();
   const [pulling, setPulling] = useState(false);
   const [menu, setMenu] = useState(false);
+  // A tile on the phone's Home screen (BLG-361): Android asks where, in its own sheet.
+  const [pinning, setPinning] = useState(false);
+  const canPin = useSupports('widgets') && homeWidgets.canPin();
+  const pinnable = (d?.tiles ?? []).filter((t) => t.kind !== 'divider');
   const shown = compare ?? compareOf(d?.compare);
   const refreshing = d?.refreshing;
 
@@ -112,8 +117,23 @@ export default function DashboardPage() {
         title={d?.name}
         options={[
           { Icon: RefreshCw, label: 'Refresh', sub: 'Run every sentinel it draws from (or pull down)', tone: 'sky', hidden: Boolean(refreshing), onPress: () => void refresh() },
+          { Icon: Grid2x2Plus, label: 'Add to Home screen', sub: 'One of its tiles, as a widget', tone: 'mint', hidden: !canPin || !pinnable.length, onPress: () => setPinning(true) },
           { Icon: Monitor, label: 'Open on your Mac', sub: 'Arrange its tiles, add numbers', tone: 'plain', onPress: () => void openOnMac({ topic }) },
         ]}
+      />
+      <Options
+        visible={pinning}
+        onClose={() => setPinning(false)}
+        title="Which tile?"
+        options={pinnable.map((t) => ({
+          Icon: t.kind === 'number' ? Hash : t.kind === 'chart' || t.kind === 'series' ? ChartSpline : Text,
+          label: t.title,
+          ...(t.value ? { sub: t.value } : t.sentinel ? { sub: t.sentinel } : {}),
+          tone: 'plain' as const,
+          onPress: () => {
+            if (d && !homeWidgets.pin(`${d.id}/${t.id}`)) store.toast({ text: 'This phone’s Home screen can’t take it from here: long-press it › Widgets › Beluga.', tone: 'error' });
+          },
+        }))}
       />
     </Screen>
   );

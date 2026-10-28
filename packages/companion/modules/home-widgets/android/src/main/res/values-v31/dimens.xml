@@ -1,0 +1,4 @@
+<resources>
+  <!-- The launcher's own corner, so the tile sits like every other widget. -->
+  <dimen name="beluga_widget_radius">@android:dimen/system_app_widget_background_radius</dimen>
+</resources>

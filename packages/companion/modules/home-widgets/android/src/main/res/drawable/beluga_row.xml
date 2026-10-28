@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A row in the tile picker: the card, pressed with the system's ripple. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/beluga_widget_sunken">
+  <item>
+    <shape android:shape="rectangle">
+      <solid android:color="@color/beluga_widget_card" />
+      <corners android:radius="18dp" />
+    </shape>
+  </item>
+</ripple>
