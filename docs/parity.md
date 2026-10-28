@@ -58,7 +58,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/remove` | `session.submit` → `runCommand` | typed in the composer · Person sheet › Remove |
 | `/newlink` | `session.submit` → `runCommand` | typed in the composer · Settings › People › New link |
 | `/lock` | `session.submit` → `runCommand` | typed in the composer · Settings › People › Take new people |
-| `/help` | `session.submit` → `runCommand` | typed in the composer · Help › Keys and Commands · ⌘K |
+| `/help` | `session.submit` → `runCommand` | typed in the composer · ⌘K (Help › Keys and Commands opens Settings › Keyboard) |
 | `/quit` | `session.submit` → `runCommand` | typed in the composer · Beluga › Quit (⌘Q) · tray |
 
 ## UI actions (`UiAction`, in `src/ui/workspace-models.ts`)
@@ -575,6 +575,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | A calm sidebar: Overview, Work (Tasks, Issues and Plans in one row, a Tasks · Issues · Plans switch over each list, running plans under it) and Group chat at the top, always; Activity only while it's live and Requests only while one is unanswered (answered ones are tucked behind Show answered on the Requests page); Files (folders friends and the room share, grouped by person) as a row of its own, and projects friends share in Projects (there is no Shared with me any more); Search in the toolbar (⇧⌘F); Usage as an icon above the sidebar (amber when most of the week is used); the terminal in the right panel (⌘J). The places in order (Overview, Tasks, Chat, Search, Usage, Terminal, Files) for ⌥1…7, ⌃Tab, the Go menu and the palette (`lib/go.ts`) | Mac |
 | The toolbar's main button chosen from the workspace's state (Commit / Merge / PR #n / Fix Checks / Solve Conflict / Restore / Run), the rest as icons and a ⋯ menu with shortcuts (`layout/toolbar-actions.ts`) | Mac |
 | Find in a conversation (⌘F) | Mac (`chat/FindBar.tsx`) |
+| Your own keyboard shortcuts (BLG-289): Settings › Keyboard (Help › Keys and Commands, ⌘/, ⌘K › Keyboard Shortcuts…) lists every shortcut by section; click a key and press the new one, + for another key, × to take one away, ↺ back to its own, Reset All with Undo; a key something else has offers Swap / Use Here / Cancel (↩ / esc), what macOS keeps (⌘Q, ⌘C…) and keys that would type are refused with why; find a shortcut by name or by pressing its keys (and see a key is free). The window, the pages' own keys, the message box, requests, the sidebar, the talk shortcut, the menu bar's accelerators (`set_menu_keys`, off while recording), tooltips and the palette all follow; kept on this Mac (`prefs.shortcuts`) | Mac (`lib/shortcuts-model.ts`, `lib/shortcuts.ts`, `dialogs/KeyboardSettings.tsx`) |
 | Right-click menus: messages (Copy, Copy as Markdown, Quote in Reply, Ask Claude About This, Open Image), code blocks, files (Open, Show in Finder, Copy Path, Mention in Chat, Save a Copy…), changed files and commits in Diff, search results, Usage rows, notifications | Mac |
 | Save a shared file where you choose (`files.download` with `to`, the Save panel) | Mac |
 | A new worktree's form: Based on (`workspaces.branches`), Name, Create Worktree (`workspaces.startWorktree` with `base` / `name`) | Mac |

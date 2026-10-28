@@ -27,6 +27,7 @@ import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
 import { SelfBar } from '../network/StatusMenu.js';
 import { UpdatePill } from '../components/UpdatePill.js';
 import s from './Sidebar.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * The sidebar's top: three places, always. The rest are a click away without a row of their
@@ -106,7 +107,7 @@ export function Sidebar() {
       <div className={s.titlebar} data-tauri-drag-region>
         <span className={s.trafficSpace} data-tauri-drag-region />
         <UsageButton />
-        <IconButton icon="sidebar" label="Hide sidebar" keys="⌃⌘S" onClick={() => setPrefs({ sidebar: false })} />
+        <IconButton icon="sidebar" label="Hide sidebar" keys={shortcutKeys('toggle-sidebar')} onClick={() => setPrefs({ sidebar: false })} />
       </div>
       <div className={s.scroll}>
         <section className={s.section}>
@@ -177,7 +178,7 @@ function UsageButton() {
   const selected = useApp((st) => st.view.kind === 'usage');
   return (
     <span className={s.usage} data-level={week === undefined ? undefined : week >= 90 ? 'high' : week >= 70 ? 'mid' : 'low'}>
-      <IconButton icon="gauge" label="Usage" keys="⌥5" active={selected} onClick={() => actions.run({ type: 'view', view: { kind: 'usage' } })} />
+      <IconButton icon="gauge" label="Usage" keys={shortcutKeys('go-usage')} active={selected} onClick={() => actions.run({ type: 'view', view: { kind: 'usage' } })} />
     </span>
   );
 }

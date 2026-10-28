@@ -8,6 +8,7 @@ import { ImportGroup, TermPreview } from './TerminalImport.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import t from './terminal-settings.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const OTHER = '__other';
 
@@ -122,7 +123,7 @@ function PlaceGroup() {
   const prefs = usePrefs();
   return (
     <Group title="In this window">
-      <Row label="⌘J opens the terminal" detail={prefs.termIn === 'drawer' ? 'It slides up under the conversation, across the window.' : 'It shows as the right panel’s Terminal tab, beside the conversation.'}>
+      <Row label={`${shortcutKeys('toggle-dock') ?? 'Toggle Terminal'} opens the terminal`} detail={prefs.termIn === 'drawer' ? 'It slides up under the conversation, across the window.' : 'It shows as the right panel’s Terminal tab, beside the conversation.'}>
         <Segmented
           label="Where the terminal opens"
           value={prefs.termIn}

@@ -24,6 +24,7 @@ import { ContextNote } from '../chat/ContextMeter.js';
 import { PeopleHere } from './PeopleHere.js';
 import { PrivateMark, shareWithTeamItems } from '../team/Team.js';
 import s from './Toolbar.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /** Room the title keeps, and the window buttons on the right (search, bell, panel). */
 const TITLE_MIN = 210;
@@ -50,7 +51,7 @@ function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
 function SearchButton() {
   const actions = useActions();
   const on = useApp((st) => st.view.kind === 'search');
-  return <IconButton icon="search" label="Search" keys={`⇧${mod()}F`} active={on} onClick={() => actions.run({ type: 'view', view: { kind: 'search' } })} />;
+  return <IconButton icon="search" label="Search" keys={shortcutKeys('find')} active={on} onClick={() => actions.run({ type: 'view', view: { kind: 'search' } })} />;
 }
 
 function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode; headerRef: React.RefObject<HTMLElement | null> }) {
@@ -64,7 +65,7 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
     <header ref={headerRef} className={cx(s.toolbar, !prefs.sidebar && s.noSidebar)} data-tauri-drag-region>
       {prefs.sidebar ? null : (
         <span className={s.lead}>
-          <IconButton icon="sidebar" label="Show sidebar" keys="⌃⌘S" onClick={() => setPrefs({ sidebar: true })} />
+          <IconButton icon="sidebar" label="Show sidebar" keys={shortcutKeys('toggle-sidebar')} onClick={() => setPrefs({ sidebar: true })} />
         </span>
       )}
       <div className={s.titles} data-tauri-drag-region>
@@ -82,7 +83,7 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
         <IconButton
           icon="panelRight"
           label={!fits ? (view.kind === 'plan' ? 'No panel on a plan’s page: its chat is beside the plan' : 'No panel here: this page has the whole window') : prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'}
-          {...(fits ? { keys: `⌥${mod()}0` } : {})}
+          {...(fits ? { keys: shortcutKeys('toggle-inspector') } : {})}
           active={fits && prefs.inspector}
           disabled={!fits}
           onClick={() => togglePanel(view)}

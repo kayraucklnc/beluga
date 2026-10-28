@@ -35,6 +35,7 @@ import { useGitHubMenuItems } from '../views/project/GitHubRow.js';
 import { TeamBadge, useTeamMenuItems } from '../team/Team.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * The sidebar's Projects, arranged the way you like: drag projects and groups to reorder them,
@@ -348,7 +349,7 @@ function HiddenProjects() {
 export function ProjectsAddMenu() {
   const actions = useActions();
   const items: ActionItem[] = [
-    { label: 'Add Projects…', keys: '⌘O', onSelect: () => actions.run({ type: 'add_project' }) },
+    { label: 'Add Projects…', keys: shortcutKeys('add-project'), onSelect: () => actions.run({ type: 'add_project' }) },
     { label: 'New Group', onSelect: () => newEmptyGroup() },
   ];
   return (

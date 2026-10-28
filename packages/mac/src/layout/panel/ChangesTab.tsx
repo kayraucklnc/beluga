@@ -18,6 +18,7 @@ import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
 import { showGitTrouble } from '../../lib/git-trouble.js';
 import s from './panel.module.css';
+import { shortcutKeys } from '../../lib/shortcuts.js';
 
 /** The last answer Claude finished in this workspace (its edits may have changed what's shown). */
 function useLastTurn(wsId: string): string {
@@ -116,14 +117,14 @@ function Actions({ wsId }: { wsId: string }) {
   return (
     <div className={s.actions}>
       {worktree && changed ? (
-        <Tip label={`Commit ${changed} changed file${changed === 1 ? '' : 's'}`} keys={`⇧${mod()}C`}>
+        <Tip label={`Commit ${changed} changed file${changed === 1 ? '' : 's'}`} keys={shortcutKeys('ws-commit')}>
           <Button size="small" variant="primary" icon="check" onClick={() => run('commit')}>
             Commit
           </Button>
         </Tip>
       ) : null}
       {worktree && pr ? (
-        <Tip label="Open it, fix checks, or update it" keys={`⇧${mod()}P`}>
+        <Tip label="Open it, fix checks, or update it" keys={shortcutKeys('ws-pr')}>
           <Button size="small" icon="pr" onClick={() => run('pr')}>
             {`PR #${pr.number}`}
           </Button>
@@ -148,7 +149,7 @@ function Actions({ wsId }: { wsId: string }) {
           </ActionsDropdown>
         </>
       ) : null}
-      <Tip label="Ask Claude to check everything: bugs, security, tests and quality" keys={`⇧${mod()}R`}>
+      <Tip label="Ask Claude to check everything: bugs, security, tests and quality" keys={shortcutKeys('ws-review')}>
         <Button size="small" variant="quiet" icon="claude" onClick={() => run('review_claude')}>
           Review
         </Button>

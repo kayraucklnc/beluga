@@ -22,6 +22,7 @@ import { useConversationLoaded } from "./use-plans.js";
 import s from "../chat/composer.module.css";
 import k from "./plan-ask.module.css";
 import p from "./plans.module.css";
+import { shortcutKeys } from "../lib/shortcuts.js";
 
 const FOLD = { fold: true };
 const FOLD_QUIET = { fold: true, quietWorking: true };
@@ -312,7 +313,7 @@ export function PlanChat({
           {busy ? (
             <Tip
               label="Stop Claude here · your queued messages come back to the box"
-              keys="⌘."
+              keys={shortcutKeys('conv-stop')}
             >
               <button
                 type="button"

@@ -8,6 +8,7 @@ import { Tip, cx } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useFlightLanding } from './flight.js';
 import s from './queue.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -32,7 +33,7 @@ const STEERING_MS = 8_000;
 function SteerButton({ steering, blocked, onSteer }: { steering: boolean; blocked?: string; onSteer: () => void }) {
   const { client } = useBeluga();
   return (
-    <Tip label={blocked ?? (steering ? 'Steering: sending it to Claude now' : 'Steer: Claude reads this now (a long command is interrupted for it)')} keys={blocked ? undefined : '⌥↩'}>
+    <Tip label={blocked ?? (steering ? 'Steering: sending it to Claude now' : 'Steer: Claude reads this now (a long command is interrupted for it)')} keys={blocked ? undefined : shortcutKeys('composer-steer')}>
       <button
         type="button"
         className={cx(s.now, (blocked || steering) && s.nowOff, steering && s.steering)}

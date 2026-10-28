@@ -15,6 +15,7 @@ import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
 import { pastePlain } from '../chat/paste-paths.js';
 import type { PlaceKind } from './go.js';
 import { throttle } from './throttle.js';
+import { fromMenu } from './shortcuts.js';
 import { windowActive } from './window-active.js';
 import { newChatProject } from './project-home.js';
 import { type MenuBarCounts, SPOUT_EVERY_MS, spoutStep, trayTitle } from '../menubar/menubar-look.js';
@@ -58,7 +59,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'paste-plain':
       return void pastePlain();
     case 'help-keys':
-      return ui.patch({ palette: true });
+      return ui.patch({ settings: 'keyboard' });
     case 'help-welcome':
     case 'onboarding':
       return void document.dispatchEvent(new CustomEvent(SHOW_WELCOME));
@@ -131,7 +132,8 @@ export function useNative(client: SocketClient, ui: UiStore, actions: Actions, o
     let off: Array<() => void> = [];
     let alive = true;
     void import('@tauri-apps/api/event').then(async ({ listen }) => {
-      const a = await listen<string>('menu', (e) => runMenuItem(e.payload, client, ui, actions));
+      // The same key press can reach the window too (lib/shortcuts.ts): it runs once.
+      const a = await listen<string>('menu', (e) => fromMenu(e.payload, () => runMenuItem(e.payload, client, ui, actions)));
       // The same link can come both ways (live and from the launch buffer): handle it once.
       const handled = new Set<string>();
       const open = (url: string): void => {

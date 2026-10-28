@@ -19,6 +19,7 @@ import { HistoryTab } from './panel/HistoryTab.js';
 import { ScratchTab, useScratchNewest } from './panel/ScratchTab.js';
 import { BackgroundTab, useBackgroundRunning } from './panel/BackgroundTab.js';
 import s from './panel/panel.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const PhonePanel = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhonePanel })));
 
@@ -176,7 +177,7 @@ function TabStrip({ pane, tabs, tab, open, badges, dock = false }: { pane: PaneI
               aria-controls={`panel-body-${pane}`}
               aria-selected={on}
               aria-label={PANEL_LABELS[t]}
-              title={`${PANEL_LABELS[t]} (⌥⌘${panelDigit(t)}) · drag it to the other half, or right-click to move it`}
+              title={`${PANEL_LABELS[t]}${shortcutKeys(`panel-${t}`) ? ` (${shortcutKeys(`panel-${t}`)})` : ''} · drag it to the other half, or right-click to move it`}
               tabIndex={slotOf(t) === shown ? 0 : -1}
               draggable
               className={cx(s.tab, on && s.tabOn, drop === i && s.dropBefore)}
@@ -222,7 +223,7 @@ function ViewSwitch({ views, tab, pane }: { views: readonly PanelTab[]; tab: Pan
         options={views.map((v) => ({
           value: v,
           label: PANEL_LABELS[v],
-          keys: `⌥⌘${panelDigit(v)}`,
+          keys: shortcutKeys(`panel-${v}`),
         }))}
       />
     </div>
@@ -263,7 +264,7 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
       <header
         className={lead ? s.head : cx(s.paneHead, dock && s.dockHead)}
         {...(lead ? { 'data-tauri-drag-region': true } : {})}
-        {...(dock && !open ? { onClick: (e: React.MouseEvent) => e.target === e.currentTarget && setPrefs({ bottomOpen: true }), title: 'Show the terminal dock (⌘J)' } : {})}
+        {...(dock && !open ? { onClick: (e: React.MouseEvent) => e.target === e.currentTarget && setPrefs({ bottomOpen: true }), title: `Show the terminal dock${shortcutKeys('toggle-dock') ? ` (${shortcutKeys('toggle-dock')})` : ''}` } : {})}
       >
         {dock ? <Icon name="terminal" size={12} className={s.dockMark} /> : null}
         <TabStrip pane={pane} tabs={tabs} tab={tab} open={open} badges={badges} dock={dock} />

@@ -16,6 +16,7 @@ import { useClock } from '../lib/window-active.js';
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
 import t from '../tasks/tasks.module.css';
 import s from './sentinel.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * One run: its headline, who started it and how long it took, each step with how it went (its
@@ -83,7 +84,7 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
       <div className={t.page}>
         <div className={t.pageMain} data-run-page={run.id}>
           <nav className={t.crumbs} aria-label="Where this run is">
-            <IconButton icon="back" label="Back" keys="⌘[" className={t.crumbBack} onClick={back} />
+            <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
             <button type="button" className={t.crumb} onClick={() => a.openList()}>
               Sentinel
             </button>

@@ -38,6 +38,7 @@ import { useClock } from '../lib/window-active.js';
 import { useRunsFolder, useSentinelActions, useSentinelState } from './use-sentinel.js';
 import t from '../tasks/tasks.module.css';
 import s from './sentinel.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * A sentinel's page: the editor and its history in one. The name is renamed in place, When and
@@ -83,7 +84,7 @@ function Crumbs({ item, back }: { item: Sentinel; back: () => void }) {
   const project = useApp((st) => st.projects.find((p) => p.id === item.projectId));
   return (
     <nav className={t.crumbs} aria-label="Where this sentinel is">
-      <IconButton icon="back" label="Back" keys="⌘[" className={t.crumbBack} onClick={back} />
+      <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
       <button type="button" className={t.crumb} onClick={() => a.openList()}>
         Sentinel
       </button>

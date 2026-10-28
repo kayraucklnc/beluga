@@ -52,24 +52,6 @@ export const COMMAND_IDS = [
 ] as const;
 export type CommandId = (typeof COMMAND_IDS)[number];
 
-/** Shortcuts as the menu bar shows them (the same keys work in the window, see useCommandKeys). */
-export const COMMAND_KEYS: Partial<Record<CommandId, string>> = {
-  'conv-stop': '⌘.',
-  'conv-plan': '⌥⌘P',
-  'conv-find': '⌘F',
-  'conv-find-next': '⌘G',
-  'conv-find-prev': '⇧⌘G',
-  'conv-clear': '⇧⌘K',
-  'ws-commit': '⇧⌘C',
-  'ws-pr': '⇧⌘P',
-  'ws-merge': '⇧⌘M',
-  'ws-run': '⌘R',
-  'ws-review': '⇧⌘R',
-  'ws-archive': '⌃⌘A',
-  'ws-next': '⌥⌘↓',
-  'ws-prev': '⌥⌘↑',
-};
-
 /** The workspace action behind each workspace command (its toolbar button). */
 const WS_ACTION: Partial<Record<CommandId, WorkspaceAction>> = {
   'ws-commit': 'commit',
@@ -251,28 +233,4 @@ export function runCommand(ctx: CommandCtx, id: CommandId): void {
       actions.run({ type: 'ws', id: ws.id, action: solve ? 'merge_claude' : action });
     }
   }
-}
-
-/** Which key press is which command (the menu bar shows the same keys). */
-export function commandForKey(e: KeyboardEvent): CommandId | undefined {
-  // ⌘ only: ⌃R, ⌃G… belong to the shell in a terminal.
-  if (!e.metaKey) return undefined;
-  const k = e.key.toLowerCase();
-  if (e.ctrlKey) return !e.altKey && !e.shiftKey && e.code === 'KeyA' ? 'ws-archive' : undefined;
-  if (e.altKey && !e.shiftKey && e.code === 'KeyP') return 'conv-plan';
-  if (e.altKey && e.key === 'ArrowDown') return 'ws-next';
-  if (e.altKey && e.key === 'ArrowUp') return 'ws-prev';
-  if (e.altKey) return undefined;
-  if (!e.shiftKey && e.key === '.') return 'conv-stop';
-  if (!e.shiftKey && k === 'f') return 'conv-find';
-  if (k === 'g') return e.shiftKey ? 'conv-find-prev' : 'conv-find-next';
-  if (!e.shiftKey && k === 'r') return 'ws-run';
-  if (e.shiftKey) {
-    if (k === 'c') return 'ws-commit';
-    if (k === 'p') return 'ws-pr';
-    if (k === 'm') return 'ws-merge';
-    if (k === 'r') return 'ws-review';
-    if (k === 'k') return 'conv-clear';
-  }
-  return undefined;
 }

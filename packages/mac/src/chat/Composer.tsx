@@ -39,6 +39,8 @@ import { handleInvite } from '../lib/invite-command.js';
 import s from './composer.module.css';
 import m from './max.module.css';
 import d from './draft.module.css';
+import { isShortcut } from '../lib/shortcuts.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -382,7 +384,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     // Enter while an input method is composing (Japanese, Chinese…) picks the characters.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     // Shift-Tab switches between acting and planning first, as in Claude Code (not focus).
-    if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && channel !== 'draft' && !shared && !planHome) {
+    if (isShortcut('composer-mode', e) && channel !== 'draft' && !shared && !planHome) {
       e.preventDefault();
       setMode(nextMode(mode));
       return;
@@ -396,19 +398,22 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       else if (state.view.kind === 'draft' || state.view.kind === 'draft_worktree') client.store.dispatch({ type: 'view', view: state.view.back });
       return;
     }
+    // ⇧⌥↩: the steered message Claude hasn't read yet goes now (its step stops); what's in the box stays.
+    if (unread && isShortcut('composer-send-now', e)) {
+      e.preventDefault();
+      sendSteerNow(client, unread.request);
+      return;
+    }
+    // ⌥↩: steer (Claude reads it at its next step).
+    if (isShortcut('composer-steer', e)) {
+      e.preventDefault();
+      send(true);
+      return;
+    }
     if (e.key === 'Enter') {
       const sends = prefs.sendWith === 'enter' ? !e.shiftKey && !modKey : modKey;
-      // ⇧⌥↩: the steered message Claude hasn't read yet goes now (its step stops); what's in the box stays.
-      if (e.altKey && e.shiftKey && unread) {
-        e.preventDefault();
-        sendSteerNow(client, unread.request);
-        return;
-      }
-      if (e.altKey) {
-        e.preventDefault();
-        send(true);
-        return;
-      }
+      // A ⌥ chord that isn't steering is no Send.
+      if (e.altKey) return;
       if (sends) {
         e.preventDefault();
         send(false);
@@ -463,7 +468,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               </button>
             ) : planHome ? null : (
               <span className={s.planKeys}>
-                <Kbd>⇧⇥</Kbd> to act
+                <Kbd>{shortcutKeys('composer-mode')}</Kbd> to act
               </span>
             )}
           </div>
@@ -526,7 +531,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
                 .filter((m) => m !== 'tasks' || canPlanTasks || tasksMode)
                 .map((m) => ({ label: MODE_INFO[m].label, hint: MODE_INFO[m].hint, checked: mode === m, onSelect: () => setMode(m) }))}
             >
-              <button type="button" className={cx(s.chip, mode !== 'act' && s.chipOn)} title={mode === 'tasks' ? MODE_INFO[mode].hint : `${MODE_INFO[mode].hint} (⇧⇥ switches acting and planning first)`} aria-label={`Mode: ${MODE_INFO[mode].label}`}>
+              <button type="button" className={cx(s.chip, mode !== 'act' && s.chipOn)} title={mode === 'tasks' ? MODE_INFO[mode].hint : `${MODE_INFO[mode].hint} (${shortcutKeys('composer-mode') ?? 'Settings › Keyboard'} switches acting and planning first)`} aria-label={`Mode: ${MODE_INFO[mode].label}`}>
                 <Icon name={mode === 'tasks' ? 'graph' : 'wand'} size={12} />
                 {MODE_INFO[mode].label}
                 <Icon name="chevronDown" size={9} />
@@ -548,7 +553,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           {channel !== 'draft' ? <ContextMeter channel={channel} /> : null}
           {/* While you talk, only your voice's control shows: two square buttons side by side stopped Claude by mistake. */}
           {compose.busy && !talking ? (
-            <Tip label="Stop Claude here · your queued messages come back to the box" keys={`${mod()}.`}>
+            <Tip label="Stop Claude here · your queued messages come back to the box" keys={shortcutKeys('conv-stop')}>
               <button type="button" className={s.stop} aria-label="Stop Claude" onClick={() => stopClaude({ client, ui, actions }, channel)}>
                 <span className={s.stopMark} />
               </button>
@@ -571,7 +576,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
                   Queue
                 </button>
               </Tip>
-              <Tip label="Steer: Claude reads this at its next step, without stopping" keys="⌥↩">
+              <Tip label="Steer: Claude reads this at its next step, without stopping" keys={shortcutKeys('composer-steer')}>
                 <button type="button" className={s.splitAlt} onClick={() => send(true)} disabled={!buffer.trim()}>
                   Steer
                 </button>
@@ -591,12 +596,24 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       <div className={s.legend}>
         {queueing ? (
           <>
-            <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> steer ·{unread ? (
+            <Kbd>{sendKeys}</Kbd> queue ·{shortcutKeys('composer-steer') ? (
               <>
-                <Kbd>⇧⌥↩</Kbd> send now ·
+                {' '}
+                <Kbd>{shortcutKeys('composer-steer')}</Kbd> steer ·
               </>
             ) : null}
-            <Kbd>{mod()}.</Kbd> stop
+            {unread && shortcutKeys('composer-send-now') ? (
+              <>
+                {' '}
+                <Kbd>{shortcutKeys('composer-send-now')}</Kbd> send now ·
+              </>
+            ) : null}
+            {shortcutKeys('conv-stop') ? (
+              <>
+                {' '}
+                <Kbd>{shortcutKeys('conv-stop')}</Kbd> stop
+              </>
+            ) : null}
           </>
         ) : (
           <>

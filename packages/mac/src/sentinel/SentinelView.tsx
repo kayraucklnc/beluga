@@ -13,6 +13,8 @@ import { MAC_SCOPE, type Show, countsOf, filterSentinels, footLine, groupSentine
 import { sentinelMenu, useRunsFolder, useSentinelActions, useSentinelState, type SentinelActions } from './use-sentinel.js';
 import t from '../tasks/tasks.module.css';
 import s from './sentinel.module.css';
+import { isShortcut } from '../lib/shortcuts.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const ALL = 'all';
 
@@ -39,11 +41,11 @@ export function SentinelView() {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || currentSheet()) return;
       const typing = (e.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"], [role="combobox"], [role="dialog"]');
-      if (e.metaKey && e.key.toLowerCase() === 'f' && !typing) {
+      if (isShortcut('page-filter', e) && !typing) {
         e.preventDefault();
         find.current?.focus();
         find.current?.select();
-      } else if (e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'n') {
+      } else if (isShortcut('page-new', e) && (!typing || e.metaKey || e.ctrlKey || e.altKey)) {
         e.preventDefault();
         e.stopPropagation();
         openSheet({ kind: 'new_sentinel', ...(scope ? { projectId: scope } : {}) });
@@ -124,7 +126,7 @@ export function SentinelView() {
           <ActionsDropdown items={more}>
             <IconButton icon="more" label="More for Sentinel" />
           </ActionsDropdown>
-          <Tip label="A sentinel runs Claude, a script or a notification on a schedule, and leaves a report" keys="⌘N">
+          <Tip label="A sentinel runs Claude, a script or a notification on a schedule, and leaves a report" keys={shortcutKeys('page-new')}>
             <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_sentinel', ...(scope ? { projectId: scope } : {}) })}>
               New Sentinel
             </Button>
