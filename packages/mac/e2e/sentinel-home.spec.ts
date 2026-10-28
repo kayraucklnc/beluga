@@ -87,6 +87,49 @@ test('Ask Sentinel is docked beside the page; × closes it until you ask again',
   await expect(panel).toBeVisible();
 });
 
+test('Ask Sentinel’s panel is resized by its edge, and its message box stays on one line', async ({ page }) => {
+  await openSentinel(page);
+  const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
+  await expect(panel).toBeVisible();
+  // Narrow, the box's bar keeps one line: no chip wraps, nothing runs off the edge.
+  const bar = panel.getByRole('button', { name: 'Model and effort' }).locator('..');
+  const fits = async (): Promise<void> => {
+    const b = (await bar.boundingBox())!;
+    const p = (await panel.boundingBox())!;
+    const send = (await panel.getByRole('button', { name: 'Send' }).boundingBox())!;
+    expect(b.height).toBeLessThan(40);
+    expect(send.x + send.width).toBeLessThanOrEqual(p.x + p.width - 8);
+  };
+  await fits();
+  const edge = panel.getByRole('separator', { name: 'Resize Ask Sentinel' });
+  const before = (await panel.boundingBox())!.width;
+  const e = (await edge.boundingBox())!;
+  await page.mouse.move(e.x + e.width / 2, e.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(e.x - 120, e.y + 200, { steps: 6 });
+  await page.mouse.up();
+  const wider = (await panel.boundingBox())!.width;
+  expect(wider).toBeGreaterThan(before + 100);
+  await shoot(page, 'ask-wide');
+  // Kept: it comes back at that width.
+  await panel.getByRole('button', { name: 'Close' }).click();
+  await main(page).getByRole('button', { name: 'Ask Claude' }).click();
+  await expect(panel).toBeVisible();
+  expect(Math.abs((await panel.boundingBox())!.width - wider)).toBeLessThan(2);
+  // Narrowest, it still fits.
+  const e2 = (await edge.boundingBox())!;
+  await page.mouse.move(e2.x + e2.width / 2, e2.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(e2.x + 600, e2.y + 200, { steps: 6 });
+  await page.mouse.up();
+  expect((await panel.boundingBox())!.width).toBeLessThan(330);
+  await fits();
+  await shoot(page, 'ask-narrow');
+  // Double-click: back to its usual width.
+  await edge.dblclick();
+  expect(Math.abs((await panel.boundingBox())!.width - 380)).toBeLessThan(2);
+});
+
 test('asking about one sentinel opens the chat beside its page, naming it', async ({ page }) => {
   await openSentinel(page);
   await main(page).getByRole('row', { name: /^Morning brief/ }).click();
@@ -116,6 +159,9 @@ test('a tile is resized by dragging its corner', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(box.x + tileBox.width * 1.1, box.y + 4, { steps: 6 });
   await expect(tile).toHaveAttribute('data-sizing', '');
+  // The tile stays put while you drag; an outline shows where it lands.
+  await expect(tile).toHaveAttribute('data-w', '1');
+  await page.screenshot({ path: path.join(shots, 'home-resizing.png') });
   await page.mouse.up();
   await expect(tile).toHaveAttribute('data-w', '2');
   // Bigger still, a number shows how it got here.
@@ -129,6 +175,31 @@ test('a tile is resized by dragging its corner', async ({ page }) => {
   // Wide, the number has its chart beside it; the sparkline steps aside.
   await expect(tile.locator('[data-look="chart"] [data-fits] svg').first()).toBeVisible();
   await shoot(page, 'resized');
+});
+
+test('a tile is moved by dragging it; Escape puts it back', async ({ page }) => {
+  await openSentinel(page);
+  const glance = main(page).getByRole('region', { name: 'At a glance' });
+  const tiles = glance.locator('[data-tile][data-kind="number"]');
+  const first = await tiles.nth(0).getAttribute('data-tile');
+  const second = await tiles.nth(1).getAttribute('data-tile');
+  const a = (await tiles.nth(0).boundingBox())!;
+  const b = (await tiles.nth(1).boundingBox())!;
+  // Escape: nothing moves.
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height - 14);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width * 0.8, b.y + b.height / 2, { steps: 8 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(tiles.nth(0)).toHaveAttribute('data-tile', first!);
+  // Dropped past the second, it goes after it, and stays there.
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height - 14);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width * 0.8, b.y + b.height / 2, { steps: 8 });
+  await page.screenshot({ path: path.join(shots, 'home-moving.png') });
+  await page.mouse.up();
+  await expect(tiles.nth(0)).toHaveAttribute('data-tile', second!);
+  await expect(tiles.nth(1)).toHaveAttribute('data-tile', first!);
 });
 
 test('what came back: each sentinel’s latest run as a message; tiles say where they come from', async ({ page }) => {

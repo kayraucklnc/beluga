@@ -12,13 +12,22 @@
   padding: 14px 24px 40px;
 }
 .panel {
+  position: relative;
   flex: none;
-  width: clamp(320px, 30%, 420px);
   display: flex;
+  /* The message box in it keeps a slimmer margin than the full-width chat's. */
+  --composer-inset: 12px;
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--hairline);
   background: var(--bg);
+}
+/* Its left edge, dragged to resize: the panel's own border is the line; the handle only lights up. */
+.panel > .panelEdge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
 }
 .grow {
   flex: 1;

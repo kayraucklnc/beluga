@@ -14,7 +14,7 @@ import { Board, SectionHead } from './DashboardPage.js';
 import { Disc, RunPill, TriggerDisc } from './marks.js';
 import { Markdown } from '../chat/Markdown.js';
 import { ago } from '../tasks/tasks-model.js';
-import { SentinelChat } from './SentinelChat.js';
+import { AskPanel, SentinelChat } from './SentinelChat.js';
 import { MAC_SCOPE, type Need, dotsOf, doesLine, durationText, filterSentinels, groupSentinels, headlineOf, iconOf, latestOf, needsOf, runDuration, recipeWhen, rowOf, scopesOf, startingPoints } from './sentinel-model.js';
 import { sentinelMenu, useRunsFolder, useSentinelActions, useSentinelState, type SentinelActions } from './use-sentinel.js';
 import s from './home.module.css';
@@ -63,9 +63,9 @@ export function SentinelHome() {
     <div className={s.home} data-asking={asking || undefined}>
       <div className={s.page}>{state.items.length ? <Lived state={state} scope={scope} setScope={setScope} board={board} setBoard={setBoard} /> : <FirstVisit />}</div>
       {asking ? (
-        <aside className={s.panel} aria-label="Ask Sentinel">
+        <AskPanel>
           <SentinelChat key={view.chat ?? 'main'} onClose={close} />
-        </aside>
+        </AskPanel>
       ) : null}
     </div>
   );

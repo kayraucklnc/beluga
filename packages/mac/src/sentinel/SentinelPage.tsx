@@ -8,7 +8,7 @@ import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
-import { SentinelChat } from './SentinelChat.js';
+import { AskPanel, SentinelChat } from './SentinelChat.js';
 import { Attention } from '../chat/Attention.js';
 import home from './home.module.css';
 import { useSwipeBack } from '../tasks/use-swipe-back.js';
@@ -84,9 +84,9 @@ function Page({ item }: { item: Sentinel }) {
         </div>
       </div>
       {asking ? (
-        <aside className={home.panel} aria-label="Ask Sentinel">
+        <AskPanel>
           <SentinelChat onClose={() => a.open(item.id)} />
-        </aside>
+        </AskPanel>
       ) : null}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
 import { FIRST_SENTINEL_CHAT, sentinelChatOf, sentinelChatTitle } from '@beluga/core/sentinel/model.js';
 import { activityOf } from '@beluga/ui/workspace-models.js';
@@ -13,9 +13,11 @@ import { useApi, useApp } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { openSheet } from '../lib/sheets.js';
 import { PickMenu } from '../tasks/PickMenu.js';
+import { ResizeHandle, useWindowWidth } from '../layout/panel/ResizeHandle.js';
 import { useSentinelActions } from './use-sentinel.js';
 import v from '../views/views.module.css';
 import s from './sentinel.module.css';
+import home from './home.module.css';
 
 /**
  * Ask Sentinel (docs/sentinel.md §12, BLG-306): one conversation with your own Claude for the whole
@@ -31,6 +33,65 @@ const STARTERS = [
   { label: 'Watch My Pull Requests', icon: 'branch', prompt: 'Set up a sentinel that counts my open pull requests every morning, and put the number on my board.' },
   { label: 'What Did They Find?', icon: 'sentinel', prompt: 'What did my sentinels find this week? Lead with anything that needs me.' },
 ] as const;
+
+/** Ask Sentinel's width beside the page: dragged by its left edge, kept on this Mac. */
+const WIDTH = 'sentinel.ask.width';
+const WIDTH_DEFAULT = 380;
+const WIDTH_MIN = 320;
+const WIDTH_STEP = 24;
+const readWidth = (): number => {
+  try {
+    const w = Number(localStorage.getItem(WIDTH));
+    return Number.isFinite(w) && w > 0 ? w : WIDTH_DEFAULT;
+  } catch {
+    return WIDTH_DEFAULT;
+  }
+};
+/** At most 60% of the window (and 760 pt), so the page beside it keeps room. */
+const fitWidth = (w: number, windowWidth: number): number => Math.round(Math.max(WIDTH_MIN, Math.min(w, Math.min(760, windowWidth * 0.6))));
+
+/** The panel Ask Sentinel docks in, on Sentinel's page and a sentinel's own: its left edge resizes it. */
+export function AskPanel({ children }: { children: React.ReactNode }) {
+  const panel = useRef<HTMLElement>(null);
+  const windowWidth = useWindowWidth();
+  const [width, setWidth] = useState(readWidth);
+  const latest = useRef(width);
+  const set = (w: number): void => {
+    latest.current = w;
+    setWidth(w);
+  };
+  const keep = (w: number = latest.current): void => {
+    try {
+      localStorage.setItem(WIDTH, String(fitWidth(w, window.innerWidth)));
+    } catch {
+      // Not kept: it still has this width now.
+    }
+  };
+  return (
+    <aside ref={panel} className={home.panel} style={{ width: fitWidth(width, windowWidth) }} aria-label="Ask Sentinel">
+      <ResizeHandle
+        axis="x"
+        label="Resize Ask Sentinel"
+        className={home.panelEdge}
+        onMove={(x) => {
+          const r = panel.current?.getBoundingClientRect();
+          if (r) set(fitWidth(r.right - x, window.innerWidth));
+        }}
+        onEnd={() => keep()}
+        onReset={() => {
+          set(WIDTH_DEFAULT);
+          keep(WIDTH_DEFAULT);
+        }}
+        onStep={(dir) => {
+          const w = fitWidth(latest.current + dir * WIDTH_STEP, window.innerWidth);
+          set(w);
+          keep(w);
+        }}
+      />
+      {children}
+    </aside>
+  );
+}
 
 export function SentinelChat({ onClose }: { onClose?: () => void }) {
   const view = useApp((st) => st.view);

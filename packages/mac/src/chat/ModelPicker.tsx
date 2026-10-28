@@ -40,12 +40,21 @@ export function ModelPicker({ channel }: { channel: string }) {
   // Some models take only some effort levels.
   const allowed = new Set((model?.efforts ?? EFFORTS) as readonly string[]);
   const chip = `${label}${effort ? ` · ${EFFORT_INFO[effort].label}` : ''}`;
+  // Narrow (a side panel): the effort alone, the whole of it in the tooltip; never two lines.
+  const words = effort ? (
+    <>
+      <span className={s.chipModel}>{label} · </span>
+      {EFFORT_INFO[effort].label}
+    </>
+  ) : (
+    label
+  );
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <button type="button" className={s.chip} aria-label="Model and effort">
+        <button type="button" className={s.chip} aria-label="Model and effort" title={chip} data-shrink="">
           <Icon name="claude" size={12} />
-          {chip}
+          <span className={s.chipText}>{words}</span>
           <Icon name="chevronDown" size={9} />
         </button>
       </Popover.Trigger>

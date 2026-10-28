@@ -533,7 +533,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             >
               <button type="button" className={cx(s.chip, mode !== 'act' && s.chipOn)} title={mode === 'tasks' ? MODE_INFO[mode].hint : `${MODE_INFO[mode].hint} (${shortcutKeys('composer-mode') ?? 'Settings › Keyboard'} switches acting and planning first)`} aria-label={`Mode: ${MODE_INFO[mode].label}`}>
                 <Icon name={mode === 'tasks' ? 'graph' : 'wand'} size={12} />
-                {MODE_INFO[mode].label}
+                <span className={s.chipLabel}>{MODE_INFO[mode].label}</span>
                 <Icon name="chevronDown" size={9} />
               </button>
             </ActionsDropdown>
@@ -571,9 +571,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ) : queueing ? (
             <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label="Claude is working">
               <Tip label="Claude is working: this waits its turn in the queue" keys={sendKeys}>
-                <button type="button" className={s.splitMain} onClick={() => send(false)} disabled={!buffer.trim()}>
+                <button type="button" className={s.splitMain} aria-label="Queue" onClick={() => send(false)} disabled={!buffer.trim()}>
                   <Icon name="clock" size={12} />
-                  Queue
+                  <span className={s.chipLabel}>Queue</span>
                 </button>
               </Tip>
               <Tip label="Steer: Claude reads this at its next step, without stopping" keys={shortcutKeys('composer-steer')}>
