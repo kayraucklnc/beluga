@@ -111,31 +111,34 @@ export function ImportConversationSheet({ projectId, close }: { projectId: strin
         </span>
       </Field>
       {found && found.conversations.length > SEARCH_FROM ? <TextInput value={query} onChange={setQuery} placeholder="Search conversations" spellCheck={false} aria-label="Search conversations" /> : null}
-      {!found ? (
-        <p className={s.quiet}>Looking for conversations…</p>
-      ) : !found.conversations.length ? (
-        <p className={s.quiet}>No Claude Code conversation ran in this folder or inside it. Choose another folder, the one you started Claude in.</p>
-      ) : (
-        <ul className={s.list} role="radiogroup" aria-label="Claude Code conversations">
-          {shown.map((c) => {
-            const where = whereIn(found.dir, c.cwd, home);
-            const on = c.sessionId === picked;
-            return (
-              <li key={c.sessionId}>
-                <button type="button" role="radio" aria-checked={on} className={cx(s.row, on && s.on)} onClick={() => setPicked(c.sessionId)}>
-                  <Icon name={c.wsId ? 'branch' : 'chat'} size={14} className={s.icon} />
-                  <span className={s.text}>
-                    <span className={s.title}>{c.title}</span>
-                    <span className={s.detail}>{[c.wsId ? 'Brought in already' : '', where, agoText(c.lastModified), formatBytes(c.bytes)].filter(Boolean).join(' · ')}</span>
-                  </span>
-                  {on ? <Icon name="check" size={13} className={s.check} /> : null}
-                </button>
-              </li>
-            );
-          })}
-          {!shown.length ? <li className={s.quiet}>Nothing matches “{query.trim()}”</li> : null}
-        </ul>
-      )}
+      {/* Where the sheet's focus starts: the list, not the folder button (it loads after opening). */}
+      <div className={s.focus} data-autofocus tabIndex={-1}>
+        {!found ? (
+          <p className={s.quiet}>Looking for conversations…</p>
+        ) : !found.conversations.length ? (
+          <p className={s.quiet}>No Claude Code conversation ran in this folder or inside it. Choose another folder, the one you started Claude in.</p>
+        ) : (
+          <ul className={s.list} role="radiogroup" aria-label="Claude Code conversations">
+            {shown.map((c) => {
+              const where = whereIn(found.dir, c.cwd, home);
+              const on = c.sessionId === picked;
+              return (
+                <li key={c.sessionId}>
+                  <button type="button" role="radio" aria-checked={on} className={cx(s.row, on && s.on)} onClick={() => setPicked(c.sessionId)}>
+                    <Icon name={c.wsId ? 'branch' : 'chat'} size={14} className={s.icon} />
+                    <span className={s.text}>
+                      <span className={s.title}>{c.title}</span>
+                      <span className={s.detail}>{[c.wsId ? 'Brought in already' : '', where, agoText(c.lastModified), formatBytes(c.bytes)].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    {on ? <Icon name="check" size={13} className={s.check} /> : null}
+                  </button>
+                </li>
+              );
+            })}
+            {!shown.length ? <li className={s.quiet}>Nothing matches “{query.trim()}”</li> : null}
+          </ul>
+        )}
+      </div>
       {chosen && !opening ? (
         <Field label="Name" htmlFor="import-convo-name" hint={slug(name) ? <>Your branch <code>beluga/{slug(name)}</code>, from the commit that folder is on. Its uncommitted changes stay there.</> : undefined}>
           <TextInput

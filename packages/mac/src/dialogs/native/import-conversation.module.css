@@ -70,3 +70,7 @@
   padding: 8px 12px;
   color: var(--text-3);
 }
+/* Where focus starts (one child: the list, or what's said instead). */
+.focus:focus {
+  outline: none;
+}

@@ -19,7 +19,7 @@ import { launchGateway } from '../core/gateway/launch.js';
 import { launchFriendShares } from '../core/friend-share/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
 import { launchSupport } from '../core/merge-counter.js';
-import { launchClaudeCode } from '../core/claude-code/launch.js';
+import { claudeHome, launchClaudeCode } from '../core/claude-code/launch.js';
 import { launchCompanion } from '../companion/launch.js';
 import { Store, initialState, prefsFrom } from '../core/store.js';
 import { createDemoFolders, createDemoWorkspaces, seedDemoContext, startDemoFriend, startDemoGuest } from '../demo.js';
@@ -263,6 +263,9 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let closing = false;
   let saveAsked = false;
   const workspaces = demo ? await createDemoWorkspaces() : new WorkspaceManager();
+  // The demo reads Claude Code's conversations only from a pretend ~/.claude (BELUGA_CLAUDE_HOME, the e2e's), never yours.
+  const readsClaude = !demo || Boolean(belugaEnv('CLAUDE_HOME'));
+  if (demo && readsClaude) process.env.CLAUDE_CONFIG_DIR = claudeHome();
   const terminals = new TerminalManager();
   const session: Session = new Session({
     workspaces,
@@ -300,7 +303,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     loadPeople: () => loadSettings().people,
     replayFile: path.join(belugaHome(), 'seen.json'),
     stepsDir: path.join(belugaHome(), 'steps'),
-    ...(demo ? {} : { findConversation, otherTools }),
+    ...(readsClaude ? { findConversation, otherTools } : {}),
     ...(roomControl ? { room: roomControl } : {}),
   });
 

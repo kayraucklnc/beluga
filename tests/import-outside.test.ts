@@ -166,7 +166,7 @@ describe('continuing an outside conversation in a worktree', () => {
     const channel = `ws:${ws.id}`;
     const said = () => kay.state().log.filter((l) => l.channel === channel).map((l) => ('text' in l ? l.text : ''));
     expect(said()).toEqual(expect.arrayContaining(['Why does login fail on Safari?', 'The cookie is SameSite=Strict.']));
-    expect(said().some((t) => t.startsWith(`Brought in from ${dir}`))).toBe(true);
+    expect(said().some((t) => t.startsWith('On a new branch from where app is') && t.includes(dir))).toBe(true);
 
     kay.session.askOwnClaude('Go ahead and fix it', channel);
     await waitFor(() => kay.runs.length === 1, 4000);

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import type { ArchiveManifest, ArchivePhase, ArchivePreview } from '../workspaces/archive.js';
 import { formatBytes } from '../workspaces/disk.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
+import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { slugify } from '../agent/namer.js';
@@ -69,6 +70,9 @@ const CONTINUE_WAIT_MS = 60_000;
 
 /** The same message, ignoring spacing differences (the sheet trims and may rewrap it). */
 const sameText = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim();
+
+/** A folder as people read it: ~/… under your home. */
+const tilde = (dir: string): string => (dir.startsWith(`${os.homedir()}/`) ? `~${dir.slice(os.homedir().length)}` : dir);
 
 /** A Claude Code conversation from outside Beluga (BLG-321); `wsId`: the worktree it was brought into. */
 export interface OutsideConversation extends FoundConversation {
@@ -375,7 +379,7 @@ export class WorkspaceController {
       const ws = await this.deps.manager.createWorktreeOn(project.id, named, branch, { importedSession: sessionId });
       // Claude Code looks for a conversation under the folder it runs in: a copy goes there.
       if (!carrySession(sessionId, found.cwd, ws.path)) throw new Error('its transcript couldn’t be copied');
-      return { ws, from: same ? `${path.basename(found.cwd)} (${head.slice(0, 7)})` : project.base };
+      return { ws, from: same ? `where ${path.basename(found.cwd)} is (${head.slice(0, 7)})` : project.base };
     });
     if (!made) return undefined;
     const { ws } = made;
@@ -384,7 +388,7 @@ export class WorkspaceController {
     // Read where it ran: the copy is filed under the worktree, but says it ran there.
     // Nothing in it to show (only tool calls, say): Claude still resumes it.
     if (!(await this.importConversation(ws.id, ws.path, channel, sessionId, found.cwd))) this.deps.manager.rememberSession(ws.id, sessionId);
-    this.deps.store.dispatch({ type: 'system', channel, text: `Brought in from ${found.cwd}, on a new branch from ${made.from}. The conversation there stays as it was; uncommitted changes in that folder stay there too.` });
+    this.deps.store.dispatch({ type: 'system', channel, text: `On a new branch from ${made.from}. The conversation in ${tilde(found.cwd)} stays as it was, and so do that folder’s uncommitted changes.` });
     this.open(ws.id);
     this.deps.toast(`Continuing “${found.title}” in ${ws.name}`, 'success');
     this.created(ws, { about: found.title });
