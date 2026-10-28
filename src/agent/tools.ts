@@ -1,6 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { RoomBridge } from './types.js';
+import type { RoomBridge, SetupTools } from './types.js';
 import { createGatewayToolDefs } from './gateway-tools.js';
 
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
@@ -134,7 +134,20 @@ export function continueInWorktreeToolDef(move: (task: string) => Promise<string
   );
 }
 
-/** The Beluga tools for one run: the room's, plus continue_in_worktree in a main folder. */
-export function createRoomTools(bridge: RoomBridge, move?: (task: string) => Promise<string>) {
-  return createSdkMcpServer({ name: 'beluga', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : [])] });
+/** For your own runs in a worktree: correct the setup new worktrees of this project run once. */
+export function setProjectSetupToolDef(setup: SetupTools) {
+  return tool(
+    'set_project_setup',
+    "Change the setup command Beluga runs once in every new worktree of this project, when you found it incomplete (you had to install dependencies or run a step it doesn't). Give the whole command a fresh checkout needs, chained with &&.",
+    {
+      command: z.string().min(1).max(2000).describe('The full setup command, e.g. `npm install && (cd packages/app && npm install)`'),
+      why: z.string().min(1).max(300).describe('What was missing, in a few words (shown to the owner)'),
+    },
+    (a) => guarded(async () => setup.set(a.command, a.why)),
+  );
+}
+
+/** The Beluga tools for one run: the room's, plus continue_in_worktree in a main folder, plus set_project_setup in a worktree. */
+export function createRoomTools(bridge: RoomBridge, move?: (task: string) => Promise<string>, setup?: SetupTools) {
+  return createSdkMcpServer({ name: 'beluga', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : []), ...(setup ? [setProjectSetupToolDef(setup)] : [])] });
 }

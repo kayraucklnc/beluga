@@ -105,7 +105,7 @@ export async function fixRun(dir: string, failed: string, output: string, opts: 
  * looks (read-only) and says, for each one asked, a command or none. Undefined on any trouble.
  */
 export async function workOutScripts(dir: string, want: { setup: boolean; run: boolean }, opts: { claudePath?: string; model?: string } = {}): Promise<WorkedOutScripts | undefined> {
-  const parts = [want.setup && 'SETUP: the one command that installs what the project needs in a fresh checkout (dependencies), or none if nothing does', want.run && 'RUN: the one command that starts it for development (a dev server, the app, the CLI with no arguments), or none if it isn\'t something you run (a library, docs)'].filter(Boolean);
+  const parts = [want.setup && 'SETUP: the one command that installs what the project needs in a fresh checkout (dependencies, including those of sub-packages with their own manifest or lockfile, chained with &&), or none if nothing does', want.run && 'RUN: the one command that starts it for development (a dev server, the app, the CLI with no arguments), or none if it isn\'t something you run (a library, docs)'].filter(Boolean);
   if (!parts.length) return {};
   const said = await ask(
     dir,

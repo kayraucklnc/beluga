@@ -12,6 +12,8 @@ import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
 import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, commitSubjects, createPr, disableAutoMerge, prFromCommits, titleOfBranch, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, forgetGh, ghState, gitSetup, hasGh, listPrs, useHttpsRemote, mergePr, mergeToBase, prStep, pushForPr, remoteRef, resetPrPrompt, unpushedCommits } from '../workspaces/pr.js';
 import { PROJECT_FILES, type ProjectScripts, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
+import type { SetupTools } from '../agent/types.js';
+import { buildSetupAppend } from '../agent/prompt.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store } from './store.js';
@@ -1189,7 +1191,10 @@ export class Workbench {
     const yours = this.manager.yourScripts(project.id);
     if (yours.looked) return undefined;
     const now = this.manager.scripts(project.id);
-    const want = { setup: !now.setup && !yours.skipSetup, run: !now.run };
+    // A setup guessed from lockfiles (`npm install`) can miss part of the project: Claude checks it too.
+    // A Makefile or justfile target is the project's own word, not a guess.
+    const guessed = now.setup?.source === 'detected' && !/^(make|just) /.test(now.setup.command) ? now.setup.command : undefined;
+    const want = { setup: (!now.setup || Boolean(guessed)) && !yours.skipSetup, run: !now.run };
     if (!want.setup && !want.run) return undefined;
     const asked = this.deps.workOutScripts(ws.path, want);
     if (!asked) return undefined;
@@ -1201,13 +1206,16 @@ export class Workbench {
         const learned: { -readonly [K in keyof ProjectScripts]: ProjectScripts[K] } = { looked: true };
         const mine: Array<'setup' | 'run'> = [];
         const said: string[] = [];
-        if (found.setup && 'none' in found.setup) {
+        // Checking a guess: the same command, or "none" where the files say there's something to
+        // install, keeps the guess (it runs without asking); only a different command is kept.
+        const setup = guessed && found.setup && ('none' in found.setup || found.setup.command === guessed) ? undefined : found.setup;
+        if (setup && 'none' in setup) {
           learned.skipSetup = true;
           said.push('no setup needed');
-        } else if (found.setup) {
-          learned.setup = found.setup.command;
+        } else if (setup) {
+          learned.setup = setup.command;
           mine.push('setup');
-          said.push(`setup \`${found.setup.command}\``);
+          said.push(`setup \`${setup.command}\``);
         }
         if (found.run && 'command' in found.run) {
           learned.run = found.run.command;
@@ -1295,6 +1303,30 @@ export class Workbench {
     } catch (err) {
       this.deps.toast(err instanceof Error ? err.message : String(err), 'error');
     }
+  }
+
+  /**
+   * A run of your own Claude in a worktree: what the project's setup is, and a way for Claude to
+   * change it when it finds it incomplete (it had to install something the setup didn't). What it
+   * sets is kept as yours, marked as Claude's, so the next worktree asks you once before running it.
+   */
+  setupForRun(wsId: string): SetupTools | undefined {
+    const ws = this.manager.find(wsId);
+    const project = ws ? this.manager.list.find((p) => p.id === ws.projectId) : undefined;
+    if (!ws || ws.kind === 'main' || !project?.root) return undefined;
+    const now = this.manager.scripts(project.id).setup;
+    return {
+      brief: buildSetupAppend(project.name, now?.command, now?.source),
+      set: (command, why) => {
+        const value = command.trim();
+        if (!value) return 'Give the whole setup command.';
+        if (!this.manager.list.some((p) => p.id === project.id)) return 'That project is gone.';
+        if (value === this.manager.scripts(project.id).setup?.command) return `The setup is already \`${value}\`.`;
+        this.remember(project.id, { setup: value, skipSetup: undefined }, ['setup']);
+        this.deps.toast(`Setup for ${project.name} is now \`${value}\`: ${why}`, 'success');
+        return `Saved: new worktrees of ${project.name} run \`${value}\` (the owner approves it once the first time it runs by itself).`;
+      },
+    };
   }
 
   /** Put your commands in the project's beluga.json (or its older klaud.json) so teammates get them. */
