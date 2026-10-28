@@ -1,5 +1,6 @@
 import type { BoardTools, TaskDefinition } from '../../agent/types.js';
 import { type DraftContext, type TaskDraft, firstLineTitle } from '../../agent/task-drafter.js';
+import { personMentions } from '../person-mentions.js';
 import { teammatesOf } from '../team/model.js';
 import { slugify } from '../../agent/namer.js';
 import { isSecretPath } from '../shares.js';
@@ -12,6 +13,9 @@ import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
 import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
 import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isArchived, isFinished, isOpen, issueForWorkspace, titleFromName, worktreeDoing } from './model.js';
+
+/** How a name is written after "@" (as the message box completes it: src/ui/suggest.ts friendMention). */
+const handleOf = (name: string): string => `@${name.replace(/[^\p{L}\p{N}_.-]+/gu, '')}`;
 
 /**
  * The board at work: tasks open with worktrees and follow their pull requests, a task can start
@@ -169,19 +173,37 @@ export class BoardWork {
     const plain: TaskDraft = { title, goal: text, acceptance: [], labels: [] };
     if (!this.deps.draftTask) return plain;
     // `several` (a phone that shows them all, BLG-322): the words may ask for several tasks, an epic, and who does each.
-    return (await this.deps.draftTask(text, this.draftContext(projectId, undefined, opts.several)).catch(() => undefined)) ?? plain;
+    return (await this.deps.draftTask(text, this.draftContext(projectId, text, undefined, opts.several)).catch(() => undefined)) ?? plain;
   }
 
   /**
    * What the describer knows besides the words: the project's name, what it's about (BLG-298), and
-   * its labels; with `several` (BLG-319), who on its team a task can be for (you first).
+   * its labels; with `several` (BLG-319), who on its team a task can be for (you first); and who
+   * the words' "@mia"s are, teammates and friends (BLG-342).
    */
-  private draftContext(projectId: string, look?: string, several = false): DraftContext {
+  private draftContext(projectId: string, text: string, look?: string, several = false): DraftContext {
     const labels = labelsFor(this.board.state(), projectId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
     const about = this.board.state().projects[projectId]?.context?.text;
     const people = several ? this.people(projectId).map((p) => p.name) : [];
-    return { labels, ...(project ? { project } : {}), ...(about ? { about } : {}), ...(look ? { look } : {}), ...(several ? { several, ...(people.length > 1 ? { people } : {}) } : {}) };
+    const named = this.named(projectId, text);
+    return {
+      labels,
+      ...(project ? { project } : {}),
+      ...(about ? { about } : {}),
+      ...(look ? { look } : {}),
+      ...(several ? { several, ...(people.length > 1 ? { people } : {}) } : {}),
+      ...(named.length ? { named } : {}),
+    };
+  }
+
+  /** The people "@" names in the words: the project's teammates, then your other friends (never you). */
+  private named(projectId: string, text: string): NonNullable<DraftContext['named']> {
+    if (!text.includes('@')) return [];
+    const team = this.people(projectId).filter((p) => p.id !== this.deps.selfId());
+    const friends = (this.deps.store.getState().network?.friends ?? []).filter((f) => f.peerId !== this.deps.selfId() && !team.some((m) => m.id === f.peerId));
+    const onTeam = new Set(team.map((m) => m.id));
+    return personMentions(text, [...team.map((m) => ({ peerId: m.id, name: m.name })), ...friends]).map((p) => ({ handle: handleOf(p.name), name: p.name, team: onTeam.has(p.peerId) }));
   }
 
   /** Who a project's task can be for: you, then its teammates (BLG-299). */
@@ -220,7 +242,7 @@ export class BoardWork {
     // Without your Claude: the first line, and what was said as the goal if it says more.
     if (!draft) return this.board.create({ ...input, title, ...(text.replace(/\s+/g, ' ') !== title ? { brief: { goal: text } } : {}) }, this.me(), opts.origin);
     const issue = this.board.create({ ...input, title, drafting: true }, this.me(), opts.origin);
-    const done = draft(text, this.draftContext(issue.projectId, opts.look, opts.several))
+    const done = draft(text, this.draftContext(issue.projectId, text, opts.look, opts.several))
       .catch(() => undefined)
       .then((d) => {
         try {

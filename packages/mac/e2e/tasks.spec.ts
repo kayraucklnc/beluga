@@ -188,6 +188,39 @@ test('one New Task message asking for two tasks makes both on Create, no chat in
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
 });
 
+test('"@" in New Task offers your friends, puts the one you pick in, and Escape closes only the list (BLG-342)', async ({ page }) => {
+  test.setTimeout(90_000);
+  // The demo's friends (bob, mia…) come with the network on.
+  await page.goto('/');
+  const card = sidebar(page).getByRole('group', { name: 'Talk with friends' });
+  if (await card.isVisible().catch(() => false)) await card.getByRole('button', { name: 'Turn On' }).click();
+  await expect(sidebar(page).getByRole('button', { name: /^bob, / })).toBeVisible({ timeout: 30_000 });
+  await openTasks(page);
+  await page.getByRole('button', { name: 'New Task', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Task' });
+  const box = sheet.getByRole('textbox', { name: 'Describe the task' });
+  await box.pressSequentially('ask @');
+  const list = sheet.getByRole('listbox', { name: 'Suggestions' });
+  await expect(list.getByRole('option').first()).toBeVisible();
+  // People only: no commands, no Claudes, no projects.
+  await expect(list).not.toContainText('@claude');
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: `${process.env.BELUGA_SHOTS}/new-task-at-menu.png` });
+  const first = (await list.getByRole('option').first().innerText()).split(/\s/)[0]!;
+  await box.press('Enter');
+  await expect(box).toHaveValue(`ask ${first} `);
+  await expect(sheet.getByTestId('mention-highlighter').locator('mark')).toHaveText(first);
+  await box.pressSequentially('for the copy');
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: `${process.env.BELUGA_SHOTS}/new-task-at-pill.png` });
+  // Escape with the list open closes the list; the sheet stays.
+  await box.pressSequentially(' @');
+  await expect(list).toBeVisible();
+  await box.press('Escape');
+  await expect(list).toBeHidden();
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole('button', { name: 'Cancel' }).click();
+  await expect(sheet).toBeHidden();
+});
+
 test('a worktree shows the task it’s doing, and opens it', async ({ page }) => {
   await page.goto('/');
   const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });

@@ -1,7 +1,11 @@
-import { type KeyboardEvent, useMemo, useState } from 'react';
+import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
 import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, issueById } from '@beluga/core/board/model.js';
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
+import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
+import { MentionHighlighter } from '../chat/MentionHighlighter.js';
+import type { MentionWorld } from '../chat/mentions.js';
 import { Icon } from '../components/Icon.js';
+import f from '../components/form.module.css';
 import { cx } from '../components/ui.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { PriorityIcon } from './marks.js';
@@ -16,7 +20,8 @@ const SCALE: readonly Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
  * A new task: say what you want in one box and Claude writes its title and goal and picks its
  * labels (or write them yourself), and how much it matters on a scale if you like. The box can ask
  * for several tasks, or an epic with its parts, and say who each is for: Create makes them all
- * (BLG-319), no chat in between. It goes in the
+ * (BLG-319), no chat in between. "@" in the box names a teammate or a friend, so Claude knows who
+ * you mean (BLG-342). It goes in the
  * project and column you opened it from. Start with Claude makes the worktree and puts Claude on it.
  */
 export function NewTaskSheet({ projectId, status, parent, close }: { projectId?: string; status?: IssueStatus; parent?: string; close: () => void }) {
@@ -42,6 +47,9 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const [assignee, setAssignee] = useState('');
   const [start, setStart] = useState(false);
   const solo = useSolo(project);
+  const tagged = useTaggable(project, self.id, projects.find((p) => p.id === project)?.name);
+  const box = useRef<HTMLTextAreaElement>(null);
+  const tags = useBoxSuggestions({ text: describe, setText: setDescribe, people: tagged.people, className: n.suggestions });
   if (!projects.length) {
     return <FormSheet title="New Task" intro="Tasks belong to a project. Add a project first (File › Add Project…)." submitLabel="OK" hideSubmit onSubmit={close} onCancel={close} />;
   }
@@ -88,21 +96,32 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
         </>
       ) : (
         <div className={n.describe}>
-          <TextArea
-            aria-label="Describe the task"
-            className={n.box}
-            value={describe}
-            onChange={setDescribe}
-            rows={4}
-            maxLength={8000}
-            placeholder={solo ? 'Say what you want done: one task, or a few. Claude writes them.' : 'Say what you want done: one task, or a few and who each is for. Claude writes them.'}
-            onInput={(e) => grow(e.currentTarget)}
-            data-autofocus
-          />
+          <div className={n.boxWrap}>
+            <MentionHighlighter text={describe} world={tagged.world} input={box} className={cx(f.input, f.area, n.box, n.layer)} />
+            <TextArea
+              ref={box}
+              aria-label="Describe the task"
+              aria-haspopup="listbox"
+              aria-expanded={tags.open}
+              className={cx(n.box, n.overLayer)}
+              value={describe}
+              onChange={setDescribe}
+              rows={4}
+              maxLength={8000}
+              placeholder={solo ? 'Say what you want done: one task, or a few. Claude writes them.' : 'Say what you want done: one task, or a few and who each is for. Claude writes them.'}
+              onInput={(e) => grow(e.currentTarget)}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                tags.onKey(e);
+              }}
+              data-autofocus
+            />
+            {tags.list}
+          </div>
           <div className={n.hint}>
             {solo
-              ? 'Ask for several tasks, or an epic with its parts, and Create makes them all. ⌘↩ creates it.'
-              : 'Ask for several tasks, or an epic with its parts, and name who each is for: Create makes and assigns them all. ⌘↩ creates it.'}
+              ? 'Ask for several tasks, or an epic with its parts, and Create makes them all. @ names a friend. ⌘↩ creates it.'
+              : 'Ask for several tasks, or an epic with its parts, and name who each is for (@ picks them): Create makes and assigns them all. ⌘↩ creates it.'}
           </div>
         </div>
       )}
@@ -126,6 +145,25 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
       )}
     </FormSheet>
   );
+}
+
+/**
+ * Who "@" can name in the box: the project's team first (a task can be for them), then your other
+ * friends (Claude knows who you mean, but a task isn't theirs). Never you.
+ */
+function useTaggable(projectId: string, selfId: string, projectName: string | undefined): { people: ReadonlyArray<{ name: string; hint: string }>; world: MentionWorld } {
+  const mates = usePeople(projectId);
+  const friends = useApp((s) => s.network.friends);
+  return useMemo(() => {
+    const team = mates.filter((m) => m.id !== selfId);
+    const others = friends.filter((f) => f.peerId !== selfId && !team.some((m) => m.id === f.peerId));
+    const people = [
+      ...team.map((m) => ({ name: m.name, hint: projectName ? `on ${projectName}` : 'on this project' })),
+      ...others.map((f) => ({ name: f.name, hint: 'a friend' })),
+    ];
+    const named = [...team.map((m) => ({ name: m.name, peerId: m.id })), ...others.map((f) => ({ name: f.name, peerId: f.peerId }))];
+    return { people, world: { friends: named, peers: [], projects: [], workspaces: [] } };
+  }, [mates, friends, selfId, projectName]);
 }
 
 /** The describe box grows with what you write (up to a point; then it scrolls). */

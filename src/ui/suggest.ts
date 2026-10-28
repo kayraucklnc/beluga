@@ -248,6 +248,29 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
   return [...named, ...tasks, ...paths];
 }
 
+/**
+ * Only people, for a box that names who it's about (New Task): "@mi" offers "@MiaChen". No
+ * commands, no Claudes, no projects; each person once, in the order given (the team first).
+ */
+export function peopleSuggestions(buffer: string, people: ReadonlyArray<{ readonly name: string; readonly hint: string }>): Suggestion[] {
+  const typed = typedMention(buffer);
+  if (typed === undefined || typed.includes('/') || typed.includes(':')) return [];
+  const token = `@${typed}`.toLowerCase();
+  const before = buffer.slice(0, buffer.length - token.length);
+  const seen = new Set<string>();
+  return people
+    .map((p) => ({ label: friendMention(p.name), hint: p.hint, name: p.name.toLowerCase() }))
+    .filter((p) => {
+      const handle = p.label.toLowerCase();
+      if (p.label.length < 2 || seen.has(handle) || handle === token) return false;
+      seen.add(handle);
+      // "@chen" finds Mia Chen too.
+      return handle.startsWith(token) || p.name.split(/\s+/).some((w) => w.startsWith(typed.toLowerCase()));
+    })
+    .map((p) => ({ label: p.label, hint: p.hint, value: `${before}${p.label} `, enter: 'complete' as const, kind: 'person' as const }))
+    .slice(0, MAX);
+}
+
 /** Autocomplete for the composer: /commands, their arguments (incl. file paths), and @mentions. */
 export function suggest(buffer: string, ctx: SuggestContext): Suggestion[] {
   if (buffer.startsWith('/') && !buffer.startsWith('//')) {
