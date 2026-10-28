@@ -103,6 +103,23 @@ export function buildCommitAppend(): string {
   ].join('\n');
 }
 
+/**
+ * A worktree's run: the setup Beluga ran when it was made, and that Claude keeps it true (with
+ * set_project_setup) when it finds something the setup should have installed and didn't.
+ */
+export function buildSetupAppend(project: string, command: string | undefined, source: string | undefined): string {
+  const from = source === 'detected' ? 'guessed from its files' : source === 'claude' ? 'worked out by Claude' : source === 'yours' ? 'set by the owner' : source ? `from its ${source}` : '';
+  return [
+    '',
+    command
+      ? `When a worktree of ${project} is made, Beluga runs its setup once: \`${command}\`${from ? ` (${from})` : ''}.`
+      : `${project} has no setup: new worktrees of it install nothing.`,
+    'If you find this worktree missing something that setup should have done (dependencies not installed in a',
+    'sub-package, a step you had to run first), do it, then call mcp__beluga__set_project_setup with the whole',
+    'command a fresh worktree needs (chained with &&) so the next one comes ready. Only for that; never for a one-off.',
+  ].join('\n');
+}
+
 /** How a sub-agent's own scratch folder is introduced (also how Beluga tells it already has one). */
 export const AGENT_SCRATCH_MARK = 'Your scratch folder:';
 

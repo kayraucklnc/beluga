@@ -209,7 +209,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
         // Your own MCP servers first, so a name of Beluga's always means Beluga's.
-        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
+        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined, askOnly ? undefined : input.setup), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -246,7 +246,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.phoneBrief ?? '') + (input.sentinelBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.phoneBrief ?? '') + (input.sentinelBrief ?? '') + (input.setup && !askOnly ? input.setup.brief : '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),

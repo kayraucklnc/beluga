@@ -76,6 +76,8 @@ export interface AgentRunInput {
    * `task` there (Claude's continue_in_worktree tool). Resolves with what to tell Claude.
    */
   readonly continueInWorktree?: (task: string) => Promise<string>;
+  /** Your own runs in a worktree: the project's setup, and Claude's tool to correct it. */
+  readonly setup?: SetupTools;
   /** A friend's task: the extra tools its owner allowed (the screen, device info). */
   readonly taskTools?: TaskTools;
   /** Your own runs: the task board (Claude reads and keeps tasks true; see core/board). */
@@ -236,6 +238,15 @@ export interface BoardTools {
 export interface TaskTools {
   readonly screenshot?: (app?: string) => Promise<{ readonly text: string; readonly image?: { readonly data: string; readonly mimeType: string } }>;
   readonly deviceInfo?: () => Promise<string>;
+}
+
+/**
+ * A worktree's project setup (core/workbench): what new worktrees run once, told to Claude in
+ * `brief`, and `set` (Claude's set_project_setup tool) when it finds that setup incomplete.
+ */
+export interface SetupTools {
+  readonly brief: string;
+  set(command: string, why: string): string;
 }
 
 /**
