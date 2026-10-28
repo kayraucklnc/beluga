@@ -16,7 +16,7 @@ const project = (id: string, name: string, workspaces: Workspace[] = []): Projec
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-function setup(opts: { readonly autoTasks?: boolean } = {}) {
+function setup(opts: { readonly autoTasks?: boolean; readonly describeProject?: (dir: string, project: string) => Promise<string | undefined>; readonly toast?: (text: string) => void } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api'), project('land', 'landing')] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
@@ -40,10 +40,41 @@ function setup(opts: { readonly autoTasks?: boolean } = {}) {
     },
   } as unknown as WorkspaceController;
   const board = new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name });
-  const work = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push([prompt, channel]) });
+  const work = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push([prompt, channel]), ...(opts.describeProject ? { describeProject: opts.describeProject } : {}), ...(opts.toast ? { toast: opts.toast } : {}) });
   if (opts.autoTasks) board.setAutoTasks(true);
   return { store, board, work, open, emit, asked };
 }
+
+describe('Claude writes what a project is about, in the background (BLG-298)', () => {
+  it('on a project’s first new worktree, from a look at its main folder; once, and only while no one has written it', async () => {
+    const looked: Array<[string, string]> = [];
+    const toasts: string[] = [];
+    let finish!: (text: string | undefined) => void;
+    const { board, open } = setup({ describeProject: (dir, name) => (looked.push([dir, name]), new Promise((r) => (finish = r))), toast: (t) => void toasts.push(t) });
+    open(ws('w1', 'api', 'add-auth'));
+    open(ws('w2', 'api', 'fix-login'));
+    expect(looked).toEqual([['/tmp/bob-api', 'bob-api']]);
+    finish('Bob is a payments API for bakeries: the server in src/, the app in web/.');
+    await tick();
+    expect(board.state().projects.api?.context).toMatchObject({ text: 'Bob is a payments API for bakeries: the server in src/, the app in web/.', by: 'Kay’s Claude' });
+    expect(toasts).toEqual(['Claude wrote what bob-api is about: Tasks › ⋯ › About This Project']);
+    // Not a main folder's chat; and a project someone already wrote it for isn't looked at.
+    board.setContext('land', 'A landing page.', 'Kay');
+    open(ws('w3', 'land', 'hero', 'main'));
+    open(ws('w4', 'land', 'hero'));
+    expect(looked).toHaveLength(1);
+  });
+
+  it('someone writes it while Claude looks: theirs stays', async () => {
+    let finish!: (text: string | undefined) => void;
+    const { board, open } = setup({ describeProject: () => new Promise((r) => (finish = r)) });
+    open(ws('w1', 'api', 'add-auth'));
+    board.setContext('api', 'Ours: an API for bakeries.', 'Kay');
+    finish('Bob is a payments API for bakeries.');
+    await tick();
+    expect(board.state().projects.api?.context).toMatchObject({ text: 'Ours: an API for bakeries.', by: 'Kay' });
+  });
+});
 
 describe('worktrees open tasks', () => {
   it('by default a new worktree opens no task: tasks come from plans', () => {
@@ -205,6 +236,15 @@ describe('Claude and the board', () => {
     expect(run.tools!.get('bob-3')).toContain('Blocked by: BOB-2');
     expect(() => run.tools!.attachProof(undefined, { kind: 'file', title: 'env', path: '/tmp/add-auth/.env' })).toThrow(/secrets/);
     expect(run.tools!.attachProof(undefined, { kind: 'url', title: 'Preview', url: 'https://preview.example' })).toBe('Attached “Preview” to BOB-2');
+  });
+
+  it('runs in a project read what it is about, with or without a task (BLG-298)', () => {
+    const { board, work, open } = setup({ autoTasks: true });
+    open(ws('w1', 'api', 'add-auth'));
+    expect(work.forRun('ws:w1', 'p-me')!.brief).not.toContain('project_context');
+    board.setContext('api', 'Bob is a payments API for bakeries.', 'Kay');
+    expect(work.forRun('ws:w1', 'p-me')!.brief).toContain('<project_context>\nBob is a payments API for bakeries.\n</project_context>');
+    expect(work.forRun('room', 'p-me')!.brief).not.toContain('project_context');
   });
 
   it('elsewhere: a note that the board is there, and tools that need a key', () => {

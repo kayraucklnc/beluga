@@ -314,6 +314,7 @@ export const PHONE: Record<Method, Side> = {
   'board.setAutoTasks': 'mac',
   'board.setPrefix': 'mac',
   'board.createLabel': 'mac',
+  'board.setContext': 'mac',
   'board.removeLabel': 'mac',
   // Connecting a tracker is a key and settings: the Mac's.
   'board.syncTeams': 'mac',

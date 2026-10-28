@@ -30,6 +30,7 @@ import { PlanDecisions } from '../plans/decisions.js';
 import { launchTeam } from '../team/launch.js';
 import { TeamBoardSync } from '../team/board-sync.js';
 import { TeamAssign } from '../team/assign.js';
+import { TeamContext } from '../team/context-share.js';
 import { TeamPlans } from '../team/plan-share.js';
 
 /**
@@ -63,6 +64,8 @@ export function launchBoard(host: BoardHost): () => void {
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
     askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
     ...(session.draftsTasks ? { draftTask: (text: string, ctx: DraftContext) => session.draftTask(text, ctx) } : {}),
+    ...(session.describesProjects ? { describeProject: (dir: string, project: string) => session.describeProject(dir, project) } : {}),
+    toast: (text: string) => session.toast(text, 'info'),
     // Tasks whose worktree went before their pull request merged still go Done (the demo has no GitHub).
     ...(host.demo
       ? {}
@@ -161,7 +164,8 @@ export function launchBoard(host: BoardHost): () => void {
       const teamSync = new TeamBoardSync(team, { board, live, running, dir: teamDir });
       // Plans you choose to share with the team: teammates review them, you apply what you like.
       const teamPlans = new TeamPlans(team, { edit: (id, ops) => void planWork.edit(id, ops), dir: teamDir });
-      return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans];
+      // What the project is about (for Claude writing tasks): one text for the whole team.
+      return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans, new TeamContext(team, board)];
     },
   });
   let stopSeed = (): void => undefined;

@@ -9,7 +9,7 @@ import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
-import { briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
+import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
 import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isArchived, isFinished, isOpen, issueForWorkspace, titleFromName, worktreeDoing } from './model.js';
 
 /**
@@ -28,6 +28,10 @@ export interface BoardWorkDeps {
   readonly askClaude: (prompt: string, channel: string, shown?: string) => void;
   /** Your Claude writes a task from a description (none: the first line is the title). */
   readonly draftTask?: (text: string, ctx: DraftContext) => Promise<TaskDraft | undefined>;
+  /** Your Claude writes what a project is about from a quick look at its folder (none: people write it). */
+  readonly describeProject?: (dir: string, project: string) => Promise<string | undefined>;
+  /** A quiet word on screen (what Claude wrote in the background). */
+  readonly toast?: (text: string) => void;
   /** A branch's pull request, asked of gh (none: tasks whose worktree went aren't looked after). Throws when gh can't tell. */
   readonly findPr?: (dir: string, branch: string) => Promise<IssuePr | undefined>;
   /** How often to look for merged pull requests of tasks nobody watches any more (0: only when asked). */
@@ -46,6 +50,8 @@ export class BoardWork {
   private readonly pending = new Map<string, TaskDefinition>();
   /** Tasks made by approving a plan in a main folder's chat (by that chat's workspace id): the worktree it continues in does it. */
   private readonly carried = new Map<string, string>();
+  /** Projects whose About This Project your Claude was asked to write this run. */
+  private readonly described = new Set<string>();
   /** Worktrees being started for tasks (Start Worktree): the one that opens under that name belongs to that task. */
   private readonly expecting: Array<{ readonly projectId: string; readonly name: string; readonly issueId: string }> = [];
   private readonly names = new Map<string, string>();
@@ -161,9 +167,15 @@ export class BoardWork {
     const title = firstLineTitle(text);
     const plain: TaskDraft = { title, goal: text, acceptance: [], labels: [] };
     if (!this.deps.draftTask) return plain;
+    return (await this.deps.draftTask(text, this.draftContext(projectId)).catch(() => undefined)) ?? plain;
+  }
+
+  /** What the describer knows besides the words: the project's name, what it's about (BLG-298), and its labels. */
+  private draftContext(projectId: string, look?: string): DraftContext {
     const labels = labelsFor(this.board.state(), projectId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
-    return (await this.deps.draftTask(text, { labels, ...(project ? { project } : {}) }).catch(() => undefined)) ?? plain;
+    const about = this.board.state().projects[projectId]?.context?.text;
+    return { labels, ...(project ? { project } : {}), ...(about ? { about } : {}), ...(look ? { look } : {}) };
   }
 
   /** A draft (from draft, maybe changed) added as a task: its title, goal, criteria, labels and priority. */
@@ -187,9 +199,7 @@ export class BoardWork {
     // Without your Claude: the first line, and what was said as the goal if it says more.
     if (!draft) return this.board.create({ ...input, title, ...(text.replace(/\s+/g, ' ') !== title ? { brief: { goal: text } } : {}) }, this.me(), opts.origin);
     const issue = this.board.create({ ...input, title, drafting: true }, this.me(), opts.origin);
-    const labels = labelsFor(this.board.state(), issue.projectId).map((l) => l.name);
-    const project = this.deps.store.getState().projects.find((p) => p.id === issue.projectId)?.name;
-    const done = draft(text, { labels, ...(project ? { project } : {}), ...(opts.look ? { look: opts.look } : {}) })
+    const done = draft(text, this.draftContext(issue.projectId, opts.look))
       .catch(() => undefined)
       .then((d) => {
         try {
@@ -299,7 +309,9 @@ export class BoardWork {
     const issue = own ? own.current : channel.startsWith(WS) ? issueForWorkspace(this.board.state(), channel.slice(WS.length)) : undefined;
     const tools = this.toolsFor(channel, issue, Boolean(opts.plan));
     const parallel = this.parallelNote(channel, issue);
-    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
+    const projectId = this.runProject(channel, issue);
+    const about = projectId ? aboutPrompt(this.board.state(), projectId) : '';
+    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + about + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
     if (!opts.plan) return { tools, brief };
     this.pending.delete(channel);
     return {
@@ -363,10 +375,15 @@ export class BoardWork {
     return this.board.need(issue.id);
   }
 
+  /** The project a run is in: its task's, or its worktree's. */
+  private runProject(channel: string, current: Issue | undefined): string | undefined {
+    const wsId = channel.startsWith(WS) ? channel.slice(WS.length) : undefined;
+    return current?.projectId ?? (wsId ? this.workspaces().find((w) => w.id === wsId)?.projectId : undefined);
+  }
+
   /** Other tasks being worked on in this project right now: so Claudes working side by side know about each other. */
   private parallelNote(channel: string, current: Issue | undefined): string {
-    const wsId = channel.startsWith(WS) ? channel.slice(WS.length) : undefined;
-    const projectId = current?.projectId ?? (wsId ? this.workspaces().find((w) => w.id === wsId)?.projectId : undefined);
+    const projectId = this.runProject(channel, current);
     if (!projectId) return '';
     const state = this.deps.store.getState();
     const busy = busyChannels(state.log);
@@ -409,6 +426,7 @@ export class BoardWork {
   private opened(ws: Workspace, from: string | undefined): void {
     this.names.set(ws.id, ws.name);
     if (ws.kind !== 'worktree') return;
+    void this.describeOnce(ws.projectId);
     const state = this.board.state();
     const linked = (id: string): Issue | undefined => issueForWorkspace(state, id);
     const beluga: Actor = { kind: 'beluga' };
@@ -432,6 +450,27 @@ export class BoardWork {
     if (!this.board.autoTasksOn || !this.deps.store.getState().projects.some((p) => p.id === ws.projectId && p.root)) return;
     const issue = this.board.create({ projectId: ws.projectId, title: titleFromName(ws.name), autoTitle: true, status: 'in_progress', assignee: this.me() }, beluga, 'worktree');
     this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, beluga);
+  }
+
+  /**
+   * A project's first worktree here, and no one has written what it's about (BLG-298): your Claude
+   * takes a quick look at its folder in the background and writes it. Never over one someone
+   * wrote or cleared (a teammate's arriving meanwhile wins), and tried once per project per run.
+   */
+  async describeOnce(projectId: string): Promise<void> {
+    const describe = this.deps.describeProject;
+    if (!describe || this.described.has(projectId) || this.board.state().projects[projectId]?.context) return;
+    const project = this.deps.store.getState().projects.find((p) => p.id === projectId && p.root);
+    if (!project) return;
+    this.described.add(projectId);
+    const text = await describe(project.root, project.name).catch(() => undefined);
+    if (!text || this.board.state().projects[projectId]?.context) return;
+    try {
+      this.board.setContext(projectId, text, `${this.deps.selfName()}’s Claude`);
+    } catch {
+      return; // The project went meanwhile.
+    }
+    this.deps.toast?.(`Claude wrote what ${project.name} is about: Tasks › ⋯ › About This Project`);
   }
 
   private onAction(action: Action): void {

@@ -627,6 +627,11 @@ async function mockSentinelAsk(input: AgentRunInput, tools: NonNullable<AgentRun
 
 const FILLER = /^(?:(?:please|pls|can you|could you|we should|we need to|i want to|i'd like to|let's|lets|make it so)\s+)+/i;
 
+/** The demo's About This Project (it reads no files). */
+export function mockAbout(project: string): string {
+  return [`${project} is a small web app and its API, for a team that ships every week.`, '', '- `src/`: the server (routes, then services, then the database)', '- `web/`: the app people use', '- `tests/`: one file per route'].join('\n');
+}
+
 /** The demo's task writer: a tidy title from the first line, a goal and criteria, labels the words name. */
 export function mockDraft(text: string, ctx: DraftContext): TaskDraft {
   const words = firstLineTitle(text).replace(FILLER, '').replace(/[.!?]+$/, '').split(' ').slice(0, 8).join(' ');
@@ -711,6 +716,10 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     draftTask: async (text, ctx) => {
       await new Promise((r) => setTimeout(r, (ctx.look ? 6000 : 1500) * pace));
       return mockDraft(text, ctx);
+    },
+    describeProject: async (_dir, project) => {
+      await new Promise((r) => setTimeout(r, 4000 * pace));
+      return mockAbout(project);
     },
     // A short name a moment later, as Haiku would give it.
     titlePlan: async (goal) => {

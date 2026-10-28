@@ -29,6 +29,7 @@ import {
   KEEP_ACTIVITY,
   KEEP_PROOF,
   KEEP_REVISIONS,
+  MAX_PROJECT_CONTEXT,
   PRIORITIES,
   PRIORITY_INFO,
   type Priority,
@@ -115,6 +116,8 @@ const MAX_LABELS = 12;
 
 const SavedLabel = z.object({ name: z.string().regex(LABEL_NAME), icon: z.enum(LABEL_ICONS), color: z.enum(LABEL_COLORS), hint: z.string().max(80).optional() });
 
+const SavedContext = z.object({ text: z.string().max(MAX_PROJECT_CONTEXT), by: z.string().max(80), at: z.number().int().min(0) });
+
 const BoardFile = z.object({
   version: z.literal(1),
   // Renamed from autoTasks when it turned off by default (tasks come from plans now): the old key is ignored.
@@ -127,6 +130,8 @@ const BoardFile = z.object({
         next: z.number().int().positive(),
         // A label that doesn't read any more is left out, not the board.
         labels: z.array(z.unknown()).optional().transform((list) => list?.flatMap((l) => { const r = SavedLabel.safeParse(l); return r.success ? [r.data as LabelDef] : []; })),
+        // One that doesn't read is left out, not the project.
+        context: z.unknown().optional().transform((c) => { const r = SavedContext.safeParse(c); return r.success ? r.data : undefined; }),
       }),
     )
     .default({}),
@@ -869,6 +874,25 @@ export class Board {
     this.projects = { ...this.projects, [projectId]: { ...project, labels: own.filter((l) => l.name !== name) } };
     this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
     this.save();
+  }
+
+  /**
+   * What the project is, for Claude writing its tasks (empty: none). Yours is newer than what's
+   * here, always (a teammate's clock may run ahead). From a teammate (`from`), it's kept only if
+   * it's newer than what's here (by time, then text); false when it wasn't kept or changed nothing.
+   */
+  setContext(projectId: string, text: string, by: string, from?: { readonly at: number }): boolean {
+    const clean = text.replace(/\r\n/g, '\n').trim().slice(0, MAX_PROJECT_CONTEXT);
+    const project = this.projectFor(projectId);
+    const had = project.context;
+    if ((had?.text ?? '') === clean && (!from || !had || had.at >= from.at)) return false;
+    if (from && had && (had.at > from.at || (had.at === from.at && had.text >= clean))) return false;
+    const at = from ? from.at : Math.max(Date.now(), (had?.at ?? 0) + 1);
+    // Emptied, it stays (with no text) so an older copy from a teammate doesn't bring it back.
+    this.projects = { ...this.projects, [projectId]: { ...project, context: { text: clean, by: oneLine(by, 80), at } } };
+    this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
+    this.save();
+    return true;
   }
 
   /** Write anything waiting now (on the way out). */

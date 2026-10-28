@@ -25,6 +25,8 @@ export const FEATURE_NAMES = {
   'team.board': 'team boards',
   /** Plan drafts shared with teammates to review (core/team). */
   'team.plans': 'shared plans',
+  /** A teamed project's About This Project, for Claude writing its tasks (core/team, BLG-298). */
+  'team.context': 'project context',
   /** Profile pictures, sent once per change and kept by the Macs that see them (net/mesh/avatars.ts). */
   'profile.avatar': 'profile pictures',
 } as const;
@@ -35,7 +37,7 @@ export type Feature = keyof typeof FEATURE_NAMES;
 export const SHARE_FEATURES: readonly Feature[] = ['share.project', 'share.folder', 'share.copy', 'share.history'];
 
 /** What a Mac takes while its team boards run (core/team). */
-export const TEAM_FEATURES: readonly Feature[] = ['team.board', 'team.plans'];
+export const TEAM_FEATURES: readonly Feature[] = ['team.board', 'team.plans', 'team.context'];
 
 /** What the network itself always does. */
 export const MESH_FEATURES: readonly Feature[] = ['chat.files', 'chat.claude', 'profile.avatar'];

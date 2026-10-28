@@ -36,6 +36,8 @@ export type NativeSheet =
   | { readonly kind: 'new_label'; readonly projectId: string; readonly issueId?: string }
   /** Sync a project's tasks with Linear: connect a key and a team, or see how it syncs. */
   | { readonly kind: 'task_sync'; readonly projectId: string }
+  /** About This Project: what Claude reads when it writes a task there, shared with teammates (BLG-298). */
+  | { readonly kind: 'project_context'; readonly projectId: string }
   /** A new plan with Claude: what it's for, the project (unset: pick one), how far it runs on its own. */
   | { readonly kind: 'new_plan'; readonly projectId?: string }
   /** A new sentinel (docs/sentinel.md §3): from a recipe, or built yourself; `projectId` 'mac' is Your Mac. */
