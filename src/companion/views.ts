@@ -11,7 +11,8 @@ import { type Plan, planForHome, planTitle } from '../core/plans/model.js';
 import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
 import { type RunSummary, type Sentinel, type SentinelState, activeSentinelChat, firstLine, isLive, isSentinelChat, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById, sentinelChatTitle } from '../core/sentinel/model.js';
-import { type Dashboard, type Tile, metricOf, outputLook, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
+import { type Dashboard, type Tile, metricOf, outputLook, tileColumns, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
+import { storageSources } from '../core/sentinel/columns.js';
 import { COMPARE, changeText, deltaOf, formatMetric } from '../core/sentinel/metrics.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
@@ -1025,9 +1026,23 @@ function tileView(s: SentinelState, d: Dashboard, t: Tile): DashboardTileView {
     return { ...base, output: { look, text: clip(text, 16_000), ...(o.cut || text.length > 16_000 ? { cut: true } : {}) }, ...(o.runId ? { runId: clip(o.runId, 200) } : {}), ...(o.at ? { at: Math.round(o.at) } : {}) };
   }
   if (t.kind === 'table' && m?.rows) {
-    const columns = (m.columns?.length ? m.columns : Object.keys(m.rows[0] ?? {})).slice(0, 20);
+    // The tile's own order, headings and hidden columns (BLG-347); a storage chip's bucket and path columns stay out.
+    const present = m.columns?.length ? m.columns : Object.keys(m.rows[0] ?? {});
+    const quiet = new Set(storageSources(m.columnTypes, present));
+    const typedBy = new Map((m.columnTypes ?? []).map((c) => [c.key, c]));
+    const shown = tileColumns(present, t.columns).filter((c) => !c.hidden && !(quiet.has(c.key) && !t.columns?.some((o) => o.key === c.key))).slice(0, 20);
+    const rows = m.rows.slice(0, 50);
     const cell = (v: unknown): string | number | boolean | null => (v === null || v === undefined ? null : typeof v === 'number' || typeof v === 'boolean' ? v : clip(String(v), 300));
-    return { ...base, table: { columns: columns.map((c) => clip(c, 80)), rows: m.rows.slice(0, 50).map((r) => columns.map((c) => cell(r[c]))), total: m.rows.length }, ...(m.rowsAt ? { at: Math.round(m.rowsAt) } : {}) };
+    const typed = shown.flatMap((c, col) => {
+      const ty = typedBy.get(c.key);
+      return ty ? [{ col, key: clip(c.key, 80), kind: ty.type, values: rows.map((r) => (typeof r[c.key] === 'string' && r[c.key] ? clip(String(r[c.key]), 1200) : null)) }] : [];
+    });
+    const heading = (c: { key: string; label?: string }): string => clip(c.label ?? typedBy.get(c.key)?.label ?? c.key, 80);
+    return {
+      ...base,
+      table: { columns: shown.map(heading), rows: rows.map((r) => shown.map((c) => cell(r[c.key]))), total: m.rows.length, ...(typed.length ? { typed, metric: { sentinelId: clip(m.sentinelId, 200), name: clip(m.name, 80) } } : {}) },
+      ...(m.rowsAt ? { at: Math.round(m.rowsAt) } : {}),
+    };
   }
   if (t.kind === 'text' && sn) {
     const last = lastRunOf(s, sn.id);

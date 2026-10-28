@@ -1,4 +1,5 @@
 import type { Row, Source } from '../../shared/view-spec.js';
+import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
 
 /**
@@ -206,6 +207,8 @@ export interface MetricSpec {
   readonly x?: string;
   /** A series of rows: the column with each point's value (the first number column when none). */
   readonly y?: string;
+  /** Rows: what kind of value some columns hold (a document, a storage object, a link, a path; columns.ts). */
+  readonly columns?: readonly MetricColumn[];
 }
 
 export const METRIC_KINDS = ['number', 'series', 'rows', 'output'] as const;
@@ -232,6 +235,8 @@ export interface MeasureStep extends StepBase {
   readonly metrics: readonly MetricSpec[];
   /** Rows kept per run for a rows metric (200 by default, at most). */
   readonly keep?: number;
+  /** Days the documents its typed columns save are kept (14 by default). */
+  readonly filesKeepDays?: number;
 }
 
 export type Step = ClaudeStep | ScriptStep | NotifyStep | HttpStep | PrStep | MergeStep | MessageStep | FriendStep | TriggerStep | MeasureStep;
@@ -546,6 +551,8 @@ export interface MetricSeries {
   readonly points: readonly MetricPoint[];
   readonly rows?: readonly Row[];
   readonly columns?: readonly string[];
+  /** Rows: the typed columns (a document's cell is its file's name in the run's folder, `rowsRunId`'s). */
+  readonly columnTypes?: readonly MetricColumn[];
   /** A series metric's latest array, in order. */
   readonly series?: readonly SeriesPoint[];
   /** An output metric's latest output. */

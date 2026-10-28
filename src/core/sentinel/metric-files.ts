@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renam
 import path from 'node:path';
 import { readJson, safeName, writeJson } from '../../net/mesh/files.js';
 import { KEEP_MS, KEEP_POINTS, type MetricLine, prunePoints, readLine } from './metrics.js';
+import type { MetricColumn } from './columns.js';
 import type { Better, MetricKind, MetricUnit } from './model.js';
 
 /**
@@ -16,6 +17,8 @@ export interface MetricMeta {
   readonly unit: MetricUnit;
   readonly better: Better;
   readonly kind: MetricKind;
+  /** A rows metric's typed columns (a document's cell is its file's name in its run's folder). */
+  readonly columnTypes?: readonly MetricColumn[];
 }
 
 /** How many lines a file may grow past its limit before it's rewritten (so pruning isn't every run). */

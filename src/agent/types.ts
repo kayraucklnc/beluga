@@ -161,6 +161,8 @@ export interface ToolTile {
   readonly show?: 'auto' | 'markdown' | 'tree' | 'table' | 'text';
   readonly text?: 'headline' | 'report';
   readonly compare?: 'previous' | 'day' | 'week' | 'month';
+  /** A table's own columns: in order, renamed or hidden. */
+  readonly columns?: ReadonlyArray<{ readonly key: string; readonly label?: string; readonly hidden?: boolean }>;
 }
 
 /** Dashboards and numbers as Claude's tools (agent/dashboard-tools.ts, server `beluga_dashboard`): each answers in words. */

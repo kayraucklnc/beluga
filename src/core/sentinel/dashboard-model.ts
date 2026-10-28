@@ -69,6 +69,27 @@ export interface Tile {
   readonly text?: 'headline' | 'report';
   /** Its own compare, pinned (none: the dashboard's). */
   readonly compare?: Compare;
+  /** A table's columns as it shows them (BLG-347): in this order first, renamed or hidden; the rest after, as they come. */
+  readonly columns?: readonly TileColumn[];
+}
+
+/** A table tile's own say over a column: its heading, or hidden from the grid (a row still shows it when opened). */
+export interface TileColumn {
+  readonly key: string;
+  readonly label?: string;
+  readonly hidden?: boolean;
+}
+
+/**
+ * A table's columns as a tile shows them: those it names first, in its order (renamed, hidden ones
+ * marked), then the rest as they come. Columns it names that the rows don't have are left out.
+ */
+export function tileColumns(present: readonly string[], own: readonly TileColumn[] | undefined): Array<{ readonly key: string; readonly label?: string; readonly hidden?: boolean }> {
+  if (!own?.length) return present.map((key) => ({ key }));
+  const has = new Set(present);
+  const named = own.filter((c) => has.has(c.key));
+  const seen = new Set(named.map((c) => c.key));
+  return [...named.map((c) => ({ key: c.key, ...(c.label?.trim() ? { label: c.label.trim() } : {}), ...(c.hidden ? { hidden: true } : {}) })), ...present.filter((k) => !seen.has(k)).map((key) => ({ key }))];
 }
 
 export interface Dashboard {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { API, type Method } from '../ipc/api.js';
-import { ChatMessageView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, SubAgentDetailView, TerminalView, TerminalsView, TranscriptView, TurnView, VoiceMacView } from './protocol.js';
+import { ChatMessageView, DocumentView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, SignedLinkView, SubAgentDetailView, TerminalView, TerminalsView, TranscriptView, TurnView, VoiceMacView } from './protocol.js';
 
 /**
  * Every call the phone may make, typed: each `phone` method of coverage.ts with its arguments
@@ -142,6 +142,9 @@ export const PhoneCalls = {
   // 1.22 (BLG-244): a number over time (its points, oldest first), and pull to refresh a dashboard.
   'sentinel.metricRead': entry('sentinel.metricRead', z.object({ metric: z.object({ name: z.string(), label: z.string(), unit: z.string() }).passthrough(), lines: z.array(z.object({ at: z.number(), runId: z.string(), value: z.number().optional() }).passthrough()) })),
   'dashboard.refresh': entry('dashboard.refresh', z.object({ total: z.number() })),
+  // 1.25 (BLG-345): a table's document chip, read through the Mac, and a storage chip's link signed there.
+  'sentinel.document': entry('sentinel.document', DocumentView),
+  'sentinel.signStorage': entry('sentinel.signStorage', SignedLinkView),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;

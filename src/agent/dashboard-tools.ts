@@ -28,6 +28,11 @@ const TILE = {
   show: z.enum(['auto', 'markdown', 'tree', 'table', 'text']).optional().describe('How an output tile shows it: auto, Markdown, a JSON tree, a table, or plain text'),
   text: z.enum(['headline', 'report']).optional().describe('A text tile: the sentinel’s last headline, or its last report'),
   compare: compare.optional().describe('Pin this tile’s compare; none follows the dashboard’s'),
+  columns: z
+    .array(z.object({ key: z.string().min(1).max(80).describe('The column (metric_list shows them)'), label: z.string().max(80).optional().describe('Its heading'), hidden: z.boolean().optional().describe('Out of the grid (an opened row still shows it)') }))
+    .max(40)
+    .optional()
+    .describe('A table tile’s columns: in this order first, renamed or hidden; the rest follow as they come. [] gives them back. Use it to keep a big column (html_content) out of the grid without changing the query'),
 };
 
 /** `chart` is what a series tile was called: still taken. */
