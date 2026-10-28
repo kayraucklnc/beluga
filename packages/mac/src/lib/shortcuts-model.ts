@@ -365,7 +365,8 @@ export function caveat(id: string, chord: string): string | undefined {
   const c = parseChord(chord);
   const d = BY_ID.get(id);
   if (!c || !d) return undefined;
-  if (c.ctrl && !c.cmd && d.scope === 'app') return `In a terminal, ${chordLabel(chord)} goes to the shell`;
+  // In a terminal, keys without ⌘ are the shell's (App.tsx); only ⌃Tab still moves places.
+  if (!c.cmd && d.scope === 'app' && !(c.ctrl && c.key === 'Tab')) return `In a terminal, ${chordLabel(chord)} goes to the shell`;
   if (d.menu && !menuAccel(chord)) return 'The menu bar can’t show this key, but it works';
   return undefined;
 }

@@ -233,6 +233,38 @@ describe('setup and run scripts', () => {
     expect(looked).toEqual([]);
   }, 60_000);
 
+  it('a setup guessed from a lockfile is checked by Claude once: the same answer keeps the guess, a fuller one is kept as Claude’s', async () => {
+    hub = await startHub({ keys });
+    const dir = repo({ 'package.json': '{}', 'package-lock.json': '{}', 'Makefile': 'dev:\n\techo dev\n' });
+    const looked: Array<{ setup: boolean; run: boolean }> = [];
+    const kay = await solo(dir, { agent: { workOutScripts: async (_d, want) => (looked.push(want), { setup: { command: 'npm install && (cd app && npm install)' } }) } });
+    const id = projectOf(kay.workspaces).id;
+    expect(projectOf(kay.workspaces).scripts?.setup).toEqual({ command: 'npm install', source: 'detected' });
+    await kay.session.workspaces!.newWorktree(id, 'guess');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.source === 'claude', 4000);
+    expect(looked).toEqual([{ setup: true, run: false }]);
+    expect(projectOf(kay.workspaces).scripts?.setup?.command).toBe('npm install && (cd app && npm install)');
+  }, 60_000);
+
+  it("your Claude in a worktree is told the setup, and can correct it for the next worktree", async () => {
+    hub = await startHub({ keys });
+    const dir = repo();
+    const kay = await solo(dir);
+    const id = projectOf(kay.workspaces).id;
+    kay.bench.setScript(id, 'setup', 'true');
+    const ws = await kay.session.workspaces!.newWorktree(id, 'tells');
+    const tools = kay.bench.setupForRun(ws!.id)!;
+    expect(tools.brief).toContain('Beluga runs its setup once: `true` (set by the owner)');
+    expect(tools.set('true', 'same')).toBe('The setup is already `true`.');
+    expect(tools.set('true && (cd app && npm install)', 'app had no node_modules')).toContain('Saved');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.source === 'claude', 4000);
+    expect(projectOf(kay.workspaces).scripts?.setup?.command).toBe('true && (cd app && npm install)');
+    // Its runs get them.
+    kay.session.askOwnClaude('hi', `ws:${ws!.id}`);
+    await waitFor(() => kay.runs.length === 1, 4000);
+    expect(kay.runs[0]?.setup?.brief).toContain('`true && (cd app && npm install)` (worked out by Claude)');
+  }, 60_000);
+
   it("when the run fails it asks whether to fix it; yes has Claude find the right command, which starts", async () => {
     hub = await startHub({ keys });
     const dir = repo();

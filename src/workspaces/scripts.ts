@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { belugaEnvBoth } from '../core/beluga-env.js';
@@ -106,14 +106,49 @@ function toolCommand(root: string, targets: readonly string[]): string | undefin
   return undefined;
 }
 
-/** A sensible setup command from the files in the project (its Makefile's `setup`, else e.g. package-lock.json → npm install). */
+/** A sensible setup command from the files in the project (its Makefile's `setup`, else e.g. package-lock.json → npm install, plus each nested package of its own). */
 export function detectSetup(root: string): string | undefined {
   const tool = toolCommand(root, SETUP_TARGETS);
   if (tool) return tool;
-  for (const [file, command] of LOCKFILES) if (existsSync(path.join(root, file))) return command;
-  if (existsSync(path.join(root, 'package.json'))) return 'npm install';
+  const own = installIn(root);
+  if (own && !existsSync(path.join(root, 'package.json'))) return own;
+  const nested = nestedPackages(root).map((dir) => `(cd ${dir} && ${installIn(path.join(root, dir))})`);
+  const all = [...(own ? [own] : []), ...nested];
+  if (all.length) return all.join(' && ');
   if (existsSync(path.join(root, 'requirements.txt'))) return 'python3 -m venv .venv && .venv/bin/pip install -r requirements.txt';
   return undefined;
+}
+
+/** The install a folder's own lockfile (or bare package.json) asks for. */
+function installIn(dir: string): string | undefined {
+  for (const [file, command] of LOCKFILES) if (existsSync(path.join(dir, file))) return command;
+  return existsSync(path.join(dir, 'package.json')) ? 'npm install' : undefined;
+}
+
+/** Where monorepos keep their packages, one level down. */
+const PACKAGE_DIRS = ['packages', 'apps', 'services', 'libs'];
+
+/**
+ * JavaScript packages under packages/, apps/… that install on their own: their own lockfile, and
+ * not part of the root's workspaces (npm/yarn "workspaces", pnpm-workspace.yaml) nor already
+ * installed by the root's own install scripts. A root `npm install` leaves these empty.
+ */
+export function nestedPackages(root: string): string[] {
+  if (existsSync(path.join(root, 'pnpm-workspace.yaml'))) return [];
+  const pkg = readJson(path.join(root, 'package.json')) as { workspaces?: unknown; scripts?: Record<string, unknown> } | undefined;
+  if (pkg?.workspaces) return [];
+  const hooks = ['preinstall', 'install', 'postinstall', 'prepare'].map((s) => pkg?.scripts?.[s]).filter((s): s is string => typeof s === 'string').join('\n');
+  return PACKAGE_DIRS.flatMap((parent) => {
+    let names: string[];
+    try {
+      names = readdirSync(path.join(root, parent), { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name).sort();
+    } catch {
+      return [];
+    }
+    return names
+      .map((name) => `${parent}/${name}`)
+      .filter((dir) => existsSync(path.join(root, dir, 'package.json')) && JS_LOCKS.some(([file]) => existsSync(path.join(root, dir, file))) && !hooks.includes(dir));
+  });
 }
 
 const JS_LOCKS: ReadonlyArray<readonly [string, string]> = [

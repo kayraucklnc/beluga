@@ -217,6 +217,26 @@ describe('env files and safe merges', () => {
     expect(mgr.envChanges(ws.id).map((c) => [c.file, c.binary])).toEqual([['.aws/config', true]]);
   });
 
+  it('copies deep, direnv, Wrangler and .worktreeinclude files too, never tracked ones or examples', async () => {
+    const deep = path.join(repo, 'apps', 'web', 'config', 'local');
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(path.join(deep, '.env'), 'DEEP=1\n');
+    writeFileSync(path.join(repo, '.envrc'), 'export A=1\n');
+    writeFileSync(path.join(repo, '.dev.vars'), 'B=2\n');
+    writeFileSync(path.join(repo, 'secrets.json'), '{}\n');
+    writeFileSync(path.join(repo, 'notes.txt'), 'not mine to copy\n');
+    writeFileSync(path.join(repo, '.worktreeinclude'), 'secrets.json\n');
+    mkdirSync(path.join(repo, 'node_modules', 'pkg'), { recursive: true });
+    writeFileSync(path.join(repo, 'node_modules', 'pkg', '.env'), 'X=1\n');
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'deep');
+    expect(readFileSync(path.join(ws.path, 'apps', 'web', 'config', 'local', '.env'), 'utf8')).toBe('DEEP=1\n');
+    expect(existsSync(path.join(ws.path, '.envrc'))).toBe(true);
+    expect(existsSync(path.join(ws.path, '.dev.vars'))).toBe(true);
+    expect(existsSync(path.join(ws.path, 'secrets.json'))).toBe(true);
+    expect(existsSync(path.join(ws.path, 'notes.txt'))).toBe(false);
+    expect(existsSync(path.join(ws.path, 'node_modules', 'pkg', '.env'))).toBe(false);
+  });
+
   it('only merges into the main folder when it is on the base branch', async () => {
     const ws = await mgr.createWorktree(repos()[0]!.id, 'side');
     commitIn(ws.path, 'x.txt', 'x', 'x');

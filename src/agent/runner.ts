@@ -34,6 +34,8 @@ import { ownerMcpServers } from './owner-mcp.js';
 import { McpConnect, claudeMcpSession } from './mcp-connect.js';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, RunProcess, Steer } from './types.js';
 import { keepLines, trackedSpawn } from './claude-process.js';
+import { keptBashInput } from '../workspaces/test-procs.js';
+import { SCRATCH_DIR } from '../shared/scratch-dir.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
@@ -209,7 +211,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
         // Your own MCP servers first, so a name of Beluga's always means Beluga's.
-        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
+        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined, askOnly ? undefined : input.setup), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -225,7 +227,11 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                   const decision = decideTool(hookInput.tool_name, toolInput, policy);
                   if (decision === 'deny') return verdict('deny', denyReason(hookInput.tool_name, toolInput, policy));
                   // A sub-agent is told where its own scratch folder is, so what it makes shows on its page.
-                  const patched = scratchRoot ? withAgentScratch(hookInput.tool_name, toolInput, hookInput.tool_use_id, scratchRoot) : undefined;
+                  const scratched = scratchRoot ? withAgentScratch(hookInput.tool_name, toolInput, hookInput.tool_use_id, scratchRoot) : undefined;
+                  // In a worktree, what's kept on purpose is made to outlive the turn (see workspaces/test-procs.ts).
+                  const keptLog = path.join(cwd, SCRATCH_DIR, `kept-${hookInput.tool_use_id.slice(-8)}.log`);
+                  const kept = input.env?.KLAUD_WORKTREE ? keptBashInput(hookInput.tool_name, scratched ?? toolInput, keptLog) : undefined;
+                  const patched = kept ?? scratched;
                   const allow = (reason: string) => (patched ? { hookSpecificOutput: { ...verdict('allow', reason).hookSpecificOutput, updatedInput: patched } } : verdict('allow', reason));
                   if (decision === 'allow') return patched ? allow('Allowed by Beluga.') : {};
                   if (decision === 'secret') return (await input.canUseSecret?.(hookInput.tool_name, toolInput)) ? allow('Approved by the machine owner.') : verdict('deny', SECRET_DECLINED);
@@ -246,7 +252,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.phoneBrief ?? '') + (input.sentinelBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.phoneBrief ?? '') + (input.sentinelBrief ?? '') + (input.setup && !askOnly ? input.setup.brief : '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),

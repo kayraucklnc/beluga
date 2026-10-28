@@ -880,6 +880,8 @@ export class WorkspaceManager {
       mkdirSync(path.dirname(ws.path), { recursive: true });
       await g.git(ws.projectRoot, ['worktree', 'add', ws.path, ws.branch]);
     }
+    // Back from its branch alone (or an archive from before env files were kept): the main folder's env files again.
+    if (ws.kind === 'worktree') await copyEnvFiles(ws.projectRoot, ws.path);
     this.patchRecord(id, { archived: false, archive: undefined });
     await this.refresh();
     return manifest;

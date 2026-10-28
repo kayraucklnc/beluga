@@ -72,6 +72,8 @@ export interface AgentHostDeps {
   /** Your phone (core/phone, BLG-150), your own runs: tools to act on it, saving screenshots in `scratchDir`. `env` lets Bash use adb/scrcpy (BLG-174). */
   readonly phone?: (scratchDir?: string) => { readonly tools: import('../agent/types.js').PhoneTools; readonly brief: string; readonly env?: Record<string, string> } | undefined;
   /** How freely Claude may use the phone now (off · ask · use · full), for the owner-approval gate. */
+  /** Your own worktree runs: the project's setup, and Claude's tool to correct it (core/workbench). */
+  readonly setup?: (channel: string) => import('../agent/types.js').SetupTools | undefined;
   readonly phoneUse?: () => 'off' | 'ask' | 'use' | 'full';
 }
 
@@ -1151,6 +1153,8 @@ export class AgentHost {
         plan: body.plan,
         // A plan's conversation plans; it doesn't move to a worktree.
         ...(move && !plans?.tools ? { continueInWorktree: move } : {}),
+        // Your own Claude in a worktree keeps the project's setup true for the next one.
+        ...(worktree && from === this.selfId && body.channel.startsWith('ws:') ? (({ setup }) => (setup ? { setup } : {}))({ setup: this.deps.setup?.(body.channel) }) : {}),
         onProcess: (p) => {
           proc = p;
           watch(p);

@@ -1,16 +1,34 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-/** Files and folders that hold local secrets/config and aren't in git, copied into new worktrees. */
-const ENV_FILE = /^\.env(\..+)?$/;
+/**
+ * Files and folders that hold local secrets/config and aren't in git, copied into new worktrees:
+ * `.env*`, direnv's `.envrc` and Wrangler's `.dev.vars` (all KEY=VALUE), and `.ssh`/`.aws` folders.
+ * A `.worktreeinclude` at the root (gitignore patterns, as Claude Code reads it) adds any others.
+ */
+const ENV_FILE = /^(\.env(\..+)?|\.envrc|\.dev\.vars(\..+)?)$/;
 const ENV_DIRS = new Set(['.ssh', '.aws']);
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.beluga', '.klaud', '.klaude', '.next', 'vendor']);
 const MAX_DEPTH = 3;
+const INCLUDE_FILE = '.worktreeinclude';
 
-/** Relative paths of env files (and files inside .ssh/.aws folders) in a checkout. */
+const isEnvName = (name: string): boolean => ENV_FILE.test(name) && !/\.(example|sample|template)$/.test(name);
+
+/** Untracked files git lists in a checkout (none when it isn't one, or git can't say). */
+function untracked(root: string, args: readonly string[]): string[] {
+  try {
+    const out = execFileSync('git', ['ls-files', '--others', '-z', ...args], { cwd: root, encoding: 'utf8', timeout: 15_000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.split('\0').filter((f) => f && !f.endsWith('/'));
+  } catch {
+    return [];
+  }
+}
+
+/** Relative paths of env files (files inside .ssh/.aws folders, and what .worktreeinclude names) in a checkout. */
 export function findEnvFiles(root: string): string[] {
-  const found: string[] = [];
+  const found = new Set<string>();
   const walk = (dir: string, rel: string, depth: number): void => {
     let entries;
     try {
@@ -20,14 +38,22 @@ export function findEnvFiles(root: string): string[] {
     }
     for (const e of entries) {
       const relPath = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isFile() && ENV_FILE.test(e.name) && !/\.(example|sample|template)$/.test(e.name)) found.push(relPath);
+      if (e.isFile() && isEnvName(e.name)) found.add(relPath);
       else if (e.isDirectory() && ENV_DIRS.has(e.name)) {
-        for (const f of readdirSync(path.join(dir, e.name), { withFileTypes: true })) if (f.isFile()) found.push(`${relPath}/${f.name}`);
+        for (const f of readdirSync(path.join(dir, e.name), { withFileTypes: true })) if (f.isFile()) found.add(`${relPath}/${f.name}`);
       } else if (e.isDirectory() && depth < MAX_DEPTH && !SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) walk(path.join(dir, e.name), relPath, depth + 1);
     }
   };
   walk(root, '', 0);
-  return found.sort();
+  // Deeper than the walk goes (a monorepo's apps/web/config/local/.env): git lists the ignored files (ignored folders
+  // like node_modules folded into one line) and the untracked ones it doesn't ignore.
+  const skipped = (rel: string) => rel.split('/').slice(0, -1).some((d) => SKIP_DIRS.has(d));
+  const listed = [...untracked(root, ['--ignored', '--exclude-standard', '--directory']), ...untracked(root, ['--exclude-standard'])];
+  for (const rel of listed) if (isEnvName(path.posix.basename(rel)) && !skipped(rel)) found.add(rel);
+  if (existsSync(path.join(root, INCLUDE_FILE))) {
+    for (const rel of untracked(root, ['--ignored', `--exclude-from=${INCLUDE_FILE}`])) if (!skipped(rel)) found.add(rel);
+  }
+  return [...found].sort();
 }
 
 /** Copy env files from the main folder into a new worktree (only ones the worktree doesn't have). */
@@ -36,6 +62,7 @@ export async function copyEnvFiles(from: string, to: string): Promise<string[]> 
   for (const rel of findEnvFiles(from)) {
     const target = path.join(to, rel);
     if (existsSync(target)) continue;
+    mkdirSync(path.dirname(target), { recursive: true });
     cpSync(path.join(from, rel), target, { recursive: true, preserveTimestamps: true });
     copied.push(rel);
   }

@@ -111,6 +111,8 @@ function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || isRecording()) return;
+      // In a terminal, keys without ⌘ are the shell's (⌥1 types there, ⌃K kills the line); only ⌃Tab still moves places.
+      if (!e.metaKey && (e.target as Element | null)?.closest?.('.xterm') && !(e.ctrlKey && e.key === 'Tab')) return;
       const state = client.store.getState();
       const bindings = getBindings();
       // A request waiting for you: ⌃Y, ⌃N, ⌃A (not while typing).
@@ -124,8 +126,6 @@ function useShortcuts() {
       }
       const id = shortcutFor(bindings, e, APP_SHORTCUTS);
       if (!id) return;
-      // ⌃ and a letter belong to the shell in a terminal (⌃R, ⌃G…).
-      if (e.ctrlKey && !e.metaKey && /^Key[A-Z]$/.test(e.code) && (e.target as HTMLElement | null)?.closest?.('.xterm')) return;
       e.preventDefault();
       fromKey(id, () => {
         if (id === 'place-next' || id === 'place-prev') actions.run({ type: 'view', view: { kind: stepPlace(state, id === 'place-next' ? 1 : -1) } });

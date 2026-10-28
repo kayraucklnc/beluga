@@ -162,6 +162,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       assistant: (channel, from) => assistantOf(session)?.forRun(channel, from) ?? assistantOf(session)?.forChat(channel, from),
       phone: (scratchDir) => companionOf(session)?.control.toolsFor(scratchDir),
       phoneUse: () => companionOf(session)?.control.useLevel() ?? 'off',
+      setup: (channel) => workbench?.setupForRun(channel.slice(3)),
     });
     const remote = new RemoteWork({
       store: opts.store,

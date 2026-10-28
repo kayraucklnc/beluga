@@ -224,7 +224,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.phone.wifi` | ✓ Settings › Phone › Over Wi‑Fi: Use over Wi‑Fi while the phone is on a cable (turns on its Wireless debugging, reached through the link), or Turn Off (BLG-187) |
 | `companion.phone.pairCable` | ✓ Settings › Phone › On the cable › Pair over the Cable, when Beluga is on the plugged-in phone but it isn't paired with this Mac (BLG-190) |
 | `companion.phone.settings` | ✓ Settings › Phone › On the cable › Open on the Phone, while USB debugging is off: the phone shows its Developer options, or About phone (BLG-190) |
-| `companion.phone.act` | ✓ the Your phone page's live mirror (full size, from the Phone tab's ⤢; the sidebar's Your phone opens Your Mac's chat with the phone beside it, BLG-196): click to tap, drag to swipe, the hardware-key buttons, the type line (BLG-171) |
+| `companion.phone.act` | ✓ the Your phone page's live mirror (full size, from the Phone tab’s ⤢ in Your Mac’s panel, BLG-196, BLG-292): click to tap, drag to swipe, the hardware-key buttons, the type line (BLG-171) |
 | `companion.phone.macros` | ✓ the Your phone page's Macros strip: the saved flows (BLG-175) |
 | `companion.phone.macroRun` | ✓ the Your phone page's Macros strip › Run |
 | `companion.phone.macroDelete` | ✓ the Your phone page's Macros strip › a macro's × |

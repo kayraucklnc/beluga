@@ -82,10 +82,11 @@ export function buildScratchAppend(dir: string): string {
 export function buildKeepAppend(): string {
   return [
     '',
-    'Processes you start here (dev servers, watchers, test runs) are stopped when your turn ends. To leave one',
-    'running on purpose (the user asked to keep it up), start it with BELUGA_KEEP=1 in front, e.g.',
-    '`BELUGA_KEEP=1 npm run dev &`, and say in your answer that it is still running. Only a server or watcher the',
-    'user asked for: never a test run (vitest, playwright, an e2e run), which is always stopped.',
+    'Processes you start here (dev servers, watchers, test runs) are stopped when your turn ends. When the user',
+    'asks you to run or start a server, an app or a watcher (or to keep one up), keep it: start it with',
+    'BELUGA_KEEP=1 in front, e.g. `BELUGA_KEEP=1 npm run dev &` (run_in_background works too: Beluga keeps it',
+    'and tells you where its output goes), and say in your answer that it is still running. Not for one you only',
+    'started to check something yourself, and never a test run (vitest, playwright, an e2e run): always stopped.',
   ].join('\n');
 }
 
@@ -100,6 +101,23 @@ export function buildCommitAppend(): string {
     'end it: one commit with a short message in the style of `git log` here (no attribution lines unless the',
     'repo uses them). Leave out scratch files, build output and anything secret. Never push, merge, rebase or',
     'open a pull request unless asked: the owner does that from Beluga. If the request says not to run git, don\'t.',
+  ].join('\n');
+}
+
+/**
+ * A worktree's run: the setup Beluga ran when it was made, and that Claude keeps it true (with
+ * set_project_setup) when it finds something the setup should have installed and didn't.
+ */
+export function buildSetupAppend(project: string, command: string | undefined, source: string | undefined): string {
+  const from = source === 'detected' ? 'guessed from its files' : source === 'claude' ? 'worked out by Claude' : source === 'yours' ? 'set by the owner' : source ? `from its ${source}` : '';
+  return [
+    '',
+    command
+      ? `When a worktree of ${project} is made, Beluga runs its setup once: \`${command}\`${from ? ` (${from})` : ''}.`
+      : `${project} has no setup: new worktrees of it install nothing.`,
+    'If you find this worktree missing something that setup should have done (dependencies not installed in a',
+    'sub-package, a step you had to run first), do it, then call mcp__beluga__set_project_setup with the whole',
+    'command a fresh worktree needs (chained with &&) so the next one comes ready. Only for that; never for a one-off.',
   ].join('\n');
 }
 
