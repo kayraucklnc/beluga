@@ -84,10 +84,12 @@ export function UsageView() {
   return (
     <div className={s.page}>
       <div className={s.inner}>
-        <div className={s.summary}>
-          <PlanCard state={state} now={now} />
-          <ActivityCard state={state} now={now} />
-          <EarningsSummaryCard />
+        <div className={s.summaryFit}>
+          <div className={s.summary}>
+            <PlanCard state={state} now={now} />
+            <ActivityCard state={state} now={now} />
+            <EarningsSummaryCard />
+          </div>
         </div>
         <StorageCard rows={rows} measuring={measuring} measured={measured} onMeasure={measure} />
         {measured ? <CleanupCard items={cleanups(state, rows, now)} state={state} onDone={measure} /> : null}
