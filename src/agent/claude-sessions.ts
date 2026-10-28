@@ -65,7 +65,11 @@ const summaryOf = (s: Info): ConversationSummary => ({ sessionId: s.sessionId, t
 
 /** Transcript files filed under one spelling of a folder. */
 function sessionFilesIn(dir: string): string[] {
-  const folder = path.join(claudeConfigDir(), 'projects', encodeProjectDir(dir));
+  return transcriptsIn(path.join(claudeConfigDir(), 'projects', encodeProjectDir(dir)));
+}
+
+/** The transcript files in one of Claude Code's project folders. */
+function transcriptsIn(folder: string): string[] {
   if (!existsSync(folder)) return [];
   try {
     return readdirSync(folder)
@@ -149,6 +153,49 @@ export async function listConversations(dir: string, limit = 50): Promise<Conver
     }
   }
   return [...found.values()].sort((a, b) => b.lastModified - a.lastModified).slice(0, limit);
+}
+
+/** A conversation found under a folder (BLG-321): where it ran, and how big its transcript is. */
+export interface FoundConversation extends ConversationSummary {
+  readonly cwd: string;
+  readonly bytes: number;
+}
+
+/** How many of a folder's newest transcripts are read for a list (each read is a peek at its ends). */
+const UNDER_MAX = 150;
+
+/**
+ * Every Claude Code conversation that ran in a folder or in any folder inside it (Terminal, an
+ * IDE, another tool), newest first, to bring one into Beluga. Claude Code's folder names can't be
+ * told apart ("a/b-c" and "a-b/c" are filed alike), so each transcript's own folder decides.
+ */
+export async function conversationsUnder(dir: string, limit = UNDER_MAX): Promise<FoundConversation[]> {
+  const projects = path.join(claudeConfigDir(), 'projects');
+  let names: string[];
+  try {
+    names = readdirSync(projects);
+  } catch {
+    return [];
+  }
+  const roots = pathVariants(dir);
+  const prefixes = roots.map(encodeProjectDir);
+  const exact = new Set(prefixes);
+  const inside = (cwd: string): boolean => pathVariants(cwd).some((c) => roots.some((r) => c === r || c.startsWith(`${r}/`)));
+  const files: Array<{ file: string; folder: string; mtime: number; size: number }> = [];
+  for (const folder of names.filter((n) => prefixes.some((p) => n === p || n.startsWith(`${p}-`)))) {
+    for (const file of transcriptsIn(path.join(projects, folder))) {
+      const st = await stat(file).catch(() => undefined);
+      if (st?.isFile()) files.push({ file, folder, mtime: st.mtimeMs, size: st.size });
+    }
+  }
+  const out: FoundConversation[] = [];
+  for (const f of files.sort((a, b) => b.mtime - a.mtime).slice(0, limit)) {
+    const info = await summarizeFile(f.file);
+    // No folder in it: only where it's filed under exactly this one.
+    const cwd = info?.cwd ?? (exact.has(f.folder) ? path.resolve(dir) : undefined);
+    if (info && cwd && inside(cwd)) out.push({ ...summaryOf(info), cwd, bytes: f.size });
+  }
+  return out;
 }
 
 async function messagesOf(sessionId: string, dir: string): Promise<TranscriptMessage[]> {

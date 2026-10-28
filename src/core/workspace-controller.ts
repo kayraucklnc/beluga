@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import type { ArchiveManifest, ArchivePhase, ArchivePreview } from '../workspaces/archive.js';
 import { formatBytes } from '../workspaces/disk.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
+import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { slugify } from '../agent/namer.js';
@@ -9,7 +10,8 @@ import { carrySession } from '../agent/session-carry.js';
 import type { AgentPlace } from '../agent/types.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
-import type { MergeResult } from '../workspaces/git.js';
+import { type MergeResult, git } from '../workspaces/git.js';
+import type { FoundConversation } from '../agent/claude-sessions.js';
 import type { ShareService } from './shares.js';
 import { type LogItem, type Store, type WorkspaceTab, settleRun } from './store.js';
 import { type Conversation, isImportedItem } from '../agent/transcript.js';
@@ -68,6 +70,14 @@ const CONTINUE_WAIT_MS = 60_000;
 
 /** The same message, ignoring spacing differences (the sheet trims and may rewrap it). */
 const sameText = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim();
+
+/** A folder as people read it: ~/… under your home. */
+const tilde = (dir: string): string => (dir.startsWith(`${os.homedir()}/`) ? `~${dir.slice(os.homedir().length)}` : dir);
+
+/** A Claude Code conversation from outside Beluga (BLG-321); `wsId`: the worktree it was brought into. */
+export interface OutsideConversation extends FoundConversation {
+  readonly wsId?: string;
+}
 
 export const workspaceIdOf = (channel: string): string | undefined => (channel.startsWith(WS_PREFIX) ? channel.slice(WS_PREFIX.length) : undefined);
 export { shareNameOf } from '../shared/share-names.js';
@@ -276,12 +286,12 @@ export class WorkspaceController {
    * main folder) shows the latest Claude Code conversation from that folder, and Claude
    * continues it from there.
    */
-  private async importConversation(id: string, dir: string, channel: string, sessionId?: string): Promise<boolean> {
+  private async importConversation(id: string, dir: string, channel: string, sessionId?: string, readFrom = dir): Promise<boolean> {
     try {
       const external = this.deps.manager.find(id)?.external ?? false;
       // Conductor's worktrees: the conversation Conductor has open comes first.
       const prefer = !sessionId && external ? await this.others.preferredSession(dir) : undefined;
-      const found = await this.deps.findConversation?.(dir, sessionId ? { sessionId } : prefer ? { prefer } : {});
+      const found = await this.deps.findConversation?.(readFrom, sessionId ? { sessionId } : prefer ? { prefer } : {});
       if (!found?.items.length) return false;
       if (!this.onlyImported(channel)) return false; // you started talking meanwhile
       const when = new Date(found.lastModified).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -319,6 +329,70 @@ export class WorkspaceController {
     if (!shown) this.deps.toast('That conversation has nothing to show', 'warn');
     this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab: 'chat' } });
     return shown;
+  }
+
+  // ---------------------------------------------------------- conversations from outside Beluga (BLG-321)
+
+  /**
+   * The Claude Code conversations that ran in `dir` (else the project's folder) or in a folder
+   * inside it, newest first: those started in Terminal, an IDE or another tool. Beluga's own are
+   * left out, except one already brought in, which carries its worktree's id.
+   */
+  async outsideConversations(projectId: string, dir?: string): Promise<{ dir: string; conversations: OutsideConversation[] }> {
+    const project = this.deps.manager.list.find((p) => p.id === projectId && p.root);
+    if (!project) throw new Error('That project isn’t on this Mac');
+    const where = path.resolve(dir?.trim() || project.root);
+    const all = this.deps.manager.list.flatMap((p) => p.workspaces);
+    const brought = new Map(all.filter((w) => w.importedSession && !w.archived).map((w) => [w.importedSession!, w.id]));
+    const ours = new Set(all.flatMap((w) => [w.sessionId, w.forkFromSession]).filter((x): x is string => Boolean(x)));
+    const found = (await this.deps.otherTools?.conversationsUnder(where).catch(() => [])) ?? [];
+    const conversations = found
+      .filter((c) => brought.has(c.sessionId) || !ours.has(c.sessionId))
+      .map((c) => (brought.has(c.sessionId) ? { ...c, wsId: brought.get(c.sessionId)! } : c));
+    return { dir: where, conversations };
+  }
+
+  /**
+   * Go on with a conversation from outside Beluga in a new worktree of the project: on a branch
+   * from the commit its folder is on (when that's this repository; else the latest origin), with
+   * the conversation shown and Claude resuming it there. The original stays as it was: Claude goes
+   * on in a copy. One brought in already opens its worktree. → the worktree's id.
+   */
+  async importOutside(projectId: string, dir: string, sessionId: string, name?: string): Promise<string | undefined> {
+    const project = this.deps.manager.list.find((p) => p.id === projectId && p.root);
+    const listed = project ? await this.outsideConversations(projectId, dir) : undefined;
+    const found = listed?.conversations.find((c) => c.sessionId === sessionId);
+    if (!project || !found) {
+      this.deps.toast('That conversation isn’t in that folder any more', 'warn');
+      return undefined;
+    }
+    if (found.wsId) {
+      this.open(found.wsId);
+      return found.wsId;
+    }
+    const named = name?.trim() || slugify(found.title) || 'conversation';
+    const made = await this.act("Couldn't bring the conversation in", async () => {
+      const head = (await git(found.cwd, ['rev-parse', 'HEAD']).catch(() => '')).trim();
+      const same = /^[0-9a-f]{40}$/.test(head) && (await git(project.root, ['cat-file', '-e', `${head}^{commit}`]).then(() => true, () => false));
+      const branch = await this.deps.manager.freeBranchName(project.root, named);
+      await git(project.root, ['branch', '--no-track', '--', branch, same ? head : project.base]);
+      const ws = await this.deps.manager.createWorktreeOn(project.id, named, branch, { importedSession: sessionId });
+      // Claude Code looks for a conversation under the folder it runs in: a copy goes there.
+      if (!carrySession(sessionId, found.cwd, ws.path)) throw new Error('its transcript couldn’t be copied');
+      return { ws, from: same ? `where ${path.basename(found.cwd)} is (${head.slice(0, 7)})` : project.base };
+    });
+    if (!made) return undefined;
+    const { ws } = made;
+    const channel = `${WS_PREFIX}${ws.id}`;
+    this.ensureLoaded(ws.id);
+    // Read where it ran: the copy is filed under the worktree, but says it ran there.
+    // Nothing in it to show (only tool calls, say): Claude still resumes it.
+    if (!(await this.importConversation(ws.id, ws.path, channel, sessionId, found.cwd))) this.deps.manager.rememberSession(ws.id, sessionId);
+    this.deps.store.dispatch({ type: 'system', channel, text: `On a new branch from ${made.from}. The conversation in ${tilde(found.cwd)} stays as it was, and so do that folder’s uncommitted changes.` });
+    this.open(ws.id);
+    this.deps.toast(`Continuing “${found.title}” in ${ws.name}`, 'success');
+    this.created(ws, { about: found.title });
+    return ws.id;
   }
 
   /** Where Claude runs for a workspace conversation: its folder, its own resumable session. */

@@ -294,6 +294,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.otherActivity` | worktrees made outside Beluga listed after a project's own, most recently active first (5, then Show N more) |
 | `workspaces.worktreeInfo` | the page a worktree from another tool shows when it has no conversation (or About This Worktree) |
 | `workspaces.showConversation` | that page › Earlier conversations › Show |
+| `workspaces.outsideConversations` | project ••• › Bring In a Claude Code Conversation… (the project's folder and the folders inside it; Choose Another Folder…) |
+| `workspaces.importOutside` | that sheet › Continue in a Worktree (one brought in already: Open Its Worktree) |
 | `workspaces.removeOther` | that page › Remove Worktree… (asks first; keeps the branch) |
 | `workspaces.staleOthers` | a project's Clean Up Worktrees… (its right-click menu and its home) |
 | `workspaces.cleanUpOthers` | Clean Up Worktrees… › Remove (only what you ticked; branches kept) |
