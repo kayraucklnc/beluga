@@ -43,8 +43,11 @@ export interface Pusher {
  */
 export const NO_PUSH: Pusher = { push: async () => undefined };
 
-/** You're at the Mac when it was used within this long (and the screen isn't locked). */
-export const AWAY_AFTER_MS = 2 * 60_000;
+/**
+ * You're at the Mac when its keyboard or mouse was used within this long (BLG-360): the phone
+ * stays quiet, since you see it there. Five minutes without a touch and the phone is told.
+ */
+export const AWAY_AFTER_MS = 5 * 60_000;
 
 export interface PushContext {
   /** The phone is linked now (a nudge goes over the link instead). */
@@ -60,17 +63,28 @@ export interface PushContext {
   readonly canPush: boolean;
 }
 
-export type Delivery = 'nudge' | 'push' | 'none';
+/** `held`: you're at the Mac, so not now; told later if it's still waiting once you've stepped away. */
+export type Delivery = 'nudge' | 'push' | 'held' | 'none';
 
-/** How (and whether) to tell one phone something. */
+/**
+ * You're at the Mac: its keyboard or mouse was used in the last five minutes. When that can't be
+ * read (not a Mac), a Beluga window in front stands in for it.
+ */
+export const atMac = (ctx: Pick<PushContext, 'macIdleMs' | 'macFront'>): boolean => (ctx.macIdleMs !== undefined ? ctx.macIdleMs < AWAY_AFTER_MS : ctx.macFront);
+
+/**
+ * How (and whether) to tell one phone something. The app open on the phone hears it in the app
+ * (a toast), wherever you are; otherwise a notification only once you've been away from the Mac
+ * five minutes (a linked phone in the background gets it as a nudge, an unlinked one as a push).
+ */
 export function deliver(nudge: Pick<Nudge, 'kind' | 'topic'>, ctx: PushContext): Delivery {
   // Already looking at it on the phone: nothing to say.
   if (ctx.linked && ctx.inFront && nudge.topic && ctx.onScreen.has(nudge.topic)) return 'none';
-  if (ctx.linked) return 'nudge';
+  if (ctx.linked && ctx.inFront) return 'nudge';
+  if (!ctx.linked && !ctx.canPush) return 'none';
   // You're at the Mac: you see it there.
-  const atMac = ctx.macFront || (ctx.macIdleMs !== undefined && ctx.macIdleMs < AWAY_AFTER_MS);
-  if (atMac || !ctx.canPush) return 'none';
-  return 'push';
+  if (atMac(ctx)) return 'held';
+  return ctx.linked ? 'nudge' : 'push';
 }
 
 /**

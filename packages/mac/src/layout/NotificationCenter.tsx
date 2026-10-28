@@ -156,6 +156,7 @@ function useGo(): (view: View) => void {
 /** Something waiting for you: who and where, answered right here, or opened where it lives. */
 function WaitingRow({ w, now, close }: { w: Waiting; now: number; close: () => void }) {
   const { client } = useBeluga();
+  const api = useApi();
   const go = useGo();
   const [busy, setBusy] = useState(false);
   const { item } = w;
@@ -178,6 +179,8 @@ function WaitingRow({ w, now, close }: { w: Waiting; now: number; close: () => v
   const items: ActionItem[] = [
     ...(w.view ? [{ label: w.place ? `Open in ${w.place}` : 'Open', onSelect: open }] : []),
     ...[...w.surface, ...w.more].map((a, i) => ({ label: a.label, ...(a.tone === 'danger' ? { danger: true } : {}), ...(i === 0 ? { separate: true } : {}), onSelect: () => answer(a) })),
+    // Off every list (here and the phone) without answering it (BLG-359).
+    { label: 'Dismiss', separate: true, onSelect: () => void api.needs.dismiss(item.id) },
   ];
   // A question that takes words or several picks is answered where it was asked.
   const typed = !w.surface.length;

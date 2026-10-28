@@ -32,6 +32,7 @@ import { TerminalManager } from '../terminal/index.js';
 import { WorkspaceManager } from '../workspaces/manager.js';
 import { belugaHome } from '../workspaces/store.js';
 import { belugaEnv } from '../core/beluga-env.js';
+import { loadDismissedNeeds } from '../core/dismissed-needs.js';
 
 /**
  * Everything Beluga is apart from its screens: your identity, the room (hosted or joined),
@@ -225,6 +226,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   if (process.argv.includes('--name') || process.argv.includes('-n')) saveSettings({ name: config.name });
   const store = new Store(initialState(room.room, config.policy, { ...prefsFrom(saved), theme: config.theme, mouse: config.mouse, tunnel: config.tunnel, selfApproval: config.selfApproval }));
   if (room.invite) store.dispatch({ type: 'invite', invite: room.invite });
+  store.dispatch({ type: 'needs_dismissed', ids: loadDismissedNeeds() });
 
   const client = new PeerClient({
     url: room.url,

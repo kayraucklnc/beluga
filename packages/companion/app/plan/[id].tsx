@@ -4,7 +4,7 @@ import { Options } from '../../components/Options';
 import { openOnMac } from '../../lib/mac';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { LinearTransition, FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { convHref } from '../../components/Conv';
 import { answer, NeedButtons, NeedFace } from '../../components/Needs';
@@ -103,7 +103,7 @@ export default function Plan() {
               ) : null}
               {how && !drafting ? (
                 <Press onPress={() => setHowOpen(true)} accessibilityLabel={`How it runs: ${how.label}`} style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, height: 34, paddingHorizontal: 12, borderRadius: 17, backgroundColor: toneBg('lavender') }}>
-                  <how.Icon color={toneInk('lavender')} size={15} strokeWidth={2.3} />
+                  <how.Icon color={toneInk('lavender')} size={15} strokeWidth={1.9} />
                   <T v="caption" c={toneInk('lavender')} style={{ fontWeight: '700' }}>
                     {how.label}
                     {p.paused ? ' · paused' : ''}
@@ -129,7 +129,7 @@ export default function Plan() {
                   Waiting on you
                 </T>
                 {needs.map((n) => (
-                  <Animated.View key={n.id} entering={FadeInDown.springify()} layout={LinearTransition.springify()}>
+                  <Animated.View key={n.id} entering={FadeIn.duration(180)} layout={LinearTransition.duration(180)}>
                     <Card style={{ marginHorizontal: 16, padding: 16, gap: 14 }}>
                       <NeedFace item={n} more />
                       <NeedButtons item={n} onAnswer={(t) => answer(n, t)} />
@@ -181,10 +181,10 @@ function Milestone({ m, last, i, draft, titles, after, picked }: { m: PlanView['
   const done = m.state === 'done';
   const n = m.tasks.filter((t) => t.state === 'done').length;
   return (
-    <Animated.View entering={FadeInDown.delay(i * 70).springify()} style={{ flexDirection: 'row', gap: 14 }}>
+    <Animated.View entering={FadeIn.duration(180)} style={{ flexDirection: 'row', gap: 14 }}>
       <View style={{ width: 26, alignItems: 'center' }}>
         <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(tone) }}>
-          {done ? <Check color={toneInk(tone)} size={15} strokeWidth={3} /> : <T v="caption" c={toneInk(tone)} style={{ fontWeight: '800' }}>{i + 1}</T>}
+          {done ? <Check color={toneInk(tone)} size={15} strokeWidth={2.2} /> : <T v="caption" c={toneInk(tone)} style={{ fontWeight: '800' }}>{i + 1}</T>}
         </View>
         {!last ? <View style={{ width: 2, flex: 1, marginVertical: 4, borderRadius: 1, backgroundColor: done ? toneBg('mint') : color.hairlineStrong }} /> : null}
       </View>
@@ -212,7 +212,7 @@ function Milestone({ m, last, i, draft, titles, after, picked }: { m: PlanView['
           ) : null}
         </Press>
         {open ? (
-          <Animated.View entering={FadeInDown.springify()} style={{ marginTop: 10, gap: 8 }}>
+          <Animated.View entering={FadeIn.duration(180)} style={{ marginTop: 10, gap: 8 }}>
             {m.criteria.length ? (
               <View style={{ gap: 3, marginBottom: 2 }}>
                 {m.criteria.map((c) => (

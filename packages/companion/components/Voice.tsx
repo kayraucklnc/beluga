@@ -1,29 +1,7 @@
 import { Mic, Square } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
-import Animated, {
-  cancelAnimation,
-  Easing,
-  FadeIn,
-
-  FadeOut,
-
-  interpolate,
-  interpolateColor,
-  LinearTransition,
-  type SharedValue,
-  useAnimatedStyle,
-  useDerivedValue,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
-  withSpring,
-  withTiming,
-  ZoomIn,
-  ZoomOut,
-} from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, interpolate, interpolateColor, LinearTransition, type SharedValue, useAnimatedStyle, useDerivedValue, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import { VOICE_MODELS, voiceSize } from '../../../src/shared/voice-models';
 import type { Phrase, VoiceSession, VoiceView } from '../lib/voice-session';
 import { alpha, color, ink, scheme, spring, tint } from '../lib/theme';
@@ -70,11 +48,11 @@ export function VoiceButton({ voice, size = 44, onPress }: { readonly voice: Voi
         {busy ? (
           <Dots />
         ) : phase === 'listening' ? (
-          <Animated.View key="stop" entering={ZoomIn.springify().damping(14)} exiting={ZoomOut.duration(120)}>
+          <Animated.View key="stop" entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)}>
             <Square color={ink.rose} fill={ink.rose} size={size * 0.3} />
           </Animated.View>
         ) : (
-          <Animated.View key="mic" entering={ZoomIn.springify().damping(14)} exiting={ZoomOut.duration(120)}>
+          <Animated.View key="mic" entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)}>
             <Mic color={color.text2} size={size * 0.45} />
           </Animated.View>
         )}
@@ -250,7 +228,7 @@ export function VoiceStage({ voice, before = '', box, minHeight }: { readonly vo
   if (v.phase !== 'listening' && v.phase !== 'writing') return null;
   const listening = v.phase === 'listening';
   return (
-    <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)} layout={LinearTransition.springify().damping(20)} style={{ minHeight, justifyContent: 'center' }}>
+    <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)} layout={LinearTransition.duration(180)} style={{ minHeight, justifyContent: 'center' }}>
       <View style={{ flexDirection: 'row', gap: box ? 6 : 8, alignItems: 'center', marginLeft: box ? -4 : -10 }}>
         <Metaballs level={voice.level} speaking={voice.speaking} writing={!listening} pulses={count} size={blob} />
         <View style={{ flex: 1, minHeight: blob, justifyContent: 'center', paddingVertical: box ? 4 : 0 }}>

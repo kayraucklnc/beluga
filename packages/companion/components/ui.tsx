@@ -1,13 +1,14 @@
 import * as Haptics from 'expo-haptics';
-import { ChevronRight, Ellipsis, type LucideIcon, SquareTerminal } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Ellipsis, type LucideIcon, SquareTerminal } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { Platform, Pressable, type PressableProps, type StyleProp, StyleSheet, Text, type TextProps, type TextStyle, View, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { color, elevation, ink, radius, scheme, spring, tint, type, typeColor } from '../lib/theme';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { color, elevation, ink, radius, scheme, stroke, tint, type, typeColor } from '../lib/theme';
 
 /**
- * The app's small parts. One pattern everywhere: an icon in a pastel circle, one or two words,
- * the primary action on the surface, and everything else one tap away behind "•••".
+ * The app's small parts. One pattern everywhere: a line icon in one ink, one or two words, the
+ * primary action on the surface, and everything else one tap away behind "•••". Color is for
+ * meaning only (needs you, a problem, a link), never to tell icons apart.
  */
 
 export const haptic = {
@@ -27,7 +28,7 @@ export type Tone = 'sky' | 'mint' | 'peach' | 'lavender' | 'butter' | 'rose' | '
 export const toneBg = (t: Tone): string => (t === 'plain' ? color.sunken : tint[t]);
 export const toneInk = (t: Tone): string => (t === 'plain' ? color.text2 : ink[t]);
 
-/** A card: white (or slate) on the warm background, rounded, with a whisper of shadow in light. */
+/** A card: white (or slate) on the grey page, a hairline edge, and the faintest lift in light. */
 export function Card({ children, style, tone, r = radius.l }: { readonly children?: ReactNode; readonly style?: StyleProp<ViewStyle>; readonly tone?: Tone; readonly r?: number }) {
   return (
     <View
@@ -50,24 +51,27 @@ export function Card({ children, style, tone, r = radius.l }: { readonly childre
 const shadow = (): ViewStyle =>
   Platform.select({
     web: { boxShadow: color.shadowCss } as ViewStyle,
-    default: { shadowColor: color.shadowInk, shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
+    default: { shadowColor: color.shadowInk, shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 0 },
   })!;
 
-/** A press that springs a little (on the UI thread), with a selection tick. */
+/**
+ * A press: it dims while held (on the UI thread), with a selection tick. No scaling or springing:
+ * the app answers a touch, it doesn't perform. `scaleTo` is kept for callers and ignored.
+ */
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-export function Press({ children, style, scaleTo = 0.97, onPress, haptics = true, ...rest }: Omit<PressableProps, 'style' | 'children'> & { readonly style?: StyleProp<ViewStyle>; readonly scaleTo?: number; readonly haptics?: boolean; readonly children?: ReactNode }) {
-  const s = useSharedValue(1);
-  const anim = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
+export function Press({ children, style, scaleTo: _scaleTo, onPress, haptics = true, ...rest }: Omit<PressableProps, 'style' | 'children'> & { readonly style?: StyleProp<ViewStyle>; readonly scaleTo?: number; readonly haptics?: boolean; readonly children?: ReactNode }) {
+  const o = useSharedValue(1);
+  const anim = useAnimatedStyle(() => ({ opacity: o.value }));
   return (
     <AnimatedPressable
       {...rest}
       style={[style, anim]}
       onPressIn={(e) => {
-        s.value = withSpring(scaleTo, spring.snappy);
+        o.value = withTiming(0.55, { duration: 60 });
         rest.onPressIn?.(e);
       }}
       onPressOut={(e) => {
-        s.value = withSpring(1, spring.snappy);
+        o.value = withTiming(1, { duration: 160 });
         rest.onPressOut?.(e);
       }}
       onPress={(e) => {
@@ -80,21 +84,30 @@ export function Press({ children, style, scaleTo = 0.97, onPress, haptics = true
   );
 }
 
-/** An icon in a pastel circle (or rounded square): the app's main visual unit. */
+/**
+ * An icon, the app's main visual unit: a line drawing in one ink. Small ones (rows, cards) stand
+ * on their own; large ones (an empty state, a sheet's head) sit in a hairline ring. Only a tone
+ * that means something (butter: needs you, rose: a problem) colors it.
+ */
 export function IconBadge({ Icon, tone, size = 36, square }: { readonly Icon: LucideIcon; readonly tone: Tone; readonly size?: number; readonly square?: boolean }) {
+  const ringed = size >= 44;
   return (
-    <View style={{ width: size, height: size, borderRadius: square ? size * 0.32 : size / 2, backgroundColor: toneBg(tone), alignItems: 'center', justifyContent: 'center' }}>
-      <Icon color={toneInk(tone)} size={size * 0.5} strokeWidth={2.1} />
+    <View style={{ width: size, height: size, borderRadius: square ? size * 0.28 : size / 2, alignItems: 'center', justifyContent: 'center', ...(ringed ? { borderWidth: StyleSheet.hairlineWidth * 2, borderColor: color.hairlineStrong } : {}) }}>
+      <Icon color={toneInk(tone)} size={Math.round(size * (ringed ? 0.46 : 0.6))} strokeWidth={stroke} />
     </View>
   );
 }
 
-/** A small tinted label: an optional icon and a word or two. */
+/**
+ * A small label: an optional icon and a word or two, as quiet text in a hairline outline. A tone
+ * that means something (butter, rose) inks it and gives it the faintest fill.
+ */
 export function Pill({ label, tone = 'plain', Icon, style }: { readonly label: string; readonly tone?: Tone; readonly Icon?: LucideIcon; readonly style?: ViewStyle }) {
+  const meant = tone === 'butter' || tone === 'rose';
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 26, paddingHorizontal: 10, borderRadius: 13, backgroundColor: toneBg(tone) }, style]}>
-      {Icon ? <Icon color={toneInk(tone)} size={13} strokeWidth={2.3} /> : null}
-      <Text style={{ ...type.caption, color: toneInk(tone), fontWeight: '600' }} numberOfLines={1}>
+    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: 8, borderRadius: 6, backgroundColor: meant ? toneBg(tone) : 'transparent', borderWidth: meant ? 0 : StyleSheet.hairlineWidth * 2, borderColor: color.hairline }, style]}>
+      {Icon ? <Icon color={toneInk(tone)} size={12} strokeWidth={stroke} /> : null}
+      <Text style={{ ...type.caption, fontSize: 12, color: meant ? toneInk(tone) : color.text2, fontWeight: '500' }} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -105,7 +118,7 @@ export function Pill({ label, tone = 'plain', Icon, style }: { readonly label: s
 export function More({ onPress, label = 'More', size = 34 }: { readonly onPress: () => void; readonly label?: string; readonly size?: number }) {
   return (
     <Press onPress={onPress} accessibilityLabel={label} hitSlop={8} style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: color.sunken }}>
-      <Ellipsis color={color.text2} size={18} strokeWidth={2.4} />
+      <Ellipsis color={color.text2} size={18} strokeWidth={2} />
     </Press>
   );
 }
@@ -114,7 +127,7 @@ export function More({ onPress, label = 'More', size = 34 }: { readonly onPress:
 export function Row({ Icon, tone = 'plain', label, sub, right, onPress, chevron = true, first }: { readonly Icon?: LucideIcon; readonly tone?: Tone; readonly label: string; readonly sub?: string; readonly right?: ReactNode; readonly onPress?: () => void; readonly chevron?: boolean; readonly first?: boolean }) {
   const body = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14 }}>
-      {Icon ? <IconBadge Icon={Icon} tone={tone} size={34} /> : null}
+      {Icon ? <IconBadge Icon={Icon} tone={tone} size={30} /> : null}
       <View style={{ flex: 1, gap: 1 }}>
         <T v="body" numberOfLines={1} style={{ fontWeight: '500' }}>
           {label}
@@ -131,9 +144,9 @@ export function Row({ Icon, tone = 'plain', label, sub, right, onPress, chevron 
   );
   return (
     <View>
-      {!first ? <Hairline style={{ marginLeft: Icon ? 60 : 14 }} /> : null}
+      {!first ? <Hairline style={{ marginLeft: Icon ? 56 : 14 }} /> : null}
       {onPress ? (
-        <Press scaleTo={0.985} onPress={onPress}>
+        <Press onPress={onPress}>
           {body}
         </Press>
       ) : (
@@ -143,17 +156,16 @@ export function Row({ Icon, tone = 'plain', label, sub, right, onPress, chevron 
   );
 }
 
-const HUES: Tone[] = ['peach', 'sky', 'mint', 'lavender', 'butter', 'rose'];
-export const hueOf = (name: string): Tone => HUES[[...name].reduce((n, ch) => n + ch.charCodeAt(0), 0) % HUES.length]!;
+/** A name's tone, kept for callers: people are told apart by their initial, so it is always neutral. */
+export const hueOf = (_name: string): Tone => 'plain';
 const PRESENCE: Record<string, () => string> = { online: () => color.ok, away: () => color.warn, dnd: () => color.error, offline: () => color.text3 };
 
-/** A person's initial in their pastel; their Claude gets the Claude mark (`owner`: in its owner's pastel, BLG-210). */
-export function Avatar({ name, size = 40, presence, claude, owner }: { readonly name: string; readonly size?: number; readonly presence?: string; readonly claude?: boolean; readonly owner?: string }) {
-  const t: Tone = claude ? (owner ? hueOf(owner) : 'peach') : hueOf(name);
+/** A person's initial on a neutral disc; their Claude gets the Claude mark (`owner` kept for callers, BLG-210). */
+export function Avatar({ name, size = 40, presence, claude }: { readonly name: string; readonly size?: number; readonly presence?: string; readonly claude?: boolean; readonly owner?: string }) {
   return (
     <View style={{ width: size, height: size }}>
-      <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(t) }}>
-        {claude ? <SquareTerminal color={toneInk(t)} size={size * 0.5} strokeWidth={2.1} /> : <Text style={{ color: toneInk(t), fontSize: size * 0.4, fontWeight: '700' }}>{(name[0] ?? '?').toUpperCase()}</Text>}
+      <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: color.sunken, borderWidth: StyleSheet.hairlineWidth, borderColor: color.hairline }}>
+        {claude ? <SquareTerminal color={color.text2} size={size * 0.46} strokeWidth={stroke} /> : <Text style={{ color: color.text2, fontSize: size * 0.4, fontWeight: '600' }}>{(name[0] ?? '?').toUpperCase()}</Text>}
       </View>
       {presence ? <View style={{ position: 'absolute', right: -1, bottom: -1, width: size * 0.3, height: size * 0.3, borderRadius: size, backgroundColor: PRESENCE[presence]?.() ?? color.text3, borderWidth: 2.5, borderColor: color.bg }} /> : null}
     </View>
@@ -172,6 +184,33 @@ export function Section({ title, right, children, style }: { readonly title: str
   );
 }
 
+/**
+ * A group's head that folds it: what it is (a project's mark and name), a quiet count while
+ * folded, anything else on the right, and a chevron that turns. The whole head is the tap.
+ */
+export function FoldHead({ folded, onToggle, lead, label, count, right, big }: { readonly folded: boolean; readonly onToggle: () => void; readonly lead?: ReactNode; readonly label: string; readonly count?: number; readonly right?: ReactNode; readonly big?: boolean }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 4 }}>
+      <Press onPress={onToggle} haptics accessibilityRole="button" accessibilityState={{ expanded: !folded }} accessibilityLabel={`${label}, ${folded ? 'folded' : 'open'}`} hitSlop={6} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 32 }}>
+        {lead}
+        <T v={big ? 'heading' : 'callout'} c={color.text} numberOfLines={1} style={{ flexShrink: 1, fontWeight: '600' }}>
+          {label}
+        </T>
+        {folded && count ? (
+          <T v="caption" style={{ fontVariant: ['tabular-nums'] }}>
+            {count}
+          </T>
+        ) : null}
+        <View style={{ flex: 1 }} />
+        <View style={{ transform: [{ rotate: folded ? '-90deg' : '0deg' }] }}>
+          <ChevronDown color={color.text3} size={17} />
+        </View>
+      </Press>
+      {right}
+    </View>
+  );
+}
+
 export function StatusDot({ c, size = 8 }: { readonly c: string; readonly size?: number }) {
   return <View style={{ width: size, height: size, borderRadius: size, backgroundColor: c }} />;
 }
@@ -185,8 +224,8 @@ export const Hairline = ({ style }: { readonly style?: ViewStyle }) => <View sty
 /** The main button: ink on light, light on dark. `quiet` for the second choice. */
 export function Button({ label, onPress, Icon, quiet, disabled, style, flex }: { readonly label: string; readonly onPress: () => void; readonly Icon?: LucideIcon; readonly quiet?: boolean; readonly disabled?: boolean; readonly style?: ViewStyle; readonly flex?: number }) {
   return (
-    <Press disabled={disabled} onPress={onPress} style={[{ flex, height: 48, borderRadius: 24, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: quiet ? color.sunken : color.primary, opacity: disabled ? 0.4 : 1 }, style]}>
-      {Icon ? <Icon color={quiet ? color.text : color.onPrimary} size={18} strokeWidth={2.2} /> : null}
+    <Press disabled={disabled} onPress={onPress} style={[{ flex, height: 46, borderRadius: radius.m, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: quiet ? color.sunken : color.primary, opacity: disabled ? 0.4 : 1 }, style]}>
+      {Icon ? <Icon color={quiet ? color.text : color.onPrimary} size={18} strokeWidth={stroke} /> : null}
       <T v="body" c={quiet ? color.text : color.onPrimary} numberOfLines={1} style={{ fontWeight: '600', flexShrink: 1 }}>
         {label}
       </T>

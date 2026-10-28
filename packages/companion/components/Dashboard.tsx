@@ -86,7 +86,7 @@ export function NumberTile({ t, compare, width }: { readonly t: DashboardTileVie
         </View>
         {pinned ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Pin color={color.text3} size={11} strokeWidth={2.3} />
+            <Pin color={color.text3} size={11} strokeWidth={1.9} />
             <T v="caption" c={color.text3} numberOfLines={1} style={{ fontSize: 11.5 }}>
               {COMPARES.find((c) => c.key === pinned)!.vs}
             </T>
@@ -376,7 +376,7 @@ export function NumbersHome() {
     <Press scaleTo={0.985} onPress={() => router.push(dashboardHref(n.dashboard.id) as never)} accessibilityLabel={`${n.dashboard.name}: ${n.items.map((i) => `${i.label} ${i.value}${i.change ? `, ${i.change}` : ''}`).join('; ')}`} style={{ marginHorizontal: 16, marginTop: 10 }}>
       <Card style={{ paddingVertical: 12, paddingHorizontal: 14, gap: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <LayoutDashboard color={color.text3} size={14} strokeWidth={2.2} />
+          <LayoutDashboard color={color.text3} size={14} strokeWidth={1.9} />
           <T v="caption" numberOfLines={1} style={{ flex: 1 }}>
             {n.dashboard.name}
           </T>

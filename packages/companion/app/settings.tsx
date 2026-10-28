@@ -3,7 +3,7 @@ import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck
 import { Segments } from '../components/Segments';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform, ScrollView, Switch, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header, Screen, useScrolled } from '../components/Screen';
 import { Card, haptic, Pill, Row, T } from '../components/ui';
@@ -119,7 +119,7 @@ export default function Settings() {
     <Screen>
       <Header scrolled={scrolled} back title="Settings" />
       <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 20 }}>
-        <Animated.View entering={FadeInDown.duration(300)}>
+        <Animated.View entering={FadeIn.duration(300)}>
           <Card>
             <Row first Icon={Monitor} tone="mint" label={link.mac?.name ?? link.pairing?.macName ?? 'Your Mac'} sub={link.mode === 'demo' ? 'Demo Mac' : `Beluga ${link.mac?.version ?? ''}`} right={<Pill label={link.phase === 'open' ? 'Linked' : link.phase === 'asleep' ? 'Asleep' : 'Away'} tone={link.phase === 'open' ? 'mint' : 'sky'} />} />
             <Row

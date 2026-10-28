@@ -675,7 +675,8 @@ export class TaskServer {
     this.sendResult(done, result, files);
   }
 
-  private sendResult(task: TaskView, result: TaskOutcome, files: ReadonlyArray<{ name: string; size: number; b64?: string; ref?: string; sha256?: string; image?: boolean }> = result.files): void {
+  /** Tell the friend who asked how their task ended (also: one that ended when Beluga quit). */
+  sendResult(task: TaskView, result: TaskOutcome, files: ReadonlyArray<{ name: string; size: number; b64?: string; ref?: string; sha256?: string; image?: boolean }> = result.files): void {
     try {
       this.ctx.courier.send(
         task.peerId,

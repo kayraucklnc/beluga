@@ -84,6 +84,8 @@ export const PhoneCalls = {
   'gateway.list': entry('gateway.list', done),
   'gateway.confirm': entry('gateway.confirm', done),
   'gateway.cancel': entry('gateway.cancel', done),
+  'gateway.forget': entry('gateway.forget', done),
+  'needs.dismiss': entry('needs.dismiss', done),
   'gateway.ask': entry('gateway.ask', done),
   'gateway.decide': entry('gateway.decide', done),
   'gateway.answer': entry('gateway.answer', done),

@@ -18,7 +18,7 @@ export function copy(text: string, what = 'Copied'): void {
 export function SmallChip({ label, Icon, on = false, onPress, accessibilityLabel }: { readonly label: string; readonly Icon?: LucideIcon; readonly on?: boolean; readonly onPress: () => void; readonly accessibilityLabel?: string }) {
   return (
     <Press haptics={false} accessibilityLabel={accessibilityLabel ?? label} accessibilityState={{ selected: on }} onPress={() => (haptic.tap(), onPress())} hitSlop={4} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 28, paddingHorizontal: 10, borderRadius: 14, backgroundColor: on ? tint.sky : color.sunken }}>
-      {Icon ? <Icon color={on ? ink.sky : color.text2} size={13} strokeWidth={2.2} /> : null}
+      {Icon ? <Icon color={on ? ink.sky : color.text2} size={13} strokeWidth={1.9} /> : null}
       <Text style={{ ...type.caption, color: on ? ink.sky : color.text2, fontWeight: '700' }}>{label}</Text>
     </Press>
   );

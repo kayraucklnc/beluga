@@ -397,8 +397,15 @@ function sentinelItems(state: DomainState): NeedsYou[] {
   });
 }
 
-/** Everything waiting for you, in no order and uncut (needsYou sorts and keeps 50). */
+/** Everything waiting for you, in no order and uncut (needsYou sorts and keeps 50), minus what you dismissed. */
 export function allNeeds(state: DomainState): NeedsYou[] {
+  const dismissed = state.dismissedNeeds ?? [];
+  const all = waitingNeeds(state);
+  return dismissed.length ? all.filter((n) => !dismissed.includes(n.id)) : all;
+}
+
+/** Everything waiting for you, dismissed or not. */
+export function waitingNeeds(state: DomainState): NeedsYou[] {
   return [
     ...state.approvals.map((a) => approvalItem(state, a)),
     ...state.questions.map((q) => questionItem(state, q)),

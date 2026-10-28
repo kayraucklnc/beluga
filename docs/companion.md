@@ -243,6 +243,10 @@ Home screen"): `widgets`, every board tile in words as the Mac's desktop widgets
 with its change and points, a chart's points, an output, a table or a headline as text; its project,
 tint and icon checksum). The Android app watches it while open, and while away with Stay connected
 when a widget is placed. Never a source, a query or a key.
+1.27 (BLG-354) lets the phone remove a request you asked of a friend (`gateway.forget`, cancelled
+first while it's still going) and dismiss a needs-you item without answering it (`needs.dismiss`,
+gone on the Mac too). An older Mac never gets either: Remove isn't offered, and a dismissed card
+is only hidden on the phone until it relinks.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 

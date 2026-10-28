@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronDown, ChevronRight, CirclePause, FileText, Monitor, Play, Power, TriangleAlert } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NeedsStack } from '../../components/Needs';
 import { GraphCard } from '../../components/render/Graph';
@@ -183,11 +183,11 @@ export default function SentinelPage() {
                   const text = reports[r.id];
                   const canOpen = !r.state.match(/^(queued|running)$/) || Boolean(r.chat);
                   return (
-                    <Animated.View key={r.id} entering={FadeInDown.duration(200)} layout={LinearTransition.springify()}>
+                    <Animated.View key={r.id} entering={FadeIn.duration(200)} layout={LinearTransition.duration(180)}>
                       {i ? <Hairline style={{ marginLeft: 58 }} /> : null}
                       <Press scaleTo={0.985} disabled={!canOpen} onPress={() => openRun(r)} accessibilityLabel={`${st.label}: ${r.headline || 'a run'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
                         <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(st.tone) }}>
-                          <st.Icon color={toneInk(st.tone)} size={16} strokeWidth={2.3} />
+                          <st.Icon color={toneInk(st.tone)} size={16} strokeWidth={1.9} />
                         </View>
                         <View style={{ flex: 1, gap: 2 }}>
                           <T v="body" numberOfLines={2} style={{ fontWeight: '500' }}>

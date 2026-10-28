@@ -39,7 +39,7 @@ function StripChip({ a, onOpen }: { readonly a: SubAgentView; readonly onOpen: (
   return (
     <Press onPress={() => onOpen(a)} scaleTo={0.98} accessibilityLabel={`${a.title}, ${agentWord(a.status)}${time ? `, ${time}` : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 11, borderRadius: 16, backgroundColor: toneBg(tone) }}>
       <Breathe on={a.status === 'running'}>
-        <Icon color={toneInk(tone)} size={14} strokeWidth={2.3} />
+        <Icon color={toneInk(tone)} size={14} strokeWidth={1.9} />
       </Breathe>
       <T v="caption" c={toneInk(tone)} numberOfLines={1} style={{ fontWeight: '600', maxWidth: 170 }}>
         {a.title}
@@ -62,7 +62,7 @@ export function AgentStrip({ turns, onOpen }: { readonly turns: readonly TurnVie
     <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(180)} style={{ paddingBottom: 8 }} accessibilityRole="summary">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, gap: 8, alignItems: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingRight: 2 }}>
-          <Bot color={color.subagent} size={15} strokeWidth={2.2} />
+          <Bot color={color.subagent} size={15} strokeWidth={1.9} />
           <T v="caption" c={color.text2} style={{ fontWeight: '600' }}>
             {agents.length} {agents.length === 1 ? 'agent' : 'agents'} · {running} running
           </T>

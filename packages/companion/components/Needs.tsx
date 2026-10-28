@@ -3,7 +3,7 @@ import { Check, CircleCheck, Flag, Hand, Monitor, MessageCircleQuestion, PenLine
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import Animated, { FadeIn, interpolate, type SharedValue, useAnimatedStyle, useSharedValue, withSpring, withTiming, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeIn, interpolate, type SharedValue, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { ago } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
@@ -14,7 +14,8 @@ import { Button, Card, haptic, IconBadge, More, Pill, Press, T, type Tone, toneB
 
 /**
  * What needs you, as a stack of cards: swipe right to approve, left to decline, or tap the two
- * buttons. Everything else (Always, the whole text, open it) is behind "•••" or a long press.
+ * buttons; × dismisses one without answering it. Everything else (Always, the whole text, open
+ * it, Dismiss again) is behind "•••" or a long press.
  * Questions and decisions answer with their choices; a kind this phone doesn't know is a plain
  * card that says "Open on your Mac" (docs/companion.md, staying in step).
  */
@@ -111,7 +112,15 @@ export function NeedFace({ item, full = false, onAnswered, more }: { readonly it
             {[item.from, ago(item.askedAt)].filter(Boolean).join(' · ')}
           </T>
         </View>
-        {more ? <More onPress={() => openDetail(item)} label="More options" /> : null}
+        {more ? (
+          <>
+            {/* Dismiss: off the list (here and on the Mac) without answering it. */}
+            <Press onPress={() => store.dismiss(item)} accessibilityLabel="Dismiss" hitSlop={8} style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }}>
+              <X color={color.text3} size={18} />
+            </Press>
+            <More onPress={() => openDetail(item)} label="More options" />
+          </>
+        ) : null}
       </View>
       <T v="heading" numberOfLines={full ? undefined : 3} style={{ fontSize: 18, lineHeight: 24 }}>
         {item.title}
@@ -138,7 +147,7 @@ export function NeedFace({ item, full = false, onAnswered, more }: { readonly it
               <Press key={c.label} onPress={() => tap(c.label)} accessibilityLabel={c.label} accessibilityState={multi ? { checked: on } : undefined} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, backgroundColor: toneBg(k.tone) }}>
                 {multi ? (
                   <View style={{ width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? toneInk(k.tone) : 'transparent', borderWidth: on ? 0 : 1.5, borderColor: toneInk(k.tone) }}>
-                    {on ? <Check color={color.card} size={14} strokeWidth={3} /> : null}
+                    {on ? <Check color={color.card} size={14} strokeWidth={2.2} /> : null}
                   </View>
                 ) : null}
                 <View style={{ flex: 1 }}>
@@ -357,7 +366,7 @@ export function NeedsStack({ items }: { readonly items: readonly NeedsYou[] }) {
 
   if (!deck.length) {
     return (
-      <Animated.View entering={ZoomIn.springify()} style={{ marginHorizontal: 16 }}>
+      <Animated.View entering={FadeIn.duration(140)} style={{ marginHorizontal: 16 }}>
         <Card style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <IconBadge Icon={CircleCheck} tone="mint" />
           <View style={{ flex: 1 }}>

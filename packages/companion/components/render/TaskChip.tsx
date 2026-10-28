@@ -52,7 +52,7 @@ export function TaskChip({ k, task }: { readonly k: string; readonly task?: Task
       onPress={() => (t ? router.push(taskHref(t)) : store.toast({ text: `${k}: not on the board here`, tone: 'info' }))}
       style={[pill, { backgroundColor: bg }]}
     >
-      {t ? <st.Icon color={fg} size={11} strokeWidth={2.6} /> : null}
+      {t ? <st.Icon color={fg} size={11} strokeWidth={2} /> : null}
       <Text style={{ ...type.caption, color: fg, fontWeight: '800' }}>{t?.key ?? k}</Text>
       {t ? (
         <Text numberOfLines={1} style={{ ...type.caption, color: fg, maxWidth: 160 }}>

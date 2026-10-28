@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Bell, ChevronLeft, CircleCheck, CircleX, Info, MoonStar, RefreshCw, Smartphone, Trash2, TriangleAlert } from 'lucide-react-native';
 import { type ReactNode, useState } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, View, type ViewStyle } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeInUp, FadeOut, FadeOutUp, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { asOf, useLink, useOutbox, useToasts } from '../lib/hooks';
 import { store } from '../lib/store';
@@ -45,7 +45,7 @@ export function Header({ title, subtitle, back, right, eyebrow, at, scrolled, le
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 40, gap: 10 }}>
         {back ? (
           <Press onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} accessibilityLabel="Back" hitSlop={12} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card, marginLeft: -4, borderWidth: StyleSheet.hairlineWidth, borderColor: color.hairline }}>
-            <ChevronLeft color={color.text} size={21} strokeWidth={2.2} />
+            <ChevronLeft color={color.text} size={21} strokeWidth={1.9} />
           </Press>
         ) : null}
         {lead}
@@ -83,7 +83,7 @@ export function AwayBand({ at }: { readonly at?: number }) {
   const [why, setWhy] = useState(false);
   if (link.outdated) {
     return (
-      <Animated.View entering={FadeInDown.springify()} style={{ marginTop: 12 }}>
+      <Animated.View entering={FadeIn.duration(180)} style={{ marginTop: 12 }}>
         <Card tone="butter" r={18} style={{ padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
           <TriangleAlert color={color.warn} size={18} />
           <T v="callout" c={color.warn} style={{ flex: 1, fontWeight: '500' }}>
@@ -99,7 +99,7 @@ export function AwayBand({ at }: { readonly at?: number }) {
   // Said in words when we know why (no internet, a network that won't connect, the Mac away…).
   const d = link.phase === 'closed' ? undefined : link.diagnosis;
   return (
-    <Animated.View entering={FadeInDown.springify().stiffness(spring.snappy.stiffness).damping(spring.snappy.damping)} exiting={FadeOutUp} layout={LinearTransition.springify()} style={{ marginTop: 12 }}>
+    <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut} layout={LinearTransition.duration(180)} style={{ marginTop: 12 }}>
       <Card tone="sky" r={18} style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
         <Press haptics={false} onPress={() => setOpen((o) => !o)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <MoonStar color={color.info} size={18} />
@@ -143,7 +143,7 @@ export function AwayBand({ at }: { readonly at?: number }) {
           )}
         </Press>
         {open && outbox.length ? (
-          <Animated.View entering={FadeInUp} style={{ marginTop: 10, gap: 6 }}>
+          <Animated.View entering={FadeIn} style={{ marginTop: 10, gap: 6 }}>
             {outbox.map((o) => (
               <View key={o.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <T v="caption" c={color.info} style={{ flex: 1 }} numberOfLines={1}>
@@ -172,7 +172,7 @@ export function Toasts() {
   return (
     <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { paddingTop: insets.top + 6, alignItems: 'center' }]}>
       {toasts.map((t) => (
-        <Animated.View key={t.id} entering={FadeInUp.springify().stiffness(300).damping(28)} exiting={FadeOutUp.duration(200)} layout={LinearTransition.springify()} style={{ width: '92%', marginBottom: 8 }}>
+        <Animated.View key={t.id} entering={FadeIn.duration(180)} exiting={FadeOut.duration(200)} layout={LinearTransition.duration(180)} style={{ width: '92%', marginBottom: 8 }}>
           <Press
             onPress={() => {
               store.dismissToast(t.id);

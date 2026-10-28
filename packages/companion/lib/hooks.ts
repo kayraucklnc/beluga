@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { NeedsYou, OutputView, Topic } from './link/protocol';
+import { kv } from './kv';
 import { type CachedView, type FileState, type LinkState, type OutboxItem, store, type Toast } from './store';
 
 /** The screens' way into the store. Each hook re-renders only when its own key changes. */
@@ -132,4 +133,22 @@ export function until(ts: number | undefined, now = Date.now()): string {
   if (h < 24) return `${h} h ${m % 60} min`;
   const d = Math.floor(h / 24);
   return `${d} d ${h % 24} h`;
+}
+
+/**
+ * Which groups of a list are folded (Work's projects, Tasks' projects): kept between launches,
+ * per list. `folded(id)` and `toggle(id)`; a group nobody folded is open.
+ */
+export function useFolded(list: string): { readonly folded: (id: string) => boolean; readonly toggle: (id: string) => void } {
+  const key = `folded:${list}`;
+  const [ids, setIds] = useState<readonly string[]>(() => kv.get<string[]>(key) ?? []);
+  return {
+    folded: (id) => ids.includes(id),
+    toggle: (id) =>
+      setIds((was) => {
+        const next = was.includes(id) ? was.filter((x) => x !== id) : [...was, id];
+        kv.set(key, next);
+        return next;
+      }),
+  };
 }

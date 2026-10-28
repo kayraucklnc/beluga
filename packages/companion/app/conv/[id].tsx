@@ -7,7 +7,7 @@ import { ProjectMark } from '../../components/ProjectMark';
 import { openOnMac } from '../../lib/mac';
 import { useRef, useState } from 'react';
 import { Platform, ScrollView, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeInUp, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer, QueueTray } from '../../components/Composer';
 import { AgentChips, Prose, StepTicker } from '../../components/Conv';
@@ -107,6 +107,8 @@ export default function Conversation() {
   const chatCount = home?.data.macChats?.length ?? 0;
   const [chatsOpen, setChatsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  /** A request you asked of a friend's Claude: Stop cancels it (no run of yours to stop), Remove forgets it. */
+  const askedTask = topic.startsWith('conv:task:') ? topic.slice('conv:task:'.length) : undefined;
 
   return (
     <OutputsTopic.Provider value={topic}>
@@ -195,17 +197,17 @@ export default function Conversation() {
             {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
             {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
             {turns.map((t, i) => (
-              <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
+              <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeIn.duration(180) : undefined}>
                 {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
               </Animated.View>
             ))}
             {pending.map((p) => (
-              <Animated.View key={p.id} entering={FadeInUp.springify().stiffness(220).damping(22)} layout={LinearTransition.springify().stiffness(220).damping(26)}>
+              <Animated.View key={p.id} entering={FadeIn.duration(180)}>
                 <PendingTurn s={p} />
               </Animated.View>
             ))}
             {needs.map((n) => (
-              <Animated.View key={n.id} entering={FadeInDown.springify()} layout={LinearTransition.springify()}>
+              <Animated.View key={n.id} entering={FadeIn.duration(180)}>
                 <Card style={{ padding: 16, gap: 14 }}>
                   <NeedFace item={n} more  />
                   <NeedButtons item={n} onAnswer={(t) => answer(n, t)} />
@@ -235,7 +237,7 @@ export default function Conversation() {
                     sends.message(topic, text, calls.steer(topic, text));
                   }
             }
-            onStop={() => void store.call(calls.stop(topic))}
+            onStop={() => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic))}
             bottom={insets.bottom}
             above={
               c?.queue?.length ? (
@@ -292,7 +294,7 @@ export default function Conversation() {
           title={c?.title}
           options={[
             { Icon: Plus, label: 'New chat', sub: 'A fresh chat with your Mac, a new tab there too', tone: 'sky', hidden: !macChats, onPress: () => newMacChat((h) => router.replace(h as never)) },
-            { Icon: Square, label: 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(calls.stop(topic)) },
+            { Icon: Square, label: askedTask ? 'Stop asking' : 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic)) },
             { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
             { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
             { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
@@ -300,6 +302,14 @@ export default function Conversation() {
             { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
             { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
             { Icon: Trash2, label: 'Delete this chat', sub: 'For good, here and on your Mac', tone: 'rose', hidden: !macChats, onPress: () => setDeleting(true) },
+            {
+              Icon: Trash2,
+              label: 'Remove',
+              sub: c?.working ? 'Stops asking, then takes it off your lists' : 'Takes it off your lists, here and on your Mac',
+              tone: 'rose',
+              hidden: !askedTask || !store.supports('forget'),
+              onPress: () => void store.call(calls.forgetTask(askedTask!)).then(() => (router.canGoBack() ? router.back() : router.replace('/' as never))),
+            },
           ]}
         />
         {macChats ? (

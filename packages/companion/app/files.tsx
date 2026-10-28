@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronRight, FolderTree, Lock, Search, X } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, FlatList, Platform, ScrollView, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { openOutput, sizeOf } from '../components/Outputs';
 import { Header, Screen, useScrolled } from '../components/Screen';
@@ -114,7 +114,7 @@ export default function Files() {
   return (
     <Screen>
       <Header scrolled={scrolled} back eyebrow="Files · read only" title={name ?? 'Files'} lead={<IconBadge Icon={FolderTree} tone="sky" size={30} />} />
-      <Animated.View entering={FadeInDown.springify()} style={{ paddingHorizontal: 16, paddingBottom: 8, gap: 10 }}>
+      <Animated.View entering={FadeIn.duration(180)} style={{ paddingHorizontal: 16, paddingBottom: 8, gap: 10 }}>
         <Card r={18} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 42, gap: 8 }}>
           <Search color={color.text2} size={16} />
           <TextInput

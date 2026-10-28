@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Eye, FolderOpen, MessageCircle, Monitor, Sparkles, SquareTerminal } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chatHref, convHref } from '../../components/Conv';
 import { Header, Screen, useScrolled } from '../../components/Screen';
@@ -42,7 +42,7 @@ export default function Person() {
   };
 
   const action = (Icon: typeof Sparkles, label: string, tone: Tone, onPress: () => void, disabled: boolean, delay: number) => (
-    <Animated.View entering={FadeInDown.delay(delay).duration(300)} style={{ flex: 1 }}>
+    <Animated.View entering={FadeIn.duration(180)} style={{ flex: 1 }}>
       <Press disabled={disabled} onPress={onPress} accessibilityLabel={label} style={{ opacity: disabled ? 0.4 : 1 }}>
         <Card style={{ paddingVertical: 16, alignItems: 'center', gap: 10 }}>
           <IconBadge Icon={Icon} tone={tone} size={46} />
@@ -59,7 +59,7 @@ export default function Person() {
       <Header scrolled={scrolled} back title="" />
       <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
         <View style={{ alignItems: 'center', paddingTop: 4 }}>
-          <Animated.View entering={ZoomIn.duration(320)}>
+          <Animated.View entering={FadeIn.duration(320)}>
             <Avatar name={p.name} size={88} presence={p.presence} />
           </Animated.View>
           <T v="title" style={{ marginTop: 14 }}>
@@ -88,7 +88,7 @@ export default function Person() {
         ) : null}
 
         {p.usage ? (
-          <Animated.View entering={FadeInDown.delay(180).duration(300)} style={{ marginTop: 24, marginHorizontal: 16 }}>
+          <Animated.View entering={FadeIn.duration(180)} style={{ marginTop: 24, marginHorizontal: 16 }}>
             <Card style={{ padding: 16, gap: 14 }}>
               <T v="heading">Usage</T>
               <UsageBars usage={p.usage} />
@@ -96,7 +96,7 @@ export default function Person() {
           </Animated.View>
         ) : null}
 
-        <Animated.View entering={FadeInDown.delay(220).duration(300)} style={{ marginTop: 24, paddingHorizontal: 20, gap: 10 }}>
+        <Animated.View entering={FadeIn.duration(180)} style={{ marginTop: 24, paddingHorizontal: 20, gap: 10 }}>
           <T v="eyebrow">Your Claude can use</T>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {p.offers.length ? p.offers.map((o) => <Pill key={o} label={OFFER[o]?.label ?? o} Icon={OFFER[o]?.Icon} tone="mint" />) : <T v="callout">Only chat</T>}

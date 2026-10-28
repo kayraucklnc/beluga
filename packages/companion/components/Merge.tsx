@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Archive as ArchiveIcon, ArrowRight, Check, CircleAlert, Clock, FileWarning, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, Info, type LucideIcon, RefreshCw, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { calls } from '../lib/link/calls';
 import type { BranchStepView, BranchView, MergeCheckView, MergeView, PhoneBranchStep, Topic } from '../lib/link/protocol';
 import { openOnMac } from '../lib/mac';
@@ -99,7 +99,7 @@ export function MergeSheet({ topic, visible, onClose }: { readonly topic: Topic;
                 return (
                   <View key={c.id} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                     <View style={{ width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(t.tone) }}>
-                      <t.Icon color={toneInk(t.tone)} size={13} strokeWidth={2.4} />
+                      <t.Icon color={toneInk(t.tone)} size={13} strokeWidth={1.9} />
                     </View>
                     <T v="callout" c={color.text} style={{ flex: 1 }}>
                       {c.text}
@@ -156,12 +156,12 @@ export function MergeBand({ topic, merge, onCheck }: { readonly topic: Topic; re
     void store.call(calls.resolve(topic), { queue: false }).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
   };
   return (
-    <Animated.View key={merge.phase} entering={FadeInDown.duration(260)}>
+    <Animated.View key={merge.phase} entering={FadeIn.duration(260)}>
       <Card tone={b.tone} style={{ padding: 14, gap: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Breathe on={live}>
             <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card }}>
-              <b.Icon color={toneInk(b.tone)} size={16} strokeWidth={2.3} />
+              <b.Icon color={toneInk(b.tone)} size={16} strokeWidth={1.9} />
             </View>
           </Breathe>
           <T v="callout" c={toneInk(b.tone)} style={{ fontWeight: '700', flex: 1 }}>
@@ -281,7 +281,7 @@ export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topi
             hitSlop={6}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, maxWidth: 180, flexShrink: 1, paddingHorizontal: 14, borderRadius: 16, backgroundColor: toneBg(chip.tone), opacity: busy ? 0.6 : 1 }}
           >
-            {busy ? <ActivityIndicator size="small" color={toneInk(chip.tone)} /> : <chip.Icon color={toneInk(chip.tone)} size={14} strokeWidth={2.3} />}
+            {busy ? <ActivityIndicator size="small" color={toneInk(chip.tone)} /> : <chip.Icon color={toneInk(chip.tone)} size={14} strokeWidth={1.9} />}
             <T v="caption" c={toneInk(chip.tone)} numberOfLines={1} style={{ fontWeight: '700', flexShrink: 1 }}>
               {chip.label}
             </T>

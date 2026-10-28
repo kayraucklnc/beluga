@@ -146,6 +146,9 @@ export const API = {
   // ---- people and trust
   'people.setTrust': args(id, z.enum(TRUST_LEVELS)),
   'people.dismissPrompt': args(id),
+
+  // ---- what needs you: Dismiss takes an item off every list (phone, the Mac's bell) without answering it
+  'needs.dismiss': args(z.string().min(1).max(300)),
   'people.forget': args(id),
 
   // ---- workspaces you share, and ones shared with you

@@ -42,7 +42,7 @@ const Mini = ({ label, value, change }: { label: string; value: string; change: 
 
 const Step = ({ Icon, tone, title }: { Icon: LucideIcon; tone: Tone; title: string }) => (
   <View style={{ flex: 1, alignItems: 'center', gap: 6, padding: 10, borderRadius: radius.s, backgroundColor: toneBg(tone) }}>
-    <Icon color={toneInk(tone)} size={16} strokeWidth={2.2} />
+    <Icon color={toneInk(tone)} size={16} strokeWidth={1.9} />
     <T v="caption" c={color.text} numberOfLines={2} style={{ textAlign: 'center', fontWeight: '600' }}>
       {title}
     </T>

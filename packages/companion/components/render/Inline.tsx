@@ -91,7 +91,7 @@ export function InlineThing({ el }: { readonly el: InlineElement }) {
       const Arrow = el.dir > 0 ? ArrowUpRight : el.dir < 0 ? ArrowDownRight : ArrowRight;
       return (
         <View style={[pill, { backgroundColor: good === undefined ? color.code : good ? tint.ok : tint.error }]}>
-          <Arrow color={c} size={13} strokeWidth={2.4} />
+          <Arrow color={c} size={13} strokeWidth={1.9} />
           <Text style={{ ...type.caption, color: c, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{el.text}</Text>
         </View>
       );
@@ -126,7 +126,7 @@ function WorktreeChip({ id }: { readonly id: string }) {
   const found = work?.data.projects.flatMap((p) => p.conversations.map((c) => ({ c, project: p.name }))).find((x) => x.c.topic === topic);
   return (
     <Press haptics={false} onPress={() => router.push(`/conv/${encodeURIComponent(`ws:${id}`)}`)} style={[pill, { backgroundColor: tint.mint }]}>
-      <GitBranch color={ink.mint} size={12} strokeWidth={2.4} />
+      <GitBranch color={ink.mint} size={12} strokeWidth={1.9} />
       <Text numberOfLines={1} style={{ ...type.caption, color: ink.mint, fontWeight: '700', maxWidth: 180 }}>
         {found ? `${found.project} · ${found.c.title}` : 'New worktree'}
       </Text>
@@ -140,7 +140,7 @@ function PlanChip({ id }: { readonly id: string }) {
   const plan = plans?.data.plans.find((p) => p.id === id);
   return (
     <Press haptics={false} onPress={() => router.push(`/plan/${encodeURIComponent(id)}`)} style={[pill, { backgroundColor: tint.butter }]}>
-      <Workflow color={ink.butter} size={12} strokeWidth={2.4} />
+      <Workflow color={ink.butter} size={12} strokeWidth={1.9} />
       <Text numberOfLines={1} style={{ ...type.caption, color: ink.butter, fontWeight: '700', maxWidth: 180 }}>
         {plan?.title ?? 'Plan'}
       </Text>
@@ -155,7 +155,7 @@ function SentinelChip({ id }: { readonly id: string }) {
   const s = list?.data.sentinels.find((x) => x.id === id);
   return (
     <Press haptics={false} disabled={!on} onPress={() => router.push(`/sentinel/${encodeURIComponent(id)}`)} style={[pill, { backgroundColor: tint.sky }]}>
-      <Shield color={ink.sky} size={12} strokeWidth={2.4} />
+      <Shield color={ink.sky} size={12} strokeWidth={1.9} />
       <Text numberOfLines={1} style={{ ...type.caption, color: ink.sky, fontWeight: '700', maxWidth: 180 }}>
         {s?.name ?? 'Sentinel'}
       </Text>

@@ -87,7 +87,7 @@ export function JsonTree({ doc, text }: { readonly doc: JsonDoc; readonly text: 
                   );
                 const row = (
                   <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: l.depth * 14, paddingRight: 8, minHeight: 22 }}>
-                    <View style={{ width: 16, alignItems: 'center' }}>{l.container ? l.open ? <ChevronDown color={color.text3} size={12} strokeWidth={2.4} /> : <ChevronRight color={color.text3} size={12} strokeWidth={2.4} /> : null}</View>
+                    <View style={{ width: 16, alignItems: 'center' }}>{l.container ? l.open ? <ChevronDown color={color.text3} size={12} strokeWidth={1.9} /> : <ChevronRight color={color.text3} size={12} strokeWidth={1.9} /> : null}</View>
                     <Text numberOfLines={1} style={mono}>
                       {keyText}
                       {l.container ? (

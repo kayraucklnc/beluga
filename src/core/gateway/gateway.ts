@@ -126,6 +126,8 @@ export interface MeshNode extends MeshPort {
 }
 
 const TICK_MS = 10_000;
+/** A request you sent that was handed over and then heard nothing for this long: it failed. */
+const SILENT_MS = 24 * 3600_000;
 const DEFAULT_CONFIRM_MS = 10 * 60_000;
 const MAX_STEPS = 12;
 
@@ -214,7 +216,8 @@ export class Gateway {
     // Tasks that were waiting on the other side when Beluga quit are still there: keep waiting.
     // Received ones that were running here stopped with it.
     for (const t of this.book.all()) {
-      if (t.direction === 'received' && !isFinal(t.state)) this.put({ ...t, state: 'failed', result: { status: 'failed', summary: 'Beluga quit before it finished', files: [], log: t.steps }, endedAt: this.now(), updatedAt: this.now() });
+      // And the friend who asked hears it, or their copy would wait on "working" for good.
+      if (t.direction === 'received' && !isFinal(t.state)) this.server.sendResult(this.put({ ...t, state: 'failed', result: { status: 'failed', summary: 'Beluga quit before it finished', files: [], log: t.steps }, endedAt: this.now(), updatedAt: this.now() }), { status: 'failed', summary: 'Beluga quit before it finished', files: [], log: t.steps });
       if (t.direction === 'sent' && t.state === 'confirm') this.put({ ...t, state: 'cancelled', result: { status: 'cancelled', summary: 'Not sent (Beluga quit before you answered)', files: [], log: [] }, endedAt: this.now(), updatedAt: this.now() });
     }
     deps.store.dispatch({ type: 'gw_init', state: this.view() });
@@ -402,6 +405,18 @@ export class Gateway {
     const unsent = request !== undefined && !request.sentAt;
     if (!unsent) this.courier.send(task.peerId, { t: 'task_cancel', id, ts: this.now() }, true);
     return this.finishLocal(task, 'cancelled', unsent ? 'Cancelled before it reached them' : 'Cancelled by you');
+  }
+
+  /**
+   * Remove a task you sent from your lists (the phone's Remove): one still going is cancelled first,
+   * so the friend's Mac hears it too. Its saved pictures and files stay where they were saved.
+   */
+  forget(id: string): void {
+    const task = this.need(id);
+    if (task.direction !== 'sent') throw new Error('Only a request you sent can be removed');
+    if (!isFinal(task.state)) this.cancel(id);
+    this.book.remove(id);
+    this.deps.store.dispatch({ type: 'gw_forget', id });
   }
 
   get(id: string): TaskView | undefined {
@@ -940,6 +955,12 @@ export class Gateway {
       if (!('m' in gone.frame) || gone.frame.m.t !== 'task_request') continue;
       const task = this.book.get(gone.frame.m.id);
       if (task && !isFinal(task.state)) this.finishLocal(task, 'failed', `${task.peerName} didn't come online in time`);
+    }
+    // Handed over, then silence: a friend's Mac that lost it (an older Beluga that quit mid-task)
+    // never answers, so after a day without news it stops showing as running here.
+    const now = this.now();
+    for (const t of this.book.all()) {
+      if (t.direction === 'sent' && t.state !== 'confirm' && !isFinal(t.state) && !this.book.pending()[t.id] && now - t.updatedAt > SILENT_MS) this.finishLocal(t, 'failed', `No word from ${t.peerName} in a day`);
     }
     this.courier.flush();
     this.queueCards();

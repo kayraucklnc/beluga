@@ -33,6 +33,8 @@ import { COMPANION_HANDLERS } from './companion-handlers.js';
 import { ASSISTANT_HANDLERS } from './assistant-handlers.js';
 import { VOICE_HANDLERS } from './voice-handlers.js';
 import { TERMINAL_IMPORT_HANDLERS } from './terminal-import-handlers.js';
+import { waitingNeeds } from '../companion/needs-you.js';
+import { saveDismissedNeeds, withDismissed } from '../core/dismissed-needs.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
@@ -102,6 +104,12 @@ export const HANDLERS = {
 
   'people.setTrust': (s, peerId, level) => s.people.setTrust(peerId, level),
   'people.dismissPrompt': (s, peerId) => s.people.dismissPrompt(peerId),
+  'needs.dismiss': (s, needId) => {
+    const live = new Set(waitingNeeds(s.store.getState()).map((n) => n.id));
+    const ids = withDismissed(s.store.getState().dismissedNeeds, needId, live);
+    s.store.dispatch({ type: 'needs_dismissed', ids });
+    saveDismissedNeeds(ids);
+  },
   'people.forget': (s, peerId) => s.people.forget(peerId),
 
   'sharing.invite': (s, wsId, peerId, role) => {

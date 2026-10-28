@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowUp, ChevronDown, Folder, GitBranch, ImagePlus, Laptop, ListChecks, MessageCircleQuestion, MessageSquare, Mic, Sparkles, Square, Workflow, X } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, useAnimatedStyle, withSpring, ZoomIn, ZoomOut } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { convHref } from '../components/Conv';
 import { Sheet } from '../components/Sheet';
 import { Avatar, haptic, IconBadge, Press, T, type Tone, toneBg, toneInk } from '../components/ui';
@@ -211,7 +211,7 @@ export default function Ask() {
                 />
               )}
               {photo ? (
-                <Animated.View entering={ZoomIn.duration(220)} exiting={ZoomOut.duration(150)} style={{ width: 80, height: 80, borderRadius: 16, overflow: 'hidden', marginTop: 6 }}>
+                <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(150)} style={{ width: 80, height: 80, borderRadius: 16, overflow: 'hidden', marginTop: 6 }}>
                   <Image source={{ uri: photo.uri }} style={{ flex: 1 }} contentFit="cover" />
                   <Press onPress={() => setPhoto(undefined)} accessibilityLabel="Remove photo" style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card }}>
                     <X color={color.text2} size={13} />
@@ -253,7 +253,7 @@ export default function Ask() {
                 accessibilityLabel={speaking ? 'Send it as you said it' : 'Send'}
                 style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() || speaking ? color.primary : color.sunken }}
               >
-                <ArrowUp color={text.trim() || speaking ? color.onPrimary : color.text3} size={22} strokeWidth={2.6} />
+                <ArrowUp color={text.trim() || speaking ? color.onPrimary : color.text3} size={22} strokeWidth={2} />
               </Press>
             </View>
           </View>
@@ -278,7 +278,7 @@ function ModeChips({ mode, onMode, planFirst, onPlanFirst }: { readonly mode: Mo
             accessibilityLabel={m.label}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: on ? toneBg(m.tone) : color.sunken }}
           >
-            <m.Icon color={on ? toneInk(m.tone) : color.text2} size={15} strokeWidth={2.3} />
+            <m.Icon color={on ? toneInk(m.tone) : color.text2} size={15} strokeWidth={1.9} />
             <T v="caption" c={on ? toneInk(m.tone) : color.text2} style={{ fontWeight: '700' }}>
               {m.label}
             </T>
@@ -300,7 +300,7 @@ function PlanFirst({ on, onChange }: { readonly on: boolean; readonly onChange: 
       accessibilityLabel="Plan mode: Claude plans first"
       style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: on ? toneBg('lavender') : color.sunken }}
     >
-      <ListChecks color={on ? toneInk('lavender') : color.text2} size={15} strokeWidth={2.3} />
+      <ListChecks color={on ? toneInk('lavender') : color.text2} size={15} strokeWidth={1.9} />
       <T v="caption" c={on ? toneInk('lavender') : color.text2} style={{ fontWeight: '700' }}>
         Plan first
       </T>

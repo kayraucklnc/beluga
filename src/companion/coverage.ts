@@ -291,6 +291,8 @@ export const PHONE: Record<Method, Side> = {
   'gateway.confirm': 'phone',
   'gateway.setAskFreely': 'mac',
   'gateway.cancel': 'phone',
+  'gateway.forget': 'phone',
+  'needs.dismiss': 'phone',
   'gateway.ask': 'phone',
   'gateway.setNote': 'mac',
   'gateway.decide': 'phone',

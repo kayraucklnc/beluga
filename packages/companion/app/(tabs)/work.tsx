@@ -2,23 +2,24 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Folder } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AgentDots, convHref, statusIcon } from '../../components/Conv';
 import { PlansList } from '../../components/Plans';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Segments } from '../../components/Segments';
-import { Card, Row, T } from '../../components/ui';
-import { ago, useSupports, useView } from '../../lib/hooks';
+import { Card, FoldHead, Row } from '../../components/ui';
+import { ago, useFolded, useSupports, useView } from '../../lib/hooks';
 import type { PlansView, TasksView, WorkView } from '../../lib/link/protocol';
 import { store } from '../../lib/store';
 import { ProjectMark } from '../../components/ProjectMark';
 import { TasksList } from '../../components/Tasks';
 import { color, TAB_BAR_H } from '../../lib/theme';
 
-/** Work: projects and their conversations; plans beside them. */
+/** Work: projects and their conversations (each project folds, remembered); plans and tasks beside them. */
 export default function Work() {
   const { scrolled, onScroll } = useScrolled();
+  const fold = useFolded('work');
   const insets = useSafeAreaInsets();
   const work = useView<WorkView>('work');
   const plans = useView<PlansView>('plans');
@@ -52,16 +53,18 @@ export default function Work() {
             <TasksList />
           </Animated.View>
         ) : (
-          <Animated.View entering={FadeIn} style={{ gap: 22 }}>
-            {(work?.data.projects ?? []).filter((p) => p.conversations.length).map((p, pi) => (
-              <Animated.View key={p.id} entering={FadeInDown.delay(pi * 60).duration(300)}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, marginBottom: 8 }}>
-                  {p.id === 'asked' || p.id === 'room' ? <Folder color={color.text3} size={16} /> : <ProjectMark name={p.name} icon={p.icon} size={24} />}
-                  <T v="eyebrow" style={{ flex: 1 }}>
-                    {p.name}
-                  </T>
-                </View>
-                <Card style={{ marginHorizontal: 16 }}>
+          <Animated.View entering={FadeIn} style={{ gap: 12 }}>
+            {(work?.data.projects ?? []).filter((p) => p.conversations.length).map((p) => (
+              <View key={p.id}>
+                <FoldHead
+                  folded={fold.folded(p.id)}
+                  onToggle={() => fold.toggle(p.id)}
+                  lead={p.id === 'asked' || p.id === 'room' ? <Folder color={color.text3} size={18} /> : <ProjectMark name={p.name} icon={p.icon} size={22} />}
+                  label={p.name}
+                  count={p.conversations.length}
+                />
+                {fold.folded(p.id) ? null : (
+                <Card style={{ marginHorizontal: 16, marginTop: 6 }}>
                   {p.conversations.map((c, i) => {
                     const st = statusIcon(c.needsYou ? 'waiting' : c.status);
                     return (
@@ -78,7 +81,8 @@ export default function Work() {
                     );
                   })}
                 </Card>
-              </Animated.View>
+                )}
+              </View>
             ))}
           </Animated.View>
         )}

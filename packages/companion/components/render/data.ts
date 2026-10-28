@@ -101,7 +101,7 @@ export function useViewData(view: View, at: BlockAt | undefined, opts: { limit?:
       .call<ViewFetchResult>(calls.viewFetch({ ...at, query, ...(own ? { source: own } : {}), ...(wantFresh ? { fresh: true } : {}), ...(yes ? { confirm: true } : {}), ...(opts.text ? { text: true } : {}) }), { queue: false })
       .then(
         (r) => {
-          if (!alive || !r) return;
+          if (!alive || !r || 'notKept' in r) return;
           if ('needsApproval' in r) return setAsk(r.what);
           setAsk(undefined);
           setError(undefined);
