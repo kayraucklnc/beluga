@@ -45,3 +45,42 @@ test('Your Mac holds several chats as tabs, and deletes one for good', async ({ 
   await expect(tabs.first()).toContainText('What is using my CPU?');
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/03-after-delete.png` });
 });
+
+/**
+ * Deleting the open chat opens the one beside it, and a worktree named in that one (`worktree:<id>`)
+ * is a chip: its pick built a new object on every read, which React took for a store that never
+ * settles and gave up on (#185, "This view ran into a problem").
+ */
+test('Your Mac deletes the open chat; the one beside it shows its worktree chip', async ({ page }) => {
+  await page.goto('/');
+  // A worktree the demo has, asked of the daemon over a second connection (the app's own boot code).
+  const wt = await page.evaluate(async () => {
+    const boot = await import('/src/lib/boot.ts');
+    const c = await boot.connect(boot.capabilities(() => ({ ok: true, message: '' })));
+    const w = c.store.getState().projects.flatMap((p) => p.workspaces).find((x) => x.kind === 'worktree' && !x.archived)!;
+    return { id: w.id, name: w.name };
+  });
+  await page.getByRole('navigation', { name: 'Sidebar' }).getByText('Your Mac', { exact: true }).click();
+  const strip = page.getByRole('tablist', { name: 'Your Mac’s chats' });
+  const tabs = strip.getByRole('tab');
+  const box = page.locator('textarea:not(.xterm-helper-textarea)');
+  await box.fill(`How is \`worktree:${wt.id}\` doing?`);
+  await box.press('Enter');
+  const chip = page.getByRole('button', { name: new RegExp(`^Worktree ${wt.name} in `) }).first();
+  await expect(chip).toBeVisible();
+
+  const count = (await tabs.count()) + 1;
+  await page.getByRole('button', { name: 'New chat with Your Mac' }).click();
+  await expect(tabs).toHaveCount(count);
+  await expect(tabs.last()).toHaveAttribute('aria-selected', 'true');
+  await box.fill('Take a screenshot');
+  await box.press('Enter');
+  await expect(tabs.last()).toContainText('Take a screenshot');
+  await tabs.last().hover();
+  await strip.getByRole('button', { name: 'Delete this chat' }).last().click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete Chat' }).click();
+  await expect(tabs).toHaveCount(count - 1);
+  await expect(tabs.last()).toHaveAttribute('aria-selected', 'true');
+  await expect(chip).toBeVisible();
+  await expect(page.getByText('This view ran into a problem')).toHaveCount(0);
+});
