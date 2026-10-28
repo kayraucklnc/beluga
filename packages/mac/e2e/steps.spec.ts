@@ -199,6 +199,9 @@ test('while Claude works, a sent message flies into the queue above the box', as
   const queued = page.getByRole('region', { name: 'Queued messages' }).locator('li', { hasText: 'then list the riskiest parts' });
   await expect(queued).toHaveAttribute('data-flown', 'true');
   expect(await flights(page)).toBeGreaterThanOrEqual(1);
+  // It waits above the box, not in the chat (BLG-317).
+  await expect(page.locator('[data-index]', { hasText: 'then list the riskiest parts' })).toHaveCount(0);
+  await page.screenshot({ path: '../../.beluga/scratch/01-queued-above-the-box.png' });
   // Stop: the queued message comes back to the box.
   await page.getByRole('button', { name: 'Stop Claude' }).first().click();
   await expect(composer(page)).toHaveValue(/then list the riskiest parts/);

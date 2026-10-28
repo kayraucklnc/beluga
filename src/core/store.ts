@@ -87,6 +87,8 @@ export type LogItem =
       readonly prompt?: string;
       /** Queued only because your Claude works in as many other conversations as it may at once. */
       readonly slotWait?: SlotWait;
+      /** When it left the queue (it waited its turn): where the chat draws it and the message it answers (see shared/claude-notices.ts asSent). */
+      readonly queuedUntil?: number;
       readonly status: AgentItemStatus;
       readonly text: string;
       readonly steps: readonly string[];
@@ -794,6 +796,7 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(a.event === 'tool' ? { stepAt: a.ts } : {}),
     ...(a.event === 'queued' && a.text ? { prompt: a.text } : {}),
     ...(a.event === 'queued' && a.slotWait ? { slotWait: a.slotWait } : {}),
+    ...(existing?.status === 'queued' && a.event !== 'queued' ? { queuedUntil: a.ts } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
   // A new message, or a run in a workspace finishing while no screen shows it (Claude's answer is news).

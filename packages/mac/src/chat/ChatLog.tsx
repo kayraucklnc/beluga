@@ -14,7 +14,8 @@ import { CompactDivider } from './CompactDivider.js';
 import { isCompactItem } from './context-model.js';
 import { useClaudeStarting } from './flight.js';
 import { withLiveTails } from './live-tail.js';
-import { steeredMessages } from '@beluga/shared/claude-notices.js';
+import { asSent, steeredMessages } from '@beluga/shared/claude-notices.js';
+import { inYourQueue } from '@beluga/ui/compose.js';
 import s from './chat.module.css';
 import f from './flight.module.css';
 
@@ -109,9 +110,11 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const selfId = useApp((st) => st.selfId);
   // A shared workspace's earlier messages arrive as system lines; drawn here as normal messages.
   const items = useMemo(() => mine.map(chatRowOf), [mine]);
+  // What waits its turn is in the queue above the box; once it runs, it's drawn where it ran (BLG-317).
+  const sent = useMemo(() => asSent(items, (card) => inYourQueue(card, selfId)), [items, selfId]);
   // A message you steered in shows itself whether Claude has read it (BLG-54): its note card isn't drawn.
-  const steered = useMemo(() => steeredMessages(items), [items]);
-  const drawn = useMemo(() => (steered.notes.size ? items.filter((l) => !steered.notes.has(l.id)) : items), [items, steered]);
+  const steered = useMemo(() => steeredMessages(sent), [sent]);
+  const drawn = useMemo(() => (steered.notes.size ? sent.filter((l) => !steered.notes.has(l.id)) : sent), [sent, steered]);
   const tasks = useApp((st) => tasksIn(st, channel), sameItems);
   const placed = useMemo(() => placeTasks(drawn, tasks), [drawn, tasks]);
   // A card's tasks stay the same list while they're the same tasks, so its memo holds.

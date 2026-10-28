@@ -33,9 +33,15 @@ export interface QueuedMessage {
 /** What waits in this conversation for your Claude, and what you asked others' Claudes, in run order. */
 export function queueIn(state: Pick<AppState, 'log'>, channel: string, selfId: string): QueuedMessage[] {
   return state.log.flatMap((l) => {
-    if (l.type !== 'agent' || l.channel !== channel || l.status !== 'queued') return [];
-    const askedBySelf = l.requester !== undefined ? l.requester === selfId : l.owner === selfId && l.requesterName === l.ownerName;
-    if (l.owner !== selfId && !askedBySelf) return [];
-    return [{ requestId: l.requestId, prompt: l.prompt ?? '', by: l.requesterName, claude: l.ownerName, yours: l.owner === selfId && askedBySelf, ...(l.slotWait ? { slotWait: l.slotWait } : {}) }];
+    if (l.type !== 'agent' || l.channel !== channel || l.status !== 'queued' || !inYourQueue(l, selfId)) return [];
+    return [{ requestId: l.requestId, prompt: l.prompt ?? '', by: l.requesterName, claude: l.ownerName, yours: l.owner === selfId && askedBy(l, selfId), ...(l.slotWait ? { slotWait: l.slotWait } : {}) }];
   });
+}
+
+type AgentCard = Extract<AppState['log'][number], { type: 'agent' }>;
+const askedBy = (l: AgentCard, selfId: string): boolean => (l.requester !== undefined ? l.requester === selfId : l.owner === selfId && l.requesterName === l.ownerName);
+
+/** A card the queue above the box shows while it waits: for your Claude, or asked by you. */
+export function inYourQueue(l: AgentCard, selfId: string): boolean {
+  return l.owner === selfId || askedBy(l, selfId);
 }
