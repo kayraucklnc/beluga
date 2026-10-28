@@ -117,3 +117,31 @@ test('a permission macOS already allows shows as allowed, and the tour shows a r
   await expect(welcome.getByText('Allowed', { exact: true })).toBeVisible();
   await expect(welcome.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
 });
+
+test('the tour explains Sentinel: a sentence becomes a sentinel, then real ones at work', async ({ page }) => {
+  await page.goto('/');
+  const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
+  await welcome.getByRole('button', { name: /Get Started/ }).click();
+  for (const heading of ['Work on everything at once.', 'See every agent work. Steer any of them.', 'Answers you can sort, not just read.', 'Your Claude, and your friends’ Claudes.']) {
+    await expect(welcome.getByRole('heading', { name: heading })).toBeVisible();
+    await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  }
+
+  // A sentence becomes a sentinel: its trigger, its steps, its access; the names pick another.
+  await expect(welcome.getByRole('heading', { name: 'Say when. Say what. Beluga keeps watch.' })).toBeVisible();
+  await expect(welcome.getByText('Every day at 7:00')).toBeVisible();
+  await welcome.getByRole('tab', { name: 'Site watch' }).click();
+  await expect(welcome.getByText('When example.com stops answering')).toBeVisible();
+  await expect(welcome.getByText('Run a script')).toBeVisible();
+  await expect(welcome.getByText('Call a service')).toBeVisible();
+  await expect(welcome.getByText('Back up', { exact: true })).toBeVisible({ timeout: 10_000 });
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+
+  // Sentinel at work: its page's films, each with the sentence that sets it up.
+  await expect(welcome.getByRole('heading', { name: 'Real work, done while you sleep.' })).toBeVisible();
+  await welcome.getByRole('tab', { name: 'Failing tests' }).click();
+  await expect(welcome.getByText('When the tests break, Claude fixes them and asks you to merge')).toBeVisible();
+  await expect(welcome.getByText(/When the tests fail on GitHub for one of my projects/)).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(welcome.getByRole('heading', { name: 'Know what every project earns.' })).toBeVisible();
+});

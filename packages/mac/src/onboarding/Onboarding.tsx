@@ -20,7 +20,7 @@ import { Hello, Ready, Tour } from './Steps.js';
 import s from './onboarding.module.css';
 
 /** How lit the backdrop is on each step: bright for the welcome and the end, calm behind settings. */
-const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, tables: 0.9, friends: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, terminal: 0.7, fire: 0.7, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, ready: 1 };
+const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, tables: 0.9, friends: 0.9, sentinel: 0.9, uses: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, terminal: 0.7, fire: 0.7, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, ready: 1 };
 
 /** How long the app takes to settle into place as the wormhole clears (Shell.module.css, `arrive`). */
 const ARRIVE_S = 1.6;
@@ -95,7 +95,7 @@ function Progress({ step, go }: { readonly step: Step; readonly go: (to: Step) =
 }
 
 /**
- * The first time Beluga opens: a welcome, a six-part tour of what it does, a look and a few
+ * The first time Beluga opens: a welcome, an eight-part tour of what it does, a look and a few
  * settings, the macOS permissions (one a step, each optional), notifications, the phone app,
  * then the app. A full window of its own over the app (which is already there
  * underneath, so finishing simply lifts this away).

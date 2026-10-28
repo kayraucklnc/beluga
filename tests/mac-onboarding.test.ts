@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { ACCESS, DONE_KEY, LAST_SETTING, PLACE_KEY, PREFS_KEY, RESUME_MS, STEPS, TOUR, accessPlace, afterAccess, afterTour, clearPlace, groupOf, inAccess, inTour, resumeAt, saveMark, savePlace, shouldShow, stepBy, tourPlace, wasDone } from '../packages/mac/src/onboarding/onboarding-model.js';
 import { ACCESS_COPY, accessNext, grantText } from '../packages/mac/src/onboarding/access-copy.js';
+import { TOUR_SENTINELS } from '../packages/mac/src/onboarding/sentinel-tour.js';
+import { TOUR_COPY } from '../packages/mac/src/onboarding/tour-copy.js';
+import { accessAllows, stepAvailable, triggerAvailable } from '../src/core/sentinel/model.js';
 
 /** The Mac app's first-run welcome (packages/mac/src/onboarding): when it shows, and how it steps. */
 
@@ -159,5 +162,32 @@ describe('the new tour and phone steps', () => {
     expect(groupOf('agents')).toBe('tour');
     expect(groupOf('automation')).toBe('access');
     expect(groupOf('phone')).toBe('other');
+  });
+});
+
+describe('Sentinel in the tour (BLG-362)', () => {
+  it('explains a sentinel, then shows it at work, right after friends', () => {
+    expect(stepBy('friends', 1)).toBe('sentinel');
+    expect(stepBy('sentinel', 1)).toBe('uses');
+    expect(stepBy('uses', 1)).toBe('earnings');
+    expect(inTour('sentinel') && inTour('uses')).toBe(true);
+    expect(TOUR_COPY.sentinel?.title).toBeTruthy();
+    expect(TOUR_COPY.uses?.title).toBeTruthy();
+  });
+
+  it('builds only sentinels Sentinel really allows', () => {
+    expect(new Set(TOUR_SENTINELS.map((x) => x.id)).size).toBe(TOUR_SENTINELS.length);
+    // Different triggers and steps each time: the point is how far the same parts go.
+    expect(new Set(TOUR_SENTINELS.map((x) => x.trigger)).size).toBeGreaterThanOrEqual(4);
+    expect(new Set(TOUR_SENTINELS.flatMap((x) => x.steps.map((st) => st.kind))).size).toBeGreaterThanOrEqual(7);
+    for (const x of TOUR_SENTINELS) {
+      expect(triggerAvailable(x.trigger)).toBe(true);
+      expect(x.said).toHaveLength(3);
+      expect(x.steps.length).toBeGreaterThan(0);
+      for (const st of x.steps) {
+        expect(stepAvailable(st.kind)).toBe(true);
+        expect(accessAllows(x.access, st.kind, st.where), `${x.id}: ${st.kind} with ${x.access}`).toBe(true);
+      }
+    }
   });
 });
