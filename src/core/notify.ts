@@ -482,7 +482,7 @@ export class Notifier {
     const desktop = desktopAllowed(state, this.now());
     for (const raw of events) {
       const e = direct ? scopeToPlan(state, raw) : raw;
-      if (!enabled(prefs, e.kind)) continue;
+      if (!enabled(prefs, e.kind, e.tag)) continue;
       if (e.key !== undefined) {
         if (this.told.has(e.key) || state.inbox.some((n) => n.key === e.key)) continue;
         this.told.add(e.key);
@@ -560,5 +560,9 @@ export function combine(batch: readonly NoticeEvent[], prefs: boolean | SoundPre
   return { title: `${batch.length} updates in Beluga`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), ...sound, ...channel };
 }
 
-/** Whether you want to hear about this kind (missing in old settings: yes). */
-export const enabled = (prefs: NotifySettings, kind: NoticeKind): boolean => prefs[kind] !== false;
+/**
+ * Whether you want to hear about this kind (missing in old settings: yes). Sentinels have their own
+ * switch on top, for their results and failures; one that waits for you (a merge to allow) still tells.
+ */
+export const enabled = (prefs: NotifySettings, kind: NoticeKind, tag?: NoticeTag): boolean =>
+  prefs[kind] !== false && !(tag === 'sentinel' && kind !== 'needsYou' && prefs.sentinels === false);
