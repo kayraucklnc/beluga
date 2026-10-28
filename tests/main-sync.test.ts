@@ -279,17 +279,50 @@ describe('the main folder on another branch', () => {
 });
 
 describe('Let Claude handle it', () => {
-  it('starts a main-folder conversation whose next run (only) may sync git', async () => {
+  it('diverged history: a worktree from local main, where Claude can work', async () => {
     teammatePushes({ 0: 'a' }, 'mate 1');
     git(repo, 'commit', '-q', '--allow-empty', '-m', 'local');
     await ctl.mainSync.fetch(pid());
-    const wsId = await ctl.mainSync.askClaude(pid());
+    const wsId = await ctl.mainSync.askClaude(pid(), 'main and origin/main have both moved on');
     const ws = mgr.find(wsId!)!;
-    expect(ws).toMatchObject({ kind: 'chat', askOnly: true, purpose: 'sync_main', name: 'Update main' });
+    expect(ws).toMatchObject({ kind: 'worktree', purpose: 'sync_main', name: 'update-main' });
+    expect(ws.askOnly).toBeFalsy();
+    // Its branch starts from local main, so the local commit comes along.
+    expect(head(ws.path)).toBe(head(repo, 'main'));
     expect(asked).toHaveLength(1);
     expect(asked[0]!.channel).toBe(`ws:${wsId}`);
     expect(asked[0]!.prompt).toMatch(/Bring main up to date with origin\/main/);
-    expect(asked[0]!.prompt).toMatch(/main has 1 commit that isn’t on origin\/main, and origin\/main has 1 new commit/);
+    expect(asked[0]!.prompt).toMatch(/main and origin\/main have both moved on \(main has 1 commit that isn’t on origin\/main, and origin\/main has 1 new commit/);
+    expect(asked[0]!.prompt).toMatch(/main is checked out in the main folder, so don't move it yourself/);
+    expect(asked[0]!.prompt).toMatch(/Never push/);
+    const place = ctl.place(`ws:${wsId}`);
+    expect(place?.askOnly).toBeUndefined();
+    expect(place?.autoEdit).toBe(true);
+    // The main folder isn't touched.
+    expect(git(repo, 'branch', '--show-current').trim()).toBe('main');
+  });
+
+  it('a failing fetch: a worktree from origin, told git’s words and never to handle a password', async () => {
+    git(repo, 'remote', 'set-url', 'origin', path.join(base, 'gone.git'));
+    const out = await ctl.mainSync.update(pid());
+    expect(out.kind).toBe('fetch_failed');
+    const wsId = await ctl.mainSync.askClaude(pid(), `Couldn’t fetch: ${out.kind === 'fetch_failed' ? out.message : ''}`);
+    expect(mgr.find(wsId!)).toMatchObject({ kind: 'worktree', purpose: 'sync_main' });
+    expect(asked[0]!.prompt).toMatch(/What Beluga found: Couldn’t fetch/);
+    expect(asked[0]!.prompt).toMatch(/If fetching fails, find out why/);
+    expect(asked[0]!.prompt).toMatch(/Never ask for, type or store a password or token/);
+  });
+
+  it('a merge stopped halfway in main: a main-folder conversation whose next run (only) may sync git', async () => {
+    teammatePushes({ 0: 'theirs' }, 'mate 1');
+    writeFileSync(path.join(repo, 'notes.txt'), fileWith({ 0: 'ours' }));
+    git(repo, 'commit', '-q', '-am', 'local');
+    await ctl.mainSync.fetch(pid());
+    expect(() => git(repo, 'merge', 'origin/main')).toThrow();
+    const wsId = await ctl.mainSync.askClaude(pid());
+    const ws = mgr.find(wsId!)!;
+    expect(ws).toMatchObject({ kind: 'chat', askOnly: true, purpose: 'sync_main', name: 'Update main' });
+    expect(asked[0]!.prompt).toMatch(/a merge is stopped halfway in the main folder/);
     expect(asked[0]!.prompt).toMatch(/Never push/);
     const first = ctl.place(`ws:${wsId}`);
     expect(first?.askOnly).toBeTruthy();

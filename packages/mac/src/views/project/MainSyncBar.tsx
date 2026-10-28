@@ -13,14 +13,19 @@ import s from './main-sync.module.css';
 /**
  * Under the project's name: Update main (fetch and fast-forward), Fetch and when it last did, the
  * main folder being on another branch (Switch to main), and Claude updating main. What can't
- * simply fast-forward asks: set your changes aside, move them to a worktree, or let Claude do it.
+ * simply fast-forward asks: set your changes aside, move them to a worktree, or let Claude do it
+ * (in a worktree of its own; in the main folder only for what's stuck in its files).
  */
 
 type Dialog =
   | { readonly kind: 'dirty'; readonly files: readonly string[]; readonly behind: number }
-  | { readonly kind: 'claude'; readonly title: string; readonly message: string }
+  /** `inMain`: stuck in the main folder's own files, so Claude works there (else in a worktree). */
+  | { readonly kind: 'claude'; readonly title: string; readonly message: string; readonly inMain?: boolean }
   | { readonly kind: 'conflicts'; readonly files: readonly string[]; readonly message: string }
   | { readonly kind: 'switch'; readonly dirty: number };
+
+/** A fetch that failed, as the dialog that offers Claude (git's own words go along). */
+const fetchDialog = (message: string, detail?: string): Dialog => ({ kind: 'claude', title: 'Couldn’t fetch', message: detail && !message.includes(detail) ? `${message} Git said: ${detail}` : message });
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -35,9 +40,10 @@ function useNow(ms: number): number {
   return now;
 }
 
-/** A conversation where Claude is updating main right now (its workspace id). */
-function useClaudeUpdating(project: Project): string | undefined {
-  return useApp((st) => project.workspaces.find((w) => w.purpose === 'sync_main' && !w.archived && activityOf(st.log, `ws:${w.id}`).running)?.id);
+/** A conversation where Claude is updating main right now (its workspace id, and whether it's in a worktree). */
+function useClaudeUpdating(project: Project): { id: string; worktree: boolean } | undefined {
+  const ws = useApp((st) => project.workspaces.find((w) => w.purpose === 'sync_main' && !w.archived && activityOf(st.log, `ws:${w.id}`).running));
+  return ws ? { id: ws.id, worktree: ws.kind === 'worktree' } : undefined;
 }
 
 export function MainSyncBar({ project, line }: { project: Project; line: MainLine }) {
@@ -85,10 +91,13 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
         setDialog({ kind: 'claude', title: `${out.branch} and ${out.upstream} have both moved on`, message: `${out.branch} has ${plural(out.ahead, 'commit')} that ${out.ahead === 1 ? 'isn’t' : 'aren’t'} on ${out.upstream}, and ${out.upstream} has ${plural(out.behind, 'new commit')}. Bringing them together takes a merge or a rebase.` });
         return;
       case 'busy':
-        setDialog({ kind: 'claude', title: `A ${out.operation} is stopped halfway in main`, message: `The main folder is in the middle of a ${out.operation} (there are conflicts to resolve). Claude can finish it and then update ${branch}.` });
+        setDialog({ kind: 'claude', inMain: true, title: `A ${out.operation} is stopped halfway in main`, message: `The main folder is in the middle of a ${out.operation} (there are conflicts to resolve). Claude can finish it and then update ${branch}.` });
         return;
       case 'failed':
         setDialog({ kind: 'claude', title: `Couldn’t update ${branch}`, message: out.message });
+        return;
+      case 'fetch_failed':
+        setDialog(fetchDialog(out.message, out.detail));
         return;
       default:
     }
@@ -96,9 +105,11 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
 
   const update = (): void => void run('update', () => api.git.updateMain(project.id)).then((out) => out && decide(out));
   const fetchNow = (): void => void api.git.fetch(project.id).catch((err: unknown) => toast(client, errorText(err), 'error'));
+  /** What the dialog said goes along, so Claude starts from git's own words. */
   const askClaude = (): void => {
+    const said = dialog && 'message' in dialog ? `${dialog.kind === 'claude' ? `${dialog.title}: ` : ''}${dialog.message}`.slice(0, 2000) : undefined;
     setDialog(undefined);
-    void run('claude', () => api.git.askClaude(project.id));
+    void run('claude', () => api.git.askClaude(project.id, said));
   };
   const stashAndUpdate = (): void => {
     setDialog(undefined);
@@ -141,9 +152,9 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
         <div className={cx(s.callout, s.calloutClaude)} role="status" aria-label="Claude is updating main">
           <Dot tone="claude" live />
           <span className={s.calloutText}>
-            <strong>Claude is updating {branch}.</strong> It may only sync git here: fetch, merge, stash, resolve conflicts. Nothing is pushed.
+            <strong>Claude is updating {branch}.</strong> {claude.worktree ? 'It works in a worktree of its own and leaves the main folder to you.' : 'It may only sync git here: fetch, merge, stash, resolve conflicts.'} Nothing is pushed.
           </span>
-          <Button size="small" onClick={() => actions.run({ type: 'open_ws', id: claude, tab: 'chat' })}>
+          <Button size="small" onClick={() => actions.run({ type: 'open_ws', id: claude.id, tab: 'chat' })}>
             Open
           </Button>
         </div>
@@ -164,11 +175,11 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
           </Tip>
         ) : null}
         {sync.fetchError ? (
-          <Tip label={sync.fetchError.message}>
-            <span className={cx(s.status, s.statusWarn)} role="status">
+          <Tip label={`${sync.fetchError.message} Click to let Claude look into it.`}>
+            <button type="button" className={cx(s.status, s.statusWarn, s.statusButton)} onClick={() => setDialog(fetchDialog(sync.fetchError!.message))}>
               <Icon name="alert" size={12} />
               {sync.fetchError.reason === 'auth' ? 'Sign-in needed to fetch' : sync.fetchError.reason === 'offline' ? 'Couldn’t reach the remote' : 'Couldn’t fetch'}
-            </span>
+            </button>
           </Tip>
         ) : sync.upstream ? (
           <span className={s.status} title={sync.fetchedAt ? new Date(sync.fetchedAt).toLocaleString() : undefined}>
@@ -195,7 +206,11 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
           message={
             <>
               {dialog.message}
-              <span className={s.alertNote}> Claude can do it in the main folder: it may only sync git there (fetch, merge or rebase, stash, resolve conflicts), keeps your changes, never pushes, and explains what it did.</span>
+              <span className={s.alertNote}>
+                {dialog.inMain
+                  ? ' Claude can do it in the main folder: it may only sync git there (fetch, merge or rebase, stash, resolve conflicts), keeps your changes, never pushes, and explains what it did.'
+                  : ' Claude works it out in a worktree of its own, leaves the main folder and your changes alone, never pushes, and tells you the step left, if any.'}
+              </span>
             </>
           }
           confirm={{ label: 'Let Claude Handle It', onClick: askClaude }}
