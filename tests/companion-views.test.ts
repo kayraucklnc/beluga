@@ -520,6 +520,10 @@ describe('the views of a known Mac', () => {
     const withAnswers = { ...state, network: { ...state.network, messages: { ...state.network.messages, [conv]: [...list, answer('m3abcdefgh', 'm2abcdefgh'), answer('m4abcdefgh', 'm1abcdefgh')] } } };
     const chat = ChatView.parse(viewOf(withAnswers, ctx, `chat:dm:${BOB}`));
     expect(chat.messages.map((m) => m.offer)).toEqual([undefined, undefined, { to: BOB, ask: 'Send me your wallpaper', needs: ['files'] }, undefined]);
+    // Your Mac sent it already (BLG-353): the phone doesn't offer it again.
+    const sent = { id: 't_fromanswer01', direction: 'sent' as const, peerId: BOB, peerName: 'bob', kind: 'ask' as const, ask: 'Send me your wallpaper', needs: ['files' as const], by: 'person' as const, answer: 'm3abcdefgh', state: 'sent' as const, steps: [], createdAt: T0 + 41, updatedAt: T0 + 41 };
+    const after = ChatView.parse(viewOf({ ...withAnswers, gateway: { ...withAnswers.gateway, tasks: [...withAnswers.gateway.tasks, sent] } }, ctx, `chat:dm:${BOB}`));
+    expect(after.messages.map((m) => m.offer)).toEqual([undefined, undefined, undefined, undefined]);
   });
 
   it('a chat says who’s there, what their Claude does, what waits on whom and who gets it later (BLG-210)', () => {

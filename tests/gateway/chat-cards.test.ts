@@ -56,8 +56,10 @@ describe('a task’s card in the chat both people share', () => {
     await settle(() => bob.person.mesh.shares(chat, kay.id) && cat.person.mesh.shares(chat, kay.id));
     kay.trust(bob.id, 'trusted');
     bob.trust(kay.id, 'trusted');
-    const t = kay.gw.ask({ person: 'bobG', ask: 'check the build', by: 'person', conversation: chat });
+    // Sent from bob's Claude's answer there (BLG-353): the task remembers which answer it came from.
+    const t = kay.gw.ask({ person: 'bobG', ask: 'check the build', by: 'person', conversation: chat, answer: 'm_answer01' });
     expect(task(kay, t.id)?.chat).toBe(chat);
+    expect(task(kay, t.id)?.answer).toBe('m_answer01');
     await settle(() => task(bob, t.id)?.chat === chat);
     await settle(() => cardIn(bob, chat, t.id) && cardIn(cat, chat, t.id));
     expect(cardIn(cat, chat, t.id)?.text).toBe("kayG asked bobG's Claude: check the build");

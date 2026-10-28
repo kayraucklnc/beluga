@@ -301,6 +301,15 @@ repeated every minute, forgotten after three; only for an ask that called that p
 most per person). The history and files are marked as context from several
 people: only the asker's message is a request.
 
+**What needs their Mac goes there by itself.** A friend's Claude in a chat has no tools, so when your ask
+needs their Mac (open a link, a screenshot, a file) its answer ends with a `[[request needs=…: …]]` line,
+which travels as `claude.request`. Your Mac sends it at once as your request on their Mac
+(`src/core/chat/requests.ts`, the gateway, `by: 'person'`, its `answer` the answer's id): you already
+asked, so there's no second click. Their trust settings or their Allow still decide whether it runs, and
+its card shows under that answer. Only for your own ask that called that Claude in, only for an answer
+under 10 minutes old, each once (`~/.beluga/chat-requests.json`). One that couldn't go (their Mac doesn't
+take requests) tells you why and keeps an **Ask on Berca's Mac** button.
+
 Who may call your Claude: you always; others as **Settings › People & access › Who can ask your Claude in
 chats** says (`chatClaude`: friends in the chat (default), people you trust, only you; someone in a channel
 who isn't your friend needs your trust either way), never someone you blocked; 20 asks per person an hour

@@ -119,7 +119,8 @@ export function systemPrompt(scene: ChatScene): string {
           `When the message asks for something that needs ${scene.owner}'s Mac (a file, a screenshot, a setting, running something, looking`,
           `something up there), don't refuse and don't tell them to do it by hand. Beluga can send it to you as a real request on`,
           `${scene.owner}'s Mac, where you do have tools; whether it may run is ${scene.owner}'s call (their trust settings, or they approve it`,
-          `then), not yours here. Say in one short line that you can do that as a request, then end your answer with this line, exactly:`,
+          `then), not yours here. ${scene.asker} already asked you, so don't ask them to confirm: Beluga sends it as soon as you answer.`,
+          `Say in one short line that it's on its way to your Mac as a request, then end your answer with this line, exactly:`,
           REQUEST_MARK_EXAMPLE,
           `with the task in a few words, as ${scene.asker} would ask it, and "needs" listing what it takes, from: ${REQUEST_NEEDS.join(', ')}`,
           `(leave it out when none). Only one such line, and only for something that needs the Mac.`,
@@ -142,7 +143,7 @@ export function parseRequest(answer: string): { text: string; request?: ChatRequ
   const ask = hit[2]!.trim().slice(0, MAX_REQUEST_ASK);
   const needs = [...new Set((hit[1] ?? '').split(',').map((n) => n.trim().toLowerCase()))].filter((n): n is (typeof REQUEST_NEEDS)[number] => (REQUEST_NEEDS as readonly string[]).includes(n));
   const text = answer.slice(0, hit.index).trimEnd();
-  return { text: text || 'I can do that as a request on my owner’s Mac.', ...(ask ? { request: { ask, ...(needs.length ? { needs } : {}) } } : {}) };
+  return { text: text || 'Sending it to my owner’s Mac as a request.',...(ask ? { request: { ask, ...(needs.length ? { needs } : {}) } } : {}) };
 }
 
 export interface PromptFile {

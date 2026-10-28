@@ -201,7 +201,7 @@ function TaskRow({ task, me }: { task: TaskView; me?: { name: string; peerId: st
   );
 }
 
-/** Which answers you sent as requests (message id → task id), so the card stays under the answer. */
+/** Answers sent as requests before tasks said so themselves (message id → task id): read only. */
 const SENT_KEY = 'beluga.chat-requests';
 const sentRequests = (): Record<string, string> => {
   try {
@@ -210,22 +210,19 @@ const sentRequests = (): Record<string, string> => {
     return {};
   }
 };
-const rememberSent = (message: string, task: string): void => {
-  const all = Object.entries({ ...sentRequests(), [message]: task }).slice(-200);
-  localStorage.setItem(SENT_KEY, JSON.stringify(Object.fromEntries(all)));
-};
 
 /**
  * A friend's Claude can't touch their Mac from a chat; when what you asked needs it, its answer
- * offers the real thing: a request to their Claude on their Mac (the gateway), which their trust
- * settings let in or they approve. Once sent, the request's card follows it here.
+ * carries the real thing: a request to their Claude on their Mac (the gateway), which their trust
+ * settings let in or they approve. Your Mac sends it at once (BLG-353), and its card follows here;
+ * the button is only for one that couldn't go (their Mac didn't take requests then).
  */
 function RequestOffer({ m }: { m: MessageView }) {
   const { client } = useBeluga();
   const say = useSay();
   const [sending, setSending] = useState(false);
   const [taskId, setTaskId] = useState<string | undefined>(() => sentRequests()[m.id]);
-  const task = useApp((st) => (taskId ? st.gateway.tasks.find((t) => t.id === taskId) : undefined));
+  const task = useApp((st) => st.gateway.tasks.find((t) => (taskId ? t.id === taskId : t.answer === m.id)));
   const request = m.claude?.request;
   if (!request) return null;
   if (task) return <TaskCard task={task} inChat />;
@@ -233,11 +230,8 @@ function RequestOffer({ m }: { m: MessageView }) {
   const send = (): void => {
     setSending(true);
     void client.api.gateway
-      .ask(m.from, request.ask, request.needs?.length ? { needs: [...request.needs] } : undefined)
-      .then((t) => {
-        rememberSent(m.id, t.id);
-        setTaskId(t.id);
-      })
+      .ask(m.from, request.ask, { ...(request.needs?.length ? { needs: [...request.needs] } : {}), answer: { conversation: m.conversation, id: m.id } })
+      .then((t) => setTaskId(t.id))
       .catch((err: unknown) => say(`Couldn’t send it: ${errorText(err)}`))
       .finally(() => setSending(false));
   };
@@ -498,7 +492,7 @@ function Conversation({ id }: { id: string }) {
   const mineIds = new Set(messages.filter((m) => m.mine).map((m) => m.id));
   // A request sent from a friend's Claude's answer (RequestOffer) has its card under that answer:
   // its own message would be the same card again, so it isn't drawn twice.
-  const offered = new Set(Object.values(sentRequests()));
+  const offered = new Set([...Object.values(sentRequests()), ...tasks.filter((t) => t.answer).map((t) => t.id)]);
   const nameOf = (peerId: string): string => net.friends.find((f) => f.peerId === peerId)?.name ?? group?.members.find((m) => m.peerId === peerId)?.name ?? 'someone';
   const title = group ? channelName(net, group) : (friend?.name ?? '');
   const note = offlineNote(here);
