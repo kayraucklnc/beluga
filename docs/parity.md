@@ -527,7 +527,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `git.stashAndUpdate` | ✓ the “changes in the way” alert › Stash and Update (and put them back) |
 | `git.moveAndUpdate` | ✓ the “changes in the way” alert › Move to Worktree |
 | `git.switchToDefault` | ✓ “The main folder is on feat/…” › Switch to main (clean; or Move to Worktree / Bring Them Along) |
-| `git.askClaude` | ✓ Let Claude Handle It: a conversation in the project's Questions whose run may only sync git (banner “Claude is updating main”) |
+| `git.askClaude` | ✓ Let Claude Handle It (also on “Couldn’t fetch”): a worktree of its own for a failing fetch or diverged history; for what’s stuck in the main folder’s files, a conversation in its Questions whose run may only sync git (banner “Claude is updating main”) |
 | `git.github` | ✓ the GitHub row on a project's home: GitHub ↗, Private/Public, people, open PRs, stars (through gh, cached an hour; Connect GitHub when gh isn't set up) |
 | `git.githubRepo` | ✓ Open on GitHub in a project's right-click and ⋯ menus |
 | `git.log` | ✓ History: a project home's latest commits, the History page (Show All) and the panel's History tab (⌥⌘5), as a graph |

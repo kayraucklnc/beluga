@@ -1,4 +1,5 @@
-import { syncMainPrompt } from '../agent/sync-main.js';
+import { syncMainPrompt, syncWorktreePrompt } from '../agent/sync-main.js';
+import { conflictedFiles } from '../workspaces/git.js';
 import { type GhRunner, type GitHubInfo, type GitHubRepo, fetchGitHubInfo, ghHosts, parseGitHubRemote, runGh } from '../workspaces/github.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import * as sync from '../workspaces/sync.js';
@@ -8,7 +9,8 @@ import type { Project, Workspace } from '../workspaces/types.js';
  * Keeping each project's main folder current, for the project home's Update main / Fetch: a
  * quiet fetch every ~15 minutes while Beluga runs (and when you open a project), fast-forwarding
  * the default branch, setting uncommitted changes aside or into a worktree, and handing anything
- * harder to Claude in a run that may only sync git. Never pushes; never discards.
+ * harder to Claude: in a worktree of its own, or (for what's stuck in the main folder's own files)
+ * in a run there that may only sync git. Never pushes; never discards.
  */
 
 export interface MainSyncDeps {
@@ -20,6 +22,8 @@ export interface MainSyncDeps {
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
   /** A questions-only chat in the project's main folder, opened (undefined: it couldn't be made). */
   readonly newChat: (projectId: string, title: string) => Promise<Workspace | undefined>;
+  /** A new worktree (from `base`, else the latest origin), opened (undefined: it couldn't be made). */
+  readonly newWorktree: (projectId: string, name: string, opts: { base?: string }) => Promise<Workspace | undefined>;
   /** Let the next run in this conversation sync git (see controller.place). */
   readonly armSync: (wsId: string, target: { branch: string; upstream: string }) => void;
   readonly askClaude: (prompt: string, channel: string) => void;
@@ -229,8 +233,10 @@ export class MainSync {
   }
 
   /**
-   * "Let Claude handle it": a conversation in the main folder whose run may sync git (and only
-   * that), with the task and what Beluga found. Shows in the project's Questions.
+   * "Let Claude handle it". What's stuck in the main folder's own files (a merge or rebase stopped
+   * halfway, conflict markers from putting changes back) gets a conversation there whose run may
+   * sync git, and only that. Anything else (a fetch that fails, diverged or rewritten history) gets
+   * a worktree of its own, where Claude can do what it takes. → the conversation's workspace id.
    */
   async askClaude(projectId: string, situation?: string): Promise<string | undefined> {
     const project = this.project(projectId);
@@ -240,11 +246,23 @@ export class MainSync {
       return undefined;
     }
     const files = line.dirty ? await sync.dirtyFiles(project.root) : [];
+    const said = situation?.trim() ? `${situation.trim()} (${describe(line)})` : describe(line);
+    const inMain = Boolean(line.operation) || (await conflictedFiles(project.root)).length > 0;
+    if (!inMain) {
+      // From local main when it has commits of its own, so they come along; else the latest origin.
+      const fromLocal = line.local && line.ahead > 0;
+      const ws = await this.deps.newWorktree(projectId, `update-${line.branch}`, fromLocal ? { base: line.branch } : {});
+      if (!ws) return undefined;
+      this.deps.manager.markPurpose(ws.id, 'sync_main');
+      this.deps.askClaude(syncWorktreePrompt({ branch: line.branch, upstream: line.upstream, situation: said, mainFolder: project.root, onDefault: line.onDefault, fromLocal, dirty: files }), `ws:${ws.id}`);
+      await this.deps.refresh();
+      return ws.id;
+    }
     const ws = await this.deps.newChat(projectId, `Update ${line.branch}`);
     if (!ws) return undefined;
     this.deps.manager.markPurpose(ws.id, 'sync_main');
     this.deps.armSync(ws.id, { branch: line.branch, upstream: line.upstream });
-    this.deps.askClaude(syncMainPrompt({ branch: line.branch, upstream: line.upstream, situation: situation ?? describe(line), dirty: files }), `ws:${ws.id}`);
+    this.deps.askClaude(syncMainPrompt({ branch: line.branch, upstream: line.upstream, situation: said, dirty: files }), `ws:${ws.id}`);
     await this.deps.refresh();
     return ws.id;
   }

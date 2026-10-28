@@ -213,6 +213,30 @@ export function syncMainPrompt(ctx: { branch: string; upstream: string; situatio
   ].join('\n');
 }
 
+/**
+ * The task Claude gets when "Let Claude Handle It" opens a worktree: main's trouble that doesn't
+ * live in the main folder's own files (a fetch that fails, diverged or rewritten history). There it
+ * may do what it takes, as in any worktree, but the main folder stays yours.
+ */
+export function syncWorktreePrompt(ctx: { branch: string; upstream: string; situation: string; mainFolder: string; onDefault: boolean; fromLocal: boolean; dirty?: readonly string[] }): string {
+  const remote = ctx.upstream.split('/')[0] || 'origin';
+  const dirty = ctx.dirty?.length ? `\nUncommitted changes in the main folder (they're mine; leave them be): ${ctx.dirty.slice(0, 30).join(', ')}${ctx.dirty.length > 30 ? ` and ${ctx.dirty.length - 30} more` : ''}.` : '';
+  const finish = ctx.onDefault
+    ? `${ctx.branch} is checked out in the main folder, so don't move it yourself: get this worktree's branch to hold ${ctx.branch} with everything from ${ctx.upstream}, and I'll take it from there (Update ${ctx.branch} if ${ctx.branch} only needs to fast-forward, or Merge into ${ctx.branch} in Beluga).`
+    : `${ctx.branch} isn't checked out in the main folder, so once it's right you may move it (git branch -f ${ctx.branch} <commit>), after keeping its old tip on a branch of its own.`;
+  return [
+    `Bring ${ctx.branch} up to date with ${ctx.upstream}. Updating it from Beluga didn't work, so you're in a worktree of your own for this (branch from ${ctx.fromLocal ? `my local ${ctx.branch}, with its own commits` : ctx.upstream}). The main folder is ${ctx.mainFolder}.`,
+    `What Beluga found: ${ctx.situation}${dirty}`,
+    '',
+    `1. Look first: git status, git fetch ${remote}, git log --oneline --graph -15 ${ctx.branch} ${ctx.upstream}, git stash list.`,
+    `2. If fetching fails, find out why (git remote -v, ssh -T, gh auth status, the credential helper, the network) and fix what you can on this Mac. Never ask for, type or store a password or token: if it needs me to sign in, tell me exactly what to run.`,
+    `3. Keep my work: any commits on ${ctx.branch} that aren't on ${ctx.upstream} (merge ${ctx.upstream} into this branch, resolving conflicts carefully and keeping both sides' intent; prefer a merge if they may have been shared). If the histories don't share a base (a rewritten ${ctx.upstream}), check whether ${ctx.branch} has work of its own before choosing, and keep its old history on a branch.`,
+    `4. ${finish}`,
+    `5. Never push. Never discard anything (no reset --hard, clean, branch -D, stash drop), and don't change files or git state in the main folder. Ask me with a question if a decision is mine to make.`,
+    `6. Finish with a short explanation: what was wrong, what you did, where ${ctx.branch} stands now, and the one step left for me, if any.`,
+  ].join('\n');
+}
+
 /** Told to Claude at the start of a sync run (instead of the questions-only note). */
 export function buildSyncMainAppend(project: string, branch: string, upstream: string): string {
   const remote = upstream.split('/')[0] || 'origin';

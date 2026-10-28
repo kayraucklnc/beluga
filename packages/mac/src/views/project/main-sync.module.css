@@ -24,6 +24,19 @@
 .statusWarn {
   color: var(--warn);
 }
+.statusButton {
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.statusButton:hover {
+  background: var(--warn-soft, color-mix(in srgb, var(--warn) 12%, transparent));
+}
 .spinning svg {
   animation: spin 0.9s linear infinite;
 }

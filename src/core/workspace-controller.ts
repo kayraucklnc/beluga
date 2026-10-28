@@ -192,6 +192,7 @@ export class WorkspaceController {
       publish: () => this.publish(),
       toast: deps.toast,
       newChat: (projectId, title) => this.newChat(projectId, title),
+      newWorktree: (projectId, name, opts) => this.newWorktree(projectId, name, opts),
       armSync: (wsId, target) => void this.syncRuns.set(wsId, target),
       askClaude: (prompt, channel) => deps.askClaude(prompt, channel),
       open: (wsId) => this.open(wsId),
