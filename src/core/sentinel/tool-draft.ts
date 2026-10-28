@@ -1,13 +1,21 @@
 import { z } from 'zod';
 import { ACCESS, BELUGA_EVENTS, GITHUB_EVENTS, NOTIFY_WHERE, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
-import { SourceSchema } from '../../shared/view-spec.js';
+import { SOURCE_KINDS } from '../../shared/view-spec.js';
 import { LimitsSchema, MetricSpecSchema, ScheduleTriggerSchema } from './schema.js';
 
 /**
  * What Claude's sentinel_create and sentinel_update take (agent/sentinel-tools.ts): a sentinel in
  * the shapes this Beluga runs (a schedule, by hand, after another sentinel, or an event; every step kind),
  * its project by name. Browser-safe: zod only.
+ *
+ * Every part must turn into JSON Schema: a tool whose input can't (a preprocess, a transform, a
+ * z.custom) is dropped from Claude's tools without a word. So the measure step's source and units
+ * are plain here; StepInputSchema checks them for real when the step is made (sentinels.ts toolStep).
  */
+
+// A view source as Claude gives it; SourceSchema reads it (a bare command, a kind left out) when the step is made.
+const TOOL_SOURCE = z.union([z.string().min(1).max(8000), z.looseObject({ kind: z.enum(SOURCE_KINDS).optional() })]);
+const TOOL_METRIC = MetricSpecSchema.extend({ unit: z.string().regex(/^(count|percent|ms|bytes|plain|currency:[A-Za-z]{3})$/).optional() });
 
 const stepId = z.string().max(40).optional().describe('Keep a step’s id (from sentinel_get) when you keep or edit that step');
 const stepName = z.string().max(80);
@@ -52,8 +60,8 @@ const TOOL_STEP = z.discriminatedUnion('kind', [
       id: stepId,
       name: stepName,
       from: z.enum(['previous', 'source', 'claude']).describe('previous: the step before’s output (a number, JSON, CSV, "name: value" lines); source: a view source run here (sqlite, postgres, http, command); claude: what the Claude step before kept with sentinel_measure'),
-      source: SourceSchema.optional().describe('For from: source, the same JSON a view’s source takes; secrets only as $VAR'),
-      metrics: z.array(MetricSpecSchema).max(40).optional().describe('Each: name (subscribers), label, pick (a JSON path like $.items[0].statistics.subscriberCount, or a column), unit (count, currency:USD, percent, ms, bytes, plain), better (up, down, none), kind (number, or rows for a table). None: every top-level number'),
+      source: TOOL_SOURCE.optional().describe('For from: source, the same JSON a view’s source takes; secrets only as $VAR'),
+      metrics: z.array(TOOL_METRIC).max(40).optional().describe('Each: name (subscribers), label, pick (a JSON path like $.items[0].statistics.subscriberCount, or a column), unit (count, currency:USD, percent, ms, bytes, plain), better (up, down, none), kind (number, or rows for a table). None: every top-level number'),
       keep: z.number().int().min(1).max(200).optional().describe('Rows kept per run for a rows metric (200)'),
     })
     .describe('Keep the numbers: they show on the sentinel’s page and dashboards, compared with the past'),
