@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
-import { Activity, Bell, Bot, Calendar, Check, CircleDot, CirclePause, Clock, Coins, Eye, FileText, Gauge, GitMerge, GitPullRequest, Globe, Hand, Loader, type LucideIcon, MessageSquare, Minus, Play, RefreshCw, Shield, SquareTerminal, Tag, Terminal, TriangleAlert, Users, Wrench, X } from 'lucide-react-native';
+import { Activity, Bell, Bot, Calendar, Check, CircleDot, CirclePause, Clock, Coins, Eye, FileText, Gauge, GitMerge, GitPullRequest, Globe, Network, Hand, Loader, type LucideIcon, MessageSquare, Minus, Play, RefreshCw, Shield, SquareTerminal, Tag, Terminal, TriangleAlert, Users, Wrench, X } from 'lucide-react-native';
 import { View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { ago, useSupports, useView } from '../lib/hooks';
@@ -18,7 +18,7 @@ import { Card, Hairline, IconBadge, Pill, Press, T, type Tone, toneBg, toneInk }
  */
 
 /** A sentinel's icon by the name the Mac gives it; one the phone doesn't know is the shield. */
-const ICONS: Record<string, LucideIcon> = { calendar: Calendar, wrench: Wrench, check: Check, globe: Globe, clock: Clock, hand: Hand, bell: Bell, shield: Shield, merge: GitMerge, pr: GitPullRequest, chat: MessageSquare, users: Users, terminal: Terminal, file: FileText, bot: Bot, alert: TriangleAlert, refresh: RefreshCw, tag: Tag, issue: CircleDot, pulse: Activity, coin: Coins, eye: Eye, claude: SquareTerminal, play: Play, gauge: Gauge };
+const ICONS: Record<string, LucideIcon> = { calendar: Calendar, wrench: Wrench, check: Check, globe: Globe, clock: Clock, hand: Hand, bell: Bell, shield: Shield, merge: GitMerge, pr: GitPullRequest, chat: MessageSquare, users: Users, terminal: Terminal, file: FileText, bot: Bot, alert: TriangleAlert, refresh: RefreshCw, tag: Tag, issue: CircleDot, pulse: Activity, coin: Coins, eye: Eye, claude: SquareTerminal, play: Play, gauge: Gauge, graph: Network };
 export const sentinelIcon = (name: string): LucideIcon => ICONS[name] ?? Shield;
 
 /** A run's state as a pill: the Mac's words (RUN_STATE_INFO) in the phone's pastels. */

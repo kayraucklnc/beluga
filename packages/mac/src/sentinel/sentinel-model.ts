@@ -56,7 +56,7 @@ export const LATER = 'Comes with a later update';
 
 // ---------------------------------------------------------------- icons
 
-const SENTINEL_ICONS: ReadonlySet<string> = new Set(['calendar', 'check', 'refresh', 'tag', 'issue', 'wrench', 'globe', 'eye', 'bell', 'terminal', 'flag', 'pr', 'coin', 'pulse', 'task', 'claude', 'clock', 'hand', 'sentinel', 'laptop', 'search', 'chartLine', 'merge', 'link', 'alert', 'people', 'play', 'gauge']);
+const SENTINEL_ICONS: ReadonlySet<string> = new Set(['calendar', 'check', 'refresh', 'tag', 'issue', 'wrench', 'globe', 'eye', 'bell', 'terminal', 'flag', 'pr', 'coin', 'pulse', 'task', 'claude', 'clock', 'hand', 'sentinel', 'laptop', 'search', 'chartLine', 'merge', 'link', 'alert', 'people', 'play', 'gauge', 'graph']);
 
 /** A sentinel's (or a recipe's) icon: the name it carries when the window has it, else the shield. */
 export const iconOf = (name: string | undefined): IconName => (name && SENTINEL_ICONS.has(name) ? (name as IconName) : 'sentinel');

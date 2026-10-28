@@ -59,7 +59,8 @@ export const COMPANION_PROTO = { major: 1, minor: 25 } as const;
  * `companion.addTask` adding them all (`more` in its answer). 1.25 (BLG-345): a table tile's typed
  * columns (`table.typed`: a document, a storage object, a link, a path, with each row's whole value)
  * and its metric (`table.metric`), so a chip opens the document through the Mac (`sentinel.document`)
- * or a storage object's link signed there (`sentinel.signStorage`).
+ * or a storage object's link signed there (`sentinel.signStorage`); a sentinel page's workflow
+ * as a graph (`SentinelPageView.graph`, BLG-352).
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25 } as const;
 
@@ -653,6 +654,8 @@ export const SentinelPageView = SentinelSummary.extend({
   steps: z.array(z.object({ kind: z.string().max(20), name: z.string().max(100) })).max(40),
   runs: z.array(SentinelRunView).max(30),
   needsYou: z.array(NeedsYou).max(10),
+  /** 1.25 (BLG-352): its workflow as a `beluga-graph` (JSON): what starts it, its steps, where results land, its last run's states. */
+  graph: z.string().max(200_000).optional(),
 });
 export type SentinelPageView = z.infer<typeof SentinelPageView>;
 

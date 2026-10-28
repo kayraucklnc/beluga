@@ -13,6 +13,7 @@ import { branchState } from '../core/branch-state.js';
 import { type RunSummary, type Sentinel, type SentinelState, activeSentinelChat, firstLine, isLive, isSentinelChat, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById, sentinelChatTitle } from '../core/sentinel/model.js';
 import { type Dashboard, type Tile, metricOf, outputLook, tileColumns, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
 import { storageSources } from '../core/sentinel/columns.js';
+import { sentinelGraph } from '../core/sentinel/workflow.js';
 import { COMPARE, changeText, deltaOf, formatMetric } from '../core/sentinel/metrics.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
@@ -1114,6 +1115,8 @@ export function sentinelPageView(state: DomainState, id: string, ctx?: ViewConte
     needsYou: needsYou(state)
       .filter((n) => n.topic === summary.topic)
       .slice(0, 10),
+    // Its workflow, as the Mac's Steps › Graph draws it (step cards say what each does, never a key: headers by name only).
+    ...(sn.steps.length ? { graph: clip(JSON.stringify(sentinelGraph(sn, { items: s.items, ...(lastRunOf(s, sn.id) ? { run: lastRunOf(s, sn.id)! } : {}), ...(s.dashboards ? { dashboards: s.dashboards } : {}) })), 200_000) } : {}),
   };
 }
 

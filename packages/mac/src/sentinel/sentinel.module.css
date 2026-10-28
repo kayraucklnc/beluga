@@ -1149,3 +1149,8 @@ button.chatName:hover {
   color: var(--text-3);
   font-size: 12px;
 }
+
+/* The steps as a graph (BLG-352): the chat's graph card, full width of the Steps card. */
+.workflow {
+  margin-top: 2px;
+}

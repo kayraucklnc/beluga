@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   type AfterTrigger,
   type ClaudeStep,
@@ -62,6 +62,8 @@ import {
 import { EventControls } from './EventControls.js';
 import { MeasureFields } from './MeasureFields.js';
 import { useDraft } from './use-draft.js';
+import { sentinelGraph } from '@beluga/core/sentinel/workflow.js';
+import { GraphBlock } from '../components/graph/GraphBlock.js';
 import s from './sentinel.module.css';
 
 /** The sentinel page's editor: When it runs, and its Steps. Everything saves as you change it. */
@@ -213,12 +215,27 @@ export function StepsCard({ item, save }: { item: Sentinel; save: Save }) {
     },
   }));
   const steps = item.steps;
+  const [look, setLook] = useState<'list' | 'graph'>('list');
   return (
     <section className={s.card} aria-label="Steps">
       <header className={s.cardHead}>
         <h3 className={s.cardTitle}>Steps</h3>
+        <span className={s.grow} />
+        {steps.length ? (
+          <Segmented<'list' | 'graph'>
+            label="Show the steps as"
+            value={look}
+            onChange={setLook}
+            options={[
+              { value: 'list', label: 'List', icon: 'rows' },
+              { value: 'graph', label: 'Graph', icon: 'graph' },
+            ]}
+          />
+        ) : null}
       </header>
-      {steps.length ? (
+      {look === 'graph' && steps.length ? (
+        <WorkflowGraph item={item} />
+      ) : steps.length ? (
         <div className={s.steps} role="list">
           {steps.map((st, i) => (
             <StepItem
@@ -248,6 +265,25 @@ export function StepsCard({ item, save }: { item: Sentinel; save: Save }) {
         </ActionsDropdown>
       </div>
     </section>
+  );
+}
+
+/**
+ * The steps as a workflow (BLG-352): what starts it, each step with what it hands the next, where its
+ * results land (dashboards, other sentinels), and its last run's states. A node's card says what it does.
+ */
+function WorkflowGraph({ item }: { item: Sentinel }) {
+  const items = useApp((st) => st.sentinel.items);
+  const runs = useApp((st) => st.sentinel.runs);
+  const dashboards = useApp((st) => st.sentinel.dashboards);
+  const run = useMemo(() => [...runs].reverse().find((r) => r.sentinelId === item.id), [runs, item.id]);
+  const graph = useMemo(() => sentinelGraph(item, { items, ...(run ? { run } : {}), ...(dashboards ? { dashboards } : {}) }), [item, items, run, dashboards]);
+  // Its layout follows its nodes and lines; a run moving along only recolours them.
+  const shape = JSON.stringify([graph.nodes.map((n) => [n.id, n.label]), graph.edges.map((e) => e.id)]);
+  return (
+    <div className={s.workflow}>
+      <GraphBlock code={JSON.stringify(graph)} shapeKey={shape} />
+    </div>
   );
 }
 
