@@ -1,4 +1,5 @@
 import type { Row, Source } from '../../shared/view-spec.js';
+import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
 
 /**
@@ -113,10 +114,28 @@ export interface ClaudeStep extends StepBase {
   readonly effort?: string;
 }
 
+/** The languages a script step's own code runs in (BLG-350), with what runs it. */
+export const SCRIPT_LANGUAGES = ['python', 'node', 'bash', 'sh', 'zsh', 'ruby', 'perl'] as const;
+export type ScriptLanguage = (typeof SCRIPT_LANGUAGES)[number];
+export const SCRIPT_LANGUAGE_INFO: Readonly<Record<ScriptLanguage, { readonly label: string; readonly run: string; readonly ext: string }>> = {
+  python: { label: 'Python', run: 'python3', ext: 'py' },
+  node: { label: 'JavaScript (Node)', run: 'node', ext: 'mjs' },
+  bash: { label: 'Bash', run: 'bash', ext: 'sh' },
+  sh: { label: 'Shell', run: '/bin/sh', ext: 'sh' },
+  zsh: { label: 'Zsh', run: 'zsh', ext: 'zsh' },
+  ruby: { label: 'Ruby', run: 'ruby', ext: 'rb' },
+  perl: { label: 'Perl', run: 'perl', ext: 'pl' },
+};
+/** A script step's own code, at most. */
+export const SCRIPT_CODE_MAX = 100_000;
+
 export interface ScriptStep extends StepBase {
   readonly kind: 'script';
-  /** One shell line or a script's path. */
+  /** One shell line or a script's path; with `code`, what follows the script (its arguments), often empty. */
   readonly command: string;
+  /** The script itself (BLG-350): kept in the sentinel, written to the run's folder and run with `language`'s interpreter. */
+  readonly code?: string;
+  readonly language?: ScriptLanguage;
   readonly cwd: 'project' | 'home';
   /** 120 by default, up to 3600. */
   readonly timeoutSec: number;
@@ -206,6 +225,8 @@ export interface MetricSpec {
   readonly x?: string;
   /** A series of rows: the column with each point's value (the first number column when none). */
   readonly y?: string;
+  /** Rows: what kind of value some columns hold (a document, a storage object, a link, a path; columns.ts). */
+  readonly columns?: readonly MetricColumn[];
 }
 
 export const METRIC_KINDS = ['number', 'series', 'rows', 'output'] as const;
@@ -232,6 +253,8 @@ export interface MeasureStep extends StepBase {
   readonly metrics: readonly MetricSpec[];
   /** Rows kept per run for a rows metric (200 by default, at most). */
   readonly keep?: number;
+  /** Days the documents its typed columns save are kept (14 by default). */
+  readonly filesKeepDays?: number;
 }
 
 export type Step = ClaudeStep | ScriptStep | NotifyStep | HttpStep | PrStep | MergeStep | MessageStep | FriendStep | TriggerStep | MeasureStep;
@@ -546,6 +569,8 @@ export interface MetricSeries {
   readonly points: readonly MetricPoint[];
   readonly rows?: readonly Row[];
   readonly columns?: readonly string[];
+  /** Rows: the typed columns (a document's cell is its file's name in the run's folder, `rowsRunId`'s). */
+  readonly columnTypes?: readonly MetricColumn[];
   /** A series metric's latest array, in order. */
   readonly series?: readonly SeriesPoint[];
   /** An output metric's latest output. */
@@ -880,8 +905,17 @@ const stepContent = (st: Step): string => {
 const stable = (v: unknown): string =>
   Array.isArray(v) ? `[${v.map(stable).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter((k) => (v as Record<string, unknown>)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}` : JSON.stringify(v);
 
-/** Who or what a step reaches (a chat, a friend, another sentinel); undefined for the other kinds. */
-const stepTarget = (st: Step): string | undefined => (st.kind === 'message' ? `message:${st.to}` : st.kind === 'friend' ? `friend:${st.peerId}` : st.kind === 'trigger' ? `trigger:${st.sentinelId}` : undefined);
+/** Who or what a step reaches (a chat, a friend, another sentinel; the sentinels its table's action buttons run). */
+const stepTargets = (st: Step): string[] =>
+  st.kind === 'message'
+    ? [`message:${st.to}`]
+    : st.kind === 'friend'
+      ? [`friend:${st.peerId}`]
+      : st.kind === 'trigger'
+        ? [`trigger:${st.sentinelId}`]
+        : st.kind === 'measure'
+          ? st.metrics.flatMap((m) => (m.columns ?? []).flatMap((c) => (c.type === 'action' && c.sentinel ? [`trigger:${c.sentinel}`] : [])))
+          : [];
 
 /**
  * What a trigger watches, without how often or when: its kind and its target (the other
@@ -923,11 +957,8 @@ export function claudeWidened(was: Pick<Sentinel, 'steps' | 'access'> & Partial<
   if (was.trigger && next.trigger && triggerTarget(was.trigger) !== triggerTarget(next.trigger)) return true;
   const before = new Set(was.steps.filter(isGuarded).map(stepContent));
   if (next.steps.some((st) => isGuarded(st) && !before.has(stepContent(st)))) return true;
-  const reached = new Set(was.steps.map(stepTarget).filter((t) => t !== undefined));
-  return next.steps.some((st) => {
-    const t = stepTarget(st);
-    return t !== undefined && !reached.has(t);
-  });
+  const reached = new Set(was.steps.flatMap(stepTargets));
+  return next.steps.some((st) => stepTargets(st).some((t) => !reached.has(t)));
 }
 
 // ---------------------------------------------------------------- service presets
@@ -1114,6 +1145,7 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
       return what ? `Claude ${where}: “${what}”` : `Claude ${where}`;
     }
     case 'script':
+      if (step.code?.trim()) return `Runs its ${SCRIPT_LANGUAGE_INFO[step.language ?? 'sh'].label} script (${step.code.split('\n').length} lines) in ${step.cwd === 'home' ? 'your home folder' : 'the project'}`;
       return `Runs \`${quoteLine(step.command, 50)}\` in ${step.cwd === 'home' ? 'your home folder' : 'the project'}`;
     case 'notify':
       return step.phone ? 'Tells you on the Mac and the phone' : 'Tells you on the Mac';

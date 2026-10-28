@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { SourceSchema } from '../../shared/view-spec.js';
 import { CHART_TILE_KINDS, LEGACY_TILE_KINDS, OUTPUT_SHOWS, TILE_KINDS } from './dashboard-model.js';
+import { COLUMN_ENCODINGS, COLUMN_KINDS, FILES_KEEP_MAX } from './columns.js';
 import { COMPARE } from './metrics.js';
-import { ACCESS, BELUGA_EVENTS, BETTER, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
+import { ACCESS, BELUGA_EVENTS, BETTER, SCRIPT_CODE_MAX, SCRIPT_LANGUAGES, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 
 /**
  * Sentinels as zod checks: what the API takes (sentinel-api.ts), what sentinel.json holds, and
@@ -44,6 +45,23 @@ const stepName = z.string().max(80).optional();
 export const MetricUnitSchema = z.union([z.enum(['count', 'percent', 'ms', 'bytes', 'plain']), z.custom<`currency:${string}`>((v) => typeof v === 'string' && /^currency:[A-Za-z]{3}$/.test(v), 'A currency like currency:USD')]);
 export const MetricNameSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}$/, 'A name like subscribers or failed-payments');
 
+/** A typed column of a rows metric (columns.ts): a document, a storage object, a link or a path. */
+export const MetricColumnSchema = z.object({
+  key: z.string().min(1).max(80),
+  type: z.enum(COLUMN_KINDS),
+  label: z.string().max(80).optional(),
+  name: z.string().max(200).optional(),
+  bucket: z.string().max(100).optional(),
+  path: z.string().max(80).optional(),
+  encoding: z.enum(COLUMN_ENCODINGS).optional(),
+  currency: z.string().regex(/^[A-Za-z]{3}$/).optional(),
+  decimals: z.number().int().min(0).max(8).optional(),
+  max: z.number().positive().max(1_000_000).optional(),
+  better: z.enum(BETTER).optional(),
+  sentinel: z.string().max(80).optional(),
+  button: z.string().max(40).optional(),
+});
+
 /** One number (or a series, rows, or an output) a Keep the numbers step keeps. */
 export const MetricSpecSchema = z.object({
   name: MetricNameSchema,
@@ -55,13 +73,14 @@ export const MetricSpecSchema = z.object({
   // A series of rows: the label column and the value column.
   x: z.string().max(80).optional(),
   y: z.string().max(80).optional(),
+  columns: z.array(MetricColumnSchema).max(20).optional(),
 });
 
 /** A step as given: ids and names are filled in when missing. */
 export const StepInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: text(20_000), where: z.enum(['project', 'worktree', 'mac']).default('project'), model: text(80).optional(), effort: text(20).optional() }),
   // Empty until it's filled in (a new step from Add a Step): a run says so.
-  z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: text(4000), cwd: z.enum(['project', 'home']).default('project'), timeoutSec: z.number().int().min(1).max(3600).default(120) }),
+  z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: text(4000).default(''), code: text(SCRIPT_CODE_MAX).optional(), language: z.enum(SCRIPT_LANGUAGES).optional(), cwd: z.enum(['project', 'home']).default('project'), timeoutSec: z.number().int().min(1).max(3600).default(120) }),
   z.object({ kind: z.literal('notify'), id: stepId, name: stepName, title: text(200).optional(), body: text(4000).optional(), phone: z.boolean().default(false) }),
   z.object({
     kind: z.literal('http'),
@@ -82,7 +101,7 @@ export const StepInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('friend'), id: stepId, name: stepName, peerId: z.string().max(80).default(''), prompt: text(20_000).default(''), project: text(200).optional() }),
   z.object({ kind: z.literal('trigger'), id: stepId, name: stepName, sentinelId: z.string().max(80).default('') }),
   // Its source may be filled in later (none: a run says to pick one).
-  z.object({ kind: z.literal('measure'), id: stepId, name: stepName, from: z.enum(MEASURE_FROM).default('previous'), source: SourceSchema.optional(), metrics: z.array(MetricSpecSchema).max(40).default([]), keep: z.number().int().min(1).max(ROWS_KEPT).optional() }),
+  z.object({ kind: z.literal('measure'), id: stepId, name: stepName, from: z.enum(MEASURE_FROM).default('previous'), source: SourceSchema.optional(), metrics: z.array(MetricSpecSchema).max(40).default([]), keep: z.number().int().min(1).max(ROWS_KEPT).optional(), filesKeepDays: z.number().int().min(1).max(FILES_KEEP_MAX).optional() }),
 ]);
 
 export const LimitsSchema = z.object({
@@ -181,6 +200,8 @@ export const TileInputSchema = z.object({
   sentinelId: id.optional(),
   text: z.enum(['headline', 'report']).optional(),
   compare: z.enum(COMPARE).optional(),
+  // A table's own columns (BLG-347): in order, renamed or hidden.
+  columns: z.array(z.object({ key: z.string().min(1).max(80), label: z.string().max(80).optional(), hidden: z.boolean().optional() })).max(40).optional(),
 });
 
 /** A tile's change: anything but its id and kind (compare null: the dashboard's again). */

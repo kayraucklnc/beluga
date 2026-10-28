@@ -1149,3 +1149,18 @@ button.chatName:hover {
   color: var(--text-3);
   font-size: 12px;
 }
+
+/* The steps as a graph (BLG-352): the chat's graph card, full width of the Steps card. */
+.workflow {
+  margin-top: 2px;
+}
+
+/* A script step's own code (BLG-350): monospace, tabs as two spaces, it grows with its lines. */
+.codeArea {
+  font-size: 12px;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  overflow-x: auto;
+  resize: vertical;
+}

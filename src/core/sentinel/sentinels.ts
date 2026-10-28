@@ -13,11 +13,15 @@ import type { AgentPlace } from '../../agent/types.js';
 import { SentinelChats } from './chat.js';
 import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_INFO, dashboardSentinels, outputFormat, outputSteps } from './dashboard-model.js';
 import { Dashboards, type TileInput, type TilePatch } from './dashboards.js';
+import { FILES_KEEP_DAYS, type MetricColumn, SIGNED_SECONDS, documentMime, isDocumentKind, sameRow, splitStorage, takeDocuments, typedWords, withStorage } from './columns.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
+import { signStorageUrl } from './storage-sign.js';
 import { MetricFiles } from './metric-files.js';
-import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, keptWords, labelOf, measureFrom, metricName, pointOf, toNumber } from './metrics.js';
+import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, keptWords, labelOf, measureFrom, metricName, pointOf, readOutput, toNumber } from './metrics.js';
 import { type SentinelTest, type SourcePreview, describePreviews, previewBroken, previewFailed, previewOf } from './preview.js';
 import {
+  type MeasureStep,
+  type ScriptStep,
   APPROVAL_MS,
   CLAUDE_CHANGED,
   DEFAULT_LIMITS,
@@ -222,6 +226,7 @@ export class Sentinels {
     else this.save();
     this.metricFiles = new MetricFiles(deps.dir, this.now);
     this.loadMetrics(!data.lossy);
+    for (const item of this.items) this.sweepDocuments(item);
     this.dashboards = new Dashboards(deps.dir, this.now, (all) => {
       if (this.closed) return;
       deps.store.dispatch({ type: 'sentinel_dashboards', dashboards: all });
@@ -862,14 +867,14 @@ export class Sentinels {
   async test(ref: string, by: 'you' | 'claude'): Promise<SentinelTest> {
     const s = this.need(ref);
     if (this.active.has(s.id)) throw new Error(`“${s.name}” is running now: its run shows what it finds`);
-    if (!s.steps.some(isSourceStep)) {
-      return { previews: [], text: `“${s.name}” has no Keep the numbers step that reads a source, so a test has nothing to run: ${by === 'claude' ? 'the user’s Run Now runs all of it (paused or not)' : 'Run Now runs all of it, paused or not'}.` };
+    if (!s.steps.some((st, i) => isSourceStep(st) || (by === 'you' && readsScript(s.steps, i)))) {
+      return { previews: [], text: `“${s.name}” has no Keep the numbers step that reads a source${by === 'you' ? ' or a script' : ''}, so a test has nothing to run: ${by === 'claude' ? 'the user’s Run Now runs all of it (paused or not)' : 'Run Now runs all of it, paused or not'}.` };
     }
     if (this.testing.has(s.id)) throw new Error(`“${s.name}” is being tested already`);
     this.testing.add(s.id);
     let checks: SourceCheck[];
     try {
-      checks = await this.checkSources(s.steps, s.projectId, by === 'claude');
+      checks = await this.checkSources(s.steps, s.projectId, by === 'claude', undefined, by === 'you' ? s : undefined);
     } finally {
       this.testing.delete(s.id);
     }
@@ -884,17 +889,30 @@ export class Sentinels {
    * Run sources once, read-only, as your Claude would (byClaude: nothing that needs your yes) or as you:
    * each source step's rows as a preview, and the numbers its step would keep. `only`: those steps.
    */
-  private async checkSources(steps: readonly Step[], projectId: string | undefined, byClaude: boolean, only?: ReadonlySet<string>): Promise<SourceCheck[]> {
+  private async checkSources(steps: readonly Step[], projectId: string | undefined, byClaude: boolean, only?: ReadonlySet<string>, scriptsOf?: Sentinel): Promise<SourceCheck[]> {
     const out: SourceCheck[] = [];
-    for (const st of steps) {
-      if (st.kind !== 'measure' || st.from !== 'source' || (only && !only.has(st.id))) continue;
-      out.push(await this.checkSource(st.source, projectId, byClaude, st.id, st.name, (rows) => measureFrom(rows, st.metrics, st.keep)));
+    for (const [i, st] of steps.entries()) {
+      if (st.kind !== 'measure' || (only && !only.has(st.id))) continue;
+      if (st.from === 'source') out.push(await this.checkSource(st.source, projectId, byClaude, st.id, st.name, (rows) => measureFrom(rows, st.metrics, st.keep), undefined, (rows) => typedOf(st, rows)));
+      // Your own test runs a script step once, and the Keep the numbers step that reads it (BLG-350); your Claude's never does.
+      else if (scriptsOf && readsScript(steps, i)) out.push(await this.checkScript(scriptsOf, steps[i - 1] as ScriptStep, st));
     }
     return out;
   }
 
+  /** A script step run once for a test, and what the Keep the numbers step after it would keep from what it printed. */
+  private async checkScript(s: Sentinel, script: ScriptStep, measure: MeasureStep): Promise<SourceCheck> {
+    const said = await this.runner.scriptOnce(s, script, CHECK_MS);
+    if ('why' in said) return { stepId: measure.id, preview: previewFailed(measure.id, measure.name, 'failed', `“${script.name}” ${redactSecrets(said.why)}`), found: [] };
+    const data = readOutput(said.output);
+    const m = measureFrom(data, measure.metrics, measure.keep, said.output);
+    const rows = Array.isArray(data) ? cellRows(data.filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object')) : data && typeof data === 'object' ? cellRows([data as Record<string, unknown>]) : data === undefined ? [] : [{ value: typeof data === 'number' ? data : String(data).slice(0, 2000) }];
+    const preview = previewOf(measure.id, measure.name, rows, [], { kept: m.found.map((f) => f.name), missing: m.missing }, undefined, typedOf(measure, rows));
+    return { stepId: measure.id, preview, found: m.found };
+  }
+
   /** One source, once: its preview (and what a step keeps from it, `measure`). */
-  private async checkSource(source: Source | undefined, projectId: string | undefined, byClaude: boolean, stepId: string, stepName: string, measure?: (rows: readonly Row[]) => { readonly found: Measured[]; readonly missing: string[] }, sample?: number): Promise<SourceCheck> {
+  private async checkSource(source: Source | undefined, projectId: string | undefined, byClaude: boolean, stepId: string, stepName: string, measure?: (rows: readonly Row[]) => { readonly found: Measured[]; readonly missing: string[] }, sample?: number, typed?: (rows: readonly Row[]) => string[]): Promise<SourceCheck> {
     if (!source) return { stepId, preview: previewFailed(stepId, stepName, 'failed', 'it has no source yet: give it one'), found: [] };
     const fetch = this.deps.fetchSource;
     if (!fetch) return { stepId, preview: previewFailed(stepId, stepName, 'not-checked', 'sources need the Beluga app'), found: [] };
@@ -912,7 +930,7 @@ export class Sentinels {
     if ('needsYes' in got) return { stepId, preview: previewFailed(stepId, stepName, 'not-checked', `it runs ${firstLine(got.needsYes, 200)}, which waits for the user’s yes: it runs on their Run Now`), found: [] };
     const rows = cellRows(got.rows as Record<string, unknown>[]);
     const m = measure?.(rows);
-    return { stepId, preview: previewOf(stepId, stepName, rows, got.columns, m ? { kept: m.found.map((f) => f.name), missing: m.missing } : undefined, sample), found: m?.found ?? [] };
+    return { stepId, preview: previewOf(stepId, stepName, rows, got.columns, m ? { kept: m.found.map((f) => f.name), missing: m.missing } : undefined, sample, typed?.(rows)), found: m?.found ?? [] };
   }
 
   /** A test as a run in the sentinel's history (by you or your Claude), its numbers kept; nothing follows it. */
@@ -1303,7 +1321,9 @@ export class Sentinels {
   private stepsOf(drafts: readonly StepDraft[], access: Sentinel['access']): Step[] {
     const steps = drafts.map((d) => {
       const parsed = StepInputSchema.parse(d);
-      return { ...parsed, id: parsed.id ?? short('st', 4), name: oneLine(parsed.name ?? '', 80) || STEP_INFO[parsed.kind].label } as Step;
+      // An action column's sentinel is kept by its id (it may be given by name).
+      const own = parsed.kind === 'measure' ? { metrics: parsed.metrics.map((m) => (m.columns?.some((c) => c.type === 'action' && c.sentinel) ? { ...m, columns: m.columns.map((c) => (c.type === 'action' && c.sentinel ? { ...c, sentinel: this.get(c.sentinel)?.id ?? c.sentinel } : c)) } : m)) } : {};
+      return { ...parsed, ...own, id: parsed.id ?? short('st', 4), name: oneLine(parsed.name ?? '', 80) || STEP_INFO[parsed.kind].label } as Step;
     });
     this.checkAccess(steps, access);
     return steps;
@@ -1351,6 +1371,7 @@ export class Sentinels {
             unit: m?.unit ?? 'count',
             better: m?.better ?? 'up',
             kind: m?.kind ?? (lastRows?.rows ? 'rows' : lastRows?.series ? 'series' : lastRows?.output ? 'output' : 'number'),
+            ...(m?.columnTypes?.length ? { columnTypes: m.columnTypes } : {}),
             points: lines.slice(-POINTS_IN_STATE).map(pointOf),
             ...(lastRows?.rows ? { rows: lastRows.rows, columns: lastRows.columns ?? Object.keys(lastRows.rows[0] ?? {}) } : {}),
             ...(lastRows?.series ? { series: lastRows.series } : {}),
@@ -1366,16 +1387,25 @@ export class Sentinels {
   private keepNumbers(s: Sentinel, runId: string, measured: readonly Measured[]): void {
     if (!this.items.some((i) => i.id === s.id)) return;
     const at = this.now();
+    // The names this run's documents took (two metrics' documents never share one).
+    const taken = new Set<string>();
     for (const m of measured) {
       const name = metricName(m.name);
       const was = this.metrics[s.id]?.[name];
-      const rows = m.rows ? cellRows(m.rows as Record<string, unknown>[]).slice(0, ROWS_KEPT) : undefined;
+      let rows = m.rows ? cellRows(m.rows as Record<string, unknown>[]).slice(0, ROWS_KEPT) : undefined;
+      // A typed document column's values go to the run's folder (files/, readable only by you): the cell keeps the name.
+      if (rows && m.columnTypes?.some((c) => isDocumentKind(c.type))) {
+        const docs = takeDocuments(rows, m.columnTypes, taken);
+        for (const f of docs.files) this.folders.writeDocument(runId, f.name, f.data);
+        rows = docs.rows;
+      }
       // An output is kept as said (it was redacted with the step's output); a series as its points.
       const output = m.output ? { text: redactSecrets(m.output.text), format: m.output.format } : undefined;
       const pts = m.series?.length ? m.series : undefined;
       const kind = rows ? 'rows' : pts ? 'series' : output ? 'output' : 'number';
       if (!rows && !pts && !output && m.value === undefined) continue;
-      const meta = { label: oneLine(m.label ?? was?.label ?? labelOf(m.name), 80), unit: m.unit ?? was?.unit ?? 'count', better: m.better ?? was?.better ?? (kind === 'number' || kind === 'series' ? 'up' : 'none'), kind } as const;
+      const columnTypes = rows ? m.columnTypes : undefined;
+      const meta = { label: oneLine(m.label ?? was?.label ?? labelOf(m.name), 80), unit: m.unit ?? was?.unit ?? 'count', better: m.better ?? was?.better ?? (kind === 'number' || kind === 'series' ? 'up' : 'none'), kind, ...(columnTypes?.length ? { columnTypes } : {}) } as const;
       this.metricFiles.setMeta(s.id, name, meta);
       const line: MetricLine = rows ? { at, runId, rows, columns: m.columns?.length ? [...m.columns] : Object.keys(rows[0] ?? {}) } : pts ? { at, runId, series: pts } : output ? { at, runId, output } : { at, runId, value: m.value! };
       this.metricFiles.append(s.id, name, line, kind === 'output' ? OUTPUT_LINES_KEPT : undefined);
@@ -1394,6 +1424,93 @@ export class Sentinels {
       this.deps.store.dispatch({ type: 'sentinel_metric', metric: series });
     }
     this.dashboards.autoMake(this.allMetrics());
+    this.sweepDocuments(s);
+  }
+
+  /** How many days a sentinel's documents are kept: the longest any of its Keep the numbers steps asks (14 by default). */
+  private filesKeepDays(s: Sentinel): number {
+    const days = s.steps.flatMap((st) => (st.kind === 'measure' && st.filesKeepDays ? [st.filesKeepDays] : []));
+    return days.length ? Math.max(...days) : FILES_KEEP_DAYS;
+  }
+
+  /** A sentinel's documents older than its days go (the rest of each run's folder stays). */
+  private sweepDocuments(s: Sentinel): void {
+    const before = this.now() - this.filesKeepDays(s) * 24 * 60 * 60_000;
+    for (const r of this.runs) if (r.sentinelId === s.id && (r.endedAt ?? r.startedAt) < before && this.folders.hasDocuments(r.id)) this.folders.removeDocuments(r.id);
+  }
+
+  /**
+   * A typed cell of a metric's latest rows, checked: the column is typed so, and the value is one its
+   * rows hold (nothing else can be named: no path or bucket comes from the screen).
+   */
+  private typedCell(sentinel: string, metric: string, column: string, value: string, kinds: (c: MetricColumn) => boolean): { readonly s: Sentinel; readonly m: MetricSeries; readonly col: MetricColumn } {
+    const s = this.need(sentinel);
+    const m = this.metrics[s.id]?.[metric];
+    if (!m?.rows) throw new Error(`“${s.name}” keeps no rows called ${metric}`);
+    const col = m.columnTypes?.find((c) => c.key === column);
+    if (!col || !kinds(col)) throw new Error(`${column} isn’t a document column of ${m.label}`);
+    if (!m.rows.some((r) => r[column] === value)) throw new Error(`${m.label} has no ${column} “${value}” in its latest rows`);
+    return { s, m, col };
+  }
+
+  /**
+   * An action cell's button: the sentinel its column names runs now (as your Run Now does), with the
+   * row as its trigger's payload. The row must be one of the metric's latest rows.
+   */
+  runRow(sentinel: string, metric: string, column: string, row: Readonly<Record<string, unknown>>, by: 'you' | 'phone'): RunSummary {
+    const s = this.need(sentinel);
+    const m = this.metrics[s.id]?.[metric];
+    if (!m?.rows) throw new Error(`“${s.name}” keeps no rows called ${metric}`);
+    const col = m.columnTypes?.find((c) => c.key === column && c.type === 'action');
+    if (!col?.sentinel) throw new Error(`${column} isn’t an action column of ${m.label}`);
+    const kept = m.rows.find((r) => sameRow(r, row));
+    if (!kept) throw new Error(`That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
+    const target = this.need(col.sentinel);
+    const words = col.button?.trim() || col.label?.trim() || `Run ${target.name}`;
+    return this.start(target.id, by, { kind: 'manual', summary: `You pressed “${words}” on a row of ${m.label}`, payload: { row: kept, sentinel: s.name, metric: m.label } }, [s.id]);
+  }
+
+  /** A document a typed column kept: its name, kind and contents (text for text, base64 for the rest). */
+  /**
+   * A document a typed column kept: its name, kind and contents (text for text, base64 for the rest).
+   * `max`: the most that may go (the phone's frame): text over it is cut, other bytes over it aren't sent.
+   */
+  document(sentinel: string, metric: string, column: string, name: string, max = 20 * 1024 * 1024): { readonly name: string; readonly mime: string; readonly size: number; readonly text?: string; readonly base64?: string; readonly cut?: boolean; readonly runId: string; readonly at?: number } {
+    const { s, m } = this.typedCell(sentinel, metric, column, name, (c) => isDocumentKind(c.type));
+    const runId = m.rowsRunId ?? '';
+    const bytes = runId ? this.folders.readDocument(runId, name) : undefined;
+    if (!bytes) throw new Error(`${name} is no longer kept: “${s.name}” keeps its documents ${this.filesKeepDays(s)} days`);
+    const mime = documentMime(name);
+    const text = mime.startsWith('text/') || mime === 'application/json' || mime === 'image/svg+xml';
+    const at = m.rowsAt ? { at: m.rowsAt } : {};
+    if (text) {
+      const cut = bytes.byteLength > max;
+      return { name, mime, size: bytes.byteLength, text: new TextDecoder().decode(cut ? bytes.subarray(0, max) : bytes), ...(cut ? { cut: true } : {}), runId, ...at };
+    }
+    if (bytes.byteLength > (max * 3) / 4) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on the Mac`);
+    return { name, mime, size: bytes.byteLength, base64: Buffer.from(bytes).toString('base64'), runId, ...at };
+  }
+
+  /** Where a kept document is on this Mac, to open it in its own app (the Mac only: never to the phone). */
+  documentPath(sentinel: string, metric: string, column: string, name: string): string {
+    const { m } = this.typedCell(sentinel, metric, column, name, (c) => isDocumentKind(c.type));
+    const file = m.rowsRunId ? this.folders.documentPath(m.rowsRunId, name) : undefined;
+    if (!file || !this.folders.readDocument(m.rowsRunId!, name)) throw new Error(`${name} is no longer kept`);
+    return file;
+  }
+
+  /**
+   * A storage cell's link, signed now for about a minute with the project's Supabase variables (its
+   * URL and service key; the key never leaves this Mac and the link is never kept).
+   */
+  async signStorage(sentinel: string, metric: string, column: string, value: string): Promise<{ readonly url: string; readonly expiresIn: number }> {
+    const { s } = this.typedCell(sentinel, metric, column, value, (c) => c.type === 'storage');
+    const obj = splitStorage(value);
+    if (!obj) throw new Error(`“${value}” isn’t a bucket and a path`);
+    const env = this.deps.envFor?.(this.cwdOfProject(s.projectId)) ?? {};
+    const fetchFn = this.deps.fetch ?? fetch;
+    const url = await signStorageUrl(env, obj.bucket, obj.path, SIGNED_SECONDS, fetchFn);
+    return { url, expiresIn: SIGNED_SECONDS };
   }
 
   /** Every metric in the state, sentinel by sentinel. */
@@ -1601,13 +1718,15 @@ export class Sentinels {
       ...(t.kind === 'text' && t.sentinel ? { sentinelId: this.need(t.sentinel).id } : {}),
       ...(t.text ? { text: t.text } : {}),
       ...(t.compare ? { compare: t.compare } : {}),
+      ...(t.columns ? { columns: [...t.columns] } : {}),
     });
     const describe = (d: Dashboard): string => {
       const tiles = d.tiles.map((t) => {
         const refs = t.metric ? [t.metric] : (t.metrics ?? []);
         const stepName = t.step ? this.get(t.step.sentinelId)?.steps.find((x) => x.id === t.step!.stepId)?.name : undefined;
         const what = t.kind === 'divider' ? `“${t.title ?? ''}”` : t.kind === 'text' ? `${this.get(t.sentinelId ?? '')?.name ?? 'a sentinel that’s gone'} (${t.text ?? 'headline'})` : t.step ? `${this.get(t.step.sentinelId)?.name ?? 'gone'}, step “${stepName ?? 'gone'}” (${t.step.stepId})` : refs.map((r) => `${this.get(r.sentinelId)?.name ?? 'gone'}/${r.metric}`).join(', ');
-        return `  - ${t.id}: ${TILE_INFO[t.kind].label.toLowerCase()} ${what}${t.title ? ` titled “${t.title}”` : ''}, ${t.width} wide${t.height === 2 ? ', tall' : ''}${t.chart && t.kind === 'series' ? `, ${t.chart}` : ''}${t.compare ? `, ${COMPARE_WORDS[t.compare]}` : ''}`;
+        const cols = t.columns?.length ? `, columns ${t.columns.map((c) => `${c.key}${c.hidden ? ' (hidden)' : c.label ? ` as “${c.label}”` : ''}`).join(', ')}` : '';
+        return `  - ${t.id}: ${TILE_INFO[t.kind].label.toLowerCase()} ${what}${t.title ? ` titled “${t.title}”` : ''}, ${t.width} wide${t.height === 2 ? ', tall' : ''}${t.chart && t.kind === 'series' ? `, ${t.chart}` : ''}${t.compare ? `, ${COMPARE_WORDS[t.compare]}` : ''}${cols}`;
       });
       return [`${d.name} (id ${d.id}) · ${COMPARE_WORDS[d.compare]} · ${d.tiles.length} ${d.tiles.length === 1 ? 'tile' : 'tiles'}`, ...tiles].join('\n');
     };
@@ -1800,6 +1919,10 @@ function notSaved(what: string, broken: readonly SourceCheck[]): string {
 
 /** A Keep the numbers step that reads a source (the steps a check before saving, and a test, run). */
 const isSourceStep = (st: Pick<Step, 'kind'> & { readonly from?: string }): boolean => st.kind === 'measure' && st.from === 'source';
+/** A Keep the numbers step that reads the script step right before it (your test runs both). */
+const readsScript = (steps: readonly Step[], i: number): boolean => steps[i]?.kind === 'measure' && (steps[i] as MeasureStep).from === 'previous' && steps[i - 1]?.kind === 'script';
+/** A Keep the numbers step's typed columns in the preview's words ("html_content → 6 documents, 81 KB"). */
+const typedOf = (st: MeasureStep, rows: readonly Row[]): string[] => st.metrics.flatMap((m) => (m.kind === 'rows' && m.columns?.length ? typedWords(withStorage(rows, Object.keys(rows[0] ?? {}), m.columns).rows, m.columns) : []));
 
 /** One source checked: its step, its preview, and the numbers its step would keep. */
 interface SourceCheck {

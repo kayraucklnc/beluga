@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   type AfterTrigger,
   type ClaudeStep,
@@ -24,6 +24,9 @@ import {
   stepAvailable,
   stepRefusal,
   stepSentence,
+  SCRIPT_LANGUAGES,
+  SCRIPT_LANGUAGE_INFO,
+  type ScriptLanguage,
 } from '@beluga/core/sentinel/model.js';
 import { Checkbox, TextArea, TextInput } from '../components/FormSheet.js';
 import { Icon } from '../components/Icon.js';
@@ -62,6 +65,8 @@ import {
 import { EventControls } from './EventControls.js';
 import { MeasureFields } from './MeasureFields.js';
 import { useDraft } from './use-draft.js';
+import { sentinelGraph } from '@beluga/core/sentinel/workflow.js';
+import { GraphBlock } from '../components/graph/GraphBlock.js';
 import s from './sentinel.module.css';
 
 /** The sentinel page's editor: When it runs, and its Steps. Everything saves as you change it. */
@@ -213,12 +218,27 @@ export function StepsCard({ item, save }: { item: Sentinel; save: Save }) {
     },
   }));
   const steps = item.steps;
+  const [look, setLook] = useState<'list' | 'graph'>('list');
   return (
     <section className={s.card} aria-label="Steps">
       <header className={s.cardHead}>
         <h3 className={s.cardTitle}>Steps</h3>
+        <span className={s.grow} />
+        {steps.length ? (
+          <Segmented<'list' | 'graph'>
+            label="Show the steps as"
+            value={look}
+            onChange={setLook}
+            options={[
+              { value: 'list', label: 'List', icon: 'rows' },
+              { value: 'graph', label: 'Graph', icon: 'graph' },
+            ]}
+          />
+        ) : null}
       </header>
-      {steps.length ? (
+      {look === 'graph' && steps.length ? (
+        <WorkflowGraph item={item} />
+      ) : steps.length ? (
         <div className={s.steps} role="list">
           {steps.map((st, i) => (
             <StepItem
@@ -248,6 +268,25 @@ export function StepsCard({ item, save }: { item: Sentinel; save: Save }) {
         </ActionsDropdown>
       </div>
     </section>
+  );
+}
+
+/**
+ * The steps as a workflow (BLG-352): what starts it, each step with what it hands the next, where its
+ * results land (dashboards, other sentinels), and its last run's states. A node's card says what it does.
+ */
+function WorkflowGraph({ item }: { item: Sentinel }) {
+  const items = useApp((st) => st.sentinel.items);
+  const runs = useApp((st) => st.sentinel.runs);
+  const dashboards = useApp((st) => st.sentinel.dashboards);
+  const run = useMemo(() => [...runs].reverse().find((r) => r.sentinelId === item.id), [runs, item.id]);
+  const graph = useMemo(() => sentinelGraph(item, { items, ...(run ? { run } : {}), ...(dashboards ? { dashboards } : {}) }), [item, items, run, dashboards]);
+  // Its layout follows its nodes and lines; a run moving along only recolours them.
+  const shape = JSON.stringify([graph.nodes.map((n) => [n.id, n.label]), graph.edges.map((e) => e.id)]);
+  return (
+    <div className={s.workflow}>
+      <GraphBlock code={JSON.stringify(graph)} shapeKey={shape} />
+    </div>
   );
 }
 
@@ -398,16 +437,79 @@ function ClaudeFields({ step, item, change }: { step: ClaudeStep; item: Sentinel
 const TIMEOUTS = [30, 60, 120, 300, 600, 900, 1800, 3600] as const;
 const timeoutLabel = (sec: number): string => (sec < 60 ? `${sec} seconds` : sec < 3600 ? `${sec / 60} minute${sec === 60 ? '' : 's'}` : '1 hour');
 
+/** What a new script starts as, by language: it prints what the next step reads. */
+const STARTER: Readonly<Record<ScriptLanguage, string>> = {
+  python: 'import json, os\n\n# What you print is what the next step reads (a number, JSON or CSV).\nprint(json.dumps({"value": 42}))\n',
+  node: '// What you print is what the next step reads (a number, JSON or CSV).\nconsole.log(JSON.stringify({ value: 42 }));\n',
+  bash: '# What you print is what the next step reads (a number, JSON or CSV).\necho 42\n',
+  sh: '# What you print is what the next step reads (a number, JSON or CSV).\necho 42\n',
+  zsh: '# What you print is what the next step reads (a number, JSON or CSV).\necho 42\n',
+  ruby: '# What you print is what the next step reads (a number, JSON or CSV).\nrequire "json"\nputs({ value: 42 }.to_json)\n',
+  perl: '# What you print is what the next step reads (a number, JSON or CSV).\nprint "42\\n";\n',
+};
+
 function ScriptFields({ step, change }: { step: ScriptStep; change: (patch: Partial<ScriptStep>) => void }) {
   const command = useDraft(step.command, (v) => v !== step.command && change({ command: v }));
+  const code = useDraft(step.code ?? '', (v) => v !== (step.code ?? '') && change({ code: v }));
+  const own = step.code !== undefined;
+  const language = step.language ?? 'sh';
   const timeouts: number[] = TIMEOUTS.includes(step.timeoutSec as (typeof TIMEOUTS)[number]) ? [...TIMEOUTS] : [...TIMEOUTS, step.timeoutSec].sort((a, b) => a - b);
+  // Its own code (BLG-350), or one shell line. Going back to a line keeps nothing of the script.
+  const setMode = (mode: 'command' | 'script'): void => {
+    if (mode === 'script') change({ code: step.code ?? STARTER.python, language: step.language ?? 'python', command: '' });
+    else {
+      const { code: _c, language: _l, ...rest } = step;
+      change({ ...rest, code: undefined, language: undefined } as Partial<ScriptStep>);
+    }
+  };
+  // Tab indents (two spaces) rather than leaving the editor.
+  const indent = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key !== 'Tab' || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const { selectionStart: a, selectionEnd: b, value } = el;
+    code.change(`${value.slice(0, a)}  ${value.slice(b)}`);
+    requestAnimationFrame(() => el.setSelectionRange(a + 2, a + 2));
+  };
   return (
     <>
-      <div className={s.field}>
-        <span className={s.fieldLabel}>Command</span>
-        <TextInput value={command.text} onChange={command.change} onBlur={command.flush} mono placeholder="npm test" aria-label="Command" />
-        <span className={s.help}>One shell line or a script’s path; a non-zero exit stops the run. $VAR from Settings › Environment; $SENTINEL_PREVIOUS has the step before’s output, and $SENTINEL_PREVIOUS_FILE the file it’s in.</span>
+      <div className={s.controlRow}>
+        <span className={s.controlLabel}>It runs</span>
+        <Segmented<'command' | 'script'>
+          label="It runs"
+          value={own ? 'script' : 'command'}
+          onChange={setMode}
+          options={[
+            { value: 'command', label: 'A command' },
+            { value: 'script', label: 'Its own script' },
+          ]}
+        />
       </div>
+      {own ? (
+        <>
+          <div className={s.controlRow}>
+            <span className={s.controlLabel}>Language</span>
+            <Select label="Language" size="small" value={language} options={SCRIPT_LANGUAGES.map((l) => ({ value: l, label: SCRIPT_LANGUAGE_INFO[l].label }))} onChange={(l) => change({ language: l })} />
+          </div>
+          <div className={s.field}>
+            <span className={s.fieldLabel}>Script</span>
+            <TextArea value={code.text} onChange={code.change} onBlur={code.flush} onKeyDown={indent} mono rows={Math.min(24, Math.max(8, code.text.split('\n').length + 1))} spellCheck={false} aria-label="Script" className={s.codeArea} />
+            <span className={s.help}>
+              Runs with {SCRIPT_LANGUAGE_INFO[language].run} in the folder below. What it prints is what the next step reads (a number, JSON or CSV); a non-zero exit stops the run. It gets $VAR from Settings › Environment, $SENTINEL_PREVIOUS (the step before’s output), $SENTINEL_PREVIOUS_FILE and $SENTINEL_RUN_DIR.
+            </span>
+          </div>
+          <div className={s.field}>
+            <span className={s.fieldLabel}>Arguments</span>
+            <TextInput value={command.text} onChange={command.change} onBlur={command.flush} mono placeholder="--since yesterday" aria-label="Arguments" />
+          </div>
+        </>
+      ) : (
+        <div className={s.field}>
+          <span className={s.fieldLabel}>Command</span>
+          <TextInput value={command.text} onChange={command.change} onBlur={command.flush} mono placeholder="npm test" aria-label="Command" />
+          <span className={s.help}>One shell line or a script’s path; a non-zero exit stops the run. $VAR from Settings › Environment; $SENTINEL_PREVIOUS has the step before’s output, and $SENTINEL_PREVIOUS_FILE the file it’s in.</span>
+        </div>
+      )}
       <div className={s.controlRow}>
         <span className={s.controlLabel}>Runs in</span>
         <Select

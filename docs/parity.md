@@ -450,12 +450,16 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `sentinel.runs` | ✓ a sentinel's page › History (the dot strip, then the runs as rows); the phone's sentinel page draws the same runs from its `sentinel:<id>` topic |
 | `sentinel.runGet` | ✓ a run's page: the steps' outputs (Show output) and the report; the phone opens a run's report |
 | `sentinel.ask` | ✓ a sentinel's page › the box under its header, "Ask Claude to change this sentinel…" (⌘↩; Claude's last line while it works, its answer and Open Chat after) · New Sentinel › Describe It (an empty paused sentinel, then this) |
-| `sentinel.recipes` | ✓ New Sentinel › Recipe: the eleven recipes as a list (icon, name, when it runs, one line) |
+| `sentinel.recipes` | ✓ New Sentinel › Recipe: the twelve recipes as a list (icon, name, when it runs, one line) |
 | `sentinel.decide` | ✓ Merge and Not Now on a run waiting for you (a run's page), and the phone's needs-you card |
 | `sentinel.setRunAtOnce` | ✓ the Sentinel list's ⋯ › Run at Once ▸ (1 to 6 at once) |
 | `sentinel.rotateSecret` | a webhook sentinel's page › When › Rotate Secret… (asks first; the old URL stops at once) |
 | `sentinel.webhookUrl` | a webhook sentinel's page › When: its URL with Copy (or why there's none now) |
 | `sentinel.metricRead` | ✓ a sentinel's page › Numbers: a number tile opens its chart over time (its whole history; a point opens its run); the phone reads it through `sentinel.metricRead` · Claude's `metric_read` (`mcp__beluga_dashboard__*`) |
+| `sentinel.document` | a kept table's document chip (a typed `html` or `file` column, BLG-345) opens the document in Beluga's viewer (scripts and network off); the phone reads it through the Mac (640 KB at most) · the Mac chips and viewer are still to come (BLG-349) |
+| `sentinel.documentOpen` | the document viewer's Open in Default App (Mac only: its path never leaves the daemon) · still to come (BLG-349) |
+| `sentinel.signStorage` | a kept table's storage chip (bucket and path columns): a Supabase link signed on click for 60 s, never kept; the phone asks the Mac to sign it · the Mac chip is still to come (BLG-349) |
+| `sentinel.runRow` | a kept table's action button (an `action` column) runs its sentinel with that row as the trigger's payload (the row checked against the latest rows) · the Mac button is still to come (BLG-349) |
 | `dashboard.create` | ✓ Sentinel › Dashboard › + beside the tabs, ⋯ › New Dashboard, and the empty page's New Dashboard (the first is made for you when the first number arrives) · Claude's `dashboard_create` |
 | `dashboard.update` | ✓ Sentinel › Dashboard: the compare `Segmented` at the top (Previous · Yesterday · Last week · Last month, every tile); ⋯ › Rename… (or double-click its tab) · Claude's `dashboard_update` |
 | `dashboard.remove` | ✓ Sentinel › Dashboard › ⋯ › Delete Dashboard… (confirms; the numbers stay with their sentinels) · Claude's `dashboard_remove` (always asks your approval first) |

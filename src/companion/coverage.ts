@@ -480,6 +480,13 @@ export const PHONE: Record<Method, Side> = {
   // Numbers and dashboards (docs/sentinel.md §10): the phone reads a number over time and pulls a
   // dashboard to refresh it (Run Now on its sentinels); arranging dashboards is the Mac's.
   'sentinel.metricRead': 'phone',
+  // A table's document chip (BLG-345): the phone reads the document through the Mac, and a storage
+  // chip's link is signed there (the key stays on the Mac). Opening it in a Mac app is the Mac's.
+  'sentinel.document': 'phone',
+  'sentinel.signStorage': 'phone',
+  'sentinel.documentOpen': 'mac',
+  // An action cell's button runs a sentinel with its row, as Run Now does from the phone.
+  'sentinel.runRow': 'phone',
   'dashboard.refresh': 'phone',
   'dashboard.create': 'mac',
   'dashboard.update': 'mac',

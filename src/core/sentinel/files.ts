@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { readJson, safeName, writeJson } from '../../net/mesh/files.js';
+import { FILES_DIR, safeFileName } from './columns.js';
 import { DEFAULT_RUN_AT_ONCE, KEEP_IN_FILE, type RunSummary, type Sentinel, keepRuns } from './model.js';
 import { SavedRunSchema, SavedSentinelSchema, SentinelFileSchema } from './schema.js';
 
@@ -157,9 +158,10 @@ export function pruneRuns<R extends { readonly id: string; readonly sentinelId: 
   return { kept: all, gone: runs.filter((r) => !keptIds.has(r.id)).map((r) => r.id) };
 }
 
-/** A run's folder: its trigger, each step's whole output, its report. In memory without a home. */
+/** A run's folder: its trigger, each step's whole output, its report, its documents (files/). In memory without a home. */
 export class RunFolders {
   private readonly memory = new Map<string, Map<string, string>>();
+  private readonly documents = new Map<string, Map<string, string | Uint8Array>>();
 
   constructor(private readonly dir: string | null) {}
 
@@ -207,8 +209,71 @@ export class RunFolders {
     }
   }
 
+  /** Where a run's document is (none in memory, or a name that isn't one). */
+  documentPath(runId: string, name: string): string | undefined {
+    const dir = this.folder(runId);
+    const safe = safeFileName(name);
+    return dir && safe === name ? path.join(dir, FILES_DIR, safe) : undefined;
+  }
+
+  /** A document a typed column kept (files/<name>, readable only by you) → whether it was kept. */
+  writeDocument(runId: string, name: string, data: string | Uint8Array): boolean {
+    if (safeFileName(name) !== name) return false;
+    const dir = this.folder(runId);
+    if (!dir) {
+      const files = this.documents.get(runId) ?? new Map<string, string | Uint8Array>();
+      files.set(name, data);
+      this.documents.set(runId, files);
+      return true;
+    }
+    try {
+      mkdirSync(path.join(dir, FILES_DIR), { recursive: true, mode: 0o700 });
+      writeFileSync(path.join(dir, FILES_DIR, name), data, { mode: 0o600 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** A run's document, as bytes (none: gone, swept, or never kept). */
+  readDocument(runId: string, name: string): Uint8Array | undefined {
+    if (safeFileName(name) !== name) return undefined;
+    const dir = this.folder(runId);
+    if (!dir) {
+      const v = this.documents.get(runId)?.get(name);
+      return v === undefined ? undefined : typeof v === 'string' ? new TextEncoder().encode(v) : v;
+    }
+    try {
+      const file = path.join(dir, FILES_DIR, name);
+      if (statSync(file).size > 64 * 1024 * 1024) return undefined;
+      return readFileSync(file);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Whether a run kept documents (they're there to sweep). */
+  hasDocuments(runId: string): boolean {
+    const dir = this.folder(runId);
+    if (!dir) return Boolean(this.documents.get(runId)?.size);
+    return existsSync(path.join(dir, FILES_DIR));
+  }
+
+  /** A run's documents go (their days are up); the rest of its folder stays. */
+  removeDocuments(runId: string): void {
+    this.documents.delete(runId);
+    const dir = this.folder(runId);
+    if (!dir) return;
+    try {
+      rmSync(path.join(dir, FILES_DIR), { recursive: true, force: true });
+    } catch {
+      // Gone already.
+    }
+  }
+
   remove(runId: string): void {
     this.memory.delete(runId);
+    this.documents.delete(runId);
     const dir = this.folder(runId);
     if (!dir) return;
     try {

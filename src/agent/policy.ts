@@ -252,8 +252,18 @@ export const ASK_ONLY_REASON =
   "Beluga blocked this: you're in the project's main folder, which is read-only (questions only; work happens in worktrees). " +
   "Don't try another way to change it here. If a change is wanted, call mcp__beluga__continue_in_worktree with the task.";
 
+/** A write outside the folders this request may change (not a credential file): say so, and what to do (BLG-348). */
+export const OUTSIDE_REASON =
+  'Beluga blocked this: that file is outside the shared folders this request may write to. ' +
+  "Don't try another way to write it. Write inside the working folder (or the scratch folder), or ask the machine owner in chat to save it where they want it.";
+
 /** The reason to give Claude for a denied tool call. */
 export function denyReason(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): string {
-  if (!ctx.askOnly || !changesMain(toolName, input, ctx)) return DENY_REASON;
-  return ctx.syncMain ? SYNC_MAIN_REASON : ASK_ONLY_REASON;
+  if (ctx.askOnly && changesMain(toolName, input, ctx)) return ctx.syncMain ? SYNC_MAIN_REASON : ASK_ONLY_REASON;
+  const writeField = WRITE_TOOLS[toolName];
+  if (writeField) {
+    const target = resolveTarget(ctx.cwd, input[writeField]);
+    if (!isSecretPath(target) && ctx.scope !== 'full' && !ctx.roots.some((r) => inside(path.resolve(r), target))) return OUTSIDE_REASON;
+  }
+  return DENY_REASON;
 }

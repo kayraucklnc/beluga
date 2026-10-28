@@ -182,7 +182,8 @@ export function tileOf(input: TileInput): Tile {
     case 'number':
     case 'table':
       if (!t.metric) throw new Error(`A ${t.kind === 'number' ? 'number' : 'table'} tile needs its metric (a sentinel and a metric’s name)`);
-      return { ...base, metric: t.metric };
+      // An empty list gives the columns back to the rows.
+      return { ...base, metric: t.metric, ...(t.kind === 'table' && t.columns?.length ? { columns: t.columns.map((c) => ({ key: c.key, ...(c.label?.trim() ? { label: oneLine(c.label, 80) } : {}), ...(c.hidden ? { hidden: true } : {}) })) } : {}) };
     case 'series': {
       // Several metrics over time, or one (a number's points, or a series metric's kept array).
       const metrics = t.metrics?.length ? t.metrics : t.metric ? [t.metric] : [];

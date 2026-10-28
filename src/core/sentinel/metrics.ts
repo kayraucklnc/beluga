@@ -1,4 +1,5 @@
 import { type Row, parseText, toCell, toRows } from '../../shared/view-spec.js';
+import { type MetricColumn, documentCounts, withStorage } from './columns.js';
 import { type Better, type MetricPoint, type MetricSeries, type MetricSpec, type MetricUnit, OUTPUT_METRIC_MAX, type OutputFormat, ROWS_KEPT, SERIES_KEPT, type SeriesPoint } from './model.js';
 
 /**
@@ -18,6 +19,8 @@ export interface Measured {
   readonly value?: number;
   readonly rows?: readonly Row[];
   readonly columns?: readonly string[];
+  /** Rows: the typed columns (their documents still in the cells until they're kept). */
+  readonly columnTypes?: readonly MetricColumn[];
   readonly series?: readonly SeriesPoint[];
   readonly output?: { readonly text: string; readonly format: OutputFormat };
 }
@@ -224,7 +227,9 @@ export function measureFrom(data: unknown, specs: readonly MetricSpec[], keep = 
     }
     if (spec.kind === 'rows') {
       const r = rowsOf(v, cap);
-      if (r?.rows.length) found.push({ ...base, rows: r.rows, columns: r.columns });
+      // A storage column is filled in from its row's bucket and path; documents stay until they're kept.
+      const typed = r && spec.columns?.length ? withStorage(r.rows, r.columns, spec.columns) : r;
+      if (typed?.rows.length) found.push({ ...base, rows: typed.rows, columns: typed.columns, ...(spec.columns?.length ? { columnTypes: spec.columns } : {}) });
       else missing.push(spec.name);
       continue;
     }
@@ -239,8 +244,14 @@ export function measureFrom(data: unknown, specs: readonly MetricSpec[], keep = 
 
 /** What a Keep the numbers step kept, in words: "Kept Revenue: $3,120 · Jobs: 6 rows". */
 export function keptWords(found: readonly Measured[]): string {
-  const said = found.map((m) => `${m.label ?? labelOf(m.name)}: ${m.value !== undefined ? formatMetric(m.value, m.unit) : m.series ? `${m.series.length} points` : m.output ? `its output (${m.output.format === 'json' ? 'JSON' : m.output.format === 'markdown' ? 'Markdown' : 'text'})` : `${m.rows?.length ?? 0} rows`}`);
+  const said = found.map((m) => `${m.label ?? labelOf(m.name)}: ${m.value !== undefined ? formatMetric(m.value, m.unit) : m.series ? `${m.series.length} points` : m.output ? `its output (${m.output.format === 'json' ? 'JSON' : m.output.format === 'markdown' ? 'Markdown' : 'text'})` : `${m.rows?.length ?? 0} rows${docWords(m)}`}`);
   return `Kept ${said.join(' · ')}`;
+}
+
+/** ", with 6 documents" when a rows metric keeps some. */
+function docWords(m: Measured): string {
+  const n = documentCounts(m.rows ?? [], m.columnTypes).reduce((a, c) => a + c.count, 0);
+  return n ? `, ${n} ${n === 1 ? 'document' : 'documents'}` : '';
 }
 
 /** Rows as cells only (what the files and the state keep). */

@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { redactSecrets } from '../../shared/steps.js';
 import type { NoticeEvent } from '../notify.js';
 import { type Named, mentionNote, personMentions } from '../person-mentions.js';
@@ -20,6 +22,7 @@ import {
   type StepRun,
   type TriggerStep,
   APPROVAL_MS,
+  SCRIPT_LANGUAGE_INFO,
   STEP_INFO,
   accessAllows,
   accessNeeded,
@@ -261,7 +264,8 @@ export const OUTPUT_KEPT = 16 * 1024;
 const PREVIOUS_MAX = 256 * 1024;
 
 type StepEnd =
-  | { readonly kind: 'done'; readonly output: string; readonly channel?: string; readonly ms?: number }
+  /** `data`: what the next steps get as $SENTINEL_PREVIOUS_FILE instead of the output (a Keep the numbers step's rows, as JSON). */
+  | { readonly kind: 'done'; readonly output: string; readonly channel?: string; readonly ms?: number; readonly data?: unknown }
   | { readonly kind: 'failed'; readonly why: string; readonly output?: string; readonly channel?: string; readonly ms?: number }
   | { readonly kind: 'skip'; readonly reason: string; readonly output?: string; readonly channel?: string }
   | { readonly kind: 'timeout'; readonly output?: string; readonly channel?: string }
@@ -342,7 +346,13 @@ export class SentinelRunner {
       // the next steps get its path (a big one goes to Claude as the file, not pasted; BLG-331).
       if (output !== undefined) {
         const name = `step-${i + 1}.txt`;
-        const file = this.deps.folders.write(active.run.id, name, output) ? this.deps.folders.pathOf(active.run.id, name) : undefined;
+        let file = this.deps.folders.write(active.run.id, name, output) ? this.deps.folders.pathOf(active.run.id, name) : undefined;
+        // What a Keep the numbers step read goes on as JSON (BLG-346): a script after it reads the rows, not the summary.
+        if (result.kind === 'done' && result.data !== undefined) {
+          const json = `step-${i + 1}.json`;
+          const text = redactSecrets(JSON.stringify(result.data, null, 2) ?? 'null');
+          file = this.deps.folders.write(active.run.id, json, text) ? (this.deps.folders.pathOf(active.run.id, json) ?? file) : file;
+        }
         outputs.push({ name: step.name, output, ...(file ? { file } : {}) });
       }
       const kept = output === undefined ? {} : { output: output.slice(0, OUTPUT_KEPT) };
@@ -748,6 +758,8 @@ export class SentinelRunner {
     if (!keep) return { kind: 'failed', why: 'keeping numbers needs the Beluga app' };
     let found: Measured[];
     let missing: string[] = [];
+    // What it read, for the step after it (the source's rows, or the step before's data).
+    let passedOn: unknown;
     if (step.from === 'claude') {
       const said = active.measured ?? [];
       // Named ones keep their label, unit and which way is good; Claude's own come as Claude said.
@@ -772,11 +784,13 @@ export class SentinelRunner {
         if (typeof got.value === 'string') return { kind: 'failed', why: `the source didn’t answer: ${lineOf(got.value, 700)}` };
         if ('needsYes' in got.value) return { kind: 'failed', why: `it needs your yes first: ${got.value.needsYes}` };
         data = got.value.rows;
+        passedOn = data;
       } else {
         const before = outputs.at(-1);
         if (!before) return { kind: 'failed', why: 'there’s no step before it to read: put it after the step that finds the numbers' };
         data = readOutput(before.output);
         raw = before.output;
+        passedOn = typeof data === 'string' ? undefined : data;
       }
       ({ found, missing } = measureFrom(data, step.metrics, step.keep, raw));
       if (!found.length) return { kind: 'failed', why: step.metrics.length ? `found none of ${step.metrics.map((m) => m.name).join(', ')} in ${step.from === 'source' ? 'the source’s rows' : 'the step before’s output'}` : 'found no numbers to keep' };
@@ -784,7 +798,7 @@ export class SentinelRunner {
     keep(active, found);
     const output = `${keptWords(found)}${missing.length ? `\nNot found: ${missing.join(', ')}` : ''}`;
     if (missing.length) return { kind: 'failed', why: `didn’t find ${missing.join(', ')} (the rest was kept)`, output };
-    return { kind: 'done', output };
+    return { kind: 'done', output, data: passedOn ?? Object.fromEntries(found.map((m) => [m.name, m.rows ?? m.series ?? m.output?.text ?? m.value ?? null])) };
   }
 
   // ---------------------------------------------------------------- Run another sentinel
@@ -890,10 +904,18 @@ export class SentinelRunner {
   }
 
   private async scriptStep(active: ActiveRun, step: ScriptStep, outputs: Outputs): Promise<StepEnd> {
-    if (!step.command.trim()) return { kind: 'failed', why: 'its command is empty: fill it in' };
+    const code = step.code?.trim() ? step.code : undefined;
+    if (!code && !step.command.trim()) return { kind: 'failed', why: 'its command is empty: fill it in' };
     const s = active.sentinel;
     const project = s.projectId ? this.deps.project(s.projectId) : undefined;
     const cwd = step.cwd === 'project' && project?.root ? project.root : this.deps.home;
+    // Its own code (BLG-350): written to the run's folder as it is, run with its language's interpreter; `command` is its arguments.
+    let command = step.command;
+    if (code) {
+      const file = this.scriptFile(active.run.id, step, code);
+      if (!file) return { kind: 'failed', why: 'its script couldn’t be written to the run’s folder' };
+      command = `${SCRIPT_LANGUAGE_INFO[step.language ?? 'sh'].run} ${shellQuote(file)}${step.command.trim() ? ` ${step.command.trim()}` : ''}`;
+    }
     const previous = outputs.at(-1)?.output ?? '';
     const previousFile = outputs.at(-1)?.file ?? '';
     const env = {
@@ -908,13 +930,46 @@ export class SentinelRunner {
     const remaining = Math.max(0, active.deadline - this.deps.now());
     const own = Math.min(3600, Math.max(1, step.timeoutSec)) * 1000;
     const limit = Math.min(own, remaining);
-    const res = await this.deps.shell(step.command, cwd, limit, env, active.abort.signal);
+    const res = await this.deps.shell(command, cwd, limit, env, active.abort.signal);
     if (active.abort.signal.aborted) return { kind: 'stopped', output: res.output };
     if (res.timedOut) return limit < own ? { kind: 'timeout', output: res.output } : { kind: 'failed', why: `took longer than ${Math.round(own / 1000)} s`, output: res.output };
     // `why` (the headline, the notification) is built from the output with its secrets redacted.
     const said = redactSecrets(res.output);
     if (res.exitCode !== 0) return { kind: 'failed', why: `exit ${res.exitCode ?? '?'}${said.trim() ? `: ${tail(said)}` : ''}`, output: res.output, ms: res.ms };
     return { kind: 'done', output: res.output, ms: res.ms };
+  }
+
+  /** Where a script step's code is for this run: script-<step>.<ext> in the run's folder (a temporary folder without one). */
+  private scriptFile(runId: string, step: ScriptStep, code: string): string | undefined {
+    const name = `script-${step.id.replace(/[^\w-]/g, '')}.${SCRIPT_LANGUAGE_INFO[step.language ?? 'sh'].ext}`;
+    if (this.deps.folders.write(runId, name, code)) {
+      const at = this.deps.folders.pathOf(runId, name);
+      if (at) return at;
+    }
+    try {
+      const file = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-script-')), name);
+      writeFileSync(file, code, { mode: 0o600 });
+      return file;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * A script step once, outside a run (your test of its sources, BLG-350): its output, or why it
+   * failed. It gets what a run's first step gets (no step before it), in a folder of its own that goes after.
+   */
+  async scriptOnce(sentinel: Sentinel, step: ScriptStep, ms: number): Promise<{ readonly output: string } | { readonly why: string }> {
+    const runId = `test-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const now = this.deps.now();
+    const active: ActiveRun = { run: { id: runId, sentinelId: sentinel.id, by: 'you', trigger: { kind: 'manual', summary: 'You tested its sources' }, state: 'running', startedAt: now, headline: '', steps: [], tasks: [] }, sentinel, abort: new AbortController(), deadline: now + ms, places: {} };
+    try {
+      const end = await this.scriptStep(active, step, []);
+      if (end.kind === 'done') return { output: redactSecrets(end.output) };
+      return { why: end.kind === 'failed' ? end.why : end.kind === 'timeout' ? `took longer than ${Math.round(ms / 1000)} s` : 'stopped' };
+    } finally {
+      this.deps.folders.remove(runId);
+    }
   }
 
   private notifyStep(active: ActiveRun, step: NotifyStep, outputs: Outputs): StepEnd {
@@ -975,6 +1030,8 @@ export async function mergePinned(gh: SentinelGitHub, where: PrPlace, pr: PrRef,
 }
 
 const capital = (text: string): string => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
+/** A word for the shell, as it is: in single quotes. */
+const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 const lowerFirst = (text: string): string => (text && !/^[A-Z]{2}/.test(text) ? text[0]!.toLowerCase() + text.slice(1) : text);
 
 /** A step's output as the next steps get it: its name, its text (secrets redacted), where its file is. */

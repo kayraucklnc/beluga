@@ -1,10 +1,12 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronDown, ChevronRight, CirclePause, FileText, Monitor, Play, Power, TriangleAlert } from 'lucide-react-native';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NeedsStack } from '../../components/Needs';
+import { GraphCard } from '../../components/render/Graph';
+import { parseGraph } from '../../lib/render';
 import { Options } from '../../components/Options';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { nextText, runStateOf, sentinelIcon, stepIcon } from '../../components/Sentinels';
@@ -47,6 +49,11 @@ export default function SentinelPage() {
   const [reports, setReports] = useState<Record<string, string | null>>({});
   const Icon = s ? sentinelIcon(s.icon) : undefined;
   const last = s?.last ? runStateOf(s.last.state) : undefined;
+  // Its workflow (a Mac before 1.25 sends none: the steps show as pills).
+  const graph = useMemo(() => {
+    const parsed = s?.graph ? parseGraph(s.graph) : undefined;
+    return parsed?.ok ? parsed.graph : undefined;
+  }, [s?.graph]);
 
   const runNow = async () => {
     if (!s || running) return;
@@ -145,11 +152,18 @@ export default function SentinelPage() {
                 <T v="eyebrow" style={{ paddingHorizontal: 20 }}>
                   What it does
                 </T>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16 }}>
-                  {s.steps.map((st, i) => (
-                    <Pill key={i} label={st.name} Icon={stepIcon(st.kind)} tone={st.kind === 'claude' ? 'peach' : 'plain'} />
-                  ))}
-                </View>
+                {graph ? (
+                  // 1.25 (BLG-352): its workflow, as the Mac's Steps › Graph draws it.
+                  <View style={{ paddingHorizontal: 16 }}>
+                    <GraphCard graph={graph} />
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16 }}>
+                    {s.steps.map((st, i) => (
+                      <Pill key={i} label={st.name} Icon={stepIcon(st.kind)} tone={st.kind === 'claude' ? 'peach' : 'plain'} />
+                    ))}
+                  </View>
+                )}
               </View>
             ) : null}
 

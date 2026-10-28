@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 24 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 25 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -56,9 +56,13 @@ export const COMPANION_PROTO = { major: 1, minor: 24 } as const;
  * and `SentinelsView.chat`, the Sentinel chat's open conversation (a `conv:sentinel-chat:<id>`
  * topic the phone writes in as any conversation). 1.24 (BLG-322): New Task from one message makes
  * several tasks: `companion.draftTask`'s `several`, a draft's `for`, `more` and `epic`, and
- * `companion.addTask` adding them all (`more` in its answer).
+ * `companion.addTask` adding them all (`more` in its answer). 1.25 (BLG-345): a table tile's typed
+ * columns (`table.typed`: a document, a storage object, a link, a path, with each row's whole value)
+ * and its metric (`table.metric`), so a chip opens the document through the Mac (`sentinel.document`)
+ * or a storage object's link signed there (`sentinel.signStorage`); a sentinel page's workflow
+ * as a graph (`SentinelPageView.graph`, BLG-352).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -650,6 +654,8 @@ export const SentinelPageView = SentinelSummary.extend({
   steps: z.array(z.object({ kind: z.string().max(20), name: z.string().max(100) })).max(40),
   runs: z.array(SentinelRunView).max(30),
   needsYou: z.array(NeedsYou).max(10),
+  /** 1.25 (BLG-352): its workflow as a `beluga-graph` (JSON): what starts it, its steps, where results land, its last run's states. */
+  graph: z.string().max(200_000).optional(),
 });
 export type SentinelPageView = z.infer<typeof SentinelPageView>;
 
@@ -686,12 +692,42 @@ export const DashboardTileView = z.object({
   }).optional(),
   /** 1.23: an output tile: how it reads (`markdown`, `tree`, `table`, `text`), the text (Markdown without its code, or JSON), and whether it was cut. */
   output: z.object({ look: z.union([z.enum(['markdown', 'tree', 'table', 'text']), z.string().max(10)]), text: z.string().max(16_000), cut: z.boolean().optional() }).optional(),
-  table: z.object({ columns: z.array(z.string().max(80)).max(20), rows: z.array(z.array(z.union([z.string().max(300), z.number(), z.boolean(), z.null()])).max(20)).max(50), total: z.number().int().min(0) }).optional(),
+  table: z
+    .object({
+      columns: z.array(z.string().max(80)).max(20),
+      rows: z.array(z.array(z.union([z.string().max(300), z.number(), z.boolean(), z.null()])).max(20)).max(50),
+      total: z.number().int().min(0),
+      /** 1.25: the metric the rows are (a chip's `sentinel.document` names it). */
+      metric: z.object({ sentinelId: z.string().max(200), name: z.string().max(80) }).optional(),
+      /** 1.25: typed columns by place: `html`/`file` (a document), `storage`, `url`, `path`, with each row's whole value (a document's file name, a storage object's bucket/path). */
+      typed: z.array(z.object({ col: z.number().int().min(0).max(19), key: z.string().max(80), kind: z.union([z.enum(['html', 'file', 'storage', 'url', 'path']), z.string().max(20)]), values: z.array(z.string().max(1200).nullable()).max(50) })).max(20).optional(),
+    })
+    .optional(),
   text: z.string().max(2000).optional(),
   runId: z.string().max(200).optional(),
   at: ts.optional(),
 });
 export type DashboardTileView = z.infer<typeof DashboardTileView>;
+
+/**
+ * 1.25 (BLG-345): a table's document, read through the Mac (`sentinel.document`): its name, kind,
+ * size, and its text or bytes (base64). A phone gets at most DOCUMENT_TO_PHONE of it (`cut`: text was).
+ */
+export const DocumentView = z.object({
+  name: z.string().max(200),
+  mime: z.string().max(100),
+  size: z.number().int().min(0),
+  text: z.string().optional(),
+  base64: z.string().optional(),
+  cut: z.boolean().optional(),
+  runId: z.string().max(200),
+  at: ts.optional(),
+});
+export type DocumentView = z.infer<typeof DocumentView>;
+/** What of a document goes to the phone, at most (a call's answer fits one frame). */
+export const DOCUMENT_TO_PHONE = 640 * 1024;
+/** 1.25: a storage object's link, signed on the Mac for `expiresIn` seconds. */
+export const SignedLinkView = z.object({ url: z.string().max(4000), expiresIn: z.number().int().min(1) });
 
 /** 1.22: one dashboard: its tiles in order, what it compares with, a Refresh going ("Fetching… 2 of 3"), and every dashboard (its tabs). */
 export const DashboardView = z.object({
