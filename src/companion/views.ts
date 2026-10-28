@@ -60,7 +60,7 @@ import { chatTopic, clip, convTopic, dashboardTopic, myId, nameOf, needsYou, pla
 export { chatTopic, convTopic, dashboardTopic, planTopic, sentinelTopic, taskTopic } from './needs-you.js';
 export { needsYou };
 import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, activeAssistantChannel, assistantChatTitle, isAssistant } from '../shared/assistant.js';
-import { STEERED_IN, type SteeredMessage, steeredMessages, steerWaiting } from '../shared/claude-notices.js';
+import { STEERED_IN, type SteeredMessage, asSent, steeredMessages, steerWaiting } from '../shared/claude-notices.js';
 import { slotWaitDetail } from '../shared/run-slots.js';
 
 /** Words for a turn: code taken out (strip.ts), math typeset (math-svg.ts). */
@@ -387,9 +387,12 @@ function liveStep(item: AgentItem): string | undefined {
 
 /**
  * A conversation's items with your steered messages as the Mac draws them (BLG-54): one Claude
- * hasn't read yet says so on the message, and the note cards about them aren't turns.
+ * hasn't read yet says so on the message, and the note cards about them aren't turns. What waits
+ * in the queue above the composer (queueOf) isn't a turn yet; once it runs, it's where it ran (BLG-317).
  */
-function withSteers(items: readonly LogItem[]): Array<{ item: LogItem; steer?: SteeredMessage }> {
+function withSteers(state: DomainState, all: readonly LogItem[]): Array<{ item: LogItem; steer?: SteeredMessage }> {
+  const me = myId(state);
+  const items = asSent(all, (l) => l.owner === me && (l.requester !== undefined ? l.requester === me : l.requesterName === l.ownerName));
   const { waiting, notes } = steeredMessages(items);
   return items.flatMap((item) => (notes.has(item.id) ? [] : [{ item, ...(waiting.has(item.id) ? { steer: waiting.get(item.id)! } : {}) }]));
 }
@@ -601,7 +604,7 @@ export function convTurns(state: DomainState, ctx: ViewContext, named: string, o
   const outputs = task ? [] : outputsOf(ctx, conv);
   const cc = ccAgents(state, channel);
   const pictures = (p: ProseView) => withPictures(p, ctx.refs, 'cwd' in conv ? conv.cwd : undefined);
-  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(withSteers(itemsOf(state, channel)).flatMap(({ item, steer }) => (turnOf(state, item, outputs, cc, steer, pictures) ?? [])), outputs);
+  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(withSteers(state, itemsOf(state, channel)).flatMap(({ item, steer }) => (turnOf(state, item, outputs, cc, steer, pictures) ?? [])), outputs);
   const end = opts.before ? all.findIndex((t) => t.id === opts.before) : all.length;
   const upto = end < 0 ? all.length : end;
   const limit = opts.limit ?? VIEW_TURNS;
