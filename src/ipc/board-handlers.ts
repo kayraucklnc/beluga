@@ -1,8 +1,15 @@
 import { isSecretPath } from '../core/shares.js';
 import { needBoard } from '../core/board/registry.js';
 import { syncOf } from '../core/board/sync/sync.js';
+import { canAssign } from '../core/team/model.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
+
+/** A project's task is for you or a teammate on it, never any friend (BLG-299). */
+function onTeam(s: Session, projectId: string, assignee: { readonly id: string; readonly name: string } | undefined): void {
+  const state = s.store.getState();
+  if (!canAssign(state.team, projectId, state.selfId, assignee?.id)) throw new Error(`${assignee!.name} isn’t on this project’s team. Team up with them first to give them its tasks`);
+}
 
 /** What each `board.*` method does (see board-api.ts): you act as yourself. */
 
@@ -12,12 +19,16 @@ type BoardHandlers = { readonly [M in BoardMethod]: (s: Session, ...args: Args<M
 export const BOARD_HANDLERS = {
   'board.create': (s, input) => {
     const work = needBoard(s);
+    onTeam(s, input.projectId, input.assignee);
     const { goal, describe, title, ...rest } = input;
     if (!title?.trim() && describe) return work.createDescribed(rest, describe);
     return work.board.create({ ...rest, title: title ?? '', ...(goal?.trim() ? { brief: { goal } } : {}) }, work.me());
   },
   'board.update': (s, ref, patch) => {
     const work = needBoard(s);
+    const issue = work.board.get(ref);
+    // Keeping who it's already for is fine (a task given before BLG-299); a new someone must be on the team.
+    if (issue && patch.assignee && patch.assignee.id !== issue.assignee?.id) onTeam(s, issue.projectId, patch.assignee);
     return work.board.update(ref, patch, work.me());
   },
   'board.move': (s, ref, status, between) => {

@@ -143,6 +143,12 @@ export function reduceTeam(state: TeamSlice, action: TeamAction): TeamSlice {
 /** A project's teammates (none: it isn't worked on as a team). */
 export const teammatesOf = (team: TeamState, projectId: string): readonly Teammate[] => team.teams[projectId]?.mates ?? [];
 
+/**
+ * Whether a project's task can be given to someone (BLG-299): you, or a teammate on that project.
+ * Friends you haven't teamed up with on it can't have its tasks; no one (unassigned) always can.
+ */
+export const canAssign = (team: TeamState, projectId: string, self: string, peerId: string | undefined): boolean => !peerId || peerId === self || teammatesOf(team, projectId).some((m) => m.peerId === peerId);
+
 /** Teammates working on a task now. */
 export const workingOn = (team: TeamState, issueId: string): ReadonlyArray<{ readonly peerId: string; readonly name: string; readonly running?: true }> => team.working[issueId] ?? [];
 

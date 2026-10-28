@@ -7,6 +7,7 @@ import type { RoomBridge } from '../src/agent/types.js';
 import { BoardWork } from '../src/core/board/work.js';
 import { DEFAULT_TASKS_PREFS, assigneeChoices, fromV1TasksPrefs, assigneeKey, assigneesIn, checklist, connected, dueText, isFor, isSolo, onIt, onItTip, onItWords, projectToShow, readTasksPrefs, scopeCounts, scoped, statusesFor, taskGraph, toggleCheck } from '../packages/mac/src/tasks/tasks-model.js';
 import { parseGraph } from '../src/shared/graph-spec.js';
+import { NO_TEAM, canAssign } from '../src/core/team/model.js';
 import type { Project } from '../src/workspaces/types.js';
 
 /** The Tasks screens' pure parts, and the words tasks are shown in. */
@@ -134,6 +135,20 @@ describe('the Tasks view', () => {
     expect(choices.every((c) => c.assignee.kind === 'person')).toBe(true);
     expect(assigneeKey(choices[0]!.assignee)).toBe('person:p-me');
     expect(assigneeKey(undefined)).toBe('');
+  });
+
+  it('keeps someone a task is already for in the list, even off the team (BLG-299)', () => {
+    const choices = assigneeChoices({ id: 'p-me', name: 'Kay' }, [{ id: 'p-mia', name: 'mia' }], { kind: 'person', id: 'p-old', name: 'old' });
+    expect(choices.map((c) => c.label)).toEqual(['You', 'mia', 'old']);
+  });
+
+  it('gives a project’s tasks only to you or its teammates (BLG-299)', () => {
+    const team = { ...NO_TEAM, enabled: true, teams: { api: { projectId: 'api', repo: 'acme/api', mates: [{ peerId: 'p-ata', name: 'ata', since: 1 }] } } };
+    expect(canAssign(team, 'api', 'p-me', 'p-ata')).toBe(true);
+    expect(canAssign(team, 'api', 'p-me', 'p-me')).toBe(true);
+    expect(canAssign(team, 'api', 'p-me', undefined)).toBe(true);
+    expect(canAssign(team, 'api', 'p-me', 'p-mia')).toBe(false);
+    expect(canAssign(team, 'web', 'p-me', 'p-ata')).toBe(false);
   });
 
   it('draws what waits on what: parents as boxes, blockers in the problem color until done', () => {

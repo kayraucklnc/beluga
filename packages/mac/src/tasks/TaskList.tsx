@@ -120,7 +120,7 @@ const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; curso
         <WaitingMark issueId={issue.id} />
         <WorkingMark issueId={issue.id} />
         {solo ? null : <span className={t.rowCell} onClick={stop}>
-          <AssigneePicker value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
+          <AssigneePicker projectId={issue.projectId} value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
             <button type="button" className={t.iconHit}>
               <AssigneeMark assignee={issue.assignee} selfId={selfId} />
             </button>

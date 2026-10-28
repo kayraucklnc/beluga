@@ -44,11 +44,11 @@ export function PriorityPicker({ issue, children, align }: { issue: Issue; child
   );
 }
 
-/** Who a task is for: you, your Claude, people you know, or no one. */
-export function AssigneePicker({ value, onChange, children, align }: { value: Assignee | undefined; onChange: (a: Assignee | null) => void; children: ReactNode; align?: 'start' | 'end' }) {
+/** Who a task is for: you, a teammate on its project (BLG-299), or no one. */
+export function AssigneePicker({ projectId, value, onChange, children, align }: { projectId: string; value: Assignee | undefined; onChange: (a: Assignee | null) => void; children: ReactNode; align?: 'start' | 'end' }) {
   const self = useSelf();
-  const people = usePeople();
-  const choices = assigneeChoices(self, people);
+  const people = usePeople(projectId);
+  const choices = assigneeChoices(self, people, value);
   return (
     <PickMenu<string>
       label="Assignee"
@@ -60,7 +60,7 @@ export function AssigneePicker({ value, onChange, children, align }: { value: As
         ...choices.map((c) => ({
           value: c.key,
           label: c.label,
-          section: c.assignee.id === self.id ? undefined : 'People',
+          section: c.assignee.id === self.id ? undefined : 'Team',
           mark: <Avatar name={c.assignee.name} id={c.assignee.id} size={16} />,
         })),
       ]}
