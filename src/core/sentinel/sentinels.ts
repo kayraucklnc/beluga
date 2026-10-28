@@ -419,7 +419,26 @@ export class Sentinels {
     // Another trigger (or another project's GitHub, Stripe, board) watches from now: what the old one saw doesn't apply.
     if (triggerChanged || projectId !== was.projectId) this.forgetCursor(next.id);
     this.replace(next);
+    if (patch.steps) this.relabelNumbers(next);
     return next;
+  }
+
+  /** Numbers already kept take their step's new label, unit and better at once (their tiles too), not at the next run. */
+  private relabelNumbers(s: Sentinel): void {
+    for (const step of s.steps) {
+      if (step.kind !== 'measure') continue;
+      for (const spec of step.metrics) {
+        const name = metricName(spec.name);
+        const was = this.metrics[s.id]?.[name];
+        if (!was) continue;
+        const meta = { label: spec.label?.trim() ? oneLine(spec.label, 80) : was.label, unit: spec.unit ?? was.unit, better: spec.better ?? was.better, kind: was.kind } as const;
+        if (meta.label === was.label && meta.unit === was.unit && meta.better === was.better) continue;
+        this.metricFiles.setMeta(s.id, name, meta);
+        const series: MetricSeries = { ...was, ...meta };
+        this.metrics = { ...this.metrics, [s.id]: { ...this.metrics[s.id], [name]: series } };
+        this.deps.store.dispatch({ type: 'sentinel_metric', metric: series });
+      }
+    }
   }
 
   /** Turn it on (Resume) or pause it. */

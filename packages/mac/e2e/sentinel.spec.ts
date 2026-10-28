@@ -372,6 +372,25 @@ test('the Dashboard: every kind of tile (numbers, series, a table, outputs from 
   await expect(main(page).getByTestId('dashboard-fetching')).toHaveCount(0, { timeout: 40_000 });
 });
 
+test('Rename… on a number tile: its label turns into a field, and Enter keeps the new title', async ({ page }) => {
+  await openList(page);
+  const board = main(page).locator('[data-dashboard]');
+  await expect(board).toBeVisible({ timeout: 20_000 });
+  const tile = board.locator('[data-kind="number"]').first();
+  const id = await tile.getAttribute('data-tile');
+  const same = board.locator(`[data-tile="${id}"]`);
+  await tile.hover();
+  await tile.getByRole('button', { name: /^More for / }).click();
+  await page.getByRole('menuitem', { name: 'Rename…' }).click();
+  const field = same.getByRole('textbox', { name: 'Tile title' });
+  await expect(field).toBeFocused();
+  await field.fill('Money in');
+  await page.keyboard.press('Enter');
+  await expect(field).toHaveCount(0);
+  await expect(same).toContainText('Money in');
+  await shoot(page, 'dashboard-renamed');
+});
+
 test('Add a Tile takes a description: Claude adds it, and sets up a draft sentinel when nothing fetches it yet', async ({ page }) => {
   await openList(page);
   const board = main(page).locator('[data-dashboard]');

@@ -201,6 +201,18 @@ describe('the measure step', () => {
     expect(s.store.getState().sentinel.dashboards).toEqual([]);
   });
 
+  it('a kept number takes its step’s new label at once, not at the next run (its tiles with it)', async () => {
+    const sh = fakeShell(() => ({ exitCode: 0, output: JSON.stringify({ items: [{ statistics: { subscriberCount: '1000' } }] }) }));
+    const s = setup({ shell: sh.shell });
+    const made = s.sentinels.create(yt);
+    const run = s.sentinels.start(made.id, 'you');
+    await until(() => s.sentinels.runGet(run.id).run.state === 'done');
+    s.sentinels.update(made.id, { steps: [yt.steps[0]!, { kind: 'measure', name: 'Keep the numbers', from: 'previous', metrics: [{ name: 'subscribers', label: 'YouTube fans', pick: '$.items[0].statistics.subscriberCount', better: 'down' }] }] });
+    const m = s.store.getState().sentinel.metrics![made.id]!.subscribers!;
+    expect(m).toMatchObject({ label: 'YouTube fans', better: 'down', unit: 'count', kind: 'number' });
+    expect(m.points.map((p) => p.value)).toEqual([1000]);
+  });
+
   it('a name it can’t find fails the step, saying which (the rest is kept)', async () => {
     const sh = fakeShell(() => ({ exitCode: 0, output: 'customers: 41' }));
     const s = setup({ shell: sh.shell });

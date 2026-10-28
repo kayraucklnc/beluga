@@ -657,10 +657,12 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
       </div>
     );
   }
+  // A number tile has no head: its label is where the title is renamed.
+  const titleInput = renaming ? <TitleInput title={tile.title ?? cap.title} done={(title) => (setRenaming(false), title !== (tile.title ?? cap.title) && update({ title }))} /> : null;
   const head = (
     <div className={n.cellHead}>
       {mark}
-      {renaming ? <TitleInput title={tile.title ?? cap.title} done={(title) => (setRenaming(false), title !== (tile.title ?? cap.title) && update({ title }))} /> : <span className={n.cellTitle}>{cap.title}</span>}
+      {titleInput ?? <span className={n.cellTitle}>{cap.title}</span>}
       {cap.from && tile.kind !== 'text' && cap.from !== cap.title ? <span className={n.cellFrom}>{cap.from}</span> : null}
       {note ? <span className={n.note}>{note}</span> : tile.compare && tile.kind !== 'number' ? <span className={n.note}>{COMPARE_WORDS[tile.compare]}</span> : null}
       {more}
@@ -670,26 +672,26 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
     <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={size.w} data-h={size.h} data-movable={movable && !ghost ? '' : undefined} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
       {tile.kind === 'number' ? null : head}
       <div className={n.cellBody}>
-        <TileBody d={d} tile={tile} state={state} compare={compare} note={note} lead={tile.kind === 'number' ? mark : null} more={tile.kind === 'number' ? more : null} />
+        <TileBody d={d} tile={tile} state={state} compare={compare} note={note} lead={tile.kind === 'number' ? mark : null} more={tile.kind === 'number' ? more : null} titleInput={tile.kind === 'number' ? titleInput : null} />
       </div>
       {corner}
     </div>
   );
 }
 
-function TileBody({ d, tile, state, compare, note, lead, more }: { d: Dashboard; tile: Tile; state: SentinelState; compare: Compare; note: string | undefined; lead?: React.ReactNode; more: React.ReactNode }) {
+function TileBody({ d, tile, state, compare, note, lead, more, titleInput }: { d: Dashboard; tile: Tile; state: SentinelState; compare: Compare; note: string | undefined; lead?: React.ReactNode; more: React.ReactNode; titleInput?: React.ReactNode }) {
   const a = useSentinelActions();
   if (tile.kind === 'number') {
     const m = metricOf(state, tile.metric);
     if (!m)
       return (
         <div className={n.waiting}>
-          <span className={n.cellTitle}>{tileCaption(state, tile).title}</span>
+          {titleInput ?? <span className={n.cellTitle}>{tileCaption(state, tile).title}</span>}
           <span className={n.quiet}>{note ?? 'gone'}</span>
           {more}
         </div>
       );
-    return <NumberFit m={m} compare={compare} title={tileCaption(state, tile).title} note={note} lead={lead} more={more} onRun={(runId) => a.openRun(runId)} />;
+    return <NumberFit m={m} compare={compare} title={tileCaption(state, tile).title} note={note} lead={lead} more={more} titleInput={titleInput} onRun={(runId) => a.openRun(runId)} />;
   }
   const tall = tile.height === 2;
   if (tile.kind === 'series') {
@@ -714,12 +716,12 @@ function TileBody({ d, tile, state, compare, note, lead, more }: { d: Dashboard;
  * (taller or wider), its points over time fill the rest and the sparkline steps aside. The value
  * grows with the tile.
  */
-function NumberFit({ m, compare, title, note, lead, more, onRun }: { m: MetricSeries; compare: Compare; title: string; note: string | undefined; lead?: React.ReactNode; more: React.ReactNode; onRun: (runId: string) => void }) {
+function NumberFit({ m, compare, title, note, lead, more, titleInput, onRun }: { m: MetricSeries; compare: Compare; title: string; note: string | undefined; lead?: React.ReactNode; more: React.ReactNode; titleInput?: React.ReactNode; onRun: (runId: string) => void }) {
   const [filled, setFilled] = useState(false);
   const series = useMemo(() => [m], [m]);
   return (
     <div className={n.numberFit} data-look={filled ? 'chart' : 'number'}>
-      <NumberTile w={numberWords(m, compare, title)} spark={!filled} lead={lead} {...(note ? { note } : {})}>
+      <NumberTile w={numberWords(m, compare, title)} spark={!filled} lead={lead} label={titleInput} {...(note ? { note } : {})}>
         {more}
       </NumberTile>
       <FillChart series={series} onRun={onRun} onFit={setFilled} />

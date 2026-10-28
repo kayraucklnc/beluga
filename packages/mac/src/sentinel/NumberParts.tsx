@@ -24,14 +24,14 @@ export function CompareSwitch({ value, onChange, label = 'Compare with' }: { val
 }
 
 /** A number as a stat tile. `note`: a quiet word in its corner ("paused", "vs last week" when pinned). */
-export function NumberTile({ w, note, selected, onClick, className, spark = true, lead, children }: { w: NumberWords; note?: string; selected?: boolean; onClick?: () => void; className?: string; spark?: boolean; lead?: React.ReactNode; children?: React.ReactNode }) {
+export function NumberTile({ w, note, selected, onClick, className, spark = true, lead, label, children }: { w: NumberWords; note?: string; selected?: boolean; onClick?: () => void; className?: string; spark?: boolean; lead?: React.ReactNode; label?: React.ReactNode; children?: React.ReactNode }) {
   const good = w.tone === 'good' ? true : w.tone === 'bad' ? false : undefined;
   const up = w.change?.startsWith('+');
   const body = (
     <>
       <div className={v.tileLabel}>
         {lead}
-        <span className={n.tileLabelText}>{w.label}</span>
+        {label ?? <span className={n.tileLabelText}>{w.label}</span>}
         {note ? <span className={n.note}>{note}</span> : null}
         {children}
       </div>
