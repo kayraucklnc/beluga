@@ -9,6 +9,8 @@ import { Archive } from './scenes/Archive.js';
 import { Earnings } from './scenes/Earnings.js';
 import { Friends } from './scenes/Friends.js';
 import { Parallel } from './scenes/Parallel.js';
+import { Sentinel } from './scenes/Sentinel.js';
+import { SentinelUses } from './scenes/SentinelUses.js';
 import { Tables } from './scenes/Tables.js';
 import { TOUR_COPY } from './tour-copy.js';
 import s from './onboarding.module.css';
@@ -57,6 +59,8 @@ const SCENES: Partial<Record<Step, () => ReactNode>> = {
   agents: () => <Agents />,
   tables: () => <Tables />,
   friends: () => <Friends />,
+  sentinel: () => <Sentinel />,
+  uses: () => <SentinelUses />,
   earnings: () => <Earnings />,
   archive: () => <Archive />,
 };
