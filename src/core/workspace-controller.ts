@@ -9,7 +9,7 @@ import { slugify } from '../agent/namer.js';
 import { carrySession } from '../agent/session-carry.js';
 import type { AgentPlace } from '../agent/types.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
-import type { Workspace } from '../workspaces/types.js';
+import type { Project, Workspace } from '../workspaces/types.js';
 import { type MergeResult, git } from '../workspaces/git.js';
 import type { FoundConversation } from '../agent/claude-sessions.js';
 import type { ShareService } from './shares.js';
@@ -357,26 +357,49 @@ export class WorkspaceController {
    * from the commit its folder is on (when that's this repository; else the latest origin), with
    * the conversation shown and Claude resuming it there. The original stays as it was: Claude goes
    * on in a copy. One brought in already opens its worktree. → the worktree's id.
+   *
+   * Given a `name`, its row shows and its page opens right away, while git makes the worktree
+   * and the transcript is copied (as for a new worktree); if it can't be made, the row goes again.
    */
   async importOutside(projectId: string, dir: string, sessionId: string, name?: string): Promise<string | undefined> {
     const project = this.deps.manager.list.find((p) => p.id === projectId && p.root);
-    const listed = project ? await this.outsideConversations(projectId, dir) : undefined;
+    const id = this.deps.manager.newWorktreeId();
+    const early = project && name?.trim() ? slugify(name) : '';
+    if (project && early) {
+      this.ahead.making.set(id, pendingWorktree({ id, project, name: early }));
+      this.publish();
+      this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab: 'chat' } });
+    }
+    const ws = await this.bringIn(project, dir, sessionId, name, id);
+    const shown = this.ahead.making.delete(id);
+    this.publish();
+    if (ws === id) {
+      // Its page is open already (you may have gone elsewhere since: you stay there).
+      if (shown) this.ensureLoaded(id);
+      else this.open(id);
+    } else {
+      if (shown) this.deps.intend({ type: 'close_tab', id });
+      if (ws) this.open(ws);
+    }
+    return ws;
+  }
+
+  /** importOutside's work: the new worktree gets `id`. → its id, or that of the one brought in already. */
+  private async bringIn(project: Project | undefined, dir: string, sessionId: string, name: string | undefined, id: string): Promise<string | undefined> {
+    const listed = project ? await this.outsideConversations(project.id, dir).catch(() => undefined) : undefined;
     const found = listed?.conversations.find((c) => c.sessionId === sessionId);
     if (!project || !found) {
       this.deps.toast('That conversation isn’t in that folder any more', 'warn');
       return undefined;
     }
-    if (found.wsId) {
-      this.open(found.wsId);
-      return found.wsId;
-    }
+    if (found.wsId) return found.wsId;
     const named = name?.trim() || slugify(found.title) || 'conversation';
     const made = await this.act("Couldn't bring the conversation in", async () => {
       const head = (await git(found.cwd, ['rev-parse', 'HEAD']).catch(() => '')).trim();
       const same = /^[0-9a-f]{40}$/.test(head) && (await git(project.root, ['cat-file', '-e', `${head}^{commit}`]).then(() => true, () => false));
       const branch = await this.deps.manager.freeBranchName(project.root, named);
       await git(project.root, ['branch', '--no-track', '--', branch, same ? head : project.base]);
-      const ws = await this.deps.manager.createWorktreeOn(project.id, named, branch, { importedSession: sessionId });
+      const ws = await this.deps.manager.createWorktreeOn(project.id, named, branch, { id, importedSession: sessionId });
       // Claude Code looks for a conversation under the folder it runs in: a copy goes there.
       if (!carrySession(sessionId, found.cwd, ws.path)) throw new Error('its transcript couldn’t be copied');
       return { ws, from: same ? `where ${path.basename(found.cwd)} is (${head.slice(0, 7)})` : project.base };
@@ -389,7 +412,6 @@ export class WorkspaceController {
     // Nothing in it to show (only tool calls, say): Claude still resumes it.
     if (!(await this.importConversation(ws.id, ws.path, channel, sessionId, found.cwd))) this.deps.manager.rememberSession(ws.id, sessionId);
     this.deps.store.dispatch({ type: 'system', channel, text: `On a new branch from ${made.from}. The conversation in ${tilde(found.cwd)} stays as it was, and so do that folder’s uncommitted changes.` });
-    this.open(ws.id);
     this.deps.toast(`Continuing “${found.title}” in ${ws.name}`, 'success');
     this.created(ws, { about: found.title });
     return ws.id;

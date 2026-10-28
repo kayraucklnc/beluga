@@ -3,7 +3,7 @@ import path from 'node:path';
 import { expect, test, type Page } from './fixtures.js';
 
 /**
- * Bring In a Claude Code Conversation… (BLG-321): conversations had with Claude Code outside
+ * Import from Claude Code… (BLG-321): conversations had with Claude Code outside
  * Beluga, written where the demo daemon looks (BELUGA_CLAUDE_HOME), in the demo's "landing"
  * project and a folder inside it. The project's ••• opens the sheet; one goes on in a new worktree.
  */
@@ -37,8 +37,8 @@ test('a conversation from outside Beluga goes on in a new worktree', async ({ pa
 
   await row.hover();
   await page.getByRole('button', { name: 'More for landing' }).click();
-  await page.getByRole('menuitem', { name: 'Bring In a Claude Code Conversation…' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Bring In a Claude Code Conversation' });
+  await page.getByRole('menuitem', { name: 'Import from Claude Code…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Import from Claude Code' });
   const list = sheet.getByRole('radiogroup', { name: 'Claude Code conversations' });
   await expect(list.getByRole('radio')).toHaveCount(3);
   await expect(list.getByRole('radio').nth(0)).toContainText('Hero section feels cramped on mobile');
@@ -56,7 +56,7 @@ test('a conversation from outside Beluga goes on in a new worktree', async ({ pa
   // Opened again: it's marked, and the button opens its worktree.
   await row.hover();
   await page.getByRole('button', { name: 'More for landing' }).click();
-  await page.getByRole('menuitem', { name: 'Bring In a Claude Code Conversation…' }).click();
+  await page.getByRole('menuitem', { name: 'Import from Claude Code…' }).click();
   await expect(list.getByRole('radio').nth(0)).toContainText('Brought in already');
   await list.getByRole('radio').nth(0).click();
   await expect(sheet.getByRole('button', { name: 'Open Its Worktree' })).toBeVisible();

@@ -157,8 +157,14 @@ describe('continuing an outside conversation in a worktree', () => {
     expect(listed.dir).toBe(dir);
     expect(listed.conversations.map((c) => c.sessionId)).toEqual([sessionId]);
 
-    const wsId = await ctl.importOutside(project.id, dir, sessionId, 'safari login');
+    const bringing = ctl.importOutside(project.id, dir, sessionId, 'safari login');
+    // Before any git work: its row is there already (the sheet closes; nothing waits on it).
+    const row = kay.state().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'safari-login')!;
+    expect(row).toMatchObject({ pending: true, kind: 'worktree' });
+    const wsId = await bringing;
+    expect(wsId).toBe(row.id);
     const ws = kay.workspaces.find(wsId!)!;
+    expect(kay.state().projects.find((p) => p.root)!.workspaces.filter((w) => w.name === 'safari-login')).toEqual([expect.not.objectContaining({ pending: true })]);
     expect(ws).toMatchObject({ kind: 'worktree', name: 'safari-login', importedSession: sessionId, sessionId });
     expect(git(ws.path, 'rev-parse', 'HEAD')).toBe(git(dir, 'rev-parse', 'HEAD'));
     // Claude Code finds it under the worktree's folder; the original is as it was.
