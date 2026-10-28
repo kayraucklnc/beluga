@@ -104,9 +104,12 @@ function Route() {
     case 'team_plan':
       return <WorkFrame page="plans"><SharedPlanPage key={`${view.owner}/${view.id}`} owner={view.owner} id={view.id} /></WorkFrame>;
     // Sentinel is one page (BLG-300): its board is on it, its chat docks beside it; the old views land there.
+    case 'sentinel_chat':
+      // Asked from a sentinel's own page: that page stays, the chat beside it.
+      if (view.about) return <SentinelPage key={view.about} id={view.about} />;
+      return <SentinelHome />;
     case 'sentinel':
     case 'dashboard':
-    case 'sentinel_chat':
       return <SentinelHome />;
     case 'sentinel_page':
       return <SentinelPage key={view.id} id={view.id} />;

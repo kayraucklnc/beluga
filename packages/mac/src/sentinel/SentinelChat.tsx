@@ -35,6 +35,9 @@ const STARTERS = [
 export function SentinelChat({ onClose }: { onClose?: () => void }) {
   const view = useApp((st) => st.view);
   const channel = channelOf(view);
+  // Opened beside a sentinel's own page: going between chats keeps that page.
+  const about = view.kind === 'sentinel_chat' ? view.about : undefined;
+  const here = about ? { about } : {};
   const id = sentinelChatOf(channel) ?? FIRST_SENTINEL_CHAT;
   const actions = useActions();
   const api = useApi();
@@ -48,11 +51,11 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
   const name = names[chats.findIndex((c) => c.id === id)] ?? 'New chat';
   const open = (chat: string): void => {
     void a.act(() => api.sentinel.chatOpen(chat));
-    actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat } });
+    actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat, ...here } });
   };
   const fresh = async (): Promise<void> => {
     const made = await a.act(() => api.sentinel.chatNew());
-    if (made) actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat: made.id } });
+    if (made) actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat: made.id, ...here } });
   };
   const more: ActionItem[] = [
     { label: 'New Chat', icon: 'plus', onSelect: () => void fresh() },
@@ -70,7 +73,7 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
           run: () =>
             void a.act(() => api.sentinel.chatDelete(id), 'Deleted the chat').then(() => {
               // The one now open (the next, or a fresh first one) is shown.
-              actions.run({ type: 'view', view: { kind: 'sentinel_chat' } });
+              actions.run({ type: 'view', view: { kind: 'sentinel_chat', ...here } });
             }),
         }),
     },

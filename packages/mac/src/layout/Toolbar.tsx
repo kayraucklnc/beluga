@@ -280,13 +280,13 @@ export function Toolbar() {
   }
 
   // Sentinel is one page (BLG-300): its list, its board and its chat say Sentinel, with how it's doing.
-  if (view.kind === 'sentinel' || view.kind === 'dashboard' || view.kind === 'sentinel_chat') {
+  if (view.kind === 'sentinel' || view.kind === 'dashboard' || (view.kind === 'sentinel_chat' && !view.about)) {
     return <Shell headerRef={headerRef} title={<span className={s.name}>Sentinel</span>} subtitle={<span className={s.meta}>{sentinelSubtitle(state.sentinel)}</span>} />;
   }
 
-  if (view.kind === 'sentinel_page' || view.kind === 'sentinel_run') {
+  if (view.kind === 'sentinel_page' || view.kind === 'sentinel_run' || view.kind === 'sentinel_chat') {
     const run = view.kind === 'sentinel_run' ? state.sentinel.runs.find((r) => r.id === view.runId) : undefined;
-    const item = state.sentinel.items.find((x) => x.id === (view.kind === 'sentinel_page' ? view.id : run?.sentinelId));
+    const item = state.sentinel.items.find((x) => x.id === (view.kind === 'sentinel_page' ? view.id : view.kind === 'sentinel_chat' ? view.about : run?.sentinelId));
     const project = item?.projectId ? state.projects.find((p) => p.id === item.projectId) : undefined;
     return (
       <Shell

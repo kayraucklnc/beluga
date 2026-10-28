@@ -7,30 +7,29 @@ import type { Args } from '@beluga/ipc/api.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
-import { Button, Empty, EmptyActions, IconButton, Tip } from '../components/ui.js';
+import { Button, IconButton, Tip } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { copyText } from '../lib/copy.js';
 import { openSheet } from '../lib/sheets.js';
-import { useActions } from '../lib/actions.js';
 import { isDrag } from '../tasks/board-drag.js';
 import { PickMenu } from '../tasks/PickMenu.js';
 import { ago } from '../tasks/tasks-model.js';
 import { ClaudeMark } from './marks.js';
-import { CompareSwitch, MetricChart, NumberTile, RowsTable, SeriesChart } from './NumberParts.js';
+import { MetricChart, NumberTile, RowsTable, SeriesChart } from './NumberParts.js';
 import { draftsOf, jsonFence, numberWords, outputTable, refreshLine, tileCaption, tileNote, tileWords } from './numbers-model.js';
 import { askLine, inScope, namedLine } from './sentinel-model.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
-import t from '../tasks/tasks.module.css';
 import n from './numbers.module.css';
 
 /**
- * Sentinel › Dashboard (docs/sentinel.md §10): anything your sentinels produced, picked up as tiles
- * in tabs: numbers with their change, series, tables, a step's latest output, a headline or report.
- * Tiles in a grid of six columns, dragged into place (the board's drag), each resized and retitled
- * from its ⋯; compare at the top for every tile (a tile can pin its own); Refresh runs the
- * sentinels it draws from one at a time; Add a Tile takes a description (your Claude builds it, and
- * sets up a draft sentinel when nothing fetches it yet) or lets you pick. Everything saves at once.
+ * At a glance (docs/sentinel.md §10, BLG-300): the board on Sentinel's page. Anything your
+ * sentinels keep or bring back, as tiles: numbers with their change, series, tables, a step's
+ * latest output, a headline or a report. Tiles sit in a grid of six columns, dragged into place
+ * (the board's drag) and resized by their corner (a bigger tile shows more: a number gets its chart);
+ * each is marked with its project when the board mixes them, and can be grouped by project. The
+ * board picker goes between boards; compare sets every tile at once; Refresh runs the sentinels it
+ * draws from one at a time; Add takes a description or lets you pick. Everything saves at once.
  */
 
 /** The boards' names (the picker), and the one shown: the one asked for, else the first. */

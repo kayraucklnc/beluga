@@ -1,12 +1,15 @@
 import { useRef, useState } from 'react';
+import { ACCESS, ACCESS_INFO, type Access, CLAUDE_CHANGED, CLAUDE_CHANGED_BANNER, FIRST_SENTINEL_CHAT, sentinelChatChannel, NOTIFY_WHERE, type RunSummary, type Sentinel, type SentinelPatch, TIME_LIMITS, accessRank, runsOf, scheduleSentence } from '@beluga/core/sentinel/model.js';
 import { activityOf } from '@beluga/ui/workspace-models.js';
-import { ACCESS, ACCESS_INFO, type Access, CLAUDE_CHANGED, CLAUDE_CHANGED_BANNER, NOTIFY_WHERE, type RunSummary, type Sentinel, type SentinelPatch, TIME_LIMITS, accessRank, runsOf, scheduleSentence } from '@beluga/core/sentinel/model.js';
 import { recipeById } from '@beluga/core/sentinel/recipes.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
-import { useApp } from '../lib/beluga.js';
+import { useApi, useApp } from '../lib/beluga.js';
+import { useActions } from '../lib/actions.js';
+import { SentinelChat } from './SentinelChat.js';
+import home from './home.module.css';
 import { useSwipeBack } from '../tasks/use-swipe-back.js';
 import { SwipeBackEdge } from '../tasks/SwipeBackEdge.js';
 import { ago } from '../tasks/tasks-model.js';
@@ -59,22 +62,31 @@ function Page({ item }: { item: Sentinel }) {
   const back = (): void => a.openList();
   const swipe = useSwipeBack(wrap, back);
   const save = (patch: SentinelPatch): void => void a.act(() => a.update(item.id, patch));
+  // The Sentinel chat docks beside the page when you ask from here (its properties make room for it).
+  const asking = useApp((st) => st.view.kind === 'sentinel_chat' && st.view.about === item.id);
   return (
-    <div ref={wrap} className={t.pageWrap}>
-      <SwipeBackEdge progress={swipe} />
-      <div className={t.page}>
-        <div className={t.pageMain} data-sentinel-page={item.id}>
-          <Crumbs item={item} back={back} />
-          <Header item={item} save={save} />
-          <AskBox item={item} />
-          <Banners item={item} />
-          <WhenCard item={item} save={save} />
-          <StepsCard item={item} save={save} />
-          <NumbersCard item={item} />
-          <History item={item} />
+    <div className={home.home}>
+      <div ref={wrap} className={cx(t.pageWrap, home.grow)}>
+        <SwipeBackEdge progress={swipe} />
+        <div className={t.page}>
+          <div className={t.pageMain} data-sentinel-page={item.id}>
+            <Crumbs item={item} back={back} />
+            <Header item={item} save={save} />
+            <AskBox item={item} />
+            <Banners item={item} />
+            <WhenCard item={item} save={save} />
+            <StepsCard item={item} save={save} />
+            <NumbersCard item={item} />
+            <History item={item} />
+          </div>
+          {asking ? null : <Properties item={item} save={save} />}
         </div>
-        <Properties item={item} save={save} />
       </div>
+      {asking ? (
+        <aside className={home.panel} aria-label="Ask Sentinel">
+          <SentinelChat onClose={() => a.open(item.id)} />
+        </aside>
+      ) : null}
     </div>
   );
 }
@@ -152,24 +164,26 @@ function Header({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) =
 }
 
 /**
- * "Ask Claude to change this sentinel…": one line under the header (⌘↩ or Return sends). While
- * Claude works it shows its conversation's last line; then its answer, with Open Chat.
+ * "Ask Claude about this sentinel…": one line under the header. What you say goes to the Sentinel
+ * chat, which opens beside the page (naming this sentinel, so Claude knows which one): you watch it
+ * change things there, and answer its approvals there.
  */
 function AskBox({ item }: { item: Sentinel }) {
+  const api = useApi();
+  const actions = useActions();
+  const active = useApp((st) => st.sentinel.chats?.active ?? FIRST_SENTINEL_CHAT);
   const a = useSentinelActions();
+  // New Sentinel › Describe it: Claude writing this one from your words, its last line, then its answer.
   const ask = useApp((st) => st.sentinel.asks?.[item.id]);
   const live = useApp((st) => (ask?.state === 'writing' ? activityOf(st.log, ask.channel) : undefined));
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const writing = ask?.state === 'writing';
   const line = askLine(ask, live);
-  const send = async (): Promise<void> => {
+  const [text, setText] = useState('');
+  const send = (): void => {
     const words = text.trim();
-    if (!words || writing || busy) return;
-    setBusy(true);
-    const sent = await a.act(() => a.api.ask(item.id, words));
-    setBusy(false);
-    if (sent) setText('');
+    if (!words) return;
+    void api.session.submit(`About “${item.name}”: ${words}`, { channel: sentinelChatChannel(active) });
+    actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat: active, about: item.id } });
+    setText('');
   };
   return (
     <section className={s.ask} aria-label="Ask Claude" data-testid="sentinel-ask">
@@ -178,20 +192,19 @@ function AskBox({ item }: { item: Sentinel }) {
         <input
           className={s.askInput}
           value={text}
-          placeholder={writing ? 'Claude is changing it…' : 'Ask Claude to change this sentinel…'}
-          aria-label="Ask Claude to change this sentinel"
+          placeholder="Ask Claude about this sentinel: “make it weekly”, “why did it fail?”…"
+          aria-label="Ask Claude about this sentinel"
           spellCheck
-          disabled={writing}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              void send();
+              send();
             }
           }}
         />
-        <Tip label="Claude changes it for you; it looks at the project first when that helps" keys="⌘↩">
-          <Button size="small" icon="arrowRight" disabled={!text.trim() || writing || busy} onClick={() => void send()}>
+        <Tip label="The Sentinel chat opens beside this page; Claude changes it there" keys="↩">
+          <Button size="small" icon="arrowRight" disabled={!text.trim()} onClick={send}>
             Ask
           </Button>
         </Tip>

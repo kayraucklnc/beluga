@@ -79,6 +79,22 @@ test('Ask Claude opens the Sentinel chat beside the page; × closes it', async (
   await expect(main(page).getByRole('complementary', { name: 'Ask Sentinel' })).toBeVisible();
 });
 
+test('asking about one sentinel opens the chat beside its page, naming it', async ({ page }) => {
+  await openSentinel(page);
+  await main(page).getByRole('row', { name: /^Morning brief/ }).click();
+  await main(page).getByRole('textbox', { name: 'Ask Claude about this sentinel' }).fill('Make it weekly on Mondays');
+  await main(page).getByRole('textbox', { name: 'Ask Claude about this sentinel' }).press('Enter');
+  const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
+  await expect(panel).toContainText('Make it weekly on Mondays');
+  await expect(panel).toContainText('Morning brief');
+  // The sentinel's page stays beside it.
+  await expect(main(page).getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Morning brief');
+  await shoot(page, 'page-ask');
+  await panel.getByRole('button', { name: 'Close' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(main(page).getByRole('complementary', { name: 'Properties' })).toBeVisible();
+});
+
 test('a tile is resized by dragging its corner', async ({ page }) => {
   await openSentinel(page);
   const glance = main(page).getByRole('region', { name: 'At a glance' });

@@ -331,8 +331,8 @@ export type View =
   | { readonly kind: 'sentinel_run'; readonly runId: string }
   /** Sentinel › Dashboard (docs/sentinel.md §10): your dashboards, one open (none: the first). */
   | { readonly kind: 'dashboard'; readonly id?: string }
-  /** Sentinel › Chat (docs/sentinel.md §12): one of the Sentinel chat's conversations (none: the first). */
-  | { readonly kind: 'sentinel_chat'; readonly chat?: string };
+  /** The Sentinel chat (docs/sentinel.md §12), one of its conversations (none: the first), docked beside Sentinel's page, or beside a sentinel's own page (`about`, its id) when you asked from there. */
+  | { readonly kind: 'sentinel_chat'; readonly chat?: string; readonly about?: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
