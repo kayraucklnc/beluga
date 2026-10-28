@@ -211,6 +211,15 @@ describe('enabled', () => {
     expect(enabled(prefs, 'pr')).toBe(false);
     expect(enabled(prefs, 'done')).toBe(true);
   });
+
+  it('quiets sentinels on their own, but not what one needs from you', () => {
+    const prefs = { ...initialState('room').prefs.notify, sentinels: false };
+    expect(enabled(prefs, 'done', 'sentinel')).toBe(false);
+    expect(enabled(prefs, 'problems', 'sentinel')).toBe(false);
+    expect(enabled(prefs, 'needsYou', 'sentinel')).toBe(true);
+    expect(enabled(prefs, 'done')).toBe(true);
+    expect(enabled({ ...prefs, sentinels: true, done: false }, 'done', 'sentinel')).toBe(false);
+  });
 });
 
 describe('Notifier', () => {
