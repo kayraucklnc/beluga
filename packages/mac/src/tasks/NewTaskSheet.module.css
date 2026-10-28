@@ -164,3 +164,33 @@
   gap: 5px;
   font-size: 0.92rem;
 }
+
+/* "@" in the describe box: who you mean, as pills behind the words, and the people to pick from under it. */
+.boxWrap {
+  position: relative;
+  border-radius: 6px;
+  background: var(--bg);
+}
+:global([data-theme='dark']) .boxWrap {
+  background: color-mix(in srgb, var(--bg-raised) 70%, black);
+}
+/* The pills' layer takes the box's padding and type, without its look. */
+.boxWrap .layer,
+:global([data-theme='dark']) .boxWrap .layer {
+  background: transparent;
+  box-shadow: none;
+}
+.boxWrap .overLayer,
+:global([data-theme='dark']) .boxWrap .overLayer {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  background: transparent;
+}
+.suggestions {
+  top: calc(100% + 4px);
+  bottom: auto;
+  left: 0;
+  right: 0;
+}

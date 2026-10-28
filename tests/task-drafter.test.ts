@@ -173,6 +173,9 @@ describe('one New Task message, several tasks and who each is for (BLG-319)', ()
     expect(matchPerson('me', people)).toBe('Kay');
     expect(matchPerson('Bob', people)).toBeUndefined();
     expect(matchPerson(null, people)).toBeUndefined();
+    // As the New Task box's "@" writes them (BLG-342).
+    expect(matchPerson('@AtaDemir', people)).toBe('Ata Demir');
+    expect(matchPerson('@mia', people)).toBe('Mia');
   });
 
   it('reads several tasks with their people, and an epic with its parts', () => {
@@ -227,6 +230,27 @@ describe('one New Task message, several tasks and who each is for (BLG-319)', ()
     finish({ title: 'Cache the rates', goal: 'g', acceptance: [], labels: [], for: 'Ata Demir' });
     await settle();
     expect(board.need(first.id).assignee?.name).toBe('Mia');
+  });
+
+  it('"@" names in the words: the describer is told who each is, on the team or only a friend (BLG-342)', async () => {
+    const asked: DraftContext[] = [];
+    const { store, work } = setup(async (_t, ctx) => (asked.push(ctx), { title: 'A', goal: 'a', acceptance: [], labels: [] }));
+    withTeam(store);
+    const friend = (peerId: string, name: string) => ({ peerId, name, online: true, presence: 'online' as const, addedAt: 1, unread: 0 });
+    store.dispatch({ type: 'net_summary', summary: { enabled: true, friends: [friend('p-ata', 'Ata Demir'), friend('p-zoe', 'Zoë Park')], groups: [], invitations: [] } as never });
+    work.createDescribed({ projectId: 'api' }, 'ask @ZoëPark for the copy, then @AtaDemir ships it. Not @nobody.', { several: true });
+    await settle();
+    expect(asked[0]!.named).toEqual([
+      { handle: '@ZoëPark', name: 'Zoë Park', team: false },
+      { handle: '@AtaDemir', name: 'Ata Demir', team: true },
+    ]);
+    const prompt = draftPrompt('x', asked[0]!);
+    expect(prompt).toContain('- @AtaDemir is Ata Demir, on this project');
+    expect(prompt).toContain('- @ZoëPark is Zoë Park, a friend (not on this project');
+    // No "@": nothing to say.
+    work.createDescribed({ projectId: 'api' }, 'fix the login', { several: true });
+    await settle();
+    expect(asked[1]!.named).toBeUndefined();
   });
 
   it('not from New Task (a GitHub issue, the phone): always one task', async () => {

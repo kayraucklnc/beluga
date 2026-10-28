@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { localDirKey } from '@beluga/core/local-key.js';
 import { workspaceMentions } from '@beluga/core/mentions.js';
-import { mentionDir, suggest, type Suggestion } from '@beluga/ui/suggest.js';
+import { mentionDir, peopleSuggestions, suggest, type Suggestion } from '@beluga/ui/suggest.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -13,8 +13,22 @@ import s from './composer.module.css';
  * The chat box's / and @ suggestions for another text box (the project home's New Worktree):
  * commands, people, projects, and with `filesOf` a folder's files for "@src/au". Returns the
  * list to draw (above the box) and a key handler that says whether it took the key.
+ * With `people`, "@" offers only them (New Task: who the words are about), and nothing else.
  */
-export function useBoxSuggestions({ text, setText, filesOf }: { text: string; setText: (text: string) => void; filesOf?: string | undefined }): { list: ReactNode; onKey: (e: React.KeyboardEvent) => boolean } {
+export function useBoxSuggestions({
+  text,
+  setText,
+  filesOf,
+  people,
+  className,
+}: {
+  text: string;
+  setText: (text: string) => void;
+  filesOf?: string | undefined;
+  people?: ReadonlyArray<{ readonly name: string; readonly hint: string }>;
+  /** Where the list sits, when not above the box. */
+  className?: string;
+}): { list: ReactNode; onKey: (e: React.KeyboardEvent) => boolean; open: boolean } {
   const api = useApi();
   const actions = useActions();
   const state = useApp((st) => st);
@@ -33,7 +47,9 @@ export function useBoxSuggestions({ text, setText, filesOf }: { text: string; se
     () =>
       hidden || !text
         ? []
-        : suggest(text, {
+        : people
+          ? peopleSuggestions(text, people)
+          : suggest(text, {
             peers: state.peers,
             selfId: state.selfId,
             dirCache: state.dirCache,
@@ -43,7 +59,7 @@ export function useBoxSuggestions({ text, setText, filesOf }: { text: string; se
             projects: state.projects.filter((p) => p.root),
             ...(share ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${share}/${dir}`] } : {}),
           }),
-    [text, hidden, state.peers, state.selfId, state.dirCache, state.projects, state.network.friends, share],
+    [text, hidden, people, state.peers, state.selfId, state.dirCache, state.projects, state.network.friends, share],
   );
   const listed = Math.min(suggestions.length, MAX_LISTED);
   const pick = Math.min(selected, Math.max(0, listed - 1));
@@ -72,7 +88,7 @@ export function useBoxSuggestions({ text, setText, filesOf }: { text: string; se
     return true;
   };
   const list = suggestions.length ? (
-    <div ref={ref} className={s.suggestions} role="listbox" aria-label="Suggestions">
+    <div ref={ref} className={cx(s.suggestions, className)} role="listbox" aria-label="Suggestions">
       {suggestions.slice(0, MAX_LISTED).map((sug, i, all) => (
         <Fragment key={`${sug.value}:${i}`}>
         {sectionOf(sug, all[i - 1]) ? (
@@ -96,5 +112,5 @@ export function useBoxSuggestions({ text, setText, filesOf }: { text: string; se
       ))}
     </div>
   ) : null;
-  return { list, onKey };
+  return { list, onKey, open: suggestions.length > 0 };
 }

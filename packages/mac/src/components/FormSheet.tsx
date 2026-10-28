@@ -60,6 +60,10 @@ export function FormSheet({ title, intro, icon, submitLabel, onSubmit, onCancel,
           className={s.sheet}
           style={{ width: `min(${width}px, calc(100vw - 48px))` }}
           aria-describedby={undefined}
+          // Escape in a field with its suggestions open (New Task's "@") closes them, not the sheet.
+          onEscapeKeyDown={(e) => {
+            if (document.activeElement?.getAttribute('aria-expanded') === 'true' && document.activeElement.getAttribute('aria-haspopup') === 'listbox') e.preventDefault();
+          }}
           onOpenAutoFocus={(e) => {
             // The first field gets the focus (not the close button).
             const root = e.currentTarget as HTMLElement | null;
