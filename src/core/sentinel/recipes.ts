@@ -372,7 +372,7 @@ export const RECIPES: readonly Recipe[] = [
           ].join('\n'),
         },
         { kind: 'http', name: 'Send the analysis', ...presetFields('url'), method: 'POST', url: '$RESULTS_URL', headers: { 'Content-Type': 'application/json' }, body: '{"sentinel": "{{sentinel}}", "date": "{{date}}", "report": "{{previous}}"}', timeoutSec: 30 },
-        { kind: 'measure', name: 'Keep its answer', from: 'previous', metrics: [{ name: 'answer', label: 'The service’s answer', kind: 'output' }] },
+        { kind: 'measure', name: 'Keep its answer', from: 'previous', metrics: [{ name: 'answer', label: 'its answer', kind: 'output' }] },
         { kind: 'notify', name: 'Tell me', phone: true },
       ],
     },
