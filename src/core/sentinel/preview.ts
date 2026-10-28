@@ -31,6 +31,8 @@ export interface SourcePreview {
   /** The metrics its Keep the numbers step found, and the ones it didn't. */
   readonly kept?: readonly string[];
   readonly missing?: readonly string[];
+  /** Its typed columns, in words ("html_content → 6 documents, 81 KB"). */
+  readonly typed?: readonly string[];
 }
 
 /** Nothing in it: null, an empty or blank string, an empty list. */
@@ -57,10 +59,10 @@ export function flaggedColumns(empty: Readonly<Record<string, number>>): string[
 }
 
 /** A source's answer as a preview. */
-export function previewOf(stepId: string, stepName: string, rows: readonly Row[], columns: readonly string[], measured?: { readonly kept: readonly string[]; readonly missing: readonly string[] }, sample = SAMPLE_ROWS): SourcePreview {
+export function previewOf(stepId: string, stepName: string, rows: readonly Row[], columns: readonly string[], measured?: { readonly kept: readonly string[]; readonly missing: readonly string[] }, sample = SAMPLE_ROWS, typed?: readonly string[]): SourcePreview {
   const cols = columns.length ? columns : [...new Set(rows.slice(0, 200).flatMap((r) => Object.keys(r)))];
   const empty = columnEmptiness(rows, cols);
-  return { stepId, stepName, state: 'ok', rows: rows.length, columns: cols, sample: rows.slice(0, sample), empty, flagged: flaggedColumns(empty), ...(measured ? { kept: measured.kept, missing: measured.missing } : {}) };
+  return { stepId, stepName, state: 'ok', rows: rows.length, columns: cols, sample: rows.slice(0, sample), empty, flagged: flaggedColumns(empty), ...(measured ? { kept: measured.kept, missing: measured.missing } : {}), ...(typed?.length ? { typed } : {}) };
 }
 
 /** A source step whose check failed: it didn't answer, or answered rows without the numbers it keeps. */
@@ -91,6 +93,7 @@ export function describePreview(p: SourcePreview): string {
   const lines = [`“${p.stepName}”: ${p.rows} ${p.rows === 1 ? 'row' : 'rows'}${p.columns.length ? `, columns ${p.columns.join(', ')}` : ''}.`];
   if (p.kept?.length) lines.push(`Keeps ${p.kept.join(', ')}.`);
   if (p.missing?.length) lines.push(`Didn’t find ${p.missing.join(', ')} in the rows.`);
+  if (p.typed?.length) lines.push(`Typed columns: ${p.typed.join('; ')}.`);
   if (!p.rows) {
     lines.push('No rows came back: check the query’s filters (a date, a status) against the data, or say that none is expected yet.');
     return lines.join('\n');

@@ -40,6 +40,7 @@ export const SENTINEL_HANDLERS = {
     systemOpen(needSentinel(s).documentPath(id, metric, column, name));
   },
   'sentinel.signStorage': (s, id, metric, column, value) => needSentinel(s).signStorage(id, metric, column, value),
+  'sentinel.runRow': (s, id, metric, column, row) => needSentinel(s).runRow(id, metric, column, row, fromPhone() ? 'phone' : 'you'),
   'sentinel.chatNew': (s) => needSentinel(s).chatNew(),
   'sentinel.chatOpen': (s, id) => needSentinel(s).chatOpen(id),
   'sentinel.chatClear': (s, id) => {

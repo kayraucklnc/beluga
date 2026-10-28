@@ -11,10 +11,24 @@ import type { Cell, Row } from '../../shared/view-spec.js';
  * - `storage`: a Supabase Storage object, from a bucket and a path column (or a bucket's own name). The
  *   cell is `<bucket>/<path>`; its link is signed only when it's clicked, for about a minute.
  * - `url`, `path`: declared, so nothing has to guess from the value.
+ * - The table's own kinds (BLG-349): text, number, percent, currency, bytes, date, datetime, bool,
+ *   badge, color, image, code; and progress (a bar, 0…max), sparkline (a list of numbers), delta (a
+ *   change, green or rose by `better`), person (a name or email, with its initials), rating (stars,
+ *   0…max), action (a button that runs another sentinel with the row as its trigger's payload).
  */
 
-export const COLUMN_KINDS = ['html', 'file', 'storage', 'url', 'path'] as const;
+/** Kinds whose value is a document or a storage object (a chip that opens it). */
+export const DOCUMENT_KINDS = ['html', 'file', 'storage'] as const;
+/** Kinds the chat's table already draws (view-spec COLUMN_TYPES): a column is shown as one of these. */
+export const VIEW_KINDS = ['text', 'number', 'percent', 'currency', 'bytes', 'date', 'datetime', 'bool', 'url', 'path', 'color', 'image', 'code', 'badge'] as const;
+/** Kinds only a kept table draws. */
+export const RICH_KINDS = ['progress', 'sparkline', 'delta', 'person', 'rating', 'action'] as const;
+export const COLUMN_KINDS = [...DOCUMENT_KINDS, ...VIEW_KINDS, ...RICH_KINDS] as const;
 export type ColumnKind = (typeof COLUMN_KINDS)[number];
+export type ViewKind = (typeof VIEW_KINDS)[number];
+export type RichKind = (typeof RICH_KINDS)[number];
+export const isViewKind = (t: ColumnKind): t is ViewKind => (VIEW_KINDS as readonly string[]).includes(t);
+export const isRichKind = (t: ColumnKind): t is RichKind => (RICH_KINDS as readonly string[]).includes(t);
 
 /** One typed column of a rows metric. */
 export interface MetricColumn {
@@ -34,6 +48,17 @@ export interface MetricColumn {
    * `base64` / `hex` for a column that holds bytes so.
    */
   readonly encoding?: ColumnEncoding;
+  /** currency: its code ("EUR", USD when none). */
+  readonly currency?: string;
+  /** number, percent, currency: digits after the point. */
+  readonly decimals?: number;
+  /** progress and rating: the most (100 and 5 when none). */
+  readonly max?: number;
+  /** delta: which way is good (up when none). */
+  readonly better?: 'up' | 'down' | 'none';
+  /** action: the sentinel it runs (its id or name; kept as its id), and the button's words ("Retry"). */
+  readonly sentinel?: string;
+  readonly button?: string;
 }
 
 export const COLUMN_ENCODINGS = ['auto', 'text', 'base64', 'hex'] as const;
@@ -307,4 +332,67 @@ export function quietHtml(html: string): string {
   const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:; form-action 'none'; base-uri 'none'">`;
   // Before anything the document says (a <base>, a <meta refresh>, a script): the policy comes first.
   return `<!doctype html>${policy}${html.replace(/<meta[^>]+http-equiv\s*=\s*["']?refresh[^>]*>/gi, '')}`;
+}
+
+/** A progress cell's share, 0 to 1 (a number, "40%", "3/8"); none when it isn't one. */
+export function progressOf(v: unknown, max = 100): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) ? Math.max(0, Math.min(1, v / (max || 100))) : undefined;
+  if (typeof v !== 'string') return undefined;
+  const frac = /^\s*(-?\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*$/.exec(v);
+  if (frac) return Number(frac[2]) > 0 ? Math.max(0, Math.min(1, Number(frac[1]) / Number(frac[2]))) : undefined;
+  const pct = /^\s*(-?\d+(?:\.\d+)?)\s*%\s*$/.exec(v);
+  if (pct) return Math.max(0, Math.min(1, Number(pct[1]) / 100));
+  const n = Number(v);
+  return v.trim() && Number.isFinite(n) ? Math.max(0, Math.min(1, n / (max || 100))) : undefined;
+}
+
+/** A sparkline cell's numbers: a JSON list, or numbers apart by commas or spaces. */
+export function sparkOf(v: unknown): number[] | undefined {
+  if (typeof v !== 'string' && typeof v !== 'number') return undefined;
+  const t = String(v).trim();
+  let list: unknown[];
+  try {
+    const j = JSON.parse(t) as unknown;
+    list = Array.isArray(j) ? j : [];
+  } catch {
+    list = t.replace(/^\[|\]$/g, '').split(/[\s,;]+/);
+  }
+  const out = list.map((x) => (typeof x === 'number' ? x : Number(String(x)))).filter((x) => Number.isFinite(x));
+  return out.length >= 2 ? out.slice(0, 120) : undefined;
+}
+
+/** A delta cell: its number and tone ("+12%", -3, "−$40"); none when it isn't one. */
+export function deltaCellOf(v: unknown, better: MetricColumn['better'] = 'up'): { readonly text: string; readonly tone: 'good' | 'bad' | 'flat' | 'none' } | undefined {
+  const t = typeof v === 'number' ? (v > 0 ? `+${v}` : String(v)) : typeof v === 'string' ? v.trim() : '';
+  const n = Number(t.replace(/[−–]/g, '-').replace(/[^\d.+-]/g, ''));
+  if (!t || !Number.isFinite(n)) return undefined;
+  const tone = n === 0 ? 'flat' : better === 'none' ? 'none' : (n > 0) === (better !== 'down') ? 'good' : 'bad';
+  return { text: typeof v === 'number' && v > 0 ? `+${v}` : t, tone };
+}
+
+/** A person cell: their name (an email's part before the @, said nicely) and initials. */
+export function personOf(v: unknown): { readonly name: string; readonly initials: string; readonly email?: string } | undefined {
+  if (typeof v !== 'string' || !v.trim()) return undefined;
+  const t = v.trim();
+  const mail = /^([^@\s<>]+)@[^@\s<>]+$/.exec(t) ?? /<([^@\s<>]+@[^@\s<>]+)>/.exec(t);
+  const email = mail ? (mail[0].includes('<') ? mail[1] : t) : undefined;
+  const raw = mail && !t.includes('<') ? mail[1]!.replace(/[._+-]+/g, ' ') : t.replace(/<[^>]*>/, '').trim();
+  const name = raw.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 60);
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
+  return { name, initials, ...(email ? { email } : {}) };
+}
+
+/** A rating cell's stars, 0 to max (5 when none). */
+export function ratingOf(v: unknown, max = 5): { readonly value: number; readonly max: number } | undefined {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.trim()) : NaN;
+  if (!Number.isFinite(n)) return undefined;
+  const m = Math.max(1, Math.min(10, Math.round(max)));
+  return { value: Math.max(0, Math.min(m, n)), max: m };
+}
+
+/** Two rows are the same row: every column equal (how an action names the row it runs with). */
+export function sameRow(a: Readonly<Record<string, unknown>>, b: Readonly<Record<string, unknown>>): boolean {
+  const ka = Object.keys(a).filter((k) => a[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => b[k] !== undefined);
+  return ka.length === kb.length && ka.every((k) => (a[k] ?? null) === (b[k] ?? null));
 }

@@ -145,6 +145,7 @@ export const PhoneCalls = {
   // 1.25 (BLG-345): a table's document chip, read through the Mac, and a storage chip's link signed there.
   'sentinel.document': entry('sentinel.document', DocumentView),
   'sentinel.signStorage': entry('sentinel.signStorage', SignedLinkView),
+  'sentinel.runRow': entry('sentinel.runRow', SentinelRunResult),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;

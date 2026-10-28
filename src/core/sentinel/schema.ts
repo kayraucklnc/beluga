@@ -3,7 +3,7 @@ import { SourceSchema } from '../../shared/view-spec.js';
 import { CHART_TILE_KINDS, LEGACY_TILE_KINDS, OUTPUT_SHOWS, TILE_KINDS } from './dashboard-model.js';
 import { COLUMN_ENCODINGS, COLUMN_KINDS, FILES_KEEP_MAX } from './columns.js';
 import { COMPARE } from './metrics.js';
-import { ACCESS, BELUGA_EVENTS, BETTER, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
+import { ACCESS, BELUGA_EVENTS, BETTER, SCRIPT_CODE_MAX, SCRIPT_LANGUAGES, GITHUB_EVENTS, MEASURE_FROM, METRIC_KINDS, NOTIFY_WHERE, ROWS_KEPT, SCHEDULE_EVERY, SENTRY_EVENTS, STRIPE_EVENTS } from './model.js';
 
 /**
  * Sentinels as zod checks: what the API takes (sentinel-api.ts), what sentinel.json holds, and
@@ -54,6 +54,12 @@ export const MetricColumnSchema = z.object({
   bucket: z.string().max(100).optional(),
   path: z.string().max(80).optional(),
   encoding: z.enum(COLUMN_ENCODINGS).optional(),
+  currency: z.string().regex(/^[A-Za-z]{3}$/).optional(),
+  decimals: z.number().int().min(0).max(8).optional(),
+  max: z.number().positive().max(1_000_000).optional(),
+  better: z.enum(BETTER).optional(),
+  sentinel: z.string().max(80).optional(),
+  button: z.string().max(40).optional(),
 });
 
 /** One number (or a series, rows, or an output) a Keep the numbers step keeps. */
@@ -74,7 +80,7 @@ export const MetricSpecSchema = z.object({
 export const StepInputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: text(20_000), where: z.enum(['project', 'worktree', 'mac']).default('project'), model: text(80).optional(), effort: text(20).optional() }),
   // Empty until it's filled in (a new step from Add a Step): a run says so.
-  z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: text(4000), cwd: z.enum(['project', 'home']).default('project'), timeoutSec: z.number().int().min(1).max(3600).default(120) }),
+  z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: text(4000).default(''), code: text(SCRIPT_CODE_MAX).optional(), language: z.enum(SCRIPT_LANGUAGES).optional(), cwd: z.enum(['project', 'home']).default('project'), timeoutSec: z.number().int().min(1).max(3600).default(120) }),
   z.object({ kind: z.literal('notify'), id: stepId, name: stepName, title: text(200).optional(), body: text(4000).optional(), phone: z.boolean().default(false) }),
   z.object({
     kind: z.literal('http'),

@@ -13,13 +13,15 @@ import type { AgentPlace } from '../../agent/types.js';
 import { SentinelChats } from './chat.js';
 import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_INFO, dashboardSentinels, outputFormat, outputSteps } from './dashboard-model.js';
 import { Dashboards, type TileInput, type TilePatch } from './dashboards.js';
-import { FILES_KEEP_DAYS, type MetricColumn, SIGNED_SECONDS, documentMime, isDocumentKind, splitStorage, takeDocuments } from './columns.js';
+import { FILES_KEEP_DAYS, type MetricColumn, SIGNED_SECONDS, documentMime, isDocumentKind, sameRow, splitStorage, takeDocuments, typedWords, withStorage } from './columns.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
 import { signStorageUrl } from './storage-sign.js';
 import { MetricFiles } from './metric-files.js';
-import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, keptWords, labelOf, measureFrom, metricName, pointOf, toNumber } from './metrics.js';
+import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, keptWords, labelOf, measureFrom, metricName, pointOf, readOutput, toNumber } from './metrics.js';
 import { type SentinelTest, type SourcePreview, describePreviews, previewBroken, previewFailed, previewOf } from './preview.js';
 import {
+  type MeasureStep,
+  type ScriptStep,
   APPROVAL_MS,
   CLAUDE_CHANGED,
   DEFAULT_LIMITS,
@@ -846,14 +848,14 @@ export class Sentinels {
   async test(ref: string, by: 'you' | 'claude'): Promise<SentinelTest> {
     const s = this.need(ref);
     if (this.active.has(s.id)) throw new Error(`“${s.name}” is running now: its run shows what it finds`);
-    if (!s.steps.some(isSourceStep)) {
-      return { previews: [], text: `“${s.name}” has no Keep the numbers step that reads a source, so a test has nothing to run: ${by === 'claude' ? 'the user’s Run Now runs all of it (paused or not)' : 'Run Now runs all of it, paused or not'}.` };
+    if (!s.steps.some((st, i) => isSourceStep(st) || (by === 'you' && readsScript(s.steps, i)))) {
+      return { previews: [], text: `“${s.name}” has no Keep the numbers step that reads a source${by === 'you' ? ' or a script' : ''}, so a test has nothing to run: ${by === 'claude' ? 'the user’s Run Now runs all of it (paused or not)' : 'Run Now runs all of it, paused or not'}.` };
     }
     if (this.testing.has(s.id)) throw new Error(`“${s.name}” is being tested already`);
     this.testing.add(s.id);
     let checks: SourceCheck[];
     try {
-      checks = await this.checkSources(s.steps, s.projectId, by === 'claude');
+      checks = await this.checkSources(s.steps, s.projectId, by === 'claude', undefined, by === 'you' ? s : undefined);
     } finally {
       this.testing.delete(s.id);
     }
@@ -868,17 +870,30 @@ export class Sentinels {
    * Run sources once, read-only, as your Claude would (byClaude: nothing that needs your yes) or as you:
    * each source step's rows as a preview, and the numbers its step would keep. `only`: those steps.
    */
-  private async checkSources(steps: readonly Step[], projectId: string | undefined, byClaude: boolean, only?: ReadonlySet<string>): Promise<SourceCheck[]> {
+  private async checkSources(steps: readonly Step[], projectId: string | undefined, byClaude: boolean, only?: ReadonlySet<string>, scriptsOf?: Sentinel): Promise<SourceCheck[]> {
     const out: SourceCheck[] = [];
-    for (const st of steps) {
-      if (st.kind !== 'measure' || st.from !== 'source' || (only && !only.has(st.id))) continue;
-      out.push(await this.checkSource(st.source, projectId, byClaude, st.id, st.name, (rows) => measureFrom(rows, st.metrics, st.keep)));
+    for (const [i, st] of steps.entries()) {
+      if (st.kind !== 'measure' || (only && !only.has(st.id))) continue;
+      if (st.from === 'source') out.push(await this.checkSource(st.source, projectId, byClaude, st.id, st.name, (rows) => measureFrom(rows, st.metrics, st.keep), undefined, (rows) => typedOf(st, rows)));
+      // Your own test runs a script step once, and the Keep the numbers step that reads it (BLG-350); your Claude's never does.
+      else if (scriptsOf && readsScript(steps, i)) out.push(await this.checkScript(scriptsOf, steps[i - 1] as ScriptStep, st));
     }
     return out;
   }
 
+  /** A script step run once for a test, and what the Keep the numbers step after it would keep from what it printed. */
+  private async checkScript(s: Sentinel, script: ScriptStep, measure: MeasureStep): Promise<SourceCheck> {
+    const said = await this.runner.scriptOnce(s, script, CHECK_MS);
+    if ('why' in said) return { stepId: measure.id, preview: previewFailed(measure.id, measure.name, 'failed', `“${script.name}” ${redactSecrets(said.why)}`), found: [] };
+    const data = readOutput(said.output);
+    const m = measureFrom(data, measure.metrics, measure.keep, said.output);
+    const rows = Array.isArray(data) ? cellRows(data.filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object')) : data && typeof data === 'object' ? cellRows([data as Record<string, unknown>]) : data === undefined ? [] : [{ value: typeof data === 'number' ? data : String(data).slice(0, 2000) }];
+    const preview = previewOf(measure.id, measure.name, rows, [], { kept: m.found.map((f) => f.name), missing: m.missing }, undefined, typedOf(measure, rows));
+    return { stepId: measure.id, preview, found: m.found };
+  }
+
   /** One source, once: its preview (and what a step keeps from it, `measure`). */
-  private async checkSource(source: Source | undefined, projectId: string | undefined, byClaude: boolean, stepId: string, stepName: string, measure?: (rows: readonly Row[]) => { readonly found: Measured[]; readonly missing: string[] }, sample?: number): Promise<SourceCheck> {
+  private async checkSource(source: Source | undefined, projectId: string | undefined, byClaude: boolean, stepId: string, stepName: string, measure?: (rows: readonly Row[]) => { readonly found: Measured[]; readonly missing: string[] }, sample?: number, typed?: (rows: readonly Row[]) => string[]): Promise<SourceCheck> {
     if (!source) return { stepId, preview: previewFailed(stepId, stepName, 'failed', 'it has no source yet: give it one'), found: [] };
     const fetch = this.deps.fetchSource;
     if (!fetch) return { stepId, preview: previewFailed(stepId, stepName, 'not-checked', 'sources need the Beluga app'), found: [] };
@@ -896,7 +911,7 @@ export class Sentinels {
     if ('needsYes' in got) return { stepId, preview: previewFailed(stepId, stepName, 'not-checked', `it runs ${firstLine(got.needsYes, 200)}, which waits for the user’s yes: it runs on their Run Now`), found: [] };
     const rows = cellRows(got.rows as Record<string, unknown>[]);
     const m = measure?.(rows);
-    return { stepId, preview: previewOf(stepId, stepName, rows, got.columns, m ? { kept: m.found.map((f) => f.name), missing: m.missing } : undefined, sample), found: m?.found ?? [] };
+    return { stepId, preview: previewOf(stepId, stepName, rows, got.columns, m ? { kept: m.found.map((f) => f.name), missing: m.missing } : undefined, sample, typed?.(rows)), found: m?.found ?? [] };
   }
 
   /** A test as a run in the sentinel's history (by you or your Claude), its numbers kept; nothing follows it. */
@@ -1287,7 +1302,9 @@ export class Sentinels {
   private stepsOf(drafts: readonly StepDraft[], access: Sentinel['access']): Step[] {
     const steps = drafts.map((d) => {
       const parsed = StepInputSchema.parse(d);
-      return { ...parsed, id: parsed.id ?? short('st', 4), name: oneLine(parsed.name ?? '', 80) || STEP_INFO[parsed.kind].label } as Step;
+      // An action column's sentinel is kept by its id (it may be given by name).
+      const own = parsed.kind === 'measure' ? { metrics: parsed.metrics.map((m) => (m.columns?.some((c) => c.type === 'action' && c.sentinel) ? { ...m, columns: m.columns.map((c) => (c.type === 'action' && c.sentinel ? { ...c, sentinel: this.get(c.sentinel)?.id ?? c.sentinel } : c)) } : m)) } : {};
+      return { ...parsed, ...own, id: parsed.id ?? short('st', 4), name: oneLine(parsed.name ?? '', 80) || STEP_INFO[parsed.kind].label } as Step;
     });
     this.checkAccess(steps, access);
     return steps;
@@ -1415,6 +1432,23 @@ export class Sentinels {
     if (!col || !kinds(col)) throw new Error(`${column} isn’t a document column of ${m.label}`);
     if (!m.rows.some((r) => r[column] === value)) throw new Error(`${m.label} has no ${column} “${value}” in its latest rows`);
     return { s, m, col };
+  }
+
+  /**
+   * An action cell's button: the sentinel its column names runs now (as your Run Now does), with the
+   * row as its trigger's payload. The row must be one of the metric's latest rows.
+   */
+  runRow(sentinel: string, metric: string, column: string, row: Readonly<Record<string, unknown>>, by: 'you' | 'phone'): RunSummary {
+    const s = this.need(sentinel);
+    const m = this.metrics[s.id]?.[metric];
+    if (!m?.rows) throw new Error(`“${s.name}” keeps no rows called ${metric}`);
+    const col = m.columnTypes?.find((c) => c.key === column && c.type === 'action');
+    if (!col?.sentinel) throw new Error(`${column} isn’t an action column of ${m.label}`);
+    const kept = m.rows.find((r) => sameRow(r, row));
+    if (!kept) throw new Error(`That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
+    const target = this.need(col.sentinel);
+    const words = col.button?.trim() || col.label?.trim() || `Run ${target.name}`;
+    return this.start(target.id, by, { kind: 'manual', summary: `You pressed “${words}” on a row of ${m.label}`, payload: { row: kept, sentinel: s.name, metric: m.label } }, [s.id]);
   }
 
   /** A document a typed column kept: its name, kind and contents (text for text, base64 for the rest). */
@@ -1866,6 +1900,10 @@ function notSaved(what: string, broken: readonly SourceCheck[]): string {
 
 /** A Keep the numbers step that reads a source (the steps a check before saving, and a test, run). */
 const isSourceStep = (st: Pick<Step, 'kind'> & { readonly from?: string }): boolean => st.kind === 'measure' && st.from === 'source';
+/** A Keep the numbers step that reads the script step right before it (your test runs both). */
+const readsScript = (steps: readonly Step[], i: number): boolean => steps[i]?.kind === 'measure' && (steps[i] as MeasureStep).from === 'previous' && steps[i - 1]?.kind === 'script';
+/** A Keep the numbers step's typed columns in the preview's words ("html_content → 6 documents, 81 KB"). */
+const typedOf = (st: MeasureStep, rows: readonly Row[]): string[] => st.metrics.flatMap((m) => (m.kind === 'rows' && m.columns?.length ? typedWords(withStorage(rows, Object.keys(rows[0] ?? {}), m.columns).rows, m.columns) : []));
 
 /** One source checked: its step, its preview, and the numbers its step would keep. */
 interface SourceCheck {

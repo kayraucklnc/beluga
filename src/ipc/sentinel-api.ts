@@ -50,6 +50,9 @@ export const SENTINEL_API = {
   'sentinel.documentOpen': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(200)]) },
   // A storage cell's link, signed now for about a minute with the project's Supabase variables → { url, expiresIn }. Never kept.
   'sentinel.signStorage': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(1200)]) },
+  // An action cell's button (BLG-349): runs the sentinel its column names, with the row (one of the
+  // metric's latest rows, checked) as its trigger's payload → the run.
+  'sentinel.runRow': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.record(z.string().max(80), z.union([z.string().max(100_000), z.number(), z.boolean(), z.null()]))]) },
   // The Sentinel chat (docs/sentinel.md §12): a new conversation beside the others, open now → { id, channel }.
   'sentinel.chatNew': { args: z.tuple([]) },
   // Open one (the phone's Chat is the open one).

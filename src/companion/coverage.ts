@@ -485,6 +485,8 @@ export const PHONE: Record<Method, Side> = {
   'sentinel.document': 'phone',
   'sentinel.signStorage': 'phone',
   'sentinel.documentOpen': 'mac',
+  // An action cell's button runs a sentinel with its row, as Run Now does from the phone.
+  'sentinel.runRow': 'phone',
   'dashboard.refresh': 'phone',
   'dashboard.create': 'mac',
   'dashboard.update': 'mac',
