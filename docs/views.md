@@ -61,6 +61,8 @@ None of these are required. Claude uses them when they say something faster than
 
 Every card also has **Copy as CSV**, **Copy as JSON** and **Open in Full Window** (on hover and in the right-click menu).
 
+A table has **Copy Table** in its toolbar, one click: every row in the order you're looking at it (sorted, searched, filtered; every page, not just this one). It goes on the clipboard as an HTML table, so Sheets, Numbers, Excel, Docs and Notion paste it as a table, and as Markdown for its plain text (a chat, a terminal, GitHub). A Markdown table that stays as written (it has links) copies the same way, from what's drawn. On the phone, a table's **Copy** chip copies it as Markdown. A source running on your Mac copies the page it has.
+
 ## Controls: the next question, answered ahead
 
 When Claude can tell what you'll want next ("now the top five", "only the overdue ones", "just Europe"), it sets up controls instead of waiting to be asked. Each click shows its rows at once. Nothing goes back to Claude: the rows are already here, or the source is asked again.

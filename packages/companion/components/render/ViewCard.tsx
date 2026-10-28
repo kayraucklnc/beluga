@@ -1,10 +1,10 @@
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
-import { ArrowDown, ArrowUp, BarChart3, ChevronLeft, ChevronRight, MoveHorizontal, Maximize2, Play, RefreshCw, Rows3, Search, Table2, TriangleAlert } from 'lucide-react-native';
+import { ArrowDown, ArrowUp, BarChart3, ChevronLeft, ChevronRight, Copy, MoveHorizontal, Maximize2, Play, RefreshCw, Rows3, Search, Table2, TriangleAlert } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { type Column, type Control, type Row, type Stat, type View as ViewSpec, alignOf, columnChoices, contrast, formatCell, headingOf, inkOn, parseColor, toHex } from '../../lib/render';
+import { type Column, type Control, type Row, type Stat, type View as ViewSpec, alignOf, columnChoices, contrast, formatCell, headingOf, inkOn, parseColor, toHex, toMarkdownTable } from '../../lib/render';
 import { store } from '../../lib/store';
 import { openFull } from '../../lib/fullscreen';
 import { color, elevation, ink, radius, tint, type } from '../../lib/theme';
@@ -13,6 +13,7 @@ import { ChartView } from './Chart';
 import { CalendarView, GanttView, HeatmapView } from './Grids';
 import { type BlockAt, useViewData, type ViewData } from './data';
 import { Spark, badgeTone } from './Inline';
+import { copy, SmallChip } from './parts';
 
 /**
  * A `beluga-view` on the phone (BLG-68): a card with its title, its controls, and the element
@@ -185,6 +186,11 @@ function TableView({ view, d }: { readonly view: ViewSpec; readonly d: ViewData 
   const wide = space > 0 && widths.reduce((a, b) => a + b, 0) + 24 > space;
   const searchable = view.search || d.live || view.rows.length > d.pageSize;
   const from = d.page * d.pageSize;
+  // The whole table as Markdown (it reads as a table in chat, notes and GitHub), not just this page.
+  const copyTable = () => {
+    const all = d.allRows();
+    copy(toMarkdownTable(all, cols), `Copied ${all.length} ${all.length === 1 ? 'row' : 'rows'}`);
+  };
   const sortBy = (key: string) => {
     haptic.tap();
     // Again: the other way; a third time: as they came (the Mac's order).
@@ -255,6 +261,11 @@ function TableView({ view, d }: { readonly view: ViewSpec; readonly d: ViewData 
         <View style={{ flex: 1 }}>
           <Pager d={d} from={from} />
         </View>
+        {d.rows.length ? (
+          <View style={{ marginRight: wide ? 0 : 12 }}>
+            <SmallChip label="Copy" Icon={Copy} accessibilityLabel="Copy the table" onPress={copyTable} />
+          </View>
+        ) : null}
         {wide ? (
           <View style={{ flexDirection: 'row', marginRight: 12, padding: 2, gap: 2, borderRadius: 15, backgroundColor: color.sunken }}>
             {([['Scroll sideways', MoveHorizontal, false], ['As cards', Rows3, true]] as const).map(([label, Icon, on]) => (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contrast, formatBytes, formatCell, headingOf, inkOn, parseColor, toCsv, toHex, toneOf } from '../packages/mac/src/components/views/format.js';
+import { contrast, formatBytes, formatCell, headingOf, inkOn, parseColor, toCsv, toHex, toHtmlTable, toMarkdownTable, toneOf } from '../packages/mac/src/components/views/format.js';
 import { readInline } from '../packages/mac/src/components/views/inline-model.js';
 import { tableRows, tableView } from '../packages/mac/src/components/views/md-table.js';
 import { planChart } from '../packages/mac/src/components/views/chart-model.js';
@@ -24,6 +24,15 @@ describe('how cells read', () => {
     expect(headingOf({ key: 'totalCount' })).toBe('Total Count');
     expect([toneOf('Failed'), toneOf('paid'), toneOf('pending'), toneOf('blue')]).toEqual(['critical', 'good', 'warning', 'neutral']);
     expect(toCsv([{ a: 'x, y', b: 1 }], [col('a', 'text'), col('b')])).toBe('a,b\n"x, y",1');
+  });
+
+  it('a table copies as Markdown and HTML, the way it reads', () => {
+    const cols = [col('name', 'text'), col('revenue', 'currency'), col('ok', 'bool')];
+    const rows = [{ name: 'a | b', revenue: 48210, ok: true }, { name: '<x>', revenue: null, ok: false }];
+    expect(toMarkdownTable(rows, cols)).toBe(['| Name | Revenue | Ok |', '| --- | ---: | :---: |', `| a \\| b | ${formatCell(48210, cols[1]!)} | Yes |`, '| <x> |  | No |'].join('\n'));
+    const html = toHtmlTable(rows, cols);
+    expect(html).toMatch(/^<table><thead><tr><th>Name<\/th><th style="text-align:right">Revenue<\/th>/);
+    expect(html).toContain('<td>&lt;x&gt;</td><td style="text-align:right"></td>');
   });
 
   it('colors', () => {

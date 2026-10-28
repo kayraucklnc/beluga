@@ -108,6 +108,26 @@ export function toCsv(rows: readonly Row[], columns: readonly Column[]): string 
   return [columns.map((c) => esc(c.key)).join(','), ...rows.map((r) => columns.map((c) => esc(r[c.key] ?? null)).join(','))].join('\n');
 }
 
+/** A cell as the table shows it, for a copy ("$48,210", "Yes"; links and paths in full). */
+const shownText = (v: Cell | undefined, c: Column): string => (v === null || v === undefined ? '' : formatCell(v, c));
+
+/** Rows as a Markdown table, the way they read (Copy: the plain text, for chat, a terminal, GitHub). */
+export function toMarkdownTable(rows: readonly Row[], columns: readonly Column[]): string {
+  const esc = (t: string): string => t.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+  const line = (cells: readonly string[]): string => `| ${cells.join(' | ')} |`;
+  const rule = columns.map((c) => (alignOf(c) === 'right' ? '---:' : alignOf(c) === 'center' ? ':---:' : '---'));
+  return [line(columns.map((c) => esc(headingOf(c)))), line(rule), ...rows.map((r) => line(columns.map((c) => esc(shownText(r[c.key], c)))))].join('\n');
+}
+
+/** Rows as an HTML table (Copy: what Sheets, Numbers, Excel, Docs and Notion paste as a table). */
+export function toHtmlTable(rows: readonly Row[], columns: readonly Column[]): string {
+  const esc = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const cell = (tag: 'th' | 'td', text: string, c: Column): string => `<${tag}${alignOf(c) === 'left' ? '' : ` style="text-align:${alignOf(c)}"`}>${esc(text).replace(/\r?\n/g, '<br>')}</${tag}>`;
+  const head = `<tr>${columns.map((c) => cell('th', headingOf(c), c)).join('')}</tr>`;
+  const body = rows.map((r) => `<tr>${columns.map((c) => cell('td', shownText(r[c.key], c), c)).join('')}</tr>`).join('');
+  return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
 /** A badge's tone from its words ("failed" reads as a problem). */
 export function toneOf(v: string): 'good' | 'warning' | 'critical' | 'info' | 'neutral' {
   const t = v.toLowerCase();
