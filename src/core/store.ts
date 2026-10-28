@@ -1101,6 +1101,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'fshare_projects':
     case 'fshare_grants':
     case 'fshare_delivery':
+    case 'fshare_fork':
       return { ...state, ...reduceFriendShare(state, action) };
     case 'board_init':
     case 'board_issue':

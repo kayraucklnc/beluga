@@ -22,6 +22,7 @@ import { ContinueButton } from '../chat/AskBanner.js';
 import { useConversationHeader } from '../network/ConversationHeader.js';
 import { ContextNote } from '../chat/ContextMeter.js';
 import { PeopleHere } from './PeopleHere.js';
+import { ForkToMacButton } from '../dialogs/native/ForkToMacSheet.js';
 import { PrivateMark, shareWithTeamItems } from '../team/Team.js';
 import s from './Toolbar.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
@@ -242,6 +243,7 @@ export function Toolbar() {
         }
         right={
           <>
+            <ForkToMacButton owner={view.owner} wsId={view.id} />
             <PeopleHere wsId={view.id} />
             <IconButton icon="people" label={`About ${w?.name ?? 'this workspace'}: who's here, leave`} onClick={() => ui.openMenu({ kind: 'shared', owner: view.owner, id: view.id })} />
           </>

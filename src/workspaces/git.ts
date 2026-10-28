@@ -10,10 +10,10 @@ export class GitError extends Error {}
 /** Git must never ask for a password on Beluga's screen: fail instead, and say why. */
 const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
 
-/** Run git in a directory; resolves stdout, rejects with git's own message. */
-export function git(cwd: string, args: readonly string[], timeoutMs = 60_000): Promise<string> {
+/** Run git in a directory; resolves stdout, rejects with git's own message. `env`: more of git's environment (GIT_INDEX_FILE…). */
+export function git(cwd: string, args: readonly string[], timeoutMs = 60_000, env?: Readonly<Record<string, string>>): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', [...args], { cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env: GIT_ENV }, (err, stdout, stderr) => {
+    execFile('git', [...args], { cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env: env ? { ...GIT_ENV, ...env } : GIT_ENV }, (err, stdout, stderr) => {
       if (err) reject(new GitError((stderr || err.message).trim()));
       else resolve(stdout);
     });

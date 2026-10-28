@@ -41,6 +41,16 @@ export interface SharedCopy {
   readonly error?: string;
 }
 
+/**
+ * Your fork of a friend's worktree on this Mac (BLG-312): asked for, coming over, made (`wsId`,
+ * the worktree of yours it became), or it failed (why).
+ */
+export interface SharedFork {
+  readonly state: 'asking' | 'copying' | 'ready' | 'failed';
+  readonly wsId?: string;
+  readonly error?: string;
+}
+
 /** Who one of your projects is shared with (owner side): `only` limits it to those worktrees. */
 export interface ProjectGrant {
   readonly role: WsRole;
@@ -66,15 +76,18 @@ export interface FriendShareSlice {
   readonly friendFolders: readonly FriendFolder[];
   /** Messages for a friend's worktree, by request id: waiting for their Mac, or delivered after waiting. */
   readonly delivery: Readonly<Record<string, 'waiting' | 'delivered'>>;
+  /** Forks of friends' worktrees, by their worktree's id. */
+  readonly forks: Readonly<Record<string, SharedFork>>;
 }
 
-export const initialFriendShare: FriendShareSlice = { sharedProjects: [], projectShares: {}, friendFolders: [], delivery: {} };
+export const initialFriendShare: FriendShareSlice = { sharedProjects: [], projectShares: {}, friendFolders: [], delivery: {}, forks: {} };
 
 export type FriendShareAction =
   | { type: 'fshare_projects'; projects: readonly SharedProject[] }
   | { type: 'fshare_grants'; grants: FriendShareSlice['projectShares'] }
   | { type: 'fshare_folders'; folders: readonly FriendFolder[] }
-  | { type: 'fshare_delivery'; id: string; state: 'waiting' | 'delivered' };
+  | { type: 'fshare_delivery'; id: string; state: 'waiting' | 'delivered' }
+  | { type: 'fshare_fork'; id: string; fork: SharedFork };
 
 /** Delivery states kept (the oldest go first). */
 const DELIVERY_KEPT = 200;
@@ -87,6 +100,8 @@ export function reduceFriendShare(state: FriendShareSlice, action: FriendShareAc
       return { ...state, projectShares: action.grants };
     case 'fshare_folders':
       return { ...state, friendFolders: action.folders };
+    case 'fshare_fork':
+      return { ...state, forks: { ...state.forks, [action.id]: action.fork } };
     case 'fshare_delivery': {
       if (state.delivery[action.id] === action.state) return state;
       const { [action.id]: _old, ...rest } = state.delivery;

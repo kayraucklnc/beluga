@@ -185,6 +185,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `sharing.scratch` | ✓ a friend's worktree's Scratch tab |
 | `sharing.earlier` | ✓ scrolling back in a friend's worktree |
 | `sharing.runHere` | ✓ a friend's worktree's "Runs on" chip › This Mac |
+| `sharing.fork` | ✓ a friend's worktree's header › Fork to My Mac (a sheet: what comes over, what stays behind, a name), then Open My Fork |
 | `invites.create` | ✓ |
 | `invites.revoke` | ✓ |
 | `invites.copyLink` | ✓ |

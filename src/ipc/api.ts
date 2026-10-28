@@ -165,6 +165,8 @@ export const API = {
   'sharing.earlier': args(id, id),
   // Say it in a friend's worktree but to your own Claude, in your copy of the project (owner, worktree id, message).
   'sharing.runHere': args(id, id, z.string().min(1).max(100_000)),
+  // Fork a friend's shared worktree to this Mac: its changes, Scratch and conversation, as a worktree of yours (owner, worktree id, name?).
+  'sharing.fork': args(id, id, z.string().max(120).optional()),
 
   // ---- links into one project (or everything)
   'invites.create': args(LinkOptions),
