@@ -191,7 +191,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   // Share with friends over the network (nobody hosts): it shows in their Projects with your avatar.
   const shareItem: ActionItem[] = p.root ? [{ label: 'Share with…', icon: 'people', separate: true, onSelect: () => openSheet({ kind: 'share_project', projectId: p.id }) }] : [];
   // A conversation had with Claude Code outside Beluga, continued in a new worktree (BLG-321).
-  const importItem: ActionItem[] = p.root ? [{ label: 'Bring In a Claude Code Conversation…', icon: 'claude', onSelect: () => openSheet({ kind: 'import_conversation', projectId: p.id }) }] : [];
+  const importItem: ActionItem[] = p.root ? [{ label: 'Import from Claude Code…', icon: 'claude', onSelect: () => openSheet({ kind: 'import_conversation', projectId: p.id }) }] : [];
   const extra: ActionItem[] = [...shareItem, ...teamItems, ...importItem, ...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, earning), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, separate: true, onSelect: () => hide(p) }, { label: 'Delete Project…', danger: true, onSelect: () => openSheet({ kind: 'delete_project', projectId: p.id }) }];
   const kids = depth + 2;
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).

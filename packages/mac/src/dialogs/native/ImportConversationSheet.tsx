@@ -28,7 +28,7 @@ function whereIn(dir: string, cwd: string, home: string): string {
 }
 
 /**
- * Bring In a Claude Code Conversation… (BLG-321): the conversations you had with Claude Code
+ * Import from Claude Code… (BLG-321): the conversations you had with Claude Code
  * outside Beluga (Terminal, an IDE, another app) in the project's folder or a folder inside it, or
  * in any folder you choose. Pick one and Claude goes on with it in a new worktree, remembering all
  * of it; the original stays as it was.
@@ -74,15 +74,15 @@ export function ImportConversationSheet({ projectId, close }: { projectId: strin
   const opening = Boolean(chosen?.wsId);
   return (
     <FormSheet
-      title="Bring In a Claude Code Conversation"
+      title="Import from Claude Code"
       icon="claude"
-      intro={`Conversations you had with Claude Code outside Beluga, in Terminal or another app. Pick one and Claude goes on with it in a new worktree of ${project.name}, remembering all of it.`}
+      intro={`Pick a conversation from Terminal or another app. Claude goes on with it in a new worktree of ${project.name}.`}
       submitLabel={opening ? 'Open Its Worktree' : 'Continue in a Worktree'}
       canSubmit={Boolean(chosen) && (opening || Boolean(slug(name)))}
-      onSubmit={async () => {
+      onSubmit={() => {
         if (!chosen || !found) return;
-        const id = await api.workspaces.importOutside(projectId, found.dir, chosen.sessionId, opening ? undefined : name.trim());
-        if (!id) return 'That conversation couldn’t be brought in';
+        // The worktree's row and page show at once while it's made; a failure comes back as a toast.
+        void api.workspaces.importOutside(projectId, found.dir, chosen.sessionId, opening ? undefined : name.trim()).catch(() => undefined);
         close();
       }}
       onCancel={close}

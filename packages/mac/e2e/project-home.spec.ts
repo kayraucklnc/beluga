@@ -78,7 +78,7 @@ test('Continue in New Worktree carries the conversation to a new worktree', asyn
   // Now in the worktree: the conversation came along, Claude works on the task.
   await expect(page.getByRole('note', { name: 'Questions only' })).toHaveCount(0, { timeout: 15_000 });
   await expect(home(page).getByText('Explain the billing flow').first()).toBeVisible();
-  await expect(home(page).getByText(/Continued from/)).toBeVisible();
+  await expect(home(page).getByText(/This chat is now the worktree/)).toBeVisible();
   await expect(home(page).getByText('Add idempotency keys to billing').first()).toBeVisible();
 });
 
@@ -88,7 +88,7 @@ test('asking for a change in a questions-only chat moves to a new worktree on it
   await page.getByLabel('Question about bob-api').fill('Fix the typo in the README');
   await page.getByLabel('Question about bob-api').press('Enter');
   await expect(page.getByRole('note', { name: 'Questions only' })).toHaveCount(0, { timeout: 20_000 });
-  await expect(home(page).getByText(/Continued from/)).toBeVisible();
+  await expect(home(page).getByText(/This chat is now the worktree/)).toBeVisible();
   await expect(sidebar(page).getByRole('button', { name: /fix-typo-readme/ }).first()).toBeVisible();
 });
 
