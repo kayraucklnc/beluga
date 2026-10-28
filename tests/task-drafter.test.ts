@@ -157,3 +157,12 @@ describe('board.create with a description', () => {
     }
   });
 });
+
+describe('what a project is about, from a quick look (BLG-298)', () => {
+  it('keeps the note, without a fence around it; too little to be one is none', async () => {
+    const { parseDescription } = await import('../src/agent/project-describer.js');
+    expect(parseDescription('```markdown\nBob is a payments API for bakeries, in src/ and web/.\n```')).toBe('Bob is a payments API for bakeries, in src/ and web/.');
+    expect(parseDescription('I could not tell.')).toBeUndefined();
+    expect(parseDescription('x'.repeat(9000))).toHaveLength(6000);
+  });
+});

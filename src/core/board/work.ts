@@ -28,6 +28,10 @@ export interface BoardWorkDeps {
   readonly askClaude: (prompt: string, channel: string, shown?: string) => void;
   /** Your Claude writes a task from a description (none: the first line is the title). */
   readonly draftTask?: (text: string, ctx: DraftContext) => Promise<TaskDraft | undefined>;
+  /** Your Claude writes what a project is about from a quick look at its folder (none: people write it). */
+  readonly describeProject?: (dir: string, project: string) => Promise<string | undefined>;
+  /** A quiet word on screen (what Claude wrote in the background). */
+  readonly toast?: (text: string) => void;
   /** A branch's pull request, asked of gh (none: tasks whose worktree went aren't looked after). Throws when gh can't tell. */
   readonly findPr?: (dir: string, branch: string) => Promise<IssuePr | undefined>;
   /** How often to look for merged pull requests of tasks nobody watches any more (0: only when asked). */
@@ -46,6 +50,8 @@ export class BoardWork {
   private readonly pending = new Map<string, TaskDefinition>();
   /** Tasks made by approving a plan in a main folder's chat (by that chat's workspace id): the worktree it continues in does it. */
   private readonly carried = new Map<string, string>();
+  /** Projects whose About This Project your Claude was asked to write this run. */
+  private readonly described = new Set<string>();
   /** Worktrees being started for tasks (Start Worktree): the one that opens under that name belongs to that task. */
   private readonly expecting: Array<{ readonly projectId: string; readonly name: string; readonly issueId: string }> = [];
   private readonly names = new Map<string, string>();
@@ -420,6 +426,7 @@ export class BoardWork {
   private opened(ws: Workspace, from: string | undefined): void {
     this.names.set(ws.id, ws.name);
     if (ws.kind !== 'worktree') return;
+    void this.describeOnce(ws.projectId);
     const state = this.board.state();
     const linked = (id: string): Issue | undefined => issueForWorkspace(state, id);
     const beluga: Actor = { kind: 'beluga' };
@@ -443,6 +450,27 @@ export class BoardWork {
     if (!this.board.autoTasksOn || !this.deps.store.getState().projects.some((p) => p.id === ws.projectId && p.root)) return;
     const issue = this.board.create({ projectId: ws.projectId, title: titleFromName(ws.name), autoTitle: true, status: 'in_progress', assignee: this.me() }, beluga, 'worktree');
     this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, beluga);
+  }
+
+  /**
+   * A project's first worktree here, and no one has written what it's about (BLG-298): your Claude
+   * takes a quick look at its folder in the background and writes it. Never over one someone
+   * wrote or cleared (a teammate's arriving meanwhile wins), and tried once per project per run.
+   */
+  async describeOnce(projectId: string): Promise<void> {
+    const describe = this.deps.describeProject;
+    if (!describe || this.described.has(projectId) || this.board.state().projects[projectId]?.context) return;
+    const project = this.deps.store.getState().projects.find((p) => p.id === projectId && p.root);
+    if (!project) return;
+    this.described.add(projectId);
+    const text = await describe(project.root, project.name).catch(() => undefined);
+    if (!text || this.board.state().projects[projectId]?.context) return;
+    try {
+      this.board.setContext(projectId, text, `${this.deps.selfName()}’s Claude`);
+    } catch {
+      return; // The project went meanwhile.
+    }
+    this.deps.toast?.(`Claude wrote what ${project.name} is about: Tasks › ⋯ › About This Project`);
   }
 
   private onAction(action: Action): void {

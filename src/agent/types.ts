@@ -409,6 +409,8 @@ export interface AgentBackend {
   workOutScripts?(dir: string, want: { setup: boolean; run: boolean }): Promise<WorkedOutScripts | undefined>;
   /** A task written from a description: title, goal, criteria, labels from the board's own (Sonnet). */
   draftTask?(text: string, ctx: DraftContext): Promise<TaskDraft | undefined>;
+  /** What a project is about, from a quick read-only look at its folder (About This Project, BLG-298). */
+  describeProject?(dir: string, project: string): Promise<string | undefined>;
   /** A pull request reviewed before a sentinel merges it: ship or hold, in one sentence (a small model, read-only). */
   reviewPr?(input: import('./pr-reviewer.js').PrReviewInput): Promise<import('./pr-reviewer.js').PrReview | undefined>;
   /** Models this Claude Code offers, for the model picker. */

@@ -663,6 +663,16 @@ export class Session {
     return this.agent?.draftTask ? this.agent.draftTask(text, ctx).catch(() => undefined) : undefined;
   }
 
+  /** Your Claude can write what a project is about (About This Project). */
+  get describesProjects(): boolean {
+    return Boolean(this.agent?.describeProject);
+  }
+
+  /** What a project is about, from a quick look at its folder by your Claude (undefined on any trouble, or without it). */
+  async describeProject(dir: string, project: string): Promise<string | undefined> {
+    return this.agent?.describeProject ? this.agent.describeProject(dir, project).catch(() => undefined) : undefined;
+  }
+
   /** A pull request reviewed before a sentinel merges it (undefined without your Claude, or on trouble). */
   async reviewPr(input: import('../agent/pr-reviewer.js').PrReviewInput): Promise<import('../agent/pr-reviewer.js').PrReview | undefined> {
     return this.agent?.reviewPr ? this.agent.reviewPr(input).catch(() => undefined) : undefined;

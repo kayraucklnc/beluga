@@ -64,6 +64,8 @@ export function launchBoard(host: BoardHost): () => void {
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
     askClaude: (prompt, channel, shown) => session.askOwnClaude(prompt, channel, false, shown ?? true),
     ...(session.draftsTasks ? { draftTask: (text: string, ctx: DraftContext) => session.draftTask(text, ctx) } : {}),
+    ...(session.describesProjects ? { describeProject: (dir: string, project: string) => session.describeProject(dir, project) } : {}),
+    toast: (text: string) => session.toast(text, 'info'),
     // Tasks whose worktree went before their pull request merged still go Done (the demo has no GitHub).
     ...(host.demo
       ? {}

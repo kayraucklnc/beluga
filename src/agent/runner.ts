@@ -23,6 +23,7 @@ import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from '.
 import { answerChat } from './chat-answer.js';
 import { nameTask, titlePlan } from './namer.js';
 import { fixRun, fixSetup, workOutScripts } from './setup-fixer.js';
+import { describeProject } from './project-describer.js';
 import { draftTask } from './task-drafter.js';
 import { reviewPr } from './pr-reviewer.js';
 import { createRoomTools } from './tools.js';
@@ -556,6 +557,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     fixRun: (dir: string, failed: string, output: string) => fixRun(dir, failed, output, { claudePath: opts.claudePath }),
     workOutScripts: (dir: string, want: { setup: boolean; run: boolean }) => workOutScripts(dir, want, { claudePath: opts.claudePath }),
     draftTask: (text, ctx) => draftTask(text, ctx, { cwd: opts.cwd, ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
+    describeProject: (dir, project) => describeProject(dir, project, { ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
     reviewPr: (input) => reviewPr(input, { ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
 
     // Your MCP servers (BLG-251): the room's folder first, where Claude Code starts, then your projects'.
