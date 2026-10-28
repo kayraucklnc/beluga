@@ -5,6 +5,7 @@ import { tilde } from './paths.js';
 import path from 'node:path';
 import { type BodyInput, type BodyOf, MAX_DOWNLOAD_BYTES } from '../protocol.js';
 import { git } from '../workspaces/git.js';
+import { cannotTake } from '../net/mesh/features.js';
 import { belugaHome } from '../workspaces/store.js';
 import { formatBytes } from '../workspaces/disk.js';
 import { type Requester, downloadFile, fetchBytes, safeFileName, uniquePath } from './downloads.js';
@@ -50,6 +51,8 @@ export interface RemoteWorkDeps {
 type Waiter = { peer: string; resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout };
 
 const OUTBOX_TTL_MS = 15 * 60_000;
+/** A handoff's branch waits longer: a friend outside the room may be offline when it's offered (BLG-341). */
+const HANDOFF_TTL_MS = 60 * 60_000;
 const AUTO_ACCEPT_BYTES = 50 * 1024 * 1024;
 const AUTO_ACCEPT_PER_10_MIN = 10;
 
@@ -389,6 +392,11 @@ export class RemoteWork {
       this.deps.toast('Only worktrees can be handed off', 'warn');
       return false;
     }
+    const why = this.cannotHandOff(peerId);
+    if (why) {
+      this.deps.toast(why, 'warn');
+      return false;
+    }
     const remote = await ctl.manager.remoteOf(ws.projectId);
     if (!remote) {
       this.deps.toast('This project has no origin remote, so the other computer could not find the same repository', 'warn');
@@ -439,6 +447,15 @@ export class RemoteWork {
     return true;
   }
 
+  /** Why a handoff can't reach them: someone in your room always can; a friend outside it over the network (BLG-341). */
+  private cannotHandOff(peerId: string): string | undefined {
+    if (this.state.peers.some((p) => p.peerId === peerId)) return undefined;
+    const friend = this.state.network.friends.find((f) => f.peerId === peerId);
+    if (!friend) return `${this.name(peerId)} isn't in your room or your friends`;
+    if (!this.deps.sharing.friends) return 'Handing off to a friend outside your room needs the Beluga network: turn it on in Settings › Network';
+    return cannotTake(friend.name, friend.beluga, 'share.handoff', friend.online);
+  }
+
   private async hasCommits(ws: Workspace): Promise<boolean> {
     const out = await git(ws.path, ['rev-list', '--count', `${ws.base ?? 'origin/main'}..HEAD`]).catch(() => '0');
     return Number(out.trim()) > 0;
@@ -458,7 +475,7 @@ export class RemoteWork {
     setTimeout(() => {
       this.deps.shares.remove(share);
       void fs.rm(dir, { recursive: true, force: true });
-    }, OUTBOX_TTL_MS).unref?.();
+    }, HANDOFF_TTL_MS).unref?.();
     return { share, path: 'branch.bundle', size };
   }
 
@@ -510,7 +527,9 @@ export class RemoteWork {
       await ctl.refresh();
       ctl.open(ws.id);
       if (full) this.deps.onWorktreeCreated?.(ws);
-      this.deps.sharing.invite(ws.id, from, 'view');
+      // They follow along: through the room you're both in, or over the network for a friend outside it.
+      if (!this.state.peers.some((p) => p.peerId === from) && this.deps.sharing.friends) this.deps.sharing.shareWithFriend({ peerId: from, workspaceId: ws.id, projectId: project.id, role: 'view' });
+      else this.deps.sharing.invite(ws.id, from, 'view');
       reply(true);
       // The note is their text: Claude reads it with what they're allowed to do here, and asks you the rest.
       this.deps.runOnBehalf(from, channel, continuePrompt(who, note));

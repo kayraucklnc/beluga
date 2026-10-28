@@ -34,7 +34,7 @@ export function wsShareMenu(state: AppState, wsId: string): MenuSpec | undefined
       inside.length ? `In this workspace: ${inside.join(', ')}` : 'Only you are in this workspace.',
       'People you invite see this conversation and can browse its folder. If they can work here, they can ask your',
       'Claude too: it runs on your computer, and risky steps still ask you (unless you fully trust them).',
-      ...(people.length ? [] : ['', 'Nobody else is in the room yet. Invite someone first, then come back here.']),
+      ...(people.length ? [] : ['', 'Nobody else is in the room. To share just this worktree with a friend, type /invite @their-name in its chat.']),
     ],
     options,
   };

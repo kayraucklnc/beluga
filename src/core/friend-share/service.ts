@@ -10,7 +10,7 @@ import type { Project } from '../../workspaces/types.js';
 import { fetchBytes } from '../downloads.js';
 import type { FriendFolder, ProjectGrant, SharedCopy, SharedFork, SharedProject } from '../friend-share-store.js';
 import { readProjectIcon } from '../project-icons.js';
-import { safeRef } from '../remote-work.js';
+import { outboxDir, safeRef } from '../remote-work.js';
 import { git } from '../../workspaces/git.js';
 import type { Session } from '../session.js';
 import type { Action, LogItem, Store } from '../store.js';
@@ -79,7 +79,7 @@ interface FolderGrant {
 }
 
 /** Room messages that may travel over a friend's link, and only about what you share. */
-const KINDS = new Set<Body['kind']>(['chat', 'agent_request', 'agent_event', 'agent_question', 'agent_answer', 'fs_list', 'fs_read', 'fs_fetch', 'fs_search', 'ws_diff', 'fs_list_result', 'fs_read_result', 'fs_chunk', 'fs_search_result', 'ws_diff_result', 'fs_changed', 'ws_roster', 'ws_leave']);
+const KINDS = new Set<Body['kind']>(['chat', 'agent_request', 'agent_event', 'agent_question', 'agent_answer', 'fs_list', 'fs_read', 'fs_fetch', 'fs_search', 'ws_diff', 'fs_list_result', 'fs_read_result', 'fs_chunk', 'fs_search_result', 'ws_diff_result', 'fs_changed', 'ws_roster', 'ws_leave', 'ws_handoff', 'ws_handoff_result']);
 const RESULTS = new Set<Body['kind']>(['fs_list_result', 'fs_read_result', 'fs_chunk', 'fs_search_result', 'ws_diff_result']);
 /** A Claude's steps as they stream only go to who's linked now; these wait for an offline Mac. */
 const KEPT_EVENTS = new Set(['queued', 'awaiting_approval', 'started', 'done', 'error', 'denied', 'answered']);
@@ -123,6 +123,10 @@ export class FriendShares implements FriendSharing {
   private readonly outgoing = new Map<string, string>();
   /** Bundles of friends' projects you're fetching (share name → its owner). */
   private readonly incoming = new Map<string, string>();
+  /** Worktrees you offered a friend outside your room to take over, waiting for their answer (hid → them, BLG-341). */
+  private readonly handoffsOut = new Map<string, string>();
+  /** Handoffs a friend offered you over the network, to answer them the same way (hid → them). */
+  private readonly handoffsIn = new Map<string, string>();
   /** The names you gave forks you asked for (their worktree's id → name). */
   private readonly forkNames = new Map<string, string>();
 
@@ -216,6 +220,8 @@ export class FriendShares implements FriendSharing {
     const { mesh } = this.opts;
     const next: Record<string, FolderGrant> = {};
     for (const share of this.state.myShares) {
+      // A one-off pack for one friend (a copy, a fork, a handoff's branch) isn't a folder you share.
+      if (this.isOutbox(share.root)) continue;
       const peers = share.private ? (share.allowed ?? []).filter((p) => mesh.isFriend(p) && !cannotTake('', mesh.belugaOf(p), 'share.folder', mesh.isLinked(p))) : [];
       if (peers.length) next[share.name] = { label: share.root.split('/').filter(Boolean).pop() ?? share.name, writable: Boolean(share.writable), peers };
     }
@@ -406,6 +412,7 @@ export class FriendShares implements FriendSharing {
     const { mesh } = this.opts;
     // A folder shared with a friend over the network: its own `folder` message says so (see syncFolders).
     if (body.kind === 'share_offer') return mesh.isFriend(to) && (this.folders[body.name]?.peers.includes(to) || !this.state.peers.some((p) => p.peerId === to)) ? true : undefined;
+    if (body.kind === 'ws_handoff' || body.kind === 'ws_handoff_result') return this.routeHandoff(to, body);
     if (!KINDS.has(body.kind) || !mesh.isFriend(to)) return undefined;
     if (!this.about(to, body)) return undefined;
     // Who's in a shared worktree goes with the project's own message.
@@ -418,6 +425,36 @@ export class FriendShares implements FriendSharing {
     const went = this.courier.send(to, { k: 'body', b: body }, { reliable });
     if (body.kind === 'agent_request' && !went) this.dispatch({ type: 'fshare_delivery', id: body.requestId, state: 'waiting' });
     return reliable ? true : went;
+  }
+
+  /** In one of the outboxes where packs for one friend wait to be fetched. */
+  private isOutbox(root: string): boolean {
+    return [path.join(this.opts.dir, 'outbox'), outboxDir()].some((dir) => root.startsWith(dir + path.sep));
+  }
+
+  /**
+   * Handing a worktree to a friend outside your room (BLG-341): the offer goes over their link, its
+   * branch bundle is fetched like a fork's pack, and their answer comes back the same way. Someone in
+   * your room gets it through the room, as before.
+   */
+  private routeHandoff(to: string, body: Extract<BodyInput, { kind: 'ws_handoff' | 'ws_handoff_result' }>): boolean | undefined {
+    const { mesh } = this.opts;
+    if (!mesh.isFriend(to)) return undefined;
+    if (body.kind === 'ws_handoff_result') {
+      if (this.handoffsIn.get(body.hid) !== to) return undefined;
+      this.handoffsIn.delete(body.hid);
+      return this.courier.send(to, { k: 'body', b: body }, { reliable: true });
+    }
+    if (this.state.peers.some((p) => p.peerId === to)) return undefined;
+    if (cannotTake('', mesh.belugaOf(to), 'share.handoff', mesh.isLinked(to))) return false;
+    this.handoffsOut.set(body.hid, to);
+    if (body.bundle) this.outgoing.set(body.bundle.share, to);
+    setTimeout(() => {
+      this.handoffsOut.delete(body.hid);
+      if (body.bundle) this.outgoing.delete(body.bundle.share);
+    }, COPY_TTL_MS).unref();
+    this.courier.send(to, { k: 'body', b: body }, { reliable: true });
+    return true;
   }
 
   /** Is this message about something shared between you and `peerId` over the network? */
@@ -457,7 +494,8 @@ export class FriendShares implements FriendSharing {
       Boolean(this.sent[peerId] && Object.keys(this.sent[peerId]!).length) ||
       Object.values(this.received).some((p) => p.owner === peerId) ||
       Object.values(this.friendFolders).some((f) => f.owner === peerId) ||
-      Object.values(this.folders).some((f) => f.peers.includes(peerId))
+      Object.values(this.folders).some((f) => f.peers.includes(peerId)) ||
+      [...this.outgoing.values(), ...this.incoming.values()].includes(peerId)
     );
   }
 
@@ -519,6 +557,11 @@ export class FriendShares implements FriendSharing {
     const theirs = ws !== undefined && this.receivedWs(ws)?.owner === from;
     if ('channel' in body && body.channel !== undefined && !mine && !theirs) return;
     if (body.kind === 'ws_roster' || body.kind === 'ws_leave') return;
+    if (body.kind === 'ws_handoff' && !this.tookHandoff(from, body)) return;
+    if (body.kind === 'ws_handoff_result') {
+      if (this.handoffsOut.get(body.hid) !== from) return;
+      this.handoffsOut.delete(body.hid);
+    }
     let author = from;
     if (m.as) {
       // Only a worktree's owner passes on what others said in it.
@@ -543,6 +586,18 @@ export class FriendShares implements FriendSharing {
     if (body.kind === 'chat' && mine && !m.as && session.sharing.canPost(from, body.channel ?? '')) {
       for (const peer of Object.keys(session.sharing.members(ws!))) if (peer !== from) this.courier.send(peer, { k: 'body', b: body, as: from }, { reliable: true });
     }
+  }
+
+  /** A friend offers you a worktree to take over: remember it to answer them, and its bundle to fetch. */
+  private tookHandoff(from: string, body: Extract<Body, { kind: 'ws_handoff' }>): boolean {
+    if (this.handoffsIn.has(body.hid) || (body.bundle && this.incoming.has(body.bundle.share))) return false;
+    this.handoffsIn.set(body.hid, from);
+    if (body.bundle) this.incoming.set(body.bundle.share, from);
+    setTimeout(() => {
+      this.handoffsIn.delete(body.hid);
+      if (body.bundle) this.incoming.delete(body.bundle.share);
+    }, COPY_TTL_MS).unref();
+    return true;
   }
 
   // ---------------------------------------------------------------- receiver side

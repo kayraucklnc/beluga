@@ -23,6 +23,8 @@ export const FEATURE_NAMES = {
   'share.history': 'whole conversations',
   /** Packs a shared worktree (its changes, Scratch, conversation) for a friend's own fork of it (core/friend-share/fork.ts). */
   'share.fork': 'forks of worktrees',
+  /** Takes a worktree handed over by a friend outside the room: its note, branch bundle and chat (core/friend-share, BLG-341). */
+  'share.handoff': 'handoffs',
   /** Team boards (core/team): friends on the same GitHub repo find each other and keep one board. */
   'team.board': 'team boards',
   /** Plan drafts shared with teammates to review (core/team). */
@@ -36,7 +38,7 @@ export const FEATURE_NAMES = {
 export type Feature = keyof typeof FEATURE_NAMES;
 
 /** What a Mac takes while it shares projects and folders with friends (core/friend-share). */
-export const SHARE_FEATURES: readonly Feature[] = ['share.project', 'share.folder', 'share.copy', 'share.history', 'share.fork'];
+export const SHARE_FEATURES: readonly Feature[] = ['share.project', 'share.folder', 'share.copy', 'share.history', 'share.fork', 'share.handoff'];
 
 /** What a Mac takes while its team boards run (core/team). */
 export const TEAM_FEATURES: readonly Feature[] = ['team.board', 'team.plans', 'team.context'];

@@ -2,9 +2,13 @@ import { useState } from 'react';
 import type { WsRole } from '@beluga/protocol.js';
 import { inviteChoice } from '@beluga/ui/invite-menus.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import { shareRowDetail, worktreeShareRows, type WorktreeShareRow } from '@beluga/ui/worktree-share.js';
+import { cannotTake } from '@beluga/net/mesh/features.js';
+import { presenceOf } from '@beluga/core/friend-share-people.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Avatar, Button } from '../../components/ui.js';
-import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
+import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
+import { openNet } from '../../network/net-sheets.js';
 import { Select } from '../settings-controls.js';
 import type { NativeMenuProps } from './index.js';
 import { Choice, Section, Sheet, Tag } from './parts.js';
@@ -19,28 +23,35 @@ const ACCESS: ReadonlyArray<{ value: Access; label: string }> = [
 ];
 
 /**
- * Share a workspace: everyone in the room with a role (work here, follow along, or nothing),
- * changed in place, plus a link for someone new. The shared Share menu, as a sheet.
+ * Share a workspace with just this one worktree's people (BLG-340): your friends, over the Beluga
+ * network with nobody in a room, and anyone in your room. Each with a role (work here, follow along,
+ * or nothing), changed in place, plus a way to add someone new.
  */
 export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>) {
   const api = useApi();
-  const { ui } = useBeluga();
+  const { ui, client } = useBeluga();
   const ws = useApp((st) => findWorkspace(st.projects, menu.id));
   const project = useApp((st) => st.projects.find((p) => p.workspaces.some((w) => w.id === menu.id)));
-  const members = useApp((st) => st.members[menu.id]);
-  const selfId = useApp((st) => st.selfId);
   const self = useApp((st) => st.self);
-  const people = useApp((st) => st.peers).filter((p) => p.peerId !== selfId);
+  const network = useApp((st) => st.network);
+  const peers = useApp((st) => st.peers);
+  const members = useApp((st) => st.members);
+  const projectShares = useApp((st) => st.projectShares);
+  const projects = useApp((st) => st.projects);
   if (!ws) return null;
-  const set = (peerId: string, access: Access): void => {
-    if (access === 'none') void api.sharing.remove(ws.id, peerId);
-    else void api.sharing.invite(ws.id, peerId, access);
+  const rows = worktreeShareRows({ peers, self, members, network, projectShares, projects }, ws.id);
+  const said = (p: Promise<unknown>): void => void p.catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'warn'));
+  const set = (row: WorktreeShareRow, access: Access): void => {
+    const where = { peerId: row.peerId, workspaceId: ws.id, ...(project ? { projectId: project.id } : {}) };
+    if (row.via === 'room') said(access === 'none' ? api.sharing.remove(ws.id, row.peerId) : api.sharing.invite(ws.id, row.peerId, access));
+    else said(access === 'none' ? api.sharing.unshareFriend(where) : api.sharing.shareWithFriend({ ...where, role: access }));
   };
   const byLink = (): void => ui.openMenu({ kind: 'invite_link', ...inviteChoice(project?.root ? project.id : undefined) });
+  const addFriend = (): void => (close(), openNet({ kind: 'add_friend' }));
   return (
     <Sheet
       title={`Share “${ws.name}”`}
-      subtitle="People you add see this conversation and can browse its folder."
+      subtitle="Only this worktree: people you add see its conversation, files and Scratch, and can ask your Claude here. Friends get it over the Beluga network, so nobody needs to be in your room."
       icon="share"
       close={close}
       footer={
@@ -50,7 +61,9 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
               Invite by Link…
             </Button>
           ) : (
-            <span />
+            <Button variant="quiet" icon="people" onClick={addFriend}>
+              Add a Friend…
+            </Button>
           )}
           <Button variant="primary" onClick={close}>
             Done
@@ -70,20 +83,29 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
               <Tag>Owner</Tag>
             </div>
           ) : null}
-          {people.map((p) => {
-            const access: Access = members?.[p.peerId] ?? 'none';
+          {rows.map((row) => {
+            const friend = network.friends.find((f) => f.peerId === row.peerId);
+            const presence = friend ? presenceOf({ network, peers }, row.peerId) : undefined;
+            const why = row.via === 'network' && row.access === 'none' && friend ? cannotTake(friend.name, friend.beluga, 'share.project', friend.online) : undefined;
+            const inRoom = peers.some((p) => p.peerId === row.peerId);
             return (
-              <div key={p.peerId} role="listitem" className={s.item}>
-                <Avatar name={p.name} id={p.peerId} size={24} />
+              <div key={row.peerId} role="listitem" className={s.item}>
+                <Avatar name={row.name} id={row.peerId} size={24} />
                 <div className={s.itemText}>
-                  <span className={s.itemTitle}>{p.name}</span>
-                  <span className={s.itemDetail}>{access === 'contribute' ? 'Chats and asks your Claude here' : access === 'view' ? 'Follows along, read-only' : p.guest ? 'Guest' : 'In the room, not in this workspace'}</span>
+                  <span className={s.itemTitle}>
+                    {row.name} {presence && presence.state !== 'online' ? <Tag tone="muted">{presence.label}</Tag> : null}
+                  </span>
+                  <span className={s.itemDetail}>{why ?? shareRowDetail(row, inRoom)}</span>
                 </div>
-                <Select<Access> label={`Access for ${p.name}`} value={access} options={ACCESS} onChange={(a) => set(p.peerId, a)} />
+                <Select<Access> label={`Access for ${row.name}`} value={row.access} options={ACCESS} onChange={(a) => set(row, a)} />
               </div>
             );
           })}
-          {people.length ? null : <div className={s.empty}>Nobody else is in the room yet. Invite someone, then add them here.</div>}
+          {rows.length ? null : (
+            <div className={s.empty}>
+              {network.enabled ? 'No friends yet. Add a friend, then share this worktree with them here.' : 'Turn on the Beluga network in Settings to share with friends, or invite someone to your room.'}
+            </div>
+          )}
         </div>
       </Section>
       <p className={s.hint}>Your Claude runs on your computer. Risky steps still ask you, unless you fully trust the person asking.</p>

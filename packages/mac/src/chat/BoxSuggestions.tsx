@@ -5,7 +5,8 @@ import { mentionDir, peopleSuggestions, suggest, type Suggestion } from '@beluga
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp } from '../lib/beluga.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { handleInvite } from '../lib/invite-command.js';
 import { MAX_LISTED, SuggestionBody, sectionOf } from './Suggestions.js';
 import s from './composer.module.css';
 
@@ -30,6 +31,7 @@ export function useBoxSuggestions({
   className?: string;
 }): { list: ReactNode; onKey: (e: React.KeyboardEvent) => boolean; open: boolean } {
   const api = useApi();
+  const { client, ui } = useBeluga();
   const actions = useActions();
   const state = useApp((st) => st);
   const [selected, setSelected] = useState(0);
@@ -71,7 +73,8 @@ export function useBoxSuggestions({
   const accept = (sug: Suggestion): void => {
     if (sug.enter === 'submit') {
       setText('');
-      actions.submit(sug.value);
+      // "/invite @ata" picked here does what typing it does (BLG-340): the daemon can't see what's on screen.
+      if (!handleInvite(client, ui, sug.value)) actions.submit(sug.value);
       return;
     }
     setText(sug.value);

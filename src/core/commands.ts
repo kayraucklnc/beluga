@@ -2,7 +2,7 @@ import type { Session } from './session.js';
 import type { Policy } from './store.js';
 import { THEMES, type ThemeName } from '../shared/settings-schema.js';
 import { runEnvCommand, runShellCommand } from './terminal-commands.js';
-import { type InvitePlace, inviteRoute, namesLine, parseInvite } from '../shared/invite-route.js';
+import { type InvitePlace, friendNamed, inviteRoute, namesLine, parseInvite } from '../shared/invite-route.js';
 
 export interface CommandSpec {
   readonly name: string;
@@ -81,8 +81,9 @@ export function visualizePrompt(what: string): string {
 /**
  * `/invite` (BLG-203). On its own: the Add a Friend sheet. With friends named, typed in a worktree:
  * share it with them. The Mac's message boxes route it themselves (they also know DMs, channels and
- * projects, src/shared/invite-route.ts); this is the core's own reading, for any other screen. Until
- * worktrees can be shared with friends over the network, a friend in your room gets it through the room.
+ * projects, src/shared/invite-route.ts); this is the core's own reading, for any other screen. The
+ * worktree goes to them over the Beluga network (BLG-204), room or not; with the network off, a friend
+ * in your room still gets it through the room (BLG-340).
  */
 function inviteCommand(session: Session, args: readonly string[], channel: string): void {
   const parsed = parseInvite(['/invite', ...args].join(' '));
@@ -94,10 +95,15 @@ function inviteCommand(session: Session, args: readonly string[], channel: strin
   const route = inviteRoute(place, parsed.names, state.network.friends);
   if (route.kind === 'error') return session.toast(route.text, 'warn');
   if (route.kind !== 'share' || !route.workspaceId) return session.toast('Type it in the Mac app’s message box there', 'info');
+  const workspaceId = route.workspaceId;
+  if (session.sharing.friends) {
+    for (const f of route.friends) session.sharing.shareWithFriend({ peerId: f.peerId, workspaceId, ...(route.projectId ? { projectId: route.projectId } : {}), role: 'contribute' });
+    return;
+  }
   const inRoom = route.friends.filter((f) => state.peers.some((p) => p.peerId === f.peerId && !p.guest));
-  for (const f of inRoom) session.sharing.invite(route.workspaceId, f.peerId, 'contribute');
+  for (const f of inRoom) session.sharing.invite(workspaceId, f.peerId, 'contribute');
   const away = route.friends.filter((f) => !inRoom.includes(f));
-  if (away.length) session.toast(`Sharing a worktree with friends who aren’t in your room isn’t in this Beluga yet. Ask ${namesLine(away.map((f) => f.name))} to join your room for now`, 'warn');
+  if (away.length) session.toast(`Turn on the Beluga network in Settings › Network to share ${route.where} with ${namesLine(away.map((f) => f.name))}`, 'warn');
 }
 
 /**
@@ -360,7 +366,8 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
       ctl.open(ws.id, 'terminal');
       return;
     case 'handoff': {
-      const peer = text ? session.findPeer(text) : undefined;
+      // Someone in your room, or a friend by @handle or name over the network (BLG-341).
+      const peer = text ? (session.findPeer(text) ?? friendNamed(text.replace(/^@+/, ''), session.store.getState().network.friends)) : undefined;
       if (!peer) return session.intend({ type: 'overlay', overlay: 'handoff' });
       void session.remote.handoff(ws.id, peer.peerId);
       return;

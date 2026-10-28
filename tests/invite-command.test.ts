@@ -6,6 +6,9 @@ import { inviteFor, invitePlace } from '../packages/mac/src/lib/invite-model.js'
 import { NO_NETWORK } from '../src/core/network-store.js';
 import type { FriendView, GroupView } from '../src/net/mesh/views.js';
 import type { AppState } from '../src/core/store.js';
+import type { Session } from '../src/core/session.js';
+import { runCommand } from '../src/core/commands.js';
+import { handoffPeople, shareRowDetail, worktreeShareRows } from '../src/ui/worktree-share.js';
 
 /** `/invite` (BLG-203): on its own it adds a friend; with friends named, it adds them to what's on screen. */
 
@@ -108,5 +111,102 @@ describe('completing friends after /invite', () => {
     expect(channelSuggestions('/in', { people, friends }).map((s) => [s.label, s.value])).toEqual([['/invite', '/invite @']]);
     expect(channelSuggestions('/invite @', { people, friends }).map((s) => s.value)).toEqual(['/invite @BoLin', '/invite @cy']);
     expect(channelSuggestions('/invite @c', { people, friends }).map((s) => s.label)).toEqual(['cy']);
+  });
+});
+
+describe('/invite @friend in a worktree, read by the daemon (BLG-340)', () => {
+  const peerAta = { peerId: ata.peerId, name: 'ata', agent: true };
+  const fake = (network: boolean) => {
+    const calls: { net: unknown[]; room: unknown[]; toasts: string[] } = { net: [], room: [], toasts: [] };
+    const state = {
+      projects: [{ id: 'p1', name: 'beluga', root: '/p', workspaces: [{ id: 'w1', name: 'add-auth', projectId: 'p1' }] }],
+      network: { ...NO_NETWORK, enabled: network, friends },
+      peers: [peerAta],
+    };
+    const session = {
+      store: { getState: () => state },
+      toast: (text: string) => calls.toasts.push(text),
+      intend: () => undefined,
+      sharing: {
+        ...(network ? { friends: {} } : {}),
+        shareWithFriend: (share: unknown) => calls.net.push(share),
+        invite: (wsId: string, peerId: string, role: string) => calls.room.push([wsId, peerId, role]),
+      },
+    } as unknown as Session;
+    return { session, calls };
+  };
+
+  it('shares it over the network, room or not', () => {
+    const { session, calls } = fake(true);
+    runCommand(session, 'invite', ['@cy'], 'ws:w1');
+    expect(calls.net).toEqual([{ peerId: cy.peerId, workspaceId: 'w1', projectId: 'p1', role: 'contribute' }]);
+    expect(calls.room).toEqual([]);
+    expect(calls.toasts).toEqual([]);
+  });
+
+  it('with the network off, someone in your room still gets it through the room', () => {
+    const { session, calls } = fake(false);
+    runCommand(session, 'invite', ['@ata', '@cy'], 'ws:w1');
+    expect(calls.room).toEqual([['w1', ata.peerId, 'contribute']]);
+    expect(calls.toasts).toEqual(['Turn on the Beluga network in Settings › Network to share add-auth with cy']);
+  });
+});
+
+describe('who a worktree’s Share sheet lists (BLG-340)', () => {
+  const self = { peerId: id('k'), name: 'kayra' };
+  const base = {
+    self,
+    projects: [{ id: 'p1', name: 'beluga', workspaces: [{ id: 'w1' }, { id: 'w2' }] }],
+    network: { ...NO_NETWORK, enabled: true, friends },
+    peers: [self, { peerId: id('z'), name: 'zed', guest: true }],
+    members: {},
+    projectShares: {},
+  } as unknown as Parameters<typeof worktreeShareRows>[0];
+
+  it('every friend, over the network, and room people who aren’t friends', () => {
+    expect(worktreeShareRows(base, 'w1').map((r) => [r.name, r.via, r.access])).toEqual([
+      ['ata', 'network', 'none'],
+      ['Bo Lin', 'network', 'none'],
+      ['cy', 'network', 'none'],
+      ['zed', 'room', 'none'],
+    ]);
+  });
+
+  it('what each has: one worktree, the whole project, or through the room', () => {
+    const state = {
+      ...base,
+      members: { w1: { [ata.peerId]: 'view' } },
+      projectShares: { p1: { [bo.peerId]: { role: 'contribute' }, [cy.peerId]: { role: 'view', only: ['w2'] } } },
+    } as unknown as typeof base;
+    const rows = worktreeShareRows(state, 'w1');
+    expect(rows.slice(0, 3).map((r) => [r.name, r.via, r.access, r.wholeProject])).toEqual([
+      ['ata', 'room', 'view', false],
+      ['Bo Lin', 'network', 'contribute', true],
+      ['cy', 'network', 'none', false],
+    ]);
+    expect(shareRowDetail(rows[1]!, false)).toBe('Works with your Claude across the whole project');
+    expect(shareRowDetail(rows[2]!, false)).toBe('Not in this worktree');
+  });
+});
+
+describe('who a worktree can be handed to (BLG-341)', () => {
+  const self = { peerId: id('k'), name: 'kayra' };
+  const old = { ...cy, beluga: { version: '0.6.1+mac.1.4.0', can: ['share.project'] } };
+  const state = (enabled: boolean) => ({
+    self,
+    peers: [self, { peerId: ata.peerId, name: 'ata', agent: true }, { peerId: id('z'), name: 'zed', agent: false }],
+    network: { ...NO_NETWORK, enabled, friends: [ata, { ...bo, online: false }, old] },
+  }) as unknown as Parameters<typeof handoffPeople>[0];
+
+  it('room people with their Claude, then friends over the network; an old Beluga says why', () => {
+    expect(handoffPeople(state(true)).map((p) => [p.name, p.via, p.online, p.why])).toEqual([
+      ['ata', 'room', true, undefined],
+      ['Bo Lin', 'network', false, undefined],
+      ['cy', 'network', true, "cy's Beluga 1.4.0 can't open handoffs yet. Ask cy to update Beluga."],
+    ]);
+  });
+
+  it('with the network off, only the room', () => {
+    expect(handoffPeople(state(false)).map((p) => p.name)).toEqual(['ata']);
   });
 });
