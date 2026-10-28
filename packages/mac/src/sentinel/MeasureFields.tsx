@@ -120,7 +120,8 @@ function clean(m: MetricSpec): MetricSpec {
 }
 
 function MetricRow({ m, index, from, change, remove }: { m: MetricSpec; index: number; from: MeasureFrom; change: (patch: Partial<MetricSpec>) => void; remove: () => void }) {
-  const [named, setNamed] = useState(Boolean(m.label));
+  // Only one just added (still “value”, “value-2”…) is named by its label: another's name is its file, its tiles' link and maybe where it's read.
+  const [named, setNamed] = useState(Boolean(m.label) || !/^value(-\d+)?$/.test(m.name));
   const label = useDraft(m.label ?? '', (v) => {
     if (v === (m.label ?? '')) return;
     // A new number takes its name from its label, until it's kept once (the name is its file).
