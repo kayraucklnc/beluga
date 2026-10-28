@@ -101,6 +101,7 @@ export function seedDemoSentinel(store: Store, sentinels: Sentinels, travel: (ms
         later.push(t);
       });
       seedChat(store);
+      seedBriefSession(store);
     } catch {
       // A demo without its sentinels still works.
     } finally {
@@ -166,7 +167,8 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
         startedAt: start,
         endedAt: start + 2 * MIN + i * 7_000,
         headline,
-        steps: steps(brief.steps.map((s) => s.id), 'done', start, MIN).map((s, n) => (quiet && n === 1 ? { ...s, state: 'skipped' } : s)),
+        // The latest run's Claude session, to watch from its run (BLG-330).
+        steps: steps(brief.steps.map((s) => s.id), 'done', start, MIN, i === BRIEFS.length - 1 ? [{ channel: BRIEF_SESSION }] : []).map((s, n) => (quiet && n === 1 ? { ...s, state: 'skipped' } : s)),
         tasks: [],
         ...(quiet ? { why: 'Nothing changed since Friday' } : {}),
       },
@@ -394,6 +396,36 @@ const NEW_SUBS = [4, 6, 3, 7, 5, 8, 4, 6];
 const FAILED = [3, 1, 2, 2, 0, 1, 3, 1];
 const SUBSCRIBERS = [11_820, 11_904, 11_960, 12_045, 12_110, 12_188, 12_231, 12_304];
 const VIEWS = [1_440_120, 1_446_300, 1_451_870, 1_458_020, 1_463_400, 1_469_950, 1_475_310, 1_482_210];
+
+/** The latest Morning brief's Claude session (a quiet chat), watched from its run's page. */
+const BRIEF_SESSION = 'mac:assistant:demo-brief-session';
+
+function seedBriefSession(store: Store): void {
+  const { selfId, self } = store.getState();
+  const me = self?.name ?? 'you';
+  const asked = Date.now() - DAY;
+  const [headline, body] = BRIEFS.at(-1)!;
+  const items: LogItem[] = [
+    { id: 'demo-brief-session-asked', type: 'chat', channel: BRIEF_SESSION, from: selfId, name: 'Morning brief', text: 'Write my morning brief for bob-api: commits, pull requests, issues and CI since yesterday, and the open tasks. Start with what needs me first. If nothing changed, say so and stop.', ts: asked, byAgent: true },
+    {
+      id: 'demo-brief-session-answer',
+      type: 'agent',
+      channel: BRIEF_SESSION,
+      subagents: [],
+      requestId: 'demo-brief-session-answer',
+      owner: selfId,
+      ownerName: me,
+      requesterName: 'Morning brief',
+      requester: selfId,
+      status: 'done',
+      text: `${headline}\n\n${body}`,
+      steps: ['Bash: git log --since=yesterday --oneline', 'Bash: gh pr list --state open', 'Bash: gh run list --limit 5', 'mcp__beluga_board__task_list'],
+      ts: asked + 5_000,
+      endTs: asked + 55_000,
+    },
+  ];
+  store.dispatch({ type: 'history', channel: BRIEF_SESSION, items });
+}
 
 /** The Sentinel chat's first conversation: a question about the week, and Claude's answer (§12). */
 function seedChat(store: Store): void {

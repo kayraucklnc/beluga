@@ -81,6 +81,11 @@ test('a run’s page: the line, the steps, the report', async ({ page }) => {
   await expect(main(page).getByText(/^Morning brief · ran by schedule · .+ · .+ s$/)).toBeVisible();
   await expect(main(page).getByRole('region', { name: 'Report' })).toBeVisible();
   await main(page).getByRole('button', { name: 'Show output' }).first().click();
+  // Its Claude's session, watched right in the run (BLG-330).
+  await main(page).getByRole('button', { name: 'Claude’s session' }).click();
+  const session = main(page).locator('[data-run-session]');
+  await expect(session).toContainText('3 commits landed');
+  await expect(session.getByRole('button', { name: 'Open the Chat' })).toBeVisible();
   await shoot(page, 'run');
 });
 
@@ -439,7 +444,10 @@ test('the Sentinel chat: its own conversation about all of Sentinel; a delete as
   // Clear empties it (the chat stays); New Chat makes another beside it, the picker goes between them.
   await chat.getByRole('button', { name: 'More for this chat' }).click();
   await page.getByRole('menuitem', { name: /^Clear/ }).click();
-  await expect(chat.getByText('Ask Sentinel', { exact: true })).toBeVisible();
+  // Empty again, it offers what to ask: first, Claude looks at your projects and suggests (BLG-333).
+  await expect(chat.getByRole('button', { name: 'Suggest Some for Me' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: /^A Morning Brief for / })).toBeVisible();
+  await shoot(page, 'chat-empty');
   await chat.getByRole('button', { name: 'New Chat' }).click();
   await expect(main(page).locator('[data-sentinel-chat]')).not.toHaveAttribute('data-sentinel-chat', 'main');
   await expect(main(page).getByRole('button', { name: /^Chat: / })).toBeVisible();

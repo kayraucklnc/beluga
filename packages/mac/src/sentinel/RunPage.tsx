@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type RunDetail, type RunSummary, type Step, type StepRun, STEP_INFO } from '@beluga/core/sentinel/model.js';
+import { Attention } from '../chat/Attention.js';
+import { ChatLog } from '../chat/ChatLog.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
@@ -14,6 +16,7 @@ import { RunPill } from './marks.js';
 import { STEP_ICON, chatPlaceOf, durationText, headlineOf, isRunning, runLine } from './sentinel-model.js';
 import { useClock } from '../lib/window-active.js';
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
+import v from '../views/views.module.css';
 import t from '../tasks/tasks.module.css';
 import s from './sentinel.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
@@ -133,7 +136,7 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
             </header>
             <div className={s.timeline} role="list">
               {run.steps.map((st, i) => (
-                <TimelineStep key={st.id} run={st} step={sentinel?.steps.find((x) => x.id === st.id)} index={i} now={now} open={(c) => a.openChannel(c)} />
+                <TimelineStep key={st.id} run={st} step={sentinel?.steps.find((x) => x.id === st.id)} index={i} now={now} worktree={run.worktreeId} open={(c) => a.openChannel(c)} />
               ))}
             </div>
           </section>
@@ -173,8 +176,12 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
   );
 }
 
-function TimelineStep({ run, step, index, now, open }: { run: StepRun; step: Step | undefined; index: number; now: number; open: (channel: string) => void }) {
+function TimelineStep({ run, step, index, now, worktree, open }: { run: StepRun; step: Step | undefined; index: number; now: number; worktree?: string | undefined; open: (channel: string) => void }) {
   const [shown, setShown] = useState(false);
+  // Claude's session, watched right here: open while it works (and when it needs you), folded after.
+  const live = run.state === 'running';
+  const [watching, setWatching] = useState<boolean>();
+  const watch = watching ?? live;
   const took = run.startedAt !== undefined ? durationText((run.endedAt ?? now) - run.startedAt) : '';
   const kind = step?.kind;
   return (
@@ -188,12 +195,21 @@ function TimelineStep({ run, step, index, now, open }: { run: StepRun; step: Ste
           {kind ? <span className={s.tTook}>{STEP_INFO[kind].label}</span> : null}
           {took ? <span className={s.tTook}>· {took}{run.state === 'running' ? ' so far' : ''}</span> : null}
           <span className={t.grow} />
-          {run.channel && chatPlaceOf(run.channel) ? (
+          {run.channel && chatPlaceOf(run.channel) && kind !== 'claude' ? (
             <Button size="small" variant="quiet" icon="chat" onClick={() => open(run.channel!)}>
               Open Chat
             </Button>
           ) : null}
         </div>
+        {run.channel && kind === 'claude' ? (
+          <>
+            <button type="button" className={s.disclosure} aria-expanded={watch} onClick={() => setWatching(!watch)}>
+              <Icon name={watch ? 'chevronDown' : 'chevronRight'} size={10} />
+              {watch ? 'Hide Claude’s session' : live ? 'Watch Claude work' : 'Claude’s session'}
+            </button>
+            {watch ? <Session channel={run.channel} live={live} where={step?.kind === 'claude' ? step.where : undefined} worktree={worktree} open={() => open(run.channel!)} /> : null}
+          </>
+        ) : null}
         {run.why ? <span className={run.state === 'failed' ? s.tWhy : s.tNote}>{run.why}</span> : run.state === 'waiting' ? <span className={s.tNote}>Waiting for the steps before it</span> : null}
         {run.output ? (
           <>
@@ -209,3 +225,30 @@ function TimelineStep({ run, step, index, now, open }: { run: StepRun; step: Ste
   );
 }
 
+
+/**
+ * A Claude step's session, as the chat draws it, inside the run (BLG-330): what Claude reads, runs
+ * and says, live, and what it asks you (answered here). Read-only: the conversation itself, a click
+ * away, is where you write to it. A step in a worktree names it.
+ */
+function Session({ channel, live, where, worktree, open }: { channel: string; live: boolean; where: 'project' | 'worktree' | 'mac' | undefined; worktree: string | undefined; open: () => void }) {
+  return (
+    <div className={s.session} data-run-session={channel} data-live={live || undefined}>
+      <div className={s.sessionBar}>
+        {live ? <LiveDot /> : <Icon name="claude" size={12} />}
+        <span className={s.sessionWhere}>{where === 'worktree' ? 'In its own worktree' : where === 'mac' ? 'On Your Mac' : 'In the project, reading only'}</span>
+        {where === 'worktree' && worktree ? <WorktreeChip id={worktree} /> : null}
+        <span className={t.grow} />
+        {chatPlaceOf(channel) ? (
+          <Button size="small" variant="quiet" icon="chat" onClick={open}>
+            Open the Chat
+          </Button>
+        ) : null}
+      </div>
+      <div className={cx(v.chat, s.sessionLog)}>
+        <ChatLog channel={channel} empty={<div className={s.sessionEmpty}>{live ? 'Claude is starting…' : 'This session has nothing to show'}</div>} />
+        <Attention channel={channel} />
+      </div>
+    </div>
+  );
+}
