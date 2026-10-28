@@ -18,12 +18,17 @@ import { z } from 'zod';
  * - A whole project's `project` carries `copy` (with the repository's https address when it has
  *   one): the friend makes their own copy (copy.ts). When they can't clone it, `copy_request` asks
  *   the owner's Mac for a bundle of it, and `copy_ready` says where to fetch it (or `copy_failed`).
+ *   `repo`: that address for a project shared a worktree at a time too (a fork looks for it in yours).
+ * - `fork_request`: a friend who works in one of your worktrees wants their own fork of it on their
+ *   Mac (fork.ts), with the commits they `have` (left out of the pack). `fork_ready` says where to
+ *   fetch the pack (or `fork_failed`, why not).
  */
 
 const id = z.string().regex(/^[\w:.-]{1,80}$/);
 const peerId = z.string().regex(/^[\w-]{32}$/);
 const role = z.enum(['contribute', 'view']);
 const text = (max: number) => z.string().max(max);
+const repoUrl = z.string().regex(/^https:\/\/[\w.~/-]{4,500}$/);
 
 export const HISTORY_ITEMS = 60;
 export const HISTORY_TEXT = 4000;
@@ -37,11 +42,15 @@ export const ShareMsg = z.discriminatedUnion('k', [
     role,
     worktrees: z.array(z.object({ id, name: text(200), branch: text(200).optional() })).max(200),
     members: z.array(z.object({ peerId, name: text(80), role })).max(100),
-    copy: z.object({ url: z.string().regex(/^https:\/\/[\w.~/-]{4,500}$/).optional() }).optional(),
+    copy: z.object({ url: repoUrl.optional() }).optional(),
+    repo: repoUrl.optional(),
   }),
   z.object({ k: z.literal('copy_request'), id }),
   z.object({ k: z.literal('copy_ready'), id, share: id, size: z.number().int().min(0) }),
   z.object({ k: z.literal('copy_failed'), id, error: text(300) }),
+  z.object({ k: z.literal('fork_request'), ws: id, have: z.array(z.string().regex(/^[0-9a-f]{40}$/)).max(40) }),
+  z.object({ k: z.literal('fork_ready'), ws: id, share: id, size: z.number().int().min(0) }),
+  z.object({ k: z.literal('fork_failed'), ws: id, error: text(300) }),
   z.object({ k: z.literal('unshare'), id }),
   z.object({ k: z.literal('leave'), id }),
   z.object({

@@ -556,6 +556,26 @@ message goes when it's back"; a message sent then shows "Waiting for ata's Mac" 
 Mac took it (`delivery` in the state). The phone lists the worktree in its work view under "ata · bob-api", chats there
 the same way, and its message box says the same (`ConvView.waiting`).
 
+**A fork on your own Mac** (`fork.ts`, BLG-312). In a friend's worktree you work in (*Can work here*), **Fork to My
+Mac** in its header makes it a worktree of yours: the sheet says what comes over and what stays behind, and asks for a
+name. Your Mac finds the project in your Projects (your copy of a project shared whole, or your own clone of the same
+repository: the `project` message carries `repo`, its https address, for that) and sends `fork_request {ws, have}`,
+`have` being up to 40 of your newest branch tips. Their Mac packs `fork.tgz` in a private share only you can read and
+answers `fork_ready {ws, share, size}` (or `fork_failed {ws, error}`); it says in the worktree's chat that you forked it.
+
+- `fork.bundle`: the branch's last commit and a commit of the uncommitted work on top (made with an index of its own,
+  so nothing in their worktree changes), without what `have` reaches. No bundle when you have all of it.
+- `history.json`: the whole conversation; `session.jsonl`: Claude Code's session, the values of the worktree's .env
+  files replaced by `[secret]`; `scratch/`: its Scratch folder (files up to 50 MB, 120 MB in all).
+- Never what git ignores (node_modules, build output: the setup makes them again), nor a secret (`isDenied`).
+
+Your Mac fetches it, makes your branch (`beluga/<name>`) at their tip, a worktree on it with the uncommitted work
+left uncommitted, Scratch in place and Claude's session where Claude Code looks, so the first turn resumes it as a fork
+(`forkFromSession`): your Claude remembers the conversation. As with a handoff, their code only gets your .env files
+and the setup when you trust them fully; otherwise the chat says so, with Terminal → Run setup. How far it got is in
+the state's `forks` (asking, copying, ready with your worktree's id, failed with why); the header button follows it
+(Packing…, Waiting for ata's Mac…, Copying…, then Open My Fork). The same trust rule now holds for "Runs on" › This Mac.
+
 **Folders, under Files.** A folder you share with only some people (**Share a Folder** › *Only…*, which lists your
 friends as well as the room's people) goes to those of them who are friends over the network as well, with no room
 needed: a `folder` message, again when you change it, `active: false` when you stop or untick them. On their Mac it's in

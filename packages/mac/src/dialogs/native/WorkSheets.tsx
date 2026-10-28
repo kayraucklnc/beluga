@@ -19,6 +19,7 @@ import { type NativeSheet, closeSheet, useSheet } from '../../lib/sheets.js';
 import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
 import { TemplateEditorSheet } from './TemplatesSheet.js';
 import { ContinueSheet } from './ContinueSheet.js';
+import { ForkToMacSheet } from './ForkToMacSheet.js';
 import { CleanUpWorktreesAlert } from './CleanUpWorktrees.js';
 import { DeleteProjectAlert } from './DeleteProjectAlert.js';
 import { WorkConfirm } from './WorkConfirm.js';
@@ -166,6 +167,8 @@ export function NativeSheets() {
       return <ForkSheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
     case 'continue_worktree':
       return <ContinueSheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
+    case 'fork_to_mac':
+      return <ForkToMacSheet key={sheet.wsId} owner={sheet.owner} wsId={sheet.wsId} close={close} />;
     case 'peer_run':
       return <PeerRunSheet key={sheet.peerId ?? ''} {...(sheet.peerId ? { peerId: sheet.peerId } : {})} close={close} />;
     case 'template':

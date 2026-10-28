@@ -1,0 +1,36 @@
+/* Fork to This Mac: what comes over, one quiet row each (pastel, no glow). */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  list-style: none;
+}
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  line-height: 1.35;
+}
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.title {
+  display: block;
+  color: var(--text);
+}
+.detail {
+  display: block;
+  color: var(--text-3);
+  font-size: 0.9rem;
+}

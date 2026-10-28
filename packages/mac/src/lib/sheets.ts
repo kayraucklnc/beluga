@@ -12,6 +12,8 @@ export type NativeSheet =
   | { readonly kind: 'fork'; readonly wsId: string }
   /** Carry a conversation (an ask chat in a main folder) into a new worktree and go on there. */
   | { readonly kind: 'continue_worktree'; readonly wsId: string }
+  /** Fork a friend's shared worktree to this Mac: its changes, Scratch and conversation (BLG-312). */
+  | { readonly kind: 'fork_to_mac'; readonly owner: string; readonly wsId: string }
   /** A command to run on a friend's computer (`peerId` unset: pick who). */
   | { readonly kind: 'peer_run'; readonly peerId?: string }
   /** A new template (Name, Prompt, Plan first). */
