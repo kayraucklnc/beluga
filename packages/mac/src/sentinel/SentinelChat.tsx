@@ -81,6 +81,12 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
   return (
     <div className={s.chatTab} data-sentinel-chat={id}>
       <div className={s.chatBar}>
+        {onClose ? (
+          <span className={s.chatTitle}>
+            <Icon name="claude" size={13} />
+            Ask Sentinel
+          </span>
+        ) : null}
         {chats.length > 1 ? (
           <PickMenu<string>
             label="Chats"

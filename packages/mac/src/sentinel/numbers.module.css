@@ -251,7 +251,7 @@
   background: none;
   box-shadow: none;
 }
-@container (max-width: 760px) {
+@container (max-width: 680px) {
   .cell[data-w='3'],
   .cell[data-w='4'] {
     grid-column: span 6;
@@ -749,21 +749,26 @@
   display: flex;
   flex-direction: column;
 }
+/* The stat keeps its height; only the chart takes (or gives up) room. */
+.numberFit > :first-child {
+  flex: none;
+}
 /* Wide and short: the chart beside the number instead of under it. */
-@container (min-width: 420px) {
+@container (min-width: 340px) {
   .numberFit {
     flex-direction: row;
   }
   .numberFit > :first-child {
     flex: none;
-    width: clamp(170px, 38%, 260px);
+    width: clamp(150px, 42%, 260px);
   }
   .numberFit .fillIn {
     inset: 10px 12px 8px 0;
   }
 }
 .numberFit [data-value] {
-  font-size: clamp(22px, 12cqi, 40px);
+  font-size: clamp(17px, 12cqi, 40px);
+  white-space: nowrap;
   transition: font-size 0.15s ease;
 }
 .numberFit[data-look='chart'] [data-value] {
@@ -811,4 +816,11 @@
   fill: none;
   stroke: var(--accent);
   stroke-width: 1.5;
+}
+
+/* A narrow number: the value has the room; its sparkline steps aside. */
+@container (max-width: 150px) {
+  .numberFit [data-value] ~ * {
+    display: none;
+  }
 }

@@ -284,7 +284,7 @@ test('one Sentinel row, one page: the old Dashboard and Chat links land on it', 
   await expect(sidebar(page).getByRole('button', { name: /^Dashboard/ })).toHaveCount(0);
   await expect(main(page).getByRole('tablist', { name: 'Sentinel' })).toHaveCount(0);
   await expect(main(page).locator('[data-dashboard]')).toBeVisible({ timeout: 20_000 });
-  await main(page).getByRole('button', { name: 'Ask Claude' }).click();
+  // Ask Sentinel is docked beside the page.
   await expect(main(page).locator('[data-sentinel-chat]')).toBeVisible();
   // The sidebar's Sentinel row stays selected with the chat open.
   await expect(sidebar(page).getByRole('button', { name: /^Sentinel/ })).toHaveAttribute('aria-current', /.+/);
@@ -415,7 +415,6 @@ test('Add a Tile takes a description: Claude adds it, and sets up a draft sentin
 
 test('the Sentinel chat: its own conversation about all of Sentinel; a delete asks first; Clear and New Chat', async ({ page }) => {
   await openList(page);
-  await main(page).getByRole('button', { name: 'Ask Claude' }).click();
   const chat = main(page).locator('[data-sentinel-chat]');
   await expect(chat).toBeVisible();
   // The demo's short exchange.

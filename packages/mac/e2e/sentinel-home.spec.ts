@@ -62,21 +62,29 @@ test('the project dropdown lists only projects with sentinels; Find filters', as
   await expect(main(page).getByRole('region', { name: 'At a glance' })).toHaveCount(0);
 });
 
-test('Ask Claude opens the Sentinel chat beside the page; × closes it', async ({ page }) => {
+test('Ask Sentinel is docked beside the page; × closes it until you ask again', async ({ page }) => {
   await openSentinel(page);
-  await main(page).getByRole('button', { name: 'Ask Claude' }).click();
   const panel = main(page).getByRole('complementary', { name: 'Ask Sentinel' });
   await expect(panel.locator('[data-sentinel-chat]')).toContainText('What did my sentinels find this week?');
+  await expect(panel).toContainText('Ask Sentinel');
   // The page stays beside it.
   await expect(main(page).getByRole('region', { name: 'Watching' })).toBeVisible();
   await shoot(page, 'ask');
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).toHaveCount(0);
-  // ⌘K › Go to Sentinel Chat opens the panel too.
+  // Closed, it stays closed when you come back.
+  await sidebar(page).getByRole('button', { name: /^Overview/ }).click();
+  await sidebar(page).getByRole('button', { name: /^Sentinel/ }).click();
+  await expect(main(page).getByRole('region', { name: 'Watching' })).toBeVisible();
+  await expect(panel).toHaveCount(0);
+  await main(page).getByRole('button', { name: 'Ask Claude' }).click();
+  await expect(panel).toBeVisible();
+  await panel.getByRole('button', { name: 'Close' }).click();
+  // ⌘K › Go to Sentinel Chat opens it too.
   await page.keyboard.press('Meta+k');
   await page.keyboard.type('Go to Sentinel Chat');
   await page.keyboard.press('Enter');
-  await expect(main(page).getByRole('complementary', { name: 'Ask Sentinel' })).toBeVisible();
+  await expect(panel).toBeVisible();
 });
 
 test('asking about one sentinel opens the chat beside its page, naming it', async ({ page }) => {
@@ -119,7 +127,7 @@ test('a tile is resized by dragging its corner', async ({ page }) => {
   await page.mouse.up();
   await expect(tile).toHaveAttribute('data-w', '3');
   // Wide, the number has its chart beside it; the sparkline steps aside.
-  await expect(tile.locator('[data-look="chart"] .recharts-surface')).toBeVisible();
+  await expect(tile.locator('[data-look="chart"] [data-fits] svg').first()).toBeVisible();
   await shoot(page, 'resized');
 });
 

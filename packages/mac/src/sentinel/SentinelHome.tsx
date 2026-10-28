@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CLAUDE_CHANGED, FIRST_SENTINEL_CHAT, MAX_RUN_AT_ONCE, type Recipe, RUN_STATE_INFO, type RunSummary, type Sentinel, type SentinelState, lastRunOf, pausedWords, sentinelChatChannel } from '@beluga/core/sentinel/model.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
@@ -45,7 +45,18 @@ export function SentinelHome() {
     if (view.kind === 'dashboard' && view.id) setBoard(view.id);
   }, [view]);
   const asking = view.kind === 'sentinel_chat';
-  const close = (): void => actions.run({ type: 'view', view: { kind: 'sentinel', ...(scope ? { projectId: scope } : {}) } });
+  const active = useApp((st) => st.sentinel.chats?.active ?? FIRST_SENTINEL_CHAT);
+  // Ask Sentinel stays docked on the right (it opens with the page) until you close it.
+  const docked = useAskDocked();
+  const any = state.items.length > 0;
+  useLayoutEffect(() => {
+    if (asking) setAskDocked(true);
+    else if (docked && any && (view.kind === 'sentinel' || view.kind === 'dashboard')) actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat: active } });
+  }, [view, docked, any]);
+  const close = (): void => {
+    setAskDocked(false);
+    actions.run({ type: 'view', view: { kind: 'sentinel', ...(scope ? { projectId: scope } : {}) } });
+  };
 
   if (!state.enabled) return <Empty icon="sentinel" title="Sentinel needs the Beluga app" detail="Sentinels run on your Mac, as you: open Beluga for Mac to make one." />;
   return (
@@ -59,6 +70,31 @@ export function SentinelHome() {
     </div>
   );
 }
+
+/** Whether Ask Sentinel is docked beside the page (on unless you closed it; kept on this Mac). */
+const DOCKED = 'sentinel.ask.docked';
+const dockListeners = new Set<() => void>();
+const readDocked = (): boolean => {
+  try {
+    return localStorage.getItem(DOCKED) !== '0';
+  } catch {
+    return true;
+  }
+};
+function setAskDocked(on: boolean): void {
+  if (readDocked() === on) return;
+  try {
+    localStorage.setItem(DOCKED, on ? '1' : '0');
+  } catch {
+    // Not kept: it still follows now.
+  }
+  for (const l of [...dockListeners]) l();
+}
+const useAskDocked = (): boolean =>
+  useSyncExternalStore((l) => {
+    dockListeners.add(l);
+    return () => void dockListeners.delete(l);
+  }, readDocked);
 
 /** Open the Sentinel chat beside the page, and send it this (when there's something to send). */
 function useAsk(): (text?: string) => void {
@@ -80,6 +116,7 @@ function Lived({ state, scope, setScope, board, setBoard }: { state: SentinelSta
   const a = useSentinelActions();
   const folder = useRunsFolder();
   const ask = useAsk();
+  const asking = useApp((st) => st.view.kind === 'sentinel_chat');
   const now = useClock(true, 30_000);
   const [query, setQuery] = useState('');
   const find = useRef<HTMLInputElement>(null);
@@ -158,11 +195,13 @@ function Lived({ state, scope, setScope, board, setBoard }: { state: SentinelSta
         <ActionsDropdown items={more}>
           <IconButton icon="more" label="More for Sentinel" />
         </ActionsDropdown>
-        <Tip label="Say what you want watched; Claude sets it up beside this page">
-          <Button size="small" icon="claude" onClick={() => ask()}>
-            Ask Claude
-          </Button>
-        </Tip>
+        {asking ? null : (
+          <Tip label="Say what you want watched; Claude sets it up beside this page">
+            <Button size="small" icon="claude" onClick={() => ask()}>
+              Ask Claude
+            </Button>
+          </Tip>
+        )}
         <Tip label="Describe one, start from a recipe, or build it step by step" keys={shortcutKeys('page-new')}>
           <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_sentinel', ...(scoped ? { projectId: scoped } : {}) })}>
             New Sentinel

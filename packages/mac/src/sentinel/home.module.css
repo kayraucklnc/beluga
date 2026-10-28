@@ -13,7 +13,7 @@
 }
 .panel {
   flex: none;
-  width: clamp(340px, 34%, 460px);
+  width: clamp(320px, 30%, 420px);
   display: flex;
   flex-direction: column;
   min-height: 0;
