@@ -19,7 +19,7 @@ const canvas = (): HTMLCanvasElement => {
 
 const fire = (show: 'always' | 'typing'): { f: MaxFire; draws: () => number } => {
   const f = new MaxFire(canvas(), canvas());
-  f.setTune({ style: 'smooth', show, fuel: 0.5, height: 0.5, thickness: 0.5, wildness: 0.5, colors: ['#a0c4ff', '#bdb2ff', '#ffc6ff'], temper: false, catchAfter: 0, outAfter: 0.4 });
+  f.setTune({ style: 'toon', show, fuel: 0.5, height: 0.5, thickness: 0.5, wildness: 0.5, colors: ['#a0c4ff', '#bdb2ff', '#ffc6ff'], temper: false, catchAfter: 0, outAfter: 0.4 });
   f.resize(400, 200, { x: 40, y: 80, w: 320, h: 80 });
   let n = 0;
   const target = f as unknown as { draw: () => void };
