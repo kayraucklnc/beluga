@@ -19,6 +19,18 @@ const rel = z.string().max(4096);
 const termKey = z.string().min(1).max(200);
 const conversation = z.string().regex(/^(dm:[\w-]{32}|group:[0-9a-f]{32})$/);
 
+/** A task's draft as the phone sends it back (maybe changed): `for` is the teammate it names (1.24). */
+const phoneDraft = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    goal: z.string().max(20_000),
+    acceptance: z.array(z.string().trim().min(1).max(300)).max(12),
+    labels: z.array(z.string().min(1).max(32)).max(12),
+    priority: z.enum(['urgent', 'high', 'medium', 'low']).optional(),
+    for: z.string().min(1).max(80).optional(),
+  })
+  .strict();
+
 export const COMPANION_API = {
   // Open a one-time pairing (10 minutes, one phone): → { link, code, expiresAt }. Starting another replaces it.
   'companion.pair.start': { args: z.tuple([]) },
@@ -117,22 +129,12 @@ export const COMPANION_API = {
     ]),
   },
   // A task described in words: your Claude's draft of it (title, goal, criteria, labels), not added yet → the draft.
-  'companion.draftTask': { args: z.tuple([z.object({ projectId: z.string().min(1).max(200), text: z.string().min(1).max(8000) }).strict()]) },
-  // Add a draft (maybe changed on the phone) as a task in a project → the task ({ id, key }).
-  'companion.addTask': {
-    args: z.tuple([
-      z
-        .object({
-          projectId: z.string().min(1).max(200),
-          title: z.string().trim().min(1).max(200),
-          goal: z.string().max(20_000),
-          acceptance: z.array(z.string().trim().min(1).max(300)).max(12),
-          labels: z.array(z.string().min(1).max(32)).max(12),
-          priority: z.enum(['urgent', 'high', 'medium', 'low']).optional(),
-        })
-        .strict(),
-    ]),
-  },
+  // 1.24 (BLG-322) `several`: the words may ask for several tasks (the draft's `more`), an epic, and who each is for.
+  'companion.draftTask': { args: z.tuple([z.object({ projectId: z.string().min(1).max(200), text: z.string().min(1).max(8000), several: z.boolean().optional() }).strict()]) },
+  // Add a draft (maybe changed on the phone) as a task in a project → the task ({ id, key }); 1.24: with
+  // `more` (under it when `epic`; at most MAX_TASKS in all, agent/task-drafter.ts), those too (`more` in
+  // the answer), each for the teammate `for` names.
+  'companion.addTask': { args: z.tuple([phoneDraft.extend({ projectId: z.string().min(1).max(200), epic: z.boolean().optional(), more: z.array(phoneDraft).max(11).optional() }).strict()]) },
   // A worktree's files, read-only (BLG-42), through the file gate: never outside the worktree (links
   // followed and checked again), never a secret. A folder → FolderView; names that match → FoundView;
   // a page of a file (512 KB, from `off`) → FilePageView. Nothing on the phone can change a file.

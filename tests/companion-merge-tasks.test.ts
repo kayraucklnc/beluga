@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { branchStep } from '../src/companion/branch-steps.js';
 import { type MergeBook, merge, mergeCheckOf, resolve } from '../src/companion/merge.js';
-import { MergeCheckView, type MergeView } from '../src/companion/protocol.js';
+import { COMPANION_PROTO, MergeCheckView, type MergeView, SINCE } from '../src/companion/protocol.js';
 import { COMPANION_API } from '../src/ipc/companion-api.js';
 import type { Session } from '../src/core/session.js';
 import type { MergePreview } from '../src/workspaces/merge-preview.js';
@@ -73,6 +73,12 @@ describe('merging from the phone', () => {
     expect(COMPANION_API['companion.merge'].args.safeParse(['conv:room']).success).toBe(false);
     expect(COMPANION_API['companion.addTask'].args.safeParse([{ projectId: 'p1', title: 'Retry webhooks', goal: '', acceptance: ['Retries 3 times'], labels: [] }]).success).toBe(true);
     expect(COMPANION_API['companion.addTask'].args.safeParse([{ projectId: 'p1', title: ' ', goal: '', acceptance: [], labels: [] }]).success).toBe(false);
+    // 1.24 (BLG-322): several at once, each for someone, maybe under an epic; a draft asked for several.
+    const two = { projectId: 'p1', title: 'Checkout', goal: '', acceptance: [], labels: [], epic: true, more: [{ title: 'Card form', goal: 'g', acceptance: [], labels: [], for: 'Ata' }] };
+    expect(COMPANION_API['companion.addTask'].args.safeParse([two]).success).toBe(true);
+    expect(COMPANION_API['companion.addTask'].args.safeParse([{ ...two, more: [{ ...two.more[0], sneaky: 1 }] }]).success).toBe(false);
+    expect(COMPANION_API['companion.draftTask'].args.safeParse([{ projectId: 'p1', text: 'a and b', several: true }]).success).toBe(true);
+    expect(SINCE.severalTasks).toBeLessThanOrEqual(COMPANION_PROTO.minor);
   });
 });
 

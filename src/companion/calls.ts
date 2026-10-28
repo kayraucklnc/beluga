@@ -21,7 +21,9 @@ export const OpenOnMacResult = z.object({ opened: z.boolean(), why: z.string().o
 /** A project's small icon (PNG, or a small SVG), by checksum. */
 export const IconResult = z.object({ sum: z.string(), mime: z.string(), b64: z.string() });
 /** Your Claude's draft of a task described in words (companion.draftTask), before it's added. */
-export const TaskDraftResult = z.object({ title: z.string(), goal: z.string(), acceptance: z.array(z.string()), labels: z.array(z.string()), priority: z.enum(['urgent', 'high', 'medium', 'low']).optional() });
+const OneDraft = z.object({ title: z.string(), goal: z.string(), acceptance: z.array(z.string()), labels: z.array(z.string()), priority: z.enum(['urgent', 'high', 'medium', 'low']).optional(), for: z.string().optional() });
+/** 1.24 (BLG-322): who each is for (`for`), the tasks after the first (`more`), and whether the first is their epic. */
+export const TaskDraftResult = OneDraft.extend({ more: z.array(OneDraft).optional(), epic: z.boolean().optional() });
 export type TaskDraftResult = z.infer<typeof TaskDraftResult>;
 /** What `put` answers: a piece taken, then the file's ref. */
 /** A sentinel's run as the phone reads it (src/core/sentinel/model.ts RunSummary; more fields pass through). */
@@ -114,7 +116,7 @@ export const PhoneCalls = {
   'companion.branchStep': entry('companion.branchStep', z.object({ ok: z.boolean(), message: z.string() })),
   'companion.viewFetch': entry('companion.viewFetch', done),
   'companion.draftTask': entry('companion.draftTask', TaskDraftResult),
-  'companion.addTask': entry('companion.addTask', z.object({ id: z.string(), key: z.string() })),
+  'companion.addTask': entry('companion.addTask', z.object({ id: z.string(), key: z.string(), more: z.array(z.object({ id: z.string(), key: z.string() })).optional() })),
   'board.start': entry('board.start', z.string()),
   // 1.7: a worktree's files (read-only) and terminals (shared with the Mac).
   'companion.files.list': entry('companion.files.list', FolderView),

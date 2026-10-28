@@ -238,6 +238,21 @@ describe('one New Task message, several tasks and who each is for (BLG-319)', ()
     expect(asked[0]!.several).toBeUndefined();
   });
 
+  it('the phone (BLG-322): its draft asks for several, and adding it makes them all, for the people named', async () => {
+    const asked: DraftContext[] = [];
+    const { store, board, work } = setup(async (_t, ctx) => (asked.push(ctx), undefined));
+    withTeam(store);
+    await work.draft('api', 'a and b', { several: true });
+    await work.draft('api', 'just a');
+    expect(asked.map((c) => c.several)).toEqual([true, undefined]);
+    const [first, ...rest] = work.addDraft('api', { title: 'Cache the rates', goal: 'g', acceptance: ['Fresh'], labels: [], for: 'Mia', more: [{ title: 'Show the fees', goal: 'f', acceptance: [], labels: [], for: 'Ata Demir' }, { title: 'Someone else', goal: 'x', acceptance: [], labels: [], for: 'Bob' }] });
+    expect(first).toMatchObject({ title: 'Cache the rates', assignee: { id: 'p-mia' }, brief: { acceptance: '- [ ] Fresh' } });
+    expect(rest.map((i) => [i.title, i.assignee?.id])).toEqual([['Show the fees', 'p-ata'], ['Someone else', undefined]]);
+    const [epic, ...parts] = work.addDraft('api', { title: 'Checkout', goal: 'e', acceptance: [], labels: [], epic: true, more: [{ title: 'Card form', goal: 'c', acceptance: [], labels: [] }] });
+    expect(parts.map((i) => i.parent)).toEqual([epic!.id]);
+    expect(board.list()).toHaveLength(5);
+  });
+
   it('the mock makes one task per listed line, for whoever it names', () => {
     const d = mockDraft('Two things:\n- cache the rates for Ata\n- show the fees for mia', { labels: [], several: true, people });
     expect(d).toMatchObject({ title: 'Cache the rates', for: 'Ata Demir', more: [{ title: 'Show the fees', for: 'Mia' }] });
