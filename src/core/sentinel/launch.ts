@@ -19,6 +19,8 @@ import type { FetchLike, TriggerDeps, WebhookTunnel } from './triggers/types.js'
 import { attachSentinel, detachSentinel } from './registry.js';
 import type { PrLook, PrPlace, SentinelChat, SentinelClaude, SentinelFriends, SentinelGitHub, SentinelPlaces } from './runner.js';
 import { Sentinels } from './sentinels.js';
+import { keepWidgetSnapshot } from './widgets.js';
+import path from 'node:path';
 
 /**
  * Start Sentinel for the daemon (the Mac app's Beluga): sentinels in ~/.beluga/sentinel.json,
@@ -65,7 +67,10 @@ export function launchSentinel(host: SentinelHost): () => void {
   });
   attachSentinel(session, sentinels);
   const stopSeed = host.demo && !sentinels.list().length ? seedDemoSentinel(store, sentinels, (ms) => (back = ms)) : () => undefined;
+  // The boards' tiles for the Mac's desktop widgets (BLG-309): never the demo's.
+  const stopWidgets = !host.demo && process.platform === 'darwin' ? keepWidgetSnapshot(store, path.join(belugaHome(), 'widgets'), (id) => store.getState().projects.find((p) => p.id === id)?.root) : () => undefined;
   return () => {
+    stopWidgets();
     stopSeed();
     claude.close();
     detachSentinel(session);
@@ -78,10 +83,13 @@ export function launchSentinel(host: SentinelHost): () => void {
  * A Keep the numbers step's source, run as views run theirs (your environment, the source's own
  * checks: never a credential file), fresh each run. It's your own sentinel's, so it doesn't wait for a
  * yes the way a command in a chat does; a change by your Claude to it pauses the sentinel instead.
+ * Your Claude checking or testing one alone (`byClaude`: before saving, sentinel_test) runs what's
+ * read-only by itself (a database, a file, an address without your variables); a command, or an
+ * address that would carry one of your variables, waits for your yes (Run Now, or a view's Run).
  */
-async function sourceRows(source: Source, cwd: string): Promise<{ readonly rows: readonly import('../../shared/view-spec.js').Row[]; readonly columns: readonly string[] } | string> {
-  const got = await fetchSource(source, { offset: 0, limit: 5000 }, { cwd, confirm: true, fresh: true });
-  if ('needsApproval' in got) return `it needs your yes first: ${got.what}`;
+async function sourceRows(source: Source, cwd: string, _signal: AbortSignal, opts?: { readonly byClaude?: boolean }): Promise<{ readonly rows: readonly import('../../shared/view-spec.js').Row[]; readonly columns: readonly string[] } | { readonly needsYes: string } | string> {
+  const got = await fetchSource(source, { offset: 0, limit: 5000 }, { cwd, confirm: !opts?.byClaude, fresh: true });
+  if ('needsApproval' in got) return opts?.byClaude ? { needsYes: got.what } : `it needs your yes first: ${got.what}`;
   if ('notKept' in got) return 'nothing came back';
   return { rows: got.rows, columns: got.columns };
 }

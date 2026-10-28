@@ -28,6 +28,7 @@ export function openNoticeTarget(actions: Actions, target: MacNoticeTarget, go?:
   else if (target.kind === 'plan') actions.run({ type: 'view', view: { kind: 'plan', id: target.id, ...(target.task ? { task: target.task } : {}) } });
   else if (target.kind === 'room') actions.run({ type: 'view', view: { kind: 'room' } });
   else if (target.kind === 'assistant') actions.run({ type: 'view', view: { kind: 'assistant', ...(target.chat ? { chat: target.chat } : {}) } });
+  else if (target.kind === 'sentinel_chat') actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat: target.chat } });
   else if (target.kind === 'shared') actions.run({ type: 'open_shared', owner: target.owner, id: target.id, tab: 'chat' });
   else actions.run({ type: 'open_ws', id: target.id });
 }

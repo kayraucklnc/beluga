@@ -237,6 +237,12 @@ export function measureFrom(data: unknown, specs: readonly MetricSpec[], keep = 
   return { found, missing };
 }
 
+/** What a Keep the numbers step kept, in words: "Kept Revenue: $3,120 · Jobs: 6 rows". */
+export function keptWords(found: readonly Measured[]): string {
+  const said = found.map((m) => `${m.label ?? labelOf(m.name)}: ${m.value !== undefined ? formatMetric(m.value, m.unit) : m.series ? `${m.series.length} points` : m.output ? `its output (${m.output.format === 'json' ? 'JSON' : m.output.format === 'markdown' ? 'Markdown' : 'text'})` : `${m.rows?.length ?? 0} rows`}`);
+  return `Kept ${said.join(' · ')}`;
+}
+
 /** Rows as cells only (what the files and the state keep). */
 export const cellRows = (rows: readonly Record<string, unknown>[]): Row[] => rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, toCell(v)])));
 

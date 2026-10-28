@@ -123,16 +123,23 @@ export interface SentinelTools {
   /** Inside a sentinel run only: nothing to do this time, the run ends as skipped with the reason. */
   stop?(reason: string): string;
   list(): string;
-  /** A new sentinel from a draft (it starts paused; the answer links it as `sentinel:<id>`). */
-  create(draft: import('../core/sentinel/tool-draft.js').ToolDraft): string;
+  /**
+   * A new sentinel from a draft (it starts paused; the answer links it as `sentinel:<id>`). One with a
+   * source runs it once first (BLG-304): saved only when it works, answered with a preview.
+   */
+  create(draft: import('../core/sentinel/tool-draft.js').ToolDraft): string | Promise<string>;
   /** Runs one that's on (never a paused one). */
   run(ref: string): string;
+  /** Test its sources once, paused or not, without turning it on; what they find is kept → a preview. */
+  test(ref: string): Promise<string>;
+  /** Run a view source once, read-only, to look before writing a sentinel's query (the schema, a try) → its first rows. */
+  trySource(source: unknown, project?: string): Promise<string>;
   /** Pause-only: turning a sentinel on is the user's (the Mac or the phone), never Claude's. */
   pause(ref: string): string;
   /** The whole sentinel, as material. */
   get(ref: string): string;
-  /** Change it (a change to what it can do pauses one that was on). */
-  update(ref: string, patch: import('../core/sentinel/tool-draft.js').ToolPatch): string;
+  /** Change it (a change to what it can do pauses one that was on); a source it adds or changes runs once first. */
+  update(ref: string, patch: import('../core/sentinel/tool-draft.js').ToolPatch): string | Promise<string>;
   /** Delete it (through your approval: never in ALWAYS_OK). */
   remove(ref: string): string;
   /** This conversation changes that sentinel (sentinel.ask): its id. */

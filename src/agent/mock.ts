@@ -501,7 +501,7 @@ async function mockFetchTile(input: AgentRunInput, sentinels: NonNullable<AgentR
   input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_list');
   await sleep(600 * pace, input.signal);
   input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_create');
-  const made = sentinels.create({
+  const made = await sentinels.create({
     name: what.name,
     trigger: { kind: 'schedule', every: 'day', at: '09:00', missed: 'catch-up' },
     steps: [
@@ -616,7 +616,7 @@ async function mockSentinelAsk(input: AgentRunInput, tools: NonNullable<AgentRun
   await sleep(800 * pace, input.signal);
   input.onEvent('tool', 'mcp__beluga_sentinel__sentinel_update');
   try {
-    tools.update(id, { name, trigger, steps });
+    await tools.update(id, { name, trigger, steps });
   } catch (err) {
     return `I couldn’t change it: ${err instanceof Error ? err.message : String(err)}`;
   }

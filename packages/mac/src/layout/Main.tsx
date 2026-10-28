@@ -32,12 +32,9 @@ const ActionsView = lazy(() => import('../ci/ActionsView.js').then((m) => ({ def
 const RunPage = lazy(() => import('../ci/RunPage.js').then((m) => ({ default: m.RunPage })));
 const PlansView = lazy(() => import('../plans/PlansView.js').then((m) => ({ default: m.PlansView })));
 const PlanPage = lazy(() => import('../plans/PlanPage.js').then((m) => ({ default: m.PlanPage })));
-const SentinelView = lazy(() => import('../sentinel/SentinelView.js').then((m) => ({ default: m.SentinelView })));
 const SentinelPage = lazy(() => import('../sentinel/SentinelPage.js').then((m) => ({ default: m.SentinelPage })));
 const SentinelRunPage = lazy(() => import('../sentinel/RunPage.js').then((m) => ({ default: m.RunPage })));
-const DashboardPage = lazy(() => import('../sentinel/DashboardPage.js').then((m) => ({ default: m.DashboardPage })));
-const SentinelChatTab = lazy(() => import('../sentinel/SentinelChat.js').then((m) => ({ default: m.SentinelChat })));
-const SentinelSection = lazy(() => import('../sentinel/SentinelSection.js').then((m) => ({ default: m.SentinelSection })));
+const SentinelHome = lazy(() => import('../sentinel/SentinelHome.js').then((m) => ({ default: m.SentinelHome })));
 const PhoneView = lazy(() => import('../phone/PhoneView.js').then((m) => ({ default: m.PhoneView })));
 
 /** A worktree being made: its page shows at once, and becomes its conversation when git is done. */
@@ -106,17 +103,18 @@ function Route() {
       return <PlanPage key={view.id} id={view.id} task={view.task} />;
     case 'team_plan':
       return <WorkFrame page="plans"><SharedPlanPage key={`${view.owner}/${view.id}`} owner={view.owner} id={view.id} /></WorkFrame>;
-    // Sentinel's three tabs (docs/sentinel.md §10): the list, the Dashboard and the Chat.
+    // Sentinel is one page (BLG-300): its board is on it, its chat docks beside it; the old views land there.
+    case 'sentinel_chat':
+      // Asked from a sentinel's own page: that page stays, the chat beside it.
+      if (view.about) return <SentinelPage key={view.about} id={view.about} />;
+      return <SentinelHome />;
     case 'sentinel':
-      return <SentinelSection tab="sentinels"><SentinelView /></SentinelSection>;
+    case 'dashboard':
+      return <SentinelHome />;
     case 'sentinel_page':
       return <SentinelPage key={view.id} id={view.id} />;
     case 'sentinel_run':
       return <SentinelRunPage key={view.runId} runId={view.runId} />;
-    case 'dashboard':
-      return <SentinelSection tab="dashboard"><DashboardPage {...(view.id ? { id: view.id } : {})} /></SentinelSection>;
-    case 'sentinel_chat':
-      return <SentinelSection tab="chat"><SentinelChatTab key={view.chat ?? 'main'} /></SentinelSection>;
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':

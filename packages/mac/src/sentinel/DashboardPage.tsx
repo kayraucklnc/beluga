@@ -1,149 +1,208 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { activityOf } from '@beluga/ui/workspace-models.js';
-import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, TILE_WIDTHS, WIDTH_WORDS, dashboardMarkdown, dashboardSentinels, gridLanding, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
+import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, GRID_COLUMNS, TILE_WIDTHS, type TileHeight, type TileWidth, WIDTH_WORDS, dashboardMarkdown, snapWidth, tileSentinelOf, dashboardSentinels, gridLanding, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
 import { COMPARE, COMPARE_LABEL, COMPARE_WORDS, type Compare } from '@beluga/core/sentinel/metrics.js';
-import type { SentinelState } from '@beluga/core/sentinel/model.js';
+import type { MetricSeries, SentinelState } from '@beluga/core/sentinel/model.js';
 import type { Args } from '@beluga/ipc/api.js';
+import { Attention } from '../chat/Attention.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
-import { Button, Empty, EmptyActions, IconButton, Tip } from '../components/ui.js';
+import { Button, IconButton, Tip } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { copyText } from '../lib/copy.js';
 import { openSheet } from '../lib/sheets.js';
-import { useActions } from '../lib/actions.js';
 import { isDrag } from '../tasks/board-drag.js';
+import { PickMenu } from '../tasks/PickMenu.js';
 import { ago } from '../tasks/tasks-model.js';
 import { ClaudeMark } from './marks.js';
-import { CompareSwitch, MetricChart, NumberTile, RowsTable, SeriesChart } from './NumberParts.js';
+import { FillChart, MetricChart, NumberTile, RowsTable, SeriesChart } from './NumberParts.js';
 import { draftsOf, jsonFence, numberWords, outputTable, refreshLine, tileCaption, tileNote, tileWords } from './numbers-model.js';
-import { askLine, namedLine } from './sentinel-model.js';
+import { askLine, inScope, namedLine } from './sentinel-model.js';
+import { ProjectIcon } from '../components/ProjectIcon.js';
+import { TINTS, setTintChoice, tintChoiceOf, useProjectTint } from './tint.js';
+import { SHOW_TILE } from '../lib/widget-links.js';
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
-import t from '../tasks/tasks.module.css';
 import n from './numbers.module.css';
 
 /**
- * Sentinel › Dashboard (docs/sentinel.md §10): anything your sentinels produced, picked up as tiles
- * in tabs: numbers with their change, series, tables, a step's latest output, a headline or report.
- * Tiles in a grid of six columns, dragged into place (the board's drag), each resized and retitled
- * from its ⋯; compare at the top for every tile (a tile can pin its own); Refresh runs the
- * sentinels it draws from one at a time; Add a Tile takes a description (your Claude builds it, and
- * sets up a draft sentinel when nothing fetches it yet) or lets you pick. Everything saves at once.
+ * At a glance (docs/sentinel.md §10, BLG-300): the board on Sentinel's page. Anything your
+ * sentinels keep or bring back, as tiles: numbers with their change, series, tables, a step's
+ * latest output, a headline or a report. Tiles sit in a grid of six columns, dragged into place
+ * (the board's drag) and resized by their corner (a bigger tile shows more: a number gets its chart);
+ * each is marked with its project when the board mixes them, and can be grouped by project. The
+ * board picker goes between boards; compare sets every tile at once; Refresh runs the sentinels it
+ * draws from one at a time; Add takes a description or lets you pick. Everything saves at once.
  */
 
-export function DashboardPage({ id }: { id?: string }) {
+/** The boards' names (the picker), and the one shown: the one asked for, else the first. */
+export function Board({ id, onPick, scope, children }: { id?: string; onPick: (id: string) => void; scope?: string; children?: React.ReactNode }) {
   const state = useSentinelState();
   const all = state.dashboards ?? [];
   const current = all.find((d) => d.id === id) ?? all[0];
-  if (!state.enabled) return <Empty icon="gauge" title="Dashboards need the Beluga app" />;
-  if (!current) return <NoDashboard />;
-  return <Page key={current.id} d={current} all={all} />;
+  if (!current) return <NoBoard onPick={onPick}>{children}</NoBoard>;
+  return (
+    <Page key={current.id} d={current} all={all} onPick={onPick} {...(scope ? { scope } : {})}>
+      {children}
+    </Page>
+  );
 }
 
-function NoDashboard() {
+/** Group the board's tiles by project (kept for this Mac). */
+const GROUPED = 'sentinel.board.grouped';
+const readGrouped = (): boolean => {
+  try {
+    return localStorage.getItem(GROUPED) === '1';
+  } catch {
+    return false;
+  }
+};
+
+/** The project a tile's sentinel works in (none: Your Mac), and its name. */
+function tileProject(state: SentinelState, tile: Tile, projects: ReadonlyArray<{ readonly id: string; readonly name: string }>): { readonly id?: string; readonly name: string; readonly sentinel?: string } | undefined {
+  const sid = tileSentinelOf(tile);
+  const item = sid ? state.items.find((i) => i.id === sid) : undefined;
+  if (!item) return undefined;
+  const p = item.projectId ? projects.find((x) => x.id === item.projectId) : undefined;
+  return p ? { id: p.id, name: p.name, sentinel: item.name } : { name: 'Your Mac', sentinel: item.name };
+}
+
+/** No board yet: a quiet strip that says what goes here, and Add (the first board is made for it). */
+function NoBoard({ onPick, children }: { onPick: (id: string) => void; children?: React.ReactNode }) {
   const api = useApi();
-  const go = useGo();
   const a = useSentinelActions();
+  const add = async (): Promise<void> => {
+    const d = await a.act(() => api.dashboard.create('Overview'));
+    if (!d) return;
+    onPick(d.id);
+    openSheet({ kind: 'add_tile', dashboardId: d.id });
+  };
   return (
-    <div className={n.page}>
-      <Empty
-        icon="gauge"
-        title="Nothing on a dashboard yet"
-        detail="Sentinel’s dashboard shows what your sentinels keep and bring back: a number and how it moved, a series, a table, what Claude wrote, an API’s answer. Make one and add tiles by describing them; the first is made for you when the first number arrives."
-        action={
-          <EmptyActions>
-            <Button variant="primary" onClick={() => void a.act(() => api.dashboard.create('Dashboard')).then((d) => d && go(d.id))}>
-              New Dashboard
-            </Button>
-            <Button onClick={() => openSheet({ kind: 'new_sentinel', way: 'recipe' })}>Try a Recipe</Button>
-          </EmptyActions>
-        }
-      />
+    <section className={n.glance} aria-label="At a glance">
+      <SectionHead title="At a glance" />
+      <button type="button" className={n.noBoard} onClick={() => void add()} data-testid="board-empty">
+        <Icon name="plus" size={14} />
+        <span>
+          <strong>Put a number here</strong>
+          <span>Revenue, open pull requests, how fast your site answers, what Claude wrote this morning: it updates each time its sentinel runs.</span>
+        </span>
+      </button>
+      {children}
+    </section>
+  );
+}
+
+/** A section's heading on Sentinel's page: its name, a hairline, and what acts on it at the end. */
+export function SectionHead({ title, count, children }: { title: string; count?: number; children?: React.ReactNode }) {
+  return (
+    <div className={n.sectionHead}>
+      <span className={n.sectionTitle}>
+        {title}
+        {count ? <span className={n.sectionCount}>{count}</span> : null}
+      </span>
+      <span className={n.sectionRule} />
+      {children}
     </div>
   );
 }
 
-const useGo = () => {
-  const actions = useActions();
-  return (id: string): void => actions.run({ type: 'view', view: { kind: 'dashboard', id } });
-};
-
-function Page({ d, all }: { d: Dashboard; all: readonly Dashboard[] }) {
+function Page({ d, all, onPick, scope, children }: { d: Dashboard; all: readonly Dashboard[]; onPick: (id: string) => void; scope?: string; children?: React.ReactNode }) {
   const api = useApi();
+  const allProjects = useApp((st) => st.projects);
+  const projects = useMemo(() => allProjects.filter((p) => p.root && !p.error), [allProjects]);
+  const [grouped, setGrouped] = useState(readGrouped);
+  const group = (on: boolean): void => {
+    setGrouped(on);
+    try {
+      localStorage.setItem(GROUPED, on ? '1' : '0');
+    } catch {
+      // Not kept: it still groups now.
+    }
+  };
   const { client } = useBeluga();
   const a = useSentinelActions();
-  const go = useGo();
   const state = useSentinelState();
   const refreshing = state.refreshing?.[d.id];
   const [renaming, setRenaming] = useState(false);
   const save = (patch: Args<'dashboard.update'>[1]): void => void a.act(() => api.dashboard.update(d.id, patch));
   const sentinels = dashboardSentinels(d).filter((sid) => state.items.some((i) => i.id === sid && !i.paused));
   const copyMarkdown = (): void => void copyText(dashboardMarkdown(d, (tile) => tileWords(state, d, tile))).then(() => toast(client, `Copied ${d.name} as Markdown`, 'success'));
+  const newBoard = (): void => void a.act(() => api.dashboard.create(`Board ${all.length + 1}`)).then((x) => x && onPick(x.id));
   const more: ActionItem[] = [
     { label: 'Rename…', icon: 'pencil', onSelect: () => setRenaming(true) },
     { label: 'Copy as Markdown', icon: 'copy', onSelect: copyMarkdown },
-    { label: 'New Dashboard', icon: 'plus', separate: true, onSelect: () => void a.act(() => api.dashboard.create(`Dashboard ${all.length + 1}`)).then((x) => x && go(x.id)) },
+    { label: 'Group by Project', icon: 'folder', checked: grouped, hint: 'Each project’s tiles under its name (drag tiles in the board as one)', onSelect: () => group(!grouped) },
+    { label: 'New Board', icon: 'plus', separate: true, onSelect: newBoard },
     {
-      label: 'Delete Dashboard…',
+      label: 'Delete Board…',
       danger: true,
       separate: true,
       onSelect: () =>
         openSheet({
           kind: 'confirm',
           title: `Delete “${d.name}”?`,
-          message: 'Its tiles go; the numbers stay with their sentinels, and other dashboards keep theirs.',
-          confirm: 'Delete Dashboard',
+          message: 'Its tiles go; the numbers stay with their sentinels, and other boards keep theirs.',
+          confirm: 'Delete Board',
           destructive: true,
           run: () => void a.act(() => api.dashboard.remove(d.id), `Deleted ${d.name}`),
         }),
     },
   ];
   return (
-    <div className={n.page} data-dashboard={d.id}>
-      <div className={n.bar}>
-        <div className={n.tabs} role="tablist" aria-label="Dashboards">
-          {all.map((x) =>
-            renaming && x.id === d.id ? (
-              <RenameTab key={x.id} name={x.name} done={(name) => {
-                setRenaming(false);
-                if (name && name !== d.name) save({ name });
-              }} />
-            ) : (
-              <button key={x.id} type="button" role="tab" className={n.tab} aria-selected={x.id === d.id} onClick={() => go(x.id)} onDoubleClick={() => x.id === d.id && setRenaming(true)}>
-                {x.name}
-              </button>
-            ),
-          )}
-          <IconButton icon="plus" label="New Dashboard" onClick={() => void a.act(() => api.dashboard.create(`Dashboard ${all.length + 1}`)).then((x) => x && go(x.id))} />
-        </div>
-        <span className={t.grow} />
-        <CompareSwitch value={d.compare} onChange={(compare) => save({ compare })} label="Compare every tile with" />
+    <section className={n.glance} data-dashboard={d.id} aria-label="At a glance">
+      <SectionHead title="At a glance">
+        {renaming ? (
+          <RenameTab
+            name={d.name}
+            done={(name) => {
+              setRenaming(false);
+              if (name && name !== d.name) save({ name });
+            }}
+          />
+        ) : (
+          <PickMenu<string>
+            label="Boards"
+            choices={all.map((x) => ({ value: x.id, label: x.name, mark: <Icon name="gauge" size={13} />, hint: `${x.tiles.length} ${x.tiles.length === 1 ? 'tile' : 'tiles'}` }))}
+            chosen={[d.id]}
+            onPick={onPick}
+            actions={[{ label: 'New Board', icon: 'plus', onSelect: newBoard }]}
+          >
+            <button type="button" className={n.headPick} aria-label={`Board: ${d.name}`} onDoubleClick={() => setRenaming(true)}>
+              {d.name}
+              <Icon name="chevronDown" size={10} />
+            </button>
+          </PickMenu>
+        )}
+        <PickMenu<Compare> label="Compare every tile with" choices={COMPARE.map((c) => ({ value: c, label: COMPARE_WORDS[c] }))} chosen={[d.compare]} onPick={(compare) => save({ compare })}>
+          <button type="button" className={n.headPick} aria-label={`Compare: ${COMPARE_WORDS[d.compare]}`}>
+            {COMPARE_WORDS[d.compare]}
+            <Icon name="chevronDown" size={10} />
+          </button>
+        </PickMenu>
         {refreshing ? (
           <span className={n.fetching} role="status" data-testid="dashboard-fetching">
             <Icon name="refresh" size={12} />
             {refreshLine(refreshing)}
           </span>
         ) : (
-          <Tip label={sentinels.length ? `Run Now on its ${sentinels.length === 1 ? 'sentinel' : `${sentinels.length} sentinels`}, one at a time` : 'Its sentinels are paused or gone'}>
-            <Button size="small" icon="refresh" disabled={!sentinels.length} onClick={() => void a.act(() => api.dashboard.refresh(d.id))}>
-              Refresh
-            </Button>
+          <Tip label={sentinels.length ? `Run its ${sentinels.length === 1 ? 'sentinel' : `${sentinels.length} sentinels`} now, one at a time` : 'Its sentinels are paused or gone'}>
+            <IconButton icon="refresh" label="Refresh" disabled={!sentinels.length} onClick={() => void a.act(() => api.dashboard.refresh(d.id))} />
           </Tip>
         )}
-        <Button size="small" variant="primary" icon="plus" onClick={() => openSheet({ kind: 'add_tile', dashboardId: d.id })}>
-          Add a Tile
-        </Button>
         <ActionsDropdown items={more}>
           <IconButton icon="more" label={`More for ${d.name}`} />
         </ActionsDropdown>
-      </div>
+      </SectionHead>
       <AskLine d={d} />
-      {d.tiles.length ? (
-        <Grid d={d} state={state} />
+      {scope ? (
+        <Grid d={d} state={state} projects={projects} tiles={d.tiles.filter((x) => x.kind !== 'divider' && inScope({ projectId: tileProject(state, x, projects)?.id }, scope) && tileProject(state, x, projects))} />
+      ) : grouped ? (
+        <GroupedGrid d={d} state={state} projects={projects} />
       ) : (
-        <Empty icon="gauge" title="Nothing on it yet" detail="Describe a tile (“my Stripe revenue per day”, “the open PR count”) and Claude puts it together, setting up a sentinel to fetch it when none does yet; or pick a number, a series, a table or a step’s output yourself." action={<Button onClick={() => openSheet({ kind: 'add_tile', dashboardId: d.id })}>Add a Tile</Button>} />
+        <Grid d={d} state={state} projects={projects} />
       )}
-    </div>
+      {children}
+    </section>
   );
 }
 
@@ -188,6 +247,8 @@ function AskLine({ d }: { d: Dashboard }) {
           </Button>
         </div>
       ) : null}
+      {/* What Claude needs your OK for while it builds this (it works in a quiet chat of its own). */}
+      {ask ? <Attention channel={ask.channel} /> : null}
       {drafts.map((x) => (
         <div key={x.id} className={n.draft} data-testid="dashboard-draft" data-sentinel={x.id}>
           <ClaudeMark />
@@ -220,7 +281,33 @@ interface Drag {
 }
 
 /** The tiles, dragged into place: a pointer that moves past a few pixels lifts the tile; where it drops is worked out from the others' boxes. */
-function Grid({ d, state }: { d: Dashboard; state: SentinelState }) {
+/** Tiles under their project's name (the board's own order inside each); dividers are left out, and tiles aren't dragged here. */
+function GroupedGrid({ d, state, projects }: { d: Dashboard; state: SentinelState; projects: ReadonlyArray<{ readonly id: string; readonly name: string }> }) {
+  const groups = new Map<string, { id?: string; name: string; tiles: Tile[] }>();
+  for (const tile of d.tiles) {
+    if (tile.kind === 'divider') continue;
+    const p = tileProject(state, tile, projects) ?? { name: 'Gone' };
+    const key = p.id ?? p.name;
+    const g = groups.get(key) ?? { ...(p.id ? { id: p.id } : {}), name: p.name, tiles: [] };
+    g.tiles.push(tile);
+    groups.set(key, g);
+  }
+  return (
+    <>
+      {[...groups.values()].map((g) => (
+        <div key={g.id ?? g.name} className={n.tileGroup} role="group" aria-label={g.name}>
+          <div className={n.tileGroupHead}>
+            {g.id ? <ProjectIcon id={g.id} name={g.name} size={14} /> : <Icon name="laptop" size={13} />}
+            {g.name}
+          </div>
+          <Grid d={d} state={state} tiles={g.tiles} projects={projects} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: SentinelState; tiles?: readonly Tile[]; projects?: ReadonlyArray<{ readonly id: string; readonly name: string }> }) {
   const api = useApi();
   const a = useSentinelActions();
   const grid = useRef<HTMLDivElement>(null);
@@ -257,7 +344,9 @@ function Grid({ d, state }: { d: Dashboard; state: SentinelState }) {
   }, [drag !== undefined, a, api, d.id]);
 
   const down = (e: React.PointerEvent<HTMLElement>, id: string): void => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('button, input, a, [role="menu"], .recharts-wrapper')) return;
+    // A part of the board (one project's tiles) keeps the board's order: tiles move on the whole board.
+    if (only) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button, input, a, [role="menu"], [data-resize], .recharts-wrapper')) return;
     const box = (e.currentTarget.closest('[data-tile]') as HTMLElement).getBoundingClientRect();
     start.current = { id, x: e.clientX, y: e.clientY, box };
   };
@@ -268,14 +357,16 @@ function Grid({ d, state }: { d: Dashboard; state: SentinelState }) {
     setDrag({ id: s.id, dx: s.x - s.box.left, dy: s.y - s.box.top, w: s.box.width, h: s.box.height, x: e.clientX, y: e.clientY, index: undefined });
   };
 
-  const rest = drag ? d.tiles.filter((x) => x.id !== drag.id) : d.tiles;
-  const lifted = drag ? d.tiles.find((x) => x.id === drag.id) : undefined;
+  const tiles = only ?? d.tiles;
+  const rest = drag ? tiles.filter((x) => x.id !== drag.id) : tiles;
+  const lifted = drag ? tiles.find((x) => x.id === drag.id) : undefined;
+
   const at = drag?.index;
   return (
     <div ref={grid} className={n.grid} role="list" aria-label={`${d.name}’s tiles`} onPointerMove={moveStart} onPointerUp={() => (start.current = undefined)}>
       {rest.map((tile, i) => (
         <TileSlot key={tile.id} before={at === i && lifted ? lifted : undefined}>
-          <TileCell d={d} tile={tile} state={state} onPointerDown={(e) => down(e, tile.id)} />
+          <TileCell d={d} tile={tile} state={state} source={tileProject(state, tile, projects)} onPointerDown={(e) => down(e, tile.id)} />
         </TileSlot>
       ))}
       {lifted && at !== undefined && at >= rest.length ? <div className={n.gap} data-w={lifted.width} style={{ gridColumn: `span ${lifted.kind === 'divider' ? 6 : lifted.width}` }} /> : null}
@@ -284,6 +375,12 @@ function Grid({ d, state }: { d: Dashboard; state: SentinelState }) {
           <TileCell d={d} tile={lifted} state={state} ghost />
         </div>
       ) : null}
+      {drag || only ? null : (
+        <button type="button" className={n.addCell} data-first={d.tiles.length ? undefined : ''} onClick={() => openSheet({ kind: 'add_tile', dashboardId: d.id })} aria-label="Add to the board">
+          <Icon name="plus" size={14} />
+          <span>{d.tiles.length ? 'Add' : 'Add a number, a chart or what Claude wrote'}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -298,12 +395,41 @@ function TileSlot({ before, children }: { before: Tile | undefined; children: Re
 }
 
 const noop = (): void => undefined;
+/** The grid's gap (numbers.module.css .grid), for working out a column's width. */
+const GAP = 10;
 const SHOW_WORDS: Readonly<Record<OutputShow, string>> = { auto: 'As it reads', markdown: 'Markdown', tree: 'A JSON tree', table: 'A table', text: 'Plain text' };
 
-function TileCell({ d, tile, state, onPointerDown, ghost }: { d: Dashboard; tile: Tile; state: SentinelState; onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void; ghost?: boolean }) {
+type Source = ReturnType<typeof tileProject>;
+
+function TileCell({ d, tile, state, source, onPointerDown, ghost }: { d: Dashboard; tile: Tile; state: SentinelState; source?: Source; onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void; ghost?: boolean }) {
+  // Its project's logo in the corner, and a soft wash of the project's colour (changeable from ⋯ › Tint).
+  const tint = useProjectTint(source?.id, source?.name ?? '');
+  const mark = source ? (
+    <Tip label={`From ${source.sentinel} · ${source.name}`}>
+      <span className={n.source} aria-label={`From ${source.sentinel}, ${source.name}`}>
+        {source.id ? <ProjectIcon id={source.id} name={source.name} size={16} /> : <Icon name="laptop" size={13} />}
+      </span>
+    </Tip>
+  ) : null;
   const api = useApi();
   const a = useSentinelActions();
   const [renaming, setRenaming] = useState(false);
+  // Dragging its corner: the size it would land on, shown while the pointer moves.
+  const [sizing, setSizing] = useState<{ readonly w: TileWidth; readonly h: TileHeight }>();
+  // A desktop widget of this tile was clicked: the board scrolls to it and marks it for a moment.
+  const [shown, setShown] = useState(false);
+  const cellRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (ghost) return;
+    const on = (e: Event): void => {
+      if ((e as CustomEvent<string>).detail !== tile.id) return;
+      cellRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setShown(true);
+      setTimeout(() => setShown(false), 1600);
+    };
+    document.addEventListener(SHOW_TILE, on);
+    return () => document.removeEventListener(SHOW_TILE, on);
+  }, [tile.id, ghost]);
   const onRename = (): void => setRenaming(true);
   const cap = tileCaption(state, tile);
   const note = tileNote(cap.state);
@@ -327,8 +453,75 @@ function TileCell({ d, tile, state, onPointerDown, ghost }: { d: Dashboard; tile
           ...(output?.runId ? [{ label: 'Open the Run', icon: 'arrowRight' as const, separate: true, onSelect: () => a.openRun(output.runId) }] : []),
           ...(sentinelId && cap.state !== 'gone' ? [{ label: 'Open Its Sentinel', icon: 'sentinel' as const, ...(output?.runId ? {} : { separate: true }), onSelect: () => a.open(sentinelId) }] : []),
         ]),
+    ...(tile.kind === 'divider'
+      ? []
+      : [
+          {
+            label: 'Add to Desktop…',
+            icon: 'laptop' as const,
+            hint: 'As a macOS widget that updates when its sentinel runs',
+            separate: true,
+            onSelect: () =>
+              openSheet({
+                kind: 'confirm',
+                title: `Put “${cap.title}” on your desktop`,
+                message: `Right-click your desktop and choose Edit Widgets, search for Beluga, and drag Board tile where you want it (small, medium or large). Then right-click the widget, choose Edit “Board tile”, and pick “${cap.title}” (${d.name}). It updates each time its sentinel runs, and clicking it opens this board. macOS doesn’t let an app place a widget itself.`,
+                confirm: 'Got It',
+                run: noop,
+              }),
+          },
+        ]),
+    ...(source?.id
+      ? [
+          {
+            label: 'Tint',
+            icon: 'palette' as const,
+            hint: `For every tile from ${source.name}`,
+            separate: true,
+            onSelect: noop,
+            submenu: [
+              { label: 'From its icon', checked: tintChoiceOf(source.id) === 'auto', onSelect: () => setTintChoice(source.id!, 'auto') },
+              ...TINTS.map((t) => ({ label: t.label, swatch: t.color, checked: tintChoiceOf(source.id!) === t.id, onSelect: () => setTintChoice(source.id!, t.id) })),
+              { label: 'None', checked: tintChoiceOf(source.id) === 'none', onSelect: () => setTintChoice(source.id!, 'none') },
+            ],
+          },
+        ]
+      : []),
     { label: 'Remove Tile', danger: true, separate: true, onSelect: () => void a.act(() => api.dashboard.removeTile(d.id, tile.id)) },
   ];
+  /** The corner: drag it across the grid's columns (it snaps to 1, 2, 3, 4 or 6 of 6) and down for tall. */
+  const resize = (e: React.PointerEvent<HTMLElement>): void => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cell = e.currentTarget.closest<HTMLElement>('[data-tile]');
+    const grid = cell?.parentElement;
+    if (!cell || !grid) return;
+    const box = cell.getBoundingClientRect();
+    const column = (grid.getBoundingClientRect().width + GAP) / GRID_COLUMNS;
+    const from = { w: tile.width, h: tile.height ?? 1 };
+    let to = from;
+    const move = (ev: PointerEvent): void => {
+      const tall = from.h === 2 ? ev.clientY - box.top > box.height * 0.7 : ev.clientY - box.top > box.height * 1.4;
+      to = { w: snapWidth((ev.clientX - box.left + GAP) / column), h: tall ? 2 : 1 };
+      setSizing(to);
+    };
+    const up = (): void => {
+      window.removeEventListener('pointermove', move);
+      delete document.documentElement.dataset.dragging;
+      setSizing(undefined);
+      if (to.w !== from.w || to.h !== from.h) update({ width: to.w, height: to.h });
+    };
+    document.documentElement.dataset.dragging = 'resize';
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+  };
+  const corner = ghost ? null : (
+    <>
+      <span className={n.resize} data-resize="" onPointerDown={resize} role="separator" aria-label={`Resize ${cap.title || 'this tile'}: drag the corner`} title="Drag to resize" />
+      {sizing ? <span className={n.sizing}>{WIDTH_WORDS[sizing.w]}{sizing.h === 2 ? ' · tall' : ''}</span> : null}
+    </>
+  );
   const more = ghost ? null : (
     <ActionsDropdown items={menu}>
       <IconButton icon="more" label={`More for ${cap.title || 'this tile'}`} className={n.cellMore} />
@@ -346,6 +539,7 @@ function TileCell({ d, tile, state, onPointerDown, ghost }: { d: Dashboard; tile
   }
   const head = (
     <div className={n.cellHead}>
+      {mark}
       {renaming ? <TitleInput title={tile.title ?? cap.title} done={(title) => (setRenaming(false), title !== (tile.title ?? cap.title) && update({ title }))} /> : <span className={n.cellTitle}>{cap.title}</span>}
       {cap.from && tile.kind !== 'text' && cap.from !== cap.title ? <span className={n.cellFrom}>{cap.from}</span> : null}
       {note ? <span className={n.note}>{note}</span> : tile.compare && tile.kind !== 'number' ? <span className={n.note}>{COMPARE_WORDS[tile.compare]}</span> : null}
@@ -353,16 +547,17 @@ function TileCell({ d, tile, state, onPointerDown, ghost }: { d: Dashboard; tile
     </div>
   );
   return (
-    <div className={n.cell} data-tile={tile.id} data-kind={tile.kind} data-w={tile.width} data-h={tile.height ?? 1} data-state={cap.state} role="listitem" onPointerDown={onPointerDown}>
+    <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={sizing?.w ?? tile.width} data-h={sizing?.h ?? tile.height ?? 1} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
       {tile.kind === 'number' ? null : head}
       <div className={n.cellBody}>
-        <TileBody d={d} tile={tile} state={state} compare={compare} note={note} more={tile.kind === 'number' ? more : null} />
+        <TileBody d={d} tile={tile} state={state} compare={compare} note={note} lead={tile.kind === 'number' ? mark : null} more={tile.kind === 'number' ? more : null} />
       </div>
+      {corner}
     </div>
   );
 }
 
-function TileBody({ d, tile, state, compare, note, more }: { d: Dashboard; tile: Tile; state: SentinelState; compare: Compare; note: string | undefined; more: React.ReactNode }) {
+function TileBody({ d, tile, state, compare, note, lead, more }: { d: Dashboard; tile: Tile; state: SentinelState; compare: Compare; note: string | undefined; lead?: React.ReactNode; more: React.ReactNode }) {
   const a = useSentinelActions();
   if (tile.kind === 'number') {
     const m = metricOf(state, tile.metric);
@@ -374,12 +569,7 @@ function TileBody({ d, tile, state, compare, note, more }: { d: Dashboard; tile:
           {more}
         </div>
       );
-    const w = numberWords(m, compare, tileCaption(state, tile).title);
-    return (
-      <NumberTile w={w} {...(note ? { note } : {})}>
-        {more}
-      </NumberTile>
-    );
+    return <NumberFit m={m} compare={compare} title={tileCaption(state, tile).title} note={note} lead={lead} more={more} onRun={(runId) => a.openRun(runId)} />;
   }
   const tall = tile.height === 2;
   if (tile.kind === 'series') {
@@ -397,6 +587,24 @@ function TileBody({ d, tile, state, compare, note, more }: { d: Dashboard; tile:
   }
   if (tile.kind === 'output') return <OutputTile tile={tile} state={state} note={note} />;
   return <TextTile tile={tile} state={state} />;
+}
+
+/**
+ * A number that fits its tile: the value, its change and a sparkline when small; given more room
+ * (taller or wider), its points over time fill the rest and the sparkline steps aside. The value
+ * grows with the tile.
+ */
+function NumberFit({ m, compare, title, note, lead, more, onRun }: { m: MetricSeries; compare: Compare; title: string; note: string | undefined; lead?: React.ReactNode; more: React.ReactNode; onRun: (runId: string) => void }) {
+  const [filled, setFilled] = useState(false);
+  const series = useMemo(() => [m], [m]);
+  return (
+    <div className={n.numberFit} data-look={filled ? 'chart' : 'number'}>
+      <NumberTile w={numberWords(m, compare, title)} spark={!filled} lead={lead} {...(note ? { note } : {})}>
+        {more}
+      </NumberTile>
+      <FillChart series={series} onRun={onRun} onFit={setFilled} />
+    </div>
+  );
 }
 
 /** A tile's title, renamed in place (empty: its metric's or step's name again). */

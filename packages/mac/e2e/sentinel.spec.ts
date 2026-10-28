@@ -38,15 +38,16 @@ test('the list shows the demo’s sentinels, grouped by project, with their last
   await openList(page);
   const rows = main(page).locator('[data-sentinel]');
   await expect(rows).toHaveCount(11);
-  await expect(main(page).getByRole('row', { name: /^Morning brief, Every day at 7:00/ })).toContainText('Done');
+  // Each row leads with what it found.
+  await expect(main(page).getByRole('row', { name: /^Morning brief, Every day at 7:00/ })).toContainText('3 commits landed');
   await expect(main(page).getByRole('row', { name: /^Nightly tests/ })).toContainText('Paused after 3 failures in a row');
   await expect(main(page).getByRole('row', { name: /^Fix what broke/ })).toContainText('Needs you');
   // The demo's run going now is the recorded one: nothing caught up, nothing failed.
   await expect(main(page).getByRole('row', { name: /^Watch the web/ })).toContainText('Running');
   await expect(main(page).getByRole('row', { name: /^Watch the web/ })).not.toContainText('Failed');
-  await page.getByRole('tab', { name: /Paused/ }).click();
-  await expect(rows).toHaveCount(2);
-  await page.getByRole('tab', { name: /^All/ }).click();
+  await main(page).getByRole('textbox', { name: 'Find a sentinel' }).fill('nightly');
+  await expect(rows).toHaveCount(1);
+  await main(page).getByRole('textbox', { name: 'Find a sentinel' }).fill('');
   await expect(rows).toHaveCount(11);
   await shoot(page, 'list');
 });
@@ -277,37 +278,52 @@ test('Keep the numbers on a page: what it reads, each number with where it is, i
   await shoot(page, 'measure-step');
 });
 
-test('one Sentinel row, three tabs: Sentinels · Dashboard · Chat; the old Dashboard links land on its tab', async ({ page }) => {
+test('one Sentinel row, one page: the old Dashboard and Chat links land on it', async ({ page }) => {
   await openList(page);
-  // No Dashboard row of its own in the sidebar: it's Sentinel's.
+  // No Dashboard row of its own in the sidebar, and no tabs: the board and the chat are Sentinel's page.
   await expect(sidebar(page).getByRole('button', { name: /^Dashboard/ })).toHaveCount(0);
-  const tabs = main(page).getByRole('tablist', { name: 'Sentinel' });
-  await expect(tabs.getByRole('tab', { name: 'Sentinels' })).toHaveAttribute('aria-selected', 'true');
-  await tabs.getByRole('tab', { name: 'Dashboard' }).click();
+  await expect(main(page).getByRole('tablist', { name: 'Sentinel' })).toHaveCount(0);
   await expect(main(page).locator('[data-dashboard]')).toBeVisible({ timeout: 20_000 });
-  await expect(tabs.getByRole('tab', { name: 'Dashboard' })).toHaveAttribute('aria-selected', 'true');
-  // The sidebar's Sentinel row stays selected on every tab.
-  await expect(sidebar(page).getByRole('button', { name: /^Sentinel/ })).toHaveAttribute('aria-current', /.+/);
-  await tabs.getByRole('tab', { name: 'Chat' }).click();
+  // Ask Sentinel is docked beside the page.
   await expect(main(page).locator('[data-sentinel-chat]')).toBeVisible();
-  await tabs.getByRole('tab', { name: 'Sentinels' }).click();
-  await expect(main(page).locator('[data-sentinel]').first()).toBeVisible();
-  // ⌘K › Go to Dashboard still works: it lands on the tab.
+  // The sidebar's Sentinel row stays selected with the chat open.
+  await expect(sidebar(page).getByRole('button', { name: /^Sentinel/ })).toHaveAttribute('aria-current', /.+/);
+  await main(page).getByRole('complementary', { name: 'Ask Sentinel' }).getByRole('button', { name: 'Close' }).click();
+  await expect(main(page).locator('[data-sentinel-chat]')).toHaveCount(0);
+  // ⌘K › Go to Dashboard still works: it lands on the page, the board in view.
   await page.keyboard.press('Meta+k');
   await page.keyboard.type('Go to Dashboard');
   await page.keyboard.press('Enter');
-  await expect(main(page).locator('[data-sentinel-tab="dashboard"]')).toBeVisible();
+  await expect(main(page).getByRole('region', { name: 'At a glance' })).toBeVisible();
 });
+
+/** The board picker's menu (named by its button, "Board: Overview"). */
+const boardsMenu = (page: Page) => page.getByRole('menu', { name: /^Board: / });
+
+/** Open At a glance's board picker (the page may still be settling as the demo's runs land: try again until it's open). */
+async function openBoards(page: Page): Promise<void> {
+  await expect(async () => {
+    if (!(await boardsMenu(page).isVisible())) await main(page).getByRole('button', { name: /^Board: / }).click();
+    await expect(boardsMenu(page)).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+}
+
+/** Show another board in At a glance (its picker). */
+async function pickBoard(page: Page, name: string): Promise<void> {
+  await openBoards(page);
+  await boardsMenu(page).getByText(name, { exact: true }).click();
+  await expect(main(page).getByRole('button', { name: `Board: ${name}` })).toBeVisible();
+}
 
 test('the Dashboard: every kind of tile (numbers, series, a table, outputs from Claude and from an API, text, dividers), compare, Refresh', async ({ page }) => {
   await openList(page);
-  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Dashboard' }).click();
   const board = main(page).locator('[data-dashboard]');
   await expect(board).toBeVisible({ timeout: 20_000 });
-  const boards = main(page).getByRole('tablist', { name: 'Dashboards' });
-  await expect(boards.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
-  await expect(boards.getByRole('tab', { name: 'Revenue' })).toBeVisible();
-  await expect(boards.getByRole('tab', { name: 'Ops' })).toBeVisible();
+  await expect(main(page).getByRole('button', { name: 'Board: Overview' })).toBeVisible();
+  await openBoards(page);
+  await expect(boardsMenu(page)).toContainText('Revenue');
+  await expect(boardsMenu(page)).toContainText('Ops');
+  await page.keyboard.press('Escape');
   for (const kind of ['number', 'series', 'table', 'output', 'text', 'divider']) await expect(board.locator(`[data-kind="${kind}"]`).first()).toBeVisible();
   await expect(board.locator('[data-kind="number"]').first()).toContainText('$3,412');
   // A series over time and a kept array (signups by day, as bars).
@@ -338,11 +354,13 @@ test('the Dashboard: every kind of tile (numbers, series, a table, outputs from 
   await page.getByRole('menuitem', { name: 'A table' }).or(page.getByRole('menuitemcheckbox', { name: 'A table' })).focus();
   await page.keyboard.press('Enter');
   await expect(youtube.locator('[data-look="table"]')).toContainText('youtube#channel');
-  await main(page).getByRole('tablist', { name: 'Compare every tile with' }).getByRole('tab', { name: 'Last week' }).click();
+  await main(page).getByRole('button', { name: /^Compare: / }).click();
+  await page.getByRole('menu', { name: /^Compare: / }).getByText('vs last week').click();
   await expect(board.locator('[data-kind="number"]').first()).toContainText('vs last week');
-  await main(page).getByRole('tablist', { name: 'Compare every tile with' }).getByRole('tab', { name: 'Previous' }).click();
+  await main(page).getByRole('button', { name: /^Compare: / }).click();
+  await page.getByRole('menu', { name: /^Compare: / }).getByText('vs the run before').click();
   // Refresh on Ops runs its sentinels one at a time (Last job run is paused: two run).
-  await boards.getByRole('tab', { name: 'Ops' }).click();
+  await pickBoard(page, 'Ops');
   await expect(board.locator('[data-tile]')).toHaveCount(4);
   await main(page).getByRole('button', { name: 'Refresh' }).click();
   await expect(main(page).getByTestId('dashboard-fetching')).toContainText(/Fetching… \d of 2/);
@@ -351,13 +369,11 @@ test('the Dashboard: every kind of tile (numbers, series, a table, outputs from 
 
 test('Add a Tile takes a description: Claude adds it, and sets up a draft sentinel when nothing fetches it yet', async ({ page }) => {
   await openList(page);
-  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Dashboard' }).click();
   const board = main(page).locator('[data-dashboard]');
-  await main(page).getByRole('tablist', { name: 'Dashboards' }).getByRole('tab', { name: 'Ops' }).click();
+  await pickBoard(page, 'Ops');
   await expect(board.locator('[data-tile]')).toHaveCount(4);
-  await main(page).getByRole('button', { name: 'Add a Tile' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Add a Tile' });
-  await expect(sheet.getByRole('tab', { name: /Describe it/ })).toHaveAttribute('aria-selected', 'true');
+  await main(page).getByRole('button', { name: 'Add to the board' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Add to Ops' });
   await sheet.getByRole('textbox', { name: 'What should it show?' }).fill('the open PR count');
   await shoot(page, 'add-tile-describe');
   await sheet.getByRole('button', { name: 'Ask Claude' }).click();
@@ -378,21 +394,27 @@ test('Add a Tile takes a description: Claude adds it, and sets up a draft sentin
   // Pick it yourself is one tap away: a series of a kept array, sized.
   await main(page).getByRole('button', { name: /^Back/ }).first().click().catch(() => undefined);
   await openList(page);
-  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Dashboard' }).click();
-  await main(page).getByRole('tablist', { name: 'Dashboards' }).getByRole('tab', { name: 'Ops' }).click();
-  await main(page).getByRole('button', { name: 'Add a Tile' }).click();
-  await sheet.getByRole('tab', { name: /Pick it yourself/ }).click();
-  await sheet.getByRole('tab', { name: 'Series' }).click();
-  await sheet.getByRole('checkbox', { name: /Signups by day/ }).or(sheet.getByRole('radio', { name: /Signups by day/ })).click();
+  await pickBoard(page, 'Ops');
+  await main(page).getByRole('button', { name: 'Add to the board' }).click();
+  // Pick it: what's kept on the left, how it looks on the right (pictures, sizes as shapes, a preview).
+  await sheet.getByRole('option', { name: /^Signups by day/ }).first().click();
+  await expect(sheet.getByRole('radiogroup', { name: 'Show it as' }).getByRole('radio')).toHaveCount(2);
+  await sheet.getByRole('radio', { name: 'Bars' }).click();
+  await sheet.getByRole('radiogroup', { name: 'Size' }).getByRole('radio', { name: 'Big' }).click();
   await expect(sheet.getByTestId('tile-preview').locator('.recharts-surface')).toBeVisible();
   await shoot(page, 'add-tile-pick');
-  await sheet.getByRole('button', { name: 'Add Tile' }).click();
+  // Somewhere new asks what from it, with ideas.
+  await sheet.locator('[data-source="stripe"]').first().click();
+  await expect(sheet.getByRole('button', { name: 'Revenue per day' })).toBeVisible();
+  await shoot(page, 'add-tile-new');
+  await sheet.getByRole('option', { name: /^Signups by day/ }).first().click();
+  await sheet.getByRole('radio', { name: 'Bars' }).click();
+  await sheet.getByRole('button', { name: 'Add to Ops' }).click();
   await expect(board.locator('[data-tile]')).toHaveCount(6);
 });
 
 test('the Sentinel chat: its own conversation about all of Sentinel; a delete asks first; Clear and New Chat', async ({ page }) => {
   await openList(page);
-  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Chat' }).click();
   const chat = main(page).locator('[data-sentinel-chat]');
   await expect(chat).toBeVisible();
   // The demo's short exchange.
@@ -412,14 +434,12 @@ test('the Sentinel chat: its own conversation about all of Sentinel; a delete as
   await shoot(page, 'chat-delete-asks');
   await card.getByRole('button', { name: 'Decline' }).click();
   await expect(chat).toContainText('You said no, so “Site speed” keeps watching.', { timeout: 30_000 });
-  // It still watches.
-  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Sentinels' }).click();
+  // It still watches (the page is beside the chat).
   await expect(main(page).getByRole('row', { name: /^Site speed/ })).toBeVisible();
-  await main(page).getByRole('tablist', { name: 'Sentinel' }).getByRole('tab', { name: 'Chat' }).click();
   // Clear empties it (the chat stays); New Chat makes another beside it, the picker goes between them.
   await chat.getByRole('button', { name: 'More for this chat' }).click();
   await page.getByRole('menuitem', { name: /^Clear/ }).click();
-  await expect(chat.getByText('Talk to Sentinel')).toBeVisible();
+  await expect(chat.getByText('Ask Sentinel', { exact: true })).toBeVisible();
   await chat.getByRole('button', { name: 'New Chat' }).click();
   await expect(main(page).locator('[data-sentinel-chat]')).not.toHaveAttribute('data-sentinel-chat', 'main');
   await expect(main(page).getByRole('button', { name: /^Chat: / })).toBeVisible();

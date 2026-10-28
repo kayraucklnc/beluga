@@ -55,6 +55,7 @@
       "entitlements": "entitlements.plist",
       "hardenedRuntime": true,
       "signingIdentity": "-",
+      "files": { "PlugIns/BelugaWidgets.appex": "../widgets/build/BelugaWidgets.appex" },
       "dmg": {
         "background": "../dmg/background.png",
         "windowSize": { "width": 660, "height": 420 },

@@ -1144,12 +1144,15 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
   }
 }
 
-/** One line from a report or an output: its first line, without Markdown marks. */
+/**
+ * One line from a report or an output: its first line, without Markdown marks. An underscore inside a
+ * word stays (`$DATABASE_URL`, snake_case): only emphasis around words goes.
+ */
 export function firstLine(text: string, max = 140): string {
   const line =
     text
       .split('\n')
-      .map((l) => l.replace(/^#+\s*|^[-*>]\s+/, '').replace(/[*_`]/g, '').trim())
+      .map((l) => l.replace(/^#+\s*|^[-*>]\s+/, '').replace(/[*`]/g, '').replace(/(^|[^A-Za-z0-9])_+/g, '$1').replace(/_+(?![A-Za-z0-9])/g, '').trim())
       .find(Boolean) ?? '';
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }

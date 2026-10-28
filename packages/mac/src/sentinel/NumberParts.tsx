@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo } from 'react';
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type View, readView } from '@beluga/shared/view-spec.js';
 import type { MetricSeries } from '@beluga/core/sentinel/model.js';
 import { Icon } from '../components/Icon.js';
@@ -24,22 +24,23 @@ export function CompareSwitch({ value, onChange, label = 'Compare with' }: { val
 }
 
 /** A number as a stat tile. `note`: a quiet word in its corner ("paused", "vs last week" when pinned). */
-export function NumberTile({ w, note, selected, onClick, className, children }: { w: NumberWords; note?: string; selected?: boolean; onClick?: () => void; className?: string; children?: React.ReactNode }) {
+export function NumberTile({ w, note, selected, onClick, className, spark = true, lead, children }: { w: NumberWords; note?: string; selected?: boolean; onClick?: () => void; className?: string; spark?: boolean; lead?: React.ReactNode; children?: React.ReactNode }) {
   const good = w.tone === 'good' ? true : w.tone === 'bad' ? false : undefined;
   const up = w.change?.startsWith('+');
   const body = (
     <>
       <div className={v.tileLabel}>
+        {lead}
         <span className={n.tileLabelText}>{w.label}</span>
         {note ? <span className={n.note}>{note}</span> : null}
         {children}
       </div>
       <div className={v.tileMain}>
-        <div className={v.tileValue}>
+        <div className={v.tileValue} data-value="">
           {w.value}
           {w.unit ? <span className={v.tileUnit}>{w.unit}</span> : null}
         </div>
-        {w.trend.length > 1 ? <Spark values={w.trend} good={good} /> : null}
+        {spark && w.trend.length > 1 ? <Spark values={w.trend} good={good} /> : null}
       </div>
       <div className={cx(v.tileFoot, n.foot)}>
         {w.change ? (
@@ -107,5 +108,53 @@ function TableBody({ view }: { view: View }) {
     <div className={n.table}>
       <DataTable view={view} data={data} full={false} />
     </div>
+  );
+}
+
+/**
+ * A chart that takes whatever room is left under it (a board tile grown tall or wide): it measures
+ * its box and draws to fit, and draws nothing when there's too little room for a chart to read.
+ * `onFit` hears whether it drew, so the tile can drop its sparkline then.
+ */
+export function FillChart({ series, kind = 'area', onRun, onFit, min = 64 }: { series: readonly MetricSeries[]; kind?: 'line' | 'area' | 'bar'; onRun?: (runId: string) => void; onFit?: (fits: boolean) => void; min?: number }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = (): void => setHeight(Math.floor(el.getBoundingClientRect().height));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fits = height >= min && series.some((m) => m.points.length > 1);
+  // The chart engine draws 120 px and up (with its axes); less room than that gets a clean area of the points.
+  const small = height < 138;
+  useEffect(() => onFit?.(fits), [fits, onFit]);
+  // Steps of 8 px: a drag across the grid redraws the chart a few times, not on every pixel.
+  const drawn = Math.max(min - 18, Math.floor((height - 18) / 8) * 8);
+  return (
+    <div ref={box} className={n.fill} data-fits={fits || undefined}>
+      {/* Laid over its box, so the chart never makes the tile taller than its row. */}
+      {fits ? (
+        <div className={n.fillIn}>{small ? <AreaFill values={series[0]!.points.map((p) => p.value)} /> : <MetricChart series={series} kind={kind} height={drawn} {...(onRun ? { onRun } : {})} />}</div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A number's points as a soft area that stretches to its box (no axes: for a tile with a little room). */
+function AreaFill({ values }: { values: readonly number[] }) {
+  if (values.length < 2) return null;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo || 1;
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 100},${100 - ((v - lo) / span) * 86 - 7}`);
+  return (
+    <svg className={n.areaFill} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <polygon points={`0,100 ${pts.join(' ')} 100,100`} className={n.areaFillArea} />
+      <polyline points={pts.join(' ')} className={n.areaFillLine} vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }

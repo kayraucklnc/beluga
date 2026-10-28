@@ -169,6 +169,12 @@ function main() {
   } catch (e) {
     throw new Error(`${built}.app's code signature doesn't verify, so downloaded copies would say "damaged" (signingIdentity in tauri.conf.json):\n${e.stderr ?? e.message}`);
   }
+  // The desktop widgets (BLG-309) keep their own sandbox: signing the app with --deep would take it
+  // away, and macOS then drops the widgets without a word.
+  const widgets = path.join(bundle, `macos/${built}.app/Contents/PlugIns/BelugaWidgets.appex`);
+  if (!existsSync(widgets)) throw new Error(`${built}.app has no desktop widgets (Contents/PlugIns/BelugaWidgets.appex): did scripts/build-widgets.mjs run?`);
+  const widgetRights = execFileSync('codesign', ['-d', '--entitlements', '-', '--xml', widgets], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+  if (!widgetRights.includes('com.apple.security.app-sandbox')) throw new Error(`${built}.app's widgets lost their sandbox entitlement (was the app signed with --deep?), so macOS would drop them`);
   if (!opts.flags.has('ad-hoc')) {
     const requirement = execFileSync('codesign', ['-d', '-r-', path.join(bundle, `macos/${built}.app`)], { stdio: ['ignore', 'pipe', 'pipe'] });
     if (pinsOneBuild(requirement.toString())) {

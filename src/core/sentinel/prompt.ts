@@ -79,7 +79,7 @@ export function sentinelNote(): string {
   return [
     '',
     'Sentinel: Beluga runs watchers for the user on a schedule, by hand, after another one, or when something happens (GitHub, Stripe, a site going down, Sentry, a webhook, Beluga itself) (mcp__beluga_sentinel__*: sentinel_list,',
-    'sentinel_get, sentinel_create, sentinel_update, sentinel_run, sentinel_pause, sentinel_remove). When the user asks for something to',
+    'sentinel_get, sentinel_create, sentinel_update, sentinel_run, sentinel_test, sentinel_try_source, sentinel_pause, sentinel_remove). When the user asks for something to',
     'happen regularly ("every morning…"), offer to set one up with sentinel_create; it starts paused, so say so and link it as',
     '`sentinel:<id>` (inline code) for them to turn on. "Make the morning brief weekly" is sentinel_update. You can run one that is on and',
     'pause one, but never turn one on: that is the user’s, from the Mac or the phone. A change that adds or edits a script, a service',
@@ -87,8 +87,27 @@ export function sentinelNote(): string {
     'Sentinels can keep numbers, series, rows and outputs (a Keep the numbers step: subscribers, revenue per day, open issues, an API’s answer).',
     'metric_list and metric_read(sentinel, name, since) (mcp__beluga_dashboard__*) answer "what were subscribers a month ago"; dashboard_list,',
     'dashboard_create and dashboard_add_tile arrange them on the user’s dashboards (Sentinel › Dashboard). dashboard_remove asks them first.',
+    ...DATA_LINES,
   ].join('\n');
 }
+
+/**
+ * How to build a sentinel from data (BLG-304): look before writing the query, use the project's own
+ * variables, and show the preview setup answers with. In every brief that sets sentinels up.
+ */
+const DATA_LINES = [
+  'Keeping numbers from a database or an API: read the schema first, with mcp__beluga_sentinel__sentinel_try_source (it runs a source once,',
+  'read-only, with the project’s variables): the columns of every table you join, how the foreign keys actually link (which column holds',
+  'which id; a user id may match profiles.auth_user_id, not profiles.id), and parent/child rows that would double-count (chunks or retries',
+  'pointing at a parent_job_id: count the parents). Look at a few real rows, then try the query itself. For a table of events (jobs,',
+  'orders, signups), include who did it when the data has a user (their name or email). When a column’s meaning isn’t obvious (is_ext, a',
+  'status code), ask the user instead of guessing. Leave a postgres source without url or env: it uses the project’s existing variables',
+  '(DATABASE_URL, or Supabase’s; Supabase’s session pooler is found by itself); never write a connection string or a password into it.',
+  'sentinel_create and sentinel_update run each source they add or change once before saving, and save nothing when one can’t connect or',
+  'its query fails: fix it and call again. They answer with a preview (the first rows, how empty each column is, columns flagged as empty in',
+  'nearly every row): show the user that preview before you say it’s done, and fix the join or drop a flagged column. sentinel_test runs a',
+  'sentinel’s sources again, paused or not, without turning it on, and keeps what they find so its tiles fill: use it to check a fix.',
+];
 
 /** The tiles Claude can put on a dashboard, and how they're given to dashboard_add_tile. */
 const TILE_LINES = [
@@ -157,8 +176,8 @@ export function sentinelChatBrief(items: readonly Sentinel[], dashboards: readon
     ...howSentinelsWork(items, recipes),
     ...TILE_LINES,
     ...FETCH_LINES,
-    'Your tools: mcp__beluga_sentinel__* (sentinel_list, sentinel_get, sentinel_create, sentinel_update, sentinel_run, sentinel_pause,',
-    'sentinel_remove) and mcp__beluga_dashboard__* (dashboard_list, dashboard_create, dashboard_update, dashboard_remove, dashboard_add_tile,',
+    'Your tools: mcp__beluga_sentinel__* (sentinel_list, sentinel_get, sentinel_create, sentinel_update, sentinel_run, sentinel_test,',
+    'sentinel_try_source, sentinel_pause, sentinel_remove) and mcp__beluga_dashboard__* (dashboard_list, dashboard_create, dashboard_update, dashboard_remove, dashboard_add_tile,',
     'dashboard_update_tile, dashboard_move_tile, dashboard_remove_tile, metric_list, metric_read). Name a sentinel you made or changed as',
     '`sentinel:<id>` (inline code): both screens draw it as a link.',
     'What’s safe, and the rules: create, change and run sentinels, tiles and dashboards without asking. A sentinel you make starts paused;',
@@ -247,6 +266,7 @@ function howSentinelsWork(others: readonly Sentinel[], recipes: readonly Recipe[
     '$VAR (Settings › Environment, like $GROQBOT_KEY); never write a key out.',
     'Access: look (read and report), work (change code in a worktree, open pull requests), ship (also merge once the checks pass, a review',
     'says ship and the user approves). Give it the least it needs.',
+    ...DATA_LINES,
     `Recipes that work well: ${recipes.map((r) => `${r.name} (${r.line})`).join('; ')}.`,
     'An Ask Claude prompt is full instructions in your own words: what to look at, what to produce, and when to stop ("if nothing',
     'changed, say so and stop"). Look at the repository first when it helps (the test command, the CI workflow, where the docs are).',

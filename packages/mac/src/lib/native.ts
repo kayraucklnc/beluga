@@ -20,6 +20,7 @@ import { windowActive } from './window-active.js';
 import { newChatProject } from './project-home.js';
 import { type MenuBarCounts, SPOUT_EVERY_MS, spoutStep, trayTitle } from '../menubar/menubar-look.js';
 import { shownState } from '../network/net-model.js';
+import { SHOW_TILE, boardLinkOf } from './widget-links.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
@@ -136,7 +137,17 @@ export function useNative(client: SocketClient, ui: UiStore, actions: Actions, o
       const a = await listen<string>('menu', (e) => fromMenu(e.payload, () => runMenuItem(e.payload, client, ui, actions)));
       // The same link can come both ways (live and from the launch buffer): handle it once.
       const handled = new Set<string>();
+      let lastBoard: { url: string; at: number } | undefined;
       const open = (url: string): void => {
+        // A widget's link, clicked as often as you like (the same one twice in a second is one click).
+        const board = boardLinkOf(url);
+        if (board) {
+          if (lastBoard?.url === url && Date.now() - lastBoard.at < 1000) return;
+          lastBoard = { url, at: Date.now() };
+          actions.run({ type: 'view', view: board.board ? { kind: 'dashboard', id: board.board } : { kind: 'sentinel' } });
+          if (board.tile) setTimeout(() => document.dispatchEvent(new CustomEvent(SHOW_TILE, { detail: board.tile })), 300);
+          return;
+        }
         if (handled.has(url)) return;
         // beluga://add… and beluga://join#…: a friend's or a group's invitation (the Beluga network).
         if (openNetworkLink(url)) return void handled.add(url);

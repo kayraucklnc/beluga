@@ -1033,37 +1033,10 @@
   gap: 6px;
 }
 
-/* ---------------------------------------------------------------- the section's tabs (docs/sentinel.md §10) */
-
-/* One section, three tabs: the switch on top, the tab's own page under it. */
-.section {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  min-width: 0;
-}
-.sectionBar {
-  display: flex;
-  align-items: center;
-  padding: 10px 16px 0;
-  flex-shrink: 0;
-}
-.sectionBody {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.sectionBody > * {
-  flex: 1;
-  min-height: 0;
-}
-
 /* ---------------------------------------------------------------- the Sentinel chat (§12) */
 
 .chatTab {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1072,7 +1045,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
+  min-width: 0;
+  padding: 10px 12px 10px 16px;
   border-bottom: 1px solid var(--hairline);
   flex-shrink: 0;
 }
@@ -1090,6 +1064,8 @@
   font-weight: 600;
   color: var(--text);
   max-width: 340px;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 .chatName span {
   overflow: hidden;
@@ -1104,6 +1080,25 @@ button.chatName:hover {
   flex-shrink: 0;
 }
 .chatBusy {
+  flex: none;
   font-size: 11.5px;
   color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Ask Sentinel's name, before the chat's own (the panel beside Sentinel's page). */
+.chatTitle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chatTitle svg {
+  color: var(--subagent);
+}
+.chatTitle + .chatName {
+  color: var(--text-3);
+  font-weight: 400;
 }

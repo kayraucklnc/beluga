@@ -1,6 +1,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { TOOL_DRAFT_SHAPE, TOOL_PATCH_SHAPE } from '../core/sentinel/tool-draft.js';
+import { SOURCE_KINDS } from '../shared/view-spec.js';
 import type { SentinelTools } from './types.js';
 
 /**
@@ -9,17 +10,21 @@ import type { SentinelTools } from './types.js';
  * delete one (deleting asks you), and inside a sentinel's run, stop it when there's nothing to do.
  */
 
-export const SENTINEL_TOOL_NAMES = ['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_run', 'sentinel_update', 'sentinel_pause', 'sentinel_remove'].map((n) => `mcp__beluga_sentinel__${n}`);
+export const SENTINEL_TOOL_NAMES = ['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_run', 'sentinel_test', 'sentinel_try_source', 'sentinel_update', 'sentinel_pause', 'sentinel_remove'].map((n) => `mcp__beluga_sentinel__${n}`);
 
 const ref = z.string().min(1).max(80).describe('The sentinel’s id (from sentinel_list) or its name');
 
-function guarded(fn: () => string): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+async function guarded(fn: () => string | Promise<string>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
   try {
-    return Promise.resolve({ content: [{ type: 'text', text: fn() }] });
+    return { content: [{ type: 'text', text: await fn() }] };
   } catch (err) {
-    return Promise.resolve({ content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true });
+    return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true };
   }
 }
+
+/** What every sentinel with a database source needs from Claude before its query is written (BLG-304). */
+const READ_FIRST =
+  'Before writing a source’s query, read the schema with sentinel_try_source: the columns of every table you join, how the foreign keys actually link (which column holds which id), and child rows that would double-count (chunks or retries pointing at a parent). For a table of events, include who did it when there is a user. Ask the user about columns whose meaning isn’t obvious instead of guessing. Leave a postgres source without url or env: it uses the project’s own variables (DATABASE_URL, or Supabase’s).';
 
 export function createSentinelToolDefs(sentinel: SentinelTools) {
   const stop = sentinel.stop;
@@ -38,14 +43,29 @@ export function createSentinelToolDefs(sentinel: SentinelTools) {
     tool('sentinel_get', 'One sentinel’s whole definition (its trigger, steps with their ids and fields, access, limits) as material, to change it with sentinel_update.', { id: ref }, (a) => guarded(() => sentinel.get(a.id))),
     tool(
       'sentinel_create',
-      'Set up a sentinel from what the user asked for ("every weekday at 8, triage new issues into tasks"): when it runs, and its steps in order (Ask Claude with a full prompt in your own words, Run a script, Notify me). It is always made paused, and you can’t turn it on: tell the user and link it as `sentinel:<id>` (inline code) so they can check it and turn it on themselves from its page (the Mac or the phone).',
+      `Set up a sentinel from what the user asked for ("every weekday at 8, triage new issues into tasks"): when it runs, and its steps in order (Ask Claude with a full prompt in your own words, Run a script, Notify me, Keep the numbers). It is always made paused, and you can’t turn it on: tell the user and link it as \`sentinel:<id>\` (inline code) so they can check it and turn it on themselves from its page (the Mac or the phone). A Keep the numbers step that reads a source (postgres, sqlite, http, file) runs once first, with the project’s variables: when it can’t connect or its query fails, nothing is saved and the error says why; fix it and call again. When it works, the answer has a preview (the first rows, how empty each column is, columns flagged as empty in nearly every row) and the check is kept as a test run, so its tiles fill: show the user that preview before you say it’s done. ${READ_FIRST}`,
       TOOL_DRAFT_SHAPE,
       (a) => guarded(() => sentinel.create(a)),
     ),
-    tool('sentinel_run', 'Run a sentinel now. Only one that is on: a paused one runs only when the user turns it on or presses Run. It runs on its own; its report shows on its page.', { id: ref }, (a) => guarded(() => sentinel.run(a.id))),
+    tool('sentinel_run', 'Run a sentinel now. Only one that is on: a paused one runs only when the user turns it on or presses Run (to check a paused one’s sources, use sentinel_test). It runs on its own; its report shows on its page.', { id: ref }, (a) => guarded(() => sentinel.run(a.id))),
+    tool(
+      'sentinel_test',
+      'Test a sentinel once without turning it on: it works on a paused one, and it stays paused. Each Keep the numbers step that reads a source runs once with the project’s current variables and keeps what it finds (its dashboard tiles fill), and the answer is a preview per source (the first rows, how empty each column is, columns flagged as empty) or why it failed (no IPv6, the wrong pooler, the wrong password…). Nothing else runs: no Claude, script, service call, message or pull request, and no sentinel after it. A command source, or an address that sends one of the user’s $VARS, waits for their Run Now. Use it to check a fix right away.',
+      { id: ref },
+      (a) => guarded(() => sentinel.test(a.id)),
+    ),
+    tool(
+      'sentinel_try_source',
+      `Run a view source once, read-only, and see its first rows, before you put it in a sentinel: read the schema (postgres: SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' ORDER BY 1, ordinal_position; the foreign keys from information_schema.key_column_usage), look at a few real rows, then try the query you mean to keep. It uses the project’s variables (a postgres source without url or env finds DATABASE_URL, or Supabase’s), never writes, and a command source waits for the user’s yes. ${READ_FIRST}`,
+      {
+        source: z.looseObject({ kind: z.enum(SOURCE_KINDS) }).describe('The same JSON a view’s source takes: { kind: "postgres", query: "SELECT …" }, { kind: "sqlite", path, query }, { kind: "http", url, headers? }'),
+        project: z.string().max(200).optional().describe('The project whose variables and folder it uses (its name); leave out for Your Mac'),
+      },
+      (a) => guarded(() => sentinel.trySource(a.source, a.project)),
+    ),
     tool(
       'sentinel_update',
-      'Change a sentinel: only the fields given change (steps: the whole new list in order, keeping the ids of steps you keep or edit; sentinel_get has them). You can’t turn one on. Adding or editing a script, a service call, a pull request or a merge step, raising its access, moving it to another project, pointing a message, friend or Run another sentinel step elsewhere, or giving it a trigger of another kind or target pauses it until the user turns it on again: tell them. A change to its name, schedule times, a prompt or where it notifies doesn’t. A merge step always waits for the user’s approval: you can’t turn that off.',
+      'Change a sentinel: only the fields given change (steps: the whole new list in order, keeping the ids of steps you keep or edit; sentinel_get has them). You can’t turn one on. Adding or editing a script, a service call, a pull request or a merge step, raising its access, moving it to another project, pointing a message, friend or Run another sentinel step elsewhere, or giving it a trigger of another kind or target pauses it until the user turns it on again: tell them. A change to its name, schedule times, a prompt or where it notifies doesn’t. A merge step always waits for the user’s approval: you can’t turn that off. A source you add or change runs once first: when it fails nothing changes; when it works the answer has its preview to show the user.',
       { id: ref, ...TOOL_PATCH_SHAPE },
       ({ id, ...patch }) => guarded(() => sentinel.update(id, patch)),
     ),

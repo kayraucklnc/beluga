@@ -226,3 +226,43 @@ export function tileWords(s: Pick<SentinelState, 'metrics' | 'items' | 'runs'> &
   }
   return { title };
 }
+
+// ---------------------------------------------------------------- Add to the board (BLG-308)
+
+/** How a picked thing can show on the board, as the sheet's pictures say it. */
+export type TileLook = 'number' | 'line' | 'bars' | 'table' | 'text';
+export const LOOK_WORDS: Readonly<Record<TileLook, string>> = { number: 'A number', line: 'Over time', bars: 'Bars', table: 'A table', text: 'Its text' };
+
+/** The looks a kept thing fits: a number as itself or over time, a kept array as a chart, rows as a table, words as text. */
+export function looksFor(kind: MetricKind | 'step' | 'report'): readonly TileLook[] {
+  if (kind === 'number') return ['number', 'line', 'bars'];
+  if (kind === 'series') return ['line', 'bars'];
+  if (kind === 'rows') return ['table'];
+  return ['text'];
+}
+
+/** The sizes as shapes: how many of the six columns, and whether tall. */
+export const TILE_SIZES = [
+  { id: 'small', label: 'Small', w: 1, h: 1 },
+  { id: 'wide', label: 'Wide', w: 2, h: 1 },
+  { id: 'half', label: 'Half', w: 3, h: 1 },
+  { id: 'big', label: 'Big', w: 3, h: 2 },
+  { id: 'full', label: 'Full width', w: 6, h: 1 },
+] as const;
+export type TileSizeId = (typeof TILE_SIZES)[number]['id'];
+
+/** The size a look starts at: a number small, a chart or a table half, text big. */
+export const sizeFor = (look: TileLook): TileSizeId => (look === 'number' ? 'small' : look === 'text' ? 'big' : 'half');
+
+/** Somewhere a tile can come from that no sentinel fetches yet: Claude sets one up (a draft) when you pick it. */
+export const NEW_SOURCES = [
+  { id: 'stripe', label: 'Stripe', hint: 'revenue, payments', ideas: ['Revenue per day', 'New subscriptions this week', 'Failed payments'] },
+  { id: 'github', label: 'GitHub', hint: 'pull requests, issues, CI', ideas: ['Open pull requests', 'Open issues', 'Failed CI runs this week'] },
+  { id: 'database', label: 'A database', hint: 'Supabase, Postgres, SQLite', ideas: ['Sign-ups per day', 'Rows added yesterday', 'The latest 10 orders'] },
+  { id: 'url', label: 'A URL or an API', hint: 'any JSON', ideas: ['A number from a JSON API', 'Whether my site answers'] },
+  { id: 'script', label: 'A script', hint: 'prints a number', ideas: ['Free disk space', 'Lines of code'] },
+] as const;
+export type NewSourceId = (typeof NEW_SOURCES)[number]['id'];
+
+/** What Claude is asked when you pick somewhere new and say what from it. */
+export const newSourceAsk = (source: NewSourceId, words: string): string => `Add a tile from ${NEW_SOURCES.find((x) => x.id === source)!.label}: ${words.trim()}. If no sentinel fetches it yet, set one up (a draft) that does.`;

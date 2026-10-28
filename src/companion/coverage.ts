@@ -458,6 +458,8 @@ export const PHONE: Record<Method, Side> = {
   // Sentinel (docs/sentinel.md): the phone runs one, pauses or resumes it, reads its runs and
   // reports, and answers a run waiting for a merge. Making and changing sentinels is the Mac's.
   'sentinel.run': 'phone',
+  // Testing a sentinel's sources is setting it up: the Mac's.
+  'sentinel.test': 'mac',
   'sentinel.pause': 'phone',
   'sentinel.runs': 'phone',
   'sentinel.runGet': 'phone',
