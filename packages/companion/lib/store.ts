@@ -397,7 +397,8 @@ class Store {
 
   /**
    * Stay connected (BLG-128): away, the link stays open with nothing on screen, so the Mac sends
-   * only nudges (and pings come and go); a link that drops is dialed again, slowly.
+   * only nudges (and pings come and go), and the tiles for Home-screen widgets when any are placed
+   * (BLG-361); a link that drops is dialed again, slowly.
    */
   private stayAway(): void {
     this.stayingAway = true;
@@ -405,7 +406,7 @@ class Store {
     this.awayAt ??= Date.now();
     if (this.state.phase === 'open') {
       this.transport?.send({ t: 'focus', on: false });
-      this.transport?.send({ t: 'sub', topics: [] });
+      this.transport?.send({ t: 'sub', topics: this.topics() });
     } else if (this.state.phase !== 'dialing') this.dial(false);
     this.stayNote();
   }
@@ -633,10 +634,16 @@ class Store {
 
   // ---- views
 
-  /** The topics on screen right now (what the Mac should send). */
+  /** The topics on screen right now (what the Mac should send); away, only the ones kept while away. */
   private topics(): Topic[] {
-    if (this.stayingAway) return [];
+    if (this.stayingAway) return [...this.awayTopics].filter(([t, wanted]) => wanted() && this.knows(t)).map(([t]) => t);
     return [...this.subCounts.keys()].filter((t) => this.knows(t)).slice(0, 16);
+  }
+
+  /** Topics that keep coming while away with Stay connected, as long as `wanted` says (the Home-screen widgets' tiles). */
+  private awayTopics = new Map<Topic, () => boolean>();
+  keepWhileAway(topic: Topic, wanted: () => boolean): void {
+    this.awayTopics.set(topic, wanted);
   }
 
   /** Does the Mac have this (its protocol's minor, SINCE)? Before its welcome, only what every 1.x has. */
@@ -649,6 +656,7 @@ class Store {
     if (isMacTopic(topic)) return this.supports('assistant');
     if (topic === 'sentinels' || topic.startsWith('sentinel:')) return this.supports('sentinel');
     if (topic.startsWith('dashboard:')) return this.supports('dashboard');
+    if (topic === 'widgets') return this.supports('widgets');
     return topic === 'tasks' || topic.startsWith('task:') ? this.supports('tasks') : true;
   }
 

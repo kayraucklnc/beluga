@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RefTable } from '../src/companion/files.js';
-import { ChatsView, ChatView, ConvView, DashboardView, HomeView, PeopleView, PlansView, PlanView, SentinelPageView, SentinelsView, TaskPageView, TasksView, type Topic, WorkView, viewSchema } from '../src/companion/protocol.js';
+import { ChatsView, ChatView, ConvView, DashboardView, HomeView, PeopleView, PlansView, PlanView, SentinelPageView, SentinelsView, TaskPageView, TasksView, type Topic, WidgetsView, WorkView, viewSchema } from '../src/companion/protocol.js';
 import { type ViewContext, convTurns, homeView, needsYou, sentinelDone, viewOf } from '../src/companion/views.js';
 import { NO_SENTINEL, type Sentinel, type SentinelState } from '../src/core/sentinel/model.js';
 import { type Action, type DomainState, Store, initialState } from '../src/core/store.js';
@@ -308,7 +308,7 @@ function context(): ViewContext {
 }
 
 const ICON = 'abcdef0123456789abcdef01';
-const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:mac:assistant', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1', 'sentinels', 'sentinel:sn_fix', 'dashboard:db_rev'];
+const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:mac:assistant', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1', 'sentinels', 'sentinel:sn_fix', 'dashboard:db_rev', 'widgets'];
 
 describe('the views of a known Mac', () => {
   const state = demoState();
@@ -602,6 +602,21 @@ describe('the views of a known Mac', () => {
     const list = SentinelsView.parse(viewOf(state, ctx, 'sentinels'));
     expect(list.dashboards).toEqual([{ id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }]);
     expect(list.numbers).toEqual({ dashboard: { id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }, items: [{ label: 'Open issues', value: '9', change: '−5 (−35.7%)', tone: 'good' }, { label: 'Revenue', value: '$3,400', tone: 'none' }] });
+  });
+
+  it('widgets: every tile but headings in words, as the Mac’s desktop widgets have them, its project’s icon as a checksum', () => {
+    const w = WidgetsView.parse(viewOf(state, ctx, 'widgets'));
+    expect(w.tiles.map((t) => t.id)).toEqual(['db_rev/t1', 'db_rev/t2', 'db_rev/t3', 'db_rev/t4', 'db_rev/t5', 'db_rev/t6']);
+    const [issues, , chart, table, text, gone] = w.tiles;
+    expect(issues).toMatchObject({ dashboard: 'db_rev', tile: 't1', board: 'Revenue', title: 'Open issues', kind: 'number', value: '9', change: '−5 (−35.7%)', tone: 'good', points: [14, 12, 9], icon: ICON });
+    expect(issues!.tint).toMatch(/^#[0-9a-f]{6}$/);
+    expect(chart).toMatchObject({ kind: 'chart', points: [14, 12, 9] });
+    expect(table).toMatchObject({ kind: 'text', value: '2 rows', text: 'lena · deploy\nbob · tests' });
+    expect(text).toMatchObject({ kind: 'text', text: '3 commits landed, CI is **green**' });
+    expect(gone).toMatchObject({ tile: 't6', note: 'gone' });
+    // Never a source, a query or a path of the Mac's.
+    expect(JSON.stringify(w)).not.toMatch(/\/Users\//);
+    expect(WidgetsView.parse(viewOf({ ...state, sentinel: { ...SENTINELS, enabled: false } }, ctx, 'widgets'))).toEqual({ tiles: [] });
   });
 
   it('sentinel: a run that ended where the sentinel notifies the phone is told once', () => {

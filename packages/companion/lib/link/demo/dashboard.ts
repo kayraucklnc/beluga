@@ -1,4 +1,4 @@
-import type { DashboardTileView, DashboardView, SentinelPageView, SentinelRunView, SentinelSummary, SentinelsView, Topic } from '../protocol';
+import type { DashboardTileView, DashboardView, SentinelPageView, SentinelRunView, SentinelSummary, SentinelsView, Topic, WidgetTileView, WidgetsView } from '../protocol';
 /**
  * The demo Mac's numbers and dashboards (1.22, docs/sentinel.md §10), as src/core/sentinel/demo.ts
  * seeds the Mac's: Stripe revenue, YouTube subscribers, Site speed and Last job run (paused, its
@@ -289,7 +289,7 @@ function tileTitle(n: DemoNumbers, t: Tile, sentinels: readonly { summary: { id:
   return ms.length ? ms.map((m) => m.label).join(' and ') : (t.metric ?? t.metrics?.[0])?.[1] ?? t.kind;
 }
 
-type Sentinels = readonly { summary: { id: string; name: string; topic: Topic; paused: boolean }; runs: readonly SentinelRunView[] }[];
+type Sentinels = readonly { summary: { id: string; name: string; topic: Topic; paused: boolean; projectId?: string; project?: string }; runs: readonly SentinelRunView[] }[];
 
 function tileState(n: DemoNumbers, t: Tile, sentinels: Sentinels): DashboardTileView['state'] {
   if (t.kind === 'divider') return 'ok';
@@ -374,4 +374,59 @@ export function dashboardSentinels(n: DemoNumbers, sentinels: Sentinels, id: str
   const d = n.dashboards.find((x) => x.id === id);
   const ids = d ? d.tiles.flatMap((t) => (t.kind === 'divider' ? [] : [tileSentinel(t)])).filter((x): x is string => Boolean(x)) : [];
   return [...new Set(ids)].filter((sid) => sentinels.some((s) => s.summary.id === sid && !s.summary.paused));
+}
+
+const VS: Record<Compare, string> = { previous: 'vs the run before', day: 'vs yesterday', week: 'vs last week', month: 'vs last month' };
+const day = (ms: number): string => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+/** A project's tint, as src/core/sentinel/widgets.ts `tintOf` works it out (its letter tile's hue). */
+function tintOf(name: string): string {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  const k = (n: number): number => (n + h / 30) % 12;
+  const a = 0.55 * Math.min(0.55, 0.45);
+  const f = (n: number): number => 0.55 - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const hex = (x: number): string => Math.round(x * 255).toString(16).padStart(2, '0');
+  return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`;
+}
+
+/** 1.26 (BLG-361): every tile in words for the Home-screen widgets, as src/companion/views.ts `widgetsView` sends it. */
+export function widgetsView(n: DemoNumbers, sentinels: Sentinels, iconOf: (projectId: string) => string | undefined): WidgetsView {
+  const tiles: WidgetTileView[] = [];
+  for (const d of n.dashboards)
+    for (const t of d.tiles) {
+      if (t.kind === 'divider') continue;
+      const v = tileView(n, t, sentinels);
+      const sid = tileSentinel(t);
+      const sn = sid ? sentinels.find((x) => x.summary.id === sid) : undefined;
+      const project = sn?.summary.project;
+      const icon = sn?.summary.projectId ? iconOf(sn.summary.projectId) : undefined;
+      const compare = t.compare ?? d.compare;
+      const base = {
+        id: `${d.id}/${t.id}`,
+        dashboard: d.id,
+        tile: t.id,
+        board: d.name,
+        title: v.title,
+        tone: 'none',
+        ...(v.state === 'paused' ? { note: 'paused' } : v.state === 'gone' ? { note: 'gone' } : {}),
+        ...(project ? { project, tint: tintOf(project) } : {}),
+        ...(icon ? { icon } : {}),
+        ...(v.at ? { at: v.at } : {}),
+      };
+      if (t.kind === 'number') {
+        const delta = v.deltas?.[compare];
+        tiles.push({ ...base, kind: 'number', ...(v.value ? { value: v.value } : {}), ...(delta?.change ? { change: delta.change } : {}), tone: delta?.tone ?? 'none', vs: VS[compare], ...(v.trend ? { points: v.trend.slice(-40) } : {}) });
+      } else if (t.kind === 'chart') {
+        const pts = v.chart?.series[0]?.points.slice(-40) ?? [];
+        tiles.push({ ...base, kind: 'chart', ...(pts.length ? { points: pts.map((p) => p[1]), from: day(pts[0]![0]), to: day(pts.at(-1)![0]), at: pts.at(-1)![0] } : {}) });
+      } else if (t.kind === 'table') {
+        const rows = v.table?.rows ?? [];
+        tiles.push({ ...base, kind: 'text', ...(rows.length ? { value: `${v.table!.total} ${v.table!.total === 1 ? 'row' : 'rows'}`, text: rows.slice(0, 8).map((r) => r.slice(0, 3).map((c) => String(c ?? '')).join(' · ')).join('\n') } : {}) });
+      } else {
+        const text = v.output?.text ?? v.text;
+        tiles.push({ ...base, kind: 'text', ...(text ? { text: text.replace(/[#*_`]/g, '').slice(0, 1000) } : {}) });
+      }
+    }
+  return { tiles };
 }

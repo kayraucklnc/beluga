@@ -58,8 +58,8 @@ export const calls = {
   /** How a plan runs (1.5): Step by Step, Check-ins or Autopilot. */
   setAutonomy: (plan: string, autonomy: 'step' | 'gated' | 'autopilot', label: string): Call => make('plans.setAutonomy', [plan, autonomy], `Run as ${label}`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
-  /** A request you asked of a friend's Claude (a `conv:task:<id>`): stop it, or (1.26) remove it from your lists. */
-  /** 1.26: take a needs-you item off every list (here and the Mac's) without answering it. */
+  /** A request you asked of a friend's Claude (a `conv:task:<id>`): stop it, or (1.27) remove it from your lists. */
+  /** 1.27: take a needs-you item off every list (here and the Mac's) without answering it. */
   dismissNeed: (id: string): Call => make('needs.dismiss', [id], 'Dismiss'),
   cancelTask: (id: string): Call => make('gateway.cancel', [id], 'Stop asking'),
   forgetTask: (id: string): Call => make('gateway.forget', [id], 'Remove'),

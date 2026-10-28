@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 26 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 27 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -60,11 +60,13 @@ export const COMPANION_PROTO = { major: 1, minor: 26 } as const;
  * columns (`table.typed`: a document, a storage object, a link, a path, with each row's whole value)
  * and its metric (`table.metric`), so a chip opens the document through the Mac (`sentinel.document`)
  * or a storage object's link signed there (`sentinel.signStorage`); a sentinel page's workflow
- * as a graph (`SentinelPageView.graph`, BLG-352). 1.26 (BLG-354): a request you asked of a friend
- * can be removed (`gateway.forget`), and a needs-you item dismissed (`needs.dismiss`) without
- * answering it, here and on the Mac.
+ * as a graph (`SentinelPageView.graph`, BLG-352). 1.26 (BLG-361): every board tile in words for
+ * the phone's Home-screen widgets (the `widgets` topic, `WidgetsView`: what the Mac's desktop
+ * widgets read from `~/.beluga/widgets/tiles.json`, each project's icon as its checksum).
+ * 1.27 (BLG-354): a request you asked of a friend can be removed (`gateway.forget`), and a
+ * needs-you item dismissed (`needs.dismiss`) without answering it, here and on the Mac.
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, forget: 26, dismiss: 26 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -119,6 +121,8 @@ export const Topic = z.union([
   z.string().regex(/^sentinel:[\w.-]{1,200}$/),
   /** 1.22: one dashboard with its tiles. */
   z.string().regex(/^dashboard:[\w.-]{1,200}$/),
+  /** 1.26: every board tile, for the phone's Home-screen widgets. */
+  z.literal('widgets'),
 ]);
 export type Topic = z.infer<typeof Topic>;
 
@@ -742,6 +746,41 @@ export const DashboardView = z.object({
 });
 export type DashboardView = z.infer<typeof DashboardView>;
 
+/**
+ * 1.26 (BLG-361): a board tile as a Home-screen widget draws it, in words (src/core/sentinel/
+ * widgets.ts `widgetSnapshot`, the same the Mac's desktop widgets read): a number (its value, its
+ * change, its points), a chart (its points with the first and last labels) or text. `dashboard`
+ * and `tile` name it on its board (the widget opens there). Never a source, a query or a key.
+ */
+export const WidgetTileView = z.object({
+  /** "<dashboardId>/<tileId>". */
+  id: z.string().min(1).max(401),
+  dashboard: id,
+  tile: id,
+  board: z.string().max(100),
+  title: z.string().max(100),
+  kind: z.union([z.enum(['number', 'chart', 'text']), z.string().max(20)]),
+  value: z.string().max(60).optional(),
+  change: z.string().max(60).optional(),
+  tone: NumberTone,
+  vs: z.string().max(60).optional(),
+  points: z.array(z.number()).max(40).optional(),
+  from: z.string().max(80).optional(),
+  to: z.string().max(80).optional(),
+  text: z.string().max(1000).optional(),
+  /** "paused", "draft: turn it on", "gone", "waiting for its first run". */
+  note: z.string().max(60).optional(),
+  project: z.string().max(100).optional(),
+  /** The project's icon, as its checksum (`companion.icon`). */
+  icon: z.string().regex(/^[0-9a-f]{16,64}$/).optional(),
+  /** Its project's tint, #rrggbb. */
+  tint: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+  at: ts.optional(),
+});
+export type WidgetTileView = z.infer<typeof WidgetTileView>;
+export const WidgetsView = z.object({ tiles: z.array(WidgetTileView).max(120) });
+export type WidgetsView = z.infer<typeof WidgetsView>;
+
 export const ChatMessageView = z.object({
   id,
   from: z.string().max(100),
@@ -1180,6 +1219,7 @@ export function viewSchema(topic: Topic): z.ZodType {
   if (topic === 'sentinels') return SentinelsView;
   if (topic.startsWith('sentinel:')) return SentinelPageView;
   if (topic.startsWith('dashboard:')) return DashboardView;
+  if (topic === 'widgets') return WidgetsView;
   return ChatView;
 }
 

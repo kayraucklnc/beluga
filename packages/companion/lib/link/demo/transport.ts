@@ -26,7 +26,7 @@ import type { ViewQuery } from '../../render';
 import { DEMO_IMAGES } from './images.generated';
 import { DemoShell, demoAttach, demoFind, demoFolder, demoRead } from './worktree';
 import { makeSentinels, runOf, sentinelNeeds, sentinelOf, sentinelPage, sentinelsView } from './sentinel';
-import { dashboardSentinels, dashboardView } from './dashboard';
+import { dashboardSentinels, dashboardView, widgetsView } from './dashboard';
 
 
 /** What the demo Mac "hears", phrase by phrase (it has no model; the phone's voice UI shows it arriving). */
@@ -221,6 +221,7 @@ export class DemoTransport implements Transport {
     if (topic === 'sentinels') return sentinelsView(this.sentinels);
     if (topic.startsWith('sentinel:')) return sentinelPage(this.sentinels, topic, w.needs);
     if (topic.startsWith('dashboard:')) return dashboardView(this.sentinels.numbers, this.sentinels.items, topic.slice('dashboard:'.length));
+    if (topic === 'widgets') return widgetsView(this.sentinels.numbers, this.sentinels.items, (id) => w.icons[id]?.sum);
     if (topic === 'plans') return { plans: w.plans.map((p) => ({ id: p.id, title: p.title, state: p.state, topic: p.topic, ...count(p) })) } satisfies PlansView;
     if (topic === 'chats') return { chats: [...w.chats].map(([t, c]) => ({ topic: t, name: c.name, kind: c.kind, last: lastLine(c.messages.at(-1)), lastAt: c.messages.at(-1)?.ts, unread: c.unread })).sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0)) };
     if (topic === 'people') return { people: w.people };

@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'org.jetbrains.kotlin.android'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'sh.ratel.beluga'
+version = '1.0.0'
+
+android {
+  namespace "sh.ratel.beluga.widgets"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  implementation "androidx.core:core-ktx:1.17.0"
+}

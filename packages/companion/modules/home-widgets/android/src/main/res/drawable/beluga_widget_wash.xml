@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The project's tint as a soft wash over the card: drawn white, coloured and faded from code. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+  <solid android:color="#FFFFFFFF" />
+  <corners android:radius="@dimen/beluga_widget_radius" />
+</shape>

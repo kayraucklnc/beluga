@@ -238,6 +238,15 @@ delete Claude asks for there is an `approval` like any other.
 with `several` drafts every task the words ask for (`more`, under the first when `epic`), each with
 the teammate it names (`for`); `companion.addTask` with them adds them all and answers their keys
 (`more`). An older Mac never gets `several`, so it drafts one task as before.
+1.26 (BLG-361) brought the Home-screen widgets (`SINCE.widgets`, docs/sentinel.md "On the phone's
+Home screen"): `widgets`, every board tile in words as the Mac's desktop widgets read them (a number
+with its change and points, a chart's points, an output, a table or a headline as text; its project,
+tint and icon checksum). The Android app watches it while open, and while away with Stay connected
+when a widget is placed. Never a source, a query or a key.
+1.27 (BLG-354) lets the phone remove a request you asked of a friend (`gateway.forget`, cancelled
+first while it's still going) and dismiss a needs-you item without answering it (`needs.dismiss`,
+gone on the Mac too). An older Mac never gets either: Remove isn't offered, and a dismissed card
+is only hidden on the phone until it relinks.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
@@ -770,7 +779,7 @@ The Mac app changes quickly; the phone must not fall behind silently.
    Mentions.
 3. **iOS**: the same app; Keychain, APNs, the Notification Service Extension.
 4. **Later**: screen sharing (ScreenCaptureKit → H.264 over the same link, on demand only), voice
-   asks, a home-screen widget for usage and Needs you, other agents' allowance next to Claude's
+   asks, a home-screen widget for usage and Needs you (board tiles came first: BLG-361), other agents' allowance next to Claude's
    (the usage view is a list of providers, not one).
 
 ## Risks
