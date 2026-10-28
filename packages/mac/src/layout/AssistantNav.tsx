@@ -2,8 +2,6 @@ import { ASSISTANT_CHANNEL, ASSISTANT_TITLE } from '@beluga/shared/assistant.js'
 import { Icon } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/beluga.js';
-import { tabShowing, usePanelRuntime } from '../lib/panel.js';
-import { usePrefs } from '../lib/prefs.js';
 import { sameDeep } from '../lib/stable.js';
 import { type Signal, signalOf } from './attention-model.js';
 import { SignalMark } from './signal-marks.js';
@@ -18,10 +16,8 @@ const RANK: Record<Signal['level'], number> = { needs: 3, unread: 2, working: 1,
  */
 export function AssistantNav() {
   const actions = useActions();
-  const prefs = usePrefs();
-  usePanelRuntime((r) => r.phone);
-  // With the phone beside the chat, "Your phone" is the row that's on (BLG-196).
-  const selected = useApp((s) => s.view.kind === 'assistant' && !tabShowing(s, 'phone', prefs));
+  // The phone is the Phone tab in this page's panel, not a row of its own (BLG-292); its full-size mirror is still yours.
+  const selected = useApp((s) => s.view.kind === 'assistant' || s.view.kind === 'phone');
   const signal = useApp((s) => {
     const channels = s.assistant.chats.length ? s.assistant.chats.map((c) => c.channel) : [ASSISTANT_CHANNEL];
     return channels.map((c) => signalOf(s, c)).reduce((a, b) => (RANK[b.level] > RANK[a.level] ? b : a));
