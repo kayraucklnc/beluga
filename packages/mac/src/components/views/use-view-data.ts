@@ -42,6 +42,8 @@ export interface ViewData {
   readonly switched: boolean;
   /** What's chosen in each of the view's controls (see shared/view-controls.ts). */
   readonly controls: ControlState;
+  /** Every row in this order (sorted, searched, filtered), past the page: what Copy takes. A source here: the page it has. */
+  allRows(): readonly Row[];
   setControl(id: string, value: ControlState[string]): void;
   setPage(n: number): void;
   setSort(s: Sort): void;
@@ -177,6 +179,7 @@ export function useViewData(view: View, opts: { local: boolean; visible: boolean
   const hasMore = shown ? shown.hasMore : mode === 'live' ? (view.total ?? 0) > pageSize || view.rows.length > pageSize : local!.hasMore;
   const at = shown?.at ?? view.at;
   const text = shown?.text ?? view.text;
+  const allRows = useCallback(() => (mode === 'live' ? rows : pageOf(view.rows, { ...query, offset: 0, limit: view.rows.length }).rows), [mode, view.rows, query, rows]);
   return {
     mode,
     rows,
@@ -195,6 +198,7 @@ export function useViewData(view: View, opts: { local: boolean; visible: boolean
     ...(source ? { source } : {}),
     switched: other !== undefined,
     controls,
+    allRows,
     setControl,
     setPage,
     setSort,

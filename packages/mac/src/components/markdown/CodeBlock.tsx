@@ -5,13 +5,13 @@ import { copyText } from '../../lib/copy.js';
 import { CodeLines } from './CodeLines.js';
 import c from './code.module.css';
 
-/** "Copied" for a moment after a copy button is pressed. */
-export function useCopied(): [boolean, (text: string) => void] {
+/** "Copied" for a moment after a copy button is pressed (text, or a copy of its own, like a table's). */
+export function useCopied(): [boolean, (what: string | (() => Promise<unknown>)) => void] {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
-  const copy = (text: string): void => {
-    void copyText(text).then(() => {
+  const copy = (what: string | (() => Promise<unknown>)): void => {
+    void (typeof what === 'string' ? copyText(what) : what()).then(() => {
       setCopied(true);
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1400);

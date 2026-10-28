@@ -39,6 +39,8 @@ export interface ViewData {
   readonly search: string;
   readonly controls: ControlState;
   readonly switched: boolean;
+  /** Every row in this order (sorted, searched, filtered), past the page: what Copy takes. A source on the Mac: the page it has. */
+  allRows(): readonly Row[];
   setControl(id: string, value: ControlState[string]): void;
   setPage(n: number): void;
   setSort(s: Sort): void;
@@ -154,6 +156,7 @@ export function useViewData(view: View, at: BlockAt | undefined, opts: { limit?:
   const hasMore = shown ? shown.hasMore : live ? (view.total ?? 0) > pageSize || view.rows.length > pageSize : local!.hasMore;
   const when = shown?.at ?? view.at;
   const text = shown?.text ?? view.text;
+  const allRows = useCallback(() => (live ? rows : pageOf(view.rows, { ...query, offset: 0, limit: view.rows.length }).rows), [live, view.rows, query, rows]);
   return {
     live,
     rows,
@@ -171,6 +174,7 @@ export function useViewData(view: View, at: BlockAt | undefined, opts: { limit?:
     search,
     controls,
     switched: other !== undefined,
+    allRows,
     setControl,
     setPage,
     setSort,
