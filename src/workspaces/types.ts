@@ -46,6 +46,8 @@ export interface WorkspaceRecord {
   /** Set on forks until their first run, so Claude branches the parent's conversation. */
   readonly forkFromSession?: string;
   readonly forkedFrom?: string;
+  /** Brought in from a Claude Code conversation that ran outside Beluga (its session id, BLG-321). */
+  readonly importedSession?: string;
   /** Hashes of env files copied into this worktree at creation, to detect changes later. */
   readonly envSnapshot?: Readonly<Record<string, string>>;
   /** Model picked for this conversation (unset: your default). */

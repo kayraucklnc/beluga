@@ -253,6 +253,9 @@ export const API = {
   'workspaces.otherActivity': args(id),
   'workspaces.worktreeInfo': args(id),
   'workspaces.showConversation': args(id, z.string().min(1).max(100)),
+  // Claude Code conversations from outside Beluga in a project's folder (or `path`), and going on with one in a new worktree (BLG-321).
+  'workspaces.outsideConversations': args(id, opt(path)),
+  'workspaces.importOutside': args(id, path, z.string().regex(/^[\w-]{1,100}$/), opt(z.string().max(120))),
   'workspaces.removeOther': args(id, opt(bool)),
   'workspaces.staleOthers': args(id, opt(z.enum(['conductor', 'claude', 'other']))),
   'workspaces.cleanUpOthers': args(id, z.array(id).max(500)),

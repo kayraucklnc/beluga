@@ -146,6 +146,8 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.otherActivity': 'mac',
   'workspaces.worktreeInfo': 'mac',
   'workspaces.showConversation': 'mac',
+  'workspaces.outsideConversations': 'mac',
+  'workspaces.importOutside': 'mac',
   'workspaces.removeOther': 'mac',
   'workspaces.staleOthers': 'mac',
   'workspaces.cleanUpOthers': 'mac',

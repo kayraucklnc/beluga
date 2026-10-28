@@ -20,6 +20,7 @@ import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
 import { TemplateEditorSheet } from './TemplatesSheet.js';
 import { ContinueSheet } from './ContinueSheet.js';
 import { ForkToMacSheet } from './ForkToMacSheet.js';
+import { ImportConversationSheet } from './ImportConversationSheet.js';
 import { CleanUpWorktreesAlert } from './CleanUpWorktrees.js';
 import { DeleteProjectAlert } from './DeleteProjectAlert.js';
 import { WorkConfirm } from './WorkConfirm.js';
@@ -183,6 +184,8 @@ export function NativeSheets() {
       return <CleanUpWorktreesAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'delete_project':
       return <DeleteProjectAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'import_conversation':
+      return <ImportConversationSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'share_project':
       return <ShareProjectSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_task':

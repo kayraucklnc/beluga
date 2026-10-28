@@ -327,6 +327,7 @@ describe('worktrees from other tools, end to end in a real repo', () => {
   it('labels with the conversation that made it, and lists conversations that ran there', async () => {
     const busy = ext('busy');
     const tools = {
+      conversationsUnder: async () => [],
       conversations: async (dir: string) => (dir === busy.path ? [{ sessionId: 's1', title: 'Earlier', lastModified: 1 }] : []),
       conductor: async () => [],
       creators: async (paths: readonly string[]) => new Map(paths.map((p) => [p, { sessionId: 'maker', title: 'RC-210 epic', cwd: repo }])),
@@ -367,7 +368,7 @@ describe('opening a worktree from another tool', () => {
       intend: () => undefined,
       askClaude: () => undefined,
       findConversation: async (dir, opts) => (asked.push({ dir, ...(opts ? { opts } : {}) }), opts?.sessionId === 'older' ? convo('older', 'the older one') : convo('active', 'the one Conductor has open')),
-      otherTools: { conversations: async () => [], conductor: async () => [{ path: wt, name: 'berlin', sessionId: 'active' }], creators: async () => new Map() },
+      otherTools: { conversations: async () => [], conversationsUnder: async () => [], conductor: async () => [{ path: wt, name: 'berlin', sessionId: 'active' }], creators: async () => new Map() },
     });
     await ctl.refresh();
     const ws = mgr.list.flatMap((p) => p.workspaces).find((w) => w.path === wt)!;
@@ -410,6 +411,7 @@ describe("Conductor's live workspaces", () => {
     const mgr = new WorkspaceManager(store);
     await mgr.refresh();
     const tools = {
+      conversationsUnder: async () => [],
       conversations: async () => [],
       conductor: async () => [
         { path: live, name: 'lisbon', state: 'ready' },
