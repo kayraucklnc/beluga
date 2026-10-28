@@ -30,6 +30,7 @@ import type { TaskView } from '@beluga/core/gateway/model.js';
 import { TaskCard } from '../gateway/TaskCard.js';
 import { SlotWaitNotice } from './SlotWait.js';
 import s from './chat.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
@@ -92,7 +93,7 @@ function SteerWaiting({ steer }: { steer: SteeredMessage }) {
       <Icon name="clock" size={11} />
       <span>{stopping ? 'Sent · Claude is stopping its step to read it' : 'Sent · waiting for Claude to read it'}</span>
       {stopping ? null : (
-        <Tip label="Stop Claude’s current step so it reads this now" keys="⇧⌥↩">
+        <Tip label="Stop Claude’s current step so it reads this now" keys={shortcutKeys('composer-send-now')}>
           <button type="button" className={s.steerNow} onClick={() => sendSteerNow(client, steer.request)}>
             <Icon name="send" size={10} />
             Send now
@@ -397,7 +398,7 @@ function TurnCard({
   const hasSteps = item.steps.length > 0 || item.subagents.length > 0;
   const folded = answered && prefs.doneSteps === 'fold' && !steps.shown;
   const lead: ActionItem[] = stoppable
-    ? [{ label: 'Stop Claude', icon: 'stop', keys: '⌘.', onSelect: stop }]
+    ? [{ label: 'Stop Claude', icon: 'stop', ...(shortcutKeys('conv-stop') ? { keys: shortcutKeys('conv-stop') } : {}), onSelect: stop }]
     : answered && hasSteps && prefs.doneSteps === 'fold'
       ? [{ label: steps.shown ? 'Hide Steps' : 'Show Steps', icon: 'rows', onSelect: () => steps.setShown(!steps.shown) }]
       : [];
@@ -423,7 +424,7 @@ function TurnCard({
               </span>
             ) : stoppable ? (
               <span className={s.hoverActions}>
-                <Button size="small" variant="quiet" icon="stop" onClick={stop} title="Stop Claude here (⌘.)">
+                <Button size="small" variant="quiet" icon="stop" onClick={stop} title={`Stop Claude here${shortcutKeys('conv-stop') ? ` (${shortcutKeys('conv-stop')})` : ''}`}>
                   Stop
                 </Button>
               </span>

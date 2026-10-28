@@ -48,7 +48,7 @@ test('a steered message is sent, not read, until Claude reads it; Send now stops
   expect(rows.at(-1)?.working).toBe(true);
   expect(rows.findIndex((r) => r.text.includes('look at the webhook retries first'))).toBeLessThan(rows.length - 1);
   // The box says how to send it now.
-  await expect(page.locator('[class*="legend"]')).toContainText('⇧⌥↩ send now');
+  await expect(page.locator('[class*="legend"]')).toContainText('⌥⇧↩ send now');
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/54-steer-pending.png` });
   await page.emulateMedia({ colorScheme: 'dark' });

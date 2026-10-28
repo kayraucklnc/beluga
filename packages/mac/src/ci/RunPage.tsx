@@ -18,6 +18,7 @@ import { useCiActions, useNow, useRun } from './use-ci.js';
 import { WorkflowGraph } from './WorkflowGraph.js';
 import t from '../tasks/tasks.module.css';
 import s from './ci.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * One workflow run, to watch: its workflow drawn as a graph with each job coloured by how it's
@@ -69,7 +70,7 @@ function Page({ projectId, repo, run, loading, refresh }: { projectId: string; r
       <div className={t.page}>
         <div className={t.pageMain}>
           <nav className={t.crumbs} aria-label="Where this run is">
-            <IconButton icon="back" label="Back" keys="⌘[" className={t.crumbBack} onClick={back} />
+            <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
             <button type="button" className={t.crumb} onClick={() => a.openList(projectId)}>
               Actions
             </button>

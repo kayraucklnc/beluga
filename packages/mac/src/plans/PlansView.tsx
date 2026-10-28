@@ -15,6 +15,8 @@ import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 import v from './PlansView.module.css';
 import { SharedPlansList } from '../team/SharedPlans.js';
+import { isShortcut } from '../lib/shortcuts.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * Plans: one project's at a time (the one you're in, like Tasks). Each is a row with how far it
@@ -36,7 +38,7 @@ export function PlansView() {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || currentSheet()) return;
       const typing = (e.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]');
-      if (!typing && e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'n') {
+      if (!typing && isShortcut('page-new', e)) {
         e.preventDefault();
         e.stopPropagation();
         openSheet({ kind: 'new_plan', ...(project ? { projectId: project } : {}) });
@@ -65,7 +67,7 @@ export function PlansView() {
         <ActionsDropdown items={[{ label: 'Planning Style…', onSelect: () => openSheet({ kind: 'plan_style' }) }]}>
           <IconButton icon="more" label="Plans Options" />
         </ActionsDropdown>
-        <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })} title="New Plan (⌘N)">
+        <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })} title={`New Plan${shortcutKeys('page-new') ? ` (${shortcutKeys('page-new')})` : ''}`}>
           New Plan
         </Button>
       </div>

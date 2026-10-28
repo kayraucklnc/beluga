@@ -24,6 +24,7 @@ import { SwipeBackEdge } from './SwipeBackEdge.js';
 import { FixItButton, GitHubIssueProp, useInvestigated } from '../issues/task-bits.js';
 import t from './tasks.module.css';
 import { AssignedToYou, WaitingFor, WorkingOn } from '../team/Team.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * One task: its title (click to rename), what to do next (start a worktree with Claude on it, or
@@ -86,7 +87,7 @@ function Header({ issue }: { issue: Issue }) {
   return (
     <>
       <nav className={t.crumbs} aria-label="Where this task is">
-        <IconButton icon="back" label="Back" keys="⌘[" className={t.crumbBack} onClick={() => back(issue.projectId)} />
+        <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={() => back(issue.projectId)} />
         <button type="button" className={t.crumb} onClick={() => openList(issue.projectId)}>
           Tasks
         </button>

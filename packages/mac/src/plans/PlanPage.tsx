@@ -26,6 +26,7 @@ import { barColumns, changeWords, headline, nextWords, titleOf } from './plans-m
 import { useConversationLoaded, usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 import { TeamReviews, usePlanTeamItems } from '../team/SharedPlans.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const PlanCanvas = lazy(() => import('./PlanCanvas.js'));
 
@@ -242,7 +243,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
             </Button>
           )}
           {/* The chat beside the plan, in and out: always here, whichever way it is. */}
-          <IconButton icon="claude" label={chat ? 'Hide the Chat' : 'Show the Chat'} keys={`⌥${mod()}0`} active={chat} onClick={() => showChat(!chat)} />
+          <IconButton icon="claude" label={chat ? 'Hide the Chat' : 'Show the Chat'} keys={shortcutKeys('toggle-inspector')} active={chat} onClick={() => showChat(!chat)} />
           <ActionsDropdown items={more}>
             <IconButton icon="more" label="Plan Options" />
           </ActionsDropdown>

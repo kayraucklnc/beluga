@@ -81,6 +81,14 @@ fn set_menu_state(
     }
 }
 
+/// Give menu-bar items your keys (Settings › Keyboard): an accelerator each, or none.
+#[tauri::command]
+fn set_menu_keys(app: tauri::AppHandle, keys: HashMap<String, Option<String>>) {
+    if let Some(m) = app.menu() {
+        menu::apply_keys(&m, &keys);
+    }
+}
+
 /// What the menu-bar icon and the Dock icon say: how many things are new for you (unread
 /// notifications and what waits on you), and how many Claudes are working. `title` is what the
 /// menu bar shows beside the whale (Settings › Menu Bar picks it; "" shows nothing); without
@@ -231,6 +239,7 @@ pub fn run() {
             daemon_endpoint,
             restart_daemon,
             set_menu_state,
+            set_menu_keys,
             set_tray_status,
             set_tray_presence,
             requests::set_tray_requests,

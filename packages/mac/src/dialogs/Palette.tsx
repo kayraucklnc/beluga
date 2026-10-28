@@ -8,9 +8,9 @@ import { useActions } from '../lib/actions.js';
 import { asksBeforeWork } from '../lib/work-confirm.js';
 import { useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { setPrefs, usePrefs, zoom } from '../lib/prefs.js';
-import { mod } from '../lib/system.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 import { showPanelTab, tabsOf, togglePanel, toggleTerminal } from '../lib/panel.js';
-import { PANEL_LABELS, panelDigit, panelFits } from '../lib/panel-model.js';
+import { PANEL_LABELS, panelFits } from '../lib/panel-model.js';
 import { paletteCommands } from './palette-commands.js';
 import { newChatProject } from '../lib/project-home.js';
 import { networkPaletteItems } from '../network/net-palette.js';
@@ -25,6 +25,12 @@ interface Item {
   readonly run: () => void;
   readonly keywords?: string[];
 }
+
+/** A shortcut's keys for an item, when it has some (yours: Settings › Keyboard). */
+const keysOf = (id: string): { keys?: string } => {
+  const keys = shortcutKeys(id);
+  return keys ? { keys } : {};
+};
 
 const VIEW_ICONS: Record<string, IconName> = { room: 'chat', files: 'folder', overview: 'grid', search: 'search', usage: 'gauge', terminal: 'terminal', tasks: 'task' };
 
@@ -45,7 +51,7 @@ export function Palette() {
     fn();
   };
 
-  const nav: Item[] = macTabs(state).map((t) => ({ id: `view:${t.kind}`, label: t.label, hint: t.hint.split(' · ')[0], keys: `⌥${t.key}`, icon: VIEW_ICONS[t.kind] ?? 'grid', run: () => actions.run({ type: 'view', view: { kind: t.kind } }) }));
+  const nav: Item[] = macTabs(state).map((t) => ({ id: `view:${t.kind}`, label: t.label, hint: t.hint.split(' · ')[0], ...keysOf(`go-${t.kind}`), icon: VIEW_ICONS[t.kind] ?? 'grid', run: () => actions.run({ type: 'view', view: { kind: t.kind } }) }));
   const places: Item[] = [
     // Each project's home (its main folder: Update main, its worktrees and chats).
     ...state.projects.filter((p) => p.root).map((p) => ({ id: `project:${p.id}`, label: p.name, hint: 'project home', icon: 'folder' as IconName, run: () => actions.run({ type: 'view', view: { kind: 'project', id: p.id } }) })),
@@ -61,7 +67,7 @@ export function Palette() {
   const here: Item[] = ws
     ? [
         // The right panel's tabs (the center stays on the conversation).
-        ...tabsOf(state).map((tab) => ({ id: `panel:${tab}`, label: `Show ${PANEL_LABELS[tab]}`, hint: 'in the panel', keys: `⌥${mod()}${panelDigit(tab)}`, icon: (tab === 'changes' ? 'diff' : tab === 'files' ? 'folder' : tab === 'terminal' ? 'terminal' : tab === 'history' ? 'clock' : tab === 'scratch' ? 'pulse' : tab === 'background' ? 'play' : tab === 'phone' ? 'phone' : 'inspector') as IconName, run: () => void showPanelTab(state, tab) })),
+        ...tabsOf(state).map((tab) => ({ id: `panel:${tab}`, label: `Show ${PANEL_LABELS[tab]}`, hint: 'in the panel', ...keysOf(`panel-${tab}`), icon: (tab === 'changes' ? 'diff' : tab === 'files' ? 'folder' : tab === 'terminal' ? 'terminal' : tab === 'history' ? 'clock' : tab === 'scratch' ? 'pulse' : tab === 'background' ? 'play' : tab === 'phone' ? 'phone' : 'inspector') as IconName, run: () => void showPanelTab(state, tab) })),
         ...workspaceButtons(state, ws)
           .filter((b) => !b.disabled)
           .map((b) => ({ id: `ws-action:${b.action}`, label: asksBeforeWork(b.action) ? `${b.label}…` : b.label, hint: b.hint, icon: (b.action === 'merge' ? 'merge' : b.action === 'pr' ? 'pr' : b.action === 'run' ? 'play' : b.action === 'archive' ? 'archive' : b.action === 'share' ? 'share' : b.action === 'handoff' ? 'hand' : b.action === 'review_claude' ? 'review' : b.action === 'commit' ? 'commit' : 'claude') as IconName, run: () => actions.run({ type: 'ws', id: ws.id, action: b.action }) })),
@@ -69,7 +75,7 @@ export function Palette() {
     : [];
   const chatHere = newChatProject(state);
   const create: Item[] = [
-    { id: 'new-chat', label: 'New chat', hint: chatHere === 'chats' ? 'Talk to Claude about anything' : `in ${state.projects.find((p) => p.id === chatHere)?.name ?? 'this project'}`, keys: `${mod()}N`, icon: 'chat', run: () => actions.run({ type: 'new_chat', projectId: chatHere }) },
+    { id: 'new-chat', label: 'New chat', hint: chatHere === 'chats' ? 'Talk to Claude about anything' : `in ${state.projects.find((p) => p.id === chatHere)?.name ?? 'this project'}`, ...keysOf('new-chat'), icon: 'chat', run: () => actions.run({ type: 'new_chat', projectId: chatHere }) },
     ...state.projects.filter((p) => p.root).flatMap((p) => [
       { id: `new-wt:${p.id}`, label: `New worktree in ${p.name}`, hint: 'from the latest origin', icon: 'branch' as IconName, run: () => actions.run({ type: 'new_worktree', projectId: p.id }) },
       { id: `new-chat:${p.id}`, label: `New chat in ${p.name}`, hint: 'a new one, in its main folder', icon: 'chat' as IconName, run: () => actions.run({ type: 'new_chat', projectId: p.id }) },
@@ -89,19 +95,20 @@ export function Palette() {
   // The /commands as things to do (no `<arg>` syntax); the ones that need more open their sheet.
   const commands: Item[] = paletteCommands({ client, ui, actions, state });
   const window: Item[] = [
-    { id: 'settings', label: 'Settings…', keys: `${mod()},`, icon: 'gear', run: () => ui.patch({ settings: 'general' }) },
-    { id: 'inbox', label: 'Notifications', hint: 'What happened while you were elsewhere', icon: 'bell', run: () => ui.patch({ notices: true }) },
+    { id: 'settings', label: 'Settings…', ...keysOf('settings'), icon: 'gear', run: () => ui.patch({ settings: 'general' }) },
+    { id: 'shortcuts', label: 'Keyboard Shortcuts…', hint: 'Change any key', keywords: ['keys', 'shortcuts', 'remap', 'hotkeys', 'keyboard'], ...keysOf('help-keys'), icon: 'command', run: () => ui.patch({ settings: 'keyboard' }) },
+    { id: 'inbox', label: 'Notifications', hint: 'What happened while you were elsewhere', ...keysOf('inbox'), icon: 'bell', run: () => ui.patch({ notices: true }) },
     { id: 'appearance', label: `Appearance: ${prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark'}`, icon: 'eye', run: () => setPrefs({ appearance: prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark' }) },
-    { id: 'sidebar', label: prefs.sidebar ? 'Hide the sidebar' : 'Show the sidebar', keys: '⌃⌘S', icon: 'sidebar', run: () => setPrefs({ sidebar: !prefs.sidebar }) },
+    { id: 'sidebar', label: prefs.sidebar ? 'Hide the sidebar' : 'Show the sidebar', ...keysOf('toggle-sidebar'), icon: 'sidebar', run: () => setPrefs({ sidebar: !prefs.sidebar }) },
     ...(panelFits(state.view)
-      ? [{ id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', keys: `⌥${mod()}0`, icon: 'panelRight' as IconName, run: () => togglePanel(state.view) }]
+      ? [{ id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', ...keysOf('toggle-inspector'), icon: 'panelRight' as IconName, run: () => togglePanel(state.view) }]
       : state.view.kind === 'plan'
-        ? [{ id: 'inspector', label: 'Show or hide the plan’s chat', keys: `⌥${mod()}0`, icon: 'claude' as IconName, run: () => togglePanel(state.view) }]
+        ? [{ id: 'inspector', label: 'Show or hide the plan’s chat', ...keysOf('toggle-inspector'), icon: 'claude' as IconName, run: () => togglePanel(state.view) }]
         : []),
-    { id: 'terminal-toggle', label: 'Show or hide the terminal', hint: prefs.termIn === 'drawer' ? 'under the chat' : 'in the panel', keys: `${mod()}J`, icon: 'terminal', run: () => void toggleTerminal(client.store.getState()) },
-    { id: 'bigger', label: 'Bigger text', keys: `${mod()}+`, icon: 'plus', run: () => zoom('in') },
-    { id: 'smaller', label: 'Smaller text', keys: `${mod()}−`, icon: 'x', run: () => zoom('out') },
-    { id: 'copy-answer', label: "Copy Claude's last answer", icon: 'copy', run: () => void client.api.session.copyLastAnswer() },
+    { id: 'terminal-toggle', label: 'Show or hide the terminal', hint: prefs.termIn === 'drawer' ? 'under the chat' : 'in the panel', ...keysOf('toggle-dock'), icon: 'terminal', run: () => void toggleTerminal(client.store.getState()) },
+    { id: 'bigger', label: 'Bigger text', ...keysOf('zoom-in'), icon: 'plus', run: () => zoom('in') },
+    { id: 'smaller', label: 'Smaller text', ...keysOf('zoom-out'), icon: 'x', run: () => zoom('out') },
+    { id: 'copy-answer', label: "Copy Claude's last answer", ...keysOf('conv-copy'), icon: 'copy', run: () => void client.api.session.copyLastAnswer() },
     { id: 'stop', label: 'Stop your Claude everywhere', icon: 'stop', run: () => void client.api.session.stopAgent() },
   ];
   const groups: Array<[string, Item[]]> = [

@@ -5,7 +5,8 @@ import { planTitle } from '@beluga/core/plans/model.js';
 import { type WorkspaceAction, type WorkspaceButton, workspaceButtons } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import type { IconName } from '../components/Icon.js';
-import { COMMAND_KEYS, runRunning } from '../lib/commands.js';
+import { runRunning } from '../lib/commands.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 import { mergeTargetOf } from '../lib/merge-review.js';
 import type { PlanAction } from '../lib/plan-task.js';
 import { asksBeforeWork } from '../lib/work-confirm.js';
@@ -73,16 +74,24 @@ const ICON: Record<WorkspaceAction, IconName> = {
   setup: 'terminal',
 };
 
+/** The shortcut behind each button (its key is yours: Settings › Keyboard). */
 const KEYS: Partial<Record<WorkspaceAction, string>> = {
-  commit: COMMAND_KEYS['ws-commit'],
-  pr: COMMAND_KEYS['ws-pr'],
-  merge: COMMAND_KEYS['ws-merge'],
-  merge_claude: COMMAND_KEYS['ws-merge'],
-  run: COMMAND_KEYS['ws-run'],
-  stop_run: COMMAND_KEYS['ws-run'],
-  review_claude: COMMAND_KEYS['ws-review'],
-  archive: COMMAND_KEYS['ws-archive'],
+  commit: 'ws-commit',
+  pr: 'ws-pr',
+  merge: 'ws-merge',
+  merge_claude: 'ws-merge',
+  run: 'ws-run',
+  stop_run: 'ws-run',
+  review_claude: 'ws-review',
+  archive: 'ws-archive',
 };
+
+/** A button's key, when its shortcut has one. */
+function keysOf(action: WorkspaceAction): { keys?: string } {
+  const id = KEYS[action];
+  const keys = id ? shortcutKeys(id) : undefined;
+  return keys ? { keys } : {};
+}
 
 /**
  * Menu-style names for the shared buttons (Finder → Show in Finder, PR → Create Pull Request).
@@ -132,7 +141,7 @@ const toAction = (b: WorkspaceButton, pr: boolean): ToolAction => ({
   ...(tipOf(b) ? { tip: tipOf(b) } : {}),
   icon: ICON[b.action],
   action: b.action,
-  ...(KEYS[b.action] ? { keys: KEYS[b.action] } : {}),
+  ...keysOf(b.action),
   ...(b.disabled ? { disabled: true } : {}),
   ...(b.tone ? { tone: b.tone } : {}),
   ...(b.action === 'archive' || b.action === 'delete' ? { danger: true } : {}),
@@ -205,7 +214,7 @@ export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
   const withDelete = !ws.archived && ws.kind !== 'main' && !ws.external && !buttons.some((b) => b.action === 'delete') && !state.prefs.hiddenButtons.includes('delete');
   const own = [...buttons.map((b) => {
     // While the run script runs, its button stops it.
-    if (b.action === 'run' && runRunning(state, ws.id)) return { ...toAction(b, pr), id: 'stop_run', action: 'stop_run' as const, label: 'Stop Running', icon: 'stop' as const, hint: 'Stop the run script', keys: KEYS.stop_run };
+    if (b.action === 'run' && runRunning(state, ws.id)) return { ...toAction(b, pr), id: 'stop_run', action: 'stop_run' as const, label: 'Stop Running', icon: 'stop' as const, hint: 'Stop the run script', ...keysOf('stop_run') };
     return toAction(b, pr);
   }), ...(withDelete ? [ws.kind === 'worktree' ? DELETE : { ...DELETE, hint: 'Remove it from Beluga and delete the conversation' }] : [])];
   const owner = ws.archived ? undefined : planOwnerOf(state.plans, state.board, ws.id);

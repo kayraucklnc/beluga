@@ -7,6 +7,7 @@ import { inApp } from './boot.js';
 import { getPrefs, usePrefs, type UiPrefs } from './prefs.js';
 import { joinPhrases, PhraseCutter, PHRASE_RATE, promptFrom, Resampler } from '@beluga/shared/voice-phrases.js';
 import { cleanWords, DICTATION_MAX_SECONDS, HOLD_MS, matchesAccel, parseAccel, spoken, wavFromFloats } from './dictation-model.js';
+import { isRecording } from './shortcuts.js';
 
 /**
  * Speak instead of typing (BLG-145): the microphone beside Send, and the talk shortcut (Settings ›
@@ -336,6 +337,8 @@ export function useDictationSetup(c: SocketClient): void {
   const global = prefs.voiceAnyApp && inApp() && Boolean(accel);
   useEffect(() => {
     const down = (e: KeyboardEvent): void => {
+      // Settings › Keyboard is recording a shortcut: the keys are its.
+      if (isRecording()) return;
       if (state.kind !== 'off') {
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -374,6 +377,7 @@ export function useDictationSetup(c: SocketClient): void {
     void import('@tauri-apps/plugin-global-shortcut')
       .then(async ({ register, unregister }) => {
         await register(shortcut, (ev) => {
+          if (isRecording()) return;
           if (ev.state === 'Pressed') {
             void import('@tauri-apps/api/window').then(async ({ getCurrentWindow }) => {
               const w = getCurrentWindow();

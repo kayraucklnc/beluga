@@ -11,22 +11,22 @@ import { NO_TALLY, type Tally, tallyTip } from './attention-model.js';
 import { DotMark, TallyMark } from './signal-marks.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
+import { isShortcut } from '../lib/shortcuts.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /** The project menu's group options, done the Mac way: these spec options become "Move to Group ▸". */
 export const isGroupOption = (id: string): boolean => id.startsWith('p-group:') || id === 'p-newgroup' || id === 'p-ungroup';
 
 /** Moving rows with the keyboard (⌥⌘↑/↓ are Previous/Next Workspace in the menu bar). */
-export const MOVE_UP_KEYS = '⌃⌘↑';
-export const MOVE_DOWN_KEYS = '⌃⌘↓';
-export const moveKey = (e: KeyboardEvent): -1 | 1 | undefined => (e.ctrlKey && e.metaKey && !e.altKey && !e.shiftKey ? (e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : undefined) : undefined);
+export const moveKey = (e: KeyboardEvent): -1 | 1 | undefined => (isShortcut('project-up', e) ? -1 : isShortcut('project-down', e) ? 1 : undefined);
 
 /** "Move Up" and "Move Down" for a row's menu (greyed at the ends). */
 export function moveItems(entries: readonly Entry[], item: Target, arrange: (item: Target, place: Place) => void): ActionItem[] {
   const up = stepOf(entries, item, -1);
   const down = stepOf(entries, item, 1);
   return [
-    { label: 'Move Up', keys: MOVE_UP_KEYS, disabled: !up, onSelect: () => up && arrange(item, up) },
-    { label: 'Move Down', keys: MOVE_DOWN_KEYS, disabled: !down, onSelect: () => down && arrange(item, down) },
+    { label: 'Move Up', keys: shortcutKeys('project-up'), disabled: !up, onSelect: () => up && arrange(item, up) },
+    { label: 'Move Down', keys: shortcutKeys('project-down'), disabled: !down, onSelect: () => down && arrange(item, down) },
   ];
 }
 

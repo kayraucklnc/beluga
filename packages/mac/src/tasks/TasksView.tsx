@@ -15,6 +15,8 @@ import { useTaskFileDrop } from './use-task-drop.js';
 import { setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
 import { TeamOffers } from '../team/Team.js';
+import { isShortcut } from '../lib/shortcuts.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const FlowGraph = lazy(() => import('../components/graph/FlowGraph.js'));
 
@@ -67,17 +69,17 @@ export function TasksView() {
   const here = projects.find((p) => p.id === project);
   const sync = project ? board.sync?.[project] : undefined;
 
-  // ⌘F finds, ⌘N or C (outside a field) makes a task.
+  // ⌘F finds, ⌘N or C (outside a field) makes a task (or your keys for them: Settings › Keyboard).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       // Not while typing, in a menu, a pop-up or a sheet (a sheet's own keys stay its own).
       if (e.defaultPrevented || currentSheet()) return;
       const typing = (e.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"], [role="combobox"], [role="dialog"]');
-      if (e.metaKey && e.key.toLowerCase() === 'f' && !typing) {
+      if (isShortcut('page-filter', e) && !typing) {
         e.preventDefault();
         find.current?.focus();
         find.current?.select();
-      } else if ((e.metaKey && e.key.toLowerCase() === 'n' && !e.shiftKey) || (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && e.key === 'c')) {
+      } else if (isShortcut('page-new', e) && (!typing || e.metaKey || e.ctrlKey || e.altKey)) {
         e.preventDefault();
         e.stopPropagation();
         openSheet({ kind: 'new_task', projectId: project });
@@ -189,7 +191,7 @@ export function TasksView() {
         >
           <IconButton icon="more" label="Tasks Options" />
         </ActionsDropdown>
-        <Button variant="primary" size="small" icon="plus" className={t.newTask} aria-label="New Task" onClick={() => openSheet({ kind: 'new_task', projectId: project })} title="New Task (⌘N)">
+        <Button variant="primary" size="small" icon="plus" className={t.newTask} aria-label="New Task" onClick={() => openSheet({ kind: 'new_task', projectId: project })} title={`New Task${shortcutKeys('page-new') ? ` (${shortcutKeys('page-new')})` : ''}`}>
           New Task
         </Button>
         </div>

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { DEFAULT_FIRE, type FireLook, fireLookOf } from '../chat/fire-look.js';
 import { DEFAULT_MENU_BAR, type MenuBarLook, menuBarLookOf } from '../menubar/menubar-look.js';
 import { type TermThemePref, themeOf } from './terminal-import-model.js';
+import { type ShortcutOverrides, overridesOf } from './shortcuts-model.js';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
 /**
@@ -92,6 +93,8 @@ export interface UiPrefs {
   readonly voiceSend: boolean;
   /** The shortcut works from any app: Beluga comes forward and listens. */
   readonly voiceAnyApp: boolean;
+  /** Settings › Keyboard (BLG-289): the shortcuts you gave other keys (the rest keep theirs). */
+  readonly shortcuts: ShortcutOverrides;
 }
 
 export const ACCENTS = {
@@ -155,6 +158,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   voiceShortcut: 'Alt+Space',
   voiceSend: false,
   voiceAnyApp: false,
+  shortcuts: {},
 };
 
 const KEY = 'beluga.prefs.v1';
@@ -164,7 +168,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme) };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts) };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -210,7 +214,8 @@ export function apply(p: UiPrefs = current): void {
   root.style.setProperty('--chat-max', p.chatWidth === 'narrow' ? '42rem' : p.chatWidth === 'wide' ? '60rem' : '100%');
 }
 
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => apply());
+// (Not in tests, which load the pure parts of what imports this without a window.)
+if (typeof window !== 'undefined') window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => apply());
 
 /** ⌘+ / ⌘- / ⌘0: the window's text size. */
 export function zoom(dir: 'in' | 'out' | 'reset'): { ok: boolean; message: string } {

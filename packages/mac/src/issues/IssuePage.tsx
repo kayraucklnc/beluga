@@ -21,6 +21,7 @@ import { useIssue, useIssueActions, useIssueStage } from './use-issues.js';
 import { useActions } from '../lib/actions.js';
 import t from '../tasks/tasks.module.css';
 import s from './issues.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
  * One GitHub issue: what it says and what people said since, and what Claude should do about it.
@@ -90,7 +91,7 @@ function Page({ projectId, repo, issue, loading, refresh }: { projectId: string;
       <div className={t.page}>
         <div className={t.pageMain}>
           <nav className={t.crumbs} aria-label="Where this issue is">
-            <IconButton icon="back" label="Back" keys="⌘[" className={t.crumbBack} onClick={back} />
+            <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
             <button type="button" className={t.crumb} onClick={() => a.openList(projectId)}>
               Issues
             </button>

@@ -3,6 +3,7 @@ import type { LogItem } from '@beluga/core/store.js';
 import { Icon } from '../components/Icon.js';
 import { IconButton } from '../components/ui.js';
 import s from './find.module.css';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 /** The words of one conversation item that Find looks through. */
 function searchable(item: LogItem): string {
@@ -141,8 +142,8 @@ export function FindBar({ items, logRef, onGo }: { items: readonly LogItem[]; lo
         {find.query.trim() ? (matches.length ? `${at + 1} of ${matches.length}` : 'No matches') : ''}
       </span>
       <span className={s.steps}>
-        <IconButton icon="chevronUp" label="Previous match" keys="⇧⌘G" disabled={!matches.length} onClick={() => step(-1)} />
-        <IconButton icon="chevronDown" label="Next match" keys="⌘G" disabled={!matches.length} onClick={() => step(1)} />
+        <IconButton icon="chevronUp" label="Previous match" keys={shortcutKeys('conv-find-prev')} disabled={!matches.length} onClick={() => step(-1)} />
+        <IconButton icon="chevronDown" label="Next match" keys={shortcutKeys('conv-find-next')} disabled={!matches.length} onClick={() => step(1)} />
       </span>
       <button type="button" className={s.done} onClick={close}>
         Done

@@ -338,6 +338,33 @@ pub fn apply_state<R: Runtime>(menu: &Menu<R>, state: &MenuState) {
     }
 }
 
+/// Set menu-bar items' keys by id (None: no key). A key the menu can't take leaves the item without one.
+pub fn apply_keys<R: Runtime>(menu: &Menu<R>, keys: &HashMap<String, Option<String>>) {
+    let Ok(top) = menu.items() else { return };
+    let submenus: Vec<Submenu<R>> = top
+        .into_iter()
+        .filter_map(|k| match k {
+            MenuItemKind::Submenu(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    for (id, accel) in keys {
+        match submenus.iter().find_map(|s| s.get(id)) {
+            Some(MenuItemKind::MenuItem(i)) => {
+                if i.set_accelerator(accel.as_deref()).is_err() {
+                    let _ = i.set_accelerator(None::<&str>);
+                }
+            }
+            Some(MenuItemKind::Check(i)) => {
+                if i.set_accelerator(accel.as_deref()).is_err() {
+                    let _ = i.set_accelerator(None::<&str>);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "quit" => app.exit(0),

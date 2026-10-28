@@ -16,6 +16,7 @@ import { McpSettings } from './McpSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { VoiceSettings } from './VoiceSettings.js';
+import { KeyboardSettings } from './KeyboardSettings.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import { MaintainerChip } from './SupportSheets.js';
 import s from './settings.module.css';
@@ -29,6 +30,7 @@ import { AccessSettings } from '../gateway/AccessSettings.js';
 import { UpdateAboutRow, UpdateSettingsGroup } from './UpdateSettings.js';
 import { GITHUB_URL, openSupport } from '../lib/support.js';
 import { openExternal } from '../lib/system.js';
+import { shortcutKeys } from '../lib/shortcuts.js';
 
 const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> = [
   { id: 'general', label: 'General', icon: 'gear' },
@@ -43,6 +45,7 @@ const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> 
   { id: 'people', label: 'People & access', icon: 'people' },
   { id: 'phone', label: 'Phone', icon: 'phone' },
   { id: 'voice', label: 'Voice', icon: 'mic' },
+  { id: 'keyboard', label: 'Keyboard', icon: 'command' },
   { id: 'about', label: 'About', icon: 'globe' },
 ];
 
@@ -211,7 +214,7 @@ function Appearance() {
         </Row>
       </Group>
       <Group title="Layout">
-        <Row label="Text size" detail={`${prefs.textSize} pt · ⌘+ and ⌘− work anywhere`}>
+        <Row label="Text size" detail={`${prefs.textSize} pt · ${[shortcutKeys('zoom-in'), shortcutKeys('zoom-out')].filter(Boolean).join(' and ') || 'Bigger and Smaller Text in the View menu'} work anywhere`}>
           <input className={s.slider} type="range" min={11} max={17} step={1} value={prefs.textSize} onChange={(e) => setPrefs({ textSize: Number(e.target.value) })} />
         </Row>
         <Row label="Density">
@@ -291,7 +294,7 @@ function ClaudePane() {
         <Row label="Give Claude a scratch folder" detail="Screenshots, JSON, logs and notes Claude makes while it works go to the workspace’s .beluga/scratch/ folder (kept out of git; never touches other tools’ .context/).">
           <Switch label="Scratch folder" on={p.scratchFolder} onChange={(v) => void api.session.setPrefs({ scratchFolder: v })} />
         </Row>
-        <Row label="Show the Scratch tab" detail="Watch that folder live in the right panel, newest first (⌥⌘6).">
+        <Row label="Show the Scratch tab" detail={`Watch that folder live in the right panel, newest first${shortcutKeys('panel-scratch') ? ` (${shortcutKeys('panel-scratch')})` : ''}.`}>
           <Switch label="Scratch tab" on={macPrefs.scratchTab} onChange={(v) => setPrefs({ scratchTab: v })} />
         </Row>
       </Group>
@@ -481,7 +484,7 @@ function About() {
   );
 }
 
-const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, fire: FireSettings, menubar: MenuBarSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, voice: VoiceSettings, about: About };
+const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, fire: FireSettings, menubar: MenuBarSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, voice: VoiceSettings, keyboard: KeyboardSettings, about: About };
 
 /** Beluga's settings: this window's look on the left panes, Beluga's shared settings on the rest. */
 export function Settings() {

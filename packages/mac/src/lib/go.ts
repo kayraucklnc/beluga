@@ -1,5 +1,6 @@
 import type { AppState } from '@beluga/core/store.js';
 import { type TopTab, topTabs } from '@beluga/ui/workspace-models.js';
+import { shortcutKeys } from './shortcuts.js';
 
 /**
  * The Mac app's places: Overview, Tasks and Chat (the sidebar's top), then Search, Usage,
@@ -17,19 +18,22 @@ export interface Place extends Omit<TopTab, 'kind'> {
 
 export const GO_ORDER: readonly PlaceKind[] = ['overview', 'tasks', 'room', 'search', 'usage', 'terminal', 'files'];
 
-/** The places there are now, in order, each hint ending with its ⌥ key. */
+/** A hint ending with the place's key (yours: Settings › Keyboard). */
+function withKeys(hint: string, kind: PlaceKind): string {
+  const keys = shortcutKeys(`go-${kind}`);
+  return keys ? `${hint} · ${keys}` : hint;
+}
+
+/** The places there are now, in order, each hint ending with its key. */
 export function macTabs(state: AppState): Place[] {
   const tabs = topTabs(state);
   return GO_ORDER.flatMap((kind, i): Place[] => {
     const key = i + 1;
-    if (kind === 'tasks') return state.board.enabled ? [{ kind, key, label: 'Tasks', short: 'Tasks', hint: `Plan and track the work · ⌥${key}`, badge: 0 }] : [];
+    if (kind === 'tasks') return state.board.enabled ? [{ kind, key, label: 'Tasks', short: 'Tasks', hint: withKeys('Plan and track the work', kind), badge: 0 }] : [];
     const t = tabs.find((x) => x.kind === kind);
-    return t ? [{ ...t, kind, key, hint: `${t.hint.replace(/ · (⌥|Alt\+)\d$/, '')} · ⌥${key}` }] : [];
+    return t ? [{ ...t, kind, key, hint: withKeys(t.hint.replace(/ · (⌥|Alt\+)\d$/, ''), kind) }] : [];
   });
 }
-
-/** The place ⌥<digit> goes to. */
-export const placeForKey = (state: AppState, digit: number): Place | undefined => macTabs(state).find((p) => p.key === digit);
 
 /** The place ⌃Tab (+1) or ⌃⇧Tab (-1) goes to; from elsewhere, the first or last one. */
 export function stepPlace(state: AppState, delta: 1 | -1): PlaceKind {
