@@ -817,6 +817,19 @@ class Store {
     }
   }
 
+  /**
+   * Dismiss a needs-you item without answering it: gone here at once, and (a Mac with
+   * SINCE.dismiss) gone on the Mac too and after a relink. An older Mac: hidden until the phone relinks.
+   */
+  dismiss(item: NeedsYou): void {
+    this.hide(item.id);
+    if (!this.supports('dismiss')) return;
+    this.call(calls.dismissNeed(item.id)).catch((e: Error) => {
+      this.hide(item.id, false);
+      this.toast({ text: e.message, tone: 'error' });
+    });
+  }
+
   /** Answer a needs-you item: hide it now, show it again if the Mac says no. */
   async answer(item: NeedsYou, c: Call, done: string): Promise<void> {
     this.hide(item.id);

@@ -167,6 +167,8 @@ export type GatewayAction =
   | { type: 'gw_init'; state: GatewayState }
   /** One task changed (same id: replaced). */
   | { type: 'gw_task'; task: TaskView }
+  /** One task forgotten (Remove). */
+  | { type: 'gw_forget'; id: string }
   | { type: 'gw_card'; peerId: string; card: PeerCard }
   | { type: 'gw_note'; note: string }
   | { type: 'gw_rules'; rules: readonly Rule[] }
@@ -186,6 +188,8 @@ export function reduceGateway(state: GatewaySlice, action: GatewayAction): Gatew
       return { gateway: action.state };
     case 'gw_task':
       return { gateway: { ...state.gateway, tasks: withTask(state.gateway.tasks, action.task) } };
+    case 'gw_forget':
+      return { gateway: { ...state.gateway, tasks: state.gateway.tasks.filter((t) => t.id !== action.id) } };
     case 'gw_card':
       return { gateway: { ...state.gateway, cards: { ...state.gateway.cards, [action.peerId]: action.card } } };
     case 'gw_note':

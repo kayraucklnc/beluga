@@ -3,8 +3,8 @@ import { KeyboardLift } from '../../components/KeyboardLift';
 import { ArrowLeftRight, Clock, Lock, SquareTerminal, TriangleAlert, X } from 'lucide-react-native';
 import { AskClaudePicker, type AskTarget, askTargets } from '../../components/AskClaudePicker';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View } from 'react-native';
-import Animated, { FadeInUp, LinearTransition } from 'react-native-reanimated';
+import { ScrollView, StyleSheet as RNStyleSheet, View } from 'react-native';
+import Animated, { LinearTransition, FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '../../components/Composer';
 import { SendStatus } from '../../components/SendStatus';
@@ -61,8 +61,7 @@ export default function Chat() {
             return (
               <Animated.View
                 key={m.id}
-                entering={i > c.messages.length - 3 ? FadeInUp.springify().stiffness(220).damping(22) : undefined}
-                layout={LinearTransition.springify()}
+                entering={i > c.messages.length - 3 ? FadeIn.duration(180) : undefined}
                 onLayout={m.task ? (e) => (cards.current[m.task!.id] = e.nativeEvent.layout.y) : undefined}
               >
                 <Bubble m={m} first={run.first} last={run.last} group={c.kind === 'group'} pics={pics} me={meName} />
@@ -70,8 +69,8 @@ export default function Chat() {
             );
           })}
           {pending.map((p) => (
-            <Animated.View key={p.id} entering={FadeInUp.springify().stiffness(220).damping(22)} layout={LinearTransition.springify()} style={{ alignItems: 'flex-end', marginTop: 6 }}>
-              <View style={{ maxWidth: '78%', paddingVertical: 9, paddingHorizontal: 13, borderRadius: 19, borderBottomRightRadius: 6, backgroundColor: meName ? toneBg(hueOf(meName)) : tint.sky, opacity: p.state === 'failed' ? 1 : 0.6, borderWidth: p.state === 'failed' ? 1 : 0, borderColor: color.error }}>
+            <Animated.View key={p.id} entering={FadeIn.duration(180)} style={{ alignItems: 'flex-end', marginTop: 6 }}>
+              <View style={{ maxWidth: '78%', paddingVertical: 9, paddingHorizontal: 13, borderRadius: 19, borderBottomRightRadius: 6, backgroundColor: color.sunken, opacity: p.state === 'failed' ? 1 : 0.6, borderWidth: p.state === 'failed' ? 1 : 0, borderColor: color.error }}>
                 <T v="body" c={color.text} style={{ fontSize: 15.5 }}>
                   {p.text || 'Photo'}
                 </T>
@@ -81,7 +80,7 @@ export default function Chat() {
           ))}
         </ScrollView>
         {ask ? (
-          <Animated.View entering={FadeInUp.duration(180)} style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 2 }}>
+          <Animated.View entering={FadeIn.duration(180)} style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 2 }}>
             <Press onPress={() => setPicking(true)} accessibilityLabel={`Ask: ${ask.label}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingLeft: 10, paddingRight: 4, borderRadius: 15, backgroundColor: tint.peach }}>
               <SquareTerminal color={ink.peach} size={14} />
               <T v="caption" c={ink.peach} style={{ fontWeight: '700' }}>
@@ -245,8 +244,8 @@ function Bubble({ m, first, last, group, pics, me }: { m: ChatMessageView; first
       </ClaudeRow>
     );
   }
-  // Your pastel, or theirs: each person keeps their colour (the same as their picture).
-  const bg = toneBg(hueOf(mine && me ? me : m.from));
+  // Theirs on a card with a hairline, yours a quiet grey: told apart by side and tone, not a hue each.
+  const bg = mine ? color.sunken : color.card;
   return (
     <View style={{ flexDirection: 'row', justifyContent: mine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: 8, marginTop: first ? 10 : 0 }}>
       {!mine ? <View style={{ width: 30 }}>{last ? <Avatar name={m.from} size={30} /> : null}</View> : null}
@@ -268,6 +267,7 @@ function Bubble({ m, first, last, group, pics, me }: { m: ChatMessageView; first
               borderBottomRightRadius: mine ? (last ? 5 : 8) : 19,
               borderBottomLeftRadius: mine ? 19 : last ? 5 : 8,
               backgroundColor: bg,
+              ...(mine ? {} : { borderWidth: RNStyleSheet.hairlineWidth, borderColor: color.hairlineStrong }),
             }}
           >
             <T v="body" c={color.text} style={{ fontSize: 15.5 }}>

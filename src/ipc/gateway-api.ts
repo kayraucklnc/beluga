@@ -32,6 +32,8 @@ export const GATEWAY_API = {
   'gateway.setAskFreely': { args: z.tuple([z.string().min(1).max(80), z.boolean()]) },
   // Cancel a task you sent, or stop one someone sent you.
   'gateway.cancel': { args: z.tuple([taskId]) },
+  // Remove a task you sent from your lists (cancelled first while it's still going).
+  'gateway.forget': { args: z.tuple([taskId]) },
   // Ask someone's Claude yourself (from their card): → the task.
   'gateway.ask': { args: z.tuple([z.string().min(1).max(80), z.string().min(1).max(16_000), z.object({ needs: needs.optional(), project: z.string().min(1).max(80).optional() }).optional()]) },
   // Your "Ask me for…" note (what friends' Claudes see on your card).

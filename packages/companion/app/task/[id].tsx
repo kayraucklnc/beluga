@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowRightLeft, Check, CircleSlash, GitBranch, Clock, GitPullRequest, MessageSquare, Monitor, Play, User } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '../../components/Composer';
 import { convHref, Prose } from '../../components/Conv';
@@ -100,7 +100,7 @@ export default function Task() {
                     return (
                       <View key={i} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                         <View style={{ width: 20, height: 20, borderRadius: 6, marginTop: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: done ? toneBg('mint') : why ? toneBg('butter') : 'transparent', borderWidth: done || why ? 0 : 1.5, borderColor: color.hairlineStrong }}>
-                          {done ? <Check color={toneInk('mint')} size={13} strokeWidth={3} /> : why ? <CircleSlash color={toneInk('butter')} size={12} /> : null}
+                          {done ? <Check color={toneInk('mint')} size={13} strokeWidth={2.2} /> : why ? <CircleSlash color={toneInk('butter')} size={12} /> : null}
                         </View>
                         <View style={{ flex: 1 }}>
                           <T v="callout" c={done ? color.text2 : color.text}>
@@ -154,7 +154,7 @@ export default function Task() {
                     Activity
                   </T>
                   {t.activity.map((a) => (
-                    <Animated.View key={a.id} entering={FadeInDown.duration(220)} layout={LinearTransition.springify()} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                    <Animated.View key={a.id} entering={FadeIn.duration(220)} layout={LinearTransition.duration(180)} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                       <Avatar name={a.who} size={26} claude={/Claude/.test(a.who)} />
                       <View style={{ flex: 1, gap: 4 }}>
                         <T v="callout">

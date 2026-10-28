@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { Activity, Bell, Bot, Calendar, Check, CircleDot, CirclePause, Clock, Coins, Eye, FileText, Gauge, GitMerge, GitPullRequest, Globe, Network, Hand, Loader, type LucideIcon, MessageSquare, Minus, Play, RefreshCw, Shield, SquareTerminal, Tag, Terminal, TriangleAlert, Users, Wrench, X } from 'lucide-react-native';
 import { View } from 'react-native';
-import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { LinearTransition, FadeIn } from 'react-native-reanimated';
 import { ago, useSupports, useView } from '../lib/hooks';
 import type { SentinelSummary, SentinelsView } from '../lib/link/protocol';
 import { kv } from '../lib/kv';
@@ -66,7 +66,7 @@ export function SentinelRow({ s, first }: { readonly s: SentinelSummary; readonl
       {!first ? <Hairline style={{ marginLeft: 58 }} /> : null}
       <Press scaleTo={0.985} onPress={() => router.push(sentinelHref(s.id) as never)} accessibilityLabel={`${s.name}, ${sentinelCaption(s)}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14, opacity: s.paused ? 0.75 : 1 }}>
         <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(tone) }}>
-          {s.paused ? <CirclePause color={toneInk(tone)} size={16} strokeWidth={2.3} /> : <Icon color={toneInk(tone)} size={16} strokeWidth={2.3} />}
+          {s.paused ? <CirclePause color={toneInk(tone)} size={16} strokeWidth={1.9} /> : <Icon color={toneInk(tone)} size={16} strokeWidth={1.9} />}
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <T v="body" numberOfLines={1} style={{ fontWeight: '500' }}>
@@ -121,7 +121,7 @@ export function SentinelsList() {
   return (
     <View style={{ gap: 22 }}>
       {ordered.map(([key, g], gi) => (
-        <Animated.View key={key || 'mac'} entering={FadeInDown.delay(gi * 60).duration(300)} layout={LinearTransition.springify()} style={{ gap: 10 }}>
+        <Animated.View key={key || 'mac'} entering={FadeIn.duration(180)} layout={LinearTransition.duration(180)} style={{ gap: 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20 }}>
             <ProjectMark name={g.name} size={26} />
             <T v="heading" style={{ flex: 1 }} numberOfLines={1}>

@@ -1,7 +1,7 @@
 import { BookOpen, Bot, Check, ChevronDown, CircleAlert, FilePlus2, FlaskConical, Globe, Hourglass, ListChecks, type LucideIcon, PenLine, Search, ShieldQuestion, Sparkles, SquareTerminal, Wrench } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeInDown, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import { elapsed, useSince } from '../lib/hooks';
 import type { LiveView, StepView, SubAgentView, TurnView } from '../lib/link/protocol';
 import { color, spring } from '../lib/theme';
@@ -36,7 +36,7 @@ export function ToolBadge({ kind, size = 24 }: { readonly kind?: string; readonl
   const { Icon, tone } = toolOf(kind);
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(tone) }}>
-      <Icon color={toneInk(tone)} size={size * 0.54} strokeWidth={2.2} />
+      <Icon color={toneInk(tone)} size={size * 0.54} strokeWidth={1.9} />
     </View>
   );
 }
@@ -64,7 +64,7 @@ function Dot({ delay, c }: { readonly delay: number; readonly c: string }) {
 export function Breathe({ children, on = true }: { readonly children: React.ReactNode; readonly on?: boolean }) {
   const o = useSharedValue(1);
   useEffect(() => {
-    o.value = on ? withRepeat(withSequence(withTiming(0.5, { duration: 1100, easing: Easing.inOut(Easing.sin) }), withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.sin) })), -1) : withTiming(1);
+    o.value = on ? withRepeat(withSequence(withTiming(0.65, { duration: 1100, easing: Easing.inOut(Easing.sin) }), withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.sin) })), -1) : withTiming(1);
   }, [on]);
   const st = useAnimatedStyle(() => ({ opacity: o.value }));
   return <Animated.View style={st}>{children}</Animated.View>;
@@ -82,7 +82,7 @@ function Bar({ value, tone = 'mint' }: { readonly value: number; readonly tone?:
   const [w, setW] = useState(0);
   const x = useSharedValue(0);
   useEffect(() => {
-    x.value = withSpring(value, spring.soft);
+    x.value = withTiming(value, { duration: 320, easing: Easing.out(Easing.cubic) });
   }, [value]);
   const st = useAnimatedStyle(() => ({ width: Math.max(4, x.value * w) }));
   return (
@@ -109,7 +109,7 @@ function NowRow({ live }: { readonly live: LiveView }) {
   const tool = step ? toolOf(live.tool) : undefined;
   const words = step ? (live.words ?? 'Working') : p!.label;
   return (
-    <Animated.View key={`${live.phase}:${live.words ?? ''}`} entering={FadeInDown.duration(260)} layout={LinearTransition.springify().stiffness(220).damping(26)} style={{ gap: 8 }}>
+    <View style={{ gap: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Breathe>{step ? <ToolBadge kind={live.tool} size={28} /> : <PhaseBadge Icon={p!.Icon} tone={p!.tone} />}</Breathe>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -135,14 +135,14 @@ function NowRow({ live }: { readonly live: LiveView }) {
           </T>
         </View>
       ) : null}
-    </Animated.View>
+    </View>
   );
 }
 
 function PhaseBadge({ Icon, tone }: { readonly Icon: LucideIcon; readonly tone: Tone }) {
   return (
     <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(tone) }}>
-      <Icon color={toneInk(tone)} size={15} strokeWidth={2.2} />
+      <Icon color={toneInk(tone)} size={15} strokeWidth={1.9} />
     </View>
   );
 }
@@ -167,7 +167,7 @@ export function StepList({ steps, shown = 5, live }: { readonly steps: readonly 
         const on = Boolean(live && last);
         // Keyed by place in the whole list: a new step slides in, the others stay put.
         return (
-          <Animated.View key={from + i} entering={FadeInDown.duration(280).springify().stiffness(220).damping(24)} layout={LinearTransition.springify().stiffness(220).damping(26)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+          <Animated.View key={from + i} entering={FadeIn.duration(160)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
             <Breathe on={on}>
               <ToolBadge kind={s.tool} size={22} />
             </Breathe>
@@ -262,11 +262,11 @@ export function AgentList({ agents, onOpen }: { readonly agents: readonly SubAge
         const Icon = a.status === 'done' ? Check : a.status === 'failed' ? CircleAlert : Bot;
         const now = a.status === 'running' ? (a.step ?? a.steps.at(-1)) : (a.trail?.at(-1)?.text ?? a.steps.at(-1));
         return (
-          <Animated.View key={a.id} entering={FadeIn.duration(240)} layout={LinearTransition.duration(220)}>
+          <Animated.View key={a.id} entering={FadeIn.duration(160)}>
             <Press scaleTo={0.985} onPress={() => onOpen(a)} accessibilityLabel={a.title} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 14, backgroundColor: toneBg(tone) }}>
               <Breathe on={a.status === 'running'}>
                 <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card }}>
-                  <Icon color={toneInk(tone)} size={14} strokeWidth={2.3} />
+                  <Icon color={toneInk(tone)} size={14} strokeWidth={1.9} />
                 </View>
               </Breathe>
               <View style={{ flex: 1, gap: 1 }}>
@@ -274,12 +274,12 @@ export function AgentList({ agents, onOpen }: { readonly agents: readonly SubAge
                   {a.title}
                 </T>
                 {now ? (
-                  <Animated.View key={now} entering={FadeInDown.duration(220)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     {a.status === 'running' && a.tool ? <ToolBadge kind={a.tool} size={16} /> : null}
                     <T v="caption" c={toneInk(tone)} numberOfLines={1} style={{ flex: 1, opacity: 0.85 }}>
                       {now}
                     </T>
-                  </Animated.View>
+                  </View>
                 ) : null}
               </View>
               <AgentTime a={a} tone={tone} />

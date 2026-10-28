@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ChevronRight, Workflow } from 'lucide-react-native';
 import { View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useView } from '../lib/hooks';
 import type { PlansView } from '../lib/link/protocol';
 import { color } from '../lib/theme';
@@ -30,7 +30,7 @@ export function PlansList() {
         const tone = toneOf(p.state);
         const pct = p.total ? p.done / p.total : 0;
         return (
-          <Animated.View key={p.id} entering={FadeInDown.delay(i * 50).duration(300)}>
+          <Animated.View key={p.id} entering={FadeIn.duration(180)}>
             <Press scaleTo={0.985} onPress={() => router.push(`/plan/${p.id}`)} style={{ marginHorizontal: 16 }}>
               <Card style={{ padding: 14, gap: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>

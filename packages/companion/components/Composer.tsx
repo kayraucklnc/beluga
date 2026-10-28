@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { ArrowUp, Clock, ImagePlus, ListPlus, Navigation, Plus, Square, X } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { Keyboard, Platform, ScrollView, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp, LinearTransition, useAnimatedStyle, withSpring, ZoomIn, ZoomOut } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { composerPlan, FIELD_LINE_HEIGHT, FIELD_PAD, fieldHeight, MAX_PHOTOS } from '../lib/composer';
 import { pickPhoto } from '../lib/pick';
 import { color, ink, spring, tint } from '../lib/theme';
@@ -32,7 +32,7 @@ export type Photo = NonNullable<Awaited<ReturnType<typeof pickPhoto>>>;
 export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readonly { id: string; text: string; waiting?: string }[]; readonly onSteer: (id: string) => void; readonly onRemove: (id: string) => void }) {
   if (!queue.length) return null;
   return (
-    <Animated.View entering={FadeInDown.duration(240)} exiting={FadeOutUp.duration(160)} layout={LinearTransition.springify()}>
+    <Animated.View entering={FadeIn.duration(240)} exiting={FadeOut.duration(160)} layout={LinearTransition.duration(180)}>
       <Card r={20} style={{ paddingVertical: 6, paddingHorizontal: 6, gap: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingTop: 4, paddingBottom: 2 }}>
           <Clock color={color.text3} size={13} />
@@ -49,7 +49,7 @@ export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readon
           </View>
         ) : null}
         {queue.map((q, i) => (
-          <Animated.View key={q.id} entering={FadeInDown.duration(220)} exiting={FadeOutUp.duration(140)} layout={LinearTransition.springify()} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 8, paddingVertical: 2 }}>
+          <Animated.View key={q.id} entering={FadeIn.duration(220)} exiting={FadeOut.duration(140)} layout={LinearTransition.duration(180)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 8, paddingVertical: 2 }}>
             <View style={{ width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: color.sunken }}>
               <T v="caption" style={{ fontSize: 11, fontWeight: '700' }}>
                 {i + 1}
@@ -80,10 +80,10 @@ function PhotoStrip({ photos, onRemove }: { readonly photos: readonly Photo[]; r
     <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 8, paddingHorizontal: 6, paddingTop: 6, paddingBottom: 2 }}>
         {photos.map((p) => (
-          <Animated.View key={p.uri} entering={ZoomIn.duration(200)} exiting={ZoomOut.duration(140)} style={{ width: 64, height: 64 }}>
+          <Animated.View key={p.uri} entering={FadeIn.duration(200)} exiting={FadeOut.duration(140)} style={{ width: 64, height: 64 }}>
             <Image source={{ uri: p.uri }} style={{ width: 64, height: 64, borderRadius: 14, backgroundColor: color.sunken }} contentFit="cover" />
             <Press onPress={() => onRemove(p.uri)} accessibilityLabel="Remove photo" hitSlop={8} style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card }}>
-              <X color={color.text2} size={13} strokeWidth={2.4} />
+              <X color={color.text2} size={13} strokeWidth={1.9} />
             </Press>
           </Animated.View>
         ))}
@@ -259,13 +259,13 @@ export function Composer({
           ) : null}
           <Animated.View style={btn}>
             {plan.tap === 'stop' ? (
-              <Animated.View key="stop" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
+              <Animated.View key="stop" entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)}>
                 <Press onPress={() => (haptic.commit(), onStop?.())} accessibilityLabel="Stop" style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: tint.rose }}>
                   <Square color={color.error} fill={color.error} size={13} />
                 </Press>
               </Animated.View>
             ) : (
-              <Animated.View key="send" entering={ZoomIn.springify()} exiting={ZoomOut.duration(120)}>
+              <Animated.View key="send" entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)}>
                 <Press
                   onPress={() => (speaking ? (haptic.commit(), voice.finish('send')) : send('send'))}
                   onLongPress={plan.more.length ? () => (haptic.commit(), Keyboard.dismiss(), setMenu(true)) : undefined}
@@ -275,7 +275,7 @@ export function Composer({
                   accessibilityHint={plan.more.length ? 'Hold to steer Claude now instead' : undefined}
                   style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: live ? color.primary : color.sunken }}
                 >
-                  <ArrowUp color={live ? color.onPrimary : color.text3} size={20} strokeWidth={2.6} />
+                  <ArrowUp color={live ? color.onPrimary : color.text3} size={20} strokeWidth={2} />
                 </Press>
               </Animated.View>
             )}

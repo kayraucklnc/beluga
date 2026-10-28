@@ -183,7 +183,7 @@ export function ChartView({ view, columns, rows, tall, fit }: { readonly view: V
                 return (
                   <G key={s.key}>
                     {fill ? <Path d={fill} fill={s.color} opacity={0.18} /> : null}
-                    <Path d={d} fill="none" stroke={s.color} strokeWidth={2.2} strokeLinejoin="round" strokeLinecap="round" />
+                    <Path d={d} fill="none" stroke={s.color} strokeWidth={1.9} strokeLinejoin="round" strokeLinecap="round" />
                     {view.dots || n <= 12 ? pts.map((p, i) => <Circle key={i} cx={p[0]} cy={p[1]} r={at === i ? 4 : 2.6} fill={s.color} />) : at !== undefined ? <Circle cx={pts[at]![0]} cy={pts[at]![1]} r={4} fill={s.color} /> : null}
                   </G>
                 );

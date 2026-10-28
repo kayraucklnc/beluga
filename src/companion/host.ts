@@ -51,7 +51,7 @@ import {
 import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type TunnelEnd, type TunnelSide, type VideoPiece, phoneErrorText } from './phone-control.js';
 import { type Macro, PhoneMacros } from './phone-macros.js';
 import { type SystemPort, realSystem } from '../core/gateway/device.js';
-import { type Delivery, NO_PUSH, type Nudge, type Pusher, deliver } from './push.js';
+import { type Delivery, NO_PUSH, type Nudge, type Pusher, atMac, deliver } from './push.js';
 import { type ConvOutput, type ViewContext, channelOf, chatMessages, convTopic, convTurns, needsYou, phoneChannel, sentinelDone, viewOf } from './views.js';
 
 /**
@@ -76,6 +76,8 @@ export const COMPANION_MIN = { major: COMPANION_PROTO.major, minor: 0 } as const
 const MAX_IN_BYTES = 8 * 1024 * 1024;
 const HELLO_TIMEOUT_MS = 10_000;
 const MAX_TOPICS = 16;
+/** While something that needs you is held (you were at the Mac), how often to look whether you stepped away. */
+const HELD_CHECK_MS = 30_000;
 
 export interface CompanionHostOptions {
   readonly identity: Identity;
@@ -531,6 +533,7 @@ export class CompanionHost {
     for (const off of this.offs.splice(0)) off();
     void this.voice.close();
     clearTimeout(this.changeTimer);
+    clearInterval(this.heldTimer);
     this.awake.release();
     this.control.stop();
     await this.pairing.cancel('Beluga on your Mac is shutting down');
@@ -952,7 +955,11 @@ export class CompanionHost {
     const seen = this.seenNeeds;
     const fresh = seen ? items.filter((n) => !seen.has(n.id)) : [];
     this.seenNeeds = new Set(items.map((n) => n.id));
-    const nudges: Nudge[] = fresh.map((n: NeedsYou) => ({ kind: 'needsYou', title: n.title.slice(0, 200), body: (n.detail ?? n.from ?? '').slice(0, 1000), ...(n.topic ? { topic: n.topic } : {}), priority: 'high' }));
+    const nudges: Nudge[] = fresh.map((n: NeedsYou) => {
+      const nudge: Nudge = { kind: 'needsYou', title: n.title.slice(0, 200), body: (n.detail ?? n.from ?? '').slice(0, 1000), ...(n.topic ? { topic: n.topic } : {}), priority: 'high' };
+      this.needOf.set(nudge, n.id);
+      return nudge;
+    });
     for (const [channel, wasRunning] of [...this.phoneRuns]) {
       const last = [...state.log].reverse().find((l) => l.channel === channel && l.type === 'agent');
       const running = last?.type === 'agent' && !['done', 'error', 'denied', 'interrupted', 'answered'].includes(last.status);
@@ -980,29 +987,62 @@ export class CompanionHost {
       }
     }
     if (!nudges.length) return;
-    let idle: number | undefined;
-    let idleAsked = false;
+    // Asked once: are you at the Mac (used it in the last five minutes)?
+    const idle = await this.opts.idleMs?.().catch(() => undefined);
+    await this.tell(nudges, state, idle);
+  }
+
+  /**
+   * Tell each phone: in the app if it's open, else (only once you've been away from the Mac five
+   * minutes) a nudge to a linked phone or a push to one that isn't. What needs you while you're at
+   * the Mac is held, and told once you step away if it's still waiting (BLG-360).
+   */
+  private async tell(nudges: readonly Nudge[], state: DomainState, idle: number | undefined): Promise<void> {
     for (const record of this.opts.devices.all()) {
       const id = deviceId(record.cert);
       const linked = [...this.links].filter((l) => l.deviceId === id && l.hello);
+      const onScreen = new Set<string>(linked.flatMap((l) => [...l.topics.keys()]));
+      const inFront = linked.some((l) => l.inFront);
       for (const nudge of nudges) {
-        const onScreen = new Set<string>(linked.flatMap((l) => [...l.topics.keys()]));
-        if (nudge.away && (!linked.length || linked.some((l) => l.inFront))) continue;
-        const pre: Delivery = deliver(nudge, { linked: linked.length > 0, onScreen, inFront: linked.some((l) => l.inFront), macFront: state.attention.front, canPush: Boolean(record.push), macIdleMs: 0 });
-        if (pre === 'nudge') {
-          for (const l of linked) l.send({ t: 'nudge', kind: nudge.kind, title: nudge.title, body: nudge.body, ...(nudge.topic ? { topic: nudge.topic } : {}) });
-          continue;
-        }
-        if (linked.length || !record.push) continue;
-        // Not linked: a push, unless you're at the Mac (asked once, only when it matters).
-        if (!idleAsked) {
-          idleAsked = true;
-          idle = await this.opts.idleMs?.().catch(() => undefined);
-        }
-        const how = deliver(nudge, { linked: false, onScreen, inFront: false, macFront: state.attention.front, canPush: true, ...(idle !== undefined ? { macIdleMs: idle } : {}) });
-        if (how === 'push') await (this.opts.pusher ?? NO_PUSH).push({ deviceId: id, ...record.push, box: record.cert.box }, nudge).catch((err: unknown) => this.logLine(`push failed: ${String(err)}`));
+        if (nudge.away && (!linked.length || inFront)) continue;
+        const how: Delivery = deliver(nudge, { linked: linked.length > 0, onScreen, inFront, macFront: state.attention.front, canPush: Boolean(record.push), ...(idle !== undefined ? { macIdleMs: idle } : {}) });
+        if (how === 'nudge') for (const l of linked) l.send({ t: 'nudge', kind: nudge.kind, title: nudge.title, body: nudge.body, ...(nudge.topic ? { topic: nudge.topic } : {}) });
+        else if (how === 'push' && record.push) await (this.opts.pusher ?? NO_PUSH).push({ deviceId: id, ...record.push, box: record.cert.box }, nudge).catch((err: unknown) => this.logLine(`push failed: ${String(err)}`));
+        else if (how === 'held') this.hold(nudge);
       }
     }
+  }
+
+  /** Needs-you nudges held while you're at the Mac, by the item they're about. */
+  private held = new Map<string, Nudge>();
+  private heldTimer?: NodeJS.Timeout;
+  /** Which item a needs-you nudge is about (held ones are told only if it's still waiting). */
+  private needOf = new WeakMap<Nudge, string>();
+
+  private hold(nudge: Nudge): void {
+    const need = this.needOf.get(nudge);
+    if (nudge.kind !== 'needsYou' || !need) return;
+    this.held.set(need, nudge);
+    if (this.heldTimer) return;
+    this.heldTimer = setInterval(() => void this.release(), HELD_CHECK_MS);
+    this.heldTimer.unref();
+  }
+
+  /** Away from the Mac now: tell the phones what's still waiting from what was held. */
+  private async release(): Promise<void> {
+    const done = (): void => {
+      clearInterval(this.heldTimer);
+      this.heldTimer = undefined;
+    };
+    if (this.stopped || !this.held.size) return done();
+    const state = this.state();
+    const idle = await this.opts.idleMs?.().catch(() => undefined);
+    if (atMac({ macFront: state.attention.front, ...(idle !== undefined ? { macIdleMs: idle } : {}) })) return;
+    const live = new Set(needsYou(state).map((n) => n.id));
+    const still = [...this.held].filter(([need]) => live.has(need)).map(([, n]) => n);
+    this.held.clear();
+    done();
+    if (still.length) await this.tell(still, state, idle);
   }
 
   /** The shared state's `companion` slice: the phones (who's linked, last seen) and the pairing. */

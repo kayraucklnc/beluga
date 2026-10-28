@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { LucideProvider } from 'lucide-react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Toasts } from '../components/Screen';
@@ -16,7 +17,7 @@ import { store } from '../lib/store';
 // Loaded at once: sends that waited while your Mac was away go when it answers, whatever is on screen.
 import '../lib/sends';
 import { allowTurning } from '../lib/fullscreen';
-import { color } from '../lib/theme';
+import { color, stroke } from '../lib/theme';
 
 /** The app: one store (lib/store.ts), a stack of screens over the tabs, toasts on top. */
 export default function Root() {
@@ -58,6 +59,8 @@ export default function Root() {
   return (
     <GestureHandlerRootView key={scheme} style={{ flex: 1, backgroundColor: color.bg }}>
       <SafeAreaProvider>
+        {/* Every icon one line weight (lib/theme.ts `stroke`) unless it says otherwise. */}
+        <LucideProvider strokeWidth={stroke}>
         <KeyboardProvider>
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {/* A new theme fades in over the old background: no flash. */}
@@ -75,6 +78,7 @@ export default function Root() {
           <Toasts />
         </Animated.View>
         </KeyboardProvider>
+        </LucideProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

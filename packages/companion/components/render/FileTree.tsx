@@ -64,7 +64,7 @@ export function FileTreeView({ tree, text }: { readonly tree: Tree; readonly tex
             const body = (
               <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 26, paddingLeft: depth * 16, paddingRight: 8, gap: 6 }}>
                 <View style={{ width: 14, alignItems: 'center' }}>
-                  {folder && node.children.length ? open ? <ChevronDown color={color.text3} size={13} strokeWidth={2.4} /> : <ChevronRight color={color.text3} size={13} strokeWidth={2.4} /> : null}
+                  {folder && node.children.length ? open ? <ChevronDown color={color.text3} size={13} strokeWidth={1.9} /> : <ChevronRight color={color.text3} size={13} strokeWidth={1.9} /> : null}
                 </View>
                 <Icon color={tone === 'plain' ? color.text3 : toneInk(tone)} size={15} strokeWidth={2} />
                 <Text numberOfLines={1} style={[type.mono, { fontSize: 13, color: node.more ? color.text3 : color.text, fontWeight: folder ? '600' : '400' }]}>

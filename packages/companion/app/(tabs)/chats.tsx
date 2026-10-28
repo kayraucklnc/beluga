@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Hash } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chatHref } from '../../components/Conv';
 import { Header, Screen, useScrolled } from '../../components/Screen';
@@ -27,7 +27,7 @@ export default function Chats() {
         ) : (
           <Card style={{ marginHorizontal: 16 }}>
             {chats.map((c, i) => (
-              <Animated.View key={c.topic} entering={FadeInDown.delay(i * 40).duration(280)}>
+              <Animated.View key={c.topic} entering={FadeIn.duration(180)}>
                 {i ? <Hairline style={{ marginLeft: 72 }} /> : null}
                 <Press scaleTo={0.985} onPress={() => router.push(chatHref(c.topic))} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
                   {c.kind === 'group' ? <IconBadge Icon={Hash} tone="sky" size={44} square /> : <Avatar name={c.name} size={44} />}

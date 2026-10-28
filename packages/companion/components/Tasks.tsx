@@ -1,16 +1,16 @@
 import { router } from 'expo-router';
 import { ArrowUp, Check, Circle, CircleDashed, CircleDot, Eye, Layers, type LucideIcon, Plus, Sparkles, User, X, XCircle } from 'lucide-react-native';
 import { useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
-import { useSupports, useView } from '../lib/hooks';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import { useFolded, useSupports, useView } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
 import type { TaskSummary, TasksView } from '../lib/link/protocol';
 import { store } from '../lib/store';
-import { color } from '../lib/theme';
+import { color, radius } from '../lib/theme';
 import { ProjectMark } from './ProjectMark';
 import { Sheet } from './Sheet';
-import { Button, Card, haptic, Hairline, Pill, Press, T, type Tone, toneBg, toneInk } from './ui';
+import { Button, Card, FoldHead, haptic, Hairline, Pill, Press, T, type Tone, toneBg, toneInk } from './ui';
 import type { TaskDraftResult } from '../../../src/companion/calls';
 
 /**
@@ -40,17 +40,17 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
   const pr = PRIORITY[t.priority];
   return (
     <View>
-      {!first ? <Hairline style={{ marginLeft: 58 }} /> : null}
-      <Press scaleTo={0.985} onPress={() => router.push(taskHref(t))} accessibilityLabel={`${t.key} ${t.title}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
-        <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(st.tone) }}>
-          <st.Icon color={toneInk(st.tone)} size={16} strokeWidth={2.3} />
+      {!first ? <Hairline style={{ marginLeft: 56 }} /> : null}
+      <Press onPress={() => router.push(taskHref(t))} accessibilityLabel={`${t.key} ${t.title}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
+        <View style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+          <st.Icon color={toneInk(st.tone)} size={18} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <T v="body" numberOfLines={2} style={{ fontWeight: '500' }}>
             {t.title}
           </T>
           <T v="caption" numberOfLines={1}>
-            <T v="caption" style={{ fontWeight: '700' }}>
+            <T v="caption" style={{ fontWeight: '600', fontVariant: ['tabular-nums'] }}>
               {t.key}
             </T>
             {[t.epic ? (t.epic.total ? `Epic, ${t.epic.done}/${t.epic.total} done` : 'Epic') : undefined, t.epicKey ? `in ${t.epicKey}` : undefined, t.assignee, t.working, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined]
@@ -71,6 +71,7 @@ export function TasksList() {
   const drafts = useSupports('draftTask');
   const tasks = useView<TasksView>(tasksOn ? 'tasks' : undefined);
   const [adding, setAdding] = useState<{ id: string; name: string; icon?: string } | undefined>();
+  const fold = useFolded('tasks');
   if (!tasksOn) {
     return (
       <Card style={{ marginHorizontal: 16, padding: 18 }}>
@@ -93,23 +94,27 @@ export function TasksList() {
           </T>
         </Card>
       ) : null}
-      {list.map((p, pi) => (
-        <Animated.View key={p.id} entering={FadeInDown.delay(pi * 60).duration(300)} layout={LinearTransition.springify()} style={{ gap: 10 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20 }}>
-            <ProjectMark name={p.name} icon={p.icon} size={26} />
-            <T v="heading" style={{ flex: 1 }} numberOfLines={1}>
-              {p.name}
-            </T>
-            {drafts ? (
-              <Press onPress={() => setAdding({ id: p.id, name: p.name, icon: p.icon })} accessibilityLabel={`New task in ${p.name}`} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, paddingHorizontal: 10, borderRadius: 15, backgroundColor: color.sunken }}>
-                <Plus color={color.text2} size={15} />
-                <T v="caption" c={color.text2} style={{ fontWeight: '700' }}>
-                  New
-                </T>
-              </Press>
-            ) : null}
-          </View>
-          {p.groups.map((g) => (
+      {list.map((p) => (
+        <Animated.View key={p.id} entering={FadeIn.duration(180)} style={{ gap: 10 }}>
+          <FoldHead
+            big
+            folded={fold.folded(p.id)}
+            onToggle={() => fold.toggle(p.id)}
+            lead={<ProjectMark name={p.name} icon={p.icon} size={24} />}
+            label={p.name}
+            count={p.groups.reduce((n, g) => n + g.tasks.length + (g.more ?? 0), 0)}
+            right={
+              drafts ? (
+                <Press onPress={() => setAdding({ id: p.id, name: p.name, icon: p.icon })} accessibilityLabel={`New task in ${p.name}`} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: 10, borderRadius: radius.s, borderWidth: StyleSheet.hairlineWidth * 2, borderColor: color.hairline }}>
+                  <Plus color={color.text2} size={14} />
+                  <T v="caption" c={color.text2} style={{ fontWeight: '600' }}>
+                    New
+                  </T>
+                </Press>
+              ) : null
+            }
+          />
+          {fold.folded(p.id) ? null : p.groups.map((g) => (
             <View key={g.status} style={{ gap: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 22 }}>
                 <T v="eyebrow">{g.label}</T>
@@ -204,7 +209,7 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
                 {several ? 'Your Claude drafts each task and who it’s for. You see them first.' : 'Your Claude drafts the title, goal and checks. You see it first.'}
               </T>
               <Press disabled={!text.trim() || !!busy} onPress={() => void ask()} accessibilityLabel="Draft it" style={{ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() ? color.primary : color.sunken }}>
-                {busy === 'draft' ? <ActivityIndicator color={color.onPrimary} /> : <ArrowUp color={text.trim() ? color.onPrimary : color.text3} size={22} strokeWidth={2.6} />}
+                {busy === 'draft' ? <ActivityIndicator color={color.onPrimary} /> : <ArrowUp color={text.trim() ? color.onPrimary : color.text3} size={22} strokeWidth={2} />}
               </Press>
             </View>
           </>

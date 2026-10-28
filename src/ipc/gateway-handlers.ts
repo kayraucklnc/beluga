@@ -16,6 +16,7 @@ export const GATEWAY_HANDLERS = {
   'gateway.confirm': (s, id, yes, edited, always) => needGateway(s).confirm(id, yes, edited || undefined, undefined, always ?? false),
   'gateway.setAskFreely': (s, peerId, on) => needGateway(s).setAskFreely(peerId, on),
   'gateway.cancel': (s, id) => needGateway(s).cancel(id),
+  'gateway.forget': (s, id) => needGateway(s).forget(id),
   'gateway.ask': (s, person, ask, opts) => needGateway(s).ask({ person, ask, by: 'person', ...(opts?.needs ? { needs: opts.needs } : {}), ...(opts?.project ? { project: opts.project } : {}) }),
   'gateway.setNote': (s, note) => needGateway(s).setNote(note),
   'gateway.decide': (s, id, decision) => needGateway(s).decide(id, decision),

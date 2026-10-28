@@ -367,6 +367,12 @@ export class DemoTransport implements Transport {
     const item = this.needFor(method, args);
     switch (method) {
       // ---- what needs you (the calls views.ts puts on the buttons)
+      case 'needs.dismiss':
+        this.resolve(this.world.needs.find((n) => n.id === str(0)));
+        return ok();
+      case 'gateway.cancel':
+      case 'gateway.forget':
+        return ok();
       case 'host.answerApproval':
         this.resolve(item);
         if (item?.id === 'n-deploy' && args[0] !== 'no') this.deploy();

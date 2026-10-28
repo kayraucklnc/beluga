@@ -123,6 +123,16 @@ export class TaskBook {
     return gone;
   }
 
+  /** Forget a task: it, anything still waiting to go for it, and a result waiting for its files. */
+  remove(taskId: string): void {
+    this.dropTask(taskId);
+    this.setPending(taskId, undefined);
+    const next = this.tasks.filter((t) => t.id !== taskId);
+    if (next.length === this.tasks.length) return;
+    this.tasks = next;
+    this.save();
+  }
+
   /** Drop what's waiting for one task (it was cancelled before it left). */
   dropTask(taskId: string): void {
     const next = this.outbox.filter((o) => o.frame.m.t === 'card' || o.frame.m.id !== taskId);

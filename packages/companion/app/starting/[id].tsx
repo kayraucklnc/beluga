@@ -2,7 +2,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { GitBranch, MessageCircleQuestion, MoonStar, Sparkles, Workflow } from 'lucide-react-native';
 import { useCallback, useEffect } from 'react';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { convHref } from '../../components/Conv';
 import { Breathe, TypingDots } from '../../components/Live';
 import { ProjectMark } from '../../components/ProjectMark';
@@ -53,7 +53,7 @@ export default function Starting() {
       <ScrollView contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 8, gap: 14 }}>
         {s ? (
           <>
-            <Animated.View entering={FadeInUp.springify().stiffness(220).damping(22)} style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
+            <Animated.View entering={FadeIn.duration(180)} style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
               <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14 }}>
                 <T v="body" style={{ fontSize: 15 }}>
                   {s.text}

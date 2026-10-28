@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { openOnMac } from '../../lib/mac';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Infinity as Always, MessageSquare, Monitor, Shield, Workflow } from 'lucide-react-native';
+import { Infinity as Always, EyeOff, MessageSquare, Monitor, Shield, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
 import { Platform, ScrollView, TextInput, View } from 'react-native';
 import { chatHref, convHref } from '../../components/Conv';
@@ -58,6 +58,7 @@ export default function Need() {
                 />
               ) : null}
               <Row first={!always && !n.topic} Icon={Monitor} tone="plain" label="Open on your Mac" onPress={() => (void openOnMac(n.topic ? { topic: n.topic } : { need: n.id }), close())} chevron={false} />
+              <Row Icon={EyeOff} tone="plain" label="Dismiss" sub="Off your lists, here and on your Mac, without answering" onPress={() => (store.dismiss(n), close())} chevron={false} />
             </Card>
             {n.answer?.text ? (
               <View style={{ gap: 8 }}>

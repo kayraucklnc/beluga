@@ -1,7 +1,7 @@
 import { Archive, Eraser, FileText, Film, FolderOpen, HardDrive, ImageIcon, Trash2 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Platform, ScrollView, Switch, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Options, type Option } from '../components/Options';
 import { sizeOf } from '../components/Outputs';
@@ -54,7 +54,7 @@ export default function Storage() {
     <Screen>
       <Header scrolled={scrolled} back title="Storage" />
       <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 20 }}>
-        <Animated.View entering={FadeInDown.duration(300)} style={{ gap: 20 }}>
+        <Animated.View entering={FadeIn.duration(300)} style={{ gap: 20 }}>
           <Card>
             <Row first Icon={HardDrive} tone="sky" label="Saved on this phone" sub={saved.length ? `${saved.length} ${saved.length === 1 ? 'file' : 'files'} · ${sizeOf(totalBytes(saved))}` : 'Nothing yet'} chevron={false} />
             <Row

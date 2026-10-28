@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Check, ChevronRight, MessagesSquare } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { elapsed, useSince, useView } from '../lib/hooks';
 import type { ConvView, PlanView, Topic } from '../lib/link/protocol';
 import { color } from '../lib/theme';
@@ -117,12 +117,12 @@ function MapNode({ m, i, onPress }: { readonly m: Milestone; readonly i: number;
   const done = m.tasks.filter((t) => t.state === 'done').length;
   const all = m.tasks.length;
   return (
-    <Animated.View entering={FadeInDown.delay(i * 50).springify()}>
+    <Animated.View entering={FadeIn.duration(180)}>
       <Press scaleTo={0.97} onPress={onPress} accessibilityLabel={`${m.title}, ${m.state}, ${done} of ${all} tasks`}>
         <View style={{ width: 156, padding: 10, gap: 6, borderRadius: 14, backgroundColor: color.card, borderWidth: m.state === 'running' || m.state === 'gate' ? 1.5 : 0.5, borderColor: m.state === 'running' || m.state === 'gate' ? toneInk(tone) : color.hairline }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <View style={{ width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: toneBg(tone) }}>
-              {m.state === 'done' ? <Check color={toneInk(tone)} size={12} strokeWidth={3} /> : <T v="caption" c={toneInk(tone)} style={{ fontSize: 11, fontWeight: '800' }}>{i + 1}</T>}
+              {m.state === 'done' ? <Check color={toneInk(tone)} size={12} strokeWidth={2.2} /> : <T v="caption" c={toneInk(tone)} style={{ fontSize: 11, fontWeight: '800' }}>{i + 1}</T>}
             </View>
             <Pill label={m.state === 'gate' ? 'for you' : m.state} tone={tone} />
           </View>

@@ -12,7 +12,7 @@ import { ViewCard } from './render/ViewCard';
 import { TASK_LINK_SCHEME, linkTaskKeys, readInline, splitInlineMath, tableView } from '../lib/render';
 import { TaskChip, type TaskRef, useTaskIndex } from './render/TaskChip';
 import { InlineMath, type MathMap } from './render/MathBlock';
-import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { ago, useFile } from '../lib/hooks';
 import type { ConvSummary, ProseView, SubAgentView, Topic } from '../lib/link/protocol';
 import { color, tint, type } from '../lib/theme';
@@ -237,18 +237,17 @@ function MacImage({ refId, alt }: { readonly refId?: string; readonly alt: strin
   );
 }
 
-/** The live step: a calm dot, and each new step rolls up into place (counts change in place). */
+/** The live step: a calm dot and the step's words, changed in place (no rolling, nothing jumps). */
 export function StepTicker({ step, tone = 'peach', size = 13.5 }: { readonly step?: string; readonly tone?: Tone; readonly size?: number }) {
   if (!step) return null;
-  const words = step.replace(/\d+/g, '#');
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: size * 1.6, overflow: 'hidden' }}>
       <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: toneInk(tone) }} />
-      <Animated.View key={words} entering={FadeInDown.duration(260)} exiting={FadeOutUp.duration(160)} style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <T v="callout" c={toneInk(tone)} numberOfLines={1} style={{ fontSize: size, fontWeight: '600', fontVariant: ['tabular-nums'] }}>
           {step}
         </T>
-      </Animated.View>
+      </View>
     </View>
   );
 }
@@ -329,7 +328,7 @@ export function AgentChips({ agents, onOpen }: { readonly agents: readonly SubAg
         const Icon = a.status === 'done' ? Check : a.status === 'failed' ? CircleAlert : Bot;
         return (
           <Press key={a.id} onPress={() => onOpen(a)} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, height: 34, paddingHorizontal: 12, borderRadius: 17, backgroundColor: tint[t] }}>
-            <Icon color={toneInk(t)} size={15} strokeWidth={2.3} />
+            <Icon color={toneInk(t)} size={15} strokeWidth={1.9} />
             <T v="caption" c={toneInk(t)} numberOfLines={1} style={{ fontWeight: '600', maxWidth: 200 }}>
               {a.title}
             </T>

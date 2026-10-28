@@ -415,6 +415,8 @@ export interface DomainState extends CollabState, WorkState, NetworkSlice, Earni
   readonly projectOrder: readonly string[];
   /** Roots of projects you hid (still on disk), to show again. */
   readonly hiddenProjects: readonly string[];
+  /** Needs-you items you dismissed without answering, by id (core/dismissed-needs.ts). */
+  readonly dismissedNeeds: readonly string[];
   /** Files with merge conflicts from the last merge attempt, per workspace. */
   readonly conflicts: Readonly<Record<string, readonly string[]>>;
   readonly review?: ReviewDomain;
@@ -559,6 +561,8 @@ export type Action =
   | { type: 'companion'; companion: CompanionSlice['companion'] }
   /** Your Mac's chats changed (one made, opened or deleted; core/assistant). */
   | { type: 'assistant_chats'; assistant: AssistantChats }
+  /** The needs-you items you dismissed (all of them: on start, and after a Dismiss). */
+  | { type: 'needs_dismissed'; ids: readonly string[] }
   | CollabAction
   | WorkAction
   | NetworkAction
@@ -615,6 +619,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     projectGroups: [],
     projectOrder: [],
     hiddenProjects: [],
+    dismissedNeeds: [],
     conflicts: {},
     unread: {},
     seenShares: [],
@@ -1080,6 +1085,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, support: action.support };
     case 'assistant_chats':
       return { ...state, assistant: action.assistant };
+    case 'needs_dismissed':
+      return { ...state, dismissedNeeds: action.ids };
     case 'earnings':
     case 'fx_rates':
       return { ...state, ...reduceEarnings(state, action) };
@@ -1089,6 +1096,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, ...reduceClaudeCode(state, action) };
     case 'gw_init':
     case 'gw_task':
+    case 'gw_forget':
     case 'gw_card':
     case 'gw_note':
     case 'gw_rules':

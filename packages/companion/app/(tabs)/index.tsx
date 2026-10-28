@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { ChevronRight, Eye, Laptop, MessagesSquare, Settings, Workflow } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { LinearTransition, FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConvCard, convHref, StepTicker } from '../../components/Conv';
 import { MacChatsSheet } from '../../components/MacChats';
@@ -12,7 +12,7 @@ import { NumbersHome } from '../../components/Dashboard';
 import { SentinelHome } from '../../components/Sentinels';
 import { AwayBand, Screen, StatusShade, useScrolled } from '../../components/Screen';
 import { UsageCard, UsageSheet } from '../../components/Usage';
-import { Card, IconBadge, Pill, Press, Section, T } from '../../components/ui';
+import { Card, IconBadge, Pill, Press, Section, StatusDot, T } from '../../components/ui';
 import { useLink, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
 import type { ConvSummary, HomeView, PlansView } from '../../lib/link/protocol';
 import { displayName } from '../../lib/names';
@@ -52,12 +52,18 @@ export default function Home() {
                 {h?.mac.name ?? link.mac?.name ?? link.pairing?.macName ?? 'Your Mac'}
               </T>
             </View>
-            <Pill label={linked ? 'Linked' : asleep ? 'Asleep' : link.phase === 'dialing' ? 'Linking' : 'Away'} tone={linked ? 'mint' : asleep ? 'sky' : 'plain'} />
+            {/* The link's state as a dot and a word: green only while it's live. */}
+            <View accessibilityLabel={linked ? 'Linked' : asleep ? 'Asleep' : 'Away'} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <StatusDot c={linked ? color.ok : asleep ? color.text3 : link.phase === 'dialing' ? color.warn : color.text3} size={7} />
+              <T v="caption" c={color.text2}>
+                {linked ? 'Linked' : asleep ? 'Asleep' : link.phase === 'dialing' ? 'Linking' : 'Away'}
+              </T>
+            </View>
             <Press onPress={() => router.push('/settings')} accessibilityLabel="Settings" hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card }}>
               <Settings color={color.text2} size={19} />
             </Press>
           </View>
-          <Animated.View entering={FadeInDown.delay(80).duration(400)} style={{ marginTop: 24 }}>
+          <Animated.View entering={FadeIn.duration(180)} style={{ marginTop: 24 }}>
             <T v="hero">
               {name ? `${greeting}, ${name}` : 'Hi there'}
             </T>
@@ -98,7 +104,7 @@ export default function Home() {
 
             {h.running.length || running.length ? (
               <Section title="Running">
-                <Animated.View layout={LinearTransition.springify()} style={{ gap: 10 }}>
+                <Animated.View layout={LinearTransition.duration(180)} style={{ gap: 10 }}>
                   {running.map((p) => (
                     <Press key={p.id} scaleTo={0.985} onPress={() => router.push(`/plan/${p.id}`)} style={{ marginHorizontal: 16 }}>
                       <Card style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>

@@ -174,6 +174,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `questions.pick` | ✓ |
 | `people.setTrust` | ✓ |
 | `people.dismissPrompt` | ✓ |
+| `needs.dismiss` | ✓ Dismiss in a waiting item's right-click menu (the bell's Waiting for you); on the phone, Dismiss on a needs-you card |
 | `people.forget` | ✓ |
 | `sharing.invite` | ✓ |
 | `sharing.remove` | ✓ |
@@ -404,6 +405,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `gateway.list` | ✓ the shared state's `gateway` (task cards in conversations, Requests) |
 | `gateway.confirm` | ✓ the “Ask bob's Claude?” card in a conversation: Ask / Always / Not now |
 | `gateway.cancel` | ✓ Cancel on a task card and in Requests (sent), Stop in Requests (received) |
+| `gateway.forget` | – the phone only: Remove in an asked-of-friends conversation's ••• sheet (cancels it first while it's still going) |
 | `gateway.ask` | ✓ Requests › Ask someone's Claude… |
 | `gateway.setAskFreely` | ✓ Settings › Access: “Your Claude asks them without checking” › Ask Me First (Always on the card turns it on) |
 | `gateway.setNote` | ✓ Requests › your “Ask me for…” note |

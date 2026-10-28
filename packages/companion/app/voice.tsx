@@ -1,7 +1,7 @@
 import { Check, ChevronDown, ChevronUp, Download, Gauge, Languages, Laptop, SlidersHorizontal, Smartphone, Trash2, Zap } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Options, type Option } from '../components/Options';
 import { Header, Screen, useScrolled } from '../components/Screen';
@@ -93,7 +93,7 @@ export default function Voice() {
     <Screen>
       <Header scrolled={scrolled} back title="Voice" />
       <ScrollView onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 20 }}>
-        <Animated.View entering={FadeInDown.duration(300)} style={{ gap: 8 }}>
+        <Animated.View entering={FadeIn.duration(300)} style={{ gap: 8 }}>
           <T v="caption" c={color.text3} style={{ paddingHorizontal: 6 }}>
             The microphone in Ask writes down what you say, here or on your Mac. Your words go into the field to read over before you send.
           </T>
@@ -113,7 +113,7 @@ export default function Voice() {
                   right={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       {p.id === suggested ? <Pill label="Suggested" tone="mint" /> : null}
-                      {on ? <Check color={color.primary} size={20} strokeWidth={2.6} /> : null}
+                      {on ? <Check color={color.primary} size={20} strokeWidth={2} /> : null}
                     </View>
                   }
                   // The suggested one follows the suggestion (it may change with your Mac or language).
@@ -167,7 +167,7 @@ export default function Voice() {
                       tone={knows ? (m.kind === 'parakeet' ? 'lavender' : 'peach') : 'plain'}
                       label={m.label}
                       sub={!knows ? `Doesn’t know ${language}` : `${voiceSize(m.files[choice.where]!.bytes)} · ${m.languages === 'all' ? 'every language' : 'English and 24 European languages'}`}
-                      right={choice.model === id ? <Check color={color.primary} size={20} strokeWidth={2.6} /> : null}
+                      right={choice.model === id ? <Check color={color.primary} size={20} strokeWidth={2} /> : null}
                       onPress={knows ? () => save({ preset: 'custom', where: choice.where, model: id, language: set.language }) : undefined}
                       chevron={false}
                     />
