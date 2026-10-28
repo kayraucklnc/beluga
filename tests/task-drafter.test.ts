@@ -7,7 +7,7 @@ import { BoardWork } from '../src/core/board/work.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController } from '../src/core/workspace-controller.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
-import { type DraftContext, type TaskDraft, draftPrompt, firstLineTitle, parseTaskDraft } from '../src/agent/task-drafter.js';
+import { type DraftContext, type TaskDraft, draftPrompt, firstLineTitle, matchPerson, parseTaskDraft } from '../src/agent/task-drafter.js';
 import { createMockBackend, mockDraft } from '../src/agent/mock.js';
 import type { RoomBridge } from '../src/agent/types.js';
 import { BOARD_API } from '../src/ipc/board-api.js';
@@ -155,6 +155,109 @@ describe('board.create with a description', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('one New Task message, several tasks and who each is for (BLG-319)', () => {
+  const people = ['Kay', 'Ata Demir', 'Mia'];
+  const withTeam = (store: Store): void =>
+    store.dispatch({
+      type: 'team_state',
+      state: { enabled: true, offers: [], teams: { api: { projectId: 'api', repo: 'kay/bob-api', mates: [{ peerId: 'p-ata', name: 'Ata Demir', since: 1 }, { peerId: 'p-mia', name: 'Mia', since: 1 }] } }, working: {}, waiting: {}, assigned: [], plans: [], planShares: {} },
+    });
+
+  it('a name as said is the person on the list; "me" is the one writing; no one else', () => {
+    expect(matchPerson('ata', people)).toBe('Ata Demir');
+    expect(matchPerson('Ata D.', people)).toBe('Ata Demir');
+    expect(matchPerson('MIA', people)).toBe('Mia');
+    expect(matchPerson('me', people)).toBe('Kay');
+    expect(matchPerson('Bob', people)).toBeUndefined();
+    expect(matchPerson(null, people)).toBeUndefined();
+  });
+
+  it('reads several tasks with their people, and an epic with its parts', () => {
+    const raw = JSON.stringify({ epic: null, tasks: [{ title: 'Cache the rates', goal: 'g1', acceptance: [], labels: ['Feature'], for: 'ata' }, { title: 'Show the fees', goal: 'g2', labels: [], for: 'Bob' }] });
+    expect(parseTaskDraft(raw, ['feature'], people)).toEqual({ title: 'Cache the rates', goal: 'g1', acceptance: [], labels: ['feature'], for: 'Ata Demir', more: [{ title: 'Show the fees', goal: 'g2', acceptance: [], labels: [] }] });
+    const epic = parseTaskDraft(JSON.stringify({ epic: { title: 'Checkout', goal: 'Pay in one step.' }, tasks: [{ title: 'A', goal: 'a' }, { title: 'B', goal: 'b', for: 'Mia' }] }), [], people)!;
+    expect(epic).toMatchObject({ title: 'Checkout', goal: 'Pay in one step.', epic: true, more: [{ title: 'A' }, { title: 'B', for: 'Mia' }] });
+    // One task in the list is just that task.
+    expect(parseTaskDraft(JSON.stringify({ tasks: [{ title: 'A', goal: 'a' }] }), [])).toEqual({ title: 'A', goal: 'a', acceptance: [], labels: [] });
+    expect(parseTaskDraft(JSON.stringify({ tasks: [] }), [])).toBeUndefined();
+  });
+
+  it('the prompt names the people only when it may make several', () => {
+    expect(draftPrompt('x', { labels: [], several: true, people })).toContain('People a task can be for: Kay (the person writing this), Ata Demir, Mia');
+    expect(draftPrompt('x', { labels: [], people })).not.toContain('People a task can be for');
+  });
+
+  it('Create fills in the first, adds the rest in its column, and gives each to whom the words said', async () => {
+    let finish!: (d: TaskDraft) => void;
+    const asked: DraftContext[] = [];
+    const { store, board, work } = setup((_t, ctx) => (asked.push(ctx), new Promise((r) => (finish = r))));
+    withTeam(store);
+    const first = work.createDescribed({ projectId: 'api', status: 'backlog', labels: ['api'] }, 'cache the rates for Ata, and show the fees for Mia', { several: true });
+    expect(asked[0]).toMatchObject({ several: true, people: ['Kay', 'Ata Demir', 'Mia'] });
+    finish({ title: 'Cache the rates', goal: 'g1', acceptance: ['Fresh'], labels: [], for: 'Ata Demir', more: [{ title: 'Show the fees', goal: 'g2', acceptance: [], labels: ['feature'], for: 'Mia' }, { title: 'Write it up', goal: 'g3', acceptance: [], labels: [] }] });
+    await settle();
+    expect(board.need(first.id)).toMatchObject({ title: 'Cache the rates', status: 'backlog', assignee: { id: 'p-ata', name: 'Ata Demir' } });
+    const rest = board.list().filter((i) => i.id !== first.id);
+    expect(rest.map((i) => [i.title, i.status, i.assignee?.name, i.labels])).toEqual([
+      ['Show the fees', 'backlog', 'Mia', ['api', 'feature']],
+      ['Write it up', 'backlog', undefined, ['api']],
+    ]);
+    expect(rest[0]!.brief.goal).toBe('g2');
+  });
+
+  it('an epic: the first task is the epic, the parts go under it', async () => {
+    const { store, board, work } = setup(async () => ({ title: 'Checkout', goal: 'Pay in one step.', acceptance: [], labels: [], epic: true, more: [{ title: 'Card form', goal: 'a', acceptance: [], labels: [], for: 'Kay' }, { title: 'Receipts', goal: 'b', acceptance: [], labels: [] }] }));
+    withTeam(store);
+    const epic = work.createDescribed({ projectId: 'api' }, 'an epic for checkout: card form for me, receipts', { several: true });
+    await settle();
+    expect(board.need(epic.id).title).toBe('Checkout');
+    const parts = board.list().filter((i) => i.parent === epic.id);
+    expect(parts.map((i) => [i.title, i.assignee?.id])).toEqual([['Card form', 'p-me'], ['Receipts', undefined]]);
+  });
+
+  it('given to someone by hand while Claude wrote: theirs it stays', async () => {
+    let finish!: (d: TaskDraft) => void;
+    const { store, board, work } = setup(() => new Promise((r) => (finish = r)));
+    withTeam(store);
+    const first = work.createDescribed({ projectId: 'api' }, 'cache the rates for Ata', { several: true });
+    board.update(first.id, { assignee: { kind: 'person', id: 'p-mia', name: 'Mia' } }, work.me());
+    finish({ title: 'Cache the rates', goal: 'g', acceptance: [], labels: [], for: 'Ata Demir' });
+    await settle();
+    expect(board.need(first.id).assignee?.name).toBe('Mia');
+  });
+
+  it('not from New Task (a GitHub issue, the phone): always one task', async () => {
+    const asked: DraftContext[] = [];
+    const { board, work } = setup(async (_t, ctx) => (asked.push(ctx), { title: 'A', goal: 'a', acceptance: [], labels: [], more: [{ title: 'B', goal: 'b', acceptance: [], labels: [] }] }));
+    work.createDescribed({ projectId: 'api' }, 'a and b');
+    await settle();
+    expect(board.list().map((i) => i.title)).toEqual(['A']);
+    expect(asked[0]!.several).toBeUndefined();
+  });
+
+  it('the phone (BLG-322): its draft asks for several, and adding it makes them all, for the people named', async () => {
+    const asked: DraftContext[] = [];
+    const { store, board, work } = setup(async (_t, ctx) => (asked.push(ctx), undefined));
+    withTeam(store);
+    await work.draft('api', 'a and b', { several: true });
+    await work.draft('api', 'just a');
+    expect(asked.map((c) => c.several)).toEqual([true, undefined]);
+    const [first, ...rest] = work.addDraft('api', { title: 'Cache the rates', goal: 'g', acceptance: ['Fresh'], labels: [], for: 'Mia', more: [{ title: 'Show the fees', goal: 'f', acceptance: [], labels: [], for: 'Ata Demir' }, { title: 'Someone else', goal: 'x', acceptance: [], labels: [], for: 'Bob' }] });
+    expect(first).toMatchObject({ title: 'Cache the rates', assignee: { id: 'p-mia' }, brief: { acceptance: '- [ ] Fresh' } });
+    expect(rest.map((i) => [i.title, i.assignee?.id])).toEqual([['Show the fees', 'p-ata'], ['Someone else', undefined]]);
+    const [epic, ...parts] = work.addDraft('api', { title: 'Checkout', goal: 'e', acceptance: [], labels: [], epic: true, more: [{ title: 'Card form', goal: 'c', acceptance: [], labels: [] }] });
+    expect(parts.map((i) => i.parent)).toEqual([epic!.id]);
+    expect(board.list()).toHaveLength(5);
+  });
+
+  it('the mock makes one task per listed line, for whoever it names', () => {
+    const d = mockDraft('Two things:\n- cache the rates for Ata\n- show the fees for mia', { labels: [], several: true, people });
+    expect(d).toMatchObject({ title: 'Cache the rates', for: 'Ata Demir', more: [{ title: 'Show the fees', for: 'Mia' }] });
+    expect(mockDraft('An epic for checkout:\n- card form\n- receipts', { labels: [], several: true, people })).toMatchObject({ epic: true, more: [{ title: 'Card form' }, { title: 'Receipts' }] });
+    expect(mockDraft('- cache the rates\n- show the fees', { labels: [] }).more).toBeUndefined();
   });
 });
 

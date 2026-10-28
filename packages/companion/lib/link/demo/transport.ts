@@ -664,46 +664,66 @@ export class DemoTransport implements Transport {
         return ok(topic.replace(/^conv:/, '').replace(/^ws:/, ''));
       }
       case 'companion.draftTask': {
-        const a = args[0] as { projectId: string; text: string };
-        const words = a.text.trim().replace(/\s+/g, ' ');
-        const title = words.length > 70 ? `${words.slice(0, 69)}…` : words.replace(/^./, (ch) => ch.toUpperCase()).replace(/[.!]$/, '');
-        // Claude takes a moment to write it, as the Mac's drafter does.
-        this.later(1400, () =>
-          ok({
+        const a = args[0] as { projectId: string; text: string; several?: boolean };
+        const one = (said: string) => {
+          const words = said.trim().replace(/\s+/g, ' ');
+          const named = a.several ? /\s+for\s+(Mia|Ata|me)\.?$/i.exec(words) : null;
+          const what = named ? words.slice(0, named.index) : words;
+          const title = what.length > 70 ? `${what.slice(0, 69)}…` : what.replace(/^./, (ch) => ch.toUpperCase()).replace(/[.!]$/, '');
+          return {
             title,
-            goal: `${words.replace(/^./, (ch) => ch.toUpperCase())}${/[.!?]$/.test(words) ? '' : '.'} Done means it works on the phone and the Mac alike, and nothing that worked before breaks.`,
+            goal: `${what.replace(/^./, (ch) => ch.toUpperCase())}${/[.!?]$/.test(what) ? '' : '.'} Done means it works on the phone and the Mac alike, and nothing that worked before breaks.`,
             acceptance: ['It works from the phone, in light and dark', 'The Mac shows the same', 'Tests cover it'],
             labels: ['companion'],
             priority: /urgent|asap|broken|crash/i.test(words) ? 'high' : 'medium',
-          }),
-        );
+            ...(named ? { for: /^me$/i.test(named[1]!) ? 'You' : named[1]!.replace(/^./, (ch) => ch.toUpperCase()) } : {}),
+          };
+        };
+        // 1.24 (BLG-322): a list is one task per line, under an epic when the first line says so.
+        const lines = a.several ? a.text.split('\n').flatMap((l) => /^\s*(?:[-*•]|\d+[.)])\s+(.+)/.exec(l)?.[1] ?? []) : [];
+        const intro = a.text.split('\n').find((l) => l.trim() && !/^\s*(?:[-*•]|\d+[.)])\s/.test(l)) ?? '';
+        const draft =
+          lines.length > 1
+            ? /\bepic\b/i.test(intro)
+              ? { ...one(intro.replace(/\b(?:an?\s+)?epic\b(?:\s+for)?:?/i, '').replace(/[:,]\s*$/, '')), acceptance: [], labels: [], epic: true, more: lines.map(one) }
+              : { ...one(lines[0]!), more: lines.slice(1).map(one) }
+            : one(a.text);
+        // Claude takes a moment to write it, as the Mac's drafter does.
+        this.later(1400, () => ok(draft));
         return;
       }
       case 'companion.addTask': {
-        const a = args[0] as { projectId: string; title: string; goal: string; acceptance: string[]; labels: string[]; priority?: string };
-        const n = 52 + w.tasks.length;
-        const key = `${a.projectId === 'pixel-weather' ? 'PXW' : 'BLG'}-${n}`;
-        const task: (typeof w.tasks)[number] = {
-          id: `iss-${n}`,
-          topic: `task:iss-${n}`,
-          key,
-          title: a.title,
-          status: 'todo',
-          priority: a.priority ?? 'none',
-          projectId: a.projectId,
-          project: w.projects.find((p) => p.id === a.projectId)?.name ?? a.projectId,
-          ...(w.icons[a.projectId] ? { icon: w.icons[a.projectId]!.sum } : {}),
-          goal: { text: a.goal, code: [] },
-          acceptance: a.acceptance.map((text) => ({ text, state: 'open' })),
-          checks: a.acceptance.length ? { done: 0, total: a.acceptance.length } : undefined,
-          activity: [{ id: `a${n}`, at: Date.now(), who: 'You', text: 'created this' }],
-          moves: ['in_progress', 'in_review', 'done', 'backlog', 'canceled'].map((s) => ({ status: s, label: STATUS_LABEL[s]! })),
-          updatedAt: Date.now(),
+        type Draft = { title: string; goal: string; acceptance: string[]; labels: string[]; priority?: string; for?: string };
+        const a = args[0] as Draft & { projectId: string; more?: Draft[]; epic?: boolean };
+        const add = (d: Draft, parent?: string) => {
+          const n = 52 + w.tasks.length;
+          const key = `${a.projectId === 'pixel-weather' ? 'PXW' : 'BLG'}-${n}`;
+          const task: (typeof w.tasks)[number] = {
+            id: `iss-${n}`,
+            topic: `task:iss-${n}`,
+            key,
+            title: d.title,
+            status: 'todo',
+            priority: d.priority ?? 'none',
+            projectId: a.projectId,
+            project: w.projects.find((p) => p.id === a.projectId)?.name ?? a.projectId,
+            ...(w.icons[a.projectId] ? { icon: w.icons[a.projectId]!.sum } : {}),
+            ...(d.for ? { assignee: d.for === 'You' ? 'you' : d.for } : {}),
+            goal: { text: d.goal, code: [] },
+            acceptance: d.acceptance.map((text) => ({ text, state: 'open' })),
+            checks: d.acceptance.length ? { done: 0, total: d.acceptance.length } : undefined,
+            activity: [{ id: `a${n}`, at: Date.now(), who: 'You', text: parent ? `created this under ${parent}` : 'created this' }],
+            moves: ['in_progress', 'in_review', 'done', 'backlog', 'canceled'].map((s) => ({ status: s, label: STATUS_LABEL[s]! })),
+            updatedAt: Date.now(),
+          };
+          if (!task.checks) delete task.checks;
+          w.tasks = [...w.tasks, task];
+          return { id: task.id, key };
         };
-        if (!task.checks) delete task.checks;
-        w.tasks = [...w.tasks, task];
+        const first = add(a);
+        const more = (a.more ?? []).map((m) => add(m, a.epic ? first.key : undefined));
         this.touch('tasks');
-        return ok({ id: task.id, key });
+        return ok({ ...first, ...(more.length ? { more } : {}) });
       }
 
       // ---- merging a worktree (the Mac's checks, merge, Claude resolving)

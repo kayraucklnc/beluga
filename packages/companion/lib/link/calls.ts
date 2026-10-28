@@ -31,6 +31,9 @@ const short = (text: string): string => (text.length > 32 ? `${text.slice(0, 31)
 type Files = readonly string[] | undefined;
 const withFiles = (files: Files) => (files?.length ? { files: [...files] } : {});
 
+/** One task's draft as the phone sends it back to be added. */
+type PhoneDraft = { title: string; goal: string; acceptance: string[]; labels: string[]; priority?: 'urgent' | 'high' | 'medium' | 'low'; for?: string };
+
 export const calls = {
   /** Since 1.13 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
   keepAwake: (mode: 'off' | 'power' | 'always'): Call => make('companion.keepAwake', [mode], 'Keep your Mac awake'),
@@ -75,8 +78,11 @@ export const calls = {
   /** Start a task in a new worktree with Claude on it (the Mac's Start with Claude) → the worktree's id. */
   start: (key: string): Call => make('board.start', [key, { claude: true }], `Start ${key}`),
   /** A task described in words: Claude's draft first, then it's added. */
-  draftTask: (projectId: string, text: string): Call => make('companion.draftTask', [{ projectId, text }], 'Draft a task'),
-  addTask: (projectId: string, d: { title: string; goal: string; acceptance: string[]; labels: string[]; priority?: 'urgent' | 'high' | 'medium' | 'low' }): Call => make('companion.addTask', [{ projectId, ...d }], `Add "${short(d.title)}"`),
+  // 1.24 (BLG-322) `several`: only to a Mac that has it (SINCE.severalTasks); an older one drafts one task.
+  draftTask: (projectId: string, text: string, several = false): Call => make('companion.draftTask', [{ projectId, text, ...(several ? { several } : {}) }], 'Draft a task'),
+  // A draft with `more` (1.24) adds them all: what the Mac drafted with `several`, as it came.
+  addTask: (projectId: string, d: PhoneDraft & { more?: PhoneDraft[]; epic?: boolean }): Call =>
+    make('companion.addTask', [{ projectId, ...d }], d.more?.length ? `Add ${d.more.length + 1} tasks` : `Add "${short(d.title)}"`),
   /** A live view's rows: the Mac runs its source (one your own Claude's view names) and sends the page. */
   viewFetch: (a: { topic: Topic; turn: string; block: number; query: object; source?: object; confirm?: boolean; fresh?: boolean; text?: boolean }): Call => make('companion.viewFetch', [a as never], 'View rows'),
   /** Merging a worktree (its conversation): look first, merge, Claude resolves the conflicts. */

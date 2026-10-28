@@ -234,6 +234,10 @@ Markdown without its code, or JSON for a tree or a table), a tile's real size (`
 `width` stays 1 to 3), the `draft` state, and in `sentinels` the Sentinel chat's open conversation
 (`chat`), a `conv:sentinel-chat:<id>` topic the phone writes and answers in as any conversation. A
 delete Claude asks for there is an `approval` like any other.
+1.24 (BLG-322) brought New Task from one message (`SINCE.severalTasks`): `companion.draftTask`
+with `several` drafts every task the words ask for (`more`, under the first when `epic`), each with
+the teammate it names (`for`); `companion.addTask` with them adds them all and answers their keys
+(`more`). An older Mac never gets `several`, so it drafts one task as before.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 

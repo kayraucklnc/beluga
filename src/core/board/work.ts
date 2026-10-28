@@ -1,5 +1,6 @@
 import type { BoardTools, TaskDefinition } from '../../agent/types.js';
 import { type DraftContext, type TaskDraft, firstLineTitle } from '../../agent/task-drafter.js';
+import { teammatesOf } from '../team/model.js';
 import { slugify } from '../../agent/namer.js';
 import { isSecretPath } from '../shares.js';
 import type { Action, LogItem, Store } from '../store.js';
@@ -161,37 +162,57 @@ export class BoardWork {
    * What your Claude writes for a task described in words, without adding it yet (the phone shows
    * the draft first, then adds it with addDraft). Without your Claude: the first line as the title.
    */
-  async draft(projectId: string, describe: string): Promise<TaskDraft> {
+  async draft(projectId: string, describe: string, opts: { readonly several?: boolean } = {}): Promise<TaskDraft> {
     const text = describe.trim();
     if (!text) throw new Error('Say what the task is');
     const title = firstLineTitle(text);
     const plain: TaskDraft = { title, goal: text, acceptance: [], labels: [] };
     if (!this.deps.draftTask) return plain;
-    return (await this.deps.draftTask(text, this.draftContext(projectId)).catch(() => undefined)) ?? plain;
+    // `several` (a phone that shows them all, BLG-322): the words may ask for several tasks, an epic, and who does each.
+    return (await this.deps.draftTask(text, this.draftContext(projectId, undefined, opts.several)).catch(() => undefined)) ?? plain;
   }
 
-  /** What the describer knows besides the words: the project's name, what it's about (BLG-298), and its labels. */
-  private draftContext(projectId: string, look?: string): DraftContext {
+  /**
+   * What the describer knows besides the words: the project's name, what it's about (BLG-298), and
+   * its labels; with `several` (BLG-319), who on its team a task can be for (you first).
+   */
+  private draftContext(projectId: string, look?: string, several = false): DraftContext {
     const labels = labelsFor(this.board.state(), projectId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
     const about = this.board.state().projects[projectId]?.context?.text;
-    return { labels, ...(project ? { project } : {}), ...(about ? { about } : {}), ...(look ? { look } : {}) };
+    const people = several ? this.people(projectId).map((p) => p.name) : [];
+    return { labels, ...(project ? { project } : {}), ...(about ? { about } : {}), ...(look ? { look } : {}), ...(several ? { several, ...(people.length > 1 ? { people } : {}) } : {}) };
   }
 
-  /** A draft (from draft, maybe changed) added as a task: its title, goal, criteria, labels and priority. */
-  addDraft(projectId: string, d: TaskDraft): Issue {
-    const acceptance = d.acceptance.map((a) => `- [ ] ${a.replace(/\s+/g, ' ').trim()}`).join('\n');
-    return this.board.create(
-      { projectId, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), brief: { ...(d.goal.trim() ? { goal: d.goal.trim() } : {}), ...(acceptance ? { acceptance } : {}) } },
-      this.me(),
-    );
+  /** Who a project's task can be for: you, then its teammates (BLG-299). */
+  private people(projectId: string): Assignee[] {
+    const mates = teammatesOf(this.deps.store.getState().team, projectId).map((m): Assignee => ({ kind: 'person', id: m.peerId, name: m.name }));
+    return [this.me(), ...mates.filter((m) => m.id !== this.deps.selfId())];
+  }
+
+  /**
+   * A draft (from draft, maybe changed) added as a task: its title, goal, criteria, labels and
+   * priority, for whoever it names on the team; with `more`, those too (under it when `epic`). → the first (or the epic), then the rest.
+   */
+  addDraft(projectId: string, d: TaskDraft): Issue[] {
+    const who = d.epic ? undefined : this.whom(projectId, d.for);
+    const first = this.board.create({ projectId, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), ...(who ? { assignee: who } : {}), brief: draftBrief(d) }, this.me());
+    return [first, ...this.addMore(first, {}, d)];
+  }
+
+  /** The person a draft names, if they're on the project's team (you or a teammate). */
+  private whom(projectId: string, name: string | undefined): Assignee | undefined {
+    return name ? this.people(projectId).find((p) => p.name === name) : undefined;
   }
 
   /**
    * `look`: a folder Claude may read first (the project's main folder), so the task also says where
    * the code is and what's likely behind it; it takes a minute or two rather than seconds.
+   * `several` (New Task, BLG-319): the words may ask for several tasks, or an epic with its
+   * sub-tasks, and say who each is for. The first (or the epic) fills in this task; the rest are
+   * added beside it (or under it), in its column, each for whoever the words gave it to.
    */
-  createDescribed(input: Omit<NewIssue, 'title' | 'brief' | 'drafting'>, describe: string, opts: { readonly look?: string; readonly origin?: Issue['origin'] } = {}): Issue {
+  createDescribed(input: Omit<NewIssue, 'title' | 'brief' | 'drafting'>, describe: string, opts: { readonly look?: string; readonly origin?: Issue['origin']; readonly several?: boolean } = {}): Issue {
     const text = describe.trim();
     if (!text) throw new Error('Say what the task is');
     const draft = this.deps.draftTask;
@@ -199,11 +220,12 @@ export class BoardWork {
     // Without your Claude: the first line, and what was said as the goal if it says more.
     if (!draft) return this.board.create({ ...input, title, ...(text.replace(/\s+/g, ' ') !== title ? { brief: { goal: text } } : {}) }, this.me(), opts.origin);
     const issue = this.board.create({ ...input, title, drafting: true }, this.me(), opts.origin);
-    const done = draft(text, this.draftContext(issue.projectId, opts.look))
+    const done = draft(text, this.draftContext(issue.projectId, opts.look, opts.several))
       .catch(() => undefined)
       .then((d) => {
         try {
           this.board.finishDraft(issue.id, d, this.myClaude(), text);
+          if (d && opts.several) this.addTheRest(issue, input, d);
         } catch {
           // Deleted meanwhile.
         }
@@ -211,6 +233,38 @@ export class BoardWork {
       .finally(() => this.drafts.delete(issue.id));
     this.drafts.set(issue.id, done);
     return issue;
+  }
+
+  /** The tasks after the first that one New Task message asked for, and who each is for (BLG-319). */
+  private addTheRest(first: Issue, input: Omit<NewIssue, 'title' | 'brief' | 'drafting'>, d: TaskDraft): void {
+    const now = this.board.need(first.id);
+    // Words naming someone beat the sheet's Assignee; one changed by hand meanwhile stays.
+    const named = d.epic ? undefined : this.whom(now.projectId, d.for);
+    if (named && now.assignee?.id === input.assignee?.id && named.id !== now.assignee?.id) this.board.update(now.id, { assignee: named }, this.me());
+    const made = this.addMore(now, input, d);
+    if (!made.length) return;
+    const list = andList(made.map((i) => i.key));
+    this.deps.toast?.(d.epic ? `${now.key} is an epic: Claude added ${list} under it` : `Claude also made ${list}, from what you wrote`);
+  }
+
+  /** A draft's `more`: beside the first (or under it, an epic), in its column, each for whom it names. */
+  private addMore(first: Issue, input: Pick<NewIssue, 'labels' | 'priority' | 'assignee' | 'parent'>, d: TaskDraft): Issue[] {
+    return (d.more ?? []).map((m) => {
+      const who = this.whom(first.projectId, m.for) ?? input.assignee;
+      return this.board.create(
+        {
+          projectId: first.projectId,
+          title: m.title,
+          status: first.status,
+          labels: [...new Set([...(input.labels ?? []), ...m.labels])],
+          ...(m.priority ? { priority: m.priority } : input.priority ? { priority: input.priority } : {}),
+          ...(who ? { assignee: who } : {}),
+          ...(d.epic ? { parent: first.id } : input.parent ? { parent: input.parent } : {}),
+          brief: draftBrief(m),
+        },
+        this.me(),
+      );
+    });
   }
 
   /**
@@ -679,3 +733,11 @@ export function startPrompt(issue: Issue): string {
   return lines.join('\n');
 }
 
+/** "BLG-1", "BLG-1 and BLG-2", "BLG-1, BLG-2 and BLG-3". */
+export const andList = (items: readonly string[]): string => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
+
+/** A draft's goal and criteria as a task's brief. */
+function draftBrief(d: TaskDraft): Partial<Record<BriefSection, string>> {
+  const acceptance = d.acceptance.map((a) => `- [ ] ${a.replace(/\s+/g, ' ').trim()}`).join('\n');
+  return { ...(d.goal.trim() ? { goal: d.goal.trim() } : {}), ...(d.context?.trim() ? { context: d.context.trim() } : {}), ...(acceptance ? { acceptance } : {}) };
+}

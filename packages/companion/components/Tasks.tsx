@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowUp, Check, Circle, CircleDashed, CircleDot, Eye, type LucideIcon, Plus, Sparkles, X, XCircle } from 'lucide-react-native';
+import { ArrowUp, Check, Circle, CircleDashed, CircleDot, Eye, Layers, type LucideIcon, Plus, Sparkles, User, X, XCircle } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
@@ -17,7 +17,8 @@ import type { TaskDraftResult } from '../../../src/companion/calls';
  * Tasks (BLG-48): the board's tasks per project, grouped by status as the Mac's list groups them
  * (in progress, in review, ready, backlog, the latest done), each with its key, title, priority and
  * who has it. A new task can be described in a sentence: Claude drafts it, you see the draft, then
- * it's added.
+ * it's added. One message can ask for several tasks, or an epic with its parts, and who each is for
+ * (BLG-322): you see them all, and Add makes them all.
  */
 
 export const STATUS: Record<string, { Icon: LucideIcon; tone: Tone; label: string }> = {
@@ -144,6 +145,9 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
   const [last, setLast] = useState(project);
   if (project && project !== last) setLast(project);
   const p = project ?? last;
+  // A Mac with 1.24 drafts every task the words ask for (an older one, just one).
+  const several = useSupports('severalTasks');
+  const count = draft ? 1 + (draft.more?.length ?? 0) : 0;
   const close = () => {
     onClose();
     setTimeout(() => {
@@ -156,7 +160,7 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
     if (!p || !text.trim() || busy) return;
     haptic.commit();
     setBusy('draft');
-    const d = await store.call<TaskDraftResult>(calls.draftTask(p.id, text.trim()), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
+    const d = await store.call<TaskDraftResult>(calls.draftTask(p.id, text.trim(), several), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
     setBusy(undefined);
     if (d) setDraft(d);
   };
@@ -164,10 +168,10 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
     if (!p || !draft || busy) return;
     haptic.success();
     setBusy('add');
-    const r = await store.call<{ id: string; key: string }>(calls.addTask(p.id, draft), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
+    const r = await store.call<{ id: string; key: string; more?: Array<{ id: string; key: string }> }>(calls.addTask(p.id, draft), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
     setBusy(undefined);
     if (!r) return;
-    store.toast({ text: `Added ${r.key}`, tone: 'ok' });
+    store.toast({ text: `Added ${andList([r.key, ...(r.more ?? []).map((m) => m.key)])}`, tone: 'ok' });
     close();
     setTimeout(() => router.push(taskHref(r)), 300);
   };
@@ -190,14 +194,14 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
               value={text}
               onChangeText={setText}
               multiline
-              placeholder="Say what it is: Claude writes the rest"
+              placeholder={several ? 'Say what it is, or a few tasks and who does each' : 'Say what it is: Claude writes the rest'}
               placeholderTextColor={color.text3}
               style={{ color: color.text, fontSize: 18, lineHeight: 25, minHeight: 84, maxHeight: 180, textAlignVertical: 'top', ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }}
             />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Sparkles color={color.claude} size={15} />
               <T v="caption" style={{ flex: 1 }}>
-                Your Claude drafts the title, goal and checks. You see it first.
+                {several ? 'Your Claude drafts each task and who it’s for. You see them first.' : 'Your Claude drafts the title, goal and checks. You see it first.'}
               </T>
               <Press disabled={!text.trim() || !!busy} onPress={() => void ask()} accessibilityLabel="Draft it" style={{ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() ? color.primary : color.sunken }}>
                 {busy === 'draft' ? <ActivityIndicator color={color.onPrimary} /> : <ArrowUp color={text.trim() ? color.onPrimary : color.text3} size={22} strokeWidth={2.6} />}
@@ -206,41 +210,25 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
           </>
         ) : (
           <Animated.View entering={FadeIn.duration(220)} style={{ gap: 12 }}>
-            <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ gap: 10 }}>
-              <Card style={{ padding: 14, gap: 8 }}>
+            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ gap: 10 }}>
+              {count > 1 ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Sparkles color={color.claude} size={14} />
                   <T v="caption" c={color.claude} style={{ fontWeight: '700' }}>
-                    Claude’s draft
+                    {draft.epic ? `An epic and ${count - 1} sub-task${count === 2 ? '' : 's'}` : `${count} tasks`}
                   </T>
-                  {draft.priority ? <Pill label={PRIORITY[draft.priority]?.label ?? draft.priority} tone={PRIORITY[draft.priority]?.tone ?? 'plain'} style={{ marginLeft: 'auto' }} /> : null}
                 </View>
-                <T v="heading">{draft.title}</T>
-                {draft.goal ? <T v="callout">{draft.goal}</T> : null}
-                {draft.acceptance.length ? (
-                  <View style={{ gap: 6, marginTop: 4 }}>
-                    {draft.acceptance.map((a) => (
-                      <View key={a} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-                        <View style={{ width: 16, height: 16, borderRadius: 5, borderWidth: 1.5, borderColor: color.hairlineStrong, marginTop: 2 }} />
-                        <T v="callout" c={color.text} style={{ flex: 1 }}>
-                          {a}
-                        </T>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-                {draft.labels.length ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                    {draft.labels.map((l) => (
-                      <Pill key={l} label={l} tone="lavender" />
-                    ))}
-                  </View>
-                ) : null}
-              </Card>
+              ) : null}
+              <DraftCard draft={draft} epic={draft.epic} heading={count > 1 ? undefined : 'Claude’s draft'} />
+              {(draft.more ?? []).map((m, i) => (
+                <View key={i} style={draft.epic ? { marginLeft: 14 } : undefined}>
+                  <DraftCard draft={m} />
+                </View>
+              ))}
             </ScrollView>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <Button label="Change" quiet flex={1} onPress={() => setDraft(undefined)} />
-              <Button label={busy === 'add' ? 'Adding…' : 'Add task'} Icon={Plus} flex={1.4} disabled={!!busy} onPress={() => void add()} />
+              <Button label={busy === 'add' ? 'Adding…' : count > 1 ? `Add ${count} tasks` : 'Add task'} Icon={Plus} flex={1.4} disabled={!!busy} onPress={() => void add()} />
             </View>
           </Animated.View>
         )}
@@ -248,3 +236,64 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
     </Sheet>
   );
 }
+
+/** One drafted task: its title, goal, checks and labels, how much it matters, and who it's for. */
+function DraftCard({ draft, heading, epic }: { readonly draft: Omit<TaskDraftResult, 'more' | 'epic'>; readonly heading?: string; readonly epic?: boolean }) {
+  const top = heading || epic || draft.priority || draft.for;
+  return (
+    <Card style={{ padding: 14, gap: 8, ...(epic ? { backgroundColor: toneBg('lavender') } : {}) }}>
+      {top ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {heading ? (
+            <>
+              <Sparkles color={color.claude} size={14} />
+              <T v="caption" c={color.claude} style={{ fontWeight: '700' }}>
+                {heading}
+              </T>
+            </>
+          ) : null}
+          {epic ? (
+            <>
+              <Layers color={toneInk('lavender')} size={13} />
+              <T v="caption" c={toneInk('lavender')} style={{ fontWeight: '700' }}>
+                Epic
+              </T>
+            </>
+          ) : null}
+          <View style={{ flex: 1 }} />
+          {draft.for ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <User color={color.text2} size={13} />
+              <T v="caption">For {draft.for}</T>
+            </View>
+          ) : null}
+          {draft.priority ? <Pill label={PRIORITY[draft.priority]?.label ?? draft.priority} tone={PRIORITY[draft.priority]?.tone ?? 'plain'} /> : null}
+        </View>
+      ) : null}
+      <T v="heading">{draft.title}</T>
+      {draft.goal ? <T v="callout">{draft.goal}</T> : null}
+      {draft.acceptance.length ? (
+        <View style={{ gap: 6, marginTop: 4 }}>
+          {draft.acceptance.map((a) => (
+            <View key={a} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+              <View style={{ width: 16, height: 16, borderRadius: 5, borderWidth: 1.5, borderColor: color.hairlineStrong, marginTop: 2 }} />
+              <T v="callout" c={color.text} style={{ flex: 1 }}>
+                {a}
+              </T>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {draft.labels.length ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+          {draft.labels.map((l) => (
+            <Pill key={l} label={l} tone="lavender" />
+          ))}
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
+/** "BLG-1", "BLG-1 and BLG-2", "BLG-1, BLG-2 and BLG-3". */
+const andList = (items: readonly string[]): string => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);

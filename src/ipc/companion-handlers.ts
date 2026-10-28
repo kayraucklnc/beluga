@@ -10,6 +10,8 @@ import { needBoard } from '../core/board/registry.js';
 import { needCompanion } from '../companion/registry.js';
 import { currentClient } from '../core/client-context.js';
 import type { Session } from '../core/session.js';
+import type { TaskDraft } from '../agent/task-drafter.js';
+import type { TaskDraftResult } from '../companion/calls.js';
 import type { Args, Method } from './api.js';
 
 /** What each `companion.*` method does (see companion-api.ts). Results carry no keys or secrets beyond the pairing's own link and code. */
@@ -58,13 +60,13 @@ export const COMPANION_HANDLERS = {
   'companion.branchStep': (s, topic, step) => branchStep(s, topic, step),
   'companion.viewFetch': (s, a) => viewFetch(s.store.getState(), a as ViewFetchArgs),
   'companion.draftTask': async (s, a) => {
-    const d = await needBoard(s).draft(a.projectId, a.text);
-    // Words only: a code block in the goal (rare in a draft) reads "(code)" on the phone.
-    return { title: d.title, goal: stripCode(d.goal).text.replace(/\[\[code(?::\d+)?\]\]/g, '(code)'), acceptance: [...d.acceptance], labels: [...d.labels], ...(d.priority ? { priority: d.priority } : {}) };
+    const d = await needBoard(s).draft(a.projectId, a.text, { several: Boolean(a.several) });
+    return phoneDraft(d, a.several);
   },
   'companion.addTask': (s, a) => {
-    const issue = needBoard(s).addDraft(a.projectId, { title: a.title, goal: a.goal, acceptance: a.acceptance, labels: a.labels, ...(a.priority ? { priority: a.priority } : {}) });
-    return { id: issue.id, key: issue.key };
+    const { projectId, more, epic, ...first } = a;
+    const [issue, ...rest] = needBoard(s).addDraft(projectId, { ...first, ...(more?.length ? { more } : {}), ...(epic ? { epic: true as const } : {}) });
+    return { id: issue!.id, key: issue!.key, ...(rest.length ? { more: rest.map((i) => ({ id: i.id, key: i.key })) } : {}) };
   },
   'companion.files.list': (s, topic, rel) => needCompanion(s).filesList(topic, rel),
   'companion.files.find': (s, topic, query) => needCompanion(s).filesFind(topic, query),
@@ -80,3 +82,12 @@ export const COMPANION_HANDLERS = {
     }, topic, turn, id),
   'companion.gone': (s, topics) => ({ gone: goneTopics(s.store.getState(), topics) }),
 } satisfies CompanionHandlers;
+
+/**
+ * A draft as the phone shows it: words only (a code block in a goal, rare in a draft, reads
+ * "(code)"); with `several` (1.24), who each is for and the tasks after the first.
+ */
+function phoneDraft(d: TaskDraft, several?: boolean): TaskDraftResult {
+  const one = (t: TaskDraft) => ({ title: t.title, goal: stripCode(t.goal).text.replace(/\[\[code(?::\d+)?\]\]/g, '(code)'), acceptance: [...t.acceptance], labels: [...t.labels], ...(t.priority ? { priority: t.priority } : {}), ...(several && t.for ? { for: t.for } : {}) });
+  return { ...one(d), ...(several && d.more?.length ? { more: d.more.map(one), ...(d.epic ? { epic: true } : {}) } : {}) };
+}

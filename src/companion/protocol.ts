@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 23 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 24 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -54,9 +54,11 @@ export const COMPANION_PROTO = { major: 1, minor: 23 } as const;
  * older phone's `chart` still comes as `chart`) and `output` (a step's latest export, `output`),
  * a tile's real size (`span`, `tall`; `width` stays 1 to 3 for older phones), the `draft` state,
  * and `SentinelsView.chat`, the Sentinel chat's open conversation (a `conv:sentinel-chat:<id>`
- * topic the phone writes in as any conversation).
+ * topic the phone writes in as any conversation). 1.24 (BLG-322): New Task from one message makes
+ * several tasks: `companion.draftTask`'s `several`, a draft's `for`, `more` and `epic`, and
+ * `companion.addTask` adding them all (`more` in its answer).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;

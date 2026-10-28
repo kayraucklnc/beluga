@@ -14,7 +14,9 @@ const SCALE: readonly Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 
 /**
  * A new task: say what you want in one box and Claude writes its title and goal and picks its
- * labels (or write them yourself), and how much it matters on a scale if you like. It goes in the
+ * labels (or write them yourself), and how much it matters on a scale if you like. The box can ask
+ * for several tasks, or an epic with its parts, and say who each is for: Create makes them all
+ * (BLG-319), no chat in between. It goes in the
  * project and column you opened it from. Start with Claude makes the worktree and puts Claude on it.
  */
 export function NewTaskSheet({ projectId, status, parent, close }: { projectId?: string; status?: IssueStatus; parent?: string; close: () => void }) {
@@ -93,11 +95,15 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
             onChange={setDescribe}
             rows={4}
             maxLength={8000}
-            placeholder="Describe the task: what you want, and why. Claude writes the title and goal."
+            placeholder={solo ? 'Say what you want done: one task, or a few. Claude writes them.' : 'Say what you want done: one task, or a few and who each is for. Claude writes them.'}
             onInput={(e) => grow(e.currentTarget)}
             data-autofocus
           />
-          <div className={n.hint}>Claude writes the title, goal and what done looks like, and picks its labels. ⌘↩ creates it.</div>
+          <div className={n.hint}>
+            {solo
+              ? 'Ask for several tasks, or an epic with its parts, and Create makes them all. ⌘↩ creates it.'
+              : 'Ask for several tasks, or an epic with its parts, and name who each is for: Create makes and assigns them all. ⌘↩ creates it.'}
+          </div>
         </div>
       )}
       <button type="button" className={n.disclosure} aria-expanded={mine} onClick={() => setMine(!mine)}>

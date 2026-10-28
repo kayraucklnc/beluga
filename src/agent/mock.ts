@@ -2,7 +2,7 @@ import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.
 import type { McpServerRow } from '../shared/mcp.js';
 import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
 import { cleanPlanTitle, slugify } from './namer.js';
-import { type DraftContext, type TaskDraft, firstLineTitle } from './task-drafter.js';
+import { type DraftContext, MAX_TASKS, type TaskDraft, firstLineTitle, matchPerson } from './task-drafter.js';
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
 import { MOCK_GRAPH_ANSWER } from './mock-graphs.js';
@@ -634,6 +634,24 @@ export function mockAbout(project: string): string {
 
 /** The demo's task writer: a tidy title from the first line, a goal and criteria, labels the words name. */
 export function mockDraft(text: string, ctx: DraftContext): TaskDraft {
+  // New Task (BLG-319): a list makes one task per line ("for Ata" gives it to Ata), under an epic
+  // when the words say so.
+  const items = ctx.several ? text.split('\n').flatMap((l) => /^\s*(?:[-*•]|\d+[.)])\s+(.+)/.exec(l)?.[1]?.trim() ?? []).slice(0, MAX_TASKS) : [];
+  if (items.length > 1) {
+    const tasks = items.map((item) => {
+      const named = /\b(?:for|to)\s+([\p{L}][\p{L}'-]*)\s*[.!]?$/iu.exec(item);
+      const who = matchPerson(named?.[1], ctx.people ?? []);
+      const d = mockDraft(who ? item.slice(0, named!.index).trim() : item, { ...ctx, several: false });
+      return who ? { ...d, for: who } : d;
+    });
+    const intro = text.split('\n').find((l) => l.trim() && !/^\s*(?:[-*•]|\d+[.)])\s/.test(l));
+    if (intro && /\bepic\b/i.test(intro)) {
+      const epic = mockDraft(intro.replace(/\b(?:an?\s+)?epic\b(?:\s+(?:for|to))?:?/i, '').replace(/[:,]\s*$/, ''), { ...ctx, several: false });
+      return { title: epic.title, goal: epic.goal, acceptance: [], labels: [], more: tasks, epic: true };
+    }
+    const [first, ...rest] = tasks;
+    return { ...first!, more: rest };
+  }
   const words = firstLineTitle(text).replace(FILLER, '').replace(/[.!?]+$/, '').split(' ').slice(0, 8).join(' ');
   const title = words.charAt(0).toUpperCase() + words.slice(1);
   const said = text.toLowerCase();
