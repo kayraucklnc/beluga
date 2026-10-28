@@ -1,0 +1,15 @@
+<resources>
+  <!-- The app's own greys and pastel inks (lib/theme.ts), dark. -->
+  <color name="beluga_widget_bg">#1E1E21</color>
+  <color name="beluga_widget_card">#2A2A2E</color>
+  <color name="beluga_widget_text">#ECECEE</color>
+  <color name="beluga_widget_text2">#A8A8AE</color>
+  <color name="beluga_widget_text3">#8B8B92</color>
+  <color name="beluga_widget_hairline">#13FFFFFF</color>
+  <color name="beluga_widget_sunken">#0FFFFFFF</color>
+  <color name="beluga_widget_good">#9FD6BD</color>
+  <color name="beluga_widget_good_bg">#249FD6BD</color>
+  <color name="beluga_widget_bad">#EFB0BC</color>
+  <color name="beluga_widget_bad_bg">#24EFB0BC</color>
+  <color name="beluga_widget_sky">#A9C8EC</color>
+</resources>

@@ -1,0 +1,4 @@
+<resources>
+  <string name="beluga_widget_label">Board tile</string>
+  <string name="beluga_widget_description">A number, a chart or what a sentinel said, from your Beluga boards.</string>
+</resources>

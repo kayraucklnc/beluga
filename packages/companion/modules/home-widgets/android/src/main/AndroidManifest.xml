@@ -1,0 +1,33 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Board tiles on the Home screen (BLG-361). Exported: the launcher binds it. -->
+    <receiver
+      android:name="sh.ratel.beluga.widgets.TileWidget"
+      android:exported="true"
+      android:label="@string/beluga_widget_label">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/beluga_tile_widget" />
+    </receiver>
+
+    <!-- Android's "Add to Home screen" sheet, from a tile's ••• in the app, comes back here. -->
+    <receiver
+      android:name="sh.ratel.beluga.widgets.PinnedReceiver"
+      android:exported="false" />
+
+    <!-- Which tile: opened by the launcher when the widget is added, and by Settings on it later. -->
+    <activity
+      android:name="sh.ratel.beluga.widgets.TilePickerActivity"
+      android:exported="true"
+      android:excludeFromRecents="true"
+      android:taskAffinity=""
+      android:theme="@style/BelugaTilePicker">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

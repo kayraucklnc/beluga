@@ -13,6 +13,7 @@ import { Toasts } from '../components/Screen';
 import { useScheme } from '../lib/appearance';
 import { startSaved } from '../lib/saved';
 import { store } from '../lib/store';
+import { startWidgets } from '../lib/widgets';
 // Loaded at once: sends that waited while your Mac was away go when it answers, whatever is on screen.
 import '../lib/sends';
 import { allowTurning } from '../lib/fullscreen';
@@ -24,7 +25,8 @@ export default function Root() {
   useEffect(() => {
     // The cache holds nothing a new launch uses; saved files are checked when the link opens.
     startSaved();
-    void store.boot();
+    // The Home-screen widgets (Android) get your boards' tiles once the store knows its Mac.
+    void store.boot().then(startWidgets);
     // Upright everywhere; only data full screen turns (lib/fullscreen.ts).
     allowTurning(false);
     // A notification from Stay connected (lib/stay.ts) opens what it's about.

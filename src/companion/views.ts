@@ -14,6 +14,7 @@ import { type RunSummary, type Sentinel, type SentinelState, activeSentinelChat,
 import { type Dashboard, type Tile, metricOf, outputLook, tileColumns, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
 import { storageSources } from '../core/sentinel/columns.js';
 import { sentinelGraph } from '../core/sentinel/workflow.js';
+import { widgetSnapshot } from '../core/sentinel/widgets.js';
 import { COMPARE, changeText, deltaOf, formatMetric } from '../core/sentinel/metrics.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
@@ -43,6 +44,7 @@ import {
   type SentinelsView,
   type DashboardTileView,
   type DashboardView,
+  type WidgetsView,
   type StepView,
   type SubAgentView,
   TASK_OTHERS,
@@ -1295,6 +1297,43 @@ export function peopleView(state: DomainState): PeopleView {
   };
 }
 
+/**
+ * 1.26 (BLG-361): every board tile in words, for the phone's Home-screen widgets: the snapshot the
+ * Mac's desktop widgets read (src/core/sentinel/widgets.ts), each project's icon as its checksum.
+ */
+export function widgetsView(state: DomainState, ctx?: ViewContext): WidgetsView {
+  const s = state.sentinel;
+  if (!s.enabled) return { tiles: [] };
+  // A project's icon as its checksum (companion.icon), where the Mac's own widgets have a file.
+  const snap = widgetSnapshot(s, (projectId) => {
+    const p = projectId ? state.projects.find((x) => x.id === projectId) : undefined;
+    return p ? { name: p.name, ...iconOf(ctx, p.id) } : undefined;
+  });
+  return {
+    tiles: snap.tiles.slice(0, 120).map((w) => ({
+      id: clip(w.id, 401),
+      dashboard: clip(w.dashboard, 200),
+      tile: clip(w.tile, 200),
+      board: clip(w.board, 100),
+      title: clip(w.title, 100),
+      kind: w.kind,
+      ...(w.value ? { value: clip(w.value, 60) } : {}),
+      ...(w.change ? { change: clip(w.change, 60) } : {}),
+      tone: w.tone,
+      ...(w.vs ? { vs: clip(w.vs, 60) } : {}),
+      ...(w.points?.length ? { points: w.points.slice(-40) } : {}),
+      ...(w.from ? { from: clip(w.from, 80) } : {}),
+      ...(w.to ? { to: clip(w.to, 80) } : {}),
+      ...(w.text ? { text: clip(w.text, 1000) } : {}),
+      ...(w.note ? { note: clip(w.note, 60) } : {}),
+      ...(w.project ? { project: clip(w.project, 100) } : {}),
+      ...(w.icon ? { icon: w.icon } : {}),
+      ...(w.tint ? { tint: w.tint } : {}),
+      ...(w.at !== undefined ? { at: Math.round(w.at) } : {}),
+    })),
+  };
+}
+
 /** The view a topic carries, or undefined when there's nothing by that name (a plan that's gone). */
 export function viewOf(state: DomainState, ctx: ViewContext, topic: Topic): unknown {
   if (topic === 'home') return homeView(state, ctx);
@@ -1310,5 +1349,6 @@ export function viewOf(state: DomainState, ctx: ViewContext, topic: Topic): unkn
   if (topic === 'sentinels') return sentinelsView(state);
   if (topic.startsWith('sentinel:')) return sentinelPageView(state, topic.slice('sentinel:'.length), ctx);
   if (topic.startsWith('dashboard:')) return dashboardView(state, topic.slice('dashboard:'.length));
+  if (topic === 'widgets') return widgetsView(state, ctx);
   return undefined;
 }
