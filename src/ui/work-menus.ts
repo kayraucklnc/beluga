@@ -1,6 +1,7 @@
 import type { AppState } from '../core/store.js';
 import { describePr } from '../shared/format.js';
 import type { MenuSpec } from './menus.js';
+import { handoffPeople } from './worktree-share.js';
 
 export type WorkMenuKind =
   /** The PR button: create one with Claude, or work with the one that exists. */
@@ -84,7 +85,8 @@ function templatesMenu(state: AppState, manage: boolean): MenuSpec {
 function handoffMenu(state: AppState, id: string): MenuSpec | undefined {
   const ws = findWs(state, id);
   if (!ws) return undefined;
-  const people = state.peers.filter((p) => p.peerId !== state.self?.peerId && p.agent);
+  // In your room, or friends over the network (BLG-341); one whose Beluga can't take it yet isn't offered.
+  const people = handoffPeople(state).filter((p) => !p.why);
   return {
     title: `Hand off ${ws.name}`,
     intro: [
@@ -93,10 +95,10 @@ function handoffMenu(state: AppState, id: string): MenuSpec | undefined {
       '  2. Uncommitted work is committed, and the branch is sent to them (encrypted).',
       '  3. They accept, get a worktree with the branch and the chat, and their Claude continues.',
       'They need the same repository (same origin). You can follow along afterwards.',
-      ...(people.length ? [] : ['', 'Nobody with a Claude is in the room yet. Invite someone first.']),
+      ...(people.length ? [] : ['', 'No friends to hand it to yet. Type /invite to add one.']),
       '',
     ],
-    options: [...people.map((p) => ({ id: `ho:${p.peerId}`, label: `Hand off to ${p.name}`, hint: `${p.name}'s Claude continues on ${p.name}'s computer` })), { id: 'close', label: 'Cancel', hint: 'Esc' }],
+    options: [...people.map((p) => ({ id: `ho:${p.peerId}`, label: `Hand off to ${p.name}`, hint: `${p.name}'s Claude continues on ${p.name}'s computer${p.online ? '' : ' (offline: it waits for them)'}` })), { id: 'close', label: 'Cancel', hint: 'Esc' }],
   };
 }
 

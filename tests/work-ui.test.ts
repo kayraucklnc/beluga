@@ -566,13 +566,13 @@ describe('workMenuSpec', () => {
     expect(m.title).toBe('Hand off fix-auth');
     expect(ids(m)).toEqual(['ho:fr000001', 'close']);
     expect(m.options[0]!.label).toBe('Hand off to ana');
-    expect(m.intro.join('\n')).not.toContain('Nobody with a Claude');
+    expect(m.intro.join('\n')).not.toContain('No friends to hand');
   });
 
-  it('handoff: without people says to invite someone; unknown workspace is undefined', () => {
+  it('handoff: without people says to add a friend; unknown workspace is undefined', () => {
     const m = spec(base(), { kind: 'handoff', id: 'w1' })!;
     expect(ids(m)).toEqual(['close']);
-    expect(m.intro).toContain('Nobody with a Claude is in the room yet. Invite someone first.');
+    expect(m.intro).toContain('No friends to hand it to yet. Type /invite to add one.');
     expect(spec(base(), { kind: 'handoff', id: 'nope' })).toBeUndefined();
   });
 

@@ -8,7 +8,7 @@ import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate } from './text.js';
 import { SPINNER, glyph, theme } from './theme.js';
-import { worktreeShareRows } from './worktree-share.js';
+import { handoffPeople, worktreeShareRows } from './worktree-share.js';
 
 /** Something clickable, in coordinates relative to the model's own top-left corner. */
 export interface Zone {
@@ -603,7 +603,8 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
   const conflict = Boolean(state.conflicts[ws.id]?.length);
   const pr = state.prs[ws.id];
   const scripts = project?.scripts;
-  const friends = state.peers.some((p) => p.peerId !== state.self?.peerId && p.agent);
+  // In your room with their Claude, or a friend over the network (BLG-341).
+  const friends = handoffPeople(state).length > 0;
   const all: WorkspaceButton[] = ws.archived
     ? [
         { label: 'Restore', action: 'restore', hint: 'Bring this workspace back' },
@@ -627,7 +628,7 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
                     hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
                     disabled: !ahead || changed > 0,
                   },
-              { label: 'Hand off', action: 'handoff', hint: friends ? "Someone else's Claude continues this on their computer" : 'Hand off goes to someone in your room. To work on just this worktree with a friend, use Share', disabled: !friends },
+              { label: 'Hand off', action: 'handoff', hint: friends ? "A friend's Claude continues this on their computer" : state.network.enabled ? 'Add a friend first; then their Claude can take this over' : 'Turn on the Beluga network to hand this to a friend, or invite someone to your room', disabled: !friends },
             ] as WorkspaceButton[])
           : []),
         ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so Claude has room to keep going' }] as WorkspaceButton[]) : []),

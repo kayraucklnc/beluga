@@ -8,7 +8,7 @@ import type { FriendView, GroupView } from '../src/net/mesh/views.js';
 import type { AppState } from '../src/core/store.js';
 import type { Session } from '../src/core/session.js';
 import { runCommand } from '../src/core/commands.js';
-import { shareRowDetail, worktreeShareRows } from '../src/ui/worktree-share.js';
+import { handoffPeople, shareRowDetail, worktreeShareRows } from '../src/ui/worktree-share.js';
 
 /** `/invite` (BLG-203): on its own it adds a friend; with friends named, it adds them to what's on screen. */
 
@@ -186,5 +186,27 @@ describe('who a worktree’s Share sheet lists (BLG-340)', () => {
     ]);
     expect(shareRowDetail(rows[1]!, false)).toBe('Works with your Claude across the whole project');
     expect(shareRowDetail(rows[2]!, false)).toBe('Not in this worktree');
+  });
+});
+
+describe('who a worktree can be handed to (BLG-341)', () => {
+  const self = { peerId: id('k'), name: 'kayra' };
+  const old = { ...cy, beluga: { version: '0.6.1+mac.1.4.0', can: ['share.project'] } };
+  const state = (enabled: boolean) => ({
+    self,
+    peers: [self, { peerId: ata.peerId, name: 'ata', agent: true }, { peerId: id('z'), name: 'zed', agent: false }],
+    network: { ...NO_NETWORK, enabled, friends: [ata, { ...bo, online: false }, old] },
+  }) as unknown as Parameters<typeof handoffPeople>[0];
+
+  it('room people with their Claude, then friends over the network; an old Beluga says why', () => {
+    expect(handoffPeople(state(true)).map((p) => [p.name, p.via, p.online, p.why])).toEqual([
+      ['ata', 'room', true, undefined],
+      ['Bo Lin', 'network', false, undefined],
+      ['cy', 'network', true, "cy's Beluga 1.4.0 can't open handoffs yet. Ask cy to update Beluga."],
+    ]);
+  });
+
+  it('with the network off, only the room', () => {
+    expect(handoffPeople(state(false)).map((p) => p.name)).toEqual(['ata']);
   });
 });

@@ -1,5 +1,6 @@
 import type { WsRole } from '../protocol.js';
 import type { AppState } from '../core/store.js';
+import { cannotTake } from '../net/mesh/features.js';
 
 /**
  * Who a worktree's Share sheet lists (BLG-340): your friends, who get it over the Beluga network
@@ -55,4 +56,27 @@ export function shareRowDetail(row: WorktreeShareRow, inRoom: boolean): string {
   if (row.access === 'view') return row.wholeProject ? 'Follows the whole project, read-only' : 'Follows along, read-only';
   if (row.guest) return 'Guest';
   return inRoom ? 'In your room, not in this worktree' : 'Not in this worktree';
+}
+
+/** Someone a worktree can be handed to (BLG-341): in your room with their Claude, or a friend over the network. */
+export interface HandoffPerson {
+  readonly peerId: string;
+  readonly name: string;
+  readonly via: 'room' | 'network';
+  readonly online: boolean;
+  /** Why it can't go to them (their Beluga is too old); undefined when it can. */
+  readonly why?: string;
+}
+
+export function handoffPeople(state: Pick<AppState, 'peers' | 'self' | 'network'>): HandoffPerson[] {
+  const selfId = state.self?.peerId;
+  const room: HandoffPerson[] = state.peers.filter((p) => p.peerId !== selfId && p.agent).map((p) => ({ peerId: p.peerId, name: p.name, via: 'room', online: true }));
+  if (!state.network.enabled) return room;
+  const friends: HandoffPerson[] = state.network.friends
+    .filter((f) => f.peerId !== selfId && !state.peers.some((p) => p.peerId === f.peerId))
+    .map((f) => {
+      const why = cannotTake(f.name, f.beluga, 'share.handoff', f.online);
+      return { peerId: f.peerId, name: f.name, via: 'network', online: f.online, ...(why ? { why } : {}) };
+    });
+  return [...room, ...friends];
 }

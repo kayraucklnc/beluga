@@ -2,7 +2,7 @@ import type { Session } from './session.js';
 import type { Policy } from './store.js';
 import { THEMES, type ThemeName } from '../shared/settings-schema.js';
 import { runEnvCommand, runShellCommand } from './terminal-commands.js';
-import { type InvitePlace, inviteRoute, namesLine, parseInvite } from '../shared/invite-route.js';
+import { type InvitePlace, friendNamed, inviteRoute, namesLine, parseInvite } from '../shared/invite-route.js';
 
 export interface CommandSpec {
   readonly name: string;
@@ -366,7 +366,8 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
       ctl.open(ws.id, 'terminal');
       return;
     case 'handoff': {
-      const peer = text ? session.findPeer(text) : undefined;
+      // Someone in your room, or a friend by @handle or name over the network (BLG-341).
+      const peer = text ? (session.findPeer(text) ?? friendNamed(text.replace(/^@+/, ''), session.store.getState().network.friends)) : undefined;
       if (!peer) return session.intend({ type: 'overlay', overlay: 'handoff' });
       void session.remote.handoff(ws.id, peer.peerId);
       return;

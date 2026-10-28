@@ -576,6 +576,14 @@ and the setup when you trust them fully; otherwise the chat says so, with Termin
 the state's `forks` (asking, copying, ready with your worktree's id, failed with why); the header button follows it
 (Packing…, Waiting for ata's Mac…, Copying…, then Open My Fork). The same trust rule now holds for "Runs on" › This Mac.
 
+**Handing a worktree to a friend (BLG-341).** Hand Off lists your friends as well as the room's people with their
+Claude. To a friend outside your room, the room's own `ws_handoff` (note, chat, branch bundle in a private share for
+them) goes over their link instead (`FriendShares.routeHandoff`), and so does their `ws_handoff_result`; each side
+keeps the `hid` so only that answer is let through, and the bundle's share is fetched the way a fork's pack is (the
+`outgoing`/`incoming` maps). The offer waits for an offline friend, its bundle for an hour. Once they take it, their
+Mac shares the new worktree back to you over the network to follow along. Packs in an outbox (copies, forks,
+handoffs) are never offered as folders. A Beluga without `share.handoff` is told before anything is sent.
+
 **Folders, under Files.** A folder you share with only some people (**Share a Folder** › *Only…*, which lists your
 friends as well as the room's people) goes to those of them who are friends over the network as well, with no room
 needed: a `folder` message, again when you change it, `active: false` when you stop or untick them. On their Mac it's in
