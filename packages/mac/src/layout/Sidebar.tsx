@@ -22,7 +22,6 @@ import { RequestsNav } from '../gateway/RequestsNav.js';
 import { WorkNav } from '../work/WorkNav.js';
 import { SentinelNav } from '../sentinel/SentinelNav.js';
 import { AssistantNav } from './AssistantNav.js';
-import { PhoneNav } from '../phone/PhoneNav.js';
 import { footerStatus } from '../views/room/connection-model.js';
 import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
 import { SelfBar } from '../network/StatusMenu.js';
@@ -112,7 +111,6 @@ export function Sidebar() {
       <div className={s.scroll}>
         <section className={s.section}>
           <AssistantNav />
-          <PhoneNav />
           {NAV.map((n) => {
             const tab = tabs.find((t) => t.kind === n.kind);
             if (!tab) return null;
