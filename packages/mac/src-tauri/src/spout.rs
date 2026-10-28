@@ -68,15 +68,16 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
             if play && !frames.is_empty() {
                 if let Some(tray) = app.tray_by_id("beluga") {
                     let started = Instant::now();
+                    // Image and template together, in one go: `set_icon` alone puts each frame up
+                    // as a plain (untinted) image until a second call marks it a template, and the
+                    // bar draws it in between, so the whale flickered on every frame (BLG-335).
                     for (i, f) in frames.iter().enumerate() {
-                        let _ = tray.set_icon(Some(f.clone()));
-                        let _ = tray.set_icon_as_template(true);
+                        let _ = tray.set_icon_with_as_template(Some(f.clone()), true);
                         // Keep to the clock, not to how long setting the icon took.
                         let due = started + frame * (i as u32 + 1);
                         thread::sleep(due.saturating_duration_since(Instant::now()));
                     }
-                    let _ = tray.set_icon(rest());
-                    let _ = tray.set_icon_as_template(true);
+                    let _ = tray.set_icon_with_as_template(rest(), true);
                 }
                 // Spouts asked for while it played are the same spout.
                 while let Ok(c) = rx.try_recv() {
