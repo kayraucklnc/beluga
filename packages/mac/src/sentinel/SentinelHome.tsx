@@ -474,7 +474,7 @@ function FirstVisit() {
         ))}
       </div>
       <div className={s.firstFoot}>
-        <span>Nothing runs until you turn it on.</span>
+        <span>Each one starts paused: nothing runs until you turn it on, and Claude never does.</span>
         <button type="button" className={s.link} onClick={() => openSheet({ kind: 'new_sentinel', way: 'recipe' })}>
           Every recipe
         </button>
