@@ -347,8 +347,10 @@ function useFileFollow(): void {
 }
 
 /**
- * How the panel slides: its room in the window is taken (or given back) in one step and only
- * its inside moves, so the conversation beside it is laid out once, not on every frame.
+ * How the panel slides: its room in the window is taken (or given back) in one step, the moment
+ * it's asked for, and only its inside moves, so the conversation beside it is laid out once, not
+ * on every frame. Opening, the room it takes is the page's white until the panel covers it;
+ * closing, the panel slides away over the conversation, which already has its room back.
  * `in`: slid in (it starts out of sight, one frame, so the slide has somewhere to come from).
  * `settled`: the slide is over and the tab's content can be drawn. Open at launch: both at once.
  */
@@ -412,9 +414,9 @@ export function RightPanel() {
   const both = hasTop && hasBottom && paneShowing(state, 'bottom', prefs);
   const badges = useBadges();
   return (
-    <aside className={s.panel} style={{ width: presence.mounted ? width : 0 }} aria-label="Panel" aria-hidden={!open} inert={!open}>
+    <aside className={cx(s.panel, presence.closing && s.leaving)} style={{ width: open ? width : 0 }} aria-label="Panel" aria-hidden={!open} inert={!open}>
       {presence.mounted ? (
-        <div ref={inner} className={cx(s.inner, !slide.in && s.innerOut, slide.moving && s.sliding)} style={{ width }}>
+        <div ref={inner} className={cx(s.inner, !slide.in && s.innerOut, slide.moving && s.sliding, slide.settled && s.settled)} style={{ width }}>
           <ResizeHandle
             axis="x"
             label="Resize the panel"
