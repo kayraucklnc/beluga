@@ -31,6 +31,7 @@ import { TaskCard } from '../gateway/TaskCard.js';
 import { SlotWaitNotice } from './SlotWait.js';
 import { EditPrompt } from './EditPrompt.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import { PersonButton } from '../network/PersonProfile.js';
 import s from './chat.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
 
@@ -180,11 +181,17 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
     return (
       <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
         <div ref={row} className={cx(s.message, s.theirs, continued && s.continued, steer && s.unread)} data-steer={steer ? 'waiting' : undefined} style={{ ['--person' as string]: personColor(item.from) }}>
-          <div className={cx(s.gutter, s.gutterEnd)}>{ends ? <Avatar name={item.name} id={item.from} size={26} /> : null}</div>
+          <div className={cx(s.gutter, s.gutterEnd)}>{ends ? (
+              <PersonButton peerId={item.from} name={item.name}>
+                <Avatar name={item.name} id={item.from} size={26} />
+              </PersonButton>
+            ) : null}</div>
           <div className={cx(s.body, s.theirsBody)}>
             {continued ? null : (
               <div className={s.meta}>
-                <span className={s.author}>{item.name}</span>
+                <PersonButton peerId={item.from} name={item.name}>
+                  <span className={s.author}>{item.name}</span>
+                </PersonButton>
                 {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
               </div>
             )}

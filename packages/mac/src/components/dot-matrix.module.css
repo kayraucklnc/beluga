@@ -7,9 +7,23 @@
   gap: 1px;
   vertical-align: middle;
 }
+/* Each dot sits on a faint floor (--dot-floor: a soft grey in light, none in dark), so on white the
+   dim dots read as crisp grey points instead of a pale smudge of the colour. */
 .matrix i {
+  position: relative;
   display: block;
   border-radius: 50%;
+  background: var(--dot-floor, transparent);
+}
+.matrix i::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
   background: currentColor;
-  opacity: 0.4;
+  opacity: var(--lit, 0.4);
+}
+/* On white, faint colour reads as blur: the dim end drops to the floor and the lit end goes full. */
+:global(:root[data-theme='light']) .matrix i::after {
+  opacity: calc((var(--lit, 0.4) - 0.22) * 1.4);
 }

@@ -101,6 +101,10 @@
   background: var(--bg-sidebar-solid);
   box-shadow: 0 -1px 0 var(--hairline), 0 -6px 14px -10px rgba(0, 0, 0, 0.35);
 }
+/* On light the dark theme's shadow read as a grey smear: a firm line and a whisper of shade. */
+:global(:root[data-theme='light']) .dock {
+  box-shadow: 0 -1px 0 var(--hairline), 0 -4px 10px -8px rgba(0, 0, 0, 0.12);
+}
 .dockHead {
   gap: 4px;
   height: 32px;

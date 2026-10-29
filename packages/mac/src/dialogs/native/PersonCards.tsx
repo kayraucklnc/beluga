@@ -8,7 +8,8 @@ import type { TrustLevel } from '@beluga/shared/settings-schema.js';
 import { CAN_ORDER } from '@beluga/ui/invite-menus.js';
 import type { MenuKind } from '@beluga/ui/menus.js';
 import { Icon, type IconName } from '../../components/Icon.js';
-import { Avatar, cx } from '../../components/ui.js';
+import { ZoomAvatar } from '../../components/ZoomAvatar.js';
+import { cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Select } from '../settings-controls.js';
@@ -50,7 +51,7 @@ function usePick(menu: MenuKind) {
 function Head({ peer, tags, lines, title }: { peer: PeerInfo; tags: ReactNode; lines: ReadonlyArray<string | undefined>; title?: ReactNode }) {
   return (
     <div className={p.head}>
-      <Avatar name={peer.name} id={peer.peerId} size={44} />
+      <ZoomAvatar name={peer.name} id={peer.peerId} size={44} />
       <div className={p.who}>
         {title ?? <div className={p.name}>{peer.name}</div>}
         <div className={p.tags}>{tags}</div>
@@ -64,8 +65,20 @@ function Head({ peer, tags, lines, title }: { peer: PeerInfo; tags: ReactNode; l
   );
 }
 
+/** What they're happy to be asked for (their "Ask me for…" note), when they've written one. */
+export function AskMeFor({ peerId, name }: { peerId: string; name: string }) {
+  const note = useApp((st) => st.gateway.cards[peerId]?.note?.trim());
+  if (!note) return null;
+  return (
+    <div className={p.block}>
+      <div className={p.blockLabel}>Ask {name} for</div>
+      <div className={cx(p.blockDetail, p.note)}>{note}</div>
+    </div>
+  );
+}
+
 /** A round button with its name under it (like a contact card's). */
-function Action({ icon, label, onClick, on }: { icon: IconName; label: string; onClick: () => void; on?: boolean }) {
+export function Action({ icon, label, onClick, on }: { icon: IconName; label: string; onClick: () => void; on?: boolean }) {
   return (
     <button type="button" className={cx(p.action, on && p.actionOn)} onClick={onClick} aria-pressed={on}>
       <span className={p.actionIcon}>
@@ -144,6 +157,7 @@ export function RoomPeerCard({ peer, menu, close, confirm, onRun }: CardProps & 
         <Action icon="eye" label={following ? 'Following' : 'Follow'} on={following} onClick={() => pick(following ? 'unfollow' : 'follow')} />
         {share ? <Action icon="folder" label="Files" onClick={() => pick('browse')} /> : null}
       </div>
+      <AskMeFor peerId={peer.peerId} name={peer.name} />
       <div className={p.block}>
         <div className={p.blockLabel}>Trust</div>
         <div className={p.blockDetail}>

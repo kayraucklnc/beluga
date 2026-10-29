@@ -70,19 +70,34 @@ function chunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([head, data, crc]);
 }
 
-export function demoScreenshot(): Buffer {
-  const rows = Buffer.alloc((W * 3 + 1) * H);
-  for (let y = 0; y < H; y++) {
-    const row = y * (W * 3 + 1);
-    for (let x = 0; x < W; x++) {
-      const top = TOP_FIRST.find((rect) => inside(rect, x, y));
-      const [r, g, b] = top?.color ?? [0, 0, 0];
-      rows.set([r, g, b], row + 1 + x * 3);
-    }
+/** A plain RGB PNG of `w`×`h`, each pixel from `at`. */
+function png(w: number, h: number, at: (x: number, y: number) => Rgb): Buffer {
+  const rows = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * (w * 3 + 1);
+    for (let x = 0; x < w; x++) rows.set(at(x, y), row + 1 + x * 3);
   }
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(W, 0);
-  ihdr.writeUInt32BE(H, 4);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
   ihdr.set([8, 2, 0, 0, 0], 8);
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+export function demoScreenshot(): Buffer {
+  return png(W, H, (x, y) => TOP_FIRST.find((rect) => inside(rect, x, y))?.color ?? [0, 0, 0]);
+}
+
+const mix = (a: Rgb, b: Rgb, t: number): Rgb => [0, 1, 2].map((i) => Math.round(a[i]! + (b[i]! - a[i]!) * t)) as unknown as Rgb;
+
+/** A made-up profile picture (a pastel portrait: head and shoulders on a soft sky) for a demo friend. */
+export function demoPortrait(size = 256): Buffer {
+  const c = size / 2;
+  return png(size, size, (x, y) => {
+    const head = (x - c) ** 2 + (y - size * 0.4) ** 2 <= (size * 0.19) ** 2;
+    const shoulders = (x - c) ** 2 / (size * 0.36) ** 2 + (y - size * 0.98) ** 2 / (size * 0.34) ** 2 <= 1;
+    if (head) return [248, 214, 190];
+    if (shoulders) return mix([186, 170, 232], [150, 134, 214], y / size);
+    return mix([206, 228, 248], [244, 218, 232], (x + y) / (2 * size));
+  });
 }

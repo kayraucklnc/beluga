@@ -7,6 +7,7 @@ import { Select } from '../dialogs/settings-controls.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { type ChatPerson, claudeLine, versionChip, waitingLabel } from '@beluga/core/chat-people.js';
 import { APP_VERSION } from '../lib/boot.js';
+import { PersonButton } from './PersonProfile.js';
 import { PersonAvatar } from './Avatars.js';
 import { showWaiting, useChatPeople } from './use-chat-people.js';
 import { belugaLine, conversationOf, presenceLine, shownState, sortMembers } from './net-model.js';
@@ -70,7 +71,13 @@ function PersonRow({ p, trust }: { p: ChatPerson; trust?: string }) {
   const line = p.me || p.claude === 'offline' || p.claude === 'update' || !trust ? claudeLine(p) : `${trust} · ${claudeLine(p)}`;
   return (
     <li className={n.hereRow}>
-      <PersonAvatar name={p.name} id={p.peerId} state={p.presence} size={30} />
+      {p.me ? (
+        <PersonAvatar name={p.name} id={p.peerId} state={p.presence} size={30} />
+      ) : (
+        <PersonButton peerId={p.peerId} name={p.name}>
+          <PersonAvatar name={p.name} id={p.peerId} state={p.presence} size={30} />
+        </PersonButton>
+      )}
       <span className={n.hereText}>
         <span className={n.hereName}>{p.me ? 'You' : p.name}</span>
         <span className={n.hereLine}>{line}</span>
@@ -157,7 +164,13 @@ export function ConversationDetails({ id }: { id: string }) {
             {sortMembers(g.members).map((m) => (
               <Tip key={m.peerId} label={m.self ? `${m.name} (you)` : `${m.name} · ${presenceLine(m)}${m.admin ? ' · admin' : ''}`}>
                 <span style={{ marginRight: 4 }}>
-                  <PersonAvatar name={m.name} id={m.peerId} {...(m.self ? {} : { state: shownState(m) })} size={20} />
+                  {m.self ? (
+                    <PersonAvatar name={m.name} id={m.peerId} size={20} />
+                  ) : (
+                    <PersonButton peerId={m.peerId} name={m.name}>
+                      <PersonAvatar name={m.name} id={m.peerId} state={shownState(m)} size={20} />
+                    </PersonButton>
+                  )}
                 </span>
               </Tip>
             ))}

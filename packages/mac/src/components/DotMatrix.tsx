@@ -7,7 +7,7 @@ import s from './dot-matrix.module.css';
  * a pattern after dotmatrix's loaders. `petals` ("circular 7": turning petals and rings) is a
  * conversation or a sub-agent; `orbit` ("circular 6": three sectors orbiting a lit centre) is the
  * bigger work, a worktree or a plan. Every one on screen moves with the live clock
- * (lib/live-motion.ts), writing its dots' opacity directly (no React renders). With Reduce Motion
+ * (lib/live-motion.ts), writing how lit each dot is (`--lit`) directly (no React renders). With Reduce Motion
  * it holds still; while you're not looking at Beluga it rests where it is.
  */
 
@@ -64,7 +64,7 @@ export function DotMatrix({ size = 13, label, className, pattern = 'petals' }: {
       const t = now === null ? 0 : ((now % cycle) / cycle) * Math.PI * 2;
       CELLS.forEach((c, i) => {
         const el = dots[i];
-        if (el) el.style.opacity = lit(c.row, c.col, t).toFixed(3);
+        if (el) el.style.setProperty('--lit', lit(c.row, c.col, t).toFixed(3));
       });
     });
   }, [pattern]);
