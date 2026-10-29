@@ -69,6 +69,12 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const INTERACTIVE = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
 /** Claude's AskUserQuestion input → our question card (unknown shapes are dropped safely). */
+/** Claude Code retrying the API, in a few words for the working line (40 characters at most). */
+export function retryWords(status: number | null, attempt: number, max: number, noResponse = false): string {
+  const why = noResponse || status === null ? 'No answer from Claude' : status === 429 ? 'Rate limited' : status >= 500 ? 'Claude is busy' : `API error ${status}`;
+  return `${why}, retry ${attempt} of ${max}`;
+}
+
 export function toQuestion(input: Record<string, unknown>): ClaudeQuestion | undefined {
   const parsed = ClaudeQuestion.safeParse({ kind: 'question', questions: input.questions });
   return parsed.success ? parsed.data : undefined;
@@ -452,6 +458,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           background.observe(msg as Parameters<BackgroundAgents['observe']>[0]);
           watchQuiet();
           if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
+          // Claude Code retrying the API (busy, a limit, no network): said on the working line, not a silent "Starting" (BLG-403).
+          if (msg.type === 'system' && msg.subtype === 'api_retry') input.onEvent('progress', retryWords(msg.error_status, msg.attempt, msg.max_retries, Boolean(msg.no_response)));
           if (msg.type === 'rate_limit_event') {
             const update = fromRateLimitEvent(msg.rate_limit_info);
             if (update) opts.bridge.reportUsage(update);

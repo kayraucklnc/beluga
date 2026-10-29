@@ -217,6 +217,13 @@ describe('workingPhase', () => {
     expect(workingPhase(turn('c', 1, { status: 'text', text: 'Answered', subagents: [sub('npm run build', 'running', 'background')] }))).toBe('Waiting on 1 background task · npm run build');
   });
 
+  it('before its first step, says what it waits on: an API retry, Claude Code downloading (BLG-403)', () => {
+    expect(workingPhase(turn('c', 1, { progress: 'Claude is busy, retry 2 of 10' }))).toBe('Claude is busy, retry 2 of 10');
+    expect(workingPhase(turn('c', 1, { progress: 'Getting Claude Code ready, one time: 40%' }))).toBe('Getting Claude Code ready, one time: 40%');
+    // Once a step runs, the step says itself.
+    expect(workingPhase(turn('c', 1, { progress: 'Claude is busy, retry 2 of 10', steps: ['Bash npm test'] }))).toBe('');
+  });
+
   it('nothing when it isn’t at work, or waits for an approval', () => {
     expect(workingPhase(turn('c', 1, { status: 'done', text: 'ok' }))).toBeUndefined();
     expect(workingPhase(turn('c', 1, { status: 'awaiting_approval' }))).toBeUndefined();
