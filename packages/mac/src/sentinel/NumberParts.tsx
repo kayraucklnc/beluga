@@ -1,13 +1,15 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type View, readView } from '@beluga/shared/view-spec.js';
 import type { MetricSeries } from '@beluga/core/sentinel/model.js';
+import type { TileColumn } from '@beluga/core/sentinel/dashboard-model.js';
 import { Icon } from '../components/Icon.js';
 import { Spark } from '../components/views/Stats.js';
-import { DataTable } from '../components/views/Table.js';
+import { type DrawCell, DataTable } from '../components/views/Table.js';
 import { useViewData } from '../components/views/use-view-data.js';
 import { Segmented, cx } from '../components/ui.js';
 import type { Compare } from '@beluga/core/sentinel/metrics.js';
-import { COMPARE_CHOICES, type NumberWords, chartViewOf, seriesViewOf, tableViewOf } from './numbers-model.js';
+import { COMPARE_CHOICES, type NumberWords, chartViewOf, drawnColumns, seriesViewOf, tableViewOf } from './numbers-model.js';
+import { typedCells } from './TypedCell.js';
 import v from '../components/views/views.module.css';
 import n from './numbers.module.css';
 
@@ -92,21 +94,25 @@ export function SeriesChart({ metric, kind = 'bar', height = 220 }: { metric: Me
   return <ChartBody view={view} kind={kind} />;
 }
 
-/** A rows metric (or a list from a step's output) as the chat's table, a page at a time. */
-export function RowsTable({ metric, pageSize = 8 }: { metric: Pick<MetricSeries, 'rows' | 'columns'>; pageSize?: number }) {
+/**
+ * A rows metric (or a list from a step's output) as the chat's table, a page at a time: its columns
+ * as its sentinel typed them (documents open, progress is a bar…), in a tile's own order and words.
+ */
+export function RowsTable({ metric, pageSize = 8, columns }: { metric: Pick<MetricSeries, 'rows' | 'columns'> & Partial<Pick<MetricSeries, 'sentinelId' | 'name' | 'columnTypes'>>; pageSize?: number; columns?: readonly TileColumn[] }) {
   const view = useMemo(() => {
-    const r = readView(tableViewOf(metric, pageSize));
+    const r = readView(tableViewOf(metric, pageSize, columns));
     return r.ok ? r.view : undefined;
-  }, [metric, pageSize]);
+  }, [metric, pageSize, columns]);
+  const cell = useMemo(() => (metric.sentinelId && metric.name ? typedCells({ sentinelId: metric.sentinelId, name: metric.name, rows: metric.rows }, drawnColumns(metric)) : undefined), [metric]);
   if (!view) return null;
-  return <TableBody view={view} />;
+  return <TableBody view={view} {...(cell ? { cell } : {})} />;
 }
 
-function TableBody({ view }: { view: View }) {
+function TableBody({ view, cell }: { view: View; cell?: DrawCell }) {
   const data = useViewData(view, { local: true, visible: true });
   return (
     <div className={n.table}>
-      <DataTable view={view} data={data} full={false} />
+      <DataTable view={view} data={data} full={false} {...(cell ? { cell } : {})} />
     </div>
   );
 }

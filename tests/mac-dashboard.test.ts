@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readView } from '../src/shared/view-spec.js';
 import type { Dashboard } from '../src/core/sentinel/dashboard-model.js';
 import { NO_SENTINEL, type MetricSeries, type SentinelState } from '../src/core/sentinel/model.js';
-import { COMPARE_CHOICES, chartRows, chartViewOf, draftsOf, jsonFence, metricChoices, metricsOf, numberWords, outputTable, refreshLine, seriesViewOf, stepChoices, tableViewOf, tileCaption, tileNote, tileWords } from '../packages/mac/src/sentinel/numbers-model.js';
+import { COMPARE_CHOICES, chartRows, chartViewOf, draftsOf, jsonFence, metricChoices, metricsOf, numberWords, outputTable, refreshLine, drawnColumns, keptRow, seriesViewOf, stepChoices, tableViewOf, tileCaption, tileNote, tileWords } from '../packages/mac/src/sentinel/numbers-model.js';
 import { isSentinelView, namedLine } from '../packages/mac/src/sentinel/sentinel-model.js';
 import { panelFits } from '../packages/mac/src/lib/panel-model.js';
 
@@ -123,5 +123,39 @@ describe('numbers on the Mac', () => {
     expect(tileCaption(asked, { id: 'n', kind: 'number', width: 1, metric: { sentinelId: 'sn_new', metric: 'open-prs' } }).state).toBe('draft');
     expect(tileNote('draft')).toBe('draft: turn it on');
     expect(namedLine('I set up `sentinel:sn_new` and `sentinel:sn_x`.', (id) => (id === 'sn_new' ? 'Open pull requests' : undefined))).toBe('I set up “Open pull requests” and `sentinel:sn_x`.');
+  });
+
+  it('draws a kept table as its sentinel typed it: headings, kinds, a tile’s own words, storage sources out of sight (BLG-381)', () => {
+    const m: Pick<MetricSeries, 'rows' | 'columns' | 'columnTypes'> = {
+      columns: ['who', 'credits_left', 'output', 'price', 'bucket', 'path', 'note'],
+      rows: [{ who: 'ana@x.com', credits_left: 40, output: 'out-1.html', price: 3, bucket: 'docs', path: 'a/b.pdf', note: 'https://x.com', file: 'docs/a/b.pdf' }],
+      columnTypes: [
+        { key: 'who', type: 'person', label: 'Who' },
+        { key: 'credits_left', type: 'progress', label: 'Credits left', max: 100 },
+        { key: 'output', type: 'html', button: 'Open HTML' },
+        { key: 'price', type: 'currency', currency: 'EUR', decimals: 2 },
+        { key: 'file', type: 'storage', bucket: 'bucket', path: 'path' },
+      ],
+    };
+    const cols = (own?: Parameters<typeof tableViewOf>[2]) => (tableViewOf({ ...m, columns: [...m.columns!, 'file'] }, 8, own).columns as Array<Record<string, unknown>>);
+    expect(cols()).toEqual([
+      { key: 'who', label: 'Who', type: 'text' },
+      { key: 'credits_left', label: 'Credits left', type: 'text' },
+      { key: 'output', type: 'text' },
+      { key: 'price', type: 'currency', currency: 'EUR', decimals: 2 },
+      { key: 'bucket', hidden: true },
+      { key: 'path', hidden: true },
+      // No type: the table guesses, as before (a link stays a link).
+      { key: 'note' },
+      { key: 'file', type: 'text' },
+    ]);
+    // The tile's own words and hidden columns win; a storage source it names shows.
+    const own = cols([{ key: 'who', label: 'Translator' }, { key: 'bucket' }, { key: 'price', hidden: true }]);
+    expect(own.slice(0, 3)).toEqual([{ key: 'who', label: 'Translator', type: 'text' }, { key: 'bucket' }, { key: 'price', hidden: true, type: 'currency', currency: 'EUR', decimals: 2 }]);
+    expect(readView(tableViewOf(m, 8)).ok).toBe(true);
+    // The cells the table draws itself, and the kept row an action runs with.
+    expect([...drawnColumns(m).keys()]).toEqual(['who', 'credits_left', 'output', 'file']);
+    expect(keptRow(m.rows, { ...m.rows![0]! })).toBe(m.rows![0]);
+    expect(keptRow(m.rows, { who: 'someone else' })).toBeUndefined();
   });
 });

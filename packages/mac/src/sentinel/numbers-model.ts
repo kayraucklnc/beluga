@@ -1,5 +1,6 @@
 import type { Cell, Row } from '../../../../src/shared/view-spec.js';
-import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, type Tile, type TileState, TILE_STATE_WORDS, metricOf, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../../../../src/core/sentinel/dashboard-model.js';
+import { type MetricColumn, isViewKind, storageSources } from '../../../../src/core/sentinel/columns.js';
+import { type Dashboard, type MetricRef, type TileColumn, tileColumns, OUTPUT_STEP_KINDS, type StepRef, type Tile, type TileState, TILE_STATE_WORDS, metricOf, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../../../../src/core/sentinel/dashboard-model.js';
 import { COMPARE, COMPARE_LABEL, COMPARE_WORDS, type Compare, type Tone, changeText, deltaOf, formatMetric, unitLabel } from '../../../../src/core/sentinel/metrics.js';
 import { type MetricKind, type MetricSeries, type SentinelState, STEP_INFO, type StepKind, firstLine } from '../../../../src/core/sentinel/model.js';
 
@@ -98,10 +99,39 @@ export function chartViewOf(series: readonly MetricSeries[], kind: 'line' | 'are
   };
 }
 
-/** A rows metric as a table view's JSON (pages of 8). */
-export function tableViewOf(m: Pick<MetricSeries, 'rows' | 'columns'>, pageSize = 8): Record<string, unknown> {
-  const columns = m.columns?.length ? m.columns : Object.keys(m.rows?.[0] ?? {});
-  return { type: 'table', columns: columns.map((key) => ({ key })), data: m.rows ?? [], pageSize, search: false };
+/**
+ * A rows metric as a table view's JSON (pages of 8). Each column as its sentinel typed it (BLG-381):
+ * its heading, and the kind the table draws it as (a column with no type is guessed from its values,
+ * as before). A tile's own order, headings and hidden columns win (BLG-347); a storage chip's bucket
+ * and path columns stay out of sight unless the tile names them.
+ */
+export function tableViewOf(m: Pick<MetricSeries, 'rows' | 'columns' | 'columnTypes'>, pageSize = 8, own?: readonly TileColumn[]): Record<string, unknown> {
+  const present = m.columns?.length ? m.columns : Object.keys(m.rows?.[0] ?? {});
+  const typed = new Map((m.columnTypes ?? []).map((c) => [c.key, c]));
+  const quiet = new Set(storageSources(m.columnTypes, present));
+  const columns = tileColumns(present, own).map((c) => {
+    const t = typed.get(c.key);
+    const label = c.label ?? t?.label;
+    const hidden = c.hidden || (quiet.has(c.key) && !own?.some((o) => o.key === c.key));
+    return { key: c.key, ...(label ? { label } : {}), ...(hidden ? { hidden: true } : {}), ...(t ? viewTypeOf(t) : {}) };
+  });
+  return { type: 'table', columns, data: m.rows ?? [], pageSize, search: false };
+}
+
+/** How the table draws a typed column: the chat's own kinds as they are; a document or a rich kind as text (its cell draws it). */
+function viewTypeOf(t: MetricColumn): Record<string, unknown> {
+  if (!isViewKind(t.type)) return { type: 'text' };
+  return { type: t.type, ...(t.currency ? { currency: t.currency } : {}), ...(t.decimals !== undefined ? { decimals: t.decimals } : {}) };
+}
+
+/** The typed columns a table draws itself (documents, storage, and the kinds only a kept table has), by key. */
+export function drawnColumns(m: Pick<MetricSeries, 'columnTypes'>): ReadonlyMap<string, MetricColumn> {
+  return new Map((m.columnTypes ?? []).filter((c) => !isViewKind(c.type)).map((c) => [c.key, c]));
+}
+
+/** The metric's own row a table's row stands for (a typed action runs with it; the daemon checks it again). */
+export function keptRow(rows: readonly Row[] | undefined, row: Readonly<Record<string, unknown>>): Row | undefined {
+  return rows?.find((r) => Object.keys(r).every((k) => (r[k] ?? null) === (row[k] ?? null)));
 }
 
 /** JSON as pretty text for the tree (a ```json block, the chat's JSON tree). */

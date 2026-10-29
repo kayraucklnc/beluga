@@ -1,5 +1,6 @@
 import type { LogItem, Store } from '../store.js';
 import { demoRepo } from '../issues/demo.js';
+import type { MetricColumn } from './columns.js';
 import { FIRST_SENTINEL_CHAT, type StepRun, presetFields, sentinelChatChannel } from './model.js';
 import type { SentinelGitHub } from './runner.js';
 import type { Sentinels } from './sentinels.js';
@@ -391,6 +392,17 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
 const NUMBER_RECIPES: ReadonlySet<string> = new Set(['stripe-revenue', 'youtube-subscribers', 'site-speed', 'last-job-run']);
 
 /** A week of numbers (oldest first), and the dashboards that show them. */
+/** Last job run's columns, typed (BLG-381): who as a person, the status a badge, progress a bar, the log a document. */
+const JOB_COLUMNS: readonly MetricColumn[] = [
+  { key: 'who', type: 'person', label: 'Who' },
+  { key: 'status', type: 'badge', label: 'Status' },
+  { key: 'progress', type: 'progress', label: 'Progress', max: 100 },
+  { key: 'log', type: 'html', label: 'Log', name: '{{job}}.html', button: 'Open log' },
+  { key: 'finished_at', type: 'text', label: 'Finished' },
+];
+/** A job's log as a small page (the demo's document). */
+const jobLog = (job: string, line: string): string => `<html><body style="font: 14px -apple-system, sans-serif; padding: 16px"><h1 style="font-size: 18px">${job}</h1><pre>${line}</pre></body></html>`;
+
 const REVENUE = [2_810, 3_020, 2_950, 3_240, 3_105, 3_390, 3_180, 3_412];
 const NEW_SUBS = [4, 6, 3, 7, 5, 8, 4, 6];
 const FAILED = [3, 1, 2, 2, 0, 1, 3, 1];
@@ -534,7 +546,7 @@ function seedNumbers(sentinels: Sentinels, travel: (msAgo: number) => void, api:
     trigger: { kind: 'schedule', every: 'hours', at: '00:00', hours: 1, missed: 'skip' },
     access: 'look',
     notify: 'off',
-    steps: [{ kind: 'measure', name: 'Who ran what', from: 'source', source: { kind: 'postgres', env: 'DATABASE_URL', query: 'select who, job, status, finished_at from job_runs order by finished_at desc limit 20' }, metrics: [{ name: 'last-jobs', label: 'Last jobs', kind: 'rows', better: 'none' }], keep: 20 }],
+    steps: [{ kind: 'measure', name: 'Who ran what', from: 'source', source: { kind: 'postgres', env: 'DATABASE_URL', query: 'select who, job, status, progress, log, finished_at from job_runs order by finished_at desc limit 20' }, metrics: [{ name: 'last-jobs', label: 'Last jobs', kind: 'rows', better: 'none', columns: JOB_COLUMNS }], keep: 20 }],
   });
 
   // ---- Signups by day: the last two weeks as one array, every morning (a series metric)
@@ -608,13 +620,13 @@ function seedNumbers(sentinels: Sentinels, travel: (msAgo: number) => void, api:
     const ms = Math.round((slow ? 610 : 372) + Math.sin(k * 1.7) * (slow ? 40 : 26) + (k % 5) * 4);
     ran(speed.id, sp, start, `Kept Home page: ${ms} ms`, [{ name: 'home', label: 'Home page', unit: 'ms', better: 'down', value: ms }], [`home: ${ms}`, `Kept Home page: ${ms} ms`]);
   }
-  ran(jobs.id, jobs.steps.map((x) => x.id), now - 18 * MIN, 'Kept Last jobs: 6 rows', [{ name: 'last-jobs', label: 'Last jobs', better: 'none', columns: ['who', 'job', 'status', 'finished_at'], rows: [
-    { who: 'lena', job: 'deploy landing', status: 'done', finished_at: '09:12' },
-    { who: 'bob', job: 'refund webhooks backfill', status: 'done', finished_at: '08:55' },
-    { who: 'ci', job: 'nightly tests', status: 'failed', finished_at: '02:01' },
-    { who: 'mia', job: 'export invoices', status: 'done', finished_at: 'yesterday 18:40' },
-    { who: 'ci', job: 'image cache warm-up', status: 'done', finished_at: 'yesterday 17:05' },
-    { who: 'bob', job: 'deploy bob-api', status: 'done', finished_at: 'yesterday 16:22' },
+  ran(jobs.id, jobs.steps.map((x) => x.id), now - 18 * MIN, 'Kept Last jobs: 6 rows', [{ name: 'last-jobs', label: 'Last jobs', better: 'none', columns: ['who', 'job', 'status', 'progress', 'log', 'finished_at'], columnTypes: JOB_COLUMNS, rows: [
+    { who: 'lena@example.com', job: 'deploy landing', status: 'done', progress: 100, log: jobLog('deploy landing', 'Deployed landing in 48 s.'), finished_at: '09:12' },
+    { who: 'bob', job: 'refund webhooks backfill', status: 'done', progress: 100, log: jobLog('refund webhooks backfill', 'Backfilled 212 refunds.'), finished_at: '08:55' },
+    { who: 'ci', job: 'nightly tests', status: 'failed', progress: 62, log: jobLog('nightly tests', 'FAIL tests/webhooks.test.ts › retries a webhook once'), finished_at: '02:01' },
+    { who: 'mia@example.com', job: 'export invoices', status: 'done', progress: 100, log: jobLog('export invoices', 'Exported 1,204 invoices.'), finished_at: 'yesterday 18:40' },
+    { who: 'ci', job: 'image cache warm-up', status: 'done', progress: 100, log: null, finished_at: 'yesterday 17:05' },
+    { who: 'bob', job: 'deploy bob-api', status: 'done', progress: 100, log: jobLog('deploy bob-api', 'Deployed bob-api in 1 min 12 s.'), finished_at: 'yesterday 16:22' },
   ] }], ['Kept Last jobs: 6 rows']);
   // Signups by day: this morning's run, with the last two weeks.
   const days = SIGNUPS.map((n, i) => ({ x: dayLabel(now, SIGNUPS.length - 1 - i), y: n }));

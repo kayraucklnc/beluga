@@ -932,3 +932,143 @@
   box-shadow: inset 0 0 0 2px var(--accent);
   transition: box-shadow 0.4s ease;
 }
+
+/* A kept table's typed cells (BLG-381): a document's chip, progress, a person, stars, a row's action. */
+.docChip,
+.rowAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  cursor: pointer;
+}
+.docChip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docChip:hover,
+.rowAction:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.rowAction {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 110px;
+}
+.progressBar {
+  flex: 1;
+  height: 6px;
+  min-width: 60px;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.progressBar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--accent) 70%, var(--bg));
+}
+.progressValue {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.sparkCell {
+  display: inline-block;
+  width: 80px;
+  height: 22px;
+}
+.sparkCell svg {
+  width: 100%;
+  height: 100%;
+}
+.deltaCell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.deltaCell[data-tone='good'] {
+  color: var(--ok);
+}
+.deltaCell[data-tone='bad'] {
+  color: var(--error);
+}
+.deltaCell[data-tone='flat'],
+.deltaCell[data-tone='none'] {
+  color: var(--text-2);
+}
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.initials {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.rating {
+  display: inline-flex;
+  gap: 1px;
+}
+.starOn {
+  color: var(--warn);
+}
+.starOff {
+  color: var(--hairline-strong);
+}
+
+/* The quiet document viewer. */
+.docView {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 200px;
+}
+.docFrame {
+  width: 100%;
+  height: min(50vh, 520px);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: #fff;
+}
+.docImage {
+  max-width: 100%;
+  max-height: 50vh;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+.docText {
+  max-height: 50vh;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  font: 12px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+}
+.docNote {
+  margin: 0;
+  color: var(--text-2);
+}

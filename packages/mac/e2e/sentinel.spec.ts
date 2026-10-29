@@ -346,6 +346,20 @@ test('the Dashboard: every kind of tile (numbers, series, a table, outputs from 
   const jobs = board.locator('[data-kind="table"]');
   await expect(jobs).toHaveAttribute('data-state', 'paused');
   await expect(jobs).toContainText('deploy landing');
+  // Its columns as typed (BLG-381): headings from their labels, a person, a badge, a bar, a log that opens.
+  await expect(jobs.getByRole('columnheader', { name: 'Finished' })).toBeVisible();
+  await expect(jobs.getByText('Lena', { exact: true })).toBeVisible();
+  await expect(jobs.locator('[title="62%"]')).toBeVisible();
+  await jobs.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(shots, 'dashboard-typed-table.png') });
+  await jobs.getByRole('button', { name: 'Open log' }).first().click();
+  const log = page.getByRole('dialog', { name: 'deploy landing.html' });
+  await expect(log.frameLocator('iframe').getByRole('heading', { name: 'deploy landing' })).toBeVisible();
+  await expect(log.getByRole('button', { name: 'Open in Default App' })).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(shots, 'dashboard-document.png') });
+  await log.getByRole('button', { name: 'Close' }).click();
+  await expect(log).toBeHidden();
   await expect(board.locator('[data-kind="text"]')).toContainText('$3,412 yesterday');
   await shoot(page, 'dashboard');
   await brief.scrollIntoViewIfNeeded();

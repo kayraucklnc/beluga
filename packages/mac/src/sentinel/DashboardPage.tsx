@@ -744,7 +744,7 @@ function TileBody({ d, tile, state, compare, note, lead, more, titleInput }: { d
   if (tile.kind === 'table') {
     const m = metricOf(state, tile.metric);
     if (!m?.rows) return <div className={n.quiet}>{note ?? 'gone'}</div>;
-    return <RowsTable metric={m} pageSize={tall ? 14 : 6} />;
+    return <RowsTable metric={m} pageSize={tall ? 14 : 6} {...(tile.columns ? { columns: tile.columns } : {})} />;
   }
   if (tile.kind === 'output') return <OutputTile tile={tile} state={state} note={note} />;
   return <TextTile tile={tile} state={state} />;
