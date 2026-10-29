@@ -1,4 +1,4 @@
-import { type KeyboardEvent, memo, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type KeyboardEvent, memo, useEffect, useRef, useState } from 'react';
 import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank, isEpic } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext } from '../components/SpecMenu.js';
@@ -10,7 +10,7 @@ import { ArchiveDoneButton, IssueMeta, TuckButton, useIssueMenu } from './parts.
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
-import { setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import { revealing, setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
 import { WaitingMark, WorkingMark } from '../team/Team.js';
 
@@ -49,6 +49,8 @@ export function TaskList({ issues, statuses, projectId, emptyGroups, archived = 
 
   const fold = (status: IssueStatus): void => setTasksPrefs({ folded: prefs.folded.includes(status) ? prefs.folded.filter((s) => s !== status) : [...prefs.folded, status] });
 
+  // Sub-tasks just opened out pop in one after another, top to bottom.
+  let pop = 0;
   return (
     <div ref={list} className={t.list} role="grid" aria-label="Tasks" tabIndex={0} onKeyDown={onKeyDown}>
       {groups.map((g) => {
@@ -65,7 +67,7 @@ export function TaskList({ issues, statuses, projectId, emptyGroups, archived = 
               {g.status === 'done' && !archived ? <ArchiveDoneButton projectId={projectId} /> : null}
               {archived ? null : <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { projectId } : {}) })} />}
             </header>
-            {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
+            {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} {...(revealing(issue.parent) ? { pop: pop++ } : {})} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
             {!folded && !g.items.length ? <div className={t.groupEmpty}>Nothing here</div> : null}
           </section>
         );
@@ -74,7 +76,7 @@ export function TaskList({ issues, statuses, projectId, emptyGroups, archived = 
   );
 }
 
-const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; cursor: boolean; onCursor: () => void }) {
+const Row = memo(function Row({ issue, pop, cursor, onCursor }: { issue: Issue; pop?: number; cursor: boolean; onCursor: () => void }) {
   const selfId = useSelfId();
   const solo = useSolo(issue.projectId);
   const { api, act, open } = useTaskActions();
@@ -88,7 +90,8 @@ const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; curso
         tabIndex={-1}
         data-issue={issue.id}
         {...taskDropProps(issue)}
-        className={cx(t.row, cursor && t.rowCursor)}
+        className={cx(t.row, cursor && t.rowCursor, pop !== undefined && t.pop)}
+        style={pop !== undefined ? ({ '--pop': pop } as CSSProperties) : undefined}
         onClick={() => open(issue)}
         onMouseDown={onCursor}
         aria-label={`${issue.key} ${issue.title}, ${STATUS_INFO[issue.status].label}`}

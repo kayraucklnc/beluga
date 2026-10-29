@@ -5,7 +5,7 @@ import { Store, initialState } from '../src/core/store.js';
 import { createMockBackend } from '../src/agent/mock.js';
 import type { RoomBridge } from '../src/agent/types.js';
 import { BoardWork } from '../src/core/board/work.js';
-import { DEFAULT_TASKS_PREFS, assigneeChoices, fromV1TasksPrefs, assigneeKey, assigneesIn, checklist, connected, dueText, isFor, isSolo, onIt, onItTip, onItWords, projectToShow, readTasksPrefs, scopeCounts, scoped, statusesFor, taskGraph, toggleCheck, toggleTuck, untucked } from '../packages/mac/src/tasks/tasks-model.js';
+import { DEFAULT_TASKS_PREFS, assigneeChoices, fromV1TasksPrefs, assigneeKey, assigneesIn, checklist, connected, dueText, isFor, isSolo, onIt, onItTip, onItWords, projectToShow, readTasksPrefs, scopeCounts, scoped, statusesFor, taskGraph, toggleCheck, toggleOpened, untucked } from '../packages/mac/src/tasks/tasks-model.js';
 import { parseGraph } from '../src/shared/graph-spec.js';
 import { NO_TEAM, canAssign } from '../src/core/team/model.js';
 import type { Project } from '../src/workspaces/types.js';
@@ -50,7 +50,7 @@ describe('the Tasks view', () => {
   it('reads saved prefs kindly', () => {
     expect(readTasksPrefs(null)).toEqual(DEFAULT_TASKS_PREFS);
     expect(readTasksPrefs('{oops')).toEqual(DEFAULT_TASKS_PREFS);
-    expect(readTasksPrefs(JSON.stringify({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done', 'nope'], tucked: ['i-1', 2] }))).toEqual({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done'], tucked: ['i-1'] });
+    expect(readTasksPrefs(JSON.stringify({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done', 'nope'], opened: ['i-1', 2] }))).toEqual({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done'], opened: ['i-1'] });
     // "My Tasks" mixed projects: it's gone (an old window's choice reads as Active).
     expect(readTasksPrefs(JSON.stringify({ scope: 'mine', display: 1 }))).toMatchObject({ scope: 'active', display: 'board', who: '' });
     expect(readTasksPrefs(fromV1TasksPrefs(JSON.stringify({ scope: 'backlog', display: 'list' })))).toMatchObject({ scope: 'backlog', display: 'board' });
@@ -62,20 +62,20 @@ describe('the Tasks view', () => {
     expect(statusesFor('all')).toHaveLength(7);
   });
 
-  it('tucks an epic’s sub-tasks under it, unless the epic isn’t shown or a filter is on', () => {
+  it('tucks sub-tasks under their epic until it’s opened out, unless the epic isn’t shown or a filter is on', () => {
     const { store, b } = board();
     const epic = b.create({ projectId: 'api', title: 'Epic' }, me);
     const a = b.create({ projectId: 'api', title: 'A', parent: epic.key }, me);
     const c = b.create({ projectId: 'api', title: 'C' }, me);
     const all = store.getState().board.issues;
     const ids = (r: ReturnType<typeof untucked>) => r.shown.map((i) => i.id);
-    expect(untucked(all, [])).toEqual({ shown: all, hidden: 0 });
-    expect(untucked(all, [epic.id]).hidden).toBe(1);
-    expect(ids(untucked(all, [epic.id]))).not.toContain(a.id);
-    expect(ids(untucked(all, [epic.id]))).toContain(c.id);
-    expect(untucked(all.filter((i) => i.id !== epic.id), [epic.id]).hidden).toBe(0);
-    expect(untucked(all, [epic.id], 'A').hidden).toBe(0);
-    expect(toggleTuck(toggleTuck([], epic.id), epic.id)).toEqual([]);
+    expect(untucked(all, [])).toMatchObject({ hidden: 1, tucked: [epic.id] });
+    expect(ids(untucked(all, []))).not.toContain(a.id);
+    expect(ids(untucked(all, []))).toContain(c.id);
+    expect(untucked(all, [epic.id])).toEqual({ shown: all, hidden: 0, tucked: [] });
+    expect(untucked(all.filter((i) => i.id !== epic.id), []).hidden).toBe(0);
+    expect(untucked(all, [], 'A').hidden).toBe(0);
+    expect(toggleOpened(toggleOpened([], epic.id), epic.id)).toEqual([]);
   });
 
   it('counts a project’s open tasks per scope, for everyone or someone', () => {

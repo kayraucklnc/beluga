@@ -11,9 +11,9 @@ import { openSheet } from '../lib/sheets.js';
 import { useClock } from '../plans/use-plans.js';
 import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
-import { doneCount, dueText, onIt, onItTip, onItWords, toggleTuck } from './tasks-model.js';
+import { doneCount, dueText, onIt, onItTip, onItWords, toggleOpened } from './tasks-model.js';
 import type { LogItem } from '@beluga/core/store.js';
-import { setTasksPrefs, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import { revealSubTasks, setTasksPrefs, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import { teammatesOf, workingOn } from '@beluga/core/team/model.js';
 import { sameDeep } from '../lib/stable.js';
 import { askAboutTask } from '../network/chat-model.js';
@@ -184,12 +184,13 @@ export function EpicBar({ issue }: { issue: Issue }) {
 }
 
 /**
- * The eye on an epic: tucks its sub-tasks under it (the epic's card stands for them), or shows
- * them again. Always there, never behind a menu; tinted while they're tucked away.
+ * The eye on an epic: its sub-tasks start tucked under it (the epic's card stands for them); the
+ * eye pops them out, one after another, or tucks them back. Always there, never behind a menu;
+ * tinted, with how many, while they're tucked away. Your choice alone: others' boards don't change.
  */
 export function TuckButton({ issue }: { issue: Issue }) {
-  const tucked = useTasksPrefs().tucked;
-  const away = tucked.includes(issue.id);
+  const opened = useTasksPrefs().opened;
+  const away = !opened.includes(issue.id);
   const n = useApp((s) => childrenOf(s.board, issue).length);
   const label = away ? `Show its ${n} sub-task${n === 1 ? '' : 's'}` : 'Tuck its sub-tasks under it';
   // A press here isn't the card's: no drag, no opening the task.
@@ -206,7 +207,8 @@ export function TuckButton({ issue }: { issue: Issue }) {
         onKeyDown={stop}
         onClick={(e) => {
           e.stopPropagation();
-          setTasksPrefs({ tucked: toggleTuck(tucked, issue.id) });
+          if (away) revealSubTasks([issue.id]);
+          setTasksPrefs({ opened: toggleOpened(opened, issue.id) });
         }}
       >
         <Icon name={away ? 'eyeOff' : 'eye'} size={12} />

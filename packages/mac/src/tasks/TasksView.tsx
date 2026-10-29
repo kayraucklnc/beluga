@@ -12,7 +12,7 @@ import { ProjectIcon } from '../components/ProjectIcon.js';
 import { PickMenu } from './PickMenu.js';
 import { type Display, SCOPES, ago, type Scope, assigneesIn, connected, doneCount, projectToShow, scopeCounts, scoped, statusesFor, taskGraph, untucked } from './tasks-model.js';
 import { useTaskFileDrop } from './use-task-drop.js';
-import { setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import { revealSubTasks, setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
 import { TeamOffers } from '../team/Team.js';
 import { isShortcut } from '../lib/shortcuts.js';
@@ -55,8 +55,8 @@ export function TasksView() {
     const all = project ? scoped(board, { scope: prefs.scope, project, who }, selfId, query) : [];
     return worktree ? all.filter((i) => worksOn(i, worktree)) : all;
   }, [board, prefs.scope, project, who, selfId, query, worktree]);
-  // Sub-tasks of epics tucked away (the eye on an epic) are left out; the graph shows them all.
-  const tuck = useMemo(() => untucked(found, prefs.display === 'graph' ? [] : prefs.tucked, query), [found, prefs.display, prefs.tucked, query]);
+  // Sub-tasks stay tucked under their epics until you open one out (the eye on it); the graph shows them all.
+  const tuck = useMemo(() => (prefs.display === 'graph' ? { shown: found, hidden: 0, tucked: [] } : untucked(found, prefs.opened, query)), [found, prefs.display, prefs.opened, query]);
   const issues = tuck.shown;
   const counts = useMemo(() => (project ? scopeCounts(board, project, who, selfId) : { active: 0, backlog: 0, all: 0, archived: 0 }), [board, project, who, selfId]);
   const statuses = statusesFor(prefs.scope);
@@ -241,7 +241,7 @@ export function TasksView() {
           {tuck.hidden ? (
             <>
               {` · ${tuck.hidden} sub-task${tuck.hidden === 1 ? '' : 's'} tucked under their epics · `}
-              <button type="button" className={t.footLink} onClick={() => setTasksPrefs({ tucked: [] })}>
+              <button type="button" className={t.footLink} onClick={() => (revealSubTasks(tuck.tucked), setTasksPrefs({ opened: [...new Set([...prefs.opened, ...tuck.tucked])] }))}>
                 Show All
               </button>
             </>

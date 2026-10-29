@@ -883,6 +883,25 @@
 .tuckAway:hover {
   background: color-mix(in srgb, var(--epic) 18%, transparent);
 }
+/*
+ * Sub-tasks opened out of their epic pop in one after another (tik, tik, tik): each drops a touch
+ * and settles with a small overshoot. Only the start is held through the wait, so hover still lifts.
+ */
+.pop {
+  animation: pop-in 360ms cubic-bezier(0.34, 1.45, 0.64, 1) backwards;
+  animation-delay: calc(min(var(--pop, 0), 14) * 60ms);
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.92);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pop {
+    animation: none;
+  }
+}
 /* A sub-task says which epic it's in. */
 .epicOf {
   display: inline-flex;
