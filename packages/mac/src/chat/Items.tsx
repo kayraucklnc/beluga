@@ -32,6 +32,7 @@ import { SlotWaitNotice } from './SlotWait.js';
 import { EditPrompt } from './EditPrompt.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { PersonButton } from '../network/PersonProfile.js';
+import { KnockCard } from '../team/Team.js';
 import s from './chat.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
 
@@ -242,10 +243,13 @@ export const SystemRow = memo(function SystemRow({ item }: { item: SystemItem })
   const menu = useMenuContext();
   return (
     <ActionsContext items={() => messageItems({ ...menu, text: item.text })}>
-        <div className={cx(s.system, item.level === 'warn' && s.systemWarn, item.level === 'error' && s.systemError)}>
-          {/* Core words ("beluga") in this app's; a line quoting what someone said stays as written. */}
-          <Markdown text={item.said ? item.text : brandText(item.text)} />
-        </div>
+        {/* A teammate knocking on this worktree (BLG-416): its card while it waits, then the line. */}
+        <KnockCard id={item.id.startsWith('wt-knock-') ? item.id.slice('wt-knock-'.length) : ''} text={item.text}>
+          <div className={cx(s.system, item.level === 'warn' && s.systemWarn, item.level === 'error' && s.systemError)}>
+            {/* Core words ("beluga") in this app's; a line quoting what someone said stays as written. */}
+            <Markdown text={item.said ? item.text : brandText(item.text)} />
+          </div>
+        </KnockCard>
     </ActionsContext>
   );
 });

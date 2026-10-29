@@ -31,6 +31,7 @@ import { launchTeam } from '../team/launch.js';
 import { TeamBoardSync } from '../team/board-sync.js';
 import { TeamAssign } from '../team/assign.js';
 import { TeamContext } from '../team/context-share.js';
+import { TeamKnocks } from '../team/knock.js';
 import { TeamPlans } from '../team/plan-share.js';
 
 /**
@@ -165,7 +166,16 @@ export function launchBoard(host: BoardHost): () => void {
       // Plans you choose to share with the team: teammates review them, you apply what you like.
       const teamPlans = new TeamPlans(team, { edit: (id, ops) => void planWork.edit(id, ops), dir: teamDir });
       // What the project is about (for Claude writing tasks): one text for the whole team.
-      return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans, new TeamContext(team, board)];
+      // Knocking on a teammate's worktree: let in, it's shared with them the friend-share way (BLG-416).
+      const knocks = new TeamKnocks(team, {
+        board,
+        store,
+        live,
+        letIn: (peerId, workspaceId, role) => session.sharing.shareWithFriend({ peerId, workspaceId, role }),
+        intend: (intent) => session.intend(intent),
+        dir: teamDir,
+      });
+      return [teamSync, new TeamAssign(team, { board, sync: teamSync, dir: teamDir }), teamPlans, new TeamContext(team, board), knocks];
     },
   });
   let stopSeed = (): void => undefined;

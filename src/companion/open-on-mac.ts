@@ -79,6 +79,11 @@ export function needView(state: DomainState, need: string): View | undefined {
   // A friend's request and the tasks between Claudes live in Requests; someone at the door, the room.
   if (need.startsWith('request:') || need.startsWith('confirm:') || need.startsWith('gwq:')) return { kind: 'requests' };
   if (need.startsWith('knock:')) return { kind: 'room' };
+  const wtKnock = /^wt-knock:(.+)$/.exec(need);
+  if (wtKnock) {
+    const k = state.team.knocks?.find((x) => x.id === wtKnock[1]);
+    return k ? { kind: 'workspace', id: k.workspaceId, tab: 'chat' } : undefined;
+  }
   const approval = /^approval:(.+)$/.exec(need);
   if (approval) return state.approvals.find((a) => a.id === approval[1])?.task ? { kind: 'requests' } : undefined;
   const join = /^join:([^:]+):/.exec(need);

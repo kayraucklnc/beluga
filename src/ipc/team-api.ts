@@ -11,6 +11,7 @@ const peerId = z.string().regex(/^[\w-]{32}$/);
 const projectId = z.string().min(1).max(200);
 const planId = z.string().min(1).max(60);
 const reviewId = z.string().regex(/^[\w-]{8,40}$/);
+const knockId = z.string().regex(/^[\w-]{8,40}$/);
 
 export const TEAM_API = {
   // An offer to team up on a project: Team Up (true) or Not Now (false). Nothing is shared until both say yes.
@@ -26,4 +27,10 @@ export const TEAM_API = {
   // A teammate's suggested changes to your plan: in (as your edit), or set aside.
   'team.applySuggestion': { args: z.tuple([planId, reviewId]) },
   'team.dismissSuggestion': { args: z.tuple([planId, reviewId]) },
+  // Knock on the worktree a teammate is doing a task in (BLG-416): they let you in as a viewer or an editor. Optional: which teammate, a few words.
+  'team.knock': { args: z.tuple([z.string().min(1).max(40), peerId.optional(), z.string().max(500).optional()]) },
+  // Take a knock of yours back (or clear one they answered).
+  'team.cancelKnock': { args: z.tuple([knockId]) },
+  // A teammate knocking on your worktree: let them in as a viewer ('view') or an editor ('contribute'), or not now ('decline').
+  'team.answerKnock': { args: z.tuple([knockId, z.enum(['view', 'contribute', 'decline'])]) },
 } as const;

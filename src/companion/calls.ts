@@ -63,6 +63,8 @@ export const PhoneCalls = {
   'team.reviewPlan': entry('team.reviewPlan', done),
   'team.applySuggestion': entry('team.applySuggestion', done),
   'team.dismissSuggestion': entry('team.dismissSuggestion', done),
+  // A teammate knocking on your worktree (its card): let in as a viewer or an editor, or not now.
+  'team.answerKnock': entry('team.answerKnock', done),
   'network.dm.send': entry('network.dm.send', done),
   'network.dm.history': entry('network.dm.history', done),
   'network.groups.list': entry('network.groups.list', done),
