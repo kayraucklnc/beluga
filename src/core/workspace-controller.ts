@@ -50,6 +50,8 @@ export interface ControllerDeps {
   readonly onWorkspaceGoing?: (id: string) => void;
   /** An archived worktree is back; `remake` makes again what the archive threw away (npm install…). */
   readonly onWorktreeRestored?: (ws: Workspace, remake: readonly string[]) => void;
+  /** A project's own variables in Beluga (BLG-369): whether keys a worktree adds go back on their own, and Save in Beluga. */
+  readonly env?: { readonly newKeysBack: (projectId: string) => boolean; readonly merge: (projectId: string, vars: Readonly<Record<string, string>>) => number };
   /** Claude Code's folder, where its sub-agents' worktrees are found (default: ~/.claude). */
   readonly claudeHome?: string;
   /** Move a folder to the Trash (Delete Project; default: the system's Trash, see workspaces/trash.ts). */
@@ -270,6 +272,17 @@ export class WorkspaceController {
       const worktrees = p.workspaces.filter((w) => w.kind === 'worktree' && !w.archived && !w.external);
       for (const w of p.workspaces) delete asks[w.id];
       if (!worktrees.length || !p.root || !existsSync(p.root)) continue;
+      // New keys first: the main folder gets them, then the other worktrees' untouched copies follow below.
+      if (this.deps.env?.newKeysBack(p.id)) {
+        for (const w of worktrees) {
+          try {
+            const added = this.deps.manager.applyNewEnvKeys(w.id).flatMap((f) => f.keys);
+            if (added.length) this.deps.toast(`${w.name} added ${added.join(', ')}: put in the main folder’s .env too, so the next worktree has ${added.length === 1 ? 'it' : 'them'}`, 'success');
+          } catch {
+            // gone meanwhile
+          }
+        }
+      }
       const mainFiles = findEnvFiles(p.root);
       for (const w of worktrees) {
         try {
@@ -283,6 +296,23 @@ export class WorkspaceController {
     }
     if (!isDeepStrictEqual(asks, state.envAsks)) this.deps.store.dispatch({ type: 'env_asks', asks });
     if (followed.length) this.deps.toast(`The main folder’s env changed: updated ${followed.length === 1 ? followed[0] : `${followed.length} worktrees`} too`, 'info');
+  }
+
+  /**
+   * Save a worktree's env changes in Beluga (the project's own variables), so every worktree and
+   * run gets them; the main folder's file is left as it is, and this worktree isn't asked again.
+   */
+  saveEnvInBeluga(id: string): void {
+    const ws = this.deps.manager.find(id);
+    if (!ws || !this.deps.env) return;
+    try {
+      const n = this.deps.env.merge(ws.projectId, this.deps.manager.envValues(id));
+      this.deps.manager.keepEnvHere(id);
+      this.deps.toast(n ? `Saved ${n} variable${n === 1 ? '' : 's'} in Beluga: every worktree of this project gets ${n === 1 ? 'it' : 'them'}` : 'Nothing to save: those files aren’t KEY=value', n ? 'success' : 'info');
+    } catch (err) {
+      this.deps.toast(`Couldn't save them: ${errorText(err)}`, 'error');
+    }
+    this.checkEnv(ws.projectId);
   }
 
   /** Keep a worktree's env changes there only (not asked again until they change). */

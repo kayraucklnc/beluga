@@ -236,6 +236,8 @@ export const API = {
   'workspaces.applyEnvBack': args(id),
   // A worktree's env changes stay there: not asked about again until they change (BLG-369).
   'workspaces.keepEnvHere': args(id),
+  // Save a worktree's env changes as the project's own variables in Beluga (every worktree gets them; the main .env is left alone).
+  'workspaces.saveEnvInBeluga': args(id),
   // Look at a project's worktrees' env files now (untouched copies follow the main folder; changed ones are asked about).
   'workspaces.checkEnv': args(id),
   'workspaces.askClaudeToReview': args(id),
@@ -327,6 +329,8 @@ export const API = {
   'env.testDatabase': args(opt(id)),
   // Copy a project's main folder .env values into its own variables (kept even if the file goes) → how many were added.
   'env.importDotenv': args(id),
+  // Keys a worktree adds go into the project's main .env on their own (on by default).
+  'env.newKeysBack': args(id, bool),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),

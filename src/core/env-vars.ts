@@ -8,7 +8,7 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { ENV_KEY, type EnvKeys, type EnvVar, MAX_ENV_VALUE, MAX_ENV_VARS, envProblems, envRecord, mergeEnv, parseEnvText } from '../shared/env-vars.js';
+import { ENV_KEY, type EnvKeys, type EnvVar, MAX_ENV_VALUE, MAX_ENV_VARS, envProblems, envRecord, importEnv, mergeEnv, parseEnvText } from '../shared/env-vars.js';
 import type { Project } from '../workspaces/types.js';
 import { belugaHome } from './home.js';
 import type { Store } from './store.js';
@@ -25,7 +25,7 @@ export const EnvFile = z.object({
    * yourself, before it was the default, so your Claude gets it too). `claudeDotenv`: your own Claude
    * reads and changes its .env files without asking.
    */
-  projects: z.record(z.string(), z.object({ vars: Vars.default({}), dotenv: z.boolean().optional(), claudeDotenv: z.boolean().default(false) })).default({}),
+  projects: z.record(z.string(), z.object({ vars: Vars.default({}), dotenv: z.boolean().optional(), claudeDotenv: z.boolean().default(false), newKeysBack: z.boolean().optional() })).default({}),
   /** 2: `dotenv` unset means on. Files without it said false for "never switched on". */
   v: z.number().optional(),
 });
@@ -115,6 +115,8 @@ const dotenvFilesIn = (dir: string): string[] => DOTENV_FILES.filter((f) => {
 /** One place's variables, for the Settings editor. */
 export interface EnvScope {
   readonly vars: readonly EnvVar[];
+  /** A key a worktree adds goes into the main folder's .env on its own (projects only; on unless switched off). */
+  readonly newKeysBack?: boolean;
   /** Load the main folder's .env (projects only; on unless you switched it off). */
   readonly dotenv: boolean;
   /** Names in the project's .env right now (shown so you know what it adds). */
@@ -226,6 +228,7 @@ export class EnvVars {
       dotenvVars: toRows(dotenvVars),
       dotenvFiles: project ? dotenvFilesIn(project.root) : [],
       claudeDotenv: saved?.claudeDotenv ?? false,
+      newKeysBack: saved?.newKeysBack !== false,
     };
   }
 
@@ -246,7 +249,8 @@ export class EnvVars {
     const next: EnvFile['projects'][string] = { vars: {}, claudeDotenv: false, ...before, ...change };
     // Back on (the default): nothing to keep for it.
     if (next.dotenv === undefined || ('dotenv' in change && change.dotenv === undefined)) delete next.dotenv;
-    return Object.keys(next.vars).length || next.dotenv !== undefined || next.claudeDotenv ? { ...others, [root]: next } : others;
+    if (next.newKeysBack !== false) delete next.newKeysBack;
+    return Object.keys(next.vars).length || next.dotenv !== undefined || next.claudeDotenv || next.newKeysBack === false ? { ...others, [root]: next } : others;
   }
 
   readonly dotenvAccess: DotenvAccess = {
@@ -299,6 +303,26 @@ export class EnvVars {
     const incoming = toRows(readDotenv(project.root)).filter((v) => !known.has(v.key));
     if (!incoming.length) return 0;
     this.set(projectId, [...own, ...incoming]);
+    return incoming.length;
+  }
+
+  /** Whether keys a worktree adds go into the project's main .env on its own (by project id; on by default). */
+  newKeysBack(projectId: string): boolean {
+    const project = this.project(projectId);
+    return project ? this.data.projects[project.root]?.newKeysBack !== false : false;
+  }
+
+  setNewKeysBack(projectId: string, on: boolean): void {
+    const project = this.project(projectId);
+    if (!project) throw new Error('That project is gone');
+    this.data = { ...this.data, projects: this.withProject(project.root, { newKeysBack: on }) };
+    this.save();
+  }
+
+  /** Set these in a project's own variables (same name: replaced), e.g. a worktree's .env changes (Save in Beluga). → how many. */
+  merge(projectId: string, vars: Readonly<Record<string, string>>): number {
+    const incoming = toRows(vars);
+    if (incoming.length) this.set(projectId, importEnv(this.get(projectId).vars, incoming));
     return incoming.length;
   }
 

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import type { EnvChange } from '@beluga/workspaces/env.js';
 import { EnvKeys } from '../../dialogs/native/ConfirmAlert.js';
 import { Icon } from '../../components/Icon.js';
-import { Button, Tip } from '../../components/ui.js';
+import { ActionsDropdown } from '../../components/SpecMenu.js';
+import { Button, IconButton, Tip } from '../../components/ui.js';
 import { useApi, useApp } from '../../lib/beluga.js';
 import { openSheet } from '../../lib/sheets.js';
 import { sameDeep } from '../../lib/stable.js';
@@ -11,8 +12,9 @@ import s from './env-asks.module.css';
 const NONE: readonly EnvChange[] = [];
 
 /**
- * A worktree changed a .env the main folder doesn't have (BLG-369): its keys, then Copy to Main
- * Folder (every worktree's untouched copy follows) or Keep Here (not asked again until it changes).
+ * A worktree changed a .env value the main folder doesn't have (BLG-369; brand-new keys went there
+ * on their own): its keys, then Copy to Main Folder (every worktree's untouched copy follows), Save
+ * in Beluga (every run gets them, the file stays), or behind ••• Keep in This Worktree Only.
  */
 function EnvAsk({ wsId, changes, name }: { wsId: string; changes: readonly EnvChange[]; name?: string }) {
   const api = useApi();
@@ -41,11 +43,14 @@ function EnvAsk({ wsId, changes, name }: { wsId: string; changes: readonly EnvCh
           Copy to Main Folder
         </Button>
       </Tip>
-      <Tip label="It stays in this worktree only; asked again if it changes">
-        <Button size="small" variant="quiet" disabled={busy} onClick={() => act(() => api.workspaces.keepEnvHere(wsId))}>
-          Keep Here
+      <Tip label="The project’s own variables in Beluga: every worktree and run gets them; the file stays as it is">
+        <Button size="small" variant="quiet" disabled={busy} onClick={() => act(() => api.workspaces.saveEnvInBeluga(wsId))}>
+          Save in Beluga
         </Button>
       </Tip>
+      <ActionsDropdown items={[{ label: 'Keep in This Worktree Only', hint: 'asked again if it changes', onSelect: () => act(() => api.workspaces.keepEnvHere(wsId)) }]}>
+        <IconButton icon="more" label="More for these env changes" disabled={busy} />
+      </ActionsDropdown>
     </div>
   );
 }

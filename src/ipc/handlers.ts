@@ -191,6 +191,7 @@ export const HANDLERS = {
   'workspaces.prepareRemoval': (s, id) => ctl(s)?.prepareRemoval(id),
   'workspaces.applyEnvBack': (s, id) => ctl(s)?.applyEnvBack(id),
   'workspaces.keepEnvHere': (s, id) => ctl(s)?.keepEnvHere(id),
+  'workspaces.saveEnvInBeluga': (s, id) => ctl(s)?.saveEnvInBeluga(id),
   'workspaces.checkEnv': (s, projectId) => ctl(s)?.checkEnv(projectId, false),
   'workspaces.askClaudeToReview': (s, id) => ctl(s)?.askClaudeToReview(id),
   'workspaces.askClaudeToMerge': (s, id) => ctl(s)?.askClaudeToMerge(id),
@@ -258,6 +259,7 @@ export const HANDLERS = {
   'env.claudeDotenv': (s, projectId, on) => s.env.setClaudeDotenv(projectId, on),
   'env.testDatabase': (s, projectId) => testDatabase(s.env.viewEnvOf(projectId)),
   'env.importDotenv': (s, projectId) => s.env.importDotenv(projectId),
+  'env.newKeysBack': (s, projectId, on) => s.env.setNewKeysBack(projectId, on),
 
   'attachments.add': async (_s, ext, base64) => {
     const bytes = Buffer.from(base64, 'base64');

@@ -140,6 +140,7 @@ describe('EnvVars (kept by the core)', () => {
       dotenvVars: [{ key: 'FROM_DOTENV', value: 'root' }, { key: 'SHARED', value: 'dotenv' }],
       dotenvFiles: ['.env'],
       claudeDotenv: false,
+      newKeysBack: true,
     });
     expect(env.get().overridden).toEqual({ SHARED: ['app’s variables'] });
     expect(store.getState().envKeys.projects[root]).toEqual({ keys: ['SHARED'], dotenv: true });
@@ -170,6 +171,24 @@ describe('EnvVars (kept by the core)', () => {
     expect(env.importDotenv('p1')).toBe(2);
     expect(env.get('p1').vars).toEqual([{ key: 'A', value: 'mine' }, { key: 'B', value: 'local' }, { key: 'C', value: '3' }]);
     expect(env.importDotenv('p1')).toBe(0);
+  });
+
+  it("saves a worktree's values over the project's own, and remembers whether new keys go back on their own", () => {
+    const root = path.join(dir, 'app');
+    mkdirSync(root);
+    const store = new Store(initialState('t'));
+    store.dispatch({ type: 'projects', projects: [project(root, root)] });
+    const file = path.join(dir, 'env.json');
+    const env = new EnvVars({ store, file });
+    env.set('p1', [{ key: 'A', value: '1' }, { key: 'B', value: '1' }]);
+    expect(env.merge('p1', { B: '2', C: '3' })).toBe(2);
+    expect(env.get('p1').vars).toEqual([{ key: 'A', value: '1' }, { key: 'B', value: '2' }, { key: 'C', value: '3' }]);
+    expect(env.newKeysBack('p1')).toBe(true);
+    expect(env.get('p1').newKeysBack).toBe(true);
+    env.setNewKeysBack('p1', false);
+    expect(new EnvVars({ store, file }).newKeysBack('p1')).toBe(false);
+    env.setNewKeysBack('p1', true);
+    expect(loadEnvFile(file).projects[root]).not.toHaveProperty('newKeysBack');
   });
 
   it("gives your own Claude the .env only where it may read .env files, or you switched it on yourself", () => {

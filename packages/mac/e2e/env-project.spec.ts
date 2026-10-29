@@ -62,8 +62,8 @@ test("a project's Environment… shows its .env, and typing over a value sets it
   await sheet.getByRole('button', { name: 'Done' }).click();
 });
 
-test('a worktree that changed its .env is asked about on the project page, and Keep Here stops asking', async ({ page }) => {
-  const { writeFileSync } = await import('node:fs');
+test('a worktree’s new key goes to the main folder on its own; a changed value is asked about and saved in Beluga', async ({ page }) => {
+  const { readFileSync, writeFileSync } = await import('node:fs');
   const path = await import('node:path');
   await page.goto('/');
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
@@ -85,9 +85,17 @@ test('a worktree that changed its .env is asked about on the project page, and K
   await sidebar.getByRole('button', { name: 'bob-api', exact: true }).first().click();
   const ask = page.getByRole('status', { name: 'Env changes in this worktree' }).filter({ hasText: ws.name });
   await expect(ask).toBeVisible();
-  await expect(ask.getByText('+NEW_FLAG')).toBeVisible();
+  // NEW_FLAG is new: it went to the main folder by itself. The changed API_URL is asked about.
   await expect(ask.getByText('~API_URL')).toBeVisible();
+  await expect(ask.getByText('+NEW_FLAG')).toHaveCount(0);
+  expect(readFileSync(path.join(root, '.env'), 'utf8')).toContain('NEW_FLAG=1');
   if (process.env.SHOTS) await page.locator('header').filter({ has: ask }).screenshot({ path: `${process.env.SHOTS}/env-ask-project-page.png` });
-  await ask.getByRole('button', { name: 'Keep Here' }).click();
+  await ask.getByRole('button', { name: 'Save in Beluga' }).click();
   await expect(ask).toHaveCount(0);
+  // Now Beluga's: the project's sheet shows it changed over the file, which is left as it was.
+  await page.getByRole('button', { name: /^Environment/ }).click();
+  const sheet = page.getByRole('dialog', { name: 'Environment for bob-api' });
+  await expect(sheet.getByLabel('Value of API_URL', { exact: true })).toHaveValue('https://staging.example.com');
+  expect(readFileSync(path.join(root, '.env'), 'utf8')).toContain('API_URL=https://api.example.com');
+  if (process.env.SHOTS) await sheet.screenshot({ path: `${process.env.SHOTS}/env-sheet-saved-from-worktree.png` });
 });

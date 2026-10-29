@@ -72,6 +72,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
         onWorkspaceGoing: (id) => workbench?.closeTerminals(id),
         onWorktreeRestored: (ws, remake) => workbench?.onWorktreeRestored(ws, remake),
+        env: { newKeysBack: (projectId) => env.newKeysBack(projectId), merge: (projectId, vars) => env.merge(projectId, vars) },
       });
     }
     const notifier = new Notifier({ store: opts.store, desktop: (n) => opts.desktopNotify?.(n), toast: (text, level) => session.toast(text, level) });

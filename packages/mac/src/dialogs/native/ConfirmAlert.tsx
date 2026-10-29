@@ -64,6 +64,7 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
   const ws = useApp((st) => findWorkspace(st.projects, menu.id));
   const env = useApp((st) => st.envChanges[menu.id] ?? NO_ENV);
   const [copyEnv, setCopyEnv] = useState(true);
+  const [saveEnv, setSaveEnv] = useState(false);
   const plan = useArchivePlan(menu.id, menu.action !== 'delete' && ws?.kind === 'worktree' && !ws.archived);
   if (!ws) return null;
   const changed = ws.status?.changed ?? 0;
@@ -74,8 +75,19 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
         rows: env.map((c) => [<code key="f">{c.file}</code>, <EnvKeys key="k" change={c} />]),
       }
     : undefined;
-  const envBox = env.length ? <Checkbox checked={copyEnv} onChange={setCopyEnv} label="Copy these env changes to the main folder first" detail="Keeps the keys you added here" /> : null;
+  // Where its env changes go before it does: the main folder's file, Beluga, both, or nowhere (BLG-369).
+  const envBox = env.length ? (
+    <>
+      <Checkbox checked={copyEnv} onChange={setCopyEnv} label="Copy them into the main folder’s .env" detail="Every new worktree starts with them" />
+      <Checkbox checked={saveEnv} onChange={setSaveEnv} label="Save them in Beluga" detail="The project’s own variables: every run gets them, and the file stays as it is" />
+    </>
+  ) : null;
   const withEnv = copyEnv && env.length > 0;
+  /** Save in Beluga first (it reads the worktree's files, so before they go), then the option. */
+  const go = (option: string): void => {
+    if (saveEnv && env.length) void api.workspaces.saveEnvInBeluga(menu.id).then(() => pick(option), () => pick(option));
+    else pick(option);
+  };
 
   if (menu.action === 'delete') {
     const worktree = ws.kind === 'worktree' && !ws.external;
@@ -99,7 +111,7 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
           </>
         }
         table={table}
-        confirm={{ label: 'Delete', destructive: true, onClick: () => pick(withEnv ? 'confirm-delete-env' : 'confirm-delete') }}
+        confirm={{ label: 'Delete', destructive: true, onClick: () => go(withEnv ? 'confirm-delete-env' : 'confirm-delete') }}
         onCancel={close}
       >
         {envBox}
@@ -128,10 +140,10 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
     </>
   );
   // With env changes, "copy them first" goes before whichever way you archive.
-  const archive = (): void => void pick(withEnv ? 'confirm-archive-env' : 'confirm-archive');
+  const archive = (): void => go(withEnv ? 'confirm-archive-env' : 'confirm-archive');
   const commitAndArchive = (): void => {
-    if (withEnv) void api.workspaces.applyEnvBack(menu.id).then(() => pick('confirm-commit-archive'));
-    else pick('confirm-commit-archive');
+    if (withEnv) void api.workspaces.applyEnvBack(menu.id).then(() => go('confirm-commit-archive'));
+    else go('confirm-commit-archive');
   };
   return (
     <Alert

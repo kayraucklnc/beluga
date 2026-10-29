@@ -279,7 +279,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.merge` | ✓ |
 | `workspaces.prepareRemoval` | ✓ |
 | `workspaces.applyEnvBack` | ✓ (and Copy to Main Folder on a worktree's env bar) |
-| `workspaces.keepEnvHere` | ✓ Keep Here on a worktree's env bar (project page, worktree) |
+| `workspaces.keepEnvHere` | ✓ a worktree's env bar ••• › Keep in This Worktree Only (project page, worktree) |
+| `workspaces.saveEnvInBeluga` | ✓ Save in Beluga on a worktree's env bar, and Archive/Delete's “Save them in Beluga” |
 | `workspaces.checkEnv` | ✓ when a project's page or a worktree opens |
 | `workspaces.askClaudeToReview` | ✓ |
 | `workspaces.askClaudeToMerge` | ✓ |
@@ -340,6 +341,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `env.get` | ✓ Settings › Environment, and a project's Environment… (••• menu, project page) (values only go to the screen that asks) |
 | `env.set` | ✓ Settings › Environment, and a project's Environment… |
 | `env.importDotenv` | ✓ a project's Environment › Keep a Copy in Beluga |
+| `env.newKeysBack` | ✓ a project's Environment › Worktrees › New keys go to the main folder |
 | `env.testDatabase` | ✓ Settings › Environment › Database (Test Connection) |
 | `env.claudeDotenv` | ✓ Settings › Environment › Your Claude (and a .env approval's Always) |
 | `attachments.add` | ✓ |

@@ -54,6 +54,7 @@ export function EnvEditor({ projectId }: { projectId: string }) {
   const [dotenvFiles, setDotenvFiles] = useState<readonly string[]>([]);
   const [copying, setCopying] = useState(false);
   const [claudeDotenv, setClaudeDotenv] = useState(false);
+  const [newKeysBack, setNewKeysBack] = useState(true);
   const [overridden, setOverridden] = useState<Readonly<Record<string, readonly string[]>>>({});
   const [shown, setShown] = useState<ReadonlySet<number>>(new Set());
   const [shownFile, setShownFile] = useState<ReadonlySet<string>>(new Set());
@@ -76,6 +77,7 @@ export function EnvEditor({ projectId }: { projectId: string }) {
       setDotenvVars(scope.dotenvVars ?? []);
       setDotenvFiles(scope.dotenvFiles ?? []);
       setClaudeDotenv(scope.claudeDotenv);
+      setNewKeysBack(scope.newKeysBack ?? true);
       setOverridden(scope.overridden ?? {});
     });
     return () => void (live = false);
@@ -324,6 +326,26 @@ export function EnvEditor({ projectId }: { projectId: string }) {
           </span>
         </div>
       </Group>
+      {projectId ? (
+        <Group title="Worktrees">
+          <Row label="New keys go to the main folder" detail="A key a worktree adds to its .env (one the main folder doesn’t have) is added there too, so the next worktree works. A changed value is asked about: copy it there, or save it in Beluga.">
+            <Switch
+              label="New keys from worktrees go to the main folder's .env"
+              on={newKeysBack}
+              onChange={(v) => {
+                setNewKeysBack(v);
+                api.env.newKeysBack(projectId, v).then(
+                  () => setStatus({ kind: 'saved' }),
+                  (err: unknown) => {
+                    setNewKeysBack(!v);
+                    setStatus({ kind: 'error', text: errorText(err) });
+                  },
+                );
+              }}
+            />
+          </Row>
+        </Group>
+      ) : null}
       <DatabaseTest projectId={projectId} />
       <Group title="Your Claude">
         <Row

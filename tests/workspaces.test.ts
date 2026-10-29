@@ -247,6 +247,25 @@ describe('env files and safe merges', () => {
     expect(mgr.followMainEnv(a.id)).toEqual([]);
   });
 
+  it('brings only brand-new keys back on its own, and gives the values for Save in Beluga (BLG-369)', async () => {
+    writeFileSync(path.join(repo, '.env'), 'API=1\nKEEP=yes\n');
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'env-new');
+    writeFileSync(path.join(ws.path, '.env'), 'API=staging\nKEEP=yes\nSTRIPE_KEY="sk test"\n');
+    expect(mgr.envValues(ws.id)).toEqual({ API: 'staging', STRIPE_KEY: 'sk test' });
+    expect(mgr.applyNewEnvKeys(ws.id)).toEqual([{ file: '.env', keys: ['STRIPE_KEY'] }]);
+    // The new key is in the main folder; the changed value isn't, and is still asked about.
+    expect(readFileSync(path.join(repo, '.env'), 'utf8')).toBe('API=1\nKEEP=yes\nSTRIPE_KEY="sk test"\n');
+    expect(mgr.envChanges(ws.id)).toEqual([{ file: '.env', added: [], changed: ['API'], removed: [], binary: false }]);
+    expect(mgr.applyNewEnvKeys(ws.id)).toEqual([]);
+    // Only new keys: the copy follows the main folder again afterwards.
+    writeFileSync(path.join(repo, '.env'), 'API=1\n');
+    const other = await mgr.createWorktree(repos()[0]!.id, 'env-new-2');
+    writeFileSync(path.join(other.path, '.env'), 'API=1\nFLAG=on\n');
+    mgr.applyNewEnvKeys(other.id);
+    writeFileSync(path.join(repo, '.env'), 'API=2\nFLAG=on\n');
+    expect(mgr.followMainEnv(other.id)).toEqual(['.env']);
+  });
+
   it('copies deep, direnv, Wrangler and .worktreeinclude files too, never tracked ones or examples', async () => {
     const deep = path.join(repo, 'apps', 'web', 'config', 'local');
     mkdirSync(deep, { recursive: true });
