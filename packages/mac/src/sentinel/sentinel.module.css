@@ -549,6 +549,10 @@
   flex-direction: column;
   gap: 4px;
 }
+/* A field's input keeps its height (its flex: 1 is for rows, and would squash it in this column). */
+.field > input {
+  flex: none;
+}
 .fieldLabel {
   font-size: 12px;
   color: var(--text-2);
@@ -1155,12 +1159,3 @@ button.chatName:hover {
   margin-top: 2px;
 }
 
-/* A script step's own code (BLG-350): monospace, tabs as two spaces, it grows with its lines. */
-.codeArea {
-  font-size: 12px;
-  line-height: 1.5;
-  tab-size: 2;
-  white-space: pre;
-  overflow-x: auto;
-  resize: vertical;
-}
