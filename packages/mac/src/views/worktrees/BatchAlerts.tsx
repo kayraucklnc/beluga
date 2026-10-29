@@ -5,7 +5,8 @@ import type { WorktreeRow } from './worktrees-model.js';
 /**
  * Before archiving, removing build files from or deleting several worktrees at once: what
  * happens to them, and what it frees or loses. Archiving keeps everything of yours; removing
- * build files keeps the worktrees and clears only what's made again; deleting is for good.
+ * build files keeps the worktrees and clears only what's made again; deleting (live or archived
+ * ones) is for good.
  */
 
 export type Batch = 'archive' | 'free' | 'delete';
@@ -29,6 +30,34 @@ export function BatchAlert({ batch, rows, rebuildable, onConfirm, onCancel }: { 
           </>
         }
         confirm={{ label: 'Remove Build Files', onClick: onConfirm }}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (batch === 'delete' && !rows.some((r) => r.archived)) {
+    // Beluga's own go with everything in them; another tool's (or a sub-agent's) only if git lets them, branch kept.
+    const own = rows.filter((r) => r.madeBy.kind === 'beluga');
+    const files = own.reduce((k, r) => k + (r.left?.files ?? 0), 0);
+    const commits = own.filter((r) => r.ws.branch).reduce((k, r) => k + (r.left?.commits ?? 0), 0);
+    const branches = own.filter((r) => r.ws.branch).length;
+    const theirs = n - own.length;
+    return (
+      <Alert
+        icon="alert"
+        tone="danger"
+        title={`Delete ${plural(n, 'worktree')} permanently?`}
+        message={
+          <>
+            <p>
+              {n === 1 ? 'Its folder goes, with its conversation' : 'Their folders go, with their conversations'}
+              {branches ? ` and ${branches === 1 ? 'the branch' : `the ${branches} branches`} Beluga made${commits ? ` (${plural(commits, 'commit')} not in main)` : ''}` : ''}.
+              {files ? ` ${plural(files, 'uncommitted file')} ${files === 1 ? 'is' : 'are'} lost.` : ''}
+            </p>
+            {theirs ? <p>{n === 1 ? 'It was' : theirs === 1 ? 'One was' : `${theirs} were`} made outside Beluga or by a sub-agent: {theirs === 1 ? 'its branch is' : 'their branches are'} kept, and git won’t delete one with uncommitted changes.</p> : null}
+            <p>You can’t undo this. To keep the work, archive {n === 1 ? 'it' : 'them'} instead.</p>
+          </>
+        }
+        confirm={{ label: `Delete ${plural(n, 'Worktree')}`, destructive: true, onClick: onConfirm }}
         onCancel={onCancel}
       />
     );

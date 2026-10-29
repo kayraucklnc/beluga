@@ -130,6 +130,7 @@ export function WorktreeItem({ row, plan, ticked, onTick, act }: { row: Worktree
     { label: 'Show in Finder', icon: 'folder', onSelect: () => actions.run({ type: 'ws', id: w.id, action: 'finder' }) },
     { label: 'Remove Build Files…', icon: 'archive', separate: true, disabled: !plan?.dropBytes, hint: plan && !plan.dropBytes ? 'None to remove' : 'node_modules, builds and caches; your work stays', onSelect: () => act.free([row]) },
     { label: 'Archive…', icon: 'archive', hint: 'Keeps your work; restore it any time', onSelect: () => act.archive([row]) },
+    { label: 'Delete Permanently…', icon: 'x', danger: true, separate: true, disabled: Boolean(row.archiving), hint: row.madeBy.kind === 'beluga' ? 'The folder, its branch and the conversation' : 'The folder and the conversation; its branch stays', onSelect: () => act.remove([row]) },
   ];
   const onKey = (e: KeyboardEvent): void => {
     if (e.target !== e.currentTarget) return;
