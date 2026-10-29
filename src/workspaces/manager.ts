@@ -11,6 +11,7 @@ import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envHashes, e
 import { WorkspaceStore } from './store.js';
 import { migrateMainConversations } from './main-migration.js';
 import { stopTestProcesses } from './test-procs.js';
+import { applySnapshot, dropSnapshots, snapshotBase } from './snapshots.js';
 import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWorktree, dropArchive, freeSpace, planArchive, previewOf, readManifest, restoreWorktree } from './archive.js';
 import { worktreeOrigin } from './origin.js';
 import { deleteFolderInBackground, removeWorktreeKeepingBranch, sweepSetAside } from './others.js';
@@ -54,6 +55,10 @@ export const projectId = (root: string): string => createHash('sha1').update(rea
 const pathId = (p: string): string => `wt-${createHash('sha1').update(real(p)).digest('hex').slice(0, 10)}`;
 /** New workspaces get a fresh id, so a reused name never inherits an old record or history. */
 const freshId = (): string => `wt-${randomUUID().slice(0, 12)}`;
+
+/** The session a fork goes on from: `session` when one was given (null: none, Claude starts fresh), else a branch of the source's. */
+const forkSessionOf = (source: Workspace, session: string | null | undefined): Pick<WorkspaceRecord, 'sessionId' | 'forkFromSession'> =>
+  session === undefined ? (source.sessionId ? { forkFromSession: source.sessionId } : {}) : session ? { sessionId: session } : {};
 export const mainId = (root: string): string => `${projectId(root)}:main`;
 
 /** Chats that don't belong to any project live in this pseudo-project. */
@@ -782,17 +787,22 @@ export class WorkspaceManager {
     return this.require(record.id);
   }
 
-  /** Copy a workspace into a new worktree that starts from its current state, with its conversation. */
-  async fork(id: string, name: string, opts: { base?: string } = {}): Promise<Workspace> {
+  /**
+   * Copy a workspace into a new worktree that starts from its current state, with its conversation.
+   * `at`: from an earlier snapshot of it instead (see snapshots.ts), with `session` (Claude's, cut to
+   * there; null: none) and `history` (the conversation up to there) in place of the whole of them.
+   */
+  async fork(id: string, name: string, opts: { base?: string; at?: string; session?: string | null; history?: readonly unknown[] } = {}): Promise<Workspace> {
     const source = this.require(id);
     const project = this.projectOf(source);
     const s = slug(name);
     const dir = this.freeDir(project, s);
     // `opts.base`: start from there (e.g. the latest origin) instead of the source's own commits.
-    const from = opts.base ?? (source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD'));
+    const from = opts.at ? await snapshotBase(source.path, opts.at) : (opts.base ?? (source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD')));
     const branch = await this.freeBranch(project.root, `${BRANCH_PREFIX}${s}`);
     await g.addWorktree(project.root, dir, branch, from);
     await g.excludeProjectDir(dir);
+    if (opts.at) await applySnapshot(dir, opts.at);
     await copyEnvFiles(source.kind === 'chat' ? project.root : source.path, dir);
     const record: WorkspaceRecord = {
       id: freshId(),
@@ -804,13 +814,39 @@ export class WorkspaceManager {
       base: opts.base ?? source.base ?? project.base,
       createdAt: Date.now(),
       forkedFrom: source.id,
-      forkFromSession: source.sessionId,
+      ...forkSessionOf(source, opts.session),
       envSnapshot: await envSnapshot(dir),
     };
     this.saveRecord(record);
-    if (existsSync(this.store.historyFile(source.id))) copyFileSync(this.store.historyFile(source.id), this.store.historyFile(record.id));
+    if (opts.history) this.store.saveHistory(record.id, opts.history);
+    else if (existsSync(this.store.historyFile(source.id))) copyFileSync(this.store.historyFile(source.id), this.store.historyFile(record.id));
     await this.refresh();
     return this.require(record.id);
+  }
+
+  /**
+   * A new chat beside a chat (BLG-385): in the same project (or its own scratch folder), with
+   * `history` as its conversation and `session` as Claude's (null: Claude starts fresh).
+   */
+  async forkChat(id: string, name: string, opts: { session: string | null; history: readonly unknown[] }): Promise<Workspace> {
+    const source = this.require(id);
+    if (source.kind !== 'chat') throw new WorkspaceError('Only a chat forks into a chat');
+    const standalone = source.projectRoot === '';
+    const chatId = `chat-${randomUUID().slice(0, 8)}`;
+    // A chat with its own scratch folder gets one of its own; one in a folder you chose stays there.
+    const own = standalone && real(source.path).startsWith(real(this.chatsDir) + path.sep);
+    const dir = own ? path.join(this.chatsDir, chatId) : source.path;
+    if (own) mkdirSync(dir, { recursive: true });
+    const record: WorkspaceRecord = { id: chatId, projectRoot: source.projectRoot, name: slug(name).slice(0, 40) || 'chat', path: own ? real(dir) : dir, kind: 'chat', createdAt: Date.now(), forkedFrom: source.id, ...forkSessionOf(source, opts.session) };
+    this.saveRecord(record);
+    this.store.saveHistory(record.id, opts.history);
+    await this.refresh();
+    return this.require(record.id);
+  }
+
+  /** Go on from `sessionId` (a copy of Claude's session, cut to an earlier message), or start fresh (null). */
+  rewindSession(id: string, sessionId: string | null): void {
+    this.patchRecord(id, { sessionId: sessionId ?? undefined, forkFromSession: undefined });
   }
 
   /**
@@ -909,6 +945,7 @@ export class WorkspaceManager {
       if (ws.branch && !foreign) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
     }
     rmSync(this.store.historyFile(id), { force: true });
+    if (ws.kind === 'worktree' && existsSync(ws.projectRoot)) await dropSnapshots(ws.projectRoot, id).catch(() => undefined);
     if (ws.archived) await dropArchive(ws.projectRoot, this.store.archivesDir, id).catch(() => undefined);
     // Only ever delete Beluga's own scratch folders, never a folder you started a chat in.
     if (ws.projectRoot === '' && real(ws.path).startsWith(real(this.chatsDir) + path.sep)) rmSync(ws.path, { recursive: true, force: true });

@@ -60,6 +60,11 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         intend: (intent) => session.intend(intent),
         askClaude: (prompt, channel, o) => session.askOwnClaude(prompt, channel, false, o?.echo ?? true),
         compact: (channel, instructions) => session.compact(channel, instructions),
+        stopHere: async (channel) => {
+          if (host.runningIn(channel)) host.stopRun(channel);
+          await host.idle(channel);
+        },
+        forgetContext: (channel) => host.forgetContext(channel),
         findConversation: opts.findConversation
           ? async (dir, o) => {
               const found = await opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }, o);

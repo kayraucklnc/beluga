@@ -465,6 +465,18 @@ describe('the views of a known Mac', () => {
     expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.at(-1)?.steer).toBeUndefined();
   });
 
+  it('your own message can be edited, where its words reach the phone whole (BLG-387)', () => {
+    const store = new Store(state);
+    store.dispatch({ type: 'chat', id: 'c20', from: ME, text: 'Use this:\n\n```ts\nconst x = 1;\n```', ts: T0 + 30, byAgent: false, channel: 'ws:w1' });
+    store.dispatch({ type: 'chat', id: 'c21', from: BOB, text: 'and the tests', ts: T0 + 31, byAgent: false, channel: 'ws:w1' });
+    const turns = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns;
+    expect(turns.find((t) => t.id === 'c1')?.edit).toEqual({ ws: 'w1', kind: 'worktree' });
+    // Code in it (folded away on the phone), someone else's words, or not a workspace: no Edit.
+    expect(turns.find((t) => t.id === 'c20')?.edit).toBeUndefined();
+    expect(turns.find((t) => t.id === 'c21')?.edit).toBeUndefined();
+    expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:mac:assistant')).turns.find((t) => t.id === 'ca1')?.edit).toBeUndefined();
+  });
+
   it('pages back through older turns', () => {
     const { turns } = convTurns(state, ctx, 'ws:w1');
     const older = convTurns(state, ctx, 'ws:w1', { before: turns.at(-1)!.id, limit: 1 });

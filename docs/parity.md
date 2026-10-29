@@ -269,6 +269,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.startWorktree` | ✓ (→ the new worktree's id; `plan`: its Claude plans first; `quiet`: the window stays put. The phone's Ask › a project › Worktree, with Plan first, since 1.5; Your Mac's `start_worktree`) |
 | `workspaces.branches` | New worktree › Based on popup |
 | `workspaces.fork` | ✓ |
+| `workspaces.editPrompt` | Edit on your own message (hover, or right-click › Edit Message) › the message opens in place: Rewind Here or New Fork, then ↩ |
 | `workspaces.continueInWorktree` | Continue in New Worktree… (toolbar and the ask banner) › sheet: Task, Based on, Name (the chat becomes the worktree) |
 | `workspaces.archive` | ✓ |
 | `workspaces.restore` | ✓ |

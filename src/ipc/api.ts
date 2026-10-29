@@ -221,6 +221,8 @@ export const API = {
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),
+  // Edit a message you sent (workspace, message id, its new words, how): 'here' rewinds this conversation to it (files too), 'fork' goes on in a new worktree or chat → the conversation it went on in.
+  'workspaces.editPrompt': args(id, id, str, z.enum(['here', 'fork'])),
   // Carry a conversation (an ask chat in a main folder, or any chat) into a new worktree and go on there → the new workspace's id.
   'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }).strict())),
   'workspaces.archive': args(id, opt(bool)),

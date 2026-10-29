@@ -98,6 +98,8 @@ export const calls = {
   branchStep: (topic: Topic, step: PhoneBranchStep, label: string): Call => make('companion.branchStep', [topic, step], label),
   /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
   steerNow: (request: string): Call => make('host.steerNow', [request], 'Send now'),
+  /** 1.28 (BLG-387): a message you sent, edited: the conversation rewinds to it ('here') or goes on in a new fork → where it went on. */
+  editPrompt: (ws: string, turn: string, text: string, mode: 'here' | 'fork'): Call => make('workspaces.editPrompt', [ws, turn, text, mode], mode === 'here' ? 'Rewind and send' : 'Fork and send'),
   /** 1.7: a worktree's files, read-only: a folder ('' is the top), names that match, a page of a file. */
   filesList: (topic: Topic, path: string): Call => make('companion.files.list', [topic, path], 'Files'),
   filesFind: (topic: Topic, query: string): Call => make('companion.files.find', [topic, query], 'Find files'),

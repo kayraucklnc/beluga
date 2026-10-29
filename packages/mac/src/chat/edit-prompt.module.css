@@ -1,0 +1,48 @@
+/* Your message, open to edit in place (BLG-385): the project home composer's box, at the bubble's spot. */
+.edit {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  border-radius: var(--radius-l);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), 0 2px 10px rgba(0, 0, 0, 0.07);
+}
+.busy {
+  opacity: 0.7;
+}
+.input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  max-height: 320px;
+  padding: 10px 13px 4px;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 20px;
+}
+.input:focus {
+  outline: none;
+}
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 8px 8px 10px;
+}
+/* What sending does, in words, for the choice picked. */
+.note {
+  flex: 1 1 180px;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  line-height: 1.3;
+}
+.actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
