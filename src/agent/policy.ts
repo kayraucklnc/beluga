@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { isDotenvPath, isReceivedTaskFile, isSecretPath } from '../core/shares.js';
+import { isDotenvPath, isReceivedTaskFile, isSecretPath, realOf } from '../core/shares.js';
 import { isReadOnlyCommand } from './read-only.js';
 import { SourceSchema } from '../shared/view-spec.js';
 import { type ScriptPlan, planScript } from '../core/views/scripts.js';
@@ -110,7 +110,33 @@ export interface PolicyContext {
 }
 
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
+/** Inside a folder where it really is (links followed), so a link in a shared folder can't reach past it (BLG-414). */
+const within = (root: string, target: string): boolean => inside(realOf(path.resolve(root)), realOf(target));
+/** A secret by its name or by where it really is (a harmless-looking link to a key is still the key). */
+const secretAt = (target: string): boolean => isSecretPath(target) || isSecretPath(realOf(target));
 const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, typeof raw === 'string' && raw ? raw : '.');
+
+/**
+ * Files that make something run later, as you: git hooks and config, Claude Code's settings and MCP
+ * servers, editor tasks, direnv, npm scripts, make, shell start-up files, login items, CI (BLG-413).
+ * Changing one from someone else's request asks you every time, so "may edit files" never quietly
+ * becomes "may run commands".
+ */
+const CODE_DIRS = new Set(['.git', '.githooks', '.husky', '.claude', '.vscode', '.idea', '.devcontainer']);
+const CODE_FILES = /^(\.mcp\.json|\.envrc|package\.json|makefile|gnumakefile|justfile|\.pre-commit-config\.ya?ml|\.zshrc|\.zshenv|\.zprofile|\.zlogin|\.bashrc|\.bash_profile|\.profile|.+\.command)$/;
+const CODE_PATHS = /(^|\/)(library\/launch(agents|daemons)|\.github\/workflows)(\/|$)/;
+const runsCodeAt = (p: string): boolean => {
+  const segments = p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
+  return segments.some((s) => CODE_DIRS.has(s)) || CODE_FILES.test(segments.at(-1) ?? '') || CODE_PATHS.test(segments.join('/'));
+};
+export const runsCode = (p: string): boolean => runsCodeAt(p) || runsCodeAt(realOf(path.resolve(p)));
+
+/** This edit changes a file that runs code (see runsCode): its approval is once, never Always. */
+export function writesCode(toolName: string, input: Record<string, unknown>, cwd: string): boolean {
+  const field = WRITE_TOOLS[toolName];
+  const raw = field === undefined ? undefined : input[field];
+  return typeof raw === 'string' && raw !== '' && (runsCodeAt(raw) || runsCode(path.resolve(cwd, raw)));
+}
 
 /**
  * Decide whether a tool call can run without asking the machine owner.
@@ -159,8 +185,8 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
     // Only full paths: the same file is checked here and read when it's sent.
     if (!path.isAbsolute(raw)) return 'deny';
     const target = path.resolve(raw);
-    if (isSecretPath(target)) return 'deny';
-    if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+    if (secretAt(target)) return 'deny';
+    if (ctx.roots.some((r) => within(r, target))) return 'allow';
     return ctx.scope === 'full' ? 'allow' : 'ask';
   }
   // Commands on a friend's computer: their Beluga decides; secrets are refused on both ends.
@@ -172,19 +198,23 @@ function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: 
     const target = resolveTarget(ctx.cwd, input[readField]);
     // A secret a friend approved sending you (BLG-209) is your user's file now: your own Claude may read it, once you say so.
     if (ctx.dotenv && isReceivedTaskFile(target) && !namesOf(input).some(isSecretPath)) return 'ask';
-    if (!dotenv && (isSecretPath(target) || namesOf(input).some(isSecretPath))) return 'deny';
-    if ([target, ...namesOf(input)].some((n) => isSecretPath(n) && !isDotenvPath(n))) return 'deny';
-    if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+    const real = realOf(target);
+    if (!dotenv && (isSecretPath(target) || isSecretPath(real) || namesOf(input).some(isSecretPath))) return 'deny';
+    if ([target, real, ...namesOf(input)].some((n) => isSecretPath(n) && !isDotenvPath(n))) return 'deny';
+    if (ctx.roots.some((r) => within(r, target))) return 'allow';
     // Outside the shared folders the owner decides (or it just runs, with full trust).
     return ctx.scope === 'full' ? 'allow' : 'ask';
   }
   const writeField = WRITE_TOOLS[toolName];
   if (writeField) {
     const target = resolveTarget(ctx.cwd, input[writeField]);
-    if (isSecretPath(target) && !dotenv) return 'deny';
-    if (ctx.autoEdit && inside(path.resolve(ctx.cwd), target)) return 'allow';
-    if (ctx.fixup && inside(path.resolve(ctx.fixup), target)) return 'allow';
-    if (ctx.scope !== 'full' && !ctx.roots.some((r) => inside(path.resolve(r), target))) return 'deny';
+    if (secretAt(target) && !dotenv) return 'deny';
+    const others = ctx.scope !== 'full';
+    if (others && !ctx.roots.some((r) => within(r, target))) return 'deny';
+    // Someone else's request: a file that makes code run later (a git hook, npm scripts…) asks you.
+    if (others && runsCode(target)) return 'ask';
+    if (ctx.autoEdit && within(ctx.cwd, target)) return 'allow';
+    if (ctx.fixup && within(ctx.fixup, target)) return 'allow';
     return 'ask';
   }
   return 'ask';
@@ -207,8 +237,8 @@ function decideShow(input: Record<string, unknown>, ctx: PolicyContext): Decisio
   if (source.kind === 'http') return Object.values(source.headers ?? {}).some((v) => /\$\{?[A-Za-z_]/.test(v)) ? 'ask' : 'allow';
   if (source.kind === 'postgres') return 'allow';
   const target = resolveTarget(ctx.cwd, source.path.replace(/^~(?=$|\/)/, process.env.HOME ?? '~'));
-  if (isSecretPath(target)) return 'deny';
-  if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+  if (secretAt(target)) return 'deny';
+  if (ctx.roots.some((r) => within(r, target))) return 'allow';
   return ctx.scope === 'full' ? 'allow' : 'ask';
 }
 
@@ -263,7 +293,7 @@ export function denyReason(toolName: string, input: Record<string, unknown>, ctx
   const writeField = WRITE_TOOLS[toolName];
   if (writeField) {
     const target = resolveTarget(ctx.cwd, input[writeField]);
-    if (!isSecretPath(target) && ctx.scope !== 'full' && !ctx.roots.some((r) => inside(path.resolve(r), target))) return OUTSIDE_REASON;
+    if (!secretAt(target) && ctx.scope !== 'full' && !ctx.roots.some((r) => within(r, target))) return OUTSIDE_REASON;
   }
   return DENY_REASON;
 }

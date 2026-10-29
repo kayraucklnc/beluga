@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, AgentPlace, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer } from '../agent/types.js';
-import { ALWAYS_ASK_YOU } from '../agent/policy.js';
+import { ALWAYS_ASK_YOU, writesCode } from '../agent/policy.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
@@ -1256,6 +1256,12 @@ export class AgentHost {
     // Your own Claude doesn't nag you (unless you asked it to); fully trusted friends don't either.
     if (requester === this.selfId && state.prefs.selfApproval === 'never') return true;
     if (requester !== this.selfId && trustOf(state, requester) === 'full') return true;
+    // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once, whatever was allowed before.
+    if (requester !== this.selfId && writesCode(toolName, input, cwd ?? process.cwd())) {
+      const file = String(input.file_path ?? input.notebook_path);
+      const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, requester, channel, { once: true });
+      return answer !== 'no';
+    }
     // Invited by link to edit this project: as if you prompted, inside its folder (secrets were already refused).
     if (cwd && requester !== this.selfId && this.deps.canEditIn?.(requester, channel) && toolInside(toolName, input, cwd)) return true;
     // "Always" is scoped to one requester and one tool, never global.

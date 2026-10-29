@@ -1,5 +1,8 @@
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { decideTool } from '../src/agent/policy.js';
+import { decideTool, writesCode } from '../src/agent/policy.js';
 
 const ctx = { cwd: '/work/proj', roots: ['/work/proj', '/work/docs'], autoEdit: false };
 const rw = { ...ctx, autoEdit: true };
@@ -99,5 +102,43 @@ describe('decideTool', () => {
     expect(decideTool('Read', { file_path: 'apps/web/.env.sample' }, ctx)).toBe('allow');
     expect(decideTool('Bash', { command: 'cp .env.example .env.examples' }, ctx)).toBe('deny');
     expect(decideTool('Bash', { command: 'cat .env.example' }, ctx)).toBe('ask');
+  });
+
+  it('asks before a friend changes a file that runs code later, even in a :rw share (BLG-413)', () => {
+    for (const file of ['.git/hooks/pre-commit', '.git/config', '.git', '.claude/settings.json', '.mcp.json', '.vscode/tasks.json', '.husky/pre-push', '.envrc', 'package.json', 'apps/web/package.json', 'Makefile', '.github/workflows/ci.yml', '.zshrc', 'Library/LaunchAgents/x.plist', 'run.command']) {
+      expect(decideTool('Write', { file_path: file }, rw), file).toBe('ask');
+      expect(writesCode('Edit', { file_path: file }, '/work/proj'), file).toBe(true);
+    }
+    // Ordinary files still go through, and your own Claude (scope full) isn't asked more than before.
+    expect(decideTool('Write', { file_path: 'src/package-info.ts' }, rw)).toBe('allow');
+    expect(decideTool('Write', { file_path: '.github/README.md' }, rw)).toBe('allow');
+    expect(decideTool('Write', { file_path: 'package.json' }, { ...rw, scope: 'full' })).toBe('allow');
+    expect(writesCode('Read', { file_path: '.git/config' }, '/work/proj')).toBe(false);
+  });
+
+  it("follows links: a link in a share can't reach past it, or hide a key (BLG-414)", () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'beluga-policy-'));
+    const share = path.join(base, 'share');
+    const outside = path.join(base, 'outside');
+    mkdirSync(share);
+    mkdirSync(outside);
+    writeFileSync(path.join(outside, 'diary.txt'), 'private');
+    writeFileSync(path.join(outside, 'server.pem'), 'key');
+    symlinkSync(path.join(outside, 'diary.txt'), path.join(share, 'notes.txt'));
+    symlinkSync(path.join(outside, 'server.pem'), path.join(share, 'todo.txt'));
+    symlinkSync(outside, path.join(share, 'more'));
+    const linked = { cwd: share, roots: [share], autoEdit: true };
+    expect(decideTool('Read', { file_path: 'notes.txt' }, linked)).toBe('ask');
+    expect(decideTool('Read', { file_path: 'more/diary.txt' }, linked)).toBe('ask');
+    expect(decideTool('Read', { file_path: 'todo.txt' }, linked)).toBe('deny');
+    expect(decideTool('Read', { file_path: 'todo.txt' }, { ...linked, scope: 'full' })).toBe('deny');
+    expect(decideTool('mcp__beluga__send_file', { path: path.join(share, 'todo.txt') }, linked)).toBe('deny');
+    expect(decideTool('Write', { file_path: 'more/new.txt' }, linked)).toBe('deny');
+    expect(decideTool('Write', { file_path: 'notes.txt' }, linked)).toBe('deny');
+    // The share itself reached through a link (macOS /tmp is /private/tmp) still counts as inside.
+    const viaLink = path.join(base, 'share-link');
+    symlinkSync(share, viaLink);
+    expect(decideTool('Read', { file_path: path.join(share, 'a.md') }, { ...linked, cwd: viaLink, roots: [viaLink] })).toBe('allow');
+    expect(decideTool('Write', { file_path: path.join(viaLink, 'a.md') }, linked)).toBe('allow');
   });
 });
