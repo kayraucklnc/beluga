@@ -5,6 +5,7 @@ import type { GitHubRepo } from '@beluga/workspaces/github.js';
 import { toast, useApi, useBeluga } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
 import { openSheet } from '../lib/sheets.js';
+import { keepSeen, lastSeen } from '../lib/last-seen.js';
 import { onWindowActive, useClock, windowActive } from '../lib/window-active.js';
 
 /**
@@ -15,8 +16,11 @@ import { onWindowActive, useClock, windowActive } from '../lib/window-active.js'
 
 const message = (err: unknown): string => (err instanceof Error ? err.message.replace(/^Error: /, '') : String(err));
 
-/** Ask again after `every(data)` ms, while the window shows; `poke` asks now. A new key starts over. */
-function usePolled<T>(key: string, ask: ((force: boolean) => Promise<T>) | undefined, every: (data: T) => number): { readonly data?: T; readonly error?: string; readonly loading: boolean; readonly poke: () => void } {
+/**
+ * Ask again after `every(data)` ms, while the window shows; `poke` asks now. A new key starts over.
+ * With `keep`, the last answer is kept (lib/last-seen.ts) and shown at once while the fresh one comes.
+ */
+function usePolled<T>(key: string, ask: ((force: boolean) => Promise<T>) | undefined, every: (data: T) => number, keep?: string): { readonly data?: T; readonly error?: string; readonly loading: boolean; readonly poke: () => void } {
   const [got, setGot] = useState<{ readonly key: string; readonly data?: T; readonly error?: string }>();
   const [loading, setLoading] = useState(false);
   const [nudge, setNudge] = useState(0);
@@ -45,6 +49,7 @@ function usePolled<T>(key: string, ask: ((force: boolean) => Promise<T>) | undef
         (data) => {
           if (gone) return;
           setGot({ key, data });
+          if (keep) keepSeen(`${keep}:${key}`, data);
           setLoading(false);
           timer = setTimeout(run, every(data));
         },
@@ -63,7 +68,8 @@ function usePolled<T>(key: string, ask: ((force: boolean) => Promise<T>) | undef
       stopWaiting?.();
     };
   }, [key, nudge]);
-  const shown = got?.key === key ? got : undefined;
+  const kept = keep && key ? lastSeen<T>(`${keep}:${key}`) : undefined;
+  const shown = got?.key === key ? got : kept !== undefined ? { key, data: kept } : undefined;
   return {
     ...(shown?.data !== undefined ? { data: shown.data } : {}),
     ...(shown?.error ? { error: shown.error } : {}),
@@ -80,21 +86,21 @@ export function useRuns(projectId: string | undefined, query: { readonly workflo
   const api = useApi();
   const key = projectId ? `${projectId}\0${query.workflow ?? ''}\0${query.branch ?? ''}` : '';
   const ask = projectId ? (force: boolean) => api.ci.runs(projectId, { ...(query.workflow ? { workflow: query.workflow } : {}), ...(query.branch ? { branch: query.branch } : {}), ...(force ? { force: true } : {}) }) : undefined;
-  const { data, error, loading, poke } = usePolled<RunsList>(key, ask, (l) => (l.kind === 'github' ? pollEvery(l.runs) : 120_000));
+  const { data, error, loading, poke } = usePolled<RunsList>(key, ask, (l) => (l.kind === 'github' ? pollEvery(l.runs) : 120_000), 'ci.runs');
   return { ...(data ? { list: data } : {}), ...(error ? { error } : {}), loading, refresh: poke };
 }
 
 /** One run with its jobs and steps, every few seconds while it runs. */
 export function useRun(projectId: string, id: number): { readonly data?: { readonly repo: GitHubRepo; readonly run: GhRunFull }; readonly error?: string; readonly loading: boolean; readonly refresh: () => void } {
   const api = useApi();
-  const { data, error, loading, poke } = usePolled(`${projectId}#${id}`, (force) => api.ci.run(projectId, id, force ? { force: true } : undefined), (d) => (isLive(d.run) ? 3_000 : 60_000));
+  const { data, error, loading, poke } = usePolled(`${projectId}#${id}`, (force) => api.ci.run(projectId, id, force ? { force: true } : undefined), (d) => (isLive(d.run) ? 3_000 : 60_000), 'ci.run');
   return { ...(data ? { data } : {}), ...(error ? { error } : {}), loading, refresh: poke };
 }
 
 /** The project's workflows and their files (read again now and then: you may be editing one). */
 export function useWorkflows(projectId: string | undefined): { readonly data?: { readonly repo: GitHubRepo; readonly workflows: readonly GhWorkflow[] }; readonly error?: string; readonly loading: boolean; readonly refresh: () => void } {
   const api = useApi();
-  const { data, error, loading, poke } = usePolled(projectId ?? '', projectId ? (force) => api.ci.workflows(projectId, force ? { force: true } : undefined) : undefined, () => 60_000);
+  const { data, error, loading, poke } = usePolled(projectId ?? '', projectId ? (force) => api.ci.workflows(projectId, force ? { force: true } : undefined) : undefined, () => 60_000, 'ci.workflows');
   return { ...(data ? { data } : {}), ...(error ? { error } : {}), loading, refresh: poke };
 }
 

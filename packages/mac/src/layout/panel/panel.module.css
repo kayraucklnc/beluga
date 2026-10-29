@@ -16,6 +16,13 @@
   flex: none;
   height: 100%;
   overflow: hidden;
+  /* The room it takes, as the page beside it, so opening shows no gray gap before the panel arrives. */
+  background: var(--bg);
+}
+/* Closing: its room is already given back, so it slides away over the conversation. */
+.leaving {
+  overflow: visible;
+  z-index: 50;
 }
 /* Fixed to the panel's width and pinned right, so it slides instead of re-wrapping as the panel opens and closes. */
 .inner {
@@ -36,6 +43,15 @@
 /* While it slides, its own compositing layer; not after (a layer of its own blurs text in WebKit). */
 .sliding {
   will-change: transform;
+}
+/* The tab's content, drawn once the slide is over, fades in instead of popping. */
+.settled .body {
+  animation: settle var(--dur) var(--ease-out);
+}
+@keyframes settle {
+  from {
+    opacity: 0;
+  }
 }
 .head {
   flex: none;

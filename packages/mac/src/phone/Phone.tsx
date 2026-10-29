@@ -48,6 +48,7 @@ function PhoneClaude({ d }: { d: DeviceView }) {
       <Row label="Let Claude use this phone" detail={route ? `Reached by ${ROUTE_WORDS[route] ?? route}.` : (c.note ?? 'Not reachable right now.')}>
         <Select label="Let Claude use this phone" value={c.use} onChange={(v) => void client.api.companion['phone.use'](d.id, v as PhoneUse)} options={USE_OPTIONS.map((o) => ({ ...o }))} />
       </Row>
+      {c.use !== 'off' && c.accessibility !== true ? <BelugaLink id={d.id} reachable={c.usb === true || c.adb === 'connected' || c.adb === 'ready'} /> : null}
       {c.use !== 'off' && (c.usb || c.adb !== 'off') ? <OverWifi id={d.id} on={c.adb !== undefined && c.adb !== 'off'} cable={c.usb === true} path={c.wifiPath} /> : null}
       {c.use !== 'off' && c.adb === 'unpaired' ? (
         <Row label="Wireless debugging" detail="On the phone, open Wireless debugging › Pair device with pairing code, then type the six digits into Beluga’s notification.">
@@ -57,6 +58,38 @@ function PhoneClaude({ d }: { d: DeviceView }) {
         </Row>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Beluga Link (BLG-391): the phone's small add-on app with the Accessibility service, which lets
+ * Claude tap and type without a cable. Installed from here over adb, Play Protect doesn't block it
+ * and it's turned on too.
+ */
+function BelugaLink({ id, reachable }: { id: string; reachable: boolean }) {
+  const { client } = useBeluga();
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string>();
+  const go = async (): Promise<void> => {
+    setBusy(true);
+    setSaid(undefined);
+    try {
+      setSaid(await client.api.companion['phone.setUpLink'](id));
+    } catch (err) {
+      setSaid(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const detail = reachable
+    ? 'Beluga Link is the small app on the phone that lets Claude tap and type there without a cable. It’s separate so Android’s Play Protect never blocks Beluga itself; set up from here, Link isn’t blocked either. This Mac installs it and turns it on.'
+    : 'Beluga Link is the small app on the phone that lets Claude tap and type there without a cable. Downloaded on the phone, Android may block it (“App blocked to protect your device”); set up from here, it isn’t. Connect the phone with a USB cable first.';
+  return (
+    <Row label="Beluga Link" detail={said ?? detail}>
+      <Button size="small" disabled={busy || !reachable} onClick={() => void go()}>
+        {busy ? 'Setting Up…' : 'Set Up Beluga Link'}
+      </Button>
+    </Row>
   );
 }
 
@@ -362,7 +395,7 @@ export function PhoneSettings() {
       </Group>
       {useDevices().some((d) => d.platform !== 'ios') ? (
         <Group title="Let Claude use your phone">
-          <Row label="How it works" detail="Ask Claude on this Mac to do something on your phone — look at the screen, tap, type, open apps, install a build. It uses Wireless debugging when it can, or the phone’s Accessibility service. Off until you choose a level below; set it up on the phone in Beluga › Settings.">
+          <Row label="How it works" detail="Ask Claude on this Mac to do something on your phone — look at the screen, tap, type, open apps, install a build. It uses Wireless debugging when it can, or Beluga Link, the phone’s small add-on app. Off until you choose a level below; set it up on the phone in Beluga › Settings.">
             <span />
           </Row>
           <AdbLine />

@@ -168,7 +168,7 @@ function TableTile({ t, rows: given }: { readonly t: DashboardTileView; readonly
     );
   }
   const rows = all ? tb.rows : tb.rows.slice(0, FIRST_ROWS);
-  // Typed columns (1.28, BLG-386) draw their own cells: a chip, a bar, a person, stars, a button.
+  // Typed columns (1.29, BLG-386) draw their own cells: a chip, a bar, a person, stars, a button.
   const typedAt = new Map((tb.typed ?? []).map((x) => [x.col, x]));
   const widths = tb.columns.map((c, i) => {
     const ty = typedAt.get(i);

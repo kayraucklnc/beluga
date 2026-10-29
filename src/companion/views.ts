@@ -402,11 +402,21 @@ function withSteers(state: DomainState, all: readonly LogItem[]): Array<{ item: 
   return items.flatMap((item) => (notes.has(item.id) ? [] : [{ item, ...(waiting.has(item.id) ? { steer: waiting.get(item.id)! } : {}) }]));
 }
 
+/** Your message, editable from the phone (BLG-387): in a worktree or chat of yours, its words whole as shown (no code taken out). */
+function editOf(state: DomainState, channel: string, text: string, prose: ProseView): TurnView['edit'] {
+  if (!channel.startsWith('ws:') || prose.code.length || prose.text !== text) return undefined;
+  const id = channel.slice(3);
+  const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id);
+  return ws && !ws.archived && (ws.kind === 'worktree' || ws.kind === 'chat') ? { ws: clip(id, 200), kind: ws.kind } : undefined;
+}
+
 function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[], cc: ReadonlyMap<string, CcAgent> = new Map(), steer?: SteeredMessage, pictures: (prose: ProseView) => ProseView = (p) => p): TurnView | undefined {
   const me = myId(state);
   if (item.type === 'chat') {
     const who = item.byAgent ? 'claude' : item.from === me ? 'you' : 'friend';
-    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose: who === 'claude' ? pictures(proseOf(item.text)) : proseOf(item.text), ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}) };
+    const prose = who === 'claude' ? pictures(proseOf(item.text)) : proseOf(item.text);
+    const edit = who === 'you' && !steer ? editOf(state, item.channel, item.text, prose) : undefined;
+    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose, ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}), ...(edit ? { edit } : {}) };
   }
   if (item.type === 'system') {
     // Earlier lines of a shared workspace's conversation ("bob: …") read as that person's turn.

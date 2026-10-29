@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Hand, HardDrive, Info, LogOut, Mic, Monitor, MonitorSmartphone, Moon, MoonStar, Network, ShieldCheck, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Download, Hand, HardDrive, Info, LogOut, Mic, Monitor, MonitorSmartphone, Moon, MoonStar, Network, ShieldCheck, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform, ScrollView, Switch, View } from 'react-native';
@@ -19,7 +19,7 @@ import { useSaved } from '../lib/saved';
 import { totalBytes } from '../lib/saved-list';
 import { store } from '../lib/store';
 import { askBatteryUnrestricted, batteryUnrestricted, setStay, stayAvailable, stayOn } from '../lib/stay';
-import { accessibilityOn, openAccessibilitySettings, phoneAllowed, phoneControlAvailable, setPhoneAllowed } from '../lib/phone';
+import { accessibilityOn, addonInstalled, onAccessibilityChange, openAccessibilitySettings, phoneAllowed, phoneControlAvailable, setPhoneAllowed } from '../lib/phone';
 import { color, ink } from '../lib/theme';
 import { voiceAvailable, voiceChoice, voiceSetting } from '../lib/voice';
 import { VOICE_MODELS } from '../../../src/shared/voice-models';
@@ -50,6 +50,7 @@ export default function Settings() {
   const canControl = link.mode === 'bare' && phoneControlAvailable();
   const [control, setControl] = useState(phoneAllowed());
   const [acc, setAcc] = useState(accessibilityOn());
+  const [addon, setAddon] = useState(addonInstalled());
   // Back from Android's settings (notifications, battery, accessibility): show what's true now.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
@@ -57,9 +58,19 @@ export default function Settings() {
       void permission(false).then(setPerm);
       setUnrestricted(batteryUnrestricted());
       setAcc(accessibilityOn());
+      setAddon(addonInstalled());
     });
     return () => sub.remove();
   }, []);
+  // Beluga Link answers a moment after the app binds it: show its Accessibility as soon as it does.
+  useEffect(
+    () =>
+      onAccessibilityChange(() => {
+        setAcc(accessibilityOn());
+        setAddon(addonInstalled());
+      }),
+    [],
+  );
   const toggleControl = () => {
     haptic.tap();
     const next = !control;
@@ -74,7 +85,11 @@ export default function Settings() {
     }
     store.staySet();
     store.controlSet(next);
-    if (next && !accessibilityOn()) openAccessibilitySettings();
+    // Without Beluga Link there's nothing to turn on yet: the guide says how to get it (BLG-390).
+    if (next && !accessibilityOn()) {
+      if (addonInstalled()) openAccessibilitySettings();
+      else router.push('/link');
+    }
   };
   const toggleStay = () => {
     haptic.tap();
@@ -164,12 +179,21 @@ export default function Settings() {
                 chevron={false}
               />
             ) : null}
-            {canControl && control && !acc ? (
+            {canControl && control && !acc && !addon ? (
+              <Row
+                Icon={Download}
+                tone="peach"
+                label="Get Beluga Link"
+                sub="The small app your Mac taps and types with. How to install it"
+                onPress={() => router.push('/link')}
+              />
+            ) : null}
+            {canControl && control && !acc && addon ? (
               <Row
                 Icon={ShieldCheck}
                 tone="peach"
-                label="Turn on Accessibility for Beluga"
-                sub="Android › Accessibility › Beluga. A sideloaded app first needs “Allow restricted settings” from the app’s ⋮ menu."
+                label="Turn on Beluga Link"
+                sub="Android › Accessibility › Beluga Link. A downloaded app first needs “Allow restricted settings” from its App info ⋮ menu."
                 onPress={openAccessibilitySettings}
               />
             ) : null}

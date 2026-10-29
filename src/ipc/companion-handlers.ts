@@ -31,6 +31,7 @@ export const COMPANION_HANDLERS = {
   'companion.phone.pairAdb': (s, id) => needCompanion(s).pairPhoneAdb(id),
   'companion.phone.wifi': (s, id, on) => needCompanion(s).phoneWifiDebugging(id, on),
   'companion.phone.pairCable': (s) => needCompanion(s).pairOverCable(),
+  'companion.phone.setUpLink': (s, id) => needCompanion(s).setUpPhoneLink(id),
   'companion.phone.settings': (s, id, which) => needCompanion(s).showPhoneSettings(id, which),
   'companion.phone.act': (s, id, op, args) => needCompanion(s).phoneAction(id, op, args),
   'companion.phone.macros': (s) => needCompanion(s).listPhoneMacros(),

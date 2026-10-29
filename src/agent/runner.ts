@@ -38,6 +38,7 @@ import { keepLines, trackedSpawn } from './claude-process.js';
 import { keptBashInput } from '../workspaces/test-procs.js';
 import { SCRATCH_DIR } from '../shared/scratch-dir.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
+import { claudeCodeReady } from './claude-code.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
 /** How long a run may stay open after answering while its background agents work. */
@@ -166,6 +167,10 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
 
   return {
     async run(input: AgentRunInput): Promise<string> {
+      // The Mac app downloads Claude Code on first launch (BLG-384): a run that comes first waits for it.
+      await claudeCodeReady(({ got, total }) => input.onEvent('progress', `Getting Claude Code ready, one time: ${total ? `${Math.round((got / total) * 100)}%` : `${Math.round(got / 1e6)} MB`}`)).catch((err: unknown) => {
+        throw new Error(`Couldn’t get Claude Code ready (${err instanceof Error ? err.message : String(err)}). Send your message again to try once more.`);
+      });
       const abortController = new AbortController();
       // Several conversations run at once: this run's room tools post to its own.
       const bridge = input.channel && opts.bridge.inChannel ? opts.bridge.inChannel(input.channel) : opts.bridge;
@@ -309,7 +314,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       // Streaming input keeps Claude Code alive after it answers while background agents still
       // work: a one-shot prompt would cut them off 10 minutes later, rejecting their next step.
       const prompts = new PromptQueue();
-      prompts.push(isCompactCommand(input.prompt) ? input.prompt.trim() : imageContent(buildPrompt(input), linkedImages(input.prompt)));
+      prompts.push(isCompactCommand(input.prompt) ? input.prompt.trim() : imageContent(buildPrompt(input), linkedImages(input.prompt)), { uuid: input.promptId });
       const background = new BackgroundAgents();
       const turns = new TurnRouter({ onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}), ...(input.onAnswered ? { onDone: input.onAnswered } : {}) });
       // Steps in detail go to the request whose turn it is (a follow-up's turn: the follow-up).
@@ -341,7 +346,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         }
         // Between turns it starts one now: thinking before its first step counts from here.
         if (turns.between) recorder.begin();
-        const uuid = prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)), { steer: steer && !turns.between });
+        const uuid = prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)), { steer: steer && !turns.between, uuid: followUp.promptId });
         if (uuid === false) return false;
         turns.queue(followUp, uuid, steer && !turns.between);
         return uuid;

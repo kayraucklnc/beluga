@@ -98,6 +98,8 @@ export const calls = {
   branchStep: (topic: Topic, step: PhoneBranchStep, label: string): Call => make('companion.branchStep', [topic, step], label),
   /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
   steerNow: (request: string): Call => make('host.steerNow', [request], 'Send now'),
+  /** 1.28 (BLG-387): a message you sent, edited: the conversation rewinds to it ('here') or goes on in a new fork → where it went on. */
+  editPrompt: (ws: string, turn: string, text: string, mode: 'here' | 'fork'): Call => make('workspaces.editPrompt', [ws, turn, text, mode], mode === 'here' ? 'Rewind and send' : 'Fork and send'),
   /** 1.7: a worktree's files, read-only: a folder ('' is the top), names that match, a page of a file. */
   filesList: (topic: Topic, path: string): Call => make('companion.files.list', [topic, path], 'Files'),
   filesFind: (topic: Topic, query: string): Call => make('companion.files.find', [topic, query], 'Find files'),
@@ -132,9 +134,9 @@ export const calls = {
   /** 1.22 (BLG-244): Refresh a dashboard (Run Now on each sentinel it draws from, one at a time) → { total }; a number over time. */
   dashboardRefresh: (id: string, name: string): Call => make('dashboard.refresh', [id], `Refresh ${short(name)}`),
   metricRead: (sentinelId: string, name: string, since?: number): Call => make('sentinel.metricRead', since === undefined ? [sentinelId, name] : [sentinelId, name, since], 'Read a number'),
-  /** 1.28 (BLG-386): a table's action button runs its sentinel with the row; a document the phone doesn't show opens on the Mac. */
+  /** 1.29 (BLG-386): a table's action button runs its sentinel with the row; a document the phone doesn't show opens on the Mac. */
   sentinelRunRow: (sentinelId: string, metric: string, column: string, row: Record<string, string | number | boolean | null>, words: string): Call => make('sentinel.runRow', [sentinelId, metric, column, row], short(words)),
-  /** 1.28 (BLG-392): what a sentinel keeps (its metrics' histories and runs' files, as refs), and a run's file opened on the Mac. */
+  /** 1.29 (BLG-392): what a sentinel keeps (its metrics' histories and runs' files, as refs), and a run's file opened on the Mac. */
   dataList: (sentinelId: string): Call => make('sentinel.dataList', [sentinelId], 'Read what it keeps'),
   runFileOpen: (runId: string, name: string, label: string): Call => make('sentinel.runFileOpen', [runId, name], `Open ${short(label)} on your Mac`),
   documentOpen: (sentinelId: string, metric: string, column: string, value: string, storage: boolean, name: string): Call => make(storage ? 'sentinel.storageOpen' : 'sentinel.documentOpen', [sentinelId, metric, column, value], `Open ${short(name)} on your Mac`),

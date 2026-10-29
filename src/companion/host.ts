@@ -1081,6 +1081,10 @@ export class CompanionHost {
   phoneWifiDebugging(deviceId: string, on: boolean): Promise<string> {
     return this.control.setWifiDebugging(deviceId, on);
   }
+  /** Beluga Link installed and turned on over adb (Settings › Phone › Beluga Link, BLG-391). */
+  setUpPhoneLink(deviceId: string): Promise<string> {
+    return this.control.setUpLink(deviceId);
+  }
   /** One phone action from the Mac UI (the mirror's tap/type, a button). */
   phoneAction(deviceId: string, op: PhoneOp, args: Record<string, unknown>): Promise<unknown> {
     return this.control.action(deviceId, op, args);

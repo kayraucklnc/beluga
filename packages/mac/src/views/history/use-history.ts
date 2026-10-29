@@ -3,6 +3,7 @@ import type { GitHubState } from '@beluga/core/main-sync.js';
 import type { CommitInfo, HistoryFilters } from '@beluga/workspaces/history.js';
 import type { Project } from '@beluga/workspaces/types.js';
 import { useApi, useApp } from '../../lib/beluga.js';
+import { keepSeen, lastSeen } from '../../lib/last-seen.js';
 
 /** History's data: pages of commits, the filter choices, the GitHub repository, your worktrees' branches. */
 
@@ -21,21 +22,29 @@ export interface LogState {
   readonly loadMore: () => void;
 }
 
+/** The first page as kept between visits (its cursor only when it's the whole of what was read). */
+interface KeptLog {
+  readonly commits: readonly CommitInfo[];
+  readonly next?: string;
+}
+
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
  * Commits for a project or worktree, a page at a time. A new query starts over; a new `version`
  * (a fetch, a commit) reloads what's loaded while the list on screen stays. After an error it
  * stops asking until the query or version changes (no retry loop while the end is in view).
+ * The first page read last time is shown at once (lib/last-seen.ts) while it's read again.
  */
 export function useLog(target: string, query: LogQuery, pageSize: number, version = ''): LogState {
   const api = useApi();
-  const [commits, setCommits] = useState<readonly CommitInfo[]>([]);
-  const [next, setNext] = useState<string>();
+  const key = JSON.stringify([target, query.branch, query.author ?? '', query.path ?? '', pageSize]);
+  const seenKey = `git.log:${key}`;
+  const [commits, setCommits] = useState<readonly CommitInfo[]>(() => lastSeen<KeptLog>(seenKey)?.commits ?? []);
+  const [next, setNext] = useState<string | undefined>(() => lastSeen<KeptLog>(seenKey)?.next);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const token = useRef(0);
-  const key = JSON.stringify([target, query.branch, query.author ?? '', query.path ?? '', pageSize]);
   const lastKey = useRef(key);
   const loaded = useRef(0);
   const live = useRef({ next, loading, error });
@@ -47,8 +56,9 @@ export function useLog(target: string, query: LogQuery, pageSize: number, versio
     const fresh = lastKey.current !== key;
     lastKey.current = key;
     if (fresh) {
-      setCommits([]);
-      setNext(undefined);
+      const kept = lastSeen<KeptLog>(seenKey);
+      setCommits(kept?.commits ?? []);
+      setNext(kept?.next);
       loaded.current = 0;
     }
     setError(undefined);
@@ -63,6 +73,7 @@ export function useLog(target: string, query: LogQuery, pageSize: number, versio
           setCommits(page.commits);
           setNext(page.next);
           loaded.current = page.commits.length;
+          keepSeen(seenKey, { commits: page.commits.slice(0, pageSize), ...(page.commits.length > pageSize ? {} : page.next ? { next: page.next } : {}) } satisfies KeptLog);
         },
         (err: unknown) => mine === token.current && setError(errorText(err)),
       )

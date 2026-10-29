@@ -247,6 +247,17 @@ when a widget is placed. Never a source, a query or a key.
 first while it's still going) and dismiss a needs-you item without answering it (`needs.dismiss`,
 gone on the Mac too). An older Mac never gets either: Remove isn't offered, and a dismissed card
 is only hidden on the phone until it relinks.
+1.28 (BLG-387) lets the phone edit a message you sent (`TurnView.edit`, `workspaces.editPrompt`):
+long-press it, change it, then Rewind Here (the conversation goes back to it, a worktree's files too)
+or New Fork (a new worktree or chat from that point). Only messages whose words reach the phone whole
+(no code in them). An older Mac sends no `edit`, so Edit isn't offered.
+1.29 (BLG-386, BLG-392) draws a board table's typed cells on the phone and opens what they point
+to: each document or storage object comes as a ref (`table.typed[].docs`) the phone streams with
+`get`, read (or fetched through a link signed on the Mac) only when asked and kept nowhere; a
+sentinel's kept data (`sentinel.dataList`) lists its metrics' histories (CSV, made when fetched) and
+its runs' files the same way. A kind the phone can't show offers Open on your Mac
+(`sentinel.documentOpen`, `sentinel.storageOpen`, `sentinel.runFileOpen`). An older Mac sends no
+refs, so its cells stay plain text and Kept data isn't shown.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
@@ -672,6 +683,26 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   `ACTION_SET_TEXT`), presses back/home/recents (global actions), opens apps and links, and takes a
   screenshot (`takeScreenshot`, API 30+, no MediaProjection prompt). The Mac asks with `req`, the
   app answers with `reply`. `FLAG_SECURE` screens capture black; the tool says so rather than lying.
+- **Beluga Link, an add-on app** (BLG-377, `modules/phone-control/addon`). The
+  Accessibility service lives in its own small APK (`sh.ratel.beluga.control`), attached to each
+  release beside the app. Play Protect's fraud protection blocks a sideloaded app that declares an
+  Accessibility service ("App blocked to protect your device"), so the main APK no longer declares
+  one and always installs; only the add-on can hit that block, and installing it over adb (the Mac
+  on a cable or Wireless debugging) goes through. The app binds the add-on's `ControlService` and
+  they swap Messenger messages (`shared/…/ControlLink.kt`: `HELLO`, `PERFORM`/`RESULT`, `STATE`,
+  `LAUNCH`); each side answers only a caller signed with the same key. The add-on also opens the
+  mirror's "Start now" screen from the background for the app (`LAUNCH`, a PendingIntent), which a
+  bound Accessibility service may do. `./gradlew assembleRelease` builds both APKs
+  (`plugins/phone-control-addon.js` adds the add-on to the generated project). Each release
+  carries it as `Beluga-Link.apk` (no version in the name, so `releases/latest/download/` always
+  finds it). Its icon is Beluga's beluga in ink on a soft pastel with a link badge
+  (`scripts/make-link-icon.mjs`), so it never looks like a second Beluga.
+- **Setting up Beluga Link from the Mac** (BLG-391). Settings › Phone › **Set Up Beluga Link**
+  (`companion.phone.setUpLink`), or Claude's `phone_setup_link`: with adb reaching the phone (a
+  cable or Wireless debugging), the Mac downloads the latest `Beluga-Link.apk`, installs it
+  (`adb install --user 0`, which Play Protect doesn't block), and adds its service to
+  `enabled_accessibility_services`, keeping the others and dropping Beluga's own from before 1.6.0.
+  Nothing to tap on the phone, and no "Allow restricted settings".
 - **Over adb, the mirror is video too** (BLG-185). With USB, Wireless debugging or debugging
   through the link, the Mac streams Android's own `screenrecord --output-format=h264` (sized to
   1280 px, 6 Mbit/s on a cable, 4 on Wi‑Fi, 2.5 through the link; started again after its
@@ -735,8 +766,11 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   typing, opening, installs without asking), **Full** (shell too). Kept on the device record
   (`DeviceRecord.use`); the owner-approval gate honours it (`agent-host.ts` `authorizeTool`).
 - **On the phone**: one switch, **Let your Mac use this phone**, which turns on Stay connected and
-  walks you through Accessibility (and, for a sideloaded app, Android 13+'s "Allow restricted
-  settings"). While the Mac is acting, an ongoing notification says so and has **Stop**, which cuts
+  walks you through Beluga Link: **Get Beluga Link** while it isn't installed opens a guide
+  (`app/link.tsx`, BLG-390) that says what Link is for, why it's an app of its own, that Android
+  may block it when downloaded ("App blocked to protect your device"), and the two ways to install
+  it (from the Mac over a cable, recommended, or Download Beluga Link); then **Turn on Beluga
+  Link** in Accessibility (and, for a downloaded app, Android 13+'s "Allow restricted settings"). While the Mac is acting, an ongoing notification says so and has **Stop**, which cuts
   every route at once. iPhone can't do any of this.
 
 ## On the Mac

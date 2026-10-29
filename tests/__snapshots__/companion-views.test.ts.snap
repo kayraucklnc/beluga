@@ -286,6 +286,10 @@ here",
     "topic": "conv:ws:w1",
     "turns": [
       {
+        "edit": {
+          "kind": "worktree",
+          "ws": "w1",
+        },
         "id": "c1",
         "name": "kayra",
         "prose": {

@@ -14,7 +14,7 @@ import type { PhoneTools } from './types.js';
  */
 
 export const PHONE_TOOL_NAMES = [
-  'phone_status', 'phone_screenshot', 'phone_screen', 'phone_tap', 'phone_swipe', 'phone_type', 'phone_key', 'phone_scroll', 'phone_open', 'phone_apps', 'phone_info', 'phone_install', 'phone_shell', 'phone_logcat', 'phone_push', 'phone_pull', 'phone_notifications', 'phone_macro_save', 'phone_macro_list', 'phone_macro_run', 'phone_macro_delete',
+  'phone_status', 'phone_screenshot', 'phone_screen', 'phone_tap', 'phone_swipe', 'phone_type', 'phone_key', 'phone_scroll', 'phone_open', 'phone_apps', 'phone_info', 'phone_install', 'phone_setup_link', 'phone_shell', 'phone_logcat', 'phone_push', 'phone_pull', 'phone_notifications', 'phone_macro_save', 'phone_macro_list', 'phone_macro_run', 'phone_macro_delete',
 ].map((n) => `mcp__beluga_phone__${n}`);
 /** The tools that only look (never change the phone): always allowed, like the Mac's screenshot. */
 export const PHONE_LOOK_TOOLS = ['phone_status', 'phone_screenshot', 'phone_screen', 'phone_apps', 'phone_info', 'phone_pull', 'phone_notifications', 'phone_macro_list'].map((n) => `mcp__beluga_phone__${n}`);
@@ -91,6 +91,12 @@ export function createPhoneToolDefs(phone: PhoneTools) {
       (a) => guarded(async () => words(await phone.install(a.path))),
     ),
     tool(
+      'phone_setup_link',
+      'Set up Beluga Link on the phone: installs the small add-on app with the Accessibility service (downloaded from the latest release) over the cable or Wireless debugging, and turns it on. Then taps, typing and screenshots work without a cable. Use it when the person asks to set up Beluga Link or phone control. Needs USB or Wireless debugging.',
+      {},
+      () => guarded(async () => words(await phone.setUpLink())),
+    ),
+    tool(
       'phone_shell',
       'Run a command in the phone’s shell (adb shell) and return its output. Needs Wireless debugging. For taps and typing, prefer the tools above.',
       { command: z.string().min(1).max(4000) },
@@ -159,7 +165,7 @@ export function phoneBrief(summary: string): string {
     '- Act: phone_tap (a #node or x,y), phone_type, phone_swipe, phone_scroll, phone_key, phone_open.',
     '- phone_install puts an APK on the phone (the phone confirms). phone_shell and phone_logcat need Wireless debugging.',
     '- After acting, take another screenshot to check what happened before the next step. Work in small, checked steps.',
-    '- If a tool says the phone can’t be reached, say so plainly and what would fix it (turn on debugging or Accessibility); don’t keep retrying.',
+    '- If a tool says the phone can’t be reached, say so plainly and what would fix it (turn on Wireless debugging, or install Beluga Link and its Accessibility); don’t keep retrying.',
     '',
     'Running an app on the phone (the dev loop): adb is on your PATH and points at this phone, so in Bash you can',
     'build and install directly — e.g. `./gradlew assembleDebug` then `adb install -r <apk>`, or `adb shell am start -n <pkg>/<activity>`,',

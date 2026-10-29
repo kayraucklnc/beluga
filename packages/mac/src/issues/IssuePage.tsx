@@ -22,6 +22,8 @@ import { useIssue, useIssueActions, useIssueStage } from './use-issues.js';
 import { useActions } from '../lib/actions.js';
 import t from '../tasks/tasks.module.css';
 import s from './issues.module.css';
+import arr from '../lib/arrive.module.css';
+import { useLateArrival } from '../lib/last-seen.js';
 import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
@@ -34,6 +36,7 @@ import { shortcutKeys } from '../lib/shortcuts.js';
 export function IssuePage({ projectId, number }: { projectId: string; number: number }) {
   const { data, error, loading, refresh } = useIssue(projectId, number);
   const actions = useActions();
+  const late = useLateArrival(`${projectId}#${number}`, data !== undefined);
   if (!data) {
     if (error) {
       return (
@@ -54,10 +57,10 @@ export function IssuePage({ projectId, number }: { projectId: string; number: nu
     }
     return <Empty icon="issue" title="Asking GitHub…" detail={`For issue #${number}`} />;
   }
-  return <Page projectId={projectId} repo={data.repo} issue={data.issue} loading={loading} refresh={refresh} />;
+  return <Page projectId={projectId} repo={data.repo} issue={data.issue} loading={loading} refresh={refresh} late={late} />;
 }
 
-function Page({ projectId, repo, issue, loading, refresh }: { projectId: string; repo: GitHubRepo; issue: GhIssueFull; loading: boolean; refresh: () => void }) {
+function Page({ projectId, repo, issue, loading, refresh, late }: { projectId: string; repo: GitHubRepo; issue: GhIssueFull; loading: boolean; refresh: () => void; late: boolean }) {
   const wrap = useRef<HTMLDivElement>(null);
   const actions = useActions();
   const back = (): void => actions.run({ type: 'view', view: issueWayBack(projectId) });
@@ -87,7 +90,7 @@ function Page({ projectId, repo, issue, loading, refresh }: { projectId: string;
       ]
     : [];
   return (
-    <div ref={wrap} className={t.pageWrap}>
+    <div ref={wrap} className={cx(t.pageWrap, late && arr.arrive)}>
       <SwipeBackEdge progress={swipe} />
       <div className={t.page}>
         <div className={t.pageMain}>

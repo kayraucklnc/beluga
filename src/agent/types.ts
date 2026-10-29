@@ -9,6 +9,8 @@ export type AccessScope = 'folder' | 'full';
 
 export interface AgentRunInput {
   readonly prompt: string;
+  /** The prompt's id in Claude's transcript (a UUID: the request's own), so editing that message can cut the session there. */
+  readonly promptId?: string;
   readonly requesterName: string;
   readonly viaAgent: boolean;
   readonly context: readonly string[];
@@ -279,6 +281,8 @@ export interface PhoneTools {
   info(): Promise<string>;
   /** Install an APK (a path on this Mac); the phone shows its own Install button. */
   install(apkPath: string): Promise<string>;
+  /** Beluga Link installed over adb and its Accessibility turned on (BLG-391). */
+  setUpLink(): Promise<string>;
   /** A shell command on the phone (needs Wireless debugging). */
   shell(command: string): Promise<string>;
   /** Recent logs (needs Wireless debugging). */
@@ -312,7 +316,7 @@ export interface MacTools {
 }
 
 /** A message sent into a live run: while it waits on its background agents, or steering it. */
-export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName' | 'viaAgent' | 'context' | 'onEvent' | 'onStep'> {
+export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName' | 'viaAgent' | 'context' | 'onEvent' | 'onStep' | 'promptId'> {
   /**
    * The model the conversation uses now ('' for Claude Code's default). Picked after the run
    * started, the run switches to it before reading the message; unset: the run keeps its own.

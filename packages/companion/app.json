@@ -81,11 +81,16 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 29
+            "minSdkVersion": 29,
+            "buildArchs": [
+              "arm64-v8a"
+            ],
+            "useLegacyPackaging": true
           }
         }
       ],
-      "./plugins/loopback-cleartext"
+      "./plugins/loopback-cleartext",
+      "./plugins/phone-control-addon"
     ]
   }
 }

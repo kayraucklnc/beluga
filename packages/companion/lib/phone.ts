@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { phoneControl, type AdbPorts } from '../modules/phone-control';
 import type { PhoneControl as PhoneControlState, PhoneOp } from '../../../src/companion/protocol';
 import { kv } from './kv';
@@ -74,7 +74,7 @@ export async function runOp(op: PhoneOp, args: Record<string, unknown>): Promise
   // Video (`mirror`) is Android's screen capture, asked of the user on the phone; a proof (`proof`) and a
   // settings screen for the person (`open {settings}`) don't act on the screen: no Accessibility needed.
   const free = op === 'info' || op === 'apps' || op === 'mirror' || op === 'proof' || (op === 'open' && typeof args.settings === 'string');
-  if (!free && !phoneControl.accessibilityEnabled()) throw new Error('Turn on Accessibility for Beluga on the phone');
+  if (!free && !phoneControl.accessibilityEnabled()) throw new Error(phoneControl.addonInstalled() ? 'Turn on Accessibility for Beluga Link on the phone' : 'Install Beluga Link on the phone and turn on its Accessibility');
   return phoneControl.perform(op, args);
 }
 
@@ -99,6 +99,13 @@ export const mirrorAck = (seq: number): void => phoneControl.mirrorAck(seq);
 
 export const accessibilityOn = (): boolean => phoneControlAvailable() && phoneControl.accessibilityEnabled();
 export const openAccessibilitySettings = (): void => phoneControl.openAccessibilitySettings();
+/** Beluga Link, the small add-on app with the Accessibility service (BLG-377), is installed. */
+export const addonInstalled = (): boolean => phoneControlAvailable() && phoneControl.addonInstalled();
+/** Open Beluga Link (it goes to Accessibility), or where to download it. */
+export const openAddon = (): void => phoneControl.openAddon();
+/** Beluga Link's APK on the latest release (each release carries it under this name, BLG-390). */
+export const LINK_APK_URL = 'https://github.com/kayraucklnc/beluga/releases/latest/download/Beluga-Link.apk';
+export const downloadLink = (): void => void Linking.openURL(LINK_APK_URL);
 export const onAccessibilityChange = (fn: () => void): (() => void) => (phoneControlAvailable() ? phoneControl.onAccessibilityChange(fn) : () => {});
 /** The Stop button on the phone's notification: cut control at once. */
 export const onControlStop = (fn: () => void): (() => void) => (phoneControlAvailable() ? phoneControl.onStop(fn) : () => {});

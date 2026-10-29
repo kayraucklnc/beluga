@@ -343,7 +343,7 @@ function tileView(n: DemoNumbers, t: Tile, sentinels: Sentinels): DashboardTileV
   if (t.kind === 'table' && m?.rows) {
     const columns = (m.columns?.length ? m.columns : Object.keys(m.rows[0] ?? {})).slice(0, 20);
     const rows = m.rows.slice(0, 50);
-    // Typed as the Mac sends them (1.28): each document's cell as a ref the phone streams.
+    // Typed as the Mac sends them (1.29): each document's cell as a ref the phone streams.
     const jobs = m.sentinelId === 'sn_jobs';
     const typed = jobs
       ? columns.flatMap((c, col) => {
