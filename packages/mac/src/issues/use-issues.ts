@@ -4,6 +4,7 @@ import type { GitHubRepo } from '@beluga/workspaces/github.js';
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
+import { keepSeen, lastSeen } from '../lib/last-seen.js';
 import { type IssuesPrefs, readIssuesPrefs } from './issues-model.js';
 import { teammateOn } from '@beluga/core/team/model.js';
 import { openSheet } from '../lib/sheets.js';
@@ -37,6 +38,7 @@ export function useIssueList(projectId: string | undefined, state: GhIssueState,
     setLoading(true);
     job.then(
       (list) => {
+        if (!search) keepSeen(`issues:${at}`, list);
         if (current.current !== at) return;
         setGot({ key: at, list });
         setLoading(false);
@@ -51,7 +53,9 @@ export function useIssueList(projectId: string | undefined, state: GhIssueState,
   };
   useEffect(() => load(false), [key]);
   // What's shown is for this project and search (the last one's stays while the next one loads, unless it was another project).
-  const shown = got && (got.key === key || got.key.split('\0')[0] === projectId) ? got : undefined;
+  // Nothing yet: what was read last time (lib/last-seen.ts), while it's read again.
+  const kept = got?.key === key || search ? undefined : lastSeen<IssuesList>(`issues:${key}`);
+  const shown = kept ? { key, list: kept } : got && (got.key === key || got.key.split('\0')[0] === projectId) ? got : undefined;
   return { ...(shown?.list ? { list: shown.list } : {}), ...(shown?.error ? { error: shown.error } : {}), loading, refresh: () => load(true) };
 }
 

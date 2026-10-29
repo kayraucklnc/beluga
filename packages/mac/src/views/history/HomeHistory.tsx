@@ -1,6 +1,7 @@
-import { Button } from '../../components/ui.js';
+import { Button, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
 import { useApp } from '../../lib/beluga.js';
+import { useLateArrival } from '../../lib/last-seen.js';
 import { HistoryList } from './HistoryList.js';
 import { useRefContext } from './HistoryView.js';
 import { showCommitNext } from './history-nav.js';
@@ -21,6 +22,8 @@ export function HomeHistory({ projectId }: { projectId: string }) {
   const version = useHistoryVersion(project);
   const log = useLog(projectId, QUERY, LATEST, version);
   const refs = useRefContext(projectId, project?.sync?.current);
+  // Kept from last time: shown still. Read for the first time: it settles in once it's here.
+  const late = useLateArrival(projectId, log.commits.length > 0);
   const open = (hash?: string): void => {
     if (hash) showCommitNext(projectId, hash);
     actions.run({ type: 'view', view: { kind: 'project', id: projectId, page: 'history' } });
@@ -38,7 +41,7 @@ export function HomeHistory({ projectId }: { projectId: string }) {
         </Button>
       </div>
       {log.commits.length ? (
-        <div className={s.homeList}>
+        <div className={cx(s.homeList, late && h.arrive)}>
           <HistoryList commits={log.commits} variant="full" onSelect={(hash) => open(hash)} refs={refs} label="Latest commits" />
         </div>
       ) : (

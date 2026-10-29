@@ -224,6 +224,17 @@ button.stat:disabled {
 .rows > [role='listitem'] + [role='listitem'] {
   border-top: 0.5px solid var(--hairline);
 }
+/* Content that came after the page opened (nothing kept from last time) settles in, and a row that's
+   new since (a run just started) rises in on its own; what was kept shows still. */
+.arrive {
+  animation: arrive calc(var(--dur) * 1.6) var(--ease-out) both;
+}
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
 .none {
   margin: 0;
   padding: 14px;

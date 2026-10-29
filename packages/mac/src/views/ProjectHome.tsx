@@ -40,6 +40,7 @@ import { HomeHistory } from "./history/HomeHistory.js";
 import { EarningsSection } from "./project/EarningsSection.js";
 import { GitHubRow } from "./project/GitHubRow.js";
 import { RunRow } from "../ci/parts.js";
+import { useArrivals, useLateArrival } from "../lib/last-seen.js";
 import { useCiActions, useNow, useRuns } from "../ci/use-ci.js";
 import { isLive, sortRuns } from "@beluga/core/ci/model.js";
 import { IssueRow } from "../issues/parts.js";
@@ -634,9 +635,13 @@ const HOME_ISSUES = 4;
 function HomeIssues({ projectId }: { projectId: string }) {
   const { list } = useIssueList(projectId, "open", "");
   const { openList } = useIssueActions();
-  if (list?.kind !== "github" || !list.issues.length) return null;
+  const shown = list?.kind === "github" ? list.issues.slice(0, HOME_ISSUES) : [];
+  const late = useLateArrival(projectId, shown.length > 0);
+  const isNew = useArrivals(shown.map((i) => i.number));
+  if (list?.kind !== "github" || !shown.length) return null;
   return (
     <Section
+      arrive={late}
       title="Issues"
       count={list.issues.length}
       hint={list.more ? "The most recently active, from GitHub" : "Open on GitHub"}
@@ -646,8 +651,8 @@ function HomeIssues({ projectId }: { projectId: string }) {
         </Button>
       }
     >
-      {list.issues.slice(0, HOME_ISSUES).map((issue) => (
-        <div key={issue.number} role="listitem">
+      {shown.map((issue) => (
+        <div key={issue.number} role="listitem" className={isNew(issue.number) ? s.arrive : undefined}>
           <IssueRow projectId={projectId} repo={list.repo} issue={issue} compact />
         </div>
       ))}
@@ -669,9 +674,13 @@ function HomeActions({ projectId }: { projectId: string }) {
   const runs = useMemo(() => (list?.kind === "github" ? sortRuns(list.runs) : []), [list]);
   const running = runs.filter(isLive).length;
   const now = useNow(running > 0);
+  const shown = runs.slice(0, HOME_RUNS);
+  const late = useLateArrival(projectId, shown.length > 0);
+  const isNew = useArrivals(shown.map((r) => r.id));
   if (!runs.length) return null;
   return (
     <Section
+      arrive={late}
       title="Actions"
       count={running || runs.length}
       hint={running ? `${running} running · live` : "The latest workflow runs, from GitHub"}
@@ -681,8 +690,8 @@ function HomeActions({ projectId }: { projectId: string }) {
         </Button>
       }
     >
-      {runs.slice(0, HOME_RUNS).map((run) => (
-        <div key={run.id} role="listitem">
+      {shown.map((run) => (
+        <div key={run.id} role="listitem" className={isNew(run.id) ? s.arrive : undefined}>
           <RunRow projectId={projectId} run={run} now={now} compact />
         </div>
       ))}
@@ -763,8 +772,11 @@ function Section({
   count,
   hint,
   action,
+  arrive,
   children,
 }: {
+  /** It came after the page opened: it settles in. */
+  arrive?: boolean;
   title: string;
   count: number;
   hint?: string;
@@ -772,7 +784,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className={s.section} aria-label={title}>
+    <section className={cx(s.section, arrive && s.arrive)} aria-label={title}>
       <div className={s.sectionHead}>
         <h3 className={s.sectionTitle}>
           {title} <span className={s.count}>{count}</span>
