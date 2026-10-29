@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, AgentPlace, TaskTools } from '../../agent/types.js';
-import { mentionsSecret } from '../../agent/policy.js';
+import { mentionsSecret, writesCode } from '../../agent/policy.js';
 import type { ClaudeAnswer, ClaudeQuestion } from '../../protocol.js';
 import { isNeverSent, isSecretPath, secretKindOf } from '../shares.js';
 import type { TrustLevel } from '../trust.js';
@@ -478,7 +478,7 @@ export class TaskServer {
         },
         onFileTouched: () => undefined,
         vetTool: (tool) => this.vetTool(task, tool),
-        canUseTool: (tool, input) => this.authorizeTool(task, tool, input, full),
+        canUseTool: (tool, input) => this.authorizeTool(task, tool, input, full, place.cwd),
         askUser: (question) => this.askRequester(task, question, controller.signal),
         ...(toolNames.length ? { taskTools: tools } : {}),
         ...ctx.model(),
@@ -556,12 +556,19 @@ export class TaskServer {
     return `${this.ctx.selfName()} doesn't let friends' Claudes ${CAP_INFO[access.need].doing} here${access.decided.by === 'rule' ? ' (a rule for this person)' : ''}. Don't try another way; say so in your answer.`;
   }
 
-  private async authorizeTool(task: TaskView, tool: string, input: Record<string, unknown>, full: boolean): Promise<boolean> {
+  private async authorizeTool(task: TaskView, tool: string, input: Record<string, unknown>, full: boolean, cwd: string): Promise<boolean> {
     const access = this.toolAccess(task, tool);
     if (access?.decided.verdict === 'decline') return false;
     if (full) return true;
     // Commands are allowed for this person (their trust level's setting, or a rule): no need to ask.
     if (tool === 'Bash' && access?.decided.verdict === 'allow') return true;
+    // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once.
+    if (writesCode(tool, input, cwd)) {
+      const file = String(input.file_path ?? input.notebook_path);
+      const answer = await this.ask(task, 'tool', `Your Claude (working on ${task.peerName}'s request) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, { once: true });
+      if (!this.isOver(task.id)) this.update(task.id, { state: 'working' });
+      return answer.answer !== 'no';
+    }
     const scope = `${task.peerId}:${tool}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input).slice(0, 2000);

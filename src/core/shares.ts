@@ -46,7 +46,7 @@ const belugaHomeDir = (): string => path.resolve(belugaEnv('HOME') ?? process.en
 const fold = (p: string): string => (process.platform === 'darwin' || process.platform === 'win32' ? p.toLowerCase() : p);
 
 /** Where a path really is (its links followed, its case as on disk), for as much of it as exists. */
-function realOf(p: string): string {
+export function realOf(p: string): string {
   const rest: string[] = [];
   for (let at = p; ; at = path.dirname(at)) {
     try {
