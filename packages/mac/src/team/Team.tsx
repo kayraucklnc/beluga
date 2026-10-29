@@ -123,12 +123,12 @@ export function KnockToJoin({ issueId }: { issueId: string }) {
   const button = (label: string) =>
     people.length > 1 ? (
       <ActionsDropdown items={people.map((p) => ({ label: `${p.name}’s Worktree`, onSelect: () => knock(p.peerId) }))}>
-        <Button variant="quiet" icon="hand">
+        <Button size="small" icon="hand" className={s.knockButton}>
           {label}
         </Button>
       </ActionsDropdown>
     ) : people[0] ? (
-      <Button variant="quiet" icon="hand" onClick={() => knock(people[0]!.peerId)}>
+      <Button size="small" icon="hand" className={s.knockButton} onClick={() => knock(people[0]!.peerId)}>
         {label}
       </Button>
     ) : null;
@@ -137,11 +137,11 @@ export function KnockToJoin({ issueId }: { issueId: string }) {
     <span className={s.knock}>
       <span className={mine.state === 'waiting' ? s.knockWaiting : s.knockWords}>{myKnockWords(mine)}</span>
       {mine.state === 'waiting' ? (
-        <Button variant="quiet" onClick={() => say(api.team.cancelKnock(mine.id))}>
+        <Button size="small" onClick={() => say(api.team.cancelKnock(mine.id))}>
           Take Back
         </Button>
       ) : mine.state === 'in' && there ? (
-        <Button variant="quiet" icon="arrowRight" onClick={() => actions.run({ type: 'open_shared', owner: mine.peerId, id: mine.workspaceId!, tab: 'chat' })}>
+        <Button size="small" icon="arrowRight" className={s.knockButton} onClick={() => actions.run({ type: 'open_shared', owner: mine.peerId, id: mine.workspaceId!, tab: 'chat' })}>
           Open
         </Button>
       ) : again ? (
