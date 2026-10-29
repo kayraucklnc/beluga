@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -115,7 +115,7 @@ describe('EnvVars (kept by the core)', () => {
     expect(env.envFor()).toEqual({ A: '1' });
   });
 
-  it("layers yours, the project's .env (only when switched on) and the project's own", () => {
+  it("layers yours, the project's .env (on by default) and the project's own", () => {
     const root = path.join(dir, 'app');
     const wt = path.join(dir, 'wt');
     mkdirSync(root);
@@ -126,20 +126,95 @@ describe('EnvVars (kept by the core)', () => {
     store.dispatch({ type: 'projects', projects: [project(root, wt)] });
     const env = new EnvVars({ store, file: path.join(dir, 'env.json') });
     env.set(undefined, [{ key: 'SHARED', value: 'yours' }, { key: 'ONLY_YOURS', value: '1' }]);
-    env.set('p1', [{ key: 'SHARED', value: 'project' }]);
-    expect(env.envFor({ workspaceId: 'w1' })).toEqual({ SHARED: 'project', ONLY_YOURS: '1' });
-    expect(env.get('p1')).toEqual({ vars: [{ key: 'SHARED', value: 'project' }], dotenv: false, dotenvKeys: ['FROM_DOTENV', 'SHARED'], claudeDotenv: false });
-    // Database views read the project's .env even when runs don't load it (it goes only to psql).
-    expect(env.viewEnv(wt)).toMatchObject({ vars: { SHARED: 'project', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' }, where: expect.stringContaining('app’s variables') });
-    // Yours that the project wins over are flagged where you edit them.
-    expect(env.get().overridden).toEqual({ SHARED: ['app’s variables'] });
-
-    env.set('p1', [], true);
-    // The worktree's own .env wins over the main folder's; the project's (now none) over both.
+    // Nothing set for the project: its .env loads on its own, the worktree's copy over the main folder's.
     expect(env.envFor({ workspaceId: 'w1' })).toEqual({ SHARED: 'dotenv', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' });
     expect(env.envFor({ dir: path.join(root, 'src') })).toEqual({ SHARED: 'dotenv', ONLY_YOURS: '1', FROM_DOTENV: 'root' });
     expect(env.envFor({ dir: os.homedir() })).toEqual({ SHARED: 'yours', ONLY_YOURS: '1' });
-    expect(store.getState().envKeys.projects[root]).toEqual({ keys: [], dotenv: true });
+    // One set in Beluga wins over the .env.
+    env.set('p1', [{ key: 'SHARED', value: 'project' }]);
+    expect(env.envFor({ workspaceId: 'w1' })).toEqual({ SHARED: 'project', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' });
+    expect(env.get('p1')).toEqual({
+      vars: [{ key: 'SHARED', value: 'project' }],
+      dotenv: true,
+      dotenvKeys: ['FROM_DOTENV', 'SHARED'],
+      dotenvVars: [{ key: 'FROM_DOTENV', value: 'root' }, { key: 'SHARED', value: 'dotenv' }],
+      dotenvFiles: ['.env'],
+      claudeDotenv: false,
+      newKeysBack: true,
+    });
+    expect(env.get().overridden).toEqual({ SHARED: ['app’s variables'] });
+    expect(store.getState().envKeys.projects[root]).toEqual({ keys: ['SHARED'], dotenv: true });
+
+    // Switched off: only yours and the project's own; database views still read it (it goes only to psql).
+    env.set('p1', [{ key: 'SHARED', value: 'project' }], false);
+    expect(env.envFor({ workspaceId: 'w1' })).toEqual({ SHARED: 'project', ONLY_YOURS: '1' });
+    expect(env.viewEnv(wt)).toMatchObject({ vars: { SHARED: 'project', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' }, where: expect.stringContaining('app’s variables') });
+    expect(loadEnvFile(path.join(dir, 'env.json')).projects[root]?.dotenv).toBe(false);
+    // Back on is the default again: nothing kept for it.
+    env.set('p1', [], true);
+    expect(loadEnvFile(path.join(dir, 'env.json')).projects[root]).toBeUndefined();
+    expect(env.envFor({ workspaceId: 'w1' })).toEqual({ SHARED: 'dotenv', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' });
+  });
+
+  it('reads .env.local over .env, and copies them into Beluga on request (BLG-369)', () => {
+    const root = path.join(dir, 'app');
+    mkdirSync(root);
+    writeFileSync(path.join(root, '.env'), 'A=1\nB=1\n');
+    writeFileSync(path.join(root, '.env.local'), 'B=local\nC=3\n');
+    const store = new Store(initialState('t'));
+    store.dispatch({ type: 'projects', projects: [project(root, root)] });
+    const env = new EnvVars({ store, file: path.join(dir, 'env.json') });
+    expect(env.get('p1').dotenvFiles).toEqual(['.env', '.env.local']);
+    expect(env.envFor({ projectId: 'p1' })).toEqual({ A: '1', B: 'local', C: '3' });
+    env.set('p1', [{ key: 'A', value: 'mine' }]);
+    // Yours stays; the rest come in.
+    expect(env.importDotenv('p1')).toBe(2);
+    expect(env.get('p1').vars).toEqual([{ key: 'A', value: 'mine' }, { key: 'B', value: 'local' }, { key: 'C', value: '3' }]);
+    expect(env.importDotenv('p1')).toBe(0);
+  });
+
+  it("saves a worktree's values over the project's own, and remembers whether new keys go back on their own", () => {
+    const root = path.join(dir, 'app');
+    mkdirSync(root);
+    const store = new Store(initialState('t'));
+    store.dispatch({ type: 'projects', projects: [project(root, root)] });
+    const file = path.join(dir, 'env.json');
+    const env = new EnvVars({ store, file });
+    env.set('p1', [{ key: 'A', value: '1' }, { key: 'B', value: '1' }]);
+    expect(env.merge('p1', { B: '2', C: '3' })).toBe(2);
+    expect(env.get('p1').vars).toEqual([{ key: 'A', value: '1' }, { key: 'B', value: '2' }, { key: 'C', value: '3' }]);
+    expect(env.newKeysBack('p1')).toBe(true);
+    expect(env.get('p1').newKeysBack).toBe(true);
+    env.setNewKeysBack('p1', false);
+    expect(new EnvVars({ store, file }).newKeysBack('p1')).toBe(false);
+    env.setNewKeysBack('p1', true);
+    expect(loadEnvFile(file).projects[root]).not.toHaveProperty('newKeysBack');
+  });
+
+  it("gives your own Claude the .env only where it may read .env files, or you switched it on yourself", () => {
+    const root = path.join(dir, 'app');
+    mkdirSync(root);
+    writeFileSync(path.join(root, '.env'), 'SECRET=1\n');
+    const store = new Store(initialState('t'));
+    store.dispatch({ type: 'projects', projects: [project(root, root)] });
+    const file = path.join(dir, 'env.json');
+    const env = new EnvVars({ store, file });
+    env.set('p1', [{ key: 'MINE', value: '1' }]);
+    expect(env.envFor({ projectId: 'p1' })).toEqual({ SECRET: '1', MINE: '1' });
+    expect(env.envFor({ projectId: 'p1' }, { claude: true })).toEqual({ MINE: '1' });
+    env.setClaudeDotenv('p1', true);
+    expect(env.envFor({ projectId: 'p1' }, { claude: true })).toEqual({ SECRET: '1', MINE: '1' });
+    env.setClaudeDotenv('p1', false);
+    // A file from before the default: false was "never switched on" (on now), true was switched on (Claude too).
+    writeFileSync(file, JSON.stringify({ global: {}, projects: { [root]: { vars: {}, dotenv: true } } }));
+    const later = new Date(Date.now() + 5000);
+    utimesSync(file, later, later);
+    expect(env.envFor({ projectId: 'p1' }, { claude: true })).toEqual({ SECRET: '1' });
+    writeFileSync(file, JSON.stringify({ global: {}, projects: { [root]: { vars: { X: '1' }, dotenv: false } } }));
+    const later2 = new Date(Date.now() + 10_000);
+    utimesSync(file, later2, later2);
+    expect(env.envFor({ projectId: 'p1' })).toEqual({ SECRET: '1', X: '1' });
+    expect(env.envFor({ projectId: 'p1' }, { claude: true })).toEqual({ X: '1' });
   });
 
   it('remembers where your Claude may read .env files without asking', () => {

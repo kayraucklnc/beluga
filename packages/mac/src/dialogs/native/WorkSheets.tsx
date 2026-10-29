@@ -1,5 +1,6 @@
 import { NewLabelSheet } from '../../tasks/NewLabelSheet.js';
 import { ProjectContextSheet } from '../../tasks/ProjectContextSheet.js';
+import { EnvironmentSheet } from '../EnvironmentSheet.js';
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
 import { NewSentinelSheet } from '../../sentinel/NewSentinelSheet.js';
 import { AddTileSheet } from '../../sentinel/AddTileSheet.js';
@@ -196,6 +197,8 @@ export function NativeSheets() {
       return <SyncSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'project_context':
       return <ProjectContextSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'project_env':
+      return <EnvironmentSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_plan':
       return <NewPlanSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} close={close} />;
     case 'new_sentinel':

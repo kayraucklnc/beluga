@@ -1,13 +1,13 @@
 import { type MergePreview, mergePreview } from './merge-preview.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { systemOpen } from '../core/os-open.js';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { findProjects, isMainCheckout } from './discovery.js';
 import * as g from './git.js';
 import * as sync from './sync.js';
-import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
+import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envHashes, envSnapshot, followMainEnv } from './env.js';
 import { WorkspaceStore } from './store.js';
 import { migrateMainConversations } from './main-migration.js';
 import { stopTestProcesses } from './test-procs.js';
@@ -23,6 +23,7 @@ import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, gr
 export type ArrangeTarget = { readonly project: string } | { readonly group: string };
 import { type ProjectScripts, type ResolvedScripts, resolveScripts, saveProjectFile } from './scripts.js';
 import { PROJECT_DIR } from '../shared/scratch-dir.js';
+import { envRecord, parseEnvText } from '../shared/env-vars.js';
 
 export const slug = (s: string): string =>
   s
@@ -1148,19 +1149,69 @@ export class WorkspaceManager {
 
   // --------------------------------------------------------------- env files
 
-  /** Env keys/files changed in a worktree compared with the main folder (key names only). */
-  envChanges(id: string): EnvChange[] {
+  /**
+   * Env keys/files changed in a worktree compared with the main folder (key names only). Files you
+   * kept in the worktree are left out, unless `withKept` (archiving or deleting it lists them all).
+   */
+  envChanges(id: string, withKept = false): EnvChange[] {
     const ws = this.require(id);
     if (ws.kind !== 'worktree' || ws.archived || !existsSync(ws.path)) return [];
-    return envChanges(ws.path, ws.projectRoot, ws.envSnapshot);
+    return envChanges(ws.path, ws.projectRoot, ws.envSnapshot, withKept ? {} : ws.envKept);
   }
 
-  /** Copy a worktree's env changes back into the main folder. */
+  /** Copy a worktree's env changes back into the main folder; they're in step again, so nothing is asked. */
   applyEnvBack(id: string): number {
     const ws = this.require(id);
-    const changes = this.envChanges(id);
+    const changes = this.envChanges(id, true);
     applyEnvChanges(ws.path, ws.projectRoot, changes);
+    const files = changes.map((c) => c.file);
+    this.patchRecord(id, { envSnapshot: { ...ws.envSnapshot, ...envHashes(ws.path, files) }, envKept: dropKeys(ws.envKept, files) });
     return changes.length;
+  }
+
+  /**
+   * Only the keys a worktree added that the main folder's file doesn't have at all (BLG-369): what
+   * the code there needs to run, so the next worktree has it too. Changed and removed ones stay
+   * for you to decide. Files you kept in the worktree are left alone. → the keys added, by file.
+   */
+  applyNewEnvKeys(id: string): { file: string; keys: string[] }[] {
+    const ws = this.require(id);
+    const fresh = this.envChanges(id).filter((c) => !c.binary && c.added.length && existsSync(path.join(ws.projectRoot, c.file)));
+    if (!fresh.length) return [];
+    applyEnvChanges(ws.path, ws.projectRoot, fresh.map((c) => ({ ...c, changed: [], removed: [] })));
+    // A file with nothing but new keys is in step now: it follows the main folder's again.
+    const whole = fresh.filter((c) => !c.changed.length && !c.removed.length).map((c) => c.file);
+    if (whole.length) this.patchRecord(id, { envSnapshot: { ...ws.envSnapshot, ...envHashes(ws.path, whole) } });
+    return fresh.map((c) => ({ file: c.file, keys: [...c.added] }));
+  }
+
+  /** The values of the keys a worktree added or changed in its .env-style files (for Save in Beluga). */
+  envValues(id: string): Record<string, string> {
+    const ws = this.require(id);
+    const out: Record<string, string> = {};
+    for (const c of this.envChanges(id, true)) {
+      if (c.binary) continue;
+      const vars = envRecord(parseEnvText(readFileSync(path.join(ws.path, c.file), 'utf8')).vars);
+      for (const key of [...c.added, ...c.changed]) if (key in vars) out[key] = vars[key]!;
+    }
+    return out;
+  }
+
+  /** Keep a worktree's env changes there only: not asked about again until they change again. */
+  keepEnvHere(id: string): number {
+    const ws = this.require(id);
+    const files = this.envChanges(id).map((c) => c.file);
+    if (files.length) this.patchRecord(id, { envKept: { ...ws.envKept, ...envHashes(ws.path, files) } });
+    return files.length;
+  }
+
+  /** Bring the main folder's env changes into a worktree's untouched copies → the files updated. */
+  followMainEnv(id: string, mainFiles?: readonly string[]): string[] {
+    const ws = this.find(id);
+    if (!ws || ws.kind !== 'worktree' || ws.archived || ws.external || !existsSync(ws.path) || !existsSync(ws.projectRoot)) return [];
+    const { updated, snapshot } = followMainEnv(ws.path, ws.projectRoot, ws.envSnapshot, mainFiles);
+    if (!isDeepStrictEqual(snapshot, ws.envSnapshot ?? {})) this.patchRecord(id, { envSnapshot: snapshot });
+    return updated;
   }
 
   // ------------------------------------------------------------------ misc
@@ -1211,3 +1262,10 @@ function stripLive(ws: Workspace): WorkspaceRecord {
 const KIND_ORDER = { main: 0, worktree: 1, chat: 2 } as const;
 const order = (a: Workspace, b: Workspace): number =>
   Number(a.archived ?? false) - Number(b.archived ?? false) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.createdAt - a.createdAt || a.name.localeCompare(b.name);
+
+/** A record without these keys (undefined when nothing's left). */
+function dropKeys(record: Readonly<Record<string, string>> | undefined, keys: readonly string[]): Record<string, string> | undefined {
+  if (!record) return undefined;
+  const out = Object.fromEntries(Object.entries(record).filter(([k]) => !keys.includes(k)));
+  return Object.keys(out).length ? out : undefined;
+}

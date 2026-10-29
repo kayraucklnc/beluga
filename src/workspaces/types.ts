@@ -50,6 +50,8 @@ export interface WorkspaceRecord {
   readonly importedSession?: string;
   /** Hashes of env files copied into this worktree at creation, to detect changes later. */
   readonly envSnapshot?: Readonly<Record<string, string>>;
+  /** Env files changed here that you said stay in this worktree (by their hash then): not asked again until they change. */
+  readonly envKept?: Readonly<Record<string, string>>;
   /** Model picked for this conversation (unset: your default). */
   readonly model?: string;
   readonly usage?: WorkspaceUsage;
