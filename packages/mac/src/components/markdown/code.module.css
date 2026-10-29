@@ -23,6 +23,11 @@
 .wrap .code {
   min-width: 0;
 }
+.chunk {
+  display: block;
+  content-visibility: auto;
+  contain-intrinsic-size: auto calc(var(--lines) * 1lh);
+}
 .line {
   display: block;
   min-height: var(--code-line, 1.6em);

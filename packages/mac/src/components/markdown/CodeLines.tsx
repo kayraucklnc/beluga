@@ -1,13 +1,16 @@
 import { type CSSProperties, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { cx } from '../ui.js';
-import { type TokenLines, tokenize } from './highlight.js';
+import { type Token, type TokenLines, cachedTokens, tokenize } from './highlight.js';
 import c from './code.module.css';
 
 /** The code's colored tokens once they're ready (plain until then, and for unknown languages). */
 export function useTokens(text: string, lang: string | undefined): TokenLines | undefined {
   const [tokens, setTokens] = useState<{ key: string; lines: TokenLines | undefined }>();
   const key = `${lang ?? ''}\0${text}`;
+  // Colored before (the panel opened again on this file): drawn colored at once, not plain and then again.
+  const cached = useMemo(() => cachedTokens(text, lang), [key]);
   useEffect(() => {
+    if (cached) return;
     let alive = true;
     void tokenize(text, lang)
       .then((lines) => alive && setTokens({ key, lines }))
@@ -16,7 +19,35 @@ export function useTokens(text: string, lang: string | undefined): TokenLines | 
       alive = false;
     };
   }, [key]);
-  return tokens?.key === key ? tokens.lines : undefined;
+  return tokens?.key === key ? tokens.lines : cached;
+}
+
+/** Lines per block of long wrapped code. */
+const CHUNK = 200;
+
+function chunksOf(lines: TokenLines): (readonly (readonly Token[])[])[] {
+  const out: (readonly (readonly Token[])[])[] = [];
+  for (let i = 0; i < lines.length; i += CHUNK) out.push(lines.slice(i, i + CHUNK));
+  return out;
+}
+
+function lineOf(line: readonly Token[], i: number, numbers: boolean) {
+  return (
+    <span key={i} className={c.line}>
+      {numbers ? <span className={c.ln} data-n={i + 1} aria-hidden="true" /> : null}
+      <span className={c.src}>
+        {line.map((t, j) =>
+          t.style ? (
+            <span key={j} style={t.style}>
+              {t.content}
+            </span>
+          ) : (
+            t.content
+          ),
+        )}
+      </span>
+    </span>
+  );
 }
 
 /** The text's lines as plain tokens. */
@@ -60,22 +91,14 @@ export const CodeLines = memo(function CodeLines({ text, lang, numbers = false, 
   return (
     <pre className={cx(c.pre, wrap && c.wrap, numbers && c.numbered, tokens && c.colored, className)} style={gutter} data-lang={lang || undefined}>
       <code className={c.code}>
-        {lines.map((line, i) => (
-          <span key={i} className={c.line}>
-            {numbers ? <span className={c.ln} data-n={i + 1} aria-hidden="true" /> : null}
-            <span className={c.src}>
-              {line.map((t, j) =>
-                t.style ? (
-                  <span key={j} style={t.style}>
-                    {t.content}
-                  </span>
-                ) : (
-                  t.content
-                ),
-              )}
-            </span>
-          </span>
-        ))}
+        {wrap && lines.length > CHUNK
+          ? chunksOf(lines).map((chunk, k) => (
+              // Long wrapped code in blocks the browser lays out only once they scroll near (a 6,000-line file in the panel opened slowly).
+              <span key={k} className={c.chunk} data-chunk="" style={{ '--lines': chunk.length } as CSSProperties}>
+                {chunk.map((line, i) => lineOf(line, k * CHUNK + i, numbers))}
+              </span>
+            ))
+          : lines.map((line, i) => lineOf(line, i, numbers))}
       </code>
     </pre>
   );
