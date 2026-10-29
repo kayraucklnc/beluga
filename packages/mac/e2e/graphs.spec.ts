@@ -29,7 +29,7 @@ test('draws what Claude visualizes, and you can explore it', async ({ page }) =>
 
   const graph = page.getByRole('figure', { name: 'Graph: How a payment goes through' }).last();
   await expect(graph.locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
-  await expect(graph.getByText('9 parts · 5-step walkthrough')).toBeVisible();
+  await expect(graph.getByText('9 parts · 5 steps')).toBeVisible();
   const node = (label: string) => graph.locator('.react-flow__node').filter({ hasText: label });
   await expect(node('Webhook handler')).toBeVisible();
   await expect(node('orders')).toContainText('stripe_intent');
