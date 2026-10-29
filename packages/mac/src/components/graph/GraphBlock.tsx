@@ -72,16 +72,16 @@ function GraphCard({ graph, code, warnings, localImages, shapeKey }: { graph: Gr
     { label: 'Open in Full Window', icon: 'expand', onSelect: () => setFull(true) },
     { label: 'Copy as JSON', icon: 'copy', onSelect: copy },
   ];
-  const meta = [`${parts} ${parts === 1 ? 'part' : 'parts'}`, graph.steps.length ? `${graph.steps.length}-step walkthrough` : ''].filter(Boolean).join(' · ');
+  const meta = [`${parts} ${parts === 1 ? 'part' : 'parts'}`, graph.steps.length ? `${graph.steps.length} ${graph.steps.length === 1 ? 'step' : 'steps'}` : ''].filter(Boolean).join(' · ');
   return (
     <>
       <ActionsContext items={items}>
       <figure ref={ref} className={g.block} data-state="ready" aria-label={graph.title ? `Graph: ${graph.title}` : 'Graph'}>
         <figcaption className={g.blockHead}>
-          <span className={g.blockIcon} aria-hidden="true">
-            <GraphGlyph size={14} />
+          <span className={g.blockGlyph} aria-hidden="true">
+            <GraphGlyph size={13} />
           </span>
-          <span className={g.blockTitles}>
+          <span className={g.blockTitles} title={graph.summary ? `${graph.title ?? 'Graph'}\n${graph.summary}` : undefined}>
             <span className={g.blockTitle}>{graph.title ?? 'Graph'}</span>
             {graph.summary ? <span className={g.blockSummary}>{graph.summary}</span> : null}
           </span>
