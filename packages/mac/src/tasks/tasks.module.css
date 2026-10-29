@@ -1779,8 +1779,20 @@
 .commentBox:focus-within {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent);
 }
+.commentInput {
+  position: relative;
+}
+/* The pills' layer under the box: the same type, so each "@name" sits under its words. */
+.commentLayer {
+  font-size: 13px;
+  line-height: 1.5;
+}
 .commentBox textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
   width: 100%;
+  padding: 0;
   border: 0;
   outline: none;
   resize: none;
