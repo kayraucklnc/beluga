@@ -119,6 +119,10 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
     })().catch(() => undefined);
   }
 
+  // BELUGA_DEMO_SCENE=team (BLG-417): bob teams up on bob-api, works on a task and knocks on your worktree.
+  let stopTeam: (() => void) | undefined;
+  if (belugaEnv('DEMO_SCENE') === 'team') void import('./team/demo.js').then(async (m) => (stopTeam = await m.startDemoTeam(bob, meId, path.join(base, 'bob')))).catch(() => undefined);
+
   // They answer you (mention Claude and their Claude asks yours something).
   bob.on('message', (m) => {
     if (m.mine) return;
@@ -137,6 +141,7 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
     mesh: me.mesh,
     stop: async () => {
       stopped = true;
+      stopTeam?.();
       for (const c of Object.values(chats)) {
         c.claude.stop();
         c.files.stop();

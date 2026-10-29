@@ -13,8 +13,9 @@ import type { BoardWork } from './work.js';
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-const bob: Assignee & Actor = { kind: 'person', id: 'demo-bob', name: 'bob' };
-const mia: Assignee & Actor = { kind: 'person', id: 'demo-mia', name: 'mia' };
+// Peer-id shaped (32 characters), so a demo task can travel on a team board (BELUGA_DEMO_SCENE=team).
+const bob: Assignee & Actor = { kind: 'person', id: 'demo-bob-00000000000000000000000', name: 'bob' };
+const mia: Assignee & Actor = { kind: 'person', id: 'demo-mia-00000000000000000000000', name: 'mia' };
 
 /** Seed once the demo's projects are there (they arrive a moment after the daemon starts). */
 export function seedDemoBoard(store: Store, work: BoardWork, travel: (msAgo: number) => void, after?: () => void, tries = 60): () => void {
