@@ -2,7 +2,8 @@ import { useState } from 'react';
 import type { Source } from '@beluga/shared/view-spec.js';
 import { type Better, type MeasureFrom, type MeasureStep, type MetricSpec, type MetricUnit, ROWS_KEPT } from '@beluga/core/sentinel/model.js';
 import { metricName } from '@beluga/core/sentinel/metrics.js';
-import { TextArea, TextInput } from '../components/FormSheet.js';
+import { TextInput } from '../components/FormSheet.js';
+import { CodeEditor } from '../components/markdown/CodeEditor.js';
 import { Select } from '../components/Select.js';
 import { Button, IconButton } from '../components/ui.js';
 import { useDraft } from './use-draft.js';
@@ -181,7 +182,9 @@ function SourceFields({ source, change }: { source: Source; change: (s: Source) 
       <div className={s.field}>
         <span className={s.fieldLabel}>{source.kind === 'postgres' || source.kind === 'sqlite' ? 'Query' : source.kind === 'command' ? 'Command' : source.kind === 'http' ? 'Address' : 'Path'}</span>
         {source.kind === 'postgres' || source.kind === 'sqlite' ? (
-          <TextArea value={main.text} onChange={main.change} onBlur={main.flush} rows={3} mono aria-label="Query" />
+          <CodeEditor value={main.text} onChange={main.change} onBlur={main.flush} lang="sql" minRows={4} aria-label="Query" />
+        ) : source.kind === 'command' ? (
+          <CodeEditor value={main.text} onChange={main.change} onBlur={main.flush} lang="bash" single aria-label="Source" />
         ) : (
           <TextInput value={main.text} onChange={main.change} onBlur={main.flush} mono aria-label="Source" />
         )}

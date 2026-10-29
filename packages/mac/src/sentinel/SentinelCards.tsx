@@ -29,6 +29,7 @@ import {
   type ScriptLanguage,
 } from '@beluga/core/sentinel/model.js';
 import { Checkbox, TextArea, TextInput } from '../components/FormSheet.js';
+import { CodeEditor } from '../components/markdown/CodeEditor.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
@@ -462,15 +463,6 @@ function ScriptFields({ step, change }: { step: ScriptStep; change: (patch: Part
       change({ ...rest, code: undefined, language: undefined } as Partial<ScriptStep>);
     }
   };
-  // Tab indents (two spaces) rather than leaving the editor.
-  const indent = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key !== 'Tab' || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey) return;
-    e.preventDefault();
-    const el = e.currentTarget;
-    const { selectionStart: a, selectionEnd: b, value } = el;
-    code.change(`${value.slice(0, a)}  ${value.slice(b)}`);
-    requestAnimationFrame(() => el.setSelectionRange(a + 2, a + 2));
-  };
   return (
     <>
       <div className={s.controlRow}>
@@ -493,7 +485,7 @@ function ScriptFields({ step, change }: { step: ScriptStep; change: (patch: Part
           </div>
           <div className={s.field}>
             <span className={s.fieldLabel}>Script</span>
-            <TextArea value={code.text} onChange={code.change} onBlur={code.flush} onKeyDown={indent} mono rows={Math.min(24, Math.max(8, code.text.split('\n').length + 1))} spellCheck={false} aria-label="Script" className={s.codeArea} />
+            <CodeEditor value={code.text} onChange={code.change} onBlur={code.flush} lang={language} minRows={8} aria-label="Script" />
             <span className={s.help}>
               Runs with {SCRIPT_LANGUAGE_INFO[language].run} in the folder below. What it prints is what the next step reads (a number, JSON or CSV); a non-zero exit stops the run. It gets $VAR from Settings › Environment, $SENTINEL_PREVIOUS (the step before’s output), $SENTINEL_PREVIOUS_FILE and $SENTINEL_RUN_DIR.
             </span>
@@ -506,7 +498,7 @@ function ScriptFields({ step, change }: { step: ScriptStep; change: (patch: Part
       ) : (
         <div className={s.field}>
           <span className={s.fieldLabel}>Command</span>
-          <TextInput value={command.text} onChange={command.change} onBlur={command.flush} mono placeholder="npm test" aria-label="Command" />
+          <CodeEditor value={command.text} onChange={command.change} onBlur={command.flush} lang="bash" single placeholder="npm test" aria-label="Command" />
           <span className={s.help}>One shell line or a script’s path; a non-zero exit stops the run. $VAR from Settings › Environment; $SENTINEL_PREVIOUS has the step before’s output, and $SENTINEL_PREVIOUS_FILE the file it’s in.</span>
         </div>
       )}
@@ -576,7 +568,7 @@ function HttpFields({ step, change }: { step: HttpStep; change: (patch: Partial<
       {step.method !== 'GET' ? (
         <div className={s.field}>
           <span className={s.fieldLabel}>Body</span>
-          <TextArea value={body.text} onChange={body.change} onBlur={body.flush} rows={3} mono placeholder={'{"query": "{{previous}}"}'} aria-label="Body" />
+          <CodeEditor value={body.text} onChange={body.change} onBlur={body.flush} lang="json" placeholder={'{"query": "{{previous}}"}'} aria-label="Body" />
           <span className={s.help}>{TEMPLATE_HELP} (filled in as JSON text in a JSON body)</span>
         </div>
       ) : null}
