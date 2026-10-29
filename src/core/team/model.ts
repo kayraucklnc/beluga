@@ -104,6 +104,43 @@ export interface TeamWaiting {
   readonly mailed: boolean;
 }
 
+/**
+ * A teammate knocking on one of your worktrees (BLG-416): they see you're on a task and ask to
+ * join the worktree doing it. You let them in as a viewer or an editor, or say not now.
+ */
+export interface TeamKnock {
+  readonly id: string;
+  readonly peerId: string;
+  readonly name: string;
+  readonly issueId: string;
+  readonly key: string;
+  readonly title: string;
+  readonly projectId: string;
+  /** Your worktree doing the task. */
+  readonly workspaceId: string;
+  readonly worktree: string;
+  /** A few words they sent with it. */
+  readonly note?: string;
+  readonly at: number;
+}
+
+/** How a knock of yours stands: waiting for them, let in (as `role`, into `workspaceId`), not now, or the worktree went. */
+export type MyKnockState = 'waiting' | 'in' | 'declined' | 'gone';
+
+/** A knock of yours on a teammate's worktree. */
+export interface MyKnock {
+  readonly id: string;
+  readonly issueId: string;
+  readonly peerId: string;
+  readonly name: string;
+  readonly state: MyKnockState;
+  readonly role?: 'view' | 'contribute';
+  readonly workspaceId?: string;
+  readonly at: number;
+  /** When they answered. */
+  readonly answeredAt?: number;
+}
+
 export interface TeamState {
   /** Team boards run (the daemon, while the network is on). */
   readonly enabled: boolean;
@@ -118,13 +155,17 @@ export interface TeamState {
   readonly plans: readonly SharedPlan[];
   /** Plan id → who it's shared with and their reviews. */
   readonly planShares: Readonly<Record<string, MyPlanShare>>;
+  /** Teammates knocking on your worktrees, oldest first (BLG-416). */
+  readonly knocks?: readonly TeamKnock[];
+  /** Your knocks on teammates' worktrees, newest first. */
+  readonly myKnocks?: readonly MyKnock[];
 }
 
 export interface TeamSlice {
   readonly team: TeamState;
 }
 
-export const NO_TEAM: TeamState = { enabled: false, offers: [], teams: {}, working: {}, waiting: {}, assigned: [], plans: [], planShares: {} };
+export const NO_TEAM: TeamState = { enabled: false, offers: [], teams: {}, working: {}, waiting: {}, assigned: [], plans: [], planShares: {}, knocks: [], myKnocks: [] };
 export const initialTeam: TeamSlice = { team: NO_TEAM };
 
 export type TeamAction = { type: 'team_state'; state: TeamState } | { type: 'team_off' };
@@ -201,6 +242,32 @@ export function teammateOn(team: TeamState, issue: Pick<Issue, 'id' | 'projectId
   if (a && a.id !== self && mates.some((m) => m.peerId === a.id)) return { peerId: a.id, name: a.name, words: `${a.name} has it${issue.github ? ` (#${issue.github.number})` : ''}` };
   return undefined;
 }
+
+/** A teammate's knock on one of your worktrees, by its id. */
+export const knockOf = (team: TeamState, id: string): TeamKnock | undefined => team.knocks?.find((k) => k.id === id);
+
+/** Knocks waiting on one of your worktrees. */
+export const knocksOn = (team: TeamState, workspaceId: string): readonly TeamKnock[] => (team.knocks ?? []).filter((k) => k.workspaceId === workspaceId);
+
+/** Your latest knock on a task (for one teammate, or anyone). */
+export const myKnockOn = (team: TeamState, issueId: string, peerId?: string): MyKnock | undefined => (team.myKnocks ?? []).find((k) => k.issueId === issueId && (!peerId || k.peerId === peerId));
+
+/** What a knock of yours says on the task: "Waiting for Ata to let you in", "Ata let you in as an editor"… */
+export function myKnockWords(k: Pick<MyKnock, 'name' | 'state' | 'role'>): string {
+  switch (k.state) {
+    case 'waiting':
+      return `Knocked. Waiting for ${k.name} to let you in`;
+    case 'in':
+      return `${k.name} let you in ${k.role === 'contribute' ? 'as an editor' : 'to follow along'}`;
+    case 'declined':
+      return `${k.name} said not now`;
+    case 'gone':
+      return `${k.name}’s worktree for this isn’t there any more`;
+  }
+}
+
+/** What a knock on your worktree says: "Ata is knocking: they’d like to join add-rate-limiting". */
+export const knockWords = (k: Pick<TeamKnock, 'name' | 'worktree'>): string => `${k.name} is knocking: they’d like to join ${k.worktree}`;
 
 /**
  * A conversation's "Share with Team" (BLG-226): each teammate and whether this worktree is shared

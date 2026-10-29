@@ -56,6 +56,47 @@
   font-size: 12px;
 }
 
+/* Knock to Join (BLG-416): a quiet button after "Ata is working on this", then how the knock stands. */
+.knock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+/* A soft pastel pill: plainly a button, never loud. */
+.knockButton {
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--accent) 35%, var(--hairline-strong));
+}
+.knockButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 17%, var(--bg-raised));
+}
+.knockButton:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+.knockWords {
+  color: var(--text-2);
+}
+/* Waiting for them: the words breathe softly (no glow), like a door you've knocked on. */
+.knockWaiting {
+  color: var(--text-2);
+  animation: knock-wait 2.4s ease-in-out infinite;
+}
+@keyframes knock-wait {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .knockWaiting {
+    animation: none;
+  }
+}
+
 /* Not every teammate has the latest yet (BLG-273): a quiet clock, gone once they do. */
 .waiting {
   display: inline-flex;

@@ -481,7 +481,7 @@ export class TeamBoards {
       const t = teams[link.projectId] ?? { projectId: link.projectId, repo: this.repos.get(link.projectId)?.label ?? this.projectName(link.projectId), mates: [] };
       teams[link.projectId] = { ...t, mates: [...t.mates, { peerId: link.peerId, name: mesh.nameFor(link.peerId), since: link.since }] };
     }
-    let state: TeamState = { enabled: true, offers, teams, working: {}, waiting: {}, assigned: [], plans: [], planShares: {} };
+    let state: TeamState = { enabled: true, offers, teams, working: {}, waiting: {}, assigned: [], plans: [], planShares: {}, knocks: [], myKnocks: [] };
     for (const p of this.parts) state = { ...state, ...p.view?.() };
     const before = this.deps.store.getState().team;
     if (JSON.stringify(before) !== JSON.stringify(state)) this.deps.store.dispatch({ type: 'team_state', state });

@@ -1,4 +1,6 @@
-import { OFFER_DETAIL, offerWords, teamShareChoices, teammateOn, teammatesOf, waitingDetail, waitingOn, waitingWords, workingOn, workingWords } from '@beluga/core/team/model.js';
+import { OFFER_DETAIL, knockOf, knockWords, myKnockOn, myKnockWords, offerWords, teamShareChoices, teammateOn, teammatesOf, waitingDetail, waitingOn, waitingWords, workingOn, workingWords } from '@beluga/core/team/model.js';
+import type { ReactNode } from 'react';
+import { useActions } from '../lib/actions.js';
 import { ago } from '../tasks/tasks-model.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
@@ -85,16 +87,97 @@ export function useTeamMenuItems(projectId: string): readonly ActionItem[] {
   return [{ label: 'Leave Team', icon: 'people', separate: true, onSelect: () => say(api.team.leave(projectId)) }];
 }
 
-/** "Ata is working on this" with their avatars, for a task. */
+/** "Ata is working on this" with their avatars, for a task, and Knock to Join on their worktree. */
 export function WorkingOn({ issueId }: { issueId: string }) {
   const people = useApp((st) => workingOn(st.team, issueId), sameDeep);
+  const knocked = useApp((st) => Boolean(myKnockOn(st.team, issueId)));
   const words = workingWords(people.map((p) => p.name));
-  if (!words) return null;
+  if (!words && !knocked) return null;
   return (
     <span className={s.working}>
-      <AvatarStack people={people} size={14} max={3} />
-      {words}
+      {words ? (
+        <>
+          <AvatarStack people={people} size={14} max={3} />
+          {words}
+        </>
+      ) : null}
+      <KnockToJoin issueId={issueId} />
     </span>
+  );
+}
+
+/**
+ * Knock to Join (BLG-416): a teammate's worktree is doing this task, so ask them to let you in.
+ * Then it says how it stands: waiting (Take Back), let in (Open), or not now (Knock Again).
+ */
+export function KnockToJoin({ issueId }: { issueId: string }) {
+  const people = useApp((st) => workingOn(st.team, issueId).filter((p) => p.peerId !== st.selfId), sameDeep);
+  const mine = useApp((st) => myKnockOn(st.team, issueId), sameDeep);
+  const there = useApp((st) => Boolean(mine?.workspaceId && st.shared.some((w) => w.id === mine.workspaceId && w.owner === mine.peerId)));
+  const api = useApi();
+  const say = useSay();
+  const actions = useActions();
+  if (!people.length && !mine) return null;
+  const knock = (peerId: string): void => say(api.team.knock(issueId, peerId));
+  const again = mine && (mine.state === 'declined' || mine.state === 'gone');
+  const button = (label: string) =>
+    people.length > 1 ? (
+      <ActionsDropdown items={people.map((p) => ({ label: `${p.name}’s Worktree`, onSelect: () => knock(p.peerId) }))}>
+        <Button size="small" icon="hand" className={s.knockButton}>
+          {label}
+        </Button>
+      </ActionsDropdown>
+    ) : people[0] ? (
+      <Button size="small" icon="hand" className={s.knockButton} onClick={() => knock(people[0]!.peerId)}>
+        {label}
+      </Button>
+    ) : null;
+  if (!mine) return <span className={s.knock}>{button('Knock to Join')}</span>;
+  return (
+    <span className={s.knock}>
+      <span className={mine.state === 'waiting' ? s.knockWaiting : s.knockWords}>{myKnockWords(mine)}</span>
+      {mine.state === 'waiting' ? (
+        <Button size="small" onClick={() => say(api.team.cancelKnock(mine.id))}>
+          Take Back
+        </Button>
+      ) : mine.state === 'in' && there ? (
+        <Button size="small" icon="arrowRight" className={s.knockButton} onClick={() => actions.run({ type: 'open_shared', owner: mine.peerId, id: mine.workspaceId!, tab: 'chat' })}>
+          Open
+        </Button>
+      ) : again ? (
+        button('Knock Again')
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * A teammate knocking on this worktree, in its chat (BLG-416): Let In as Editor, or as a viewer;
+ * Not Now behind •••. Once answered it's the plain line it was.
+ */
+export function KnockCard({ id, text, children }: { id: string; text: string; children: ReactNode }) {
+  const k = useApp((st) => (id ? knockOf(st.team, id) : undefined), sameDeep);
+  const api = useApi();
+  const say = useSay();
+  if (!k) return <>{children}</>;
+  const more: ActionItem[] = [{ label: 'Not Now', onSelect: () => say(api.team.answerKnock(k.id, 'decline')) }];
+  return (
+    <section className={s.offer} aria-label={knockWords(k)}>
+      <Avatar name={k.name} id={k.peerId} size={26} />
+      <div className={s.offerText}>
+        <span className={s.offerTitle}>{knockWords(k)}</span>
+        <span className={s.offerDetail}>{k.note ? `“${k.note}” · ` : ''}{k.key}: {k.title}. An editor can talk to your Claude here; a viewer follows along.</span>
+      </div>
+      <Button variant="quiet" onClick={() => say(api.team.answerKnock(k.id, 'view'))}>
+        Let In as Viewer
+      </Button>
+      <Button variant="primary" icon="people" onClick={() => say(api.team.answerKnock(k.id, 'contribute'))}>
+        Let In as Editor
+      </Button>
+      <ActionsDropdown items={more}>
+        <IconButton icon="more" label={`More for ${text.slice(0, 40)}`} />
+      </ActionsDropdown>
+    </section>
   );
 }
 

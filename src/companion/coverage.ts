@@ -387,6 +387,10 @@ export const PHONE: Record<Method, Side> = {
   'team.reviewPlan': 'phone',
   'team.applySuggestion': 'phone',
   'team.dismissSuggestion': 'phone',
+  // Knocks on a teammate's worktree (BLG-416): answering one is the phone's too (its card); knocking starts on a task's page, the Mac's.
+  'team.knock': 'mac',
+  'team.cancelKnock': 'mac',
+  'team.answerKnock': 'phone',
 
   // ---- git, live views' sources, editing files: the Mac's
   'git.fetch': 'mac',

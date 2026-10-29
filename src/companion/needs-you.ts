@@ -1,5 +1,5 @@
 import type { Approval, DomainState } from '../core/store.js';
-import { OFFER_DETAIL, offerWords } from '../core/team/model.js';
+import { OFFER_DETAIL, knockWords, offerWords } from '../core/team/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
 import type { TaskView as GwTask } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
@@ -321,6 +321,27 @@ function assignedItems(state: DomainState): NeedsYou[] {
   });
 }
 
+/** A teammate knocking on one of your worktrees (BLG-416): let them in as a viewer or an editor. */
+function worktreeKnockItems(state: DomainState): NeedsYou[] {
+  return (state.team.knocks ?? []).map((k) => {
+    const topic = chatTopic(`ws:${k.workspaceId}`);
+    return {
+      id: `wt-knock:${k.id}`,
+      kind: 'request' as const,
+      title: clip(knockWords(k), 500),
+      detail: clip(k.note ? `“${k.note}” · ${k.key}: ${k.title}` : `${k.key}: ${k.title}`, 64_000),
+      from: clip(k.name, 100),
+      ...(topic ? { topic } : {}),
+      askedAt: k.at,
+      actions: [
+        { label: 'Let In as Editor', tone: 'main' as const, method: 'team.answerKnock', args: [k.id, 'contribute'] },
+        { label: 'Not Now', tone: 'danger' as const, method: 'team.answerKnock', args: [k.id, 'decline'] },
+        { label: 'Let In as Viewer', tone: 'plain' as const, method: 'team.answerKnock', args: [k.id, 'view'] },
+      ],
+    };
+  });
+}
+
 /**
  * Shared plans (BLG-225): a plan a teammate shared that you haven't approved (Approve, or words as a
  * comment), and a teammate's suggested change to a plan of yours (Apply / Set Aside).
@@ -416,6 +437,7 @@ export function waitingNeeds(state: DomainState): NeedsYou[] {
     ...offerItems(state),
     ...teamOfferItems(state),
     ...assignedItems(state),
+    ...worktreeKnockItems(state),
     ...sharedPlanItems(state),
     ...sentinelItems(state),
   ];

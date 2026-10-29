@@ -28,6 +28,12 @@ import { ISSUE_STATUSES, MAX_PROJECT_CONTEXT } from '../board/model.js';
  * The project's context (context-share.ts, BLG-298):
  * - `context`: About This Project as the sender has it (`by`: who wrote it, `at`: when); the
  *   newest wins on every Mac, and the newest replaces one still waiting.
+ *
+ * Knocking on a teammate's worktree (knock.ts, BLG-416):
+ * - `knock`: you'd like to join the worktree doing this task (`note`: a few words with it).
+ * - `knock_answer`: let in as `view` or `contribute` (`ws`: the worktree, shared the friend-share
+ *   way), `decline` (not now), or `gone` (no worktree does it any more).
+ * - `knock_cancel`: you took your knock back.
  */
 
 export const hex32 = z.string().regex(/^[0-9a-f]{32}$/);
@@ -55,6 +61,7 @@ export const ActivitySchema = z.object({
   now: words(400).optional(),
 });
 export const taskId = z.string().regex(/^[\w-]{1,40}$/);
+export const knockId = z.string().regex(/^[\w-]{8,40}$/);
 export const FieldSchema = z.object({ v: z.unknown(), l: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), a: peerId });
 export const TaskDelta = z.object({
   id: taskId,
@@ -123,6 +130,9 @@ export const TeamMsg = z.discriminatedUnion('k', [
   z.object({ k: z.literal('plan_gone'), link: linkId, id: z.string().max(60) }),
   z.object({ k: z.literal('context'), link: linkId, text: words(MAX_PROJECT_CONTEXT), by: words(80), at: z.number().int().min(0) }),
   z.object({ k: z.literal('review'), link: linkId, plan: z.string().max(60), review: ReviewSchema.omit({ by: true, name: true, settled: true }) }),
+  z.object({ k: z.literal('knock'), link: linkId, id: knockId, task: taskId, note: words(500).optional() }),
+  z.object({ k: z.literal('knock_answer'), link: linkId, id: knockId, answer: z.enum(['view', 'contribute', 'decline', 'gone']), ws: z.string().regex(/^[\w:.-]{1,80}$/).optional() }),
+  z.object({ k: z.literal('knock_cancel'), link: linkId, id: knockId }),
 ]);
 export type TeamMsg = z.infer<typeof TeamMsg>;
 

@@ -509,6 +509,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `team.reviewPlan` | ✓ a teammate's shared plan (Plans › Shared by Your Team): Approve, Comment, and Suggest a Change… on a task or milestone; the phone's card (Approve, or words as a comment) |
 | `team.applySuggestion` | ✓ Apply on a suggestion in Team Reviews on your plan's page; the phone's card (Apply) |
 | `team.dismissSuggestion` | ✓ ••• › Set Aside on a suggestion in Team Reviews; the phone's card (Set Aside) |
+| `team.knock` | ✓ a task's page, after "Ata is working on this": Knock to Join (pick whose worktree when several teammates are on it); Knock Again after a Not Now |
+| `team.cancelKnock` | ✓ Take Back next to "Knocked. Waiting for Ata to let you in" on the task's page |
+| `team.answerKnock` | ✓ the knock's card in the worktree's chat (Let In as Editor, Let In as Viewer; ••• › Not Now) and the bell's row; the phone's card (Let In as Editor / Not Now / Let In as Viewer) |
 | `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates) |
 | `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (Claude plans in the conversation you're in) |
