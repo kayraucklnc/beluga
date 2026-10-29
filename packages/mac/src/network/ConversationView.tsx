@@ -25,6 +25,7 @@ import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork, useSay } from './use-net.js';
 import { inApp } from '../lib/boot.js';
 import chat from '../chat/chat.module.css';
+import { PersonButton } from './PersonProfile.js';
 import s from './network.module.css';
 
 /** Messages the shared state keeps per conversation; with that many, there may be earlier ones. */
@@ -118,11 +119,19 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
     return (
       <ActionsContext items={items}>
         <div className={cx(s.row, s.rowTheirs, !place.first && s.rowCont, m.status === 'waiting' && s.waiting)} data-message={m.id} style={tintOf(author)}>
-          <div className={s.side}>{place.last ? <Avatar name={m.name} id={m.from} size={28} /> : null}</div>
+          <div className={s.side}>
+            {place.last ? (
+              <PersonButton peerId={m.from} name={m.name}>
+                <Avatar name={m.name} id={m.from} size={28} />
+              </PersonButton>
+            ) : null}
+          </div>
           <div className={s.stack} title={fullTime(m.ts)}>
             {place.first ? (
               <div className={s.runName}>
-                <span className={s.runAuthor}>{m.name}</span>
+                <PersonButton peerId={m.from} name={m.name}>
+                  <span className={s.runAuthor}>{m.name}</span>
+                </PersonButton>
                 {prefs.timestamps ? <span className={s.runTime}>{time(m.ts)}</span> : null}
               </div>
             ) : null}

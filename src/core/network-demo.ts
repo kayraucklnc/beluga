@@ -5,7 +5,7 @@ import { generateIdentity } from '../net/crypto.js';
 import { Mesh } from '../net/mesh/mesh.js';
 import { dmConversation, groupConversation } from '../net/mesh/views.js';
 import { type NetworkService, startNetwork } from './network.js';
-import { demoScreenshot } from '../demo-image.js';
+import { demoPortrait, demoScreenshot } from '../demo-image.js';
 import { ChatClaude } from './chat/claude.js';
 import { demoAnswerFromPrompt } from './chat/demo-answers.js';
 import { ChatFiles } from './chat/files.js';
@@ -64,6 +64,8 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   await me.mesh.accept((await mia.createInvite()).link);
   await mia.accept((await bob.createInvite()).code);
   mia.setPresence({ state: 'away', note: 'in a meeting' });
+  // mia has a profile picture (her card's avatar opens it large); bob keeps his initial.
+  mia.setAvatar(demoPortrait());
   let stopped = false;
   const pace = Number(belugaEnv('DEMO_PACE')) || 1;
   const chats = { bob: demoChat(bob, path.join(base, 'bob'), pace), mia: demoChat(mia, path.join(base, 'mia'), pace) };

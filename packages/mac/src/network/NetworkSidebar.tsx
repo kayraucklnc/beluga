@@ -12,6 +12,7 @@ import { Row, Section } from '../layout/sidebar-parts.js';
 import { optionIndex } from '../dialogs/native/parts.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
 import { PersonContextMenu } from '../dialogs/native/PersonMenu.js';
+import { PersonButton } from './PersonProfile.js';
 import { GroupAvatar, PersonAvatar } from './Avatars.js';
 import { type RoomBits, type RoomPerson, dmId, groupId, incomingOffers, membersLine, notFriendsYet, offerSent, openGroupInvitation, presenceLine, roomBits, shownState, sortFriends, sortGroups } from './net-model.js';
 import { openNet } from './net-sheets.js';
@@ -134,7 +135,11 @@ function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] 
         data-friend-row={f.peerId}
         data-person-row={bits ? f.peerId : undefined}
         selected={selected}
-        icon={<PersonAvatar name={f.name} id={f.peerId} state={state} size={18} />}
+        icon={
+          <PersonButton peerId={f.peerId} name={f.name}>
+            <PersonAvatar name={f.name} id={f.peerId} state={state} size={18} />
+          </PersonButton>
+        }
         aria-label={`${f.name}, ${presenceLine(f)}${f.unread ? `, ${f.unread} unread` : ''}`}
         label={
           <span className={s.who}>
