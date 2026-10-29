@@ -12,7 +12,7 @@
 .head,
 .row {
   display: grid;
-  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.2fr) 24px 22px;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.2fr) 24px 30px;
   align-items: center;
   gap: 6px;
   padding: 0 10px 0 14px;
@@ -157,32 +157,54 @@
   color: var(--text-3);
   font-size: 0.86rem;
 }
-/* The main folder's .env, under the project's own: read-only names, values you can type over. */
-.fileHead {
+/* Where a project's rows come from: the main folder's .env, switched on or off in place. */
+.sourceBar {
   display: flex;
   align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 0 14px;
-  border-top: 0.5px solid var(--hairline);
-  color: var(--text-3);
-  font-size: 0.84rem;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px 0 14px;
+  border-bottom: 0.5px solid var(--hairline);
 }
-.fileRow .key {
+.sourceIcon {
+  flex: none;
+  color: var(--text-3);
+}
+.sourceText {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+}
+/* A name the .env gives: not renamed here. */
+.fixedKey {
   background: transparent;
   box-shadow: none;
-  color: var(--text-2);
   cursor: default;
 }
-.fileRow .value:not(:focus) {
-  background: transparent;
+.fixedKey:focus {
+  box-shadow: none;
 }
-.fileTag {
+/* ".env" on a row from the file; a soft accent arrow on one changed here (click: the file's again). */
+.sourceTag {
   display: grid;
   place-items: center;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+.sourceEdited {
   width: 22px;
   height: 22px;
-  color: var(--text-3);
+  padding: 0;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.sourceEdited:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .inlineLink {
   padding: 0;

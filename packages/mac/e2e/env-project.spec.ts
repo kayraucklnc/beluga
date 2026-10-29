@@ -31,7 +31,7 @@ test("a project's Environment… shows its .env, and typing over a value sets it
   await sidebar.getByRole('button', { name: 'bob-api', exact: true }).first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Environment…' }).click();
   const sheet = page.getByRole('dialog', { name: 'Environment for bob-api' });
-  await expect(sheet.getByText('From the main folder’s .env')).toBeVisible();
+  await expect(sheet.getByText('Include the main folder’s .env')).toBeVisible();
   await expect(sheet.getByRole('switch', { name: "Use the main folder's .env" })).toHaveAttribute('aria-checked', 'true');
   const fromFile = sheet.getByLabel(/^Value of API_URL \(from \.env/);
   await expect(fromFile).toHaveValue('https://api.example.com');
@@ -48,11 +48,13 @@ test("a project's Environment… shows its .env, and typing over a value sets it
   await sheet.getByRole('button', { name: 'Show values', exact: true }).click();
   await sheet.getByLabel('Name', { exact: true }).first().click();
   await expect(sheet.getByRole('status').getByText('Saved')).toBeVisible();
-  await expect(sheet.getByText('Wins over the main folder’s .env.')).toBeVisible();
+  await expect(sheet.getByText('Changed here. The .env file is left as it is.')).toBeVisible();
+  // It stayed where it was: still the first row.
+  await expect(sheet.getByLabel('Name', { exact: true }).first()).toHaveValue('API_URL');
   if (process.env.SHOTS) await sheet.screenshot({ path: `${process.env.SHOTS}/env-sheet-override.png` });
 
   // Keep a copy in Beluga: the rest comes in too.
-  await sheet.getByRole('button', { name: 'Copy 1' }).click();
+  await sheet.getByRole('button', { name: 'Keep a Copy in Beluga' }).click();
   await expect(sheet.getByLabel('Value of STRIPE_KEY', { exact: true })).toHaveValue('sk_test_123');
   // Use .env takes the override back.
   await sheet.getByRole('button', { name: 'Use .env' }).first().click();
