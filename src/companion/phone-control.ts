@@ -530,7 +530,7 @@ export class PhoneControl {
     if (!state) return 'Open the Beluga app on this phone so it can say what it allows.';
     if (!state.allowed) return 'Turn on “Let your Mac use this phone” in the phone’s Beluga.';
     if (routes.length) return undefined;
-    if (!state.accessibility && !state.adb.on) return 'On the phone: turn on Accessibility for Beluga, or Wireless debugging.';
+    if (!state.accessibility && !state.adb.on) return 'On the phone: install Beluga Phone Control and turn on its Accessibility, or turn on Wireless debugging.';
     if (state.adb.on && state.adb.pairing) return 'Type the phone’s pairing code into Beluga’s notification to connect adb.';
     return 'Can’t reach the phone right now.';
   }

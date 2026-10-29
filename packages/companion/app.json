@@ -89,7 +89,8 @@
           }
         }
       ],
-      "./plugins/loopback-cleartext"
+      "./plugins/loopback-cleartext",
+      "./plugins/phone-control-addon"
     ]
   }
 }
