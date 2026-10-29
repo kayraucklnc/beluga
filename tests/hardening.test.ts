@@ -110,4 +110,20 @@ describe('Claude questions per conversation', () => {
     expect(store.getState().questions.map((q) => q.channel)).toEqual(['ws:x']);
     broker.cancelAll();
   });
+
+  it('approving a plan turns plan mode off in that conversation; asking for changes keeps it on', async () => {
+    const store = new Store(initialState('r'));
+    const broker = new QuestionBroker({ store, selfId: () => 'me', send: () => true, timeoutMs: () => 60_000, toast: () => undefined });
+    store.dispatch({ type: 'plan_mode', channel: 'ws:a', on: true });
+    store.dispatch({ type: 'plan_mode', channel: 'ws:b', on: true });
+    const question = { kind: 'plan', plan: 'do it' } as const;
+    const a = broker.ask('me', 'r1', 'ws:a', question);
+    const b = broker.ask('me', 'r2', 'ws:b', question);
+    const [qa, qb] = store.getState().questions;
+    broker.answer(qa!.qid, { kind: 'plan', approve: true, feedback: '' });
+    broker.answer(qb!.qid, { kind: 'plan', approve: false, feedback: 'smaller' });
+    expect(await a).toEqual({ kind: 'plan', approve: true, feedback: '' });
+    await b;
+    expect(store.getState().planMode).toEqual({ 'ws:b': true });
+  });
 });
