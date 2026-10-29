@@ -6,7 +6,7 @@ import { IconButton, Tip, cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, IssueMeta, TuckButton, useIssueMenu } from './parts.js';
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
@@ -117,6 +117,7 @@ const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; curso
         ) : null}
         <span className={cx(t.title, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</span>
         <IssueMeta issue={issue} />
+        {epic ? <TuckButton issue={issue} /> : null}
         <WaitingMark issueId={issue.id} />
         <WorkingMark issueId={issue.id} />
         {solo ? null : <span className={t.rowCell} onClick={stop}>

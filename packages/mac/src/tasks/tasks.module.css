@@ -369,6 +369,17 @@
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
+.footLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.footLink:hover {
+  text-decoration: underline;
+}
 
 /* ---------- List ---------- */
 
@@ -838,6 +849,39 @@
   font-size: 11px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
+}
+/* The eye on an epic: its sub-tasks shown, or tucked under it (tinted, with how many). */
+.tuck {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  min-width: 22px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.tuck:hover {
+  color: var(--epic);
+  background: color-mix(in srgb, var(--epic) 10%, transparent);
+}
+.tuck:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.tuckAway {
+  color: var(--epic);
+  background: color-mix(in srgb, var(--epic) 12%, transparent);
+}
+.tuckAway:hover {
+  background: color-mix(in srgb, var(--epic) 18%, transparent);
 }
 /* A sub-task says which epic it's in. */
 .epicOf {

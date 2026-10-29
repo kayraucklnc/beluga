@@ -10,7 +10,7 @@ import { TaskBoard } from './TaskBoard.js';
 import { TaskList } from './TaskList.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { PickMenu } from './PickMenu.js';
-import { type Display, SCOPES, ago, type Scope, assigneesIn, connected, doneCount, projectToShow, scopeCounts, scoped, statusesFor, taskGraph } from './tasks-model.js';
+import { type Display, SCOPES, ago, type Scope, assigneesIn, connected, doneCount, projectToShow, scopeCounts, scoped, statusesFor, taskGraph, untucked } from './tasks-model.js';
 import { useTaskFileDrop } from './use-task-drop.js';
 import { setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -51,10 +51,13 @@ export function TasksView() {
   }, [board, project, allProjects]);
   const asked = view.kind === 'tasks' ? view.worktree : undefined;
   const worktree = asked && worktrees.some((w) => w.id === asked) ? asked : '';
-  const issues = useMemo(() => {
+  const found = useMemo(() => {
     const all = project ? scoped(board, { scope: prefs.scope, project, who }, selfId, query) : [];
     return worktree ? all.filter((i) => worksOn(i, worktree)) : all;
   }, [board, prefs.scope, project, who, selfId, query, worktree]);
+  // Sub-tasks of epics tucked away (the eye on an epic) are left out; the graph shows them all.
+  const tuck = useMemo(() => untucked(found, prefs.display === 'graph' ? [] : prefs.tucked, query), [found, prefs.display, prefs.tucked, query]);
+  const issues = tuck.shown;
   const counts = useMemo(() => (project ? scopeCounts(board, project, who, selfId) : { active: 0, backlog: 0, all: 0, archived: 0 }), [board, project, who, selfId]);
   const statuses = statusesFor(prefs.scope);
   const archive = prefs.scope === 'archived';
@@ -232,7 +235,19 @@ export function TasksView() {
           <TaskList issues={issues} statuses={statuses} emptyGroups={prefs.scope === 'active' || prefs.scope === 'backlog'} projectId={project} archived={archive} />
         )}
       </div>
-      {issues.length && display !== 'graph' ? <div className={t.foot}>{archive ? `${issues.length} archived` : `${issues.filter((i) => isOpen(i.status)).length} open · ${issues.length} shown`}</div> : null}
+      {issues.length && display !== 'graph' ? (
+        <div className={t.foot}>
+          {archive ? `${issues.length} archived` : `${issues.filter((i) => isOpen(i.status)).length} open · ${issues.length} shown`}
+          {tuck.hidden ? (
+            <>
+              {` · ${tuck.hidden} sub-task${tuck.hidden === 1 ? '' : 's'} tucked under their epics · `}
+              <button type="button" className={t.footLink} onClick={() => setTasksPrefs({ tucked: [] })}>
+                Show All
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

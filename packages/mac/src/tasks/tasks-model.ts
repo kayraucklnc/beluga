@@ -20,9 +20,11 @@ export interface TasksPrefs {
   readonly who: string;
   /** Status groups folded in the list. */
   readonly folded: readonly IssueStatus[];
+  /** Epics whose sub-tasks are tucked under them (their ids): the epic's card stands for them. */
+  readonly tucked: readonly string[];
 }
 
-export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'board', project: '', who: '', folded: ['canceled'] };
+export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'board', project: '', who: '', folded: ['canceled'], tucked: [] };
 
 export const SCOPES: ReadonlyArray<{ readonly value: Scope; readonly label: string; readonly hint: string }> = [
   { value: 'active', label: 'Active', hint: 'Ready, In Progress and In Review' },
@@ -41,6 +43,7 @@ export function readTasksPrefs(raw: string | null): TasksPrefs {
       project: typeof p.project === 'string' ? p.project : '',
       who: typeof p.who === 'string' ? p.who : '',
       folded: Array.isArray(p.folded) ? p.folded.filter((s): s is IssueStatus => (ISSUE_STATUSES as readonly string[]).includes(s)) : DEFAULT_TASKS_PREFS.folded,
+      tucked: Array.isArray(p.tucked) ? p.tucked.filter((id): id is string => typeof id === 'string') : DEFAULT_TASKS_PREFS.tucked,
     };
   } catch {
     return DEFAULT_TASKS_PREFS;
@@ -74,6 +77,21 @@ export function statusesFor(scope: Scope): readonly IssueStatus[] {
       return ISSUE_STATUSES;
   }
 }
+
+/**
+ * The tasks to show with the sub-tasks of tucked epics left out, and how many were. A sub-task
+ * stays when its epic isn't shown (nothing would stand for it), and a filter finds everything.
+ */
+export function untucked(issues: readonly Issue[], tucked: readonly string[], query = ''): { shown: readonly Issue[]; hidden: number } {
+  if (!tucked.length || query.trim()) return { shown: issues, hidden: 0 };
+  const here = new Set(issues.map((i) => i.id));
+  const away = new Set(tucked.filter((id) => here.has(id)));
+  const shown = issues.filter((i) => !(i.parent && away.has(i.parent)));
+  return { shown, hidden: issues.length - shown.length };
+}
+
+/** Tucks an epic's sub-tasks under it, or shows them again. */
+export const toggleTuck = (tucked: readonly string[], epicId: string): string[] => (tucked.includes(epicId) ? tucked.filter((id) => id !== epicId) : [...tucked, epicId]);
 
 /** Whether a task is for `who` ('' = anyone, 'nobody' = unassigned, else an assignee key). */
 export const isFor = (issue: Issue, who: string): boolean => (!who ? true : who === 'nobody' ? !issue.assignee : assigneeKey(issue.assignee) === who);

@@ -49,3 +49,40 @@ test('an epic is a deck on the board; labels are picked from the set, and a new 
   await expect(page.locator('[class*="propLabels"]')).toContainText('Performance');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/04-task-page.png` });
 });
+
+test('the eye on an epic tucks its sub-tasks under it, and Show All brings them back (BLG-396)', async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page).getByRole('button', { name: 'bob-api', exact: true })).toBeVisible();
+  await page.keyboard.press('Meta+K');
+  await page.keyboard.type('Go to Tasks');
+  await page.keyboard.press('Enter');
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+  const board = page.getByRole('list', { name: 'Board' });
+  const sub = board.getByRole('button', { name: /Refund endpoint/ });
+  await expect(sub).toBeVisible();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/05-sub-tasks-shown.png` });
+
+  // The eye hides them; the epic stays where it was and the task doesn't open.
+  await board.getByRole('button', { name: 'Tuck its sub-tasks under it' }).first().click();
+  await expect(sub).toHaveCount(0);
+  await expect(board.getByRole('button', { name: /Payments API v1/ })).toBeVisible();
+  await expect(page.getByText(/sub-tasks? tucked under their epics/)).toBeVisible();
+  if (SHOTS) {
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${SHOTS}/06-sub-tasks-tucked.png` });
+  }
+
+  // A filter still finds them, and the list hides them too.
+  await page.getByLabel('Filter tasks').fill('Refund');
+  await expect(sub).toBeVisible();
+  await page.getByLabel('Filter tasks').fill('');
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+  await expect(page.getByRole('row', { name: /Refund endpoint/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Show its \d+ sub-tasks?$/ })).toBeVisible();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/07-list-tucked.png` });
+
+  await page.getByRole('button', { name: 'Show All' }).click();
+  await expect(page.getByRole('row', { name: /Refund endpoint/ })).toBeVisible();
+});
