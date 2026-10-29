@@ -46,10 +46,15 @@ export const SENTINEL_API = {
   // A typed column's document (BLG-345), by sentinel, metric, column and its cell (the file's name; only one
   // its latest rows hold) → { name, mime, size, text | base64, runId, at }. The phone reads it through the Mac.
   'sentinel.document': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(200)]) },
-  // The same document opened in its own app on the Mac.
-  'sentinel.documentOpen': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(200)]) },
+  // The same document opened in its own app on the Mac, or (`reveal`) shown in Finder.
+  'sentinel.documentOpen': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(200), z.enum(['open', 'reveal']).optional()]) },
   // A storage cell's link, signed now for about a minute with the project's Supabase variables → { url, expiresIn }. Never kept.
   'sentinel.signStorage': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(1200)]) },
+  // A storage cell's object, fetched now through a link signed for a minute, for Beluga's viewer → as `sentinel.document`
+  // reads, with its bucket and path (one too big: its name, kind and size only). Nothing is kept.
+  'sentinel.storageDocument': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(1200)]) },
+  // The same object saved in its run's files (readable only by you) and opened in its own app, or (`reveal`) shown in Finder.
+  'sentinel.storageOpen': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(1200), z.enum(['open', 'reveal']).optional()]) },
   // An action cell's button (BLG-349): runs the sentinel its column names, with the row (one of the
   // metric's latest rows, checked) as its trigger's payload → the run.
   'sentinel.runRow': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.record(z.string().max(80), z.union([z.string().max(100_000), z.number(), z.boolean(), z.null()]))]) },

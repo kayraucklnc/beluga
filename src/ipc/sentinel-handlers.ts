@@ -2,7 +2,7 @@ import { fromPhone } from '../core/client-context.js';
 import { busyChannels } from '../core/board/work.js';
 import { sentinelChatChannel } from '../core/sentinel/model.js';
 import { needSentinel } from '../core/sentinel/registry.js';
-import { systemOpen } from '../core/os-open.js';
+import { revealInFinder, systemOpen } from '../core/os-open.js';
 import { DOCUMENT_TO_PHONE } from '../companion/protocol.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
@@ -35,11 +35,15 @@ export const SENTINEL_HANDLERS = {
   'sentinel.metricRead': (s, id, name, since) => needSentinel(s).metricRead(id, name, since),
   // The phone gets what fits a frame of its link (text cut, bigger bytes refused).
   'sentinel.document': (s, id, metric, column, name) => needSentinel(s).document(id, metric, column, name, fromPhone() ? DOCUMENT_TO_PHONE : undefined),
-  // In its own app, on this Mac (its path never leaves the daemon).
-  'sentinel.documentOpen': (s, id, metric, column, name) => {
-    systemOpen(needSentinel(s).documentPath(id, metric, column, name));
+  // In its own app, or shown in Finder, on this Mac (its path never leaves the daemon).
+  'sentinel.documentOpen': (s, id, metric, column, name, how) => {
+    (how === 'reveal' ? revealInFinder : systemOpen)(needSentinel(s).documentPath(id, metric, column, name));
   },
   'sentinel.signStorage': (s, id, metric, column, value) => needSentinel(s).signStorage(id, metric, column, value),
+  'sentinel.storageDocument': (s, id, metric, column, value) => needSentinel(s).storageDocument(id, metric, column, value),
+  'sentinel.storageOpen': async (s, id, metric, column, value, how) => {
+    (how === 'reveal' ? revealInFinder : systemOpen)(await needSentinel(s).storagePath(id, metric, column, value));
+  },
   'sentinel.runRow': (s, id, metric, column, row) => needSentinel(s).runRow(id, metric, column, row, fromPhone() ? 'phone' : 'you'),
   'sentinel.chatNew': (s) => needSentinel(s).chatNew(),
   'sentinel.chatOpen': (s, id) => needSentinel(s).chatOpen(id),

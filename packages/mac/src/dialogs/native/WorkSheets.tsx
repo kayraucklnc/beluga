@@ -207,7 +207,7 @@ export function NativeSheets() {
     case 'add_tile':
       return <AddTileSheet key={sheet.dashboardId} dashboardId={sheet.dashboardId} close={close} />;
     case 'sentinel_document':
-      return <DocumentSheet sentinelId={sheet.sentinelId} metric={sheet.metric} column={sheet.column} name={sheet.name} close={close} />;
+      return <DocumentSheet key={`${sheet.source}:${sheet.name}`} source={sheet.source} sentinelId={sheet.sentinelId} metric={sheet.metric} column={sheet.column} name={sheet.name} close={close} />;
     case 'plan_style':
       return <PlanStyleSheet close={close} />;
     case 'plan_send_back':

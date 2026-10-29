@@ -360,6 +360,17 @@ test('the Dashboard: every kind of tile (numbers, series, a table, outputs from 
   await page.screenshot({ path: path.join(shots, 'dashboard-document.png') });
   await log.getByRole('button', { name: 'Close' }).click();
   await expect(log).toBeHidden();
+  // A kind Beluga can't show says what it is, and offers its app and Finder.
+  await jobs.getByRole('button', { name: 'nightly tests.zip' }).click();
+  const zip = page.getByRole('dialog', { name: 'nightly tests.zip' });
+  await expect(zip).toContainText('ZIP archive');
+  await expect(zip).toContainText('Beluga can’t show a ZIP archive here');
+  await expect(zip.getByRole('button', { name: 'Show in Finder' })).toBeVisible();
+  await expect(zip.getByRole('button', { name: 'Open in Default App' })).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(shots, 'dashboard-document-info.png') });
+  await zip.getByRole('button', { name: 'Close' }).click();
+  await expect(zip).toBeHidden();
   await expect(board.locator('[data-kind="text"]')).toContainText('$3,412 yesterday');
   await shoot(page, 'dashboard');
   await brief.scrollIntoViewIfNeeded();

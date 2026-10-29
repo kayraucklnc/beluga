@@ -50,8 +50,8 @@ export type NativeSheet =
   | { readonly kind: 'new_sentinel'; readonly projectId?: string; readonly way?: 'describe' | 'recipe' | 'build' }
   /** Add a Tile to a dashboard (docs/sentinel.md §10). */
   | { readonly kind: 'add_tile'; readonly dashboardId: string }
-  /** A kept table's document, in the quiet viewer (BLG-381). */
-  | { readonly kind: 'sentinel_document'; readonly sentinelId: string; readonly metric: string; readonly column: string; readonly name: string }
+  /** A kept table's document or storage object, in Beluga's viewer (BLG-381); `name` is the storage cell for one from Storage. */
+  | { readonly kind: 'sentinel_document'; readonly source: 'kept' | 'storage'; readonly sentinelId: string; readonly metric: string; readonly column: string; readonly name: string }
   /** Your planning style (how you like plans cut). */
   | { readonly kind: 'plan_style' }
   /** Not yet: what a milestone still needs, for the plan's head Claude. */

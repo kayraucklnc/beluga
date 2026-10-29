@@ -13,7 +13,7 @@ import type { AgentPlace } from '../../agent/types.js';
 import { SentinelChats } from './chat.js';
 import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_INFO, dashboardSentinels, layoutTiles, outputFormat, outputSteps } from './dashboard-model.js';
 import { Dashboards, type TileInput, type TilePatch } from './dashboards.js';
-import { FILES_KEEP_DAYS, type MetricColumn, SIGNED_SECONDS, documentMime, isDocumentKind, sameRow, splitStorage, takeDocuments, typedWords, withStorage } from './columns.js';
+import { type DocumentRead, FILES_KEEP_DAYS, type MetricColumn, SIGNED_SECONDS, STORAGE_MAX, documentMime, isDocumentKind, safeFileName, sameRow, sizeWords, splitStorage, storageName, takeDocuments, typedWords, withStorage } from './columns.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
 import { signStorageUrl } from './storage-sign.js';
 import { MetricFiles } from './metric-files.js';
@@ -1470,25 +1470,60 @@ export class Sentinels {
     return this.start(target.id, by, { kind: 'manual', summary: `You pressed “${words}” on a row of ${m.label}`, payload: { row: kept, sentinel: s.name, metric: m.label } }, [s.id]);
   }
 
-  /** A document a typed column kept: its name, kind and contents (text for text, base64 for the rest). */
   /**
    * A document a typed column kept: its name, kind and contents (text for text, base64 for the rest).
    * `max`: the most that may go (the phone's frame): text over it is cut, other bytes over it aren't sent.
    */
-  document(sentinel: string, metric: string, column: string, name: string, max = 20 * 1024 * 1024): { readonly name: string; readonly mime: string; readonly size: number; readonly text?: string; readonly base64?: string; readonly cut?: boolean; readonly runId: string; readonly at?: number } {
+  document(sentinel: string, metric: string, column: string, name: string, max = 20 * 1024 * 1024): DocumentRead {
     const { s, m } = this.typedCell(sentinel, metric, column, name, (c) => isDocumentKind(c.type));
     const runId = m.rowsRunId ?? '';
     const bytes = runId ? this.folders.readDocument(runId, name) : undefined;
     if (!bytes) throw new Error(`${name} is no longer kept: “${s.name}” keeps its documents ${this.filesKeepDays(s)} days`);
-    const mime = documentMime(name);
-    const text = mime.startsWith('text/') || mime === 'application/json' || mime === 'image/svg+xml';
-    const at = m.rowsAt ? { at: m.rowsAt } : {};
-    if (text) {
-      const cut = bytes.byteLength > max;
-      return { name, mime, size: bytes.byteLength, text: new TextDecoder().decode(cut ? bytes.subarray(0, max) : bytes), ...(cut ? { cut: true } : {}), runId, ...at };
-    }
-    if (bytes.byteLength > (max * 3) / 4) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on the Mac`);
-    return { name, mime, size: bytes.byteLength, base64: Buffer.from(bytes).toString('base64'), runId, ...at };
+    const read = documentRead(name, documentMime(name), bytes, max);
+    if (!read) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on the Mac`);
+    return { ...read, runId, ...(m.rowsAt ? { at: m.rowsAt } : {}) };
+  }
+
+  /**
+   * A storage cell's object, fetched now through a link signed for about a minute (the link isn't
+   * kept, nor are the bytes): as a kept document reads, for Beluga's viewer. One too big to show
+   * comes back with its name, kind and size only.
+   */
+  async storageDocument(sentinel: string, metric: string, column: string, value: string, max = 20 * 1024 * 1024): Promise<DocumentRead & { readonly bucket: string; readonly path: string }> {
+    const { m } = this.typedCell(sentinel, metric, column, value, (c) => c.type === 'storage');
+    const { name, mime, bytes, bucket, path: objectPath } = await this.fetchStorage(sentinel, metric, column, value);
+    const read = documentRead(name, mime, bytes, max) ?? { name, mime, size: bytes.byteLength, tooBig: true as const };
+    return { ...read, runId: m.rowsRunId ?? '', ...(m.rowsAt ? { at: m.rowsAt } : {}), bucket, path: objectPath };
+  }
+
+  /**
+   * A storage cell's object saved on this Mac, to open in its own app or show in Finder (you asked
+   * to): a copy in its run's files, readable only by you, swept with the run's documents.
+   */
+  async storagePath(sentinel: string, metric: string, column: string, value: string): Promise<string> {
+    const { s, m } = this.typedCell(sentinel, metric, column, value, (c) => c.type === 'storage');
+    const { name, bytes } = await this.fetchStorage(sentinel, metric, column, value);
+    const copy = safeFileName(`storage-${name}`);
+    const file = m.rowsRunId && this.folders.writeDocument(m.rowsRunId, copy, bytes) ? this.folders.documentPath(m.rowsRunId, copy) : undefined;
+    if (!file) throw new Error(`Couldn’t save ${name} on this Mac for “${s.name}”`);
+    return file;
+  }
+
+  private async fetchStorage(sentinel: string, metric: string, column: string, value: string): Promise<{ readonly name: string; readonly mime: string; readonly bytes: Uint8Array; readonly bucket: string; readonly path: string }> {
+    const obj = splitStorage(value);
+    if (!obj) throw new Error(`“${value}” isn’t a bucket and a path`);
+    const { url } = await this.signStorage(sentinel, metric, column, value);
+    const res = await (this.deps.fetch ?? fetch)(url);
+    const name = storageName(value);
+    if (!res.ok) throw new Error(`Supabase Storage answered ${res.status} for ${name}`);
+    const size = Number(res.headers.get('content-length') ?? 0);
+    if (size > STORAGE_MAX) throw new Error(`${name} is ${sizeWords(size)}: too big to fetch here`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > STORAGE_MAX) throw new Error(`${name} is ${sizeWords(bytes.byteLength)}: too big to fetch here`);
+    // Its name says what it is; Storage's own type when the name doesn't.
+    const said = res.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+    const byName = documentMime(name);
+    return { name, mime: byName === 'application/octet-stream' && said ? said : byName, bytes, bucket: obj.bucket, path: obj.path };
   }
 
   /** Where a kept document is on this Mac, to open it in its own app (the Mac only: never to the phone). */
@@ -1926,6 +1961,20 @@ const isSourceStep = (st: Pick<Step, 'kind'> & { readonly from?: string }): bool
 /** A Keep the numbers step that reads the script step right before it (your test runs both). */
 const readsScript = (steps: readonly Step[], i: number): boolean => steps[i]?.kind === 'measure' && (steps[i] as MeasureStep).from === 'previous' && steps[i - 1]?.kind === 'script';
 /** A Keep the numbers step's typed columns in the preview's words ("html_content → 6 documents, 81 KB"). */
+/**
+ * A document's contents as the viewer reads them: text for text (cut past `max`), base64 for the rest
+ * (none when it's past three quarters of `max`: base64 grows it by a third).
+ */
+function documentRead(name: string, mime: string, bytes: Uint8Array, max: number): Omit<DocumentRead, 'runId' | 'at'> | undefined {
+  const text = mime.startsWith('text/') || mime === 'application/json' || mime === 'image/svg+xml';
+  if (text) {
+    const cut = bytes.byteLength > max;
+    return { name, mime, size: bytes.byteLength, text: new TextDecoder().decode(cut ? bytes.subarray(0, max) : bytes), ...(cut ? { cut: true } : {}) };
+  }
+  if (bytes.byteLength > (max * 3) / 4) return undefined;
+  return { name, mime, size: bytes.byteLength, base64: Buffer.from(bytes).toString('base64') };
+}
+
 const typedOf = (st: MeasureStep, rows: readonly Row[]): string[] => st.metrics.flatMap((m) => (m.kind === 'rows' && m.columns?.length ? typedWords(withStorage(rows, Object.keys(rows[0] ?? {}), m.columns).rows, m.columns) : []));
 
 /** One source checked: its step, its preview, and the numbers its step would keep. */

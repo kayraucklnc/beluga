@@ -6,7 +6,6 @@ import { Spark } from '../components/views/Stats.js';
 import type { DrawCell } from '../components/views/Table.js';
 import { formatNumber } from '../components/views/format.js';
 import { useApi } from '../lib/beluga.js';
-import { useActions } from '../lib/actions.js';
 import { openSheet } from '../lib/sheets.js';
 import { keptRow } from './numbers-model.js';
 import { useSentinelActions } from './use-sentinel.js';
@@ -14,8 +13,8 @@ import n from './numbers.module.css';
 
 /**
  * A kept table's typed cells (BLG-381): what its sentinel said a column holds, drawn so. A document
- * is a chip that opens it in the quiet viewer; a storage object a chip whose link is signed when
- * clicked; progress a bar; a sparkline its line; a change green or rose; a person their initials and
+ * or a storage object is a chip that opens it in Beluga's viewer (a storage object fetched then,
+ * through a link signed for a minute); progress a bar; a sparkline its line; a change green or rose; a person their initials and
  * name; a rating its stars; an action a button that runs its sentinel with the row. The chat's own
  * kinds (badge, url, currency…) are the table's.
  */
@@ -31,7 +30,6 @@ export function typedCells(m: Pick<MetricSeries, 'sentinelId' | 'name' | 'rows'>
 function TypedCell({ m, t, cell, row }: { m: Pick<MetricSeries, 'sentinelId' | 'name' | 'rows'>; t: MetricColumn; cell: Cell; row: Row }) {
   const api = useApi();
   const a = useSentinelActions();
-  const actions = useActions();
   const text = String(cell);
   // A chip or a button in a row opens what it says, not the row.
   const own = (run: () => void) => (e: React.MouseEvent) => {
@@ -42,26 +40,15 @@ function TypedCell({ m, t, cell, row }: { m: Pick<MetricSeries, 'sentinelId' | '
     case 'html':
     case 'file':
       return (
-        <button type="button" className={n.docChip} title={text} onClick={own(() => openSheet({ kind: 'sentinel_document', sentinelId: m.sentinelId, metric: m.name, column: t.key, name: text }))}>
+        <button type="button" className={n.docChip} title={text} onClick={own(() => openSheet({ kind: 'sentinel_document', source: 'kept', sentinelId: m.sentinelId, metric: m.name, column: t.key, name: text }))}>
           <Icon name="file" size={11} />
           <span>{t.button?.trim() || text}</span>
         </button>
       );
     case 'storage':
       return (
-        <button
-          type="button"
-          className={n.docChip}
-          title={text}
-          onClick={own(
-            () =>
-              void a.act(async () => {
-                const { url } = await api.sentinel.signStorage(m.sentinelId, m.name, t.key, text);
-                actions.openLink({ kind: 'url', url });
-              }),
-          )}
-        >
-          <Icon name="link" size={11} />
+        <button type="button" className={n.docChip} title={text} onClick={own(() => openSheet({ kind: 'sentinel_document', source: 'storage', sentinelId: m.sentinelId, metric: m.name, column: t.key, name: text }))}>
+          <Icon name="file" size={11} />
           <span>{t.button?.trim() || storageName(cell)}</span>
         </button>
       );

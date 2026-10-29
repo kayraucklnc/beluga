@@ -73,8 +73,26 @@ export const DOCUMENT_MAX = 10 * 1024 * 1024;
 export const FILES_DIR = 'files';
 /** How long a signed storage link lasts. */
 export const SIGNED_SECONDS = 60;
+/** The most of a storage object Beluga fetches to show or open (a bigger one: open its link). */
+export const STORAGE_MAX = 50 * 1024 * 1024;
 
 export const isDocumentKind = (t: ColumnKind): boolean => t === 'html' || t === 'file';
+
+/**
+ * A document as the viewer reads it (a kept one, or a storage object fetched now): its name, kind and
+ * size; text for text, base64 for the rest; neither when it's too big to send (`tooBig`).
+ */
+export interface DocumentRead {
+  readonly name: string;
+  readonly mime: string;
+  readonly size: number;
+  readonly text?: string;
+  readonly base64?: string;
+  readonly cut?: boolean;
+  readonly tooBig?: boolean;
+  readonly runId: string;
+  readonly at?: number;
+}
 
 /** A document taken out of a row: its file name, its contents, its size. */
 export interface DocumentFile {
@@ -311,17 +329,35 @@ export function documentMime(name: string): string {
   return MIME[ext] ?? 'application/octet-stream';
 }
 
-const MIME: Readonly<Record<string, string>> = { html: 'text/html', htm: 'text/html', txt: 'text/plain', md: 'text/markdown', json: 'application/json', csv: 'text/csv', xml: 'text/xml', pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', zip: 'application/zip', gz: 'application/gzip' };
+const MIME: Readonly<Record<string, string>> = { html: 'text/html', htm: 'text/html', txt: 'text/plain', log: 'text/plain', md: 'text/markdown', markdown: 'text/markdown', json: 'application/json', csv: 'text/csv', tsv: 'text/tab-separated-values', xml: 'text/xml', yaml: 'text/yaml', yml: 'text/yaml', pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', zip: 'application/zip', gz: 'application/gzip', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
 
-/** How the viewer shows a document: as a page (with nothing allowed to run), text, a picture, a PDF, or only its name and size (a zip, any other bytes). */
-export type DocumentLook = 'html' | 'text' | 'image' | 'pdf' | 'other';
+/**
+ * How the viewer shows a document: as a page (with nothing allowed to run), Markdown, JSON as a tree,
+ * text, a picture, a PDF, a video or a sound; anything else (a zip, a Word file) only by what it is.
+ */
+export type DocumentLook = 'html' | 'markdown' | 'json' | 'text' | 'image' | 'pdf' | 'video' | 'audio' | 'other';
 export function documentLook(mime: string): DocumentLook {
   if (mime === 'text/html') return 'html';
+  if (mime === 'text/markdown') return 'markdown';
+  if (mime === 'application/json') return 'json';
   // An SVG can carry script: it's shown as a picture (an <img> runs none).
   if (mime.startsWith('image/')) return 'image';
   if (mime === 'application/pdf') return 'pdf';
-  if (mime.startsWith('text/') || mime === 'application/json') return 'text';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('text/')) return 'text';
   return 'other';
+}
+
+const KIND_WORDS: Readonly<Record<string, string>> = { 'application/zip': 'ZIP archive', 'application/gzip': 'Gzip archive', 'application/pdf': 'PDF document', 'text/html': 'Web page', 'text/markdown': 'Markdown', 'application/json': 'JSON', 'text/csv': 'CSV table', 'text/tab-separated-values': 'TSV table', 'text/plain': 'Plain text', 'image/svg+xml': 'SVG image', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel spreadsheet', 'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint presentation' };
+
+/** What kind of file it is, in words ("PDF document", "PNG image", "DMG file"). */
+export function kindWords(name: string, mime: string): string {
+  if (KIND_WORDS[mime]) return KIND_WORDS[mime]!;
+  const sub = mime.split('/')[1]?.replace(/^x-/, '').toUpperCase();
+  if (/^(image|video|audio)\//.test(mime) && sub) return `${sub} ${mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'audio'}`;
+  const ext = /\.([A-Za-z0-9]{1,8})$/.exec(name)?.[1]?.toUpperCase();
+  return ext ? `${ext} file` : 'File';
 }
 
 /**

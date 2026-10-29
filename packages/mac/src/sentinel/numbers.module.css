@@ -1072,3 +1072,52 @@
   margin: 0;
   color: var(--text-2);
 }
+.docButtons {
+  display: inline-flex;
+  gap: 8px;
+}
+.docInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+}
+.docIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.docMeta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 12.5px;
+}
+.docMeta dt {
+  color: var(--text-3);
+}
+.docMeta dd {
+  margin: 0;
+  color: var(--text);
+}
+.docPath {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+.docPage {
+  max-height: 50vh;
+  overflow: auto;
+  padding: 4px 2px;
+}
+.docAudio {
+  width: 100%;
+}
