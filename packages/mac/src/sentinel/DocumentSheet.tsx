@@ -20,7 +20,7 @@ type Read = DocumentRead & { readonly bucket?: string; readonly path?: string };
  * says what it is, how big, and where it's from, with Open in Default App and Show in Finder. A
  * storage object is fetched now through a link signed for a minute; a copy is saved only to open it.
  */
-export function DocumentSheet({ source, sentinelId, metric, column, name, close }: { source: 'kept' | 'storage'; sentinelId: string; metric: string; column: string; name: string; close: () => void }) {
+export function DocumentSheet({ source, sentinelId, metric, column, name, close }: { source: 'kept' | 'storage' | 'run'; sentinelId: string; metric: string; column: string; name: string; close: () => void }) {
   const api = useApi();
   const a = useSentinelActions();
   const actions = useActions();
@@ -28,7 +28,8 @@ export function DocumentSheet({ source, sentinelId, metric, column, name, close 
   const [error, setError] = useState<string>();
   useEffect(() => {
     let alive = true;
-    const read: Promise<Read> = source === 'storage' ? api.sentinel.storageDocument(sentinelId, metric, column, name) : api.sentinel.document(sentinelId, metric, column, name);
+    // A run's file: `metric` is its run (BLG-392).
+    const read: Promise<Read> = source === 'storage' ? api.sentinel.storageDocument(sentinelId, metric, column, name) : source === 'run' ? api.sentinel.runFile(metric, name) : api.sentinel.document(sentinelId, metric, column, name);
     read.then(
       (d) => alive && setDoc(d),
       (err: unknown) => alive && setError(err instanceof Error ? err.message : String(err)),
@@ -42,7 +43,7 @@ export function DocumentSheet({ source, sentinelId, metric, column, name, close 
   // A PDF, a video or a sound from its bytes, while the sheet is open.
   const blob = useMemo(() => (doc?.base64 && (look === 'pdf' || look === 'video' || look === 'audio') ? URL.createObjectURL(new Blob([Uint8Array.from(atob(doc.base64), (c) => c.charCodeAt(0))], { type: doc.mime })) : undefined), [doc, look]);
   useEffect(() => () => (blob ? URL.revokeObjectURL(blob) : undefined), [blob]);
-  const open = (how: 'open' | 'reveal'): void => void a.act(() => (source === 'storage' ? api.sentinel.storageOpen(sentinelId, metric, column, name, how) : api.sentinel.documentOpen(sentinelId, metric, column, name, how)));
+  const open = (how: 'open' | 'reveal'): void => void a.act(() => (source === 'storage' ? api.sentinel.storageOpen(sentinelId, metric, column, name, how) : source === 'run' ? api.sentinel.runFileOpen(metric, name, how) : api.sentinel.documentOpen(sentinelId, metric, column, name, how)));
   const inBrowser = (): void =>
     void a.act(async () => {
       const { url } = await api.sentinel.signStorage(sentinelId, metric, column, name);

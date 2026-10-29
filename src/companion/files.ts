@@ -27,13 +27,17 @@ import { COMPANION_PIECE, type OutputView } from './protocol.js';
 /** Refs kept (the oldest go first: views hand them out again when they're still shown). */
 const MAX_REFS = 5_000;
 
-/** A typed cell of a kept table (a sentinel's metric, its column and the cell's value). */
-export interface DocKey {
-  readonly sentinelId: string;
-  readonly metric: string;
-  readonly column: string;
-  readonly value: string;
-}
+/**
+ * What a document ref names: a typed cell of a kept table (a sentinel's metric, its column and the
+ * cell's value), a run's file (BLG-392: its report, a step's output, a document), or a metric's whole
+ * history as CSV, made when it's fetched.
+ */
+export type DocKey =
+  | { readonly sentinelId: string; readonly metric: string; readonly column: string; readonly value: string; readonly run?: undefined; readonly history?: undefined }
+  | { readonly run: string; readonly name: string; readonly sentinelId?: undefined; readonly history?: undefined }
+  | { readonly history: string; readonly sentinelId: string; readonly run?: undefined };
+
+const docKeyOf = (doc: DocKey): string => (doc.run !== undefined ? `run\u0000${doc.run}\u0000${doc.name}` : doc.history !== undefined ? `history\u0000${doc.sentinelId}\u0000${doc.history}` : `doc\u0000${doc.sentinelId}\u0000${doc.metric}\u0000${doc.column}\u0000${doc.value}`);
 
 type RefEntry = { readonly path: string; readonly cwd?: string; readonly doc?: undefined } | { readonly doc: DocKey; readonly path?: undefined; readonly cwd?: undefined };
 
@@ -101,9 +105,9 @@ export class RefTable {
     return ref;
   }
 
-  /** The ref for a kept table's typed cell: the same cell keeps its ref. */
+  /** The ref for a kept table's typed cell, a run's file or a metric's history: the same one keeps its ref. */
   docRef(doc: DocKey): string {
-    const key = `doc\u0000${doc.sentinelId}\u0000${doc.metric}\u0000${doc.column}\u0000${doc.value}`;
+    const key = docKeyOf(doc);
     const known = this.byPath.get(key);
     if (known) return known;
     const ref = `out:${this.random()}`;

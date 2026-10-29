@@ -163,7 +163,15 @@ export function launchCompanion(opts: CompanionLaunch): () => Promise<void> {
     macrosFile: path.join(dir, 'phone-macros.json'),
     outputs: outputs.get,
     // A kept table's documents and storage objects, streamed to the phone from memory (BLG-386).
-    documents: (d) => needSentinel(opts.session).documentBytes(d.sentinelId, d.metric, d.column, d.value),
+    documents: (d) => {
+      const sn = needSentinel(opts.session);
+      if (d.run !== undefined) return Promise.resolve(sn.runFileBytes(d.run, d.name));
+      if (d.history !== undefined) {
+        const out = sn.metricExport(d.sentinelId, d.history, 'csv');
+        return Promise.resolve({ name: out.name, mime: out.mime, bytes: new TextEncoder().encode(out.text) });
+      }
+      return sn.documentBytes(d.sentinelId, d.metric, d.column, d.value);
+    },
     watching: (channels, linked) => outputs.watch(channels, linked),
     idleMs: macIdleMs,
     ...(opts.terminals ? { terminals: opts.terminals } : {}),

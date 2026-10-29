@@ -267,6 +267,41 @@ test('a sentinel’s Numbers: tiles with their change, compare, a chart over tim
   await expect(main(page).getByText(/^Stripe revenue · ran by schedule/)).toBeVisible();
 });
 
+test('Kept data: every number’s whole history to look at and export, and the files its runs kept, opened in Beluga (BLG-392)', async ({ page }) => {
+  await openList(page);
+  await main(page).getByRole('row', { name: /^Stripe revenue/ }).click();
+  const kept = main(page).getByTestId('sentinel-data');
+  await kept.scrollIntoViewIfNeeded();
+  const revenue = kept.locator('[data-metric="revenue"]');
+  await expect(revenue).toContainText('Revenue');
+  await expect(revenue).toContainText('8 runs');
+  await shoot(page, 'kept-data');
+  await revenue.click();
+  const sheet = page.getByRole('dialog', { name: 'Revenue' });
+  await expect(sheet).toContainText('8 runs, since');
+  await expect(sheet.getByRole('columnheader', { name: 'Kept' })).toBeVisible();
+  await expect(sheet.getByRole('cell', { name: '$3,412' }).or(sheet.getByRole('cell', { name: '3,412' })).first()).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
+  await expect(sheet.getByRole('button', { name: 'Show in Finder' })).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(shots, 'kept-data-history.png') });
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  // A run's file: its steps' outputs, opened in the viewer (redacted, as everywhere).
+  const run = kept.locator('[data-run]').first();
+  await run.getByRole('button').nth(1).click();
+  const file = page.getByRole('dialog');
+  await expect(file.getByRole('button', { name: 'Show in Finder' })).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(shots, 'kept-data-file.png') });
+  await file.getByRole('button', { name: 'Close' }).click();
+  // Last job run's documents are its runs' files too.
+  await openList(page);
+  await main(page).getByRole('row', { name: /^Last job run/ }).click();
+  const jobs = main(page).getByTestId('sentinel-data');
+  await jobs.getByRole('button', { name: 'deploy landing.html' }).click();
+  await expect(page.getByRole('dialog', { name: 'deploy landing.html' }).frameLocator('iframe').getByRole('heading', { name: 'deploy landing' })).toBeVisible();
+});
+
 test('Keep the numbers on a page: what it reads, each number with where it is, its unit and which way is good', async ({ page }) => {
   await openList(page);
   await main(page).getByRole('row', { name: /^Site speed/ }).click();

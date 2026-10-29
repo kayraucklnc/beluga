@@ -55,6 +55,16 @@ export const SENTINEL_API = {
   'sentinel.storageDocument': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(1200)]) },
   // The same object saved in its run's files (readable only by you) and opened in its own app, or (`reveal`) shown in Finder.
   'sentinel.storageOpen': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.string().min(1).max(1200), z.enum(['open', 'reveal']).optional()]) },
+  // What a sentinel keeps, to look at and take out (BLG-392): its metrics (how many lines, since when) and its runs' files → SentinelData.
+  'sentinel.dataList': { args: z.tuple([id]) },
+  // A run's file (its report, a step's output, a document `files/<name>`) as `sentinel.document` reads; text redacted.
+  'sentinel.runFile': { args: z.tuple([id, z.string().min(1).max(220)]) },
+  // The same file opened in its own app on the Mac, or (`reveal`) shown in Finder.
+  'sentinel.runFileOpen': { args: z.tuple([id, z.string().min(1).max(220), z.enum(['open', 'reveal']).optional()]) },
+  // Take it out: a metric's whole history (CSV or JSON) or a run's files, written to ~/Downloads/Beluga/<sentinel>/ and shown in Finder.
+  'sentinel.dataExport': { args: z.tuple([id, z.union([z.object({ metric: z.string().min(1).max(80), format: z.enum(['csv', 'json']) }), z.object({ runId: id })])]) },
+  // Show its numbers' folder, or a run's folder, in Finder.
+  'sentinel.dataReveal': { args: z.tuple([id, id.optional()]) },
   // An action cell's button (BLG-349): runs the sentinel its column names, with the row (one of the
   // metric's latest rows, checked) as its trigger's payload → the run.
   'sentinel.runRow': { args: z.tuple([id, z.string().min(1).max(80), z.string().min(1).max(80), z.record(z.string().max(80), z.union([z.string().max(100_000), z.number(), z.boolean(), z.null()]))]) },

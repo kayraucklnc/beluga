@@ -26,7 +26,8 @@ const PAGE_MAX = 4 * 1024 * 1024;
  */
 export default function DocumentScreen() {
   const insets = useSafeAreaInsets();
-  const p = useLocalSearchParams<{ ref: string; name: string; mime: string; sentinelId: string; metric: string; column: string; value: string; storage?: string }>();
+  // A table's cell (sentinelId, metric, column, value), or a run's file (run, file: BLG-392).
+  const p = useLocalSearchParams<{ ref: string; name: string; mime: string; sentinelId?: string; metric?: string; column?: string; value?: string; storage?: string; run?: string; file?: string }>();
   const look = documentLook(p.mime ?? '');
   const svg = p.mime === 'image/svg+xml';
   const page = look === 'html' || svg;
@@ -44,7 +45,7 @@ export default function DocumentScreen() {
     return quietHtml(`<meta name="viewport" content="width=device-width, initial-scale=1">${text.text}`);
   }, [page, svg, text?.status, text?.text, more]);
   const openOnMac = () =>
-    void store.call(calls.documentOpen(p.sentinelId, p.metric, p.column, p.value, p.storage === '1', p.name)).then(
+    void store.call(p.run ? calls.runFileOpen(p.run, p.file ?? p.name, p.name) : calls.documentOpen(p.sentinelId ?? '', p.metric ?? '', p.column ?? '', p.value ?? '', p.storage === '1', p.name)).then(
       () => store.toast({ text: `${p.name} is open on your Mac`, tone: 'ok' }),
       (e: Error) => store.toast({ text: e.message, tone: 'error' }),
     );
@@ -96,7 +97,7 @@ export default function DocumentScreen() {
             <View style={{ gap: 4 }}>
               <Meta label="Kind" value={kind} />
               {got?.size ? <Meta label="Size" value={sizeOf(got.size)} /> : null}
-              {p.storage === '1' ? <Meta label="In Storage" value={p.value} /> : null}
+              {p.storage === '1' && p.value ? <Meta label="In Storage" value={p.value} /> : null}
             </View>
             <T v="callout" c={color.text2}>
               {failed ?? (text?.status === 'ready' && (text.size ?? 0) > PAGE_MAX ? 'It’s too big to show on the phone: open it on your Mac.' : 'The phone can’t show this kind of file: open it on your Mac.')}

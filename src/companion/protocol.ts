@@ -67,9 +67,11 @@ export const COMPANION_PROTO = { major: 1, minor: 28 } as const;
  * needs-you item dismissed (`needs.dismiss`) without answering it, here and on the Mac.
  * 1.28 (BLG-386): a table's documents and storage objects as refs the phone streams (`table.typed[].docs`,
  * fetched by the Mac when asked, nothing kept), each column's `max`, `better` and `button`, and Open
- * on your Mac for one the phone doesn't show (`sentinel.documentOpen`, `sentinel.storageOpen`).
+ * on your Mac for one the phone doesn't show (`sentinel.documentOpen`, `sentinel.storageOpen`); what a
+ * sentinel keeps (`sentinel.dataList`, BLG-392: its metrics' histories and runs' files, as refs) and
+ * Open on your Mac for a run's file (`sentinel.runFileOpen`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, docRefs: 28 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, docRefs: 28, keptData: 28 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -155,6 +157,17 @@ export type OutputView = z.infer<typeof OutputView>;
 /** 1.28 (BLG-386): a kept table's document or storage object, as a ref (`get` streams it; text comes redacted). */
 export const DocRefView = z.object({ ref: OutputView.shape.ref, name: z.string().max(256), mime: z.string().max(100) });
 export type DocRefView = z.infer<typeof DocRefView>;
+
+/**
+ * 1.28 (BLG-392): what a sentinel keeps (`sentinel.dataList` from the phone): each metric with how
+ * much it keeps, its whole history as a ref (CSV, made when it's fetched); each run's files as refs.
+ */
+export const DataListView = z.object({
+  metrics: z.array(z.object({ name: z.string().max(80), label: z.string().max(100), kind: z.string().max(10), unit: z.string().max(40), lines: z.number().int().min(0), first: ts.optional(), last: ts.optional(), rows: z.number().int().min(0).optional(), ref: OutputView.shape.ref }).passthrough()).max(200),
+  runs: z.array(z.object({ runId: z.string().max(200), at: ts, headline: z.string().max(2000), state: z.string().max(20), files: z.array(z.object({ name: z.string().max(220), label: z.string().max(200), kind: z.string().max(10), size: z.number().int().min(0), ref: OutputView.shape.ref, mime: z.string().max(100) }).passthrough()).max(60) }).passthrough()).max(200),
+  keepsDays: z.number().int().min(0),
+});
+export type DataListView = z.infer<typeof DataListView>;
 
 export const UsageWindowView = z.object({ label: z.string().max(40), pct: z.number().min(0).max(100), resetsAt: ts.optional() });
 /** One agent provider's allowance (Claude Code today; others later). */

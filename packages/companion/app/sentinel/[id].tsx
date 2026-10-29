@@ -17,6 +17,7 @@ import type { SentinelPageView, SentinelRunView, Topic } from '../../lib/link/pr
 import { openOnMac } from '../../lib/mac';
 import { store } from '../../lib/store';
 import { color } from '../../lib/theme';
+import { KeptData } from '../../components/KeptData';
 
 /** "2 min 12 s", "48 s". */
 const took = (r: SentinelRunView): string | undefined => {
@@ -222,6 +223,8 @@ export default function SentinelPage() {
                 })}
               </Card>
             </View>
+
+            <KeptData sentinelId={s.id} at={s.runs[0]?.endedAt} />
           </Animated.View>
         )}
       </ScrollView>

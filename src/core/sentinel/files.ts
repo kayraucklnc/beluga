@@ -209,6 +209,49 @@ export class RunFolders {
     }
   }
 
+  /**
+   * What a run kept, for you to look at (BLG-392): its report, each step's output, its documents
+   * (`files/<name>`), with their sizes. Never its trigger (a payload can carry what it was sent).
+   */
+  list(runId: string): Array<{ readonly name: string; readonly size: number }> {
+    const shown = (n: string): boolean => n === 'report.md' || /^step-\d+\.txt$/.test(n);
+    const dir = this.folder(runId);
+    if (!dir) {
+      const texts = [...(this.memory.get(runId) ?? [])].filter(([n]) => shown(n)).map(([name, t]) => ({ name, size: Buffer.byteLength(t) }));
+      const docs = [...(this.documents.get(runId) ?? [])].map(([n, d]) => ({ name: `${FILES_DIR}/${n}`, size: typeof d === 'string' ? Buffer.byteLength(d) : d.byteLength }));
+      return [...texts, ...docs];
+    }
+    const sized = (folder: string, prefix: string, keep: (n: string) => boolean): Array<{ name: string; size: number }> => {
+      try {
+        return readdirSync(folder, { withFileTypes: true }).flatMap((e) => {
+          if (!e.isFile() || !keep(e.name)) return [];
+          try {
+            return [{ name: `${prefix}${e.name}`, size: statSync(path.join(folder, e.name)).size }];
+          } catch {
+            return [];
+          }
+        });
+      } catch {
+        return [];
+      }
+    };
+    return [...sized(dir, '', shown), ...sized(path.join(dir, FILES_DIR), `${FILES_DIR}/`, (n) => safeFileName(n) === n)];
+  }
+
+  /** A listed file's bytes (`report.md`, `step-<n>.txt`, `files/<name>`); none for anything else. */
+  readListed(runId: string, name: string): Uint8Array | undefined {
+    if (name.startsWith(`${FILES_DIR}/`)) return this.readDocument(runId, name.slice(FILES_DIR.length + 1));
+    if (name !== 'report.md' && !/^step-\d+\.txt$/.test(name)) return undefined;
+    const text = this.read(runId, name);
+    return text === undefined ? undefined : new TextEncoder().encode(text);
+  }
+
+  /** Where a listed file is on this Mac (none in memory). */
+  listedPath(runId: string, name: string): string | undefined {
+    if (name.startsWith(`${FILES_DIR}/`)) return this.documentPath(runId, name.slice(FILES_DIR.length + 1));
+    return name === 'report.md' || /^step-\d+\.txt$/.test(name) ? this.pathOf(runId, name) : undefined;
+  }
+
   /** Where a run's document is (none in memory, or a name that isn't one). */
   documentPath(runId: string, name: string): string | undefined {
     const dir = this.folder(runId);

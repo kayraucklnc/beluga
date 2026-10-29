@@ -468,6 +468,11 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `sentinel.signStorage` | a kept table's storage chip (bucket and path columns): a Supabase link signed on click for 60 s, never kept; the phone asks the Mac to sign it · Mac: the storage sheet's Open Link in Browser, for a file too big to fetch (BLG-381) |
 | `sentinel.storageDocument` | a kept table's storage chip on the Mac: the object fetched now through a signed link (nothing kept) and shown in the document sheet; a kind Beluga can't show gets its kind, size, bucket and path (BLG-381) |
 | `sentinel.storageOpen` | the storage sheet's Open in Default App and Show in Finder: a copy saved in its run's files (readable only by you, swept with its documents) (BLG-381) · phone: Open on your Mac (BLG-386) |
+| `sentinel.dataList` | a sentinel's page › Kept data (BLG-392): each metric with how much it keeps and since when, each run's files · phone: a sentinel's page › Kept data |
+| `sentinel.runFile` | Kept data › a run's file chip (its report, a step's output, a document) opens in the document sheet, text redacted (BLG-392) |
+| `sentinel.runFileOpen` | the document sheet's Open in Default App and Show in Finder for a run's file (BLG-392) · phone: Open on your Mac |
+| `sentinel.dataExport` | Kept data › a metric's sheet › Export CSV / Export JSON, and a run's ••• › Save Its Files to Downloads: written to ~/Downloads/Beluga/<sentinel>/ and shown in Finder (BLG-392) |
+| `sentinel.dataReveal` | Kept data's folder button and a metric's sheet › Show in Finder (its numbers' folder); a run's ••• › Show in Finder (its folder) (BLG-392) |
 | `sentinel.runRow` | a kept table's action button (an `action` column) runs its sentinel with that row as the trigger's payload (the row checked against the latest rows) · Mac: a kept table's action button (its column's words) runs it (BLG-381) |
 | `dashboard.create` | ✓ Sentinel › Dashboard › + beside the tabs, ⋯ › New Dashboard, and the empty page's New Dashboard (the first is made for you when the first number arrives) · Claude's `dashboard_create` |
 | `dashboard.update` | ✓ Sentinel › Dashboard: the compare `Segmented` at the top (Previous · Yesterday · Last week · Last month, every tile); ⋯ › Rename… (or double-click its tab) · Claude's `dashboard_update` |

@@ -149,13 +149,8 @@ export function ActionCell({ typed, row, tb, width }: { readonly typed: Typed; r
   );
 }
 
-export interface DocCell {
-  readonly sentinelId: string;
-  readonly metric: string;
-  readonly column: string;
-  readonly value: string;
-  readonly storage: boolean;
-}
+/** Where a document is, for Open on your Mac: a table's cell, or a run's file (BLG-392). */
+export type DocCell = { readonly sentinelId: string; readonly metric: string; readonly column: string; readonly value: string; readonly storage: boolean; readonly run?: undefined } | { readonly run: string; readonly name: string };
 
 /**
  * Open a document streamed from the Mac: a picture or a video in the gallery, text (Markdown, JSON,
@@ -168,5 +163,6 @@ export function openDocument(doc: DocRefView, cell: DocCell): void {
   if (look === 'image' && doc.mime !== 'image/svg+xml') return openOutput({ ref: doc.ref, name: doc.name, kind: 'image' }, []);
   if (look === 'video') return openOutput({ ref: doc.ref, name: doc.name, kind: 'video' }, []);
   if (look === 'text' || look === 'json' || look === 'markdown') return void router.push({ pathname: '/reader', params: { ref: doc.ref, name: doc.name } });
-  router.push({ pathname: '/document', params: { ref: doc.ref, name: doc.name, mime: doc.mime, sentinelId: cell.sentinelId, metric: cell.metric, column: cell.column, value: cell.value, storage: cell.storage ? '1' : '' } });
+  const where = cell.run !== undefined ? { run: cell.run, file: cell.name } : { sentinelId: cell.sentinelId, metric: cell.metric, column: cell.column, value: cell.value, storage: cell.storage ? '1' : '' };
+  router.push({ pathname: '/document', params: { ref: doc.ref, name: doc.name, mime: doc.mime, ...where } });
 }

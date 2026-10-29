@@ -1,0 +1,155 @@
+/* Kept data (BLG-392): what a sentinel keeps, a row each; the files its runs kept, as chips. */
+.list {
+  display: flex;
+  flex-direction: column;
+}
+.row,
+.runRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+}
+.row {
+  cursor: pointer;
+}
+.row:hover,
+.runRow:hover {
+  background: var(--bg-hover);
+}
+.icon {
+  flex: none;
+  color: var(--text-3);
+}
+.name {
+  font-weight: 550;
+  white-space: nowrap;
+}
+.what {
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.count {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.more {
+  flex: none;
+  color: var(--text-3);
+}
+.sub {
+  margin: 14px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.runWhen {
+  flex: none;
+  width: 92px;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text-2);
+  background: none;
+  cursor: pointer;
+}
+.runWhen:hover {
+  color: var(--accent);
+}
+.files {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  cursor: pointer;
+}
+.file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.showAll {
+  align-self: flex-start;
+  margin: 6px 8px 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  background: none;
+  cursor: pointer;
+}
+.sheetBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 56vh;
+  overflow: auto;
+}
+.output {
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.outputHead {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.outputText {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 12px/1.5 var(--font-mono);
+}
+.note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}

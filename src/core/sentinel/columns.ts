@@ -1,5 +1,6 @@
 import type { Cell, Row } from '../../shared/view-spec.js';
 
+import { documentMime } from '../../shared/typed-cells.js';
 export { type DocumentLook, deltaCellOf, documentLook, documentMime, kindWords, personOf, progressOf, quietHtml, ratingOf, sparkOf } from '../../shared/typed-cells.js';
 
 /**
@@ -79,6 +80,9 @@ export const SIGNED_SECONDS = 60;
 export const STORAGE_MAX = 50 * 1024 * 1024;
 
 export const isDocumentKind = (t: ColumnKind): boolean => t === 'html' || t === 'file';
+
+/** A run's file's kind (BLG-392): a document by its name, the report Markdown, a step's output text. */
+export const runFileMime = (name: string): string => (name.startsWith(`${FILES_DIR}/`) ? documentMime(name.slice(FILES_DIR.length + 1)) : name.endsWith('.md') ? 'text/markdown' : 'text/plain');
 
 /**
  * A document as the viewer reads it (a kept one, or a storage object fetched now): its name, kind and

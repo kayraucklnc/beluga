@@ -44,6 +44,17 @@ export const SENTINEL_HANDLERS = {
   'sentinel.storageOpen': async (s, id, metric, column, value, how) => {
     (how === 'reveal' ? revealInFinder : systemOpen)(await needSentinel(s).storagePath(id, metric, column, value));
   },
+  'sentinel.dataList': (s, id) => needSentinel(s).dataList(id),
+  'sentinel.runFile': (s, runId, name) => needSentinel(s).runFile(runId, name, fromPhone() ? DOCUMENT_TO_PHONE : undefined),
+  'sentinel.runFileOpen': (s, runId, name, how) => {
+    (how === 'reveal' ? revealInFinder : systemOpen)(needSentinel(s).runFilePath(runId, name));
+  },
+  'sentinel.dataExport': (s, id, what) => {
+    revealInFinder(needSentinel(s).dataExport(id, what));
+  },
+  'sentinel.dataReveal': (s, id, runId) => {
+    systemOpen(needSentinel(s).dataFolder(id, runId));
+  },
   'sentinel.runRow': (s, id, metric, column, row) => needSentinel(s).runRow(id, metric, column, row, fromPhone() ? 'phone' : 'you'),
   'sentinel.chatNew': (s) => needSentinel(s).chatNew(),
   'sentinel.chatOpen': (s, id) => needSentinel(s).chatOpen(id),

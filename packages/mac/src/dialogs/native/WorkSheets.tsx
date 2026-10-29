@@ -5,6 +5,7 @@ import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
 import { NewSentinelSheet } from '../../sentinel/NewSentinelSheet.js';
 import { AddTileSheet } from '../../sentinel/AddTileSheet.js';
 import { DocumentSheet } from '../../sentinel/DocumentSheet.js';
+import { DataSheet } from '../../sentinel/DataSheet.js';
 import { ShareProjectSheet } from './ShareProjectSheet.js';
 import { SyncSheet } from '../../tasks/SyncSheet.js';
 import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
@@ -206,6 +207,8 @@ export function NativeSheets() {
       return <NewSentinelSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.way ? { way: sheet.way } : {})} close={close} />;
     case 'add_tile':
       return <AddTileSheet key={sheet.dashboardId} dashboardId={sheet.dashboardId} close={close} />;
+    case 'sentinel_data':
+      return <DataSheet key={`${sheet.sentinelId}:${sheet.metric}`} sentinelId={sheet.sentinelId} metric={sheet.metric} close={close} />;
     case 'sentinel_document':
       return <DocumentSheet key={`${sheet.source}:${sheet.name}`} source={sheet.source} sentinelId={sheet.sentinelId} metric={sheet.metric} column={sheet.column} name={sheet.name} close={close} />;
     case 'plan_style':

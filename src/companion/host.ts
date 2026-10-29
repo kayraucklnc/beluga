@@ -28,6 +28,7 @@ import { pathNote } from './diagnose.js';
 import {
   COMPANION_PROTO,
   type CompanionSlice,
+  type DataListView,
   type DialAttempt,
   type LinkPath,
   KEEPALIVE_AWAY_MS,
@@ -48,6 +49,8 @@ import {
   VIEW_TURNS,
   parsePhoneFrame,
 } from './protocol.js';
+import { runFileMime } from '../core/sentinel/columns.js';
+import type { SentinelData } from '../core/sentinel/sentinels.js';
 import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type TunnelEnd, type TunnelSide, type VideoPiece, phoneErrorText } from './phone-control.js';
 import { type Macro, PhoneMacros } from './phone-macros.js';
 import { type SystemPort, realSystem } from '../core/gateway/device.js';
@@ -846,11 +849,21 @@ export class CompanionHost {
       this.phoneRuns.set(typeof channel === 'string' ? channel : 'room', false);
     }
     const out = await this.opts.call(link.clientId, method, args);
+    // What a sentinel keeps (BLG-392): each run's file and each metric's history (as CSV) as a ref the phone streams.
+    if (method === 'sentinel.dataList' && out.ok) return { ok: true, value: this.withDataRefs(String(args[0]), out.value as SentinelData) };
     if ((method === 'workspaces.startChat' || method === 'workspaces.startWorktree') && out.ok && typeof out.value === 'string') this.phoneRuns.set(`ws:${out.value}`, false);
     // A plan asked from the phone: its head Claude's draft is done (to approve) when its first run ends.
     const home = method === 'plans.create' && out.ok ? (out.value as { home?: unknown } | null)?.home : undefined;
     if (typeof home === 'string') this.phoneRuns.set(home, false);
     return out;
+  }
+
+  private withDataRefs(sentinelId: string, data: SentinelData): DataListView {
+    return {
+      metrics: data.metrics.map((m) => ({ ...m, ref: this.refs.docRef({ history: m.name, sentinelId }) })),
+      runs: data.runs.map((r) => ({ ...r, files: r.files.map((f) => ({ ...f, ref: this.refs.docRef({ run: r.runId, name: f.name }), mime: runFileMime(f.name) })) })),
+      keepsDays: data.keepsDays,
+    };
   }
 
   render(topic: Topic): unknown {
