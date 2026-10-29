@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RefTable } from '../src/companion/files.js';
+import { FileServer, RefTable } from '../src/companion/files.js';
 import { ChatsView, ChatView, ConvView, DashboardView, HomeView, PeopleView, PlansView, PlanView, SentinelPageView, SentinelsView, TaskPageView, TasksView, type Topic, WidgetsView, WorkView, viewSchema } from '../src/companion/protocol.js';
 import { type ViewContext, convTurns, homeView, needsYou, sentinelDone, viewOf } from '../src/companion/views.js';
 import { NO_SENTINEL, type Sentinel, type SentinelState } from '../src/core/sentinel/model.js';
@@ -606,7 +606,7 @@ describe('the views of a known Mac', () => {
     expect(issues!.deltas).toEqual({ previous: { change: '−3 (−25%)', tone: 'good' }, day: { change: '−3 (−25%)', tone: 'good' }, week: { change: '−5 (−35.7%)', tone: 'good' }, month: { tone: 'none' } });
     expect(revenue).toMatchObject({ value: '$3,400', deltas: { previous: { tone: 'none' } } });
     expect(chart!.chart).toEqual({ kind: 'line', unit: 'count', series: [{ label: 'Open issues', points: [[T0 - 7 * 86_400_000, 14], [T0 - 86_400_000, 12], [T0 + 60, 9]] }] });
-    expect(table!.table).toEqual({ columns: ['who', 'job'], rows: [['lena', 'deploy'], ['bob', 'tests']], total: 2 });
+    expect(table!.table).toEqual({ columns: ['who', 'job'], keys: ['who', 'job'], rows: [['lena', 'deploy'], ['bob', 'tests']], total: 2 });
     expect(text).toMatchObject({ title: 'Morning brief', text: '3 commits landed, CI is green', runId: 'run_b1' });
     expect(gone).toEqual({ id: 't6', kind: 'number', width: 1, title: 'x', state: 'gone' });
     expect(divider).toMatchObject({ kind: 'divider', title: 'Money', width: 3 });
@@ -614,6 +614,30 @@ describe('the views of a known Mac', () => {
     const list = SentinelsView.parse(viewOf(state, ctx, 'sentinels'));
     expect(list.dashboards).toEqual([{ id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }]);
     expect(list.numbers).toEqual({ dashboard: { id: 'db_rev', name: 'Revenue', topic: 'dashboard:db_rev' }, items: [{ label: 'Open issues', value: '9', change: '−5 (−35.7%)', tone: 'good' }, { label: 'Revenue', value: '$3,400', tone: 'none' }] });
+  });
+
+  it('dashboard: a typed table’s documents go as refs the phone streams, never a path; each column’s key, max and button (BLG-386)', async () => {
+    const typed = { ...SENTINELS, metrics: { sn_brief: { ...SENTINELS.metrics!.sn_brief!, jobs: { ...SENTINELS.metrics!.sn_brief!.jobs!, rows: [{ who: 'lena@x.com', job: 'deploy', log: 'deploy.html', done: 40 }, { who: 'bob', job: 'tests', log: null, done: 100 }], columns: ['who', 'job', 'log', 'done'], columnTypes: [{ key: 'who', type: 'person' as const }, { key: 'log', type: 'html' as const, button: 'Open log' }, { key: 'done', type: 'progress' as const, max: 100, label: 'Done' }] } } } };
+    const refs = new RefTable(() => 'docref0001');
+    const docCtx: ViewContext = { ...ctx, refs };
+    const d = DashboardView.parse(viewOf({ ...state, sentinel: typed }, docCtx, 'dashboard:db_rev'));
+    const t = d.tiles.find((x) => x.kind === 'table')!.table!;
+    expect(t.columns).toEqual(['who', 'job', 'log', 'Done']);
+    expect(t.keys).toEqual(['who', 'job', 'log', 'done']);
+    expect(t.metric).toEqual({ sentinelId: 'sn_brief', name: 'jobs' });
+    expect(t.typed).toEqual([
+      { col: 0, key: 'who', kind: 'person', values: ['lena@x.com', 'bob'] },
+      { col: 2, key: 'log', kind: 'html', values: ['deploy.html', null], docs: [{ ref: 'out:docref0001', name: 'deploy.html', mime: 'text/html' }, null], button: 'Open log' },
+      { col: 3, key: 'done', kind: 'progress', values: [null, null], max: 100 },
+    ]);
+    // The ref names the cell; the bytes come from Sentinel when the phone asks, text redacted.
+    const files = new FileServer({ refs, thumbsDir: '/tmp/none', documents: async (doc) => (expect(doc).toEqual({ sentinelId: 'sn_brief', metric: 'jobs', column: 'log', value: 'deploy.html' }), { name: 'deploy.html', mime: 'text/html', bytes: new TextEncoder().encode('<p>token=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789</p>') }) });
+    const piece = await files.piece('out:docref0001', 'text', 0);
+    expect(piece).toMatchObject({ off: 0, eof: true, mime: 'text/html' });
+    expect(Buffer.from(piece.b64, 'base64').toString()).not.toContain('sk-ant-api03');
+    await expect(files.piece('out:docref0001', 'full', 0)).rejects.toThrow(/redacted/);
+    await expect(new FileServer({ refs, thumbsDir: '/tmp/none' }).piece('out:docref0001', 'text', 0)).rejects.toThrow('Documents open on the Mac');
+    expect(JSON.stringify(d)).not.toMatch(/\/Users\//);
   });
 
   it('widgets: every tile but headings in words, as the Mac’s desktop widgets have them, its project’s icon as a checksum', () => {

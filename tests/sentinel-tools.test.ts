@@ -119,7 +119,7 @@ describe('the sentinel.* API', () => {
 
   it('the phone may run, pause, read runs and decide; the rest is the Mac’s', () => {
     const methods = Object.keys(API).filter((m) => m.startsWith('sentinel.'));
-    expect(methods.filter((m) => PHONE[m as keyof typeof PHONE] === 'phone').sort()).toEqual(['sentinel.decide', 'sentinel.document', 'sentinel.metricRead', 'sentinel.pause', 'sentinel.run', 'sentinel.runGet', 'sentinel.runRow', 'sentinel.runs', 'sentinel.signStorage']);
+    expect(methods.filter((m) => PHONE[m as keyof typeof PHONE] === 'phone').sort()).toEqual(['sentinel.dataList', 'sentinel.decide', 'sentinel.document', 'sentinel.documentOpen', 'sentinel.metricRead', 'sentinel.pause', 'sentinel.run', 'sentinel.runFileOpen', 'sentinel.runGet', 'sentinel.runRow', 'sentinel.runs', 'sentinel.signStorage', 'sentinel.storageOpen']);
   });
 });
 

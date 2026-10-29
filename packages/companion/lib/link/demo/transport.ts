@@ -889,6 +889,23 @@ export class DemoTransport implements Transport {
         const since = typeof args[2] === 'number' ? args[2] : 0;
         return ok({ metric: { name: m.name, label: m.label, unit: m.unit, better: m.better }, lines: m.points.filter((p) => p.at >= since).map((p) => ({ at: p.at, runId: p.runId, value: p.value })) });
       }
+      // ---- Kept data (BLG-392): each number's history as CSV, each run's report, streamed by ref as the Mac does
+      case 'sentinel.dataList': {
+        const sn = this.sentinels.items.find((x) => x.summary.id === str(0));
+        if (!sn) return this.frames.emit({ t: 'result', id, ok: false, error: 'No such sentinel' });
+        const offer = (ref: string, name: string, mime: string, text: string): string => (this.world.files.set(ref, { view: { ref, name, kind: 'text' }, mime, text }), ref);
+        const metrics = this.sentinels.numbers.metrics
+          .filter((m) => m.sentinelId === sn.summary.id)
+          .map((m) => {
+            const lines = m.rows ? [{ at: m.rowsAt ?? Date.now(), runId: 'run_demo', rows: m.rows }] : m.points;
+            const csv = m.rows ? ['kept_at,run,' + (m.columns ?? []).join(','), ...m.rows.map((r) => [new Date(m.rowsAt ?? Date.now()).toISOString(), 'run_demo', ...(m.columns ?? []).map((c) => String(r[c] ?? ''))].join(','))].join('\n') : ['kept_at,run,value', ...m.points.map((p) => `${new Date(p.at).toISOString()},${p.runId},${p.value}`)].join('\n');
+            return { name: m.name, label: m.label, kind: m.rows ? 'rows' : 'number', unit: m.unit, lines: lines.length, ...(m.points[0] ? { first: m.points[0].at } : {}), ...(m.rows ? { rows: m.rows.length } : {}), ref: offer(`out:demo-history-${m.sentinelId}-${m.name}`, `${m.label}.csv`, 'text/csv', `${csv}\n`) };
+          });
+        const runs = sn.runs
+          .filter((r) => r.text)
+          .map((r) => ({ runId: r.id, at: r.endedAt ?? r.startedAt, headline: r.headline, state: r.state, files: [{ name: 'report.md', label: 'Report', kind: 'report', size: r.text!.length, mime: 'text/markdown', ref: offer(`out:demo-report-${r.id}`, 'Report.md', 'text/markdown', r.text!) }] }));
+        return ok({ metrics, runs, keepsDays: 14 });
+      }
       // ---- saved files (BLG-124): the demo's conversations are never archived
       case 'companion.gone':
         return ok({ gone: [] });

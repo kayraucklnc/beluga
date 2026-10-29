@@ -134,6 +134,12 @@ export const calls = {
   /** 1.22 (BLG-244): Refresh a dashboard (Run Now on each sentinel it draws from, one at a time) → { total }; a number over time. */
   dashboardRefresh: (id: string, name: string): Call => make('dashboard.refresh', [id], `Refresh ${short(name)}`),
   metricRead: (sentinelId: string, name: string, since?: number): Call => make('sentinel.metricRead', since === undefined ? [sentinelId, name] : [sentinelId, name, since], 'Read a number'),
+  /** 1.29 (BLG-386): a table's action button runs its sentinel with the row; a document the phone doesn't show opens on the Mac. */
+  sentinelRunRow: (sentinelId: string, metric: string, column: string, row: Record<string, string | number | boolean | null>, words: string): Call => make('sentinel.runRow', [sentinelId, metric, column, row], short(words)),
+  /** 1.29 (BLG-392): what a sentinel keeps (its metrics' histories and runs' files, as refs), and a run's file opened on the Mac. */
+  dataList: (sentinelId: string): Call => make('sentinel.dataList', [sentinelId], 'Read what it keeps'),
+  runFileOpen: (runId: string, name: string, label: string): Call => make('sentinel.runFileOpen', [runId, name], `Open ${short(label)} on your Mac`),
+  documentOpen: (sentinelId: string, metric: string, column: string, value: string, storage: boolean, name: string): Call => make(storage ? 'sentinel.storageOpen' : 'sentinel.documentOpen', [sentinelId, metric, column, value], `Open ${short(name)} on your Mac`),
   /** This phone signs out on the Mac (its certificate goes). */
   signOut: (): Call => make('companion.signOut', [], 'Sign out'),
 

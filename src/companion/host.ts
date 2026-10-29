@@ -11,7 +11,7 @@ import type { Identity } from '../net/crypto.js';
 import { type MessageSocket, fromStream } from '../net/transport.js';
 import { phoneMay } from './coverage.js';
 import { type DeviceBook, type DeviceRecord, deviceId } from './devices.js';
-import { FileServer, RefTable, type Thumbnailer } from './files.js';
+import { type DocumentBytes, FileServer, RefTable, type Thumbnailer } from './files.js';
 import { ProjectIcons, type SmallIcon } from './icons.js';
 import type { MergeBook } from './merge.js';
 import { DevicePairing, type PairingInfo } from './pair.js';
@@ -28,6 +28,7 @@ import { pathNote } from './diagnose.js';
 import {
   COMPANION_PROTO,
   type CompanionSlice,
+  type DataListView,
   type DialAttempt,
   type LinkPath,
   KEEPALIVE_AWAY_MS,
@@ -48,6 +49,8 @@ import {
   VIEW_TURNS,
   parsePhoneFrame,
 } from './protocol.js';
+import { runFileMime } from '../core/sentinel/columns.js';
+import type { SentinelData } from '../core/sentinel/sentinels.js';
 import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type TunnelEnd, type TunnelSide, type VideoPiece, phoneErrorText } from './phone-control.js';
 import { type Macro, PhoneMacros } from './phone-macros.js';
 import { type SystemPort, realSystem } from '../core/gateway/device.js';
@@ -93,6 +96,8 @@ export interface CompanionHostOptions {
   /** Where the models that write down the phone's speech go (~/.beluga/voice), or the voice itself (tests). */
   readonly voice?: MacVoice;
   readonly thumbnail?: Thumbnailer;
+  /** A kept table's documents, streamed by ref (Sentinel's documentBytes, BLG-386). */
+  readonly documents?: DocumentBytes;
   /** Outputs on disk per conversation (sub-agents', the scratch folder's), newest first. */
   readonly outputs?: (channel: string) => readonly ConvOutput[];
   /** A phone looks at these conversations: keep their outputs fresh. */
@@ -470,7 +475,7 @@ export class CompanionHost {
     this.refs = opts.refs ?? new RefTable();
     this.uploads = new Uploads(opts.uploadsDir ?? path.join(attachmentsDir(), 'phone'));
     this.voice = opts.voice ?? sharedVoice();
-    this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}) });
+    this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}), ...(opts.documents ? { documents: opts.documents } : {}) });
     this.icons = opts.icons ?? new ProjectIcons({ dir: path.join(path.dirname(opts.thumbsDir), 'icons'), root: (id) => this.state().projects.find((p) => p.id === id)?.root, changed: () => this.refreshViews() });
     this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };
     this.control = new PhoneControl({
@@ -844,11 +849,21 @@ export class CompanionHost {
       this.phoneRuns.set(typeof channel === 'string' ? channel : 'room', false);
     }
     const out = await this.opts.call(link.clientId, method, args);
+    // What a sentinel keeps (BLG-392): each run's file and each metric's history (as CSV) as a ref the phone streams.
+    if (method === 'sentinel.dataList' && out.ok) return { ok: true, value: this.withDataRefs(String(args[0]), out.value as SentinelData) };
     if ((method === 'workspaces.startChat' || method === 'workspaces.startWorktree') && out.ok && typeof out.value === 'string') this.phoneRuns.set(`ws:${out.value}`, false);
     // A plan asked from the phone: its head Claude's draft is done (to approve) when its first run ends.
     const home = method === 'plans.create' && out.ok ? (out.value as { home?: unknown } | null)?.home : undefined;
     if (typeof home === 'string') this.phoneRuns.set(home, false);
     return out;
+  }
+
+  private withDataRefs(sentinelId: string, data: SentinelData): DataListView {
+    return {
+      metrics: data.metrics.map((m) => ({ ...m, ref: this.refs.docRef({ history: m.name, sentinelId }) })),
+      runs: data.runs.map((r) => ({ ...r, files: r.files.map((f) => ({ ...f, ref: this.refs.docRef({ run: r.runId, name: f.name }), mime: runFileMime(f.name) })) })),
+      keepsDays: data.keepsDays,
+    };
   }
 
   render(topic: Topic): unknown {

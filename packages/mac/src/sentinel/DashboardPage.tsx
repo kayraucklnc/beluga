@@ -536,7 +536,10 @@ function TileCell({ d, tile, state, source, movable, place, onSize, onPointerDow
   const [sizing, setSizing] = useState<{ readonly w: TileWidth; readonly h: TileHeight }>();
   // Let go: the new size holds until the saved board comes back with it (no jump back and forth).
   const [kept, setKept] = useState<{ readonly w: TileWidth; readonly h: TileHeight; readonly was: string }>();
-  const saved = `${tile.width}:${tile.height ?? 1}`;
+  // The size the board has saved: `tile` already carries a size the grid holds for it (`sized`),
+  // and checking against that would flip each render (held, so it isn't saved, so let go, so held…).
+  const board = d.tiles.find((x) => x.id === tile.id) ?? tile;
+  const saved = `${board.width}:${board.height ?? 1}`;
   const size = sizing ?? (kept && kept.was === saved ? kept : { w: tile.width, h: tile.height ?? 1 });
   // The board makes room for it while its corner is dragged, and until the new size is saved.
   const resizing = sizing ?? (kept && kept.was === saved ? kept : undefined);
@@ -649,7 +652,7 @@ function TileCell({ d, tile, state, source, movable, place, onSize, onPointerDow
     const up = (): void => {
       stop();
       if (to.w === from.w && to.h === from.h) return;
-      setKept({ ...to, was: `${from.w}:${from.h}` });
+      setKept({ ...to, was: saved });
       update({ width: to.w, height: to.h });
     };
     const key = (ev: KeyboardEvent): void => {
@@ -741,7 +744,7 @@ function TileBody({ d, tile, state, compare, note, lead, more, titleInput }: { d
   if (tile.kind === 'table') {
     const m = metricOf(state, tile.metric);
     if (!m?.rows) return <div className={n.quiet}>{note ?? 'gone'}</div>;
-    return <RowsTable metric={m} pageSize={tall ? 14 : 6} />;
+    return <RowsTable metric={m} pageSize={tall ? 14 : 6} {...(tile.columns ? { columns: tile.columns } : {})} />;
   }
   if (tile.kind === 'output') return <OutputTile tile={tile} state={state} note={note} />;
   return <TextTile tile={tile} state={state} />;

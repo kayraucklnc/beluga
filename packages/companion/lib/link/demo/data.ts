@@ -1,4 +1,5 @@
 import { dashboardConv } from './render-demo';
+import { JOB_DOCS } from './dashboard';
 import type { ChatMessageView, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
 import { DEMO_IMAGES, type DemoImage } from './images.generated';
 import { stripCode } from '../../render';
@@ -137,6 +138,9 @@ export function makeWorld(now = Date.now()): DemoWorld {
     files.set(view.ref, { view, mime: kind === 'json' ? 'application/json' : kind === 'markdown' ? 'text/markdown' : 'text/plain', text });
     return view;
   };
+
+  // Last jobs' documents (the dashboard's typed table, BLG-386).
+  for (const d of JOB_DOCS) files.set(d.ref, { view: { ref: d.ref, name: d.name, kind: d.text ? 'text' : 'file' }, mime: d.mime, ...(d.text !== undefined ? { text: d.text } : {}), ...(d.b64 ? { b64: d.b64 } : {}) });
 
   // ---- the conversation at work: polishing the phone's onboarding
   const shotPair = img('pair-screen.png', 'pairScreen', 'a-shots', 6 * MIN);

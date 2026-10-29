@@ -251,6 +251,13 @@ is only hidden on the phone until it relinks.
 long-press it, change it, then Rewind Here (the conversation goes back to it, a worktree's files too)
 or New Fork (a new worktree or chat from that point). Only messages whose words reach the phone whole
 (no code in them). An older Mac sends no `edit`, so Edit isn't offered.
+1.29 (BLG-386, BLG-392) draws a board table's typed cells on the phone and opens what they point
+to: each document or storage object comes as a ref (`table.typed[].docs`) the phone streams with
+`get`, read (or fetched through a link signed on the Mac) only when asked and kept nowhere; a
+sentinel's kept data (`sentinel.dataList`) lists its metrics' histories (CSV, made when fetched) and
+its runs' files the same way. A kind the phone can't show offers Open on your Mac
+(`sentinel.documentOpen`, `sentinel.storageOpen`, `sentinel.runFileOpen`). An older Mac sends no
+refs, so its cells stay plain text and Kept data isn't shown.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 

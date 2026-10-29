@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { API, type Method } from '../ipc/api.js';
-import { ChatMessageView, DocumentView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, SignedLinkView, SubAgentDetailView, TerminalView, TerminalsView, TranscriptView, TurnView, VoiceMacView } from './protocol.js';
+import { ChatMessageView, DataListView, DocumentView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, SignedLinkView, SubAgentDetailView, TerminalView, TerminalsView, TranscriptView, TurnView, VoiceMacView } from './protocol.js';
 
 /**
  * Every call the phone may make, typed: each `phone` method of coverage.ts with its arguments
@@ -150,6 +150,12 @@ export const PhoneCalls = {
   'sentinel.document': entry('sentinel.document', DocumentView),
   'sentinel.signStorage': entry('sentinel.signStorage', SignedLinkView),
   'sentinel.runRow': entry('sentinel.runRow', SentinelRunResult),
+  // 1.29 (BLG-386): a document the phone doesn't show, opened in its app on the Mac.
+  'sentinel.documentOpen': entry('sentinel.documentOpen', done),
+  'sentinel.storageOpen': entry('sentinel.storageOpen', done),
+  // 1.29 (BLG-392): what a sentinel keeps, its files and histories as refs; a run's file opened on the Mac.
+  'sentinel.dataList': entry('sentinel.dataList', DataListView),
+  'sentinel.runFileOpen': entry('sentinel.runFileOpen', done),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;

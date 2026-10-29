@@ -17,6 +17,7 @@ import { CompanionHost } from './host.js';
 import { macIdleMs } from './push.js';
 import { attachCompanion, detachCompanion } from './registry.js';
 import type { ConvOutput } from './views.js';
+import { needSentinel } from '../core/sentinel/registry.js';
 
 /**
  * Start the phone companion for the daemon (the Mac app's Beluga): the device book in
@@ -161,6 +162,16 @@ export function launchCompanion(opts: CompanionLaunch): () => Promise<void> {
     thumbsDir: path.join(dir, 'companion', 'thumbs'),
     macrosFile: path.join(dir, 'phone-macros.json'),
     outputs: outputs.get,
+    // A kept table's documents and storage objects, streamed to the phone from memory (BLG-386).
+    documents: (d) => {
+      const sn = needSentinel(opts.session);
+      if (d.run !== undefined) return Promise.resolve(sn.runFileBytes(d.run, d.name));
+      if (d.history !== undefined) {
+        const out = sn.metricExport(d.sentinelId, d.history, 'csv');
+        return Promise.resolve({ name: out.name, mime: out.mime, bytes: new TextEncoder().encode(out.text) });
+      }
+      return sn.documentBytes(d.sentinelId, d.metric, d.column, d.value);
+    },
     watching: (channels, linked) => outputs.watch(channels, linked),
     idleMs: macIdleMs,
     ...(opts.terminals ? { terminals: opts.terminals } : {}),

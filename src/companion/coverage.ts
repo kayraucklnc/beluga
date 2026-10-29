@@ -493,7 +493,14 @@ export const PHONE: Record<Method, Side> = {
   // chip's link is signed there (the key stays on the Mac). Opening it in a Mac app is the Mac's.
   'sentinel.document': 'phone',
   'sentinel.signStorage': 'phone',
-  'sentinel.documentOpen': 'mac',
+  'sentinel.documentOpen': 'phone',
+  'sentinel.storageDocument': 'mac',
+  'sentinel.storageOpen': 'phone',
+  'sentinel.dataList': 'phone',
+  'sentinel.runFile': 'mac',
+  'sentinel.runFileOpen': 'phone',
+  'sentinel.dataExport': 'mac',
+  'sentinel.dataReveal': 'mac',
   // An action cell's button runs a sentinel with its row, as Run Now does from the phone.
   'sentinel.runRow': 'phone',
   'dashboard.refresh': 'phone',

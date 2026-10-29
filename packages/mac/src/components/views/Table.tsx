@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useState } from 'react';
 import type { Cell, Column, Row, View } from '@beluga/shared/view-spec.js';
 import { Icon } from '../Icon.js';
 import { cx } from '../ui.js';
@@ -14,9 +14,12 @@ import v from './views.module.css';
  * the search finds rows across every column (at the source when it can), and pages step on
  * without Claude. Cells read by their column's type: numbers line up, statuses are badges, links
  * and paths open, colors show, images are thumbnails. A row opens to show all of itself.
+ * `cell`: a table that knows more about some columns draws their cells itself (a sentinel's kept
+ * rows: documents, progress bars, people); nothing back is the usual cell.
  */
+export type DrawCell = (cell: Cell, col: Column, row: Row, full: boolean) => ReactNode | undefined;
 
-export function DataTable({ view, data, full }: { view: View; data: ViewData; full: boolean }) {
+export function DataTable({ view, data, full, cell }: { view: View; data: ViewData; full: boolean; cell?: DrawCell }) {
   const actions = useActions();
   const [open, setOpen] = useState<number>();
   const columns = data.columns.filter((c) => !c.hidden);
@@ -78,14 +81,14 @@ export function DataTable({ view, data, full }: { view: View; data: ViewData; fu
                 <tr className={cx(v.tr, open === i && v.trOpen, view.link && v.trLink)} onClick={() => openRow(r, i)}>
                   {columns.map((c) => (
                     <td key={c.key} style={{ textAlign: alignOf(c) }} className={cx(isNumeric(c) && v.num)}>
-                      <CellView cell={r[c.key] ?? null} col={c} local={data.mode !== 'snapshot'} />
+                      {cell?.(r[c.key] ?? null, c, r, false) ?? <CellView cell={r[c.key] ?? null} col={c} local={data.mode !== 'snapshot'} />}
                     </td>
                   ))}
                 </tr>
                 {open === i ? (
                   <tr className={v.detailRow}>
                     <td colSpan={columns.length}>
-                      <RowDetail row={r} columns={data.columns} local={data.mode !== 'snapshot'} />
+                      <RowDetail row={r} columns={data.columns} local={data.mode !== 'snapshot'} {...(cell ? { cell } : {})} />
                     </td>
                   </tr>
                 ) : null}
@@ -125,7 +128,7 @@ export function DataTable({ view, data, full }: { view: View; data: ViewData; fu
   );
 }
 
-function RowDetail({ row, columns, local }: { row: Row; columns: readonly Column[]; local: boolean }) {
+function RowDetail({ row, columns, local, cell }: { row: Row; columns: readonly Column[]; local: boolean; cell?: DrawCell }) {
   const keys = [...new Set([...columns.map((c) => c.key), ...Object.keys(row)])];
   const byKey = new Map(columns.map((c) => [c.key, c]));
   return (
@@ -134,7 +137,7 @@ function RowDetail({ row, columns, local }: { row: Row; columns: readonly Column
         <Fragment key={k}>
           <dt>{headingOf(byKey.get(k) ?? { key: k })}</dt>
           <dd>
-            <CellView cell={row[k] ?? null} col={byKey.get(k) ?? { key: k, type: 'text' }} local={local} full />
+            {cell?.(row[k] ?? null, byKey.get(k) ?? { key: k, type: 'text' }, row, true) ?? <CellView cell={row[k] ?? null} col={byKey.get(k) ?? { key: k, type: 'text' }} local={local} full />}
           </dd>
         </Fragment>
       ))}

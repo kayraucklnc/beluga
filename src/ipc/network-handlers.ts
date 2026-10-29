@@ -1,8 +1,7 @@
-import { spawn } from 'node:child_process';
 import { chatOf } from '../core/chat/launch.js';
 import { answerFriendOffer, sendFriendOffer } from '../core/friend-offers.js';
 import { networkEnabled, networkOf, networkStatus, networkSwitchOf } from '../core/network.js';
-import { systemOpen } from '../core/os-open.js';
+import { revealInFinder, systemOpen } from '../core/os-open.js';
 import type { ChatFile, MessageView } from '../net/mesh/views.js';
 import { saveSettings } from '../core/settings.js';
 import type { Session } from '../core/session.js';
@@ -60,11 +59,6 @@ function post(s: Session, conversation: string, body: { text: string; files?: re
   return chat.mesh.post(conversation, outgoing(s, conversation, body.text), Object.keys(extras).length ? extras : undefined);
 }
 
-/** Show a file in Finder, selected. */
-function reveal(file: string): void {
-  if (process.platform !== 'darwin') return systemOpen(file.replace(/\/[^/]*$/, ''));
-  spawn('open', ['-R', file], { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
-}
 
 export const NETWORK_HANDLERS = {
   'network.status': (s) => networkStatus(s),
@@ -103,7 +97,7 @@ export const NETWORK_HANDLERS = {
   'network.files.download': (s, sha, conversation) => chatOf(s).files.download(sha, conversation),
   'network.files.cancel': (s, sha) => chatOf(s).files.cancel(sha),
   'network.files.open': (s, sha) => systemOpen(chatOf(s).files.pathOf(sha)),
-  'network.files.reveal': (s, sha) => reveal(chatOf(s).files.pathOf(sha)),
+  'network.files.reveal': (s, sha) => revealInFinder(chatOf(s).files.pathOf(sha)),
   'network.files.saveTo': (s, sha, target) => chatOf(s).files.saveTo(sha, target),
   'network.files.preview': (s, sha) => chatOf(s).files.preview(sha),
   'network.channels.main': (s) => chatOf(s).main.ensure(),

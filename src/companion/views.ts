@@ -12,7 +12,7 @@ import { planOwnerOf } from '../core/plans/owner.js';
 import { branchState } from '../core/branch-state.js';
 import { type RunSummary, type Sentinel, type SentinelState, activeSentinelChat, firstLine, isLive, isSentinelChat, lastRunOf, pausedWords, runsOf, scheduleSentence, sentinelById, sentinelChatTitle } from '../core/sentinel/model.js';
 import { type Dashboard, type Tile, metricOf, outputLook, tileColumns, tileCompare, tileMetrics, tileOutput, tileStateIn, tileTitle } from '../core/sentinel/dashboard-model.js';
-import { storageSources } from '../core/sentinel/columns.js';
+import { documentMime, isDocumentKind, storageName, storageSources } from '../core/sentinel/columns.js';
 import { sentinelGraph } from '../core/sentinel/workflow.js';
 import { widgetSnapshot } from '../core/sentinel/widgets.js';
 import { COMPARE, changeText, deltaOf, formatMetric } from '../core/sentinel/metrics.js';
@@ -66,6 +66,7 @@ export { needsYou };
 import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, activeAssistantChannel, assistantChatTitle, isAssistant } from '../shared/assistant.js';
 import { STEERED_IN, type SteeredMessage, asSent, steeredMessages, steerWaiting } from '../shared/claude-notices.js';
 import { slotWaitDetail } from '../shared/run-slots.js';
+import type { DocKey } from './files.js';
 
 /** Words for a turn: code taken out (strip.ts), math typeset (math-svg.ts). */
 const proseOf = (markdown: string) => withMath(stripCode(markdown));
@@ -116,7 +117,7 @@ export interface ConvOutput {
 
 export interface ViewContext {
   /** Hands out refs for paths (files.ts RefTable). */
-  readonly refs: { output(path: string, extra?: { size?: number; ts?: number; by?: string; cwd?: string }): OutputView | undefined };
+  readonly refs: { output(path: string, extra?: { size?: number; ts?: number; by?: string; cwd?: string }): OutputView | undefined; docRef?(doc: DocKey): string };
   readonly mac: { readonly name: string; readonly version: string };
   /** Outputs per conversation (channel), newest first. */
   readonly outputs?: (channel: string) => readonly ConvOutput[];
@@ -999,7 +1000,7 @@ function homeNumbers(s: SentinelState): SentinelsView['numbers'] {
 }
 
 /** A tile with what it shows worked out (a number's change for every compare; a chart's series; a table's first rows). */
-function tileView(s: SentinelState, d: Dashboard, t: Tile): DashboardTileView {
+function tileView(s: SentinelState, d: Dashboard, t: Tile, ctx?: ViewContext): DashboardTileView {
   const state = tileStateIn(s, t);
   const ms = tileMetrics(s, t);
   const sentinelId = t.metric?.sentinelId ?? t.metrics?.[0]?.sentinelId ?? t.sentinelId;
@@ -1048,12 +1049,17 @@ function tileView(s: SentinelState, d: Dashboard, t: Tile): DashboardTileView {
     const cell = (v: unknown): string | number | boolean | null => (v === null || v === undefined ? null : typeof v === 'number' || typeof v === 'boolean' ? v : clip(String(v), 300));
     const typed = shown.flatMap((c, col) => {
       const ty = typedBy.get(c.key);
-      return ty ? [{ col, key: clip(c.key, 80), kind: ty.type, values: rows.map((r) => (typeof r[c.key] === 'string' && r[c.key] ? clip(String(r[c.key]), 1200) : null)) }] : [];
+      if (!ty) return [];
+      const values = rows.map((r) => (typeof r[c.key] === 'string' && r[c.key] ? clip(String(r[c.key]), 1200) : null));
+      // A document or storage object goes as a ref the phone streams; the Mac reads or fetches it when asked (BLG-386).
+      const refs = ctx?.refs;
+      const docs = refs?.docRef && (isDocumentKind(ty.type) || ty.type === 'storage') ? values.map((v) => (v ? { ref: refs.docRef!({ sentinelId: m.sentinelId, metric: m.name, column: c.key, value: v }), name: clip(ty.type === 'storage' ? storageName(v) : v, 256), mime: documentMime(ty.type === 'storage' ? storageName(v) : v) } : null)) : undefined;
+      return [{ col, key: clip(c.key, 80), kind: ty.type, values, ...(docs ? { docs } : {}), ...(ty.max !== undefined ? { max: ty.max } : {}), ...(ty.better ? { better: ty.better } : {}), ...(ty.button?.trim() ? { button: clip(ty.button.trim(), 60) } : {}) }];
     });
     const heading = (c: { key: string; label?: string }): string => clip(c.label ?? typedBy.get(c.key)?.label ?? c.key, 80);
     return {
       ...base,
-      table: { columns: shown.map(heading), rows: rows.map((r) => shown.map((c) => cell(r[c.key]))), total: m.rows.length, ...(typed.length ? { typed, metric: { sentinelId: clip(m.sentinelId, 200), name: clip(m.name, 80) } } : {}) },
+      table: { columns: shown.map(heading), keys: shown.map((c) => clip(c.key, 80)), rows: rows.map((r) => shown.map((c) => cell(r[c.key]))), total: m.rows.length, ...(typed.length ? { typed, metric: { sentinelId: clip(m.sentinelId, 200), name: clip(m.name, 80) } } : {}) },
       ...(m.rowsAt ? { at: Math.round(m.rowsAt) } : {}),
     };
   }
@@ -1064,7 +1070,7 @@ function tileView(s: SentinelState, d: Dashboard, t: Tile): DashboardTileView {
   return base;
 }
 
-export function dashboardView(state: DomainState, id: string): DashboardView | undefined {
+export function dashboardView(state: DomainState, id: string, ctx?: ViewContext): DashboardView | undefined {
   const s = state.sentinel;
   const d = s.enabled ? s.dashboards?.find((x) => x.id === id) : undefined;
   if (!d) return undefined;
@@ -1074,7 +1080,7 @@ export function dashboardView(state: DomainState, id: string): DashboardView | u
     id: clip(d.id, 200),
     name: clip(d.name, 100),
     compare: d.compare,
-    tiles: d.tiles.slice(0, 60).map((t) => tileView(s, d, t)),
+    tiles: d.tiles.slice(0, 60).map((t) => tileView(s, d, t, ctx)),
     ...(r ? { refreshing: { done: r.done, total: r.total, ...(running ? { sentinel: clip(running, 100) } : {}) } } : {}),
     dashboards: dashboardRefs(s),
   };
@@ -1359,7 +1365,7 @@ export function viewOf(state: DomainState, ctx: ViewContext, topic: Topic): unkn
   if (topic.startsWith('task:')) return taskPageView(state, topic.slice('task:'.length), ctx);
   if (topic === 'sentinels') return sentinelsView(state);
   if (topic.startsWith('sentinel:')) return sentinelPageView(state, topic.slice('sentinel:'.length), ctx);
-  if (topic.startsWith('dashboard:')) return dashboardView(state, topic.slice('dashboard:'.length));
+  if (topic.startsWith('dashboard:')) return dashboardView(state, topic.slice('dashboard:'.length), ctx);
   if (topic === 'widgets') return widgetsView(state, ctx);
   return undefined;
 }

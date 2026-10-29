@@ -1,5 +1,8 @@
 import type { Cell, Row } from '../../shared/view-spec.js';
 
+import { documentMime } from '../../shared/typed-cells.js';
+export { type DocumentLook, deltaCellOf, documentLook, documentMime, kindWords, personOf, progressOf, quietHtml, ratingOf, sparkOf } from '../../shared/typed-cells.js';
+
 /**
  * Typed columns of a rows metric (docs/sentinel.md §10, BLG-345): what kind of value a column holds,
  * so a document shows as a chip that opens it rather than as a dump of its text. The pure part,
@@ -73,8 +76,29 @@ export const DOCUMENT_MAX = 10 * 1024 * 1024;
 export const FILES_DIR = 'files';
 /** How long a signed storage link lasts. */
 export const SIGNED_SECONDS = 60;
+/** The most of a storage object Beluga fetches to show or open (a bigger one: open its link). */
+export const STORAGE_MAX = 50 * 1024 * 1024;
 
 export const isDocumentKind = (t: ColumnKind): boolean => t === 'html' || t === 'file';
+
+/** A run's file's kind (BLG-392): a document by its name, the report Markdown, a step's output text. */
+export const runFileMime = (name: string): string => (name.startsWith(`${FILES_DIR}/`) ? documentMime(name.slice(FILES_DIR.length + 1)) : name.endsWith('.md') ? 'text/markdown' : 'text/plain');
+
+/**
+ * A document as the viewer reads it (a kept one, or a storage object fetched now): its name, kind and
+ * size; text for text, base64 for the rest; neither when it's too big to send (`tooBig`).
+ */
+export interface DocumentRead {
+  readonly name: string;
+  readonly mime: string;
+  readonly size: number;
+  readonly text?: string;
+  readonly base64?: string;
+  readonly cut?: boolean;
+  readonly tooBig?: boolean;
+  readonly runId: string;
+  readonly at?: number;
+}
 
 /** A document taken out of a row: its file name, its contents, its size. */
 export interface DocumentFile {
@@ -305,90 +329,6 @@ export const storageName = (cell: unknown): string => {
   return s ? (s.path.split('/').pop() ?? s.path) : typeof cell === 'string' ? cell : '';
 };
 
-/** A document's kind for the viewer, from its name. */
-export function documentMime(name: string): string {
-  const ext = /\.([A-Za-z0-9]{1,8})$/.exec(name)?.[1]?.toLowerCase() ?? '';
-  return MIME[ext] ?? 'application/octet-stream';
-}
-
-const MIME: Readonly<Record<string, string>> = { html: 'text/html', htm: 'text/html', txt: 'text/plain', md: 'text/markdown', json: 'application/json', csv: 'text/csv', xml: 'text/xml', pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', zip: 'application/zip', gz: 'application/gzip' };
-
-/** How the viewer shows a document: as a page (with nothing allowed to run), text, a picture, a PDF, or only its name and size (a zip, any other bytes). */
-export type DocumentLook = 'html' | 'text' | 'image' | 'pdf' | 'other';
-export function documentLook(mime: string): DocumentLook {
-  if (mime === 'text/html') return 'html';
-  // An SVG can carry script: it's shown as a picture (an <img> runs none).
-  if (mime.startsWith('image/')) return 'image';
-  if (mime === 'application/pdf') return 'pdf';
-  if (mime.startsWith('text/') || mime === 'application/json') return 'text';
-  return 'other';
-}
-
-/**
- * A document as the viewer shows it: its own HTML with a policy in front that lets nothing load
- * (no scripts, no network; styles and pictures inside it only), whatever the document says.
- */
-export function quietHtml(html: string): string {
-  const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:; form-action 'none'; base-uri 'none'">`;
-  // Before anything the document says (a <base>, a <meta refresh>, a script): the policy comes first.
-  return `<!doctype html>${policy}${html.replace(/<meta[^>]+http-equiv\s*=\s*["']?refresh[^>]*>/gi, '')}`;
-}
-
-/** A progress cell's share, 0 to 1 (a number, "40%", "3/8"); none when it isn't one. */
-export function progressOf(v: unknown, max = 100): number | undefined {
-  if (typeof v === 'number') return Number.isFinite(v) ? Math.max(0, Math.min(1, v / (max || 100))) : undefined;
-  if (typeof v !== 'string') return undefined;
-  const frac = /^\s*(-?\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*$/.exec(v);
-  if (frac) return Number(frac[2]) > 0 ? Math.max(0, Math.min(1, Number(frac[1]) / Number(frac[2]))) : undefined;
-  const pct = /^\s*(-?\d+(?:\.\d+)?)\s*%\s*$/.exec(v);
-  if (pct) return Math.max(0, Math.min(1, Number(pct[1]) / 100));
-  const n = Number(v);
-  return v.trim() && Number.isFinite(n) ? Math.max(0, Math.min(1, n / (max || 100))) : undefined;
-}
-
-/** A sparkline cell's numbers: a JSON list, or numbers apart by commas or spaces. */
-export function sparkOf(v: unknown): number[] | undefined {
-  if (typeof v !== 'string' && typeof v !== 'number') return undefined;
-  const t = String(v).trim();
-  let list: unknown[];
-  try {
-    const j = JSON.parse(t) as unknown;
-    list = Array.isArray(j) ? j : [];
-  } catch {
-    list = t.replace(/^\[|\]$/g, '').split(/[\s,;]+/);
-  }
-  const out = list.map((x) => (typeof x === 'number' ? x : Number(String(x)))).filter((x) => Number.isFinite(x));
-  return out.length >= 2 ? out.slice(0, 120) : undefined;
-}
-
-/** A delta cell: its number and tone ("+12%", -3, "−$40"); none when it isn't one. */
-export function deltaCellOf(v: unknown, better: MetricColumn['better'] = 'up'): { readonly text: string; readonly tone: 'good' | 'bad' | 'flat' | 'none' } | undefined {
-  const t = typeof v === 'number' ? (v > 0 ? `+${v}` : String(v)) : typeof v === 'string' ? v.trim() : '';
-  const n = Number(t.replace(/[−–]/g, '-').replace(/[^\d.+-]/g, ''));
-  if (!t || !Number.isFinite(n)) return undefined;
-  const tone = n === 0 ? 'flat' : better === 'none' ? 'none' : (n > 0) === (better !== 'down') ? 'good' : 'bad';
-  return { text: typeof v === 'number' && v > 0 ? `+${v}` : t, tone };
-}
-
-/** A person cell: their name (an email's part before the @, said nicely) and initials. */
-export function personOf(v: unknown): { readonly name: string; readonly initials: string; readonly email?: string } | undefined {
-  if (typeof v !== 'string' || !v.trim()) return undefined;
-  const t = v.trim();
-  const mail = /^([^@\s<>]+)@[^@\s<>]+$/.exec(t) ?? /<([^@\s<>]+@[^@\s<>]+)>/.exec(t);
-  const email = mail ? (mail[0].includes('<') ? mail[1] : t) : undefined;
-  const raw = mail && !t.includes('<') ? mail[1]!.replace(/[._+-]+/g, ' ') : t.replace(/<[^>]*>/, '').trim();
-  const name = raw.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 60);
-  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
-  return { name, initials, ...(email ? { email } : {}) };
-}
-
-/** A rating cell's stars, 0 to max (5 when none). */
-export function ratingOf(v: unknown, max = 5): { readonly value: number; readonly max: number } | undefined {
-  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.trim()) : NaN;
-  if (!Number.isFinite(n)) return undefined;
-  const m = Math.max(1, Math.min(10, Math.round(max)));
-  return { value: Math.max(0, Math.min(m, n)), max: m };
-}
 
 /** Two rows are the same row: every column equal (how an action names the row it runs with). */
 export function sameRow(a: Readonly<Record<string, unknown>>, b: Readonly<Record<string, unknown>>): boolean {

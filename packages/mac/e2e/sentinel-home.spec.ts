@@ -184,25 +184,34 @@ test('a tile is moved by dragging it; Escape puts it back', async ({ page }) => 
   await openSentinel(page);
   const glance = main(page).getByRole('region', { name: 'At a glance' });
   const tiles = glance.locator('[data-tile][data-kind="number"]');
-  const first = await tiles.nth(0).getAttribute('data-tile');
-  const second = await tiles.nth(1).getAttribute('data-tile');
-  const a = (await tiles.nth(0).boundingBox())!;
-  const b = (await tiles.nth(1).boundingBox())!;
-  // Escape: nothing moves.
+  const first = (await tiles.nth(0).getAttribute('data-tile'))!;
+  const second = (await tiles.nth(1).getAttribute('data-tile'))!;
+  const tile = (id: string) => glance.locator(`[data-tile="${id}"]`);
+  // Where a tile sits on the board's grid (its column and row, from 1).
+  const spot = (id: string) => tile(id).evaluate((el) => `${getComputedStyle(el).gridColumnStart}:${getComputedStyle(el).gridRowStart}`);
+  const from = await spot(first);
+  const there = await spot(second);
+  const a = (await tile(first).boundingBox())!;
+  const b = (await tile(second).boundingBox())!;
+  // Held where it grabbed it, its corner over the second's corner. Escape: nothing moves.
   await page.mouse.move(a.x + a.width / 2, a.y + a.height - 14);
   await page.mouse.down();
-  await page.mouse.move(b.x + b.width * 0.8, b.y + b.height / 2, { steps: 8 });
+  await page.mouse.move(b.x + a.width / 2, b.y + a.height - 14, { steps: 8 });
   await page.keyboard.press('Escape');
   await page.mouse.up();
-  await expect(tiles.nth(0)).toHaveAttribute('data-tile', first!);
-  // Dropped past the second, it goes after it, and stays there.
+  await expect.poll(() => spot(first)).toBe(from);
+  await expect.poll(() => spot(second)).toBe(there);
+  // Dropped on the second's spot, it takes that spot, and the second makes room somewhere else.
   await page.mouse.move(a.x + a.width / 2, a.y + a.height - 14);
   await page.mouse.down();
-  await page.mouse.move(b.x + b.width * 0.8, b.y + b.height / 2, { steps: 8 });
+  await page.mouse.move(b.x + a.width / 2, b.y + a.height - 14, { steps: 8 });
   await page.screenshot({ path: path.join(shots, 'home-moving.png') });
   await page.mouse.up();
-  await expect(tiles.nth(0)).toHaveAttribute('data-tile', second!);
-  await expect(tiles.nth(1)).toHaveAttribute('data-tile', first!);
+  await expect.poll(() => spot(first)).toBe(there);
+  await expect.poll(() => spot(second)).not.toBe(there);
+  // It stays there: the board saved it.
+  await openSentinel(page);
+  await expect.poll(() => spot(first)).toBe(there);
 });
 
 test('what came back: each sentinel’s latest run as a message; tiles say where they come from', async ({ page }) => {

@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import os from 'node:os';
 import type { DashboardTools, SentinelTools, ToolTile } from '../../agent/types.js';
 import { type Row, type Source, SourceSchema } from '../../shared/view-spec.js';
@@ -13,10 +14,12 @@ import type { AgentPlace } from '../../agent/types.js';
 import { SentinelChats } from './chat.js';
 import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_INFO, dashboardSentinels, layoutTiles, outputFormat, outputSteps } from './dashboard-model.js';
 import { Dashboards, type TileInput, type TilePatch } from './dashboards.js';
-import { FILES_KEEP_DAYS, type MetricColumn, SIGNED_SECONDS, documentMime, isDocumentKind, sameRow, splitStorage, takeDocuments, typedWords, withStorage } from './columns.js';
+import { type DocumentRead, FILES_DIR, FILES_KEEP_DAYS, runFileMime, type MetricColumn, SIGNED_SECONDS, STORAGE_MAX, documentMime, isDocumentKind, safeFileName, sameRow, sizeWords, splitStorage, storageName, takeDocuments, typedWords, withStorage } from './columns.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
 import { signStorageUrl } from './storage-sign.js';
 import { MetricFiles } from './metric-files.js';
+import { type ExportFormat, exportName, metricExport } from './data-export.js';
+import { safeName } from '../../net/mesh/files.js';
 import { type Measured, type MetricLine, COMPARE_WORDS, cellRows, describePoints, formatMetric, keptWords, labelOf, measureFrom, metricName, pointOf, readOutput, toNumber } from './metrics.js';
 import { type SentinelTest, type SourcePreview, describePreviews, previewBroken, previewFailed, previewOf } from './preview.js';
 import {
@@ -33,6 +36,7 @@ import {
   isSentinelChat,
   type DashboardRefresh,
   type Limits,
+  type MetricKind,
   type MetricSeries,
   type MetricUnit,
   POINTS_IN_STATE,
@@ -1427,6 +1431,9 @@ export class Sentinels {
     this.sweepDocuments(s);
   }
 
+  /** Documents the phone is streaming (documentBytes): a couple of minutes each, in memory only. */
+  private readonly docCache = new Map<string, { readonly doc: { readonly name: string; readonly mime: string; readonly bytes: Uint8Array }; readonly until: number }>();
+
   /** How many days a sentinel's documents are kept: the longest any of its Keep the numbers steps asks (14 by default). */
   private filesKeepDays(s: Sentinel): number {
     const days = s.steps.flatMap((st) => (st.kind === 'measure' && st.filesKeepDays ? [st.filesKeepDays] : []));
@@ -1463,32 +1470,212 @@ export class Sentinels {
     if (!m?.rows) throw new Error(`“${s.name}” keeps no rows called ${metric}`);
     const col = m.columnTypes?.find((c) => c.key === column && c.type === 'action');
     if (!col?.sentinel) throw new Error(`${column} isn’t an action column of ${m.label}`);
-    const kept = m.rows.find((r) => sameRow(r, row));
-    if (!kept) throw new Error(`That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
+    // The whole row (the Mac's), or the columns a phone shows: either names one of the latest rows.
+    const exact = m.rows.find((r) => sameRow(r, row));
+    const alike = exact ? [exact] : m.rows.filter((r) => Object.keys(row).length > 0 && Object.entries(row).every(([k, v]) => (r[k] ?? null) === (v ?? null)));
+    const kept = alike.length === 1 ? alike[0] : undefined;
+    if (!kept) throw new Error(alike.length > 1 ? `Several of ${m.label}’s rows look like that one: run it from the Mac` : `That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
     const target = this.need(col.sentinel);
     const words = col.button?.trim() || col.label?.trim() || `Run ${target.name}`;
     return this.start(target.id, by, { kind: 'manual', summary: `You pressed “${words}” on a row of ${m.label}`, payload: { row: kept, sentinel: s.name, metric: m.label } }, [s.id]);
   }
 
-  /** A document a typed column kept: its name, kind and contents (text for text, base64 for the rest). */
   /**
    * A document a typed column kept: its name, kind and contents (text for text, base64 for the rest).
    * `max`: the most that may go (the phone's frame): text over it is cut, other bytes over it aren't sent.
    */
-  document(sentinel: string, metric: string, column: string, name: string, max = 20 * 1024 * 1024): { readonly name: string; readonly mime: string; readonly size: number; readonly text?: string; readonly base64?: string; readonly cut?: boolean; readonly runId: string; readonly at?: number } {
+  document(sentinel: string, metric: string, column: string, name: string, max = 20 * 1024 * 1024): DocumentRead {
     const { s, m } = this.typedCell(sentinel, metric, column, name, (c) => isDocumentKind(c.type));
     const runId = m.rowsRunId ?? '';
     const bytes = runId ? this.folders.readDocument(runId, name) : undefined;
     if (!bytes) throw new Error(`${name} is no longer kept: “${s.name}” keeps its documents ${this.filesKeepDays(s)} days`);
-    const mime = documentMime(name);
-    const text = mime.startsWith('text/') || mime === 'application/json' || mime === 'image/svg+xml';
-    const at = m.rowsAt ? { at: m.rowsAt } : {};
-    if (text) {
-      const cut = bytes.byteLength > max;
-      return { name, mime, size: bytes.byteLength, text: new TextDecoder().decode(cut ? bytes.subarray(0, max) : bytes), ...(cut ? { cut: true } : {}), runId, ...at };
+    const read = documentRead(name, documentMime(name), bytes, max);
+    if (!read) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on the Mac`);
+    return { ...read, runId, ...(m.rowsAt ? { at: m.rowsAt } : {}) };
+  }
+
+  /**
+   * A storage cell's object, fetched now through a link signed for about a minute (the link isn't
+   * kept, nor are the bytes): as a kept document reads, for Beluga's viewer. One too big to show
+   * comes back with its name, kind and size only.
+   */
+  async storageDocument(sentinel: string, metric: string, column: string, value: string, max = 20 * 1024 * 1024): Promise<DocumentRead & { readonly bucket: string; readonly path: string }> {
+    const { m } = this.typedCell(sentinel, metric, column, value, (c) => c.type === 'storage');
+    const { name, mime, bytes, bucket, path: objectPath } = await this.fetchStorage(sentinel, metric, column, value);
+    const read = documentRead(name, mime, bytes, max) ?? { name, mime, size: bytes.byteLength, tooBig: true as const };
+    return { ...read, runId: m.rowsRunId ?? '', ...(m.rowsAt ? { at: m.rowsAt } : {}), bucket, path: objectPath };
+  }
+
+  /**
+   * A storage cell's object saved on this Mac, to open in its own app or show in Finder (you asked
+   * to): a copy in its run's files, readable only by you, swept with the run's documents.
+   */
+  async storagePath(sentinel: string, metric: string, column: string, value: string): Promise<string> {
+    const { s, m } = this.typedCell(sentinel, metric, column, value, (c) => c.type === 'storage');
+    const { name, bytes } = await this.fetchStorage(sentinel, metric, column, value);
+    const copy = safeFileName(`storage-${name}`);
+    const file = m.rowsRunId && this.folders.writeDocument(m.rowsRunId, copy, bytes) ? this.folders.documentPath(m.rowsRunId, copy) : undefined;
+    if (!file) throw new Error(`Couldn’t save ${name} on this Mac for “${s.name}”`);
+    return file;
+  }
+
+  /**
+   * A typed cell's bytes for the phone, which streams them a piece at a time (companion/files.ts): a
+   * kept document from its run's files, or a storage object fetched now. Held in memory for a couple
+   * of minutes so its pieces don't fetch it again; never written anywhere.
+   */
+  async documentBytes(sentinel: string, metric: string, column: string, value: string): Promise<{ readonly name: string; readonly mime: string; readonly bytes: Uint8Array }> {
+    const key = `${sentinel}\u0000${metric}\u0000${column}\u0000${value}`;
+    const now = this.now();
+    for (const [k, v] of this.docCache) if (v.until < now) this.docCache.delete(k);
+    const hit = this.docCache.get(key);
+    if (hit) return hit.doc;
+    const { s, m, col } = this.typedCell(sentinel, metric, column, value, (c) => isDocumentKind(c.type) || c.type === 'storage');
+    let doc: { readonly name: string; readonly mime: string; readonly bytes: Uint8Array };
+    if (col.type === 'storage') doc = await this.fetchStorage(sentinel, metric, column, value);
+    else {
+      const bytes = m.rowsRunId ? this.folders.readDocument(m.rowsRunId, value) : undefined;
+      if (!bytes) throw new Error(`${value} is no longer kept: “${s.name}” keeps its documents ${this.filesKeepDays(s)} days`);
+      doc = { name: value, mime: documentMime(value), bytes };
     }
-    if (bytes.byteLength > (max * 3) / 4) throw new Error(`${name} is too big to show here (${Math.round(bytes.byteLength / 1024)} KB): open it on the Mac`);
-    return { name, mime, size: bytes.byteLength, base64: Buffer.from(bytes).toString('base64'), runId, ...at };
+    this.docCache.set(key, { doc, until: now + DOC_CACHE_MS });
+    // The oldest go first past a few documents' worth.
+    let total = [...this.docCache.values()].reduce((n, v) => n + v.doc.bytes.byteLength, 0);
+    for (const [k, v] of this.docCache) {
+      if (total <= DOC_CACHE_BYTES || k === key) break;
+      total -= v.doc.bytes.byteLength;
+      this.docCache.delete(k);
+    }
+    return doc;
+  }
+
+  /**
+   * Everything a sentinel keeps, for you to look at and take out (BLG-392): each metric with how many
+   * lines it keeps and since when, and each run that kept files (its report, each step's output, its
+   * documents), newest first. Never a path, nor a trigger's payload.
+   */
+  dataList(sentinel: string): SentinelData {
+    const s = this.need(sentinel);
+    const metrics = Object.values(this.metrics[s.id] ?? {}).map((m) => {
+      const lines = this.metricFiles.read(s.id, m.name);
+      return { name: m.name, label: m.label, kind: m.kind, unit: m.unit, lines: lines.length, ...(lines.length ? { first: lines[0]!.at, last: lines.at(-1)!.at } : {}), ...(m.kind === 'rows' ? { rows: lines.reduce((n, l) => n + (l.rows?.length ?? 0), 0) } : {}) };
+    });
+    const runs = this.runs
+      .filter((r) => r.sentinelId === s.id)
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .flatMap((r) => {
+        const files = this.folders.list(r.id).map((f) => {
+          const step = /^step-(\d+)\.txt$/.exec(f.name);
+          const label = f.name === 'report.md' ? 'Report' : step ? (s.steps.find((x) => x.id === r.steps[Number(step[1]) - 1]?.id)?.name ?? `Step ${step[1]}`) : f.name.slice(FILES_DIR.length + 1);
+          return { name: f.name, label, kind: f.name === 'report.md' ? ('report' as const) : step ? ('step' as const) : ('document' as const), size: f.size };
+        });
+        return files.length ? [{ runId: r.id, at: r.endedAt ?? r.startedAt, headline: r.headline, state: r.state, files }] : [];
+      });
+    return { metrics, runs, keepsDays: this.filesKeepDays(s) };
+  }
+
+  /** A run's file as you read its name: a document's own, the report, a step's by the step ("Ask Stripe.txt"). */
+  private runFileName(r: RunSummary, name: string): string {
+    if (name.startsWith(`${FILES_DIR}/`)) return name.slice(FILES_DIR.length + 1);
+    const step = /^step-(\d+)\.txt$/.exec(name);
+    const s = this.items.find((x) => x.id === r.sentinelId);
+    const called = step ? s?.steps.find((x) => x.id === r.steps[Number(step[1]) - 1]?.id)?.name : undefined;
+    return step ? `${(called ?? `Step ${step[1]}`).replace(/[/\\:*?"<>|]+/g, '-')}.txt` : name === 'report.md' ? 'Report.md' : name;
+  }
+
+  /** A run's file as the viewer reads it: a report or a step's output redacted as everywhere, a document as kept. */
+  runFile(runId: string, name: string, max = 20 * 1024 * 1024): DocumentRead {
+    const r = this.runs.find((x) => x.id === runId);
+    if (!r) throw new Error('That run is gone (only the last 200 of each sentinel are kept)');
+    const bytes = this.folders.readListed(runId, name);
+    if (!bytes) throw new Error(`${name} is no longer kept`);
+    const doc = name.startsWith(`${FILES_DIR}/`);
+    const shown = this.runFileName(r, name);
+    const mime = runFileMime(name);
+    const data = doc ? bytes : new TextEncoder().encode(redactSecrets(new TextDecoder().decode(bytes)));
+    const read = documentRead(shown, mime, data, max) ?? { name: shown, mime, size: data.byteLength, tooBig: true as const };
+    return { ...read, runId, at: r.endedAt ?? r.startedAt };
+  }
+
+  /** A run's file's bytes for the phone, which streams them (text redacted, as runFile reads it). */
+  runFileBytes(runId: string, name: string): { readonly name: string; readonly mime: string; readonly bytes: Uint8Array } {
+    const r = this.runs.find((x) => x.id === runId);
+    if (!r) throw new Error('That run is gone');
+    const bytes = this.folders.readListed(runId, name);
+    if (!bytes) throw new Error(`${name} is no longer kept`);
+    const doc = name.startsWith(`${FILES_DIR}/`);
+    const shown = this.runFileName(r, name);
+    return { name: shown, mime: runFileMime(name), bytes: doc ? bytes : new TextEncoder().encode(redactSecrets(new TextDecoder().decode(bytes))) };
+  }
+
+  /** Where a run's file is on this Mac, to open or show in Finder (none in memory). */
+  runFilePath(runId: string, name: string): string {
+    if (!this.runs.some((x) => x.id === runId)) throw new Error('That run is gone');
+    const file = this.folders.listedPath(runId, name);
+    if (!file || !this.folders.readListed(runId, name)) throw new Error(`${name} is no longer kept`);
+    return file;
+  }
+
+  /** A metric's whole history as CSV or JSON (data-export.ts): its file's name and text. */
+  metricExport(sentinel: string, name: string, format: ExportFormat): { readonly name: string; readonly mime: string; readonly text: string } {
+    const { metric, lines } = this.metricRead(sentinel, name);
+    const s = this.need(sentinel);
+    return { name: exportName(s.name, metric.label, format), mime: format === 'csv' ? 'text/csv' : 'application/json', text: redactSecrets(metricExport(metric.kind, lines, format)) };
+  }
+
+  /**
+   * Take it out: a metric's history (CSV or JSON), or a run's files (a folder), written to Downloads
+   * (Beluga/<sentinel>/), where you can reach it → where it went, for Finder. Asked for, so it stays.
+   */
+  dataExport(sentinel: string, what: { readonly metric: string; readonly format: ExportFormat } | { readonly runId: string }): string {
+    const s = this.need(sentinel);
+    const base = path.join(this.deps.home ?? os.homedir(), 'Downloads', 'Beluga', s.name.replace(/[/\\:*?"<>|\u0000-\u001f]+/g, '-').trim().slice(0, 80) || s.id);
+    mkdirSync(base, { recursive: true });
+    if ('metric' in what) {
+      const out = this.metricExport(s.id, what.metric, what.format);
+      const file = freeName(base, out.name);
+      writeFileSync(file, out.text);
+      return file;
+    }
+    const r = this.runs.find((x) => x.id === what.runId && x.sentinelId === s.id);
+    if (!r) throw new Error('That run is gone');
+    const stamp = new Date(r.endedAt ?? r.startedAt).toISOString().slice(0, 16).replace('T', ' ').replace(':', '.');
+    const dir = freeName(base, `Run ${stamp}`);
+    mkdirSync(dir, { recursive: true });
+    for (const f of this.folders.list(r.id)) {
+      const doc = f.name.startsWith(`${FILES_DIR}/`);
+      const bytes = this.folders.readListed(r.id, f.name);
+      if (!bytes) continue;
+      const step = /^step-(\d+)\.txt$/.exec(f.name);
+      const named = doc ? f.name.slice(FILES_DIR.length + 1) : step ? `${step[1]} ${(s.steps.find((x) => x.id === r.steps[Number(step[1]) - 1]?.id)?.name ?? 'Step').replace(/[/\\:*?"<>|]+/g, '-')}.txt` : f.name;
+      writeFileSync(freeName(dir, named), doc ? bytes : redactSecrets(new TextDecoder().decode(bytes)));
+    }
+    return dir;
+  }
+
+  /** Where a sentinel's numbers are, or a run's folder, for Show in Finder (none in memory). */
+  dataFolder(sentinel: string, runId?: string): string {
+    const s = this.need(sentinel);
+    const dir = runId ? (this.runs.some((x) => x.id === runId && x.sentinelId === s.id) ? this.folders.folder(runId) : undefined) : this.metricFiles.root ? path.join(this.metricFiles.root, safeName(s.id)) : undefined;
+    if (!dir || !existsSync(dir)) throw new Error(runId ? 'That run kept no files on this Mac' : `“${s.name}” keeps no numbers on this Mac yet`);
+    return dir;
+  }
+
+  private async fetchStorage(sentinel: string, metric: string, column: string, value: string): Promise<{ readonly name: string; readonly mime: string; readonly bytes: Uint8Array; readonly bucket: string; readonly path: string }> {
+    const obj = splitStorage(value);
+    if (!obj) throw new Error(`“${value}” isn’t a bucket and a path`);
+    const { url } = await this.signStorage(sentinel, metric, column, value);
+    const res = await (this.deps.fetch ?? fetch)(url);
+    const name = storageName(value);
+    if (!res.ok) throw new Error(`Supabase Storage answered ${res.status} for ${name}`);
+    const size = Number(res.headers.get('content-length') ?? 0);
+    if (size > STORAGE_MAX) throw new Error(`${name} is ${sizeWords(size)}: too big to fetch here`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > STORAGE_MAX) throw new Error(`${name} is ${sizeWords(bytes.byteLength)}: too big to fetch here`);
+    // Its name says what it is; Storage's own type when the name doesn't.
+    const said = res.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+    const byName = documentMime(name);
+    return { name, mime: byName === 'application/octet-stream' && said ? said : byName, bytes, bucket: obj.bucket, path: obj.path };
   }
 
   /** Where a kept document is on this Mac, to open it in its own app (the Mac only: never to the phone). */
@@ -1926,6 +2113,42 @@ const isSourceStep = (st: Pick<Step, 'kind'> & { readonly from?: string }): bool
 /** A Keep the numbers step that reads the script step right before it (your test runs both). */
 const readsScript = (steps: readonly Step[], i: number): boolean => steps[i]?.kind === 'measure' && (steps[i] as MeasureStep).from === 'previous' && steps[i - 1]?.kind === 'script';
 /** A Keep the numbers step's typed columns in the preview's words ("html_content → 6 documents, 81 KB"). */
+/** A name in `dir` nothing has yet ("Report.csv", then "Report 2.csv"). */
+function freeName(dir: string, name: string): string {
+  const ext = path.extname(name);
+  const stem = name.slice(0, name.length - ext.length);
+  for (let n = 1; ; n++) {
+    const file = path.join(dir, n === 1 ? name : `${stem} ${n}${ext}`);
+    if (!existsSync(file)) return file;
+  }
+}
+
+/** What a sentinel keeps (dataList). */
+export interface SentinelData {
+  readonly metrics: ReadonlyArray<{ readonly name: string; readonly label: string; readonly kind: MetricKind; readonly unit: MetricUnit; readonly lines: number; readonly first?: number; readonly last?: number; readonly rows?: number }>;
+  readonly runs: ReadonlyArray<{ readonly runId: string; readonly at: number; readonly headline: string; readonly state: RunSummary['state']; readonly files: ReadonlyArray<{ readonly name: string; readonly label: string; readonly kind: 'report' | 'step' | 'document'; readonly size: number }> }>;
+  /** How many days its documents are kept. */
+  readonly keepsDays: number;
+}
+
+/** How long, and how much, the documents the phone streams stay in memory. */
+const DOC_CACHE_MS = 2 * 60_000;
+const DOC_CACHE_BYTES = 80 * 1024 * 1024;
+
+/**
+ * A document's contents as the viewer reads them: text for text (cut past `max`), base64 for the rest
+ * (none when it's past three quarters of `max`: base64 grows it by a third).
+ */
+function documentRead(name: string, mime: string, bytes: Uint8Array, max: number): Omit<DocumentRead, 'runId' | 'at'> | undefined {
+  const text = mime.startsWith('text/') || mime === 'application/json' || mime === 'image/svg+xml';
+  if (text) {
+    const cut = bytes.byteLength > max;
+    return { name, mime, size: bytes.byteLength, text: new TextDecoder().decode(cut ? bytes.subarray(0, max) : bytes), ...(cut ? { cut: true } : {}) };
+  }
+  if (bytes.byteLength > (max * 3) / 4) return undefined;
+  return { name, mime, size: bytes.byteLength, base64: Buffer.from(bytes).toString('base64') };
+}
+
 const typedOf = (st: MeasureStep, rows: readonly Row[]): string[] => st.metrics.flatMap((m) => (m.kind === 'rows' && m.columns?.length ? typedWords(withStorage(rows, Object.keys(rows[0] ?? {}), m.columns).rows, m.columns) : []));
 
 /** One source checked: its step, its preview, and the numbers its step would keep. */
