@@ -1,4 +1,4 @@
-import { type DragEvent, type KeyboardEvent, lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type KeyboardEvent, lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { runId, setupId } from '@beluga/shared/terminal-keys.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
@@ -234,7 +234,7 @@ function ViewSwitch({ views, tab, pane }: { views: readonly PanelTab[]; tab: Pan
  * One pane: its tabs, Changes' view switch, and the tab's content. The bottom one closes to just
  * its tabs (the chevron, ⌘J for the terminal) and opens again from any of them.
  */
-function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; style?: React.CSSProperties; badges: Badges }) {
+function Pane({ pane, lead, style, badges, settled }: { pane: PaneId; lead: boolean; style?: React.CSSProperties; badges: Badges; settled: boolean }) {
   const prefs = usePrefs();
   const view = useApp((st) => st.view);
   const projects = useApp((st) => st.projects);
@@ -276,8 +276,9 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
         <>
           <ViewSwitch views={viewsOf(tab, tabsOf(state))} tab={tab} pane={pane} />
           <div className={s.body} id={pane === 'top' ? 'panel-body' : 'panel-body-bottom'} role="tabpanel" aria-labelledby={`panel-tab-${slotOf(tab)}`} onDragOver={onDragOver} onDrop={onDrop}>
-            {/* A worktree being made has no folder yet: its tabs fill in once it's there. */}
-            {making ? (
+            {/* A worktree being made has no folder yet: its tabs fill in once it's there. And while the
+                panel slides in, the tab waits: drawing a file's preview or a long diff then stalled the slide. */}
+            {making || !settled ? (
               <div className={s.loading} />
             ) : (
               <Suspense fallback={<div className={s.loading} />}>
@@ -346,6 +347,42 @@ function useFileFollow(): void {
 }
 
 /**
+ * How the panel slides: its room in the window is taken (or given back) in one step and only
+ * its inside moves, so the conversation beside it is laid out once, not on every frame.
+ * `in`: slid in (it starts out of sight, one frame, so the slide has somewhere to come from).
+ * `settled`: the slide is over and the tab's content can be drawn. Open at launch: both at once.
+ */
+function useSlide(open: boolean, mounted: boolean, inner: React.RefObject<HTMLDivElement | null>): { in: boolean; moving: boolean; settled: boolean } {
+  const [slidIn, setSlidIn] = useState(open);
+  const [settled, setSettled] = useState(open);
+  const [moving, setMoving] = useState(false);
+  useLayoutEffect(() => {
+    if (open === slidIn) return;
+    // The out-of-sight start is styled before it moves (read layout once), else nothing slides.
+    if (open) void inner.current?.offsetWidth;
+    setMoving(true);
+    setSlidIn(open);
+  }, [open]);
+  useEffect(() => {
+    if (!moving) return;
+    const reduce = document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const t = setTimeout(
+      () => {
+        setMoving(false);
+        if (open) setSettled(true);
+      },
+      reduce ? 0 : SLIDE_MS,
+    );
+    return () => clearTimeout(t);
+  }, [moving, open]);
+  // Gone from the window: next time it opens, its content waits for the slide again.
+  useEffect(() => {
+    if (!mounted) setSettled(false);
+  }, [mounted]);
+  return { in: slidIn, moving, settled };
+}
+
+/**
  * The right side of the window, in two panes: what Claude made on top (Changes, Files, Scratch,
  * Info) and what runs below (Terminal, Background), split where you drag it. It slides in and out
  * (⌥⌘0), is as wide as you drag it, and remembers each pane's tab in each workspace.
@@ -368,15 +405,16 @@ export function RightPanel() {
   // Not beside a plan: its chat is the page's right side (your choice stays for everywhere else).
   const open = prefs.inspector && panelFits(view);
   const presence = usePresence(open, SLIDE_MS);
+  const slide = useSlide(open, presence.mounted, inner);
   const hasTop = paneTabsOf(state, 'top', prefs).length > 0;
   const hasBottom = paneTabsOf(state, 'bottom', prefs).length > 0;
   const split = clampShare(prefs.paneSplit, SPLIT_MIN, SPLIT_MAX);
   const both = hasTop && hasBottom && paneShowing(state, 'bottom', prefs);
   const badges = useBadges();
   return (
-    <aside className={cx(s.panel, drag !== undefined && s.dragging, !open && s.closed)} style={{ width: open ? width : 0 }} aria-label="Panel" aria-hidden={!open} inert={!open}>
+    <aside className={s.panel} style={{ width: presence.mounted ? width : 0 }} aria-label="Panel" aria-hidden={!open} inert={!open}>
       {presence.mounted ? (
-        <div ref={inner} className={s.inner} style={{ width }}>
+        <div ref={inner} className={cx(s.inner, !slide.in && s.innerOut, slide.moving && s.sliding)} style={{ width }}>
           <ResizeHandle
             axis="x"
             label="Resize the panel"
@@ -396,7 +434,7 @@ export function RightPanel() {
               })
             }
           />
-          <Pane pane="top" lead badges={badges} style={both ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined} />
+          <Pane pane="top" lead badges={badges} settled={slide.settled} style={both ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined} />
           {both ? (
             <ResizeHandle
               axis="y"
@@ -416,7 +454,7 @@ export function RightPanel() {
               }
             />
           ) : null}
-          <Pane pane="bottom" lead={!hasTop} badges={badges} />
+          <Pane pane="bottom" lead={!hasTop} badges={badges} settled={slide.settled} />
         </div>
       ) : null}
     </aside>

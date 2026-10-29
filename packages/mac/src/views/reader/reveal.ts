@@ -47,7 +47,9 @@ export function useReveal(at: Pick<Location, 'owner' | 'share' | 'path'>): { lin
 
 /** Scroll a drawn line (1-based) of the code in `root` into the middle of its page and flash it. */
 export function scrollToLine(root: HTMLElement, line: number, flash: string): boolean {
-  const lines = root.querySelector('pre code')?.children;
+  const code = root.querySelector('pre code');
+  // Long code comes in blocks of lines (CodeLines): its lines are theirs.
+  const lines = code?.querySelector(':scope > [data-chunk]') ? code.querySelectorAll(':scope > [data-chunk] > *') : code?.children;
   const el = lines?.[Math.max(0, Math.min(lines.length - 1, line - 1))] as HTMLElement | undefined;
   if (!el) return false;
   el.scrollIntoView({ block: 'center' });
