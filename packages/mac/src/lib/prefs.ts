@@ -45,6 +45,8 @@ export interface UiPrefs {
   /** A finished answer's steps: folded away once Claude answers (one click shows them), or left showing. */
   readonly doneSteps: 'fold' | 'show';
   readonly reduceMotion: boolean;
+  /** A solid window: no macOS blur behind the sidebar (lighter on slower Macs, BLG-409). macOS's own Reduce transparency does this too. */
+  readonly reduceTransparency: boolean;
   /** Where ⌘J (and Run) show the terminal: the drawer under the chat, or the right panel's Terminal tab. */
   readonly termIn: TerminalPlace;
   /** The terminal drawer under the chat is open. */
@@ -132,6 +134,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   timestamps: true,
   doneSteps: 'fold',
   reduceMotion: false,
+  reduceTransparency: false,
   termIn: 'panel',
   drawer: false,
   drawerSize: DRAWER_DEFAULT,
@@ -201,12 +204,22 @@ export function usePrefs(): UiPrefs {
 
 const dark = (): boolean => window.matchMedia('(prefers-color-scheme: dark)').matches;
 
+/** The window's blur, on or off, told to the app once per change (nothing outside the app). */
+let vibrancyOn: boolean | undefined;
+function vibrancy(on: boolean): void {
+  if (vibrancyOn === on || !('__TAURI_INTERNALS__' in globalThis)) return;
+  vibrancyOn = on;
+  void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_vibrancy', { on })).catch(() => undefined);
+}
+
 /** Put the preferences on the document (CSS variables and data attributes do the rest). */
 export function apply(p: UiPrefs = current): void {
   const root = document.documentElement;
   root.dataset.theme = p.appearance === 'system' ? (dark() ? 'dark' : 'light') : p.appearance;
   root.dataset.density = p.density;
   root.dataset.motion = p.reduceMotion ? 'reduce' : 'full';
+  root.dataset.transparency = p.reduceTransparency ? 'reduce' : 'full';
+  vibrancy(!p.reduceTransparency);
   root.style.setProperty('--accent', ACCENTS[p.accent]);
   root.style.setProperty('--text-size', `${p.textSize}px`);
   root.style.setProperty('--sidebar-w', `${p.sidebarWidth}px`);

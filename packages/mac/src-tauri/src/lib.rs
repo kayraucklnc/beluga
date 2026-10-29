@@ -62,6 +62,29 @@ fn take_pending_links(state: tauri::State<'_, AppState>) -> Vec<String> {
     std::mem::take(&mut *daemon::locked(&state.pending_links))
 }
 
+/// The window's blur behind the sidebar, on or off (Settings › Appearance › Reduce transparency, BLG-409).
+/// Off, the content is solid and macOS has no blur to keep redrawing. macOS's own Reduce transparency
+/// makes the blur solid by itself.
+#[cfg(target_os = "macos")]
+fn window_vibrancy(window: &tauri::WebviewWindow, on: bool) {
+    use window_vibrancy::{apply_vibrancy, clear_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+    if on {
+        let _ = apply_vibrancy(window, NSVisualEffectMaterial::Sidebar, Some(NSVisualEffectState::FollowsWindowActiveState), None);
+    } else {
+        let _ = clear_vibrancy(window);
+    }
+}
+
+#[tauri::command]
+fn set_vibrancy(app: tauri::AppHandle, on: bool) {
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = app.run_on_main_thread(move || window_vibrancy(&window, on));
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, on);
+}
+
 /// Grey out menu-bar items that can't run right now, check toggles, rename Run/Stop Running.
 #[tauri::command]
 fn set_menu_state(
@@ -241,6 +264,7 @@ pub fn run() {
             daemon_endpoint,
             restart_daemon,
             set_menu_state,
+            set_vibrancy,
             set_menu_keys,
             set_tray_status,
             set_tray_presence,
@@ -279,17 +303,7 @@ pub fn run() {
             let handle = app.handle().clone();
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]
-                {
-                    use window_vibrancy::{
-                        apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState,
-                    };
-                    let _ = apply_vibrancy(
-                        &window,
-                        NSVisualEffectMaterial::Sidebar,
-                        Some(NSVisualEffectState::FollowsWindowActiveState),
-                        None,
-                    );
-                }
+                window_vibrancy(&window, true);
             }
             menu::tray(&handle)?;
             spout::start(&handle);
