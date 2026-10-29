@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import net from 'node:net';
+import os from 'node:os';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -112,6 +113,34 @@ export interface PhoneControlDeps {
 }
 
 /** What a tool needs to act: which phone, by which route, and the adb for it when there is one. */
+/** Beluga Link, the phone's add-on with the Accessibility service (BLG-377), and that service. */
+export const LINK_PACKAGE = 'sh.ratel.beluga.control';
+export const LINK_SERVICE = `${LINK_PACKAGE}/sh.ratel.beluga.addon.BelugaAccessibilityService`;
+/** Each release carries Beluga Link under this name (BLG-391). */
+export const LINK_APK_URL = 'https://github.com/kayraucklnc/beluga/releases/latest/download/Beluga-Link.apk';
+
+/**
+ * Android's list of Accessibility services on, with Beluga Link's added: the others kept, and
+ * Beluga's own from before 1.6.0 (its service lived in the app) dropped.
+ */
+export function withLinkService(current: string): string {
+  const kept = current
+    .split(':')
+    .map((x) => x.trim())
+    .filter((x) => x && x !== 'null' && !x.startsWith('sh.ratel.beluga/'));
+  // Written back through the phone's shell: anything else on the list must stay exactly as it is.
+  if (kept.some((x) => !/^[\w.$/]+$/.test(x))) throw new Error('The phone’s Accessibility list has a service Beluga can’t safely rewrite: turn on Beluga Link in Android › Accessibility instead.');
+  return kept.includes(LINK_SERVICE) ? kept.join(':') : [...kept, LINK_SERVICE].join(':');
+}
+
+async function fetchLinkApk(to: string): Promise<void> {
+  const res = await fetch(LINK_APK_URL, { redirect: 'follow' });
+  if (!res.ok) throw new Error(`Couldn’t download Beluga Link (${res.status})`);
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (bytes.length < 1000 || bytes.length > 50_000_000 || bytes.subarray(0, 2).toString() !== 'PK') throw new Error('The Beluga Link download wasn’t an Android app');
+  await fs.writeFile(to, bytes);
+}
+
 interface Reach {
   readonly route: PhoneRoute;
   readonly adb?: Adb;
@@ -530,7 +559,7 @@ export class PhoneControl {
     if (!state) return 'Open the Beluga app on this phone so it can say what it allows.';
     if (!state.allowed) return 'Turn on “Let your Mac use this phone” in the phone’s Beluga.';
     if (routes.length) return undefined;
-    if (!state.accessibility && !state.adb.on) return 'On the phone: install Beluga Phone Control and turn on its Accessibility, or turn on Wireless debugging.';
+    if (!state.accessibility && !state.adb.on) return 'On the phone: install Beluga Link and turn on its Accessibility, or turn on Wireless debugging.';
     if (state.adb.on && state.adb.pairing) return 'Type the phone’s pairing code into Beluga’s notification to connect adb.';
     return 'Can’t reach the phone right now.';
   }
@@ -1123,6 +1152,43 @@ export class PhoneControl {
     });
   }
 
+  /**
+   * Beluga Link on the phone, from the Mac (BLG-391): the latest release's Beluga-Link.apk installed
+   * over adb, which Play Protect doesn't block the way it blocks a downloaded Accessibility app, then
+   * its Accessibility service turned on beside whatever else is on. Nothing to tap on the phone.
+   */
+  async setUpLink(deviceId: string, download: (to: string) => Promise<void> = fetchLinkApk): Promise<string> {
+    const cable = 'Connect the phone to this Mac with a cable first (or turn on Wireless debugging): Beluga Link is installed over it.';
+    // Not reachable at all says to plug in, not to install Link (that's what this does).
+    const r = await this.need(deviceId, 'act').catch((err: unknown) => {
+      if (this.howUsed(deviceId) === 'off' || this.phoneSaidNo(deviceId)) throw err;
+      throw new Error(cable);
+    });
+    if (!r.adb) throw new Error(cable);
+    const listed = await r.adb.shell(`pm list packages --user 0 ${LINK_PACKAGE}`, 10_000);
+    if (!listed.stdout.split('\n').some((l) => l.trim() === `package:${LINK_PACKAGE}`)) {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'beluga-link-'));
+      try {
+        const apk = path.join(dir, 'Beluga-Link.apk');
+        await download(apk);
+        const res = await r.adb.run(['install', '-r', '--user', '0', apk], 180_000);
+        if (!/Success/i.test(res.stdout)) throw new Error(`The phone didn’t install Beluga Link: ${(res.stderr.trim() || res.stdout.trim()).slice(0, 200) || 'no reason given'}`);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    }
+    const now = (await r.adb.shell('settings get secure enabled_accessibility_services', 8_000)).stdout.trim();
+    const next = withLinkService(now);
+    if (next !== now) {
+      const put = await r.adb.shell(`settings put secure enabled_accessibility_services '${next}'`, 8_000);
+      if (put.code !== 0) throw new Error(put.stderr.trim().slice(0, 200) || 'The phone didn’t turn on Beluga Link.');
+      await r.adb.shell('settings put secure accessibility_enabled 1', 8_000);
+    }
+    this.reached.delete(deviceId);
+    this.deps.onChange();
+    return 'Beluga Link is installed and on: Claude can look at the phone and tap, type and open apps, cable or not.';
+  }
+
   /** Pair the Mac's adb with the phone, using a code the phone sent (over the pairing-port tunnel). */
   async pairAdb(deviceId: string): Promise<string> {
     const adb = await this.ensureAdb();
@@ -1255,6 +1321,7 @@ export class PhoneControl {
         }
         throw new Error('Installing over the Accessibility service isn’t supported yet; turn on Wireless debugging.');
       },
+      setUpLink: async () => ctl.setUpLink(deviceId),
       shell: async (command) => {
         const res = await ctl.shell(deviceId, command);
         return `${res.stdout}${res.stderr ? `\n[stderr]\n${res.stderr}` : ''}`.trim() || `(no output, exit ${res.code})`;

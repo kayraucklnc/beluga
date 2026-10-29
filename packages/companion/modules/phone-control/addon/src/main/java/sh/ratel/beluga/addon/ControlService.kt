@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 
 /**
- * Beluga Phone Control's door for the Beluga app (BLG-377): the app binds this, says HELLO, and
+ * Beluga Link's door for the Beluga app (BLG-377): the app binds this, says HELLO, and
  * sends the Mac's ops (PERFORM); they run in BelugaAccessibilityService and come back as RESULT.
  * Only an app signed with the same key gets an answer.
  */
@@ -61,7 +61,7 @@ class ControlService : Service() {
     val out = Message.obtain(null, ControlLink.RESULT)
     val bundle = Bundle().apply { putInt(ControlLink.K_ID, data.getInt(ControlLink.K_ID)) }
     try {
-      val service = BelugaAccessibilityService.instance ?: throw IllegalStateException("Turn on Accessibility for Beluga Phone Control on the phone")
+      val service = BelugaAccessibilityService.instance ?: throw IllegalStateException("Turn on Accessibility for Beluga Link on the phone")
       val args = data.getString(ControlLink.K_ARGS).orEmpty()
       val json = service.perform(data.getString(ControlLink.K_OP).orEmpty(), if (args.isBlank()) JSONObject() else JSONObject(args))
       // Bytes, not a String: a screen or a screenshot is half the size in a Binder parcel this way.

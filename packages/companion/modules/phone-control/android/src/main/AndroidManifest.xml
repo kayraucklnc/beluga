@@ -13,7 +13,7 @@
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.LAUNCHER" />
     </intent>
-    <!-- Beluga Phone Control, the add-on with the Accessibility service (BLG-377). It's an app of
+    <!-- Beluga Link, the add-on with the Accessibility service (BLG-377). It's an app of
          its own: Play Protect blocks a sideloaded app that declares one, so this one doesn't. -->
     <package android:name="sh.ratel.beluga.control" />
   </queries>

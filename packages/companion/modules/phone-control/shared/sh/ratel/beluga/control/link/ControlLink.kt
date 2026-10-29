@@ -5,7 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Process
 
 /**
- * How the Beluga app and Beluga Phone Control talk on the phone (BLG-377). The Accessibility
+ * How the Beluga app and Beluga Link talk on the phone (BLG-377). The Accessibility
  * service lives in its own small app, so the main APK installs where Play Protect blocks sideloaded
  * apps that declare one. The app binds the add-on's ControlService and they swap Messenger
  * messages; each side only answers the other if it's signed with the same key.

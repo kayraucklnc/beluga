@@ -11,7 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
-/** What both the app and Beluga Phone Control do the same way: facts about the phone, opening things, a screenshot's JPEG. */
+/** What both the app and Beluga Link do the same way: facts about the phone, opening things, a screenshot's JPEG. */
 object Phone {
   /** A screenshot's bitmap as the protocol's ShotView (JPEG, longest side `max`). */
   fun encode(bitmap: Bitmap, max: Int, quality: Int): JSONObject {

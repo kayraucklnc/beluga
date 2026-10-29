@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExecBytesResult, ExecResult, SystemPort } from '../src/core/gateway/device.js';
 import { adbCandidates, parseDevices, parseUsbPhones, parseWmSize } from '../src/companion/phone-adb.js';
 import { AnnexBSplitter, videoSize } from '../src/companion/phone-video.js';
-import { type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type VideoPiece, describeScreen, describeUiautomator, parseNotifications, phoneErrorText } from '../src/companion/phone-control.js';
+import { LINK_PACKAGE, LINK_SERVICE, type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type VideoPiece, describeScreen, describeUiautomator, parseNotifications, phoneErrorText, withLinkService } from '../src/companion/phone-control.js';
 import { DeviceBook, type DeviceRecord } from '../src/companion/devices.js';
 import { type DeviceCert, MacFrame, PhoneFrame, type PhoneControl as PhoneControlState, type PhoneOp, type ScreenView } from '../src/companion/protocol.js';
 import { mkdtempSync } from 'node:fs';
@@ -670,5 +670,58 @@ describe('screen descriptions', () => {
     const xml = '<hierarchy><node text="OK" resource-id="com.app:id/ok" class="android.widget.Button" clickable="true" bounds="[10,20][110,70]"/></hierarchy>';
     const text = describeUiautomator(xml);
     expect(text).toContain('#0 Button "OK" [ok] (tap) @60,45');
+  });
+});
+
+describe('Beluga Link from the Mac (BLG-391)', () => {
+  const id = 'bb'.padEnd(16, '0');
+  const device: DeviceRecord = { cert: cert('bb'), pairedAt: 1, use: 'use' };
+
+  it('adds Link to the Accessibility services on, keeps the others, and drops Beluga’s own from before 1.6.0', () => {
+    expect(withLinkService('null')).toBe(LINK_SERVICE);
+    expect(withLinkService('')).toBe(LINK_SERVICE);
+    expect(withLinkService('com.a/.Svc:sh.ratel.beluga/sh.ratel.beluga.control.BelugaAccessibilityService')).toBe(`com.a/.Svc:${LINK_SERVICE}`);
+    expect(withLinkService(`com.a/com.a.Svc$Inner:${LINK_SERVICE}`)).toBe(`com.a/com.a.Svc$Inner:${LINK_SERVICE}`);
+    expect(() => withLinkService("com.a/.Svc';reboot")).toThrow(/can’t safely rewrite/);
+  });
+
+  it('installs the downloaded Link over adb and turns it on, with nothing to tap on the phone', async () => {
+    const { sys, calls } = fakeSys([
+      { match: /devices -l/, out: 'List\nR5CX12 device usb:1-1\n' },
+      { match: /pm list packages/, out: '' },
+      { match: /install -r --user 0/, out: 'Performing Streamed Install\nSuccess\n' },
+      { match: /settings get secure enabled_accessibility_services/, out: 'com.a/.Svc\n' },
+    ]);
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control({ accessibility: false })), onChange: () => {}, adbPath: '/fake/adb' });
+    const got: string[] = [];
+    const said = await ctl.setUpLink(id, async (to) => void got.push(to));
+    expect(said).toMatch(/installed and on/);
+    expect(got[0]).toMatch(/Beluga-Link\.apk$/);
+    expect(calls.some((c) => c.includes(`settings put secure enabled_accessibility_services 'com.a/.Svc:${LINK_SERVICE}'`))).toBe(true);
+    expect(calls.some((c) => c.includes('settings put secure accessibility_enabled 1'))).toBe(true);
+  });
+
+  it('skips the download when Link is installed already, and says what’s wrong when the phone refuses', async () => {
+    const { sys, calls } = fakeSys([
+      { match: /devices -l/, out: 'List\nR5CX12 device usb:1-1\n' },
+      { match: /pm list packages/, out: `package:${LINK_PACKAGE}\n` },
+      { match: /settings get secure enabled_accessibility_services/, out: `${LINK_SERVICE}\n` },
+    ]);
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control({ accessibility: false })), onChange: () => {}, adbPath: '/fake/adb' });
+    await ctl.setUpLink(id, () => Promise.reject(new Error('should not download')));
+    expect(calls.some((c) => c.includes('settings put'))).toBe(false);
+
+    const refusing = fakeSys([
+      { match: /devices -l/, out: 'List\nR5CX12 device usb:1-1\n' },
+      { match: /install -r/, out: 'Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]\n' },
+    ]);
+    const ctl2 = new PhoneControl({ sys: refusing.sys, devices: book([device]), link: () => fakeLink(id, control({ accessibility: false })), onChange: () => {}, adbPath: '/fake/adb' });
+    await expect(ctl2.setUpLink(id, async () => {})).rejects.toThrow(/didn’t install Beluga Link: Failure \[INSTALL_FAILED_UPDATE_INCOMPATIBLE\]/);
+  });
+
+  it('asks for a cable when adb can’t reach the phone', async () => {
+    const { sys } = fakeSys([{ match: /devices -l/, out: 'List\n' }]);
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control({ accessibility: false })), onChange: () => {}, adbPath: '/fake/adb' });
+    await expect(ctl.setUpLink(id, async () => {})).rejects.toThrow(/cable/);
   });
 });

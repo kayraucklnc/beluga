@@ -18,7 +18,7 @@ import androidx.core.app.NotificationCompat
 /**
  * A see-through screen that only shows Android's "Start now" sheet for the Mac's live mirror
  * (BLG-184), then hands the answer to MirrorService and goes. It runs in its own task, so whatever
- * app the user was in comes back underneath. Opened from the background by Beluga Phone Control
+ * app the user was in comes back underneath. Opened from the background by Beluga Link
  * (its bound Accessibility service may do that); where Android still says no, a notification opens it instead.
  */
 class MirrorConsentActivity : Activity() {
@@ -63,7 +63,7 @@ class MirrorConsentActivity : Activity() {
       if (now - askedAt < 5_000) return
       askedAt = now
       val open = Intent(context, MirrorConsentActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-      // From the background only Phone Control's bound Accessibility service may open a screen (BLG-377).
+      // From the background only Beluga Link's bound Accessibility service may open a screen (BLG-377).
       val viaAddon = AddonClient.launch(PendingIntent.getActivity(context, 3, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
       if (!viaAddon) runCatching { context.startActivity(open) }
       // Android kept it from opening: a notification the user taps instead.

@@ -21,7 +21,7 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * The app's line to Beluga Phone Control (BLG-377), the small add-on app that holds the
+ * The app's line to Beluga Link (BLG-377), the small add-on app that holds the
  * Accessibility service. It binds the add-on's ControlService when the add-on is installed and
  * signed with our key, keeps whether its Accessibility is on, and sends it the Mac's ops.
  */
@@ -74,7 +74,7 @@ object AddonClient {
   private fun lost() {
     service = null
     on = false
-    for (f in pending.values) f.completeExceptionally(IllegalStateException("Beluga Phone Control stopped"))
+    for (f in pending.values) f.completeExceptionally(IllegalStateException("Beluga Link stopped"))
     pending.clear()
     onChange?.invoke()
   }
@@ -115,7 +115,7 @@ object AddonClient {
     } catch (e: ExecutionException) {
       throw e.cause ?: e
     } catch (e: TimeoutException) {
-      throw IllegalStateException("Beluga Phone Control didn’t answer")
+      throw IllegalStateException("Beluga Link didn’t answer")
     } finally {
       pending.remove(id)
     }
@@ -130,5 +130,5 @@ object AddonClient {
     }.isSuccess
   }
 
-  const val MISSING = "Install Beluga Phone Control on the phone and turn on its Accessibility"
+  const val MISSING = "Install Beluga Link on the phone and turn on its Accessibility"
 }

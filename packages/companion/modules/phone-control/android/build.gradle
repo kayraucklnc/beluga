@@ -13,7 +13,7 @@ android {
     versionCode 1
     versionName '1.0.0'
   }
-  // What the app and Beluga Phone Control share (the add-on's build uses it too: addon/build.gradle).
+  // What the app and Beluga Link share (the add-on's build uses it too: addon/build.gradle).
   sourceSets {
     main.java.srcDirs += '../shared'
   }

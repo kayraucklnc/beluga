@@ -1,4 +1,4 @@
-// Beluga Phone Control (BLG-377), the small app with the Accessibility service, is built beside the
+// Beluga Link (BLG-377), the small app with the Accessibility service, is built beside the
 // Beluga app: this adds modules/phone-control/addon to the generated android project, so
 // `./gradlew assembleRelease` makes both APKs (phone-control-addon/build/outputs/apk/release).
 const { withSettingsGradle } = require('expo/config-plugins');

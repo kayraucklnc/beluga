@@ -224,6 +224,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.phone.use` | ✓ Settings › Phone › Let Claude use this phone: Off · Ask each time · Use · Full (BLG-150) |
 | `companion.phone.pairAdb` | ✓ Settings › Phone › Connect, once the phone shows a Wireless-debugging pairing code (runs `adb pair`) |
 | `companion.phone.wifi` | ✓ Settings › Phone › Over Wi‑Fi: Use over Wi‑Fi while the phone is on a cable (turns on its Wireless debugging, reached through the link), or Turn Off (BLG-187) |
+| `companion.phone.setUpLink` | ✓ Settings › Phone › Beluga Link › Set Up Beluga Link, while the phone lacks Link and adb reaches it (a cable or Wireless debugging): installs it and turns on its Accessibility (BLG-391) |
 | `companion.phone.pairCable` | ✓ Settings › Phone › On the cable › Pair over the Cable, when Beluga is on the plugged-in phone but it isn't paired with this Mac (BLG-190) |
 | `companion.phone.settings` | ✓ Settings › Phone › On the cable › Open on the Phone, while USB debugging is off: the phone shows its Developer options, or About phone (BLG-190) |
 | `companion.phone.act` | ✓ the Your phone page's live mirror (full size, from the Phone tab’s ⤢ in Your Mac’s panel, BLG-196, BLG-292): click to tap, drag to swipe, the hardware-key buttons, the type line (BLG-171) |

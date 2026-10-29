@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
  * Beluga's Accessibility service (BLG-150): the one piece that can read another app's screen and
  * act on it. The Mac asks (a `req` frame), the app's JS calls PhoneControlModule.perform, that
  * sends it to this add-on's ControlService (BLG-377), and it runs here. The user turns this on
- * themselves (Settings › Accessibility › Beluga Phone Control); Android only binds it then, and the
+ * themselves (Settings › Accessibility › Beluga Link); Android only binds it then, and the
  * app shows a notification while the Mac is using the phone.
  *
  * Password fields are never read. Everything is best-effort and bounded: a screen read gives at

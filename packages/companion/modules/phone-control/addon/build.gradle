@@ -1,4 +1,4 @@
-// Beluga Phone Control (BLG-377): a small app of its own with the Accessibility service, built
+// Beluga Link (BLG-377): a small app of its own with the Accessibility service, built
 // beside the Beluga app (plugins/phone-control-addon.js adds it to the generated android project),
 // with the same version and the same signing key, which is how the two trust each other.
 apply plugin: 'com.android.application'
