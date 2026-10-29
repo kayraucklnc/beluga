@@ -17,6 +17,7 @@ import { SwipeBackEdge } from '../tasks/SwipeBackEdge.js';
 import { agoWords, comments, lastReport, stateOf } from './issues-model.js';
 import { GhLabelChip, IssueStateIcon, useIssueMenu } from './parts.js';
 import { IssueComposer } from './IssueComposer.js';
+import { IssueReply } from './IssueReply.js';
 import { useIssue, useIssueActions, useIssueStage } from './use-issues.js';
 import { useActions } from '../lib/actions.js';
 import t from '../tasks/tasks.module.css';
@@ -130,6 +131,7 @@ function Page({ projectId, repo, issue, loading, refresh }: { projectId: string;
               </button>
             ) : null}
           </section>
+          <IssueReply projectId={projectId} number={issue.number} posted={refresh} />
         </div>
         <Properties repo={repo} issue={issue} stage={stage} />
       </div>
