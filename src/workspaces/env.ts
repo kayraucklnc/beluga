@@ -1,6 +1,7 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cp, mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
@@ -16,14 +17,25 @@ const INCLUDE_FILE = '.worktreeinclude';
 
 const isEnvName = (name: string): boolean => ENV_FILE.test(name) && !/\.(example|sample|template)$/.test(name);
 
+const LS_OPTS = { encoding: 'utf8', timeout: 15_000, maxBuffer: 32 * 1024 * 1024 } as const;
+const lsArgs = (args: readonly string[]): string[] => ['ls-files', '--others', '-z', ...args];
+const listedFiles = (out: string): string[] => out.split('\0').filter((f) => f && !f.endsWith('/'));
+
 /** Untracked files git lists in a checkout (none when it isn't one, or git can't say). */
 function untracked(root: string, args: readonly string[]): string[] {
   try {
-    const out = execFileSync('git', ['ls-files', '--others', '-z', ...args], { cwd: root, encoding: 'utf8', timeout: 15_000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
-    return out.split('\0').filter((f) => f && !f.endsWith('/'));
+    return listedFiles(execFileSync('git', lsArgs(args), { ...LS_OPTS, cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }));
   } catch {
     return [];
   }
+}
+
+/** The same, without holding up the daemon while git looks. */
+function untrackedAsync(root: string, args: readonly string[]): Promise<string[]> {
+  return new Promise((resolve) => {
+    const child = execFile('git', lsArgs(args), { ...LS_OPTS, cwd: root }, (err, out) => resolve(err ? [] : listedFiles(out)));
+    child.stdin?.end();
+  });
 }
 
 /** Relative paths of env files (files inside .ssh/.aws folders, and what .worktreeinclude names) in a checkout. */
@@ -47,19 +59,84 @@ export function findEnvFiles(root: string): string[] {
   walk(root, '', 0);
   // Deeper than the walk goes (a monorepo's apps/web/config/local/.env): git lists the ignored files (ignored folders
   // like node_modules folded into one line) and the untracked ones it doesn't ignore.
-  const skipped = (rel: string) => rel.split('/').slice(0, -1).some((d) => SKIP_DIRS.has(d));
   const listed = [...untracked(root, ['--ignored', '--exclude-standard', '--directory']), ...untracked(root, ['--exclude-standard'])];
+  const included = existsSync(path.join(root, INCLUDE_FILE)) ? untracked(root, ['--ignored', `--exclude-from=${INCLUDE_FILE}`]) : [];
+  return withListed(found, listed, included);
+}
+
+/** What git listed, added to what the walk found → the sorted list. */
+function withListed(found: Set<string>, listed: readonly string[], included: readonly string[]): string[] {
+  const skipped = (rel: string) => rel.split('/').slice(0, -1).some((d) => SKIP_DIRS.has(d));
   for (const rel of listed) if (isEnvName(path.posix.basename(rel)) && !skipped(rel)) found.add(rel);
-  if (existsSync(path.join(root, INCLUDE_FILE))) {
-    for (const rel of untracked(root, ['--ignored', `--exclude-from=${INCLUDE_FILE}`])) if (!skipped(rel)) found.add(rel);
-  }
+  for (const rel of included) if (!skipped(rel)) found.add(rel);
   return [...found].sort();
+}
+
+const exists = (file: string): Promise<boolean> => stat(file).then(() => true, () => false);
+
+/** findEnvFiles without holding up the daemon (BLG-406): git's lists are made while the folders are walked. */
+async function readEnvFiles(root: string): Promise<string[]> {
+  const found = new Set<string>();
+  const walk = async (dir: string, rel: string, depth: number): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    // One folder at a time, as findEnvFiles goes (a big checkout never fills the disk queue the rest of Beluga waits on).
+    for (const e of entries) {
+      const relPath = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isFile() && isEnvName(e.name)) found.add(relPath);
+      else if (e.isDirectory() && ENV_DIRS.has(e.name)) {
+        for (const f of await readdir(path.join(dir, e.name), { withFileTypes: true })) if (f.isFile()) found.add(`${relPath}/${f.name}`);
+      } else if (e.isDirectory() && depth < MAX_DEPTH && !SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) await walk(path.join(dir, e.name), relPath, depth + 1);
+    }
+  };
+  const [, ignored, others, included] = await Promise.all([
+    walk(root, '', 0),
+    untrackedAsync(root, ['--ignored', '--exclude-standard', '--directory']),
+    untrackedAsync(root, ['--exclude-standard']),
+    exists(path.join(root, INCLUDE_FILE)).then((has) => (has ? untrackedAsync(root, ['--ignored', `--exclude-from=${INCLUDE_FILE}`]) : [])),
+  ]);
+  return withListed(found, [...ignored, ...others], included);
+}
+
+interface EnvScan {
+  readonly running: Promise<string[]>;
+  next?: Promise<string[]>;
+}
+
+/** Per folder: the scan running now, and the one queued behind it. */
+const envScans = new Map<string, EnvScan>();
+
+/**
+ * The same list as findEnvFiles, without blocking the daemon, and never two scans of one folder
+ * at once (BLG-406): a call while one runs gets one more after it (what's running may have looked
+ * before the call's change), and every call meanwhile shares that one.
+ */
+export function scanEnvFiles(root: string): Promise<string[]> {
+  const now = envScans.get(root);
+  if (!now) return startScan(root);
+  now.next ??= now.running.catch(() => undefined).then(() => startScan(root));
+  return now.next;
+}
+
+function startScan(root: string): Promise<string[]> {
+  const scan: EnvScan = { running: readEnvFiles(root) };
+  envScans.set(root, scan);
+  const done = (): void => {
+    // The one queued behind it takes its place itself.
+    if (envScans.get(root) === scan && !scan.next) envScans.delete(root);
+  };
+  scan.running.then(done, done);
+  return scan.running;
 }
 
 /** Copy env files from the main folder into a new worktree (only ones the worktree doesn't have). */
 export async function copyEnvFiles(from: string, to: string): Promise<string[]> {
   const copied: string[] = [];
-  for (const rel of findEnvFiles(from)) {
+  for (const rel of await scanEnvFiles(from)) {
     const target = path.join(to, rel);
     if (existsSync(target)) continue;
     mkdirSync(path.dirname(target), { recursive: true });
@@ -70,10 +147,14 @@ export async function copyEnvFiles(from: string, to: string): Promise<string[]> 
 }
 
 const hash = (file: string): string => createHash('sha256').update(readFileSync(file)).digest('hex');
+const hashAsync = async (file: string): Promise<string> => createHash('sha256').update(await readFile(file)).digest('hex');
 
 /** Fingerprint of every env file in a folder, taken when the worktree is created. */
 export async function envSnapshot(dir: string): Promise<Record<string, string>> {
-  return Object.fromEntries(findEnvFiles(dir).map((rel) => [rel, hash(path.join(dir, rel))]));
+  const files = await scanEnvFiles(dir);
+  const out: Record<string, string> = {};
+  for (const rel of files) out[rel] = await hashAsync(path.join(dir, rel));
+  return out;
 }
 
 export interface EnvChange {
@@ -113,10 +194,46 @@ export function envChanges(worktree: string, main: string, snapshot: Readonly<Re
     }
     const mine = parseDotenv(readFileSync(file, 'utf8'));
     const theirs = existsSync(mainFile) ? parseDotenv(readFileSync(mainFile, 'utf8')) : new Map<string, string>();
-    const added = [...mine.keys()].filter((k) => !theirs.has(k));
-    const changed = [...mine.keys()].filter((k) => theirs.has(k) && theirs.get(k) !== mine.get(k));
-    const removed = [...theirs.keys()].filter((k) => !mine.has(k));
-    if (added.length || changed.length || removed.length) changes.push({ file: rel, added, changed, removed, binary: false });
+    const change = keyChange(rel, mine, theirs);
+    if (change) changes.push(change);
+  }
+  return changes;
+}
+
+/** A KEY=VALUE file's keys added, changed and removed against the main folder's (none: in step). */
+function keyChange(file: string, mine: Map<string, string>, theirs: Map<string, string>): EnvChange | undefined {
+  const added = [...mine.keys()].filter((k) => !theirs.has(k));
+  const changed = [...mine.keys()].filter((k) => theirs.has(k) && theirs.get(k) !== mine.get(k));
+  const removed = [...theirs.keys()].filter((k) => !mine.has(k));
+  return added.length || changed.length || removed.length ? { file, added, changed, removed, binary: false } : undefined;
+}
+
+/**
+ * envChanges without blocking the daemon (BLG-406), for the checks that run on their own. `files`:
+ * the worktree's env files when they were just listed (else they're listed now). Same answer.
+ */
+export async function envChangesAsync(
+  worktree: string,
+  main: string,
+  snapshot: Readonly<Record<string, string>> = {},
+  kept: Readonly<Record<string, string>> = {},
+  files?: readonly string[],
+): Promise<EnvChange[]> {
+  const changes: EnvChange[] = [];
+  for (const rel of files ?? (await scanEnvFiles(worktree))) {
+    const file = path.join(worktree, rel);
+    const now = await hashAsync(file);
+    if (snapshot[rel] === now || kept[rel] === now) continue;
+    const mainFile = path.join(main, rel);
+    const there = await exists(mainFile);
+    if (!ENV_FILE.test(path.basename(rel))) {
+      if (!there || (await hashAsync(mainFile)) !== now) changes.push({ file: rel, added: [], changed: [], removed: [], binary: true });
+      continue;
+    }
+    const mine = parseDotenv(await readFile(file, 'utf8'));
+    const theirs = there ? parseDotenv(await readFile(mainFile, 'utf8')) : new Map<string, string>();
+    const change = keyChange(rel, mine, theirs);
+    if (change) changes.push(change);
   }
   return changes;
 }
@@ -148,6 +265,35 @@ export function followMainEnv(worktree: string, main: string, snapshot: Readonly
     if (!untouched) continue;
     mkdirSync(path.dirname(dst), { recursive: true });
     cpSync(src, dst, { preserveTimestamps: true });
+    next[rel] = theirs;
+    updated.push(rel);
+  }
+  return { updated, snapshot: next };
+}
+
+/** followMainEnv without blocking the daemon (BLG-406): `mainFiles` as the main folder's scan listed them. Same result. */
+export async function followMainEnvAsync(worktree: string, main: string, snapshot: Readonly<Record<string, string>>, mainFiles: readonly string[]): Promise<{ updated: string[]; snapshot: Record<string, string> }> {
+  const next = { ...snapshot };
+  const updated: string[] = [];
+  for (const rel of mainFiles) {
+    const src = path.join(main, rel);
+    const dst = path.join(worktree, rel);
+    let theirs: string;
+    try {
+      if (!(await stat(src)).isFile()) continue;
+      theirs = await hashAsync(src);
+    } catch {
+      continue;
+    }
+    const here = (await exists(dst)) ? await hashAsync(dst) : undefined;
+    if (here === theirs) {
+      next[rel] = theirs;
+      continue;
+    }
+    const untouched = here === undefined ? !(rel in snapshot) : snapshot[rel] === here;
+    if (!untouched) continue;
+    await mkdir(path.dirname(dst), { recursive: true });
+    await cp(src, dst, { preserveTimestamps: true });
     next[rel] = theirs;
     updated.push(rel);
   }

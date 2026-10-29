@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { SystemPort } from '../core/gateway/device.js';
 import type { PhoneTools } from '../agent/types.js';
 import { phoneBrief } from '../agent/phone-tools.js';
-import { Adb, adbCandidates, findAdb, parseDevices, parseUsbPhones } from './phone-adb.js';
+import { Adb, adbCandidates, findAdb, parseDevices, parseUsbPhones, usbTree } from './phone-adb.js';
 import type { DeviceBook } from './devices.js';
 import { type Macro, MacroStep, type PhoneMacros } from './phone-macros.js';
 import { type VideoPiece, adbScreenVideo } from './phone-video.js';
@@ -242,8 +242,7 @@ export class PhoneControl {
    * shows even with USB debugging off; adb is asked only once one is there.
    */
   async scanCable(): Promise<CableView | undefined> {
-    const io = await this.deps.sys.exec('/usr/sbin/ioreg', ['-p', 'IOUSB', '-l', '-w0'], 5_000).catch(() => undefined);
-    const phone = parseUsbPhones(io?.stdout ?? '')[0];
+    const phone = await this.usbPhone();
     let next: CableView | undefined;
     if (phone) {
       const adb = await this.ensureAdb();
@@ -263,6 +262,27 @@ export class PhoneControl {
       this.deps.onChange();
     }
     return next;
+  }
+
+  /** The USB tree (names and ids only) when the full read last found no phone on it. */
+  private emptyTree?: string;
+
+  /**
+   * The Android phone on this Mac's USB, if any. The full list (every device's properties, ~100 KB
+   * even with nothing plugged in) is read only when the tree of devices isn't the very one that
+   * had no phone last time (BLG-407): anything plugged in, out or re-connected changes the tree
+   * (a new entry, a new id), so it's seen on the same tick as before.
+   */
+  private async usbPhone(): Promise<{ name: string; serial?: string } | undefined> {
+    const tree = await this.deps.sys.exec('/usr/sbin/ioreg', ['-p', 'IOUSB', '-w0'], 5_000).then(
+      (r) => (r.code === 0 && r.stdout.trim() ? usbTree(r.stdout) : undefined),
+      () => undefined,
+    );
+    if (tree !== undefined && tree === this.emptyTree) return undefined;
+    const io = await this.deps.sys.exec('/usr/sbin/ioreg', ['-p', 'IOUSB', '-l', '-w0'], 5_000).catch(() => undefined);
+    const phone = parseUsbPhones(io?.stdout ?? '')[0];
+    this.emptyTree = !phone && io?.code === 0 ? tree : undefined;
+    return phone;
   }
 
   private async factsOf(adb: Adb): Promise<{ beluga: boolean; name: string }> {

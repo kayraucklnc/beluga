@@ -59,6 +59,22 @@ export class DaemonServer {
 
   constructor(private readonly opts: DaemonServerOptions) {}
 
+  /** The frame just encoded, and its text: one going to every screen is encoded once, not once per screen (BLG-407). */
+  private lastFrame?: DaemonFrame;
+  private lastText = '';
+
+  private encoded(frame: DaemonFrame): string {
+    if (frame === this.lastFrame) return this.lastText;
+    const text = encodeFrame(frame);
+    this.lastFrame = frame;
+    this.lastText = text;
+    // Kept only while this frame goes out to each screen (one synchronous loop), never for a later send.
+    queueMicrotask(() => {
+      if (this.lastFrame === frame) this.lastFrame = undefined;
+    });
+    return text;
+  }
+
   private get session(): Session {
     return this.opts.session;
   }
@@ -146,7 +162,7 @@ export class DaemonServer {
         this.opts.log?.(`${client?.id ?? 'a screen'} fell too far behind; letting it go`);
         return ws.terminate();
       }
-      ws.send(encodeFrame(frame));
+      ws.send(this.encoded(frame));
     };
     // Phone mirrors this screen is watching (BLG-173), by device id → stop().
     const mirrors = new Map<string, () => void>();

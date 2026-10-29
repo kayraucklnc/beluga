@@ -611,6 +611,55 @@ describe('a phone on the cable (BLG-190)', () => {
     expect(await known.scanCable()).toEqual({ state: 'ready', name: 'Sad Printer' });
     void id;
   });
+
+  it('reads every device’s properties only when the USB tree isn’t the one that had no phone last time (BLG-407)', async () => {
+    const tree = (...devices: string[]) =>
+      [
+        '+-o Root  <class IORegistryEntry, id 0x100000100, retain 36>',
+        '  +-o AppleT8132USBXHCI@00000000  <class AppleT8132USBXHCI, id 0x100000530, registered, matched, active, busy 0 (17 ms), retain 37>',
+        ...devices,
+      ].join('\n');
+    const phoneLine = '    +-o SAMSUNG_Android@01120000  <class IOUSBHostDevice, id 0x2000, registered, matched, active, busy 0 (5 ms), retain 20>';
+    let short = tree();
+    let full = `${tree()}\n    "IOClass" = "AppleT8132USBXHCI"`;
+    const calls: string[] = [];
+    const sys = {
+      exec: (_cmd: string, args: readonly string[]) => {
+        const line = args.join(' ');
+        calls.push(line);
+        if (line === '-p IOUSB -w0') return Promise.resolve({ code: 0, stdout: short, stderr: '' });
+        if (line === '-p IOUSB -l -w0') return Promise.resolve({ code: 0, stdout: full, stderr: '' });
+        return Promise.resolve({ code: 0, stdout: 'List of devices attached\n', stderr: '' });
+      },
+    } as unknown as SystemPort;
+    const fullReads = () => calls.filter((l) => l === '-p IOUSB -l -w0').length;
+    const ctl = new PhoneControl({ sys, devices: book([]), link: () => undefined, onChange: () => {}, adbPath: '/fake/adb' });
+    expect(await ctl.scanCable()).toBeUndefined();
+    expect(fullReads()).toBe(1);
+    // The same tree (busy times and retain counts move on their own): nothing new on it.
+    short = short.replace('busy 0 (17 ms), retain 37', 'busy 0 (19 ms), retain 41');
+    expect(await ctl.scanCable()).toBeUndefined();
+    expect(fullReads()).toBe(1);
+    // Plugged in: seen on that very scan.
+    short = tree(phoneLine);
+    full = `${tree(phoneLine)}\n      "idVendor" = 1256\n      "USB Product Name" = "SAMSUNG_Android"`;
+    expect(await ctl.scanCable()).toEqual({ state: 'no-debugging', name: 'SAMSUNG Android' });
+    expect(fullReads()).toBe(2);
+    // While a phone is there, every scan reads it all, as before.
+    expect((await ctl.scanCable())?.state).toBe('no-debugging');
+    expect(fullReads()).toBe(3);
+    // A device still settling (not yet matched) is read in full until it has.
+    short = tree('    +-o Thing@1  <class IOUSBHostDevice, id 0x3000, registered, busy 1 (2 ms), retain 5>');
+    full = short;
+    expect(await ctl.scanCable()).toBeUndefined();
+    expect(await ctl.scanCable()).toBeUndefined();
+    expect(fullReads()).toBe(5);
+    // The short list failing: the full one, as before.
+    short = '';
+    expect(await ctl.scanCable()).toBeUndefined();
+    expect(fullReads()).toBe(6);
+    ctl.stop();
+  });
 });
 
 describe('macros (BLG-175)', () => {

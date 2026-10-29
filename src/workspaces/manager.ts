@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { findProjects, isMainCheckout } from './discovery.js';
 import * as g from './git.js';
 import * as sync from './sync.js';
-import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envHashes, envSnapshot, followMainEnv } from './env.js';
+import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envChangesAsync, envHashes, envSnapshot, followMainEnv, followMainEnvAsync } from './env.js';
 import { WorkspaceStore } from './store.js';
 import { migrateMainConversations } from './main-migration.js';
 import { stopTestProcesses } from './test-procs.js';
@@ -1196,6 +1196,13 @@ export class WorkspaceManager {
     return envChanges(ws.path, ws.projectRoot, ws.envSnapshot, withKept ? {} : ws.envKept);
   }
 
+  /** envChanges without blocking the daemon (the checks that run on their own). `files`: the worktree's env files, just listed. */
+  async envChangesAsync(id: string, files?: readonly string[]): Promise<EnvChange[]> {
+    const ws = this.require(id);
+    if (ws.kind !== 'worktree' || ws.archived || !existsSync(ws.path)) return [];
+    return envChangesAsync(ws.path, ws.projectRoot, ws.envSnapshot, ws.envKept, files);
+  }
+
   /** Copy a worktree's env changes back into the main folder; they're in step again, so nothing is asked. */
   applyEnvBack(id: string): number {
     const ws = this.require(id);
@@ -1211,9 +1218,9 @@ export class WorkspaceManager {
    * the code there needs to run, so the next worktree has it too. Changed and removed ones stay
    * for you to decide. Files you kept in the worktree are left alone. → the keys added, by file.
    */
-  applyNewEnvKeys(id: string): { file: string; keys: string[] }[] {
+  applyNewEnvKeys(id: string, changes?: readonly EnvChange[]): { file: string; keys: string[] }[] {
     const ws = this.require(id);
-    const fresh = this.envChanges(id).filter((c) => !c.binary && c.added.length && existsSync(path.join(ws.projectRoot, c.file)));
+    const fresh = (changes ?? this.envChanges(id)).filter((c) => !c.binary && c.added.length && existsSync(path.join(ws.projectRoot, c.file)));
     if (!fresh.length) return [];
     applyEnvChanges(ws.path, ws.projectRoot, fresh.map((c) => ({ ...c, changed: [], removed: [] })));
     // A file with nothing but new keys is in step now: it follows the main folder's again.
@@ -1248,6 +1255,20 @@ export class WorkspaceManager {
     if (!ws || ws.kind !== 'worktree' || ws.archived || ws.external || !existsSync(ws.path) || !existsSync(ws.projectRoot)) return [];
     const { updated, snapshot } = followMainEnv(ws.path, ws.projectRoot, ws.envSnapshot, mainFiles);
     if (!isDeepStrictEqual(snapshot, ws.envSnapshot ?? {})) this.patchRecord(id, { envSnapshot: snapshot });
+    return updated;
+  }
+
+  /** followMainEnv without blocking the daemon, with the main folder's env files as just listed. */
+  async followMainEnvAsync(id: string, mainFiles: readonly string[]): Promise<string[]> {
+    const ws = this.find(id);
+    if (!ws || ws.kind !== 'worktree' || ws.archived || ws.external || !existsSync(ws.path) || !existsSync(ws.projectRoot)) return [];
+    const before = ws.envSnapshot ?? {};
+    const { updated, snapshot } = await followMainEnvAsync(ws.path, ws.projectRoot, before, mainFiles);
+    if (isDeepStrictEqual(snapshot, before)) return updated;
+    // Only what this changed, onto the record as it is now (a keep or a copy back may have landed meanwhile).
+    const now = (this.find(id) ?? this.records.find((r) => r.id === id))?.envSnapshot ?? {};
+    const changed = Object.fromEntries(Object.entries(snapshot).filter(([rel, h]) => before[rel] !== h));
+    this.patchRecord(id, { envSnapshot: { ...now, ...changed } });
     return updated;
   }
 
