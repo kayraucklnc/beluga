@@ -281,6 +281,8 @@ export interface PhoneTools {
   info(): Promise<string>;
   /** Install an APK (a path on this Mac); the phone shows its own Install button. */
   install(apkPath: string): Promise<string>;
+  /** Beluga Link installed over adb and its Accessibility turned on (BLG-391). */
+  setUpLink(): Promise<string>;
   /** A shell command on the phone (needs Wireless debugging). */
   shell(command: string): Promise<string>;
   /** Recent logs (needs Wireless debugging). */

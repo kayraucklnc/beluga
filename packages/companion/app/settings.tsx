@@ -19,7 +19,7 @@ import { useSaved } from '../lib/saved';
 import { totalBytes } from '../lib/saved-list';
 import { store } from '../lib/store';
 import { askBatteryUnrestricted, batteryUnrestricted, setStay, stayAvailable, stayOn } from '../lib/stay';
-import { accessibilityOn, addonInstalled, onAccessibilityChange, openAccessibilitySettings, openAddon, phoneAllowed, phoneControlAvailable, setPhoneAllowed } from '../lib/phone';
+import { accessibilityOn, addonInstalled, onAccessibilityChange, openAccessibilitySettings, phoneAllowed, phoneControlAvailable, setPhoneAllowed } from '../lib/phone';
 import { color, ink } from '../lib/theme';
 import { voiceAvailable, voiceChoice, voiceSetting } from '../lib/voice';
 import { VOICE_MODELS } from '../../../src/shared/voice-models';
@@ -62,7 +62,7 @@ export default function Settings() {
     });
     return () => sub.remove();
   }, []);
-  // Phone Control answers a moment after the app binds it: show its Accessibility as soon as it does.
+  // Beluga Link answers a moment after the app binds it: show its Accessibility as soon as it does.
   useEffect(
     () =>
       onAccessibilityChange(() => {
@@ -85,7 +85,11 @@ export default function Settings() {
     }
     store.staySet();
     store.controlSet(next);
-    if (next && !accessibilityOn() && addonInstalled()) openAccessibilitySettings();
+    // Without Beluga Link there's nothing to turn on yet: the guide says how to get it (BLG-390).
+    if (next && !accessibilityOn()) {
+      if (addonInstalled()) openAccessibilitySettings();
+      else router.push('/link');
+    }
   };
   const toggleStay = () => {
     haptic.tap();
@@ -179,17 +183,17 @@ export default function Settings() {
               <Row
                 Icon={Download}
                 tone="peach"
-                label="Get Beluga Phone Control"
-                sub="A small app that lets your Mac tap and type here. Ask Claude on your Mac to install it, or download it from the release."
-                onPress={openAddon}
+                label="Get Beluga Link"
+                sub="The small app your Mac taps and types with. How to install it"
+                onPress={() => router.push('/link')}
               />
             ) : null}
             {canControl && control && !acc && addon ? (
               <Row
                 Icon={ShieldCheck}
                 tone="peach"
-                label="Turn on Beluga Phone Control"
-                sub="Android › Accessibility › Beluga Phone Control. A downloaded app first needs “Allow restricted settings” from its App info ⋮ menu."
+                label="Turn on Beluga Link"
+                sub="Android › Accessibility › Beluga Link. A downloaded app first needs “Allow restricted settings” from its App info ⋮ menu."
                 onPress={openAccessibilitySettings}
               />
             ) : null}

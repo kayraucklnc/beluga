@@ -5,7 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 
-/** Opening Beluga Phone Control takes you to Android's Accessibility settings, where you turn it on. It has no screen of its own. */
+/** Opening Beluga Link takes you to Android's Accessibility settings, where you turn it on. It has no screen of its own. */
 class SetupActivity : Activity() {
   override fun onCreate(saved: Bundle?) {
     super.onCreate(saved)

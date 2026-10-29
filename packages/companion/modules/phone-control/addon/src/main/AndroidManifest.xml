@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <!-- Beluga Phone Control (BLG-377): only the Accessibility service, in an app of its own, so the
+  <!-- Beluga Link (BLG-377): only the Accessibility service, in an app of its own, so the
        main Beluga APK isn't one Play Protect blocks when it's sideloaded. -->
 
   <!-- The Beluga app, to check it's signed with our key; and the apps the Mac may open by package. -->
@@ -12,7 +12,7 @@
   </queries>
 
   <application
-    android:label="Beluga Phone Control"
+    android:label="Beluga Link"
     android:icon="@mipmap/ic_launcher"
     android:roundIcon="@mipmap/ic_launcher_round"
     android:allowBackup="false">
@@ -21,7 +21,7 @@
     <service
       android:name=".BelugaAccessibilityService"
       android:exported="true"
-      android:label="Beluga Phone Control"
+      android:label="Beluga Link"
       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
       <intent-filter>
         <action android:name="android.accessibilityservice.AccessibilityService" />

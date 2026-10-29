@@ -48,6 +48,8 @@ export const COMPANION_API = {
   'companion.phone.wifi': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), z.boolean()]) },
   // The phone on the USB cable (BLG-190): pair it over the cable, or show a linked phone its Developer options / About phone.
   'companion.phone.pairCable': { args: z.tuple([]) },
+  // Beluga Link on the phone over adb, its Accessibility turned on (BLG-391, Settings › Phone › Beluga Link).
+  'companion.phone.setUpLink': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/)]) },
   'companion.phone.settings': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), z.enum(['developer', 'about'])]) },
   // One action on the phone from the Mac UI (the live mirror's tap/type, a button): op + its args.
   'companion.phone.act': { args: z.tuple([z.string().regex(/^[0-9a-f]{16}$/), PhoneOp, z.record(z.string(), z.unknown())]) },

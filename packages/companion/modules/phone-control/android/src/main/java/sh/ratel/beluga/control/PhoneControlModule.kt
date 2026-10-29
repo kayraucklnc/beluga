@@ -21,7 +21,7 @@ import sh.ratel.beluga.control.link.Phone
 /**
  * The app's handle on phone control (BLG-150): it runs the Mac's ops, says what this phone can do,
  * finds its own Wireless-debugging port over mDNS, and shows the "Your Mac is using this phone"
- * notification. Reading and acting on the screen happen in Beluga Phone Control, a small add-on
+ * notification. Reading and acting on the screen happen in Beluga Link, a small add-on
  * app with the Accessibility service (BLG-377), which AddonClient talks to.
  */
 class PhoneControlModule : Module() {
@@ -37,12 +37,12 @@ class PhoneControlModule : Module() {
     Events("adb", "accessibility", "stopped", "mirror", "mirrorEnd")
     current = this@PhoneControlModule
     OnCreate { runCatching { AddonClient.connect(context) } }
-    // Back in the app: Phone Control may have been installed or updated meanwhile.
+    // Back in the app: Beluga Link may have been installed or updated meanwhile.
     OnActivityEntersForeground { runCatching { AddonClient.connect(context) } }
 
     AsyncFunction("perform") { op: String, args: String ->
       val parsed = if (args.isBlank()) JSONObject() else JSONObject(args)
-      // Live video is Android's screen capture, not the Accessibility service's (Phone Control only
+      // Live video is Android's screen capture, not the Accessibility service's (Beluga Link only
       // lends its right to open the "Start now" sheet from the background).
       if (op == "mirror") return@AsyncFunction MirrorService.control(context, parsed)
       // A proof for the Mac (BLG-189), facts and apps, and a settings screen for the person (BLG-190): no Accessibility needed.
@@ -54,7 +54,7 @@ class PhoneControlModule : Module() {
         Phone.openOnPhone(context, parsed)
         return@AsyncFunction "{}"
       }
-      if (!AddonClient.on) throw IllegalStateException(if (AddonClient.installed(context)) "Turn on Accessibility for Beluga Phone Control on the phone" else AddonClient.MISSING)
+      if (!AddonClient.on) throw IllegalStateException(if (AddonClient.installed(context)) "Turn on Accessibility for Beluga Link on the phone" else AddonClient.MISSING)
       AddonClient.perform(op, args)
     }
 
@@ -69,7 +69,7 @@ class PhoneControlModule : Module() {
       context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    // Phone Control: open it when it's here (it takes you to Accessibility), else where to download it.
+    // Beluga Link: open it when it's here (it takes you to Accessibility), else where to download it.
     Function("openAddon") {
       val intent = if (AddonClient.installed(context)) Intent().setClassName(ControlLink.ADDON_PACKAGE, ControlLink.ADDON_SETUP) else Intent(Intent.ACTION_VIEW, Uri.parse(ADDON_URL))
       context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -133,8 +133,8 @@ class PhoneControlModule : Module() {
   companion object {
     const val NOTE_ID = 4208
     const val CHANNEL = "mac-using-phone"
-    /** Where Beluga Phone Control is downloaded: it's attached to each release beside the app. */
-    const val ADDON_URL = "https://github.com/kayraucklnc/beluga/releases/latest"
+    /** Where Beluga Link is downloaded: it's attached to each release beside the app. */
+    const val ADDON_URL = "https://github.com/kayraucklnc/beluga/releases/latest/download/Beluga-Link.apk"
     @Volatile private var current: PhoneControlModule? = null
     @Volatile private var adbPort: Int? = null
     @Volatile private var pairPort: Int? = null
@@ -143,7 +143,7 @@ class PhoneControlModule : Module() {
       AddonClient.onChange = { onAccessibilityChanged() }
     }
 
-    /** Phone Control's service connected or went away (or the screen changed): tell the JS so it re-reports control to the Mac. */
+    /** Beluga Link's service connected or went away (or the screen changed): tell the JS so it re-reports control to the Mac. */
     fun onAccessibilityChanged() {
       current?.sendEvent("accessibility", mapOf("on" to AddonClient.on))
     }
