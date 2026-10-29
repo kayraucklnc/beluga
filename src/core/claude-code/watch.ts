@@ -75,8 +75,11 @@ interface SessionEntry {
   readonly agents: Map<string, AgentEntry>;
   /** When a screen last asked for its steps (kept watched a while after it goes quiet). */
   viewedAt: number;
-  /** One of Beluga's own conversations: watched for its sub-agents, kept out of Activity. */
-  readonly own: boolean;
+  /**
+   * One of Beluga's own conversations: watched for its sub-agents, kept out of Activity. Checked
+   * every scan: its transcript can appear before the workspace has its session id.
+   */
+  own: boolean;
 }
 
 const ACTIVE_MS = 30 * 60_000;
@@ -387,7 +390,8 @@ export class ClaudeCodeWatcher {
         const recent = now - mtime <= activeMs || (await this.agentsWrittenSince(agentsDir, now - activeMs));
         if (!recent && !viewed) return;
         found.add(id);
-        if (!this.sessions.has(id)) this.sessions.set(id, { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: 0, own: own.has(id) });
+        if (!known) this.sessions.set(id, { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: 0, own: own.has(id) });
+        else if (!known.own && own.has(id)) known.own = true;
       });
     }
     if (this.stopped) return;
