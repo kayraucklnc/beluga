@@ -11,7 +11,7 @@ import { planTitle } from '../plans/model.js';
 import { dueNow, nextRunAt } from './clock.js';
 import type { AgentPlace } from '../../agent/types.js';
 import { SentinelChats } from './chat.js';
-import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_INFO, dashboardSentinels, outputFormat, outputSteps } from './dashboard-model.js';
+import { type Dashboard, type MetricRef, OUTPUT_STEP_KINDS, type StepRef, TILE_INFO, dashboardSentinels, layoutTiles, outputFormat, outputSteps } from './dashboard-model.js';
 import { Dashboards, type TileInput, type TilePatch } from './dashboards.js';
 import { FILES_KEEP_DAYS, type MetricColumn, SIGNED_SECONDS, documentMime, isDocumentKind, sameRow, splitStorage, takeDocuments, typedWords, withStorage } from './columns.js';
 import { RunFolders, SentinelFile, pruneRuns } from './files.js';
@@ -1721,12 +1721,14 @@ export class Sentinels {
       ...(t.columns ? { columns: [...t.columns] } : {}),
     });
     const describe = (d: Dashboard): string => {
+      const places = layoutTiles(d.tiles);
       const tiles = d.tiles.map((t) => {
+        const at = places.get(t.id);
         const refs = t.metric ? [t.metric] : (t.metrics ?? []);
         const stepName = t.step ? this.get(t.step.sentinelId)?.steps.find((x) => x.id === t.step!.stepId)?.name : undefined;
         const what = t.kind === 'divider' ? `“${t.title ?? ''}”` : t.kind === 'text' ? `${this.get(t.sentinelId ?? '')?.name ?? 'a sentinel that’s gone'} (${t.text ?? 'headline'})` : t.step ? `${this.get(t.step.sentinelId)?.name ?? 'gone'}, step “${stepName ?? 'gone'}” (${t.step.stepId})` : refs.map((r) => `${this.get(r.sentinelId)?.name ?? 'gone'}/${r.metric}`).join(', ');
         const cols = t.columns?.length ? `, columns ${t.columns.map((c) => `${c.key}${c.hidden ? ' (hidden)' : c.label ? ` as “${c.label}”` : ''}`).join(', ')}` : '';
-        return `  - ${t.id}: ${TILE_INFO[t.kind].label.toLowerCase()} ${what}${t.title ? ` titled “${t.title}”` : ''}, ${t.width} wide${t.height === 2 ? ', tall' : ''}${t.chart && t.kind === 'series' ? `, ${t.chart}` : ''}${t.compare ? `, ${COMPARE_WORDS[t.compare]}` : ''}${cols}`;
+        return `  - ${t.id}: ${TILE_INFO[t.kind].label.toLowerCase()} ${what}${t.title ? ` titled “${t.title}”` : ''}, ${t.width} wide${t.height === 2 ? ', tall' : ''}${at && t.row !== undefined ? `, at column ${at.col}, row ${at.row}` : ''}${t.chart && t.kind === 'series' ? `, ${t.chart}` : ''}${t.compare ? `, ${COMPARE_WORDS[t.compare]}` : ''}${cols}`;
       });
       return [`${d.name} (id ${d.id}) · ${COMPARE_WORDS[d.compare]} · ${d.tiles.length} ${d.tiles.length === 1 ? 'tile' : 'tiles'}`, ...tiles].join('\n');
     };
@@ -1761,9 +1763,11 @@ export class Sentinels {
         this.dashboards.remove(d.id);
         return `Deleted the dashboard “${d.name}”. Its numbers stay with their sentinels.`;
       },
-      moveTile: (dashboard: string, tileId: string, index: number) => {
-        const d = this.dashboards.moveTile(dashboard, tileId, index);
-        return `Moved tile ${tileId} to place ${d.tiles.findIndex((t) => t.id === tileId) + 1} of ${d.tiles.length} on “${d.name}”.`;
+      moveTile: (dashboard: string, tileId: string, to: number | { readonly col: number; readonly row: number }) => {
+        const d = this.dashboards.moveTile(dashboard, tileId, to);
+        const t = d.tiles.find((x) => x.id === tileId);
+        if (typeof to !== 'number' && t?.row !== undefined) return `Moved tile ${tileId} to column ${(t.col ?? 0) + 1}, row ${t.row + 1} on “${d.name}”.`;
+        return `Moved tile ${tileId} to place ${d.tiles.findIndex((x) => x.id === tileId) + 1} of ${d.tiles.length} on “${d.name}”.`;
       },
       addTile: (dashboard: string, t: ToolTile) => {
         const { tile, dashboard: d } = this.dashboards.addTile(dashboard, { kind: t.kind, ...tileInput(t) });

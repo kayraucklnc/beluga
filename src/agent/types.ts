@@ -175,7 +175,8 @@ export interface DashboardTools {
   update(dashboard: string, patch: { readonly name?: string; readonly compare?: ToolTile['compare'] }): string;
   /** Delete it (through your approval: never in ALWAYS_OK). */
   remove(dashboard: string): string;
-  moveTile(dashboard: string, tileId: string, index: number): string;
+  /** To an index among the others, or to a spot on the grid. */
+  moveTile(dashboard: string, tileId: string, to: number | { readonly col: number; readonly row: number }): string;
   addTile(dashboard: string, tile: ToolTile): string;
   updateTile(dashboard: string, tileId: string, patch: Omit<Partial<ToolTile>, 'kind' | 'compare'> & { readonly compare?: ToolTile['compare'] | null }): string;
   removeTile(dashboard: string, tileId: string): string;

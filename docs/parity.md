@@ -473,7 +473,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `dashboard.addTile` | ✓ Sentinel › Dashboard › Add a Tile › Pick it yourself: a number, a series, a table, an output (a Claude, service or script step's latest export, or an output metric), text or a divider, from every metric or step by project and sentinel, its size and title, with a preview · Claude's `dashboard_add_tile` |
 | `dashboard.updateTile` | ✓ a tile's ⋯: Rename…, Width ▸ (1 to 6 columns), Height ▸ (normal or tall), Compare ▸ (as the dashboard's, or pinned), Draw as ▸ (a series), Show as ▸ (an output: Markdown, a JSON tree, a table, text), Shows ▸ (a text tile) · Claude's `dashboard_update_tile` |
 | `dashboard.removeTile` | ✓ a tile's ⋯ › Remove Tile · Claude's `dashboard_remove_tile` |
-| `dashboard.moveTile` | ✓ Sentinel › Dashboard: a tile dragged into place (the board's drag) · Claude's `dashboard_move_tile` |
+| `dashboard.moveTile` | ✓ Sentinel › Dashboard: a tile dragged onto any column and row, where it stays · Claude's `dashboard_move_tile` (a column and row, or an index) |
 | `dashboard.refresh` | ✓ Sentinel › Dashboard › Refresh (Run Now on each sentinel it draws from, one at a time: "Fetching… 2 of 3"); the phone's dashboard: pull to refresh |
 | `dashboard.ask` | ✓ Sentinel › Dashboard › Add a Tile › Describe it (the default): Claude builds the tile, and sets up a draft sentinel that fetches it when nothing does yet (the page then says "Claude set up … · Review · Turn On"); Claude's last line while it works, its answer and Open Chat after |
 | `sentinel.chatNew` | ✓ Sentinel › Chat › New Chat (the bar, and ⋯ › New Chat) |

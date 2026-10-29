@@ -75,7 +75,12 @@ export function createDashboardToolDefs(d: DashboardTools) {
       { dashboard, tile: z.string().min(1).max(40).describe('The tile’s id (dashboard_list)'), ...TILE, compare: compare.nullable().optional() },
       ({ dashboard: ref, tile: tileId, ...patch }) => guarded(() => d.updateTile(ref, tileId, patch)),
     ),
-    tool('dashboard_move_tile', 'Move a tile to a place among the others (0 is first).', { dashboard, tile: z.string().min(1).max(40), index: z.number().int().min(0).max(100) }, (a) => guarded(() => d.moveTile(a.dashboard, a.tile, a.index))),
+    tool(
+      'dashboard_move_tile',
+      'Move a tile: to a spot on the six-column grid (column 0-5 and row, from 0; a tile there goes below it, the rest stay put), or to a place among the others (index, 0 is first; the board flows in that order again).',
+      { dashboard, tile: z.string().min(1).max(40), index: z.number().int().min(0).max(100).optional(), column: z.number().int().min(0).max(5).optional(), row: z.number().int().min(0).max(1000).optional() },
+      (a) => guarded(() => d.moveTile(a.dashboard, a.tile, a.row !== undefined ? { col: a.column ?? 0, row: a.row } : (a.index ?? 0))),
+    ),
     tool('dashboard_remove_tile', 'Take a tile off a dashboard (the number stays kept).', { dashboard, tile: z.string().min(1).max(40) }, (a) => guarded(() => d.removeTile(a.dashboard, a.tile))),
     tool('metric_list', 'Every number the user’s sentinels keep: by sentinel, each metric’s name, label, unit, which way is good and its last value.', {}, () => guarded(() => d.metricList())),
     tool(
