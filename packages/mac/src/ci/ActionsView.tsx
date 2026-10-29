@@ -17,6 +17,8 @@ import { useCiActions, useNow, useRuns, useWorkflows } from './use-ci.js';
 import { WorkflowGraph } from './WorkflowGraph.js';
 import t from '../tasks/tasks.module.css';
 import s from './ci.module.css';
+import arr from '../lib/arrive.module.css';
+import { useLateArrival } from '../lib/last-seen.js';
 
 type Page = 'runs' | 'workflows';
 
@@ -44,6 +46,8 @@ export function ActionsView() {
   const [connect, setConnect] = useState(false);
   useEffect(() => setWorkflow(''), [projectId]);
   const { list, loading, error, refresh } = useRuns(projectId, workflow ? { workflow } : {});
+  // Nothing kept from last time: the list settles in once GitHub answers.
+  const late = useLateArrival(projectId ?? '', list !== undefined);
   // The workflows: the Workflows page, and the Runs page's filter.
   const flows = useWorkflows(projectId);
   const runs = useMemo(() => (list?.kind === 'github' ? sortRuns(list.runs) : []), [list]);
@@ -131,7 +135,7 @@ export function ActionsView() {
         ) : !runs.length ? (
           <Empty icon="pulse" title={workflow ? 'No runs of this workflow yet' : 'No runs yet'} detail={workflow ? 'Pick another workflow, or All Workflows.' : `Nothing has run in ${repoSlug(list.repo)}. Add a workflow under .github/workflows and push it.`} />
         ) : (
-          <div className={s.list} role="table" aria-label={`${here.name}’s workflow runs`}>
+          <div className={cx(s.list, late && arr.arrive)} role="table" aria-label={`${here.name}’s workflow runs`}>
             {runs.map((run) => (
               <RunRow key={run.id} projectId={projectId} run={run} now={now} />
             ))}
@@ -162,12 +166,13 @@ export function ActionsView() {
 
 /** Each workflow as a card: its name and file, how its last run went, and its graph (or its YAML). */
 function Workflows({ projectId, flows, runs }: { projectId: string; flows: ReturnType<typeof useWorkflows>; runs: readonly GhRun[] }) {
+  const late = useLateArrival(projectId, flows.data !== undefined);
   if (flows.error && !flows.data) return <Empty icon="alert" title="Couldn’t read the workflows" detail={flows.error} action={<Button onClick={flows.refresh}>Try Again</Button>} />;
   if (!flows.data) return <Empty icon="graph" title="Reading the workflows…" detail="From the project’s folder, and GitHub" />;
   const list = flows.data.workflows;
   if (!list.length) return <Empty icon="graph" title="No workflows yet" detail="Workflows live in .github/workflows. Ask Claude to set one up, then push it." />;
   return (
-    <div className={s.flows}>
+    <div className={cx(s.flows, late && arr.arrive)}>
       {list.map((f) => (
         <WorkflowCard key={f.path} projectId={projectId} flow={f} last={runs.find((r) => r.path === f.path)} />
       ))}
