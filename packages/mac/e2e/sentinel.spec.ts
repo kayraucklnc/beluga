@@ -391,7 +391,7 @@ test('Rename… on a number tile: its label turns into a field, and Enter keeps 
   await shoot(page, 'dashboard-renamed');
 });
 
-test('a tile dragged onto an empty spot stays there (no restacking), and the logo shows in full colour', async ({ page }) => {
+test('a tile goes anywhere on the grid, like a home screen: dropped with an empty row above it, it stays there; the logo shows in full colour', async ({ page }) => {
   await openList(page);
   const board = main(page).locator('[data-dashboard]');
   await pickBoard(page, 'Ops');
@@ -401,22 +401,27 @@ test('a tile dragged onto an empty spot stays there (no restacking), and the log
   const id = (await tile.getAttribute('data-tile'))!;
   const same = board.locator(`[data-tile="${id}"]`);
   await same.scrollIntoViewIfNeeded();
-  // The far-right column, one row below the last: a spot nothing flows into by itself.
+  // The far-right column, two rows below the last: an empty row is left above it.
   const g = (await grid.boundingBox())!;
   const t = (await same.boundingBox())!;
   const step = (g.width + 10) / 6;
   const width = Math.round((t.width + 10) / step);
-  const to = { x: g.x + step * (6 - width) + 20, y: g.y + g.height - 20 };
+  const to = { x: g.x + step * (6 - width) + 20, y: g.y + g.height + 116 + 10 + 20 };
   await grid.screenshot({ path: path.join(shots, 'sentinel-dashboard-before-drag.png') });
   await page.mouse.move(t.x + 20, t.y + 20);
   await page.mouse.down();
   await page.mouse.move(t.x + 40, t.y + 40, { steps: 3 });
   await page.mouse.move(to.x, to.y, { steps: 12 });
+  // While it's lifted, the grid's empty cells show where it can go.
+  await expect(grid.locator('[data-lifting]').first()).toBeVisible();
+  await page.screenshot({ path: path.join(shots, 'sentinel-dashboard-dragging.png') });
   await page.mouse.up();
   await expect(same).toHaveCSS('grid-column-start', String(7 - width));
   await expect(async () => {
     const b = (await same.boundingBox())!;
     expect(b.x + b.width).toBeGreaterThan(g.x + g.width - 4);
+    // An empty row between it and the tiles above.
+    expect(b.y).toBeGreaterThan(g.y + g.height + 100);
   }).toPass();
   // The project's logo isn't greyed out until hovered.
   const logo = board.locator('[data-tile] [aria-label^="From "] > *').first();

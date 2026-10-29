@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activityOf } from '@beluga/ui/workspace-models.js';
-import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, GRID_COLUMNS, TILE_WIDTHS, type TileHeight, type TileWidth, WIDTH_WORDS, dashboardMarkdown, type GridBox, gridSpot, layoutTiles, placeTile, snapWidth, tileSentinelOf, dashboardSentinels, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
+import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, GRID_COLUMNS, TILE_WIDTHS, type TileHeight, type TileWidth, WIDTH_WORDS, dashboardMarkdown, type GridBox, type TilePlace, gridSpot, layoutTiles, placeTile, snapWidth, tileSentinelOf, dashboardSentinels, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
 import { COMPARE, COMPARE_LABEL, COMPARE_WORDS, type Compare } from '@beluga/core/sentinel/metrics.js';
 import type { MetricSeries, SentinelState } from '@beluga/core/sentinel/model.js';
 import type { Args } from '@beluga/ipc/api.js';
@@ -279,6 +279,8 @@ interface Drag {
   readonly h: number;
   /** Its columns. */
   readonly span: number;
+  /** The lowest row it can go to (two below the board's last). */
+  readonly maxRow: number;
   /** The grid as it was when lifted (its rows stay put under the pointer while the others make room). */
   readonly box: GridBox;
   x: number;
@@ -344,7 +346,7 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
     const move = (e: PointerEvent): void =>
       setDrag((now) => {
         if (!now) return now;
-        const spot = gridSpot(e.clientX - now.dx, e.clientY - now.dy, now.box, now.span);
+        const spot = gridSpot(e.clientX - now.dx, e.clientY - now.dy, now.box, now.span, now.maxRow);
         return { ...now, x: e.clientX, y: e.clientY, spot: spot.col === now.spot.col && spot.row === now.spot.row ? now.spot : spot };
       });
     const up = (): void => {
@@ -392,7 +394,7 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
     const from = places.get(s.id);
     if (!from) return;
     const spot = { col: from.col, row: from.row };
-    setDrag({ id: s.id, from: spot, spot, span: from.w, dx: s.x - s.box.left, dy: s.y - s.box.top, w: s.box.width, h: s.box.height, box: gridBoxOf(grid.current), x: e.clientX, y: e.clientY });
+    setDrag({ id: s.id, from: spot, spot, span: from.w, maxRow: bottomOf(places) + 1, dx: s.x - s.box.left, dy: s.y - s.box.top, w: s.box.width, h: s.box.height, box: gridBoxOf(grid.current), x: e.clientX, y: e.clientY });
   };
 
   const saved = only ?? (moved && moved.tiles === d.tiles ? placeTile(d.tiles, moved.id, moved.to.col, moved.to.row) : d.tiles);
@@ -408,11 +410,17 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
   };
   // Add sits where a new tile would go.
   const add = layoutTiles([...shown, { id: ADD, kind: 'number', width: 1 }], !!only).get(ADD);
+  // The empty cells, like a phone's home screen: they keep an empty row its height, and show
+  // while a tile is lifted (with two rows more below to drop it in).
+  const slots = only ? [] : emptyCells([...places.values(), ...(add && !drag && d.tiles.length ? [add] : [])], drag ? drag.maxRow + 1 : bottomOf(places));
   const onSize = (id: string, size: Size | undefined): void => setSized(size ? { id, size, tiles: d.tiles } : undefined);
   return (
     <div ref={grid} className={n.grid} role="list" aria-label={`${d.name}’s tiles`} onPointerMove={moveStart} onPointerUp={() => (start.current = undefined)}>
       {rest.map((tile) => (
         <TileCell key={tile.id} d={d} tile={tile} state={state} source={tileProject(state, tile, projects)} movable={!only} place={placeOf(tile.id)} onSize={onSize} onPointerDown={(e) => down(e, tile.id)} />
+      ))}
+      {slots.map((c) => (
+        <div key={`${c.col}:${c.row}`} className={n.slot} data-lifting={drag ? '' : undefined} style={{ '--col': c.col + 1, '--row': c.row + 1 } as React.CSSProperties} aria-hidden="true" />
       ))}
       {lifted && drag ? <div className={n.gap} data-w={lifted.kind === 'divider' ? 6 : lifted.width} data-h={lifted.kind === 'divider' ? 1 : (lifted.height ?? 1)} style={{ ...placeOf(lifted.id), minHeight: drag.h }} /> : null}
       {lifted && drag ? (
@@ -496,6 +504,15 @@ function useGlide(grid: React.RefObject<HTMLDivElement | null>, order: string): 
 }
 
 const noop = (): void => undefined;
+/** The row just under the board's last tile. */
+const bottomOf = (places: ReadonlyMap<string, TilePlace>): number => Math.max(0, ...[...places.values()].map((p) => p.row + p.h));
+/** The cells of rows 0 to `rows` (not included) no tile covers. */
+function emptyCells(taken: readonly TilePlace[], rows: number): Spot[] {
+  const covered = new Set(taken.flatMap((p) => Array.from({ length: p.w * p.h }, (_, i) => `${p.col + (i % p.w)}:${p.row + Math.floor(i / p.w)}`)));
+  const out: Spot[] = [];
+  for (let row = 0; row < rows; row++) for (let col = 0; col < GRID_COLUMNS; col++) if (!covered.has(`${col}:${row}`)) out.push({ col, row });
+  return out;
+}
 const ADD = '\u0000add';
 /** The grid's gap (numbers.module.css .grid), for working out a column's width. */
 const GAP = 10;

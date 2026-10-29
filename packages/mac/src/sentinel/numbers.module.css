@@ -250,6 +250,7 @@
  */
 .cell,
 .gap,
+.slot,
 .addCell {
   grid-column: var(--col, auto) / span var(--w, 1);
   grid-row: var(--row, auto) / span var(--h, 1);
@@ -294,6 +295,9 @@
     --w: 3;
   }
   /* Too narrow for six columns: the tiles flow in order instead. */
+  .slot {
+    display: none;
+  }
   .cell,
   .gap,
   .addCell {
@@ -311,6 +315,16 @@
 }
 .cell[data-state='gone'] .cellBody {
   opacity: 0.55;
+}
+/* An empty cell of the grid: room kept (an empty row stays its height), seen only while a tile is lifted. */
+.slot {
+  min-height: 116px;
+  border-radius: 16px;
+  transition: background var(--dur-fast);
+}
+.slot[data-lifting] {
+  background: color-mix(in srgb, var(--bg-hover) 60%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
 /* Where a lifted tile lands: a quiet dashed well its size, in the page's greys. */
 .gap {

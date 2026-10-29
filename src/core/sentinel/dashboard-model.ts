@@ -273,24 +273,28 @@ class Cells {
     while (!this.fits(col, r, w, h)) r++;
     return r;
   }
+  /** The free spot nearest (col, row) it fits in (the same row first, then the rows around it, below before above). */
+  nearest(col: number, row: number, w: number, h: number): { col: number; row: number } {
+    let best: { col: number; row: number; d: number } | undefined;
+    for (let r = Math.max(0, row - 6); r <= row + 12 || !best; r++) {
+      for (let c = 0; c + w <= GRID_COLUMNS; c++) {
+        if (!this.fits(c, r, w, h)) continue;
+        const d = Math.abs(r - row) * 5 + (r < row ? 1 : 0) + Math.abs(c - col);
+        if (!best || d < best.d) best = { col: c, row: r, d };
+      }
+    }
+    return { col: best.col, row: best.row };
+  }
   /** The first spot it fits in, reading from `row` on (left to right, then down). */
   first(row: number, w: number, h: number): { col: number; row: number } {
     for (let r = Math.max(0, row); ; r++) for (let c = 0; c + w <= GRID_COLUMNS; c++) if (this.fits(c, r, w, h)) return { col: c, row: r };
   }
 }
 
-/** Rows no tile covers are taken out (a tile moved off the bottom, one removed): the board stays together. */
-function closeEmptyRows(places: Map<string, TilePlace>): Map<string, TilePlace> {
-  const covered = new Set<number>();
-  for (const p of places.values()) for (let r = p.row; r < p.row + p.h; r++) covered.add(r);
-  const rows = [...covered].sort((a, b) => a - b);
-  const to = new Map(rows.map((r, i) => [r, i]));
-  return new Map([...places].map(([id, p]) => [id, { ...p, row: to.get(p.row)! }]));
-}
-
 /**
- * Each tile's place: tiles put somewhere keep their spot (one landing on another goes below it);
- * the rest flow into the first free spot after the tile before them. A board nobody placed (or
+ * Each tile's place, like icons on a phone's home screen: tiles put somewhere keep their spot,
+ * empty rows and holes included (one saved on top of another goes below it); the rest flow into
+ * the first free spot after the tile before them. A board nobody placed (or
  * `flow`, one project's part of it) packs in order, gaps filled, as it always did.
  */
 export function layoutTiles(tiles: readonly Pick<Tile, 'id' | 'kind' | 'width' | 'height' | 'col' | 'row'>[], flow = false): Map<string, TilePlace> {
@@ -321,12 +325,13 @@ export function layoutTiles(tiles: readonly Pick<Tile, 'id' | 'kind' | 'width' |
     out.set(t.id, p);
     prev = p;
   }
-  return closeEmptyRows(out);
+  return out;
 }
 
 /**
- * Dragged to a spot (a column and a row): it lands there, and a tile it lands on goes down below
- * it; every tile keeps the place it has (now written down), in reading order.
+ * Dragged to a spot (a column and a row), like an icon on a phone's home screen: it lands there,
+ * a tile it lands on moves to the nearest free spot, and every other tile stays where it is
+ * (now written down), in reading order.
  */
 export function placeTile<T extends Pick<Tile, 'id' | 'kind' | 'width' | 'height' | 'col' | 'row'>>(tiles: readonly T[], id: string, col: number, row: number): T[] {
   const t = tiles.find((x) => x.id === id);
@@ -338,16 +343,23 @@ export function placeTile<T extends Pick<Tile, 'id' | 'kind' | 'width' | 'height
   cells.take(mine);
   const at = new Map<string, TilePlace>([[id, mine]]);
   const others = tiles.filter((x) => x.id !== id).sort((a, b) => readingOrder(was.get(a.id)!, was.get(b.id)!));
+  const bumped: T[] = [];
   for (const o of others) {
     const p = was.get(o.id)!;
-    const q = { ...p, row: cells.below(p.col, p.row, p.w, p.h) };
+    if (!cells.fits(p.col, p.row, p.w, p.h)) {
+      bumped.push(o);
+      continue;
+    }
+    cells.take(p);
+    at.set(o.id, p);
+  }
+  for (const o of bumped) {
+    const p = was.get(o.id)!;
+    const q = { ...p, ...cells.nearest(p.col, p.row, p.w, p.h) };
     cells.take(q);
     at.set(o.id, q);
   }
-  const final = closeEmptyRows(at);
-  return [...tiles]
-    .sort((a, b) => readingOrder(final.get(a.id)!, final.get(b.id)!))
-    .map((x) => ({ ...x, col: final.get(x.id)!.col, row: final.get(x.id)!.row }));
+  return [...tiles].sort((a, b) => readingOrder(at.get(a.id)!, at.get(b.id)!)).map((x) => ({ ...x, col: at.get(x.id)!.col, row: at.get(x.id)!.row }));
 }
 
 const readingOrder = (a: Pick<TilePlace, 'col' | 'row'>, b: Pick<TilePlace, 'col' | 'row'>): number => a.row - b.row || a.col - b.col;
@@ -372,9 +384,10 @@ export const ROW_HEIGHT = 116;
 
 /**
  * The spot a tile `w` columns wide, held with its top-left corner at (left, top), would land on:
- * the nearest column, and the row its first row's middle is over (one new row below the last at most).
+ * the nearest column, and the row its first row's middle is over (rows past the last laid out are
+ * a normal row each, up to `maxRow`).
  */
-export function gridSpot(left: number, top: number, g: GridBox, w: number): { readonly col: number; readonly row: number } {
+export function gridSpot(left: number, top: number, g: GridBox, w: number, maxRow = g.rows.length): { readonly col: number; readonly row: number } {
   const step = (g.width + g.gap) / GRID_COLUMNS;
   const col = clampCol((left - g.left) / step, Math.min(w, GRID_COLUMNS));
   const probe = top + Math.min(ROW_HEIGHT, g.rows[0] ?? ROW_HEIGHT) / 2;
@@ -383,7 +396,8 @@ export function gridSpot(left: number, top: number, g: GridBox, w: number): { re
     if (probe < y + g.rows[i]! + g.gap / 2) return { col, row: i };
     y += g.rows[i]! + g.gap;
   }
-  return { col, row: g.rows.length };
+  const past = Math.max(0, Math.floor((probe - y + g.gap / 2) / (ROW_HEIGHT + g.gap)));
+  return { col, row: Math.max(0, Math.min(g.rows.length + past, maxRow)) };
 }
 
 /** Metrics a dashboard can be made from: the sentinels' metrics in the state, in order. */
