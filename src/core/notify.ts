@@ -287,6 +287,34 @@ function messagesForYou(prev: DomainState, next: DomainState): NoticeEvent[] {
   return out;
 }
 
+/**
+ * Someone mentions you in a task's comment ("@kayra can you look?", BLG-419): a teammate's comment
+ * arrives with the board. Opening it goes to the task.
+ */
+function taskMentions(prev: DomainState, next: DomainState, now: number): NoticeEvent[] {
+  if (prev.board.issues === next.board.issues) return [];
+  const selfId = next.selfId;
+  const name = next.self?.name ?? next.network.self?.name;
+  if (!selfId || !name) return [];
+  // "@Kayra Uckilinc" as typed, or "@KayraUckilinc" as the "@" list puts it.
+  const handles = [...new Set([name, name.replace(/[^\p{L}\p{N}_.-]+/gu, '')])].filter((h) => h.length > 1).map(escapeRe);
+  const mention = new RegExp(`(^|[^\\w@])@(${handles.join('|')})(?![\\w-])`, 'iu');
+  const before = new Map(prev.board.issues.map((i) => [i.id, i]));
+  const out: NoticeEvent[] = [];
+  for (const issue of next.board.issues) {
+    const was = before.get(issue.id);
+    // A task you hadn't got yet is history (the board loading, a teammate's board arriving).
+    if (!was || was === issue || was.activity === issue.activity) continue;
+    const seen = new Set(was.activity.map((e) => e.id));
+    for (const e of issue.activity) {
+      if (seen.has(e.id) || e.kind !== 'comment' || !e.body || now - e.at > STALE_MESSAGE_MS) continue;
+      if (e.by.kind !== 'person' || e.by.id === selfId || !mention.test(e.body)) continue;
+      out.push({ kind: 'mentions', tag: 'mention', title: `${e.by.name} mentioned you on ${issue.key}`, body: firstLine(e.body), channel: `task:${issue.id}`, key: `task-mention:${e.id}` });
+    }
+  }
+  return out;
+}
+
 /** Messages older than this arriving (a group catching up after days away) aren't news any more. */
 const STALE_MESSAGE_MS = 12 * 60 * 60_000;
 
@@ -326,7 +354,7 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
  * stopped, needs an answer or approval, a merge conflict, someone joined or invited you.
  */
 export function detectNotices(prev: DomainState, next: DomainState, now = Date.now()): NoticeEvent[] {
-  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...networkMessages(prev, next, now), ...planNews(prev, next)];
+  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...taskMentions(prev, next, now), ...networkMessages(prev, next, now), ...planNews(prev, next)];
   if (prev.approvals !== next.approvals) {
     const seen = new Set(prev.approvals.map((a) => a.id));
     // Someone else's request waits for you either way; on Do Not Disturb it just doesn't make a sound.

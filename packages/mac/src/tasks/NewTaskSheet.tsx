@@ -3,13 +3,13 @@ import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, issueById 
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
 import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
-import type { MentionWorld } from '../chat/mentions.js';
 import { Icon } from '../components/Icon.js';
 import f from '../components/form.module.css';
 import { cx } from '../components/ui.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { PriorityIcon } from './marks.js';
 import { assigneeChoices } from './tasks-model.js';
+import { useTaggable } from './use-taggable.js';
 import { useBoard, usePeople, useSelf, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import n from './NewTaskSheet.module.css';
 
@@ -145,25 +145,6 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
       )}
     </FormSheet>
   );
-}
-
-/**
- * Who "@" can name in the box: the project's team first (a task can be for them), then your other
- * friends (Claude knows who you mean, but a task isn't theirs). Never you.
- */
-function useTaggable(projectId: string, selfId: string, projectName: string | undefined): { people: ReadonlyArray<{ name: string; hint: string }>; world: MentionWorld } {
-  const mates = usePeople(projectId);
-  const friends = useApp((s) => s.network.friends);
-  return useMemo(() => {
-    const team = mates.filter((m) => m.id !== selfId);
-    const others = friends.filter((f) => f.peerId !== selfId && !team.some((m) => m.id === f.peerId));
-    const people = [
-      ...team.map((m) => ({ name: m.name, hint: projectName ? `on ${projectName}` : 'on this project' })),
-      ...others.map((f) => ({ name: f.name, hint: 'a friend' })),
-    ];
-    const named = [...team.map((m) => ({ name: m.name, peerId: m.id })), ...others.map((f) => ({ name: f.name, peerId: f.peerId }))];
-    return { people, world: { friends: named, peers: [], projects: [], workspaces: [] } };
-  }, [mates, friends, selfId, projectName]);
 }
 
 /** The describe box grows with what you write (up to a point; then it scrolls). */

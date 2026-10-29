@@ -190,6 +190,34 @@ test('one New Task message asking for two tasks makes both on Create, no chat in
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
 });
 
+test('"@" in a task\'s comment box names someone, and the comment shows them as a pill (BLG-419)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('/');
+  const card = sidebar(page).getByRole('group', { name: 'Talk with friends' });
+  if (await card.isVisible().catch(() => false)) await card.getByRole('button', { name: 'Turn On' }).click();
+  await expect(sidebar(page).getByRole('button', { name: /^bob, / })).toBeVisible({ timeout: 30_000 });
+  await openTasks(page);
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('row', { name: /Add auth to the payment routes/ }).click();
+  const box = page.getByRole('textbox', { name: 'Comment' });
+  await box.pressSequentially('thoughts @');
+  const list = page.getByRole('listbox', { name: 'Suggestions' });
+  await expect(list.getByRole('option').first()).toBeVisible();
+  await expect(list).not.toContainText('@claude');
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: `${process.env.BELUGA_SHOTS}/comment-at-menu.png` });
+  const first = (await list.getByRole('option').first().innerText()).split(/\s/)[0]!;
+  // Enter picks from the list (it doesn't send); ⌘↩ sends.
+  await box.press('Enter');
+  await expect(box).toHaveValue(`thoughts ${first} `);
+  await expect(page.getByTestId('mention-highlighter').locator('mark')).toHaveText(first);
+  await box.pressSequentially('on the copy?');
+  await box.press('Meta+Enter');
+  const activity = page.getByRole('region', { name: 'Activity' });
+  await expect(activity).toContainText('on the copy?');
+  await expect(box).toHaveValue('');
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: `${process.env.BELUGA_SHOTS}/comment-at-sent.png` });
+});
+
 test('"@" in New Task offers your friends, puts the one you pick in, and Escape closes only the list (BLG-342)', async ({ page }) => {
   test.setTimeout(90_000);
   // The demo's friends (bob, mia…) come with the network on.

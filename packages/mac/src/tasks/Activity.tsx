@@ -1,15 +1,21 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { type Activity as Entry, type ActivityKind, type Issue, activityText, actorName } from '@beluga/core/board/model.js';
+import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
 import { Markdown } from '../chat/Markdown.js';
+import { MentionHighlighter } from '../chat/MentionHighlighter.js';
+import type { MentionWorld } from '../chat/mentions.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
 import { ago } from './tasks-model.js';
-import { useSelfId, useTaskActions } from './use-tasks.js';
+import { useTaggable } from './use-taggable.js';
+import { useSelf, useTaskActions } from './use-tasks.js';
+import { useApp } from '../lib/beluga.js';
 import t from './tasks.module.css';
 
 /**
  * What happened to a task, oldest first: changes as quiet lines ("Beluga moved this to In
- * Review"), comments and Claude's notes as messages. A comment box at the end (⌘↩ sends).
+ * Review"), comments and Claude's notes as messages. A comment box at the end (⌘↩ sends), where
+ * "@" names a teammate or a friend (BLG-419): they're told they were mentioned.
  */
 
 const KIND_ICON: Partial<Record<ActivityKind, IconName>> = {
@@ -40,7 +46,10 @@ function Who({ entry, selfId }: { entry: Entry; selfId: string }) {
 }
 
 export function ActivityFeed({ issue }: { issue: Issue }) {
-  const selfId = useSelfId();
+  const self = useSelf();
+  const selfId = self.id;
+  const projectName = useApp((s) => s.projects.find((p) => p.id === issue.projectId)?.name);
+  const tagged = useTaggable(issue.projectId, selfId, projectName, self.name);
   const [all, setAll] = useState(false);
   const entries = issue.activity;
   const hidden = all ? 0 : Math.max(0, entries.length - 30);
@@ -62,7 +71,7 @@ export function ActivityFeed({ issue }: { issue: Issue }) {
                   <span className={t.activityWhen}>{ago(e.at)}</span>
                 </div>
                 <div className={t.commentBody}>
-                  <Markdown text={e.body} paths tasks />
+                  <Markdown text={e.body} paths tasks mentions={tagged.shown} />
                 </div>
               </div>
             </li>
@@ -79,15 +88,17 @@ export function ActivityFeed({ issue }: { issue: Issue }) {
           ),
         )}
       </ol>
-      <CommentBox issue={issue} />
+      <CommentBox issue={issue} people={tagged.people} world={tagged.world} />
     </div>
   );
 }
 
-function CommentBox({ issue }: { issue: Issue }) {
+function CommentBox({ issue, people, world }: { issue: Issue; people: ReadonlyArray<{ name: string; hint: string }>; world: MentionWorld }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const { api, act } = useTaskActions();
+  const box = useRef<HTMLTextAreaElement>(null);
+  const tags = useBoxSuggestions({ text, setText, people });
   const send = async (): Promise<void> => {
     const body = text.trim();
     if (!body || busy) return;
@@ -98,21 +109,29 @@ function CommentBox({ issue }: { issue: Issue }) {
   };
   return (
     <div className={t.commentBox}>
-      <textarea
-        value={text}
-        rows={text.includes('\n') ? 4 : 2}
-        placeholder="Leave a comment…"
-        aria-label="Comment"
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            void send();
-          }
-        }}
-      />
+      <div className={t.commentInput}>
+        <MentionHighlighter text={text} world={world} input={box} className={t.commentLayer!} />
+        <textarea
+          ref={box}
+          value={text}
+          rows={text.includes('\n') ? 4 : 2}
+          placeholder="Leave a comment… @ mentions someone"
+          aria-label="Comment"
+          aria-haspopup="listbox"
+          aria-expanded={tags.open}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || tags.onKey(e)) return;
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+        />
+        {tags.list}
+      </div>
       <div className={t.commentBar}>
-        <span className={t.editorHint}>⌘↩ to send · Markdown</span>
+        <span className={t.editorHint}>⌘↩ to send · @ mentions · Markdown</span>
         <span className={t.grow} />
         <Button size="small" variant="primary" disabled={!text.trim() || busy} onClick={() => void send()}>
           Comment

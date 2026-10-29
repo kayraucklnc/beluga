@@ -640,3 +640,52 @@ describe('a notice about something that waits for you (BLG-255)', () => {
     notifier.stop();
   });
 });
+
+describe('a task comment that mentions you (BLG-419)', () => {
+  const NOW = 10_000_000;
+  const task: Issue = {
+    id: 'i7',
+    key: 'KLD-7',
+    number: 7,
+    projectId: 'p1',
+    title: 'Login form',
+    status: 'todo',
+    priority: 'none',
+    labels: [],
+    blockedBy: [],
+    related: [],
+    rank: 0,
+    brief: {},
+    revisions: [],
+    worktrees: [],
+    proof: [],
+    activity: [],
+    createdAt: 0,
+    updatedAt: 0,
+    createdBy: { kind: 'beluga' },
+    origin: 'manual',
+  };
+  const comment = (id: string, body: string, by: Issue['activity'][number]['by'] = { kind: 'person', id: 'b', name: 'bob' }, at = NOW) => ({ id, at, by, kind: 'comment' as const, text: 'commented', body });
+  const board = (s: DomainState, i: Issue): DomainState => apply(s, { type: 'board_issue', issue: i });
+  const start = (): DomainState => apply(base(), { type: 'identity', selfId: 'me', isHost: false }, { type: 'board_init', state: { enabled: true, issues: [task], projects: {}, autoTasks: false } });
+
+  it('tells you who mentioned you, on which task, and opens the task', () => {
+    const prev = start();
+    const next = board(prev, { ...task, activity: [comment('a1', '@kay can you look at this?'), comment('a2', 'no mention here')] });
+    expect(detectNotices(prev, next, NOW)).toEqual([{ kind: 'mentions', tag: 'mention', title: 'bob mentioned you on KLD-7', body: '@kay can you look at this?', channel: 'task:i7', key: 'task-mention:a1' }]);
+  });
+
+  it('stays quiet for your own comments, Claude’s notes, someone else’s name and old comments', () => {
+    const prev = start();
+    const next = board(prev, {
+      ...task,
+      activity: [
+        comment('a1', '@kay note to self', { kind: 'person', id: 'me', name: 'kay' }),
+        { ...comment('a2', '@kay done'), kind: 'note' as const },
+        comment('a3', '@kayla look'),
+        comment('a4', '@kay old', undefined, NOW - 13 * 60 * 60_000),
+      ],
+    });
+    expect(detectNotices(prev, next, NOW)).toEqual([]);
+  });
+});
