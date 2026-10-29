@@ -214,6 +214,8 @@ export const PHONE: Record<Method, Side> = {
   'projects.add': 'mac',
   'projects.addFolder': 'mac',
   'projects.suggest': 'mac',
+  'projects.create': 'mac',
+  'projects.newHome': 'mac',
   'projects.iconAt': 'mac',
   'local.listDirs': 'mac',
   'local.openFolder': 'mac',

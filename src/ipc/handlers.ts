@@ -11,6 +11,8 @@ import { statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findProjects, isMainCheckout } from '../workspaces/discovery.js';
+import { createProject, defaultProjectsHome } from '../workspaces/new-project.js';
+import { projectId } from '../workspaces/manager.js';
 import { chooseProjectIcon, readProjectIcon, suggestProjects } from '../core/project-icons.js';
 import type { Args, Method } from './api.js';
 import { NETWORK_HANDLERS } from './network-handlers.js';
@@ -319,6 +321,12 @@ export const HANDLERS = {
   'projects.addFolder': (s, dir) => ctl(s)?.addFolder(expandHome(dir)),
   'projects.iconAt': (_s, dir) => readProjectIcon(expandHome(dir)),
   'projects.suggest': (s) => suggestProjects(s.store.getState().projects.map((p) => p.root).filter(Boolean)),
+  'projects.create': async (s, name, parent) => {
+    const dir = await createProject(name, parent ? expandHome(parent) : undefined);
+    await ctl(s)?.addProject(dir);
+    return { id: projectId(dir), path: dir };
+  },
+  'projects.newHome': () => defaultProjectsHome(),
   'local.listDirs': (s, dir) => {
     const entries = listLocalDirs(dir);
     s.store.dispatch({ type: 'dir_cache', key: localDirKey(dir), entries });

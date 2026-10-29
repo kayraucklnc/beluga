@@ -352,13 +352,15 @@ function HiddenProjects() {
 /** The + on the Projects heading: add projects, or make a group. */
 export function ProjectsAddMenu() {
   const actions = useActions();
+  const { ui } = useBeluga();
   const items: ActionItem[] = [
     { label: 'Add Projects…', keys: shortcutKeys('add-project'), onSelect: () => actions.run({ type: 'add_project' }) },
+    { label: 'New Project…', onSelect: () => ui.patch({ addProject: 'new' }) },
     { label: 'New Group', onSelect: () => newEmptyGroup() },
   ];
   return (
     <ActionsDropdown items={items}>
-      <IconButton icon="plus" label="Add a project, or make a group" />
+      <IconButton icon="plus" label="Add a project, start one, or make a group" />
     </ActionsDropdown>
   );
 }
@@ -375,6 +377,7 @@ function useSpringLoad(group: string | undefined, folded: boolean): void {
 
 export function Projects() {
   const actions = useActions();
+  const { ui } = useBeluga();
   const { entries } = useLayout();
   const arrange = useArrange();
   const tree = useRef<HTMLDivElement>(null);
@@ -401,6 +404,7 @@ export function Projects() {
   const treeItems: ActionItem[] = [
     { label: 'New Group', onSelect: () => newEmptyGroup() },
     { label: 'Add Projects…', onSelect: () => actions.run({ type: 'add_project' }) },
+    { label: 'New Project…', onSelect: () => ui.patch({ addProject: 'new' }) },
   ];
   return (
     <>
