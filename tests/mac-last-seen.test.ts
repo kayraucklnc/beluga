@@ -46,6 +46,14 @@ describe('last seen', () => {
     expect(lastSeen('k5')).toBe(5);
   });
 
+  it('leaves out an answer too big to keep, and forgets the older one it replaced', async () => {
+    vi.stubGlobal('localStorage', memory());
+    const { keepSeen, lastSeen } = await import('../packages/mac/src/lib/last-seen.js');
+    keepSeen('issue:p1#4', { body: 'short' });
+    keepSeen('issue:p1#4', { body: 'x'.repeat(200_000) });
+    expect(lastSeen('issue:p1#4')).toBeUndefined();
+  });
+
   it('shrugs off storage that is broken or missing', async () => {
     vi.stubGlobal('localStorage', memory({ 'beluga.lastSeen.v1': '{not json' }));
     const { keepSeen, lastSeen } = await import('../packages/mac/src/lib/last-seen.js');

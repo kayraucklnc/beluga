@@ -15,6 +15,8 @@ import { IssueRow } from './parts.js';
 import { setIssuesPrefs, useIssueActions, useIssueList, useIssuesPrefs } from './use-issues.js';
 import t from '../tasks/tasks.module.css';
 import s from './issues.module.css';
+import arr from '../lib/arrive.module.css';
+import { useLateArrival } from '../lib/last-seen.js';
 
 const STATES: ReadonlyArray<{ readonly value: GhIssueState; readonly label: string; readonly hint: string }> = [
   { value: 'open', label: 'Open', hint: 'Issues still open on GitHub' },
@@ -42,6 +44,8 @@ export function IssuesView() {
   const [connect, setConnect] = useState(false);
   const find = useRef<HTMLInputElement>(null);
   const { list, loading, error, refresh } = useIssueList(projectId, prefs.state, search);
+  // Nothing kept from last time: the list settles in once GitHub answers.
+  const late = useLateArrival(projectId ?? '', list !== undefined);
 
   // GitHub is asked once typing pauses.
   useEffect(() => {
@@ -147,7 +151,7 @@ export function IssuesView() {
             detail={search ? 'Try other words, or the other tab.' : prefs.state === 'open' ? `Nothing waiting in ${repoSlug(list.repo)}.` : `Nothing closed in ${repoSlug(list.repo)} yet.`}
           />
         ) : (
-          <div className={s.list} role="table" aria-label={`${here.name}’s ${prefs.state} issues`}>
+          <div className={cx(s.list, late && arr.arrive)} role="table" aria-label={`${here.name}’s ${prefs.state} issues`}>
             {list.issues.map((issue) => (
               <IssueRow key={issue.number} projectId={projectId} repo={list.repo} issue={issue} />
             ))}

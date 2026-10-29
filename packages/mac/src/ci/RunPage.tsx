@@ -18,6 +18,8 @@ import { useCiActions, useNow, useRun } from './use-ci.js';
 import { WorkflowGraph } from './WorkflowGraph.js';
 import t from '../tasks/tasks.module.css';
 import s from './ci.module.css';
+import arr from '../lib/arrive.module.css';
+import { useLateArrival } from '../lib/last-seen.js';
 import { shortcutKeys } from '../lib/shortcuts.js';
 
 /**
@@ -29,6 +31,7 @@ import { shortcutKeys } from '../lib/shortcuts.js';
 export function RunPage({ projectId, runId }: { projectId: string; runId: number }) {
   const { data, error, loading, refresh } = useRun(projectId, runId);
   const actions = useActions();
+  const late = useLateArrival(`${projectId}#${runId}`, data !== undefined);
   if (!data) {
     if (error) {
       return (
@@ -49,10 +52,10 @@ export function RunPage({ projectId, runId }: { projectId: string; runId: number
     }
     return <Empty icon="pulse" title="Asking GitHub…" detail="For the run’s jobs and steps" />;
   }
-  return <Page projectId={projectId} repo={data.repo} run={data.run} loading={loading} refresh={refresh} />;
+  return <Page projectId={projectId} repo={data.repo} run={data.run} loading={loading} refresh={refresh} late={late} />;
 }
 
-function Page({ projectId, repo, run, loading, refresh }: { projectId: string; repo: GitHubRepo; run: GhRunFull; loading: boolean; refresh: () => void }) {
+function Page({ projectId, repo, run, loading, refresh, late }: { projectId: string; repo: GitHubRepo; run: GhRunFull; loading: boolean; refresh: () => void; late: boolean }) {
   const wrap = useRef<HTMLDivElement>(null);
   const actions = useActions();
   const back = (): void => actions.run({ type: 'view', view: runWayBack(projectId) });
@@ -65,7 +68,7 @@ function Page({ projectId, repo, run, loading, refresh }: { projectId: string; r
   const tone = runTone(run);
   const failed = !live && (tone === 'failed' || tone === 'cancelled');
   return (
-    <div ref={wrap} className={t.pageWrap}>
+    <div ref={wrap} className={cx(t.pageWrap, late && arr.arrive)}>
       <SwipeBackEdge progress={swipe} />
       <div className={t.page}>
         <div className={t.pageMain}>

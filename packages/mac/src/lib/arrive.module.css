@@ -1,0 +1,11 @@
+/* Content that came after its page opened (nothing kept from last time) settles in, and a row that's
+   new since (a run just started) rises in on its own; what was kept shows still (lib/last-seen.ts). */
+.arrive {
+  animation: arrive calc(var(--dur) * 1.6) var(--ease-out) backwards;
+}
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}

@@ -76,6 +76,7 @@ export function useIssue(projectId: string, number: number): { readonly data?: {
     const at = key;
     job.then(
       (data) => {
+        keepSeen(`issue:${at}`, data);
         if (current.current !== at) return;
         setGot({ key: at, data });
         setLoading(false);
@@ -89,7 +90,9 @@ export function useIssue(projectId: string, number: number): { readonly data?: {
     );
   };
   useEffect(() => load(false), [key]);
-  const shown = got?.key === key ? got : undefined;
+  // Nothing yet: the issue as read last time (lib/last-seen.ts), while it's read again.
+  const kept = got?.key === key ? undefined : lastSeen<{ readonly repo: GitHubRepo; readonly issue: GhIssueFull }>(`issue:${key}`);
+  const shown = kept ? { key, data: kept } : got?.key === key ? got : undefined;
   return { ...(shown?.data ? { data: shown.data } : {}), ...(shown?.error ? { error: shown.error } : {}), loading, refresh: () => load(true) };
 }
 

@@ -8,6 +8,8 @@ import { useEffect, useRef } from 'react';
 
 const KEY = 'beluga.lastSeen.v1';
 const MAX = 40;
+/** A bigger answer (an issue with a long thread) isn't kept: storage stays small. */
+const MAX_CHARS = 120_000;
 
 const load = (): Map<string, unknown> => {
   try {
@@ -34,6 +36,7 @@ export function keepSeen(key: string, value: unknown): void {
   if (!key) return;
   const map = all();
   map.delete(key);
+  if (JSON.stringify(value).length > MAX_CHARS) return;
   map.set(key, value);
   while (map.size > MAX) map.delete(map.keys().next().value!);
   if (writing) return;

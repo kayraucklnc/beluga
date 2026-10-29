@@ -93,7 +93,7 @@ export function useRuns(projectId: string | undefined, query: { readonly workflo
 /** One run with its jobs and steps, every few seconds while it runs. */
 export function useRun(projectId: string, id: number): { readonly data?: { readonly repo: GitHubRepo; readonly run: GhRunFull }; readonly error?: string; readonly loading: boolean; readonly refresh: () => void } {
   const api = useApi();
-  const { data, error, loading, poke } = usePolled(`${projectId}#${id}`, (force) => api.ci.run(projectId, id, force ? { force: true } : undefined), (d) => (isLive(d.run) ? 3_000 : 60_000));
+  const { data, error, loading, poke } = usePolled(`${projectId}#${id}`, (force) => api.ci.run(projectId, id, force ? { force: true } : undefined), (d) => (isLive(d.run) ? 3_000 : 60_000), 'ci.run');
   return { ...(data ? { data } : {}), ...(error ? { error } : {}), loading, refresh: poke };
 }
 

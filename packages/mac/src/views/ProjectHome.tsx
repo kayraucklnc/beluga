@@ -55,6 +55,7 @@ import { usePlanActions, usePlanView, usePlans } from "../plans/use-plans.js";
 import c from "../chat/composer.module.css";
 import d from "../chat/draft.module.css";
 import s from "./project-home.module.css";
+import a from "../lib/arrive.module.css";
 import { TeamOffers } from "../team/Team.js";
 
 /**
@@ -652,7 +653,7 @@ function HomeIssues({ projectId }: { projectId: string }) {
       }
     >
       {shown.map((issue) => (
-        <div key={issue.number} role="listitem" className={isNew(issue.number) ? s.arrive : undefined}>
+        <div key={issue.number} role="listitem" className={isNew(issue.number) ? a.arrive : undefined}>
           <IssueRow projectId={projectId} repo={list.repo} issue={issue} compact />
         </div>
       ))}
@@ -691,7 +692,7 @@ function HomeActions({ projectId }: { projectId: string }) {
       }
     >
       {shown.map((run) => (
-        <div key={run.id} role="listitem" className={isNew(run.id) ? s.arrive : undefined}>
+        <div key={run.id} role="listitem" className={isNew(run.id) ? a.arrive : undefined}>
           <RunRow projectId={projectId} run={run} now={now} compact />
         </div>
       ))}
@@ -784,7 +785,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className={cx(s.section, arrive && s.arrive)} aria-label={title}>
+    <section className={cx(s.section, arrive && a.arrive)} aria-label={title}>
       <div className={s.sectionHead}>
         <h3 className={s.sectionTitle}>
           {title} <span className={s.count}>{count}</span>

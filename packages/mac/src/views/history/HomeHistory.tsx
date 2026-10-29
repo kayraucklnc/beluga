@@ -8,6 +8,7 @@ import { showCommitNext } from './history-nav.js';
 import { useHistoryVersion, useLog } from './use-history.js';
 import h from '../project-home.module.css';
 import s from './history.module.css';
+import a from '../../lib/arrive.module.css';
 
 const LATEST = 15;
 const QUERY = { branch: 'default' } as const;
@@ -41,7 +42,7 @@ export function HomeHistory({ projectId }: { projectId: string }) {
         </Button>
       </div>
       {log.commits.length ? (
-        <div className={cx(s.homeList, late && h.arrive)}>
+        <div className={cx(s.homeList, late && a.arrive)}>
           <HistoryList commits={log.commits} variant="full" onSelect={(hash) => open(hash)} refs={refs} label="Latest commits" />
         </div>
       ) : (
