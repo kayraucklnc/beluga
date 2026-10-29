@@ -95,12 +95,16 @@ export function parseDotenv(text: string): Map<string, string> {
   return out;
 }
 
-/** What changed in a worktree's env files compared with the main folder. */
-export function envChanges(worktree: string, main: string, snapshot: Readonly<Record<string, string>> = {}): EnvChange[] {
+/**
+ * What changed in a worktree's env files compared with the main folder. `kept`: files you said
+ * stay in the worktree, by their hash then (left out until they change again).
+ */
+export function envChanges(worktree: string, main: string, snapshot: Readonly<Record<string, string>> = {}, kept: Readonly<Record<string, string>> = {}): EnvChange[] {
   const changes: EnvChange[] = [];
   for (const rel of findEnvFiles(worktree)) {
     const file = path.join(worktree, rel);
-    if (snapshot[rel] && snapshot[rel] === hash(file)) continue; // untouched since creation
+    const now = hash(file);
+    if (snapshot[rel] === now || kept[rel] === now) continue; // untouched since creation, or kept here as it is
     const mainFile = path.join(main, rel);
     const isDotenv = ENV_FILE.test(path.basename(rel));
     if (!isDotenv) {
@@ -115,6 +119,52 @@ export function envChanges(worktree: string, main: string, snapshot: Readonly<Re
     if (added.length || changed.length || removed.length) changes.push({ file: rel, added, changed, removed, binary: false });
   }
   return changes;
+}
+
+/**
+ * Bring the main folder's env changes into a worktree: a file the worktree never touched (it still
+ * has the copy it was made with) follows the main folder's, and one new there is copied in. One
+ * changed in the worktree, or deleted there, is left alone. → the files updated and the new snapshot.
+ */
+export function followMainEnv(worktree: string, main: string, snapshot: Readonly<Record<string, string>> = {}, mainFiles: readonly string[] = findEnvFiles(main)): { updated: string[]; snapshot: Record<string, string> } {
+  const next = { ...snapshot };
+  const updated: string[] = [];
+  for (const rel of mainFiles) {
+    const src = path.join(main, rel);
+    const dst = path.join(worktree, rel);
+    let theirs: string;
+    try {
+      if (!statSync(src).isFile()) continue;
+      theirs = hash(src);
+    } catch {
+      continue;
+    }
+    const here = existsSync(dst) ? hash(dst) : undefined;
+    if (here === theirs) {
+      next[rel] = theirs;
+      continue;
+    }
+    const untouched = here === undefined ? !(rel in snapshot) : snapshot[rel] === here;
+    if (!untouched) continue;
+    mkdirSync(path.dirname(dst), { recursive: true });
+    cpSync(src, dst, { preserveTimestamps: true });
+    next[rel] = theirs;
+    updated.push(rel);
+  }
+  return { updated, snapshot: next };
+}
+
+/** The hashes of these files in a folder now (missing ones left out). */
+export function envHashes(dir: string, files: readonly string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const rel of files) {
+    try {
+      out[rel] = hash(path.join(dir, rel));
+    } catch {
+      // gone
+    }
+  }
+  return out;
 }
 
 /**

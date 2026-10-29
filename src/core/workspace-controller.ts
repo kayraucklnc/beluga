@@ -9,6 +9,7 @@ import { slugify } from '../agent/namer.js';
 import { carrySession } from '../agent/session-carry.js';
 import type { AgentPlace } from '../agent/types.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
+import { type EnvChange, findEnvFiles } from '../workspaces/env.js';
 import type { Project, Workspace } from '../workspaces/types.js';
 import { type MergeResult, git } from '../workspaces/git.js';
 import type { FoundConversation } from '../agent/claude-sessions.js';
@@ -206,6 +207,7 @@ export class WorkspaceController {
   }
 
   stop(): void {
+    if (this.envTimer) clearTimeout(this.envTimer);
     this.unsubscribe();
     this.mainSync.stop();
     this.saver.stop();
@@ -225,11 +227,72 @@ export class WorkspaceController {
       }
     }
     this.publish();
+    this.checkEnvSoon();
+  }
+
+  private envCheckedAt = 0;
+  private readonly envCheckedFor = new Map<string, number>();
+  private envTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Every project's env files, after this refresh settles and at most once a minute (git lists each worktree's files). */
+  private checkEnvSoon(): void {
+    if (this.envTimer || Date.now() - this.envCheckedAt < 60_000) return;
+    this.envTimer = setTimeout(() => {
+      this.envTimer = undefined;
+      this.envCheckedAt = Date.now();
+      this.checkEnv();
+    }, 1500);
+    this.envTimer.unref?.();
   }
 
   /** A run in this folder ended: its git status only (not every project's), published if it changed. */
   async refreshWorkspace(dir: string): Promise<void> {
     if (await this.deps.manager.refreshWorkspace(dir)) this.publish();
+    const project = this.deps.store.getState().projects.find((p) => p.workspaces.some((w) => !w.archived && (w.path === dir || dir.startsWith(`${w.path}/`))));
+    if (project) this.checkEnv(project.id);
+  }
+
+  /**
+   * The worktrees' env files (BLG-369): untouched copies follow the main folder's, and ones a
+   * worktree changed are asked about (copy to the main folder, or keep them there). One project's, or all.
+   */
+  checkEnv(projectId?: string, force = true): void {
+    // A project's page or worktree opening asks too: once every few seconds is plenty.
+    const last = projectId ? this.envCheckedFor.get(projectId) : undefined;
+    if (projectId && !force && last && Date.now() - last < 5000) return;
+    if (projectId) this.envCheckedFor.set(projectId, Date.now());
+    const state = this.deps.store.getState();
+    const asks: Record<string, readonly EnvChange[]> = projectId ? { ...state.envAsks } : {};
+    const followed: string[] = [];
+    for (const p of state.projects) {
+      if (projectId && p.id !== projectId) continue;
+      // Beluga's own (one made elsewhere has no copy to compare with).
+      const worktrees = p.workspaces.filter((w) => w.kind === 'worktree' && !w.archived && !w.external);
+      for (const w of p.workspaces) delete asks[w.id];
+      if (!worktrees.length || !p.root || !existsSync(p.root)) continue;
+      const mainFiles = findEnvFiles(p.root);
+      for (const w of worktrees) {
+        try {
+          if (this.deps.manager.followMainEnv(w.id, mainFiles).length) followed.push(w.name);
+          const changes = this.deps.manager.envChanges(w.id);
+          if (changes.length) asks[w.id] = changes;
+        } catch {
+          // gone meanwhile
+        }
+      }
+    }
+    if (!isDeepStrictEqual(asks, state.envAsks)) this.deps.store.dispatch({ type: 'env_asks', asks });
+    if (followed.length) this.deps.toast(`The main folder’s env changed: updated ${followed.length === 1 ? followed[0] : `${followed.length} worktrees`} too`, 'info');
+  }
+
+  /** Keep a worktree's env changes there only (not asked again until they change). */
+  keepEnvHere(id: string): void {
+    try {
+      this.deps.manager.keepEnvHere(id);
+    } catch (err) {
+      this.deps.toast(`Couldn't keep them: ${errorText(err)}`, 'error');
+    }
+    this.checkEnv(this.deps.manager.find(id)?.projectId);
   }
 
   /** Publish the projects as they're arranged (no re-scan: arranging is instant); nothing when nothing changed. */
@@ -813,7 +876,7 @@ export class WorkspaceController {
   prepareRemoval(id: string): void {
     let changes: ReturnType<WorkspaceManager['envChanges']> = [];
     try {
-      changes = this.deps.manager.envChanges(id);
+      changes = this.deps.manager.envChanges(id, true);
     } catch {
       changes = [];
     }
@@ -827,6 +890,8 @@ export class WorkspaceController {
     } catch (err) {
       this.deps.toast(`Couldn't copy env changes: ${errorText(err)}`, 'error');
     }
+    // The main folder changed: the other worktrees' untouched copies follow it.
+    this.checkEnv(this.deps.manager.find(id)?.projectId);
   }
 
   archivePlan(id: string): Promise<ArchivePreview | undefined> {

@@ -129,6 +129,8 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.merge': 'mac',
   'workspaces.prepareRemoval': 'mac',
   'workspaces.applyEnvBack': 'mac',
+  'workspaces.keepEnvHere': 'mac',
+  'workspaces.checkEnv': 'mac',
   'workspaces.askClaudeToReview': 'mac',
   'workspaces.askClaudeToMerge': 'mac',
   'workspaces.compact': 'mac',
@@ -193,6 +195,7 @@ export const PHONE: Record<Method, Side> = {
   'env.set': 'mac',
   'env.claudeDotenv': 'mac',
   'env.testDatabase': 'mac',
+  'env.importDotenv': 'mac',
 
   // ---- images in a message: a photo from the phone goes in as bytes, never as a Mac path
   'attachments.add': 'phone',

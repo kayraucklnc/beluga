@@ -278,7 +278,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.commit` | ✓ |
 | `workspaces.merge` | ✓ |
 | `workspaces.prepareRemoval` | ✓ |
-| `workspaces.applyEnvBack` | ✓ |
+| `workspaces.applyEnvBack` | ✓ (and Copy to Main Folder on a worktree's env bar) |
+| `workspaces.keepEnvHere` | ✓ Keep Here on a worktree's env bar (project page, worktree) |
+| `workspaces.checkEnv` | ✓ when a project's page or a worktree opens |
 | `workspaces.askClaudeToReview` | ✓ |
 | `workspaces.askClaudeToMerge` | ✓ |
 | `workspaces.compact` | ✓ |
@@ -335,8 +337,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `terminals.close` | ✓ |
 | `terminals.restart` | ✓ the terminal's "started before your variables changed · Restart" |
 | `terminals.rename` | ✓ double-click a shell tab, or right-click › Rename… (Return saves, Escape cancels, empty resets) |
-| `env.get` | ✓ Settings › Environment (values only go to the screen that asks) |
-| `env.set` | ✓ Settings › Environment |
+| `env.get` | ✓ Settings › Environment, and a project's Environment… (••• menu, project page) (values only go to the screen that asks) |
+| `env.set` | ✓ Settings › Environment, and a project's Environment… |
+| `env.importDotenv` | ✓ a project's Environment › Keep a Copy in Beluga |
 | `env.testDatabase` | ✓ Settings › Environment › Database (Test Connection) |
 | `env.claudeDotenv` | ✓ Settings › Environment › Your Claude (and a .env approval's Always) |
 | `attachments.add` | ✓ |
@@ -568,7 +571,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | First-run welcome: an eight-part animated tour (parallel worktrees, live agents, the table weave: Claude picks Postgres, connects and answers with a real, sortable table view, friends, Sentinel: a sentence becomes a sentinel (its trigger, steps and access, turned on, run step by step, its report) for five real ones you can pick, then Sentinel at work: its page's films with the sentence that sets each up, earnings, archive), then the look, the message box’s fire (Arcade, Ghost or None, tried in a live box) and a few shared settings; the macOS permissions one a step, each optional (Not Now, Skip Permissions) with why in a sentence, whether Beluga has it, and a button to its System Settings pane: Screen Recording, Accessibility, Full Disk Access, Automation (`privacy_access`, `privacy_request` in `src-tauri/src/privacy.rs`); notifications (allowed or not); the Android phone app with Pair a Phone… (`companion.pair.start`) and where to get it; once per Mac, never after an update; Help › Welcome to Beluga shows it again | Mac (`onboarding/*`, `lib/privacy.ts`) |
 | Local UI preferences (appearance, accent, text size, density, widths) | Mac (`lib/prefs.ts`) |
 | Terminal look (font, size, line height, cursor style and blink, scrollback) | Mac (`lib/prefs.ts`, Settings › Terminal) |
-| Environment variable editor (masked values, paste KEY=value lines, per-project scope, load the project's .env) | Mac (Settings › Environment) |
+| Environment variable editor (masked values, paste KEY=value lines, per-project scope; a project's main folder .env loads by default and shows beside its own variables, each marked where it comes from, an edit to a .env one overriding it and Use .env undoing that, Keep a Copy in Beluga) | Mac (Settings › Environment; a project's ••• › Environment… and its page's Environment pill: `dialogs/EnvironmentSheet.tsx`) |
+| A worktree changed a .env the main folder doesn't have: an env bar (its keys as +added ~changed −removed tags) with Copy to Main Folder and Keep Here, on the project page and in the worktree; untouched copies follow the main folder's .env on their own | Mac (`views/project/EnvAsks.tsx`) |
 | Confirmations as alerts (archive/delete with “Commit & Archive” and an env-changes table, clear, agent worktrees, hide project, leave a shared workspace), each with Cancel | Mac (`dialogs/native/*Alert.tsx`, `components/Alert.tsx`) |
 | Inviting, people and sharing as sheets and cards: the Invite People sheet (Invite to popup, Watch / Prompt / Edit, Copy Invite Link with “Copied”, people waiting, active links with Copy and Revoke), a person's card beside their row (trust as a segmented control, Message / Ask Claude / Run / Follow / Files, usage meters, Remove with an alert), your account card (rename in place, who may use your Claude), a right-click Trust ▸ submenu, the Share sheet for a workspace (an access popup per person), Share a Folder (Open panel, your projects, only some people, Claude may edit, Stop Sharing), the room's card from the sidebar's status | Mac (`dialogs/native/InviteSheet.tsx`, `PersonPopover.tsx`, `PersonCards.tsx`, `PersonMenu.tsx`, `WorkspaceShare.tsx`, `ShareFolderSheet.tsx`, `SharedSheet.tsx`, `RoomPopover.tsx`) |
 | Addressing a message with a chip (“To bob”, “To bob's Claude”, “To your Claude”) | Mac (`MacUi.to`, the composer) |

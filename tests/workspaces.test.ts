@@ -217,6 +217,36 @@ describe('env files and safe merges', () => {
     expect(mgr.envChanges(ws.id).map((c) => [c.file, c.binary])).toEqual([['.aws/config', true]]);
   });
 
+  it("keeps a worktree's env change there when asked, and untouched copies follow the main folder (BLG-369)", async () => {
+    writeFileSync(path.join(repo, '.env'), 'API=1\n');
+    const a = await mgr.createWorktree(repos()[0]!.id, 'env-a');
+    const b = await mgr.createWorktree(repos()[0]!.id, 'env-b');
+    // Copied back from a: in step again, so a isn't asked, and b (never touched) follows.
+    writeFileSync(path.join(a.path, '.env'), 'API=2\nNEW=x\n');
+    expect(mgr.applyEnvBack(a.id)).toBe(1);
+    expect(mgr.envChanges(a.id)).toEqual([]);
+    expect(mgr.followMainEnv(b.id)).toEqual(['.env']);
+    expect(readFileSync(path.join(b.path, '.env'), 'utf8')).toBe('API=2\nNEW=x\n');
+    expect(mgr.envChanges(b.id)).toEqual([]);
+
+    // Kept in b: not asked again (archiving still lists it), and the main folder no longer overwrites it.
+    writeFileSync(path.join(b.path, '.env'), 'API=b\nNEW=x\n');
+    expect(mgr.keepEnvHere(b.id)).toBe(1);
+    expect(mgr.envChanges(b.id)).toEqual([]);
+    expect(mgr.envChanges(b.id, true)).toEqual([{ file: '.env', added: [], changed: ['API'], removed: [], binary: false }]);
+    writeFileSync(path.join(repo, '.env'), 'API=3\nNEW=x\n');
+    expect(mgr.followMainEnv(b.id)).toEqual([]);
+    expect(readFileSync(path.join(b.path, '.env'), 'utf8')).toBe('API=b\nNEW=x\n');
+    // Changed again: asked again.
+    writeFileSync(path.join(b.path, '.env'), 'API=b2\nNEW=x\n');
+    expect(mgr.envChanges(b.id).map((c) => c.changed)).toEqual([['API']]);
+    // A new env file in the main folder comes in; one deleted in the worktree isn't made again.
+    writeFileSync(path.join(repo, '.env.local'), 'L=1\n');
+    expect(mgr.followMainEnv(a.id)).toEqual(['.env', '.env.local']);
+    rmSync(path.join(a.path, '.env.local'));
+    expect(mgr.followMainEnv(a.id)).toEqual([]);
+  });
+
   it('copies deep, direnv, Wrangler and .worktreeinclude files too, never tracked ones or examples', async () => {
     const deep = path.join(repo, 'apps', 'web', 'config', 'local');
     mkdirSync(deep, { recursive: true });

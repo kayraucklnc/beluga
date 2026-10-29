@@ -429,6 +429,8 @@ export interface DomainState extends CollabState, WorkState, NetworkSlice, Earni
   readonly compactions: Readonly<Record<string, Compaction>>;
   /** Env changes found in a worktree that's about to be archived or deleted. */
   readonly envChanges: Readonly<Record<string, readonly EnvChange[]>>;
+  /** Worktrees whose env files changed and the main folder doesn't have it: copy it there, or keep it here (BLG-369). */
+  readonly envAsks: Readonly<Record<string, readonly EnvChange[]>>;
   readonly hosting?: Hosting;
   readonly invite?: string;
   /** Your peer id on this computer (known before the room answers). */
@@ -530,6 +532,7 @@ export type Action =
   /** klaud is stopping: `owner`'s runs that haven't ended (their end won't come now) are interrupted. */
   | { type: 'runs_interrupted'; owner: string }
   | { type: 'env_changes'; id: string; changes: readonly EnvChange[] }
+  | { type: 'env_asks'; asks: Readonly<Record<string, readonly EnvChange[]>> }
   | { type: 'approval_add'; approval: Approval }
   | { type: 'approval_remove'; id: string }
   | { type: 'browser_root' }
@@ -626,6 +629,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     context: {},
     compactions: {},
     envChanges: {},
+    envAsks: {},
     status: 'connecting',
     peers: [],
     log: [],
@@ -929,6 +933,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, review: action.review };
     case 'env_changes':
       return { ...state, envChanges: { ...state.envChanges, [action.id]: action.changes } };
+    case 'env_asks':
+      return { ...state, envAsks: action.asks };
     case 'runs_interrupted': {
       const log = state.log.map((l) => (l.type === 'agent' && l.owner === action.owner ? settleRun(l) : l));
       return log.every((l, i) => l === state.log[i]) ? state : { ...state, log };

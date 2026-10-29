@@ -147,7 +147,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       approvalTimeoutMs: () => session.approvalTimeoutMs,
       refreshUsage: () => session.refreshUsage(),
       canEditIn: (peerId, channel) => invites.canEditIn(peerId, channel),
-      envFor: (channel, dir) => env.envFor(channel.startsWith('ws:') ? { workspaceId: channel.slice(3), dir } : { dir }),
+      envFor: (channel, dir) => env.envFor(channel.startsWith('ws:') ? { workspaceId: channel.slice(3), dir } : { dir }, { claude: true }),
       dotenvAccess: env.dotenvAccess,
       stopTests: (dir) => stopTestProcesses(dir),
       nameTask: (prompt) => session.nameTask(prompt),

@@ -12,7 +12,7 @@ import s from './menus.module.css';
 const NO_ENV: readonly EnvChange[] = [];
 
 /** The keys that differ in one env file, as small tags: +NEW, ~CHANGED, −REMOVED. */
-function EnvKeys({ change }: { change: EnvChange }) {
+export function EnvKeys({ change }: { change: EnvChange }) {
   if (change.binary) return <span className={s.muted}>the file differs</span>;
   return (
     <span className={s.keys}>

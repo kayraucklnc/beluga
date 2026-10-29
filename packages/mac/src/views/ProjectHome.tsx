@@ -45,6 +45,7 @@ import { isLive, sortRuns } from "@beluga/core/ci/model.js";
 import { IssueRow } from "../issues/parts.js";
 import { useIssueActions, useIssueList } from "../issues/use-issues.js";
 import { MainSyncBar } from "./project/MainSyncBar.js";
+import { EnvPill, ProjectEnvAsks } from "./project/EnvAsks.js";
 import { outsideOf } from "../layout/outside-model.js";
 import { openSheet } from "../lib/sheets.js";
 import { TonePill } from "../plans/marks.js";
@@ -150,6 +151,7 @@ function Header({ model }: { model: HomeModel }) {
           ) : null}
         </div>
         <MainSyncBar project={project} line={mainLine} />
+        {project.root ? <ProjectEnvAsks projectId={project.id} /> : null}
         <div className={s.stats} role="group" aria-label="At a glance">
           <span className={s.stat}>
             <strong>{stats.active}</strong> active
@@ -171,6 +173,7 @@ function Header({ model }: { model: HomeModel }) {
             <strong>{stats.archived}</strong> archived
           </button>
           <EarningsPill key={project.id} root={project.root} projectId={project.id} />
+          {project.root ? <EnvPill projectId={project.id} root={project.root} /> : null}
           <GitHubRow projectId={project.id} />
         </div>
       </div>
