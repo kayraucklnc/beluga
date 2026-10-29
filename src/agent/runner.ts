@@ -309,7 +309,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       // Streaming input keeps Claude Code alive after it answers while background agents still
       // work: a one-shot prompt would cut them off 10 minutes later, rejecting their next step.
       const prompts = new PromptQueue();
-      prompts.push(isCompactCommand(input.prompt) ? input.prompt.trim() : imageContent(buildPrompt(input), linkedImages(input.prompt)));
+      prompts.push(isCompactCommand(input.prompt) ? input.prompt.trim() : imageContent(buildPrompt(input), linkedImages(input.prompt)), { uuid: input.promptId });
       const background = new BackgroundAgents();
       const turns = new TurnRouter({ onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}), ...(input.onAnswered ? { onDone: input.onAnswered } : {}) });
       // Steps in detail go to the request whose turn it is (a follow-up's turn: the follow-up).
@@ -341,7 +341,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         }
         // Between turns it starts one now: thinking before its first step counts from here.
         if (turns.between) recorder.begin();
-        const uuid = prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)), { steer: steer && !turns.between });
+        const uuid = prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)), { steer: steer && !turns.between, uuid: followUp.promptId });
         if (uuid === false) return false;
         turns.queue(followUp, uuid, steer && !turns.between);
         return uuid;

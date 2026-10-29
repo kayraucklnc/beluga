@@ -127,6 +127,7 @@ const READS_FILE = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead']);
 const MAX_APPROVALS_PER_PERSON = 3;
 const SEEN_REQUESTS = 1000;
 const CONTEXT_LINES = 20;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Requests one person may have waiting for your Claude at once. */
 const MAX_QUEUED_PER_PERSON = 10;
 
@@ -245,6 +246,8 @@ export class AgentHost {
   /** Approvals waiting per person, so one person can't crowd out everyone else's. */
   private readonly approvalsBy = new Map<string, number>();
   private readonly seenRequests: string[] = [];
+  /** Requests already given to Claude under their own id (a retry gets a fresh one: ids are unique in its transcript). */
+  private readonly promptIds = new Set<string>();
   /** Tool approvals waiting → the conversation whose run asked for them. */
   private readonly toolApprovals = new Map<string, string>();
   /** Turns in friends' chats waiting for their answer (runChat), by request id. */
@@ -794,6 +797,7 @@ export class AgentHost {
     const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
     const sent = lane.followUps({
       prompt: this.promptOf(body),
+      ...this.promptIdOf(body),
       requesterName: peerName(this.store.getState(), from),
       viaAgent: body.viaAgent,
       model: this.modelNow(body.channel),
@@ -825,6 +829,7 @@ export class AgentHost {
     const settled = (): void => void lane.steered?.delete(body.requestId);
     return {
       prompt: this.promptOf(body),
+      ...this.promptIdOf(body),
       requesterName: peerName(this.store.getState(), from),
       viaAgent: body.viaAgent,
       model: this.modelNow(body.channel),
@@ -1124,6 +1129,7 @@ export class AgentHost {
         ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
         ...(sentinel ? { sentinelTools: sentinel.tools, sentinelBrief: sentinel.brief, ...(sentinel.dashboard ? { dashboardTools: sentinel.dashboard } : {}) } : {}),
         prompt: this.promptOf(body),
+        ...this.promptIdOf(body),
         requesterName,
         viaAgent: body.viaAgent,
         context: this.recentChat(body.channel),
@@ -1282,6 +1288,17 @@ export class AgentHost {
   private announceAgentFocus(absPath: string): void {
     const hit = this.deps.shares.locate(absPath);
     if (hit) this.send({ kind: 'focus', owner: this.selfId, share: hit.share, path: hit.path, actor: 'agent' }, this.deps.shares.isPrivate(hit.share) ? { to: this.selfId } : {});
+  }
+
+  /**
+   * The id a request's prompt gets in Claude's transcript: the request's own (a UUID, the one its
+   * message in the chat keeps), so editing the message can cut the session there. Only the first time.
+   */
+  private promptIdOf(body: BodyOf<'agent_request'>): { promptId?: string } {
+    if (!UUID.test(body.requestId) || this.promptIds.has(body.requestId)) return {};
+    this.promptIds.add(body.requestId);
+    if (this.promptIds.size > 2000) this.promptIds.delete(this.promptIds.values().next().value!);
+    return { promptId: body.requestId };
   }
 
   /** The words Claude reads: each "@BLG-24" this board has says it's a task, and which ("@BLG-24 (task: Fix the login)"). */

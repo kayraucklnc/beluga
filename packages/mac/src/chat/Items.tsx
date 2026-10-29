@@ -29,6 +29,8 @@ import { useMentionWorld } from './Mention.js';
 import type { TaskView } from '@beluga/core/gateway/model.js';
 import { TaskCard } from '../gateway/TaskCard.js';
 import { SlotWaitNotice } from './SlotWait.js';
+import { EditPrompt } from './EditPrompt.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import s from './chat.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
 
@@ -136,17 +138,33 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
   const row = useRef<HTMLDivElement>(null);
   const own = mine && !item.byAgent;
   useFlightLanding(row, item.channel, 'chat', item.text, own);
+  // Your own message in one of your conversations can be edited (BLG-385): rewound to, or forked from.
+  const wsId = own && item.channel.startsWith('ws:') ? item.channel.slice(3) : undefined;
+  const kind = useApp((st) => (wsId ? findWorkspace(st.projects, wsId)?.kind : undefined));
+  const editable = Boolean(wsId) && (kind === 'worktree' || kind === 'chat') && !steer;
+  const [editing, setEditing] = useState(false);
   // Your own words: a tinted bubble on the right, no name or picture (it's plainly you).
   if (own)
     return (
-      <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
+      <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)), ...(editable ? { lead: [{ label: 'Edit Message', icon: 'pencil', onSelect: () => setEditing(true) }] } : {}) })}>
         <div ref={row} className={cx(s.message, s.own, continued && s.continued, steer && s.unread)} data-mine="true" data-steer={steer ? 'waiting' : undefined}>
           <div className={s.body}>
-            {text ? (
-              <div className={s.bubble} title={time(item.ts)}>
-                <Folding>
-                  <Markdown text={text} paths localImages mentions={mentions} tasks />
-                </Folding>
+            {editing && wsId ? (
+              <EditPrompt wsId={wsId} lineId={item.id} text={item.text} worktree={kind === 'worktree'} onClose={() => setEditing(false)} />
+            ) : text ? (
+              <div className={s.bubbleRow}>
+                {editable ? (
+                  <span className={s.ownActions}>
+                    <Tip label="Edit: rewind to here, or fork from here">
+                      <Button size="small" variant="quiet" icon="pencil" aria-label="Edit message" onClick={() => setEditing(true)} />
+                    </Tip>
+                  </span>
+                ) : null}
+                <div className={s.bubble} title={time(item.ts)}>
+                  <Folding>
+                    <Markdown text={text} paths localImages mentions={mentions} tasks />
+                  </Folding>
+                </div>
               </div>
             ) : null}
             <ImageGrid images={images} />

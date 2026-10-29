@@ -7,6 +7,8 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { slugify } from '../agent/namer.js';
 import { carrySession } from '../agent/session-carry.js';
+import { sessionBefore } from '../agent/session-rewind.js';
+import { promptRef, restoreSnapshot, snapshot, snapshotAt } from '../workspaces/snapshots.js';
 import type { AgentPlace } from '../agent/types.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import { type EnvChange, findEnvFiles } from '../workspaces/env.js';
@@ -38,6 +40,10 @@ export interface ControllerDeps {
    * without posting the prompt as your message (it is already in the conversation).
    */
   readonly askClaude: (prompt: string, channel: string, opts?: { readonly echo?: boolean }) => void;
+  /** Stop your Claude in a conversation, resolving once nothing runs there (editing a message cuts it there). */
+  readonly stopHere?: (channel: string) => Promise<void>;
+  /** A conversation went back to an earlier point: forget how full its context was. */
+  readonly forgetContext?: (channel: string) => void;
   /** Compact a conversation's context in your Claude's queue (falls back to asking Claude for /compact). */
   readonly compact?: (channel: string, instructions: string) => void;
   /** A Claude Code conversation in a folder (from other tools), to show and continue: the newest, or the one asked for. */
@@ -791,6 +797,78 @@ export class WorkspaceController {
       this.created(ws, { from: id });
     }
     return ws;
+  }
+
+  /**
+   * Keep how a worktree is as you send a message there (BLG-385), so editing that message later can
+   * put its files back, or fork from there. Quiet: a worktree that can't be read just has none.
+   */
+  snapshotPrompt(channel: string, requestId: string): Promise<void> {
+    const id = workspaceIdOf(channel);
+    const ws = id ? this.deps.manager.find(id) : undefined;
+    if (!ws || ws.kind !== 'worktree' || ws.archived || !existsSync(ws.path)) return Promise.resolve();
+    return snapshot(ws.path, promptRef(ws.id, requestId)).then(
+      () => undefined,
+      () => undefined,
+    );
+  }
+
+  /**
+   * Edit a message you sent (BLG-385). `here`: the conversation goes back to just before it (it and
+   * everything after leave the chat, Claude forgets them, a worktree's files are as they were then)
+   * and the edited message goes in its place. `fork`: a new worktree (or chat) with the conversation
+   * up to there and the files as they were then, where the edited message goes; this one stays as
+   * it is. Resolves the conversation it went on in.
+   */
+  async editPrompt(id: string, lineId: string, text: string, mode: 'here' | 'fork'): Promise<string | undefined> {
+    const ws = this.deps.manager.find(id);
+    const prompt = text.trim();
+    if (!ws || ws.kind === 'main' || ws.archived) return void this.deps.toast('That conversation can’t be edited here', 'warn');
+    if (!prompt) return void this.deps.toast('Write the message first', 'warn');
+    const channel = `${WS_PREFIX}${id}`;
+    this.ensureLoaded(id);
+    const items = this.deps.store.getState().log.filter((l) => l.channel === channel);
+    const at = items.findIndex((l) => l.id === lineId);
+    const line = items[at];
+    if (!line || line.type !== 'chat' || line.byAgent || line.from !== this.deps.selfId()) return void this.deps.toast('Only your own messages can be edited', 'warn');
+    const kept = items.slice(0, at);
+    // Claude stops here first, so nothing more lands after the cut.
+    if (mode === 'here') await this.deps.stopHere?.(channel);
+    this.saver.flush();
+    const session = this.deps.manager.find(id)?.sessionId ?? ws.forkFromSession;
+    const cut = session ? await sessionBefore(session, ws.path, { id: line.request, text: line.text }) : { sessionId: undefined };
+    const snap = ws.kind === 'worktree' && line.request ? await snapshotAt(ws.path, promptRef(id, line.request)) : undefined;
+    const fresh = cut ? '' : ' Claude couldn’t go back to exactly that point, so it starts afresh from here.';
+    if (mode === 'here') {
+      if (snap && !(await this.act("Couldn't put the files back", () => restoreSnapshot(ws.path, id, snap)))) return undefined;
+      this.deps.manager.rewindSession(id, cut?.sessionId ?? null);
+      this.deps.forgetContext?.(channel);
+      this.deps.store.dispatch({ type: 'history', channel, items: kept });
+      const files = ws.kind !== 'worktree' ? '' : snap ? ' The files are as they were then (how they were just now is kept in git).' : ' The files stay as they are: Beluga has no copy of them from then.';
+      this.deps.store.dispatch({ type: 'system', channel, text: `Went back to before your edited message.${files}${fresh}` });
+      this.saver.changed();
+      this.deps.askClaude(prompt, channel);
+      return channel;
+    }
+    const name = slugify(prompt);
+    const history = kept.map((l) => settleRun(l));
+    const made = await this.act("Couldn't fork", () =>
+      ws.kind === 'chat'
+        ? this.deps.manager.forkChat(id, name, { session: cut?.sessionId ?? null, history })
+        : this.deps.manager.fork(id, name, { ...(snap ? { at: snap } : {}), session: cut?.sessionId ?? null, history }),
+    );
+    if (!made) return undefined;
+    // Claude Code looks for a conversation under the folder it runs in: bring the cut one along.
+    if (cut?.sessionId && made.path !== ws.path) carrySession(cut.sessionId, ws.path, made.path);
+    const to = `${WS_PREFIX}${made.id}`;
+    this.loaded.delete(to);
+    this.open(made.id);
+    const files = made.kind !== 'worktree' ? '' : snap ? ', with the files as they were then' : ', with its committed files as they are now (Beluga has no copy of them from then)';
+    this.deps.store.dispatch({ type: 'system', channel: to, text: `Forked from “${ws.name}” at your edited message${files}. “${ws.name}” stays as it was.${fresh}` });
+    this.deps.toast(`Forked into ${made.name}`, 'success');
+    if (made.kind === 'worktree') this.created(made, { from: id, about: prompt });
+    this.deps.askClaude(prompt, to);
+    return to;
   }
 
   /**

@@ -500,6 +500,8 @@ export class Session {
     // Load the saved conversation first, so what's said now is kept with it.
     if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
     const requestId = randomUUID();
+    // How a worktree is as you send this, so editing the message later can go back to it (BLG-385).
+    if (!shared && echo) void this.workspaces?.snapshotPrompt(channel, requestId);
     // Steering your own Claude at work here: the message says it isn't read yet from the moment it's drawn.
     if (echo) this.sendChat(typeof echo === 'string' ? echo : prompt, false, channel, requestId, urgent && !shared && this.host.runningIn(channel));
     return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent, undefined, requestId);

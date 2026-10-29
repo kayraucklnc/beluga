@@ -26,11 +26,11 @@ export class PromptQueue implements AsyncIterable<SDKUserMessage> {
   /**
    * Returns the prompt's id (Claude Code says which prompts each turn took in), or false once
    * closed. `steer`: sent while Claude works, it's folded into the running turn at its next step.
+   * `uuid`: the id it gets in Claude's transcript (a message's request id, so an edit can cut there).
    */
-  push(content: PromptContent, { steer = false }: { steer?: boolean } = {}): string | false {
+  push(content: PromptContent, { steer = false, uuid = randomUUID() }: { steer?: boolean; uuid?: string | undefined } = {}): string | false {
     if (this.ended) return false;
-    const uuid = randomUUID();
-    this.items.push({ content, uuid, ...(steer ? { priority: 'next' as const } : {}) });
+    this.items.push({ content, uuid: uuid as SDKUserMessage['uuid'], ...(steer ? { priority: 'next' as const } : {}) });
     this.wake?.();
     return uuid;
   }

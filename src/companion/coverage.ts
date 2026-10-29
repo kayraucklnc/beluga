@@ -119,6 +119,7 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.startWorktree': 'phone',
   'workspaces.branches': 'mac',
   'workspaces.fork': 'mac',
+  'workspaces.editPrompt': 'mac',
   'workspaces.continueInWorktree': 'mac',
   'workspaces.archive': 'mac',
   'workspaces.restore': 'mac',
