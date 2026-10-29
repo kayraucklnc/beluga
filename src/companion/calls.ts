@@ -36,6 +36,8 @@ export const PhoneCalls = {
   'host.promote': entry('host.promote', done),
   'host.sendNext': entry('host.sendNext', done),
   'host.steerNow': entry('host.steerNow', done),
+  // 1.28 (BLG-387): edit a message you sent → the conversation it went on in (a fork's channel).
+  'workspaces.editPrompt': entry('workspaces.editPrompt', z.string().optional()),
   'host.stopRun': entry('host.stopRun', z.object({ stopped: z.boolean(), returned: z.array(z.string()) }).partial().passthrough().optional()),
   'host.cancelQueued': entry('host.cancelQueued', done),
   'inbox.read': entry('inbox.read', done),

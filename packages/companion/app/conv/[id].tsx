@@ -17,6 +17,7 @@ import { OutputGrid, OutputsTopic, TurnOutputs } from '../../components/Outputs'
 import { DeleteMacChat, MacChatsSheet, newMacChat } from '../../components/MacChats';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
+import { EditPromptSheet } from '../../components/EditPrompt';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone, toneOf } from '../../components/ui';
 import { ago, elapsed, useSince, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
@@ -80,6 +81,9 @@ export default function Conversation() {
   const [menu, setMenu] = useState(false);
   /** A steered message of yours Claude hasn't read yet, long-pressed: its sheet offers Send now. */
   const [unread, setUnread] = useState<TurnView | undefined>();
+  /** Your message, long-pressed to edit it (1.28): Rewind Here or New Fork. */
+  const [editing, setEditing] = useState<TurnView | undefined>();
+  const canEdit = useSupports('editPrompt');
   const older = async () => {
     if (!c) return;
     setOlderBusy(true);
@@ -198,7 +202,7 @@ export default function Conversation() {
             {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
             {turns.map((t, i) => (
               <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeIn.duration(180) : undefined}>
-                {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
+                {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
               </Animated.View>
             ))}
             {pending.map((p) => (
@@ -271,6 +275,7 @@ export default function Conversation() {
           </ScrollView>
         </Sheet>
         {c?.mergeable ? <MergeSheet topic={topic} visible={mergeOpen} onClose={() => setMergeOpen(false)} /> : null}
+        <EditPromptSheet turn={editing} onClose={() => setEditing(undefined)} />
         <Options
           visible={Boolean(unread)}
           onClose={() => setUnread(undefined)}
@@ -323,7 +328,7 @@ export default function Conversation() {
   );
 }
 
-/** Your message. Steered into Claude's turn and not read yet: dimmed, with a clock (long-press: Send now). */
+/** Your message. Steered into Claude's turn and not read yet: dimmed, with a clock (long-press: Send now); else long-press edits it (1.28). */
 function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) | undefined }) {
   const waiting = t.steer?.waiting;
   return (

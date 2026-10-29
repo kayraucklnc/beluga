@@ -247,6 +247,10 @@ when a widget is placed. Never a source, a query or a key.
 first while it's still going) and dismiss a needs-you item without answering it (`needs.dismiss`,
 gone on the Mac too). An older Mac never gets either: Remove isn't offered, and a dismissed card
 is only hidden on the phone until it relinks.
+1.28 (BLG-387) lets the phone edit a message you sent (`TurnView.edit`, `workspaces.editPrompt`):
+long-press it, change it, then Rewind Here (the conversation goes back to it, a worktree's files too)
+or New Fork (a new worktree or chat from that point). Only messages whose words reach the phone whole
+(no code in them). An older Mac sends no `edit`, so Edit isn't offered.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
