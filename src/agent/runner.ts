@@ -174,6 +174,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const abortController = new AbortController();
       // Several conversations run at once: this run's room tools post to its own.
       const bridge = input.channel && opts.bridge.inChannel ? opts.bridge.inChannel(input.channel) : opts.bridge;
+      // Stopped while Claude Code was getting ready: an aborted signal never fires again (BLG-402).
+      if (input.signal.aborted) throw new Error('aborted');
       input.signal.addEventListener('abort', () => abortController.abort(), { once: true });
       // A workspace brings its own folder and conversation; otherwise use the room's.
       const place = input.place;

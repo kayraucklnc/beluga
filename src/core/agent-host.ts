@@ -1084,17 +1084,17 @@ export class AgentHost {
       // Sentinels (your own runs): a sentinel run's Claude step gets its brief, and the task tools even in a main folder (it makes tasks there).
       const sentinel = from === this.selfId && !place?.syncMain ? this.deps.sentinel?.(body.channel, from) : undefined;
       const board = (place?.askOnly && !sentinel?.inRun && (!planFirst || place.syncMain)) || from !== this.selfId ? undefined : this.deps.board?.(body.channel, from, { plan: planFirst });
-      // A run stopped but not ending (wedged) has its Claude Code killed after a moment (at once
-      // when it's gone already). Stopped for a newer message, it's then left behind so that message
-      // starts: never while its Claude Code could still work in this folder.
+      // A run stopped but not ending (wedged, or never started: no Claude Code yet) has its Claude
+      // Code killed after a moment (at once when it's gone already), then is left behind so what
+      // comes next in the conversation starts (BLG-402): never while its Claude Code could still
+      // work in this folder.
       const gone = new Promise<never>((_, reject) =>
         controller.signal.addEventListener(
           'abort',
           () => {
-            const leave = lane.interruptedBy !== undefined;
             const timer = setTimeout(() => {
               if (ended) return;
-              void (proc?.kill() ?? Promise.resolve()).then(() => leave && !ended && reject(new Error('aborted')));
+              void (proc?.kill() ?? Promise.resolve()).then(() => !ended && reject(new Error('aborted')));
             }, proc && !proc.alive() ? 0 : ABORT_GRACE_MS);
             timer.unref();
           },
