@@ -103,6 +103,18 @@ export function parseUsbPhones(ioreg: string): Array<{ name: string; serial?: st
   });
 }
 
+/**
+ * `ioreg -p IOUSB -w0` (no properties) → the USB tree as names, classes, ids and states, without
+ * what moves on its own (busy time, retain count). Undefined while any device in it is still
+ * settling (not yet registered, matched and active): its properties may not all be there yet.
+ */
+export function usbTree(ioreg: string): string | undefined {
+  const lines = ioreg.split('\n').filter((l) => l.includes('+-o '));
+  const settling = lines.slice(1).some((l) => !/<class [^>]*registered, matched, active/.test(l));
+  if (!lines.length || settling) return undefined;
+  return lines.map((l) => l.replace(/, busy \d+ \(\d+ ms\)/, '').replace(/, retain \d+/, '')).join('\n');
+}
+
 /** `wm size` → the size taps use: "Override size" when set, else "Physical size". */
 export function parseWmSize(stdout: string): { w: number; h: number } | undefined {
   const m = /Override size: (\d+)x(\d+)/.exec(stdout) ?? /Physical size: (\d+)x(\d+)/.exec(stdout);

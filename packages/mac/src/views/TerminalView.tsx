@@ -4,6 +4,7 @@ import { Icon } from '../components/Icon.js';
 import { Button, Dot, Empty, IconButton, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
+import { sameFields } from '../lib/stable.js';
 import { type GlobalShells, useGlobalShells } from '../lib/shells.js';
 import { extraShells, useShellOwners } from '../lib/ws-shells.js';
 import s from './terminal.module.css';
@@ -15,7 +16,7 @@ export function TerminalView() {
   const api = useApi();
   const actions = useActions();
   const { ui } = useBeluga();
-  const state = useApp((st) => st);
+  const state = useApp((st) => ({ view: st.view, projects: st.projects, terminals: st.terminals, termExits: st.termExits, termNames: st.termNames, termEnvStale: st.termEnvStale, home: st.home }), sameFields);
   const picked = useUi((u) => u.termKey);
   const shells = useGlobalShells();
   const owners = useShellOwners();

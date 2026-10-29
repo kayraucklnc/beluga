@@ -8,6 +8,7 @@ import { copyText } from '../lib/copy.js';
 import { toast, useBeluga } from '../lib/beluga.js';
 import { ago } from '../tasks/tasks-model.js';
 import { useCiActions } from './use-ci.js';
+import { NowText } from './now.js';
 import s from './ci.module.css';
 
 const ICONS: Readonly<Record<Exclude<RunTone, 'running'>, IconName>> = { passed: 'check', failed: 'x', queued: 'clock', waiting: 'hand', cancelled: 'stopSign', skipped: 'minus' };
@@ -43,7 +44,7 @@ export function useRunMenu(projectId: string): (run: GhRun, opts?: { readonly op
  * One run in a list: how it's going, its title, the workflow, what started it and where, how long
  * it took (counting while it runs), when. Click opens its page.
  */
-export const RunRow = memo(function RunRow({ projectId, run, now, compact }: { projectId: string; run: GhRun; now: number; compact?: boolean }) {
+export const RunRow = memo(function RunRow({ projectId, run, now, compact }: { projectId: string; run: GhRun; /** Its own clock; else the page's (Ticking). */ now?: number; compact?: boolean }) {
   const { openRun } = useCiActions();
   const menu = useRunMenu(projectId);
   const tone = runTone(run);
@@ -71,13 +72,19 @@ export const RunRow = memo(function RunRow({ projectId, run, now, compact }: { p
             {!compact && run.actor ? <span>{run.actor}</span> : null}
           </span>
         </span>
-        <Tip label={live ? `${statusWords(run)} for ${durationWords(runDuration(run, now))}` : `Took ${durationWords(runDuration(run, now))}`}>
-          <span className={cx(s.took, live && s.tookLive)}>
-            <Icon name="clock" size={11} />
-            {durationWords(runDuration(run, now))}
-          </span>
-        </Tip>
-        <span className={s.when}>{ago(run.createdAt, now)}</span>
+        <NowText at={now}>
+          {(now) => (
+            <>
+              <Tip label={live ? `${statusWords(run)} for ${durationWords(runDuration(run, now))}` : `Took ${durationWords(runDuration(run, now))}`}>
+                <span className={cx(s.took, live && s.tookLive)}>
+                  <Icon name="clock" size={11} />
+                  {durationWords(runDuration(run, now))}
+                </span>
+              </Tip>
+              <span className={s.when}>{ago(run.createdAt, now)}</span>
+            </>
+          )}
+        </NowText>
         <span className={s.rowMore} onClick={(e) => e.stopPropagation()}>
           <ActionsDropdown items={menu(run)}>
             <IconButton icon="more" label={`What to do with run #${run.number}`} />

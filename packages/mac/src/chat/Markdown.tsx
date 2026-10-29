@@ -221,6 +221,14 @@ function guardMath(text: string): { text: string; restore: (s: string) => string
   return { text: out.join('\n'), restore: (s) => (kept.length ? s.replace(/\uE000(\d+)\uE001/g, (_m, i: string) => kept[Number(i)] ?? '') : s) };
 }
 
+/** The board's keys as one string, worked out once per board (not for every message on every event). */
+const keysOf = new WeakMap<readonly { readonly key: string }[], string>();
+function boardKeys(issues: readonly { readonly key: string }[]): string {
+  let keys = keysOf.get(issues);
+  if (keys === undefined) keysOf.set(issues, (keys = issues.map((i) => i.key).join(' ')));
+  return keys;
+}
+
 /**
  * `localImages`: pictures named by a path on this Mac are shown (your own messages and your own
  * Claude's only; anyone else's stay a chip). `mentions`: draw "@mia", "@bob-api", "@src/auth.ts"…
@@ -232,7 +240,7 @@ function guardMath(text: string): { text: string; restore: (s: string) => string
 export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions, live = false, tasks = false }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld; live?: boolean; tasks?: boolean }) {
   const actions = useActions();
   // The board's keys as one string, so a task changing doesn't draw every message again.
-  const keys = useApp((st) => (tasks ? st.board.issues.map((i) => i.key).join(' ') : ''));
+  const keys = useApp((st) => (tasks ? boardKeys(st.board.issues) : ''));
   const source = useMemo(() => {
     // Math first (prices stay words), then set aside so the links below leave it alone.
     const math = guardMath(prepareMath(text));

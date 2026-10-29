@@ -67,6 +67,8 @@ const MAX_BLOBS = 96;
 /** Between frames while nothing's typed (30 a second), and while another app's window is in front (10). */
 const IDLE_FRAME_MS = 1000 / 30;
 const AWAY_FRAME_MS = 1000 / 10;
+/** Waking after a long rest, at most this many of its frames are done again (about 100 s: by then all of it has settled). */
+const CATCH_UP_STEPS = 3000;
 /**
  * Pixel art: one pixel of the fire is this many CSS pixels. The fire is drawn at that size (one
  * shader run per pixel of it, a sixteenth of the screen's) and scaled up crisp by the canvas, so
@@ -314,6 +316,10 @@ export class MaxFire {
   private bits: Bit[] = [];
   private raf = 0;
   private last = 0;
+  /** Out for good: no frames until something wakes it (see wake). */
+  private sleeping = false;
+  /** What the last step was burning toward (0: going out). */
+  private goal = 1;
   /** The last frame drawn showed nothing (so the next empty one needn't be drawn). */
   private drewOut = false;
   /** Confetti is on the canvas (so it needs clearing). */
@@ -335,6 +341,7 @@ export class MaxFire {
   }
 
   setTune(tune: FireTune): void {
+    this.wake();
     if (!this.fresh && tune.style !== this.tune.style) this.cur.alpha = 0;
     const restyled = tune.style !== this.tune.style;
     this.tune = tune;
@@ -349,6 +356,7 @@ export class MaxFire {
   }
 
   resize(width: number, height: number, box: FireBox): void {
+    this.wake();
     this.dpr = window.devicePixelRatio || 1;
     this.over.width = Math.round(width * this.dpr);
     this.over.height = Math.round(height * this.dpr);
@@ -369,11 +377,13 @@ export class MaxFire {
   }
 
   focus(on: boolean): void {
+    this.wake();
     this.focused = on;
   }
 
   /** A key typed at `caret`: the fire flares (and, only while typing, catches there once you keep on typing). */
   stoke(caret?: { x: number; y: number }): void {
+    this.wake();
     this.heat = Math.min(1, this.heat + 0.045);
     // A pause ends the run: the next key starts a new one, which has to warm up again.
     if (this.time - this.typedAt > RUN_GAP) {
@@ -387,6 +397,7 @@ export class MaxFire {
 
   /** Confetti from the caret (or, `pixels`, little squares in the fire's colours). */
   burst({ x, y }: { x: number; y: number }, n = 9, pixels = false): void {
+    this.wake();
     const colors = [...this.palette, '#ffffff'];
     for (let i = 0; i < n; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.95;
@@ -409,6 +420,7 @@ export class MaxFire {
 
   /** Characters deleted at the caret: each pops into a little shower of pixels that fall away. */
   pop({ x, y }: { x: number; y: number }, chars: number): void {
+    this.wake();
     const n = Math.min(60, 5 + chars * 5);
     const colors = [...this.palette, '#ffffff'];
     for (let i = 0; i < n; i++) {
@@ -431,28 +443,72 @@ export class MaxFire {
   }
 
   start(): void {
+    if (this.sleeping) return this.wake();
     if (this.raf) return;
     this.last = performance.now();
-    const tick = (now: number): void => {
-      this.raf = requestAnimationFrame(tick);
-      // Every frame (up to 120 a second) only while you type or confetti flies; a fire left
-      // burning is drawn at 30, and at 10 behind another app's window (it held a core, BLG-365).
-      const lively = this.bits.length > 0 || this.time - this.typedAt < 1.5;
-      const every = lively ? 0 : document.hasFocus() ? IDLE_FRAME_MS : AWAY_FRAME_MS;
-      if (now - this.last < every - 2) return;
-      const dt = Math.min(6, (now - this.last) / 16.67);
+    this.raf = requestAnimationFrame(this.tick);
+  }
+
+  private readonly tick = (now: number): void => {
+    this.raf = requestAnimationFrame(this.tick);
+    // Every frame (up to 120 a second) only while you type or confetti flies; a fire left
+    // burning is drawn at 30, and at 10 behind another app's window (it held a core, BLG-365).
+    const lively = this.bits.length > 0 || this.time - this.typedAt < 1.5;
+    const every = lively ? 0 : document.hasFocus() ? IDLE_FRAME_MS : AWAY_FRAME_MS;
+    if (now - this.last < every - 2) return;
+    const dt = Math.min(6, (now - this.last) / 16.67);
+    this.last = now;
+    this.step(dt);
+    // Nothing burning and nothing flying (out, or only while typing): the last frame stays as it is.
+    const out = this.amount < 0.004 && !this.blobs.length && !this.bits.length;
+    if (out && this.drewOut) {
+      // Out for good (nothing will catch until a key, a new look or focus; the rim's --burn reads
+      // 0.000): no frames at all until then. Waking catches up on what it did meanwhile.
+      if (!this.goal && this.amount < 0.0005) {
+        cancelAnimationFrame(this.raf);
+        this.raf = 0;
+        this.sleeping = true;
+      }
+      return;
+    }
+    this.drewOut = out;
+    this.draw();
+  };
+
+  /**
+   * Out and resting (see tick): before anything changes it, the fire does what its frames would
+   * have done meanwhile (its clock runs on, its look and heat settle; nothing is drawn: it's out),
+   * then its frames start again. It looks just as if it had never stopped.
+   */
+  private wake(): void {
+    if (!this.sleeping) return;
+    this.sleeping = false;
+    this.catchUp(performance.now());
+    this.raf = requestAnimationFrame(this.tick);
+  }
+
+  private catchUp(now: number): void {
+    const every = document.hasFocus() ? IDLE_FRAME_MS : AWAY_FRAME_MS;
+    const told = this.onBurn;
+    let burned: number | undefined;
+    this.onBurn = (amount) => (burned = amount);
+    let steps = 0;
+    for (; now - this.last >= every && steps < CATCH_UP_STEPS; steps++) {
+      this.last += every;
+      this.step(Math.min(6, every / 16.67));
+    }
+    // Long out: all of it has long settled; only the clock is left to move on.
+    if (steps === CATCH_UP_STEPS) {
+      this.time += (now - this.last) / 16.67 / 60;
       this.last = now;
-      this.step(dt);
-      // Nothing burning and nothing flying (out, or only while typing): the last frame stays as it is.
-      const out = this.amount < 0.004 && !this.blobs.length && !this.bits.length;
-      if (out && this.drewOut) return;
-      this.drewOut = out;
-      this.draw();
-    };
-    this.raf = requestAnimationFrame(tick);
+    }
+    this.onBurn = told;
+    if (burned !== undefined) told?.(burned);
   }
 
   stop(): void {
+    if (this.sleeping) this.catchUp(performance.now());
+    this.sleeping = false;
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.drewOut = false;
@@ -524,6 +580,7 @@ export class MaxFire {
     // The front starts just behind the caret (nothing yet) and ends past the farthest corner (all of it).
     this.spread = !typing || this.spreadT >= 1 ? Infinity : easeInOut(this.spreadT) * (this.spreadTo + SPREAD_FRONT * 2) - SPREAD_FRONT * 0.4;
     const goal = this.tune.show === 'off' ? 0 : typing ? (this.lit && this.time - this.typedAt < outAfter ? 1 : 0) : 1;
+    this.goal = goal;
     const was = this.amount;
     this.amount += (goal - this.amount) * Math.min(1, (goal > this.amount ? 0.07 : 0.12) * dt);
     if (Math.abs(this.amount - was) > 0.004 || (goal !== was && Math.abs(goal - this.amount) < 0.004)) this.onBurn?.(this.amount);

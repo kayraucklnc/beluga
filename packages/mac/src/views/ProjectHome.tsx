@@ -18,6 +18,7 @@ import { Select } from "../components/Select.js";
 import { Button, Dot, Empty, Segmented, Tip, cx } from "../components/ui.js";
 import { useActions } from "../lib/actions.js";
 import { toast, useApi, useApp, useBeluga } from "../lib/beluga.js";
+import { sameDeep } from "../lib/stable.js";
 import { usePrefs } from "../lib/prefs.js";
 import { mod } from "../lib/system.js";
 import {
@@ -859,11 +860,18 @@ function PrChip({ pr, onOpen }: { pr: PullRequest; onOpen?: () => void }) {
 /** One worktree or question: its state, name, last line and when; a click opens it (its PR: the PR sheet). */
 function Row({ ws, ask }: { ws: Workspace; ask?: boolean }) {
   const actions = useActions();
-  const state = useApp((st) => st);
-  const st = stateOf(state, ws, 0);
-  const act = activityOf(state.log, `ws:${ws.id}`);
+  // What the row shows, worked out when the shared state changes (the "when" too, as before):
+  // drawn again only when some of it reads differently.
+  const { st, last, pr, when } = useApp(
+    (full) => ({
+      st: stateOf(full, ws, 0),
+      last: activityOf(full.log, `ws:${ws.id}`).last,
+      pr: ws.kind === "worktree" && !ask ? full.prs[ws.id] : undefined,
+      when: agoText(lastActive(full, ws)),
+    }),
+    (a, b) => sameDeep(a, b, 2),
+  );
   const title = ws.kind === "main" ? "Main folder conversation" : ws.name;
-  const pr = ws.kind === "worktree" && !ask ? state.prs[ws.id] : undefined;
   const open = (): void =>
     actions.run(
       ws.archived
@@ -901,7 +909,7 @@ function Row({ ws, ask }: { ws: Workspace; ask?: boolean }) {
             <span className={s.rowBranch}>{ws.branch}</span>
           ) : null}
         </span>
-        {act.last ? <span className={s.rowLast}>{act.last}</span> : null}
+        {last ? <span className={s.rowLast}>{last}</span> : null}
       </span>
     </>
   );
@@ -910,7 +918,7 @@ function Row({ ws, ask }: { ws: Workspace; ask?: boolean }) {
       <span className={cx(s.rowState, s[`tone_${st.tone}`])}>
         {ask ? "" : st.label}
       </span>
-      <span className={s.rowWhen}>{agoText(lastActive(state, ws))}</span>
+      <span className={s.rowWhen}>{when}</span>
       <Icon name="chevronRight" size={11} className={s.rowChevron} />
     </>
   );

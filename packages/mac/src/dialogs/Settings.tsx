@@ -249,6 +249,9 @@ function Appearance() {
         <Row label="Reduce motion">
           <Switch label="Reduce motion" on={prefs.reduceMotion} onChange={(v) => setPrefs({ reduceMotion: v })} />
         </Row>
+        <Row label="Reduce transparency" detail="A solid sidebar, with no blur behind the window. Lighter on slower Macs.">
+          <Switch label="Reduce transparency" on={prefs.reduceTransparency} onChange={(v) => setPrefs({ reduceTransparency: v })} />
+        </Row>
       </Group>
     </>
   );

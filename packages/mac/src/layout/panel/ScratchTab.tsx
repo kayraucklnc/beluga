@@ -19,6 +19,7 @@ import { NextFileRow, ScratchEmpty, ScratchSkeleton } from './ScratchSkeleton.js
 import { type ScratchEntry, type ScratchKind, type ScratchSort, atEnd, fileKind, followed, foldersWithFiles, isFresh, isViewable, scratchPlace, scratchState, sortScratch, timeAgo } from './scratch-model.js';
 import s from './panel.module.css';
 import k from './scratch.module.css';
+import { everyWhileShown } from '../../lib/window-active.js';
 
 /**
  * The right panel's Scratch: what Claude saves to the workspace's `.beluga/scratch/` (or `.context/`,
@@ -71,10 +72,10 @@ function useScratch(wsId: string, owner?: string): Listing | undefined | null {
       );
     };
     look();
-    const timer = setInterval(look, POLL_MS);
+    const stop = everyWhileShown(look, POLL_MS);
     return () => {
       alive = false;
-      clearInterval(timer);
+      stop();
     };
   }, [wsId, owner]);
   return list;
@@ -99,10 +100,10 @@ export function useScratchNewest(wsId: string | undefined, owner?: string): numb
       );
     };
     look();
-    const timer = setInterval(look, NEWEST_MS);
+    const stop = everyWhileShown(look, NEWEST_MS);
     return () => {
       alive = false;
-      clearInterval(timer);
+      stop();
     };
   }, [wsId, owner]);
   return newest;
@@ -111,10 +112,8 @@ export function useScratchNewest(wsId: string | undefined, owner?: string): numb
 /** "now", "12s", "3m": kept current without a new listing. */
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 5000);
-    return () => clearInterval(t);
-  }, []);
+  // Resting only while the page can't be seen; on time again the moment it can.
+  useEffect(() => everyWhileShown(() => setNow(Date.now()), 5000), []);
   return now;
 }
 

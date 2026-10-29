@@ -3,7 +3,7 @@
 //! them on its own thread, so the spout stays smooth while the window is hidden or busy.
 
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,9 +22,10 @@ enum Cmd {
 /// The player's mailbox.
 pub struct Spout(Mutex<Sender<Cmd>>);
 
-/// The menu-bar icon at rest.
+/// The menu-bar icon at rest (decoded once, the first time a spout ends; the same picture each time).
 fn rest() -> Option<Image<'static>> {
-    Image::from_bytes(include_bytes!("../icons/tray.png")).ok()
+    static REST: OnceLock<Option<Image<'static>>> = OnceLock::new();
+    REST.get_or_init(|| Image::from_bytes(include_bytes!("../icons/tray.png")).ok()).clone()
 }
 
 /// Start the player (once, at launch).

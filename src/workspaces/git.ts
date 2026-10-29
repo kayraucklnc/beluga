@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { PROJECT_DIR } from '../shared/scratch-dir.js';
 import { limiter } from './limit.js';
@@ -168,24 +168,110 @@ export function status(dir: string, base?: string): Promise<Status> {
   return statusSlots(() => readStatus(dir, base));
 }
 
+/**
+ * A worktree's commits against its base, by what git keeps its branches in (BLG-407): HEAD, every
+ * ref and the files that say how refs and history read. The same mark means the same answer.
+ */
+interface RefsCounts {
+  readonly mark: string;
+  readonly at: number;
+  readonly ahead: number;
+  readonly behind: number;
+  readonly landed: boolean;
+}
+const refsCounts = new Map<string, RefsCounts>();
+/** Counted again at least this often, mark or not. */
+export const REFS_RECOUNT_MS = 5 * 60_000;
+/** A file changed this recently may change again without its time moving (a disk that keeps whole seconds): not trusted yet. */
+const RACY_MS = 2_000;
+/** More refs than this: just ask git each time. */
+const MAX_MARKED = 5_000;
+
+/** The git folders of a checkout: its own (HEAD) and the shared one (refs, config). */
+async function gitDirsOf(dir: string): Promise<{ own: string; common: string } | undefined> {
+  const dotGit = path.join(dir, '.git');
+  const st = await stat(dotGit).catch(() => undefined);
+  if (!st) return undefined;
+  if (st.isDirectory()) return { own: dotGit, common: dotGit };
+  const line = /^gitdir: (.+)$/m.exec(await readFile(dotGit, 'utf8').catch(() => ''))?.[1]?.trim();
+  if (!line) return undefined;
+  const own = path.resolve(dir, line);
+  const common = (await readFile(path.join(own, 'commondir'), 'utf8').catch(() => undefined))?.trim();
+  return { own, common: common ? path.resolve(own, common) : own };
+}
+
+/**
+ * The mark of everything a `base...HEAD` count reads besides the commits themselves (which never
+ * change): HEAD, every loose ref and the folders they sit in, packed-refs, config, shallow and
+ * grafts. Undefined when it can't be trusted (refs kept elsewhere, too many, or one just changed).
+ */
+export async function refsMark(dir: string): Promise<string | undefined> {
+  const dirs = await gitDirsOf(dir);
+  if (!dirs) return undefined;
+  const { own, common } = dirs;
+  if (await stat(path.join(common, 'reftable')).then(() => true, () => false)) return undefined;
+  const files = [path.join(own, 'HEAD'), path.join(own, 'config.worktree'), path.join(common, 'config'), path.join(common, 'packed-refs'), path.join(common, 'shallow'), path.join(common, 'info', 'grafts')];
+  const home = process.env.HOME;
+  if (home) files.push(path.join(home, '.gitconfig'), path.join(process.env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'git', 'config'));
+  const refDirs = [...new Set([path.join(common, 'refs'), path.join(own, 'refs')])];
+  const walked: string[] = [];
+  const walk = async (d: string): Promise<boolean> => {
+    walked.push(d);
+    const entries = await readdir(d, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (walked.length + files.length > MAX_MARKED) return false;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) {
+        if (!(await walk(p))) return false;
+      } else files.push(p);
+    }
+    return true;
+  };
+  for (const d of refDirs) if (!(await walk(d))) return undefined;
+  const now = Date.now();
+  const parts = await Promise.all(
+    [...walked, ...files].map(async (p) => {
+      const s = await stat(p, { bigint: true }).catch(() => undefined);
+      if (!s) return `${p}:-`;
+      if (now - Number(s.mtimeMs) < RACY_MS || now - Number(s.ctimeMs) < RACY_MS) return undefined;
+      return `${p}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+    }),
+  );
+  if (parts.some((p) => p === undefined)) return undefined;
+  return parts.join('\n');
+}
+
+/** Commits ahead of and behind `base`, and whether they landed there: git asked only when its refs moved (or every few minutes). */
+async function countAgainst(dir: string, base: string): Promise<{ ahead: number; behind: number; landed: boolean }> {
+  const key = `${dir}\0${base}`;
+  // Marked before git counts, so a ref that moves while it counts shows as a change next time.
+  const mark = await refsMark(dir).catch(() => undefined);
+  const known = refsCounts.get(key);
+  if (mark && known && known.mark === mark && Date.now() - known.at < REFS_RECOUNT_MS) return known;
+  const counts = (await tryGit(dir, ['rev-list', '--left-right', '--count', `${base}...HEAD`]))?.trim().split(/\s+/);
+  const behind = Number(counts?.[0] ?? 0) || 0;
+  const ahead = Number(counts?.[1] ?? 0) || 0;
+  const landed = ahead > 0 && (await hasLanded(dir, base));
+  if (refsCounts.size > 2000) refsCounts.clear();
+  if (mark) refsCounts.set(key, { mark, at: Date.now(), ahead, behind, landed });
+  else refsCounts.delete(key);
+  return { ahead, behind, landed };
+}
+
 async function readStatus(dir: string, base?: string): Promise<Status> {
   // Never take the index lock just to look: a commit (yours or Claude's) may be running.
+  // Always asked: files you edit, and new ones, change nothing git's refs or index would show.
   const out = await git(dir, ['--no-optional-locks', 'status', '--porcelain=v1', '-b']);
   const [head = '', ...files] = out.split('\n').filter(Boolean);
   const branch = /^## (?:No commits yet on )?([^.\s]+)/.exec(head)?.[1];
-  let ahead = 0;
-  let behind = 0;
   if (base) {
-    const counts = (await tryGit(dir, ['rev-list', '--left-right', '--count', `${base}...HEAD`]))?.trim().split(/\s+/);
-    behind = Number(counts?.[0] ?? 0) || 0;
-    ahead = Number(counts?.[1] ?? 0) || 0;
-    const landed = ahead > 0 && (await hasLanded(dir, base));
+    const { ahead, behind, landed } = await countAgainst(dir, base);
     return { branch, changed: files.length, ahead, behind, ...(landed ? { landed: true as const } : {}) };
   }
   // "## main...origin/main [ahead 1, behind 2]": how the checkout compares to what it tracks.
   const name = /^## [^.\s]+\.\.\.(\S+)/.exec(head)?.[1];
   const upstream = name ? { name, ahead: Number(/ahead (\d+)/.exec(head)?.[1] ?? 0), behind: Number(/behind (\d+)/.exec(head)?.[1] ?? 0) } : undefined;
-  return { branch, changed: files.length, ahead, behind, ...(upstream ? { upstream } : {}) };
+  return { branch, changed: files.length, ahead: 0, behind: 0, ...(upstream ? { upstream } : {}) };
 }
 
 export interface ChangedFile {

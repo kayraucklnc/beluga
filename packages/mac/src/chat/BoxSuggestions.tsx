@@ -6,6 +6,7 @@ import { shareNameOf } from '@beluga/shared/share-names.js';
 import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { sameDeep } from '../lib/stable.js';
 import { handleInvite } from '../lib/invite-command.js';
 import { MAX_LISTED, SuggestionBody, sectionOf } from './Suggestions.js';
 import s from './composer.module.css';
@@ -33,7 +34,8 @@ export function useBoxSuggestions({
   const api = useApi();
   const { client, ui } = useBeluga();
   const actions = useActions();
-  const state = useApp((st) => st);
+  // Only what the suggestions read, so a streamed step elsewhere doesn't draw the box again.
+  const state = useApp((st) => ({ selfId: st.selfId, peers: st.peers, dirCache: st.dirCache, projects: st.projects, network: { friends: st.network.friends } }), (a, b) => sameDeep(a, b, 2));
   const [selected, setSelected] = useState(0);
   const [hidden, setHidden] = useState(false);
   const share = filesOf ? shareNameOf(filesOf) : undefined;

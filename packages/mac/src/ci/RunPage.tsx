@@ -14,7 +14,8 @@ import { useSwipeBack } from '../tasks/use-swipe-back.js';
 import { SwipeBackEdge } from '../tasks/SwipeBackEdge.js';
 import { agoWords } from '../issues/issues-model.js';
 import { RunMark, useRunMenu } from './parts.js';
-import { useCiActions, useNow, useRun } from './use-ci.js';
+import { useCiActions, useRun } from './use-ci.js';
+import { NowText, Ticking } from './now.js';
 import { WorkflowGraph } from './WorkflowGraph.js';
 import t from '../tasks/tasks.module.css';
 import s from './ci.module.css';
@@ -64,78 +65,79 @@ function Page({ projectId, repo, run, loading, refresh, late }: { projectId: str
   const a = useCiActions();
   const menu = useRunMenu(projectId);
   const live = isLive(run);
-  const now = useNow(live);
   const tone = runTone(run);
   const failed = !live && (tone === 'failed' || tone === 'cancelled');
+  // The clock sits in Ticking: only the time text is drawn again each second.
   return (
-    <div ref={wrap} className={cx(t.pageWrap, late && arr.arrive)}>
-      <SwipeBackEdge progress={swipe} />
-      <div className={t.page}>
-        <div className={t.pageMain}>
-          <nav className={t.crumbs} aria-label="Where this run is">
-            <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
-            <button type="button" className={t.crumb} onClick={() => a.openList(projectId)}>
-              Actions
-            </button>
-            <Icon name="chevronRight" size={10} />
-            <span className={t.crumbPlain}>{project?.name ?? repoSlug(repo)}</span>
-            <span className={t.grow} />
-            <span className={t.pageKey}>
-              {run.workflow} #{run.number}
-              {run.attempt > 1 ? ` · attempt ${run.attempt}` : ''}
-            </span>
-            <IconButton icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx(loading && s.spinning)} onClick={refresh} />
-            <ActionsDropdown items={menu(run, { open: false, then: refresh })}>
-              <IconButton icon="more" label="More" />
-            </ActionsDropdown>
-          </nav>
-          <header className={t.pageHead}>
-            <h1 className={s.pageTitle}>{run.title}</h1>
-            <div className={s.byline}>
-              <span className={cx(s.statePill, s[`tone_${tone}`])}>
-                <RunMark tone={tone} size={14} />
-                {statusWords(run)}
-              </span>
-              <span>
-                {durationWords(runDuration(run, now))} · {jobsSummary(run.jobs)}
-              </span>
+    <Ticking live={live}>
+      <div ref={wrap} className={cx(t.pageWrap, late && arr.arrive)}>
+        <SwipeBackEdge progress={swipe} />
+        <div className={t.page}>
+          <div className={t.pageMain}>
+            <nav className={t.crumbs} aria-label="Where this run is">
+              <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={back} />
+              <button type="button" className={t.crumb} onClick={() => a.openList(projectId)}>
+                Actions
+              </button>
+              <Icon name="chevronRight" size={10} />
+              <span className={t.crumbPlain}>{project?.name ?? repoSlug(repo)}</span>
               <span className={t.grow} />
-              {failed ? (
-                <Button size="small" icon="refresh" onClick={() => void a.rerun(projectId, run.id, true).then((ok) => ok && refresh())}>
-                  Re-run Failed Jobs
+              <span className={t.pageKey}>
+                {run.workflow} #{run.number}
+                {run.attempt > 1 ? ` · attempt ${run.attempt}` : ''}
+              </span>
+              <IconButton icon="refresh" label={loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx(loading && s.spinning)} onClick={refresh} />
+              <ActionsDropdown items={menu(run, { open: false, then: refresh })}>
+                <IconButton icon="more" label="More" />
+              </ActionsDropdown>
+            </nav>
+            <header className={t.pageHead}>
+              <h1 className={s.pageTitle}>{run.title}</h1>
+              <div className={s.byline}>
+                <span className={cx(s.statePill, s[`tone_${tone}`])}>
+                  <RunMark tone={tone} size={14} />
+                  {statusWords(run)}
+                </span>
+                <span>
+                  <NowText>{(now) => durationWords(runDuration(run, now))}</NowText> · {jobsSummary(run.jobs)}
+                </span>
+                <span className={t.grow} />
+                {failed ? (
+                  <Button size="small" icon="refresh" onClick={() => void a.rerun(projectId, run.id, true).then((ok) => ok && refresh())}>
+                    Re-run Failed Jobs
+                  </Button>
+                ) : null}
+                {live ? (
+                  <Button size="small" icon="stop" onClick={() => a.cancel(projectId, run.id, run.title, refresh)}>
+                    Cancel Run
+                  </Button>
+                ) : null}
+                <Button size="small" variant="quiet" icon="external" onClick={() => a.openOnGitHub(run.url)}>
+                  GitHub
                 </Button>
-              ) : null}
-              {live ? (
-                <Button size="small" icon="stop" onClick={() => a.cancel(projectId, run.id, run.title, refresh)}>
-                  Cancel Run
-                </Button>
-              ) : null}
-              <Button size="small" variant="quiet" icon="external" onClick={() => a.openOnGitHub(run.url)}>
-                GitHub
-              </Button>
-            </div>
-          </header>
-          {run.file !== undefined && run.path ? (
-            <section className={s.runGraph} aria-label="The workflow">
-              <WorkflowGraph text={run.file} path={run.path} title={run.workflow} jobs={run.jobs} />
+              </div>
+            </header>
+            {run.file !== undefined && run.path ? (
+              <section className={s.runGraph} aria-label="The workflow">
+                <WorkflowGraph text={run.file} path={run.path} title={run.workflow} jobs={run.jobs} />
+              </section>
+            ) : null}
+            <section className={s.jobs} aria-label="Jobs">
+              {run.jobs.length ? sortJobs(run.jobs).map((job) => <JobCard key={job.id} projectId={projectId} job={job} />) : <p className={s.graphNote}>{live ? 'Waiting for a runner to pick it up…' : 'This run has no jobs.'}</p>}
             </section>
-          ) : null}
-          <section className={s.jobs} aria-label="Jobs">
-            {run.jobs.length ? sortJobs(run.jobs).map((job) => <JobCard key={job.id} projectId={projectId} job={job} now={now} />) : <p className={s.graphNote}>{live ? 'Waiting for a runner to pick it up…' : 'This run has no jobs.'}</p>}
-          </section>
+          </div>
+          <Properties repo={repo} run={run} />
         </div>
-        <Properties repo={repo} run={run} now={now} />
       </div>
-    </div>
+    </Ticking>
   );
 }
 
 /** A job: how it went and how long, its steps (open while it runs or once it fails), and its log when it failed. */
-function JobCard({ projectId, job, now }: { projectId: string; job: GhJob; now: number }) {
+function JobCard({ projectId, job }: { projectId: string; job: GhJob }) {
   const tone = runTone(job);
   const [open, setOpen] = useState(tone === 'failed' || tone === 'running');
   const a = useCiActions();
-  const took = spanOf(job, now);
   // A job that starts running, or fails, while you watch opens by itself.
   const was = useRef(tone);
   useEffect(() => {
@@ -150,7 +152,12 @@ function JobCard({ projectId, job, now }: { projectId: string; job: GhJob; now: 
         <span className={s.jobName}>{job.name}</span>
         {job.runner ? <span className={s.jobRunner}>{job.runner}</span> : null}
         <span className={t.grow} />
-        {took !== undefined ? <span className={cx(s.took, isLive(job) && s.tookLive)}>{durationWords(took)}</span> : <span className={s.took}>{statusWords(job)}</span>}
+        <NowText>
+          {(now) => {
+            const took = spanOf(job, now);
+            return took !== undefined ? <span className={cx(s.took, isLive(job) && s.tookLive)}>{durationWords(took)}</span> : <span className={s.took}>{statusWords(job)}</span>;
+          }}
+        </NowText>
       </button>
       {open ? (
         <div className={s.jobBody}>
@@ -158,13 +165,19 @@ function JobCard({ projectId, job, now }: { projectId: string; job: GhJob; now: 
             <ol className={s.steps}>
               {job.steps.map((step) => {
                 const st = runTone(step);
-                const span = spanOf(step, now);
                 return (
                   <li key={step.number} className={cx(s.step, s[`step_${st}`])}>
                     <RunMark tone={st} size={13} label={statusWords(step)} />
                     <span className={s.stepNo}>{step.number}</span>
                     <span className={s.stepName}>{step.name}</span>
-                    <span className={s.took}>{span !== undefined && st !== 'skipped' ? durationWords(span) : ''}</span>
+                    <span className={s.took}>
+                      <NowText>
+                        {(now) => {
+                          const span = spanOf(step, now);
+                          return span !== undefined && st !== 'skipped' ? durationWords(span) : '';
+                        }}
+                      </NowText>
+                    </span>
                   </li>
                 );
               })}
@@ -217,7 +230,7 @@ function JobLog({ projectId, jobId }: { projectId: string; jobId: number }) {
   );
 }
 
-function Properties({ repo, run, now }: { repo: GitHubRepo; run: GhRunFull; now: number }) {
+function Properties({ repo, run }: { repo: GitHubRepo; run: GhRunFull }) {
   const a = useCiActions();
   const commit = `${repo.url}/commit/${run.sha}`;
   return (
@@ -263,7 +276,9 @@ function Properties({ repo, run, now }: { repo: GitHubRepo; run: GhRunFull; now:
         <span className={t.propStatic}>{agoWords(run.startedAt)}</span>
       </Prop>
       <Prop label={isLive(run) ? 'Running for' : 'Took'} quiet>
-        <span className={t.propStatic}>{durationWords(runDuration(run, now))}</span>
+        <span className={t.propStatic}>
+          <NowText>{(now) => durationWords(runDuration(run, now))}</NowText>
+        </span>
       </Prop>
       {run.attempt > 1 ? (
         <Prop label="Attempt" quiet>

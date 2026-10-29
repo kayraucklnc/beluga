@@ -9,6 +9,8 @@ import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
+import { sameDeep, sameFields } from '../lib/stable.js';
+import type { AppState } from '@beluga/core/store.js';
 import { type ToolAction, isPrStep, shortOf, toolbarActions } from './toolbar-actions.js';
 import { type BranchFold, BranchControl, pillHidden, shortLabel } from './BranchControl.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
@@ -95,21 +97,56 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
   );
 }
 
+/**
+ * What the toolbar reads from the shared state: the slices it shows, and for a worktree its state
+ * line and buttons worked out here, so a streamed step redraws the bar only when what it shows changes.
+ */
+function toolbarPick(full: AppState) {
+  const view = full.view;
+  const ws = view.kind === 'workspace' ? findWorkspace(full.projects, view.id) : undefined;
+  const agent = ws ? isAgentWorktree(ws) : false;
+  const act = ws && !agent ? activityOf(full.log, `ws:${ws.id}`) : undefined;
+  return {
+    view,
+    ws,
+    sub: ws && agent ? agentOfWorktree(full.claudeCode.sessions, ws) : undefined,
+    made: ws && !agent ? { st: stateOf(full, ws, 0), tools: toolbarActions(full, ws), live: Boolean(act?.running || act?.awaiting) } : undefined,
+    projects: full.projects,
+    prs: full.prs,
+    plans: full.plans,
+    shared: full.shared,
+    peers: full.peers,
+    friends: full.network.friends,
+    room: full.room,
+    sentinel: full.sentinel,
+    board: full.board,
+    team: full.team,
+    members: full.members,
+  };
+}
+
+/** The slices the same objects, and what was worked out from them the same plain data. */
+function sameToolbar(a: ReturnType<typeof toolbarPick>, b: ReturnType<typeof toolbarPick>): boolean {
+  const { sub: sa, made: ma, ...ra } = a;
+  const { sub: sb, made: mb, ...rb } = b;
+  return sameFields(ra, rb) && sameDeep(sa, sb) && sameDeep(ma, mb);
+}
+
 export function Toolbar() {
   const [headerRef, width] = useToolbarWidth();
   const actions = useActions();
   const beluga = useBeluga();
   const { client } = beluga;
-  const state = useApp((st) => st);
+  const state = useApp(toolbarPick, sameToolbar);
   const view = state.view;
 
   if (view.kind === 'workspace') {
-    const ws = findWorkspace(state.projects, view.id);
+    const ws = state.ws;
     if (!ws) return <Shell headerRef={headerRef} title="Workspace" />;
     const project = state.projects.find((p) => p.id === ws.projectId);
     // A sub-agent's own worktree is the agent: its name, no worktree actions (it's Claude's, not yours).
-    if (isAgentWorktree(ws)) {
-      const sub = agentOfWorktree(state.claudeCode.sessions, ws);
+    if (isAgentWorktree(ws) || !state.made) {
+      const sub = state.sub;
       return (
         <Shell
           headerRef={headerRef}
@@ -123,8 +160,8 @@ export function Toolbar() {
         />
       );
     }
-    const st = stateOf(state, ws, 0);
-    const { branch, primary, icons, more } = toolbarActions(state, ws);
+    const { st } = state.made;
+    const { branch, primary, icons, more } = state.made.tools;
     // A narrow window: the icons that don't fit move under ⋯ first, then the branch pill keeps only
     // its icon and number, then its step and the everyday action only their icons (words in their tips).
     const pillW = (fold: BranchFold): number => (branch && !pillHidden(branch, fold) ? (fold === 'none' ? branch.label.length * 6.6 + 40 : 38) + (branch.pr ? 28 : 0) : 0);
@@ -141,14 +178,13 @@ export function Toolbar() {
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
       if (isPrStep(a.action)) return askBeforeWork(ws.id, a.action);
-      if (isPlanAction(a.action)) return runPlanAction(state, ws.id, a.action, actions.run);
+      if (isPlanAction(a.action)) return runPlanAction(client.store.getState(), ws.id, a.action, actions.run);
       actions.run({ type: 'ws', id: ws.id, action: a.action });
     };
     const pr = state.prs[ws.id];
     // Where the branch stands (Merged, Conflicts, its PR) is said once, by the branch pill on the
     // right: the subtitle keeps to what Claude is doing, or what needs you.
-    const act = activityOf(state.log, `ws:${ws.id}`);
-    const live = !branch || act.running || act.awaiting;
+    const live = !branch || state.made.live;
     return (
       <Shell
         headerRef={headerRef}
@@ -224,7 +260,7 @@ export function Toolbar() {
   if (view.kind === 'shared') {
     const w = state.shared.find((x) => x.id === view.id);
     const ui = beluga.ui;
-    const owner = state.peers.find((p) => p.peerId === view.owner)?.name ?? state.network.friends.find((f) => f.peerId === view.owner)?.name ?? 'Someone';
+    const owner = state.peers.find((p) => p.peerId === view.owner)?.name ?? state.friends.find((f) => f.peerId === view.owner)?.name ?? 'Someone';
     return (
       <Shell
         headerRef={headerRef}

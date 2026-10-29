@@ -6,6 +6,7 @@ import { SpecContext } from '../components/SpecMenu.js';
 import { Button, Empty, EmptyActions } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
+import { sameDeep } from '../lib/stable.js';
 import { EarningsCard } from './EarningsCard.js';
 import { ConversationPeek, DeleteArchivedAlert } from './overview/ConversationPeek.js';
 import { FilterBar } from './overview/FilterBar.js';
@@ -15,6 +16,7 @@ import { useOverviewPrefs } from './overview/use-overview-prefs.js';
 import s from './overview.module.css';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const sameRows = (a: readonly OverviewItem[], b: readonly OverviewItem[]): boolean => sameDeep(a, b, 3);
 
 /**
  * Every worktree and chat at a glance, archived ones too, grouped by project: what needs you
@@ -25,7 +27,8 @@ export function OverviewView() {
   const actions = useActions();
   const { client } = useBeluga();
   const api = client.api;
-  const state = useApp((st) => st);
+  // The rows as they read: drawn again when one of them changes, not on every streamed step.
+  const all = useApp(overviewItems, sameRows);
   const [prefs, setPrefs] = useOverviewPrefs();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string>();
@@ -35,7 +38,6 @@ export function OverviewView() {
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const all = useMemo(() => overviewItems(state), [state]);
   const projects = useMemo(() => [...new Map(all.map((i) => [i.project.id, i.project])).values()], [all]);
   // A project that's gone (removed, hidden) means all of them again.
   const project = projects.find((p) => p.id === prefs.project);

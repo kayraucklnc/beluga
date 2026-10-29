@@ -210,6 +210,17 @@ describe('Steer on a queued message', () => {
     expect(b.prompts).toEqual(['slow', 'later']);
   }, 12_000);
 
+  it('Stop on a run that never ends (stuck starting): it ends, and the next message runs (BLG-402)', async () => {
+    const b = backend({ wedged: true, process: true });
+    const t = await busy(b);
+    expect(t.h.stopRun('room')).toMatchObject({ stopped: true, returned: ['later'] });
+    await t.ask('r3', 'next');
+    await waitFor(() => t.card('r3')?.status === 'done', 9_000);
+    expect(t.card('r1')?.status).toBe('error');
+    expect(t.card('r1')?.text).toMatch(/Stopped by you/);
+    expect(b.timeline).toEqual(['run slow', 'killed slow', 'run next']);
+  }, 12_000);
+
   it('dead run with its Claude Code still running: killed before the message’s run starts', async () => {
     const b = backend({ wedged: true, process: true });
     const t = await busy(b);
@@ -313,20 +324,7 @@ describe('two steers in a row', () => {
   });
 });
 
-describe('the abort grace is only for steers', () => {
-  it('Stop never leaves a run behind: the next message waits for it to end', async () => {
-    const b = backend({ wedged: true, process: true });
-    const t = await busy(b);
-    t.h.stopRun('room');
-    await t.ask('r3', 'next');
-    await new Promise((r) => setTimeout(r, 5_500));
-    // Its Claude Code was killed after the grace, but the run is waited for, not left behind.
-    expect(b.timeline).toEqual(['run slow', 'killed slow']);
-    expect(b.prompts).toEqual(['slow']);
-    b.live.finish!();
-    await waitFor(() => t.card('r3')?.status === 'done');
-  }, 9_000);
-
+describe('the abort grace', () => {
   it('a run that ends normally is never killed', async () => {
     const b = backend({ process: true });
     const t = await busy(b);

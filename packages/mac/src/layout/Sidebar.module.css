@@ -7,7 +7,8 @@
   background: var(--bg-sidebar);
   border-right: 0.5px solid var(--hairline);
 }
-:global(html:not([data-app])) .sidebar {
+:global(html:not([data-app])) .sidebar,
+:global(html[data-transparency='reduce']) .sidebar {
   background: var(--bg-sidebar-solid);
 }
 
