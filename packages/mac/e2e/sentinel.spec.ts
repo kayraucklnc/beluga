@@ -407,27 +407,28 @@ test('a tile goes anywhere on the grid, like a home screen: dropped with an empt
   const step = (g.width + 10) / 6;
   const width = Math.round((t.width + 10) / step);
   const to = { x: g.x + step * (6 - width) + 20, y: g.y + g.height + 116 + 10 + 20 };
-  await grid.screenshot({ path: path.join(shots, 'sentinel-dashboard-before-drag.png') });
+  await grid.screenshot({ path: path.join(shots, 'sentinel-dashboard-unplaced.png') });
   await page.mouse.move(t.x + 20, t.y + 20);
   await page.mouse.down();
   await page.mouse.move(t.x + 40, t.y + 40, { steps: 3 });
   await page.mouse.move(to.x, to.y, { steps: 12 });
   // While it's lifted, only where it lands shows: the grid's empty cells stay unseen.
   await expect(grid.locator(':scope > [aria-hidden="true"]').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await page.screenshot({ path: path.join(shots, 'sentinel-dashboard-dragging.png') });
+  await grid.screenshot({ path: path.join(shots, 'sentinel-dashboard-snapping.png') });
   await page.mouse.up();
   await expect(same).toHaveCSS('grid-column-start', String(7 - width));
   await expect(async () => {
     const b = (await same.boundingBox())!;
-    expect(b.x + b.width).toBeGreaterThan(g.x + g.width - 4);
-    // An empty row between it and the tiles above.
-    expect(b.y).toBeGreaterThan(g.y + g.height + 100);
+    const now = (await grid.boundingBox())!;
+    expect(b.x + b.width).toBeGreaterThan(now.x + now.width - 4);
+    // An empty row between it and the tiles above (measured from the board's top: the pane may have scrolled).
+    expect(b.y - now.y).toBeGreaterThan(g.height + 100);
   }).toPass();
   // The project's logo isn't greyed out until hovered.
   const logo = board.locator('[data-tile] [aria-label^="From "] > *').first();
   if (await logo.count()) await expect(logo).toHaveCSS('opacity', '1');
   await page.mouse.move(0, 0);
-  await grid.screenshot({ path: path.join(shots, 'sentinel-dashboard-after-drag.png') });
+  await grid.screenshot({ path: path.join(shots, 'sentinel-dashboard-snapped.png') });
   await shoot(page, 'dashboard-placed');
 });
 
