@@ -76,14 +76,32 @@ const NEW_SUBS = [4, 6, 3, 7, 5, 8, 4, 6];
 const FAILED = [3, 1, 2, 2, 0, 1, 3, 1];
 const SUBSCRIBERS = [11_820, 11_904, 11_960, 12_045, 12_110, 12_188, 12_231, 12_304];
 const VIEWS = [1_440_120, 1_446_300, 1_451_870, 1_458_020, 1_463_400, 1_469_950, 1_475_310, 1_482_210];
-const JOBS: Record<string, Cell>[] = [
-  { who: 'lena', job: 'deploy landing', status: 'done', finished_at: '09:12' },
-  { who: 'bob', job: 'refund webhooks backfill', status: 'done', finished_at: '08:55' },
-  { who: 'ci', job: 'nightly tests', status: 'failed', finished_at: '02:01' },
-  { who: 'mia', job: 'export invoices', status: 'done', finished_at: 'yesterday 18:40' },
-  { who: 'ci', job: 'image cache warm-up', status: 'done', finished_at: 'yesterday 17:05' },
-  { who: 'bob', job: 'deploy bob-api', status: 'done', finished_at: 'yesterday 16:22' },
+/** A job's log as a small page, and the nightly tests' artifacts as a zip (a kind the phone only describes). */
+const jobLog = (job: string, line: string): string => `<html><body style="font: 16px -apple-system, sans-serif; padding: 16px"><h1 style="font-size: 20px">${job}</h1><pre>${line}</pre></body></html>`;
+/** The documents the demo's Last jobs table holds, by ref (makeWorld offers them; the phone streams them). */
+export const JOB_DOCS: ReadonlyArray<{ readonly ref: string; readonly name: string; readonly mime: string; readonly text?: string; readonly b64?: string }> = [
+  { ref: 'out:demo-log-deploy-landing', name: 'deploy landing.html', mime: 'text/html', text: jobLog('deploy landing', 'Deployed landing in 48 s.') },
+  { ref: 'out:demo-log-refund-backfill', name: 'refund webhooks backfill.html', mime: 'text/html', text: jobLog('refund webhooks backfill', 'Backfilled 212 refunds.') },
+  { ref: 'out:demo-log-nightly-tests', name: 'nightly tests.html', mime: 'text/html', text: jobLog('nightly tests', 'FAIL tests/webhooks.test.ts › retries a webhook once') },
+  { ref: 'out:demo-zip-nightly-tests', name: 'nightly tests.zip', mime: 'application/zip', b64: 'UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==' },
 ];
+const JOBS: Record<string, Cell>[] = [
+  { who: 'lena@example.com', job: 'deploy landing', status: 'done', progress: 100, log: 'deploy landing.html', artifact: null, finished_at: '09:12' },
+  { who: 'bob', job: 'refund webhooks backfill', status: 'done', progress: 100, log: 'refund webhooks backfill.html', artifact: null, finished_at: '08:55' },
+  { who: 'ci', job: 'nightly tests', status: 'failed', progress: 62, log: 'nightly tests.html', artifact: 'nightly tests.zip', finished_at: '02:01' },
+  { who: 'mia@example.com', job: 'export invoices', status: 'done', progress: 100, log: null, artifact: null, finished_at: 'yesterday 18:40' },
+  { who: 'ci', job: 'image cache warm-up', status: 'done', progress: 100, log: null, artifact: null, finished_at: 'yesterday 17:05' },
+  { who: 'bob', job: 'deploy bob-api', status: 'done', progress: 100, log: null, artifact: null, finished_at: 'yesterday 16:22' },
+];
+/** Last jobs' columns as its sentinel typed them (as src/core/sentinel/demo.ts types the Mac's). */
+const JOB_TYPES: Readonly<Record<string, { readonly kind: string; readonly label: string; readonly max?: number; readonly button?: string }>> = {
+  who: { kind: 'person', label: 'Who' },
+  status: { kind: 'badge', label: 'Status' },
+  progress: { kind: 'progress', label: 'Progress', max: 100 },
+  log: { kind: 'html', label: 'Log', button: 'Open log' },
+  artifact: { kind: 'file', label: 'Artifact' },
+  finished_at: { kind: 'text', label: 'Finished' },
+};
 
 const usd = (n: number): string => `$${n.toLocaleString('en-US')}`;
 
@@ -165,7 +183,7 @@ export function makeNumbers(now = Date.now()): DemoNumbers {
     { sentinelId: 'sn_yt', name: 'subscribers', label: 'YouTube subscribers', unit: 'count', better: 'up', points: subscribers },
     { sentinelId: 'sn_yt', name: 'views', label: 'Views', unit: 'count', better: 'up', points: views },
     { sentinelId: 'sn_speed', name: 'home', label: 'Home page', unit: 'ms', better: 'down', points: home },
-    { sentinelId: 'sn_jobs', name: 'last-jobs', label: 'Last jobs', unit: 'count', better: 'none', points: [], columns: ['who', 'job', 'status', 'finished_at'], rows: JOBS, rowsAt: jobsAt + 40_000 },
+    { sentinelId: 'sn_jobs', name: 'last-jobs', label: 'Last jobs', unit: 'count', better: 'none', points: [], columns: ['who', 'job', 'status', 'progress', 'log', 'artifact', 'finished_at'], rows: JOBS, rowsAt: jobsAt + 40_000 },
   ];
   let n = 0;
   const t = (tile: Omit<Tile, 'id' | 'width'> & { width?: Tile['width'] }): Tile => ({ id: `tile_${++n}`, width: tile.kind === 'number' ? 1 : 3, ...tile });
@@ -324,7 +342,20 @@ function tileView(n: DemoNumbers, t: Tile, sentinels: Sentinels): DashboardTileV
   if (t.kind === 'chart' && m) return { ...base, chart: { kind: t.chart ?? 'line', unit: m.unit, series: ms.slice(0, 8).map((x) => ({ label: x.label, points: x.points.slice(-90).map((p) => [Math.round(p.at), p.value] as [number, number]) })) } };
   if (t.kind === 'table' && m?.rows) {
     const columns = (m.columns?.length ? m.columns : Object.keys(m.rows[0] ?? {})).slice(0, 20);
-    return { ...base, table: { columns, rows: m.rows.slice(0, 50).map((r) => columns.map((c) => r[c] ?? null)), total: m.rows.length }, ...(m.rowsAt ? { at: Math.round(m.rowsAt) } : {}) };
+    const rows = m.rows.slice(0, 50);
+    // Typed as the Mac sends them (1.28): each document's cell as a ref the phone streams.
+    const jobs = m.sentinelId === 'sn_jobs';
+    const typed = jobs
+      ? columns.flatMap((c, col) => {
+          const ty = JOB_TYPES[c];
+          if (!ty) return [];
+          const values = rows.map((r) => (typeof r[c] === 'string' && r[c] ? String(r[c]) : null));
+          const docs = ty.kind === 'html' || ty.kind === 'file' ? values.map((v) => JOB_DOCS.find((d) => d.name === v)).map((d) => (d ? { ref: d.ref, name: d.name, mime: d.mime } : null)) : undefined;
+          return [{ col, key: c, kind: ty.kind, values, ...(docs ? { docs } : {}), ...(ty.max !== undefined ? { max: ty.max } : {}), ...(ty.button ? { button: ty.button } : {}) }];
+        })
+      : undefined;
+    const heading = (c: string): string => (jobs ? JOB_TYPES[c]?.label : undefined) ?? c;
+    return { ...base, table: { columns: columns.map(heading), keys: columns, rows: rows.map((r) => columns.map((c) => r[c] ?? null)), total: m.rows.length, ...(typed?.length ? { typed, metric: { sentinelId: m.sentinelId, name: m.name } } : {}) }, ...(m.rowsAt ? { at: Math.round(m.rowsAt) } : {}) };
   }
   if (t.kind === 'output') return { ...base, ...(t.output ? { output: t.output } : {}) };
   if (t.kind === 'text' && sn) {

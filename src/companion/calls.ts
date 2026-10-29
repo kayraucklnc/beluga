@@ -148,6 +148,9 @@ export const PhoneCalls = {
   'sentinel.document': entry('sentinel.document', DocumentView),
   'sentinel.signStorage': entry('sentinel.signStorage', SignedLinkView),
   'sentinel.runRow': entry('sentinel.runRow', SentinelRunResult),
+  // 1.28 (BLG-386): a document the phone doesn't show, opened in its app on the Mac.
+  'sentinel.documentOpen': entry('sentinel.documentOpen', done),
+  'sentinel.storageOpen': entry('sentinel.storageOpen', done),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;

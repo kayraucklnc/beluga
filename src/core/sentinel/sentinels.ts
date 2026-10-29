@@ -1427,6 +1427,9 @@ export class Sentinels {
     this.sweepDocuments(s);
   }
 
+  /** Documents the phone is streaming (documentBytes): a couple of minutes each, in memory only. */
+  private readonly docCache = new Map<string, { readonly doc: { readonly name: string; readonly mime: string; readonly bytes: Uint8Array }; readonly until: number }>();
+
   /** How many days a sentinel's documents are kept: the longest any of its Keep the numbers steps asks (14 by default). */
   private filesKeepDays(s: Sentinel): number {
     const days = s.steps.flatMap((st) => (st.kind === 'measure' && st.filesKeepDays ? [st.filesKeepDays] : []));
@@ -1463,8 +1466,11 @@ export class Sentinels {
     if (!m?.rows) throw new Error(`“${s.name}” keeps no rows called ${metric}`);
     const col = m.columnTypes?.find((c) => c.key === column && c.type === 'action');
     if (!col?.sentinel) throw new Error(`${column} isn’t an action column of ${m.label}`);
-    const kept = m.rows.find((r) => sameRow(r, row));
-    if (!kept) throw new Error(`That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
+    // The whole row (the Mac's), or the columns a phone shows: either names one of the latest rows.
+    const exact = m.rows.find((r) => sameRow(r, row));
+    const alike = exact ? [exact] : m.rows.filter((r) => Object.keys(row).length > 0 && Object.entries(row).every(([k, v]) => (r[k] ?? null) === (v ?? null)));
+    const kept = alike.length === 1 ? alike[0] : undefined;
+    if (!kept) throw new Error(alike.length > 1 ? `Several of ${m.label}’s rows look like that one: run it from the Mac` : `That row isn’t in ${m.label}’s latest rows any more: refresh and try again`);
     const target = this.need(col.sentinel);
     const words = col.button?.trim() || col.label?.trim() || `Run ${target.name}`;
     return this.start(target.id, by, { kind: 'manual', summary: `You pressed “${words}” on a row of ${m.label}`, payload: { row: kept, sentinel: s.name, metric: m.label } }, [s.id]);
@@ -1507,6 +1513,36 @@ export class Sentinels {
     const file = m.rowsRunId && this.folders.writeDocument(m.rowsRunId, copy, bytes) ? this.folders.documentPath(m.rowsRunId, copy) : undefined;
     if (!file) throw new Error(`Couldn’t save ${name} on this Mac for “${s.name}”`);
     return file;
+  }
+
+  /**
+   * A typed cell's bytes for the phone, which streams them a piece at a time (companion/files.ts): a
+   * kept document from its run's files, or a storage object fetched now. Held in memory for a couple
+   * of minutes so its pieces don't fetch it again; never written anywhere.
+   */
+  async documentBytes(sentinel: string, metric: string, column: string, value: string): Promise<{ readonly name: string; readonly mime: string; readonly bytes: Uint8Array }> {
+    const key = `${sentinel}\u0000${metric}\u0000${column}\u0000${value}`;
+    const now = this.now();
+    for (const [k, v] of this.docCache) if (v.until < now) this.docCache.delete(k);
+    const hit = this.docCache.get(key);
+    if (hit) return hit.doc;
+    const { s, m, col } = this.typedCell(sentinel, metric, column, value, (c) => isDocumentKind(c.type) || c.type === 'storage');
+    let doc: { readonly name: string; readonly mime: string; readonly bytes: Uint8Array };
+    if (col.type === 'storage') doc = await this.fetchStorage(sentinel, metric, column, value);
+    else {
+      const bytes = m.rowsRunId ? this.folders.readDocument(m.rowsRunId, value) : undefined;
+      if (!bytes) throw new Error(`${value} is no longer kept: “${s.name}” keeps its documents ${this.filesKeepDays(s)} days`);
+      doc = { name: value, mime: documentMime(value), bytes };
+    }
+    this.docCache.set(key, { doc, until: now + DOC_CACHE_MS });
+    // The oldest go first past a few documents' worth.
+    let total = [...this.docCache.values()].reduce((n, v) => n + v.doc.bytes.byteLength, 0);
+    for (const [k, v] of this.docCache) {
+      if (total <= DOC_CACHE_BYTES || k === key) break;
+      total -= v.doc.bytes.byteLength;
+      this.docCache.delete(k);
+    }
+    return doc;
   }
 
   private async fetchStorage(sentinel: string, metric: string, column: string, value: string): Promise<{ readonly name: string; readonly mime: string; readonly bytes: Uint8Array; readonly bucket: string; readonly path: string }> {
@@ -1961,6 +1997,10 @@ const isSourceStep = (st: Pick<Step, 'kind'> & { readonly from?: string }): bool
 /** A Keep the numbers step that reads the script step right before it (your test runs both). */
 const readsScript = (steps: readonly Step[], i: number): boolean => steps[i]?.kind === 'measure' && (steps[i] as MeasureStep).from === 'previous' && steps[i - 1]?.kind === 'script';
 /** A Keep the numbers step's typed columns in the preview's words ("html_content → 6 documents, 81 KB"). */
+/** How long, and how much, the documents the phone streams stay in memory. */
+const DOC_CACHE_MS = 2 * 60_000;
+const DOC_CACHE_BYTES = 80 * 1024 * 1024;
+
 /**
  * A document's contents as the viewer reads them: text for text (cut past `max`), base64 for the rest
  * (none when it's past three quarters of `max`: base64 grows it by a third).

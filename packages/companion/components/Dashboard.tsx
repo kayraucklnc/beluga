@@ -12,6 +12,7 @@ import { store } from '../lib/store';
 import { color, radius, tint, type } from '../lib/theme';
 import { ChartView } from './render/Chart';
 import { Spark } from './render/Inline';
+import { ActionCell, TypedCell } from './TypedCell';
 import { Card, Hairline, haptic, Press, Row, T } from './ui';
 
 /**
@@ -167,7 +168,14 @@ function TableTile({ t, rows: given }: { readonly t: DashboardTileView; readonly
     );
   }
   const rows = all ? tb.rows : tb.rows.slice(0, FIRST_ROWS);
-  const widths = tb.columns.map((c, i) => Math.max(56, Math.min(190, 14 + 7.2 * Math.max(c.length, ...tb.rows.map((r) => cellText(r[i] ?? null).length)))));
+  // Typed columns (1.28, BLG-386) draw their own cells: a chip, a bar, a person, stars, a button.
+  const typedAt = new Map((tb.typed ?? []).map((x) => [x.col, x]));
+  const widths = tb.columns.map((c, i) => {
+    const ty = typedAt.get(i);
+    const chip = ty?.docs ? Math.max(c.length, ...ty.docs.map((d) => (ty.button ?? d?.name ?? '').length)) + 4 : 0;
+    const base = Math.max(56, Math.min(190, 14 + 7.2 * Math.max(c.length, chip, ...tb.rows.map((r) => cellText(r[i] ?? null).length))));
+    return ty?.kind === 'progress' ? Math.max(base, 120) : ty?.kind === 'person' ? base + 26 : ty?.kind === 'action' ? Math.max(base, 14 + 7.2 * (ty.button ?? 'Run').length + 30) : base;
+  });
   return (
     <View style={[box(), { paddingHorizontal: 0, opacity: t.state === 'ok' ? 1 : 0.85 }]}>
       <View style={{ paddingHorizontal: 12 }}>
@@ -185,12 +193,18 @@ function TableTile({ t, rows: given }: { readonly t: DashboardTileView; readonly
           {rows.map((r, ri) => (
             <View key={ri}>
               <Hairline />
-              <View style={{ flexDirection: 'row', paddingVertical: 8 }}>
-                {tb.columns.map((_, i) => (
-                  <Text key={i} numberOfLines={1} style={{ ...type.callout, width: widths[i], color: color.text, fontVariant: typeof r[i] === 'number' ? ['tabular-nums'] : undefined }}>
-                    {cellText(r[i] ?? null)}
-                  </Text>
-                ))}
+              <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 36, paddingVertical: 6 }}>
+                {tb.columns.map((_, i) => {
+                  const ty = typedAt.get(i);
+                  const drawn = ty?.kind === 'action' ? <ActionCell key={i} typed={ty} row={r} tb={tb} width={widths[i]!} /> : ty ? <TypedCell key={i} typed={ty} cell={r[i] ?? null} ri={ri} tb={tb} width={widths[i]!} /> : null;
+                  return (
+                    drawn ?? (
+                      <Text key={i} numberOfLines={1} style={{ ...type.callout, width: widths[i], color: color.text, fontVariant: typeof r[i] === 'number' ? ['tabular-nums'] : undefined }}>
+                        {cellText(r[i] ?? null)}
+                      </Text>
+                    )
+                  );
+                })}
               </View>
             </View>
           ))}

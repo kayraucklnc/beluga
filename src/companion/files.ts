@@ -18,15 +18,29 @@ import { COMPANION_PIECE, type OutputView } from './protocol.js';
  * Variants: `thumb` (a picture's longest side 640 px, or a video's first frame (Quick Look), JPEG, made with `sips` and cached under
  * ~/.beluga/companion/thumbs), `full` (the bytes), `text` (a text output, secrets redacted). Each
  * answer is one piece of at most COMPANION_PIECE bytes from `off`; the phone asks for the next.
+ *
+ * A kept table's document or storage object (BLG-386) is a ref too (`docRef`): it names the cell,
+ * never a path, and its bytes come from Sentinel when it's fetched (a storage object fetched then
+ * through a link signed on the Mac, held in memory a moment for its pieces). Text goes redacted.
  */
 
 /** Refs kept (the oldest go first: views hand them out again when they're still shown). */
 const MAX_REFS = 5_000;
 
-interface RefEntry {
-  readonly path: string;
-  readonly cwd?: string;
+/** A typed cell of a kept table (a sentinel's metric, its column and the cell's value). */
+export interface DocKey {
+  readonly sentinelId: string;
+  readonly metric: string;
+  readonly column: string;
+  readonly value: string;
 }
+
+type RefEntry = { readonly path: string; readonly cwd?: string; readonly doc?: undefined } | { readonly doc: DocKey; readonly path?: undefined; readonly cwd?: undefined };
+
+/** A document's bytes, from Sentinel (Sentinels.documentBytes). */
+export type DocumentBytes = (doc: DocKey) => Promise<{ readonly name: string; readonly mime: string; readonly bytes: Uint8Array }>;
+
+const docText = (mime: string): boolean => mime.startsWith('text/') || mime === 'application/json' || mime === 'image/svg+xml';
 
 const MIME: Readonly<Record<string, string>> = {
   '.png': 'image/png',
@@ -83,12 +97,27 @@ export class RefTable {
     const ref = `out:${this.random()}`;
     this.byRef.set(ref, { path: p, ...(cwd ? { cwd } : {}) });
     this.byPath.set(p, ref);
-    if (this.byRef.size > MAX_REFS) {
-      const [oldest, entry] = this.byRef.entries().next().value as [string, RefEntry];
-      this.byRef.delete(oldest);
-      this.byPath.delete(entry.path);
-    }
+    this.trim();
     return ref;
+  }
+
+  /** The ref for a kept table's typed cell: the same cell keeps its ref. */
+  docRef(doc: DocKey): string {
+    const key = `doc\u0000${doc.sentinelId}\u0000${doc.metric}\u0000${doc.column}\u0000${doc.value}`;
+    const known = this.byPath.get(key);
+    if (known) return known;
+    const ref = `out:${this.random()}`;
+    this.byRef.set(ref, { doc });
+    this.byPath.set(key, ref);
+    this.trim();
+    return ref;
+  }
+
+  private trim(): void {
+    if (this.byRef.size <= MAX_REFS) return;
+    const [oldest] = this.byRef.entries().next().value as [string, RefEntry];
+    this.byRef.delete(oldest);
+    for (const [k, v] of this.byPath) if (v === oldest) this.byPath.delete(k);
   }
 
   /** An output as a view shows it, or undefined when it may not go to the phone. */
@@ -157,6 +186,8 @@ export interface FileServerOptions {
   readonly thumbnail?: Thumbnailer;
   /** A video's poster frame (quickLookPoster). */
   readonly poster?: Thumbnailer;
+  /** A kept table's documents (Sentinel's); none: their refs don't open. */
+  readonly documents?: DocumentBytes;
 }
 
 async function readPiece(file: string, off: number, max: number): Promise<{ bytes: Buffer; size: number }> {
@@ -182,6 +213,7 @@ export class FileServer {
   async piece(ref: string, variant: Variant, off: number): Promise<Piece> {
     const entry = this.opts.refs.resolve(ref);
     if (!entry) throw new Error('That file is no longer offered; pull to refresh');
+    if (entry.doc) return this.docPiece(entry.doc, variant, off);
     if (!allowed(entry.path, entry.cwd)) throw new Error("That file can't be opened on the phone");
     const kind = outputKind(entry.path);
     if (variant === 'thumb') {
@@ -201,6 +233,22 @@ export class FileServer {
     if (kind === 'text' || kind === 'json' || kind === 'markdown') throw new Error('Text files come redacted: ask for its text');
     const { bytes, size } = await readPiece(entry.path, off, COMPANION_PIECE);
     return { off, b64: bytes.toString('base64'), eof: off + bytes.length >= size, size, mime: mimeOf(entry.path) };
+  }
+
+  /** One piece of a kept table's document: text redacted, as any text output; a picture is its own thumbnail. */
+  private async docPiece(doc: DocKey, variant: Variant, off: number): Promise<Piece> {
+    if (!this.opts.documents) throw new Error('Documents open on the Mac');
+    const { mime, bytes } = await this.opts.documents(doc);
+    if (variant === 'text') {
+      if (!docText(mime)) throw new Error('That file is not text');
+      const part = Buffer.from(bytes.subarray(off, off + COMPANION_PIECE));
+      const text = redactSecrets(part.toString('utf8'));
+      return { off, b64: Buffer.from(text, 'utf8').toString('base64').slice(0, Math.ceil(COMPANION_PIECE / 3) * 4), eof: off + part.length >= bytes.byteLength, size: bytes.byteLength, mime };
+    }
+    if (docText(mime)) throw new Error('Text files come redacted: ask for its text');
+    if (variant === 'thumb' && !mime.startsWith('image/')) throw new Error('Only pictures have thumbnails here');
+    const part = Buffer.from(bytes.subarray(off, off + COMPANION_PIECE));
+    return { off, b64: part.toString('base64'), eof: off + part.length >= bytes.byteLength, size: bytes.byteLength, mime };
   }
 
   /** The cached thumbnail of a picture (made once per version of the file). */

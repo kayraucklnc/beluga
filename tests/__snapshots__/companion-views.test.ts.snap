@@ -662,6 +662,10 @@ Then protect \`/api/payments\`.",
             "who",
             "job",
           ],
+          "keys": [
+            "who",
+            "job",
+          ],
           "rows": [
             [
               "lena",

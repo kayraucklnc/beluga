@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 27 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 28 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -65,8 +65,11 @@ export const COMPANION_PROTO = { major: 1, minor: 27 } as const;
  * widgets read from `~/.beluga/widgets/tiles.json`, each project's icon as its checksum).
  * 1.27 (BLG-354): a request you asked of a friend can be removed (`gateway.forget`), and a
  * needs-you item dismissed (`needs.dismiss`) without answering it, here and on the Mac.
+ * 1.28 (BLG-386): a table's documents and storage objects as refs the phone streams (`table.typed[].docs`,
+ * fetched by the Mac when asked, nothing kept), each column's `max`, `better` and `button`, and Open
+ * on your Mac for one the phone doesn't show (`sentinel.documentOpen`, `sentinel.storageOpen`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, docRefs: 28 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -148,6 +151,10 @@ export const OutputView = z.object({
   by: z.string().max(200).optional(),
 });
 export type OutputView = z.infer<typeof OutputView>;
+
+/** 1.28 (BLG-386): a kept table's document or storage object, as a ref (`get` streams it; text comes redacted). */
+export const DocRefView = z.object({ ref: OutputView.shape.ref, name: z.string().max(256), mime: z.string().max(100) });
+export type DocRefView = z.infer<typeof DocRefView>;
 
 export const UsageWindowView = z.object({ label: z.string().max(40), pct: z.number().min(0).max(100), resetsAt: ts.optional() });
 /** One agent provider's allowance (Claude Code today; others later). */
@@ -703,10 +710,28 @@ export const DashboardTileView = z.object({
       columns: z.array(z.string().max(80)).max(20),
       rows: z.array(z.array(z.union([z.string().max(300), z.number(), z.boolean(), z.null()])).max(20)).max(50),
       total: z.number().int().min(0),
+      /** 1.28 (BLG-386): each column's key (what an action's row is sent back with). */
+      keys: z.array(z.string().max(80)).max(20).optional(),
       /** 1.25: the metric the rows are (a chip's `sentinel.document` names it). */
       metric: z.object({ sentinelId: z.string().max(200), name: z.string().max(80) }).optional(),
       /** 1.25: typed columns by place: `html`/`file` (a document), `storage`, `url`, `path`, with each row's whole value (a document's file name, a storage object's bucket/path). */
-      typed: z.array(z.object({ col: z.number().int().min(0).max(19), key: z.string().max(80), kind: z.union([z.enum(['html', 'file', 'storage', 'url', 'path']), z.string().max(20)]), values: z.array(z.string().max(1200).nullable()).max(50) })).max(20).optional(),
+      typed: z
+        .array(
+          z.object({
+            col: z.number().int().min(0).max(19),
+            key: z.string().max(80),
+            kind: z.union([z.enum(['html', 'file', 'storage', 'url', 'path']), z.string().max(20)]),
+            values: z.array(z.string().max(1200).nullable()).max(50),
+            /** 1.28 (BLG-386): a document's or storage object's cell as a ref the phone streams (`get`), with its name and kind; the Mac reads or fetches it then. */
+            docs: z.array(DocRefView.nullable()).max(50).optional(),
+            /** 1.28: what the column's sentinel said of it: progress's and rating's most, which way a change is good, an action's or a document's button words. */
+            max: z.number().optional(),
+            better: z.union([z.enum(['up', 'down', 'none']), z.string().max(10)]).optional(),
+            button: z.string().max(60).optional(),
+          }),
+        )
+        .max(20)
+        .optional(),
     })
     .optional(),
   text: z.string().max(2000).optional(),

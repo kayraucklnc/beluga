@@ -11,7 +11,7 @@ import type { Identity } from '../net/crypto.js';
 import { type MessageSocket, fromStream } from '../net/transport.js';
 import { phoneMay } from './coverage.js';
 import { type DeviceBook, type DeviceRecord, deviceId } from './devices.js';
-import { FileServer, RefTable, type Thumbnailer } from './files.js';
+import { type DocumentBytes, FileServer, RefTable, type Thumbnailer } from './files.js';
 import { ProjectIcons, type SmallIcon } from './icons.js';
 import type { MergeBook } from './merge.js';
 import { DevicePairing, type PairingInfo } from './pair.js';
@@ -93,6 +93,8 @@ export interface CompanionHostOptions {
   /** Where the models that write down the phone's speech go (~/.beluga/voice), or the voice itself (tests). */
   readonly voice?: MacVoice;
   readonly thumbnail?: Thumbnailer;
+  /** A kept table's documents, streamed by ref (Sentinel's documentBytes, BLG-386). */
+  readonly documents?: DocumentBytes;
   /** Outputs on disk per conversation (sub-agents', the scratch folder's), newest first. */
   readonly outputs?: (channel: string) => readonly ConvOutput[];
   /** A phone looks at these conversations: keep their outputs fresh. */
@@ -470,7 +472,7 @@ export class CompanionHost {
     this.refs = opts.refs ?? new RefTable();
     this.uploads = new Uploads(opts.uploadsDir ?? path.join(attachmentsDir(), 'phone'));
     this.voice = opts.voice ?? sharedVoice();
-    this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}) });
+    this.files = new FileServer({ refs: this.refs, thumbsDir: opts.thumbsDir, ...(opts.thumbnail ? { thumbnail: opts.thumbnail } : {}), ...(opts.documents ? { documents: opts.documents } : {}) });
     this.icons = opts.icons ?? new ProjectIcons({ dir: path.join(path.dirname(opts.thumbsDir), 'icons'), root: (id) => this.state().projects.find((p) => p.id === id)?.root, changed: () => this.refreshViews() });
     this.ctx = { refs: this.refs, mac: { name: opts.macName(), version: opts.version }, ...(opts.outputs ? { outputs: opts.outputs } : {}), icons: (id) => this.icons.sumFor(id), merges: (id) => this.mergeState.get(id) };
     this.control = new PhoneControl({

@@ -75,6 +75,7 @@ export default function Root() {
             <Stack.Screen name="viewer" options={{ presentation: 'transparentModal', animation: 'none', contentStyle: { backgroundColor: 'transparent' } }} />
             <Stack.Screen name="need/[id]" options={{ presentation: 'transparentModal', animation: 'none', contentStyle: { backgroundColor: 'transparent' } }} />
             <Stack.Screen name="reader" options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="document" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="data" options={{ animation: 'fade_from_bottom' }} />
           </Stack>
           <Toasts />
