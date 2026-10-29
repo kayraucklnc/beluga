@@ -3,7 +3,7 @@ import { existsSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import type { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
-import { type Dashboard, DEFAULT_WIDTH, MAX_DASHBOARDS, MAX_TILES, type MetricInfo, type Tile, autoTiles, moveTile } from './dashboard-model.js';
+import { type Dashboard, DEFAULT_WIDTH, MAX_DASHBOARDS, MAX_TILES, type MetricInfo, type Tile, autoTiles, moveTile, placeTile } from './dashboard-model.js';
 import type { Compare } from './metrics.js';
 import { DashboardFileSchema, SavedDashboardSchema, TileInputSchema, type TilePatchSchema } from './schema.js';
 
@@ -99,10 +99,15 @@ export class Dashboards {
     return this.replace({ ...d, tiles: d.tiles.filter((t) => t.id !== tileId) });
   }
 
-  /** Dragged into place: the tile goes to `index` among the others. */
-  moveTile(ref: string, tileId: string, index: number): Dashboard {
+  /**
+   * Dragged into place: to a spot (a column and a row; a tile there goes below it, every other
+   * stays put), or to `index` among the others (the board flows in that order again).
+   */
+  moveTile(ref: string, tileId: string, to: number | { readonly col: number; readonly row: number }): Dashboard {
     const d = this.need(ref);
-    return this.replace({ ...d, tiles: moveTile(d.tiles, tileId, index) });
+    if (!d.tiles.some((t) => t.id === tileId)) throw new Error(`“${d.name}” has no tile ${tileId}`);
+    if (typeof to === 'number') return this.replace({ ...d, tiles: moveTile(d.tiles, tileId, to).map(({ col: _c, row: _r, ...t }) => t) });
+    return this.replace({ ...d, tiles: placeTile(d.tiles, tileId, to.col, to.row) });
   }
 
   /** The first number arrived: the first dashboard, with every number as a tile (once, ever). */
@@ -177,7 +182,7 @@ export class Dashboards {
 /** A tile from what was given: checked, with its id, its kind's width, and what its kind needs. */
 export function tileOf(input: TileInput): Tile {
   const t = TileInputSchema.parse(input);
-  const base = { id: t.id ?? short('tl'), kind: t.kind, width: t.width ?? DEFAULT_WIDTH[t.kind], ...(t.height === 2 && t.kind !== 'divider' ? { height: 2 as const } : {}), ...(t.title?.trim() ? { title: oneLine(t.title, 80) } : {}), ...(t.compare && t.kind !== 'divider' ? { compare: t.compare } : {}) };
+  const base = { id: t.id ?? short('tl'), kind: t.kind, width: t.width ?? DEFAULT_WIDTH[t.kind], ...(t.height === 2 && t.kind !== 'divider' ? { height: 2 as const } : {}), ...(t.row !== undefined ? { col: t.kind === 'divider' ? 0 : (t.col ?? 0), row: t.row } : {}), ...(t.title?.trim() ? { title: oneLine(t.title, 80) } : {}), ...(t.compare && t.kind !== 'divider' ? { compare: t.compare } : {}) };
   switch (t.kind) {
     case 'number':
     case 'table':

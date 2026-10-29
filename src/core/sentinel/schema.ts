@@ -191,6 +191,9 @@ export const TileInputSchema = z.object({
   kind: TileKindSchema,
   width: TileWidthSchema.optional(),
   height: z.union([z.literal(1), z.literal(2)]).optional(),
+  // Where it was put on the grid (both or neither): none, it flows in order.
+  col: z.number().int().min(0).max(5).optional(),
+  row: z.number().int().min(0).max(1000).optional(),
   title: z.string().max(80).optional(),
   metric: MetricRefSchema.optional(),
   metrics: z.array(MetricRefSchema).max(8).optional(),

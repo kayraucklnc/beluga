@@ -53,6 +53,9 @@ export interface Tile {
   readonly width: TileWidth;
   /** Tall: twice the room. */
   readonly height?: TileHeight;
+  /** Where it was put on the grid (0-based column and row; both or neither): none, it flows in order. */
+  readonly col?: number;
+  readonly row?: number;
   /** Its own title (a divider's words; the metric's label when none). */
   readonly title?: string;
   /** A number's, table's or output's metric; a series tile's kept array (a `series` metric). */
@@ -241,26 +244,146 @@ export function moveTile<T extends { readonly id: string }>(tiles: readonly T[],
   return rest;
 }
 
-/** A tile's place on screen while dragging. */
-export interface TileBox {
-  readonly id: string;
-  readonly left: number;
-  readonly top: number;
-  readonly right: number;
-  readonly bottom: number;
+// ---------------------------------------------------------------- places on the grid
+
+/** Where a tile sits on the six columns: its first column and row (0-based) and what it spans. */
+export interface TilePlace {
+  readonly col: number;
+  readonly row: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+const spanOf = (t: Pick<Tile, 'kind' | 'width' | 'height'>): { readonly w: number; readonly h: number } => (t.kind === 'divider' ? { w: GRID_COLUMNS, h: 1 } : { w: t.width, h: t.height ?? 1 });
+const clampCol = (col: number, w: number): number => Math.max(0, Math.min(Math.round(col), GRID_COLUMNS - w));
+
+/** The grid's taken cells. */
+class Cells {
+  private readonly taken = new Set<string>();
+  fits(col: number, row: number, w: number, h: number): boolean {
+    for (let r = row; r < row + h; r++) for (let c = col; c < col + w; c++) if (this.taken.has(`${c}:${r}`)) return false;
+    return true;
+  }
+  take(p: TilePlace): void {
+    for (let r = p.row; r < p.row + p.h; r++) for (let c = p.col; c < p.col + p.w; c++) this.taken.add(`${c}:${r}`);
+  }
+  /** At that column, the first row from `row` down where it fits. */
+  below(col: number, row: number, w: number, h: number): number {
+    let r = Math.max(0, row);
+    while (!this.fits(col, r, w, h)) r++;
+    return r;
+  }
+  /** The first spot it fits in, reading from `row` on (left to right, then down). */
+  first(row: number, w: number, h: number): { col: number; row: number } {
+    for (let r = Math.max(0, row); ; r++) for (let c = 0; c + w <= GRID_COLUMNS; c++) if (this.fits(c, r, w, h)) return { col: c, row: r };
+  }
+}
+
+/** Rows no tile covers are taken out (a tile moved off the bottom, one removed): the board stays together. */
+function closeEmptyRows(places: Map<string, TilePlace>): Map<string, TilePlace> {
+  const covered = new Set<number>();
+  for (const p of places.values()) for (let r = p.row; r < p.row + p.h; r++) covered.add(r);
+  const rows = [...covered].sort((a, b) => a - b);
+  const to = new Map(rows.map((r, i) => [r, i]));
+  return new Map([...places].map(([id, p]) => [id, { ...p, row: to.get(p.row)! }]));
 }
 
 /**
- * Where a tile dropped at (x, y) goes among the others (their boxes in order, the lifted one taken
- * out): before the first tile it's above or to the left of on its row, else after the last.
+ * Each tile's place: tiles put somewhere keep their spot (one landing on another goes below it);
+ * the rest flow into the first free spot after the tile before them. A board nobody placed (or
+ * `flow`, one project's part of it) packs in order, gaps filled, as it always did.
  */
-export function gridLanding(x: number, y: number, boxes: readonly TileBox[]): number {
-  for (let i = 0; i < boxes.length; i++) {
-    const b = boxes[i]!;
-    if (y < b.top) return i;
-    if (y <= b.bottom && x < b.left + (b.right - b.left) / 2) return i;
+export function layoutTiles(tiles: readonly Pick<Tile, 'id' | 'kind' | 'width' | 'height' | 'col' | 'row'>[], flow = false): Map<string, TilePlace> {
+  const placed = !flow && tiles.some((t) => t.row !== undefined);
+  const cells = new Cells();
+  const out = new Map<string, TilePlace>();
+  if (placed) {
+    for (const t of tiles) {
+      if (t.row === undefined) continue;
+      const { w, h } = spanOf(t);
+      const col = clampCol(t.col ?? 0, w);
+      const p = { col, row: cells.below(col, t.row, w, h), w, h };
+      cells.take(p);
+      out.set(t.id, p);
+    }
   }
-  return boxes.length;
+  let prev: TilePlace | undefined;
+  for (const t of tiles) {
+    const has = out.get(t.id);
+    if (has) {
+      prev = has;
+      continue;
+    }
+    const { w, h } = spanOf(t);
+    const spot = cells.first(placed ? (prev?.row ?? 0) : 0, w, h);
+    const p = { ...spot, w, h };
+    cells.take(p);
+    out.set(t.id, p);
+    prev = p;
+  }
+  return closeEmptyRows(out);
+}
+
+/**
+ * Dragged to a spot (a column and a row): it lands there, and a tile it lands on goes down below
+ * it; every tile keeps the place it has (now written down), in reading order.
+ */
+export function placeTile<T extends Pick<Tile, 'id' | 'kind' | 'width' | 'height' | 'col' | 'row'>>(tiles: readonly T[], id: string, col: number, row: number): T[] {
+  const t = tiles.find((x) => x.id === id);
+  if (!t) return [...tiles];
+  const was = layoutTiles(tiles);
+  const cells = new Cells();
+  const { w, h } = spanOf(t);
+  const mine = { col: clampCol(col, w), row: Math.max(0, Math.round(row)), w, h };
+  cells.take(mine);
+  const at = new Map<string, TilePlace>([[id, mine]]);
+  const others = tiles.filter((x) => x.id !== id).sort((a, b) => readingOrder(was.get(a.id)!, was.get(b.id)!));
+  for (const o of others) {
+    const p = was.get(o.id)!;
+    const q = { ...p, row: cells.below(p.col, p.row, p.w, p.h) };
+    cells.take(q);
+    at.set(o.id, q);
+  }
+  const final = closeEmptyRows(at);
+  return [...tiles]
+    .sort((a, b) => readingOrder(final.get(a.id)!, final.get(b.id)!))
+    .map((x) => ({ ...x, col: final.get(x.id)!.col, row: final.get(x.id)!.row }));
+}
+
+const readingOrder = (a: Pick<TilePlace, 'col' | 'row'>, b: Pick<TilePlace, 'col' | 'row'>): number => a.row - b.row || a.col - b.col;
+
+/** The tiles in the order they read on the board (top to bottom, left to right). */
+export function inReadingOrder<T extends Pick<Tile, 'id' | 'kind' | 'width' | 'height' | 'col' | 'row'>>(tiles: readonly T[]): T[] {
+  const places = layoutTiles(tiles);
+  return [...tiles].sort((a, b) => readingOrder(places.get(a.id)!, places.get(b.id)!));
+}
+
+/** The board's grid on screen: its box, the gap, and each row's height as laid out. */
+export interface GridBox {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly gap: number;
+  readonly rows: readonly number[];
+}
+
+/** A normal row's height (numbers.module.css .cell min-height), for a row below the last. */
+export const ROW_HEIGHT = 116;
+
+/**
+ * The spot a tile `w` columns wide, held with its top-left corner at (left, top), would land on:
+ * the nearest column, and the row its first row's middle is over (one new row below the last at most).
+ */
+export function gridSpot(left: number, top: number, g: GridBox, w: number): { readonly col: number; readonly row: number } {
+  const step = (g.width + g.gap) / GRID_COLUMNS;
+  const col = clampCol((left - g.left) / step, Math.min(w, GRID_COLUMNS));
+  const probe = top + Math.min(ROW_HEIGHT, g.rows[0] ?? ROW_HEIGHT) / 2;
+  let y = g.top;
+  for (let i = 0; i < g.rows.length; i++) {
+    if (probe < y + g.rows[i]! + g.gap / 2) return { col, row: i };
+    y += g.rows[i]! + g.gap;
+  }
+  return { col, row: g.rows.length };
 }
 
 /** Metrics a dashboard can be made from: the sentinels' metrics in the state, in order. */

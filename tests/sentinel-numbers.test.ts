@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DASHBOARD_TOOL_NAMES, createDashboardToolDefs } from '../src/agent/dashboard-tools.js';
 import { decideTool } from '../src/agent/policy.js';
-import { autoTiles, dashboardMarkdown, dashboardSentinels, gridLanding, moveTile, tileState } from '../src/core/sentinel/dashboard-model.js';
+import { autoTiles, dashboardMarkdown, dashboardSentinels, gridSpot, layoutTiles, moveTile, placeTile, tileState } from '../src/core/sentinel/dashboard-model.js';
 import { Dashboards } from '../src/core/sentinel/dashboards.js';
 import { MetricFiles } from '../src/core/sentinel/metric-files.js';
 import { baselineOf, changeText, deltaOf, formatMetric, measureFrom, pickPath, prunePoints, readOutput, thenOf, toNumber } from '../src/core/sentinel/metrics.js';
@@ -311,6 +311,13 @@ describe('dashboards', () => {
     expect(d.get(ops.id)!.tiles.find((t) => t.id === a.id)!.compare).toBeUndefined();
     d.moveTile(ops.id, c.id, 0);
     expect(d.get(ops.id)!.tiles.map((t) => t.id)).toEqual([c.id, b.id, a.id]);
+    // Put on a spot (pulled in to fit its 2 columns): it keeps it, and so does every other tile; by index again the board flows.
+    d.moveTile(ops.id, a.id, { col: 5, row: 0 });
+    expect(d.get(ops.id)!.tiles.find((t) => t.id === a.id)).toMatchObject({ col: 4, row: 0 });
+    d.updateTile(ops.id, a.id, { title: 'Subs' });
+    expect(d.get(ops.id)!.tiles.find((t) => t.id === a.id)).toMatchObject({ col: 4, row: 0, title: 'Subs' });
+    d.moveTile(ops.id, a.id, 2);
+    expect(d.get(ops.id)!.tiles.some((t) => t.row !== undefined)).toBe(false);
     d.removeTile(ops.id, b.id);
     d.update(ops.id, { name: 'Operations', compare: 'month' });
     d.flush();
@@ -336,13 +343,35 @@ describe('dashboards', () => {
     expect(tileState({ id: 'd', kind: 'divider', width: 3 }, [], has)).toBe('ok');
   });
 
-  it('drag landing in the grid, moving, the sentinels in order, and Markdown', () => {
-    const boxes = [
-      { id: 'a', left: 0, top: 0, right: 100, bottom: 80 },
-      { id: 'b', left: 110, top: 0, right: 210, bottom: 80 },
-      { id: 'c', left: 0, top: 90, right: 210, bottom: 300 },
-    ];
-    expect([gridLanding(20, 40, boxes), gridLanding(180, 40, boxes), gridLanding(500, 40, boxes), gridLanding(10, 200, boxes), gridLanding(10, 400, boxes)]).toEqual([0, 2, 2, 2, 3]);
+  it('tiles keep the spot they were put on: a drop pushes what it lands on down, the rest stay put', () => {
+    const t = (id: string, width: 1 | 2 | 3 | 4 | 6, extra: { height?: 1 | 2; col?: number; row?: number } = {}) => ({ id, kind: 'number' as const, width, ...extra });
+    const spots = (tiles: Parameters<typeof layoutTiles>[0]) => Object.fromEntries([...layoutTiles(tiles)].map(([id, p]) => [id, [p.col, p.row]]));
+    // Nobody placed anything: packed in order, gaps filled (as the board always was).
+    expect(spots([t('a', 4), t('b', 3), t('c', 2)])).toEqual({ a: [0, 0], b: [0, 1], c: [4, 0] });
+    // Put b at the far right of the first row's free room, leaving a hole: it stays there.
+    const placed = placeTile([t('a', 2), t('b', 2), t('c', 2)], 'c', 4, 1);
+    expect(spots(placed)).toEqual({ a: [0, 0], b: [2, 0], c: [4, 1] });
+    // Dropped on a tile: that one goes below, nothing else moves.
+    const onto = placeTile(placed, 'c', 0, 0);
+    expect(spots(onto)).toEqual({ c: [0, 0], a: [0, 1], b: [2, 0] });
+    expect(onto.map((x) => x.id)).toEqual(['c', 'b', 'a']);
+    // A row nobody covers closes up; a column past the edge is pulled in.
+    expect(spots(placeTile([t('a', 3)], 'a', 5, 7))).toEqual({ a: [3, 0] });
+    // A new tile (no spot) goes in the first free spot after the tile before it, not into a hole above.
+    expect(spots([t('a', 2, { col: 4, row: 0 }), t('b', 6, { col: 0, row: 1 }), t('new', 2)])).toEqual({ a: [4, 0], b: [0, 1], new: [0, 2] });
+    // Two put on the same spot: the later one goes below.
+    expect(spots([t('a', 2, { col: 0, row: 0, height: 2 }), t('b', 2, { col: 1, row: 0 })])).toEqual({ a: [0, 0], b: [1, 2] });
+    // From the pointer: the nearest column, the row under the tile's top half-row, one new row at most.
+    const g = { left: 0, top: 0, width: 590, gap: 10, rows: [116, 242] };
+    expect([gridSpot(5, 10, g, 1), gridSpot(210, 140, g, 2), gridSpot(560, 140, g, 2), gridSpot(0, 900, g, 1)]).toEqual([
+      { col: 0, row: 0 },
+      { col: 2, row: 1 },
+      { col: 4, row: 1 },
+      { col: 0, row: 2 },
+    ]);
+  });
+
+  it('moving by index, the sentinels in order, and Markdown', () => {
     expect(moveTile([{ id: 'a' }, { id: 'b' }, { id: 'c' }], 'a', 5).map((x) => x.id)).toEqual(['b', 'c', 'a']);
     const tiles = autoTiles([{ sentinelId: 's1', name: 'x', kind: 'number' }, { sentinelId: 's2', name: 'y', kind: 'number' }], (() => {
       let n = 0;

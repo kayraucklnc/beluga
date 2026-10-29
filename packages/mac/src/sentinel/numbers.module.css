@@ -244,28 +244,42 @@
 .cell[data-movable] {
   cursor: grab;
 }
-.cell[data-w='1'] {
-  grid-column: span 1;
+/*
+ * Its spot: the column and row it was put on (the board works them out, see layoutTiles; inline
+ * as --col and --row), spanning its width and height.
+ */
+.cell,
+.gap,
+.addCell {
+  grid-column: var(--col, auto) / span var(--w, 1);
+  grid-row: var(--row, auto) / span var(--h, 1);
 }
-.cell[data-w='2'] {
-  grid-column: span 2;
+.cell[data-w='2'],
+.gap[data-w='2'] {
+  --w: 2;
 }
-.cell[data-w='3'] {
-  grid-column: span 3;
+.cell[data-w='3'],
+.gap[data-w='3'] {
+  --w: 3;
 }
-.cell[data-w='4'] {
-  grid-column: span 4;
+.cell[data-w='4'],
+.gap[data-w='4'] {
+  --w: 4;
 }
-.cell[data-w='6'] {
-  grid-column: span 6;
+.cell[data-w='6'],
+.gap[data-w='6'] {
+  --w: 6;
 }
 /* Tall: two rows (a long report, a big chart, a number with its chart beside smaller tiles). */
+.cell[data-h='2'],
+.gap[data-h='2'] {
+  --h: 2;
+}
 .cell[data-h='2'] {
-  grid-row: span 2;
   min-height: 242px;
 }
 .cell[data-kind='divider'] {
-  grid-column: 1 / -1;
+  --w: 6;
   min-height: 0;
   background: none;
   box-shadow: none;
@@ -273,11 +287,18 @@
 @container (max-width: 680px) {
   .cell[data-w='3'],
   .cell[data-w='4'] {
-    grid-column: span 6;
+    --w: 6;
   }
   .cell[data-w='2'],
   .cell[data-w='1'] {
-    grid-column: span 3;
+    --w: 3;
+  }
+  /* Too narrow for six columns: the tiles flow in order instead. */
+  .cell,
+  .gap,
+  .addCell {
+    --col: auto !important;
+    --row: auto !important;
   }
 }
 .cell[data-lifted] {
@@ -721,7 +742,7 @@
   font-size: 12px;
 }
 .addCell[data-first] {
-  grid-column: span 6;
+  --w: 6;
   min-height: 64px;
   flex-direction: row;
 }
@@ -786,18 +807,6 @@
   flex: none;
   align-items: center;
   color: var(--text-3);
-}
-/* Quiet until you look at the tile: a project's logo is a hint of where it's from, not the headline. */
-.source img,
-.source > span {
-  filter: saturate(0.35);
-  opacity: 0.7;
-  transition: filter var(--dur-fast), opacity var(--dur-fast);
-}
-.cell:hover .source img,
-.cell:hover .source > span {
-  filter: none;
-  opacity: 1;
 }
 .sourceEnd {
   display: inline-flex;

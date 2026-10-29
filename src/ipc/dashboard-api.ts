@@ -19,8 +19,8 @@ export const DASHBOARD_API = {
   // A tile's width, title, chart, metrics or pinned compare (null: the dashboard's) → the dashboard.
   'dashboard.updateTile': { args: z.tuple([id, id, TilePatchSchema]) },
   'dashboard.removeTile': { args: z.tuple([id, id]) },
-  // Dragged into place: the tile goes to that index among the others → the dashboard.
-  'dashboard.moveTile': { args: z.tuple([id, id, z.number().int().min(0).max(1000)]) },
+  // Dragged into place: to a spot on the grid (a tile there goes below it), or to an index among the others (the board flows in order again) → the dashboard.
+  'dashboard.moveTile': { args: z.tuple([id, id, z.union([z.number().int().min(0).max(1000), z.object({ col: z.number().int().min(0).max(5), row: z.number().int().min(0).max(1000) })])]) },
   // Refresh: Run Now on each sentinel it draws from, one at a time (the state says how far) → { total }.
   'dashboard.refresh': { args: z.tuple([id]) },
   // Describe it: your Claude builds it from your words → { channel }.

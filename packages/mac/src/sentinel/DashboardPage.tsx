@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activityOf } from '@beluga/ui/workspace-models.js';
-import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, GRID_COLUMNS, TILE_WIDTHS, type TileHeight, type TileWidth, WIDTH_WORDS, dashboardMarkdown, moveTile, snapWidth, tileSentinelOf, dashboardSentinels, gridLanding, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
+import { type Dashboard, type Tile, CHART_TILE_KINDS, OUTPUT_SHOWS, type OutputShow, GRID_COLUMNS, TILE_WIDTHS, type TileHeight, type TileWidth, WIDTH_WORDS, dashboardMarkdown, type GridBox, gridSpot, layoutTiles, placeTile, snapWidth, tileSentinelOf, dashboardSentinels, metricOf, outputLook, outputRows, tileCompare, tileMetrics, tileOutput, tileStateIn } from '@beluga/core/sentinel/dashboard-model.js';
 import { COMPARE, COMPARE_LABEL, COMPARE_WORDS, type Compare } from '@beluga/core/sentinel/metrics.js';
 import type { MetricSeries, SentinelState } from '@beluga/core/sentinel/model.js';
 import type { Args } from '@beluga/ipc/api.js';
@@ -271,18 +271,33 @@ function AskLine({ d }: { d: Dashboard }) {
 
 interface Drag {
   readonly id: string;
-  /** Where it was lifted from (among the others): dropped back there, nothing moves. */
-  readonly from: number;
+  /** Where it was lifted from: dropped back there, nothing moves. */
+  readonly from: Spot;
   readonly dx: number;
   readonly dy: number;
   readonly w: number;
   readonly h: number;
+  /** Its columns. */
+  readonly span: number;
+  /** The grid as it was when lifted (its rows stay put under the pointer while the others make room). */
+  readonly box: GridBox;
   x: number;
   y: number;
-  index: number | undefined;
+  spot: Spot;
+}
+type Spot = { readonly col: number; readonly row: number };
+type Size = { readonly w: TileWidth; readonly h: TileHeight };
+
+/** The grid on screen, its rows as laid out. */
+function gridBoxOf(el: HTMLElement): GridBox {
+  const b = el.getBoundingClientRect();
+  const rows = getComputedStyle(el)
+    .gridTemplateRows.split(' ')
+    .map((x) => parseFloat(x))
+    .filter((x) => Number.isFinite(x));
+  return { left: b.left, top: b.top, width: b.width, gap: GAP, rows };
 }
 
-/** The tiles, dragged into place: a pointer that moves past a few pixels lifts the tile; where it drops is worked out from the others' boxes. */
 /** Tiles under their project's name (the board's own order inside each); dividers are left out, and tiles aren't dragged here. */
 function GroupedGrid({ d, state, projects }: { d: Dashboard; state: SentinelState; projects: ReadonlyArray<{ readonly id: string; readonly name: string }> }) {
   const groups = new Map<string, { id?: string; name: string; tiles: Tile[] }>();
@@ -309,33 +324,35 @@ function GroupedGrid({ d, state, projects }: { d: Dashboard; state: SentinelStat
   );
 }
 
+/**
+ * The tiles, each at its own column and row: a pointer that moves past a few pixels lifts the
+ * tile, and it lands on the spot under it (a tile there goes below it, the others stay put).
+ */
 function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: SentinelState; tiles?: readonly Tile[]; projects?: ReadonlyArray<{ readonly id: string; readonly name: string }> }) {
   const api = useApi();
   const a = useSentinelActions();
   const grid = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag>();
   const start = useRef<{ id: string; x: number; y: number; box: DOMRect } | undefined>(undefined);
-  const others = useRef<ReturnType<typeof boxesOf>>([]);
-  // Dropped: the board shows the new order at once, until the saved board comes back with it.
-  const [moved, setMoved] = useState<{ readonly id: string; readonly index: number; readonly tiles: readonly Tile[] }>();
-
-  const boxesOf = (lifted: string) =>
-    [...(grid.current?.querySelectorAll<HTMLElement>('[data-tile]') ?? [])]
-      .filter((el) => el.dataset.tile !== lifted)
-      .map((el) => {
-        const b = el.getBoundingClientRect();
-        return { id: el.dataset.tile!, left: b.left, top: b.top, right: b.right, bottom: b.bottom };
-      });
+  // Dropped: the board shows the new places at once, until the saved board comes back with them.
+  const [moved, setMoved] = useState<{ readonly id: string; readonly to: Spot; readonly tiles: readonly Tile[] }>();
+  // A corner being dragged (or just let go): that size, so the tiles around make room as it grows.
+  const [sized, setSized] = useState<{ readonly id: string; readonly size: Size; readonly tiles: readonly Tile[] }>();
 
   useEffect(() => {
     if (!drag) return;
-    const move = (e: PointerEvent): void => setDrag((now) => (now ? { ...now, x: e.clientX, y: e.clientY, index: gridLanding(e.clientX, e.clientY, others.current) } : now));
+    const move = (e: PointerEvent): void =>
+      setDrag((now) => {
+        if (!now) return now;
+        const spot = gridSpot(e.clientX - now.dx, e.clientY - now.dy, now.box, now.span);
+        return { ...now, x: e.clientX, y: e.clientY, spot: spot.col === now.spot.col && spot.row === now.spot.row ? now.spot : spot };
+      });
     const up = (): void => {
       setDrag((now) => {
-        if (now && now.index !== undefined && now.index !== now.from) {
-          const { id, index } = now;
-          setMoved({ id, index, tiles: d.tiles });
-          void a.act(() => api.dashboard.moveTile(d.id, id, index));
+        if (now && (now.spot.col !== now.from.col || now.spot.row !== now.from.row)) {
+          const { id, spot } = now;
+          setMoved({ id, to: spot, tiles: d.tiles });
+          void a.act(() => api.dashboard.moveTile(d.id, id, spot));
         }
         return undefined;
       });
@@ -361,7 +378,7 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
   }, [drag !== undefined, a, api, d.id]);
 
   const down = (e: React.PointerEvent<HTMLElement>, id: string): void => {
-    // A part of the board (one project's tiles) keeps the board's order: tiles move on the whole board.
+    // A part of the board (one project's tiles) flows in the board's order: tiles move on the whole board.
     if (only) return;
     if (e.button !== 0 || (e.target as HTMLElement).closest('button, input, a, [role="menu"], [data-resize], .recharts-wrapper')) return;
     const box = (e.currentTarget.closest('[data-tile]') as HTMLElement).getBoundingClientRect();
@@ -369,50 +386,47 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
   };
   const moveStart = (e: React.PointerEvent<HTMLElement>): void => {
     const s = start.current;
-    if (!s || drag || !isDrag(e.clientX - s.x, e.clientY - s.y)) return;
-    others.current = boxesOf(s.id);
+    if (!s || drag || !grid.current || !isDrag(e.clientX - s.x, e.clientY - s.y)) return;
     measure();
     // Its place stays open where it was until the pointer goes somewhere else.
-    const from = tiles.findIndex((x) => x.id === s.id);
-    setDrag({ id: s.id, from, dx: s.x - s.box.left, dy: s.y - s.box.top, w: s.box.width, h: s.box.height, x: e.clientX, y: e.clientY, index: from });
+    const from = places.get(s.id);
+    if (!from) return;
+    const spot = { col: from.col, row: from.row };
+    setDrag({ id: s.id, from: spot, spot, span: from.w, dx: s.x - s.box.left, dy: s.y - s.box.top, w: s.box.width, h: s.box.height, box: gridBoxOf(grid.current), x: e.clientX, y: e.clientY });
   };
 
-  const tiles = only ?? (moved && moved.tiles === d.tiles ? moveTile(d.tiles, moved.id, moved.index) : d.tiles);
-  const rest = drag ? tiles.filter((x) => x.id !== drag.id) : tiles;
+  const saved = only ?? (moved && moved.tiles === d.tiles ? placeTile(d.tiles, moved.id, moved.to.col, moved.to.row) : d.tiles);
+  const tiles = sized && (only || sized.tiles === d.tiles) ? saved.map((t) => (t.id === sized.id ? { ...t, width: sized.size.w, height: sized.size.h } : t)) : saved;
+  const shown = drag ? placeTile(tiles, drag.id, drag.spot.col, drag.spot.row) : tiles;
+  const places = layoutTiles(shown, !!only);
   const lifted = drag ? tiles.find((x) => x.id === drag.id) : undefined;
-  const measure = useGlide(grid, `${rest.map((x) => `${x.id}:${x.width}:${x.height ?? 1}`).join(' ')}|${drag?.index ?? ''}`);
-
-  const at = drag?.index;
-  const gapStyle = (tile: Tile): React.CSSProperties => ({ gridColumn: `span ${tile.kind === 'divider' ? 6 : tile.width}`, ...(drag ? { minHeight: drag.h } : {}) });
+  const rest = drag ? shown.filter((x) => x.id !== drag.id) : shown;
+  const measure = useGlide(grid, `${rest.map((x) => { const p = places.get(x.id); return `${x.id}:${x.width}:${x.height ?? 1}:${p?.col}:${p?.row}`; }).join(' ')}|${drag ? `${drag.spot.col}:${drag.spot.row}` : ''}`);
+  const placeOf = (id: string): React.CSSProperties | undefined => {
+    const p = places.get(id);
+    return p ? ({ '--col': p.col + 1, '--row': p.row + 1 } as React.CSSProperties) : undefined;
+  };
+  // Add sits where a new tile would go.
+  const add = layoutTiles([...shown, { id: ADD, kind: 'number', width: 1 }], !!only).get(ADD);
+  const onSize = (id: string, size: Size | undefined): void => setSized(size ? { id, size, tiles: d.tiles } : undefined);
   return (
     <div ref={grid} className={n.grid} role="list" aria-label={`${d.name}’s tiles`} onPointerMove={moveStart} onPointerUp={() => (start.current = undefined)}>
-      {rest.map((tile, i) => (
-        <TileSlot key={tile.id} before={at === i && lifted ? gapStyle(lifted) : undefined}>
-          <TileCell d={d} tile={tile} state={state} source={tileProject(state, tile, projects)} movable={!only} onPointerDown={(e) => down(e, tile.id)} />
-        </TileSlot>
+      {rest.map((tile) => (
+        <TileCell key={tile.id} d={d} tile={tile} state={state} source={tileProject(state, tile, projects)} movable={!only} place={placeOf(tile.id)} onSize={onSize} onPointerDown={(e) => down(e, tile.id)} />
       ))}
-      {lifted && at !== undefined && at >= rest.length ? <div className={n.gap} data-w={lifted.width} style={gapStyle(lifted)} /> : null}
+      {lifted && drag ? <div className={n.gap} data-w={lifted.kind === 'divider' ? 6 : lifted.width} data-h={lifted.kind === 'divider' ? 1 : (lifted.height ?? 1)} style={{ ...placeOf(lifted.id), minHeight: drag.h }} /> : null}
       {lifted && drag ? (
         <div className={n.ghost} style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w, height: drag.h }} aria-hidden="true">
           <TileCell d={d} tile={lifted} state={state} ghost />
         </div>
       ) : null}
       {drag || only ? null : (
-        <button type="button" className={n.addCell} data-first={d.tiles.length ? undefined : ''} onClick={() => openSheet({ kind: 'add_tile', dashboardId: d.id })} aria-label="Add to the board">
+        <button type="button" className={n.addCell} data-first={d.tiles.length ? undefined : ''} style={d.tiles.length && add ? ({ '--col': add.col + 1, '--row': add.row + 1 } as React.CSSProperties) : undefined} onClick={() => openSheet({ kind: 'add_tile', dashboardId: d.id })} aria-label="Add to the board">
           <Icon name="plus" size={14} />
           <span>{d.tiles.length ? 'Add' : 'Add a number, a chart or what Claude wrote'}</span>
         </button>
       )}
     </div>
-  );
-}
-
-function TileSlot({ before, children }: { before: React.CSSProperties | undefined; children: React.ReactNode }) {
-  return (
-    <>
-      {before ? <div className={n.gap} style={before} /> : null}
-      {children}
-    </>
   );
 }
 
@@ -482,13 +496,14 @@ function useGlide(grid: React.RefObject<HTMLDivElement | null>, order: string): 
 }
 
 const noop = (): void => undefined;
+const ADD = '\u0000add';
 /** The grid's gap (numbers.module.css .grid), for working out a column's width. */
 const GAP = 10;
 const SHOW_WORDS: Readonly<Record<OutputShow, string>> = { auto: 'As it reads', markdown: 'Markdown', tree: 'A JSON tree', table: 'A table', text: 'Plain text' };
 
 type Source = ReturnType<typeof tileProject>;
 
-function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d: Dashboard; tile: Tile; state: SentinelState; source?: Source; movable?: boolean; onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void; ghost?: boolean }) {
+function TileCell({ d, tile, state, source, movable, place, onSize, onPointerDown, ghost }: { d: Dashboard; tile: Tile; state: SentinelState; source?: Source; movable?: boolean; place?: React.CSSProperties; onSize?: (id: string, size: Size | undefined) => void; onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void; ghost?: boolean }) {
   // Its project's logo in the corner, and a soft wash of the project's colour (changeable from ⋯ › Tint).
   const tint = useProjectTint(source?.id, source?.name ?? '');
   const mark = source ? (
@@ -507,6 +522,11 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
   const [kept, setKept] = useState<{ readonly w: TileWidth; readonly h: TileHeight; readonly was: string }>();
   const saved = `${tile.width}:${tile.height ?? 1}`;
   const size = sizing ?? (kept && kept.was === saved ? kept : { w: tile.width, h: tile.height ?? 1 });
+  // The board makes room for it while its corner is dragged, and until the new size is saved.
+  const resizing = sizing ?? (kept && kept.was === saved ? kept : undefined);
+  useEffect(() => {
+    if (!ghost) onSize?.(tile.id, resizing ? { w: resizing.w, h: resizing.h } : undefined);
+  }, [resizing?.w, resizing?.h]);
   // A desktop widget of this tile was clicked: the board scrolls to it and marks it for a moment.
   const [shown, setShown] = useState(false);
   const cellRef = useRef<HTMLDivElement>(null);
@@ -649,7 +669,7 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
   );
   if (tile.kind === 'divider') {
     return (
-      <div className={n.cell} data-tile={tile.id} data-kind="divider" role="listitem" onPointerDown={onPointerDown}>
+      <div className={n.cell} data-tile={tile.id} data-kind="divider" style={place} role="listitem" onPointerDown={onPointerDown}>
         <div className={n.divider}>
           {renaming ? <TitleInput title={tile.title ?? ''} done={(title) => (setRenaming(false), title !== (tile.title ?? '') && update({ title }))} /> : <span className={n.dividerTitle}>{tile.title || 'Divider'}</span>}
         </div>
@@ -669,7 +689,7 @@ function TileCell({ d, tile, state, source, movable, onPointerDown, ghost }: { d
     </div>
   );
   return (
-    <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={size.w} data-h={size.h} data-movable={movable && !ghost ? '' : undefined} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={tint ? ({ '--tint': tint } as React.CSSProperties) : undefined} role="listitem" onPointerDown={onPointerDown}>
+    <div ref={cellRef} className={n.cell} data-shown={shown || undefined} data-tile={tile.id} data-kind={tile.kind} data-w={size.w} data-h={size.h} data-movable={movable && !ghost ? '' : undefined} data-sizing={sizing ? '' : undefined} data-state={cap.state} data-tinted={tint ? '' : undefined} style={{ ...place, ...(tint ? ({ '--tint': tint } as React.CSSProperties) : {}) }} role="listitem" onPointerDown={onPointerDown}>
       {tile.kind === 'number' ? null : head}
       <div className={n.cellBody}>
         <TileBody d={d} tile={tile} state={state} compare={compare} note={note} lead={tile.kind === 'number' ? mark : null} more={tile.kind === 'number' ? more : null} titleInput={tile.kind === 'number' ? titleInput : null} />

@@ -14,7 +14,7 @@ export const DASHBOARD_HANDLERS = {
   'dashboard.addTile': (s, id, tile, at) => needSentinel(s).dashboards.addTile(id, tile, at),
   'dashboard.updateTile': (s, id, tileId, patch) => needSentinel(s).dashboards.updateTile(id, tileId, patch),
   'dashboard.removeTile': (s, id, tileId) => needSentinel(s).dashboards.removeTile(id, tileId),
-  'dashboard.moveTile': (s, id, tileId, index) => needSentinel(s).dashboards.moveTile(id, tileId, index),
+  'dashboard.moveTile': (s, id, tileId, to) => needSentinel(s).dashboards.moveTile(id, tileId, to),
   'dashboard.refresh': (s, id) => needSentinel(s).refresh(id),
   'dashboard.ask': (s, id, text) => needSentinel(s).dashboardAsk(id, text),
 } satisfies DashboardHandlers;
