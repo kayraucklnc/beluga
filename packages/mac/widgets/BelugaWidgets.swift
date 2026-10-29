@@ -55,41 +55,26 @@ enum Store {
 
 // MARK: - Picking a tile (the widget's Edit menu)
 
-struct TileEntity: AppEntity {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Tile"
-    static var defaultQuery = TileQuery()
-    let id: String
-    let title: String
-    let place: String
-    var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(title)", subtitle: "\(place)")
-    }
-    init(_ t: Tile) {
-        id = t.id
-        title = t.title
-        place = [t.project, t.board].compactMap { $0 }.joined(separator: " · ")
-    }
-}
-
-struct TileQuery: EntityStringQuery {
-    func entities(for identifiers: [TileEntity.ID]) async throws -> [TileEntity] {
-        (Store.read()?.tiles ?? []).filter { identifiers.contains($0.id) }.map(TileEntity.init)
-    }
-    func entities(matching string: String) async throws -> [TileEntity] {
-        (Store.read()?.tiles ?? []).filter { "\($0.title) \($0.board) \($0.project ?? "")".localizedCaseInsensitiveContains(string) }.map(TileEntity.init)
-    }
-    func suggestedEntities() async throws -> [TileEntity] {
-        (Store.read()?.tiles ?? []).map(TileEntity.init)
-    }
-    func defaultResult() async -> TileEntity? {
-        Store.read()?.tiles.first.map(TileEntity.init)
+/// The tile is kept as its id, a plain string, never an AppEntity: macOS hands a picked entity back
+/// only if it finds the entity's type registered, which it doesn't for this swiftc-built extension
+/// ("not a registered AppEntity identifier"). Each widget then got no tile and drew the first one,
+/// whatever was picked (BLG-371). A string comes back as it was saved.
+struct TileOptions: DynamicOptionsProvider {
+    func results() async throws -> IntentItemCollection<String> {
+        let tiles = Store.read()?.tiles ?? []
+        let boards = tiles.reduce(into: [String]()) { if !$0.contains($1.board) { $0.append($1.board) } }
+        return IntentItemCollection(sections: boards.map { board in
+            IntentItemSection("\(board)", items: tiles.filter { $0.board == board }.map { t in
+                IntentItem(t.id, title: "\(t.title)", subtitle: t.project.map { "\($0)" })
+            })
+        })
     }
 }
 
 struct PickTile: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Choose a Tile"
     static var description = IntentDescription("Which tile of your Beluga boards this widget shows.")
-    @Parameter(title: "Tile") var tile: TileEntity?
+    @Parameter(title: "Tile", optionsProvider: TileOptions()) var tile: String?
 }
 
 // MARK: - Timeline
@@ -113,7 +98,7 @@ struct Provider: AppIntentTimelineProvider {
     }
     private func entry(_ c: PickTile) -> Entry {
         let s = Store.read()
-        let tile = s?.tiles.first { $0.id == c.tile?.id } ?? s?.tiles.first
+        let tile = s?.tiles.first { $0.id == c.tile } ?? s?.tiles.first
         return Entry(date: .now, tile: tile, empty: s == nil || s?.tiles.isEmpty == true)
     }
 }
