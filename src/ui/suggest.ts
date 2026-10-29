@@ -2,7 +2,7 @@ import { COMMANDS } from '../core/commands.js';
 import type { Location } from '../core/store.js';
 import type { FsEntry, PeerInfo } from '../protocol.js';
 import type { ClaudeSkill } from '../shared/skills.js';
-import { type TaskMention, matchTasks } from '../shared/task-refs.js';
+import { MAX_ELSEWHERE_SUGGESTIONS, MAX_TASK_SUGGESTIONS, type TaskMention, matchTasks } from '../shared/task-refs.js';
 
 /** What a suggestion is (the list shows its icon). */
 export type SuggestionKind = 'command' | 'skill' | 'claude' | 'person' | 'project' | 'workspace' | 'folder' | 'file' | 'task' | 'option';
@@ -39,7 +39,7 @@ export interface SuggestContext {
   readonly projects?: ReadonlyArray<{ readonly name: string }>;
   /** A folder's entries in this conversation's worktree ("@src/auth.ts"); undefined while not loaded. */
   readonly entries?: (dir: string) => readonly FsEntry[] | undefined;
-  /** Tasks on the board ("@BLG-24", "@24", "@login"). */
+  /** Tasks on the board ("@BLG-24", "@24", "@login"); those marked `elsewhere` are another project's. */
   readonly tasks?: readonly TaskMention[];
   /** Claude's skills and custom commands in this conversation ("/frontend-design"). */
   readonly skills?: readonly ClaudeSkill[];
@@ -239,13 +239,15 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
     .map(({ name: _name, ...o }) => ({ ...o, value: `${before}${o.label} `, enter: 'complete' as const }));
   const seen = new Set(named.map((o) => o.label.toLowerCase()));
   // Tasks, the very key included ("@BLG-24" completes to itself, so Return never picks a neighbour).
-  const tasks = matchTasks(typed, ctx.tasks ?? [])
-    .filter((t) => !seen.has(`@${t.key}`.toLowerCase()))
-    .map((t) => ({ label: `@${t.key}`, hint: t.title, value: `${before}@${t.key} `, enter: 'complete' as const, task: t, kind: 'task' as const }));
+  const asTask = (t: TaskMention): Suggestion => ({ label: `@${t.key}`, hint: t.title, value: `${before}@${t.key} `, enter: 'complete', task: t, kind: 'task' });
+  const all = (ctx.tasks ?? []).filter((t) => !seen.has(`@${t.key}`.toLowerCase()));
+  const tasks = matchTasks(typed, all.filter((t) => !t.elsewhere), MAX_TASK_SUGGESTIONS).map(asTask);
+  // Other projects' tasks: only on a close match, and last, under their own heading.
+  const elsewhere = matchTasks(typed, all.filter((t) => t.elsewhere), MAX_ELSEWHERE_SUGGESTIONS, { strict: true }).map(asTask);
   const paths = pathMentions(typed, ctx)
     .filter((o) => !seen.has(o.label.toLowerCase()))
     .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const, kind: o.folder ? ('folder' as const) : ('file' as const) }));
-  return [...named, ...tasks, ...paths];
+  return [...named, ...tasks, ...paths, ...elsewhere];
 }
 
 /**

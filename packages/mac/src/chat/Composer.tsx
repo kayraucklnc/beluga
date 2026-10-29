@@ -41,6 +41,7 @@ import m from './max.module.css';
 import d from './draft.module.css';
 import { isShortcut } from '../lib/shortcuts.js';
 import { shortcutKeys } from '../lib/shortcuts.js';
+import { projectOfView } from '../tasks/use-tasks.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -211,7 +212,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     if (wsId && atDir !== undefined) void api.files.loadDir({ owner: state.selfId, share: shareNameOf(wsId), path: atDir });
   }, [wsId, atDir, state.selfId]);
   // "@BLG-24": a task on your board (not in a workspace someone shared with you: their Claude has its own).
-  const mentionWorld = useMentionWorld(channel, { tasks: !shared });
+  const mentionWorld = useMentionWorld(channel, { tasks: !shared, project: projectOfView(state) });
   // "/fron…": Claude's skills and custom commands here, beside Beluga's commands.
   const skills = useSkills(channel, !shared && buffer.startsWith('/') && !buffer.includes(' '));
 

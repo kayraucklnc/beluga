@@ -92,6 +92,34 @@ describe('the "@" list offers tasks', () => {
   });
 });
 
+describe('another project’s tasks in the "@" list (BLG-397)', () => {
+  const away = (task: TaskMention): TaskMention => ({ ...task, elsewhere: 'Ratel' });
+  const board = [t('BLG-24', 'Fix the login redirect'), t('BLG-25', 'Login page polish'), away(t('RAT-4', 'Login with Google')), away(t('RAT-12', 'Billing page')), away(t('RAT-240', 'Rate limits'))];
+  const ctx = { peers: [], selfId: 'me', tasks: board, projects: [{ name: 'Ratel' }] };
+  const labels = (typed: string): string[] => suggest(typed, ctx).map((s) => s.label);
+
+  it('not for the first couple of letters, nor for a number alone', () => {
+    expect(labels('@ra')).toEqual(['@Ratel']);
+    expect(labels('@lo')).toEqual(['@BLG-25', '@BLG-24']);
+    expect(labels('@log')).toEqual(['@BLG-25', '@BLG-24']);
+    expect(labels('@4')).toEqual([]);
+    expect(labels('@24')).toEqual(['@BLG-24']);
+  });
+
+  it('its whole prefix, or four letters of a word of the title, offers it, always last', () => {
+    expect(labels('@RAT-4')).toEqual(['@RAT-4']);
+    expect(labels('@rat12')).toEqual(['@RAT-12']);
+    expect(labels('@RAT')).toEqual(['@Ratel', '@RAT-240', '@RAT-12', '@RAT-4']);
+    expect(labels('@login')).toEqual(['@BLG-25', '@BLG-24', '@RAT-4']);
+    expect(suggest('@login', ctx).at(-1)).toMatchObject({ task: { key: 'RAT-4', elsewhere: 'Ratel' } });
+  });
+
+  it('only a few of them, below this project’s', () => {
+    const many = Array.from({ length: 10 }, (_, i) => away(t(`RAT-${i + 1}`, `Task ${i + 1}`)));
+    expect(suggest('@RAT', { ...ctx, tasks: many }).filter((s) => s.task)).toHaveLength(3);
+  });
+});
+
 describe('a task mention in the words', () => {
   const world: MentionWorld = { friends: [{ name: 'mia', peerId: 'mia-1' }], peers: [], projects: [], workspaces: [], tasks };
 
