@@ -38,6 +38,7 @@ import { keepLines, trackedSpawn } from './claude-process.js';
 import { keptBashInput } from '../workspaces/test-procs.js';
 import { SCRATCH_DIR } from '../shared/scratch-dir.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
+import { claudeCodeReady } from './claude-code.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
 /** How long a run may stay open after answering while its background agents work. */
@@ -166,6 +167,10 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
 
   return {
     async run(input: AgentRunInput): Promise<string> {
+      // The Mac app downloads Claude Code on first launch (BLG-384): a run that comes first waits for it.
+      await claudeCodeReady(({ got, total }) => input.onEvent('progress', `Getting Claude Code ready, one time: ${total ? `${Math.round((got / total) * 100)}%` : `${Math.round(got / 1e6)} MB`}`)).catch((err: unknown) => {
+        throw new Error(`Couldn’t get Claude Code ready (${err instanceof Error ? err.message : String(err)}). Send your message again to try once more.`);
+      });
       const abortController = new AbortController();
       // Several conversations run at once: this run's room tools post to its own.
       const bridge = input.channel && opts.bridge.inChannel ? opts.bridge.inChannel(input.channel) : opts.bridge;

@@ -28,7 +28,31 @@ copyFileSync(path.join(root, 'package-lock.json'), path.join(out, 'package-lock.
 
 // 2. Its production dependencies, installed for this architecture (prebuilt native modules).
 run('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund', `--cpu=${arch}`, '--os=darwin'], { cwd: out, env: { ...process.env, npm_config_arch: arch } });
+// Claude Code's binary (239 MB, half the app) isn't bundled: the app downloads this exact package on
+// first launch and checks it against the integrity pinned here (src/agent/claude-code.ts, BLG-384).
+{
+  const lock = JSON.parse(readFileSync(path.join(out, 'package-lock.json'), 'utf8'));
+  const name = `@anthropic-ai/claude-agent-sdk-darwin-${arch}`;
+  const entry = lock.packages[`node_modules/${name}`];
+  if (!entry?.resolved || !entry?.integrity) throw new Error(`${name} isn't in package-lock.json`);
+  writeFileSync(path.join(out, 'claude-code.json'), JSON.stringify({ version: entry.version, url: entry.resolved, integrity: entry.integrity }, null, 2) + '\n');
+  rmSync(path.join(out, 'node_modules', name), { recursive: true, force: true });
+}
 rmSync(path.join(out, 'package-lock.json'), { force: true });
+// Nothing loads these at run time (BLG-383): cloudflared's binary (downloaded to ~/.beluga/bin when
+// the relay fallback first needs it), mathjax's es5 build (math-svg.ts uses mathjax-full/js), and
+// whisper's C++ sources and wasm fallback (the native darwin build is there).
+for (const dir of ['cloudflared/bin', 'mathjax-full/es5', '@fugood/whisper.node/src', '@fugood/node-whisper-wasm']) rmSync(path.join(out, 'node_modules', dir), { recursive: true, force: true });
+// Nor type declarations, source maps, TypeScript sources or docs (licenses stay).
+const junk = /\.(d\.[cm]?ts|[cm]?ts|map|md|markdown)$/i;
+const strip = (dir) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) strip(p);
+    else if (junk.test(e.name) && !/^licen[cs]e/i.test(e.name)) rmSync(p, { force: true });
+  }
+};
+strip(path.join(out, 'node_modules'));
 // Prebuilt binaries for other systems aren't needed in a Mac app.
 const prune = (dir) => {
   for (const e of readdirSync(dir, { withFileTypes: true })) {

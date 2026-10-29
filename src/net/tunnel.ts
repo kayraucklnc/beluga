@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { belugaHome } from '../core/home.js';
 
 /**
  * How friends reach the host. `p2p`: direct only (hyperdht). `auto`: direct, plus a
@@ -185,13 +186,18 @@ export function watchTunnel(publicUrl: string, onDead: () => void, opts: WatchOp
   };
 }
 
-/** Use the cloudflared binary bundled via npm, downloading it on first use if missing. */
+/**
+ * The cloudflared binary npm installed, or else one downloaded on first use. The Mac app doesn't
+ * bundle it (BLG-383) and can't write inside itself, so that one goes to ~/.beluga/bin.
+ */
 async function managedCloudflared(onProgress: (msg: string) => void): Promise<string> {
   const pkg = await import('cloudflared');
   if (existsSync(pkg.bin)) return pkg.bin;
+  const bin = path.join(belugaHome(), 'bin', 'cloudflared');
+  if (existsSync(bin)) return bin;
   onProgress('Downloading Cloudflare tunnel helper (one-time)…');
-  mkdirSync(path.dirname(pkg.bin), { recursive: true });
-  return pkg.install(pkg.bin);
+  mkdirSync(path.dirname(bin), { recursive: true });
+  return pkg.install(bin);
 }
 
 async function startCloudflared(port: number, opts: TunnelOptions): Promise<Tunnel> {
