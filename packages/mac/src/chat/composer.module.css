@@ -262,6 +262,38 @@
 .suggestionOn .sugStatus {
   color: rgba(255, 255, 255, 0.85);
 }
+/* Other projects' tasks: last, under a warm heading, quieter, and never the accent when picked. */
+.sugSectionElsewhere {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--warn);
+}
+.sugSection.sugSectionElsewhere:not(:first-child) {
+  margin-top: 6px;
+  padding-top: 8px;
+}
+.sugElsewhere {
+  opacity: 0.72;
+}
+.sugElsewhere.suggestionOn {
+  opacity: 1;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--text);
+}
+.sugElsewhere.suggestionOn .sugKey {
+  color: color-mix(in srgb, var(--info) 80%, var(--text));
+}
+.sugProject {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  line-height: 17px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
 
 .wrap:focus-within .legend,
 .legend {

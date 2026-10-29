@@ -114,10 +114,18 @@ export interface TaskMention {
   readonly status: string;
   /** Still to do (not Done or Canceled): ranked ahead of closed ones. */
   readonly open?: boolean;
+  /**
+   * The project it's in, when that isn't the one you're in ("Ratel"): the "@" list offers it only
+   * on a closer match, at the very bottom, and asks before it goes in.
+   */
+  readonly elsewhere?: string;
 }
 
 /** How many tasks the "@" list offers at once. */
 export const MAX_TASK_SUGGESTIONS = 6;
+
+/** How many of other projects' tasks it offers, below everything else. */
+export const MAX_ELSEWHERE_SUGGESTIONS = 3;
 
 /** "BLG-24" → BLG and 24. */
 function partsOf(key: string): { prefix: string; digits: string } {
@@ -133,10 +141,18 @@ function typedKey(typed: string): { prefix: string; digits: string } | undefined
   return glued && typed ? { prefix: glued[1]!.toUpperCase(), digits: glued[2]! } : undefined;
 }
 
-/** How well a task answers what's typed: 0 is the very key, larger is looser (undefined: not at all). */
-function rankOf(typed: string, task: TaskMention): number | undefined {
+/**
+ * How well a task answers what's typed: 0 is the very key, larger is looser (undefined: not at all).
+ * `strict` (another project's task): its whole prefix ("RAT-4", "rat12", "RAT"), or four letters
+ * of a word of its title, never the first couple of letters.
+ */
+function rankOf(typed: string, task: TaskMention, strict = false): number | undefined {
   const want = typedKey(typed);
   const have = partsOf(task.key);
+  if (strict) {
+    if (want?.prefix === have.prefix && (!want.digits || have.digits.startsWith(want.digits))) return want.digits && want.digits === have.digits ? 0 : 2;
+    if (typed.replace(/[^\p{L}\p{N}]/gu, '').length < 4) return undefined;
+  }
   if (want) {
     const prefixHit = !want.prefix || have.prefix.startsWith(want.prefix);
     if (want.digits && prefixHit) {
@@ -159,12 +175,12 @@ function rankOf(typed: string, task: TaskMention): number | undefined {
  * ("BLG24", "24" → BLG-24), keys it starts ("BLG-2" → BLG-21…), then title words. Open tasks
  * ahead of closed ones, newer ahead of older.
  */
-export function matchTasks(typed: string, tasks: readonly TaskMention[], max = MAX_TASK_SUGGESTIONS): TaskMention[] {
+export function matchTasks(typed: string, tasks: readonly TaskMention[], max = MAX_TASK_SUGGESTIONS, { strict = false }: { readonly strict?: boolean } = {}): TaskMention[] {
   if (!typed) return [];
   const num = (t: TaskMention): number => Number(partsOf(t.key).digits) || 0;
   return tasks
     .flatMap((task) => {
-      const rank = rankOf(typed, task);
+      const rank = rankOf(typed, task, strict);
       return rank === undefined ? [] : [{ task, rank }];
     })
     .sort((a, b) => a.rank - b.rank || Number(b.task.open !== false) - Number(a.task.open !== false) || num(b.task) - num(a.task))
