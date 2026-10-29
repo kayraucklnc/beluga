@@ -316,15 +316,10 @@
 .cell[data-state='gone'] .cellBody {
   opacity: 0.55;
 }
-/* An empty cell of the grid: room kept (an empty row stays its height), seen only while a tile is lifted. */
+/* An empty cell of the grid: never seen, it only keeps an empty row its height (tiles snap to the cells). */
 .slot {
   min-height: 116px;
-  border-radius: 16px;
-  transition: background var(--dur-fast);
-}
-.slot[data-lifting] {
-  background: color-mix(in srgb, var(--bg-hover) 60%, transparent);
-  box-shadow: inset 0 0 0 1px var(--hairline);
+  pointer-events: none;
 }
 /* Where a lifted tile lands: a quiet dashed well its size, in the page's greys. */
 .gap {

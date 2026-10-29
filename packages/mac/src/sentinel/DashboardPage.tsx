@@ -410,8 +410,7 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
   };
   // Add sits where a new tile would go.
   const add = layoutTiles([...shown, { id: ADD, kind: 'number', width: 1 }], !!only).get(ADD);
-  // The empty cells, like a phone's home screen: they keep an empty row its height, and show
-  // while a tile is lifted (with two rows more below to drop it in).
+  // The empty cells, never seen: they keep an empty row its height (two rows more below while a tile is lifted, to drop it in).
   const slots = only ? [] : emptyCells([...places.values(), ...(add && !drag && d.tiles.length ? [add] : [])], drag ? drag.maxRow + 1 : bottomOf(places));
   const onSize = (id: string, size: Size | undefined): void => setSized(size ? { id, size, tiles: d.tiles } : undefined);
   return (
@@ -420,7 +419,7 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
         <TileCell key={tile.id} d={d} tile={tile} state={state} source={tileProject(state, tile, projects)} movable={!only} place={placeOf(tile.id)} onSize={onSize} onPointerDown={(e) => down(e, tile.id)} />
       ))}
       {slots.map((c) => (
-        <div key={`${c.col}:${c.row}`} className={n.slot} data-lifting={drag ? '' : undefined} style={{ '--col': c.col + 1, '--row': c.row + 1 } as React.CSSProperties} aria-hidden="true" />
+        <div key={`${c.col}:${c.row}`} className={n.slot} style={{ '--col': c.col + 1, '--row': c.row + 1 } as React.CSSProperties} aria-hidden="true" />
       ))}
       {lifted && drag ? <div className={n.gap} data-w={lifted.kind === 'divider' ? 6 : lifted.width} data-h={lifted.kind === 'divider' ? 1 : (lifted.height ?? 1)} style={{ ...placeOf(lifted.id), minHeight: drag.h }} /> : null}
       {lifted && drag ? (

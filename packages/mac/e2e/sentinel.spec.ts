@@ -412,8 +412,8 @@ test('a tile goes anywhere on the grid, like a home screen: dropped with an empt
   await page.mouse.down();
   await page.mouse.move(t.x + 40, t.y + 40, { steps: 3 });
   await page.mouse.move(to.x, to.y, { steps: 12 });
-  // While it's lifted, the grid's empty cells show where it can go.
-  await expect(grid.locator('[data-lifting]').first()).toBeVisible();
+  // While it's lifted, only where it lands shows: the grid's empty cells stay unseen.
+  await expect(grid.locator(':scope > [aria-hidden="true"]').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await page.screenshot({ path: path.join(shots, 'sentinel-dashboard-dragging.png') });
   await page.mouse.up();
   await expect(same).toHaveCSS('grid-column-start', String(7 - width));
