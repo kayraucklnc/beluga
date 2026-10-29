@@ -80,10 +80,7 @@ describe('polish-round leftovers', () => {
     // The PR sheet's own once-a-second clock ticked behind your back; it uses useClock now. Shrink this list, don't grow it.
     expect(ticking).toEqual([
       'chat/steps/use-steps.ts',
-      'claude-code/AgentOutputs.tsx',
-      'claude-code/BackgroundTasks.tsx',
       'layout/NotificationCenter.tsx',
-      'layout/panel/ScratchTab.tsx',
       'lib/live-motion.ts',
       'lib/window-active.ts',
       'network/AddFriendSheet.tsx',

@@ -60,11 +60,17 @@ export function DotMatrix({ size = 13, label, className, pattern = 'petals' }: {
     const dots = [...el.children] as HTMLElement[];
     const lit = OPACITY[pattern];
     const cycle = CYCLE_MS[pattern];
+    // What each dot was last given: a dot whose value reads the same isn't written again (same look, less style work).
+    const was: string[] = [];
     return joinLive(el, (now) => {
       const t = now === null ? 0 : ((now % cycle) / cycle) * Math.PI * 2;
       CELLS.forEach((c, i) => {
         const el = dots[i];
-        if (el) el.style.setProperty('--lit', lit(c.row, c.col, t).toFixed(3));
+        if (!el) return;
+        const value = lit(c.row, c.col, t).toFixed(3);
+        if (was[i] === value) return;
+        was[i] = value;
+        el.style.setProperty('--lit', value);
       });
     });
   }, [pattern]);

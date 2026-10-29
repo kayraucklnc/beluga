@@ -13,7 +13,8 @@ import { useTasksPrefs } from '../tasks/use-tasks.js';
 import { issuesProject } from '../issues/issues-model.js';
 import { ConnectGitHub } from '../views/project/GitHubRow.js';
 import { RunMark, RunRow } from './parts.js';
-import { useCiActions, useNow, useRuns, useWorkflows } from './use-ci.js';
+import { useCiActions, useRuns, useWorkflows } from './use-ci.js';
+import { NowText, Ticking } from './now.js';
 import { WorkflowGraph } from './WorkflowGraph.js';
 import t from '../tasks/tasks.module.css';
 import s from './ci.module.css';
@@ -52,115 +53,122 @@ export function ActionsView() {
   const flows = useWorkflows(projectId);
   const runs = useMemo(() => (list?.kind === 'github' ? sortRuns(list.runs) : []), [list]);
   const live = runs.some(isLive);
-  const now = useNow(live);
 
-  if (!projects.length || !here || !projectId) return <Empty icon="pulse" title="No projects yet" detail="Actions come from a project’s GitHub repository. Add a project from the sidebar." />;
+  // The clock sits in Ticking (in both returns, so it's the same one): only the time text is drawn again each second.
+  if (!projects.length || !here || !projectId)
+    return (
+      <Ticking live={live}>
+        <Empty icon="pulse" title="No projects yet" detail="Actions come from a project’s GitHub repository. Add a project from the sidebar." />
+      </Ticking>
+    );
 
   const repo = list && list.kind !== 'none' ? list.repo : undefined;
   const known = flows.data?.workflows ?? [];
   const named = (path: string): string => known.find((f) => f.path === path)?.name ?? fileName(path);
   return (
-    <div className={t.view}>
-      <div className={t.bar}>
-        <div className={t.barGroup}>
-          <PickMenu<string>
-            label="Project"
-            choices={projects.map((p) => ({ value: p.id, label: p.name, mark: <ProjectIcon id={p.id} name={p.name} size={16} /> }))}
-            chosen={[here.id]}
-            onPick={(id) => openList(id, page === 'workflows' ? 'workflows' : undefined)}
-          >
-            <button type="button" className={t.projectSwitch} aria-label={`Project: ${here.name}`}>
-              <ProjectIcon id={here.id} name={here.name} size={18} />
-              <span className={t.projectName}>{here.name}</span>
-              <Icon name="chevronDown" size={11} />
-            </button>
-          </PickMenu>
-          <Segmented<Page> label="Show" value={page} onChange={(p) => openList(projectId, p === 'workflows' ? 'workflows' : undefined)} options={PAGES} />
-          {page === 'runs' && known.length + (workflow ? 1 : 0) > 1 ? (
+    <Ticking live={live}>
+      <div className={t.view}>
+        <div className={t.bar}>
+          <div className={t.barGroup}>
             <PickMenu<string>
-              label="Workflow"
-              choices={[{ value: '', label: 'All Workflows' }, ...known.filter((f) => f.id).map((f) => ({ value: f.path, label: f.name, hint: fileName(f.path) }))]}
-              chosen={[workflow]}
-              onPick={setWorkflow}
+              label="Project"
+              choices={projects.map((p) => ({ value: p.id, label: p.name, mark: <ProjectIcon id={p.id} name={p.name} size={16} /> }))}
+              chosen={[here.id]}
+              onPick={(id) => openList(id, page === 'workflows' ? 'workflows' : undefined)}
             >
-              <button type="button" className={s.filter} aria-label="Workflow">
-                <Icon name="graph" size={12} />
-                {workflow ? named(workflow) : 'All Workflows'}
-                <Icon name="chevronDown" size={10} />
+              <button type="button" className={t.projectSwitch} aria-label={`Project: ${here.name}`}>
+                <ProjectIcon id={here.id} name={here.name} size={18} />
+                <span className={t.projectName}>{here.name}</span>
+                <Icon name="chevronDown" size={11} />
               </button>
             </PickMenu>
-          ) : null}
-        </div>
-        <div className={cx(t.barGroup, t.barActions)}>
-          {live ? (
-            <span className={s.liveTag}>
-              <span className={s.liveDot} aria-hidden="true" />
-              Live
-            </span>
-          ) : null}
-          <IconButton icon="refresh" label={loading || flows.loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx((loading || flows.loading) && s.spinning)} onClick={() => (refresh(), flows.refresh())} disabled={!repo} />
-          {repo ? (
-            <Tip label={`${repo.url}/actions`}>
-              <Button size="small" icon="external" onClick={() => openOnGitHub(`${repo.url}/actions`)}>
-                GitHub
-              </Button>
-            </Tip>
-          ) : null}
-        </div>
-      </div>
-      <div className={t.body}>
-        {error && !list ? (
-          <Empty icon="alert" title="Couldn’t read the runs" detail={error} action={<Button onClick={refresh}>Try Again</Button>} />
-        ) : !list ? (
-          <Empty icon="pulse" title="Asking GitHub…" detail={`For ${here.name}’s workflow runs`} />
-        ) : list.kind === 'none' ? (
-          <Empty icon="pulse" title="This project isn’t on GitHub" detail="Actions come from the GitHub repository a project’s origin remote points to. Push it to GitHub, or pick another project." />
-        ) : list.kind === 'no_gh' ? (
-          <Empty
-            icon="pulse"
-            title="Connect GitHub"
-            detail={`Beluga reads ${repoSlug(list.repo)}’s Actions with GitHub’s command-line tool, signed in as you. Set it up once, then check again.`}
-            action={
-              <EmptyActions>
-                <Button variant="primary" onClick={() => setConnect(true)}>
-                  Connect GitHub…
-                </Button>
-              </EmptyActions>
-            }
-          />
-        ) : list.kind === 'error' ? (
-          <Empty icon="alert" title="Couldn’t read the runs" detail={list.message} action={<Button onClick={refresh}>Try Again</Button>} />
-        ) : page === 'workflows' ? (
-          <Workflows projectId={projectId} flows={flows} runs={runs} />
-        ) : !runs.length ? (
-          <Empty icon="pulse" title={workflow ? 'No runs of this workflow yet' : 'No runs yet'} detail={workflow ? 'Pick another workflow, or All Workflows.' : `Nothing has run in ${repoSlug(list.repo)}. Add a workflow under .github/workflows and push it.`} />
-        ) : (
-          <div className={cx(s.list, late && arr.arrive)} role="table" aria-label={`${here.name}’s workflow runs`}>
-            {runs.map((run) => (
-              <RunRow key={run.id} projectId={projectId} run={run} now={now} />
-            ))}
+            <Segmented<Page> label="Show" value={page} onChange={(p) => openList(projectId, p === 'workflows' ? 'workflows' : undefined)} options={PAGES} />
+            {page === 'runs' && known.length + (workflow ? 1 : 0) > 1 ? (
+              <PickMenu<string>
+                label="Workflow"
+                choices={[{ value: '', label: 'All Workflows' }, ...known.filter((f) => f.id).map((f) => ({ value: f.path, label: f.name, hint: fileName(f.path) }))]}
+                chosen={[workflow]}
+                onPick={setWorkflow}
+              >
+                <button type="button" className={s.filter} aria-label="Workflow">
+                  <Icon name="graph" size={12} />
+                  {workflow ? named(workflow) : 'All Workflows'}
+                  <Icon name="chevronDown" size={10} />
+                </button>
+              </PickMenu>
+            ) : null}
           </div>
-        )}
-      </div>
-      {list?.kind === 'github' && runs.length && page === 'runs' ? (
-        <div className={t.foot}>
-          {runs.filter(isLive).length ? `${runs.filter(isLive).length} running · ` : ''}
-          {runs.length}
-          {list.more ? '+' : ''} runs · {repoSlug(list.repo)} · from GitHub {ago(list.fetchedAt, now)}
-          {live ? ' · watching, every few seconds' : ''}
+          <div className={cx(t.barGroup, t.barActions)}>
+            {live ? (
+              <span className={s.liveTag}>
+                <span className={s.liveDot} aria-hidden="true" />
+                Live
+              </span>
+            ) : null}
+            <IconButton icon="refresh" label={loading || flows.loading ? 'Asking GitHub…' : 'Ask GitHub Again'} className={cx((loading || flows.loading) && s.spinning)} onClick={() => (refresh(), flows.refresh())} disabled={!repo} />
+            {repo ? (
+              <Tip label={`${repo.url}/actions`}>
+                <Button size="small" icon="external" onClick={() => openOnGitHub(`${repo.url}/actions`)}>
+                  GitHub
+                </Button>
+              </Tip>
+            ) : null}
+          </div>
         </div>
-      ) : null}
-      {connect ? (
-        <ConnectGitHub
-          onClose={() => setConnect(false)}
-          onCheck={async () => {
-            const got = await api.ci.runs(projectId, { force: true }).catch(() => undefined);
-            refresh();
-            return got?.kind === 'github';
-          }}
-        />
-      ) : null}
-    </div>
+        <div className={t.body}>
+          {error && !list ? (
+            <Empty icon="alert" title="Couldn’t read the runs" detail={error} action={<Button onClick={refresh}>Try Again</Button>} />
+          ) : !list ? (
+            <Empty icon="pulse" title="Asking GitHub…" detail={`For ${here.name}’s workflow runs`} />
+          ) : list.kind === 'none' ? (
+            <Empty icon="pulse" title="This project isn’t on GitHub" detail="Actions come from the GitHub repository a project’s origin remote points to. Push it to GitHub, or pick another project." />
+          ) : list.kind === 'no_gh' ? (
+            <Empty
+              icon="pulse"
+              title="Connect GitHub"
+              detail={`Beluga reads ${repoSlug(list.repo)}’s Actions with GitHub’s command-line tool, signed in as you. Set it up once, then check again.`}
+              action={
+                <EmptyActions>
+                  <Button variant="primary" onClick={() => setConnect(true)}>
+                    Connect GitHub…
+                  </Button>
+                </EmptyActions>
+              }
+            />
+          ) : list.kind === 'error' ? (
+            <Empty icon="alert" title="Couldn’t read the runs" detail={list.message} action={<Button onClick={refresh}>Try Again</Button>} />
+          ) : page === 'workflows' ? (
+            <Workflows projectId={projectId} flows={flows} runs={runs} />
+          ) : !runs.length ? (
+            <Empty icon="pulse" title={workflow ? 'No runs of this workflow yet' : 'No runs yet'} detail={workflow ? 'Pick another workflow, or All Workflows.' : `Nothing has run in ${repoSlug(list.repo)}. Add a workflow under .github/workflows and push it.`} />
+          ) : (
+            <div className={cx(s.list, late && arr.arrive)} role="table" aria-label={`${here.name}’s workflow runs`}>
+              {runs.map((run) => (
+                <RunRow key={run.id} projectId={projectId} run={run} />
+              ))}
+            </div>
+          )}
+        </div>
+        {list?.kind === 'github' && runs.length && page === 'runs' ? (
+          <div className={t.foot}>
+            {runs.filter(isLive).length ? `${runs.filter(isLive).length} running · ` : ''}
+            {runs.length}
+            {list.more ? '+' : ''} runs · {repoSlug(list.repo)} · from GitHub <NowText>{(now) => ago(list.fetchedAt, now)}</NowText>
+            {live ? ' · watching, every few seconds' : ''}
+          </div>
+        ) : null}
+        {connect ? (
+          <ConnectGitHub
+            onClose={() => setConnect(false)}
+            onCheck={async () => {
+              const got = await api.ci.runs(projectId, { force: true }).catch(() => undefined);
+              refresh();
+              return got?.kind === 'github';
+            }}
+          />
+        ) : null}
+      </div>
+    </Ticking>
   );
 }
 

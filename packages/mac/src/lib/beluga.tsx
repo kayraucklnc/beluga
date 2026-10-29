@@ -95,27 +95,45 @@ const AWAY_MS = 1000;
 const views = new WeakMap<object, (listener: () => void) => () => void>();
 
 /**
- * How this window's views hear the shared state change: at once while you're looking at Beluga;
- * while you're not (lib/window-active.ts), at most once a second, so a Claude streaming for hours
- * doesn't redraw a window nobody's watching (KLD-40). Looking back catches up at once. The Dock,
- * tray and notifications listen to the store itself and never wait.
+ * How this window's views hear the shared state change: while you're looking at Beluga, once a
+ * frame (a burst of events, a streamed answer's words, is drawn once, in the next frame, as it
+ * would have been anyway); while you're not (lib/window-active.ts), at most once a second, so a
+ * Claude streaming for hours doesn't redraw a window nobody's watching (KLD-40). Looking back
+ * catches up at once. The state itself is applied at once (getState is always current); only
+ * the views' redraws wait. The Dock, tray and notifications listen to the store itself and never wait.
  */
 function viewSubscribe(store: { subscribe: (listener: () => void) => () => void }): (listener: () => void) => () => void {
   const known = views.get(store);
   if (known) return known;
   const listeners = new Set<() => void>();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let frame: number | undefined;
+  let soon: ReturnType<typeof setTimeout> | undefined;
   const flush = (): void => {
     clearTimeout(timer);
     timer = undefined;
+    if (frame !== undefined) cancelAnimationFrame(frame);
+    frame = undefined;
+    clearTimeout(soon);
+    soon = undefined;
     for (const l of [...listeners]) l();
   };
   store.subscribe(() => {
-    if (windowActive()) flush();
-    else timer ??= setTimeout(flush, AWAY_MS);
+    if (!windowActive()) {
+      timer ??= setTimeout(flush, AWAY_MS);
+      return;
+    }
+    if (frame !== undefined || soon !== undefined) return;
+    // A hidden page draws no frames (WebKit's "hidden" can be stale while you look, KLD-64): a timer then.
+    if (document.hidden) soon = setTimeout(flush, 0);
+    else frame = requestAnimationFrame(flush);
   });
   onWindowActive(() => {
     if (windowActive() && timer) flush();
+  });
+  // Hidden with a frame still to come (it wouldn't): now instead.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && frame !== undefined) flush();
   });
   const subscribe = (listener: () => void): (() => void) => {
     listeners.add(listener);

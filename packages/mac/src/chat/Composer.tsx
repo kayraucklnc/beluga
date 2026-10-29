@@ -12,6 +12,7 @@ import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { recipientLabel, recipientPrefix, toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
+import { sameDeep, sameFields } from '../lib/stable.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { ModelPicker } from './ModelPicker.js';
@@ -120,14 +121,44 @@ function RunOnChip({ wsId, ownerName, value, onChange }: { wsId: string; ownerNa
   );
 }
 
+/** The slices the same objects, and the box's state (worked out from them) the same. */
+function sameComposer<T extends { readonly compose: object }>(a: T, b: T): boolean {
+  const { compose: ca, ...ra } = a;
+  const { compose: cb, ...rb } = b;
+  return sameFields(ra, rb) && sameDeep(ca, cb);
+}
+
 export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const { ui, client } = useBeluga();
   const api = useApi();
   const actions = useActions();
   const prefs = usePrefs();
-  const state = useApp((st) => st);
   const buffer = useUi((u) => u.buffer);
   const pending = useUi((u) => u.pending);
+  // Only what the box reads (and what it works out from the rest), so it isn't drawn again for
+  // events that change none of it. Worked out on each render too, so the words you type count.
+  const state = useApp(
+    (full) => ({
+      view: full.view,
+      log: full.log,
+      selfId: full.selfId,
+      self: full.self,
+      peers: full.peers,
+      planMode: full.planMode,
+      plans: full.plans,
+      projects: full.projects,
+      prefs: full.prefs,
+      shared: full.shared,
+      sharedProjects: full.sharedProjects,
+      friends: full.network.friends,
+      dirCache: full.dirCache,
+      compose: composeState(full, ui.get(), full.selfId, channelOf(full.view), full.view.kind === 'shared'),
+      waiting: full.view.kind === 'shared' ? waitingNote(full, full.view.id) : undefined,
+      project: projectOfView(full),
+      placeholder: placeholderOf(full, pending ? { pending } : {}),
+    }),
+    sameComposer,
+  );
   // Addressed to someone (a person's card › Message / Ask Claude): the chip says who; sending says it to them.
   const to = useUi((u) => u.to);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -135,7 +166,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const channel = channelOf(state.view);
   const draftKey = draftKeyOf(state.view);
   const shared = state.view.kind === 'shared';
-  const compose = composeState(state, ui.get(), state.selfId, channel, shared);
+  const compose = state.compose;
   const queue = useMemo(() => queueIn(state, channel, state.selfId), [state.log, channel, state.selfId]);
   // Your newest steered message Claude hasn't read yet: ⇧⌥↩ sends it now (BLG-54).
   const unread = useMemo(() => [...steeredMessages(state.log.filter((l) => l.channel === channel)).waiting.values()].filter((x) => x.waiting === 'next_step').at(-1), [state.log, channel]);
@@ -194,7 +225,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const runOn: RunOn = canRunHere && sharedWs ? (runOnChoice.get(sharedWs.id) ?? runOnState) : 'owner';
   // Following along, or the owner's Mac can't hear you right now (offline, or an old Beluga): the box is locked,
   // unless what you say goes to your own Claude in your copy.
-  const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && runOn !== 'here' && (sharedWs?.role === 'view' || Boolean(waitingNote(state, state.view.id)));
+  const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && runOn !== 'here' && (sharedWs?.role === 'view' || Boolean(state.waiting));
   // A new worktree: the branch it starts from and its name (empty: named from the task).
   const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
   const [worktree, setWorktreeState] = useState<WorktreeChoice>(() => (draftProject && worktreeChoices.get(draftProject)) || { name: '' });
@@ -212,7 +243,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     if (wsId && atDir !== undefined) void api.files.loadDir({ owner: state.selfId, share: shareNameOf(wsId), path: atDir });
   }, [wsId, atDir, state.selfId]);
   // "@BLG-24": a task on your board (not in a workspace someone shared with you: their Claude has its own).
-  const mentionWorld = useMentionWorld(channel, { tasks: !shared, project: projectOfView(state) });
+  const mentionWorld = useMentionWorld(channel, { tasks: !shared, project: state.project });
   // "/fron…": Claude's skills and custom commands here, beside Beluga's commands.
   const skills = useSkills(channel, !shared && buffer.startsWith('/') && !buffer.includes(' '));
 
@@ -227,13 +258,13 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             dirCache: state.dirCache,
             listLocalDirs: (dir) => state.dirCache[localDirKey(dir)] ?? [],
             workspaces: state.view.kind === 'room' ? workspaceMentions(state.projects) : [],
-            friends: state.network.friends,
+            friends: state.friends,
             projects: state.projects.filter((p) => p.root),
             ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
             ...(mentionWorld.tasks ? { tasks: mentionWorld.tasks } : {}),
             skills,
           }),
-    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId, mentionWorld.tasks, skills],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills],
   );
   const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 
@@ -503,7 +534,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             rows={1}
             value={buffer}
             disabled={readOnly}
-            placeholder={to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : placeholderOf(state, pending ? { pending } : {})}
+            placeholder={to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : state.placeholder}
             onChange={(e) => set(e.target.value)}
             onKeyDown={onKey}
             onPaste={att.onPaste}

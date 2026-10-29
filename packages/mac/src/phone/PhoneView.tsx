@@ -11,6 +11,7 @@ import { showPanelTab } from '../lib/panel.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { sameDeep } from '../lib/stable.js';
 import { H264Player } from './h264.js';
+import { onWindowActive, pageShown } from '../lib/window-active.js';
 import { touchCaption } from './phone-model.js';
 import s from './phone-view.module.css';
 
@@ -176,21 +177,51 @@ function Mirror({ phone, compact = false }: { phone: DeviceView; compact?: boole
       }, ms);
       timers.add(t);
     };
-    const offF = mirror.onFrame((f) => {
+    // While the page can't be seen (minimized, another Space), nothing is decoded or drawn: the
+    // newest picture and the video since its last key frame wait, and are shown the moment it can
+    // be seen again, in the order they came.
+    let away = !pageShown();
+    let waiting: Parameters<Parameters<typeof mirror.onFrame>[0]>[0] | undefined;
+    let last: 'frame' | 'video' | undefined;
+    const show = (f: NonNullable<typeof waiting>): void => {
       // Pictures again (the video stalled or stopped): show them instead.
       setVideo(undefined);
       setFrame((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
         return { url: toUrl(f.b64, f.mime), w: f.w, h: f.h };
       });
+    };
+    const offF = mirror.onFrame((f) => {
+      if (!away) return show(f);
+      waiting = f;
+      last = 'frame';
     });
     const offV = mirror.onVideo((p) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       screen = { w: p.sw, h: p.sh };
-      player ??= new H264Player(canvas, () => setVideo((prev) => (prev && prev.w === screen.w && prev.h === screen.h ? prev : screen)));
+      if (!player) {
+        player = new H264Player(canvas, () => setVideo((prev) => (prev && prev.w === screen.w && prev.h === screen.h ? prev : screen)));
+        if (away) player.hold(true);
+      }
+      if (away) last = 'video';
       player.push(p);
     });
+    const look = (): void => {
+      const now = !pageShown();
+      if (now === away) return;
+      away = now;
+      if (away) return player?.hold(true);
+      // Back: the video caught up, then the picture if it came after it (as it would have shown).
+      const frame = waiting;
+      waiting = undefined;
+      if (frame && last !== 'frame') show(frame);
+      player?.hold(false, { quiet: last === 'frame' });
+      if (frame && last === 'frame') show(frame);
+      last = undefined;
+    };
+    document.addEventListener('visibilitychange', look);
+    const offLook = onWindowActive(look);
     // What Claude does meanwhile: a ripple where it taps, a trail where it swipes, and a word.
     const offT = mirror.onTouch((t) => {
       const id = ++seq;
@@ -203,6 +234,8 @@ function Mirror({ phone, compact = false }: { phone: DeviceView; compact?: boole
     });
     const offS = mirror.onStatus((srv) => setStatus(srv));
     return () => {
+      document.removeEventListener('visibilitychange', look);
+      offLook();
       offF();
       offV();
       offT();

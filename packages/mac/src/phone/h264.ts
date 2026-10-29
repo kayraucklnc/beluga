@@ -85,10 +85,17 @@ export interface VideoPiece {
  * fails) it waits for the next one rather than lagging or smearing; the phone sends one every few
  * seconds and whenever it skipped.
  */
+/** At most this many pieces wait while the canvas can't be seen (the phone sends a key frame every few seconds). */
+const HELD_MAX = 600;
+
 export class H264Player {
   private decoder?: VideoDecoder;
   private configured?: string;
   private waitKey = true;
+  /** While nobody can see the canvas: the pieces from the last key frame on, kept instead of decoded. */
+  private held?: VideoPiece[];
+  /** Pieces up to this time were caught up quietly: drawn, but onDrawn isn't told. */
+  private quietTo?: number;
   private readonly ctx: CanvasRenderingContext2D | null;
 
   constructor(
@@ -111,7 +118,38 @@ export class H264Player {
     return canPlay;
   }
 
+  /**
+   * While the page can't be seen (minimized, another Space) nothing is decoded or drawn: the pieces
+   * since the last key frame wait. Seen again, they're decoded at once, so the picture is the
+   * phone's current screen the moment it shows, as if it had played all along.
+   */
+  hold(on: boolean, { quiet = false }: { quiet?: boolean } = {}): void {
+    if (on) {
+      this.held ??= [];
+      return;
+    }
+    const held = this.held ?? [];
+    this.held = undefined;
+    // Quiet: pictures came after these, so they're drawn without saying so (the pictures stay shown, as they would have).
+    if (quiet && held.length) this.quietTo = held[held.length - 1]!.ts;
+    for (const piece of held) this.play(piece, true);
+  }
+
   push(piece: VideoPiece): void {
+    if (this.held) {
+      if (piece.key) this.held = [piece];
+      else if (this.held.length < HELD_MAX) this.held.push(piece);
+      else {
+        // Too long without a key frame: start again from the next one.
+        this.held = [];
+        this.waitKey = true;
+      }
+      return;
+    }
+    this.play(piece, false);
+  }
+
+  private play(piece: VideoPiece, catchUp: boolean): void {
     const nals = splitNals(fromBase64(piece.b64));
     if (piece.key) {
       const sps = nals.find((n) => typeOf(n) === SPS);
@@ -122,7 +160,7 @@ export class H264Player {
     if (!decoder || decoder.state !== 'configured') return;
     if (this.waitKey && !piece.key) return;
     // Behind (decoding slower than it comes): skip to the next key frame.
-    if (!piece.key && decoder.decodeQueueSize > 8) {
+    if (!catchUp && !piece.key && decoder.decodeQueueSize > 8) {
       this.waitKey = true;
       return;
     }
@@ -150,6 +188,7 @@ export class H264Player {
         error: () => {
           this.configured = undefined;
           this.waitKey = true;
+          this.quietTo = undefined;
         },
       });
     }
@@ -164,8 +203,10 @@ export class H264Player {
     if (this.canvas.width !== w) this.canvas.width = w;
     if (this.canvas.height !== h) this.canvas.height = h;
     this.ctx?.drawImage(frame, 0, 0, w, h);
+    const quiet = this.quietTo !== undefined && frame.timestamp <= this.quietTo;
+    if (this.quietTo !== undefined && frame.timestamp >= this.quietTo) this.quietTo = undefined;
     frame.close();
-    this.onDrawn();
+    if (!quiet) this.onDrawn();
   }
 }
 

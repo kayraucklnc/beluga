@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { View } from '@beluga/core/store.js';
 import type { Method } from '@beluga/ipc/api.js';
 import type { Notice } from '@beluga/core/work-store.js';
@@ -14,6 +14,7 @@ import { copyText } from '../lib/copy.js';
 import { brandNotice } from '../lib/brand.js';
 import { toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { macNoticeTarget, openNoticeTarget } from '../lib/notices.js';
+import { sameDeep, sameFields } from '../lib/stable.js';
 import { type Waiting, type WaitingAction, bellCount, isCovered, noticeNeedView, waitingList } from './waiting-model.js';
 import s from './notifications.module.css';
 
@@ -234,11 +235,11 @@ function Center({ close }: { close: () => void }) {
   const { ui, client } = useBeluga();
   const inbox = useApp((st) => st.inbox);
   const notify = useApp((st) => st.prefs.notify);
-  const places = useApp((st) => st);
+  // What waits for you, drawn again only when it changes (not on every streamed step).
+  const waiting = useApp(waitingList, sameDeep);
   const [filter, setFilter] = useState<NoticeFilter>('all');
   const now = useNow();
   const unread = inbox.filter((n) => !n.read).length;
-  const waiting = useMemo(() => waitingList(places), [places]);
   const history = inbox.filter((n) => !isCovered(n, waiting));
   const shownWaiting = filter === 'mentions' ? [] : waiting;
   const groups = groupNotices(filterNotices(history, filter), now);
@@ -246,6 +247,7 @@ function Center({ close }: { close: () => void }) {
   const quiet = dndActive(notify, now);
 
   const open = (n: Notice): void => {
+    const places = client.store.getState();
     // About a request: where it's answered (a team-up opens Tasks, a friend's request Requests).
     const page = noticeNeedView(places, n);
     if (page) {
@@ -333,11 +335,11 @@ function Center({ close }: { close: () => void }) {
 export function NotificationBell() {
   const { ui } = useBeluga();
   const open = useUi((u) => u.notices);
-  const state = useApp((st) => st);
-  const { waiting, unread } = useMemo(() => {
-    const list = waitingList(state);
-    return { waiting: list.length, unread: bellCount(state, list) - list.length };
-  }, [state]);
+  // Just the two counts: the bell is drawn again only when one of them changes.
+  const { waiting, unread } = useApp((st) => {
+    const list = waitingList(st);
+    return { waiting: list.length, unread: bellCount(st, list) - list.length };
+  }, sameFields);
   const quiet = useApp((st) => dndActive(st.prefs.notify));
   const label = `Notifications${waiting ? ` · ${waiting} waiting for you` : ''}${unread ? ` · ${unread} new` : ''}${quiet ? ' · Do Not Disturb' : ''}`;
   return (

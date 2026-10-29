@@ -8,6 +8,7 @@ import { openWithDefaultApp, revealInFinder } from '../lib/files.js';
 import { useApi, useBeluga } from '../lib/beluga.js';
 import { type TaskItem, taskLabel } from './background-model.js';
 import s from './background.module.css';
+import { everyWhileShown } from '../lib/window-active.js';
 
 /**
  * Background commands and watches Claude or its agents started (a dev server, the full tests, a
@@ -20,10 +21,8 @@ const POLL_MS = 1000;
 /** Re-render every few seconds, so "Running · 3m" stays true. */
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 5000);
-    return () => clearInterval(t);
-  }, []);
+  // Resting only while the page can't be seen; on time again the moment it can.
+  useEffect(() => everyWhileShown(() => setNow(Date.now()), 5000), []);
   return now;
 }
 
@@ -51,12 +50,13 @@ function useTaskOutput(item: TaskItem): CcTaskOutput | null | undefined {
       );
     };
     look();
-    const timer = running ? setInterval(look, POLL_MS) : undefined;
+    // While it runs: every second while the page can be seen, and at once when it can again.
+    const stop = running ? everyWhileShown(look, POLL_MS) : undefined;
     // Picked while the window was behind another: look once it's in front.
-    document.addEventListener('visibilitychange', look);
+    if (!running) document.addEventListener('visibilitychange', look);
     return () => {
       alive = false;
-      if (timer) clearInterval(timer);
+      stop?.();
       document.removeEventListener('visibilitychange', look);
     };
   }, [item.sessionId, item.task.agentId, item.task.id, running]);

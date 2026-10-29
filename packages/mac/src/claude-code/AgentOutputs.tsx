@@ -10,6 +10,7 @@ import { openWithDefaultApp, revealInFinder } from '../lib/files.js';
 import { followed, isFresh, timeAgo } from '../layout/panel/scratch-model.js';
 import { type Places, howLabel, outputsKey, placeOf } from './outputs-model.js';
 import s from './agent-outputs.module.css';
+import { everyWhileShown } from '../lib/window-active.js';
 
 /**
  * A sub-agent's Outputs: what it made or looked at while it worked (screenshots, test output,
@@ -42,10 +43,10 @@ export function useAgentOutputs(sessionId: string, agentId: string, live: boolea
       );
     };
     look();
-    const timer = setInterval(look, live ? POLL_LIVE_MS : POLL_MS);
+    const stop = everyWhileShown(look, live ? POLL_LIVE_MS : POLL_MS);
     return () => {
       alive = false;
-      clearInterval(timer);
+      stop();
     };
   }, [sessionId, agentId, live]);
   return list;
@@ -54,10 +55,8 @@ export function useAgentOutputs(sessionId: string, agentId: string, live: boolea
 /** "now", "12s", "3m": kept current without a new listing. */
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 5000);
-    return () => clearInterval(t);
-  }, []);
+  // Resting only while the page can't be seen; on time again the moment it can.
+  useEffect(() => everyWhileShown(() => setNow(Date.now()), 5000), []);
   return now;
 }
 

@@ -8,7 +8,7 @@ import { Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { brandText } from '../lib/brand.js';
-import { sameDeep } from '../lib/stable.js';
+import { sameDeep, sameFields } from '../lib/stable.js';
 import { hostToBefriend } from '../network/net-model.js';
 import { befriend } from '../network/use-net.js';
 import { Markdown } from './Markdown.js';
@@ -127,17 +127,19 @@ function Approvals({ channel }: { channel?: string }) {
 function Question({ channel }: { channel?: string }) {
   const actions = useActions();
   const { ui } = useBeluga();
-  const state = useApp((st) => st);
-  const first = state.questions[0];
-  const q = channel ? state.questions.find((x) => x.channel === channel) : first?.channel === channelOf(state.view) ? first : undefined;
+  // Only the question shown and who asked, so other events don't draw the card again.
+  const { q, owner, selfId } = useApp((st) => {
+    const first = st.questions[0];
+    const q = channel ? st.questions.find((x) => x.channel === channel) : first?.channel === channelOf(st.view) ? first : undefined;
+    return { q, owner: q ? st.peers.find((p) => p.peerId === q.owner)?.name : undefined, selfId: st.selfId };
+  }, sameFields);
   if (!q) return null;
-  const owner = state.peers.find((p) => p.peerId === q.owner)?.name;
   if (q.question.kind === 'plan') {
     return (
       <div className={s.card}>
         <div className={s.head}>
           <Icon name="wand" size={13} className={s.claude} />
-          <span className={s.title}>{owner && q.owner !== state.selfId ? `${owner}'s Claude` : 'Claude'} has a plan</span>
+          <span className={s.title}>{owner && q.owner !== selfId ? `${owner}'s Claude` : 'Claude'} has a plan</span>
           <Button size="small" variant="quiet" onClick={() => ui.patch({ planFull: q.qid })}>
             Read in full
           </Button>
@@ -202,11 +204,12 @@ function Question({ channel }: { channel?: string }) {
 
 function Knock() {
   const actions = useActions();
-  const state = useApp((st) => st);
-  const knock = state.knocks.find((k) => state.peers.some((p) => p.peerId === k.peerId));
+  const { knock, who, link } = useApp((st) => {
+    const knock = st.knocks.find((k) => st.peers.some((p) => p.peerId === k.peerId));
+    if (!knock) return { knock, who: undefined, link: undefined };
+    return { knock, who: st.peers.find((p) => p.peerId === knock.peerId)?.name ?? 'Someone', link: st.links.find((l) => l.id === knock.linkId) };
+  }, sameFields);
   if (!knock) return null;
-  const who = state.peers.find((p) => p.peerId === knock.peerId)?.name ?? 'Someone';
-  const link = state.links.find((l) => l.id === knock.linkId);
   return (
     <div className={s.card}>
       <div className={s.head}>
@@ -272,10 +275,11 @@ function BefriendHost() {
 
 function TrustPrompt() {
   const actions = useActions();
-  const state = useApp((st) => st);
-  const peerId = state.trustPrompts.find((id) => state.peers.some((p) => p.peerId === id));
+  const { peerId, who } = useApp((st) => {
+    const peerId = st.trustPrompts.find((id) => st.peers.some((p) => p.peerId === id));
+    return { peerId, who: peerId ? (st.peers.find((p) => p.peerId === peerId)?.name ?? 'Someone') : undefined };
+  }, sameFields);
   if (!peerId) return null;
-  const who = state.peers.find((p) => p.peerId === peerId)?.name ?? 'Someone';
   return (
     <div className={s.card}>
       <div className={s.head}>
