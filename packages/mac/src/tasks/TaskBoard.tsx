@@ -1,4 +1,4 @@
-import { type PointerEvent as ReactPointerEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { animate, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from 'motion/react';
 import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank, isEpic } from '@beluga/core/board/model.js';
@@ -15,7 +15,7 @@ import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, useIssueMenu } from '.
 import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
-import { useBoard, useSelf, useSelfId, useTaskActions } from './use-tasks.js';
+import { revealing, useBoard, useSelf, useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -307,10 +307,14 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
       justDragged.current = false;
     }
   }, [lift, lifted]);
+  // Sub-tasks just opened out pop in one after another: down each column, then the next one along.
+  let popped = 0;
   return (
     <div ref={boardRef} className={cx(t.board, lift && t.boardDragging)} role="list" aria-label="Board">
       {columns.map(({ status, items }) => {
         const target = lift && over?.status === status;
+        const popFrom = popped;
+        popped += items.filter((i) => revealing(i.parent)).length;
         return (
           <Column
             key={status}
@@ -319,6 +323,7 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
             {...(lift && lift.from === status ? { liftedId: lift.id } : {})}
             {...(target ? { gapAt: over.index, gapHeight: lift.height } : {})}
             reduce={reduce}
+            popFrom={popFrom}
             {...(projectId ? { projectId } : {})}
             onPress={press}
             onNudge={nudge}
@@ -353,6 +358,7 @@ const Column = memo(function Column({
   gapAt,
   gapHeight,
   reduce,
+  popFrom,
   projectId,
   onPress,
   onNudge,
@@ -370,6 +376,8 @@ const Column = memo(function Column({
   gapAt?: number;
   gapHeight?: number;
   reduce: boolean;
+  /** How many cards popping in come before this column's (the stagger carries on across). */
+  popFrom: number;
   projectId?: string;
   onPress: (e: ReactPointerEvent<HTMLElement>, issue: Issue, index: number) => void;
   onNudge: (issue: Issue, key: string) => void;
@@ -384,6 +392,7 @@ const Column = memo(function Column({
   const shown = withGap(items, liftedId, gapAt);
   const label = STATUS_INFO[status].label;
   let index = 0;
+  let pop = popFrom;
   return (
     <section ref={(el) => register('sections', status, el)} className={cx(t.column, gapAt !== undefined && t.columnOver)} role="listitem" aria-label={`${label}, ${items.length}`}>
       <header className={t.columnHead}>
@@ -411,7 +420,7 @@ const Column = memo(function Column({
             />
           ) : (
             <motion.div key={item.id} data-card={item.id} layout={reduce ? false : 'position'} transition={SPRING} className={t.cardSlot}>
-              <Card issue={item} index={index++} onPress={onPress} onNudge={onNudge} suppressClick={suppressClick} menu={menu} selfId={selfId} solo={solo.includes(item.projectId)} />
+              <Card issue={item} index={index++} {...(revealing(item.parent) ? { pop: pop++ } : {})} onPress={onPress} onNudge={onNudge} suppressClick={suppressClick} menu={menu} selfId={selfId} solo={solo.includes(item.projectId)} />
             </motion.div>
           ),
         )}
@@ -451,6 +460,7 @@ const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue;
 const Card = memo(function Card({
   issue,
   index,
+  pop,
   onPress,
   onNudge,
   suppressClick,
@@ -461,6 +471,8 @@ const Card = memo(function Card({
   issue: Issue;
   /** Its place in its column. */
   index: number;
+  /** Its turn popping in, when its epic was just opened out. */
+  pop?: number;
   onPress: (e: ReactPointerEvent<HTMLElement>, issue: Issue, index: number) => void;
   onNudge: (issue: Issue, key: string) => void;
   suppressClick: { current: boolean };
@@ -473,7 +485,8 @@ const Card = memo(function Card({
   return (
     <ActionsContext items={() => menu(issue)}>
       <article
-        className={cx(t.card, epic && t.cardEpic)}
+        className={cx(t.card, epic && t.cardEpic, pop !== undefined && t.pop)}
+        style={pop !== undefined ? ({ '--pop': pop } as CSSProperties) : undefined}
         role="button"
         tabIndex={0}
         aria-label={`${issue.key} ${issue.title}`}

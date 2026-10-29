@@ -149,6 +149,18 @@ export function useTasksPrefs(): TasksPrefs {
   );
 }
 
+// ---- sub-tasks popping out
+
+/** The epics just opened out: their sub-tasks pop in one after another as they appear. */
+let reveal: { readonly epics: ReadonlySet<string>; readonly at: number } = { epics: new Set(), at: 0 };
+
+export function revealSubTasks(epics: readonly string[]): void {
+  reveal = { epics: new Set(epics), at: Date.now() };
+}
+
+/** Whether a task with this parent is popping in (read as it first shows). */
+export const revealing = (parent: string | undefined): boolean => Boolean(parent && reveal.epics.has(parent) && Date.now() - reveal.at < 800);
+
 // ---- acting
 
 const message = (err: unknown): string => (err instanceof Error ? err.message.replace(/^Error: /, '') : String(err));

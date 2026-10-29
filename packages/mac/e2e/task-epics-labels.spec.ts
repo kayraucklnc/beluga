@@ -19,7 +19,8 @@ test('an epic is a deck on the board; labels are picked from the set, and a new 
   const epic = board.getByRole('button', { name: /Payments API v1/ });
   await expect(epic).toContainText('Epic');
   await expect(epic).toContainText(/\d of \d done/);
-  // Its sub-tasks say which epic they're in.
+  // Its sub-tasks start tucked under it; opened out, they say which epic they're in.
+  await epic.getByRole('button', { name: /^Show its \d+ sub-tasks?$/ }).click();
   await expect(board.getByRole('button', { name: /Refund endpoint/ })).toContainText('BOB-1');
   if (SHOTS) {
     await page.mouse.move(0, 0);
@@ -48,4 +49,54 @@ test('an epic is a deck on the board; labels are picked from the set, and a new 
   await expect(sheet).toHaveCount(0);
   await expect(page.locator('[class*="propLabels"]')).toContainText('Performance');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/04-task-page.png` });
+});
+
+test('sub-tasks start tucked under their epic; the eye pops them out one by one, and Show All opens every epic (BLG-396)', async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page).getByRole('button', { name: 'bob-api', exact: true })).toBeVisible();
+  await page.keyboard.press('Meta+K');
+  await page.keyboard.type('Go to Tasks');
+  await page.keyboard.press('Enter');
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+  const board = page.getByRole('list', { name: 'Board' });
+  const sub = board.getByRole('button', { name: /Refund endpoint/ });
+  const epic = board.getByRole('button', { name: /Payments API v1/ });
+  // Tucked by default: the epic stands for them, and the footer says so.
+  await expect(epic).toBeVisible();
+  await expect(sub).toHaveCount(0);
+  await expect(page.getByText(/sub-tasks? tucked under their epics/)).toBeVisible();
+  if (SHOTS) {
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${SHOTS}/05-sub-tasks-tucked.png` });
+  }
+
+  // The eye pops them out (the task doesn't open), one after another.
+  const eye = epic.getByRole('button', { name: /^Show its \d+ sub-tasks?$/ });
+  if (SHOTS) {
+    await eye.hover();
+    await eye.click();
+    for (let n = 0; n < 40; n++) await page.screenshot({ path: `${SHOTS}/gif/${String(n).padStart(3, '0')}.png` });
+  } else await eye.click();
+  await expect(sub).toBeVisible();
+  await expect(sub).toHaveClass(/pop/);
+  await expect(page.getByRole('tablist', { name: 'Show' })).toBeVisible();
+  if (SHOTS) {
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: `${SHOTS}/06-sub-tasks-shown.png` });
+  }
+
+  // Tucked back; a filter still finds them; the list tucks them too, and Show All opens them out.
+  await epic.getByRole('button', { name: 'Tuck its sub-tasks under it' }).click();
+  await expect(sub).toHaveCount(0);
+  await page.getByLabel('Filter tasks').fill('Refund');
+  await expect(sub).toBeVisible();
+  await page.getByLabel('Filter tasks').fill('');
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+  await expect(page.getByRole('row', { name: /Refund endpoint/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show All' }).click();
+  await expect(page.getByRole('row', { name: /Refund endpoint/ })).toBeVisible();
+  await expect(page.getByText(/sub-tasks? tucked under their epics/)).toHaveCount(0);
 });
