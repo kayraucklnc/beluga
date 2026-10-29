@@ -81,6 +81,7 @@ end tell`;
 
 mkdirSync(path.dirname(out), { recursive: true });
 rmSync(out, { force: true });
-run('hdiutil', ['convert', rw, '-format', 'UDZO', '-imagekey', 'zlib-level=9', '-o', out]);
+// LZMA (macOS 10.15+; Beluga needs 12): about a quarter smaller than zlib's UDZO (BLG-382).
+run('hdiutil', ['convert', rw, '-format', 'ULMO', '-o', out]);
 rmSync(work, { recursive: true, force: true });
 console.log(out);

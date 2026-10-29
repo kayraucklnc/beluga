@@ -672,6 +672,17 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   `ACTION_SET_TEXT`), presses back/home/recents (global actions), opens apps and links, and takes a
   screenshot (`takeScreenshot`, API 30+, no MediaProjection prompt). The Mac asks with `req`, the
   app answers with `reply`. `FLAG_SECURE` screens capture black; the tool says so rather than lying.
+- **Beluga Phone Control, an add-on app** (BLG-377, `modules/phone-control/addon`). The
+  Accessibility service lives in its own small APK (`sh.ratel.beluga.control`), attached to each
+  release beside the app. Play Protect's fraud protection blocks a sideloaded app that declares an
+  Accessibility service ("App blocked to protect your device"), so the main APK no longer declares
+  one and always installs; only the add-on can hit that block, and installing it over adb (the Mac
+  on a cable or Wireless debugging) goes through. The app binds the add-on's `ControlService` and
+  they swap Messenger messages (`shared/…/ControlLink.kt`: `HELLO`, `PERFORM`/`RESULT`, `STATE`,
+  `LAUNCH`); each side answers only a caller signed with the same key. The add-on also opens the
+  mirror's "Start now" screen from the background for the app (`LAUNCH`, a PendingIntent), which a
+  bound Accessibility service may do. `./gradlew assembleRelease` builds both APKs
+  (`plugins/phone-control-addon.js` adds the add-on to the generated project).
 - **Over adb, the mirror is video too** (BLG-185). With USB, Wireless debugging or debugging
   through the link, the Mac streams Android's own `screenrecord --output-format=h264` (sized to
   1280 px, 6 Mbit/s on a cable, 4 on Wi‑Fi, 2.5 through the link; started again after its
@@ -735,8 +746,9 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   typing, opening, installs without asking), **Full** (shell too). Kept on the device record
   (`DeviceRecord.use`); the owner-approval gate honours it (`agent-host.ts` `authorizeTool`).
 - **On the phone**: one switch, **Let your Mac use this phone**, which turns on Stay connected and
-  walks you through Accessibility (and, for a sideloaded app, Android 13+'s "Allow restricted
-  settings"). While the Mac is acting, an ongoing notification says so and has **Stop**, which cuts
+  walks you through Beluga Phone Control: **Get Beluga Phone Control** while it isn't installed,
+  then **Turn on Beluga Phone Control** in Accessibility (and, for a downloaded app, Android 13+'s
+  "Allow restricted settings"). While the Mac is acting, an ongoing notification says so and has **Stop**, which cuts
   every route at once. iPhone can't do any of this.
 
 ## On the Mac

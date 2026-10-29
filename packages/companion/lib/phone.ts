@@ -74,7 +74,7 @@ export async function runOp(op: PhoneOp, args: Record<string, unknown>): Promise
   // Video (`mirror`) is Android's screen capture, asked of the user on the phone; a proof (`proof`) and a
   // settings screen for the person (`open {settings}`) don't act on the screen: no Accessibility needed.
   const free = op === 'info' || op === 'apps' || op === 'mirror' || op === 'proof' || (op === 'open' && typeof args.settings === 'string');
-  if (!free && !phoneControl.accessibilityEnabled()) throw new Error('Turn on Accessibility for Beluga on the phone');
+  if (!free && !phoneControl.accessibilityEnabled()) throw new Error(phoneControl.addonInstalled() ? 'Turn on Accessibility for Beluga Phone Control on the phone' : 'Install Beluga Phone Control on the phone and turn on its Accessibility');
   return phoneControl.perform(op, args);
 }
 
@@ -99,6 +99,10 @@ export const mirrorAck = (seq: number): void => phoneControl.mirrorAck(seq);
 
 export const accessibilityOn = (): boolean => phoneControlAvailable() && phoneControl.accessibilityEnabled();
 export const openAccessibilitySettings = (): void => phoneControl.openAccessibilitySettings();
+/** Beluga Phone Control, the small add-on app with the Accessibility service (BLG-377), is installed. */
+export const addonInstalled = (): boolean => phoneControlAvailable() && phoneControl.addonInstalled();
+/** Open Phone Control (it goes to Accessibility), or where to download it. */
+export const openAddon = (): void => phoneControl.openAddon();
 export const onAccessibilityChange = (fn: () => void): (() => void) => (phoneControlAvailable() ? phoneControl.onAccessibilityChange(fn) : () => {});
 /** The Stop button on the phone's notification: cut control at once. */
 export const onControlStop = (fn: () => void): (() => void) => (phoneControlAvailable() ? phoneControl.onStop(fn) : () => {});

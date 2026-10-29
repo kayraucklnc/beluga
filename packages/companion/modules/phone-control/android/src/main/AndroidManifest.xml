@@ -7,30 +7,18 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
-  <!-- Listing installed apps (open by package) needs to see launcher activities on Android 11+. -->
   <queries>
+    <!-- Listing installed apps (open by package) needs to see launcher activities on Android 11+. -->
     <intent>
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.LAUNCHER" />
     </intent>
+    <!-- Beluga Phone Control, the add-on with the Accessibility service (BLG-377). It's an app of
+         its own: Play Protect blocks a sideloaded app that declares one, so this one doesn't. -->
+    <package android:name="sh.ratel.beluga.control" />
   </queries>
 
   <application>
-    <!-- The Accessibility service the Mac drives (BLG-150). Exported is required for a11y services;
-         Android only binds it after the user turns it on, and only the system may bind it. -->
-    <service
-      android:name="sh.ratel.beluga.control.BelugaAccessibilityService"
-      android:exported="true"
-      android:label="Beluga — let your Mac use this phone"
-      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-      <intent-filter>
-        <action android:name="android.accessibilityservice.AccessibilityService" />
-      </intent-filter>
-      <meta-data
-        android:name="android.accessibilityservice"
-        android:resource="@xml/beluga_accessibility" />
-    </service>
-
     <!-- The Mac's live mirror: the capture and encoder, and the see-through screen that asks "Start now". -->
     <service
       android:name="sh.ratel.beluga.control.MirrorService"

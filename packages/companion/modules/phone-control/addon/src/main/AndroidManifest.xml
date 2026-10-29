@@ -1,0 +1,50 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Beluga Phone Control (BLG-377): only the Accessibility service, in an app of its own, so the
+       main Beluga APK isn't one Play Protect blocks when it's sideloaded. -->
+
+  <!-- The Beluga app, to check it's signed with our key; and the apps the Mac may open by package. -->
+  <queries>
+    <package android:name="sh.ratel.beluga" />
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+  </queries>
+
+  <application
+    android:label="Beluga Phone Control"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:allowBackup="false">
+    <!-- The Accessibility service the Mac drives (BLG-150). Exported is required for a11y services;
+         Android only binds it after the user turns it on, and only the system may bind it. -->
+    <service
+      android:name=".BelugaAccessibilityService"
+      android:exported="true"
+      android:label="Beluga Phone Control"
+      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/beluga_accessibility" />
+    </service>
+
+    <!-- The Beluga app binds this; ControlService answers only an app signed with the same key. -->
+    <service
+      android:name=".ControlService"
+      android:exported="true" />
+
+    <activity
+      android:name=".SetupActivity"
+      android:exported="true"
+      android:excludeFromRecents="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

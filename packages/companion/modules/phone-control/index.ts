@@ -5,7 +5,9 @@ import { requireOptionalNativeModule } from 'expo';
  * the screen and acts on it, a MediaProjection-free screenshot (takeScreenshot, API 30+), finding
  * this phone's own Wireless-debugging port over mDNS, and a visible "Your Mac is using this phone"
  * notification with Stop. Nothing on iOS or the web: there `available` is false and the rest do
- * nothing. The Kotlin is in modules/phone-control/android.
+ * nothing. The Kotlin is in modules/phone-control/android; the Accessibility service itself is in
+ * Beluga Phone Control, a small add-on app (modules/phone-control/addon, BLG-377), because Play
+ * Protect blocks a sideloaded app that declares one.
  *
  * One entry point does the work: `perform(op, argsJson)` runs an op (the protocol's PHONE_OPS) and
  * returns its result as JSON — so the shapes stay in sync with src/companion/protocol.ts, not with
@@ -14,8 +16,12 @@ import { requireOptionalNativeModule } from 'expo';
 interface Native {
   /** Run one op (see PHONE_OPS); `args` is JSON, the result is JSON (throws with a message on failure). */
   perform(op: string, args: string): Promise<string>;
-  /** The Accessibility service is on for Beluga. */
+  /** Beluga Phone Control's Accessibility service is on and connected. */
   accessibilityEnabled(): boolean;
+  /** Beluga Phone Control (the add-on with the Accessibility service) is installed. */
+  addonInstalled?(): boolean;
+  /** Open Beluga Phone Control (it goes to Accessibility), or where to download it when it isn't installed. */
+  openAddon?(): void;
   /** Screenshots without adb are possible (the service is connected and Android is 11+). */
   canScreenshot(): boolean;
   /** This phone in a few facts (model, manufacturer, android, sdk, w, h), as JSON. */
@@ -70,6 +76,8 @@ export const phoneControl = {
       return undefined;
     }
   },
+  addonInstalled: (): boolean => native?.addonInstalled?.() ?? false,
+  openAddon: (): void => native?.openAddon?.(),
   openAccessibilitySettings: (): void => native?.openAccessibilitySettings(),
   startControlNote: (text: string): void => native?.startControlNote(text),
   stopControlNote: (): void => native?.stopControlNote(),

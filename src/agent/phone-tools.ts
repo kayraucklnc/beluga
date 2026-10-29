@@ -159,7 +159,7 @@ export function phoneBrief(summary: string): string {
     '- Act: phone_tap (a #node or x,y), phone_type, phone_swipe, phone_scroll, phone_key, phone_open.',
     '- phone_install puts an APK on the phone (the phone confirms). phone_shell and phone_logcat need Wireless debugging.',
     '- After acting, take another screenshot to check what happened before the next step. Work in small, checked steps.',
-    '- If a tool says the phone can’t be reached, say so plainly and what would fix it (turn on debugging or Accessibility); don’t keep retrying.',
+    '- If a tool says the phone can’t be reached, say so plainly and what would fix it (turn on Wireless debugging, or install Beluga Phone Control and its Accessibility); don’t keep retrying.',
     '',
     'Running an app on the phone (the dev loop): adb is on your PATH and points at this phone, so in Bash you can',
     'build and install directly — e.g. `./gradlew assembleDebug` then `adb install -r <apk>`, or `adb shell am start -n <pkg>/<activity>`,',

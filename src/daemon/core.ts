@@ -33,6 +33,7 @@ import { WorkspaceManager } from '../workspaces/manager.js';
 import { belugaHome } from '../workspaces/store.js';
 import { belugaEnv } from '../core/beluga-env.js';
 import { loadDismissedNeeds } from '../core/dismissed-needs.js';
+import { claudeCodePath, claudeCodeReady } from '../agent/claude-code.js';
 
 /**
  * Everything Beluga is apart from its screens: your identity, the room (hosted or joined),
@@ -217,6 +218,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let config = input;
   const demo = config.mode === 'demo' ? createDemoFolders() : undefined;
   if (demo) config = { ...config, tunnel: 'none', policyChosen: true, shares: [{ name: 'landing', root: demo.mine, writable: true }] };
+  // The Mac app's first launch: fetch Claude Code now, so it's usually there before the first message (BLG-384).
+  if (!demo && config.agent && !belugaEnv('CLAUDE_PATH')) void claudeCodeReady().catch(() => {});
   // Your own key, kept between runs: friends recognize you, and the trust they gave you comes back.
   const identity = loadIdentity(path.join(belugaHome(), 'identity.json'));
   const saved = loadSettings();
@@ -296,7 +299,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
               additionalDirectories: config.shares.slice(1).map((s) => s.root),
               bridge,
               model: config.model,
-              claudePath: belugaEnv('CLAUDE_PATH'),
+              claudePath: belugaEnv('CLAUDE_PATH') ?? claudeCodePath(),
             })
         : undefined,
     launchDir: process.cwd(),

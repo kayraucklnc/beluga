@@ -1,4 +1,4 @@
-package sh.ratel.beluga.control
+package sh.ratel.beluga.addon
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
@@ -11,14 +11,16 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
 import org.json.JSONObject
+import sh.ratel.beluga.control.link.Phone
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 /**
  * Beluga's Accessibility service (BLG-150): the one piece that can read another app's screen and
- * act on it. The Mac asks (a `req` frame), the app's JS calls PhoneControlModule.perform, and that
- * runs here. The user turns this on themselves (Settings › Accessibility › Beluga); Android only
- * binds it then, and a notification shows while the Mac is using the phone.
+ * act on it. The Mac asks (a `req` frame), the app's JS calls PhoneControlModule.perform, that
+ * sends it to this add-on's ControlService (BLG-377), and it runs here. The user turns this on
+ * themselves (Settings › Accessibility › Beluga Phone Control); Android only binds it then, and the
+ * app shows a notification while the Mac is using the phone.
  *
  * Password fields are never read. Everything is best-effort and bounded: a screen read gives at
  * most a few hundred nodes, a gesture waits a short time, and failures come back as a message.
@@ -30,18 +32,18 @@ class BelugaAccessibilityService : AccessibilityService() {
 
   override fun onServiceConnected() {
     instance = this
-    PhoneControlModule.onAccessibilityChanged()
+    ControlService.onAccessibilityChanged()
   }
 
   override fun onUnbind(intent: android.content.Intent?): Boolean {
     instance = null
-    PhoneControlModule.onAccessibilityChanged()
+    ControlService.onAccessibilityChanged()
     return super.onUnbind(intent)
   }
 
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     // The screen changed: the Mac re-reads it when it next looks (we don't push).
-    if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) PhoneControlModule.onAccessibilityChanged()
+    if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) ControlService.onAccessibilityChanged()
   }
 
   override fun onInterrupt() {}
@@ -59,9 +61,9 @@ class BelugaAccessibilityService : AccessibilityService() {
       "type" -> { type(args); "{}" }
       "key" -> { key(args.getString("key")); "{}" }
       "scroll" -> { scroll(args); "{}" }
-      "open" -> { PhoneControlModule.openOnPhone(this, args); "{}" }
-      "apps" -> PhoneControlModule.apps(this).toString()
-      "info" -> PhoneControlModule.deviceInfoJson(this).toString()
+      "open" -> { Phone.openOnPhone(this, args); "{}" }
+      "apps" -> Phone.apps(this).toString()
+      "info" -> Phone.deviceInfoJson(this).toString()
       else -> throw IllegalArgumentException("Can't do \"$op\" through the Accessibility service")
     }
   }
@@ -273,7 +275,7 @@ class BelugaAccessibilityService : AccessibilityService() {
           val software = bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
           bitmap.recycle()
           hardware.close()
-          future.complete(PhoneControlModule.encode(software, max, quality))
+          future.complete(Phone.encode(software, max, quality))
         } catch (e: Throwable) {
           future.completeExceptionally(e)
         }
