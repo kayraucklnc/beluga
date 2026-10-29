@@ -356,6 +356,10 @@ export const API = {
   'projects.add': args(path),
   'projects.addFolder': args(path),
   'projects.suggest': args(),
+  // Start a new project: a folder (name, in this folder or your code folder), git and a first commit → { id, path }.
+  'projects.create': args(z.string().max(100), opt(path)),
+  // Where a new project goes unless you pick somewhere.
+  'projects.newHome': args(),
   // The icon of a folder that isn't a project yet (one of the suggestions).
   'projects.iconAt': args(path),
 

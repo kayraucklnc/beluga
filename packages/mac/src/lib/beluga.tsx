@@ -12,8 +12,8 @@ import { onWindowActive, windowActive } from './window-active.js';
  */
 export interface MacUi extends UiState {
   readonly palette: boolean;
-  /** The Add Project sheet is open. */
-  readonly addProject?: boolean;
+  /** The Add Project sheet is open ('new': on Start new, to make a new project). */
+  readonly addProject?: boolean | 'new';
   /**
    * A project unfolded by clicking its row: it folds again when you go elsewhere, unless you
    * opened one of its worktrees or chats (then it stays open).

@@ -260,6 +260,35 @@ test('adds a project from the Add Projects sheet, with its own icon', async ({ p
   if (process.env.SHOTS) await sidebar(page).screenshot({ path: `${process.env.SHOTS}/sidebar-empty-project.png` });
 });
 
+test('starts a new project from the Add Projects sheet, with git and a first commit', async ({ page }) => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync } = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const parent = mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-new-'));
+  await sidebar(page).getByRole('button', { name: /Add a project/ }).first().click();
+  await page.getByRole('menuitem', { name: 'New Project…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'New project' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Create Project' })).toBeDisabled();
+  await sheet.getByRole('textbox', { name: 'Project name' }).fill('fresh-idea');
+  await sheet.getByRole('textbox', { name: 'Where the new project goes' }).fill(parent);
+  await expect(sheet.getByText(/with git and a first commit/)).toBeVisible();
+  if (process.env.SHOTS) await sheet.screenshot({ path: `${process.env.SHOTS}/new-project-sheet.png` });
+  await sheet.getByRole('button', { name: 'Create Project' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(sidebar(page).getByRole('button', { name: /^fresh-idea/ }).first()).toBeVisible();
+  const dir = path.join(parent, 'fresh-idea');
+  expect(execFileSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' }).trim()).toBe('Start fresh-idea');
+  // A name that's taken by a folder with files in it is refused, in the sheet.
+  await sidebar(page).getByRole('button', { name: /Add a project/ }).first().click();
+  await page.getByRole('menuitem', { name: 'New Project…' }).click();
+  await sheet.getByRole('textbox', { name: 'Project name' }).fill('fresh-idea');
+  await sheet.getByRole('textbox', { name: 'Where the new project goes' }).fill(parent);
+  await sheet.getByRole('button', { name: 'Create Project' }).click();
+  await expect(sheet.getByRole('alert')).toContainText('already there');
+});
+
 // ---- images in the chat, and the queue
 
 /** A 1×1 PNG, pasted into the box the way ⌘V hands an image to the web view. */
