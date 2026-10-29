@@ -364,6 +364,12 @@
   color: var(--text-2);
   cursor: pointer;
 }
+/* Your comment, under the thread: the composer's box. */
+.reply {
+  max-width: 920px;
+  margin-top: 14px;
+  padding-bottom: 24px;
+}
 
 /* The right column's state. */
 .propState {

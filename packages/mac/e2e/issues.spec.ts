@@ -11,7 +11,9 @@ const main = (page: Page) => page.locator('main');
 
 async function openIssues(page: Page): Promise<void> {
   await page.goto('/');
-  await sidebar(page).getByRole('button', { name: /^Issues/ }).click();
+  // Issues lives under Work (BLG-197).
+  await sidebar(page).getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Issues' }).click();
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await page.getByRole('button', { name: /^Project: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();
@@ -82,6 +84,22 @@ test('Make a Task from an issue: on the board, with its issue mark, once', async
   const open = page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: /BOB-\d+/ });
   await open.click();
   await expect(page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: /acme\/bob-api#47/ })).toBeVisible();
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await sidebar(page).getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Tasks' }).click();
   await expect(main(page).getByRole('button', { name: '#47' })).toBeVisible();
+});
+
+test('Comment on an issue from its page: it goes on GitHub as you and shows in the thread', async ({ page }) => {
+  await openIssues(page);
+  await main(page).locator('[data-issue="47"]').click();
+  const reply = main(page).getByRole('region', { name: 'Comment on #47' });
+  const box = reply.getByRole('textbox', { name: 'Your comment' });
+  await expect(reply.getByTestId('issue-comment')).toHaveAttribute('aria-disabled', 'true');
+  await box.fill('Seen this on **staging** too');
+  await box.press('Enter');
+  await expect(page.getByText('Posted on #47')).toBeVisible();
+  await expect(box).toHaveValue('');
+  const thread = main(page).getByRole('region', { name: 'The issue and its comments' });
+  await expect(thread.locator('article').last()).toContainText('you');
+  await expect(thread.locator('article').last().locator('strong', { hasText: 'staging' })).toBeVisible();
 });
