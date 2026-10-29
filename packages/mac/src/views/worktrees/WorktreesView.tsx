@@ -22,8 +22,8 @@ const BUILD_FILES = 'node_modules, build output and caches: Remove Build Files d
  * Every worktree in your projects, made by Beluga, by Claude Code's sub-agents or outside Beluga,
  * and every one you archived: who made it, what's in it that isn't in main, what it takes on
  * disk and how much of that is build files. Tick the ones you're done with, then archive them
- * (everything of yours is kept) or remove their build files (they stay); under Archived, restore
- * them or delete them for good. Everything you do with worktrees is here.
+ * (everything of yours is kept), delete them for good or remove their build files (they stay);
+ * under Archived, restore them or delete them for good. Everything you do with worktrees is here.
  */
 export function WorktreesView({ projectId }: { projectId?: string | undefined }) {
   const api = useApi();
@@ -207,6 +207,9 @@ export function WorktreesView({ projectId }: { projectId?: string | undefined })
               </Button>
               <Button size="small" onClick={() => act.free(picked)} disabled={running || !pickedSum.rebuildable} title={BUILD_FILES}>
                 Remove Build Files…
+              </Button>
+              <Button size="small" onClick={() => act.remove(picked)} disabled={running || picked.some((r) => r.archiving)} title="Delete them for good: the folders, Beluga’s branches and the conversations">
+                Delete…
               </Button>
               <Button size="small" variant="primary" icon="archive" onClick={() => act.archive(picked)} disabled={running}>
                 {running ? 'Working…' : 'Archive…'}
