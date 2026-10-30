@@ -11,6 +11,7 @@ import { NeedsStack } from '../../components/Needs';
 import { NumbersHome } from '../../components/Dashboard';
 import { SentinelHome } from '../../components/Sentinels';
 import { AwayBand, Screen, StatusShade, useScrolled } from '../../components/Screen';
+import { UpdatePill, UpdateSheet } from '../../components/Update';
 import { UsageCard, UsageSheet } from '../../components/Usage';
 import { Card, IconBadge, Pill, Press, Section, StatusDot, T } from '../../components/ui';
 import { useLink, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
@@ -27,6 +28,7 @@ export default function Home() {
   const { scrolled, onScroll } = useScrolled();
   const [usageOpen, setUsageOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
   const link = useLink();
   const home = useView<HomeView>('home');
   const plans = useView<PlansView>('plans');
@@ -72,6 +74,7 @@ export default function Home() {
               {h?.running.length ? ` · ${h.running.filter((r) => r.status === 'working').length} working` : ''}
             </T>
           </Animated.View>
+          <UpdatePill onPress={() => setUpdateOpen(true)} />
           <AwayBand at={home?.at} />
         </View>
 
@@ -160,6 +163,7 @@ export default function Home() {
       </ScrollView>
       <UsageSheet usage={h?.usage ?? []} visible={usageOpen} onClose={() => setUsageOpen(false)} />
       <MacChatsSheet window visible={chatsOpen} onClose={() => setChatsOpen(false)} />
+      <UpdateSheet visible={updateOpen} onClose={() => setUpdateOpen(false)} />
     </Screen>
   );
 }

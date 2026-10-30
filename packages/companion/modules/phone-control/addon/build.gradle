@@ -17,6 +17,15 @@ android {
     versionName expo.version
   }
   signingConfigs {
+    // Release builds: Beluga's own key, as the app's (plugins/release-signing.js, BLG-430).
+    if (System.getenv('BELUGA_ANDROID_KEYSTORE')) {
+      release {
+        storeFile file(System.getenv('BELUGA_ANDROID_KEYSTORE'))
+        storePassword System.getenv('BELUGA_ANDROID_KEY_PASSWORD')
+        keyAlias System.getenv('BELUGA_ANDROID_KEY_ALIAS') ?: 'beluga'
+        keyPassword System.getenv('BELUGA_ANDROID_KEY_PASSWORD')
+      }
+    }
     debug {
       storeFile rootProject.file('app/debug.keystore')
       storePassword 'android'
@@ -26,7 +35,7 @@ android {
   }
   buildTypes {
     debug { signingConfig signingConfigs.debug }
-    release { signingConfig signingConfigs.debug }
+    release { signingConfig System.getenv('BELUGA_ANDROID_KEYSTORE') ? signingConfigs.release : signingConfigs.debug }
   }
   sourceSets {
     main.java.srcDirs += '../shared'

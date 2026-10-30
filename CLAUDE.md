@@ -46,6 +46,13 @@ daemon or the Mac app, check the phone too, in the same change:
 - The core stays free of UI code (`tests/boundaries.test.ts`); what the screens import stays
   browser-safe (`tests/browser-safe.test.ts`), and `src/companion/protocol.ts` too: zod only.
 
+## Releasing the phone app
+
+- Build the APKs only with `npm run apk` in `packages/companion`. It signs both with Beluga's own key (`~/.beluga-release/`, password in the Keychain), checks them against `signing.json`, and writes `dist/Beluga-<version>.apk` and `dist/Beluga-Link.apk`. Attach both to the release under exactly those names: phones update themselves from `releases/latest` by looking for `Beluga-<version>.apk`.
+- Never attach an APK from a plain `./gradlew assembleRelease`. It carries the debug key, so phones refuse it as an update and Beluga Link stops trusting the app.
+- Raise `android.versionCode` in `packages/companion/app.json` every release.
+- The first release with the new key (the one after 1.7.0) must tell phone users, once: uninstall Beluga and Beluga Link, install this version, pair again. More in `docs/updates.md` ("The phone app's signing key").
+
 ## Checks
 
 `npm run typecheck`, `npx vitest run`, and in `packages/companion`: `npm run typecheck`.

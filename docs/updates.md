@@ -27,6 +27,36 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 - **Quitting.** A downloaded update always installs when you quit, unless updates are *Off*.
 - **After an update.** The pill says "Updated to 0.5 · What's new" once.
 
+## The phone app
+
+The Android app updates itself from the same releases (BLG-426, `packages/companion/lib/update.ts`, `modules/app-update`).
+
+- **When it looks.** At launch, unless it looked less than an hour ago, and every 4 hours while the app is open (an hour after a failed look). It reads `https://api.github.com/repos/kayraucklnc/beluga/releases/latest` and takes the asset named `Beluga-<version>.apk`. When that version is newer than the installed one, it has found an update.
+- **Downloading.** On Wi-Fi the update downloads by itself, as on the Mac. On mobile data it waits until you tap Update Now, and the sheet says how many MB it is. The file is kept in the app's cache and checked before it's used. Its size and SHA-256 must match the release (GitHub's `digest`), and it must be Beluga (`sh.ratel.beluga`) with a higher `versionCode` than the installed app. A file that fails these checks is deleted.
+- **What you see.** Under Home's greeting, a small pill says "Beluga 1.8.0 is ready" ("is out" while it isn't downloaded yet). Tapping it opens a sheet with the release notes, **Update Now** and **Later**. Settings has the same thing as a row on top while there's an update.
+- **Installing.** Update Now hands the APK to Android's `PackageInstaller`. Beluga closes as the new version goes in, and on the next launch it says "Updated to Beluga X" once.
+  - The first time, Android asks to allow installs from Beluga ("Install unknown apps"), then shows its own Install confirmation.
+  - From Android 12, an app that may install apps can update itself without that confirmation (`USER_ACTION_NOT_REQUIRED`).
+  - When Android still wants a tap and the app isn't in front, a notification carries the confirmation.
+- **Settings › Advanced › Updates** has the Mac's two switches:
+  - **Update automatically** (on by default): a downloaded update installs once you leave the app, as the Mac waits until you're idle. It only does this when it can install without asking (Android 12+, installs allowed). If installs aren't allowed, a row there opens that Android setting. An update that went in while you were away posts "Beluga updated to X" (tap: open it and link again), because updating ends the link and Stay connected with it.
+  - **Check for updates** (on by default): with it off, the app looks only when you tap **Check Now**. Turning it off turns Update automatically off too.
+- **Releasing.** Raise `android.versionCode` in `packages/companion/app.json`, build with `npm run apk` in `packages/companion`, and attach both files from `dist/` as they are named: `Beluga-<version>.apk` (the name the app looks for) and `Beluga-Link.apk`.
+
+## The phone app's signing key
+
+Both phone apps, Beluga (`sh.ratel.beluga`) and Beluga Link (`sh.ratel.beluga.control`), are signed with Beluga's own key (BLG-430). Before that they were signed with the Expo template's public debug key. The key matters three ways:
+
+- Android installs an update only over an app signed with the same key.
+- Link and the app trust each other only when their keys match (`checkSignatures`).
+- Nobody else can make an APK that installs over Beluga.
+
+- **Where it is.** `~/.beluga-release/beluga-android.p12` (alias `beluga`) on the maintainer's Mac. Its password is in the login Keychain as `beluga-android-release`. Neither is ever in the repo. The certificate's SHA-256 is in [packages/companion/signing.json](../packages/companion/signing.json).
+- **Keep a copy.** Back up both the file and the password (a password manager holds both). If the key is lost, no installed phone can be updated again, only uninstalled and installed afresh.
+- **How it's used.** `npm run apk` ([scripts/build-apk.mjs](../packages/companion/scripts/build-apk.mjs)) reads the password from the Keychain, runs a clean prebuild and `assembleRelease` with `BELUGA_ANDROID_KEYSTORE` / `BELUGA_ANDROID_KEY_PASSWORD`, then refuses any APK whose certificate isn't the one in `signing.json`. Two places apply the key: `plugins/release-signing.js` for the app and `modules/phone-control/addon/build.gradle` for Link. A release build without those variables is signed with the debug key and gradle warns about it. Such a build is fine for your own phone, never for a release.
+- **The switch (once).** Phones installed before the switch carry the debug key and can't take the new APK as an update. They uninstall Beluga and Beluga Link, install the new release, and pair again. The release notes for that version must say so. **Set Up Beluga Link** on the Mac replaces a Link whose key doesn't match the app's on its own (it compares `dumpsys package` signers, and uninstalls Link when `install -r` says `INSTALL_FAILED_UPDATE_INCOMPATIBLE`). A plain `adb install -r` of the new app over the old one fails the same way: `adb uninstall sh.ratel.beluga` first.
+
+
 ## What an update restarts
 
 Installing restarts Beluga's engine, the daemon that the Mac app bundles. The new app runs its own daemon:
