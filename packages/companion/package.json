@@ -9,6 +9,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
+    "apk": "node scripts/build-apk.mjs",
     "typecheck:worklet": "tsc -p worklet",
     "worklet:bundle": "node scripts/bundle-worklet.mjs",
     "demo-images": "node scripts/make-demo-images.mjs",

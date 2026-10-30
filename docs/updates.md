@@ -41,7 +41,21 @@ The Android app updates itself from the same releases (BLG-426, `packages/compan
 - **Settings › Advanced › Updates** has the Mac's two switches:
   - **Update automatically** (on by default): a downloaded update installs once you leave the app, as the Mac waits until you're idle. It only does this when it can install without asking (Android 12+, installs allowed). If installs aren't allowed, a row there opens that Android setting. An update that went in while you were away posts "Beluga updated to X" (tap: open it and link again), because updating ends the link and Stay connected with it.
   - **Check for updates** (on by default): with it off, the app looks only when you tap **Check Now**. Turning it off turns Update automatically off too.
-- **Releasing.** The phone app needs nothing new from a release. Attach the APK as `Beluga-<version>.apk` (the name it looks for), with a higher `android.versionCode` in `packages/companion/app.json`, and sign it with the same key as the installed app, or Android refuses the update.
+- **Releasing.** Raise `android.versionCode` in `packages/companion/app.json`, build with `npm run apk` in `packages/companion`, and attach both files from `dist/` as they are named: `Beluga-<version>.apk` (the name the app looks for) and `Beluga-Link.apk`.
+
+## The phone app's signing key
+
+Both phone apps, Beluga (`sh.ratel.beluga`) and Beluga Link (`sh.ratel.beluga.control`), are signed with Beluga's own key (BLG-430). Before that they were signed with the Expo template's public debug key. The key matters three ways:
+
+- Android installs an update only over an app signed with the same key.
+- Link and the app trust each other only when their keys match (`checkSignatures`).
+- Nobody else can make an APK that installs over Beluga.
+
+- **Where it is.** `~/.beluga-release/beluga-android.p12` (alias `beluga`) on the maintainer's Mac. Its password is in the login Keychain as `beluga-android-release`. Neither is ever in the repo. The certificate's SHA-256 is in [packages/companion/signing.json](../packages/companion/signing.json).
+- **Keep a copy.** Back up both the file and the password (a password manager holds both). If the key is lost, no installed phone can be updated again, only uninstalled and installed afresh.
+- **How it's used.** `npm run apk` ([scripts/build-apk.mjs](../packages/companion/scripts/build-apk.mjs)) reads the password from the Keychain, runs a clean prebuild and `assembleRelease` with `BELUGA_ANDROID_KEYSTORE` / `BELUGA_ANDROID_KEY_PASSWORD`, then refuses any APK whose certificate isn't the one in `signing.json`. Two places apply the key: `plugins/release-signing.js` for the app and `modules/phone-control/addon/build.gradle` for Link. A release build without those variables is signed with the debug key and gradle warns about it. Such a build is fine for your own phone, never for a release.
+- **The switch (once).** Phones installed before the switch carry the debug key and can't take the new APK as an update. They uninstall Beluga and Beluga Link, install the new release, and pair again. The release notes for that version must say so. **Set Up Beluga Link** on the Mac replaces a Link whose key doesn't match the app's on its own (it compares `dumpsys package` signers, and uninstalls Link when `install -r` says `INSTALL_FAILED_UPDATE_INCOMPATIBLE`). A plain `adb install -r` of the new app over the old one fails the same way: `adb uninstall sh.ratel.beluga` first.
+
 
 ## What an update restarts
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExecBytesResult, ExecResult, SystemPort } from '../src/core/gateway/device.js';
 import { adbCandidates, parseDevices, parseUsbPhones, parseWmSize } from '../src/companion/phone-adb.js';
 import { AnnexBSplitter, videoSize } from '../src/companion/phone-video.js';
-import { LINK_PACKAGE, LINK_SERVICE, type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type VideoPiece, describeScreen, describeUiautomator, parseNotifications, phoneErrorText, withLinkService } from '../src/companion/phone-control.js';
+import { LINK_PACKAGE, LINK_SERVICE, type MirrorStatus, PhoneControl, type PhoneLinkHandle, type PhoneTouch, type VideoPiece, describeScreen, describeUiautomator, parseNotifications, phoneErrorText, signerOf, withLinkService } from '../src/companion/phone-control.js';
 import { DeviceBook, type DeviceRecord } from '../src/companion/devices.js';
 import { type DeviceCert, MacFrame, PhoneFrame, type PhoneControl as PhoneControlState, type PhoneOp, type ScreenView } from '../src/companion/protocol.js';
 import { mkdtempSync } from 'node:fs';
@@ -754,6 +754,7 @@ describe('Beluga Link from the Mac (BLG-391)', () => {
     const { sys, calls } = fakeSys([
       { match: /devices -l/, out: 'List\nR5CX12 device usb:1-1\n' },
       { match: /pm list packages/, out: `package:${LINK_PACKAGE}\n` },
+      { match: /dumpsys package/, out: 'signatures=PackageSignatures{1 version:3, signatures:[8f3c1a2b], past signatures:[]}\n' },
       { match: /settings get secure enabled_accessibility_services/, out: `${LINK_SERVICE}\n` },
     ]);
     const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control({ accessibility: false })), onChange: () => {}, adbPath: '/fake/adb' });
@@ -766,6 +767,29 @@ describe('Beluga Link from the Mac (BLG-391)', () => {
     ]);
     const ctl2 = new PhoneControl({ sys: refusing.sys, devices: book([device]), link: () => fakeLink(id, control({ accessibility: false })), onChange: () => {}, adbPath: '/fake/adb' });
     await expect(ctl2.setUpLink(id, async () => {})).rejects.toThrow(/didn’t install Beluga Link: Failure \[INSTALL_FAILED_UPDATE_INCOMPATIBLE\]/);
+  });
+
+  it('replaces a Link signed with another key than the app (BLG-430)', async () => {
+    let tries = 0;
+    const { sys, calls } = fakeSys([
+      { match: /devices -l/, out: 'List\nR5CX12 device usb:1-1\n' },
+      { match: /pm list packages/, out: `package:${LINK_PACKAGE}\n` },
+      { match: new RegExp(`dumpsys package ${LINK_PACKAGE.replace(/\./g, '\\.')}$`), out: 'signatures:[aaaa1111]\n' },
+      { match: /dumpsys package sh\.ratel\.beluga$/, out: 'signatures:[bbbb2222]\n' },
+      { match: /install -r --user 0/, get out() { return tries++ === 0 ? 'Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match]\n' : 'Success\n'; } },
+      { match: /settings get secure enabled_accessibility_services/, out: `${LINK_SERVICE}\n` },
+    ]);
+    const ctl = new PhoneControl({ sys, devices: book([device]), link: () => fakeLink(id, control({ accessibility: false })), onChange: () => {}, adbPath: '/fake/adb' });
+    const got: string[] = [];
+    await ctl.setUpLink(id, async (to) => void got.push(to));
+    expect(got).toHaveLength(1);
+    expect(calls.some((c) => c.includes(`pm uninstall --user 0 ${LINK_PACKAGE}`))).toBe(true);
+    expect(calls.filter((c) => /install -r --user 0/.test(c))).toHaveLength(2);
+  });
+
+  it('reads who signed a package from dumpsys', () => {
+    expect(signerOf('  signatures=PackageSignatures{f1 version:3, signatures:[8f3c1a2b], past signatures:[]}')).toBe('8f3c1a2b');
+    expect(signerOf('Unable to find package')).toBeUndefined();
   });
 
   it('asks for a cable when adb can’t reach the phone', async () => {

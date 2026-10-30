@@ -119,6 +119,14 @@ export const LINK_SERVICE = `${LINK_PACKAGE}/sh.ratel.beluga.addon.BelugaAccessi
 /** Each release carries Beluga Link under this name (BLG-391). */
 export const LINK_APK_URL = 'https://github.com/kayraucklnc/beluga/releases/latest/download/Beluga-Link.apk';
 
+/** The app itself: Link only works signed with the same key (BLG-430). */
+export const APP_PACKAGE = 'sh.ratel.beluga';
+
+/** Who signed a package, from `dumpsys package <name>` ("signatures:[8f3c1a2b]"), or undefined when it doesn't say. */
+export function signerOf(dumpsys: string): string | undefined {
+  return /signatures:\[([0-9a-f, ]+)\]/i.exec(dumpsys)?.[1]?.trim() || undefined;
+}
+
 /**
  * Android's list of Accessibility services on, with Beluga Link's added: the others kept, and
  * Beluga's own from before 1.6.0 (its service lived in the app) dropped.
@@ -1177,6 +1185,13 @@ export class PhoneControl {
    * over adb, which Play Protect doesn't block the way it blocks a downloaded Accessibility app, then
    * its Accessibility service turned on beside whatever else is on. Nothing to tap on the phone.
    */
+  /** Link and the app on the phone are signed with the same key (false when adb doesn't say). */
+  private async sameSigner(adb: { shell(cmd: string, ms: number): Promise<{ stdout: string }> }): Promise<boolean> {
+    const [link, app] = await Promise.all([adb.shell(`dumpsys package ${LINK_PACKAGE}`, 10_000), adb.shell(`dumpsys package ${APP_PACKAGE}`, 10_000)]);
+    const a = signerOf(link.stdout);
+    return a !== undefined && a === signerOf(app.stdout);
+  }
+
   async setUpLink(deviceId: string, download: (to: string) => Promise<void> = fetchLinkApk): Promise<string> {
     const cable = 'Connect the phone to this Mac with a cable first (or turn on Wireless debugging): Beluga Link is installed over it.';
     // Not reachable at all says to plug in, not to install Link (that's what this does).
@@ -1186,12 +1201,21 @@ export class PhoneControl {
     });
     if (!r.adb) throw new Error(cable);
     const listed = await r.adb.shell(`pm list packages --user 0 ${LINK_PACKAGE}`, 10_000);
-    if (!listed.stdout.split('\n').some((l) => l.trim() === `package:${LINK_PACKAGE}`)) {
+    const installed = listed.stdout.split('\n').some((l) => l.trim() === `package:${LINK_PACKAGE}`);
+    // Link and the app trust each other by their signing key. A Link signed with the old key (before
+    // BLG-430) is installed but never connects, so it's replaced.
+    const matches = installed && (await this.sameSigner(r.adb));
+    if (!matches) {
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'beluga-link-'));
       try {
         const apk = path.join(dir, 'Beluga-Link.apk');
         await download(apk);
-        const res = await r.adb.run(['install', '-r', '--user', '0', apk], 180_000);
+        let res = await r.adb.run(['install', '-r', '--user', '0', apk], 180_000);
+        if (/INSTALL_FAILED_UPDATE_INCOMPATIBLE/.test(res.stdout + res.stderr)) {
+          // Signed with the other key: Link keeps nothing worth saving, so it goes and comes back.
+          await r.adb.shell(`pm uninstall --user 0 ${LINK_PACKAGE}`, 30_000);
+          res = await r.adb.run(['install', '-r', '--user', '0', apk], 180_000);
+        }
         if (!/Success/i.test(res.stdout)) throw new Error(`The phone didn’t install Beluga Link: ${(res.stderr.trim() || res.stdout.trim()).slice(0, 200) || 'no reason given'}`);
       } finally {
         await fs.rm(dir, { recursive: true, force: true });

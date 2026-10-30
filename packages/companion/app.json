@@ -90,7 +90,8 @@
         }
       ],
       "./plugins/loopback-cleartext",
-      "./plugins/phone-control-addon"
+      "./plugins/phone-control-addon",
+      "./plugins/release-signing"
     ]
   }
 }
