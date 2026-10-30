@@ -8,7 +8,8 @@ import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } from '../agent/runtime/types.js';
 import { guardedBackend } from '../agent/runtime/guard.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { type AgentRef, Body, type BodyInput, type BodyOf, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
+import { type AgentRef, Body, type BodyInput, type BodyOf, CLAUDE_AGENT, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile } from '../protocol.js';
+import { type UsageUpdate, withUsage } from '../agent/usage.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { networkOf } from './network.js';
 import { mentionNote, personMentions } from './person-mentions.js';
@@ -1191,16 +1192,15 @@ export class Session {
     this.opts.client.updateProfile({ ...this.opts.client.currentProfile, ...patch });
   }
 
-  /** Merge new plan-usage numbers and share them with the room. */
-  updateUsage(update: Partial<Usage>): void {
-    const prev = this.opts.client.currentProfile.usage;
-    this.updateProfile({ usage: { ...prev, ...update, updatedAt: Date.now() } });
+  /** Merge new usage numbers into that provider's (Claude's unless named) and share them with the room. */
+  updateUsage(update: UsageUpdate, agent: AgentRef = CLAUDE_AGENT): void {
+    this.updateProfile(withUsage(this.opts.client.currentProfile, agent, update));
   }
 
   /** Ask the agent backend for fresh plan usage (no prompt is sent). */
   async refreshUsage(): Promise<void> {
     const usage = await this.agent?.refreshUsage?.().catch(() => undefined);
-    if (usage) this.updateUsage(usage);
+    if (usage) this.updateUsage(usage, CLAUDE_AGENT);
   }
 
   private onAgentEvent(from: string, ts: number, body: BodyOf<'agent_event'>): void {

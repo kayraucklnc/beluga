@@ -595,6 +595,7 @@ describe('Session hardening', () => {
       policy: 'auto',
       script: async (_input, bridge) => {
         bridge.reportUsage({ fiveHour: { pct: 42 } });
+        bridge.reportUsage({ windows: [{ label: 'Weekly', pct: 7 }] }, { runtime: 'codex', label: 'Codex' });
         return 'ok';
       },
     });
@@ -604,6 +605,12 @@ describe('Session hardening', () => {
     await waitFor(() => bob.runs.length === 1);
     expect(bob.runs[0]?.scope).toBe('folder');
     await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.usage?.fiveHour?.pct === 42);
+    // Each provider's usage lands on its own entry; the old field stays Claude's.
+    await waitFor(() => (kay.state().peers.find((p) => p.name === 'bob')?.usages?.length ?? 0) === 2);
+    const shared = kay.state().peers.find((p) => p.name === 'bob')?.usages ?? [];
+    expect(shared.find((u) => u.agent.runtime === 'claude')?.fiveHour?.pct).toBe(42);
+    expect(shared.find((u) => u.agent.runtime === 'codex')?.windows?.[0]?.pct).toBe(7);
+    expect(shared.find((u) => u.agent.runtime === 'codex')?.fiveHour).toBeUndefined();
 
     bob.session.setAccess(kay.session.selfId, 'full');
     kay.session.submit('@claude:bob again');

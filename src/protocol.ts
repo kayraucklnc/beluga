@@ -34,6 +34,10 @@ export const Usage = z.object({
 });
 export type Usage = z.infer<typeof Usage>;
 
+/** A plan window by its own name, for providers whose windows aren't Claude's 5-hour/week ("Daily", "Monthly"). */
+export const NamedUsageWindow = UsageWindow.extend({ label: z.string().min(1).max(32) });
+export type NamedUsageWindow = z.infer<typeof NamedUsageWindow>;
+
 /** Runtimes Beluga knows by name; others (a newer Mac's) still parse, as their id. */
 export const KNOWN_RUNTIMES = ['claude', 'codex', 'local'] as const;
 export type AgentRuntime = (typeof KNOWN_RUNTIMES)[number] | (string & {});
@@ -53,6 +57,23 @@ export type AgentRef = z.infer<typeof AgentRef>;
 /** Before a Mac said which agent it runs, it was always Claude. */
 export const CLAUDE_AGENT: AgentRef = { runtime: 'claude', label: 'Claude' };
 
+/**
+ * One provider's usage: quota windows where the plan has them (Claude's 5-hour/week, Codex's),
+ * tokens and speed where it doesn't (a local model). One per runtime in Profile.usages.
+ */
+export const ProviderUsage = Usage.extend({
+  agent: AgentRef,
+  /** Windows that aren't the 5-hour/week pair, by their own names. */
+  windows: z.array(NamedUsageWindow).max(6).optional(),
+  /** Tokens used since the Mac started (for providers without a plan). */
+  tokens: z.object({ input: z.number().min(0), output: z.number().min(0) }).optional(),
+  /** Output tokens per second over the last run. */
+  tokensPerSec: z.number().min(0).max(100_000).optional(),
+  /** False when the provider is installed but not signed in. */
+  signedIn: z.boolean().optional(),
+});
+export type ProviderUsage = z.infer<typeof ProviderUsage>;
+
 /** The agent someone's Mac answers with when nobody names one: an older Mac's is Claude. */
 export function defaultAgentOf(p: { readonly agents?: readonly AgentRef[]; readonly defaultAgent?: AgentRef } | undefined): AgentRef {
   return p?.defaultAgent ?? p?.agents?.[0] ?? CLAUDE_AGENT;
@@ -62,7 +83,10 @@ export const Profile = z.object({
   name: z.string().regex(/^[\w.-]{1,32}$/),
   shares: z.array(ShareInfo).max(32),
   agent: z.boolean(),
+  /** Claude's usage, kept for older Macs that read only this; newer ones read `usages`. */
   usage: Usage.optional(),
+  /** Usage per provider, one per runtime (an older Mac sends none: its `usage` is Claude's). */
+  usages: z.array(ProviderUsage).max(8).optional(),
   /** Projects friends may ask to start a worktree in (names only; you approve each request). */
   projects: z.array(z.string().max(80)).max(60).optional(),
   /** The agents this person runs (an older Mac sends none: it runs Claude). */
