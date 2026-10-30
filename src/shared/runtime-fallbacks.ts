@@ -24,7 +24,8 @@ export const RUNTIME_FALLBACKS: Readonly<Record<string, Readonly<Partial<Record<
     rewind: { capability: 'canFork', reason: 'On Codex, going back puts the files back but starts a new conversation from your edited message.' },
     skills: { capability: 'skills', reason: 'Skills and commands are translated for Codex; what can’t be says “Not on Codex”.' },
     mcp_servers: { reason: 'Codex uses the MCP servers in its own settings (~/.codex/config.toml). This list is Claude Code’s; Beluga’s own tools reach both.' },
-    guests: { capability: 'canGateEveryTool', reason: 'Codex can’t check each step, so it can’t answer guests. Switch this conversation to Claude for them.' },
+    // agent-wording: claude (the way out is the Claude runtime, by name)
+  guests: { capability: 'canGateEveryTool', reason: 'Codex can’t check each step, so it can’t answer guests. Switch this conversation to Claude for them.' },
   },
 };
 

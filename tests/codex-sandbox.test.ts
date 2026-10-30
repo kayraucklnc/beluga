@@ -50,7 +50,9 @@ describe('the Codex trust table', () => {
   });
 });
 
-const codex = findCodex();
+const found = findCodex();
+// Installed and actually runs (an npm install whose native binary is missing is a shim that can't start).
+const codex = found && spawnSync(found, ['--version'], { timeout: 15_000 }).status === 0 ? found : undefined;
 describe.skipIf(!codex || process.platform !== 'darwin')("Codex's own sandbox, as Beluga sets it (the real codex binary)", () => {
   // Inside your home, so a friend reaching only shared folders is kept out of what's beside it.
   const dir = codex ? realpathSync(mkdtempSync(path.join(os.homedir(), 'Library', 'Caches', 'beluga-codex-sandbox-'))) : '';
