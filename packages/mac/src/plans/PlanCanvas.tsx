@@ -10,7 +10,7 @@ import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPa
 import { layout } from '../components/graph/layout.js';
 import { useSharpZoom } from '../components/graph/sharp-zoom.js';
 import { breath, turn, useLive } from '../lib/live-motion.js';
-import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId, taskWords } from './plans-model.js';
+import { MILESTONE_STATE, type MilestoneJoin, TASK_STATE, changeMarks, gateId, graphShape, groupId, lockWords, milestoneJoin, milestoneLink, taskNodeId, taskWords } from './plans-model.js';
 import { COMPACT_STATES, FOLDS_KEY, type Folds, MILESTONE, type MilestoneFrame, PLAN_GAPS, arrowHead, isFolded, labelAt, milestoneAnchors, milestoneFrame, milestoneRoute, placeMilestones, readFolds, taskSize, withFold } from './plan-layout.js';
 import { useClock } from './use-plans.js';
 import { LockMark, TaskChatMark, TaskStateIcon } from './marks.js';
@@ -51,6 +51,8 @@ interface MilestoneData extends Record<string, unknown> {
   readonly waitsOn: readonly string[];
   /** It waits on other milestones (and they've all passed, unless it's locked). */
   readonly gated: boolean;
+  /** The plan's branch: what it starts from once what it waits on is merged in. */
+  readonly branch?: string;
   readonly onFold: (milestoneId: string, folded: boolean) => void;
 }
 interface GateData extends Record<string, unknown> {
@@ -71,7 +73,14 @@ interface LineData extends Record<string, unknown> {
   readonly label?: string;
   /** Lit (it touches the card you point at or picked), dimmed (another one is lit), or gone (folded away). */
   readonly look?: 'hot' | 'dim' | 'gone';
+  /** It ends at a join (its milestone waits on several): no arrowhead of its own. */
+  readonly joined?: boolean;
+  /** The join it meets the others at, and the stem from there into the lock (drawn by the first line in). */
+  readonly join?: MilestoneJoin & { readonly stem: readonly Point[] };
 }
+
+/** How far above a milestone's lock the lines from several meet. */
+const JOIN_STEM = 30;
 type PlanEdge = Edge<LineData, 'line'>;
 
 export interface PlanCanvasProps {
@@ -267,7 +276,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         style: { width: box.width, height: box.height },
         width: box.width,
         height: box.height,
-        data: { view: m, current, folded: away, waitsOn, gated: m.dependsOn.some((d) => byMs.has(d)), onFold },
+        data: { view: m, current, folded: away, waitsOn, gated: m.dependsOn.some((d) => byMs.has(d)), ...(view.plan.branch ? { branch: view.plan.branch } : {}), onFold },
         selectable: false,
         draggable: false,
         zIndex: -1,
@@ -318,16 +327,34 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     // Only real lines: blockers inside a milestone (across milestones its gate says what comes first), and each gate into the milestones it unlocks.
     const shown = shape.edges.filter((e) => (e.kind === 'blocks' ? lane.get(e.from) === lane.get(e.to) && laid.routes.has(e.id) : e.kind === 'next'));
     const labelled = new Set<string>();
+    // A milestone waiting on several: their lines meet in one join above its lock, and one stem goes on into it.
+    const into = new Map<string, string[]>();
+    for (const e of shown) if (e.kind === 'next') into.set(e.to, [...(into.get(e.to) ?? []), e.id]);
     return shown.map((e) => {
       const from = byMs.get(e.from.replace(/^gate:/, ''));
       if (e.kind === 'next') {
-        const passed = !!from && passedOf(from);
-        const state: LineData['state'] = passed ? 'done' : from?.state === 'gate' || from?.state === 'checking' ? 'ready' : 'waiting';
+        const link = milestoneLink(from);
         // One label per gate (its lines leave it as one).
-        const label = labelled.has(e.from) ? undefined : passed ? 'Unlocked' : 'Unlocks';
+        const label = labelled.has(e.from) ? undefined : link.label;
         labelled.add(e.from);
-        const route = laid.routes.get(e.id);
-        return { id: e.id, source: e.from, target: e.to, ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}`, type: 'line', data: { kind: 'next', state, current: now(e), ...(route ? { route } : {}), ...(label ? { label } : {}) } };
+        let route = laid.routes.get(e.id);
+        const siblings = into.get(e.to) ?? [];
+        let join: LineData['join'];
+        if (siblings.length > 1 && route && route.points.length >= 2) {
+          // Where it turns down into the lock (the run across above the row), else straight above it.
+          const end = route.points[route.points.length - 1]!;
+          const turn = route.points[route.points.length - 2]!;
+          const knot = route.points.length > 2 && Math.abs(turn.x - end.x) < 0.5 && end.y - turn.y > JOIN_STEM / 2 ? turn : { x: end.x, y: end.y - JOIN_STEM };
+          const head = route.points.slice(0, -1);
+          route = { ...route, points: head[head.length - 1] === knot ? head : [...head, knot] };
+          // The first line in carries the join and its stem (so they're drawn once).
+          if (siblings[0] === e.id) {
+            const parents = shown.filter((x) => x.kind === 'next' && x.to === e.to).map((x) => byMs.get(x.from.replace(/^gate:/, '')));
+            const j = milestoneJoin(parents, view.plan.branch);
+            if (j) join = { ...j, stem: [knot, end] };
+          }
+        }
+        return { id: e.id, source: e.from, target: e.to, ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}`, type: 'line', data: { kind: 'next', state: link.state, current: now(e), ...(route ? { route } : {}), ...(label ? { label } : {}), ...(siblings.length > 1 ? { joined: true } : {}), ...(join ? { join } : {}) } };
       }
       const state: LineData['state'] = finished(e.from) ? 'done' : working(e.from) ? 'live' : 'waiting';
       const look: LineData['look'] = folded.has(lane.get(e.from) ?? '') ? 'gone' : focus ? (e.from === focus || e.to === focus ? 'hot' : 'dim') : undefined;
@@ -488,7 +515,8 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
 /** What a milestone's gate says of itself. */
 function gateLabel(m: MilestoneView): string {
   const checked = m.run.check?.verdict === 'pass';
-  return m.state === 'passed' || m.state === 'merging' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? (checked ? 'Checked · pass it' : 'Pass it') : 'Not yet';
+  if (m.state === 'merging') return milestoneLink(m).label === 'Merging' ? 'Merging…' : milestoneLink(m).label;
+  return m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? (checked ? 'Checked · pass it' : 'Pass it') : 'Not yet';
 }
 
 const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<MilestoneData, 'milestone'>>) {
@@ -497,10 +525,9 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
   const share = m.state === 'passed' ? 1 : m.total ? m.finished / m.total : 0;
   const locked = data.waitsOn.length > 0;
   const passed = m.state === 'passed';
-  const waits = data.waitsOn.map((t) => `“${t}”`).join(' and ');
   // Where the line from what it waits on comes in: a lock, open once those gates pass.
   const badge = data.gated ? (
-    <span className={cx(c.inBadge, locked ? c.inBadgeLocked : c.inBadgeOpen)} title={locked ? `Unlocks when ${waits} passes` : 'Unlocked'} aria-hidden="true">
+    <span className={cx(c.inBadge, locked ? c.inBadgeLocked : c.inBadgeOpen)} title={lockWords(data.waitsOn, m.dependsOn.length, data.branch)} aria-hidden="true">
       <LockMark open={!locked} size={11} />
     </span>
   ) : null;
@@ -552,11 +579,17 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
               </span>
             ) : null}
             {m.milestone.autonomy ? <span className={p.msAuto}>{AUTONOMY_INFO[m.autonomy].label}</span> : null}
+            {/* Where its work starts: the plan's branch, with what it waited on merged in. */}
+            {data.gated && data.branch && !locked && !passed ? (
+              <span className={c.fromBranch} title={lockWords([], m.dependsOn.length, data.branch)}>
+                from {data.branch}
+              </span>
+            ) : null}
           </span>
         </span>
         <span className={p.grow} />
         {locked ? (
-          <span className={c.lockChip} title={`Unlocks when ${waits} passes`}>
+          <span className={c.lockChip} title={lockWords(data.waitsOn, m.dependsOn.length, data.branch)}>
             <LockMark size={10} />
             Locked
           </span>
@@ -662,7 +695,8 @@ const PlanLine = memo(function PlanLine({ id, source, target, sourceX, sourceY, 
   return (
     <g data-from={source} data-to={target} data-kind={kind} data-state={state} data-look={look}>
       <BaseEdge id={id} path={roundedPath(points, kind === 'next' ? 14 : 10)} className={cls} interactionWidth={0} />
-      <path d={arrowHead(points, kind === 'next' ? 5 : 3.5)} className={cx(cls, c.arrow)} />
+      {data?.joined ? null : <path d={arrowHead(points, kind === 'next' ? 5 : 3.5)} className={cx(cls, c.arrow)} />}
+      {data?.join ? <JoinMark join={data.join} current={data.current} /> : null}
       {data?.label && at ? (
         <EdgeLabelRenderer>
           <div className={cx(c.flowLabel, c[`flowLabel_${state}`])} style={{ transform: `translate(-50%, -50%) translate(${at.x}px, ${at.y}px)` }}>
@@ -674,5 +708,33 @@ const PlanLine = memo(function PlanLine({ id, source, target, sourceX, sourceY, 
     </g>
   );
 });
+
+/**
+ * Where the lines from several milestones meet: a small pill saying how many are in ("2/3"), and one
+ * stem from it into the lock, solid green once all are in. Its tooltip names what it still waits on,
+ * and the branch the milestone starts from.
+ */
+function JoinMark({ join, current }: { join: NonNullable<LineData['join']>; current: boolean }) {
+  const cls = cx(c.flow, c[`flow_${join.state}`], current && c.lineCurrent);
+  const at = join.stem[0]!;
+  return (
+    <>
+      <path d={roundedPath(join.stem, 14)} className={cls} />
+      <path d={arrowHead(join.stem, 5)} className={cx(cls, c.arrow)} />
+      <EdgeLabelRenderer>
+        <div
+          className={cx(c.flowLabel, c[`flowLabel_${join.state}`], c.joinKnot)}
+          style={{ transform: `translate(-50%, -50%) translate(${at.x}px, ${at.y}px)` }}
+          title={join.tip}
+          aria-label={join.tip}
+          data-join={`${join.passed}/${join.total}`}
+        >
+          <LockMark open={join.passed === join.total} size={9} />
+          {join.passed}/{join.total}
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
 
 const EDGE_TYPES = { line: PlanLine } as const;

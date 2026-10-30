@@ -213,6 +213,11 @@ function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
       if (!w.needsYou || old.watch?.[taskId]?.needsYou) continue;
       out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${titleOf.get(taskId) ?? 'A task'}” stopped twice`, body: `${w.reason}. Resume it, or open its chat`, ...at, need: `plan:${plan.id}:stalled:${taskId}`, key: `plan:${plan.id}:${taskId}:stalled:${w.at}` });
     }
+    for (const [msId, merge] of Object.entries(plan.merging ?? {})) {
+      const c = merge.conflict;
+      if (!c?.stuck || old.merging?.[msId]?.conflict?.stuck) continue;
+      out.push({ kind: 'needsYou', tag: 'conflict', title: `${name}: merging “${titleOf.get(msId) ?? 'a milestone'}” hit a conflict Claude couldn’t fix`, body: `${c.key ?? c.merging} conflicts in ${c.files.join(', ')}: fix it in ${c.dir} and it passes`, ...at, key: `plan:${plan.id}:${msId}:conflict:${c.at}` });
+    }
     for (const [unitId, r] of Object.entries(plan.rescue ?? {})) {
       if (!r.yours || old.rescue?.[unitId]?.yours) continue;
       const what = titleOf.get(unitId);
