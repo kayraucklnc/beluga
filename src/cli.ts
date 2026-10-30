@@ -10,6 +10,7 @@ const USAGE = `Beluga's engine, for the Mac app.
 
 Usage:
   cli.js daemon [--keep-alive] [demo]   run Beluga in the background for the Mac app
+  cli.js mcp-serve <suite>              one suite of Beluga's tools over stdio, for a run (BELUGA_TOOLS_URL, BELUGA_TOOLS_TOKEN)
   cli.js --version                      show the version
 `;
 
@@ -17,6 +18,15 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args[0] === '--version' || args[0] === '-v' || args[0] === 'version') {
     process.stdout.write(`Beluga ${installedVersion()}\n`);
+    return;
+  }
+  // Started by an agent's runtime with its run's token, never by hand (agent/tool-host.ts).
+  if (args[0] === 'mcp-serve') {
+    const url = belugaEnv('TOOLS_URL');
+    const token = belugaEnv('TOOLS_TOKEN');
+    if (!args[1] || !url || !token) throw new Error('mcp-serve needs a suite, BELUGA_TOOLS_URL and BELUGA_TOOLS_TOKEN');
+    const { serveStdio } = await import('./agent/mcp-serve.js');
+    await serveStdio(args[1], url, token);
     return;
   }
   if (args[0] !== 'daemon') {

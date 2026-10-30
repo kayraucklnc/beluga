@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
 import { TOOL_DRAFT_SHAPE, TOOL_PATCH_SHAPE } from '../core/sentinel/tool-draft.js';
 import { SOURCE_KINDS } from '../shared/view-spec.js';
@@ -75,5 +75,5 @@ export function createSentinelToolDefs(sentinel: SentinelTools) {
 }
 
 export function createSentinelTools(sentinel: SentinelTools) {
-  return createSdkMcpServer({ name: 'beluga_sentinel', version: '0.1.0', tools: createSentinelToolDefs(sentinel) });
+  return toolSuite({ name: 'beluga_sentinel', version: '0.1.0', tools: createSentinelToolDefs(sentinel) });
 }

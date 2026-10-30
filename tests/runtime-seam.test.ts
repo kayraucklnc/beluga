@@ -10,17 +10,6 @@ const CLAUDE_DIR = path.join(SRC, 'agent/runtime/claude') + path.sep;
 
 /** Still on the SDK, each until its task moves it behind the seam. Empty once the milestone is done. */
 const NOT_YET = new Set<string>([
-  // BLG-442: Beluga's tools, one registry and two mounts.
-  'agent/board-tools.ts',
-  'agent/dashboard-tools.ts',
-  'agent/gateway-tools.ts',
-  'agent/mac-tools.ts',
-  'agent/phone-tools.ts',
-  'agent/plan-tools.ts',
-  'agent/sentinel-tools.ts',
-  'agent/task-tools.ts',
-  'agent/tools.ts',
-  'agent/view-tools.ts',
   // BLG-441: side calls through runtime.complete().
   'agent/chat-answer.ts',
   'agent/live-run.ts',

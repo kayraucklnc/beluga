@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
 import type { DashboardTools, ToolTile } from './types.js';
 
@@ -93,5 +93,5 @@ export function createDashboardToolDefs(d: DashboardTools) {
 }
 
 export function createDashboardTools(d: DashboardTools) {
-  return createSdkMcpServer({ name: 'beluga_dashboard', version: '0.1.0', tools: createDashboardToolDefs(d) });
+  return toolSuite({ name: 'beluga_dashboard', version: '0.1.0', tools: createDashboardToolDefs(d) });
 }

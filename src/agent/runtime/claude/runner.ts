@@ -5,11 +5,8 @@ import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../../../core/a
 import { buildAskOnlyAppend, buildCommitAppend, buildKeepAppend, buildPrompt, buildScratchAppend, buildShippedAppend, buildSystemAppend, summarizeTool } from '../../prompt.js';
 import { buildGraphAppend } from '../../graph-prompt.js';
 import { buildViewAppend } from '../../view-prompt.js';
-import { createBoardTools } from '../../board-tools.js';
-import { createPlanTools } from '../../plan-tools.js';
-import { createDashboardTools } from '../../dashboard-tools.js';
-import { createSentinelTools } from '../../sentinel-tools.js';
 import { SECRET_DECLINED, decideTool, denyReason } from '../../policy.js';
+import { gateTool } from '../../tool-gate.js';
 import { buildSyncMainAppend, syncProbes } from '../../sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse, toMs } from './usage.js';
 import { RunFailedError, classifyRun } from '../../../shared/run-failure.js';
@@ -26,11 +23,9 @@ import { fixRun, fixSetup, workOutScripts } from '../../setup-fixer.js';
 import { describeProject } from '../../project-describer.js';
 import { draftTask } from '../../task-drafter.js';
 import { reviewPr } from '../../pr-reviewer.js';
-import { createRoomTools } from '../../tools.js';
-import { ViewShelf, createViewTools } from '../../view-tools.js';
-import { createTaskTools } from '../../task-tools.js';
-import { createMacTools } from '../../mac-tools.js';
-import { createPhoneTools } from '../../phone-tools.js';
+import { ViewShelf } from '../../view-tools.js';
+import { runToolSuites } from '../../run-tools.js';
+import { sdkServers } from './sdk-mount.js';
 import { ownerMcpServers } from './owner-mcp.js';
 import { McpConnect, claudeMcpSession } from './mcp-connect.js';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, RunProcess, Steer } from '../../types.js';
@@ -78,37 +73,6 @@ export function retryWords(status: number | null, attempt: number, max: number, 
 export function toQuestion(input: Record<string, unknown>): ClaudeQuestion | undefined {
   const parsed = ClaudeQuestion.safeParse({ kind: 'question', questions: input.questions });
   return parsed.success ? parsed.data : undefined;
-}
-
-/** A friend's task brings the tools its owner allowed (the screen, device info) as a server of their own. */
-function taskServer(input: AgentRunInput): { beluga_task?: NonNullable<ReturnType<typeof createTaskTools>> } {
-  const server = input.taskTools ? createTaskTools(input.taskTools) : undefined;
-  return server ? { beluga_task: server } : {};
-}
-
-/** Your own runs get the task board (core/board): the task they're doing, and tools to keep it true. */
-function boardServer(input: AgentRunInput): { beluga_board?: ReturnType<typeof createBoardTools> } {
-  return input.board ? { beluga_board: createBoardTools(input.board) } : {};
-}
-
-/** "Your Mac" gets its own tools (core/assistant). */
-function macServer(input: AgentRunInput): { beluga_mac?: ReturnType<typeof createMacTools> } {
-  return input.macTools ? { beluga_mac: createMacTools(input.macTools) } : {};
-}
-
-/** Your own runs can drive your phone (core/phone, BLG-150). */
-function phoneServer(input: AgentRunInput): { beluga_phone?: ReturnType<typeof createPhoneTools> } {
-  return input.phoneTools ? { beluga_phone: createPhoneTools(input.phoneTools) } : {};
-}
-
-/** Your own runs get sentinels (core/sentinel): list, set up, run, pause; inside a run, stop it. */
-function sentinelServer(input: AgentRunInput): { beluga_sentinel?: ReturnType<typeof createSentinelTools>; beluga_dashboard?: ReturnType<typeof createDashboardTools> } {
-  return { ...(input.sentinelTools ? { beluga_sentinel: createSentinelTools(input.sentinelTools) } : {}), ...(input.dashboardTools ? { beluga_dashboard: createDashboardTools(input.dashboardTools) } : {}) };
-}
-
-/** A plan's home conversation gets the plan's tools (core/plans). */
-function planServer(input: AgentRunInput): { beluga_plan?: ReturnType<typeof createPlanTools> } {
-  return input.planTools ? { beluga_plan: createPlanTools(input.planTools) } : {};
 }
 
 /** Tokens and cost of a run, summed over every model it used (sub-agents included). */
@@ -226,7 +190,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(input.maxTurns ? { maxTurns: input.maxTurns } : {}),
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
         // Your own MCP servers first, so a name of Beluga's always means Beluga's.
-        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined, askOnly ? undefined : input.setup), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },
+        mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), ...sdkServers(runToolSuites(input, bridge, shelf, cwd)) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -281,13 +245,9 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         canUseTool: async (toolName, toolInput) => {
           if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);
           if (toolName === 'ExitPlanMode') return reviewPlan(toolInput);
-          const veto = input.vetTool?.(toolName, toolInput);
-          if (veto) return { behavior: 'deny', message: veto };
-          const decision = decideTool(toolName, toolInput, policy);
-          if (decision === 'deny') return { behavior: 'deny', message: denyReason(toolName, toolInput, policy) };
-          if (decision === 'secret') return (await input.canUseSecret?.(toolName, toolInput)) ? { behavior: 'allow', updatedInput: toolInput } : { behavior: 'deny', message: SECRET_DECLINED };
-          if (decision === 'allow' || (await input.canUseTool(toolName, toolInput))) return { behavior: 'allow', updatedInput: toolInput };
-          return { behavior: 'deny', message: 'The machine owner declined this action.' };
+          // The same gate the stdio tool server asks (agent/tool-gate.ts).
+          const denied = await gateTool(toolName, toolInput, input, policy);
+          return denied ? { behavior: 'deny', message: denied } : { behavior: 'allow', updatedInput: toolInput };
         },
       };
 

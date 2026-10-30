@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
 import type { MacTools } from './types.js';
 
@@ -70,5 +70,5 @@ export function createMacToolDefs(mac: MacTools) {
 }
 
 export function createMacTools(mac: MacTools) {
-  return createSdkMcpServer({ name: 'beluga_mac', version: '0.1.0', tools: createMacToolDefs(mac) });
+  return toolSuite({ name: 'beluga_mac', version: '0.1.0', tools: createMacToolDefs(mac) });
 }
