@@ -56,6 +56,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         store: opts.store,
         shares: opts.shares,
         selfId: () => session.selfId,
+        // Your default agent's runtime: a place that picked none resumes only its sessions.
+        defaultRuntime: () => opts.runtime?.agent ?? 'claude',
         toast: (text, level) => session.toast(text, level),
         intend: (intent) => session.intend(intent),
         askClaude: (prompt, channel, o) => session.askOwnClaude(prompt, channel, false, o?.echo ?? true),

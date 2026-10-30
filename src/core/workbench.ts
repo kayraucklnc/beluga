@@ -23,7 +23,7 @@ import type { ModelChoice, PullRequest } from './work-store.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
-import { defaultAgentOf } from '../protocol.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
 import { type GitFixId, type GitSetup, type GitTrouble, explainGitTrouble, httpsRemoteOf, troubleLine } from '../shared/git-trouble.js';
 
 export interface WorkbenchDeps {
@@ -284,6 +284,15 @@ export class Workbench {
     }
     this.deps.setPrefs({ model: value || undefined });
     this.deps.toast(`New conversations use ${label}`, 'success');
+  }
+
+  /** Pick the agent for one conversation (undefined: your default); every run from there uses it. */
+  setAgent(channel: string, agent: AgentRef | undefined): boolean {
+    const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+    if (!id || !this.manager.find(id)) return false;
+    this.manager.setAgent(id, agent);
+    void this.deps.controller.refresh();
+    return true;
   }
 
   // ----------------------------------------------------------- pull requests
