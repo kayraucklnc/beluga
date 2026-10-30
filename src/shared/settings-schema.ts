@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentRef } from '../protocol.js';
 import { AUTO_COMPACT_DEFAULT, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from './context-usage.js';
 import { PARALLEL_RUNS_DEFAULT, PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from './run-slots.js';
 import { coercePerKind, coerceSound, DEFAULT_SOUND, DEFAULT_VOLUME, PerKindSounds, SoundChoice } from './notify-sound.js';
@@ -81,6 +82,10 @@ export const Settings = z.object({
   /** Model for new conversations (unset: Claude Code's default). */
   model: z.string().regex(/^[\w.:[\]-]{1,80}$/).optional(),
   effort: z.enum(EFFORTS).optional(),
+  /** The agent that answers when someone addresses you plainly ("@kay"); published on your peer card. Unset: Claude. */
+  defaultAgent: AgentRef.optional(),
+  /** A project's own default agent (by project name), over `defaultAgent` for work in that project. */
+  projectAgents: z.record(z.string().min(1).max(80), AgentRef).optional(),
   /** Run the project's setup script (e.g. npm install) in every new worktree. */
   autoSetup: z.boolean().default(true),
   /** Show how full each conversation's context is. */

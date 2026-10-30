@@ -162,6 +162,23 @@ describe('Session', () => {
     await waitFor(() => agentItems(bob.state()).filter((a) => a.type === 'agent' && a.status === 'done').length === 2);
   });
 
+  it('publishes your default agent on your card at once, without reconnecting (BLG-444)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    const opus = { runtime: 'claude' as const, model: 'opus', label: 'Claude' };
+    kay.session.setPrefs({ defaultAgent: opus });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.model === 'opus');
+    expect(bob.state().peers.find((p) => p.name === 'kay')?.agents?.[0]).toEqual(opus);
+    expect(kay.session.agentRef).toEqual(opus);
+    kay.session.setPrefs({ projectAgents: { api: { runtime: 'claude', model: 'sonnet', label: 'Claude' } } });
+    expect(kay.session.agentFor('api').model).toBe('sonnet');
+    expect(kay.session.agentFor('web')).toEqual(opus);
+    kay.session.setPrefs({ defaultAgent: null });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.model === undefined);
+  });
+
   it('runs the person\'s agent with @bob and @agents, and says who a mistyped name may be', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay', { policy: 'auto' });

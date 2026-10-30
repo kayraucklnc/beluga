@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
+import { AgentRef, ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EFFORTS, KEEP_AWAKE, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
@@ -63,6 +63,9 @@ export const PrefsPatch = z
     // null: back to the default (JSON can't carry undefined, so "unset" travels as null).
     model: z.string().max(80).nullable().optional(),
     effort: z.enum(EFFORTS).nullable().optional(),
+    // Who answers "@you" (null: back to Claude), and per-project ones by project name (BLG-444).
+    defaultAgent: AgentRef.nullable().optional(),
+    projectAgents: z.record(z.string().min(1).max(80), AgentRef),
     autoSetup: bool,
     contextMeter: bool,
     autoCompact: bool,

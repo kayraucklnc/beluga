@@ -24,7 +24,7 @@ import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer
 import type { DraftContext, TaskDraft } from '../agent/task-drafter.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
-import type { Settings } from './settings.js';
+import { chosenAgent, publishedAgents, type Settings } from './settings.js';
 import { runCommand } from './commands.js';
 import { People } from './people.js';
 import { ReplayGuard } from './replay.js';
@@ -1120,6 +1120,16 @@ export class Session {
     const forScreens = Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === undefined ? null : v]));
     this.store.dispatch({ type: 'prefs', prefs: forScreens });
     this.opts.saveSettings?.(Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === null ? undefined : v])) as Partial<Settings>);
+    // Your default agent rides on your peer card: friends see the change at once, no reconnect.
+    if ('defaultAgent' in prefs || 'projectAgents' in prefs) {
+      const chosen = this.store.getState().prefs;
+      this.updateProfile({ defaultAgent: chosenAgent(chosen), agents: publishedAgents(chosen) });
+    }
+  }
+
+  /** The agent that answers for work in `project` (its own default over yours; BLG-444). */
+  agentFor(project?: string): AgentRef {
+    return chosenAgent(this.store.getState().prefs, project);
   }
 
   /** Share a folder with the room (read-only unless `writable`). */

@@ -2,6 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { type ReactNode, useRef, useState } from 'react';
 import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
 import { EFFORTS } from '@beluga/shared/settings-schema.js';
+import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
@@ -268,6 +269,9 @@ function ClaudePane() {
       <Group>
         <Row label="Model for new conversations" detail="Each conversation can pick its own from the box you type in.">
           <Select label="Model" value={p.model ?? ''} onChange={(v) => void api.workbench.setModel(undefined, v)} options={state.models.map((m) => ({ value: m.value, label: m.label }))} />
+        </Row>
+        <Row label="Answers when friends write @you" detail="Who starts when someone mentions you without naming an agent. Friends see it on your card; each project can pick its own in its settings.">
+          <Select label="Default agent" value={choiceForAgent(p.defaultAgent)} onChange={(v) => void api.session.setPrefs({ defaultAgent: v ? agentForChoice(v) : null })} options={agentChoices(state.models)} />
         </Row>
         <Row label="Thinking effort">
           <Select label="Effort" value={p.effort ?? ''} onChange={(v) => void api.session.setPrefs({ effort: (v || undefined) as (typeof EFFORTS)[number] | undefined })} options={[{ value: '', label: 'Default' }, ...EFFORTS.map((e) => ({ value: e, label: e[0]!.toUpperCase() + e.slice(1) }))]} />
