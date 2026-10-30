@@ -11,6 +11,7 @@ import { scriptedWords } from './runtime-conformance.js';
  */
 export const FAKE_CAPABILITIES: RuntimeCapabilities = {
   canGateEveryTool: true,
+  hasSandbox: false,
   canSteer: false,
   canInterrupt: true,
   hasPlanMode: false,

@@ -18,3 +18,22 @@ Inviting someone exposes your agent, with your permissions, to other people. Bel
 - **Direct connections are pinned.** A direct (peer-to-peer) connection is encrypted with Noise, has forward secrecy, and only completes with the host whose key is in the invite. The relay and the DHT see IP addresses, never content. See [docs/p2p.md](p2p.md).
 - **Untrusted files are handled carefully.** Images from friends are size-checked before decoding, and SVGs can't load files from your disk.
 - **Be aware:** a friend's message can try to talk your agent into things (prompt injection). Keep approvals on for people you don't fully trust.
+
+## Codex runs
+
+Claude Code asks Beluga before every step it takes, so the rules above are checked one step at a time. Codex runs its own commands and edits without asking first, so on Codex the same rules are kept by **Codex's own sandbox** instead: a permissions profile Beluga sets for each run, enforced by macOS.
+
+- Writes go only to the run's own folders. A project's main folder, and a plan while it's being made, are read only.
+- `.env` files, keys and credential stores (`.ssh`, `.aws`, the GitHub CLI's token, the keychains, Beluga's own files in `~/.beluga`, Codex's and Claude's logins) can't be read at all, so no command reaches them however it's written. Templates like `.env.example` are hidden too: the sandbox can't tell them apart.
+- A friend's task runs with the network off, without your own Codex MCP servers, plugins and hooks, and without your environment's tokens. It can never ask to go past the sandbox. Beluga's own tools (the room, the board) still check each call against the friend's limits.
+- Your own run may ask to go past the sandbox (a command that needs more): you get the same approval prompt as for Claude.
+- Guests can't use Codex.
+
+<!-- codex-trust-table -->
+| Who asks | Trust | Files | Rest of your home | Network | `.env`, keys, credential stores | Going past the sandbox | Your Codex tools |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Your own run | — | write the run's folders | read | on | denied by the sandbox | asks you | on |
+| A friend's task | Ask me each time, Trusted | write the run's folders | denied | off | denied by the sandbox | not possible | off |
+| A friend's task | Full trust | write the run's folders | read | off | denied by the sandbox | not possible | off |
+| A guest | invited into one project | refused | | | | | |
+<!-- /codex-trust-table -->

@@ -6,6 +6,7 @@ import { createClaudeBackend } from './runner.js';
 export const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   // The PreToolUse hook runs before Claude Code's own permission logic, for every tool.
   canGateEveryTool: true,
+  hasSandbox: false,
   canSteer: true,
   canInterrupt: true,
   hasPlanMode: true,

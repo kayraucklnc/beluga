@@ -3,6 +3,7 @@ import { type RuntimeCapabilities, safetyFor } from '../src/agent/runtime/types.
 
 const gated: RuntimeCapabilities = {
   canGateEveryTool: true,
+  hasSandbox: false,
   canSteer: true,
   canInterrupt: true,
   hasPlanMode: true,
@@ -34,5 +35,11 @@ describe('safetyFor', () => {
     expect(safetyFor(ungated, { vetTool: () => undefined }).kind).toBe('sandbox');
     expect(safetyFor(ungated, { vetTool: () => undefined })).toHaveProperty('refuse');
     expect(safetyFor(ungated, { guest: true })).toHaveProperty('refuse');
+  });
+
+  it("takes a friend's task when its own sandbox confines every step, never a guest", () => {
+    const sandboxed = { ...ungated, hasSandbox: true };
+    expect(safetyFor(sandboxed, { vetTool: () => undefined })).toEqual({ kind: 'sandbox' });
+    expect(safetyFor(sandboxed, { guest: true })).toHaveProperty('refuse');
   });
 });

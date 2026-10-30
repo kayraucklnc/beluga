@@ -40,7 +40,7 @@ const MAX_WATCHED = 200;
 const segmentsOf = (p: string): string[] => p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
 
 /** Beluga's own home (~/.beluga): your identity key, settings and trust choices live there. */
-const belugaHomeDir = (): string => path.resolve(belugaEnv('HOME') ?? process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.beluga'));
+export const belugaHomeDir = (): string => path.resolve(belugaEnv('HOME') ?? process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.beluga'));
 
 /** The Mac's file system ignores case: compare paths the way it does. */
 const fold = (p: string): string => (process.platform === 'darwin' || process.platform === 'win32' ? p.toLowerCase() : p);

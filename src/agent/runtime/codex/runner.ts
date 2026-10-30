@@ -14,8 +14,8 @@ import { INTERRUPT_TIMEOUT_MS } from '../types.js';
 import { type CodexConnect, type CodexConnection, spawnAppServer } from './app-server.js';
 import { codexComplete } from './complete.js';
 import { CodexEvents, type TurnSink, usageEvent } from './events.js';
-import type { Model, ReasoningEffort, ThreadStartResponse, Turn, UserInput } from './protocol.js';
-import { codexConfinement } from './sandbox.js';
+import type { AskForApproval, Model, ReasoningEffort, ThreadStartResponse, Turn, UserInput } from './protocol.js';
+import { codexConfinement, originOf, trustRow } from './sandbox.js';
 
 export interface CodexBackendOptions {
   readonly cwd: string;
@@ -101,7 +101,6 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, dotenv: Boolean(input.canUseSecret) && !input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const shelf = new ViewShelf();
-      const writable = [...extraDirs, ...(fixup ? [fixup] : [])];
       const model = codexModel(input.model ?? place?.model ?? opts.model);
       const effort = codexEffort(input.effort);
 
@@ -112,57 +111,72 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       let failed = true;
       let closed = false;
       try {
-        conn = await connect({ cwd, env: { ...process.env, ...input.env }, ...(opts.codexPath ? { bin: opts.codexPath } : {}) });
-        const { rpc, proc } = conn;
-        input.onProcess?.(proc);
-        if (input.signal.aborted) throw new Error('aborted');
-
         // Turns: the one running now, and how each ended (one can end before turn/start answers).
         let active: { id?: string; readonly done: ReturnType<typeof deferred<Turn>> } | undefined;
         const ended = new Map<string, Turn>();
-        const stopped = deferred<never>();
-        rpc.onNotification((method, params) => {
-          events.handle(method, params);
-          if (method === 'turn/started' && active && !active.id) active.id = (params.turn as Turn).id;
-          if (method === 'turn/completed') {
-            const turn = params.turn as Turn;
-            if (active?.id === turn.id) active.done.resolve(turn);
-            else ended.set(turn.id, turn);
-          }
-        });
-        void rpc.closed.then(() => {
-          if (!closed) stopped.reject(codexFailure({ error: 'Codex exited before the turn ended', stderr: conn?.stderr() ?? [] }));
-        });
+        /** Rejects when the app-server behind the run goes away on its own. */
+        let stopped = deferred<never>();
+        const origin = originOf(input);
 
-        // Codex asking to go past its sandbox: the same gate as every other tool (you decide).
-        rpc.onRequest(async (method, params) => {
-          if (method === 'item/commandExecution/requestApproval' || method === 'execCommandApproval') {
-            const command = typeof params.command === 'string' ? params.command : Array.isArray(params.command) ? params.command.join(' ') : '';
-            const denied = await gateTool('Bash', { command, ...(params.reason ? { description: params.reason } : {}) }, input, policy);
-            return { decision: denied ? 'decline' : 'accept' };
+        /**
+         * An app-server with this run's thread on it, confined for `planning` or for work (see
+         * sandbox.ts). Planning, then working, reopens the thread: a thread's sandbox is set when
+         * it's opened, never by a turn, so the work isn't done under the plan's read-only one.
+         */
+        const open = async (planning: boolean, resume: string | undefined): Promise<string> => {
+          const link = await connect({ cwd, env: { ...process.env, ...input.env }, ...(opts.codexPath ? { bin: opts.codexPath } : {}) });
+          conn = link;
+          const { rpc } = link;
+          input.onProcess?.(link.proc);
+          const gone = deferred<never>();
+          stopped = gone;
+          rpc.onNotification((method, params) => {
+            events.handle(method, params);
+            if (method === 'turn/started' && active && !active.id) active.id = (params.turn as Turn).id;
+            if (method === 'turn/completed') {
+              const turn = params.turn as Turn;
+              if (active?.id === turn.id) active.done.resolve(turn);
+              else ended.set(turn.id, turn);
+            }
+          });
+          void rpc.closed.then(() => {
+            if (!closed && conn === link) gone.reject(codexFailure({ error: 'Codex exited before the turn ended', stderr: link.stderr() }));
+          });
+          // Codex asking to go past its sandbox (your own runs only): the same gate as every other tool, so you decide.
+          rpc.onRequest(async (method, params) => {
+            if (method === 'item/commandExecution/requestApproval' || method === 'execCommandApproval') {
+              const command = typeof params.command === 'string' ? params.command : Array.isArray(params.command) ? params.command.join(' ') : '';
+              const denied = await gateTool('Bash', { command, ...(params.reason ? { description: params.reason } : {}) }, input, policy);
+              return { decision: denied ? 'decline' : 'accept' };
+            }
+            if (method === 'item/fileChange/requestApproval' || method === 'applyPatchApproval') {
+              const changes = events.changes.get(String(params.itemId)) ?? [];
+              const files = changes.length ? changes.map((c) => path.resolve(cwd, c.path)) : [typeof params.grantRoot === 'string' ? params.grantRoot : cwd];
+              for (const file of files) if (await gateTool('Edit', { file_path: file }, input, policy)) return { decision: 'decline' };
+              return { decision: 'accept' };
+            }
+            // Anything else (more permissions, questions, elicitations) isn't Beluga's to grant.
+            throw new Error(`${method} isn’t supported in Beluga`);
+          });
+          // A friend's task gets none of your own Codex MCP servers: their names, to switch them off.
+          const yourServers = trustRow(origin, input.scope).yourTools ? [] : await rpc.request<{ config?: { mcp_servers?: Record<string, unknown> } }>('config/read', {}).then((r) => Object.keys(r.config?.mcp_servers ?? {}), () => []);
+          const writableRoots = planning || !autoEdit ? (fixup ? [fixup] : []) : [cwd, ...extraDirs, ...(fixup ? [fixup] : [])];
+          const confined = codexConfinement(origin, input.scope, { cwd, folders: [...extraDirs, ...(fixup ? [fixup] : [])], writable: writableRoots, yourServers });
+          approval = confined.approval;
+          const params = { cwd, ...(model ? { model } : {}), developerInstructions: runInstructions(input, opts.bridge.selfName(), CODEX_AGENT), config: { ...confined.config, ...mcpConfig(mounted.servers) }, approvalPolicy: confined.approval };
+          let thread: ThreadStartResponse | undefined;
+          if (resume) {
+            thread = await rpc.request<ThreadStartResponse>('thread/resume', { threadId: resume, ...params }).catch(() => undefined);
+            if (!thread) input.onEvent('progress', 'Started a new Codex conversation (the last one couldn’t be opened)');
           }
-          if (method === 'item/fileChange/requestApproval' || method === 'applyPatchApproval') {
-            const changes = events.changes.get(String(params.itemId)) ?? [];
-            const files = changes.length ? changes.map((c) => path.resolve(cwd, c.path)) : [typeof params.grantRoot === 'string' ? params.grantRoot : cwd];
-            for (const file of files) if (await gateTool('Edit', { file_path: file }, input, policy)) return { decision: 'decline' };
-            return { decision: 'accept' };
-          }
-          // Anything else (permission profiles, questions, elicitations) isn't Beluga's to grant yet.
-          throw new Error(`${method} isn’t supported in Beluga`);
-        });
-
-        // The thread's own confinement is a working turn's; a planning turn narrows it for itself.
-        const base = codexConfinement({ ...input, plan: false }, { askOnly: Boolean(askOnly), writable });
-        const threadParams = { cwd, ...(model ? { model } : {}), developerInstructions: runInstructions(input, opts.bridge.selfName(), CODEX_AGENT), config: mcpConfig(mounted.servers), sandbox: base.sandbox, approvalPolicy: base.approval };
-        const resume = place ? place.resume : sessionId;
-        let thread: ThreadStartResponse | undefined;
-        if (resume) {
-          thread = await rpc.request<ThreadStartResponse>('thread/resume', { threadId: resume, ...threadParams }).catch(() => undefined);
-          if (!thread) input.onEvent('progress', 'Started a new Codex conversation (the last one couldn’t be opened)');
-        }
-        thread ??= await rpc.request<ThreadStartResponse>('thread/start', threadParams);
-        const threadId = thread.thread.id;
+          thread ??= await rpc.request<ThreadStartResponse>('thread/start', params);
+          return thread.thread.id;
+        };
+        let approval: AskForApproval = 'never';
+        let threadId = await open(Boolean(input.plan), place ? place.resume : sessionId);
         remember(threadId);
+        if (input.signal.aborted) throw new Error('aborted');
+        const rpc = () => conn!.rpc;
 
         // Stop: interrupt the turn (same contract as Claude), then the process for sure.
         let aborted = false;
@@ -171,7 +185,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           aborted = true;
           void interruptTurn().finally(() => {
             abort.reject(new Error('aborted'));
-            void proc.kill();
+            void conn?.proc.kill();
           });
         };
         input.signal.addEventListener('abort', onAbort, { once: true });
@@ -185,7 +199,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           const late = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), INTERRUPT_TIMEOUT_MS)));
           const stop = (async () => {
             while (!turn.id) await new Promise((r) => setTimeout(r, 20));
-            await rpc.request('turn/interrupt', { threadId, turnId: turn.id });
+            await rpc().request('turn/interrupt', { threadId, turnId: turn.id });
             await turn.done.promise;
             return true;
           })().catch(() => false);
@@ -193,12 +207,12 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         };
 
         /** One turn: its answer's text, how it ended. */
-        const runTurn = async (sink: TurnSink, text: string, prompt: string, planning: boolean): Promise<{ text: string; turn: Turn }> => {
+        const runTurn = async (sink: TurnSink, text: string, prompt: string): Promise<{ text: string; turn: Turn }> => {
           events.beginTurn(sink);
           const done = deferred<Turn>();
           active = { done };
-          const c = codexConfinement({ ...input, plan: planning }, { askOnly: Boolean(askOnly), writable });
-          const res = await rpc.request<{ turn: Turn }>('turn/start', { threadId, input: codexInput(text, prompt), sandboxPolicy: c.policy, approvalPolicy: c.approval, ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
+          // No sandboxPolicy here: a turn's would replace the thread's profile (and its .env denials).
+          const res = await rpc().request<{ turn: Turn }>('turn/start', { threadId, input: codexInput(text, prompt), approvalPolicy: approval, ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
           active.id ??= res.turn.id;
           const early = ended.get(res.turn.id);
           if (early) done.resolve(early);
@@ -220,7 +234,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         const steerIn = (followUp: FollowUp): boolean => {
           const turn = active;
           if (closed || !turn?.id) return false;
-          const sent = rpc
+          const sent = rpc()
             .request('turn/steer', { threadId, input: codexInput(buildPrompt(followUp), followUp.prompt), expectedTurnId: turn.id })
             .then(
               () => followUp.onFolded?.(),
@@ -233,7 +247,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         };
         const status = (): LiveStatus => {
           const tool = [...events.tools.values()].sort((a, b) => a.since - b.since)[0];
-          return { ...(tool ? { tool } : {}), lastEventAt: events.lastEventAt, between: !active, ...(events.thinking ? { thinking: true } : {}), alive: proc.alive() };
+          return { ...(tool ? { tool } : {}), lastEventAt: events.lastEventAt, between: !active, ...(events.thinking ? { thinking: true } : {}), alive: conn?.proc.alive() ?? false };
         };
         const interrupt = async (followUp: FollowUp, note: string): Promise<boolean> => {
           if (closed || !active || interrupting !== undefined) return false;
@@ -265,7 +279,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
 
         const answers: string[] = [];
         // Plan mode, the Codex way: a read-only turn that answers with a plan, for you to approve.
-        let r = await runTurn(original, input.plan ? `${buildPrompt(input)}\n\n${PLAN_NOTE}` : buildPrompt(input), input.prompt, Boolean(input.plan));
+        let r = await runTurn(original, input.plan ? `${buildPrompt(input)}\n\n${PLAN_NOTE}` : buildPrompt(input), input.prompt);
         let answer = answerOf(r, original);
         for (let round = 0; input.plan && input.askUser && round < PLAN_ROUNDS && r.turn.status === 'completed'; round++) {
           const verdict = await input.askUser({ kind: 'plan', plan: (r.text || '(Codex proposed a plan)').slice(0, 60_000) });
@@ -273,7 +287,13 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           if (verdict.approve) input.planTask?.approved();
           const next = verdict.approve ? 'The plan is approved. Do the work now.' : verdict.feedback ? `Change the plan: ${verdict.feedback}\n\n${PLAN_NOTE}` : undefined;
           if (!next) break;
-          r = await runTurn(original, next, '', !verdict.approve);
+          // Approved: the thread is reopened confined for work.
+          if (verdict.approve) {
+            const planned = conn;
+            threadId = await open(false, threadId);
+            await planned?.proc.kill();
+          }
+          r = await runTurn(original, next, '');
           answer = answerOf(r, original);
           if (verdict.approve) break;
         }
@@ -291,7 +311,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           const sink: TurnSink = { onEvent: followUp.onEvent, ...(followUp.onStep ? { onStep: followUp.onStep } : {}) };
           followUp.onStart?.();
           try {
-            followUp.onDone(answerOf(await runTurn(sink, buildPrompt(followUp), followUp.prompt, false), sink));
+            followUp.onDone(answerOf(await runTurn(sink, buildPrompt(followUp), followUp.prompt), sink));
           } catch (err) {
             if (aborted) throw err;
             followUp.onError(err instanceof Error ? err.message : String(err));

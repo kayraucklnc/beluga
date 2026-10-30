@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
 import { CodexEvents, toolCallOf, unwrapShell, usageEvent } from '../src/agent/runtime/codex/events.js';
 import { createCodexBackend, codexEffort, codexModel, toCodexModelChoices } from '../src/agent/runtime/codex/runner.js';
@@ -71,9 +72,13 @@ describe('a Codex run', () => {
     expect(start!.developerInstructions).toMatch(/kay's Codex/);
     expect(start!.developerInstructions).toContain('beluga-graph');
     expect(start!.developerInstructions).toContain('.beluga/scratch');
-    expect(start).toMatchObject({ cwd, sandbox: 'workspace-write', approvalPolicy: 'on-request' });
-    const [turn] = codex.sent('turn/start');
-    expect(turn!.sandboxPolicy).toMatchObject({ type: 'workspaceWrite', writableRoots: ['/tmp/extra'], networkAccess: true });
+    expect(start).toMatchObject({ cwd, approvalPolicy: 'on-request', config: { default_permissions: 'beluga' } });
+    expect(start!.sandbox).toBeUndefined();
+    const profile = (start!.config as Record<string, { extends: string; filesystem: Record<string, string>; network: { enabled: boolean } }>)['permissions.beluga']!;
+    expect(profile).toMatchObject({ extends: ':workspace', network: { enabled: true } });
+    expect(profile.filesystem).toMatchObject({ [cwd]: 'write', '/tmp/extra': 'write', [`${cwd}/**/.env*`]: 'deny' });
+    // A turn's own sandbox would replace the profile: none is sent.
+    expect(codex.sent('turn/start')[0]!.sandboxPolicy).toBeUndefined();
     expect(run.events.some(([k]) => k === 'usage')).toBe(true);
   });
 
@@ -100,18 +105,24 @@ describe('a Codex run', () => {
     const approved = vi.fn();
     const askUser = vi.fn(async () => ({ kind: 'plan' as const, approve: true, feedback: '' }));
     await backend(codex).run(input('hello', { plan: true, askUser, planTask: { needsDefinition: () => false, approved } }));
-    const turns = codex.sent('turn/start');
-    expect(turns[0]!.sandboxPolicy).toMatchObject({ type: 'readOnly' });
+    const profileOf = (p: Record<string, unknown>) => (p.config as Record<string, { extends: string }>)['permissions.beluga']!.extends;
+    expect(profileOf(codex.sent('thread/start')[0]!)).toBe(':read-only');
     expect(askUser).toHaveBeenCalledWith({ kind: 'plan', plan: 'echo: Plan only: look around read-only, change nothing, and answer with a step-by-step plan for the person to approve.' });
     expect(approved).toHaveBeenCalled();
-    expect(turns[1]!.sandboxPolicy).toMatchObject({ type: 'workspaceWrite' });
+    // The work is done on the same thread, reopened under the working profile.
+    expect(codex.connections).toBe(2);
+    const [resumed] = codex.sent('thread/resume');
+    expect(resumed!.threadId).toBe(codex.sent('turn/start')[0]!.threadId);
+    expect(profileOf(resumed!)).toBe(':workspace');
+    expect(codex.sent('turn/start')).toHaveLength(2);
   });
 
   it('a main folder is read only', async () => {
     const codex = new FakeCodex();
     await backend(codex).run(input('hello', { place: { cwd, additionalDirectories: [], autoEdit: false, askOnly: { project: 'beluga' }, onSession: () => undefined } }));
-    expect(codex.sent('thread/start')[0]).toMatchObject({ sandbox: 'read-only' });
-    expect(codex.sent('turn/start')[0]!.sandboxPolicy).toMatchObject({ type: 'readOnly' });
+    const profile = (codex.sent('thread/start')[0]!.config as Record<string, { extends: string; filesystem: Record<string, string> }>)['permissions.beluga']!;
+    expect(profile.extends).toBe(':read-only');
+    expect(profile.filesystem[cwd]).toBe('read');
   });
 
   it('steers a message into the running turn', async () => {
@@ -136,6 +147,30 @@ describe('a Codex run', () => {
     await backend(codex).run(input('ask first', { canUseTool }));
     expect(canUseTool).toHaveBeenCalledWith('Bash', { command: 'echo ask first' });
     expect(codex.approvals).toEqual([{ decision: 'decline' }]);
+  });
+
+  it("confines a friend's task as the trust table says: no network, no home, no asking, none of your own Codex tools", async () => {
+    const codex = new FakeCodex();
+    const vetTool = vi.fn(() => undefined);
+    expect(await backend(codex).run(input('hello', { vetTool, viaAgent: true, scope: 'folder' }))).toBe('echo: hello');
+    const start = codex.sent('thread/start')[0]!;
+    const config = start.config as Record<string, unknown>;
+    const profile = config['permissions.beluga'] as { filesystem: Record<string, string>; network: { enabled: boolean } };
+    expect(start.approvalPolicy).toBe('never');
+    expect(profile.network.enabled).toBe(false);
+    expect(profile.filesystem[os.homedir()]).toBe('deny');
+    expect(profile.filesystem[`${cwd}/**/.env*`]).toBe('deny');
+    expect(config).toMatchObject({ 'mcp_servers.figma.enabled': false, 'features.plugins': false, 'features.apps': false, 'shell_environment_policy.inherit': 'core' });
+    // Beluga's own tools stay, gated by the friend's limits.
+    expect(config['mcp_servers.beluga']).toBeDefined();
+  });
+
+  it("asks you before an edit outside the run's folders, in the same prompt as Claude's", async () => {
+    const codex = new FakeCodex();
+    const canUseTool = vi.fn(async () => true);
+    await backend(codex).run(input('edit the hosts file', { canUseTool, scope: 'full' }));
+    expect(canUseTool).toHaveBeenCalledWith('Edit', { file_path: '/etc/hosts' });
+    expect(codex.approvals).toEqual([{ decision: 'accept' }]);
   });
 
   it("fails as Codex's failure, saying to sign in when that's why", async () => {

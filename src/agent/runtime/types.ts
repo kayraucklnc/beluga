@@ -42,8 +42,8 @@ import type { AgentBackend, AgentRunInput, RoomBridge } from '../types.js';
  * SAFETY RULE. Beluga's guarantees (.env files blocked, a friend's vetTool limits, the owner
  * approving risky actions, a main folder staying read-only: agent/policy.ts) hold only when the
  * runtime asks Beluga before EVERY tool call it makes, its own built-in tools included. A runtime
- * that can't (`canGateEveryTool: false`) gets no friend's task, no guest, and no run without a
- * sandbox: the session layer must demand a sandbox default instead (see `safetyFor`).
+ * that can't (`canGateEveryTool: false`) gets no guest and no run without a sandbox, and a
+ * friend's task only when its own sandbox confines every step (`hasSandbox`; see `safetyFor`).
  */
 
 /**
@@ -63,6 +63,12 @@ export interface RuntimeCapabilities {
    * the run needs a sandbox (see the safety rule above).
    */
   readonly canGateEveryTool: boolean;
+  /**
+   * Its own sandbox confines every step it takes to the run's folders, with secrets (.env files,
+   * keys, credential stores) unreachable and the network off for friends (Codex's permission
+   * profiles). With it, a runtime that can't gate every tool may still take friends' tasks.
+   */
+  readonly hasSandbox: boolean;
   /** A message sent in while it works is taken in at its next step (Steer). */
   readonly canSteer: boolean;
   /** A running turn can be stopped and the next message answered (Steer.interrupt / force). */
@@ -165,12 +171,13 @@ export type RunSafety =
 
 /**
  * The safety rule as code: no per-tool gating ⇒ sandbox required (its secrets, .env files
- * included, kept out by the sandbox, not by asking). A friend's task (vetTool) or a guest can't
- * run at all without gating: their limits are per tool call.
+ * included, kept out by the sandbox, not by asking). A guest can't run at all without gating; a
+ * friend's task (vetTool) only on a runtime whose sandbox confines every step (BLG-452: Codex's
+ * workspace-write, network off, secrets unreachable; see runtime/codex/sandbox.ts).
  */
 export function safetyFor(caps: RuntimeCapabilities, input?: Pick<AgentRunInput, 'vetTool' | 'guest'>): RunSafety {
   if (caps.canGateEveryTool) return { kind: 'gated' };
-  const refuse = input?.vetTool
+  const refuse = input?.vetTool && !caps.hasSandbox
     ? "This agent can't check each step against a friend's limits, so it can't take friends' tasks."
     : input?.guest
       ? "This agent can't check each step, so it can't answer guests."

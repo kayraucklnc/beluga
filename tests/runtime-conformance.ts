@@ -145,11 +145,14 @@ export function runtimeConformance(name: string, make: () => AgentRuntime): void
       expect(last.status).toBe('error');
     });
 
-    it("refuses a friend's task unless it gates every tool", async () => {
+    it("takes a friend's task only when it gates every tool or sandboxes every step, and a guest only when it gates", async () => {
       const rt = make();
       const run = backend().run(runInput('hello', { vetTool: () => undefined }));
-      if (rt.capabilities.canGateEveryTool) await expect(run).resolves.toBe('echo: hello');
+      if (rt.capabilities.canGateEveryTool || rt.capabilities.hasSandbox) await expect(run).resolves.toBe('echo: hello');
       else await expect(run).rejects.toThrow(/friends/);
+      const guest = backend().run(runInput('hello', { guest: true }));
+      if (rt.capabilities.canGateEveryTool) await expect(guest).resolves.toBe('echo: hello');
+      else await expect(guest).rejects.toThrow(/guests/);
     });
 
     it('lists its models when it says it can', async () => {

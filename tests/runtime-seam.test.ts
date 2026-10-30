@@ -36,7 +36,7 @@ describe('the runtime seam', () => {
 });
 
 describe('guardedBackend', () => {
-  const caps = (canGateEveryTool: boolean) => ({ canGateEveryTool }) as RuntimeCapabilities;
+  const caps = (canGateEveryTool: boolean, hasSandbox = false) => ({ canGateEveryTool, hasSandbox }) as RuntimeCapabilities;
   const input = (extra: Partial<AgentRunInput> = {}) => ({ prompt: 'hi', ...extra }) as AgentRunInput;
 
   it('leaves a runtime that gates every tool as it is', () => {

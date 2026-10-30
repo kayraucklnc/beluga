@@ -8,6 +8,8 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // Its own commands and edits run inside its sandbox without asking: only what leaves the
   // sandbox comes to Beluga. So the sandbox, not per-call vetting, keeps a run in its folders.
   canGateEveryTool: false,
+  // Its permissions profile confines each step (runtime/codex/sandbox.ts).
+  hasSandbox: true,
   // turn/steer takes a message into the running turn.
   canSteer: true,
   canInterrupt: true,

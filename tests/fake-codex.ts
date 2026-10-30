@@ -46,6 +46,11 @@ export class FakeCodex {
       notify('turn/started', { threadId, turn: { id: turnId, status: 'inProgress', error: null, items: [] } });
       if (words.startsWith('fail')) return void notify('turn/completed', { threadId, turn: { id: turnId, status: 'failed', error: { message: 'Your access token could not be refreshed.', codexErrorInfo: 'unauthorized', additionalDetails: null }, items: [] } });
       notify('item/started', { threadId, turnId, item: { type: 'commandExecution', id: cmd, command: `/bin/zsh -lc 'echo ${words}'`, cwd: process.cwd(), status: 'inProgress', aggregatedOutput: null, exitCode: null, durationMs: null } });
+      if (words.startsWith('edit')) {
+        const item = { type: 'fileChange', id: `f-${turnId}`, status: 'inProgress', changes: [{ path: '/etc/hosts', kind: { type: 'update', move_path: null }, diff: '+x' }] };
+        notify('item/started', { threadId, turnId, item });
+        this.approvals.push(await ask('item/fileChange/requestApproval', { threadId, turnId, itemId: item.id, reason: 'outside the workspace' }));
+      }
       if (words.startsWith('ask')) this.approvals.push(await ask('item/commandExecution/requestApproval', { threadId, turnId, itemId: cmd, command: `echo ${words}`, cwd: process.cwd() }));
       if (words.startsWith('wait')) {
         await new Promise<void>((resolve) => (running = { id: turnId, threadId, stop: resolve }));
@@ -86,6 +91,8 @@ export class FakeCodex {
           running = undefined;
           return {};
         }
+        case 'config/read':
+          return { config: { mcp_servers: { figma: { url: 'https://figma.example' } } }, origins: {} };
         case 'model/list':
           return { data: [{ id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5', description: 'Frontier', hidden: false, isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }], nextCursor: null };
         default:
