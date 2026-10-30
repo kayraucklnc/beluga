@@ -2,6 +2,7 @@ import type { AgentRuntime, RuntimeCapabilities } from '../types.js';
 import type { CodexConnect } from './app-server.js';
 import { codexComplete } from './complete.js';
 import { createCodexBackend } from './runner.js';
+import { codexStatus } from './status.js';
 
 /** Codex through `codex app-server` (BLG-453): what it can and can't do of what Beluga asks. */
 export const CODEX_CAPABILITIES: RuntimeCapabilities = {
@@ -37,6 +38,7 @@ export function createCodexRuntime(deps: { readonly connect?: CodexConnect } = {
     capabilities: CODEX_CAPABILITIES,
     create: ({ executablePath, ...opts }) => createCodexBackend({ ...opts, ...(executablePath ? { codexPath: executablePath } : {}), ...(deps.connect ? { connect: deps.connect } : {}) }),
     complete: (req) => codexComplete(req, deps.connect ? { connect: deps.connect } : {}),
+    status: () => codexStatus(deps.connect ? { connect: deps.connect } : {}),
   };
 }
 

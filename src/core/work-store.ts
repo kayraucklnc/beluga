@@ -35,6 +35,23 @@ export interface ModelChoice {
   readonly efforts?: readonly string[];
 }
 
+/**
+ * Another agent you could run (Codex): whether it's ready on this Mac, what to do when it isn't,
+ * and its models (BLG-455). Claude's own models are `models`; this is every other runtime.
+ */
+export interface RuntimeChoice {
+  /** The runtime ('codex'). */
+  readonly id: string;
+  /** Its name for people ("Codex"). */
+  readonly label: string;
+  /** ready: signed in · signed_out: installed, not signed in · missing: not installed. */
+  readonly state: 'ready' | 'signed_out' | 'missing';
+  /** What to do about it, in a few words ("Run codex login in Terminal"). */
+  readonly fix?: string;
+  /** Its models once it's ready ('' = its default). */
+  readonly models: readonly ModelChoice[];
+}
+
 /** One CI check on a pull request (a GitHub Actions job or an external status). */
 export interface PrCheck {
   readonly name: string;
@@ -107,6 +124,8 @@ export interface Template {
 export interface WorkState {
   readonly inbox: readonly Notice[];
   readonly models: readonly ModelChoice[];
+  /** Other agents this Mac could run, and whether each is ready (see RuntimeChoice). */
+  readonly agentRuntimes: readonly RuntimeChoice[];
   /** Folder size in bytes per workspace (worktrees and chats). */
   readonly disk: Readonly<Record<string, number>>;
   /** Worktrees being archived now, and how far along (see workspaces/archive.ts). */
@@ -144,6 +163,7 @@ export type WorkAction =
   /** Clear one notice, or all of them. */
   | { type: 'notice_clear'; id?: number }
   | { type: 'models'; models: readonly ModelChoice[] }
+  | { type: 'agent_runtimes'; runtimes: readonly RuntimeChoice[] }
   | { type: 'disk'; sizes: Readonly<Record<string, number>> }
   /** No phase: done (or it failed). */
   | { type: 'archiving'; id: string; phase?: ArchivePhase }
@@ -172,6 +192,7 @@ export const FALLBACK_MODELS: readonly ModelChoice[] = [
 export const initialWork: WorkState = {
   inbox: [],
   models: FALLBACK_MODELS,
+  agentRuntimes: [],
   disk: {},
   archiving: {},
   prs: {},
@@ -213,6 +234,8 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
       return state.inbox.some((n) => n.id === action.id) ? { ...state, inbox: state.inbox.filter((n) => n.id !== action.id) } : state;
     case 'models':
       return { ...state, models: action.models.length ? action.models : FALLBACK_MODELS };
+    case 'agent_runtimes':
+      return { ...state, agentRuntimes: action.runtimes };
     case 'disk':
       return { ...state, disk: { ...state.disk, ...action.sizes } };
     case 'archiving':

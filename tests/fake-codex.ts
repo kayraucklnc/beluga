@@ -19,6 +19,8 @@ export class FakeCodex {
   readonly approvals: unknown[] = [];
   /** Set: a command step asks for approval before running (the prompt's words start with "ask"). */
   connections = 0;
+  /** Signed in (account/read says who), or not. */
+  signedIn = true;
 
   readonly connect: CodexConnect = async () => {
     this.connections++;
@@ -91,6 +93,8 @@ export class FakeCodex {
           running = undefined;
           return {};
         }
+        case 'account/read':
+          return this.signedIn ? { account: { type: 'chatgpt', email: 'kay@example.com', planType: 'plus' }, requiresOpenaiAuth: true } : { account: null, requiresOpenaiAuth: true };
         case 'config/read':
           return { config: { mcp_servers: { figma: { url: 'https://figma.example' } } }, origins: {} };
         case 'model/list':

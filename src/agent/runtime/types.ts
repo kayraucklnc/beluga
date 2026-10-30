@@ -150,6 +150,13 @@ export class CompletionError extends Error {
 /** A runtime's side call: the answer's text, or a CompletionError (an abort rejects as the runtime does). */
 export type Complete = (req: CompletionRequest) => Promise<string>;
 
+/** Whether a runtime is ready on this Mac (installed, signed in), what to do when not, and its models. */
+export interface RuntimeStatus {
+  readonly state: 'ready' | 'signed_out' | 'missing';
+  readonly fix?: string;
+  readonly models: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description: string; readonly efforts?: readonly string[] }>;
+}
+
 /** One agent kind Beluga can run. */
 export interface AgentRuntime {
   readonly id: RuntimeId;
@@ -160,6 +167,8 @@ export interface AgentRuntime {
   create(opts: RuntimeOptions): AgentBackend;
   /** A side call (agent/side-calls.ts): its answer's text, or a CompletionError. */
   readonly complete: Complete;
+  /** Whether it's installed and signed in here, and its models (the picker greys it out until it is). */
+  status?(): Promise<RuntimeStatus>;
 }
 
 /** How a run is kept safe on a runtime. */

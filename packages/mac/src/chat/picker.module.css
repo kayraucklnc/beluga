@@ -80,6 +80,14 @@
 .modelOn {
   background: var(--bg-selected);
 }
+/* Another agent's rows: shown, not picked here (greyed until it's ready). */
+.modelOff {
+  opacity: 0.55;
+  cursor: default;
+}
+.modelOff:hover {
+  background: none;
+}
 .radio {
   display: grid;
   place-items: center;

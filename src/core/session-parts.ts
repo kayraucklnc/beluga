@@ -94,6 +94,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         confirm: (title, detail) => session.ask('request', title, detail),
         open: opts.open,
         listModels: async () => (await session.backend?.listModels?.()) as readonly ModelChoice[] | undefined,
+        // Your other agents (Codex): only with the real runtimes (never the demo's or a test's).
+        ...(opts.runtime ? { runtimeStatus: async () => (await import('../agent/runtime/registry.js')).otherRuntimes() } : {}),
         findPr: opts.findPr,
         hasGh: opts.hasGh,
         envFor: (where) => env.envFor(where),

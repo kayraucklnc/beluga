@@ -1,6 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { EFFORTS, type Effort } from '@beluga/shared/settings-schema.js';
 import { modelLabel, modelOf } from '@beluga/ui/menus.js';
+import { runtimeSections } from '@beluga/ui/runtime-choices.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
@@ -36,6 +37,7 @@ export function ModelPicker({ channel }: { channel: string }) {
   const label = useApp((st) => modelLabel(st, current || undefined));
   const effort = useApp((st) => st.prefs.effort);
   const models = useApp((st) => st.models);
+  const others = useApp((st) => st.agentRuntimes);
   const model = models.find((m) => m.value === current);
   // Some models take only some effort levels.
   const allowed = new Set((model?.efforts ?? EFFORTS) as readonly string[]);
@@ -80,6 +82,35 @@ export function ModelPicker({ channel }: { channel: string }) {
               );
             })}
           </div>
+          {runtimeSections(others).map((rt) => (
+            <div key={rt.id}>
+              <div className={s.heading}>
+                {rt.label}
+                <span className={s.scope}>{rt.ready ? 'another agent' : 'not ready'}</span>
+              </div>
+              <div className={s.models} role="group" aria-label={`${rt.label} models`}>
+                {rt.ready ? (
+                  rt.models.map((m) => (
+                    <div key={m.value || 'default'} className={cx(s.model, s.modelOff)} aria-disabled="true" title={`Pick ${rt.label} as this worktree's agent to use it`}>
+                      <span className={s.radio} />
+                      <span className={s.modelText}>
+                        <span className={s.modelName}>{m.label}</span>
+                        <span className={s.modelDesc}>{m.description}</span>
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className={cx(s.model, s.modelOff)} aria-disabled="true">
+                    <span className={s.radio} />
+                    <span className={s.modelText}>
+                      <span className={s.modelName}>{rt.label}</span>
+                      <span className={s.modelDesc}>{rt.note}</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
           <div className={s.heading}>
             Thinking
             <span className={s.scope}>for every conversation</span>

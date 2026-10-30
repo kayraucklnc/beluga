@@ -1082,6 +1082,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'notice_unread':
     case 'notice_clear':
     case 'models':
+    case 'agent_runtimes':
     case 'disk':
     case 'archiving':
     case 'pr':
@@ -1120,6 +1121,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'fx_rates':
       return { ...state, ...reduceEarnings(state, action) };
     case 'claude_code':
+    case 'codex_sessions':
       return ccFinished(state, { ...state, ...reduceClaudeCode(state, action) });
     case 'agent_origins':
       return { ...state, ...reduceClaudeCode(state, action) };

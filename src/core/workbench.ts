@@ -19,7 +19,7 @@ import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store, shippedText } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
-import type { ModelChoice, PullRequest } from './work-store.js';
+import type { ModelChoice, PullRequest, RuntimeChoice } from './work-store.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
@@ -44,6 +44,8 @@ export interface WorkbenchDeps {
   readonly open?: (target: string) => void;
   /** Models your Claude Code offers (asked once). */
   readonly listModels?: () => Promise<readonly ModelChoice[] | undefined>;
+  /** The other agents this Mac could run (Codex), whether each is ready, and their models (BLG-455). */
+  readonly runtimeStatus?: () => Promise<readonly RuntimeChoice[]>;
   /** Look for a pull request (injected in tests). */
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   /** A repository's recent PRs by branch, in one call (injected in tests; without it, with an injected findPr, PRs are looked up one by one). */
@@ -85,6 +87,8 @@ export interface WorkbenchDeps {
   readonly hasClaude?: () => boolean;
 }
 
+/** An agent that isn't ready yet (Codex not signed in) is asked about again this often. */
+const RUNTIME_RECHECK_MS = 60_000;
 const DISK_EVERY_MS = 5 * 60_000;
 /** How often to see which PRs are due a look (cheap: no gh unless one is). */
 const PR_TICK_MS = 5_000;
@@ -200,6 +204,7 @@ export class Workbench {
   }
   private diskTimer?: NodeJS.Timeout;
   private prTimer?: NodeJS.Timeout;
+  private runtimeTimer?: NodeJS.Timeout;
   private readonly watchers = new Map<string, () => void>();
   /**
    * What each terminal started with: where (for its variables now) and the variables as text.
@@ -256,6 +261,7 @@ export class Workbench {
       if (ok) void this.refreshPrs();
     });
     void this.deps.listModels?.().then((models) => models && this.deps.store.dispatch({ type: 'models', models }), () => undefined);
+    void this.checkRuntimes();
     setTimeout(() => void this.measureDisk(), 3000).unref();
     this.diskTimer = setInterval(() => void this.measureDisk(), DISK_EVERY_MS);
     this.diskTimer.unref();
@@ -266,6 +272,7 @@ export class Workbench {
   stop(): void {
     clearInterval(this.diskTimer);
     clearInterval(this.prTimer);
+    clearTimeout(this.runtimeTimer);
     for (const off of this.watchers.values()) off();
     this.deps.terminals?.closeAll();
   }
@@ -1368,6 +1375,18 @@ export class Workbench {
   }
 
   /** How much disk each worktree and chat folder takes. */
+  /** Whether the other agents are ready; asked again a while later until all are (you may sign in meanwhile). */
+  private async checkRuntimes(): Promise<void> {
+    const runtimes = await this.deps.runtimeStatus?.().catch(() => undefined);
+    if (!runtimes) return;
+    this.deps.store.dispatch({ type: 'agent_runtimes', runtimes });
+    if (runtimes.some((r) => r.state !== 'ready')) {
+      clearTimeout(this.runtimeTimer);
+      this.runtimeTimer = setTimeout(() => void this.checkRuntimes(), RUNTIME_RECHECK_MS);
+      this.runtimeTimer.unref();
+    }
+  }
+
   async measureDisk(): Promise<void> {
     const dirs = this.manager.list
       .flatMap((p) => p.workspaces)
