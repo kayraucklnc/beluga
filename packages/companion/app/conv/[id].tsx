@@ -204,7 +204,7 @@ export default function Conversation() {
             {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
             {turns.map((t, i) => (
               <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeIn.duration(180) : undefined}>
-                {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
+                {t.dialogue ? <DialogueTurn d={t.dialogue} /> : t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : t.edit && canEdit ? () => setEditing(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
               </Animated.View>
             ))}
             {pending.map((p) => (
@@ -365,6 +365,47 @@ function PendingTurn({ s }: { s: Pending }) {
       </View>
       <SendStatus s={s} />
     </View>
+  );
+}
+
+/** 1.33 (BLG-466): where a dialogue between agents begins: what it's about, how far it is, and Stop / Continue. */
+function DialogueTurn({ d }: { d: NonNullable<TurnView['dialogue']> }) {
+  const act = (call: ReturnType<typeof calls.dialogueStop>): void => void store.call(call).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+  return (
+    <Card style={{ padding: 14, gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <MessagesSquare color={color.text2} size={15} />
+        <T v="caption" c={color.text} style={{ fontWeight: '700' }}>
+          {d.mode}
+        </T>
+        <T v="caption" style={{ flex: 1 }} numberOfLines={1}>
+          {d.who}
+        </T>
+      </View>
+      <T v="callout" c={color.text}>
+        {d.topic}
+      </T>
+      <T v="caption">{[d.progress, d.budget, d.status].filter(Boolean).join(' · ')}</T>
+      {d.canStop || d.canContinue ? (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {d.canContinue ? (
+            <Press onPress={() => act(calls.dialogueContinue(d.id))} style={{ paddingHorizontal: 14, height: 32, borderRadius: 16, justifyContent: 'center', backgroundColor: color.sunken }}>
+              <T v="caption" c={color.text} style={{ fontWeight: '600' }}>
+                Continue
+              </T>
+            </Press>
+          ) : null}
+          {d.canStop ? (
+            <Press onPress={() => act(calls.dialogueStop(d.id))} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 32, borderRadius: 16, backgroundColor: color.sunken }}>
+              <OctagonX color={color.text2} size={14} />
+              <T v="caption" c={color.text} style={{ fontWeight: '600' }}>
+                Stop
+              </T>
+            </Press>
+          ) : null}
+        </View>
+      ) : null}
+    </Card>
   );
 }
 

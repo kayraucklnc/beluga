@@ -5,6 +5,7 @@ import { type ViewContext, convTurns, homeView, needsYou, sentinelDone, viewOf }
 import { NO_SENTINEL, type Sentinel, type SentinelState } from '../src/core/sentinel/model.js';
 import { type Action, type DomainState, Store, initialState } from '../src/core/store.js';
 import type { Plan } from '../src/core/plans/model.js';
+import { createDialogue } from '../src/core/dialogues/model.js';
 import type { Issue } from '../src/core/board/model.js';
 
 /**
@@ -486,6 +487,19 @@ describe('the views of a known Mac', () => {
     expect(turns.find((t) => t.id === 'c20')?.edit).toBeUndefined();
     expect(turns.find((t) => t.id === 'c21')?.edit).toBeUndefined();
     expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:mac:assistant')).turns.find((t) => t.id === 'ca1')?.edit).toBeUndefined();
+  });
+
+  it('a dialogue between agents shows its header with Stop, and its turns named for their agent (BLG-466)', () => {
+    const store = new Store(state);
+    const d = createDialogue({ id: 'dlg1', topic: 'Retries or a queue?', participants: [{ agent: { runtime: 'claude', label: 'Claude' } }, { agent: { runtime: 'codex', label: 'Codex' } }], turnCap: 6, channel: 'ws:w1' }, T0);
+    store.dispatch({ type: 'dialogue_put', dialogue: d });
+    store.dispatch({ type: 'system', id: 'dh', channel: 'ws:w1', level: 'info', text: 'Dialogue: Retries or a queue?', ts: T0 + 40, dialogue: { id: 'dlg1' } });
+    store.dispatch({ type: 'chat', id: 'dt1', from: ME, text: 'A queue.', ts: T0 + 41, byAgent: true, agent: { runtime: 'codex', label: 'Codex' }, channel: 'ws:w1', dialogue: { id: 'dlg1', turn: 1 } });
+    const turns = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns;
+    expect(turns.find((t) => t.id === 'dh')?.dialogue).toMatchObject({ id: 'dlg1', mode: 'Talk', who: 'Claude and Codex', progress: 'Turn 1 of 6', canStop: true, canContinue: false });
+    expect(turns.find((t) => t.id === 'dt1')).toMatchObject({ who: 'claude', name: expect.stringContaining('Codex') });
+    store.dispatch({ type: 'dialogue_put', dialogue: { ...d, status: 'stopped', note: 'Stopped by kayra' } });
+    expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.find((t) => t.id === 'dh')?.dialogue).toMatchObject({ status: 'Stopped by kayra', canStop: false });
   });
 
   it('pages back through older turns', () => {

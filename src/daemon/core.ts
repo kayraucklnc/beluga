@@ -14,6 +14,7 @@ import { chosenAgent, loadSettings, publishedAgents, saveSettings } from '../cor
 import { ShareService } from '../core/shares.js';
 import { leaveNetwork, networkSwitch } from '../core/network.js';
 import { launchBoard } from '../core/board/launch.js';
+import { launchDialogues } from '../core/dialogues/launch.js';
 import { launchSentinel } from '../core/sentinel/launch.js';
 import { launchAssistant } from '../core/assistant/launch.js';
 import { launchChat } from '../core/chat/launch.js';
@@ -332,6 +333,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopChat = (): void => undefined;
   let stopFriendShares = (): void => undefined;
   let stopBoard = (): void => undefined;
+  let stopDialogues = (): void => undefined;
   let stopSentinel = (): void => undefined;
   let stopAssistant = (): void => undefined;
   let stopCompanion = async (): Promise<void> => undefined;
@@ -353,6 +355,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopFriendShares = launchFriendShares({ session, store, demo: Boolean(demo) });
     // Tasks (the board): opened by worktrees, moved by pull requests, kept true by Claude.
     if (opts.network) stopBoard = launchBoard({ session, store, demo: Boolean(demo) });
+    // Dialogues between your agents, chaired by Beluga (core/dialogues): saved beside plans.
+    if (opts.network) stopDialogues = launchDialogues({ session, store, demo: Boolean(demo) });
     // Sentinel: watchers that run on a schedule or by hand, do a few steps and leave a report (docs/sentinel.md).
     if (opts.network) stopSentinel = launchSentinel({ session, store, demo: Boolean(demo) });
     // "Your Mac": one conversation with your Claude for the whole Mac, from the phone and the sidebar (core/assistant).
@@ -399,6 +403,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     stopAssistant();
     stopSentinel();
     stopBoard();
+    stopDialogues();
     await stopCompanion();
     await stopNetwork();
     stopEarnings();

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { decodeImage } from '../../../src/image/decode.js';
 import { expect, test, type Page } from './fixtures.js';
+import { openWork } from './helpers.js';
 
 /**
  * Images a message shows by their path on this Mac (`![shot](</Users/…/shot.png>)`, the way Claude
@@ -85,7 +86,7 @@ test('an animated GIF a message shows plays: the file comes as it is, every fram
 
 test('the plan chat takes a dropped image, and shows a message’s screenshots as thumbnails, like any chat', async ({ page }) => {
   await page.goto('/');
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  await openWork(page, 'Plans');
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await page.getByRole('button', { name: /^Project: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();

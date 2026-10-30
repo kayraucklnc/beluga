@@ -15,6 +15,8 @@ import type { LocalEndpoints } from './local-endpoints.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { type AgentRef, Body, type BodyInput, type BodyOf, CLAUDE_AGENT, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile } from '../protocol.js';
 import { type UsageUpdate, withUsage } from '../agent/usage.js';
+import { dialoguesOf } from './dialogues/registry.js';
+import { agentName } from '../shared/agent-label.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { networkOf } from './network.js';
 import { mentionNote, personMentions } from './person-mentions.js';
@@ -221,6 +223,9 @@ export class Session {
   /** What the attached screens look at (unread counts and notifications follow it). */
   readonly attention: AttentionRegistry;
 
+  /** Backends for your other agents' runtimes (a dialogue's Codex beside your Claude), made when first needed. */
+  private readonly otherBackends = new Map<string, AgentBackend>();
+
   constructor(private readonly opts: SessionOptions) {
     this.bridge = createRoomBridge(this, () => opts.agentCwd);
     const parts = createSessionParts(this, opts);
@@ -278,6 +283,21 @@ export class Session {
 
   get store(): Store {
     return this.opts.store;
+  }
+
+  /**
+   * The backend for one of your agents' runtimes: your default agent's own, or one made for that
+   * runtime (guarded the same way). The demo's fake agent answers for all of them.
+   */
+  backendFor(runtime: string): AgentBackend | undefined {
+    if (!this.runtime || runtime === this.runtime.id) return this.agent;
+    const made = this.otherBackends.get(runtime);
+    if (made) return made;
+    const rt = this.opts.runtime?.runtimes(runtime);
+    if (!rt || !this.opts.runtime) return undefined;
+    const backend = guardedBackend(rt.create({ ...this.opts.runtime.options, bridge: this.bridge }), rt.capabilities);
+    this.otherBackends.set(runtime, backend);
+    return backend;
   }
 
   get selfId(): string {
@@ -394,6 +414,8 @@ export class Session {
       this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
       return true;
     }
+    // A dialogue between your agents: started here (proposed, you confirm its caps), or what you say into one (core/dialogues).
+    if (dialoguesOf(this)?.fromComposer(raw, channel)) return true;
     const parsed = parseInput(raw, this.selfId, state.peers);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
@@ -546,7 +568,13 @@ export class Session {
   requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID(), agent?: AgentRef): string {
     const plan = this.store.getState().planMode[channel] === true;
     this.questions.track(requestId, target, channel);
-    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}), ...(agent ? { agent } : {}) }, { to: target });
+    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}) }, { to: target });
+    // "@bob:codex": their Mac decides which of its agents answers (the agent never rides the request).
+    if (agent && target !== this.selfId) {
+      const peer = this.store.getState().peers.find((p) => p.peerId === target);
+      const theirs = peer ? defaultAgentOf(peer) : undefined;
+      if (peer && theirs && theirs.runtime !== agent.runtime) this.toast(`${peer.name}'s Mac answers with its ${agentName(theirs)}: it picks which of its agents runs`, 'info');
+    }
     return requestId;
   }
 

@@ -15,6 +15,7 @@ import { CI_API } from './ci-api.js';
 import { DASHBOARD_API } from './dashboard-api.js';
 import { SENTINEL_API } from './sentinel-api.js';
 import { PLANS_API } from './plans-api.js';
+import { DIALOGUES_API } from './dialogues-api.js';
 import { ISSUES_API } from './issues-api.js';
 import { TEAM_API } from './team-api.js';
 import { GIT_API } from './git-api.js';
@@ -398,6 +399,7 @@ export const API = {
   // ---- Dashboards: the numbers sentinels keep, arranged in tiles (dashboard-api.ts)
   ...DASHBOARD_API,
   ...PLANS_API,
+  ...DIALOGUES_API,
   // ---- a project's GitHub issues, and handing one to Claude (issues-api.ts)
   ...ISSUES_API,
   // ---- a project's GitHub Actions: its runs, a run's jobs and steps, its workflows (ci-api.ts)

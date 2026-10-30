@@ -349,6 +349,13 @@ export const PHONE: Record<Method, Side> = {
   'board.unarchive': 'mac',
   'board.emptyArchive': 'mac',
 
+  // ---- dialogues: the phone reads the thread and stops it (the Mac starts and steers it)
+  'dialogues.start': 'mac',
+  'dialogues.confirm': 'mac',
+  'dialogues.continue': 'phone',
+  'dialogues.stop': 'phone',
+  'dialogues.interject': 'mac',
+
   // ---- plans: approve, decide at a milestone's gate, send back with words; never edit their structure
   'plans.create': 'phone',
   'plans.here': 'mac',

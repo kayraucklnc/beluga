@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 32 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 33 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -80,8 +80,10 @@ export const COMPANION_PROTO = { major: 1, minor: 32 } as const;
  * 1.32 (BLG-459): usage per provider: each `UsageView` says its agent (`runtime`, `isDefault`),
  * a local model's `tokens` and `tokensPerSec`, and `signedIn`; the phone makes one the default
  * agent (`companion.defaultAgent`). An older Mac sends Claude Code alone, as before.
+ * 1.33 (BLG-466): a dialogue between agents in a conversation (`TurnView.dialogue`): its header card,
+ * and Stop / Continue? from the phone (`dialogues.stop`, `dialogues.continue`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31, providers: 32 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31, providers: 32, dialogues: 33 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -372,6 +374,25 @@ export const TurnView = z.object({
    * files go back too) or a chat. Only a message whose words show here whole (no code in it).
    */
   edit: z.object({ ws: id, kind: z.enum(['worktree', 'chat']) }).optional(),
+  /**
+   * 1.33 (BLG-466): where a dialogue between agents begins (core/dialogues view.ts, in words): its
+   * topic, who talks, turn n of the cap, the budget left, and whether Stop / Continue apply now.
+   * Its turns follow as `claude` turns named for their agent.
+   */
+  dialogue: z
+    .object({
+      id,
+      topic: z.string().max(500),
+      mode: z.string().max(40),
+      who: z.string().max(200),
+      progress: z.string().max(100),
+      budget: z.string().max(60).optional(),
+      status: z.string().max(300),
+      tone: z.enum(['live', 'waiting', 'done', 'failed']),
+      canStop: z.boolean(),
+      canContinue: z.boolean(),
+    })
+    .optional(),
 });
 export type TurnView = z.infer<typeof TurnView>;
 

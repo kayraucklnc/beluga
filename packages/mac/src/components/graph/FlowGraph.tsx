@@ -368,6 +368,9 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         zoomOnScroll={false}
         panOnScroll={!inline}
         preventScrolling={!inline}
+        // React Flow's Space-to-pan listens on the whole window and swallows Space there: inline (in a
+        // chat or a document) Space scrolls the page; dragging still pans.
+        panActivationKeyCode={inline ? null : 'Space'}
         zoomOnPinch
         panOnDrag
       >

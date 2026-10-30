@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from './fixtures.js';
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
-const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea):not([aria-label="Plan name"]):not([aria-label="Message your agent about the plan"])');
+const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea):not([aria-label="Terminal input"]):not([aria-label="Plan name"]):not([aria-label="Message your agent about the plan"])');
 const projectRow = (page: Page, name: string): Locator => sidebar(page).getByRole('button', { name, exact: true }).and(page.locator('[aria-expanded]'));
 const shots = process.env.E2E_SHOTS;
 
@@ -19,7 +19,7 @@ async function shot(page: Page, name: string): Promise<void> {
 
 async function unfold(page: Page, project: string): Promise<void> {
   await expect(projectRow(page, project)).toBeVisible();
-  const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` });
+  const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` }).first();
   if (await show.isVisible()) await show.click();
   await expect(projectRow(page, project)).toHaveAttribute('aria-expanded', 'true');
 }
@@ -78,7 +78,6 @@ test('⌘N in a project starts a new chat there', async ({ page }) => {
   await projectRow(page, 'bob-api').click();
   await expect(page.getByRole('heading', { level: 1, name: 'bob-api' })).toBeVisible();
   await page.keyboard.press('Meta+n');
-  await composer(page).fill('Is there a health check route?');
   await composer(page).press('Enter');
   const row = sidebar(page).getByRole('button', { name: 'Is there a health check route?', exact: true });
   await expect(row).toBeVisible({ timeout: 15_000 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { openWork } from './helpers.js';
 
 /** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
 
@@ -7,7 +8,7 @@ const main = (page: Page) => page.locator('main');
 
 async function openPlans(page: Page): Promise<void> {
   await page.goto('/');
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  await openWork(page, 'Plans');
   const project = page.getByRole('button', { name: /^Project: / });
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await project.click();
@@ -308,15 +309,15 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   await chat.getByRole('textbox', { name: 'Message your agent about the plan' }).press('Enter');
   await expect(main(page).locator('.react-flow__node').filter({ hasText: /Rate limits on the export endpoint/i })).toBeVisible({ timeout: 20_000 });
   // Not on the board yet.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await openWork(page, 'Tasks');
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await expect(page.getByRole('grid', { name: 'Tasks' })).not.toContainText('Data model and migration');
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  await openWork(page, 'Plans');
   await main(page).getByRole('button', { name: /^Export orders accounting,/ }).click();
   await page.getByRole('button', { name: 'Approve Plan' }).first().click();
   await expect(page.getByRole('button', { name: 'Approve Plan' })).toHaveCount(0);
   // On the board now, each with its plan.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await openWork(page, 'Tasks');
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await expect(page.getByRole('grid', { name: 'Tasks' })).toContainText('Data model and migration');
 });
@@ -370,7 +371,7 @@ test('Plans opens on the project you’re in, and says so when it has none', asy
   await page.goto('/');
   await sidebar(page).getByText('landing', { exact: true }).first().click();
   await expect(page.getByRole('heading', { level: 1, name: 'landing' })).toBeVisible();
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).first().click();
+  await openWork(page, 'Plans');
   const project = page.getByRole('button', { name: 'Project: landing' });
   await expect(project).toBeVisible();
   await expect(project).toHaveAttribute('title', 'Switch Project');

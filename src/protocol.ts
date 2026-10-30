@@ -143,8 +143,8 @@ export const AgentRequestBody = z.object({
   plan: z.boolean().default(false),
   /** Run in one of the owner's projects (by name) instead of their shared folder. */
   project: z.string().min(1).max(80).optional(),
-  /** Which of the owner's agents was asked ("@bob:codex"); left out, their default answers. */
-  agent: AgentRef.optional(),
+  // No `agent` here (BLG-448, BLG-476): the requester never picks the runtime on someone's Mac;
+  // their default (or the place's pin) answers. A field a sender adds anyway is dropped on parse.
 });
 
 export const AgentEventKind = z.enum([

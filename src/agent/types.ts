@@ -113,6 +113,8 @@ export interface AgentRunInput {
   readonly sentinelBrief?: string;
   /** Your own runs: dashboards and the numbers sentinels keep (server `beluga_dashboard`; sentinel_measure inside a run). */
   readonly dashboardTools?: DashboardTools;
+  /** A turn of a chaired dialogue (core/dialogues): its brief and end_dialogue tool. */
+  readonly dialogue?: import('./dialogue-tools.js').DialogueTurnTools;
 }
 
 /** What Claude writes down about a piece of work: the task in its own words, never the request pasted in. */

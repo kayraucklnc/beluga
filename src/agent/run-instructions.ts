@@ -25,6 +25,7 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
     (input.macBrief ?? '') +
     (input.phoneBrief ?? '') +
     (input.sentinelBrief ?? '') +
+    (input.dialogue?.brief ?? '') +
     (input.setup && !askOnly ? input.setup.brief : '') +
     (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') +
     (worktree ? buildKeepAppend() : '') +

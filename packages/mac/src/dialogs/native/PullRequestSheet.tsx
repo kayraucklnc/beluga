@@ -173,6 +173,8 @@ function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pi
   const checks = CHECKS[pr.checks];
   const review = pr.review ? REVIEW[pr.review] : undefined;
   const open = pr.state === 'OPEN';
+  // Beluga waits for the checks and merges then (Merge When Checks Pass), or GitHub's own auto-merge is on.
+  const waiting = useApp((st) => Boolean(st.projects.flatMap((p) => p.workspaces).find((w) => w.id === wsId)?.mergeWhenReady));
   return (
     <div className={s.pr} data-pr-state={pr.state}>
       <div className={s.prTop}>
@@ -196,7 +198,7 @@ function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pi
         ) : null}
         {review && open ? <span className={cx(s.pill, review.tone)}>{review.label}</span> : null}
         {open && pr.conflicts ? <span className={cx(s.pill, s.pillBad)}>Conflicts with the base</span> : null}
-        {open && pr.autoMerge ? (
+        {open && (pr.autoMerge || waiting) ? (
           <span className={cx(s.pill, s.pillWait)}>
             <Icon name="clock" size={11} />
             Merges when checks pass

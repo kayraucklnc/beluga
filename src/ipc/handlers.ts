@@ -25,6 +25,7 @@ import { BOARD_HANDLERS } from './board-handlers.js';
 import { DASHBOARD_HANDLERS } from './dashboard-handlers.js';
 import { SENTINEL_HANDLERS } from './sentinel-handlers.js';
 import { PLANS_HANDLERS } from './plans-handlers.js';
+import { DIALOGUES_HANDLERS } from './dialogues-handlers.js';
 import { ISSUES_HANDLERS } from './issues-handlers.js';
 import { CI_HANDLERS } from './ci-handlers.js';
 import { TEAM_HANDLERS } from './team-handlers.js';
@@ -359,6 +360,7 @@ export const HANDLERS = {
   ...SENTINEL_HANDLERS,
   ...DASHBOARD_HANDLERS,
   ...PLANS_HANDLERS,
+  ...DIALOGUES_HANDLERS,
   ...ISSUES_HANDLERS,
   ...CI_HANDLERS,
   ...TEAM_HANDLERS,

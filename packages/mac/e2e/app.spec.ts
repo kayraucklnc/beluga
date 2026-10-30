@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
-import { pick } from './helpers.js';
+import { personRow, pick } from './helpers.js';
 
 /** The Mac app's web view against a real Beluga (the demo): what you click does what it says. */
 
@@ -28,8 +28,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('shows the room, its people and projects', async ({ page }) => {
-  await expect(sidebar(page).getByRole('button', { name: 'bob', exact: true })).toBeVisible();
-  await expect(sidebar(page).getByText('bob-api')).toBeVisible();
+  await expect(personRow(page, 'bob')).toBeVisible();
+  await expect(sidebar(page).getByText('bob-api', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('hey! just pushed my API notes')).toBeVisible();
 });
 
@@ -124,9 +124,12 @@ test('picks a model and how hard Claude thinks', async ({ page }) => {
 });
 
 test("opens a person's card beside their row", async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'bob', exact: true }).click();
+  // On the name, not its Add button.
+  await personRow(page, 'bob').getByText('bob', { exact: true }).click();
   const card = page.getByRole('dialog', { name: 'bob' });
-  await expect(card.getByRole('radiogroup', { name: 'Trust bob' })).toBeVisible();
+  // Not a friend yet: the card says how much you trust them, and offers to add them.
+  await expect(card.getByText('Ask me each time.')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Add bob as a friend' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(card).toBeHidden();
 });
@@ -256,7 +259,8 @@ test('adds a project from the Add Projects sheet, with its own icon', async ({ p
   await expect(row.locator('img')).toHaveAttribute('src', /^data:image\/svg\+xml/);
   // Nothing in it yet: no fold arrow (a project with worktrees keeps its own).
   await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) pixel-app/ })).toHaveCount(0);
-  await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) bob-api/ })).toHaveCount(1);
+  // Your own bob-api (it has worktrees) keeps its fold arrow; bob's shared copy below has its own, not counted here.
+  await expect(sidebar(page).getByRole('button', { name: 'bob-api', exact: true }).getByRole('button', { name: /^(Fold|Show what's in) bob-api/ })).toHaveCount(1);
   if (process.env.SHOTS) await sidebar(page).screenshot({ path: `${process.env.SHOTS}/sidebar-empty-project.png` });
 });
 
@@ -483,8 +487,8 @@ test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', as
   await page.keyboard.press('Escape');
   await composer(page).click();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('status').filter({ hasText: 'Plan mode' }).filter({ hasText: 'to act' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Planning' }).filter({ hasText: 'to act' })).toBeVisible();
   await expect(composer(page)).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('status').filter({ hasText: 'Plan mode' }).filter({ hasText: 'to act' })).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'Planning' }).filter({ hasText: 'to act' })).toHaveCount(0);
 });

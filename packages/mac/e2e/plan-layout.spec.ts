@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { openWork } from './helpers.js';
 
 /** A plan's page is two parts, the plan and its chat (KLD-54): no right panel, a chat toggle in the header (⌥⌘0), a chat as wide as you leave it, and no modes in the plan's own conversation. */
 
@@ -7,7 +8,7 @@ const main = (page: Page) => page.locator('main');
 const chat = (page: Page) => page.getByRole('complementary', { name: 'Conversation' });
 
 async function openPlan(page: Page, name: RegExp): Promise<void> {
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  await openWork(page, 'Plans');
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await page.getByRole('button', { name: /^Project: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();
@@ -35,12 +36,13 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   await expect(main(page).getByRole('button', { name: 'Hide the Chat' })).toHaveAttribute('aria-pressed', 'true');
 
   // 380 wide, wider from the keyboard on its edge, and kept.
-  expect(Math.round((await chat(page).boundingBox())!.width)).toBe(380);
+  // (Within a pixel: the page's width splits into fractions.)
+  expect(Math.abs((await chat(page).boundingBox())!.width - 380)).toBeLessThanOrEqual(1);
   const edge = page.getByRole('separator', { name: 'Resize the chat' });
   await edge.focus();
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
-  await expect.poll(async () => Math.round((await chat(page).boundingBox())!.width)).toBe(428);
+  await expect.poll(async () => Math.abs((await chat(page).boundingBox())!.width - 428)).toBeLessThanOrEqual(1);
 
   // Hidden, then back after a reload: still hidden, and as wide when shown again.
   await main(page).getByRole('button', { name: 'Hide the Chat' }).click();
@@ -49,9 +51,9 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch');
   await expect(chat(page)).toHaveCount(0);
   await main(page).getByRole('button', { name: 'Show the Chat' }).click();
-  expect(Math.round((await chat(page).boundingBox())!.width)).toBe(428);
-  // Elsewhere, the panel is as you left it.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  expect(Math.abs((await chat(page).boundingBox())!.width - 428)).toBeLessThanOrEqual(1);
+  // Elsewhere (the group chat), the panel is as you left it.
+  await sidebar(page).getByRole('button', { name: /^Group chat/ }).click();
   await expect(page.getByRole('button', { name: /^(Show|Hide) the panel/ })).toBeEnabled();
 });
 

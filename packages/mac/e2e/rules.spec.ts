@@ -36,7 +36,8 @@ async function nudgeMia(page: Page, text: string): Promise<void> {
 }
 
 async function openReceived(page: Page): Promise<void> {
-  await sidebar(page).getByRole('button', { name: /^Requests/ }).click();
+  // The row comes with the first request (mia's, a moment after you wrote to her).
+  await sidebar(page).getByRole('button', { name: /^Requests/ }).click({ timeout: 30_000 });
   await page.getByRole('radio', { name: /^Received/ }).or(page.getByRole('tab', { name: /^Received/ })).first().click();
 }
 

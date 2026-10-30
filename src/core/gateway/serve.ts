@@ -1,3 +1,4 @@
+import { talkReadOnly } from '../../agent/dialogue-tools.js';
 import type { AgentRef } from '../../protocol.js';
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -102,6 +103,8 @@ export interface ServeContext {
   readonly questionWaitMs?: number;
   /** How long a friend's task may run in all (default 20 minutes; sooner if its deadline is). */
   readonly runLimitMs?: number;
+  /** Chaired dialogues (BLG-468): a turn came in or ended, and whether one was stopped here. */
+  readonly dialogues?: import('./gateway.js').GatewayDialogues;
   /** The chat its card is in here (BLG-208): the channel it names if you're both in it, else your DM with them (friends only). */
   readonly chatOf?: (from: string, chat: string | undefined) => string | undefined;
 }
@@ -220,7 +223,13 @@ export class TaskServer {
       ...(req.cwd ? { cwd: req.cwd } : {}),
       ...(req.timeoutSec ? { timeoutSec: req.timeoutSec } : {}),
       ...(req.path ? { path: req.path } : {}),
+      ...(req.dialogue && req.kind === 'ask' ? { dialogue: req.dialogue } : {}),
     });
+    if (task.dialogue) {
+      // A dialogue you stopped here takes no more turns; one going on shows in your thread too.
+      if (ctx.dialogues?.isStopped(task.dialogue.id)) return this.finish(task, 'declined', `${me} stopped this dialogue`);
+      ctx.dialogues?.turn(task);
+    }
     try {
       await this.admit(task, req, level);
     } catch (err) {
@@ -518,7 +527,8 @@ export class TaskServer {
           if (kind === 'tool' && text) step(text.slice(0, 300));
         },
         onFileTouched: () => undefined,
-        vetTool: (tool, input) => this.vetTool(this.current(task), tool, input),
+        // A talk (or cross-reference) dialogue's turn only looks, here too; then their limits as for any task.
+        vetTool: (tool, input) => (task.dialogue && task.dialogue.mode !== 'work' ? talkReadOnly(tool, input) : undefined) ?? this.vetTool(this.current(task), tool, input),
         canUseTool: (tool, input) => this.authorizeTool(task, tool, input, full, place.cwd),
         askUser: (question) => this.askRequester(task, question, controller.signal),
         ...(toolNames.length ? { taskTools: tools } : {}),
@@ -771,6 +781,7 @@ export class TaskServer {
     };
     const done = this.ctx.put({ ...t, state: status, result, endedAt: this.ctx.now(), updatedAt: this.ctx.now() });
     this.sendResult(done, result, files);
+    if (done.dialogue) this.ctx.dialogues?.turn(done);
   }
 
   /** Tell the friend who asked how their task ended (also: one that ended when Beluga quit). */
