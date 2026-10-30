@@ -7,7 +7,7 @@ import { ASK_ONLY_REASON, DENY_REASON, decideTool, denyReason } from '../src/age
 import { buildAskOnlyAppend } from '../src/agent/prompt.js';
 import { isReadOnlyCommand } from '../src/agent/read-only.js';
 import { carrySession } from '../src/agent/session-carry.js';
-import { encodeProjectDir } from '../src/agent/claude-sessions.js';
+import { encodeProjectDir } from '../src/agent/runtime/claude/claude-sessions.js';
 import { createMockBackend } from '../src/agent/mock.js';
 import type { AgentRunInput, RoomBridge } from '../src/agent/types.js';
 import { status } from '../src/workspaces/git.js';

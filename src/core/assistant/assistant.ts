@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, promises as fs, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { claudeConfigDir, encodeProjectDir, pathVariants } from '../../agent/claude-sessions.js';
+import { claudeConfigDir, encodeProjectDir, pathVariants } from '../../agent/runtime/claude/claude-sessions.js';
 import type { AgentPlace, MacTools } from '../../agent/types.js';
 import { ASSISTANT_CHANNEL, ASSISTANT_TITLE, type AssistantChats, CHAT_ID, FIRST_CHAT, assistantChannel, assistantChatOf } from '../../shared/assistant.js';
 import { SCRATCH_DIR, listScratch } from '../../workspaces/scratch.js';

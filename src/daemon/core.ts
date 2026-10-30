@@ -1,9 +1,9 @@
 import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../config.js';
-import { createClaudeBackend } from '../agent/runner.js';
+import { runtimeFor } from '../agent/runtime/registry.js';
 import { createMockBackend } from '../agent/mock.js';
-import { findConversation } from '../agent/claude-sessions.js';
+import { findConversation } from '../agent/runtime/claude/claude-sessions.js';
 import { otherTools } from '../agent/other-tools.js';
 import { copyNative, pasteText } from '../core/clipboard.js';
 import { DEFAULT_LINK } from '../core/project-invites.js';
@@ -291,17 +291,22 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     saveSettings: (patch) => void saveSettings(patch),
     createAgent: demo
       ? (bridge) => createMockBackend(bridge, Number(belugaEnv('DEMO_PACE')) || 2.6) // unhurried, so you can watch workspaces run side by side
-      : config.agent
-        ? (bridge) =>
-            createClaudeBackend({
+      : undefined,
+    // Your agent through the runtime seam (agent/runtime): Claude, the only one registered yet.
+    ...(!demo && config.agent
+      ? {
+          runtime: {
+            runtimes: runtimeFor,
+            options: {
               cwd: agentCwd,
               autoEdit: primary?.writable ?? false,
               additionalDirectories: config.shares.slice(1).map((s) => s.root),
-              bridge,
-              model: config.model,
-              claudePath: belugaEnv('CLAUDE_PATH') ?? claudeCodePath(),
-            })
-        : undefined,
+              ...(config.model ? { model: config.model } : {}),
+              executablePath: belugaEnv('CLAUDE_PATH') ?? claudeCodePath(),
+            },
+          },
+        }
+      : {}),
     launchDir: process.cwd(),
     terminals,
     savedPeople: saved.people,

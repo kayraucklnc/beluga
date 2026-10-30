@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { retryWords } from '../src/agent/runner.js';
+import { retryWords } from '../src/agent/runtime/claude/runner.js';
 
 /** Claude Code retrying the API shows on the working line instead of a silent "Starting" (BLG-403). */
 describe('retryWords', () => {

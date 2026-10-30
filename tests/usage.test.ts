@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeWindow, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/usage.js';
+import { describeWindow, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/runtime/claude/usage.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { personMenu } from '../src/ui/menus.js';

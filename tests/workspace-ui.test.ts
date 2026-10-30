@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SubAgentTracker } from '../src/agent/subagents.js';
+import { SubAgentTracker } from '../src/agent/runtime/claude/subagents.js';
 import { channelOf, type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import { activityOf, contextMeter, isCompacting, isProjectOpen, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, toggleProject, workspaceHeaderModel } from '../src/ui/workspace-models.js';

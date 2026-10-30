@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, promises as fs, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { claudeConfigDir, encodeProjectDir, pathVariants } from '../../agent/claude-sessions.js';
+import { claudeConfigDir, encodeProjectDir, pathVariants } from '../../agent/runtime/claude/claude-sessions.js';
 import type { AgentPlace } from '../../agent/types.js';
 import { HistorySaver } from '../history-saver.js';
 import { type LogItem, type Store, settleRun } from '../store.js';

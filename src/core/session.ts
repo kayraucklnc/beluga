@@ -4,6 +4,8 @@ import { assistantOf } from './assistant/registry.js';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
+import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } from '../agent/runtime/types.js';
+import { guardedBackend } from '../agent/runtime/guard.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { Body, type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
@@ -54,6 +56,15 @@ export interface SessionOptions {
   readonly shares: ShareService;
   /** Factory so the backend can receive this session's RoomBridge. */
   readonly createAgent?: (bridge: RoomBridge) => AgentBackend;
+  /**
+   * Your agent through the runtime seam (agent/runtime): `agent` (an AgentRef's runtime, 'claude'
+   * when unset) picked from `runtimes`, made with `options`. createAgent, when given, wins (the demo, tests).
+   */
+  readonly runtime?: {
+    readonly runtimes: (id?: RuntimeId) => AgentRuntime | undefined;
+    readonly agent?: RuntimeId;
+    readonly options: Omit<RuntimeOptions, 'bridge'>;
+  };
   readonly agentCwd: string;
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
@@ -161,6 +172,7 @@ export class Session {
   readonly workspaces?: WorkspaceController;
   private workspaceTimer?: NodeJS.Timeout;
   private readonly agent?: AgentBackend;
+  private readonly runtime?: AgentRuntime;
   private readonly agentWaiters = new Map<string, AgentWaiter>();
   /** Messages a screen sent with an id (a plan chat's), and the request each went as: a Retry of one that went doesn't go twice. */
   private readonly sentById = new Map<string, string>();
@@ -213,7 +225,9 @@ export class Session {
     this.shell = parts.shell;
     this.diff = parts.diff;
     this.env = parts.env;
-    this.agent = opts.createAgent?.(this.bridge);
+    this.runtime = opts.createAgent ? undefined : opts.runtime?.runtimes(opts.runtime.agent);
+    // The session layer runs a runtime only as its capabilities allow (the safety rule: see guard.ts).
+    this.agent = opts.createAgent ? opts.createAgent(this.bridge) : this.runtime && opts.runtime ? guardedBackend(this.runtime.create({ ...opts.runtime.options, bridge: this.bridge }), this.runtime.capabilities) : undefined;
     this.attention = new AttentionRegistry(opts.store);
     opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room), home: os.homedir() });
     this.publishShares();
@@ -236,6 +250,11 @@ export class Session {
   /** Your Claude (undefined when it's off). */
   get backend(): AgentBackend | undefined {
     return this.agent;
+  }
+
+  /** What your agent's runtime can do (undefined for a backend made without one: the demo, tests). */
+  get capabilities(): RuntimeCapabilities | undefined {
+    return this.runtime?.capabilities;
   }
 
   get approvalTimeoutMs(): number {
