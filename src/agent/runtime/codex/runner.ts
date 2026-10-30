@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { linkedImages } from '../../../core/attachments.js';
 import { type RunEnd, RunFailedError, classifyRun } from '../../../shared/run-failure.js';
+import { fallbackFor } from '../../../shared/runtime-fallbacks.js';
 import { buildPrompt } from '../../prompt.js';
 import { runInstructions } from '../../run-instructions.js';
 import { runToolSuites } from '../../run-tools.js';
@@ -181,7 +182,11 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           return thread.thread.id;
         };
         let approval: AskForApproval = 'never';
-        let threadId = await open(Boolean(input.plan), place ? place.resume : sessionId);
+        // A fork can't branch a Codex thread (canFork: false): resuming it would write into the source's
+        // own conversation, so a fork starts a new one, and says so (BLG-461).
+        const forked = Boolean(place?.forkSession && place.resume);
+        if (forked) input.onEvent('progress', fallbackFor('codex', 'fork')!);
+        let threadId = await open(Boolean(input.plan), place ? (forked ? undefined : place.resume) : sessionId);
         remember(threadId);
         if (input.signal.aborted) throw new Error('aborted');
         const rpc = () => conn!.rpc;

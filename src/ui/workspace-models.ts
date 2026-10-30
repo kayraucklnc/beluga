@@ -3,6 +3,7 @@ import { type AppState, type LogItem, type ReviewState, type SharedTab, type Wor
 import type { TrustLevel } from '../core/settings.js';
 import { describePr } from '../shared/format.js';
 import { formatBytes } from '../shared/format.js';
+import { fallbackFor, runtimeHere } from '../shared/runtime-fallbacks.js';
 import type { Project, Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
@@ -607,6 +608,9 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
   const scripts = project?.scripts;
   // In your room with their Claude, or a friend over the network (BLG-341).
   const friends = handoffPeople(state).length > 0;
+  // What its runtime does instead (BLG-461): Compact greyed with why, Fork saying what comes along.
+  const runtime = runtimeHere(ws.agent, state.self);
+  const noCompact = fallbackFor(runtime, 'compact');
   const all: WorkspaceButton[] = ws.archived
     ? [
         { label: 'Restore', action: 'restore', hint: 'Bring this workspace back' },
@@ -633,8 +637,8 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
               { label: 'Hand off', action: 'handoff', hint: friends ? "A friend's agent continues this on their computer" : state.network.enabled ? 'Add a friend first; then their agent can take this over' : 'Turn on the Beluga network to hand this to a friend, or invite someone to your room', disabled: !friends },
             ] as WorkspaceButton[])
           : []),
-        ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so your agent has room to keep going' }] as WorkspaceButton[]) : []),
-        ...(ws.kind !== 'chat' && !ws.askOnly ? ([{ label: 'Fork', action: 'fork', hint: 'Copy this workspace and its conversation into a new worktree' }] as WorkspaceButton[]) : []),
+        ...(state.context[`ws:${ws.id}`] ? ([noCompact ? { label: 'Compact', action: 'compact', hint: noCompact, disabled: true } : { label: 'Compact', action: 'compact', hint: 'Shrink the conversation so your agent has room to keep going' }] as WorkspaceButton[]) : []),
+        ...(ws.kind !== 'chat' && !ws.askOnly ? ([{ label: 'Fork', action: 'fork', hint: fallbackFor(runtime, 'fork') ?? 'Copy this workspace and its conversation into a new worktree' }] as WorkspaceButton[]) : []),
         { label: 'Finder', action: 'finder', hint: 'Open this folder in Finder' },
         ...(ws.kind !== 'main' ? ([{ label: 'Archive', action: 'archive', hint: 'Put it away; keeps the branch and conversation' }] as WorkspaceButton[]) : []),
         sharedButton(state, ws.id),

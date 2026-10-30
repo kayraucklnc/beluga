@@ -28,6 +28,7 @@ import { findIssue } from './board/model.js';
 import { explainTaskMentions } from '../shared/task-refs.js';
 import { isAssistant } from '../shared/assistant.js';
 import { type SlotWait, clampParallelRuns } from '../shared/run-slots.js';
+import { fallbackFor } from '../shared/runtime-fallbacks.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -283,12 +284,19 @@ export class AgentHost {
    */
   compact(channel: string, instructions = ''): void {
     if (!this.agent) return this.toast('No agent is running on this computer', 'warn');
+    const cant = this.noCompact(channel);
+    if (cant) return this.toast(cant, 'warn');
     const lane = this.lane(channel);
     if (lane.waiting.some((w) => w.compact)) return;
     const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: `compact-${randomUUID()}`, prompt: instructions.slice(0, 2000), viaAgent: false, channel, urgent: false, plan: false };
     lane.waiting.push({ from: this.selfId, body, compact: true });
     if (lane.current) this.toast('Your agent compacts this conversation when it finishes what it’s doing');
     void this.pump(lane);
+  }
+
+  /** Why this conversation's runtime can't be compacted by Beluga (Codex compacts itself); undefined when it can. */
+  private noCompact(channel: string): string | undefined {
+    return fallbackFor(this.deps.agentRef?.(channel).runtime, 'compact');
   }
 
   /** A conversation starts over (its chat was cleared fresh): forget how full it was. */
@@ -922,7 +930,7 @@ export class AgentHost {
     try {
       // Nearly full (after the last run, or before the next message): compact first, between turns.
       for (;;) {
-        const auto = this.compactor.due(lane.channel);
+        const auto = this.compactor.due(lane.channel) && !this.noCompact(lane.channel);
         if (this.quitting) break;
         const head = auto || lane.held ? undefined : lane.waiting[0];
         if (!auto && !head) break;
