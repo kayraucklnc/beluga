@@ -32,8 +32,10 @@ export interface Terminal {
   readonly lines: readonly TermLine[];
   /** The commands typed, for "Copy Commands". */
   readonly commands: readonly string[];
-  /** The text without colors, for "Copy". */
+  /** The text without colors, prompts and all (for quoting it back as a terminal). */
   readonly plain: string;
+  /** What "Copy" copies: the text without colors or prompts, so a command pastes as it was typed. */
+  readonly copy: string;
 }
 
 /** Fences that are always a terminal. */
@@ -189,7 +191,7 @@ export function readTerminal(body: string): Terminal {
     const colored = spans.some((s) => s.fg || s.bg);
     return { kind: colored ? 'output' : toneOfLine(text), spans };
   });
-  return { lines, commands, plain: rows.map(plainOf).join('\n') };
+  return { lines, commands, plain: rows.map(plainOf).join('\n'), copy: lines.map((l) => plainOf(l.spans)).join('\n') };
 }
 
 /** How many lines show before "Show all" (the last ones, where the result is). */

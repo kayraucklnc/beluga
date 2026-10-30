@@ -79,6 +79,9 @@ describe('terminal output (BLG-92)', () => {
     const t = readTerminal('user@box:~/app$ npm test\nError: boom\n Tests 3 passed, 0 failed');
     expect(t.lines[0]).toMatchObject({ kind: 'prompt', prompt: 'user@box:~/app$ ', spans: [{ text: 'npm test' }] });
     expect(t.commands).toEqual(['npm test']);
+    // Copy leaves the prompt behind (BLG-424); quoting keeps it.
+    expect(t.copy).toBe('npm test\nError: boom\n Tests 3 passed, 0 failed');
+    expect(t.plain.startsWith('user@box:~/app$ npm test')).toBe(true);
     expect(t.lines[1]!.kind).toBe('error');
     expect(t.lines[2]!.kind).toBe('ok');
     expect(toneOfLine('warning: deprecated')).toBe('warning');

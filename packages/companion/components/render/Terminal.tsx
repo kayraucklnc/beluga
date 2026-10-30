@@ -10,7 +10,7 @@ import { copy, SmallChip } from './parts';
  * Terminal output Claude shows (BLG-87), read by the Mac's own reader (src/shared/render/terminal.ts):
  * a sunken monospaced panel that scrolls sideways, prompts muted and commands strong, ANSI colors in
  * a soft palette, errors on a faint rose, warnings on butter, passes in mint. Long output folds to
- * its last lines. Copy copies the output without colors; long-press copies the commands.
+ * its last lines. Copy copies the output without colors or prompts; long-press copies the commands.
  */
 
 type Palette = Record<AnsiName, string>;
@@ -86,7 +86,7 @@ export function TerminalView({ text }: { readonly text: string }) {
   const [all, setAll] = useState(false);
   const earlier = all ? 0 : Math.max(0, term.lines.length - TERMINAL_FOLD);
   const shown = earlier ? term.lines.slice(earlier) : term.lines;
-  const copyCommands = () => (term.commands.length ? copy(term.commands.join('\n'), term.commands.length === 1 ? 'Copied the command' : `Copied ${term.commands.length} commands`) : copy(term.plain));
+  const copyCommands = () => (term.commands.length ? copy(term.commands.join('\n'), term.commands.length === 1 ? 'Copied the command' : `Copied ${term.commands.length} commands`) : copy(term.copy));
   return (
     <View style={{ gap: 8 }}>
       <Press haptics={false} scaleTo={1} onLongPress={copyCommands} delayLongPress={380} accessibilityHint="Long-press to copy the commands" style={{ borderRadius: radius.m - 2, backgroundColor: color.code, overflow: 'hidden', paddingVertical: 10 }}>
@@ -104,7 +104,7 @@ export function TerminalView({ text }: { readonly text: string }) {
         </ScrollView>
       </Press>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <SmallChip label="Copy" Icon={Copy} onPress={() => copy(term.plain)} />
+        <SmallChip label="Copy" Icon={Copy} onPress={() => copy(term.copy)} />
         <View style={{ flex: 1 }} />
         <SquareTerminal color={color.text3} size={13} />
         <T v="caption">{term.commands.length ? `${term.commands.length} ${term.commands.length === 1 ? 'command' : 'commands'}` : `${term.lines.length} ${term.lines.length === 1 ? 'line' : 'lines'}`}</T>
