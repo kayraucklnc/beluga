@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Beluga: a short guide</title>
+<!-- Render: node docs/guide/render.mjs  →  docs/guide/beluga-guide.pdf -->
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  :root {
+    --ink: #23263a; --soft: #5d6178; --line: #e6e4ef;
+    --blue: #dfe9fb; --blue-d: #3f6fd1; --mint: #ddf3e8; --mint-d: #2f8f62;
+    --peach: #fde7da; --peach-d: #c76a38; --lilac: #ece4fb; --lilac-d: #7653c9;
+    --butter: #fbf2cf; --butter-d: #a07d12; --rose: #fbe1e8; --rose-d: #c24a6c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 297mm; height: 210mm; padding: 16mm 18mm 13mm; position: relative; overflow: hidden; page-break-after: always; background: #fbfaf7; }
+  .page:last-child { page-break-after: auto; }
+  .foot { position: absolute; left: 18mm; right: 18mm; bottom: 7mm; display: flex; justify-content: space-between; color: #a4a6b5; font-size: 10px; }
+  h1 { font-size: 40px; line-height: 1.1; margin: 0 0 10px; letter-spacing: -0.5px; }
+  h2 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.3px; }
+  h3 { font-size: 14px; margin: 0 0 3px; }
+  p { margin: 0 0 8px; }
+  .lead { color: var(--soft); font-size: 14px; margin-bottom: 14px; max-width: 200mm; }
+  .kicker { display: inline-block; font-size: 10.5px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; padding: 3px 9px; border-radius: 20px; margin-bottom: 8px; }
+  .k-blue { background: var(--blue); color: var(--blue-d); } .k-mint { background: var(--mint); color: var(--mint-d); }
+  .k-peach { background: var(--peach); color: var(--peach-d); } .k-lilac { background: var(--lilac); color: var(--lilac-d); }
+  .k-butter { background: var(--butter); color: var(--butter-d); } .k-rose { background: var(--rose); color: var(--rose-d); }
+  .shot { display: block; width: 100%; border-radius: 9px; border: 1px solid var(--line); box-shadow: 0 6px 22px rgba(35, 38, 58, .08); background: #fff; }
+  .tall { height: 112mm; object-fit: cover; object-position: 30% top; }
+  .wide { height: 118mm; object-fit: cover; object-position: 28% top; }
+  .cap { color: var(--soft); font-size: 11px; margin-top: 6px; }
+  code { font: 11.5px "SF Mono", Menlo, monospace; background: #efedf5; padding: 1px 5px; border-radius: 4px; }
+  .say { font: 12px "SF Mono", Menlo, monospace; background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--blue-d); padding: 7px 10px; border-radius: 6px; margin: 6px 0 10px; }
+
+  /* Cover */
+  .cover { display: grid; grid-template-columns: 95mm 1fr; gap: 12mm; align-items: center; background: linear-gradient(150deg, #f4f1fb 0%, #eef5fb 55%, #f6f1ea 100%); }
+  .cover .logo { width: 54px; height: 54px; margin-bottom: 18px; }
+  .cover ul { padding: 0; margin: 16px 0 0; list-style: none; }
+  .cover li { display: flex; gap: 10px; align-items: baseline; margin-bottom: 7px; font-size: 13.5px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; transform: translateY(-1px); }
+
+  /* Feature tree */
+  .tree { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7mm 9mm; margin-top: 6mm; }
+  .branch { border-radius: 12px; padding: 12px 14px 10px; background: #fff; border: 1px solid var(--line); }
+  .branch h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 6px; }
+  .branch h3 .ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; }
+  .branch h3 .ic svg { width: 13px; height: 13px; }
+  .branch ul { margin: 0; padding: 0 0 0 4px; list-style: none; border-left: 1.5px solid var(--line); }
+  .branch li { position: relative; padding: 2.5px 0 2.5px 13px; font-size: 12.5px; color: var(--soft); }
+  .branch li::before { content: ""; position: absolute; left: 0; top: 10px; width: 9px; border-top: 1.5px solid var(--line); }
+  .branch li b { color: var(--ink); font-weight: 600; }
+
+  /* Workflow */
+  .flow { display: flex; gap: 6px; margin: 2mm 0 6mm; }
+  .flow span { flex: 1; text-align: center; font-size: 11px; font-weight: 600; padding: 6px 4px; border-radius: 7px; background: #fff; border: 1px solid var(--line); color: var(--soft); }
+  .flow span.on { background: var(--blue); border-color: transparent; color: var(--blue-d); }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; }
+  .step .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: #fff; font-size: 11px; font-weight: 700; margin-right: 7px; }
+  .step h3 { display: flex; align-items: center; margin: 8px 0 3px; }
+  .step p { font-size: 12px; color: var(--soft); }
+
+  /* Use cases */
+  .uc { display: grid; grid-template-columns: 82mm 1fr; gap: 10mm; height: 165mm; }
+  .uc .text p { color: var(--soft); font-size: 12.5px; }
+  .uc .pics { display: grid; gap: 6mm; align-content: start; }
+  .uc .pics.two { grid-template-columns: 1fr 1fr; }
+  .why { margin-top: 10px; padding: 0; list-style: none; }
+  .why li { font-size: 12px; padding: 4px 0 4px 18px; position: relative; color: var(--ink); }
+  .why li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--mint-d); opacity: .55; }
+
+  .e2e { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .chips span { font: 10.5px "SF Mono", Menlo, monospace; background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; color: var(--soft); }
+  .pipe { display: grid; gap: 8px; margin-top: 8px; }
+  .pipe div { background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; font-size: 12px; color: var(--soft); }
+  .pipe div b { color: var(--ink); display: block; font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+<!-- 1. Cover -->
+<section class="page cover">
+  <div>
+    <img class="logo" src="../../assets/logo.svg" alt="">
+    <h1>Beluga,<br>the short guide</h1>
+    <p class="lead">A Mac app where every task gets its own worktree and its own Claude, and where your Claude can ask a friend's Claude to do something on their Mac. Here are the cool parts, the way people actually use them.</p>
+    <ul>
+      <li><span class="dot" style="background:#7aa2ea"></span>One worktree and one Claude per task, all at once</li>
+      <li><span class="dot" style="background:#6cc49a"></span>Answers that show: charts, tables, diagrams, task cards</li>
+      <li><span class="dot" style="background:#e9a27a"></span>Ask a friend's Claude, Mac to Mac, after they click Allow</li>
+      <li><span class="dot" style="background:#a98be0"></span>Sentinels that keep watch and fix things while you sleep</li>
+      <li><span class="dot" style="background:#e48aa5"></span>Your phone sees what needs you, and answers it</li>
+    </ul>
+  </div>
+  <div><img class="shot" src="img/00-hero.jpg" alt=""><p class="cap">A worktree: the conversation in the middle, its changes on the right, projects and friends on the left.</p></div>
+  <div class="foot"><span>Beluga · a short guide</span><span>October 2026</span></div>
+</section>
+
+<!-- 2. Feature tree -->
+<section class="page">
+  <span class="kicker k-lilac">The map</span>
+  <h2>Everything Beluga has, on one page</h2>
+  <p class="lead">Six branches. Each one is a place in the sidebar, and each one also reaches your phone.</p>
+  <div class="tree">
+    <div class="branch"><h3><span class="ic" style="background:var(--blue)"><svg viewBox="0 0 16 16" fill="none" stroke="#3f6fd1" stroke-width="1.8" stroke-linecap="round"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="6" r="1.6"/><path d="M4 5v6M12 7.6c0 2.4-3 2.4-6.5 3.6"/></svg></span>Worktrees</h3>
+      <ul><li><b>A task, a worktree, a Claude</b>: own folder and branch</li><li><b>Many at once</b>, with sub-agents you can watch</li><li><b>Right panel</b>: Changes, Files, Scratch, Info</li><li><b>Terminals</b> beside the chat (⌘J)</li><li><b>Commit, PR, Merge</b> in one click</li><li><b>Plan / Act</b>, model and thinking per chat</li><li><b>Edit a sent message</b> to rewind or fork</li></ul></div>
+    <div class="branch"><h3><span class="ic" style="background:var(--mint)"><svg viewBox="0 0 16 16" fill="none" stroke="#2f8f62" stroke-width="1.8" stroke-linecap="round"><path d="M2.5 13.5h11M4.5 11V8M8 11V4M11.5 11V6.5"/></svg></span>Answers that show</h3>
+      <ul><li><b>Charts and stat tiles</b>: line, bar, pie, gantt, heatmap</li><li><b>Live tables</b> paged from a file, DB, URL or command</li><li><b>Diagrams</b> with a step-by-step walkthrough</li><li><b>Task cards</b> with live status</li><li><b>Markdown</b>: math, Mermaid, folding JSON</li><li><b>Scratch</b>: screenshots, logs, JSON as Claude works</li></ul></div>
+    <div class="branch"><h3><span class="ic" style="background:var(--butter)"><svg viewBox="0 0 16 16" fill="none" stroke="#a07d12" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M5 6.5l1.5 1.5L9.5 5M5 10.5h6"/></svg></span>Tasks and Plans</h3>
+      <ul><li><b>A board per project</b>: list, kanban, graph</li><li><b>Brief</b>: goal, criteria, decisions, handoff</li><li><b>Epics and sub-tasks</b>, labels, @-mentions</li><li><b>Done when its worktree merges</b></li><li><b>Plans</b>: milestones a head Claude runs</li><li><b>Linear and GitHub issues</b> sync, shared boards</li></ul></div>
+    <div class="branch"><h3><span class="ic" style="background:var(--peach)"><svg viewBox="0 0 16 16" fill="none" stroke="#c76a38" stroke-width="1.8" stroke-linecap="round"><circle cx="5.5" cy="5.5" r="2.3"/><circle cx="11" cy="6.5" r="1.9"/><path d="M1.8 13.5c.6-2.6 2-3.8 3.7-3.8s3.1 1.2 3.7 3.8M9.5 10.2c.5-.3 1-.4 1.5-.4 1.4 0 2.6 1 3.1 3.2"/></svg></span>Friends</h3>
+      <ul><li><b>@-tag a friend</b>: your Claude asks theirs</li><li><b>Allow / Allow Always / Decline / See more</b></li><li><b>Trust levels</b>: Ask me each time, Trusted, Full trust</li><li><b>Files, screenshots, commands</b>, device info</li><li><b>Chats and groups</b>, end-to-end encrypted</li><li><b>Peer to peer</b>: no server, no account</li></ul></div>
+    <div class="branch"><h3><span class="ic" style="background:var(--lilac)"><svg viewBox="0 0 16 16" fill="none" stroke="#7653c9" stroke-width="1.8" stroke-linecap="round"><path d="M8 1.8l5 2v4c0 3-2.2 5.2-5 6.4-2.8-1.2-5-3.4-5-6.4v-4z"/><path d="M8 5.5v3l2 1.2"/></svg></span>Sentinel</h3>
+      <ul><li><b>When</b>: a schedule, GitHub, Stripe, Sentry, uptime, webhook</li><li><b>Steps</b>: ask Claude, script, PR, merge, notify</li><li><b>Eleven recipes</b>: Morning brief, Fix what broke…</li><li><b>Dashboard</b> of kept numbers and tables</li><li><b>Safe</b>: starts paused, merge needs your tap</li></ul></div>
+    <div class="branch"><h3><span class="ic" style="background:var(--rose)"><svg viewBox="0 0 16 16" fill="none" stroke="#c24a6c" stroke-width="1.8" stroke-linecap="round"><rect x="4.5" y="1.5" width="7" height="13" rx="1.8"/><path d="M7 12h2"/></svg></span>Your Mac and phone</h3>
+      <ul><li><b>Activity</b>: every Claude Code session on the Mac</li><li><b>Usage</b>: plan limits, tokens, disk per project</li><li><b>Phone app</b>: NeedsYou, chats, files, terminal</li><li><b>Beluga Link</b>: your Mac drives your phone</li><li><b>Menu bar, ⌘K, notifications</b>, self-updating</li></ul></div>
+  </div>
+  <div class="foot"><span>Beluga · a short guide</span><span>2</span></div>
+</section>
+
+<!-- 3. Workflow, part 1 -->
+<section class="page">
+  <span class="kicker k-blue">The everyday loop</span>
+  <h2>One task, end to end</h2>
+  <p class="lead">This is the path almost every piece of work takes. Your main folder stays read-only for Claude the whole time.</p>
+  <div class="flow"><span class="on">1 Ask</span><span class="on">2 Worktree</span><span class="on">3 Claude works</span><span>4 Proof</span><span>5 Task moves</span><span>6 Merge</span></div>
+  <div class="steps">
+    <div class="step"><img class="shot tall" src="img/01-project-home.jpg" alt="" style="object-position:40% top"><h3><span class="n">1</span>Say what you want</h3><p>On a project's home, describe the task. A question stays in the main folder; a change gets its own worktree.</p></div>
+    <div class="step"><img class="shot tall" src="img/02-working.jpg" alt=""><h3><span class="n">2</span>A worktree appears</h3><p>Named for the task (<code>add-auth</code>), with its own branch and Claude. Start three more and they all run at once.</p></div>
+    <div class="step"><img class="shot tall" src="img/03-done.jpg" alt=""><h3><span class="n">3</span>Claude does the work</h3><p>Steps show live, changed files land in the right panel, and you can steer or queue a follow-up while it runs.</p></div>
+  </div>
+  <div class="foot"><span>Beluga · a short guide</span><span>3</span></div>
+</section>
+
+<!-- 4. Workflow, part 2 -->
+<section class="page">
+  <span class="kicker k-blue">The everyday loop</span>
+  <h2>One task, end to end <span style="color:var(--soft);font-weight:500">(continued)</span></h2>
+  <p class="lead">Claude doesn't just say it's done: it shows you, and the board keeps up by itself.</p>
+  <div class="flow"><span>1 Ask</span><span>2 Worktree</span><span>3 Claude works</span><span class="on">4 Proof</span><span class="on">5 Task moves</span><span class="on">6 Merge</span></div>
+  <div class="steps">
+    <div class="step"><img class="shot tall" src="img/04-scratch.jpg" alt="" style="object-position:100% top"><h3><span class="n">4</span>Proof in Scratch</h3><p>Reviewer sub-agents check the change. Test logs, a screenshot of the page and API responses fill the Scratch tab live.</p></div>
+    <div class="step"><img class="shot tall" src="img/05-task-cards.jpg" alt=""><h3><span class="n">5</span>The task keeps up</h3><p>Claude ticks criteria, records decisions and attaches proof. Ask "where do my tasks stand?" and get live cards.</p></div>
+    <div class="step"><img class="shot tall" src="img/00-hero.jpg" alt="" style="object-position:100% top"><h3><span class="n">6</span>Create PR, merge, done</h3><p>Create PR opens the pull request, or Merge brings the worktree straight into main. Either way, the task moves to Done on its own.</p></div>
+  </div>
+  <div class="foot"><span>Beluga · a short guide</span><span>4</span></div>
+</section>
+
+<!-- 5. Use case: ask a friend -->
+<section class="page">
+  <div class="uc">
+    <div class="text">
+      <span class="kicker k-peach">Use case</span>
+      <h2>"Do my tests pass on your machine?"</h2>
+      <p>You changed the webhooks and want to know if bob's checkout of <code>bob-api</code> still passes. Instead of a Slack thread, you tag bob.</p>
+      <div class="say">@bob run the tests in bob-api and tell me how many pass</div>
+      <p>Your Claude finds bob, asks his Claude, and waits. bob gets a small pop-up wherever they are, reads it with See more, and clicks Allow. Their Claude runs the tests on their Mac and the result comes back as a table.</p>
+      <ul class="why">
+        <li>No server and no shared account: Mac to Mac, end-to-end encrypted</li>
+        <li>Each Claude uses its owner's subscription and logins</li>
+        <li>Trusted friends skip the pop-up; secrets are refused at every level</li>
+        <li>Also: "send me a screenshot", "send me that PDF", "make me admin on the repo"</li>
+      </ul>
+    </div>
+    <div class="pics">
+      <img class="shot" src="img/10-ask-answer.jpg" alt="">
+      <img class="shot" src="img/11-wants-to.jpg" alt="" style="width:78%;justify-self:end;margin-top:-26mm;position:relative">
+    </div>
+  </div>
+  <div class="foot"><span>Beluga · a short guide</span><span>5</span></div>
+</section>
+
+<!-- 6. Use case: sentinel -->
+<section class="page">
+  <div class="uc">
+    <div class="text">
+      <span class="kicker k-lilac">Use case</span>
+      <h2>CI broke at 3 am. It's fixed by breakfast.</h2>
+      <p>The <b>Fix what broke</b> recipe watches GitHub. When a workflow fails on <code>main</code>, Claude finds the cause in a fresh worktree, opens a pull request and waits for the checks and a reviewer.</p>
+      <p>In the morning there's one thing waiting: a <b>Merge</b> button, on the Mac or the phone, with a short report of what broke and why the fix is right.</p>
+      <ul class="why">
+        <li>Triggers: a schedule, GitHub, Stripe, Sentry, a site going down, a webhook</li>
+        <li>Starts paused; Look, Work and Ship say how far Claude may go</li>
+        <li>Morning brief: every day at 7, what changed, sent to your phone</li>
+        <li>Keep the numbers: runs feed tiles on Sentinel's dashboard</li>
+      </ul>
+    </div>
+    <div class="pics">
+      <img class="shot" src="img/08-sentinel-merge.jpg" alt="">
+      <img class="shot" src="img/07-morning-brief.jpg" alt="" style="width:70%;justify-self:end;margin-top:-34mm;position:relative">
+    </div>
+  </div>
+  <div class="foot"><span>Beluga · a short guide</span><span>6</span></div>
+</section>
+
+<!-- 7. Use case: understand code / data -->
+<section class="page">
+  <span class="kicker k-mint">Use case</span>
+  <h2>"How does a payment flow?" and "How are payments doing?"</h2>
+  <p class="lead">New to a codebase, or checking on the business: ask, and the answer is something you can click, not a wall of text.</p>
+  <div class="steps" style="grid-template-columns:1fr 1fr">
+    <div class="step"><img class="shot wide" src="img/13-graph.jpg" alt=""><h3>A diagram with a walkthrough</h3><p><code>/visualize</code> draws the flow from the checkout page through the API, Stripe and the webhook to the <code>orders</code> table. Hover a part to see what it touches, then step through it.</p></div>
+    <div class="step"><img class="shot wide" src="img/12-views.jpg" alt=""><h3>A live dashboard in the chat</h3><p>Stat tiles, a chart of payments per day and a table of the latest orders that pages, sorts and searches straight from the source, without asking Claude again.</p></div>
+  </div>
+  <div class="foot"><span>Beluga · a short guide</span><span>7</span></div>
+</section>
+
+<!-- 8. Use case: run the week -->
+<section class="page">
+  <div class="uc">
+    <div class="text">
+      <span class="kicker k-butter">Use case</span>
+      <h2>Five fixes in one message</h2>
+      <p>You paste a list from a bug bash. Claude opens a task for each, and you start them as worktrees side by side. The board fills itself in: In Progress while Claude works, In Review when the PR opens, Done when it merges.</p>
+      <div class="say">fix the refund button, rate-limit login, send receipts once, add the launch checklist, move secrets to the keychain</div>
+      <ul class="why">
+        <li>Every task has a brief: goal, acceptance criteria, decisions, handoff</li>
+        <li>Epics group related work; a graph shows what waits on what</li>
+        <li>Share a board with friends; @-mention them in a comment</li>
+        <li>Plans: a head Claude runs milestones and asks you at decisions</li>
+      </ul>
+    </div>
+    <div class="pics"><img class="shot" src="img/06-board.jpg" alt=""><img class="shot" src="img/06b-task-graph.jpg" alt="" style="height:68mm;object-fit:cover;object-position:30% 70%"></div>
+  </div>
+  <div class="foot"><span>Beluga · a short guide</span><span>8</span></div>
+</section>
+
+<!-- 9. Your Mac + how it's tested -->
+<section class="page">
+  <span class="kicker k-rose">Keeping an eye</span>
+  <h2>Your Mac at a glance, and how we know it works</h2>
+  <div class="e2e" style="margin-top:6mm">
+    <div>
+      <img class="shot" src="img/14-activity.jpg" alt="" style="height:62mm;object-fit:cover;object-position:top left">
+      <img class="shot" src="img/15-usage.jpg" alt="" style="height:62mm;object-fit:cover;object-position:top left;margin-top:5mm">
+      <p class="cap"><b>Activity</b>: every Claude Code session on the Mac, Beluga's or not, and the background agents they started. <b>Usage</b> shows plan limits, tokens per day and disk per project with one-click clean up. The phone app mirrors what needs you, with a push.</p>
+    </div>
+    <div>
+      <h3>The end-to-end tests</h3>
+      <p style="color:var(--soft)">Every picture in this guide comes from the <b>demo</b>: a fake daemon with the projects <code>bob-api</code> and <code>landing</code>, friends bob and mia, tasks and sentinels. The e2e suite drives the real app against it, the same way a person would.</p>
+      <div class="pipe">
+        <div><b>1 · Start the demo daemon</b>A real engine with made-up projects and a simulated Claude, so runs are fast and repeatable.</div>
+        <div><b>2 · Open the app in Playwright</b>The Mac app's web view, clicked through by role and label, like a screen reader would.</div>
+        <div><b>3 · Walk a real use case</b>Make a worktree, ask a friend, merge, run a sentinel, and check what the screen says.</div>
+        <div><b>4 · Record the GIFs</b><code>scripts/gifs.mjs</code> replays the same scenes for the README.</div>
+      </div>
+      <div class="chips"><span>worktrees</span><span>merge</span><span>scratch</span><span>tasks</span><span>plans</span><span>wants-to</span><span>network</span><span>sentinel</span><span>views</span><span>graphs</span><span>phone-pairing</span><span>usage</span><span>keyboard</span><span>+ 76 more</span></div>
+      <p class="cap">Run them: <code>cd packages/mac && npm run e2e</code></p>
+    </div>
+  </div>
+  <div class="foot"><span>Beluga · a short guide</span><span>9</span></div>
+</section>
+
+</body>
+</html>
