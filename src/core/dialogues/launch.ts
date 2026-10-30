@@ -50,6 +50,10 @@ export function launchDialogues(host: DialoguesHost): () => void {
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
     myAgents: () => (host.demo ? [own(), { runtime: 'codex', label: 'Codex' }] : myAgents(own())),
     toast: (text, level) => session.toast(text, level ?? 'info'),
+    worktreeOf: (channel) => {
+      const ws = session.workspaces?.inChannel(channel);
+      return ws && ws.kind === 'worktree' && !ws.archived ? session.workspaces?.place(channel)?.cwd : undefined;
+    },
     runTurn: async (run) => {
       const runtime = run.participant.agent.runtime;
       const backend = session.backendFor(runtime);

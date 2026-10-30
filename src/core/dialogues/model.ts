@@ -67,6 +67,8 @@ export const Dialogue = z.object({
   channel: z.string().max(200).optional(),
   /** Who started it (a person's name). */
   startedBy: z.string().max(80).optional(),
+  /** A cross-reference's reconciled answer (its last turn), once it's done. */
+  result: z.string().max(200_000).optional(),
   /** For work mode: the one worktree it runs in. */
   worktree: z.string().max(4096).optional(),
   createdAt: z.number(),
@@ -93,6 +95,8 @@ export class DialogueError extends Error {}
 export function createDialogue(start: DialogueStart, now: number): Dialogue {
   if (start.participants.length < 2) throw new DialogueError('A dialogue needs two agents');
   const mode = start.mode ?? 'talk';
+  if (mode === 'work' && !start.worktree) throw new DialogueError('A work dialogue runs in one worktree: start it in that worktree’s conversation');
+  if (mode === 'cross-reference' && start.participants.length !== 2) throw new DialogueError('Cross-reference is between two agents');
   const turnCap = mode === 'cross-reference' ? CROSS_REFERENCE_TURNS : Math.max(1, Math.floor(start.turnCap ?? DEFAULT_TURN_CAP));
   return {
     id: start.id,
@@ -145,7 +149,7 @@ export function turnDone(d: Dialogue, done: TurnDone, now: number): Dialogue {
   const next: Dialogue = { ...d, turns: [...d.turns, turn], used: d.used + turn.tokens, updatedAt: now };
   if (done.ended !== undefined) return { ...next, status: 'ended', note: done.ended || 'An agent ended the dialogue' };
   if (next.budget !== undefined && next.used >= next.budget) return { ...next, status: 'budget', note: `The token budget (${next.budget}) ran out` };
-  if (next.mode === 'cross-reference' && agentTurns(next) >= CROSS_REFERENCE_TURNS) return { ...next, status: 'ended', note: 'Cross-reference done' };
+  if (next.mode === 'cross-reference' && agentTurns(next) >= CROSS_REFERENCE_TURNS) return { ...next, status: 'ended', note: 'Cross-reference done: the reconciled answer is the last turn', result: turn.text };
   if (agentTurns(next) >= next.pauseAt) return { ...next, status: 'paused', note: `Paused after ${agentTurns(next)} turns: continue?` };
   return next;
 }

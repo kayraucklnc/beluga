@@ -1230,17 +1230,17 @@ export class AgentHost {
    * end_dialogue tool, talk mode's read-only vetTool), your approvals for the rest. Not in a lane:
    * the chair runs its turns one after another itself. Its answer and the tokens it spent.
    */
-  async runDialogueTurn(channel: string, backend: AgentBackend, input: Pick<AgentRunInput, 'prompt' | 'signal' | 'vetTool' | 'dialogue'>, opts: { readonly place?: AgentPlace; readonly defaultModel?: boolean } = {}): Promise<{ text: string; tokens: number }> {
+  async runDialogueTurn(channel: string, backend: AgentBackend, input: Pick<AgentRunInput, 'prompt' | 'signal' | 'vetTool' | 'dialogue' | 'env'> & { readonly scope?: AgentRunInput['scope'] }, opts: { readonly place?: AgentPlace; readonly defaultModel?: boolean } = {}): Promise<{ text: string; tokens: number }> {
     const requestId = randomUUID();
     const requesterName = peerName(this.store.getState(), this.selfId);
     this.deps.questions.track(requestId, this.selfId, channel);
     let tokens = 0;
     const text = await backend.run({
-      ...input,
       requesterName,
       viaAgent: false,
       context: [],
-      scope: 'full',
+      ...input,
+      scope: input.scope ?? 'full',
       channel,
       ...(opts.place ? { place: opts.place } : {}),
       onEvent: (kind, payload) => {

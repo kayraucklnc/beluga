@@ -169,7 +169,7 @@ describe('the dialogue state machine', () => {
 describe('talk mode is read-only', () => {
   const run = async (mode: 'talk' | 'work'): Promise<DialogueTurnRun> => {
     const { c, runs } = chair({ script: () => 'hang' });
-    const d = c.start({ topic: 'x', mode, participants: [claude, codex] });
+    const d = c.start({ topic: 'x', mode, participants: [claude, codex], ...(mode === 'work' ? { worktree: '/w' } : {}) });
     await new Promise((r) => setTimeout(r, 5));
     c.stop(d.id);
     return runs[0]!;
@@ -191,10 +191,10 @@ describe('talk mode is read-only', () => {
     expect(await gate(turn, END_DIALOGUE_TOOL, { reason: 'done' })).toBeUndefined();
   });
 
-  it('work mode keeps its tools', async () => {
+  it('work mode keeps its tools in its worktree', async () => {
     const turn = await run('work');
-    expect(turn.input.vetTool).toBeUndefined();
     expect(await gate(turn, 'Write', { file_path: '/w/a.txt', content: 'x' })).toBeUndefined();
+    expect(await gate(turn, 'Bash', { command: 'npm test' })).toBeUndefined();
     expect(talkReadOnly('Write', {})).toBe(TALK_READ_ONLY_REASON);
   });
 

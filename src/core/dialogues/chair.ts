@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, renameSync } from 'node:fs';
 import path from 'node:path';
-import { type DialogueTurnTools, talkReadOnly } from '../../agent/dialogue-tools.js';
+import { type DialogueTurnTools, talkReadOnly, workConfined } from '../../agent/dialogue-tools.js';
+import { belugaEnvBoth } from '../beluga-env.js';
 import type { AgentRunInput } from '../../agent/types.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import {
@@ -30,7 +31,7 @@ export interface DialogueTurnRun {
   readonly participant: Participant;
   /** 1-based. */
   readonly turn: number;
-  readonly input: Pick<AgentRunInput, 'prompt' | 'signal' | 'vetTool'> & { readonly dialogue: DialogueTurnTools };
+  readonly input: Pick<AgentRunInput, 'prompt' | 'signal' | 'vetTool' | 'env'> & { readonly dialogue: DialogueTurnTools; readonly scope?: AgentRunInput['scope'] };
 }
 
 /** What a turn came back with: its final answer and the tokens it spent. */
@@ -52,8 +53,16 @@ export interface ChairDeps {
 /** Dialogues that are over and still kept (the newest). */
 const KEEP_OVER = 50;
 
-/** Talk and cross-reference turns only look; work turns use the tools work has. */
-const readOnlyMode = (d: DialogueT): boolean => d.mode === 'talk' || d.mode === 'cross-reference';
+/**
+ * What a turn may do, by mode: talk and cross-reference only look (read-only vetTool); work has
+ * the full tools, its files changing in its one worktree only (the shared folders' scope, a vetTool
+ * on writes, and the worktree's env so the usual commit rules apply).
+ */
+function modeInput(d: DialogueT): Pick<DialogueTurnRun['input'], 'vetTool' | 'scope' | 'env'> {
+  if (d.mode !== 'work') return { vetTool: talkReadOnly };
+  const worktree = d.worktree ?? '';
+  return { vetTool: workConfined(worktree), scope: 'folder', env: belugaEnvBoth('WORKTREE', worktree) };
+}
 
 /**
  * The chair: runs a dialogue's turns one after another, each one run of the speaker's agent with
@@ -168,7 +177,7 @@ export class Chair {
           speaker,
           participant,
           turn,
-          input: { prompt: turnPrompt(d, speaker), signal: ac.signal, dialogue: tools, ...(readOnlyMode(d) ? { vetTool: talkReadOnly } : {}) },
+          input: { prompt: turnPrompt(d, speaker), signal: ac.signal, dialogue: tools, ...modeInput(d) },
         });
       } catch (err) {
         if (this.inflight.get(id) === ac) this.inflight.delete(id);

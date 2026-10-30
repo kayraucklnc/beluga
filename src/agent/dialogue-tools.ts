@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { z } from 'zod';
 import { isReadOnlyCommand } from './read-only.js';
 import { tool } from './tool-kit.js';
@@ -43,4 +44,25 @@ export function talkReadOnly(toolName: string, input: Record<string, unknown>): 
   if (LOOK_TOOLS.has(toolName)) return undefined;
   if (toolName === 'Bash' && typeof input.command === 'string' && isReadOnlyCommand(input.command)) return undefined;
   return TALK_READ_ONLY_REASON;
+}
+
+/** File tools that write, and the input naming their file. */
+const WRITES: Readonly<Record<string, string>> = { Write: 'file_path', Edit: 'file_path', MultiEdit: 'file_path', NotebookEdit: 'notebook_path' };
+
+export const WORK_OUTSIDE_REASON = "Beluga blocked this: a work dialogue changes files in its one worktree only. Don't try another way; work inside it.";
+
+/**
+ * Work mode's vetTool: the full tools, but files change only inside the dialogue's worktree (the
+ * run's scope keeps everything else asking or refused too). A relative path is the worktree's.
+ */
+export function workConfined(worktree: string): (toolName: string, input: Record<string, unknown>) => string | undefined {
+  const root = path.resolve(worktree);
+  return (toolName, input) => {
+    const field = WRITES[toolName];
+    if (!field) return undefined;
+    const raw = input[field];
+    if (typeof raw !== 'string' || !raw) return WORK_OUTSIDE_REASON;
+    const target = path.resolve(root, raw);
+    return target === root || target.startsWith(root + path.sep) ? undefined : WORK_OUTSIDE_REASON;
+  };
 }

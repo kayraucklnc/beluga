@@ -17,6 +17,8 @@ export interface DialoguesDeps {
   /** Run one turn (core/agent-host runDialogueTurn on the participant's backend). */
   readonly runTurn: (run: DialogueTurnRun) => Promise<DialogueTurnResult>;
   readonly toast: (text: string, level?: 'info' | 'warn' | 'error') => void;
+  /** The worktree a conversation is (its folder), for work mode; undefined anywhere else. */
+  readonly worktreeOf?: (channel: string) => string | undefined;
 }
 
 export interface DialogueStartInput {
@@ -90,6 +92,8 @@ export class Dialogues {
 
   start(input: DialogueStartInput): Dialogue {
     if (liveDialogueIn(this.deps.store.getState(), input.channel)) throw new DialogueError('A dialogue is already going on here: stop it first');
+    // Work happens in exactly one worktree: this conversation's.
+    const worktree = input.mode === 'work' ? this.deps.worktreeOf?.(input.channel) : undefined;
     const d = this.chair.start({
       channel: input.channel,
       participants: input.participants,
@@ -98,6 +102,7 @@ export class Dialogues {
       ...(input.turnCap ? { turnCap: input.turnCap } : {}),
       ...(input.budget ? { budget: input.budget } : {}),
       startedBy: this.deps.selfName(),
+      ...(worktree ? { worktree } : {}),
       propose: !input.confirmed,
     });
     // The header card, where the thread begins.
