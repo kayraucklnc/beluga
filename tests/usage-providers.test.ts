@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { usageFor, usagesOf, withUsage } from '../src/agent/usage.js';
 import { CLAUDE_AGENT, PeerInfo, Profile } from '../src/protocol.js';
+import { friendRooms, providerCards, shortTokens } from '../src/ui/usage-cards.js';
 
 /** The Profile an older Mac (before per-provider usage) parses frames with. */
 const OldWindow = z.object({ pct: z.number().min(0).max(100), resetsAt: z.number().optional() });
@@ -58,5 +59,30 @@ describe('usage per provider', () => {
     const seen = OldPeerInfo.parse(frame);
     expect(seen.usage).toEqual({ plan: 'pro', fiveHour: { pct: 50, resetsAt: 9 }, updatedAt: 1 });
     expect(OldProfile.parse(frame).name).toBe('kay');
+  });
+
+  it('makes one card per provider, in the shape its data has', () => {
+    let p: Profile = { ...base, agents: [CLAUDE_AGENT, codex] };
+    p = { ...p, ...withUsage(p, CLAUDE_AGENT, { plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }, 1) };
+    p = { ...p, ...withUsage(p, local, { tokens: { input: 1000, output: 500 }, tokensPerSec: 38 }, 2) };
+    const cards = providerCards(p, codex);
+    expect(cards.map((c) => [c.key, c.shape, c.isDefault])).toEqual([
+      ['claude', 'quota', false],
+      ['codex', 'empty', true],
+      ['local', 'tokens', false],
+    ]);
+    expect(cards[0]?.windows.map((w) => `${w.label} ${w.pct}`)).toEqual(['5-hour 12', 'Weekly 38']);
+    expect(providerCards(p, undefined).find((c) => c.isDefault)?.key).toBe('claude');
+    expect(providerCards(withUsage({}, codex, { signedIn: false }), undefined).find((c) => c.key === 'codex')?.signedIn).toBe(false);
+    expect(shortTokens(1500)).toBe('2k');
+    expect(shortTokens(1_234_567)).toBe('1.2M');
+  });
+
+  it('shows whose agent has room left, across providers', () => {
+    const mia = { ...base, name: 'mia', peerId: 'm', defaultAgent: codex, ...withUsage(withUsage({}, CLAUDE_AGENT, { fiveHour: { pct: 10 } }), codex, { fiveHour: { pct: 71 }, week: { pct: 46 } }) };
+    const old = { ...base, name: 'bob', peerId: 'b', usage: { week: { pct: 80 }, updatedAt: 1 } };
+    const me = { ...base, peerId: 'k', ...withUsage({}, CLAUDE_AGENT, { fiveHour: { pct: 1 } }) };
+    const rooms = friendRooms([me, mia, old], 'k');
+    expect(rooms.map((r) => `${r.name} ${r.agent.label} ${r.left}${r.isDefault ? ' default' : ''}`)).toEqual(['mia Codex 29 default', 'mia Claude 90', 'bob Claude 20 default']);
   });
 });

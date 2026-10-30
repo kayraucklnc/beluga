@@ -12,6 +12,7 @@ import { startHub, type Hub } from '../src/net/hub.js';
 import { PeerClient } from '../src/net/peer-client.js';
 import { attach, waitFor } from './helpers.js';
 import type { InProcessClient } from '../src/ipc/in-process.js';
+import { friendRooms, providerCards } from '../src/ui/usage-cards.js';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -177,6 +178,25 @@ describe('Session', () => {
     expect(kay.session.agentFor('web')).toEqual(opus);
     kay.session.setPrefs({ defaultAgent: null });
     await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.model === undefined);
+  });
+
+  it('make-default on a usage card sets your default and the peer card friends see (BLG-458)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    const codex = { runtime: 'codex', model: 'gpt-5', label: 'Codex' };
+    kay.session.updateUsage({ windows: [{ label: 'Weekly', pct: 24 }] }, codex);
+    // What the Codex card's chip sends.
+    kay.session.setPrefs({ defaultAgent: codex });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.runtime === 'codex');
+    await waitFor(() => (kay.state().peers.find((p) => p.name === 'kay')?.usages?.length ?? 0) > 0);
+    expect(providerCards(kay.state().peers.find((p) => p.name === 'kay'), kay.state().prefs.defaultAgent).find((c) => c.isDefault)?.key).toBe('codex');
+    const room0 = friendRooms(bob.state().peers, bob.session.selfId).find((r) => r.name === 'kay');
+    expect(room0).toMatchObject({ agent: { runtime: 'codex' }, isDefault: true, left: 76 });
+    // And Claude's chip: back to no default.
+    kay.session.setPrefs({ defaultAgent: null });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.runtime === 'claude');
   });
 
   it('runs the person\'s agent with @bob and @agents, and says who a mistyped name may be', async () => {

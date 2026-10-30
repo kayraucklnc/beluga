@@ -127,6 +127,9 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string, nam
   };
   client.once('welcome', () => {
     session.updateUsage({ plan: 'pro', fiveHour: { pct: friend.usage }, week: { pct: 41 } });
+    // Their Codex shares its plan windows too, so the Usage tab shows whose agent has room left.
+    const codex = DEMO_AGENTS[name].agents.find((a) => a.runtime === 'codex');
+    if (codex) session.updateUsage({ plan: 'plus', fiveHour: { pct: name === 'mia' ? 71 : 18 }, week: { pct: name === 'mia' ? 46 : 9 } }, codex);
     say(friend.first);
     if (name === 'bob') setTimeout(() => shareDemoWorkspace(session, shares, folder), 1800);
     if (name === 'bob') setTimeout(() => sendDemoScreenshot(session), 4200);
