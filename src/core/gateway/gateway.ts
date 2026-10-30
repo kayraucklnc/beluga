@@ -7,7 +7,7 @@ import { type Capabilities, Decision, type DecisionInput, type Rule, offersFor }
 import { TaskBook } from './book.js';
 import type { SystemPort } from './device.js';
 import { type GatewayState, type PeerCard, type TaskFile, type TaskView, isFinal } from './model.js';
-import { type Expects, type GatewayMsg, MAX_QUESTIONS, MAX_REQUEST_SUMMARY, type Need, type PeerCardMsg, type TaskKind, type TaskQuestion, type TaskResult, type TaskUpdate } from './protocol.js';
+import { type DialogueEnvelope, type Expects, type GatewayMsg, MAX_QUESTIONS, MAX_REQUEST_SUMMARY, type Need, type PeerCardMsg, type TaskKind, type TaskQuestion, type TaskResult, type TaskUpdate } from './protocol.js';
 import { describeForClaude, oneLine, questionPrompt, resumePrompt } from './result.js';
 import { RuleBook, type RuleInput } from './rule-book.js';
 import { validate } from './schema.js';
@@ -95,6 +95,18 @@ export interface AskInput {
   readonly conversation?: string;
   /** The friend's Claude's chat answer this request comes from (its message id). */
   readonly answer?: string;
+  /** A turn of a chaired dialogue (core/dialogues): only the chair sets it, never an agent's tools. */
+  readonly dialogue?: DialogueEnvelope;
+}
+
+/** What the gateway tells core/dialogues (see GatewayDeps.dialogues). */
+export interface GatewayDialogues {
+  /** A friend's dialogue turn arrived (received task with its envelope), or ended here (its result is on it). */
+  turn(task: TaskView): void;
+  /** The other side stopped a dialogue. */
+  stopped(from: string, fromName: string, dialogue: string, why: string): void;
+  /** Stopped on this side: its next turns are declined. */
+  isStopped(dialogue: string): boolean;
 }
 
 /** Someone your Claude could ask, as who_can shows them. */
@@ -140,6 +152,7 @@ const taskId = (): string => `t_${randomBytes(9).toString('base64url')}`;
 const isAgentFinal = (status: string): boolean => status === 'done' || status === 'error' || status === 'denied';
 
 export class Gateway {
+  private dialogues: GatewayDialogues | undefined;
   readonly book: TaskBook;
   readonly rules: RuleBook;
   private readonly courier: Courier;
@@ -207,6 +220,7 @@ export class Gateway {
       ...(deps.questionWaitMs ? { questionWaitMs: deps.questionWaitMs } : {}),
       ...(deps.runLimitMs ? { runLimitMs: deps.runLimitMs } : {}),
       ...(deps.runFolder ? { runFolder: deps.runFolder } : {}),
+      dialogues: { turn: (t) => this.dialogues?.turn(t), stopped: (...a) => this.dialogues?.stopped(...a), isStopped: (id) => this.dialogues?.isStopped(id) ?? false },
       chatOf: (from, chat) => {
         const mesh = this.mesh;
         if (!mesh?.isFriend(from)) return undefined;
@@ -303,6 +317,7 @@ export class Gateway {
         void this.server.onRequest(from, msg);
         return;
       case 'task_cancel':
+        if (msg.dialogue) this.onDialogueStop(from, msg.id, msg.dialogue);
         this.server.onCancel(from, msg);
         return;
       case 'task_update':
@@ -345,14 +360,22 @@ export class Gateway {
     if (unable) throw new Error(unable);
     // Your Claude asking the same person's Claude again and again from one conversation: it stops and tells you instead.
     // (Commands and files are one step each, asked about on their side: not counted.)
-    if (input.by === 'agent' && kind === 'ask') {
+    // A declared dialogue (BLG-468) is one unit: its own turn cap governs it, counted here once per
+    // turn, and its asks don't count toward the limit for undeclared ones.
+    if (input.dialogue) {
+      if (kind !== 'ask') throw new Error('A dialogue turn is an ask');
+      if (this.trustFor(peer.peerId) === 'blocked') throw new Error(`You blocked ${peer.name}`);
+      const turns = this.book.all().filter((t) => t.direction === 'sent' && t.dialogue?.id === input.dialogue!.id).length;
+      if (input.dialogue.turn > input.dialogue.cap || turns >= input.dialogue.cap) throw new Error(`This dialogue already had its ${input.dialogue.cap} turns: continue it to go on`);
+    } else if (input.by === 'agent' && kind === 'ask') {
       const since = this.now() - AGENT_ASKS_WINDOW_MS;
-      const recent = this.book.all().filter((t) => t.direction === 'sent' && t.by === 'agent' && t.kind === 'ask' && t.peerId === peer.peerId && t.conversation === input.conversation && t.createdAt >= since).length;
+      const recent = this.book.all().filter((t) => t.direction === 'sent' && t.by === 'agent' && t.kind === 'ask' && !t.dialogue && t.peerId === peer.peerId && t.conversation === input.conversation && t.createdAt >= since).length;
       if (recent >= MAX_AGENT_ASKS) throw new Error(`You already sent ${peer.name} ${recent} requests from this conversation in the last ${AGENT_ASKS_WINDOW_MS / 60_000} minutes. Don't ask again: stop, and tell your user what you have so far and what's still missing, so they can decide.`);
     }
     const level = this.trustFor(peer.peerId);
     // Your Claude asks first, unless you trust them or said Always for them (asking them, not what they may do here).
-    const confirm = input.by === 'agent' && level !== 'trusted' && level !== 'full' && !this.freely().includes(peer.peerId);
+    // A dialogue's turns: you said yes when you started it.
+    const confirm = input.by === 'agent' && !input.dialogue && level !== 'trusted' && level !== 'full' && !this.freely().includes(peer.peerId);
     const now = this.now();
     const task = this.put({
       id: taskId(),
@@ -378,6 +401,7 @@ export class Gateway {
       ...(input.path ? { path: input.path.trim() } : {}),
       ...(input.conversation ? { conversation: input.conversation } : {}),
       ...(input.answer ? { answer: input.answer } : {}),
+      ...(input.dialogue ? { dialogue: input.dialogue, confirmed: true } : {}),
     });
     if (confirm) {
       this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your agent wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s agent'}`, body: oneLine(input.summary?.trim() || ask, 140), need: `confirm:${task.id}`, ...(input.conversation ? { channel: input.conversation } : {}) });
@@ -386,6 +410,37 @@ export class Gateway {
       this.confirmTimers.set(task.id, timer);
     } else this.transmit(task);
     return this.book.get(task.id) ?? task;
+  }
+
+  /**
+   * A dialogue stopped on this side (BLG-468): its turn in flight with them stops (sent: cancelled;
+   * received: halted), and their side hears so it ends there too, between turns as well.
+   */
+  stopDialogue(peerId: string, dialogue: string, why: string): void {
+    const tasks = this.book.all().filter((t) => t.peerId === peerId && t.dialogue?.id === dialogue).sort((a, b) => a.createdAt - b.createdAt);
+    for (const t of tasks) {
+      if (isFinal(t.state)) continue;
+      if (t.direction === 'sent') this.cancel(t.id);
+      else this.server.stopTask(t.id);
+    }
+    const last = tasks.at(-1);
+    if (last) this.courier.send(peerId, { t: 'task_cancel', id: last.id, dialogue: { id: dialogue, why: oneLine(why, 300) }, ts: this.now() }, true);
+  }
+
+  private onDialogueStop(from: string, taskId: string, d: { readonly id: string; readonly why: string }): void {
+    // Only someone this dialogue was with: the task it names is theirs and carries it.
+    const task = this.book.get(taskId);
+    if (!task || task.peerId !== from || task.dialogue?.id !== d.id) return;
+    this.dialogues?.stopped(from, this.nameOf(from), d.id, d.why);
+  }
+
+  /**
+   * Chaired dialogues (core/dialogues, BLG-468), plugged in once both are up: a friend's dialogue
+   * turn came in or ended here (this side's thread shows it), one was stopped on the other side,
+   * and whether one was stopped here (its next turns are declined).
+   */
+  useDialogues(port: GatewayDialogues | undefined): void {
+    this.dialogues = port;
   }
 
   /** Your answer on the "Ask Alice's Claude?" card: send it (maybe reworded; `always`: and don't ask about them again), or not now. */
@@ -718,6 +773,7 @@ export class Gateway {
         ...(task.timeoutSec ? { timeoutSec: task.timeoutSec } : {}),
         ...(task.path ? { path: task.path } : {}),
         ...(task.chat?.startsWith('group:') ? { chat: task.chat } : {}),
+        ...(task.dialogue ? { dialogue: task.dialogue } : {}),
       },
       true,
     );
@@ -816,7 +872,7 @@ export class Gateway {
     });
     // A wait_for that was waiting already took it (see wait).
     if (this.toldQuestion.get(next.id) === msg.qid) return;
-    if (next.by === 'agent' && next.conversation) {
+    if (next.by === 'agent' && next.conversation && !next.dialogue) {
       if (this.busy(next.conversation)) this.toAsk.add(next.id);
       else this.askClaude(next);
       return;
@@ -859,8 +915,8 @@ export class Gateway {
   }
 
   private announce(task: TaskView): void {
-    // Your Claude asked from a conversation: it hands the answer on there (one place, not two).
-    if (task.by === 'agent' && task.conversation) return;
+    // Your Claude asked from a conversation: it hands the answer on there (one place, not two). A dialogue's chair posts its turns.
+    if ((task.by === 'agent' && task.conversation) || task.dialogue) return;
     const who = task.kind === 'run' ? `Your command on ${task.peerName}'s Mac` : task.kind === 'file' ? `Your file request to ${task.peerName}'s Mac` : `${task.peerName}'s agent`;
     const verb = task.state === 'done' ? (task.kind === 'run' ? 'finished' : 'replied') : task.state === 'declined' ? 'was declined' : task.state === 'cancelled' ? 'was cancelled' : 'failed';
     this.deps.notify?.({ kind: task.state === 'done' ? 'done' : 'problems', title: `${who} ${verb}`, body: oneLine((task.result?.summary ?? task.ask).replace(/[*_`#>]/g, ''), 140), ...(task.conversation ? { channel: task.conversation } : {}) });
@@ -874,7 +930,8 @@ export class Gateway {
 
   /** A result arrived: whoever waits for it gets it; else your Claude continues with it. */
   private settle(task: TaskView): void {
-    if (task.by !== 'agent' || !task.conversation || task.delivered) return;
+    // A dialogue's turn: the chair is waiting for it (core/dialogues), no conversation resumes.
+    if (task.by !== 'agent' || !task.conversation || task.delivered || task.dialogue) return;
     // A wait_for is waiting: it hands the result to Claude (see describe).
     if (this.claimed.has(task.id) || this.waiters.get(task.id)?.size) return;
     if (this.busy(task.conversation)) {

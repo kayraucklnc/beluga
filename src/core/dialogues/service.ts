@@ -3,8 +3,11 @@ import type { AgentRef } from '../../protocol.js';
 import type { Store } from '../store.js';
 import { Chair, type DialogueTurnResult, type DialogueTurnRun } from './chair.js';
 import { type Dialogue, DialogueError, type DialogueMode, type Participant, isOver, liveDialogueIn } from './model.js';
+import type { GatewayDialogues } from '../gateway/gateway.js';
+import type { TaskView } from '../gateway/model.js';
 import { speakerName } from './prompt.js';
-import { parseDialogueStart } from './start.js';
+import { type DialogueGateway, mirrorFrom, remoteTurn } from './remote.js';
+import { type FriendAgent, parseDialogueStart } from './start.js';
 
 export interface DialoguesDeps {
   readonly store: Store;
@@ -19,6 +22,9 @@ export interface DialoguesDeps {
   readonly toast: (text: string, level?: 'info' | 'warn' | 'error') => void;
   /** The worktree a conversation is (its folder), for work mode; undefined anywhere else. */
   readonly worktreeOf?: (channel: string) => string | undefined;
+  /** Friends' agents (BLG-468): who `@bob:codex` is, and the gateway their turns go through. */
+  readonly friendAgent?: FriendAgent;
+  readonly gateway?: () => DialogueGateway | undefined;
 }
 
 export interface DialogueStartInput {
@@ -49,9 +55,13 @@ export class Dialogues {
   readonly chair: Chair;
   /** Turns already in the chat, per dialogue. */
   private readonly posted = new Map<string, number>();
+  /** Friends' dialogues you're in (they chair them): your side's copy of each thread. */
+  private readonly mirrors = new Map<string, Dialogue>();
+  /** Dialogues the other side stopped: not told back to them. */
+  private readonly quiet = new Set<string>();
 
   constructor(private readonly deps: DialoguesDeps) {
-    this.chair = new Chair({ ...(deps.dir ? { dir: deps.dir } : {}), runTurn: (run) => deps.runTurn(run), onChange: (d) => this.changed(d) });
+    this.chair = new Chair({ ...(deps.dir ? { dir: deps.dir } : {}), runTurn: (run) => this.runTurn(run), onChange: (d) => this.changed(d) });
     const all = this.chair.list();
     for (const d of all) this.posted.set(d.id, d.turns.length);
     deps.store.dispatch({ type: 'dialogues_init', dialogues: all });
@@ -70,7 +80,7 @@ export class Dialogues {
       else this.deps.toast('No dialogue is going on here', 'info');
       return true;
     }
-    const start = parseDialogueStart(text, this.deps.myAgents());
+    const start = parseDialogueStart(text, this.deps.myAgents(), this.deps.friendAgent);
     if (start?.kind === 'error') {
       this.deps.toast(start.message, 'warn');
       return true;
@@ -83,7 +93,8 @@ export class Dialogues {
       }
       return true;
     }
-    if (!live || live.status === 'proposed') return false;
+    // A friend's dialogue: what you type goes on as usual (its chair is on their side).
+    if (!live || live.status === 'proposed' || live.remoteChair) return false;
     // Commands and messages to an agent go their own way.
     if (!text || text.startsWith('/') || text.startsWith(':') || text.startsWith('@')) return false;
     this.interject(live.id, text);
@@ -118,9 +129,63 @@ export class Dialogues {
     return this.chair.continue(id, more);
   }
 
-  /** Stop (or cancel a proposal): over at once, from the Mac or the phone. */
+  /** Stop (or cancel a proposal): over at once, from the Mac or the phone; a friend's dialogue ends for both. */
   stop(id: string): Dialogue {
+    const mirror = this.mirrors.get(id);
+    if (mirror) return this.putMirror({ ...mirror, status: isOver(mirror) ? mirror.status : 'stopped', note: isOver(mirror) ? mirror.note : `Stopped by ${this.deps.selfName()}`, updatedAt: Date.now() });
     return this.chair.stop(id, this.deps.selfName());
+  }
+
+  /** What the gateway tells dialogues (core/gateway GatewayDialogues): friends' turns and stops. */
+  gatewayPort(): GatewayDialogues {
+    return {
+      turn: (task) => this.friendTurn(task),
+      stopped: (from, fromName, id, why) => this.stoppedThere(from, fromName, id, why),
+      isStopped: (id) => {
+        const m = this.mirrors.get(id);
+        return m ? isOver(m) : false;
+      },
+    };
+  }
+
+  /** A turn of yours in a friend's dialogue came in or ended: your copy of their thread follows. */
+  private friendTurn(task: TaskView): void {
+    if (task.direction !== 'received' || !task.dialogue) return;
+    const prev = this.mirrors.get(task.dialogue.id);
+    const channel = prev?.channel ?? task.chat ?? 'room';
+    const next = mirrorFrom(task, prev, this.deps.selfName(), channel, Date.now());
+    if (!next || next === prev) return;
+    if (!prev) this.deps.store.dispatch({ type: 'system', id: randomUUID(), channel, level: 'info', text: `Dialogue: ${next.topic}`, ts: Date.now(), dialogue: { id: next.id } });
+    this.putMirror(next);
+  }
+
+  /** The other side stopped (or ended) a dialogue: it ends here too, without telling them back. */
+  private stoppedThere(from: string, fromName: string, id: string, why: string): void {
+    const mirror = this.mirrors.get(id);
+    if (mirror && mirror.remoteChair?.peer === from && !isOver(mirror)) {
+      this.quiet.add(id);
+      this.putMirror({ ...mirror, status: 'stopped', note: why || `Stopped by ${fromName}`, updatedAt: Date.now() });
+      return;
+    }
+    const d = this.chair.get(id);
+    if (d && !isOver(d) && d.participants.some((p) => p.peer === from)) {
+      this.quiet.add(id);
+      this.chair.stop(id, fromName);
+    }
+  }
+
+  private putMirror(d: Dialogue): Dialogue {
+    this.mirrors.set(d.id, d);
+    this.changed(d);
+    return d;
+  }
+
+  /** A turn: your agent's runs here, a friend's goes to them through the gateway. */
+  private runTurn(run: DialogueTurnRun): Promise<DialogueTurnResult> {
+    if (!run.participant.peer) return this.deps.runTurn(run);
+    const gw = this.deps.gateway?.();
+    if (!gw) return Promise.reject(new Error('Friends’ agents need the Beluga app’s network'));
+    return remoteTurn(gw, run, this.deps.selfName());
   }
 
   interject(id: string, text: string): Dialogue {
@@ -139,8 +204,8 @@ export class Dialogues {
         type: 'chat',
         id: randomUUID(),
         channel,
-        // Your agents speak as you (labeled with which agent); a friend's (BLG-468) by their owner.
-        from: this.deps.selfId(),
+        // Your agents speak as you (labeled with which agent); a friend's (BLG-468) as them; people's words as whoever chairs.
+        from: agent?.peer ?? (t.by === 'person' && d.remoteChair && t.name !== this.deps.selfName() ? d.remoteChair.peer : this.deps.selfId()),
         text: t.text || '(no answer)',
         ts: t.at,
         byAgent: Boolean(agent),
@@ -149,7 +214,15 @@ export class Dialogues {
       });
     }
     this.posted.set(d.id, d.turns.length);
-    if (isOver(d) && was && !isOver(was)) store.dispatch({ type: 'system', id: randomUUID(), channel, level: d.status === 'failed' ? 'warn' : 'info', text: overLine(d), ts: Date.now() });
+    if (isOver(d) && was && !isOver(was)) {
+      store.dispatch({ type: 'system', id: randomUUID(), channel, level: d.status === 'failed' ? 'warn' : 'info', text: overLine(d), ts: Date.now() });
+      // Over here: over for the friends in it too (unless they ended it).
+      if (!this.quiet.delete(d.id)) {
+        const peers = d.remoteChair ? [d.remoteChair.peer] : [...new Set(d.participants.flatMap((x) => (x.peer ? [x.peer] : [])))];
+        const gw = peers.length ? this.deps.gateway?.() : undefined;
+        for (const peer of peers) gw?.stopDialogue(peer, d.id, d.note ?? overLine(d));
+      }
+    }
   }
 }
 

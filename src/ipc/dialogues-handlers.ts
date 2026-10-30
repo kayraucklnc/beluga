@@ -11,7 +11,7 @@ export const DIALOGUES_HANDLERS = {
   'dialogues.start': (s, input) =>
     needDialogues(s).start({
       channel: input.channel,
-      participants: input.agents.map((agent) => ({ agent })),
+      participants: input.agents.map(({ owner, peer, ...agent }) => ({ agent, ...(peer ? { peer, owner: owner ?? peer } : {}) })),
       topic: input.topic,
       ...(input.mode ? { mode: input.mode } : {}),
       ...(input.turnCap ? { turnCap: input.turnCap } : {}),

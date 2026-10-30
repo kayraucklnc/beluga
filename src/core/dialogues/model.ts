@@ -23,6 +23,8 @@ export const Participant = z.object({
   agent: AgentRef,
   /** Whose agent it is: unset for the owner's own (a friend's name over the gateway, BLG-468). */
   owner: z.string().min(1).max(80).optional(),
+  /** A friend's agent: their peer id (each of its turns is a gateway task to them). */
+  peer: z.string().min(1).max(200).optional(),
 });
 export type Participant = z.infer<typeof Participant>;
 
@@ -69,6 +71,8 @@ export const Dialogue = z.object({
   startedBy: z.string().max(80).optional(),
   /** A cross-reference's reconciled answer (its last turn), once it's done. */
   result: z.string().max(200_000).optional(),
+  /** A friend chairs it (BLG-468): this is your side's copy of their thread, kept from the turns that reach you. */
+  remoteChair: z.object({ peer: z.string().min(1).max(200), name: z.string().min(1).max(80) }).optional(),
   /** For work mode: the one worktree it runs in. */
   worktree: z.string().max(4096).optional(),
   createdAt: z.number(),

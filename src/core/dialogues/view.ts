@@ -48,7 +48,9 @@ export function dialogueHeader(d: Dialogue): DialogueHeader {
     d.status === 'proposed'
       ? 'Start when the caps look right'
       : d.status === 'running'
-        ? `${names[nextSpeaker(d)]} is answering…`
+        ? d.remoteChair
+          ? `Chaired by ${d.remoteChair.name}`
+          : `${names[nextSpeaker(d)]} is answering…`
         : d.status === 'paused'
           ? `Paused after ${done} turns: continue?`
           : d.status === 'ended'
@@ -59,6 +61,7 @@ export function dialogueHeader(d: Dialogue): DialogueHeader {
                 ? 'Halted: the token budget ran out'
                 : `Failed${note}`;
   const tone = d.status === 'failed' ? 'failed' : isOver(d) ? 'done' : d.status === 'running' ? 'live' : 'waiting';
-  const actions: DialogueAction[] = d.status === 'proposed' ? ['start', 'cancel'] : d.status === 'paused' ? ['continue', 'stop'] : d.status === 'running' ? ['stop'] : [];
+  // A friend chairs it: you can stop it on your side (it ends for both), never steer its caps.
+  const actions: DialogueAction[] = d.remoteChair ? (isOver(d) ? [] : ['stop']) : d.status === 'proposed' ? ['start', 'cancel'] : d.status === 'paused' ? ['continue', 'stop'] : d.status === 'running' ? ['stop'] : [];
   return { id: d.id, topic: d.topic, mode: MODE_WORDS[d.mode], who, progress, ...(budget ? { budget } : {}), status, tone, actions };
 }

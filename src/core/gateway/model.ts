@@ -1,5 +1,5 @@
 import { type Capabilities, DEFAULT_CAPABILITIES, type Rule } from './access.js';
-import type { Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
+import type { DialogueEnvelope, Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
 
 /**
  * Tasks between Claudes in the shared state (the Mac app draws them): what you sent and what
@@ -98,6 +98,8 @@ export interface TaskView {
   readonly chat?: string;
   /** Sent: the friend's Claude's chat answer it came from (its message id): its card stays under that answer (BLG-353). */
   readonly answer?: string;
+  /** A turn of a chaired dialogue (BLG-468): the chair waits for it, and nothing resumes a conversation with it. */
+  readonly dialogue?: DialogueEnvelope;
   readonly state: TaskState;
   /** The latest steps (short lines). */
   readonly steps: readonly string[];

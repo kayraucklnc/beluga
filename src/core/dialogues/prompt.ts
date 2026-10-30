@@ -1,6 +1,16 @@
 import { agentName } from '../../shared/agent-label.js';
 import { type Dialogue, agentTurns, budgetLeft, nextSpeaker, nextTurn } from './model.js';
 
+/** How a friend's agent ends a dialogue (it has no end_dialogue tool on its Mac): its answer's last line. */
+export const END_LINE = 'END DIALOGUE:';
+
+/** A friend's answer → its words, and the reason when its last line ends the dialogue. */
+export function endedBy(text: string): { readonly text: string; readonly ended?: string } {
+  const m = /\n?[ \t]*END DIALOGUE:[ \t]*([^\n]*)\s*$/i.exec(text);
+  if (!m) return { text };
+  return { text: text.slice(0, m.index).trimEnd(), ended: m[1]!.trim() || 'Ended' };
+}
+
 /** How much of the dialogue so far a turn's prompt carries (its end: the latest turns). */
 const TRANSCRIPT_CHARS = 24_000;
 
@@ -39,7 +49,9 @@ export function dialogueBrief(d: Dialogue, speaker = nextSpeaker(d)): string {
     'Answer the others directly, in a few short paragraphs: build on what was said, disagree when you do, say what you checked. A person in the room may speak in: take what they say as steering.',
     ...(d.mode === 'cross-reference'
       ? [crossReferenceRole(nextTurn(d), others.join(' and '))]
-      : ['When the question is settled, you agree, or more turns would only repeat, call mcp__beluga__end_dialogue with the reason, then give your last word.']),
+      : d.participants[speaker]?.peer
+        ? [`When the question is settled, you agree, or more turns would only repeat, end your answer with a last line \`${END_LINE} <the reason>\`.`]
+        : ['When the question is settled, you agree, or more turns would only repeat, call mcp__beluga__end_dialogue with the reason, then give your last word.']),
   ];
   if (d.mode === 'talk' || d.mode === 'cross-reference') lines.push('This is read-only. You may look things up and read files, but nothing may change (no edits, no commands that write).');
   if (d.mode === 'work' && d.worktree) lines.push(`This is work: you may change files, in ${d.worktree} only, with the usual commit rules.`);

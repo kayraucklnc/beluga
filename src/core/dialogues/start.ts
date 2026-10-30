@@ -5,6 +5,7 @@ import type { DialogueMode, Participant } from './model.js';
  * Starting a dialogue from the composer (BLG-466), two forms:
  *   @my:claude @my:codex talk about X, 6 turns
  *   /dialogue claude codex cross-reference each other on X, 20k tokens
+ *   @my:claude @bob:codex talk about X          (bob's agent: each of its turns is a task to bob)
  * Two (or more) of your agents, then what to do: "talk about…" (talk, the default),
  * "cross-reference each other on…", "work on…". Caps: "N turns", "Nk tokens". Nothing here
  * starts anything: the chair proposes it and you confirm its caps.
@@ -25,6 +26,11 @@ export interface DialogueStartError {
 }
 
 const MY = /^@my:([\w.-]+)$/i;
+/** `@bob:codex` (a friend's agent), or in /dialogue's words `bob:codex`. */
+const THEIRS = /^@?([\w.-]+):([\w.-]+)$/;
+
+/** A friend's agent by their name and its name: the participant, or why not. */
+export type FriendAgent = (person: string, agent: string) => Participant | string;
 
 /** One of your agents by its name or its runtime ("Codex", "codex"). */
 function agentNamed(name: string, mine: readonly AgentRef[]): AgentRef | undefined {
@@ -63,10 +69,15 @@ export function modeOf(text: string): { readonly mode: DialogueMode; readonly to
  * A line from the composer that starts a dialogue → its proposal (or what's wrong with it);
  * undefined when it isn't one (any other message goes on as before).
  */
-export function parseDialogueStart(raw: string, mine: readonly AgentRef[]): DialogueProposal | DialogueStartError | undefined {
+export function parseDialogueStart(raw: string, mine: readonly AgentRef[], friend?: FriendAgent): DialogueProposal | DialogueStartError | undefined {
   const text = raw.trim();
   const tokens = text.split(/\s+/);
-  const names: string[] = [];
+  /** Your agent's name, or [person, agent] for a friend's. */
+  const names: Array<string | readonly [string, string]> = [];
+  const theirs = (tok: string): readonly [string, string] | undefined => {
+    const m = THEIRS.exec(tok);
+    return m && m[1]!.toLowerCase() !== 'my' && friend ? [m[1]!, m[2]!] : undefined;
+  };
   let i = 0;
   const command = /^[/:]dialogue$/i.test(tokens[0] ?? '');
   if (command) {
@@ -74,6 +85,11 @@ export function parseDialogueStart(raw: string, mine: readonly AgentRef[]): Dial
     for (; i < tokens.length; i++) {
       const tok = tokens[i]!;
       const m = MY.exec(tok);
+      const friendOf = m ? undefined : theirs(tok);
+      if (friendOf) {
+        names.push(friendOf);
+        continue;
+      }
       const name = m ? m[1]! : tok.replace(/^@/, '');
       if (!m && !agentNamed(name, mine)) break;
       names.push(name);
@@ -81,27 +97,34 @@ export function parseDialogueStart(raw: string, mine: readonly AgentRef[]): Dial
   } else {
     for (; i < tokens.length; i++) {
       const m = MY.exec(tokens[i] ?? '');
-      if (!m) break;
-      names.push(m[1]!);
+      const friendOf = m ? undefined : theirs(tokens[i] ?? '');
+      if (!m && !friendOf) break;
+      names.push(m ? m[1]! : friendOf!);
     }
-    // One @my: is just asking that agent: not a dialogue.
-    if (names.length < 2) return undefined;
+    // One agent is just asking it, and friends' agents alone are theirs to talk: not a dialogue of yours.
+    if (names.length < 2 || names.every((n) => typeof n !== 'string')) return undefined;
   }
   const usage = 'Name two of your agents and what they should do: /dialogue claude codex talk about X, 6 turns';
   if (names.length < 2) return { kind: 'error', message: usage };
-  const agents: AgentRef[] = [];
+  const participants: Participant[] = [];
   for (const name of names) {
+    if (typeof name !== 'string') {
+      const p = friend!(name[0], name[1]);
+      if (typeof p === 'string') return { kind: 'error', message: p };
+      participants.push(p);
+      continue;
+    }
     const agent = agentNamed(name, mine);
     if (!agent) return { kind: 'error', message: `You have no agent named “${name}”` };
-    agents.push(agent);
+    participants.push({ agent });
   }
-  if (agents.length > 4) return { kind: 'error', message: 'A dialogue has at most four agents' };
+  if (participants.length > 4) return { kind: 'error', message: 'A dialogue has at most four agents' };
   const caps = capsOf(tokens.slice(i).join(' '));
   const { mode, topic } = modeOf(caps.rest);
   if (!topic) return { kind: 'error', message: usage };
   return {
     kind: 'proposal',
-    participants: agents.map((agent) => ({ agent })),
+    participants,
     topic,
     mode,
     ...(caps.turnCap ? { turnCap: caps.turnCap } : {}),

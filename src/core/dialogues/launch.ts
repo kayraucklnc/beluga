@@ -2,7 +2,9 @@ import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { belugaHome } from '../home.js';
-import type { AgentRef } from '../../protocol.js';
+import { type AgentRef, defaultAgentOf } from '../../protocol.js';
+import { gatewayOf } from '../gateway/registry.js';
+import type { FriendAgent } from './start.js';
 import { runtimeFor } from '../../agent/runtime/registry.js';
 import type { AgentPlace } from '../../agent/types.js';
 import type { Session } from '../session.js';
@@ -38,6 +40,31 @@ function turnPlace(place: AgentPlace | undefined): AgentPlace | undefined {
   return { ...rest, onSession: () => undefined };
 }
 
+/**
+ * A friend's agent by name, from the room and your friends: `@bob:codex` (or the older order,
+ * `@claude:bob`). Their Mac runs a friend's task on its own default agent.
+ */
+function friendAgentIn(store: Store, selfId: () => string): FriendAgent {
+  return (person, agentName) => {
+    const st = store.getState();
+    const all = [...st.peers.filter((p) => p.peerId !== selfId()), ...st.network.friends];
+    const look = (who: string) => all.find((x) => x.name.toLowerCase() === who.toLowerCase());
+    let friend = look(person);
+    let named = agentName;
+    if (!friend) {
+      friend = look(agentName);
+      named = person;
+    }
+    if (!friend) return `Nobody named “${person}” is your friend or in the room`;
+    const listed = (friend as { agents?: readonly AgentRef[] }).agents;
+    const agents = listed?.length ? listed : [defaultAgentOf(friend as { agents?: readonly AgentRef[]; defaultAgent?: AgentRef })];
+    const n = named.toLowerCase();
+    const agent = agents.find((a) => a.label.toLowerCase() === n || a.runtime.toLowerCase() === n);
+    if (!agent) return `${friend.name} has no agent named “${named}”`;
+    return { agent, owner: friend.name, peer: friend.peerId };
+  };
+}
+
 /** Dialogues between your agents (core/dialogues): the chair, saved beside plans, and its room thread. */
 export function launchDialogues(host: DialoguesHost): () => void {
   const { session, store } = host;
@@ -50,6 +77,8 @@ export function launchDialogues(host: DialoguesHost): () => void {
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
     myAgents: () => (host.demo ? [own(), { runtime: 'codex', label: 'Codex' }] : myAgents(own())),
     toast: (text, level) => session.toast(text, level ?? 'info'),
+    friendAgent: friendAgentIn(store, () => session.selfId),
+    gateway: () => gatewayOf(session),
     worktreeOf: (channel) => {
       const ws = session.workspaces?.inChannel(channel);
       return ws && ws.kind === 'worktree' && !ws.archived ? session.workspaces?.place(channel)?.cwd : undefined;
@@ -64,7 +93,10 @@ export function launchDialogues(host: DialoguesHost): () => void {
     },
   });
   attachDialogues(session, dialogues);
+  // Friends' dialogue turns and stops come in through the gateway (launched before this).
+  gatewayOf(session)?.useDialogues(dialogues.gatewayPort());
   return () => {
+    gatewayOf(session)?.useDialogues(undefined);
     dialogues.chair.close();
     detachDialogues(session);
   };

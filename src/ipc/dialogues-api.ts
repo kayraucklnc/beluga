@@ -16,7 +16,8 @@ export const DIALOGUES_API = {
     args: z.tuple([
       z.object({
         channel: z.string().min(1).max(200),
-        agents: z.array(AgentRef).min(2).max(4),
+        // A friend's agent names its owner and their peer id (each of its turns is a request to them).
+        agents: z.array(AgentRef.extend({ owner: z.string().min(1).max(80).optional(), peer: z.string().min(1).max(200).optional() })).min(2).max(4),
         topic: z.string().min(1).max(8000),
         mode: z.enum(['talk', 'cross-reference', 'work']).optional(),
         turnCap: z.number().int().min(1).max(200).optional(),
