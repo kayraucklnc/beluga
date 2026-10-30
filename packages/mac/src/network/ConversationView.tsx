@@ -25,7 +25,8 @@ import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork, useSay } from './use-net.js';
 import { inApp } from '../lib/boot.js';
 import chat from '../chat/chat.module.css';
-import { agentBadge } from '../lib/agent-words.js';
+import { agentBadge, useMyAgent } from '../lib/agent-words.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { PersonButton } from './PersonProfile.js';
 import s from './network.module.css';
 
@@ -36,7 +37,7 @@ const PAGE = 100;
 const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const fullTime = (ts: number): string => new Date(ts).toLocaleString([], { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: () => void; edit?: () => void; remove?: () => void }): ActionItem[] {
+function messageItems(m: MessageView, ctx: { say: (t: string) => void; mark: ActionItem['icon']; resend?: () => void; edit?: () => void; remove?: () => void }): ActionItem[] {
   if (m.status === 'locked') return ctx.remove ? [{ label: 'Delete…', icon: 'trash', danger: true, onSelect: ctx.remove }] : [];
   const copy = (text: string, what: string): void => void copyText(text).then(() => ctx.say(`Copied ${what}`));
   const quote = (): void => void document.dispatchEvent(new CustomEvent(QUOTE_EVENT, { detail: m.text }));
@@ -49,7 +50,7 @@ function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: 
           { label: 'Quote in Reply', icon: 'chat' as const, separate: true, onSelect: quote },
           {
             label: 'Ask Your Agent About This',
-            icon: 'claude' as const,
+            icon: ctx.mark,
             onSelect: () => {
               quote();
               document.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { kind: 'me' } }));
@@ -125,6 +126,9 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
   const expired = m.mine && m.status === 'expired';
   const asked = askedLine(m, nameOf, me?.peerId);
   const author = m.mine && me ? me.peerId : m.from;
+  const myAgent = useMyAgent();
+  // Only your own agent asked: its mark; anyone else's (whose runtime isn't known here): the agent glyph.
+  const askedMark = m.ask?.to !== 'all' && m.ask?.to.length === 1 && m.ask.to[0] === me?.peerId ? agentMark(myAgent) : 'claude';
   const deliveryState =
     m.mine && m.status === 'waiting' ? (
       <div className={s.state}>
@@ -142,7 +146,7 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
     ) : null;
   const askedChip = asked ? (
     <div className={s.asked}>
-      <Icon name="claude" size={11} />
+      <Icon name={askedMark} size={11} />
       {asked}
     </div>
   ) : null;
@@ -151,6 +155,7 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
   const items = () =>
     messageItems(m, {
       say,
+      mark: agentMark(myAgent),
       ...(expired ? { resend: () => resend(m) } : {}),
       ...(editable ? { edit: () => setEditing(true) } : {}),
       ...(dm ? { remove: () => openNet({ kind: 'delete_message', conversation: m.conversation, id: m.id, mine: m.mine }) } : {}),
@@ -225,14 +230,19 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
   return (
     <ActionsContext items={items}>
       <div className={cx(s.row, s.rowClaude, !place.first && s.rowCont, m.status === 'waiting' && s.waiting)} data-message={m.id} data-claude={m.claude ? 'true' : undefined}>
-        <div className={s.side}>{place.first ? <Avatar name={m.mine && me ? me.name : m.name} id={author} size={28} claude={Boolean(m.claude)} /> : null}</div>
+        <div className={s.side}>{place.first ? <Avatar name={m.mine && me ? me.name : m.name} id={author} size={28} claude={Boolean(m.claude)} agent={m.claude?.agent} /> : null}</div>
         <div className={s.claudeBody} title={fullTime(m.ts)}>
           {place.first ? (
             <div className={s.runName}>
               <span className={cx(s.runAuthor, m.claude && s.claudeAuthor)} style={m.claude ? { color: claudeColor(author) } : undefined}>
                 {authorLabel(m)}
               </span>
-              {m.claude && agentBadge(m.claude.agent) ? <span className={chat.agentBadge}>{agentBadge(m.claude.agent)}</span> : null}
+              {m.claude && agentBadge(m.claude.agent) ? (
+                <span className={chat.agentBadge}>
+                  <Icon name={agentMark(m.claude.agent)} size={10} />
+                  {agentBadge(m.claude.agent)}
+                </span>
+              ) : null}
               {m.claude ? <span className={s.claudeTag}>on {m.mine ? 'your' : `${m.name}’s`} Mac</span> : null}
               {prefs.timestamps ? <span className={s.runTime}>{time(m.ts)}</span> : null}
             </div>
@@ -264,6 +274,7 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
 function TaskRow({ task, me }: { task: TaskView; me?: { name: string; peerId: string } }) {
   const sent = task.direction === 'sent';
   const agent = task.by === 'agent';
+  const myAgent = useMyAgent();
   const owner = sent ? (me?.peerId ?? 'me') : task.peerId;
   const ownerName = sent ? (me?.name ?? 'You') : task.peerName;
   const label = agent ? (sent ? 'Your agent' : `${task.peerName}’s agent`) : sent ? 'You' : task.peerName;
@@ -271,7 +282,7 @@ function TaskRow({ task, me }: { task: TaskView; me?: { name: string; peerId: st
   return (
     <div className={cx(s.row, s.rowClaude)} data-task-row={task.id}>
       <div className={s.side}>
-        <Avatar name={ownerName} id={owner} size={28} claude={agent} />
+        <Avatar name={ownerName} id={owner} size={28} claude={agent} agent={agent && sent ? myAgent : undefined} />
       </div>
       <div className={s.claudeBody}>
         <div className={s.runName}>
@@ -389,7 +400,7 @@ function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
         End-to-end encrypted, kept on each member’s Mac
       </div>
       <div className={s.introHint}>
-        Drop files here to share them straight from your Mac. Your agent answers only when you ask: type <b>@claude</b>, or click <b>Ask: your agent</b> under the message box.
+        Drop files here to share them straight from your Mac. Your agent answers only when you ask: type <b>@claude</b> (whichever agent you run), or click <b>Ask: your agent</b> under the message box.
       </div>
       {group.admin && group.active ? (
         <div className={s.introActions}>
@@ -423,6 +434,7 @@ function useStickToBottom(dep: unknown, key: string) {
 /** Claudes answering right now: "bob’s Claude is answering…" with the typing dots. */
 function LiveRow({ id, me }: { id: string; me?: string }) {
   const net = useNetwork();
+  const myAgent = useMyAgent();
   const [, tick] = useState(0);
   const live = liveIn(net, id);
   // Stale ones drop out by themselves (a Claude that went quiet).
@@ -436,7 +448,7 @@ function LiveRow({ id, me }: { id: string; me?: string }) {
     <div className={s.live} role="status" aria-live="polite">
       <span className={s.liveAvatars}>
         {live.slice(0, 3).map((l) => (
-          <Avatar key={`${l.peerId}:${l.for}`} name={l.name} id={l.peerId} size={18} claude />
+          <Avatar key={`${l.peerId}:${l.for}`} name={l.name} id={l.peerId} size={18} claude agent={l.peerId === me ? myAgent : undefined} />
         ))}
       </span>
       <span>{liveLine(live, me)}</span>

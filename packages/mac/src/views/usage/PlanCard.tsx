@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { type AgentRef, CLAUDE_AGENT } from '@beluga/protocol.js';
 import type { AppState } from '@beluga/core/store.js';
 import { type CardWindow, type FriendRoom, type ProviderCard, friendRooms, providerCards, shortTokens } from '@beluga/ui/usage-cards.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { Icon } from '../../components/Icon.js';
 import { Avatar, IconButton, cx } from '../../components/ui.js';
 import { toast, useApi, useBeluga } from '../../lib/beluga.js';
@@ -72,12 +73,20 @@ function DefaultChip({ card }: { card: ProviderCard }) {
   );
 }
 
+/** What runs the agent, by name: Claude Code, Codex, or a local model. */
+const runtimeName = (runtime: string): string => (runtime === 'claude' ? 'Claude Code' : runtime === 'codex' ? 'Codex' : 'Local model');
+
 function ProviderBox({ card, now }: { card: ProviderCard; now: number }) {
   const [details, setDetails] = useState(false);
   return (
     <Card
       label={`${card.agent.label} usage`}
-      title={card.agent.label}
+      title={
+        <span className={s.agentTitle}>
+          <Icon name={agentMark(card.agent)} size={13} />
+          {card.agent.label}
+        </span>
+      }
       aside={
         <>
           {card.plan ? <span className={s.planBadge}>{card.plan}</span> : null}
@@ -102,7 +111,10 @@ function ProviderBox({ card, now }: { card: ProviderCard; now: number }) {
       {details ? (
         <dl className={s.providerDetails}>
           <dt>Runtime</dt>
-          <dd>{card.agent.runtime}</dd>
+          <dd className={s.agentTitle}>
+            <Icon name={agentMark(card.agent)} size={11} />
+            {runtimeName(card.agent.runtime)}
+          </dd>
           {card.agent.model ? (
             <>
               <dt>Model</dt>

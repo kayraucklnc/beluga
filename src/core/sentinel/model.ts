@@ -1,3 +1,5 @@
+import type { AgentRef } from '../../protocol.js';
+import { KNOWN_RUNTIMES } from '../../shared/agent-runtimes.js';
 import type { Row, Source } from '../../shared/view-spec.js';
 import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
@@ -110,8 +112,19 @@ export interface ClaudeStep extends StepBase {
   readonly kind: 'claude';
   readonly prompt: string;
   readonly where: ClaudeWhere;
+  /** The agent that does it (BLG-497): a runtime ("claude", "codex", "local"); with neither it nor a model, your default agent. */
+  readonly runtime?: string;
+  /** Its model ('' or none: the agent's own default); a model without a runtime is Claude's (older steps). */
   readonly model?: string;
   readonly effort?: string;
+}
+
+/** The agent a step asked for (BLG-497); undefined: your default agent. */
+export function stepAgent(step: Pick<ClaudeStep, 'runtime' | 'model'>): AgentRef | undefined {
+  if (!step.runtime && !step.model) return undefined;
+  const runtime = step.runtime ?? 'claude';
+  const label = KNOWN_RUNTIMES.find((r) => r.id === runtime)?.label ?? runtime;
+  return { runtime, label, ...(step.model ? { model: step.model } : {}) };
 }
 
 /** The languages a script step's own code runs in (BLG-350), with what runs it. */

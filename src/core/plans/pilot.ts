@@ -842,7 +842,8 @@ export class PlanPilot {
       const ordered = [first, ...tasks.filter((t) => t !== first)];
       ids = ordered.map((t) => t.issue!.id);
       const base = first.bases?.length ? plan.branch : first.base;
-      const ws = await this.deps.work.startShared(ids, `${first.issue.key} ${m.milestone.title}`, { quiet: true, ...(base ? { base } : {}) });
+      // The plan's agent works it (BLG-497); none: your default.
+      const ws = await this.deps.work.startShared(ids, `${first.issue.key} ${m.milestone.title}`, { quiet: true, ...(base ? { base } : {}), ...(plan.agent ? { agent: plan.agent } : {}) });
       const fresh = this.deps.plans.setAgent(plan.id, milestoneId, { worktree: ws.id, ...(ws.branch ? { branch: ws.branch } : {}), at: Date.now(), tasks: ordered.map((t) => t.task.id) });
       const keys = ordered.map((t) => t.issue!.key);
       const said = `started one agent for “${m.milestone.title}” (${keys.join(', ')}) in a new worktree${base ? ` from ${base}` : ''}`;
@@ -1127,7 +1128,9 @@ export class PlanPilot {
     try {
       const base = t.bases?.length ? await this.combinedBase(plan, t, issue) : t.base;
       if (t.bases?.length && !base) return `${issue.key} builds on several tasks: combining their branches hit a conflict, and the agent is fixing it`;
-      await this.deps.work.start(issue.id, { claude: true, quiet: true, ...(base ? { base } : {}) });
+      // The task's own agent, else the plan's (BLG-497), else your default.
+      const agent = issue.agent ?? plan.agent;
+      await this.deps.work.start(issue.id, { claude: true, quiet: true, ...(base ? { base } : {}), ...(agent ? { agent } : {}) });
       if (t.bases?.length) this.deps.plans.setCombining(plan.id, t.task.id, undefined);
       this.deps.plans.note(plan.id, 'started', `started ${issue.key} “${t.task.title}”${base ? ` from ${base}` : ''}`, by);
       return `Started ${issue.key} “${t.task.title}” in a new worktree${base ? ` from ${base}` : ''}`;

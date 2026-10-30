@@ -20,6 +20,7 @@ import {
   type SentinelState,
   type Recipe,
   type Step,
+  type ClaudeStep,
   type StepDraft,
   type StepKind,
   type TriggerKind,
@@ -38,6 +39,7 @@ import {
   stepRefusal,
   triggerAvailable,
 } from '../../../../src/core/sentinel/model.js';
+import { agentForChoice } from '../../../../src/ui/agent-choice.js';
 import type { IconName } from '../components/Icon.js';
 import { ago } from '../tasks/tasks-model.js';
 
@@ -779,6 +781,34 @@ export const withModel = (steps: readonly Step[], model: string): Step[] =>
     if (s.kind !== 'claude') return s;
     const { model: _m, ...rest } = s;
     return model ? { ...rest, model } : rest;
+  });
+
+/**
+ * An agent step's agent as a pop-up value (BLG-497): '' for your default agent, else agentChoices'
+ * `runtime:model` (a model with no runtime, from an older step, is Claude's).
+ */
+export const stepAgentChoice = (step: Pick<ClaudeStep, 'runtime' | 'model'>): string => (!step.runtime && !step.model ? '' : `${step.runtime ?? 'claude'}:${step.model ?? ''}`);
+
+/** The runtime and model a pop-up value stands for, as a step's fields ('' : neither, your default agent). */
+export function agentFields(value: string): Pick<ClaudeStep, 'runtime' | 'model'> {
+  if (!value) return { runtime: undefined, model: undefined };
+  const ref = agentForChoice(value);
+  return { runtime: ref.runtime, model: ref.model };
+}
+
+/** The agent every agent step shares, as a pop-up value ('' : your default; undefined when they differ). */
+export function sharedAgent(steps: readonly Step[]): string | undefined {
+  const picks = new Set(steps.flatMap((s) => (s.kind === 'claude' ? [stepAgentChoice(s)] : [])));
+  return picks.size === 1 ? [...picks][0] : picks.size === 0 ? '' : undefined;
+}
+
+/** Every agent step on one agent and model ('' : your default). */
+export const withAgent = (steps: readonly Step[], value: string): Step[] =>
+  steps.map((s) => {
+    if (s.kind !== 'claude') return s;
+    const { runtime: _r, model: _m, ...rest } = s;
+    const { runtime, model } = agentFields(value);
+    return { ...rest, ...(runtime ? { runtime } : {}), ...(model ? { model } : {}) };
   });
 
 /** Whether a run's chat (a Claude step's) is there to open. */

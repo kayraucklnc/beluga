@@ -1,4 +1,5 @@
 import { agentLabel } from '@beluga/shared/agent-label.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { planForHome } from '@beluga/core/plans/model.js';
 import { ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -267,7 +268,13 @@ export function Toolbar() {
         headerRef={headerRef}
         title={w?.name ?? 'Shared workspace'}
         // Whose machine and which agent runs there: the owner's (BLG-448), never yours.
-        subtitle={<span className={s.meta}>{`${owner}'s ${w?.project ?? 'project'} · ${agentLabel(w?.agent, owner, false, { model: true })} on their Mac · ${w?.role === 'contribute' ? 'you can work here' : 'you’re following along'}`}</span>}
+        subtitle={
+          <span className={s.meta}>
+            {`${owner}'s ${w?.project ?? 'project'} ·`}
+            <Icon name={agentMark(w?.agent)} size={11} />
+            {`${agentLabel(w?.agent, owner, false, { model: true })} on their Mac · ${w?.role === 'contribute' ? 'you can work here' : 'you’re following along'}`}
+          </span>
+        }
         center={
           <Segmented
             label="Views"

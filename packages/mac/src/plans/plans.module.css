@@ -1542,6 +1542,29 @@
   gap: 10px;
   margin-bottom: 8px;
 }
+/* More options (who works it): a quiet disclosure under the main choices (BLG-497). */
+.newPlanMore {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 6px;
+  padding: 2px 4px 2px 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: default;
+}
+.newPlanMore:hover {
+  color: var(--text);
+}
+.newPlanMore:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
 /* Six lines to start; it grows with the text (set from its scrollHeight) to ~60% of the sheet (72vh at most),
    never so far that the buttons scroll away (the rest of the sheet is under 400px). */
 textarea.goalBox {

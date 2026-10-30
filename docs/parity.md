@@ -436,7 +436,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `gateway.removeRule` | ✓ Settings › People & access › Rules, and a friend's card: Delete |
 | `gateway.setCapabilities` | ✓ Settings › People & access › What your friends’ agents can do here (per capability and trust level, the folders) |
 | `gateway.image` | ✓ screenshots on a task card's result |
-| `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…), sub-tasks on a task page |
+| `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…), sub-tasks on a task page; its Agent pop-up (BLG-497) picks the agent and model its worktree runs when it starts |
 | `board.update` | ✓ a task's properties (status, priority, assignee, labels, estimate, due date, parent), its title in place, row and card menus |
 | `board.move` | ✓ dragging a card between columns on the board, or within one |
 | `board.editBrief` | ✓ a section of the brief on a task page (click to edit, ⌘↩ saves) |
@@ -463,7 +463,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.syncNow` | ✓ Tasks › ⋯ › Sync Now, and the Sync with Linear sheet’s Sync Now (the Linear pill in the Tasks bar opens the sheet) |
 | `board.syncAuto` | ✓ the Sync with Linear sheet › Autosync |
 | `sentinel.create` | ✓ New Sentinel (⌘N on the list, ⌘K › New Sentinel…, the empty list's New Sentinel and Try a Recipe): a recipe from the list (Nightly tests makes its Fix the nightly failure too, after it), Build It Yourself, or Describe It (then `sentinel.ask`); it starts paused · the agent's `sentinel_create` in any of your chats |
-| `sentinel.update` | ✓ a sentinel's page: changes save at once (When, Steps with every kind's fields, Properties; unticking the merge step's Ask Me Before Merging asks first) · the agent's `sentinel_update` (a change to what it can do pauses it) |
+| `sentinel.update` | ✓ a sentinel's page: changes save at once (When, Steps with every kind's fields — an Ask Your Agent step's Agent pop-up picks the agent and model, BLG-497 —, Properties, whose Agent sets every agent step's; unticking the merge step's Ask Me Before Merging asks first) · the agent's `sentinel_update` (a change to what it can do pauses it) |
 | `sentinel.remove` | ✓ a sentinel's ⋯ and right-click › Delete… (confirms) · the agent's `sentinel_remove` (always asks your approval, even when your agent never asks otherwise: the card in the conversation and the phone's needs-you) |
 | `sentinel.duplicate` | ✓ a sentinel's ⋯ (its page) and its row's ⋯ and right-click › Duplicate (the copy starts paused) |
 | `sentinel.run` | ✓ Run Now on a sentinel's page, and its row's ⋯ and right-click; the phone's sentinel page (Run Now) · the agent's `sentinel_run` |
@@ -525,7 +525,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `team.cancelKnock` | ✓ Take Back next to "Knocked. Waiting for Ata to let you in" on the task's page |
 | `team.answerKnock` | ✓ the knock's card in the worktree's chat (Let In as Editor, Let In as Viewer; ••• › Not Now) and the bell's row; the phone's card (Let In as Editor / Not Now / Let In as Viewer) |
 | `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates) |
-| `plans.create` | ✓ Plans › New Plan (a goal; the agent plans in a conversation of its own in the project's main folder); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
+| `plans.create` | ✓ Plans › New Plan (a goal; the agent plans in a conversation of its own in the project's main folder; More options › Agent picks who works its milestones and tasks, BLG-497); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (the agent plans in the conversation you're in) |
 | `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation |
 | `plans.discard` | ✓ Discard Draft / Discard Changes on a plan's page |

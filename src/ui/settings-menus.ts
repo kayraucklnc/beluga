@@ -1,4 +1,5 @@
 import { agentPicker } from '../shared/agent-picker.js';
+import { CLAUDE_AGENT } from '../protocol.js';
 import type { AppState } from '../core/store.js';
 import type { Settings } from '../shared/settings-schema.js';
 import { TRUST_INFO, defaultTrust, trustOf } from '../core/trust.js';
@@ -215,7 +216,7 @@ function envHint(state: AppState): string {
  * (`model:<value>`); one of another runtime switches agent (`agent:<runtime>:<value>`).
  */
 export function modelMenu(state: AppState, channel: string | undefined, forWhat: string): MenuSpec {
-  const picker = agentPicker(state, channel ?? 'draft');
+  const picker = myAgentPicker(state, channel ?? 'draft');
   const options = picker.groups.flatMap((g) => {
     const head = picker.groups.length > 1 ? [{ id: `runtime:${g.runtime}`, label: `${g.label}${g.isDefault ? ' (your default)' : ''}`, ...(g.why ? { hint: g.why } : {}) }] : [];
     const rows = g.models.map((m) => ({
@@ -231,6 +232,16 @@ export function modelMenu(state: AppState, channel: string | undefined, forWhat:
     intro: ['Each conversation can use its own agent and model. A model applies from the next message; another agent starts its own conversation.', ''],
     options: [...options, { id: 'close', label: 'Cancel', hint: 'Esc' }],
   };
+}
+
+/**
+ * The picker from your agent's side: its runtime is "your default", and its model the default
+ * model (Settings' model is Claude's; another runtime's model goes with the agent).
+ */
+export function myAgentPicker(state: AppState, channel: string): ReturnType<typeof agentPicker> {
+  const mine = state.prefs.defaultAgent;
+  const other = mine && mine.runtime !== CLAUDE_AGENT.runtime ? mine : undefined;
+  return agentPicker({ ...state, prefs: { model: other ? other.model : state.prefs.model } }, channel, other?.runtime ?? CLAUDE_AGENT.runtime);
 }
 
 /** The inbox as the menu shows it: which notices, and whether each row clears one. */

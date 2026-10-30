@@ -1,5 +1,7 @@
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { type ButtonHTMLAttributes, type ReactNode, forwardRef } from 'react';
+import type { AgentRef } from '@beluga/protocol.js';
+import { agentMark, runtimeMark } from '../../../../src/shared/agent-marks.js';
 import { useAvatarUrl } from '../lib/avatars.js';
 import { DotMatrix } from './DotMatrix.js';
 import { Icon, type IconName } from './Icon.js';
@@ -118,19 +120,21 @@ export const claudeColor = (owner: string | undefined): string | undefined => (o
 
 /**
  * A person's profile picture (lib/avatars.ts), or their initial in their color until there is one;
- * their Claude gets its mark (the Beluga prompt), tinted the same.
+ * their agent gets its runtime's mark (Claude Code, Codex, a local model), tinted the same.
+ * `agent`: the agent (or its runtime id); `claude`: an agent whose runtime isn't known (Claude's mark).
  */
-export function Avatar({ name, id, claude, size = 22 }: { name: string; id: string; claude?: boolean; size?: number }) {
-  const picture = useAvatarUrl(id, claude);
-  const tint = claude ? claudeColor(id) : undefined;
+export function Avatar({ name, id, claude, agent, size = 22 }: { name: string; id: string; claude?: boolean; agent?: Pick<AgentRef, 'runtime'> | string | undefined; size?: number }) {
+  const isAgent = Boolean(claude) || agent !== undefined;
+  const picture = useAvatarUrl(id, isAgent);
+  const tint = isAgent ? claudeColor(id) : undefined;
   if (picture) return <img className={cx(s.avatar, s.avatarPicture)} src={picture} width={size} height={size} alt="" draggable={false} aria-hidden="true" />;
   return (
     <span
-      className={cx(s.avatar, claude && s.avatarClaude)}
-      style={{ width: size, height: size, fontSize: size * 0.46, ...(claude ? (tint ? { background: `color-mix(in srgb, ${tint} 20%, transparent)`, color: tint } : {}) : { background: personColor(id) }) }}
+      className={cx(s.avatar, isAgent && s.avatarClaude)}
+      style={{ width: size, height: size, fontSize: size * 0.46, ...(isAgent ? (tint ? { background: `color-mix(in srgb, ${tint} 20%, transparent)`, color: tint } : {}) : { background: personColor(id) }) }}
       aria-hidden="true"
     >
-      {claude ? <Icon name="claude" size={size * 0.6} /> : (name[0] ?? '?').toUpperCase()}
+      {isAgent ? <Icon name={typeof agent === 'string' ? runtimeMark(agent) : agentMark(agent)} size={size * 0.6} /> : (name[0] ?? '?').toUpperCase()}
     </span>
   );
 }

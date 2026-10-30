@@ -1,3 +1,4 @@
+import type { AgentRef } from '../../protocol.js';
 import type { Actor, IssuePr, Priority } from '../board/model.js';
 
 /**
@@ -230,6 +231,8 @@ export interface Plan {
   readonly maxParallel: number;
   /** When the e2e and full test suites run (tasks only run typecheck and the tests they touched). */
   readonly testsAt: TestsAt;
+  /** The agent (and model) its milestones and tasks are worked on by (BLG-497); none: your default. A task's own agent beats it. */
+  readonly agent?: AgentRef;
   readonly paused: boolean;
   readonly runs: Readonly<Record<string, MilestoneRun>>;
   /** Tasks whose start is being combined from several branches (by plan task id). */

@@ -2,7 +2,7 @@ import { CLAUDE_AI_CONNECTORS_URL, type McpServerRow } from '@beluga/shared/mcp.
 import { Button, Dot } from '../components/ui.js';
 import { fallbackFor } from '@beluga/shared/runtime-fallbacks.js';
 import { useBeluga } from '../lib/beluga.js';
-import { useMyAgent } from '../lib/agent-words.js';
+import { agentName, useMyAgent } from '../lib/agent-words.js';
 import { MCP_FROM, MCP_STATUS, checkMcp, signInMcp, useMcp } from '../lib/mcp.js';
 import { openExternal } from '../lib/system.js';
 import { Group, Row } from './settings-controls.js';
@@ -19,11 +19,14 @@ export function McpSettings() {
   const check = (): Promise<void> => checkMcp(client);
   const signIn = (row: McpServerRow): Promise<void> => signInMcp(client, row);
   // Your agent is Codex: these are Claude Code's, and it says where Codex's own are (BLG-461).
-  const elsewhere = fallbackFor(useMyAgent().runtime, 'mcp_servers');
+  const mine = useMyAgent();
+  const elsewhere = fallbackFor(mine.runtime, 'mcp_servers');
+  // They're Claude Code's: your agent's when it is Claude, else Claude Code's own.
+  const whose = mine.runtime === 'claude' ? `Servers your ${agentName(mine)} uses` : 'Servers Claude Code uses';
 
   return (
     <Group title="MCP servers">
-      <Row label="Servers your Claude uses" detail="Yours, your projects’ and your plugins’, as Claude Code has them. Only runs you start get them, never a friend’s.">
+      <Row label={whose} detail="Yours, your projects’ and your plugins’, as Claude Code has them. Only runs you start get them, never a friend’s.">
         <Button variant="quiet" icon="refresh" disabled={checking} onClick={() => void check()}>
           {checking ? 'Checking…' : 'Check Again'}
         </Button>

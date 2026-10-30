@@ -133,9 +133,29 @@
   margin: 2px 0 4px 8px;
 }
 .groupName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 8px 2px;
   font-weight: 600;
   font-size: 0.86rem;
+}
+/* A runtime's mark, before its name (never instead of it). */
+.mark {
+  flex: none;
+  align-self: center;
+  margin-right: -2px;
+  color: var(--text-2);
+}
+.groupOff .mark {
+  color: var(--text-3);
+}
+/* A model's maker, when it isn't its runtime's own (a GPT model served locally). */
+.maker {
+  flex: none;
+  align-self: center;
+  margin-right: -3px;
+  color: var(--text-3);
 }
 .groupOff .groupName {
   color: var(--text-3);

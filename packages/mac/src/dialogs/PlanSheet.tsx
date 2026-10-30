@@ -5,9 +5,10 @@ import { Icon } from '../components/Icon.js';
 import { Button } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
+import { useAgentNameIn } from '../lib/agent-words.js';
 import s from './plan.module.css';
 
-/** Claude's plan, full size: read it, approve it, or say what to change. */
+/** An agent's plan ("Codex's plan"), full size: read it, approve it, or say what to change. */
 export function PlanSheet() {
   const { ui } = useBeluga();
   const api = useApi();
@@ -15,6 +16,7 @@ export function PlanSheet() {
   const qid = useUi((u) => u.planFull);
   const q = useApp((st) => st.questions.find((x) => x.qid === qid));
   const [change, setChange] = useState('');
+  const agent = useAgentNameIn(q?.channel ?? '');
   if (!qid || !q || q.question.kind !== 'plan') return null;
   const close = (): void => ui.patch({ planFull: undefined });
   return (
@@ -24,7 +26,7 @@ export function PlanSheet() {
         <Dialog.Content className={s.sheet} aria-describedby={undefined}>
           <div className={s.head}>
             <Icon name="wand" size={15} className={s.claude} />
-            <Dialog.Title className={s.title}>Claude's plan</Dialog.Title>
+            <Dialog.Title className={s.title}>{agent}'s plan</Dialog.Title>
             <Dialog.Close className={s.close} aria-label="Close">
               <Icon name="x" size={12} />
             </Dialog.Close>

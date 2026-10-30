@@ -1,4 +1,5 @@
 import type { SVGProps } from 'react';
+import { AGENT_MARK_PATHS } from '../../../../src/shared/agent-marks.js';
 
 /**
  * One small icon set, drawn on a 16×16 grid with 1.5 strokes (in the spirit of SF Symbols):
@@ -142,6 +143,8 @@ const PATHS = {
   /** An epic: a task with sub-tasks, as stacked layers. */
   epic: 'M8 2.5l5.5 2.75L8 8 2.5 5.25z M2.5 8L8 10.75 13.5 8 M2.5 10.75L8 13.5l5.5-2.75',
   palette: 'M8 2.5a5.5 5.5 0 1 0 0 11c.9 0 1.3-.6 1.3-1.2 0-.8-.7-1-.7-1.8 0-.6.5-1 1.1-1h1.4A2.4 2.4 0 0 0 13.5 7c0-2.5-2.5-4.5-5.5-4.5z M5.25 7.25h.01 M7.25 5.25h.01 M10 5.5h.01',
+  /** Agents and model makers (BLG-497): Claude Code, Codex, a local model, Anthropic, OpenAI (shared/agent-marks.ts, the phone draws the same). */
+  ...AGENT_MARK_PATHS,
 } as const;
 
 export type IconName = keyof typeof PATHS;

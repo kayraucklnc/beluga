@@ -3,6 +3,7 @@ import { type ReactNode, useRef, useState } from 'react';
 import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
 import { EFFORTS } from '@beluga/shared/settings-schema.js';
 import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
+import { EFFORT_INFO, agentEntries, modelInfo, myModel, myRuntime, setMyAgent } from '../chat/ModelPicker.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
@@ -259,23 +260,39 @@ function Appearance() {
   );
 }
 
-function ClaudePane() {
+/**
+ * Your agent (BLG-497): one pick of runtime and model, for every conversation that picked none of
+ * its own and for @you; then how hard it thinks (only the levels its model takes) and the rest.
+ */
+function AgentPane() {
   const api = useApi();
   const macPrefs = usePrefs();
   const { ui } = useBeluga();
   const state = useApp((st) => st);
   const p = state.prefs;
+  const runtime = myRuntime(p);
+  const model = myModel(p);
+  const choices = agentChoices(state.runtimes, state.models);
+  // A model its runtime doesn't list (yet) takes every level.
+  const efforts = new Set<string>(modelInfo(state, runtime, model)?.efforts ?? EFFORTS);
+  const effortOptions = EFFORTS.filter((e) => efforts.has(e) || e === p.effort);
   return (
     <>
       <Group>
-        <Row label="Model for new conversations" detail="Each conversation can pick its own from the box you type in.">
-          <Select label="Model" value={p.model ?? ''} onChange={(v) => void api.workbench.setModel(undefined, v)} options={state.models.map((m) => ({ value: m.value, label: m.label }))} />
+        <Row label="Your agent" detail="Runs every new conversation and answers when friends write @you. A conversation can pick another in the box you type in; a project, in its settings.">
+          <Select
+            label="Your agent"
+            value={choiceForAgent({ runtime, label: '', ...(model ? { model } : {}) })}
+            onChange={(v) => {
+              const ref = agentForChoice(v, state.runtimes);
+              setMyAgent(api, ref.runtime, ref.label, ref.model ?? '');
+            }}
+            options={agentEntries(choices)}
+            placeholder={choices.find((c) => c.runtime === runtime)?.group ?? runtime}
+          />
         </Row>
-        <Row label="Answers when friends write @you" detail="Who starts when someone mentions you without naming an agent. Friends see it on your card; each project can pick its own in its settings.">
-          <Select label="Default agent" value={choiceForAgent(p.defaultAgent)} onChange={(v) => void api.session.setPrefs({ defaultAgent: v ? agentForChoice(v) : null })} options={agentChoices(state.models)} />
-        </Row>
-        <Row label="Thinking effort">
-          <Select label="Effort" value={p.effort ?? ''} onChange={(v) => void api.session.setPrefs({ effort: (v || undefined) as (typeof EFFORTS)[number] | undefined })} options={[{ value: '', label: 'Default' }, ...EFFORTS.map((e) => ({ value: e, label: e[0]!.toUpperCase() + e.slice(1) }))]} />
+        <Row label="Thinking effort" detail={efforts.size < EFFORTS.length ? 'Only the levels this model takes.' : undefined}>
+          <Select label="Effort" value={p.effort ?? ''} onChange={(v) => void api.session.setPrefs({ effort: (v || null) as (typeof EFFORTS)[number] | null })} options={[{ value: '', label: 'Auto', description: 'Your agent decides, case by case' }, ...effortOptions.map((e) => ({ value: e, label: EFFORT_INFO[e].label, description: EFFORT_INFO[e].detail, ...(efforts.has(e) ? {} : { disabled: true }) }))]} />
         </Row>
         <Row label="Ask before running commands" detail="Your own agent. Secrets stay blocked either way.">
           <Switch label="Self approval" on={p.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
@@ -496,7 +513,7 @@ function About() {
 const BODY: Record<SettingsPane, () => ReactNode> = {
   general: General,
   appearance: Appearance,
-  claude: ClaudePane,
+  claude: AgentPane,
   notifications: NotificationSettings,
   workspaces: Workspaces,
   terminal: TerminalSettings,

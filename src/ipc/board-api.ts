@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentRef } from '../protocol.js';
 import { LABEL_COLORS, LABEL_ICONS } from '../core/board/labels.js';
 import { BRIEF_SECTIONS, ISSUE_STATUSES, MAX_PROJECT_CONTEXT, PRIORITIES, SYNC_PROVIDERS, personOf } from '../core/board/model.js';
 
@@ -39,6 +40,8 @@ export const BOARD_API = {
         parent: ref.optional(),
         blockedBy: z.array(ref).max(20).optional(),
         goal: z.string().max(20_000).optional(),
+        // The agent (and model) that works it when it starts (BLG-497); none: your default.
+        agent: AgentRef.optional(),
       }).refine((t) => Boolean(t.title?.trim() || t.describe?.trim()), 'A task needs a title or a description'),
     ]),
   },

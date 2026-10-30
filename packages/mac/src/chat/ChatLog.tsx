@@ -7,7 +7,7 @@ import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Empty, Working } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
-import { useMyAgentName } from '../lib/agent-words.js';
+import { agentName, useMyAgent } from '../lib/agent-words.js';
 import { keepSameLists, sameItems } from '../lib/stable.js';
 import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
@@ -111,7 +111,14 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   // Only this conversation's items and tasks: another one streaming doesn't draw this one again (KLD-48).
   const mine = useApp((st) => st.log.filter((l) => l.channel === channel), sameItems);
   const selfId = useApp((st) => st.selfId);
-  const agent = useMyAgentName();
+  // The agent this conversation runs on: a worktree's own pick, else yours.
+  const myAgent = useMyAgent();
+  const ownAgent = useApp(
+    (st) => (channel.startsWith('ws:') ? st.projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(3))?.agent : undefined),
+    (a, b) => a?.runtime === b?.runtime && a?.label === b?.label,
+  );
+  const agentRef = ownAgent ?? myAgent;
+  const agent = agentName(agentRef);
   // A shared workspace's earlier messages arrive as system lines; drawn here as normal messages.
   const items = useMemo(() => mine.map(chatRowOf), [mine]);
   // What waits its turn is in the queue above the box; once it runs, it's drawn where it ran (BLG-317).
@@ -256,7 +263,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
         {starting ? (
           <div className={f.starting} data-claude-starting="true" role="status">
             <span className={f.startingAvatar}>
-              <Avatar name={agent} id={selfId} claude size={22} />
+              <Avatar name={agent} id={selfId} agent={agentRef} size={22} />
             </span>
             <Working />
             <span>{agent} is starting…</span>

@@ -2,6 +2,7 @@ import { memo, useEffect, useState } from 'react';
 import { type TaskView, approvalTitle, isFinal, stateLabel, stateTone, targetLabel } from '@beluga/core/gateway/model.js';
 import { formatDuration } from '@beluga/shared/text.js';
 import { agentLabel } from '@beluga/shared/agent-label.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { Markdown } from '../chat/Markdown.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
@@ -163,7 +164,7 @@ function Result({ task }: { task: TaskView }) {
       ) : null}
       {r.agent && task.direction === 'sent' ? (
         <div className={s.hint}>
-          <Icon name="sparkles" size={11} /> Answered by {agentLabel(r.agent, task.peerName, false, { model: true })}
+          <Icon name={agentMark(r.agent)} size={11} /> Answered by {agentLabel(r.agent, task.peerName, false, { model: true })}
         </div>
       ) : null}
       {r.problems?.length ? <div className={s.problems}>{r.valid === false ? 'The data doesn’t match what was asked for: ' : ''}{r.problems.join(' · ')}</div> : null}
@@ -320,7 +321,7 @@ export const TaskCard = memo(function TaskCard({ task, inChat }: { task: TaskVie
         </div>
       ) : null}
       <div className={s.head}>
-        <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} size={20} />
+        <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} agent={task.kind === 'ask' ? task.result?.agent : undefined} size={20} />
         <span className={s.who}>{title}</span>
         {sent && task.by === 'agent' && task.state !== 'confirm' ? <span className={s.via}>asked by your agent</span> : null}
         {!sent && task.where ? <span className={s.via}>{task.where}</span> : null}

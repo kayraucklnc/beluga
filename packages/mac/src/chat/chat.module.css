@@ -141,6 +141,9 @@
 }
 /* Which runtime and model an agent's message came from: a quiet pastel pill. */
 .agentBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 0 6px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--claude) 12%, transparent);

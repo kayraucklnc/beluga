@@ -10,7 +10,7 @@ import type { WorkspaceController, WorktreeEvent } from '../workspace-controller
 import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
 import { agentLabel, agentName } from '../../shared/agent-label.js';
-import { defaultAgentOf } from '../../protocol.js';
+import { type AgentRef, defaultAgentOf } from '../../protocol.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
 import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
@@ -277,7 +277,7 @@ export class BoardWork {
   }
 
   /** A draft's `more`: beside the first (or under it, an epic), in its column, each for whom it names. */
-  private addMore(first: Issue, input: Pick<NewIssue, 'labels' | 'priority' | 'assignee' | 'parent'>, d: TaskDraft): Issue[] {
+  private addMore(first: Issue, input: Pick<NewIssue, 'labels' | 'priority' | 'assignee' | 'parent' | 'agent'>, d: TaskDraft): Issue[] {
     return (d.more ?? []).map((m) => {
       const who = this.whom(first.projectId, m.for) ?? input.assignee;
       return this.board.create(
@@ -289,6 +289,8 @@ export class BoardWork {
           ...(m.priority ? { priority: m.priority } : input.priority ? { priority: input.priority } : {}),
           ...(who ? { assignee: who } : {}),
           ...(d.epic ? { parent: first.id } : input.parent ? { parent: input.parent } : {}),
+          // One New Task message, one agent for all it made.
+          ...(input.agent ? { agent: input.agent } : {}),
           brief: draftBrief(m),
         },
         this.me(),
@@ -299,8 +301,9 @@ export class BoardWork {
   /**
    * Start a worktree for a task (from the latest origin, or `base`), named after it, and open it;
    * with `claude`, your Claude starts on the task there with its brief. → the workspace's id.
+   * The worktree runs `opts.agent`, else the task's own agent, else your default (BLG-497).
    */
-  async start(ref: string, opts: { readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean; /** What your Claude is told instead of working the task through (it implies `claude`), and the line the conversation shows for it. */ readonly prompt?: (issue: Issue, ws: Workspace) => string; readonly shown?: string } = {}): Promise<string> {
+  async start(ref: string, opts: { readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean; readonly agent?: AgentRef; /** What your Claude is told instead of working the task through (it implies `claude`), and the line the conversation shows for it. */ readonly prompt?: (issue: Issue, ws: Workspace) => string; readonly shown?: string } = {}): Promise<string> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Worktrees need a project folder');
     // Claude still writing it: its worktree is named after, and Claude starts with, the real words.
@@ -318,7 +321,8 @@ export class BoardWork {
     this.expecting.push(ticket);
     let ws: Workspace | undefined;
     try {
-      ws = await controller.newWorktree(issue.projectId, name, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}) });
+      const agent = opts.agent ?? issue.agent;
+      ws = await controller.newWorktree(issue.projectId, name, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}), ...(agent ? { agent } : {}) });
     } finally {
       const at = this.expecting.indexOf(ticket);
       if (at >= 0) this.expecting.splice(at, 1);
@@ -343,8 +347,9 @@ export class BoardWork {
    * One worktree for several tasks (a plan milestone's one Claude does them in order): named
    * `name`, from the latest origin or `base`, linked to every task (the first goes In Progress,
    * all are your Claude's). Nobody is asked anything: the caller sends the brief. → the workspace.
+   * `agent`: the agent it runs (a plan's own, BLG-497); none: your default.
    */
-  async startShared(refs: readonly string[], name: string, opts: { readonly base?: string; readonly quiet?: boolean } = {}): Promise<Workspace> {
+  async startShared(refs: readonly string[], name: string, opts: { readonly base?: string; readonly quiet?: boolean; readonly agent?: AgentRef } = {}): Promise<Workspace> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Worktrees need a project folder');
     if (!refs.length) throw new Error('No tasks to start');
@@ -357,7 +362,7 @@ export class BoardWork {
     this.expecting.push(ticket);
     let ws: Workspace | undefined;
     try {
-      ws = await controller.newWorktree(first.projectId, slug, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}) });
+      ws = await controller.newWorktree(first.projectId, slug, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}), ...(opts.agent ? { agent: opts.agent } : {}) });
     } finally {
       const at = this.expecting.indexOf(ticket);
       if (at >= 0) this.expecting.splice(at, 1);

@@ -6,6 +6,7 @@
  * Browser-safe: the Mac app runs it. See docs/tasks-and-plans.md.
  */
 
+import type { AgentRef } from '../../protocol.js';
 import type { LabelDef } from './labels.js';
 import { agentLabel } from '../../shared/agent-label.js';
 
@@ -222,6 +223,8 @@ export interface Issue {
   readonly link?: IssueLink;
   /** The GitHub issue it's for (made from it in Issues): its pull request says "Fixes #n", so merging closes the issue. */
   readonly github?: IssueGitHub;
+  /** The agent (and model) that works it when it starts (BLG-497): its worktree's own. None: your default agent. */
+  readonly agent?: AgentRef;
 }
 
 /** What Claude was last asked to do about a task's GitHub issue: find out why it happens (Investigate), or fix it. */

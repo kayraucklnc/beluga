@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { isAgentActor, markOfName } from '../../components/AgentMark';
 import { Composer } from '../../components/Composer';
 import { convHref, Prose } from '../../components/Conv';
 import { KeyboardLift } from '../../components/KeyboardLift';
@@ -155,7 +156,7 @@ export default function Task() {
                   </T>
                   {t.activity.map((a) => (
                     <Animated.View key={a.id} entering={FadeIn.duration(220)} layout={LinearTransition.duration(180)} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-                      <Avatar name={a.who} size={26} claude={/agent$|Claude|Codex/.test(a.who)} />
+                      <Avatar name={a.who} size={26} {...(isAgentActor(a.who) ? { mark: markOfName(a.who, 'claude') } : {})} />
                       <View style={{ flex: 1, gap: 4 }}>
                         <T v="callout">
                           <T v="callout" c={color.text} style={{ fontWeight: '600' }}>

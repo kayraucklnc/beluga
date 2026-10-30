@@ -66,6 +66,8 @@ export interface ControllerDeps {
   readonly moveToTrash?: (dir: string) => Promise<void>;
   /** The runtime your default agent runs on, for a place that picked none (default: 'claude'). */
   readonly defaultRuntime?: () => string;
+  /** Your agent for a project's conversations that picked none: the project's own, else your default (Settings). */
+  readonly defaultAgent?: (project?: string) => AgentRef;
 }
 
 export const REVIEW_PROMPT = [
@@ -567,7 +569,9 @@ export class WorkspaceController {
     // "Let Claude handle it": this one run may sync git in the main folder (and nothing else).
     const syncMain = ws.askOnly ? this.syncRuns.get(ws.id) : undefined;
     if (syncMain) this.syncRuns.delete(ws.id);
-    const runtime = ws.agent?.runtime ?? this.deps.defaultRuntime?.() ?? SESSION_RUNTIME_DEFAULT;
+    // A conversation that picked no agent runs on yours (the project's own, else Settings' default).
+    const agent = ws.agent ?? this.followedAgent(ws.id);
+    const runtime = agent?.runtime ?? this.deps.defaultRuntime?.() ?? SESSION_RUNTIME_DEFAULT;
     return {
       cwd: ws.path,
       additionalDirectories: [],
@@ -578,12 +582,25 @@ export class WorkspaceController {
       // Only a session its own runtime made: another runtime's id is never fed to this one.
       ...resumeFor(ws, runtime, this.pendingResume.get(ws.id)),
       onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId, runtime),
-      ...(ws.agent ? { agent: ws.model ? { ...ws.agent, model: ws.model } : ws.agent } : {}),
+      ...(agent ? { agent: ws.model ? { ...agent, model: ws.model } : agent } : {}),
       ...(ws.model ? { model: ws.model } : {}),
       ...(ws.prShipped && ws.kind === 'worktree' ? { shipped: ws.prShipped } : {}),
       ...(syncMain ? { syncMain } : {}),
       ...(ws.askOnly && this.fixups.has(ws.id) ? { fixup: this.fixups.get(ws.id)! } : {}),
     };
+  }
+
+  /** The agent a workspace conversation runs on: its pick, else yours (undefined: not a workspace, or the daemon's own runtime). */
+  agentIn(channel: string): AgentRef | undefined {
+    const ws = this.inChannel(channel);
+    return ws ? (ws.agent ?? this.followedAgent(ws.id)) : undefined;
+  }
+
+  /** Your default agent for a workspace that picked none (its project's own first); undefined: the daemon's own runtime. */
+  private followedAgent(wsId: string): AgentRef | undefined {
+    if (!this.deps.defaultAgent) return undefined;
+    const project = this.deps.manager.list.find((p) => p.workspaces.some((w) => w.id === wsId));
+    return this.deps.defaultAgent(project?.name);
   }
 
   /** The agent that runs in a workspace conversation of yours (its pick, else `fallback`: your default), with its model. */
@@ -1365,7 +1382,7 @@ export class WorkspaceController {
     const ws = this.inChannel(channel);
     if (!ws || ws.archived || ws.kind === 'main' || !existsSync(ws.path)) return undefined;
     const resume = ws.sessionId ?? ws.forkFromSession ?? this.pendingResume.get(ws.id);
-    return { cwd: ws.path, ...(resume ? { resume } : {}), ...(ws.model ? { model: ws.model } : {}), ...(ws.agent ? { runtime: ws.agent.runtime } : {}) };
+    return { cwd: ws.path, ...(resume ? { resume } : {}), ...(ws.model ? { model: ws.model } : {}), ...(this.agentIn(channel) ? { runtime: this.agentIn(channel)!.runtime } : {}) };
   }
 
   /** Your workspace a conversation belongs to, if any. */

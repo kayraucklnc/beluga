@@ -277,15 +277,15 @@ export class AgentHost {
       place: (channel) => this.deps.workspaces?.place(channel),
       emit: (requestId, kind, text, channel) => this.emitAgent(requestId, this.selfId, kind, text, channel),
       requesterName: () => peerName(this.store.getState(), this.selfId),
-      modelFor: (place) => this.modelFor(place?.model),
+      modelFor: (place) => this.modelFor(place?.model, place?.agent),
     });
     this.btw = new BtwDesk({
       store: deps.store,
       agent: () => this.agent,
       place: (channel) => {
         const at = this.deps.workspaces?.btwPlace(channel);
-        // A conversation on an agent of its own uses its own model; your default model is your default agent's.
-        const model = at && (at.runtime ? at.model : this.modelFor(at.model).model);
+        // Settings' model is Claude's: a conversation on another agent uses its own.
+        const model = at && this.modelFor(at.model, this.deps.workspaces?.agentIn(channel)).model;
         return at && { ...at, ...(model ? { model } : {}) };
       },
     });
@@ -1199,7 +1199,7 @@ export class AgentHost {
           // Anything that queued up behind this run from the same person can go in now.
           if (send) lane.waiting = lane.waiting.filter((w) => !this.sendFollowUp(lane, w.from, w.body));
         },
-        ...this.modelFor(place?.model),
+        ...this.modelFor(place?.model, place?.agent),
         // Your MCP servers (your logins: Figma, Linear…) are for runs you asked for, never a friend's.
         ...(from === this.selfId ? { ownerMcp: true } : {}),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
@@ -1271,15 +1271,18 @@ export class AgentHost {
       onFileTouched: (abs) => this.announceAgentFocus(abs),
       canUseTool: (toolName, toolInput) => this.authorizeTool(this.selfId, requesterName, toolName, toolInput, channel, opts.place?.cwd),
       askUser: (question) => this.deps.questions.ask(this.selfId, requestId, channel, question),
-      ...(opts.defaultModel ? this.modelFor(opts.place?.model) : {}),
+      ...(opts.defaultModel ? this.modelFor(opts.place?.model, opts.place?.agent) : {}),
     });
     return { text, tokens };
   }
 
-  /** The model and effort for a run: the conversation's own pick, else your defaults. */
-  private modelFor(own: string | undefined): { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } {
+  /**
+   * The model and effort for a run: the conversation's own pick, else its agent's (a project's own
+   * agent, or yours), else Settings' model, which is Claude's: another runtime then takes its default.
+   */
+  private modelFor(own: string | undefined, agent?: AgentRef): { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } {
     const prefs = this.store.getState().prefs;
-    const model = own ?? prefs.model;
+    const model = own ?? agent?.model ?? (agent && agent.runtime !== CLAUDE_AGENT.runtime ? undefined : prefs.model);
     return { ...(model ? { model } : {}), ...(prefs.effort ? { effort: prefs.effort } : {}) };
   }
 
@@ -1288,7 +1291,7 @@ export class AgentHost {
    * run: picked after the run started (the chat's model picker), the run switches to it first.
    */
   private modelNow(channel: string): string {
-    return this.modelFor(this.deps.workspaces?.inChannel(channel)?.model).model ?? '';
+    return this.modelFor(this.deps.workspaces?.inChannel(channel)?.model, this.deps.workspaces?.agentIn(channel)).model ?? '';
   }
 
   private async authorizeTool(requester: string, requesterName: string, toolName: string, input: Record<string, unknown>, channel = 'room', cwd?: string): Promise<boolean> {

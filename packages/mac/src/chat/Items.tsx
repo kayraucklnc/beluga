@@ -19,6 +19,7 @@ import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
 import { agentBadge, agentName, useMyAgentName } from '../lib/agent-words.js';
 import type { AgentRef } from '@beluga/protocol.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { brandText } from '../lib/brand.js';
 import { messageItems } from './message-menu.js';
 import { Markdown } from './Markdown.js';
@@ -51,7 +52,12 @@ const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour:
 /** What runs the agent and its model, small and quiet beside its name ("Opus", "Codex · GPT-5"). */
 function AgentBadge({ agent }: { agent: AgentRef | undefined }) {
   const text = agentBadge(agent);
-  return text ? <span className={s.agentBadge} title={`${agent!.label}: ${agent!.runtime}${agent!.model ? `, ${agent!.model}` : ''}`}>{text}</span> : null;
+  return text ? (
+    <span className={s.agentBadge} title={`${agent!.label}: ${agent!.runtime}${agent!.model ? `, ${agent!.model}` : ''}`}>
+      <Icon name={agentMark(agent)} size={10} />
+      {text}
+    </span>
+  ) : null;
 }
 
 function useMenuContext() {
@@ -221,7 +227,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
   return (
     <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
       <div ref={row} className={cx(s.message, continued && s.continued, steer && s.unread)} data-steer={steer ? 'waiting' : undefined}>
-        <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} size={26} />}</div>
+        <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} agent={item.agent} size={26} />}</div>
         <div className={s.body}>
           {continued ? null : (
             <div className={s.meta}>
@@ -326,7 +332,7 @@ function TurnHead({ item, part, mine }: { item: AgentItem; part: TurnPart; mine:
   return (
     <div className={cx(s.message, s.agent, s.turnHead)} data-turn={item.status} data-turn-part="head">
       <div className={s.gutter}>
-        <Avatar name={agentName(item.agent)} id={item.owner} claude size={26} />
+        <Avatar name={agentName(item.agent)} id={item.owner} claude agent={item.agent} size={26} />
       </div>
       <div className={s.body}>
         <div className={s.meta}>
@@ -446,7 +452,7 @@ function TurnCard({
     <ActionsContext items={() => messageItems({ ...menu, text: item.text, lead })}>
       <div className={cx(s.message, s.agent)} data-turn={item.status} data-turn-part={part ? 'tail' : undefined}>
         <div className={s.gutter}>
-          <Avatar name={agentName(item.agent)} id={item.owner} claude size={26} />
+          <Avatar name={agentName(item.agent)} id={item.owner} claude agent={item.agent} size={26} />
         </div>
         <div className={s.body}>
           <div className={s.meta}>

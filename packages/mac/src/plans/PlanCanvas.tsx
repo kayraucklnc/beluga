@@ -585,7 +585,7 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
             {data.starting ? (
               <span className={c.starting} role="status">
                 <Working />
-                Starting its Claude…
+                Starting its agent…
               </span>
             ) : null}
             {/* Where its work starts: the plan's branch, with what it waited on merged in. */}

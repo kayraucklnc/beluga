@@ -7,13 +7,15 @@ import { calls } from '../lib/link/calls';
 import type { UsageView } from '../lib/link/protocol';
 import { store } from '../lib/store';
 import { color, ink } from '../lib/theme';
+import { AgentMarkIcon, runtimeMark } from './AgentMark';
 import { Sheet } from './Sheet';
 import { Card, IconBadge, Pill, Press, T } from './ui';
 
 /**
  * Your allowance, one provider each: a pastel bar per plan window (5 hours, week) with its percent
  * and when it resets, or a local model's tokens and speed. The card shows your default agent's;
- * tap it for every provider, each with the chip that makes it your default (1.31).
+ * tap it for every provider, each with the chip that makes it your default (1.31). A provider that
+ * says its runtime leads with that agent's mark (BLG-497).
  */
 const toneOf = (pct: number): 'mint' | 'butter' | 'rose' => (pct >= 90 ? 'rose' : pct >= 70 ? 'butter' : 'mint');
 
@@ -92,10 +94,13 @@ export function UsageCard({ usage, title = 'Allowance', onOpen }: { readonly usa
             <T v="heading" style={{ flex: 1 }}>
               {title}
             </T>
-            <T v="caption">
-              {main.provider}
-              {usage.length > 1 ? ` +${usage.length - 1}` : ''}
-            </T>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              {main.runtime ? <AgentMarkIcon mark={runtimeMark(main.runtime)} size={13} color={color.text2} /> : null}
+              <T v="caption">
+                {main.provider}
+                {usage.length > 1 ? ` +${usage.length - 1}` : ''}
+              </T>
+            </View>
           </View>
           <UsageBars usage={main} />
         </Card>
@@ -131,6 +136,7 @@ export function UsageSheet({ usage, visible, onClose }: { readonly usage: readon
         {usage.map((u) => (
           <View key={u.runtime ?? u.provider} style={{ gap: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {u.runtime ? <AgentMarkIcon mark={runtimeMark(u.runtime)} size={18} color={color.text2} /> : null}
               <T v="heading" style={{ flex: 1 }}>
                 {u.provider}
                 {u.plan ? <T v="callout"> · {u.plan}</T> : null}

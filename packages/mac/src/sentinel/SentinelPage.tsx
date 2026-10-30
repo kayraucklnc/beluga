@@ -4,6 +4,7 @@ import { activityOf } from '@beluga/ui/workspace-models.js';
 import { recipeById } from '@beluga/core/sentinel/recipes.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
+import { useAgentEntries } from '../components/agent-options.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
@@ -34,9 +35,9 @@ import {
   pauseAfterLabel,
   perDayLabel,
   runDuration,
-  sharedModel,
+  sharedAgent,
   whenText,
-  withModel,
+  withAgent,
 } from './sentinel-model.js';
 import { useDraft } from './use-draft.js';
 import { useClock } from '../lib/window-active.js';
@@ -335,9 +336,9 @@ function History({ item }: { item: Sentinel }) {
 function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) => void }) {
   const a = useSentinelActions();
   const all = useApp((st) => st.projects);
-  const models = useApp((st) => st.models);
+  const agents = useAgentEntries();
   const projects = all.filter((p) => p.root && !p.error);
-  const model = sharedModel(item.steps);
+  const agent = sharedAgent(item.steps);
   const claudeSteps = item.steps.some((x) => x.kind === 'claude');
   const limits: number[] = TIME_LIMITS.includes(item.limits.minutes as (typeof TIME_LIMITS)[number]) ? [...TIME_LIMITS] : [...TIME_LIMITS, item.limits.minutes].sort((x, y) => x - y);
   const perDay: number[] = PER_DAY_CHOICES.includes(item.limits.perDay ?? 0) ? [...PER_DAY_CHOICES] : [...PER_DAY_CHOICES, item.limits.perDay!].sort((x, y) => x - y);
@@ -373,15 +374,8 @@ function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatc
         {accessSentence(item.access, item.steps)}.
       </p>
       {claudeSteps ? (
-        <Prop label="Model">
-          <Select
-            label="Model for every agent step"
-            size="small"
-            value={model ?? 'mixed'}
-            placeholder="Mixed"
-            options={(models.length ? models : [{ value: '', label: 'Default', description: '' }]).map((m) => ({ value: m.value, label: m.label || 'Default', ...(m.description ? { description: m.description } : {}) }))}
-            onChange={(m) => save({ steps: withModel(item.steps, m) })}
-          />
+        <Prop label="Agent">
+          <Select label="Agent and model for every agent step" size="small" value={agent ?? 'mixed'} placeholder="Mixed" options={agents} onChange={(v) => save({ steps: withAgent(item.steps, v) })} />
         </Prop>
       ) : null}
       <Prop label="Time limit">

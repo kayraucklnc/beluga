@@ -3,6 +3,7 @@ import { KeyboardLift } from '../../components/KeyboardLift';
 import { ArrowLeftRight, Clock, Eraser, Lock, Pencil, SquareTerminal, Trash2, TriangleAlert, X } from 'lucide-react-native';
 import { AskClaudePicker, type AskTarget, askTargets } from '../../components/AskClaudePicker';
 import { agentBadge, agentLabel } from '../../../../src/shared/agent-label';
+import { type AgentMark, AgentMarkIcon, agentMark, modelMark } from '../../components/AgentMark';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet as RNStyleSheet, TextInput, View } from 'react-native';
 import Animated, { LinearTransition, FadeIn } from 'react-native-reanimated';
@@ -287,11 +288,14 @@ function TaskCard({ task }: { task: NonNullable<ChatMessageView['task']> }) {
   );
 }
 
-/** Full width under "<owner>'s Claude": a Claude's answer, or a task's card. */
-function ClaudeRow({ owner, label, badge, first, children }: { owner: string; label: string; badge?: string | undefined; first: boolean; children: React.ReactNode }) {
+/**
+ * Full width under "<owner>'s Codex": an agent's answer, or a task's card. The avatar wears the
+ * agent's mark (BLG-497), the badge its model maker's beside the model's name.
+ */
+function ClaudeRow({ owner, label, badge, mark, badgeMark, first, children }: { owner: string; label: string; badge?: string | undefined; mark?: AgentMark | undefined; badgeMark?: AgentMark | undefined; first: boolean; children: React.ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', gap: 8, marginTop: first ? 12 : 0 }}>
-      <View style={{ width: 30 }}>{first ? <Avatar name={owner} size={30} claude owner={owner} /> : null}</View>
+      <View style={{ width: 30 }}>{first ? <Avatar name={owner} size={30} claude {...(mark ? { mark } : {})} owner={owner} /> : null}</View>
       <View style={{ flex: 1, gap: 4 }}>
         {first ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -300,7 +304,8 @@ function ClaudeRow({ owner, label, badge, first, children }: { owner: string; la
             </T>
             {/* Which runtime and model answered ("GPT-5"), as on the Mac: a quiet pill. */}
             {badge ? (
-              <View style={{ paddingHorizontal: 6, borderRadius: 8, backgroundColor: color.card, borderWidth: 0.5, borderColor: color.hairline }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, borderRadius: 8, backgroundColor: color.card, borderWidth: 0.5, borderColor: color.hairline }}>
+                {badgeMark ? <AgentMarkIcon mark={badgeMark} size={10} color={color.text2} /> : null}
                 <T v="caption" c={color.text2} style={{ fontSize: 11 }}>
                   {badge}
                 </T>
@@ -328,7 +333,7 @@ function Bubble({ m, first, last, group, pics, me }: { m: ChatMessageView; first
     // An older Mac names it "mia’s Claude"; now "mia’s Codex" too: the owner is before the ’s.
     const owner = m.from.replace(/['’]s [^’']+$/, '');
     return (
-      <ClaudeRow owner={mine && me ? me : owner} label={agentLabel(m.agent, owner, mine, { capital: mine })} badge={agentBadge(m.agent)} first={first}>
+      <ClaudeRow owner={mine && me ? me : owner} label={agentLabel(m.agent, owner, mine, { capital: mine })} badge={agentBadge(m.agent)} mark={agentMark(m.agent)} badgeMark={m.agent?.model ? modelMark(m.agent.model, m.agent.runtime) : undefined} first={first}>
         {files.map((f) => (
           <Thumb key={f.ref} o={f} group={pics} w={f.kind === 'image' ? 220 : 200} h={f.kind === 'image' ? 170 : 92} style={{ borderRadius: 18 }} />
         ))}

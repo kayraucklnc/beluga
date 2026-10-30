@@ -1,9 +1,10 @@
 import * as Haptics from 'expo-haptics';
-import { ChevronDown, ChevronRight, Ellipsis, type LucideIcon, SquareTerminal } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Ellipsis, type LucideIcon } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { Platform, Pressable, type PressableProps, type StyleProp, StyleSheet, Text, type TextProps, type TextStyle, View, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { color, elevation, ink, radius, scheme, stroke, tint, type, typeColor } from '../lib/theme';
+import { type AgentMark, AgentMarkIcon, type IconLike } from './AgentMark';
 
 /**
  * The app's small parts. One pattern everywhere: a line icon in one ink, one or two words, the
@@ -89,7 +90,7 @@ export function Press({ children, style, scaleTo: _scaleTo, onPress, haptics = t
  * on their own; large ones (an empty state, a sheet's head) sit in a hairline ring. Only a tone
  * that means something (butter: needs you, rose: a problem) colors it.
  */
-export function IconBadge({ Icon, tone, size = 36, square }: { readonly Icon: LucideIcon; readonly tone: Tone; readonly size?: number; readonly square?: boolean }) {
+export function IconBadge({ Icon, tone, size = 36, square }: { readonly Icon: IconLike; readonly tone: Tone; readonly size?: number; readonly square?: boolean }) {
   const ringed = size >= 44;
   return (
     <View style={{ width: size, height: size, borderRadius: square ? size * 0.28 : size / 2, alignItems: 'center', justifyContent: 'center', ...(ringed ? { borderWidth: StyleSheet.hairlineWidth * 2, borderColor: color.hairlineStrong } : {}) }}>
@@ -102,7 +103,7 @@ export function IconBadge({ Icon, tone, size = 36, square }: { readonly Icon: Lu
  * A small label: an optional icon and a word or two, as quiet text in a hairline outline. A tone
  * that means something (butter, rose) inks it and gives it the faintest fill.
  */
-export function Pill({ label, tone = 'plain', Icon, style }: { readonly label: string; readonly tone?: Tone; readonly Icon?: LucideIcon; readonly style?: ViewStyle }) {
+export function Pill({ label, tone = 'plain', Icon, style }: { readonly label: string; readonly tone?: Tone; readonly Icon?: IconLike; readonly style?: ViewStyle }) {
   const meant = tone === 'butter' || tone === 'rose';
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: 8, borderRadius: 6, backgroundColor: meant ? toneBg(tone) : 'transparent', borderWidth: meant ? 0 : StyleSheet.hairlineWidth * 2, borderColor: color.hairline }, style]}>
@@ -160,12 +161,15 @@ export function Row({ Icon, tone = 'plain', label, sub, right, onPress, chevron 
 export const hueOf = (_name: string): Tone => 'plain';
 const PRESENCE: Record<string, () => string> = { online: () => color.ok, away: () => color.warn, dnd: () => color.error, offline: () => color.text3 };
 
-/** A person's initial on a neutral disc; their Claude gets the Claude mark (`owner` kept for callers, BLG-210). */
-export function Avatar({ name, size = 40, presence, claude }: { readonly name: string; readonly size?: number; readonly presence?: string; readonly claude?: boolean; readonly owner?: string }) {
+/**
+ * A person's initial on a neutral disc; their agent gets its mark (`mark`, BLG-497: Claude Code,
+ * Codex, a local model; none said: Claude Code's, an older Mac's). `owner` kept for callers, BLG-210.
+ */
+export function Avatar({ name, size = 40, presence, claude, mark }: { readonly name: string; readonly size?: number; readonly presence?: string; readonly claude?: boolean; readonly mark?: AgentMark; readonly owner?: string }) {
   return (
     <View style={{ width: size, height: size }}>
       <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: color.sunken, borderWidth: StyleSheet.hairlineWidth, borderColor: color.hairline }}>
-        {claude ? <SquareTerminal color={color.text2} size={size * 0.46} strokeWidth={stroke} /> : <Text style={{ color: color.text2, fontSize: size * 0.4, fontWeight: '600' }}>{(name[0] ?? '?').toUpperCase()}</Text>}
+        {claude || mark ? <AgentMarkIcon mark={mark ?? 'claudeCode'} color={color.text2} size={Math.round(size * 0.5)} /> : <Text style={{ color: color.text2, fontSize: size * 0.4, fontWeight: '600' }}>{(name[0] ?? '?').toUpperCase()}</Text>}
       </View>
       {presence ? <View style={{ position: 'absolute', right: -1, bottom: -1, width: size * 0.3, height: size * 0.3, borderRadius: size, backgroundColor: PRESENCE[presence]?.() ?? color.text3, borderWidth: 2.5, borderColor: color.bg }} /> : null}
     </View>

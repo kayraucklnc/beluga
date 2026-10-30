@@ -3,6 +3,7 @@ import { existsSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
+import { AgentRef } from '../../protocol.js';
 import type { Store } from '../store.js';
 import { unexplained } from './criteria.js';
 import { LABEL_COLORS, LABEL_ICONS, LABEL_NAME, type LabelColor, type LabelDef, type LabelIcon, MAX_CUSTOM_LABELS, cleanLabelName, inSet, labelsFor } from './labels.js';
@@ -81,6 +82,8 @@ export interface NewIssue {
   readonly plan?: IssuePlan;
   /** The GitHub issue it's made from. */
   readonly github?: IssueGitHub;
+  /** The agent that works it (BLG-497); none: your default. */
+  readonly agent?: AgentRef;
 }
 
 /** What Claude wrote for a task made from a description (agent/task-drafter.ts). */
@@ -160,6 +163,8 @@ const SavedIssue = z
     createdAt: z.number(),
     updatedAt: z.number(),
     origin: z.enum(['manual', 'worktree', 'claude', 'plan', 'sync', 'github']).default('manual'),
+    // The agent that works it (BLG-497): one that doesn't read is let go (your default works it).
+    agent: AgentRef.optional().catch(undefined),
   })
   .passthrough();
 
@@ -308,6 +313,7 @@ export class Board {
       ...(parent ? { parent: parent.id } : {}),
       ...(input.plan ? { plan: input.plan } : {}),
       ...(input.github ? { github: input.github } : {}),
+      ...(input.agent ? { agent: input.agent } : {}),
       blockedBy: [...new Set(blockers)],
       related: [],
       rank: this.lastRank(status),

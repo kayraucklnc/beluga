@@ -1,5 +1,7 @@
 import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
 import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, issueById } from '@beluga/core/board/model.js';
+import { agentForChoice } from '@beluga/ui/agent-choice.js';
+import { YOUR_AGENT, useAgentEntries } from '../components/agent-options.js';
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
 import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
@@ -23,6 +25,7 @@ const SCALE: readonly Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
  * (BLG-319), no chat in between. "@" in the box names a teammate or a friend, so Claude knows who
  * you mean (BLG-342). It goes in the
  * project and column you opened it from. Start with Claude makes the worktree and puts Claude on it.
+ * Agent (BLG-497): who works it when it starts (Codex, a local model…); your default unless you pick.
  */
 export function NewTaskSheet({ projectId, status, parent, close }: { projectId?: string; status?: IssueStatus; parent?: string; close: () => void }) {
   const board = useBoard();
@@ -46,6 +49,9 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const choices = assigneeChoices(self, people);
   const [assignee, setAssignee] = useState('');
   const [start, setStart] = useState(false);
+  const agents = useAgentEntries();
+  const runtimes = useApp((s) => s.runtimes);
+  const [agent, setAgent] = useState(YOUR_AGENT);
   const solo = useSolo(project);
   const tagged = useTaggable(project, self.id, projects.find((p) => p.id === project)?.name);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -75,6 +81,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
           priority,
           ...(who ? { assignee: who } : {}),
           ...(parentIssue ? { parent: parentIssue.id } : {}),
+          ...(agent !== YOUR_AGENT ? { agent: agentForChoice(agent, runtimes) } : {}),
         });
         close();
         // (The sheet is gone: a problem starting shows as a toast, and the task is there to start again.)
@@ -143,6 +150,9 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
           <Popup label="Assignee" value={assignee} options={[{ value: '', label: 'No one' }, ...choices.map((c) => ({ value: c.key, label: c.label }))]} onChange={setAssignee} />
         </Field>
       )}
+      <Field label="Agent" hint="Who works on it when it starts: its worktree runs this agent and model.">
+        <Popup label="Agent" value={agent} options={agents} onChange={setAgent} />
+      </Field>
     </FormSheet>
   );
 }

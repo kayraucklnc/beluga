@@ -131,7 +131,7 @@ describe('a worktree on Codex, end to end', () => {
     await waitFor(() => !workspaces.find(ws.id)?.agent, 8000);
     session.submit('carry on', { channel });
     await waitFor(() => claudeRuns.length === 1, 8000);
-    expect(claudeRuns[0]!.place?.agent).toBeUndefined();
+    expect(claudeRuns[0]!.place?.agent?.runtime).toBe('claude');
     await waitFor(() => said('claude: on it'), 8000);
   }, 30_000);
 });

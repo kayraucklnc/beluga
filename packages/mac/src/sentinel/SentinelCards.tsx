@@ -32,6 +32,7 @@ import { Checkbox, TextArea, TextInput } from '../components/FormSheet.js';
 import { CodeEditor } from '../components/markdown/CodeEditor.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
+import { useAgentEntries } from '../components/agent-options.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, IconButton, Segmented } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
@@ -62,6 +63,8 @@ import {
   triggerChoices,
   triggerOfKind,
   withEvery,
+  agentFields,
+  stepAgentChoice,
 } from './sentinel-model.js';
 import { EventControls } from './EventControls.js';
 import { MeasureFields } from './MeasureFields.js';
@@ -387,7 +390,7 @@ const WHERE_INFO: ReadonlyArray<{ readonly value: ClaudeStep['where']; readonly 
 ];
 
 function ClaudeFields({ step, item, change }: { step: ClaudeStep; item: Sentinel; change: (patch: Partial<ClaudeStep>) => void }) {
-  const models = useApp((st) => st.models);
+  const agents = useAgentEntries();
   const prompt = useDraft(step.prompt, (v) => v !== step.prompt && change({ prompt: v }));
   const where = WHERE_INFO.find((w) => w.value === step.where);
   return (
@@ -419,18 +422,11 @@ function ClaudeFields({ step, item, change }: { step: ClaudeStep; item: Sentinel
       </div>
       {where ? <p className={s.hint}>{where.description}.</p> : null}
       <div className={s.controlRow}>
-        <span className={s.controlLabel}>Model</span>
-        <Select
-          label="Model"
-          size="small"
-          value={step.model ?? ''}
-          options={(models.length ? models : [{ value: '', label: 'Default', description: '' }]).map((m) => ({ value: m.value, label: m.label || 'Default', ...(m.description ? { description: m.description } : {}) }))}
-          onChange={(m) => {
-            const { model: _m, ...rest } = step;
-            change(m ? { model: m } : ({ ...rest, model: undefined } as Partial<ClaudeStep>));
-          }}
-        />
+        <span className={s.controlLabel}>Agent</span>
+        {/* Which agent and model does it (BLG-497): the run's chat or worktree runs it for this step. */}
+        <Select label="Agent and model" size="small" value={stepAgentChoice(step)} options={agents} onChange={(v) => change(agentFields(v))} />
       </div>
+      {step.where === 'mac' && stepAgentChoice(step) ? <p className={s.hint}>On Your Mac, your default agent does it: pick In the project or In a new worktree for this one.</p> : null}
     </>
   );
 }

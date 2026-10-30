@@ -1,5 +1,7 @@
 import { motion } from 'motion/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
+import { agentEntries, myModel, myRuntime, setMyAgent } from '../chat/ModelPicker.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { STARTERS, type FireLook, DEFAULT_FIRE, presetOf, starterOf } from '../chat/fire-look.js';
@@ -266,6 +268,9 @@ export function Setup() {
   const policy = useApp((st) => st.policy);
   const core = useApp((st) => st.prefs);
   const models = useApp((st) => st.models);
+  const runtimes = useApp((st) => st.runtimes);
+  const runtime = myRuntime(core);
+  const model = myModel(core);
   const [name, setName] = useState(self);
   // What's typed is saved on Return, on leaving the field, and when the step goes (⌘] doesn't blur).
   const typed = useRef({ name, self });
@@ -305,11 +310,17 @@ export function Setup() {
         <SetupRow index={3} label="Ask before my agent runs commands" detail="Off lets your agent work on its own in your worktrees. Secrets stay blocked either way.">
           <Switch label="Ask before running commands" on={core.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
         </SetupRow>
-        {models.length ? (
-          <SetupRow index={4} label="Model for new conversations" detail="Each conversation can pick its own.">
-            <Select label="Model" value={core.model ?? ''} onChange={(v) => void api.workbench.setModel(undefined, v)} options={models.map((m) => ({ value: m.value, label: m.label }))} />
-          </SetupRow>
-        ) : null}
+        <SetupRow index={4} label="Your agent" detail="Runs new conversations and answers friends’ @you. Each conversation can pick its own.">
+          <Select
+            label="Your agent"
+            value={choiceForAgent({ runtime, label: '', ...(model ? { model } : {}) })}
+            onChange={(v) => {
+              const ref = agentForChoice(v, runtimes);
+              setMyAgent(api, ref.runtime, ref.label, ref.model ?? '');
+            }}
+            options={agentEntries(agentChoices(runtimes, models))}
+          />
+        </SetupRow>
         <SetupRow index={5} label="Send messages with" detail={prefs.sendWith === 'enter' ? 'Shift-Return makes a new line.' : 'Return makes a new line.'}>
           <Choice
             label="Send with"

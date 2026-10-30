@@ -6,6 +6,7 @@ import { redactSecrets } from '../../shared/steps.js';
 import type { NoticeEvent } from '../notify.js';
 import { type Named, mentionNote, personMentions } from '../person-mentions.js';
 import type { RunFolders } from './files.js';
+import type { AgentRef } from '../../protocol.js';
 import {
   type ClaudeStep,
   type FriendStep,
@@ -30,6 +31,7 @@ import {
   capPayload,
   firstLine,
   stepAvailable,
+  stepAgent,
 } from './model.js';
 import type { Row, Source } from '../../shared/view-spec.js';
 import { type Measured, keptWords, measureFrom, readOutput } from './metrics.js';
@@ -80,6 +82,8 @@ export interface SentinelPlaces {
   madeChanges(workspaceId: string): Promise<boolean | undefined>;
   /** Archive a worktree quietly (nothing of yours is lost). */
   archive(workspaceId: string): Promise<unknown>;
+  /** The agent a run's own chat or worktree runs for the next step (BLG-497); undefined: your default. */
+  setAgent?(workspaceId: string, agent: AgentRef | undefined): void;
 }
 
 /** A pull request as GitHub sees it now (for the merge gate, §5). */
@@ -857,6 +861,9 @@ export class SentinelRunner {
     const place = await this.place(active, step);
     if (typeof place === 'string') return { kind: 'failed', why: place };
     const { channel } = place;
+    // The step's agent and model (BLG-497): the run's chat or worktree runs it for this step (steps
+    // sharing one can each pick their own). Your Mac's chats run your default agent.
+    if (place.workspaceId) this.deps.places?.setAgent?.(place.workspaceId, stepAgent(step));
     // Earlier outputs filled in are material in tags, never instructions; a big one is its file and a preview.
     const prompt = render(step.prompt, { ...this.context(active, outputs), material: stepMaterial }).trim();
     if (!prompt) return { kind: 'failed', why: 'its prompt is empty', channel };

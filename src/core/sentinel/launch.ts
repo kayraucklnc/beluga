@@ -186,6 +186,12 @@ function places(session: Session): SentinelPlaces | undefined {
       return s ? s.ahead > 0 || s.changed > 0 : undefined;
     },
     archive: (workspaceId) => ctl.archive(workspaceId, false, { quiet: true }),
+    // A run's own chat or worktree (no one else's conversation): set outright, no handoff note.
+    setAgent: (workspaceId, agent) => {
+      if (!ctl.manager.find(workspaceId)) return;
+      ctl.manager.setAgent(workspaceId, agent);
+      void ctl.refresh();
+    },
   };
 }
 
