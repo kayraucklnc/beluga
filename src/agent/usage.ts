@@ -21,6 +21,14 @@ export function usageFor(p: Pick<Profile, 'usage' | 'usages'> | undefined, runti
   return usagesOf(p).find((u) => u.agent.runtime === runtime);
 }
 
+/** Someone's providers: Claude always, then every other one they run or that reported usage, by runtime. */
+export function providersOf(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined): AgentRef[] {
+  const agents = new Map<string, AgentRef>([[CLAUDE_AGENT.runtime, CLAUDE_AGENT]]);
+  for (const a of p?.agents ?? []) if (!agents.has(a.runtime)) agents.set(a.runtime, a);
+  for (const u of usagesOf(p)) if (!agents.has(u.agent.runtime)) agents.set(u.agent.runtime, u.agent);
+  return [...agents.values()];
+}
+
 /** The plain Usage an older Mac reads, from a provider's usage. */
 function legacyOf(u: ProviderUsage): Usage {
   return { ...(u.plan ? { plan: u.plan } : {}), ...(u.fiveHour ? { fiveHour: u.fiveHour } : {}), ...(u.week ? { week: u.week } : {}), updatedAt: u.updatedAt };

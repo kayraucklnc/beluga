@@ -764,7 +764,11 @@ export function makeWorld(now = Date.now()): DemoWorld {
         { label: 'Week', pct: 62, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
       ],
       updatedAt: now - MIN,
+      runtime: 'claude',
+      isDefault: true,
     },
+    { provider: 'Codex', plan: 'Plus', windows: [{ label: 'Weekly', pct: 24, resetsAt: now + 4 * 24 * HOUR }], updatedAt: now - 2 * MIN, runtime: 'codex', isDefault: false },
+    { provider: 'Local', windows: [], tokens: { input: 182_000, output: 41_500 }, tokensPerSec: 38, updatedAt: now - 3 * MIN, runtime: 'local', isDefault: false },
   ];
 
   return {

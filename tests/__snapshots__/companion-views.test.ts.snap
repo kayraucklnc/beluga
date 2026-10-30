@@ -1145,8 +1145,10 @@ Pull request #53",
     },
     "usage": [
       {
+        "isDefault": true,
         "plan": "max",
         "provider": "Claude Code",
+        "runtime": "claude",
         "updatedAt": 1760000000000,
         "windows": [
           {

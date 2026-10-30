@@ -1,4 +1,4 @@
-import { usagesOf } from '../agent/usage.js';
+import { providersOf, usagesOf } from '../agent/usage.js';
 import { type AgentRef, CLAUDE_AGENT, type PeerInfo, type Profile, type ProviderUsage } from '../protocol.js';
 
 /** A plan window ready to draw: "5-hour", "Weekly", or the provider's own name for it. */
@@ -62,11 +62,8 @@ function cardOf(agent: AgentRef, u: ProviderUsage | undefined, isDefault: boolea
  */
 export function providerCards(self: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined): ProviderCard[] {
   const usages = usagesOf(self);
-  const agents = new Map<string, AgentRef>([[CLAUDE_AGENT.runtime, CLAUDE_AGENT]]);
-  for (const a of self?.agents ?? []) if (!agents.has(a.runtime)) agents.set(a.runtime, a);
-  for (const u of usages) if (!agents.has(u.agent.runtime)) agents.set(u.agent.runtime, u.agent);
   const def = (defaultAgent ?? CLAUDE_AGENT).runtime;
-  return [...agents.values()].map((a) => cardOf(a, usages.find((u) => u.agent.runtime === a.runtime), a.runtime === def));
+  return providersOf(self).map((a) => cardOf(a, usages.find((u) => u.agent.runtime === a.runtime), a.runtime === def));
 }
 
 /** One friend's provider with quota windows: whose agent has room left. */

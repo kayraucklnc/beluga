@@ -37,6 +37,8 @@ type PhoneDraft = { title: string; goal: string; acceptance: string[]; labels: s
 export const calls = {
   /** Since 1.13 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
   keepAwake: (mode: 'off' | 'power' | 'always'): Call => make('companion.keepAwake', [mode], 'Keep your Mac awake'),
+  /** Since 1.31 (BLG-459): one of your providers (by its runtime) becomes your default agent. */
+  defaultAgent: (runtime: string): Call => make('companion.defaultAgent', [runtime], 'Make it your default agent'),
   /** 1.14: a new empty chat on Your Mac (open on the Mac now) → its id; one deleted for good. */
   newMacChat: (): Call => make('assistant.newChat', [], 'New chat'),
   deleteMacChat: (topic: Topic): Call => make('assistant.deleteChat', [macChatOf(topic)], 'Delete the chat'),
