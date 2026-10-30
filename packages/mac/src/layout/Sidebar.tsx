@@ -33,7 +33,7 @@ import { shortcutKeys } from '../lib/shortcuts.js';
  * The sidebar's top: three places, always. The rest are a click away without a row of their
  * own: Search in the toolbar (⇧⌘F), Usage as an icon above, the terminal in the right panel (⌘J),
  * folders friends share under Files (projects they share are in Projects); Activity and Requests show up only while there's something
- * in them. Everything is also in ⌘K and the Go menu (⌥1…7).
+ * in them. Everything is also in ⌘K and the Go menu (⌘1…7).
  */
 const NAV: ReadonlyArray<{ kind: 'overview' | 'room'; icon: IconName }> = [
   { kind: 'overview', icon: 'grid' },

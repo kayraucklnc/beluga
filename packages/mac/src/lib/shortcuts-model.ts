@@ -67,13 +67,13 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   def('zoom-out', 'Smaller Text', 'View', ['Cmd+-']),
   def('zoom-reset', 'Actual Size', 'View', ['Cmd+0']),
 
-  def('go-overview', 'Overview', 'Go', ['Alt+1']),
-  def('go-tasks', 'Tasks', 'Go', ['Alt+2']),
-  def('go-room', 'Chat', 'Go', ['Alt+3']),
-  def('go-search', 'Search', 'Go', ['Alt+4']),
-  def('go-usage', 'Usage', 'Go', ['Alt+5']),
-  def('go-terminal', 'Terminal', 'Go', ['Alt+6']),
-  def('go-files', 'Shared Files', 'Go', ['Alt+7']),
+  def('go-overview', 'Overview', 'Go', ['Cmd+1']),
+  def('go-tasks', 'Tasks', 'Go', ['Cmd+2']),
+  def('go-room', 'Chat', 'Go', ['Cmd+3']),
+  def('go-search', 'Search', 'Go', ['Cmd+4']),
+  def('go-usage', 'Usage', 'Go', ['Cmd+5']),
+  def('go-terminal', 'Terminal', 'Go', ['Cmd+6']),
+  def('go-files', 'Shared Files', 'Go', ['Cmd+7']),
   def('go-issues', 'Issues', 'Go', []),
   def('go-actions', 'Actions', 'Go', []),
   def('go-sentinel', 'Sentinel', 'Go', []),
@@ -354,6 +354,9 @@ export function refusal(id: string, chord: string): string | undefined {
   // The talk shortcut is held down: ↩ and esc are what you press while it listens.
   if (id === TALK_ID && (c.key === 'Enter' || c.key === 'Escape')) return `${chordLabel(chord)} sends while you talk: pick another key`;
   const fn = /^F\d{1,2}$/.test(c.key);
+  // ⌥ alone over a letter, digit or sign types a character on many keyboards (⌥3 is # on a British
+  // or Turkish Mac, ⌥L is @ on a German one), and the menu bar would take it from every text box.
+  if (c.alt && !c.cmd && !c.ctrl && [...c.key].length === 1) return `${chordLabel(chord)} types a character on some keyboards: add ⌘ or ⌃`;
   if (c.cmd || c.ctrl || c.alt || fn) return undefined;
   if (d.scope === 'composer' && c.shift && (c.key === 'Enter' || c.key === 'Tab')) return undefined;
   if (d.bare && !c.shift) return undefined;

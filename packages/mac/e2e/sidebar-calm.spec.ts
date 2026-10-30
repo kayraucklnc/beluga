@@ -21,13 +21,13 @@ test('the top of the sidebar is Your Mac, Overview, Tasks (and its GitHub issues
   for (const gone of ['Search', 'Usage', 'Terminal']) await expect(sidebar(page).locator('section').first().getByRole('button', { name: gone, exact: true })).toHaveCount(0);
 });
 
-test('Search from the toolbar, Usage from the icon above the sidebar, places by ⌥ key', async ({ page }) => {
+test('Search from the toolbar, Usage from the icon above the sidebar, places by ⌘ key', async ({ page }) => {
   await page.getByRole('button', { name: 'Search', exact: true }).first().click();
   await expect(page.locator('header').first()).toContainText('Search');
   await sidebar(page).getByRole('button', { name: 'Usage', exact: true }).click();
   await expect(page.locator('header').first()).toContainText('Usage');
-  await page.keyboard.press('Alt+Digit2');
+  await page.keyboard.press('Meta+Digit2');
   await expect(page.getByRole('tablist', { name: 'Show' })).toBeVisible();
-  await page.keyboard.press('Alt+Digit1');
+  await page.keyboard.press('Meta+Digit1');
   await expect(page.locator('header').first()).toContainText('Overview');
 });
