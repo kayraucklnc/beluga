@@ -17,6 +17,16 @@ export async function openWork(page: Page, tab: 'Tasks' | 'Issues' | 'Actions' |
   await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: tab }).click();
 }
 
+/** A person's row in the sidebar: "bob", or "bob Add bob as a friend" while you aren't friends yet. */
+export const personRow = (page: Page, name: string): Locator =>
+  page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: new RegExp(`^${name}(?: Add ${name} as a friend)?$`) });
+
+/** Open a person's card from their row: on the name, not its Add button. */
+export async function openPersonCard(page: Page, name: string): Promise<Locator> {
+  await personRow(page, name).getByText(name, { exact: true }).click();
+  return page.getByRole('dialog', { name });
+}
+
 /** The pop-up button named `label` (its aria-label). */
 export const popup = (scope: Scope, label: string | RegExp): Locator => scope.getByRole('combobox', { name: label });
 

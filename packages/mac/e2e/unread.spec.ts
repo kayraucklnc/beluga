@@ -16,7 +16,7 @@ const projectRow = (page: Page, name: string): Locator => sidebar(page).getByRol
 async function openWorkspace(page: Page, name: string, project: string): Promise<void> {
   await expect(projectRow(page, project)).toBeVisible();
   if (!(await row(page, name).isVisible())) {
-    const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` });
+    const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` }).first();
     if (await show.isVisible()) await show.click();
   }
   await row(page, name).click();

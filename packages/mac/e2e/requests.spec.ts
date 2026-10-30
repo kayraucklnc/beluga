@@ -56,7 +56,7 @@ test('your Claude asks bob’s Claude and mia’s (after you say yes); answers c
   await composer(page).press('Enter');
   const ask = task(page, /^Task: Ask mia’s agent\?/).last();
   await expect(ask).toBeVisible({ timeout: 15_000 });
-  await expect(ask).toContainText('You haven’t marked mia as trusted');
+  await expect(ask).toContainText('Your agent wants to send this, so it asks you first');
   await ask.getByRole('button', { name: 'Ask mia' }).click();
   const mia = task(page, /^Task: To mia’s agent/).last();
   await expect(mia).toHaveAttribute('data-state', 'awaiting_approval', { timeout: 15_000 });

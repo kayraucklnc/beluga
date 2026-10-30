@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
-import { pick } from './helpers.js';
+import { personRow, pick } from './helpers.js';
 
 /** The Mac app's web view against a real Beluga (the demo): what you click does what it says. */
 
@@ -26,9 +26,6 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
 });
-
-/** A person's row in the sidebar ("bob", or "bob Add bob as a friend" while you aren't friends yet). */
-const personRow = (page: Page, name: string) => sidebar(page).getByRole('button', { name: new RegExp(`^${name}(?: Add ${name} as a friend)?$`) });
 
 test('shows the room, its people and projects', async ({ page }) => {
   await expect(personRow(page, 'bob')).toBeVisible();

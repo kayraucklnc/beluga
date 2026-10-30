@@ -90,8 +90,9 @@ test('full size, every kind of file scrolls', async ({ page }) => {
 });
 
 test('the Files view (a friend’s shared folder) scrolls every kind of file', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'Shared files' }).click();
-  await center(page).getByRole('option', { name: /^bob · api/ }).click();
+  // Files: folders friends share with you (BLG-205).
+  await sidebar(page).getByRole('button', { name: /^Files/ }).click();
+  await center(page).getByRole('option', { name: /^api \(read-only\)/ }).click();
   for (const f of FILES) {
     await pickInList(page, f.folder, f.name);
     const region = center(page).getByRole('region', { name: f.name });
@@ -101,7 +102,10 @@ test('the Files view (a friend’s shared folder) scrolls every kind of file', a
 });
 
 test('a shared workspace’s Files (read-only) scrolls every kind of file', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: /payments/ }).first().click();
+  // bob's workspace sits in his shared bob-api, under "bob's conversations".
+  const payments = sidebar(page).getByRole('button', { name: /payments/ }).first();
+  if (!(await payments.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api, shared by bob' }).getByRole('button', { name: "Show what's in bob-api" }).click();
+  await payments.click();
   await center(page).getByRole('tab', { name: 'Files' }).click();
   await expect(center(page).getByRole('listbox', { name: 'Files' }).getByRole('option', { name: 'src', exact: true })).toBeVisible();
   for (const f of FILES) {
