@@ -1,6 +1,8 @@
 import { CLAUDE_AI_CONNECTORS_URL, type McpServerRow } from '@beluga/shared/mcp.js';
 import { Button, Dot } from '../components/ui.js';
+import { fallbackFor } from '@beluga/shared/runtime-fallbacks.js';
 import { useBeluga } from '../lib/beluga.js';
+import { useMyAgent } from '../lib/agent-words.js';
 import { MCP_FROM, MCP_STATUS, checkMcp, signInMcp, useMcp } from '../lib/mcp.js';
 import { openExternal } from '../lib/system.js';
 import { Group, Row } from './settings-controls.js';
@@ -16,6 +18,8 @@ export function McpSettings() {
   const { rows, checking, signingIn } = useMcp(client);
   const check = (): Promise<void> => checkMcp(client);
   const signIn = (row: McpServerRow): Promise<void> => signInMcp(client, row);
+  // Your agent is Codex: these are Claude Code's, and it says where Codex's own are (BLG-461).
+  const elsewhere = fallbackFor(useMyAgent().runtime, 'mcp_servers');
 
   return (
     <Group title="MCP servers">
@@ -24,6 +28,7 @@ export function McpSettings() {
           {checking ? 'Checking…' : 'Check Again'}
         </Button>
       </Row>
+      {elsewhere ? <div className={s.note}>{elsewhere}</div> : null}
       {rows === undefined ? (
         <div className={s.note}>Asking Claude Code…</div>
       ) : rows.length === 0 ? (

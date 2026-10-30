@@ -19,7 +19,15 @@ export interface RunFailure {
   readonly exitCode?: number;
   /** The raw error, with Claude Code's last stderr lines (Show details). */
   readonly detail: string;
+  /** The runtime that failed ('codex'); unset: Claude Code. */
+  readonly runtime?: string;
 }
+
+/** Who a failure's words name: the agent, its app, and whose API it calls. */
+const WHO: Readonly<Record<string, { readonly agent: string; readonly app: string; readonly vendor: string }>> = {
+  claude: { agent: 'Claude', app: 'Claude Code', vendor: 'Anthropic' },
+  codex: { agent: 'Codex', app: 'Codex', vendor: 'OpenAI' },
+};
 
 /** What Continue (and an automatic resume) sends: the same session goes on. */
 export const CONTINUE_PROMPT = 'Continue where you left off.';
@@ -39,15 +47,16 @@ export function resetWords(at: number, now = Date.now()): string {
 
 /** The card's headline: "Claude hit your usage limit · resets at 15:00". */
 export function failureTitle(f: RunFailure, now = Date.now()): string {
+  const who = WHO[f.runtime ?? 'claude'] ?? WHO.claude!;
   switch (f.kind) {
     case 'usage_limit':
-      return `You hit your Claude plan usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
+      return `You hit your ${who.agent} plan usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
     case 'crash':
-      return `Claude Code stopped unexpectedly${f.exitCode !== undefined ? ` (exit ${f.exitCode})` : ''}`;
+      return `${who.app} stopped unexpectedly${f.exitCode !== undefined ? ` (exit ${f.exitCode})` : ''}`;
     case 'network':
-      return 'Claude Code lost its connection to Anthropic';
+      return `${who.app} lost its connection to ${who.vendor}`;
     case 'api':
-      return `Anthropic's API failed: ${firstLine(f.detail).slice(0, 120) || 'unknown error'}`;
+      return `${who.vendor}'s API failed: ${firstLine(f.detail).slice(0, 120) || 'unknown error'}`;
     case 'stopped':
       return 'Stopped by you';
   }

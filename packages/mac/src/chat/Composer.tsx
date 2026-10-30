@@ -9,6 +9,7 @@ import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@b
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { secretIn } from '@beluga/shared/secret-text.js';
 import { steeredMessages } from '@beluga/shared/claude-notices.js';
+import { fallbackFor, runtimeHere } from '@beluga/shared/runtime-fallbacks.js';
 import { defaultAgentOf } from '@beluga/protocol.js';
 import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
@@ -251,6 +252,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const mentionWorld = useMentionWorld(channel, { tasks: !shared, project: state.project });
   // "/fron…": Claude's skills and custom commands here, beside Beluga's commands.
   const skills = useSkills(channel, !shared && buffer.startsWith('/') && !buffer.includes(' '));
+  // On Codex they're translated: each says what doesn't carry over (BLG-461).
+  const skillsOn = useApp((st) => (fallbackFor(runtimeHere(st.projects.flatMap((p) => p.workspaces).find((w) => w.id === wsId)?.agent, st.self), 'skills') ? 'mapped' : 'native'));
 
   // Suggestions as you type: commands, people and Claudes, workspaces, folders, tasks.
   const suggestions: Suggestion[] = useMemo(
@@ -268,8 +271,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
             ...(mentionWorld.tasks ? { tasks: mentionWorld.tasks } : {}),
             skills,
+            skillsOn,
           }),
-    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills, skillsOn],
   );
   const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 

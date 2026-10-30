@@ -95,6 +95,7 @@ export interface OutsideConversation extends FoundConversation {
 export const workspaceIdOf = (channel: string): string | undefined => (channel.startsWith(WS_PREFIX) ? channel.slice(WS_PREFIX.length) : undefined);
 export { shareNameOf } from '../shared/share-names.js';
 import { shareNameOf } from '../shared/share-names.js';
+import { fallbackFor } from '../shared/runtime-fallbacks.js';
 import { SCRATCH_DIR, type ScratchFile, ensureScratch, listScratch } from '../workspaces/scratch.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -884,9 +885,11 @@ export class WorkspaceController {
     if (mode === 'here') await this.deps.stopHere?.(channel);
     this.saver.flush();
     const session = this.deps.manager.find(id)?.sessionId ?? ws.forkFromSession;
-    const cut = session ? await sessionBefore(session, ws.path, { id: line.request, text: line.text }) : { sessionId: undefined };
+    // Only Claude Code's conversations can be cut at a message; another runtime's starts afresh, saying why (BLG-461).
+    const noRewind = fallbackFor(ws.sessionRuntime, 'rewind');
+    const cut = noRewind ? undefined : session ? await sessionBefore(session, ws.path, { id: line.request, text: line.text }) : { sessionId: undefined };
     const snap = ws.kind === 'worktree' && line.request ? await snapshotAt(ws.path, promptRef(id, line.request)) : undefined;
-    const fresh = cut ? '' : ' Your agent couldn’t go back to exactly that point, so it starts afresh from here.';
+    const fresh = noRewind ? ` ${noRewind}` : cut ? '' : ' Your agent couldn’t go back to exactly that point, so it starts afresh from here.';
     if (mode === 'here') {
       if (snap && !(await this.act("Couldn't put the files back", () => restoreSnapshot(ws.path, id, snap)))) return undefined;
       this.deps.manager.rewindSession(id, cut?.sessionId ?? null);

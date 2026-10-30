@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 31 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 33 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -72,18 +72,18 @@ export const COMPANION_PROTO = { major: 1, minor: 31 } as const;
  * on your Mac for one the phone doesn't show (`sentinel.documentOpen`, `sentinel.storageOpen`); what a
  * sentinel keeps (`sentinel.dataList`, BLG-392: its metrics' histories and runs' files, as refs) and
  * Open on your Mac for a run's file (`sentinel.runFileOpen`).
- * 1.31 (BLG-466): a dialogue between agents in a conversation (`TurnView.dialogue`): its header card,
- * and Stop / Continue? from the phone (`dialogues.stop`, `dialogues.continue`).
  * 1.30 (BLG-429): a direct message deleted (`network.messages.delete`, yours from your friend's Mac
  * too), your own edited (`network.messages.edit`, only one whose words reach the phone whole:
  * `ChatMessageView.editable`), and a direct chat cleared on the Mac (`network.clear`).
  * 1.31 (BLG-446): the agent picker in a conversation (`ConvView.agent`: runtimes as groups with their
  * models, an unavailable one with why), picked with `workbench.setModel` / `workbench.setAgent`.
- * 1.31 (BLG-459): usage per provider: each `UsageView` says its agent (`runtime`, `isDefault`),
+ * 1.32 (BLG-459): usage per provider: each `UsageView` says its agent (`runtime`, `isDefault`),
  * a local model's `tokens` and `tokensPerSec`, and `signedIn`; the phone makes one the default
  * agent (`companion.defaultAgent`). An older Mac sends Claude Code alone, as before.
+ * 1.33 (BLG-466): a dialogue between agents in a conversation (`TurnView.dialogue`): its header card,
+ * and Stop / Continue? from the phone (`dialogues.stop`, `dialogues.continue`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31, providers: 31 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31, providers: 32, dialogues: 33 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -182,20 +182,20 @@ export const DataListView = z.object({
 export type DataListView = z.infer<typeof DataListView>;
 
 export const UsageWindowView = z.object({ label: z.string().max(40), pct: z.number().min(0).max(100), resetsAt: ts.optional() });
-/** One agent provider's allowance: plan windows where it has them, tokens and speed where not (1.31). */
+/** One agent provider's allowance: plan windows where it has them, tokens and speed where not (1.32). */
 export const UsageView = z.object({
   provider: z.string().max(40),
   plan: z.string().max(40).optional(),
   windows: z.array(UsageWindowView).max(8),
   updatedAt: ts,
-  /** 1.31: its runtime ("claude", "codex", "local"), what `companion.defaultAgent` takes. */
+  /** 1.32: its runtime ("claude", "codex", "local"), what `companion.defaultAgent` takes. */
   runtime: z.string().max(32).optional(),
-  /** 1.31: the agent that answers when nobody names one. */
+  /** 1.32: the agent that answers when nobody names one. */
   isDefault: z.boolean().optional(),
-  /** 1.31: a local model's tokens since the Mac started, and its speed over the last run. */
+  /** 1.32: a local model's tokens since the Mac started, and its speed over the last run. */
   tokens: z.object({ input: z.number().min(0), output: z.number().min(0) }).optional(),
   tokensPerSec: z.number().min(0).optional(),
-  /** 1.31: false when it's installed on the Mac but not signed in. */
+  /** 1.32: false when it's installed on the Mac but not signed in. */
   signedIn: z.boolean().optional(),
 });
 export type UsageView = z.infer<typeof UsageView>;
@@ -375,7 +375,7 @@ export const TurnView = z.object({
    */
   edit: z.object({ ws: id, kind: z.enum(['worktree', 'chat']) }).optional(),
   /**
-   * 1.31 (BLG-466): where a dialogue between agents begins (core/dialogues view.ts, in words): its
+   * 1.33 (BLG-466): where a dialogue between agents begins (core/dialogues view.ts, in words): its
    * topic, who talks, turn n of the cap, the budget left, and whether Stop / Continue apply now.
    * Its turns follow as `claude` turns named for their agent.
    */

@@ -368,7 +368,7 @@ function PendingTurn({ s }: { s: Pending }) {
   );
 }
 
-/** 1.31 (BLG-466): where a dialogue between agents begins: what it's about, how far it is, and Stop / Continue. */
+/** 1.33 (BLG-466): where a dialogue between agents begins: what it's about, how far it is, and Stop / Continue. */
 function DialogueTurn({ d }: { d: NonNullable<TurnView['dialogue']> }) {
   const act = (call: ReturnType<typeof calls.dialogueStop>): void => void store.call(call).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
   return (

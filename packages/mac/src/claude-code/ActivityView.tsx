@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { type CcSession, outsideSessions } from '@beluga/core/claude-code/model.js';
+import { type CcSession, outsideSessions, sessionApp } from '@beluga/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
@@ -47,7 +47,7 @@ function SessionRow({ session }: { session: CcSession }) {
   const team = new Set(teamMembers(session).map((a) => a.id));
   const others = session.agents.filter((a) => !team.has(a.id));
   return (
-    <section className={s.session} aria-label={`Claude Code session ${session.title}`}>
+    <section className={s.session} aria-label={`${sessionApp(session)} session ${session.title}`}>
       <button type="button" className={s.sessionHead} onClick={() => open()}>
         <span className={s.sessionDot}>{st.tone === 'claude' ? <Dot tone="claude" live /> : <Dot tone={st.tone === 'ok' ? 'ok' : 'muted'} />}</span>
         <span className={s.sessionText}>
@@ -55,6 +55,7 @@ function SessionRow({ session }: { session: CcSession }) {
           <span className={s.sessionMeta}>
             <span className={s[`tone_${st.tone}`]}>{st.label}</span>
             <span>{place}</span>
+            {session.agent ? <span>{sessionApp(session)}</span> : null}
             {session.agents.length ? <span>{running ? `${running} of ${plural(session.agents.length, 'agent')} running` : plural(session.agents.length, 'agent')}</span> : null}
           </span>
         </span>
@@ -147,7 +148,7 @@ export function SessionPage({ session, agentId }: { session: CcSession; agentId?
         ) : (
           <span className={s.readOnly} title="It runs in a terminal or another app; Beluga shows it live">
             <Icon name="eye" size={12} />
-            {OUTSIDE}
+            {session.agent ? `Running in ${sessionApp(session)}, outside Beluga` : OUTSIDE}
           </span>
         )}
       </header>
@@ -161,6 +162,8 @@ export function SessionPage({ session, agentId }: { session: CcSession; agentId?
       ) : null}
       {agentId ? (
         <Empty icon="clock" title="This agent went quiet" detail="Beluga stops watching agents a while after they finish." action={<Button onClick={() => openActivity(client, session.id)}>Show the Conversation</Button>} />
+      ) : session.agent === 'codex' ? (
+        <Empty icon="eye" title={session.step ?? 'Working in Codex'} detail="Beluga shows what this Codex session is doing now; its whole conversation is in Codex." />
       ) : (
         <LiveTranscript key={session.id} sessionId={session.id} version={`${session.lastAt}:${session.steps}:${session.status}`} live={session.status === 'working'} label={`Claude Code session ${session.title}`} />
       )}

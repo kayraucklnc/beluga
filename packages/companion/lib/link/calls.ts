@@ -133,7 +133,7 @@ export const calls = {
   deleteMessage: (topic: Topic, id: string, everyone: boolean): Call => make('network.messages.delete', [conversationOf(topic), id, everyone ? { everyone: true } : {}], 'Delete the message'),
   editMessage: (topic: Topic, id: string, text: string): Call => make('network.messages.edit', [conversationOf(topic), id, text], `Edit to "${short(text)}"`),
   clearChat: (topic: Topic): Call => make('network.clear', [conversationOf(topic)], 'Clear the chat'),
-  /** 1.31 (BLG-466): a dialogue between agents: Stop it, or Continue? → yes. */
+  /** 1.33 (BLG-466): a dialogue between agents: Stop it, or Continue? → yes. */
   dialogueStop: (id: string): Call => make('dialogues.stop', [id], 'Stop the dialogue'),
   dialogueContinue: (id: string): Call => make('dialogues.continue', [id], 'Continue the dialogue'),
   /** Ask a friend's Claude yourself; the answer (and files) come back in the topic it returns. */
