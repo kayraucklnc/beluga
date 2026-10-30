@@ -39,7 +39,7 @@ export function selfServeCommand(): ServeCommand {
 
 /**
  * Beluga's tools for runtimes that mount MCP servers instead of taking them in-process (BLG-442).
- * Each run is mounted with its own token; `beluga mcp-serve <suite>` (agent/mcp-serve.ts) pipes the
+ * Each run is mounted with its own token; `beluga mcp-serve <suite>` (src/mcp-serve.ts) pipes the
  * agent's stdio to this host on 127.0.0.1, and a call carries the token, so it is attributable to
  * exactly one run, and passes that run's gate (vetTool, policy, your approval) before its handler.
  * Tools run here, in the daemon, where the run's bridge lives.

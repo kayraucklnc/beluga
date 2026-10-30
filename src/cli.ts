@@ -25,7 +25,7 @@ async function main(): Promise<void> {
     const url = belugaEnv('TOOLS_URL');
     const token = belugaEnv('TOOLS_TOKEN');
     if (!args[1] || !url || !token) throw new Error('mcp-serve needs a suite, BELUGA_TOOLS_URL and BELUGA_TOOLS_TOKEN');
-    const { serveStdio } = await import('./agent/mcp-serve.js');
+    const { serveStdio } = await import('./mcp-serve.js');
     await serveStdio(args[1], url, token);
     return;
   }
