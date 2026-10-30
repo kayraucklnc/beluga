@@ -554,6 +554,10 @@ export class BoardWork {
       case 'pr':
         this.board.prChanged(action.id, action.pr);
         return;
+      case 'system':
+        // Continue After Merge's divider: the worktree's task carries on past its merged PR.
+        if (action.shipped && action.channel?.startsWith(WS)) this.board.continuedAfterMerge(action.channel.slice(WS.length), action.shipped.number);
+        return;
       case 'projects':
         this.renamed();
         return;

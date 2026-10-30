@@ -12,6 +12,7 @@ import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
 import { CompactDivider } from './CompactDivider.js';
 import { isCompactItem } from './context-model.js';
+import { ShippedDivider, isShippedItem } from './ShippedDivider.js';
 import { useClaudeStarting } from './flight.js';
 import { withLiveTails } from './live-tail.js';
 import { asSent, steeredMessages } from '@beluga/shared/claude-notices.js';
@@ -238,6 +239,8 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
                   <ShellCard item={item} />
                 ) : isCompactItem(item) ? (
                   <CompactDivider item={item} />
+                ) : isShippedItem(item) ? (
+                  <ShippedDivider item={item} />
                 ) : (
                   <SystemRow item={item} />
                 )}

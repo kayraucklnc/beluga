@@ -324,3 +324,25 @@ button.label:focus-visible {
 :root[data-motion='reduce'] .shimmer {
   animation: none;
 }
+
+/* ---- Continue After Merge: what's above went out in a PR */
+.shipped .label {
+  gap: 5px;
+  color: var(--merged);
+}
+.prLink {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 2px;
+}
+.prLink:hover {
+  text-decoration-color: currentColor;
+}
+.fresh {
+  margin-top: 2px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 0.8rem;
+}

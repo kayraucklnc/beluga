@@ -63,6 +63,8 @@ export interface WorkspaceRecord {
   readonly purpose?: 'sync_main';
   /** You carried on after this PR merged (Continue After Merge): it and older ones are done, so the branch can have a new one. */
   readonly prDone?: number;
+  /** That PR (Continue After Merge): Claude is told its earlier work shipped in it, and that what's new goes in a new one. */
+  readonly prShipped?: { readonly number: number; readonly url?: string; readonly into: string };
   /**
    * Merge When Ready: Beluga merges PR `number` itself once its checks pass (and stops, saying why,
    * if they fail or it conflicts). Not GitHub's auto-merge: that merges at once when no check is required.

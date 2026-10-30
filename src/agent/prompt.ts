@@ -105,6 +105,20 @@ export function buildCommitAppend(): string {
 }
 
 /**
+ * Continue After Merge: the conversation so far went out in a pull request that merged. Claude
+ * keeps what it knows, and treats what's asked from here on as new work for a new pull request.
+ */
+export function buildShippedAppend(shipped: { readonly number: number; readonly url?: string; readonly into: string }): string {
+  return [
+    '',
+    `This worktree's earlier work already shipped: pull request #${shipped.number}${shipped.url ? ` (${shipped.url})` : ''} merged into ${shipped.into}, and the owner chose to keep`,
+    `working here (Continue After Merge). Everything in this conversation before that is done and in ${shipped.into}; a divider in the chat marks it.`,
+    `What you're asked from here on is new work on top of ${shipped.into}: it goes in a new pull request, never #${shipped.number} (merged, it can't change). Don't call`,
+    `this work merged or shipped until its new pull request is. When you sum up what's on this branch, count only what isn't in ${shipped.into} yet.`,
+  ].join('\n');
+}
+
+/**
  * A worktree's run: the setup Beluga ran when it was made, and that Claude keeps it true (with
  * set_project_setup) when it finds something the setup should have installed and didn't.
  */

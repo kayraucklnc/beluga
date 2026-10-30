@@ -71,7 +71,7 @@ export type LogItem =
       /** Sent to steer the turn your Claude is on (⌥↩): sent but not read until Claude reads it (see shared/claude-notices.ts steeredMessages). */
       readonly steer?: true;
     }
-  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark }
+  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark; readonly shipped?: ShippedMark }
   | {
       readonly id: string;
       readonly type: 'agent';
@@ -112,6 +112,19 @@ export type LogItem =
  * Who wrote a line of a shared workspace's earlier conversation (it arrives as a system line,
  * "bob: …"): screens that draw it as that person's message use this.
  */
+/**
+ * Continue After Merge: the chat above this line went out as pull request `number` (merged into
+ * `into`), and what follows is new work for a new pull request. Drawn as a divider.
+ */
+export interface ShippedMark {
+  readonly number: number;
+  readonly url?: string;
+  readonly into: string;
+}
+
+/** A shipped divider's words, where it's drawn as plain text (the phone, a log). */
+export const shippedText = (number: number, into: string): string => `Above this line went to PR #${number}, merged into ${into}. New work starts here, for a new pull request.`;
+
 export interface SaidBy {
   /** Their peer id, when they're in the room (else "history:<name>"). */
   readonly from: string;
@@ -519,7 +532,7 @@ export type Action =
   | { type: 'peers'; peers: readonly PeerInfo[] }
   | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string; request?: string; steer?: true }
   /** `id`/`ts` are stamped before reducing (see stampAction). */
-  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy }
+  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy; shipped?: ShippedMark }
   | { type: 'shell'; item: ShellItem }
   /** `itemId` (stamped before reducing) names the chat item a new run creates. */
   | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string; slotWait?: SlotWait }
@@ -913,7 +926,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'system':
       return {
         ...state,
-        log: appendLog(state.log, { id: action.id ?? '', type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: action.ts ?? 0, level: action.level ?? 'info', ...(action.said ? { said: action.said } : {}) }),
+        log: appendLog(state.log, { id: action.id ?? '', type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: action.ts ?? 0, level: action.level ?? 'info', ...(action.said ? { said: action.said } : {}), ...(action.shipped ? { shipped: action.shipped } : {}) }),
       };
     case 'conflicts': {
       const { [action.id]: _old, ...rest } = state.conflicts;

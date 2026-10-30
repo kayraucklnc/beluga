@@ -745,6 +745,23 @@ export class Board {
   }
 
   /**
+   * Continue After Merge: its worktree carries on after pull request `number` merged. That PR is
+   * history (kept in the activity); the task is worked on again, and the next PR is its own.
+   */
+  continuedAfterMerge(workspaceId: string, number: number): void {
+    for (const issue of this.issues) {
+      if (!followsWorktree(issue, workspaceId) || isArchived(issue) || issue.status === 'canceled') continue;
+      if (issue.pr && issue.pr.number > number) continue;
+      const beluga: Actor = { kind: 'beluga' };
+      const reopen = issue.status === 'done';
+      this.change(issue, { pr: undefined, ...(reopen ? { status: 'in_progress' as const, rank: this.lastRank('in_progress') } : {}) }, [
+        this.entry(beluga, 'pr', `work continues in its worktree after pull request #${number} merged; the next change gets a new pull request`),
+        ...(reopen ? [this.entry(beluga, 'status', statusText(STATUS_INFO.done.label, STATUS_INFO.in_progress.label))] : []),
+      ]);
+    }
+  }
+
+  /**
    * Its branch's pull request, found merged after its worktree stopped being watched (archived or
    * gone, see BoardWork.sweepShipped): Done, like a merge seen live.
    */
