@@ -502,6 +502,8 @@ describe('the views of a known Mac', () => {
       ['bob', false, 'see\n[[code:0]]\nhere'],
       ['kayra', true, 'on it'],
     ]);
+    // 1.30 (BLG-429): only your own words, whole on the phone, can be edited there.
+    expect(chat.messages.map((m) => m.editable)).toEqual([undefined, true]);
     expect(ChatsView.parse(viewOf(state, ctx, 'chats')).chats[0]).toMatchObject({ name: 'bob', kind: 'dm', unread: 2 });
     expect(PeopleView.parse(viewOf(state, ctx, 'people')).people[0]).toMatchObject({ name: 'bob', presence: 'away', note: 'lunch', offers: ['claude', 'screen', 'shell'] });
     expect(WorkView.parse(viewOf(state, ctx, 'work')).projects.find((p) => p.id === 'p1')?.conversations.map((c) => c.title)).toEqual(['tests', 'auth']);

@@ -223,6 +223,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         resume: place ? place.resume : sessionId,
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
+        ...(input.maxTurns ? { maxTurns: input.maxTurns } : {}),
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
         // Your own MCP servers first, so a name of Beluga's always means Beluga's.
         mcpServers: { ...(input.ownerMcp && !input.guest ? ownerMcpServers(cwd, { ...process.env, ...input.env }) : {}), beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined, askOnly ? undefined : input.setup), ...taskServer(input), ...boardServer(input), ...sentinelServer(input), ...planServer(input), ...macServer(input), ...phoneServer(input), beluga_view: createViewTools(shelf, cwd) },

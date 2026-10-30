@@ -97,6 +97,8 @@ export interface ServeContext {
   readonly runFolder?: (from: string) => Promise<string | undefined>;
   /** How long a question waits for the requester's answer (default 15 minutes). */
   readonly questionWaitMs?: number;
+  /** How long a friend's task may run in all (default 20 minutes; sooner if its deadline is). */
+  readonly runLimitMs?: number;
   /** The chat its card is in here (BLG-208): the channel it names if you're both in it, else your DM with them (friends only). */
   readonly chatOf?: (from: string, chat: string | undefined) => string | undefined;
 }
@@ -107,13 +109,31 @@ const MAX_OPEN_PER_PERSON = 5;
 const MAX_RUNNING = 2;
 const MAX_STEPS = 12;
 const STEP_EVERY_MS = 400;
+/** Screenshots one task may take, with the screenshot tool or a command (BLG-427). */
 const MAX_SCREENSHOTS = 4;
 const QUESTION_WAIT_MS = 15 * 60_000;
+/** A friend's task stops after this many turns, or this long, whichever comes first (BLG-427). */
+const MAX_TURNS = 50;
+const RUN_LIMIT_MS = 20 * 60_000;
+/** Times one task may ask you to approve a step, and declines in a row that stop it (BLG-427). */
+const MAX_TOOL_ASKS = 8;
+const MAX_DECLINES = 2;
 
 const NEED_WORDS: Readonly<Record<Need, string>> = { project: 'work in a project', shell: 'run commands', files: 'read or write files', screen: 'see the screen', device: 'read device information' };
 
 /** The capability a tool of a friend's task uses (checked on every call). */
 const TOOL_NEEDS: Readonly<Record<string, Need>> = { Bash: 'shell', Write: 'files', Edit: 'files', MultiEdit: 'files', NotebookEdit: 'files' };
+
+/** A command that takes a screenshot (macOS's screencapture, the Linux tools, a script grabbing the screen). */
+const SCREENSHOT_COMMAND = /(?:^|[\s;&|(`/])(?:screencapture|gnome-screenshot|scrot|grim|maim|spectacle|xwd)(?=$|[\s;&|)`])|\bimport\s+-window\b|\bImageGrab\b|\bpyautogui\.screenshot\b|\bCG(?:Display|WindowList)CreateImage\b/;
+export const takesScreenshot = (tool: string, input: Record<string, unknown>): boolean => tool === 'Bash' && typeof input.command === 'string' && SCREENSHOT_COMMAND.test(input.command);
+
+/** Every capability a tool call uses: a command that takes a screenshot needs the screen too. */
+const toolNeeds = (tool: string, input: Record<string, unknown>): Need[] => {
+  const need = TOOL_NEEDS[tool];
+  if (!need) return [];
+  return takesScreenshot(tool, input) ? [need, 'screen'] : [need];
+};
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const SKIP: ClaudeAnswer = { kind: 'skip' };
@@ -133,6 +153,10 @@ export class TaskServer {
   private readonly artifacts = new Map<string, string[]>();
   private readonly questions = new Map<string, QuestionWaiter>();
   private readonly asked = new Map<string, number>();
+  /** Screenshots a task took, the tool's and its commands' (at most MAX_SCREENSHOTS). */
+  private readonly shots = new Map<string, number>();
+  /** Steps a task asked you to approve, and your declines in a row. */
+  private readonly toolAsks = new Map<string, { asked: number; declined: number }>();
   readonly offers: FileOffers;
 
   constructor(private readonly ctx: ServeContext) {
@@ -210,8 +234,9 @@ export class TaskServer {
     const now = ctx.now();
     const from = task.peerId;
     if (req.deadline && req.deadline < now) return this.finish(task, 'failed', 'Its deadline passed before it could start');
-    const open = ctx.book.all().filter((t) => t.direction === 'received' && t.peerId === from && !isFinal(t.state)).length;
-    if (open > MAX_OPEN_PER_PERSON) return this.finish(task, 'declined', `Too many of your requests are already waiting on ${me}'s Mac; try again when they're done`);
+    // Their others still open (this one is on the book already): at most MAX_OPEN_PER_PERSON with it.
+    const open = ctx.book.all().filter((t) => t.direction === 'received' && t.peerId === from && t.id !== task.id && !isFinal(t.state)).length;
+    if (open >= MAX_OPEN_PER_PERSON) return this.finish(task, 'declined', `Too many of your requests are already waiting on ${me}'s Mac; try again when they're done`);
     if (req.kind === 'run' && !req.command) return this.finish(task, 'failed', 'It named no command to run');
     // Secrets stay off-limits at every trust level: refused before anyone is asked.
     if (req.kind === 'run' && mentionsSecret(req.command ?? '')) return this.finish(task, 'failed', 'Beluga never runs commands that touch secrets (.env files, keys, credentials)');
@@ -334,12 +359,13 @@ export class TaskServer {
     return facts.folder ? { folder: facts.folder } : {};
   }
 
-  private halt(task: TaskView, why: string): void {
+  /** End a task now: cancelled (by you or them), or stopped by a limit (failed, declined). */
+  private halt(task: TaskView, why: string, status: ResultStatus = 'cancelled'): void {
     this.approvals.get(task.id)?.();
     const queued = this.queue.findIndex((q) => q.task.id === task.id);
     if (queued >= 0) this.queue.splice(queued, 1);
     for (const [qid, q] of this.questions) if (q.task === task.id) (this.questions.delete(qid), q.resolve(SKIP));
-    this.finish(task, 'cancelled', why);
+    this.finish(this.current(task), status, why);
     this.controllers.get(task.id)?.abort();
     this.offers.drop(task.id);
   }
@@ -415,11 +441,12 @@ export class TaskServer {
     const tools: { screenshot?: TaskTools['screenshot']; deviceInfo?: TaskTools['deviceInfo'] } = {};
     if (req.needs.includes('screen')) {
       tools.screenshot = async (app) => {
-        const taken = this.artifacts.get(task.id) ?? [];
-        if (taken.length >= MAX_SCREENSHOTS) throw new Error(`At most ${MAX_SCREENSHOTS} screenshots per request`);
+        const tooMany = this.shotLimit(task.id);
+        if (tooMany) throw new Error(tooMany);
+        this.shots.set(task.id, (this.shots.get(task.id) ?? 0) + 1);
         const dir = path.join(this.ctx.book.workDir(task.id, this.ctx.scratch), 'screens');
         const shot = await captureScreen(this.system, dir, app ? { app } : {});
-        this.artifacts.set(task.id, [...taken, shot.file]);
+        this.artifacts.set(task.id, [...(this.artifacts.get(task.id) ?? []), shot.file]);
         this.keepStep(task.id, `Took a screenshot of ${shot.of}`);
         const image = shot.view ? { data: (await fs.readFile(shot.view)).toString('base64'), mimeType: shot.view.endsWith('.png') ? 'image/png' : 'image/jpeg' } : undefined;
         return { text: `Screenshot of ${shot.of} (${Math.round(shot.bytes / 1024)} KB). It goes back to ${task.peerName} with your answer.`, ...(image ? { image } : {}) };
@@ -462,6 +489,17 @@ export class TaskServer {
       }, Math.max(0, wait));
       timer.unref?.();
     };
+    // A friend's task never runs on and on: 20 minutes in all, or until its deadline if that's sooner.
+    const limitMs = ctx.runLimitMs ?? RUN_LIMIT_MS;
+    const byDeadline = req.deadline !== undefined && req.deadline - ctx.now() < limitMs;
+    const limit = setTimeout(
+      () => {
+        const took = limitMs >= 60_000 ? `${Math.round(limitMs / 60_000)} minutes` : `${Math.round(limitMs / 1000)} seconds`;
+        if (!this.isOver(task.id)) this.halt(task, byDeadline ? 'Stopped: its deadline passed' : `Stopped after ${took}`, 'failed');
+      },
+      Math.max(0, byDeadline ? req.deadline! - ctx.now() : limitMs),
+    );
+    limit.unref?.();
     try {
       const final = await agent.run({
         prompt: taskPrompt(req, ctx.selfName(), where, { tools: toolNames, folders }),
@@ -477,11 +515,12 @@ export class TaskServer {
           if (kind === 'tool' && text) step(text.slice(0, 300));
         },
         onFileTouched: () => undefined,
-        vetTool: (tool) => this.vetTool(task, tool),
+        vetTool: (tool, input) => this.vetTool(this.current(task), tool, input),
         canUseTool: (tool, input) => this.authorizeTool(task, tool, input, full, place.cwd),
         askUser: (question) => this.askRequester(task, question, controller.signal),
         ...(toolNames.length ? { taskTools: tools } : {}),
         ...ctx.model(),
+        maxTurns: MAX_TURNS,
       });
       clearTimeout(timer);
       if (controller.signal.aborted || this.isOver(task.id)) return;
@@ -499,11 +538,15 @@ export class TaskServer {
     } catch (err) {
       clearTimeout(timer);
       if (this.isOver(task.id)) return;
-      this.finish(this.current(task), 'failed', controller.signal.aborted ? 'Stopped' : errorText(err));
+      const why = controller.signal.aborted ? 'Stopped' : /max.turns/i.test(errorText(err)) ? `Stopped after ${MAX_TURNS} turns` : errorText(err);
+      this.finish(this.current(task), 'failed', why);
     } finally {
+      clearTimeout(limit);
       this.controllers.delete(task.id);
       this.artifacts.delete(task.id);
       this.asked.delete(task.id);
+      this.shots.delete(task.id);
+      this.toolAsks.delete(task.id);
     }
   }
 
@@ -542,22 +585,45 @@ export class TaskServer {
   }
 
   /** A tool's call, as the capability it uses, decided like a request (none: the tool needs no capability). */
-  private toolAccess(task: TaskView, tool: string): { need: Need; decided: AccessDecision } | undefined {
-    const need = TOOL_NEEDS[tool];
-    if (!need) return undefined;
-    const facts: RequestFacts = { peerId: task.peerId, kind: 'task', needs: [need], ...(task.project ? { project: task.project } : {}) };
-    return { need, decided: this.ctx.access.decide(facts, this.ctx.trustFor(task.peerId)) };
+  private toolAccess(task: TaskView, tool: string, input: Record<string, unknown>): { needs: Need[]; decided: AccessDecision } | undefined {
+    const needs = toolNeeds(tool, input);
+    if (!needs.length) return undefined;
+    const facts: RequestFacts = { peerId: task.peerId, kind: 'task', needs, ...(task.project ? { project: task.project } : {}) };
+    return { needs, decided: this.ctx.access.decide(facts, this.ctx.trustFor(task.peerId)) };
+  }
+
+  /** Why one more screenshot can't be taken (undefined: it can). */
+  private shotLimit(id: string): string | undefined {
+    return (this.shots.get(id) ?? 0) >= MAX_SCREENSHOTS ? `At most ${MAX_SCREENSHOTS} screenshots per request. Don't take more; answer with what you have.` : undefined;
   }
 
   /** Checked before every tool call of a friend's task: a capability that is Off, or a Decline rule, holds even with full trust. */
-  private vetTool(task: TaskView, tool: string): string | undefined {
-    const access = this.toolAccess(task, tool);
+  private vetTool(task: TaskView, tool: string, input: Record<string, unknown>): string | undefined {
+    // A command that takes a screenshot is the screen: only for a request let in to see it, and it counts toward the cap.
+    if (takesScreenshot(tool, input)) {
+      if (!task.needs.includes('screen')) return `This request wasn't let in to see ${this.ctx.selfName()}'s screen. Don't try another way; say so in your answer.`;
+      const tooMany = this.shotLimit(task.id);
+      if (tooMany) return tooMany;
+    }
+    const access = this.toolAccess(task, tool, input);
     if (access?.decided.verdict !== 'decline') return undefined;
-    return `${this.ctx.selfName()} doesn't let friends' Claudes ${CAP_INFO[access.need].doing} here${access.decided.by === 'rule' ? ' (a rule for this person)' : ''}. Don't try another way; say so in your answer.`;
+    const off = access.decided.caps?.length ? access.decided.caps : access.needs;
+    return `${this.ctx.selfName()} doesn't let friends' Claudes ${off.map((n) => CAP_INFO[n].doing).join(' or ')} here${access.decided.by === 'rule' ? ' (a rule for this person)' : ''}. Don't try another way; say so in your answer.`;
   }
 
   private async authorizeTool(task: TaskView, tool: string, input: Record<string, unknown>, full: boolean, cwd: string): Promise<boolean> {
-    const access = this.toolAccess(task, tool);
+    const ok = await this.allowTool(task, tool, input, full, cwd);
+    // A screenshot by command, let through: it counts like the screenshot tool's.
+    if (ok && takesScreenshot(tool, input)) {
+      if (this.shotLimit(task.id)) return false;
+      this.shots.set(task.id, (this.shots.get(task.id) ?? 0) + 1);
+      this.keepStep(task.id, 'Took a screenshot with a command');
+    }
+    return ok;
+  }
+
+  private async allowTool(task: TaskView, tool: string, input: Record<string, unknown>, full: boolean, cwd: string): Promise<boolean> {
+    const access = this.toolAccess(task, tool, input);
     if (access?.decided.verdict === 'decline') return false;
     if (full) return true;
     // Commands are allowed for this person (their trust level's setting, or a rule): no need to ask.
@@ -565,17 +631,38 @@ export class TaskServer {
     // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once.
     if (writesCode(tool, input, cwd)) {
       const file = String(input.file_path ?? input.notebook_path);
-      const answer = await this.ask(task, 'tool', `Your Claude (working on ${task.peerName}'s request) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, { once: true });
-      if (!this.isOver(task.id)) this.update(task.id, { state: 'working' });
-      return answer.answer !== 'no';
+      return (await this.askTool(task, `Your Claude (working on ${task.peerName}'s request) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, { once: true })) !== 'no';
     }
     const scope = `${task.peerId}:${tool}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input).slice(0, 2000);
-    const answer = await this.ask(task, 'tool', `Your Claude (working on ${task.peerName}'s request) wants to use ${tool.replace(/^mcp__beluga__/, '')}`, detail);
-    if (!this.isOver(task.id)) this.update(task.id, { state: 'working' });
-    if (answer.answer === 'always') this.alwaysTools.add(scope);
-    return answer.answer !== 'no';
+    const answer = await this.askTool(task, `Your Claude (working on ${task.peerName}'s request) wants to use ${tool.replace(/^mcp__beluga__/, '')}`, detail);
+    if (answer === 'always') this.alwaysTools.add(scope);
+    return answer !== 'no';
+  }
+
+  /**
+   * Ask you to approve one step of a friend's task. A task that keeps asking stops (BLG-427):
+   * after MAX_TOOL_ASKS approvals, or when you decline MAX_DECLINES in a row; the requester hears why.
+   */
+  private async askTool(task: TaskView, title: string, detail: string, opts: ApproveOpts = {}): Promise<Decision['answer']> {
+    const me = this.ctx.selfName();
+    const count = this.toolAsks.get(task.id) ?? { asked: 0, declined: 0 };
+    if (count.asked >= MAX_TOOL_ASKS) {
+      this.halt(task, `Stopped: it needed ${me}'s approval more than ${MAX_TOOL_ASKS} times. Ask for less at once, or ask ${me} to allow it`, 'failed');
+      return 'no';
+    }
+    count.asked++;
+    this.toolAsks.set(task.id, count);
+    const answer = await this.ask(task, 'tool', title, detail, opts);
+    if (this.isOver(task.id)) return 'no';
+    count.declined = answer.answer === 'no' ? count.declined + 1 : 0;
+    if (count.declined >= MAX_DECLINES) {
+      this.halt(task, `Stopped: ${me} declined ${MAX_DECLINES} of its steps in a row${answer.reason?.trim() ? ` (${answer.reason.trim()})` : ''}`, 'declined');
+      return 'no';
+    }
+    this.update(task.id, { state: 'working' });
+    return answer.answer;
   }
 
   private async runCommand(task: TaskView, req: TaskRequest): Promise<void> {

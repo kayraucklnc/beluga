@@ -265,9 +265,9 @@ export const PHONE: Record<Method, Side> = {
   'network.files.preview': 'phone',
   'network.channels.main': 'phone',
   'network.read': 'phone',
-  'network.messages.delete': 'mac',
-  'network.messages.edit': 'mac',
-  'network.clear': 'mac',
+  'network.messages.delete': 'phone',
+  'network.messages.edit': 'phone',
+  'network.clear': 'phone',
 
   'stripe.connect': 'mac',
   'stripe.disconnect': 'mac',

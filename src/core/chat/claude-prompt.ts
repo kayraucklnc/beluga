@@ -9,9 +9,22 @@ import { hhmm } from '../../shared/clock.js';
  * answers go back into it for the next one to read. Plain functions (no model, no network).
  */
 
-/** Messages before the one to answer that are shown, and how many characters of them at most. */
-export const HISTORY_MESSAGES = 60;
-export const HISTORY_CHARS = 30_000;
+/**
+ * Messages before the one to answer that are shown, and how many characters of them at most: a
+ * short recent window (BLG-428). Claude reads further back itself (read_earlier) only when it needs to.
+ */
+export const HISTORY_MESSAGES = 12;
+export const HISTORY_CHARS = 8_000;
+/** A turn with its tools (BLG-207) has no read_earlier: it gets the longer window it always had. */
+export const ACT_HISTORY = { messages: 60, chars: 30_000 } as const;
+/** Messages written after the ask that are shown (the newest ones). */
+export const SINCE_MESSAGES = 20;
+export const SINCE_CHARS = 8_000;
+/** One page of read_earlier: at most this many messages (default EARLIER_DEFAULT), this many characters. */
+export const EARLIER_MAX = 50;
+export const EARLIER_DEFAULT = 20;
+export const EARLIER_CHARS = 16_000;
+export const READ_EARLIER_TOOL = 'mcp__beluga_chat__read_earlier';
 /** Files read into the prompt: text up to this size each (and in all); pictures up to this size, this many. */
 export const TEXT_FILE_BYTES = 200 * 1024;
 export const TEXT_TOTAL_CHARS = 120_000;
@@ -33,6 +46,22 @@ export interface ChatAnswerRequest {
   readonly images: readonly ChatImage[];
   readonly model?: string;
   readonly signal: AbortSignal;
+  /** Earlier messages of this conversation only (read_earlier), when there are more than the prompt shows. */
+  readonly earlier?: (opts: EarlierAsk) => EarlierPage;
+}
+
+export interface EarlierAsk {
+  /** A message id (from the last page's `next`) or a time (ms): messages before it. Missing: before the prompt's window. */
+  readonly before?: string | number;
+  readonly limit?: number;
+}
+
+export interface EarlierPage {
+  readonly lines: readonly string[];
+  /** Older messages are still there. */
+  readonly more: boolean;
+  /** The oldest message on this page: what `before` takes for the next one. */
+  readonly next?: string;
 }
 
 export interface ChatScene {
@@ -73,18 +102,72 @@ function line(m: MessageView, owner: string): string {
   return fence(`[${hhmm(m.ts)}] ${speaker(m, owner)}: ${m.text.trim()}${files}`);
 }
 
-/** The transcript lines before the message to answer: the latest ones that fit. */
-export function historyLines(before: readonly MessageView[], owner: string): string[] {
-  const shown = before.filter((m) => m.status !== 'locked').slice(-HISTORY_MESSAGES);
-  const out: string[] = [];
+/** What Claude may read of a conversation: never a message that can't be read here (locked). */
+const readable = (list: readonly MessageView[]): MessageView[] => list.filter((m) => m.status !== 'locked');
+
+/** The newest of these that fit, as transcript lines, oldest first; and how many of them fit. */
+function newest(list: readonly MessageView[], owner: string, limits: { messages: number; chars: number }, show = line): { lines: string[]; count: number } {
+  const shown = list.slice(-limits.messages);
+  const lines: string[] = [];
   let chars = 0;
   for (let i = shown.length - 1; i >= 0; i--) {
-    const l = line(shown[i]!, owner);
-    if (chars + l.length > HISTORY_CHARS) break;
+    const l = show(shown[i]!, owner);
+    if (chars + l.length > limits.chars && lines.length) break;
+    if (chars + l.length > limits.chars) {
+      // One message longer than the whole budget: its start, rather than nothing.
+      lines.unshift(`${l.slice(0, limits.chars)}…(cut short)`);
+      break;
+    }
     chars += l.length;
-    out.unshift(l);
+    lines.unshift(l);
   }
-  return out;
+  return { lines, count: lines.length };
+}
+
+/** The transcript lines before the message to answer: the latest ones that fit. */
+export function historyLines(before: readonly MessageView[], owner: string, limits: { messages: number; chars: number } = { messages: HISTORY_MESSAGES, chars: HISTORY_CHARS }): string[] {
+  return newest(readable(before), owner, limits).lines;
+}
+
+/** How many readable messages come before the window historyLines shows (what read_earlier can still give). */
+export function olderThanWindow(before: readonly MessageView[], owner: string, limits: { messages: number; chars: number } = { messages: HISTORY_MESSAGES, chars: HISTORY_CHARS }): number {
+  const list = readable(before);
+  return list.length - newest(list, owner, limits).count;
+}
+
+/** What was written after the message to answer: the newest that fit (SINCE_MESSAGES, SINCE_CHARS). */
+export function sinceLines(after: readonly MessageView[], owner: string): string[] {
+  return newest(readable(after), owner, { messages: SINCE_MESSAGES, chars: SINCE_CHARS }, (m, o) => `${speaker(m, o)}: ${m.text.trim()}`).lines;
+}
+
+/**
+ * A page of read_earlier: the messages of `before` (this conversation's, up to the ask) older than
+ * `ask.before` (an id or a time), newest first back to `limit`, as the history's lines, oldest first.
+ * No `before`: older than the window the prompt shows. The same rules as historyLines (no locked ones).
+ */
+export function earlierPage(before: readonly MessageView[], owner: string, ask: EarlierAsk = {}): EarlierPage {
+  const list = readable(before);
+  const limit = Math.max(1, Math.min(EARLIER_MAX, Math.floor(ask.limit ?? EARLIER_DEFAULT) || EARLIER_DEFAULT));
+  let end: number;
+  if (ask.before === undefined) end = list.length - newest(list, owner, { messages: HISTORY_MESSAGES, chars: HISTORY_CHARS }).count;
+  else if (typeof ask.before === 'number') end = list.filter((m) => m.ts < (ask.before as number)).length;
+  else {
+    const at = list.findIndex((m) => m.id === ask.before);
+    // An id that isn't a message here (made up, or another conversation's): nothing.
+    if (at < 0) return { lines: [], more: false };
+    end = at;
+  }
+  const upTo = list.slice(0, Math.max(0, end));
+  const page = newest(upTo, owner, { messages: limit, chars: EARLIER_CHARS });
+  const first = upTo[upTo.length - page.count];
+  return { lines: page.lines, more: upTo.length > page.count, ...(page.count && first ? { next: first.id } : {}) };
+}
+
+/** read_earlier's answer, as Claude reads it. */
+export function earlierText(page: EarlierPage): string {
+  if (!page.lines.length) return 'No earlier messages.';
+  const tail = page.more && page.next ? `(more before these: call read_earlier with before: "${page.next}")` : '(this is the start of the conversation)';
+  return `<chat>\n${page.lines.join('\n')}\n</chat>\n${tail}`;
 }
 
 export function systemPrompt(scene: ChatScene): string {
@@ -106,7 +189,7 @@ export function systemPrompt(scene: ChatScene): string {
           `${scene.owner} asked you, so you have your tools here: commands on this Mac, and asking a friend's Claude to do something on`,
           'their Mac (who_can, ask_person, run_on, get_file, wait_for). Do what the message asks, then answer in the chat.',
         ]
-      : ['You have no tools in this chat: you can’t run commands or open anything beyond what is included below.']),
+      : ['You have no tools in this chat (beyond reading its earlier messages, when offered): you can’t run commands or open anything beyond what is included below.']),
     '',
     ...(scene.tools
       ? []
@@ -154,15 +237,20 @@ export interface PromptFile {
   readonly missing?: string;
 }
 
-export function userPrompt(opts: { history: readonly string[]; ask: MessageView; asker: string; files: readonly PromptFile[]; since: readonly string[] }): string {
+export function userPrompt(opts: { history: readonly string[]; ask: MessageView; asker: string; files: readonly PromptFile[]; since: readonly string[]; earlier?: boolean }): string {
   const parts: string[] = [];
-  if (opts.history.length) parts.push(`The chat so far (context only):\n<chat>\n${opts.history.join('\n')}\n</chat>`);
+  if (opts.history.length) parts.push(`The chat so far (${opts.earlier ? 'its latest messages; ' : ''}context only):\n<chat>\n${opts.history.join('\n')}\n</chat>`);
+  if (opts.earlier)
+    parts.push(
+      'Older messages of this chat come before these. Only if the ones here aren’t enough to answer (the message refers to something said earlier), ' +
+        'read them with the read_earlier tool: with no `before` it gives the messages just before these, and each page says how to go further back. Don’t read further than you need.',
+    );
   const withText = opts.files.filter((f) => f.text !== undefined);
   if (withText.length) parts.push(`Files attached to the message:\n${withText.map((f) => `<file name="${fence(f.file.name).replace(/"/g, "'")}">\n${fence(f.text ?? '')}\n</file>`).join('\n')}`);
   const missing = opts.files.filter((f) => f.missing);
   if (missing.length) parts.push(`Attached but not included here: ${missing.map((f) => `${f.file.name} (${f.missing})`).join(', ')}.`);
   parts.push(`The message to answer, from ${opts.asker}:\n<message>\n${fence(opts.ask.text.trim()) || (opts.files.length ? '(no text: just the attached files)' : '(no text: they asked you to read the conversation above and answer what is being discussed or still open)')}\n</message>`);
-  if (opts.since.length) parts.push(`Written since (other Claudes may have answered already):\n<chat>\n${opts.since.map(fence).join('\n')}\n</chat>`);
+  if (opts.since.length) parts.push(`Written since (the latest; other Claudes may have answered already):\n<chat>\n${opts.since.map(fence).join('\n')}\n</chat>`);
   return parts.join('\n\n');
 }
 

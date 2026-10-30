@@ -102,7 +102,8 @@ describe('asking a friend’s Claude', () => {
     await settle(() => task(dee, third.id)?.state === 'done');
     expect(eve.approvals).toHaveLength(2);
     expect(task(eve, third.id)?.allowedBy).toBe('a rule of yours allows it');
-    dee.gw.ask({ person: 'eve', ask: 'run the tests', needs: ['shell'], by: 'agent' });
+    // (From another conversation: one conversation's Claude asks the same person at most 3 times in 10 minutes.)
+    dee.gw.ask({ person: 'eve', ask: 'run the tests', needs: ['shell'], by: 'agent', conversation: 'ws:other' });
     await settle(() => eve.approvals.length === 3);
   }, 60_000);
 

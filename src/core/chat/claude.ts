@@ -6,7 +6,7 @@ import type { Mesh } from '../../net/mesh/mesh.js';
 import { asks } from '../../net/mesh/extras.js';
 import type { ChatFile, MessageView } from '../../net/mesh/views.js';
 import type { TrustLevel } from '../trust.js';
-import { type ChatAnswerRequest, type ChatImage, IMAGE_BYTES, MAX_IMAGES, type PromptFile, TEXT_FILE_BYTES, fitTexts, historyLines, isImageFile, isTextFile, parseRequest, sizeLabel, speaker, splitAnswer, systemPrompt, userPrompt } from './claude-prompt.js';
+import { ACT_HISTORY, type ChatAnswerRequest, type ChatImage, type EarlierAsk, IMAGE_BYTES, MAX_IMAGES, type PromptFile, TEXT_FILE_BYTES, earlierPage, fitTexts, historyLines, isImageFile, isTextFile, olderThanWindow, parseRequest, sinceLines, sizeLabel, splitAnswer, systemPrompt, userPrompt } from './claude-prompt.js';
 import type { ChatFiles } from './files.js';
 
 /**
@@ -247,19 +247,36 @@ export class ChatClaude {
     }
     const files = [...read.files, ...pictures];
     const images = tools ? [] : read.images;
+    const before = at >= 0 ? all.slice(0, at) : all;
+    // A short recent window (BLG-428); a toolless answer reads further back itself when it must
+    // (read_earlier), a turn with its tools has none and gets the longer window instead.
+    const earlier = !tools && olderThanWindow(before, owner) > 0;
     return {
       system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all', ...(tools ? { tools: true } : {}) }),
       prompt: userPrompt({
-        history: historyLines(at >= 0 ? all.slice(0, at) : all, owner),
+        history: historyLines(before, owner, tools ? ACT_HISTORY : undefined),
         ask: m,
         asker,
         files,
-        since: at >= 0 ? all.slice(at + 1).map((x) => `${speaker(x, owner)}: ${x.text.trim()}`) : [],
+        since: at >= 0 ? sinceLines(all.slice(at + 1), owner) : [],
+        ...(earlier ? { earlier: true } : {}),
       }),
       images,
+      ...(earlier ? { earlier: (ask: EarlierAsk) => earlierPage(this.before(m.conversation, m.id), owner, ask) } : {}),
       ...(this.opts.model?.() ? { model: this.opts.model() } : {}),
       signal,
     };
+  }
+
+  /**
+   * The messages before an ask, as this Mac holds its conversation now (read_earlier): only that
+   * conversation's, read again on every page so what was deleted or can't be read stays out.
+   */
+  private before(conversation: string, askId: string): MessageView[] {
+    const local = this.opts.localize;
+    const all = this.opts.mesh.conversation(conversation);
+    const at = all.findIndex((x) => x.id === askId);
+    return (at >= 0 ? all.slice(0, at) : []).map((x) => (local ? { ...x, text: local(x.text) } : x));
   }
 
   /** The ask's files that Claude can read: text inline, pictures as images (waiting a little for them to arrive). */

@@ -82,6 +82,10 @@ export const PhoneCalls = {
   'network.files.preview': entry('network.files.preview', z.object({ mime: z.string(), b64: z.string() }).passthrough().optional()),
   'network.channels.main': entry('network.channels.main', z.string().optional()),
   'network.read': entry('network.read', done),
+  // 1.30 (BLG-429): a direct message deleted or your own edited, and a direct chat cleared on the Mac.
+  'network.messages.delete': entry('network.messages.delete', done),
+  'network.messages.edit': entry('network.messages.edit', done),
+  'network.clear': entry('network.clear', done),
   'claudeCode.outputs': entry('claudeCode.outputs', done),
   'claudeCode.output': entry('claudeCode.output', done),
   'claudeCode.taskOutput': entry('claudeCode.taskOutput', done),

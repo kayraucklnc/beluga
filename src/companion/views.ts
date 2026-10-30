@@ -1188,14 +1188,16 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     const v = here?.state === 'here' && here.path ? ctx.refs.output(here.path, { size: f.size, ts: m.ts }) : undefined;
     return v ? [{ ...v, name: clip(f.name, 256) }] : [];
   });
+  const text = stripCode(m.text).text;
   return {
     id: clip(m.id, 200),
     from: clip(m.mine ? myName(state) : m.name, 100),
     mine: m.mine,
     ...(m.claude ? { claude: true } : {}),
-    text: stripCode(m.text).text,
+    text,
     ts: m.ts,
     ...(m.edited ? { edited: m.edited } : {}),
+    ...(m.mine && !m.claude && !m.task && m.conversation.startsWith('dm:') && text === m.text && text.trim() ? { editable: true } : {}),
     ...(files.length ? { files: files.slice(0, 20) } : {}),
     ...(offerOf(state, m) ? { offer: offerOf(state, m) } : {}),
     ...(chatTaskOf(state, m) ? { task: chatTaskOf(state, m) } : {}),
