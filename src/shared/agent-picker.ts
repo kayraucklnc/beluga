@@ -102,3 +102,14 @@ export function pickAction(picker: AgentPicker, group: Pick<PickerGroup, 'runtim
   if (group.isDefault) return { kind: 'agent', agent: model ? { runtime: group.runtime, label: group.label, model } : null };
   return { kind: 'agent', agent: { runtime: group.runtime, label: group.label, ...(model ? { model } : {}) } };
 }
+
+/**
+ * The agent that actually runs in a workspace (BLG-448): its own pick, else the owner's default,
+ * with the workspace's model. What a joined or asked worktree shows: the owner's, never the viewer's.
+ */
+export function placeAgent(ws: { readonly agent?: AgentRef; readonly model?: string }, fallback: AgentRef): AgentRef {
+  const base = ws.agent ?? fallback;
+  const model = ws.model ?? (ws.agent ? undefined : fallback.model);
+  const { model: _m, ...ref } = base;
+  return model ? { ...ref, model } : ref;
+}

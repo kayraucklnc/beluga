@@ -1,3 +1,4 @@
+import type { AgentRef } from '../protocol.js';
 import type { WsRole } from '../protocol.js';
 
 /**
@@ -12,6 +13,8 @@ export interface SharedWorktree {
   readonly id: string;
   readonly name: string;
   readonly branch?: string;
+  /** The owner's agent that runs it (BLG-448). */
+  readonly agent?: AgentRef;
 }
 
 /** A project a friend shared with you over the network (receiver side). */

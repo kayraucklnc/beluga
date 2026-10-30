@@ -1,3 +1,4 @@
+import { defaultAgentOf } from '../../protocol.js';
 import { randomBytes } from 'node:crypto';
 import type { AgentBackend } from '../../agent/types.js';
 import { type NoticeEvent, presenceQuiet } from '../notify.js';
@@ -195,6 +196,11 @@ export class Gateway {
       access: { decide: (facts, trust) => this.rules.decide(facts, trust), remember: (facts, name, d) => this.rules.remember(facts, name, d), capabilities: () => this.rules.capabilities() },
       ...(deps.serveShell ? { serveShell: deps.serveShell } : {}),
       projectRoot: deps.projectRoot,
+      agentRef: () => {
+        const st = deps.store.getState();
+        const ref = defaultAgentOf(st.self);
+        return st.prefs.model && !ref.model ? { ...ref, model: st.prefs.model } : ref;
+      },
       model: () => {
         const prefs = deps.store.getState().prefs;
         return { ...(prefs.model ? { model: prefs.model } : {}), ...(prefs.effort ? { effort: prefs.effort } : {}) };
@@ -850,6 +856,7 @@ export class Gateway {
         ...(task.expects && msg.status === 'done' ? { valid: checked.length === 0 } : {}),
         ...(problems.length ? { problems } : {}),
         ...(task.kind === 'file' && msg.secret ? { secret: msg.secret } : {}),
+        ...(task.kind === 'ask' && msg.agent ? { agent: msg.agent } : {}),
       },
       endedAt: this.now(),
       updatedAt: this.now(),

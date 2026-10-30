@@ -278,7 +278,8 @@ export type GuestCan = z.infer<typeof GuestCan>;
 /** Owner → invitee: you're in. Carries what the workspace is, recent history, and its folder share. */
 export const WsInviteBody = z.object({
   kind: z.literal('ws_invite'),
-  ws: z.object({ id: z.string().regex(/^[\w:.-]{1,80}$/), name: z.string().max(80), project: z.string().max(80), branch: z.string().max(200).optional() }),
+  /** `agent`: the owner's agent that runs there (their pick for it, or their default; an older Mac leaves it out: Claude). */
+  ws: z.object({ id: z.string().regex(/^[\w:.-]{1,80}$/), name: z.string().max(80), project: z.string().max(80), branch: z.string().max(200).optional(), agent: AgentRef.optional() }),
   role: WsRole,
   /** Set for people invited by link: watch, prompt or edit (for showing what they can do). */
   can: GuestCan.optional(),

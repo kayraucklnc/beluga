@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from 'react';
 import { type TaskView, approvalTitle, isFinal, stateLabel, stateTone, targetLabel } from '@beluga/core/gateway/model.js';
 import { formatDuration } from '@beluga/shared/text.js';
+import { agentLabel } from '@beluga/shared/agent-label.js';
 import { Markdown } from '../chat/Markdown.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
@@ -158,6 +159,11 @@ function Result({ task }: { task: TaskView }) {
       {r.secret && r.status === 'done' ? (
         <div className={s.hint}>
           <Icon name="lock" size={11} /> A secret ({r.secret}): {task.direction === 'sent' ? `${task.peerName} approved sending it to you` : 'you approved sending it'}, this once.
+        </div>
+      ) : null}
+      {r.agent && task.direction === 'sent' ? (
+        <div className={s.hint}>
+          <Icon name="sparkles" size={11} /> Answered by {agentLabel(r.agent, task.peerName, false, { model: true })}
         </div>
       ) : null}
       {r.problems?.length ? <div className={s.problems}>{r.valid === false ? 'The data doesn’t match what was asked for: ' : ''}{r.problems.join(' · ')}</div> : null}

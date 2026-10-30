@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentRef } from '../../protocol.js';
 
 /**
  * What two friends' Macs say about the things they share, inside the mesh's `share` frame (a
@@ -40,7 +41,7 @@ export const ShareMsg = z.discriminatedUnion('k', [
     name: text(200),
     icon: z.object({ mime: text(60), data: text(160_000) }).optional(),
     role,
-    worktrees: z.array(z.object({ id, name: text(200), branch: text(200).optional() })).max(200),
+    worktrees: z.array(z.object({ id, name: text(200), branch: text(200).optional(), agent: AgentRef.optional() })).max(200),
     members: z.array(z.object({ peerId, name: text(80), role })).max(100),
     copy: z.object({ url: repoUrl.optional() }).optional(),
     repo: repoUrl.optional(),

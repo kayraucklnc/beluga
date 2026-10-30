@@ -11,6 +11,7 @@ import { sessionBefore } from '../agent/runtime/claude/session-rewind.js';
 import { promptRef, restoreSnapshot, snapshot, snapshotAt } from '../workspaces/snapshots.js';
 import type { AgentPlace } from '../agent/types.js';
 import type { AgentRef } from '../protocol.js';
+import { placeAgent } from '../shared/agent-picker.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import { type EnvChange, scanEnvFiles } from '../workspaces/env.js';
 import type { Project, Workspace } from '../workspaces/types.js';
@@ -582,6 +583,13 @@ export class WorkspaceController {
       ...(syncMain ? { syncMain } : {}),
       ...(ws.askOnly && this.fixups.has(ws.id) ? { fixup: this.fixups.get(ws.id)! } : {}),
     };
+  }
+
+  /** The agent that runs in a workspace conversation of yours (its pick, else `fallback`: your default), with its model. */
+  agentOf(channel: string, fallback: AgentRef): AgentRef | undefined {
+    const id = workspaceIdOf(channel);
+    const ws = id ? this.deps.manager.find(id) : undefined;
+    return ws ? placeAgent(ws, fallback) : undefined;
   }
 
   /** Let a main-folder conversation's runs edit `dir` (a hidden worktree with a conflict to fix), until it's lifted (undefined). */

@@ -1,3 +1,5 @@
+import { defaultAgentOf } from '../../protocol.js';
+import { placeAgent } from '../../shared/agent-picker.js';
 import { randomBytes } from 'node:crypto';
 import { agentLabel } from '../../shared/agent-label.js';
 import { promises as fs } from 'node:fs';
@@ -299,7 +301,8 @@ export class FriendShares implements FriendSharing {
           name: project.name.slice(0, 200),
           ...(icon && icon.data.length <= ICON_MAX ? { icon } : {}),
           role: grant.role,
-          worktrees: worktrees.map((w) => ({ id: w.id, name: w.name.slice(0, 200), ...(w.branch ? { branch: w.branch.slice(0, 200) } : {}) })),
+          // Each with the agent that runs it (BLG-448): yours for it, else your default.
+          worktrees: worktrees.map((w) => ({ id: w.id, name: w.name.slice(0, 200), ...(w.branch ? { branch: w.branch.slice(0, 200) } : {}), agent: placeAgent(w, defaultAgentOf(this.state.self)) })),
           members,
           ...(grant.only ? this.repoFor(project) : this.copyFor(project)),
         };
@@ -961,7 +964,7 @@ export class FriendShares implements FriendSharing {
     for (const p of all) {
       for (const w of p.worktrees) {
         const known = this.state.shared.find((s) => s.id === w.id && s.owner === p.owner);
-        const ws = { owner: p.owner, id: w.id, name: w.name, project: p.name, ...(w.branch ? { branch: w.branch } : {}), role: p.role, share: shareNameOf(w.id), via: 'mesh' as const, projectId: p.id, ...(p.more?.[w.id] ? { earlier: true } : {}) };
+        const ws = { owner: p.owner, id: w.id, name: w.name, project: p.name, ...(w.branch ? { branch: w.branch } : {}), role: p.role, share: shareNameOf(w.id), via: 'mesh' as const, projectId: p.id, ...(p.more?.[w.id] ? { earlier: true } : {}), ...(w.agent ? { agent: w.agent } : {}) };
         if (!known || JSON.stringify(known) !== JSON.stringify(ws)) this.dispatch({ type: 'shared_add', ws });
         this.dispatch({ type: 'roster', id: w.id, members: p.members.map((m) => ({ peerId: m.peerId, role: m.role })) });
         const items = p.history[w.id];
