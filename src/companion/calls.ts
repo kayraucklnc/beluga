@@ -113,6 +113,8 @@ export const PhoneCalls = {
   'plans.pass': entry('plans.pass', done),
   'plans.recheck': entry('plans.recheck', done),
   'plans.sendBack': entry('plans.sendBack', done),
+  // 1.8: Resume a plan's task that stopped twice, from its Needs You card.
+  'plans.resumeTask': entry('plans.resumeTask', z.string()),
   'companion.older': entry('companion.older', OlderResult),
   'companion.ask': entry('companion.ask', AskResult),
   'companion.post': entry('companion.post', done),

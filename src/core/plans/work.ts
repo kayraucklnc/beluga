@@ -6,12 +6,13 @@ import type { Intent } from '../intents.js';
 import type { LogItem, Store } from '../store.js';
 import type { WorkspaceController } from '../workspace-controller.js';
 import { ApplyError, applyDraft } from './apply.js';
+import { dropEpics, syncEpics } from './epics.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
-import { type Autonomy, type Plan, type TestsAt, allTasks, planForHome, planTaskOfIssue, planTitle } from './model.js';
+import { type Autonomy, type Plan, type TestsAt, allTasks, checkerOf, planForHome, planTaskOfIssue, planTitle } from './model.js';
 import { type PilotDeps, PlanPilot } from './pilot.js';
 import { type PlanGit, planGitOf } from './plan-git.js';
 import { type Plans, UNTITLED } from './plans.js';
-import { describePlan, headBrief, milestoneNote, planningBrief, sizeWords, workerNote } from './prompt.js';
+import { checkFailedPrompt, checkerBrief, describePlan, headBrief, milestoneNote, planningBrief, sizeWords, workerNote } from './prompt.js';
 
 /**
  * Plans at work: making a plan (its own conversation, in the project's main folder where Claude
@@ -48,6 +49,8 @@ export interface PlansWorkDeps {
   readonly cancel?: (requestId: string) => void;
   /** Tasks only you can do came up: see PilotDeps.forYou. */
   readonly forYou?: PilotDeps['forYou'];
+  /** How long a plan may sit quiet before Beluga moves it along: see PilotDeps.rescueMs. */
+  readonly rescueMs?: number;
 }
 
 const WS = 'ws:';
@@ -68,6 +71,13 @@ export class PlansWork {
       ...(deps.combine ? { combine: deps.combine } : deps.controller ? { combine: (projectId, key, branches, into) => deps.controller!.manager.combineBase(projectId, key, branches, into) } : {}),
       ...(git ? { git } : {}),
       ...(deps.controller ? { allowFixup: (channel, dir) => deps.controller!.allowFixup?.(channel, dir) } : {}),
+      // Each milestone's check: a conversation of its own in the project (folded into the plan), archived once it passed.
+      ...(deps.controller
+        ? {
+            checkerChat: async (plan, milestone) => (await deps.controller!.newChat(plan.projectId, `Check: ${milestone.title}`.slice(0, 40), undefined, { quiet: true }))?.id,
+            retireChat: (id) => void deps.controller!.archive(id, false, { quiet: true }).catch(() => undefined),
+          }
+        : {}),
       ...(deps.alive ? { alive: deps.alive } : {}),
       ...(deps.takeOver ? { takeOver: deps.takeOver } : {}),
       ...(deps.promote ? { promote: deps.promote } : {}),
@@ -76,6 +86,8 @@ export class PlansWork {
       ...(deps.workers ? { workers: deps.workers } : {}),
       ...(deps.cancel ? { cancel: deps.cancel } : {}),
       ...(deps.forYou ? { forYou: deps.forYou } : {}),
+      ...(deps.rescueMs !== undefined ? { rescueMs: deps.rescueMs } : {}),
+      structure: (plan) => this.structure(plan.id),
     });
     // A task of a plan: its worktree's Claude knows the plan and what runs beside it.
     deps.board.setBriefExtra((issue) => this.workerBrief(issue));
@@ -158,7 +170,7 @@ export class PlansWork {
       throw err;
     }
     const { body, summary } = applied;
-    const done = this.plans.approved(id, body, by, summary);
+    const done = this.structure(this.plans.approved(id, body, by, summary).id);
     this.deps.store.dispatch({ type: 'system', channel: plan.home, text: plan.body ? `Changes applied: ${summary}.` : `Plan approved: ${summary} are on the board now.`, level: 'info' });
     this.pilot.schedule();
     return done;
@@ -175,7 +187,7 @@ export class PlansWork {
     if (retitle) {
       const named = this.plans.retitle(id, ops[0]!.op === 'retitle' ? ops[0]!.title! : '', this.me());
       this.nameHome(named, planTitle(plan));
-      return named;
+      return this.structure(named.id);
     }
     const direct = Boolean(plan.body) && !plan.draft;
     const next = this.plans.editDraft(id, ops, this.me());
@@ -255,7 +267,25 @@ export class PlansWork {
   }
 
   remove(id: string): void {
+    const plan = this.plans.get(id);
+    if (plan?.epics) dropEpics(plan, this.deps.board.board, { kind: 'beluga' });
     this.plans.remove(id);
+  }
+
+  /**
+   * The plan's shape on the board (an epic for it, one per milestone, its tasks under them): made or
+   * brought up to date. Never in the way: a board that can't take it leaves the plan as it is.
+   */
+  private structure(id: string): Plan {
+    const plan = this.plans.need(id);
+    if (!plan.body || plan.status === 'draft') return plan;
+    try {
+      const epics = syncEpics(plan, this.deps.board.board, { kind: 'beluga' });
+      return epics ? this.plans.setEpics(id, epics) : plan;
+    } catch (err) {
+      this.plans.note(id, 'problem', `couldn’t show the plan as epics on the board: ${err instanceof Error ? err.message : String(err)}`, { kind: 'beluga' });
+      return this.plans.need(id);
+    }
   }
 
   setStyle(text: string): void {
@@ -268,6 +298,14 @@ export class PlansWork {
   forRun(channel: string, from: string): { readonly tools?: PlanTools; readonly brief?: string } | undefined {
     const me = this.deps.board.me();
     if (me.kind !== 'person' || from !== me.id) return undefined;
+    // A milestone's checker: its brief, and only plan_get and plan_gate.
+    const checking = checkerOf(this.plans.state(), channel);
+    if (checking) {
+      if (checking.plan.status !== 'active' || !checking.plan.body) return undefined;
+      const view = this.pilot.view(checking.plan);
+      const m = view.milestones.find((x) => x.milestone.id === checking.milestone);
+      return m ? { tools: this.checkerTools(checking.plan.id, m.milestone.id), brief: checkerBrief(view, m) } : undefined;
+    }
     const plan = planForHome(this.plans.state(), channel);
     if (!plan) return undefined;
     const board = this.deps.store.getState().board;
@@ -311,6 +349,42 @@ export class PlansWork {
     if (issue.projectId !== plan.projectId) throw new Error(`${issue.key} belongs to another project`);
     if (issue.plan && issue.plan.id !== planId) throw new Error(`${issue.key} is already part of another plan`);
     return { ...rest, issueId: issue.id } as T;
+  }
+
+  /**
+   * A milestone's checker: it reads the plan and records its verdict on that milestone, nothing more.
+   * The verdict reaches the head Claude as one line; a failed one with the notes, to add the fix tasks.
+   */
+  private checkerTools(planId: string, milestoneId: string): PlanTools {
+    const full = this.toolsFor(planId);
+    const refuse = (): never => {
+      throw new Error('You check this milestone: only plan_get and plan_gate are yours here');
+    };
+    return {
+      only: ['plan_get', 'plan_gate'],
+      get: full.get,
+      write: refuse,
+      update: refuse,
+      start: async () => refuse(),
+      message: refuse,
+      gate: (milestone, verdict, notes) => {
+        const plan = this.plans.need(planId);
+        const m = plan.body?.milestones.find((x) => x.id === milestoneId);
+        if (!m) throw new Error('That milestone isn’t in the approved plan any more: nothing to record');
+        if (milestone !== m.id && milestone.toLowerCase() !== m.title.toLowerCase()) throw new Error(`You check “${m.title}” only (id ${m.id})`);
+        const said = full.gate(m.id, verdict, notes);
+        if (!said.startsWith('Recorded')) return said;
+        const first = notes.trim().split('\n')[0]!.slice(0, 200);
+        const auto = (m.autonomy ?? plan.autonomy) === 'autopilot';
+        if (verdict === 'pass') {
+          this.deps.store.dispatch({ type: 'system', channel: plan.home, text: `“${m.title}” checked: it passes${auto ? ', and the plan moves on' : '. It’s yours to pass'}. ${first}`, level: 'info' });
+          return `${said} Your check is done: end your turn.`;
+        }
+        this.deps.store.dispatch({ type: 'system', channel: plan.home, text: `“${m.title}” didn’t pass its check: ${first}`, level: 'info' });
+        this.deps.askClaude(checkFailedPrompt(m.title, notes, auto), plan.home, false);
+        return 'Recorded as failed. The plan’s Claude adds the fix tasks from your notes. Your check is done: end your turn.';
+      },
+    };
   }
 
   private toolsFor(planId: string): PlanTools {

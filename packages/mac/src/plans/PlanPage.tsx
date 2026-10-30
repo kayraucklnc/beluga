@@ -316,7 +316,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
               onReset={() => setPrefs((l) => ({ ...l, chatWidth: CHAT_DEFAULT }))}
               onStep={(dir) => setPrefs((l) => ({ ...l, chatWidth: clampChatWidth(chatWidth + dir * 24, splitWidth()) }))}
             />
-            <PlanChat channel={plan.home} draft={!plan.body || Boolean(plan.draft)} drafting={drafting} onClose={() => showChat(false)} />
+            <PlanChat channel={plan.home} draft={!plan.body || Boolean(plan.draft)} drafting={drafting} project={plan.projectId} onClose={() => showChat(false)} />
           </div>
         ) : null}
       </div>

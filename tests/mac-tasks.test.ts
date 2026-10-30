@@ -78,6 +78,22 @@ describe('the Tasks view', () => {
     expect(toggleOpened(toggleOpened([], epic.id), epic.id)).toEqual([]);
   });
 
+  it('epics in epics (a plan, its milestones, their tasks): a task shows only once every epic above it is opened out', () => {
+    const { store, b } = board();
+    const plan = b.create({ projectId: 'api', title: 'Plan' }, me);
+    const milestone = b.create({ projectId: 'api', title: 'Milestone', parent: plan.key }, me);
+    const task = b.create({ projectId: 'api', title: 'Task', parent: milestone.key }, me);
+    const all = store.getState().board.issues;
+    const ids = (opened: string[]) => untucked(all, opened).shown.map((i) => i.id);
+    expect(ids([])).toEqual([plan.id]);
+    expect(ids([plan.id])).toEqual([plan.id, milestone.id]);
+    // The milestone opened, the plan tucked: its task stays tucked with it.
+    expect(ids([milestone.id])).toEqual([plan.id]);
+    expect(ids([plan.id, milestone.id])).toEqual([plan.id, milestone.id, task.id]);
+    // Show all opens every level.
+    expect(untucked(all, []).tucked).toEqual(expect.arrayContaining([plan.id, milestone.id]));
+  });
+
   it('counts a project’s open tasks per scope, for everyone or someone', () => {
     const { store, b } = board();
     b.create({ projectId: 'api', title: 'A', assignee: { kind: 'person', id: 'p-me', name: 'Kay' }, status: 'in_progress' }, me);

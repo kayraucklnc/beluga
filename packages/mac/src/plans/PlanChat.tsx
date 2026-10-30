@@ -5,6 +5,9 @@ import { ChatLog } from "../chat/ChatLog.js";
 import { PaneLook } from "../chat/Items.js";
 import { QueueTray } from "../chat/QueueTray.js";
 import { MentionHighlighter } from "../chat/MentionHighlighter.js";
+import { useMentionWorld } from "../chat/Mention.js";
+import { useSuggestions } from "../chat/Suggestions.js";
+import { suggest } from "@beluga/ui/suggest.js";
 import { MaxFire } from "../chat/MaxFire.js";
 import { effectsOn, fireVars } from "../chat/fire-look.js";
 import m from "../chat/max.module.css";
@@ -44,11 +47,14 @@ export function PlanChat({
   channel,
   draft,
   drafting,
+  project,
   onClose,
 }: {
   channel: string;
   draft: boolean;
   drafting: boolean;
+  /** The plan's project: its tasks are what "@" offers first. */
+  project?: string;
   onClose: () => void;
 }) {
   const api = useApi();
@@ -93,6 +99,34 @@ export function PlanChat({
       ) || st.approvals.some((a) => a.channel === channel),
   );
   const wsId = channel.startsWith("ws:") ? channel.slice(3) : undefined;
+  // "@BLG-24" as in every message box: the plan's tasks (its project's board), people and Claudes.
+  const world = useMentionWorld(channel, { tasks: true, project });
+  const peers = useApp((st) => st.peers);
+  const selfId = useApp((st) => st.selfId);
+  const friends = useApp((st) => st.network.friends);
+  const projects = useApp((st) => st.projects);
+  const suggestions = useMemo(
+    () =>
+      text
+        ? suggest(text, {
+            peers,
+            selfId,
+            dirCache: {},
+            friends,
+            projects: projects.filter((x) => x.root),
+            ...(world.entries ? { entries: world.entries } : {}),
+            ...(world.tasks ? { tasks: world.tasks } : {}),
+          })
+        : [],
+    [text, world, peers, selfId, friends, projects],
+  );
+  const sug = useSuggestions(suggestions, text, (picked) => {
+    setText(picked.value);
+    requestAnimationFrame(() => {
+      box.current?.focus();
+      box.current?.setSelectionRange(picked.value.length, picked.value.length);
+    });
+  });
   const loading = !useConversationLoaded(channel);
   /** A message that didn't go: said under the box, with Retry. */
   const [failed, setFailed] = useState<{
@@ -257,6 +291,8 @@ export function PlanChat({
           </button>
         </div>
       ) : null}
+      <div className={p.chatCompose}>
+      {sug.list}
       <form
         ref={form}
         className={cx(
@@ -280,6 +316,7 @@ export function PlanChat({
           <div className={cx(s.inputWrap, p.chatInputWrap)}>
             <MentionHighlighter
               text={text}
+              world={world}
               input={box}
               className={p.chatInput ?? ""}
             />
@@ -300,6 +337,7 @@ export function PlanChat({
               onPaste={att.onPaste}
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing) return;
+                if (sug.onKeyDown(e)) return;
                 if (att.onRefKey(e)) return;
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -347,6 +385,7 @@ export function PlanChat({
           </Tip>
         </div>
       </form>
+      </div>
     </aside>
   );
 }

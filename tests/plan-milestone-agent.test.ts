@@ -306,6 +306,8 @@ describe('Pass Anyway is instant (BLG-16)', () => {
     for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(t.issue(title).id, { status: 'in_review' }, t.claude);
     await tick(10);
     t.work.pilot.tick();
+    // (Asking a check is a moment's work: its own conversation first; this fake makes none, so the head checks.)
+    await tick(5);
     const check = t.asked.find((a) => a.channel === 'ws:main' && a.prompt.includes('Check its pass criteria'))!;
     expect(check).toBeDefined();
     t.run('ws:main', 'started', check.id);

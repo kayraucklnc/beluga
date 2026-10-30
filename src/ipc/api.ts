@@ -121,6 +121,9 @@ export const API = {
   'session.runOnPeerByHand': args(z.string().max(64), str, opt(channel)),
   'session.stopAgent': args(),
   'session.compact': args(channel, opt(z.string().max(2000))),
+  // A side question (/btw): answered beside the conversation, never part of it; resolves once answered.
+  'session.btw': args(channel, z.string().min(1).max(4000)),
+  'session.btwDismiss': args(channel),
   'session.quit': args(),
   'session.serveFolder': args(id, path, z.array(id).max(50)),
   'session.localLocation': args(path, bool),

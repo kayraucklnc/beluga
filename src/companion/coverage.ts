@@ -41,6 +41,8 @@ export const PHONE: Record<Method, Side> = {
   'session.runOnPeerByHand': 'mac',
   'session.stopAgent': 'mac',
   'session.compact': 'mac',
+  'session.btw': 'mac',
+  'session.btwDismiss': 'mac',
   'session.quit': 'mac',
   'session.serveFolder': 'mac',
   'session.localLocation': 'mac',
@@ -374,7 +376,7 @@ export const PHONE: Record<Method, Side> = {
   'plans.mergePr': 'mac',
   'plans.mergeLocal': 'mac',
   'plans.startTask': 'mac',
-  'plans.resumeTask': 'mac',
+  'plans.resumeTask': 'phone',
   'plans.remove': 'mac',
   'plans.setStyle': 'mac',
 

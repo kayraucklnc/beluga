@@ -200,6 +200,8 @@ export interface DashboardTools {
 
 /** A plan as Claude's tools (agent/plan-tools.ts, server `beluga_plan`): each answers in words. */
 export interface PlanTools {
+  /** Only these tools (their short names, like "plan_gate"): a milestone's checker gets plan_get and plan_gate. */
+  readonly only?: readonly string[];
   get(): string;
   write(body: import('../core/plans/edit.js').BodyInput): string;
   update(ops: readonly import('../core/plans/edit.js').PlanOp[], reason?: string): string;
@@ -429,6 +431,8 @@ export interface AgentBackend {
   titlePlan?(goal: string): Promise<string | undefined>;
   /** Answer in a friends' chat from its history (one turn, no tools; core/chat/claude.ts). */
   answerChat?(req: ChatAnswerRequest): Promise<string>;
+  /** A side question about a conversation (/btw): a fork of its session, no tools, nothing kept (agent/btw.ts). */
+  btw?(req: import('./btw.js').BtwRequest): Promise<string>;
   /** What a project's setup should be after `failed` failed in `dir` (a small model looks). */
   fixSetup?(dir: string, failed: string, output: string): Promise<SetupFix | undefined>;
   /** What a project's run command should be after `failed` failed in `dir` (a model looks). */

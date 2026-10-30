@@ -26,6 +26,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/template` | `session.submit` → `runCommand` | typed in the composer · Palette › Start from a template… |
 | `/shell` | `session.submit` → `runCommand` (`/shell fish`, `default`, `login on\|off`, `args …`) | typed in the composer · Settings › Terminal › Shell |
 | `/env` | `session.submit` → `runCommand` (`/env KEY=value`, `KEY=` removes, `project KEY=value`) | typed in the composer · Settings › Environment |
+| `/btw` | the Mac's composer calls `session.btw` itself (the answer shows above the box, never in the chat); elsewhere `session.submit` → `runCommand` | typed in the composer: `/btw ` turns the box into a side question, ↩ asks · the answer card's ✕ or esc closes it (`session.btwDismiss`) |
 | `/compact` | `session.submit` → `runCommand` | typed in the composer · Toolbar ⋯ › Compact |
 | `/visualize` | `session.submit` → `runCommand` (`/graph` too): your words in the chat, the agent asked for a `beluga-graph` | typed in the composer · ⌘K › Draw This as a Graph; the graph is drawn (docs/graphs.md) |
 | `/merge` | `session.submit` → `runCommand` | typed in the composer · Toolbar Merge (the main button when ready) · Workspace › Merge (⇧⌘M) |
@@ -141,6 +142,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `session.setPrefs` | ✓ |
 | `session.setPlanMode` | ✓ |
 | `session.compact` | ✓ (context meter › Compact now) |
+| `session.btw` | ✓ (`/btw` in the composer: the side-question card above the box) |
+| `session.btwDismiss` | ✓ (the side-question card's ✕, or esc) |
 | `session.setClaudeSharing` | ✓ |
 | `session.rename` | ✓ |
 | `session.zoom` | ✓ |

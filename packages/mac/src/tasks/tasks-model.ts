@@ -90,7 +90,17 @@ export function untucked(issues: readonly Issue[], opened: readonly string[], qu
   if (query.trim()) return { shown: issues, hidden: 0, tucked: [] };
   const here = new Set(issues.map((i) => i.id));
   const open = new Set(opened);
-  const away = (i: Issue): boolean => Boolean(i.parent && here.has(i.parent) && !open.has(i.parent));
+  const byId = new Map(issues.map((i) => [i.id, i]));
+  /** The epic above it that tucks it away: its parent, or one further up (a plan → its milestones → their tasks). */
+  const tuckedBy = (i: Issue): string | undefined => {
+    const seen = new Set<string>();
+    for (let up = i.parent; up && here.has(up) && !seen.has(up); up = byId.get(up)?.parent) {
+      seen.add(up);
+      if (!open.has(up)) return up;
+    }
+    return undefined;
+  };
+  const away = (i: Issue): boolean => tuckedBy(i) !== undefined;
   const shown = issues.filter((i) => !away(i));
   if (shown.length === issues.length) return { shown: issues, hidden: 0, tucked: [] };
   return { shown, hidden: issues.length - shown.length, tucked: [...new Set(issues.filter(away).map((i) => i.parent!))] };

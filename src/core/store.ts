@@ -386,6 +386,20 @@ export interface ReviewState extends ReviewDomain {
   readonly diffScroll: number;
 }
 
+/**
+ * A side question about a conversation (/btw) and Claude's answer, shown beside the chat and
+ * never part of it: one per conversation, until you close it or ask another (core/btw.ts).
+ */
+export interface Btw {
+  readonly id: string;
+  readonly question: string;
+  /** The answer so far (all of it once done). */
+  readonly text: string;
+  readonly state: 'thinking' | 'answering' | 'done' | 'failed';
+  readonly error?: string;
+  readonly at: number;
+}
+
 /** A compaction that just happened, kept briefly so the UI can animate it. */
 export interface Compaction {
   readonly pre: number;
@@ -458,6 +472,8 @@ export interface DomainState extends CollabState, WorkState, NetworkSlice, Earni
   /** Context usage per conversation (channel). */
   readonly context: Readonly<Record<string, ContextInfo>>;
   readonly compactions: Readonly<Record<string, Compaction>>;
+  /** Side questions (/btw) per conversation, while they're open. */
+  readonly btw: Readonly<Record<string, Btw>>;
   /** Env changes found in a worktree that's about to be archived or deleted. */
   readonly envChanges: Readonly<Record<string, readonly EnvChange[]>>;
   /** Worktrees whose env files changed and the main folder doesn't have it: copy it there, or keep it here (BLG-369). */
@@ -587,6 +603,8 @@ export type Action =
   | { type: 'prefs'; prefs: { readonly [K in keyof Prefs]?: Prefs[K] | null } }
   | { type: 'clear'; channel: string }
   | { type: 'context_reset'; channel: string }
+  /** A conversation's side question (/btw) changed; none: it was closed. */
+  | { type: 'btw'; channel: string; btw?: Btw }
   /** What the attached screens look at changed (see core/attention.ts). */
   | { type: 'attention'; attention: Attention }
   | { type: 'my_shares'; shares: readonly MyShare[] }
@@ -660,6 +678,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     seenShares: [],
     context: {},
     compactions: {},
+    btw: {},
     envChanges: {},
     envAsks: {},
     status: 'connecting',
@@ -1134,6 +1153,10 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, assistant: action.assistant };
     case 'needs_dismissed':
       return { ...state, dismissedNeeds: action.ids };
+    case 'btw': {
+      const { [action.channel]: _gone, ...rest } = state.btw ?? {};
+      return { ...state, btw: action.btw ? { ...rest, [action.channel]: action.btw } : rest };
+    }
     case 'earnings':
     case 'fx_rates':
       return { ...state, ...reduceEarnings(state, action) };

@@ -18,6 +18,8 @@ import {
   MAX_PARALLEL,
   type MilestoneAgent,
   type MilestoneRun,
+  type PlanEpics,
+  type PlanRescue,
   type Plan,
   type PlanBody,
   type PlanEvent,
@@ -304,6 +306,27 @@ export class Plans {
     const plan = this.need(id);
     const { agent: _was, ...rest } = plan.runs[milestone] ?? {};
     return this.change(plan, { runs: { ...plan.runs, [milestone]: agent ? { ...rest, agent } : rest } }, []);
+  }
+
+  /** Beluga's rescue of a stalled plan (undefined: it's moving again). */
+  setRescue(id: string, rescue: Readonly<Record<string, PlanRescue>> | undefined): Plan {
+    const plan = this.need(id);
+    if (JSON.stringify(plan.rescue) === JSON.stringify(rescue)) return plan;
+    return this.change(plan, { rescue }, []);
+  }
+
+  /** Its epics on the board (see epics.ts). */
+  setEpics(id: string, epics: PlanEpics): Plan {
+    const plan = this.need(id);
+    if (JSON.stringify(plan.epics) === JSON.stringify(epics)) return plan;
+    return this.change(plan, { epics }, []);
+  }
+
+  /** The conversation that checks a milestone (undefined: none, it was archived). */
+  setChecker(id: string, milestone: string, checker: string | undefined): Plan {
+    const plan = this.need(id);
+    const { checker: _was, ...rest } = plan.runs[milestone] ?? {};
+    return this.change(plan, { runs: { ...plan.runs, [milestone]: checker ? { ...rest, checker } : rest } }, []);
   }
 
   /** A task's start being combined from several branches (undefined: no longer). */

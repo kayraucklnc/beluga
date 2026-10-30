@@ -624,6 +624,17 @@ export class Session {
     this.host.compact(channel, instructions);
   }
 
+  /** A side question about a conversation (/btw): answered beside it while Claude keeps working. */
+  btw(channel: string, question: string): Promise<void> {
+    if (channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
+    return this.host.btw.ask(channel, question);
+  }
+
+  /** Close a conversation's side question. */
+  btwDismiss(channel: string): void {
+    this.host.btw.dismiss(channel);
+  }
+
   /** Ask you to approve something; `peer` is who it's for. */
   ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string): Promise<'yes' | 'no' | 'always'> {
     return this.host.ask(kind, title, detail, peer);

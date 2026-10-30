@@ -12,7 +12,8 @@ import type { Project, Workspace } from '../../../../src/workspaces/types.js';
  * own (tests/mac-attention.test.ts); the sidebar only draws it.
  */
 
-export type Need = 'approval' | 'question' | 'plan' | 'conflict' | 'checks';
+/** `stuck`: a plan gave up moving one of its tasks or milestones on by itself (it's said why). */
+export type Need = 'approval' | 'question' | 'plan' | 'conflict' | 'checks' | 'stuck';
 
 /** Needs you > unread > working > idle: the one a row shows. */
 export type Level = 'needs' | 'unread' | 'working' | 'idle';
@@ -38,6 +39,7 @@ const NEED_TIPS: Record<Need, string> = {
   plan: 'Your agent has a plan for you to approve',
   conflict: 'A merge conflict to resolve',
   checks: 'Checks failed on its pull request',
+  stuck: 'Stuck: Beluga couldn’t move it on by itself',
 };
 
 export const needTip = (need: Need): string => NEED_TIPS[need];
@@ -124,12 +126,29 @@ const NEED_WORDS: Record<Need, string> = {
   plan: 'has a plan for you to approve',
   conflict: 'has a merge conflict',
   checks: 'has failing checks',
+  stuck: 'is stuck',
 };
 
 /** Where a plan waits on you: which of its conversations, and the plan's task there (its id), if it's a task's. */
 export interface PlanNeed {
   readonly ws: string;
   readonly task?: string;
+}
+
+/** What a plan couldn't move on by itself: a task that stopped again after Beluga woke it, or a milestone past every rescue step. */
+function stuckOf(state: Source, plan: Plan): { readonly tip: string; readonly task?: string; readonly ws?: string } | undefined {
+  if (plan.status !== 'active') return undefined;
+  const stalled = Object.entries(plan.watch ?? {}).find(([, w]) => w.needsYou);
+  if (stalled) {
+    const [task, w] = stalled;
+    const issueId = plan.body?.milestones.flatMap((m) => m.tasks).find((t) => t.id === task)?.issueId;
+    const issue = state.board.issues.find((i) => (issueId !== undefined && i.id === issueId) || (i.plan?.id === plan.id && i.plan.task === task));
+    return { tip: `${issue?.key ?? 'A task'} stopped twice: ${w.reason}`, task, ...(issue?.worktrees?.[0] ? { ws: issue.worktrees[0] } : {}) };
+  }
+  const given = Object.entries(plan.rescue ?? {}).find(([, r]) => r.yours);
+  if (!given) return undefined;
+  const title = plan.body?.milestones.find((m) => m.id === given[0])?.title;
+  return { tip: title ? `Stuck on “${title}”` : 'Stuck: Beluga couldn’t move it on' };
 }
 
 /**
@@ -149,6 +168,9 @@ export function planSignal(state: Source, plan: Plan): Signal & { readonly at?: 
     const at = { ws: waiting.ws, ...(owner ? { task: owner.task.id } : {}) };
     return { level: 'needs', unread, need, working, tip: [`${who} ${NEED_WORDS[need]}`, news].filter(Boolean).join(' · '), at };
   }
+  // Nothing asks, but the plan gave up on something by itself: it says what, and why.
+  const stuck = stuckOf(state, plan);
+  if (stuck) return { level: 'needs', unread, need: 'stuck', working, tip: [stuck.tip, news].filter(Boolean).join(' · '), ...(stuck.task && stuck.ws ? { at: { ws: stuck.ws, task: stuck.task } } : {}) };
   if (unread) return { level: 'unread', unread, working, tip: news };
   if (working) return { level: 'working', unread: 0, working, tip: 'Your agent is working' };
   return IDLE_SIGNAL;

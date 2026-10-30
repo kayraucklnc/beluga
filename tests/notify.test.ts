@@ -576,6 +576,25 @@ describe('plans: you hear from the plan, not each task', () => {
     expect(detectNotices(failed, finished)).toEqual([{ kind: 'done', tag: 'milestone', title: 'Auth is done', body: 'Its pull request is ready to merge', channel: 'ws:home', plan: 'pl1', key: 'plan:pl1:done:9' }]);
   });
 
+  it('a task stopping again after Beluga woke it, or a milestone past every rescue step, is yours: it says why', () => {
+    const before = inPlan();
+    const woken = apply(before, { type: 'plan_put', plan: plan({ watch: { t1: { at: 3, reason: 'it ended its turn without handing off', line: 'KLD-12 stopped', wokeAt: 2 } } }) });
+    expect(detectNotices(before, woken)).toEqual([]);
+    const twice = apply(woken, { type: 'plan_put', plan: plan({ watch: { t1: { at: 4, reason: 'it ended its turn without handing off', line: 'KLD-12 stopped', wokeAt: 2, needsYou: true } } }) });
+    expect(detectNotices(woken, twice)).toEqual([
+      { kind: 'needsYou', tag: 'milestone', title: 'Auth: “Login form” stopped twice', body: 'it ended its turn without handing off. Resume it, or open its chat', channel: 'ws:home', plan: 'pl1', need: 'plan:pl1:stalled:t1', key: 'plan:pl1:t1:stalled:4' },
+    ]);
+    const rescued = apply(before, { type: 'plan_put', plan: plan({ rescue: { m1: { sig: 's', tries: 3, at: 7, tried: ['woke KLD-12', 'restarted it'], yours: true } } }) });
+    expect(detectNotices(before, rescued)).toMatchObject([{ kind: 'needsYou', title: 'Auth: stuck on “API”', body: 'Beluga tried: woke KLD-12; restarted it', need: 'plan:pl1:rescue:m1' }]);
+    const conflict = { at: 8, dir: '/wt/merge', merging: 'klaud/a', key: 'KLD-12', files: ['src/a.ts'] };
+    const merging = apply(before, { type: 'plan_put', plan: plan({ merging: { m1: { at: 7, by: { kind: 'beluga' }, conflict } } }) });
+    expect(detectNotices(before, merging)).toEqual([]);
+    const stuckMerge = apply(merging, { type: 'plan_put', plan: plan({ merging: { m1: { at: 7, by: { kind: 'beluga' }, conflict: { ...conflict, stuck: true } } } }) });
+    expect(detectNotices(merging, stuckMerge)).toMatchObject([{ kind: 'needsYou', tag: 'conflict', title: 'Auth: merging “API” hit a conflict Claude couldn’t fix', body: 'KLD-12 conflicts in src/a.ts: fix it in /wt/merge and it passes' }]);
+    // Still stuck is not news again.
+    expect(detectNotices(rescued, apply(rescued, { type: 'plan_put', plan: plan({ rescue: { m1: { sig: 's', tries: 3, at: 7, tried: ['woke KLD-12', 'restarted it'], yours: true } } }) }))).toEqual([]);
+  });
+
   it('plans already there when you start are not news', () => {
     const s = base();
     expect(detectNotices(s, inPlan(plan({ runs: { m1: { passedAt: 5 } } })))).toEqual([]);

@@ -65,28 +65,43 @@ interface TaskMessage {
 }
 
 /**
- * Whether Claude still has background agents working, from the SDK stream. Prefers the
- * level signal (background_tasks_changed); falls back to task_started/finished edges.
- * A shell an agent started counts too (the agent picks its result up later); a shell the
- * main conversation left running (say, a dev server) doesn't keep the run open.
+ * Whether Claude still has background work running, from the SDK stream. Prefers the level
+ * signal (background_tasks_changed); falls back to task_started/finished edges for agents.
+ * Agents count, and so do the shells and watches they started (the agent picks their result up
+ * later). A shell or watch the main conversation left running (the full tests, a build) counts
+ * too, as `shells`: Claude often ends its turn waiting for it, and only an open run gets the
+ * notice that it ended (else that work is cut off and nobody picks it up). The run keeps those
+ * open for less long than agents (see runner.ts › SHELL_LIMIT_MS): a dev server never ends.
  */
 export class BackgroundAgents {
   private live = new Set<string>();
+  private shellIds = new Set<string>();
 
   observe(msg: TaskMessage): void {
     if (msg.type !== 'system') return;
     if (msg.subtype === 'background_tasks_changed' && msg.tasks) {
-      this.live = new Set(msg.tasks.filter((t) => !t.ambient && (AGENT_TASKS.has(t.task_type) || t.parent_task_id)).map((t) => t.task_id));
+      const active = msg.tasks.filter((t) => !t.ambient);
+      this.live = new Set(active.filter((t) => AGENT_TASKS.has(t.task_type) || t.parent_task_id).map((t) => t.task_id));
+      this.shellIds = new Set(active.filter((t) => !AGENT_TASKS.has(t.task_type) && !t.parent_task_id).map((t) => t.task_id));
       return;
     }
     const id = msg.task_id;
     if (!id) return;
     if (msg.subtype === 'task_started' && msg.task_type && AGENT_TASKS.has(msg.task_type)) this.live.add(id);
     const status = msg.subtype === 'task_updated' ? msg.patch?.status : msg.subtype === 'task_notification' ? msg.status : undefined;
-    if (status && FINISHED.has(status)) this.live.delete(id);
+    if (status && FINISHED.has(status)) {
+      this.live.delete(id);
+      this.shellIds.delete(id);
+    }
   }
 
+  /** Something in the background will come back to Claude. */
   get busy(): boolean {
+    return this.live.size > 0 || this.shellIds.size > 0;
+  }
+
+  /** Agents (or what they started) are working: worth the long wait. */
+  get agents(): boolean {
     return this.live.size > 0;
   }
 }

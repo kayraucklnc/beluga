@@ -33,6 +33,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'shell', args: '<path>|default|login on|off|args …', desc: 'the shell for the built-in terminal, and how it starts' },
   { name: 'env', args: '[project] KEY=value', desc: 'set an environment variable for your shells, scripts and your agent (KEY= removes it)' },
   { name: 'visualize', args: '[what]', desc: 'your agent draws it as an interactive graph: architecture, a flow, what changed' },
+  { name: 'btw', args: '<question>', desc: 'a side question: Claude answers beside the chat, without stopping or remembering it' },
   { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (your agent keeps what matters)" },
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
@@ -129,6 +130,12 @@ export function runCommand(session: Session, name: string, args: readonly string
       return;
     case 'invite':
       return inviteCommand(session, args, channel);
+    case 'btw': {
+      const question = args.join(' ').trim();
+      if (!question) return session.toast('Usage: /btw <question>', 'warn');
+      session.btw(channel, question).catch((err: unknown) => session.toast(err instanceof Error ? err.message : String(err), 'warn'));
+      return;
+    }
     case 'overview':
     case 'projects':
     case 'workspaces':

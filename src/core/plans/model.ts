@@ -108,6 +108,11 @@ export interface MilestoneRun {
   readonly checkAsked?: number;
   /** The one Claude doing its tasks, in one worktree (see pilot.ts). */
   readonly agent?: MilestoneAgent;
+  /**
+   * The conversation that checks it (a workspace id): a Claude of its own, not the head's, so the
+   * plan's conversation stays free while it checks and milestones are checked side by side.
+   */
+  readonly checker?: string;
 }
 
 /**
@@ -240,11 +245,42 @@ export interface Plan {
   readonly shipped?: PlanShipped;
   /** Plans that ran before they had a branch were caught up once (passed milestones merged into one). */
   readonly caughtUp?: boolean;
+  /** Its shape on the board: an epic for the plan, one under it per milestone (see epics.ts). */
+  readonly epics?: PlanEpics;
+  /** Beluga moving its stalled milestones along (see the pilot's rescue), by milestone id: kept, so a restart doesn't start over. */
+  readonly rescue?: Readonly<Record<string, PlanRescue>>;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly approvedAt?: number;
   readonly doneAt?: number;
+}
+
+/**
+ * A plan with nothing running and nothing waiting on you is stalled: Beluga moves it along, a step
+ * further each time the same thing stays stuck (send it on, a fresh Claude, the head Claude decides),
+ * and only then tells you, saying what it tried.
+ */
+export interface PlanRescue {
+  /** How far the milestone had got (see milestoneMark): moving on from there starts the ladder over. */
+  readonly sig: string;
+  /** What it's stuck on now (a check, stopped tasks, idle work…): a new kind starts its ladder over. */
+  readonly kind?: string;
+  /** How many steps up the ladder it has gone for that kind. */
+  readonly tries: number;
+  /** Steps taken in all, across kinds: past a few, it's yours (no going round in circles). */
+  readonly total?: number;
+  readonly at: number;
+  /** What was tried, in words (shown when it's left to you). */
+  readonly tried: readonly string[];
+  /** Left to you: nothing more is tried until something moves. */
+  readonly yours?: boolean;
+}
+
+/** A plan's epics on the board (task ids): the plan's own, and each milestone's (by milestone id). */
+export interface PlanEpics {
+  readonly plan: string;
+  readonly milestones: Readonly<Record<string, string>>;
 }
 
 export interface PlansState {
@@ -303,6 +339,26 @@ export const planById = (state: PlansState, id: string): Plan | undefined => sta
 
 /** The plan a conversation is the home of (the newest, when several were). */
 export const planForHome = (state: PlansState, channel: string): Plan | undefined => [...state.plans].reverse().find((p) => p.home === channel);
+
+/** The plan a board task stands for as an epic: the plan's own, or one of its milestones' (see epics.ts). */
+export function planEpicOf(state: PlansState, issueId: string): { readonly plan: Plan; readonly milestone?: PlanMilestone } | undefined {
+  for (const plan of state.plans) {
+    if (!plan.epics) continue;
+    if (plan.epics.plan === issueId) return { plan };
+    const id = Object.entries(plan.epics.milestones).find(([, epic]) => epic === issueId)?.[0];
+    const milestone = id ? shownBody(plan)?.milestones.find((m) => m.id === id) : undefined;
+    if (milestone) return { plan, milestone };
+  }
+  return undefined;
+}
+
+/** The plan and milestone a conversation checks (see MilestoneRun.checker). */
+export function checkerOf(state: PlansState, channel: string): { readonly plan: Plan; readonly milestone: string } | undefined {
+  if (!channel.startsWith('ws:')) return undefined;
+  const id = channel.slice(3);
+  for (const plan of state.plans) for (const [milestone, run] of Object.entries(plan.runs ?? {})) if (run?.checker === id) return { plan, milestone };
+  return undefined;
+}
 
 /**
  * The conversation is a live plan's own (its head Claude plans and runs it there): it has no

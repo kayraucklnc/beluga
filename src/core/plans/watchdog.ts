@@ -430,14 +430,14 @@ export class TaskWatchdog {
   }
 
   /** You resume a task that waits for you (or one that stopped): woken now, with what it missed. */
-  resume(plan: Plan, t: TaskView, runOf: (channel: string) => RunInfo | undefined): string {
+  resume(plan: Plan, t: TaskView, runOf: (channel: string) => RunInfo | undefined, by: 'you' | 'beluga' = 'you'): string {
     if (!t.issue || !t.worktree || t.issue.worktreeGone) throw new Error('That task hasn’t started');
     if (t.state === 'running') throw new Error(`${t.issue.key} is working already`);
     if (this.waking.has(t.task.id)) return `${t.issue.key} is being woken`;
     const channel = `ws:${t.worktree}`;
     const run = runOf(channel);
     const reason = plan.watch?.[t.task.id]?.reason ?? endedWhy(run);
-    this.wake(plan, t, t.issue, channel, reason, run, `You resumed ${t.issue.key} at ${hhmm(this.now())}`);
+    this.wake(plan, t, t.issue, channel, reason, run, `${by === 'you' ? 'You resumed' : 'Beluga woke'} ${t.issue.key} at ${hhmm(this.now())}`);
     return `Resumed ${t.issue.key}`;
   }
 

@@ -144,11 +144,10 @@
   background: var(--bg-hover);
 }
 
-/* A passed milestone, folded: one row (FOLDED in plan-layout.ts), the whole of it a button that opens it. */
-.msFolded {
-  overflow: hidden;
-}
+/* A passed milestone, folded: one row (FOLDED in plan-layout.ts), the whole of it a button that opens it.
+   The row clips, not the box: its lock badge straddles the top edge and must show whole. */
 .foldRow {
+  overflow: hidden;
   width: 100%;
   height: 100%;
   display: flex;
@@ -500,4 +499,31 @@
 .flowLabel_done {
   color: var(--ok);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 45%, transparent);
+}
+
+/* Where the lines from several milestones meet before the one that waits on all of them: "2/3" in, a tooltip says which. */
+.joinKnot {
+  pointer-events: auto;
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+/* The branch an unlocked milestone starts from (the plan's, with what it waited on merged in). */
+.fromBranch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+/* Its Claude being started (right after approving, or when it unlocks): said, so it never looks frozen. */
+.starting {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
 }

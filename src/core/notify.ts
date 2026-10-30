@@ -4,7 +4,7 @@ import { dndActive } from '../shared/quiet.js';
 import { isSentinelChat } from './sentinel/model.js';
 import { loudestKind, type SoundChoice, type SoundPrefs, soundFor, volumeOf } from '../shared/notify-sound.js';
 import { type Issue, issueForWorkspace } from './board/model.js';
-import { type Plan, planById, planForHome, planTitle } from './plans/model.js';
+import { type Plan, checkerOf, planById, planForHome, planTitle } from './plans/model.js';
 import { type MilestoneView, planView } from './plans/progress.js';
 import { isDecisionQid } from './plans/decisions.js';
 import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
@@ -127,7 +127,7 @@ export function planOfChannel(state: Pick<DomainState, 'plans' | 'board'>, chann
   const issue = issueForWorkspace(state.board, channel.slice(3));
   const plan = issue?.plan ? planById(state.plans, issue.plan.id) : undefined;
   if (issue?.plan && plan) return { plan, issue, task: issue.plan.task };
-  const home = planForHome(state.plans, channel);
+  const home = planForHome(state.plans, channel) ?? checkerOf(state.plans, channel)?.plan;
   return home ? { plan: home } : undefined;
 }
 
@@ -207,6 +207,23 @@ function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
         const body = run.check?.verdict === 'pass' ? 'Your agent checked it: pass it to go on' : 'Its tasks are finished: pass it to go on';
         out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${m.milestone.title}” is ready for you`, body, ...at, need: `plan:${plan.id}:pass:${id}`, key: `plan:${plan.id}:${id}:yours:${run.checkAsked ?? 0}:${run.check?.at ?? 0}` });
       }
+    }
+    // Beluga woke a task and it stopped again, or it climbed a milestone's whole rescue ladder: only
+    // then is it yours, and you hear why (the plan goes on by itself until then).
+    const titleOf = new Map(after.milestones.flatMap((m) => [[m.milestone.id, m.milestone.title] as const, ...m.tasks.map((t) => [t.task.id, t.task.title] as const)]));
+    for (const [taskId, w] of Object.entries(plan.watch ?? {})) {
+      if (!w.needsYou || old.watch?.[taskId]?.needsYou) continue;
+      out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${titleOf.get(taskId) ?? 'A task'}” stopped twice`, body: `${w.reason}. Resume it, or open its chat`, ...at, need: `plan:${plan.id}:stalled:${taskId}`, key: `plan:${plan.id}:${taskId}:stalled:${w.at}` });
+    }
+    for (const [msId, merge] of Object.entries(plan.merging ?? {})) {
+      const c = merge.conflict;
+      if (!c?.stuck || old.merging?.[msId]?.conflict?.stuck) continue;
+      out.push({ kind: 'needsYou', tag: 'conflict', title: `${name}: merging “${titleOf.get(msId) ?? 'a milestone'}” hit a conflict Claude couldn’t fix`, body: `${c.key ?? c.merging} conflicts in ${c.files.join(', ')}: fix it in ${c.dir} and it passes`, ...at, key: `plan:${plan.id}:${msId}:conflict:${c.at}` });
+    }
+    for (const [unitId, r] of Object.entries(plan.rescue ?? {})) {
+      if (!r.yours || old.rescue?.[unitId]?.yours) continue;
+      const what = titleOf.get(unitId);
+      out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: stuck${what ? ` on “${what}”` : ''}`, body: r.tried.length ? `Beluga tried: ${r.tried.join('; ')}` : 'Beluga couldn’t move it on by itself', ...at, need: `plan:${plan.id}:rescue:${unitId}`, key: `plan:${plan.id}:${unitId}:rescue:${r.at}` });
     }
   }
   return out;

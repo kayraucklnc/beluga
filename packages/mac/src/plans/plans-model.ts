@@ -248,8 +248,11 @@ export function headline(view: PlanView): Headline {
       return { who: 'you', text: next.tasks.length === 1 ? `Start “${next.tasks[0]!.task.title}”` : `Start ${count(next.tasks.length, 'task')}` };
     case 'checking':
       return { who: 'claude', text: `The agent is checking ${quoted(next.milestone)}${alsoRunning}` };
-    case 'working':
-      return running.length ? { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` } : { who: 'beluga', text: 'Starting the next tasks' };
+    case 'working': {
+      if (running.length) return { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` };
+      const starting = startingMilestones(view);
+      return { who: 'beluga', text: starting.length ? settingUp(view, starting) : 'Starting the next tasks' };
+    }
     case 'waiting':
       return { who: 'beluga', text: next.why };
     case 'merging':
@@ -467,3 +470,86 @@ export function keyOf(board: BoardState, issueId: string | undefined): string | 
 }
 
 export type { MilestoneView };
+
+// ---------------------------------------------------------------- between milestones
+
+/** A milestone's line into one that waits on it, from how it stands: passed (merged in), merging, at its gate, or not yet. */
+export interface MilestoneLink {
+  readonly state: 'done' | 'ready' | 'waiting';
+  /** What the line says just below the gate it leaves. */
+  readonly label: string;
+}
+
+/**
+ * How a milestone's line reads. Passing it merges its work into the plan's branch first (by
+ * itself; a conflict goes to Claude), and what waits on it unlocks only once that's in: so the line
+ * says Merging, Fixing a conflict or Conflict while that runs, never a silent "Passed".
+ */
+export function milestoneLink(m: MilestoneView | undefined): MilestoneLink {
+  if (!m) return { state: 'waiting', label: 'Unlocks' };
+  if (m.state === 'merging') {
+    const c = m.merging?.conflict;
+    return { state: 'ready', label: c ? (c.stuck ? 'Conflict: needs you' : 'Fixing a conflict') : 'Merging' };
+  }
+  if (m.state === 'passed' || m.run.passedAt) return { state: 'done', label: 'Unlocked' };
+  return { state: m.state === 'gate' || m.state === 'checking' ? 'ready' : 'waiting', label: 'Unlocks' };
+}
+
+/**
+ * Where the lines from several milestones meet before the one that waits on all of them: how many
+ * are in, and what it says. One line in has no join (it simply leads there).
+ */
+export interface MilestoneJoin {
+  readonly passed: number;
+  readonly total: number;
+  readonly state: MilestoneLink['state'];
+  /** Its tooltip: which are in, which it still waits on, and the branch it starts from. */
+  readonly tip: string;
+}
+
+export function milestoneJoin(parents: readonly (MilestoneView | undefined)[], branch: string | undefined): MilestoneJoin | undefined {
+  if (parents.length < 2) return undefined;
+  const links = parents.map(milestoneLink);
+  const passed = links.filter((l) => l.state === 'done').length;
+  const total = parents.length;
+  const state: MilestoneLink['state'] = passed === total ? 'done' : links.some((l) => l.state === 'ready') ? 'ready' : 'waiting';
+  const left = parents.filter((m, i) => m && links[i]!.state !== 'done').map((m) => `“${m!.milestone.title}”`);
+  const into = branch ? ` and merged into ${branch}` : '';
+  const tip = passed === total ? `All ${total} passed${into}: it starts from ${branch ?? 'their work'}` : `Unlocks when all ${total} have passed${into} · waiting on ${left.join(', ')}`;
+  return { passed, total, state, tip };
+}
+
+/** What a gated milestone's lock says: what it waits on, or the branch it starts from once they're in. */
+export function lockWords(waitsOn: readonly string[], dependsOn: number, branch: string | undefined): string {
+  const names = waitsOn.map((t) => `“${t}”`).join(' and ');
+  if (waitsOn.length) return `Unlocks when ${names} ${waitsOn.length === 1 ? 'passes' : 'pass'}${branch ? ` and ${waitsOn.length === 1 ? 'is' : 'are'} merged into ${branch}` : ''}`;
+  if (!branch) return 'Unlocked';
+  return `Unlocked: starts from ${branch}, with ${dependsOn === 1 ? 'the milestone before it' : `all ${dependsOn} before it`} merged in`;
+}
+
+// ---------------------------------------------------------------- setting up
+
+/**
+ * Open milestones whose Claude Beluga is starting right now: on their way (not Step by Step, where
+ * you start each task), with a task of Claude's ready and nothing of theirs begun or handed to a
+ * Claude yet. Between approving and the first step this is everything there is to see, so it's
+ * said, never left looking frozen.
+ */
+export function startingMilestones(view: Pick<PlanView, 'plan' | 'open'>): readonly MilestoneView[] {
+  if (view.plan.status !== 'active' || view.plan.paused) return [];
+  return view.open.filter(
+    (m) =>
+      m.state === 'running' &&
+      m.autonomy !== 'step' &&
+      !m.run.agent &&
+      m.tasks.some((t) => t.state === 'ready' && !t.forYou && !t.queued) &&
+      !m.tasks.some((t) => t.worktree || t.state === 'running' || t.state === 'asking' || t.state === 'idle' || t.state === 'review'),
+  );
+}
+
+/** “Setting up: making the plan's branch, then starting a Claude for “API” and “UI”” */
+export function settingUp(view: Pick<PlanView, 'plan'>, starting: readonly MilestoneView[]): string {
+  const names = starting.map((m) => `“${m.milestone.title}”`);
+  const list = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(' and ');
+  return `Setting up: ${view.plan.branch ? '' : 'making the plan’s branch, then '}starting a Claude for ${list}`;
+}

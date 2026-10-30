@@ -21,8 +21,10 @@ A "deferred" one is checked again at the end of the plan: don't fail on it now.
 
 This plan runs its test suites only at the end: don't run them for this check. Check by reading the code, the diffs, the tests the tasks wrote and their typecheck.
 Then call plan_gate with pass or fail and notes that say,
-per criterion, what you checked and found. On pass, the plan moves on by itself. If it fails, add the
-fix tasks with plan_update."
+per criterion, what you checked and found. On pass, the plan moves on by itself.
+If it fails, add the fix tasks with plan_update.
+Always end your turn with plan_gate, never by asking the user how to go on: what you couldn't check (a command
+that fails, a tool that isn't there) goes in the notes, and fails the check when nothing else proves it."
 `;
 
 exports[`the milestone check sees each task’s criteria > the final check lists every deferred item and requires each to be settled 1`] = `
@@ -42,11 +44,14 @@ This is the plan's final check: every criterion deferred along the way must be s
 For each one: true on the combined work, tick it ("- [x]", task_brief_edit with that key); not true, fail the
 check and add a fix task for it with plan_update (name the criterion in its goal). Don't pass while one is still deferred.
 
+Everything you start ends with your turn, and nothing wakes you afterwards (no ScheduleWakeup, no waiting for a notification): run each command to the end inside this turn. In the foreground (Bash timeout up to 600000 ms); a longer one in the background with a log, waited on in foreground steps of under 10 minutes until it is done.
 This is the final step: run every test now, once, on the plan's combined work: typecheck, the full unit suite and the e2e.
 Combine the tasks' branches in one temporary worktree (git worktree add --detach, then merge each branch), run there, and remove it after.
 Run the Mac e2e with \`npm run e2e\` in packages/mac: one e2e runs at a time on this Mac (it waits, saying whose run it waits for), with its own port and demo home, and stops everything it started when it ends.
 A failure that looks like load (a timeout, "did not start", a flaky wait while the Mac is busy: see \`uptime\`) counts only if it fails again when re-run once, alone.
 Then call plan_gate with pass or fail and notes that say,
-per criterion, what you checked and found. On pass, the plan moves on by itself. If it fails, add the
-fix tasks with plan_update."
+per criterion, what you checked and found. On pass, the plan moves on by itself.
+If it fails, add the fix tasks with plan_update.
+Always end your turn with plan_gate, never by asking the user how to go on: what you couldn't check (a command
+that fails, a tool that isn't there) goes in the notes, and fails the check when nothing else proves it."
 `;
