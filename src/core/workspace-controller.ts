@@ -1361,11 +1361,11 @@ export class WorkspaceController {
   }
 
   /** Where a side question (/btw) about a conversation runs: its folder and Claude session, nothing changed. */
-  btwPlace(channel: string): { cwd: string; resume?: string; model?: string } | undefined {
+  btwPlace(channel: string): { cwd: string; resume?: string; model?: string; runtime?: string } | undefined {
     const ws = this.inChannel(channel);
     if (!ws || ws.archived || ws.kind === 'main' || !existsSync(ws.path)) return undefined;
     const resume = ws.sessionId ?? ws.forkFromSession ?? this.pendingResume.get(ws.id);
-    return { cwd: ws.path, ...(resume ? { resume } : {}), ...(ws.model ? { model: ws.model } : {}) };
+    return { cwd: ws.path, ...(resume ? { resume } : {}), ...(ws.model ? { model: ws.model } : {}), ...(ws.agent ? { runtime: ws.agent.runtime } : {}) };
   }
 
   /** Your workspace a conversation belongs to, if any. */

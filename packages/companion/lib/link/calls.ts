@@ -136,6 +136,7 @@ export const calls = {
   /** 1.33 (BLG-466): a dialogue between agents: Stop it, or Continue? → yes. */
   dialogueStop: (id: string): Call => make('dialogues.stop', [id], 'Stop the dialogue'),
   dialogueContinue: (id: string): Call => make('dialogues.continue', [id], 'Continue the dialogue'),
+  dialogueConfirm: (id: string): Call => make('dialogues.confirm', [id], 'Start the dialogue'),
   /** Ask a friend's Claude yourself; the answer (and files) come back in the topic it returns. */
   askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s agent`),
   screenshot: (peerId: string, name: string): Call => make('companion.askPerson', [{ peerId, text: 'Take a screenshot of your desktop and send it to me.', needs: ['screen'] }], `Screenshot of ${name}'s desktop`),

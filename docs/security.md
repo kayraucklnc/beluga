@@ -28,6 +28,8 @@ Claude Code asks Beluga before every step it takes, so the rules above are check
 - A friend's task runs with the network off, without your own Codex MCP servers, plugins and hooks, and without your environment's tokens. It can never ask to go past the sandbox. Beluga's own tools (the room, the board) still check each call against the friend's limits.
 - Your own run may ask to go past the sandbox (a command that needs more): you get the same approval prompt as for Claude.
 - Guests can't use Codex.
+- Quick side calls on Codex (answering in a chat, naming a worktree, drafting a task) run as tightly as a friend's task, whoever asked: read only, your home and `.env` files out of reach, none of your own Codex tools, and no network unless the call runs commands (a pull request's review). A call given no tools can't read the folder either.
+- A talk or cross-reference between agents only looks: a Codex speaker's sandbox writes nowhere, whatever the worktree allows.
 
 <!-- codex-trust-table -->
 | Who asks | Trust | Files | Rest of your home | Network | `.env`, keys, credential stores | Going past the sandbox | Your Codex tools |

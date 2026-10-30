@@ -284,7 +284,8 @@ export class AgentHost {
       agent: () => this.agent,
       place: (channel) => {
         const at = this.deps.workspaces?.btwPlace(channel);
-        const model = at && this.modelFor(at.model).model;
+        // A conversation on an agent of its own uses its own model; your default model is your default agent's.
+        const model = at && (at.runtime ? at.model : this.modelFor(at.model).model);
         return at && { ...at, ...(model ? { model } : {}) };
       },
     });

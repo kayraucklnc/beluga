@@ -478,7 +478,10 @@ export class TaskServer {
     const { ctx } = this;
     const agent = ctx.agent();
     if (!agent) return this.finish(task, 'failed', `${ctx.selfName()}'s agent isn't running`);
-    const { place, where, folders } = this.place(task, req);
+    const found = this.place(task, req);
+    const { where, folders } = found;
+    // A talk (or cross-reference) dialogue's turn changes nothing, on any agent: no edits, even in a scratch folder.
+    const place = task.dialogue && task.dialogue.mode !== 'work' ? { ...found.place, autoEdit: false } : found.place;
     const full = ctx.trustFor(task.peerId) === 'full';
     const tools = this.toolsFor(task, req);
     const toolNames = [...(tools.screenshot ? ['screenshot'] : []), ...(tools.deviceInfo ? ['device_info'] : [])];

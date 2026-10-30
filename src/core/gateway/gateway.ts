@@ -371,8 +371,13 @@ export class Gateway {
     if (input.dialogue) {
       if (kind !== 'ask') throw new Error('A dialogue turn is an ask');
       if (this.trustFor(peer.peerId) === 'blocked') throw new Error(`You blocked ${peer.name}`);
-      const turns = this.book.all().filter((t) => t.direction === 'sent' && t.dialogue?.id === input.dialogue!.id).length;
-      if (input.dialogue.turn > input.dialogue.cap || turns >= input.dialogue.cap) throw new Error(`This dialogue already had its ${input.dialogue.cap} turns: continue it to go on`);
+      const turn = input.dialogue.turn;
+      const sent = this.book.all().filter((t) => t.direction === 'sent' && t.dialogue?.id === input.dialogue!.id);
+      // A turn sent again (the chair resumed after a restart): the copy still running on their Mac is
+      // stopped, so they never run one turn twice, and the turn counts once.
+      for (const t of sent) if (t.dialogue?.turn === turn && !isFinal(t.state)) this.cancel(t.id);
+      const turns = new Set(sent.map((t) => t.dialogue?.turn).filter((n) => n !== turn)).size;
+      if (turn > input.dialogue.cap || turns >= input.dialogue.cap) throw new Error(`This dialogue already had its ${input.dialogue.cap} turns: continue it to go on`);
     } else if (input.by === 'agent' && kind === 'ask') {
       const since = this.now() - AGENT_ASKS_WINDOW_MS;
       const recent = this.book.all().filter((t) => t.direction === 'sent' && t.by === 'agent' && t.kind === 'ask' && !t.dialogue && t.peerId === peer.peerId && t.conversation === input.conversation && t.createdAt >= since).length;

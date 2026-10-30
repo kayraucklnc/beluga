@@ -18,4 +18,14 @@ export function useMyAgentName(): string {
   return agentName(useMyAgent());
 }
 
+/** The name of the agent a conversation runs on: a worktree's own pick, else yours. */
+export function useAgentNameIn(channel: string): string {
+  const mine = useMyAgent();
+  const own = useApp(
+    (s) => (channel.startsWith('ws:') ? s.projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(3))?.agent : undefined),
+    (a, b) => a?.runtime === b?.runtime && a?.label === b?.label,
+  );
+  return agentName(own ?? mine);
+}
+
 export { agentBadge, agentLabel, agentName };

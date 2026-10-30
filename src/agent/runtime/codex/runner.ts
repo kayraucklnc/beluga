@@ -100,7 +100,8 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       const cwd = place?.cwd ?? opts.cwd;
       const extraDirs = place ? place.additionalDirectories : opts.additionalDirectories;
       const askOnly = place?.askOnly;
-      const autoEdit = !askOnly && (place?.autoEdit ?? opts.autoEdit);
+      // A talk dialogue's turn only looks: Codex's sandbox writes nowhere (talkReadOnly gates only Beluga's tools).
+      const autoEdit = !askOnly && !input.dialogue?.readOnly && (place?.autoEdit ?? opts.autoEdit);
       const fixup = place?.fixup;
       const syncMain = askOnly ? place?.syncMain : undefined;
       const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, dotenv: Boolean(input.canUseSecret) && !input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
@@ -211,7 +212,11 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           let timer: NodeJS.Timeout | undefined;
           const late = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), INTERRUPT_TIMEOUT_MS)));
           const stop = (async () => {
-            while (!turn.id) await new Promise((r) => setTimeout(r, 20));
+            while (!turn.id) {
+              // turn/start failed before the turn began: nothing to stop.
+              if (active !== turn) return false;
+              await new Promise((r) => setTimeout(r, 20));
+            }
             await rpc().request('turn/interrupt', { threadId, turnId: turn.id });
             await turn.done.promise;
             return true;
@@ -223,13 +228,14 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         const runTurn = async (sink: TurnSink, text: string, prompt: string, skill?: MappedPrompt['skill']): Promise<{ text: string; turn: Turn }> => {
           events.beginTurn(sink);
           const done = deferred<Turn>();
-          active = { done };
-          // No sandboxPolicy here: a turn's would replace the thread's profile (and its .env denials).
-          const res = await rpc().request<{ turn: Turn }>('turn/start', { threadId, input: codexInput(text, prompt, skill), approvalPolicy: approval, ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
-          active.id ??= res.turn.id;
-          const early = ended.get(res.turn.id);
-          if (early) done.resolve(early);
+          const turnNow: NonNullable<typeof active> = { done };
+          active = turnNow;
           try {
+            // No sandboxPolicy here: a turn's would replace the thread's profile (and its .env denials).
+            const res = await rpc().request<{ turn: Turn }>('turn/start', { threadId, input: codexInput(text, prompt, skill), approvalPolicy: approval, ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
+            turnNow.id ??= res.turn.id;
+            const early = ended.get(res.turn.id);
+            if (early) done.resolve(early);
             const turn = await Promise.race([done.promise, stopped.promise, abort.promise]);
             const said = events.endTurn(turn.status === 'completed');
             if (said.usage) sink.onEvent('usage', usageEvent(said.usage, threadId));
@@ -313,6 +319,8 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           if (verdict.approve) {
             const planned = conn;
             threadId = await open(false, threadId);
+            // A resume that failed started a new thread: the place's conversation is that one now.
+            remember(threadId);
             await planned?.proc.kill();
           }
           r = await runTurn(original, next, '');

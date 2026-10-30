@@ -138,6 +138,20 @@ export function codexConfinement(origin: RunOrigin, scope: 'folder' | 'full', pl
   return { row, config, approval: row.approval };
 }
 
+/**
+ * A side call's confinement (codex/complete.ts): read only, as tight as a friend's task (your home
+ * and its secret stores out of reach, `.env` files denied, none of your own Codex tools), whatever
+ * asked for it: what a chat answer reads can come from a friend. The network is on only for a call
+ * given Bash (a pull request's review runs git); one given no tools can't read the folder either.
+ */
+export function sideCallConfinement(cwd: string, opts: { readonly tools?: readonly string[]; readonly yourServers?: readonly string[]; readonly home?: string; readonly belugaHome?: string } = {}): CodexConfinement {
+  const base = codexConfinement('friend', 'folder', { cwd, folders: [], writable: [], ...(opts.yourServers ? { yourServers: opts.yourServers } : {}), ...(opts.home ? { home: opts.home } : {}), ...(opts.belugaHome ? { belugaHome: opts.belugaHome } : {}) });
+  const profile = base.config[`permissions.${PROFILE}`] as { extends: string; filesystem: Record<string, string>; network: { enabled: boolean } };
+  const tools = opts.tools ?? [];
+  const filesystem = tools.length ? profile.filesystem : { ...profile.filesystem, [path.resolve(cwd)]: 'deny' };
+  return { ...base, config: { ...base.config, [`permissions.${PROFILE}`]: { ...profile, extends: ':read-only', filesystem, network: { enabled: tools.includes('Bash') } } } };
+}
+
 /** The table as docs/security.md shows it. */
 export function trustTableMarkdown(): string {
   const yes = (b: boolean): string => (b ? 'on' : 'off');

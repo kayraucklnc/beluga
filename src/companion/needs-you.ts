@@ -462,6 +462,40 @@ function sentinelItems(state: DomainState): NeedsYou[] {
   });
 }
 
+/**
+ * A dialogue between your agents waiting on you: one proposed from the composer (confirm its caps)
+ * or paused at its cap (Continue?). One a friend chairs is theirs to decide, not yours.
+ */
+function dialogueItems(state: DomainState): NeedsYou[] {
+  return Object.values(state.dialogues ?? {}).flatMap((d) => {
+    if (d.remoteChair || (d.status !== 'paused' && d.status !== 'proposed')) return [];
+    const topic = convTopic(d.channel ?? 'room');
+    const what = clip(firstLine(d.topic, 200), 200);
+    const base = { id: `dialogue:${d.id}`, kind: 'decision' as const, from: d.participants.map((p) => p.agent.label).join(' and '), ...(topic ? { topic } : {}), askedAt: Math.round(d.updatedAt) };
+    return [
+      d.status === 'paused'
+        ? {
+            ...base,
+            title: clip(`Your agents paused after ${d.turns.filter((t) => t.by !== 'person').length} turns: continue?`, 500),
+            detail: what,
+            actions: [
+              { label: 'Continue', tone: 'main' as const, method: 'dialogues.continue', args: [d.id] },
+              { label: 'Stop', tone: 'danger' as const, method: 'dialogues.stop', args: [d.id] },
+            ],
+          }
+        : {
+            ...base,
+            title: 'Start this dialogue between your agents?',
+            detail: what,
+            actions: [
+              { label: 'Start', tone: 'main' as const, method: 'dialogues.confirm', args: [d.id] },
+              { label: 'Cancel', tone: 'danger' as const, method: 'dialogues.stop', args: [d.id] },
+            ],
+          },
+    ];
+  });
+}
+
 /** Everything waiting for you, in no order and uncut (needsYou sorts and keeps 50), minus what you dismissed. */
 export function allNeeds(state: DomainState): NeedsYou[] {
   const dismissed = state.dismissedNeeds ?? [];
@@ -484,6 +518,7 @@ export function waitingNeeds(state: DomainState): NeedsYou[] {
     ...worktreeKnockItems(state),
     ...sharedPlanItems(state),
     ...sentinelItems(state),
+    ...dialogueItems(state),
   ];
 }
 

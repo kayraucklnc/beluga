@@ -353,7 +353,7 @@ export const PHONE: Record<Method, Side> = {
 
   // ---- dialogues: the phone reads the thread and stops it (the Mac starts and steers it)
   'dialogues.start': 'mac',
-  'dialogues.confirm': 'mac',
+  'dialogues.confirm': 'phone',
   'dialogues.continue': 'phone',
   'dialogues.stop': 'phone',
   'dialogues.interject': 'mac',

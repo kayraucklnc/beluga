@@ -156,7 +156,18 @@ describe('the friend-task anti-loop limits', () => {
     const envelope = { id: 'dlg_capcheck01', turn: 1, cap: 2, chair: 'dlgF1', topic: 't', mode: 'talk' as const, participants: [{ agent: CLAUDE }, { agent: CODEX, owner: 'dlgF2' }], said: [] };
     kay.n.gw.ask({ person: bob.n.id, ask: 'one', by: 'agent', conversation: 'room', dialogue: envelope });
     kay.n.gw.ask({ person: bob.n.id, ask: 'two', by: 'agent', conversation: 'room', dialogue: { ...envelope, turn: 2 } });
-    expect(() => kay.n.gw.ask({ person: bob.n.id, ask: 'three', by: 'agent', conversation: 'room', dialogue: { ...envelope, turn: 2 } })).toThrow(/already had its 2 turns/);
+    expect(() => kay.n.gw.ask({ person: bob.n.id, ask: 'three', by: 'agent', conversation: 'room', dialogue: { ...envelope, turn: 3 } })).toThrow(/already had its 2 turns/);
     expect(() => kay.n.gw.ask({ person: bob.n.id, ask: 'past it', by: 'agent', conversation: 'room', dialogue: { ...envelope, id: 'dlg_capcheck02', turn: 3 } })).toThrow(/already had its 2 turns/);
+  }, 60_000);
+
+  it('a turn sent again (the chair resumed after a restart) stops the first copy and counts once', async () => {
+    const [kay, bob] = await pair('dlgG1', 'dlgG2');
+    bob.n.trust(kay.n.id, 'trusted');
+    const envelope = { id: 'dlg_resend0001', turn: 1, cap: 2, chair: 'dlgG1', topic: 't', mode: 'talk' as const, participants: [{ agent: CLAUDE }, { agent: CODEX, owner: 'dlgG2' }], said: [] };
+    kay.n.gw.ask({ person: bob.n.id, ask: 'one', by: 'agent', conversation: 'room', dialogue: envelope });
+    const first = kay.n.gw.ask({ person: bob.n.id, ask: 'two', by: 'agent', conversation: 'room', dialogue: { ...envelope, turn: 2 } });
+    const again = kay.n.gw.ask({ person: bob.n.id, ask: 'two again', by: 'agent', conversation: 'room', dialogue: { ...envelope, turn: 2 } });
+    expect(again.id).not.toBe(first.id);
+    expect(kay.n.gw.get(first.id)?.state).toBe('cancelled');
   }, 60_000);
 });

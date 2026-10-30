@@ -15,7 +15,7 @@ import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { recipientLabel, recipientPrefix, toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
-import { agentName, useMyAgentName } from '../lib/agent-words.js';
+import { agentName, useAgentNameIn, useMyAgentName } from '../lib/agent-words.js';
 import { sameDeep, sameFields } from '../lib/stable.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
@@ -171,6 +171,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const channel = channelOf(state.view);
+  const agentHere = useAgentNameIn(channel);
   const draftKey = draftKeyOf(state.view);
   const shared = state.view.kind === 'shared';
   const compose = state.compose;
@@ -527,7 +528,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               <Icon name="sparkles" size={11} />
               By the way
             </span>
-            <span className={s.planHint}>A side question: answered above, Claude keeps working and won’t remember it</span>
+            <span className={s.planHint}>A side question: answered above, {agentHere} keeps working and won’t remember it</span>
             <span className={s.flex} />
             <span className={s.planKeys}>
               <Kbd>esc</Kbd> to leave
@@ -580,7 +581,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             rows={1}
             value={buffer}
             disabled={readOnly}
-            placeholder={aside ? 'Ask Claude something on the side…' : to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? `Describe what to build: ${agent} plans it into milestones and tasks` : state.placeholder}
+            placeholder={aside ? `Ask ${agentHere} something on the side…` : to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? `Describe what to build: ${agent} plans it into milestones and tasks` : state.placeholder}
             onChange={(e) => set(e.target.value)}
             onKeyDown={onKey}
             onPaste={att.onPaste}

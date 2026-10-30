@@ -92,6 +92,7 @@ export const PhoneCalls = {
   // 1.33 (BLG-466): a dialogue between agents, stopped or continued from the phone.
   'dialogues.stop': entry('dialogues.stop', done),
   'dialogues.continue': entry('dialogues.continue', done),
+  'dialogues.confirm': entry('dialogues.confirm', done),
   'claudeCode.outputs': entry('claudeCode.outputs', done),
   'claudeCode.output': entry('claudeCode.output', done),
   'claudeCode.taskOutput': entry('claudeCode.taskOutput', done),

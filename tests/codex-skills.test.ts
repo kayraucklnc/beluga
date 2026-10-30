@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCodexBackend } from '../src/agent/runtime/codex/runner.js';
 import { fillArguments, mapSlash } from '../src/agent/runtime/codex/skills.js';
 import type { AgentRunInput } from '../src/agent/types.js';
-import { listSkills } from '../src/core/claude-code/skills.js';
+import { findSkill, listSkills } from '../src/core/claude-code/skills.js';
 import { suggest } from '../src/ui/suggest.js';
 import { FakeCodex } from './fake-codex.js';
 import { room } from './runtime-conformance.js';
@@ -115,5 +115,23 @@ describe("Claude Code's skills and commands on Codex", () => {
     const hint = (on: 'native' | 'mapped') => suggest('/dep', { peers: [], selfId: 'me', dirCache: {}, listLocalDirs: () => [], skills, skillsOn: on }).find((x) => x.label === '/deploy')?.hint;
     expect(hint('mapped')).toBe('Ship it · Not on Codex: its allowed tools, its model');
     expect(hint('native')).toBe('Ship it');
+  });
+});
+
+describe('finding a skill by the name the / list shows', () => {
+  it('finds a skill by its frontmatter name and a command in a subfolder', async () => {
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'codex-skills-named-')));
+    try {
+      mkdirSync(path.join(dir, '.claude', 'skills', 'review-helper'), { recursive: true });
+      writeFileSync(path.join(dir, '.claude', 'skills', 'review-helper', 'SKILL.md'), '---\nname: review\ndescription: Review it\n---\nReview the diff.\n');
+      mkdirSync(path.join(dir, '.claude', 'commands', 'git'), { recursive: true });
+      writeFileSync(path.join(dir, '.claude', 'commands', 'git', 'sync.md'), 'Sync with main.\n');
+      const listed = (await listSkills(dir, home)).map((s) => s.name);
+      expect(listed).toEqual(expect.arrayContaining(['review', 'sync']));
+      expect((await findSkill('review', dir, home))?.body).toContain('Review the diff.');
+      expect((await findSkill('sync', dir, home))?.kind).toBe('command');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

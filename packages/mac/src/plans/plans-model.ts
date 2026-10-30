@@ -547,9 +547,9 @@ export function startingMilestones(view: Pick<PlanView, 'plan' | 'open'>): reado
   );
 }
 
-/** “Setting up: making the plan's branch, then starting a Claude for “API” and “UI”” */
+/** “Setting up: making the plan's branch, then starting an agent for “API” and “UI”” */
 export function settingUp(view: Pick<PlanView, 'plan'>, starting: readonly MilestoneView[]): string {
   const names = starting.map((m) => `“${m.milestone.title}”`);
   const list = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(' and ');
-  return `Setting up: ${view.plan.branch ? '' : 'making the plan’s branch, then '}starting a Claude for ${list}`;
+  return `Setting up: ${view.plan.branch ? '' : 'making the plan’s branch, then '}starting an agent for ${list}`;
 }

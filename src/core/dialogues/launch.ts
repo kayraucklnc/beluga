@@ -33,11 +33,14 @@ export function myAgents(own: AgentRef): AgentRef[] {
 /**
  * A dialogue turn's place: the conversation's folder (a worktree's code to read, or to work in),
  * never its own conversation (a dialogue's turns carry their own transcript, not the chat's session).
+ * The turn runs on its speaker's agent, not the worktree's (with the worktree's model only when it's
+ * the same runtime), and a talk changes nothing: no edits, whatever the worktree allows.
  */
-function turnPlace(place: AgentPlace | undefined): AgentPlace | undefined {
+function turnPlace(place: AgentPlace | undefined, agent: AgentRef, talk: boolean): AgentPlace | undefined {
   if (!place) return undefined;
-  const { resume: _r, forkSession: _f, ...rest } = place;
-  return { ...rest, onSession: () => undefined };
+  const { resume: _r, forkSession: _f, agent: worktreeAgent, model, ...rest } = place;
+  const sameRuntime = (worktreeAgent?.runtime ?? agent.runtime) === agent.runtime;
+  return { ...rest, agent, ...(sameRuntime && model ? { model } : {}), ...(talk ? { autoEdit: false } : {}), onSession: () => undefined };
 }
 
 /**
@@ -88,7 +91,7 @@ export function launchDialogues(host: DialoguesHost): () => void {
       const backend = session.backendFor(runtime);
       if (!backend) throw new Error(`${run.participant.agent.label} can't run on this Mac`);
       const channel = run.dialogue.channel ?? 'room';
-      const place = channel === 'room' ? undefined : turnPlace(session.workspaces?.place(channel));
+      const place = channel === 'room' ? undefined : turnPlace(session.workspaces?.place(channel), run.participant.agent, run.dialogue.mode !== 'work');
       return session.host.runDialogueTurn(channel, backend, run.input, { ...(place ? { place } : {}), defaultModel: runtime === own().runtime });
     },
   });

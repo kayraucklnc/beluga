@@ -49,6 +49,11 @@ const IDLE_MS = 5 * 60_000;
 const MAX_SESSIONS = 40;
 /** Bytes read from one file at a time. */
 const CHUNK = 1 << 20;
+/**
+ * Bytes read in all per look: a long session's rollout (hundreds of MB with pictures) is read over
+ * several looks, so the daemon is never held up for long; what's left is read on the next ones.
+ */
+const SCAN_BUDGET = 4 * CHUNK;
 const TITLE_MAX = 80;
 
 /** The words a step shows ("Ran npm test", "Edited files"): Codex's tool calls in Activity's terms. */
@@ -147,7 +152,8 @@ export class CodexSessionsWatcher {
   scan(): void {
     const now = this.now;
     const activeMs = this.opts.activeMs ?? ACTIVE_MS;
-    const seen = new Set<string>();
+    const listed = new Set<string>();
+    let budget = SCAN_BUDGET;
     for (const dir of this.dayDirs(now)) {
       let names: string[];
       try {
@@ -163,15 +169,16 @@ export class CodexSessionsWatcher {
         } catch {
           continue;
         }
+        listed.add(file);
         if (now - st.mtimeMs > activeMs) continue;
-        seen.add(file);
         const r = this.files.get(file) ?? { offset: 0, rest: '', steps: 0, final: false, lastAt: st.mtimeMs };
         this.files.set(file, r);
         r.lastAt = st.mtimeMs;
-        if (st.size > r.offset) this.readMore(file, r, st.size);
+        if (st.size > r.offset && budget > 0) budget -= this.readMore(file, r, Math.min(st.size, r.offset + budget));
       }
     }
-    for (const file of [...this.files.keys()]) if (!seen.has(file)) this.files.delete(file);
+    // Kept while the file is still there: a session resumed after a quiet half hour goes on from where it was read.
+    for (const file of [...this.files.keys()]) if (!listed.has(file)) this.files.delete(file);
     this.publish();
   }
 
@@ -179,10 +186,11 @@ export class CodexSessionsWatcher {
   sessions(): CcSession[] {
     const now = this.now;
     const idleMs = this.opts.idleMs ?? IDLE_MS;
+    const activeMs = this.opts.activeMs ?? ACTIVE_MS;
     const projects = this.opts.store.getState().projects;
     const out: CcSession[] = [];
     for (const r of this.files.values()) {
-      if (!r.id || r.originator === 'beluga') continue;
+      if (!r.id || r.originator === 'beluga' || now - r.lastAt > activeMs) continue;
       const cwd = r.cwd ?? '';
       out.push({
         id: r.id,
@@ -211,7 +219,9 @@ export class CodexSessionsWatcher {
     this.opts.store.dispatch({ type: 'codex_sessions', sessions });
   }
 
-  private readMore(file: string, r: Rollout, size: number): void {
+  /** Read on up to byte `size`; the bytes read. */
+  private readMore(file: string, r: Rollout, size: number): number {
+    const from = r.offset;
     let fd: number | undefined;
     try {
       fd = openSync(file, 'r');
@@ -230,6 +240,7 @@ export class CodexSessionsWatcher {
     } finally {
       if (fd !== undefined) closeSync(fd);
     }
+    return r.offset - from;
   }
 
   /** ~/.codex/sessions/YYYY/MM/DD for the last few days. */

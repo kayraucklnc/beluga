@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { findCodex } from '../src/agent/runtime/codex/app-server.js';
-import { CODEX_TRUST_TABLE, PROFILE, codexConfinement, originOf, trustRow, trustTableMarkdown } from '../src/agent/runtime/codex/sandbox.js';
+import { CODEX_TRUST_TABLE, PROFILE, codexConfinement, originOf, sideCallConfinement, trustRow, trustTableMarkdown } from '../src/agent/runtime/codex/sandbox.js';
 
 /** A JSON value as TOML (inline tables), for `codex -c key=value`. */
 function toml(value: unknown): string {
@@ -87,5 +87,28 @@ describe.skipIf(!codex || process.platform !== 'darwin')("Codex's own sandbox, a
     expect(out).toMatch(/\.env: Operation not permitted/);
     expect(out).not.toContain('API_TOKEN');
     expect(out).toContain('read-beside');
+  });
+});
+
+describe('a side call on Codex', () => {
+  const home = '/Users/someone';
+  const cwd = '/Users/someone/project';
+  const profileOf = (c: ReturnType<typeof sideCallConfinement>) => c.config[`permissions.${PROFILE}`] as { extends: string; filesystem: Record<string, string>; network: { enabled: boolean } };
+
+  it('is read only, never asks, keeps your home and secret files out, and offline', () => {
+    const c = sideCallConfinement(cwd, { home, belugaHome: `${home}/.beluga`, yourServers: ['mine'] });
+    const p = profileOf(c);
+    expect(c.approval).toBe('never');
+    expect(p.extends).toBe(':read-only');
+    expect(p.network.enabled).toBe(false);
+    expect(p.filesystem[home]).toBe('deny');
+    expect(p.filesystem[`${cwd}/**/.env*`]).toBe('deny');
+    expect(c.config['mcp_servers.mine.enabled']).toBe(false);
+  });
+
+  it('given no tools, cannot read the folder either; given Bash, has the network', () => {
+    expect(profileOf(sideCallConfinement(cwd, { home })).filesystem[cwd]).toBe('deny');
+    expect(profileOf(sideCallConfinement(cwd, { home, tools: ['Read'] })).filesystem[cwd]).toBe('read');
+    expect(profileOf(sideCallConfinement(cwd, { home, tools: ['Read', 'Bash'] })).network.enabled).toBe(true);
   });
 });

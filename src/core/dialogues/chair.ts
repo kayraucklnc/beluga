@@ -164,6 +164,7 @@ export class Chair {
       let ended: string | undefined;
       const tools: DialogueTurnTools = {
         brief: dialogueBrief(d, speaker),
+        ...(d.mode !== 'work' ? { readOnly: true } : {}),
         end: (reason) => {
           ended = reason.trim() || 'Ended';
           return 'The dialogue ends after this turn. Give your last word now.';

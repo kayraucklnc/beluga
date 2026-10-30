@@ -52,15 +52,23 @@ async function read(file: string): Promise<string | undefined> {
   }
 }
 
+/** One skill or command file as the / list names it (a skill's frontmatter `name`, a command's file name). */
+interface Entry {
+  readonly name: string;
+  readonly kind: 'skill' | 'command';
+  readonly file: string;
+  readonly text: string;
+}
+
 /** `<dir>/skills/<name>/SKILL.md` and `<dir>/commands/**\/<name>.md` (commands one folder deep). */
-async function scan(dir: string, source: ClaudeSkill['source'], prefix = ''): Promise<ClaudeSkill[]> {
-  const out: ClaudeSkill[] = [];
+async function entries(dir: string): Promise<Entry[]> {
+  const out: Entry[] = [];
   for (const entry of await list(path.join(dir, 'skills'))) {
     if (!entry.endsWith('/')) continue;
-    const text = await read(path.join(dir, 'skills', entry, 'SKILL.md'));
+    const file = path.join(dir, 'skills', entry, 'SKILL.md');
+    const text = await read(file);
     if (text === undefined) continue;
-    const { fields, firstLine } = frontmatter(text);
-    out.push({ name: `${prefix}${fields.name || entry.slice(0, -1)}`, description: short(fields.description || firstLine), kind: 'skill', source, ...codexNote(fields) });
+    out.push({ name: frontmatter(text).fields.name || entry.slice(0, -1), kind: 'skill', file, text });
   }
   const commands = async (sub: string): Promise<void> => {
     for (const entry of await list(path.join(dir, 'commands', sub))) {
@@ -69,14 +77,20 @@ async function scan(dir: string, source: ClaudeSkill['source'], prefix = ''): Pr
         continue;
       }
       if (!entry.endsWith('.md')) continue;
-      const text = await read(path.join(dir, 'commands', sub, entry));
-      if (text === undefined) continue;
-      const { fields, firstLine } = frontmatter(text);
-      out.push({ name: `${prefix}${entry.slice(0, -3)}`, description: short(fields.description || firstLine), kind: 'command', source, ...(fields['argument-hint'] ? { args: fields['argument-hint'] } : {}), ...codexNote(fields) });
+      const file = path.join(dir, 'commands', sub, entry);
+      const text = await read(file);
+      if (text !== undefined) out.push({ name: entry.slice(0, -3), kind: 'command', file, text });
     }
   };
   await commands('');
   return out;
+}
+
+async function scan(dir: string, source: ClaudeSkill['source'], prefix = ''): Promise<ClaudeSkill[]> {
+  return (await entries(dir)).map((e) => {
+    const { fields, firstLine } = frontmatter(e.text);
+    return { name: `${prefix}${e.name}`, description: short(fields.description || firstLine), kind: e.kind, source, ...(e.kind === 'command' && fields['argument-hint'] ? { args: fields['argument-hint'] } : {}), ...codexNote(fields) };
+  });
 }
 
 /** Your enabled plugins' folders, with their names (installed_plugins.json, minus those settings.json turns off). */
@@ -129,16 +143,18 @@ export async function findSkill(name: string, cwd: string | undefined, home: str
   const dirs: Array<{ dir: string; source: ClaudeSkill['source'] }> = plugin
     ? (await plugins(home)).filter((p) => p.name === plugin).map((p) => ({ dir: p.dir, source: 'plugin' as const }))
     : [...(cwd ? [{ dir: path.join(cwd, '.claude'), source: 'project' as const }] : []), { dir: home, source: 'user' as const }];
+  const found = (kind: 'skill' | 'command', source: ClaudeSkill['source'], file: string, text: string): FoundSkill => ({ kind, source, file, fields: frontmatter(text).fields, body: text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '') });
   for (const { dir, source } of dirs) {
     for (const [kind, file] of [
       ['skill', path.join(dir, 'skills', inPlugin, 'SKILL.md')],
       ['command', path.join(dir, 'commands', `${inPlugin}.md`)],
     ] as const) {
       const text = await read(file);
-      if (text === undefined) continue;
-      const { fields } = frontmatter(text);
-      return { kind, source, file, fields, body: text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '') };
+      if (text !== undefined) return found(kind, source, file, text);
     }
+    // Named as the / list names it: a skill by its frontmatter name, a command in a subfolder.
+    const listed = (await entries(dir)).find((e) => e.name === inPlugin);
+    if (listed) return found(listed.kind, source, listed.file, listed.text);
   }
   return undefined;
 }

@@ -368,12 +368,24 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
   return out;
 }
 
+/** A dialogue between your agents that just paused at its cap: it waits for your Continue. */
+function dialogueNews(prev: DomainState, next: DomainState): NoticeEvent[] {
+  if (prev.dialogues === next.dialogues) return [];
+  const out: NoticeEvent[] = [];
+  for (const d of Object.values(next.dialogues)) {
+    if (d.remoteChair || d.status !== 'paused' || prev.dialogues[d.id]?.status === 'paused') continue;
+    const channel = d.channel ?? 'room';
+    out.push({ kind: 'needsYou', tag: 'question', title: `Your agents paused in ${placeName(next, channel)}`, body: `${firstLine(d.topic)}: continue, or stop`, channel, need: `dialogue:${d.id}`, key: `dialogue:${d.id}:paused:${d.pauseAt}` });
+  }
+  return out;
+}
+
 /**
  * What happened between two states that you'd want to hear about: Claude finished or
  * stopped, needs an answer or approval, a merge conflict, someone joined or invited you.
  */
 export function detectNotices(prev: DomainState, next: DomainState, now = Date.now()): NoticeEvent[] {
-  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...taskMentions(prev, next, now), ...networkMessages(prev, next, now), ...planNews(prev, next)];
+  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...taskMentions(prev, next, now), ...networkMessages(prev, next, now), ...planNews(prev, next), ...dialogueNews(prev, next)];
   if (prev.approvals !== next.approvals) {
     const seen = new Set(prev.approvals.map((a) => a.id));
     // Someone else's request waits for you either way; on Do Not Disturb it just doesn't make a sound.

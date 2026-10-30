@@ -10,6 +10,8 @@ import { tool } from './tool-kit.js';
  */
 export interface DialogueTurnTools {
   readonly brief: string;
+  /** A talk or cross-reference: the turn only looks, so a runtime that confines itself (Codex) writes nowhere. */
+  readonly readOnly?: boolean;
   /** The agent says the dialogue is done: the chair ends it after this turn. Answers in words. */
   end(reason: string): string;
 }

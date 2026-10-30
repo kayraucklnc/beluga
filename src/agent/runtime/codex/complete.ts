@@ -3,13 +3,16 @@ import { CompletionError, type CompletionRequest } from '../types.js';
 import { type CodexConnect, spawnAppServer } from './app-server.js';
 import type { ThreadItem, ThreadStartResponse, Turn } from './protocol.js';
 import { codexModel, mcpConfig } from './runner.js';
+import { sideCallConfinement } from './sandbox.js';
 
 let host: ToolHost | undefined;
 
 /**
  * A side call on Codex (agent/side-calls.ts): one turn on an ephemeral thread (nothing saved),
- * read-only and never asking, with `system` as its whole instructions. Beluga's suites, when
- * given, are mounted for this call alone and vetted per call.
+ * read-only and never asking, with `system` as its whole instructions. Codex's own commands can't
+ * be vetted per call, so its sandbox holds what Claude's tool list would (sideCallConfinement):
+ * no home, no secret stores, no `.env`, and no folder at all for a call given no tools. Beluga's
+ * suites, when given, are mounted for this call alone and vetted per call.
  */
 export async function codexComplete(req: CompletionRequest, deps: { readonly connect?: CodexConnect; readonly bin?: string; readonly toolHost?: ToolHost } = {}): Promise<string> {
   if (req.signal?.aborted) throw new Error('aborted');
@@ -34,14 +37,15 @@ export async function codexComplete(req: CompletionRequest, deps: { readonly con
     );
     const gone = rpc.closed.then(() => undefined);
     const model = codexModel(req.model);
+    const yourServers = await rpc.request<{ config?: { mcp_servers?: Record<string, unknown> } }>('config/read', {}).then((r) => Object.keys(r.config?.mcp_servers ?? {}), () => []);
+    const confined = sideCallConfinement(req.cwd, { ...(req.tools ? { tools: req.tools } : {}), yourServers });
     const thread = await rpc.request<ThreadStartResponse>('thread/start', {
       cwd: req.cwd,
       ...(model ? { model } : {}),
       ephemeral: true,
-      sandbox: 'read-only',
       approvalPolicy: 'never',
       baseInstructions: req.system,
-      ...(mounted ? { config: mcpConfig(mounted.servers) } : {}),
+      config: { ...confined.config, ...(mounted ? mcpConfig(mounted.servers) : {}) },
     });
     await rpc.request('turn/start', {
       threadId: thread.thread.id,

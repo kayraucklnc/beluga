@@ -8,9 +8,11 @@ const FLUSH_MS = 80;
 /** Where a conversation's Claude works, for a side question about it. */
 export interface BtwPlace {
   readonly cwd: string;
-  /** Its Claude session, once it has one. */
+  /** Its agent's session, once it has one. */
   readonly resume?: string;
   readonly model?: string;
+  /** The agent it runs on, when it picked its own (else your default's). */
+  readonly runtime?: string;
 }
 
 export interface BtwDeps {
@@ -33,7 +35,7 @@ export class BtwDesk {
   /** Ask; resolves once it's answered (or failed). An error only when it can't be asked here. */
   async ask(channel: string, question: string): Promise<void> {
     const agent = this.deps.agent();
-    if (!agent?.btw) throw new Error('No Claude is running on this computer');
+    if (!agent?.btw) throw new Error('No agent is running on this computer');
     const place = this.deps.place(channel);
     if (!place) throw new Error('Side questions work in a worktree or project conversation');
     const text = question.trim();
@@ -62,6 +64,7 @@ export class BtwDesk {
         cwd: place.cwd,
         ...(place.resume ? { resume: place.resume } : {}),
         ...(place.model ? { model: place.model } : {}),
+        ...(place.runtime ? { runtime: place.runtime } : {}),
         signal: controller.signal,
         onText: (soFar) => {
           pending = soFar;
