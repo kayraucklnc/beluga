@@ -27,12 +27,12 @@ export function HandoffSheet({ menu, close }: NativeMenuProps<'handoff'>) {
   const handOff = (peerId = who): void => {
     if (peerId && !people.find((p) => p.peerId === peerId)?.why) pick(`ho:${peerId}`);
   };
-  const detail = (p: (typeof people)[number]): string => p.why ?? `${p.name}’s Claude continues on ${p.name}’s computer${p.online ? '' : '. They’re offline: it waits for them'}`;
+  const detail = (p: (typeof people)[number]): string => p.why ?? `${p.name}’s agent continues on ${p.name}’s computer${p.online ? '' : '. They’re offline: it waits for them'}`;
   return (
     <FormSheet
       title={`Hand Off “${ws.name}”`}
       icon="hand"
-      intro="A friend takes over this work on their computer, with their own Claude. They need the same repository. To work on it together instead, use Share."
+      intro="A friend takes over this work on their computer, with their own agent. They need the same repository. To work on it together instead, use Share."
       submitLabel={person ? `Hand Off to ${person.name}` : 'Hand Off'}
       canSubmit={Boolean(person && !person.why)}
       onSubmit={() => handOff()}
@@ -64,9 +64,9 @@ export function HandoffSheet({ menu, close }: NativeMenuProps<'handoff'>) {
       </Field>
       <Field label="What happens">
         <ol className={s.steps}>
-          <li>Your Claude writes a short handoff note: what’s done, what’s left.</li>
+          <li>Your agent writes a short handoff note: what’s done, what’s left.</li>
           <li>Uncommitted work is committed, and the branch is sent to them, encrypted.</li>
-          <li>They accept and get a worktree with the branch and this chat. Their Claude carries on, and you can follow along.</li>
+          <li>They accept and get a worktree with the branch and this chat. Their agent carries on, and you can follow along.</li>
         </ol>
       </Field>
     </FormSheet>

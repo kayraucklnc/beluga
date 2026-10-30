@@ -149,7 +149,7 @@ export function Sidebar() {
           {liveChats.map((w) => (
             <WorkspaceRow key={w.id} ws={w} indent={0} />
           ))}
-          {liveChats.length ? null : <Row className={s.hintRow} icon={<Icon name="plus" size={13} />} label="Talk to Claude about anything" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />}
+          {liveChats.length ? null : <Row className={s.hintRow} icon={<Icon name="plus" size={13} />} label="Talk to your agent about anything" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />}
         </Section>
 
         <Section id="projects" title="Projects" action={<ProjectsAddMenu />}>

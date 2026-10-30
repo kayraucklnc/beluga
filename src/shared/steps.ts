@@ -187,7 +187,7 @@ export function toolFamily(name = ''): ToolFamily {
 
 /** "Thought for 12s", "Thought briefly", or that Claude kept it to itself. */
 export function thinkingTitle(durationMs: number | undefined, hidden: boolean): string {
-  if (hidden) return 'Thinking (hidden by Claude)';
+  if (hidden) return 'Thinking (hidden by the agent)';
   if (durationMs === undefined) return 'Thought';
   const s = Math.round(durationMs / 1000);
   if (s < 1) return 'Thought briefly';

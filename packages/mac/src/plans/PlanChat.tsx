@@ -14,6 +14,7 @@ import { Icon } from "../components/Icon.js";
 import { Empty, IconButton, Tip, Working, cx } from "../components/ui.js";
 import { useActions } from "../lib/actions.js";
 import { useApi, useApp, useBeluga } from "../lib/beluga.js";
+import { useMyAgentName } from "../lib/agent-words.js";
 import { LiveDot } from "./marks.js";
 import { PlanAsk } from "./PlanAsk.js";
 import { planAskOf } from "./plan-ask-model.js";
@@ -68,6 +69,7 @@ export function PlanChat({
   const burning = effects && fire.show !== "off";
   const busy = useApp((st) => activityOf(st.log, channel).running);
   const selfName = useApp((st) => st.self?.name ?? "");
+  const agent = useMyAgentName();
   // What waits for Claude here (picked as text, so streaming doesn't redraw this pane).
   const queued = useApp((st) =>
     JSON.stringify(queueIn(st, channel, st.selfId)),
@@ -152,7 +154,7 @@ export function PlanChat({
       (err: unknown) =>
         client.store.dispatch({
           type: "toast",
-          text: `Couldn't stop Claude: ${errorText(err)}`,
+          text: `Couldn't stop the agent: ${errorText(err)}`,
           level: "error",
         }),
     );
@@ -170,7 +172,7 @@ export function PlanChat({
       <header className={p.chatHead}>
         <span className={p.chatTitle}>
           <Icon name="claude" size={13} />
-          Claude
+          {agent}
         </span>
         {/* While it writes the first plan, the line under the placeholder says so (one status, not two). */}
         {busy && !drafting ? (
@@ -210,8 +212,8 @@ export function PlanChat({
                   title="Plan it together"
                   detail={
                     draft
-                      ? "Claude is reading the code and writing the plan. Tell it what to change: the plan on the left updates as it goes."
-                      : "Ask Claude about the plan, or tell it what to change."
+                      ? "Your agent is reading the code and writing the plan. Tell it what to change: the plan on the left updates as it goes."
+                      : "Ask your agent about the plan, or tell it what to change."
                   }
                 />
               )
@@ -229,7 +231,7 @@ export function PlanChat({
           }
         >
           <Icon name="alert" size={12} />
-          Claude asked you something. Answer it in the conversation
+          Your agent asked you something. Answer it in the conversation
         </button>
       ) : null}
       <div className={p.chatQueue}>
@@ -288,12 +290,12 @@ export function PlanChat({
               value={text}
               placeholder={
                 busy
-                  ? "Claude is working: tell it now, or stop it…"
+                  ? "Your agent is working: tell it now, or stop it…"
                   : draft
-                    ? "Tell Claude what to change…"
+                    ? "Tell your agent what to change…"
                     : "Ask about the plan, or change it…"
               }
-              aria-label="Message Claude about the plan"
+              aria-label="Message your agent about the plan"
               onChange={(e) => setText(e.target.value)}
               onPaste={att.onPaste}
               onKeyDown={(e) => {
@@ -312,13 +314,13 @@ export function PlanChat({
           </div>
           {busy ? (
             <Tip
-              label="Stop Claude here · your queued messages come back to the box"
+              label="Stop the agent here · your queued messages come back to the box"
               keys={shortcutKeys('conv-stop')}
             >
               <button
                 type="button"
                 className={k.stop}
-                aria-label="Stop Claude"
+                aria-label="Stop the agent"
                 onClick={stop}
               >
                 <span className={k.stopMark} />
@@ -328,7 +330,7 @@ export function PlanChat({
           <Tip
             label={
               busy
-                ? "Send now: Claude reads it at its next step (a long command is interrupted for it) · ⌥↩ queues it instead"
+                ? "Send now: your agent reads it at its next step (a long command is interrupted for it) · ⌥↩ queues it instead"
                 : "Send"
             }
             keys="↩"

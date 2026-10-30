@@ -10,6 +10,7 @@ import { seedLandingHistory } from './demo-history.js';
 import { demoScreenshot } from './demo-image.js';
 import { demoPdf } from './demo-pdf.js';
 import { type ShellRunner, runShell } from './core/peer-run.js';
+import { DEMO_AGENTS } from './core/demo-agents.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
 import { Store, initialState } from './core/store.js';
@@ -108,7 +109,7 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string, nam
   const friend = FRIENDS[name];
   const shares = new ShareService([{ name: friend.share, root: folder, writable: false }]);
   const store = new Store(initialState('demo', 'auto'));
-  const client = new PeerClient({ url, keys, profile: { name, shares: shares.infos, agent: true } });
+  const client = new PeerClient({ url, keys, profile: { name, shares: shares.infos, agent: true, ...structuredClone(DEMO_AGENTS[name]) } });
   const session = new Session({ client, store, shares, agentCwd: folder, createAgent: (bridge) => createMockBackend(bridge), runShell: demoShell });
   // The pretend friend "clicks Yes" on what you ask of their computer, after a moment.
   const answered = new Set<string>();

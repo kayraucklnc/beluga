@@ -32,7 +32,7 @@ export const MILESTONE_STATE: Readonly<Record<MilestoneState, { readonly label: 
   draft: { label: 'Draft', tone: 'muted' },
   later: { label: 'Up next', tone: 'muted' },
   running: { label: 'In progress', tone: 'claude' },
-  checking: { label: 'Claude is checking', tone: 'claude' },
+  checking: { label: 'Agent is checking', tone: 'claude' },
   gate: { label: 'Ready to pass', tone: 'accent' },
   failed: { label: 'Check failed', tone: 'error' },
   merging: { label: 'Merging into the plan', tone: 'claude' },
@@ -101,7 +101,7 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
     case 'approve':
       return { title: 'Approve Plan', detail: 'Its tasks go on the board and the plan starts' };
     case 'review_changes':
-      return { title: 'Apply Changes', detail: 'Claude proposed changes to the plan' };
+      return { title: 'Apply Changes', detail: 'Your agent proposed changes to the plan' };
     case 'resume':
       return { title: 'Resume', detail: 'Paused: nothing starts until you resume it' };
     case 'start': {
@@ -112,13 +112,13 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
       return { title: claude === 1 ? `Start “${next.tasks.find((t) => !t.forYou)!.task.title}”` : `Start ${claude} Tasks`, detail: claude === 1 ? 'Ready to go' : 'Ready to go, side by side' };
     }
     case 'pass':
-      return { title: `Pass “${next.milestone.milestone.title}”`, detail: next.milestone.run.check ? (next.milestone.run.check.verdict === 'pass' ? 'Claude checked it: every criterion holds' : 'Claude’s check found problems') : 'Every task is finished' };
+      return { title: `Pass “${next.milestone.milestone.title}”`, detail: next.milestone.run.check ? (next.milestone.run.check.verdict === 'pass' ? 'The agent checked it: every criterion holds' : 'The agent’s check found problems') : 'Every task is finished' };
     case 'checking':
-      return { title: 'Claude is checking', detail: `The pass criteria of “${next.milestone.milestone.title}”` };
+      return { title: 'Agent is checking', detail: `The pass criteria of “${next.milestone.milestone.title}”` };
     case 'failed':
-      return { title: 'Needs a fix', detail: `“${next.milestone.milestone.title}” didn’t pass Claude’s check` };
+      return { title: 'Needs a fix', detail: `“${next.milestone.milestone.title}” didn’t pass the agent’s check` };
     case 'answer':
-      return { title: 'Claude asked something', detail: next.tasks.map((t) => t.issue?.key ?? t.task.title).join(', ') };
+      return { title: 'Your agent asked something', detail: next.tasks.map((t) => t.issue?.key ?? t.task.title).join(', ') };
     case 'stalled':
       return { title: next.tasks.length === 1 ? `Resume ${next.tasks[0]!.issue?.key ?? `“${next.tasks[0]!.task.title}”`}` : `Resume ${next.tasks.length} Tasks`, detail: next.tasks.map((t) => t.watch?.line ?? `${t.issue?.key ?? t.task.title} stopped again`).join(' · ') };
     case 'working':
@@ -222,8 +222,8 @@ export function headline(view: PlanView): Headline {
   const running = view.active.filter((t) => t.state === 'running' || t.state === 'idle');
   const inMilestones = new Set(running.map((t) => t.milestoneId)).size;
   const alsoRunning = running.length ? ` · ${count(running.length, 'task')} running` : '';
-  if (!plan.body) return view.milestones.length ? { who: 'you', text: `Approve the plan: ${count(view.milestones.length, 'milestone')} · ${count(view.total, 'task')} · a draft, not on the board yet` } : { who: 'claude', text: 'Claude is writing the plan' };
-  if (plan.draft) return { who: 'you', text: `Review Claude’s changes: ${changeWords(plan)}` };
+  if (!plan.body) return view.milestones.length ? { who: 'you', text: `Approve the plan: ${count(view.milestones.length, 'milestone')} · ${count(view.total, 'task')} · a draft, not on the board yet` } : { who: 'claude', text: 'Your agent is writing the plan' };
+  if (plan.draft) return { who: 'you', text: `Review your agent’s changes: ${changeWords(plan)}` };
   if (next.kind !== 'done' && next.kind !== 'answer' && next.kind !== 'failed') {
     const merging = mergingLine(view);
     if (merging) return merging;
@@ -231,23 +231,23 @@ export function headline(view: PlanView): Headline {
   switch (next.kind) {
     case 'approve':
     case 'review_changes':
-      return { who: 'you', text: `Review Claude’s changes: ${changeWords(plan)}` };
+      return { who: 'you', text: `Review your agent’s changes: ${changeWords(plan)}` };
     case 'resume':
       return { who: 'you', text: 'Resume the plan: it’s paused, nothing starts' };
     case 'answer':
-      return { who: 'you', text: `Answer Claude in ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}` };
+      return { who: 'you', text: `Answer your agent in ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}` };
     case 'failed':
-      return { who: 'you', text: `${quoted(next.milestone)} didn’t pass Claude’s check: send it back or pass it anyway` };
+      return { who: 'you', text: `${quoted(next.milestone)} didn’t pass the agent’s check: send it back or pass it anyway` };
     case 'pass': {
       const m = next.milestone;
       const n = m.milestone.criteria.length;
-      const why = m.run.check?.verdict === 'pass' ? `Claude checked ${n === 1 ? 'its criterion' : n === 2 ? 'both criteria' : `all ${n} criteria`}` : 'every task is finished';
+      const why = m.run.check?.verdict === 'pass' ? `The agent checked ${n === 1 ? 'its criterion' : n === 2 ? 'both criteria' : `all ${n} criteria`}` : 'every task is finished';
       return { who: 'you', text: `Pass ${quoted(m)} — ${why}` };
     }
     case 'start':
       return { who: 'you', text: next.tasks.length === 1 ? `Start “${next.tasks[0]!.task.title}”` : `Start ${count(next.tasks.length, 'task')}` };
     case 'checking':
-      return { who: 'claude', text: `Claude is checking ${quoted(next.milestone)}${alsoRunning}` };
+      return { who: 'claude', text: `The agent is checking ${quoted(next.milestone)}${alsoRunning}` };
     case 'working':
       return running.length ? { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` } : { who: 'beluga', text: 'Starting the next tasks' };
     case 'waiting':
@@ -255,7 +255,7 @@ export function headline(view: PlanView): Headline {
     case 'merging':
       return { who: next.milestone.merging?.conflict?.stuck ? 'you' : 'beluga', text: next.text };
     case 'stalled':
-      return { who: 'you', text: `Resume ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}: its Claude stopped again without finishing` };
+      return { who: 'you', text: `Resume ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}: its agent stopped again without finishing` };
     case 'ship':
       if (next.pr?.state === 'OPEN') return { who: 'you', text: `Merge #${next.pr.number} on GitHub: every milestone passed` };
       if (next.pr?.state === 'CLOSED') return { who: 'you', text: `#${next.pr.number} was closed without merging: open it again, or merge locally` };
@@ -275,14 +275,14 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
   if (state === 'planned') return { who: 'beluga', text: 'Merged into the plan; done when the plan’s pull request merges' };
   switch (t.state) {
     case 'running':
-      return { who: 'claude', text: t.step ? `Claude is working on this: ${t.step}` : 'Claude is working on this' };
+      return { who: 'claude', text: t.step ? `The agent is working on this: ${t.step}` : 'The agent is working on this' };
     case 'asking':
-      return { who: 'you', text: 'Claude asked you something here' };
+      return { who: 'you', text: 'The agent asked you something here' };
     case 'idle':
       return { who: 'beluga', text: 'In progress; nobody is working on it right now' };
     case 'ready':
       if (t.forYou) return { who: 'you', text: 'Yours: answer it in the plan’s conversation (no worktree)' };
-      if (t.queued) return { who: 'claude', text: 'Next for this milestone’s Claude, in its worktree' };
+      if (t.queued) return { who: 'claude', text: 'Next for this milestone’s agent, in its worktree' };
       return m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'beluga', text: 'Ready: it starts by itself' };
     case 'blocked':
     case 'later':
@@ -300,9 +300,9 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
   // Done here: what's left is the milestone's.
   const others = m.tasks.filter((x) => x !== t && !['review', 'done', 'canceled', 'missing', 'planned'].includes(x.state)).length;
   if (m.state === 'running') return { who: 'beluga', text: `Done. Waiting for ${count(others, 'other task')} of ${quoted(m)}, then the milestone check; ${into}` };
-  if (m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check)) return { who: 'claude', text: `Done. Claude is checking ${quoted(m)}; ${into}` };
+  if (m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check)) return { who: 'claude', text: `Done. The agent is checking ${quoted(m)}; ${into}` };
   if (m.state === 'gate') return m.autonomy === 'autopilot' ? { who: 'beluga', text: `Done. ${quoted(m)} passes by itself; ${into}` } : { who: 'you', text: `Done. Pass ${quoted(m)} in the plan; ${into}` };
-  if (m.state === 'failed') return { who: 'you', text: `Done, but ${quoted(m)} didn’t pass Claude’s check` };
+  if (m.state === 'failed') return { who: 'you', text: `Done, but ${quoted(m)} didn’t pass the agent’s check` };
   return { who: 'beluga', text: `Done. Waiting for the milestone check; ${into}` };
 }
 
@@ -314,8 +314,8 @@ export function modeChange(view: PlanView, to: Autonomy): { readonly title: stri
   const label = AUTONOMY_INFO[to].label;
   const from = {
     step: 'From now on nothing starts by itself: you start each task. Tasks already running go on.',
-    gated: 'From now on tasks start by themselves, and each milestone waits for you to pass it once Claude has checked it.',
-    autopilot: `From now on Claude passes milestones itself${branch ? ` and merges them into ${branch}` : ''}. It stops only if a check fails.`,
+    gated: 'From now on tasks start by themselves, and each milestone waits for you to pass it once the agent has checked it.',
+    autopilot: `From now on the agent passes milestones itself${branch ? ` and merges them into ${branch}` : ''}. It stops only if a check fails.`,
   }[to];
   const open = view.open;
   const nowBits: string[] = [];

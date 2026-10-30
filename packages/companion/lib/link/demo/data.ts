@@ -1,8 +1,13 @@
 import { dashboardConv } from './render-demo';
 import { JOB_DOCS } from './dashboard';
-import type { ChatMessageView, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
+import type { AgentRefView, ChatMessageView, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
 import { DEMO_IMAGES, type DemoImage } from './images.generated';
 import { stripCode } from '../../render';
+import { agentLabel, agentName } from '../../../../../src/shared/agent-label';
+
+/** Your own agent in the demo: Claude, said the way the Mac says it ("Claude", "Your Claude"). */
+export const MY_AGENT_NAME = agentName(undefined);
+export const MY_AGENT_LABEL = agentLabel(undefined, undefined, true, { capital: true });
 
 /**
  * The demo Mac's world: two projects, a conversation at work with sub-agents taking screenshots
@@ -172,7 +177,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       next: { id: 'pr', label: 'Create PR' },
       steps: [
         { id: 'pr', label: 'Create PR', hint: 'Pushes beluga/pairing-feel and opens a pull request into main, titled from its commits' },
-        { id: 'pr_claude', label: 'Create PR with Claude', hint: 'Claude commits what belongs, then writes the title and description: what, why, how to test', claude: true },
+        { id: 'pr_claude', label: 'Create PR with Your Agent', hint: 'Your agent commits what belongs, then writes the title and description: what, why, how to test', claude: true },
         { id: 'pr_draft', label: 'Create Draft PR', hint: 'Like Create PR, as a draft: it can’t merge until it’s marked ready' },
       ],
     },
@@ -187,7 +192,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       {
         id: 't2',
         who: 'claude',
-        name: 'Claude',
+        name: MY_AGENT_NAME,
         ts: now - 30 * MIN,
         endTs: now - 15 * MIN,
         status: 'done',
@@ -219,7 +224,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       {
         id: 't4',
         who: 'claude',
-        name: 'Claude',
+        name: MY_AGENT_NAME,
         ts: now - 11 * MIN,
         status: 'working',
         step: 'Running the tests · 137/215',
@@ -263,7 +268,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       {
         id: 'p2',
         who: 'claude',
-        name: 'Claude',
+        name: MY_AGENT_NAME,
         ts: now - 47 * MIN,
         status: 'working',
         step: 'Waiting for you: deploy to staging?',
@@ -286,7 +291,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       {
         id: 'r2',
         who: 'claude',
-        name: 'Claude',
+        name: MY_AGENT_NAME,
         ts: now - 3 * HOUR + 2 * MIN,
         endTs: now - 2.6 * HOUR,
         status: 'done',
@@ -307,7 +312,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     needsYou: [],
     turns: [
       { id: 'c1', who: 'you', name: 'You', ts: now - 26 * HOUR, prose: { text: 'Why is CI red?', code: [] } },
-      { id: 'c2', who: 'claude', name: 'Claude', ts: now - 26 * HOUR, endTs: now - 25.8 * HOUR, status: 'failed', steps: 6, prose: { text: 'The forecast API\'s sandbox is down (503 since 09:12), so the contract tests fail. Nothing in the code changed. I stopped there.', code: [] } },
+      { id: 'c2', who: 'claude', name: MY_AGENT_NAME, ts: now - 26 * HOUR, endTs: now - 25.8 * HOUR, status: 'failed', steps: 6, prose: { text: 'The forecast API\'s sandbox is down (503 since 09:12), so the contract tests fail. Nothing in the code changed. I stopped there.', code: [] } },
     ],
   };
 
@@ -323,7 +328,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     needsYou: [],
     turns: [
       { id: 'lb1', who: 'you', name: 'You', ts: now - 2 * MIN, prose: { text: 'Signing in from the widget lands on a blank page instead of the forecast. Find out why the redirect drops the deep link, fix it, and add a test.', code: [] } },
-      { id: 'lb2', who: 'claude', name: 'Claude', ts: now - 2 * MIN, status: 'working', step: 'Reading src/auth/redirect.ts', steps: 3, live: { phase: 'step', words: 'Reading src/auth/redirect.ts', tool: 'read', since: now - 20_000 }, trail: [{ tool: 'search', text: 'Searched for "returnTo"' }, { tool: 'read', text: 'Read src/widget/open.ts' }], prose: { text: '', code: [] } },
+      { id: 'lb2', who: 'claude', name: MY_AGENT_NAME, ts: now - 2 * MIN, status: 'working', step: 'Reading src/auth/redirect.ts', steps: 3, live: { phase: 'step', words: 'Reading src/auth/redirect.ts', tool: 'read', since: now - 20_000 }, trail: [{ tool: 'search', text: 'Searched for "returnTo"' }, { tool: 'read', text: 'Read src/widget/open.ts' }], prose: { text: '', code: [] } },
     ],
   };
   // A plan Claude is still writing: its chat works, the plan has no milestones yet (nothing to approve).
@@ -337,7 +342,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     needsYou: [],
     turns: [
       { id: 'wp1', who: 'you', name: 'You', ts: now - 3 * MIN, prose: { text: 'Plan a home screen widget: today’s forecast, the radar thumbnail, tap opens the app at that city.', code: [] } },
-      { id: 'wp2', who: 'claude', name: 'Claude', ts: now - 3 * MIN, status: 'working', step: 'Reading src/forecast/store.ts', steps: 7, live: { phase: 'step', words: 'Reading src/forecast/store.ts', tool: 'read', since: now - 15_000 }, trail: [{ tool: 'search', text: 'Searched for "WidgetKit"' }, { tool: 'read', text: 'Read src/radar/tiles.ts' }], prose: { text: 'Looking at how the forecast is cached and how radar tiles are made, so the widget can reuse both. I’ll split it into milestones next.', code: [] } },
+      { id: 'wp2', who: 'claude', name: MY_AGENT_NAME, ts: now - 3 * MIN, status: 'working', step: 'Reading src/forecast/store.ts', steps: 7, live: { phase: 'step', words: 'Reading src/forecast/store.ts', tool: 'read', since: now - 15_000 }, trail: [{ tool: 'search', text: 'Searched for "WidgetKit"' }, { tool: 'read', text: 'Read src/radar/tiles.ts' }], prose: { text: 'Looking at how the forecast is cached and how radar tiles are made, so the widget can reuse both. I’ll split it into milestones next.', code: [] } },
     ],
   };
   const assistant: ConvView = {
@@ -349,9 +354,9 @@ export function makeWorld(now = Date.now()): DemoWorld {
     needsYou: [],
     turns: [
       { id: 'a1', who: 'you', name: 'You', ts: now - 4 * MIN, prose: { text: 'Take a screenshot and send it to me', code: [] } },
-      { id: 'a2', who: 'claude', name: 'Claude', ts: now - 4 * MIN, endTs: now - 3 * MIN, status: 'done', steps: 1, trail: [{ tool: 'tool', text: 'Took a screenshot of the main display' }], outputs: [screen], prose: { text: 'Here’s your screen: Xcode on the left, the radar build running in the Simulator on the right.', code: [] } },
+      { id: 'a2', who: 'claude', name: MY_AGENT_NAME, ts: now - 4 * MIN, endTs: now - 3 * MIN, status: 'done', steps: 1, trail: [{ tool: 'tool', text: 'Took a screenshot of the main display' }], outputs: [screen], prose: { text: 'Here’s your screen: Xcode on the left, the radar build running in the Simulator on the right.', code: [] } },
       { id: 'a3', who: 'you', name: 'You', ts: now - 2 * MIN, prose: { text: 'Start a worktree in pixel-weather for the login bug', code: [] } },
-      { id: 'a4', who: 'claude', name: 'Claude', ts: now - 2 * MIN, endTs: now - 2 * MIN + 9000, status: 'done', steps: 2, trail: [{ tool: 'tool', text: 'Listed your projects' }, { tool: 'tool', text: 'Started a worktree' }], prose: { text: 'Started `worktree:wt-login-bug` in pixel-weather. Its Claude is reading the redirect code now; I’ll leave it to it.', code: [] } },
+      { id: 'a4', who: 'claude', name: MY_AGENT_NAME, ts: now - 2 * MIN, endTs: now - 2 * MIN + 9000, status: 'done', steps: 2, trail: [{ tool: 'tool', text: 'Listed your projects' }, { tool: 'tool', text: 'Started a worktree' }], prose: { text: 'Started `worktree:wt-login-bug` in pixel-weather. Its agent is reading the redirect code now; I’ll leave it to it.', code: [] } },
     ],
   };
 
@@ -369,7 +374,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       {
         id: 'sc2',
         who: 'claude',
-        name: 'Claude',
+        name: MY_AGENT_NAME,
         ts: now - 50 * MIN,
         endTs: now - 49 * MIN,
         status: 'done',
@@ -420,7 +425,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       {
         id: 'rf2',
         who: 'claude',
-        name: 'Claude',
+        name: MY_AGENT_NAME,
         ts: now - 50 * MIN,
         endTs: now - 44 * MIN,
         status: 'done',
@@ -442,7 +447,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
         // A comparison with an empty corner, as Claude writes one: a table, never its pipes.
         id: 'rf4',
         who: 'claude',
-        name: 'Claude',
+        name: MY_AGENT_NAME,
         ts: now - 30 * MIN,
         endTs: now - 29 * MIN,
         status: 'done',
@@ -477,8 +482,8 @@ export function makeWorld(now = Date.now()): DemoWorld {
       id: 'n-deploy',
       kind: 'approval',
       title: 'Deploy the push relay to staging?',
-      detail: 'Claude wants to run: wrangler deploy --env staging\n\nIn beluga · Beluga Push relay',
-      from: 'Your Claude',
+      detail: 'Your agent wants to run: wrangler deploy --env staging\n\nIn beluga · Beluga Push relay',
+      from: MY_AGENT_LABEL,
       topic: 'conv:beluga.push',
       askedAt: now - 4 * MIN,
       actions: [
@@ -494,7 +499,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       kind: 'question',
       title: LONG_Q,
       detail: 'Your MacBook Pro runs the release pipeline for the phone app. The signing key expires in nine days, the Play Console wants a new upload certificate before the next release, and the CI cache for Gradle is 14 GB. I can rotate the key now, schedule it for after the release, or hand it to someone else.',
-      from: 'Your Claude',
+      from: MY_AGENT_LABEL,
       topic: 'conv:beluga.push',
       askedAt: now - 3 * MIN,
       choices: ['Rotate the signing key now, before the release', 'After the release, on Monday', 'Ask Mia to do it from her Mac', 'Only clear the Gradle cache for now', 'Do both now and tell me when done', 'Write a plan for it first', 'Leave it, I will do it myself'].map((label) => ({ label })),
@@ -508,8 +513,8 @@ export function makeWorld(now = Date.now()): DemoWorld {
       id: 'n-empty',
       kind: 'question',
       title: EMPTY_Q,
-      detail: "Claude is drawing the empty state of the phone's Home.",
-      from: 'Your Claude',
+      detail: "Your agent is drawing the empty state of the phone's Home.",
+      from: MY_AGENT_LABEL,
       topic: 'conv:beluga.onboarding',
       askedAt: now - 7 * MIN,
       choices: [
@@ -530,7 +535,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       id: 'n-checks',
       kind: 'question',
       title: CHECKS_Q,
-      from: 'Your Claude',
+      from: MY_AGENT_LABEL,
       topic: 'conv:beluga.onboarding',
       askedAt: now - 9 * MIN,
       choices: [{ label: 'Unit tests' }, { label: 'Phone e2e' }, { label: 'Contrast check' }, { label: 'APK size' }],
@@ -542,9 +547,9 @@ export function makeWorld(now = Date.now()): DemoWorld {
     {
       id: 'n-mia',
       kind: 'request',
-      title: "Mia's Claude would like a screenshot of your desktop",
+      title: "Mia's Codex would like a screenshot of your desktop",
       detail: '"Mia asked me to check how the radar looks on your big screen."',
-      from: "Mia's Claude",
+      from: "Mia's Codex",
       askedAt: now - 12 * MIN,
       actions: [
         { label: 'Approve', tone: 'main', method: 'gateway.decide', args: ['gw-mia', { answer: 'yes' }] },
@@ -612,7 +617,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
       id: 'friend:theo',
       kind: 'request',
       title: 'Theo wants to add you as a friend',
-      detail: 'You’re in the same room. As friends you can talk, share and ask each other’s Claude, with nobody hosting',
+      detail: 'You’re in the same room. As friends you can talk, share and ask each other’s agents, with nobody hosting',
       from: 'Theo',
       askedAt: now - 46 * MIN,
       actions: [
@@ -707,9 +712,9 @@ export function makeWorld(now = Date.now()): DemoWorld {
         messages: [
           { id: 'm1', from: 'Mia', mine: false, text: 'is the phone app real?? 👀', ts: now - 3 * HOUR },
           { id: 'm2', from: 'You', mine: true, editable: true, text: 'getting there. I\'m approving deploys from the couch', ts: now - 3 * HOUR + 2 * MIN },
-          { id: 'm3', from: 'Mia\'s Claude', mine: false, claude: true, text: 'Here\'s Mia\'s desktop, as you asked: the radar build is open on the left.', ts: now - 2 * HOUR, files: [desktop] },
+          { id: 'm3', from: 'Mia\'s Codex', mine: false, claude: true, agent: { runtime: 'codex', model: 'gpt-5', label: 'Codex' }, text: 'Here\'s Mia\'s desktop, as you asked: the radar build is open on the left.', ts: now - 2 * HOUR, files: [desktop] },
           { id: 'm4', from: 'Mia', mine: false, text: 'view from the office today', ts: now - 41 * MIN, files: [sunset] },
-          { id: 'm5', from: 'Mia', mine: false, text: 'also my Claude wants a look at your screen for the radar thing, ok?', ts: now - 12 * MIN },
+          { id: 'm5', from: 'Mia', mine: false, text: 'also my Codex wants a look at your screen for the radar thing, ok?', ts: now - 12 * MIN },
         ],
       },
     ],
@@ -820,8 +825,8 @@ function demoTasks(now: number): TaskPageView[] {
       activity: [
         { id: 'p1', at: now - 3 * HOUR, who: 'You', text: 'created this' },
         { id: 'p2', at: now - 31 * MIN, who: 'Beluga', text: 'its work is being done in worktree beluga-pairing' },
-        { id: 'p3', at: now - 30 * MIN, who: 'Your Claude', text: 'moved this from Ready to In Progress' },
-        { id: 'p4', at: now - 9 * MIN, who: 'Your Claude', text: 'commented', body: 'Contrast is fixed: captions went to 4.1 : 1. Screenshots and the e2e run are next.', comment: true },
+        { id: 'p3', at: now - 30 * MIN, who: MY_AGENT_LABEL, text: 'moved this from Ready to In Progress' },
+        { id: 'p4', at: now - 9 * MIN, who: MY_AGENT_LABEL, text: 'commented', body: 'Contrast is fixed: captions went to 4.1 : 1. Screenshots and the e2e run are next.', comment: true },
       ],
     }),
     task({
@@ -853,4 +858,11 @@ function demoTasks(now: number): TaskPageView[] {
 }
 
 /** A new turn helper for the live parts. */
+/** Whose agent is what in the demo: Mia runs Codex; you and everyone else run Claude (Opus). */
+export const CODEX_AGENT: AgentRefView = { runtime: 'codex', model: 'gpt-5', label: 'Codex' };
+export const CLAUDE_AGENT: AgentRefView = { runtime: 'claude', model: 'opus', label: MY_AGENT_NAME };
+export const demoAgent = (name: string): AgentRefView => (name.toLowerCase() === 'mia' ? CODEX_AGENT : CLAUDE_AGENT);
+/** A friend's agent by name, as the Mac says it: "Mia's Codex", "Ada's Claude". */
+export const agentOf = (name: string): string => `${name}'s ${demoAgent(name).label}`;
+
 export const turn = (t: Partial<TurnView> & Pick<TurnView, 'id' | 'who' | 'name'>, text: string, now = Date.now()): TurnView => ({ ts: now, prose: { text, code: [] }, ...t });

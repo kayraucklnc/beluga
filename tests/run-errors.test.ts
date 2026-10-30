@@ -26,7 +26,7 @@ describe('how a run ended, in words', () => {
     const resetsAt = at(15) + 24 * 60 * MIN;
     const f = classifyRun({ error: 'Claude Code process exited with code 1', rejectedUntil: resetsAt, stderr: [] });
     expect(f).toMatchObject({ kind: 'usage_limit', resetsAt });
-    expect(failureTitle({ ...f, resetsAt: at(15) }, at(12))).toBe('Claude hit your usage limit · resets at 15:00');
+    expect(failureTitle({ ...f, resetsAt: at(15) }, at(12))).toBe('You hit your Claude plan usage limit · resets at 15:00');
   });
 
   it("Claude Code's limit notice: the reset time read from its words", () => {
@@ -211,7 +211,7 @@ describe('a usage limit pauses the plan, and it goes on by itself when usage is 
     await t.later(resetsAt - t.now() + LIMIT_MARGIN_MS);
     expect(t.asked.filter((a) => a.channel === 'ws:main' && a.prompt === CONTINUE_PROMPT)).toHaveLength(1);
     expect(t.wakes()).toHaveLength(1);
-    expect(t.wakes()[0]!.prompt).toContain('Claude hit your usage limit');
+    expect(t.wakes()[0]!.prompt).toContain('You hit your Claude plan usage limit');
     await t.later(MIN);
     expect(t.wakes()).toHaveLength(1);
     expect(t.asked.filter((a) => a.prompt === CONTINUE_PROMPT)).toHaveLength(1);

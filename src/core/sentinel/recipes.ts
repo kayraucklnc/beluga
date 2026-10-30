@@ -42,7 +42,7 @@ export const RECIPES: readonly Recipe[] = [
     id: 'fix-what-broke',
     name: 'Fix what broke',
     icon: 'wrench',
-    line: 'When CI fails, Claude finds the failing step, fixes it and opens a pull request',
+    line: 'When CI fails, your agent finds the failing step, fixes it and opens a pull request',
     sentinel: {
       name: 'Fix what broke',
       icon: 'wrench',
@@ -73,7 +73,7 @@ export const RECIPES: readonly Recipe[] = [
     id: 'fix-and-ship',
     name: 'Fix it and ship it',
     icon: 'alert',
-    line: 'When Sentry sees a new error, Claude fixes it and merges once the checks pass and you’ve tapped Merge',
+    line: 'When Sentry sees a new error, your agent fixes it and merges once the checks pass and you’ve tapped Merge',
     sentinel: {
       name: 'Fix it and ship it',
       icon: 'alert',
@@ -106,7 +106,7 @@ export const RECIPES: readonly Recipe[] = [
     id: 'nightly-tests',
     name: 'Nightly tests',
     icon: 'check',
-    line: 'Every night the tests run; when they fail, Claude finds out why and fixes it',
+    line: 'Every night the tests run; when they fail, your agent finds out why and fixes it',
     sentinel: {
       name: 'Nightly tests',
       icon: 'check',
@@ -236,7 +236,7 @@ export const RECIPES: readonly Recipe[] = [
     id: 'uptime-guard',
     name: 'Uptime guard',
     icon: 'pulse',
-    line: 'When your site stops answering, Claude looks at what it can and says what’s likely',
+    line: 'When your site stops answering, your agent looks at what it can and says what’s likely',
     sentinel: {
       name: 'Uptime guard',
       icon: 'pulse',
@@ -331,7 +331,7 @@ export const RECIPES: readonly Recipe[] = [
     id: 'fetch-analyse-send',
     name: 'Fetch, analyse, send',
     icon: 'graph',
-    line: 'Fetch data with a script, have Claude analyse it in a worktree, send the result to a service and keep its answer',
+    line: 'Fetch data with a script, have your agent analyse it in a worktree, send the result to a service and keep its answer',
     sentinel: {
       name: 'Fetch, analyse, send',
       icon: 'graph',
@@ -381,7 +381,7 @@ export const RECIPES: readonly Recipe[] = [
     id: 'review-new-prs',
     name: 'Review new pull requests',
     icon: 'pr',
-    line: 'When a pull request opens, Claude reads the diff and says what to fix',
+    line: 'When a pull request opens, your agent reads the diff and says what to fix',
     sentinel: {
       name: 'Review new pull requests',
       icon: 'pr',

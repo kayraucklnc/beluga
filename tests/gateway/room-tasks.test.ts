@@ -93,8 +93,8 @@ describe('tasks between Claudes in a room', () => {
     await waitFor(() => kay.state().gateway.cards[idOf(bob)]?.trust === 'ask');
     const t = gw(kay).ask({ person: 'bob', ask: 'check the README for typos', by: 'agent', conversation: 'room' });
     await waitFor(() => bob.state().approvals.length === 1);
-    expect(bob.state().approvals[0]?.title).toBe("kay's Claude wants to: check the README for typos");
-    expect(bob.state().inbox.some((n) => n.title === "kay's Claude wants to: check the README for typos")).toBe(true);
+    expect(bob.state().approvals[0]?.title).toBe("kay's agent wants to: check the README for typos");
+    expect(bob.state().inbox.some((n) => n.title === "kay's agent wants to: check the README for typos")).toBe(true);
     bob.session.answerApproval('yes');
     await waitFor(() => gw(kay).get(t.id)?.state === 'done', 5000);
     expect(gw(kay).get(t.id)?.result?.summary).toBe('bob did it');
@@ -120,7 +120,7 @@ describe('tasks between Claudes in a room', () => {
     bob.session.people.setTrust(idOf(kay), 'trusted', true);
     const asked = gw(kay).ask({ person: 'bob', kind: 'run', ask: 'to see the folder', command: 'pwd', by: 'agent' });
     await waitFor(() => bob.state().approvals.length === 1);
-    expect(bob.state().approvals[0]?.title).toBe("kay's Claude wants to run on your Mac: pwd");
+    expect(bob.state().approvals[0]?.title).toBe("kay's agent wants to run on your Mac: pwd");
     expect(bob.state().approvals[0]?.detail).toContain('$ pwd');
     expect(bob.state().approvals[0]?.task).toBe(asked.id);
     await waitFor(() => gw(kay).get(asked.id)?.state === 'awaiting_approval');
@@ -150,9 +150,9 @@ describe('tasks between Claudes in a room', () => {
     await waitFor(() => gw(kay).get(t.id)?.delivered, 5000);
     // Kay's own Claude ran again, in the room, with bob's answer marked as data.
     await waitFor(() => kay.runs.length === 1, 5000);
-    expect(kay.runs[0]!.prompt).toContain("bob's Claude replied");
+    expect(kay.runs[0]!.prompt).toContain("bob's agent replied");
     expect(kay.runs[0]!.prompt).toContain('<task_result from="bob"');
     expect(kay.runs[0]!.requesterName).toBe('kay');
-    expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes("bob's Claude replied. Claude continues with it."))).toBe(true);
+    expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes("bob's agent replied. Your agent continues with it."))).toBe(true);
   });
 });

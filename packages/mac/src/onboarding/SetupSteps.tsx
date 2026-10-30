@@ -209,10 +209,10 @@ export function Popups() {
   return (
     <div className={s.setup}>
       <h2 className={s.title}>
-        <Words text="Never miss it when Claude needs you." />
+        <Words text="Never miss it when your agent needs you." />
       </h2>
       <Rise delay={0.2} className={s.body}>
-        When Claude asks you something, a plan waits on your decision, or a friend asks your Claude, a small card shows in the corner of your screen, over whatever you’re doing, full-screen apps too. It never takes the keyboard from you.
+        When your agent asks you something, a plan waits on your decision, or a friend asks your agent, a small card shows in the corner of your screen, over whatever you’re doing, full-screen apps too. It never takes the keyboard from you.
       </Rise>
       <Glass radius={16} width="100%" className={s.rows}>
         <SetupRow index={0} label="Show on-screen popups when something needs me" detail="Needs no permission. Off: you still get notifications.">
@@ -287,7 +287,7 @@ export function Setup() {
         <SetupRow index={0} label="Your name" detail="What friends see when you work together.">
           <input className={s.input} aria-label="Your name" value={name} placeholder="Your name" maxLength={64} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Enter' && saveName()} />
         </SetupRow>
-        <SetupRow index={1} label="When a friend asks your Claude" detail={policy === 'ask' ? 'Recommended: you see and approve every request.' : policy === 'auto' ? 'Requests from friends run without asking.' : 'Only you can use your Claude.'}>
+        <SetupRow index={1} label="When a friend asks your agent" detail={policy === 'ask' ? 'Recommended: you see and approve every request.' : policy === 'auto' ? 'Requests from friends run without asking.' : 'Only you can use your agent.'}>
           <Choice
             label="Friends' requests"
             value={policy}
@@ -299,10 +299,10 @@ export function Setup() {
             ]}
           />
         </SetupRow>
-        <SetupRow index={2} label="Tell me when Claude needs me" detail={core.notify.onlyAway ? 'When a run finishes or waits for you, while you’re in another app.' : 'When a run finishes or waits for you.'}>
+        <SetupRow index={2} label="Tell me when my agent needs me" detail={core.notify.onlyAway ? 'When a run finishes or waits for you, while you’re in another app.' : 'When a run finishes or waits for you.'}>
           <Switch label="Notifications" on={core.notify.desktop} onChange={(v) => void api.session.setPrefs({ notify: { ...core.notify, desktop: v, ...(v ? { onlyAway: true } : {}) } })} />
         </SetupRow>
-        <SetupRow index={3} label="Ask before my Claude runs commands" detail="Off lets Claude work on its own in your worktrees. Secrets stay blocked either way.">
+        <SetupRow index={3} label="Ask before my agent runs commands" detail="Off lets your agent work on its own in your worktrees. Secrets stay blocked either way.">
           <Switch label="Ask before running commands" on={core.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
         </SetupRow>
         {models.length ? (

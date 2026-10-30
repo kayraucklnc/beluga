@@ -12,7 +12,7 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 - **What happens when it finds one.** The update downloads in the background and its signature is verified. Then a small pill appears at the bottom of the sidebar, "Beluga 0.5 is ready". If the sidebar is hidden, the pill sits in the window's corner. Clicking the pill opens a short sheet with the release notes and three choices:
   - **Restart Now** installs the update and reopens Beluga where you were (the same workspace, project or place).
   - **Update When Idle** installs once all of these are true:
-    - No Claude run is working or queued.
+    - No agent run is working or queued.
     - No program is running in Beluga's terminals. A shell sitting at its prompt doesn't count.
     - Nobody is in your room, and you aren't in someone else's.
     - You haven't touched the Mac for 10 minutes.
@@ -67,22 +67,22 @@ Installing restarts Beluga's engine, the daemon that the Mac app bundles. The ne
 
 - projects, worktrees and workspaces
 - each workspace's conversation
-- each workspace Claude's session, which resumes with its context
+- each workspace agent's session, which resumes with its context
 - settings and trust
 - your identity
 - friends, groups, messages and presence on the Beluga network, which reconnects by itself
 
 **Lost:**
 
-- Claude runs in progress and queued messages.
+- Agent runs in progress and queued messages.
 - Terminals and their scrollback. The shells start again.
 - The room chat (it lives only in memory).
-- The room-level Claude's context.
+- The room-level agent's context.
 - Friends connected to your room. They drop out, and the **invite link changes**: each start makes a new room secret. They need the new link.
 - If you had joined a friend's room, you're back in your own.
 - The first time a workspace is opened after the restart, its history loads again.
 
-That is why *Update When Idle* waits for Claude, the terminals and the room.
+That is why *Update When Idle* waits for the agent, the terminals and the room.
 
 ## Releasing
 

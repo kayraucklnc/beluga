@@ -205,7 +205,7 @@ function TimelineStep({ run, step, index, now, worktree, open }: { run: StepRun;
           <>
             <button type="button" className={s.disclosure} aria-expanded={watch} onClick={() => setWatching(!watch)}>
               <Icon name={watch ? 'chevronDown' : 'chevronRight'} size={10} />
-              {watch ? 'Hide Claude’s session' : live ? 'Watch Claude work' : 'Claude’s session'}
+              {watch ? 'Hide the agent’s session' : live ? 'Watch the agent work' : 'The agent’s session'}
             </button>
             {watch ? <Session channel={run.channel} live={live} where={step?.kind === 'claude' ? step.where : undefined} worktree={worktree} open={() => open(run.channel!)} /> : null}
           </>
@@ -246,7 +246,7 @@ function Session({ channel, live, where, worktree, open }: { channel: string; li
         ) : null}
       </div>
       <div className={cx(v.chat, s.sessionLog)}>
-        <ChatLog channel={channel} empty={<div className={s.sessionEmpty}>{live ? 'Claude is starting…' : 'This session has nothing to show'}</div>} />
+        <ChatLog channel={channel} empty={<div className={s.sessionEmpty}>{live ? 'The agent is starting…' : 'This session has nothing to show'}</div>} />
         <Attention channel={channel} />
       </div>
     </div>

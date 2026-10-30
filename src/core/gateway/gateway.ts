@@ -380,7 +380,7 @@ export class Gateway {
       ...(input.answer ? { answer: input.answer } : {}),
     });
     if (confirm) {
-      this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your Claude wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s Claude'}`, body: oneLine(input.summary?.trim() || ask, 140), need: `confirm:${task.id}`, ...(input.conversation ? { channel: input.conversation } : {}) });
+      this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your agent wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s agent'}`, body: oneLine(input.summary?.trim() || ask, 140), need: `confirm:${task.id}`, ...(input.conversation ? { channel: input.conversation } : {}) });
       const timer = setTimeout(() => this.confirm(task.id, false, undefined, 'Not sent: nobody answered in time'), this.deps.confirmTimeoutMs ?? DEFAULT_CONFIRM_MS);
       timer.unref();
       this.confirmTimers.set(task.id, timer);
@@ -486,13 +486,13 @@ export class Gateway {
     if (!skip && !answers.some((a) => a.trim())) throw new Error('Give an answer (or skip)');
     // Your Claude's answer tells them something: if you never saw this task, you see the answer first.
     if (by === 'agent' && !skip && !task.confirmed) {
-      this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `Your Claude wants to answer ${task.peerName}'s Claude`, body: oneLine(answers.join(' · '), 140), need: `gwq:${task.id}`, ...(task.conversation ? { channel: task.conversation } : {}) });
+      this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `Your agent wants to answer ${task.peerName}'s agent`, body: oneLine(answers.join(' · '), 140), need: `gwq:${task.id}`, ...(task.conversation ? { channel: task.conversation } : {}) });
       return this.put({ ...task, answerDraft: { qid: q.qid, answers: answers.map((a) => a.slice(0, 4000)) }, updatedAt: this.now() });
     }
     const record = skip ? undefined : Object.fromEntries(q.questions.map((item, i) => [item.question, (answers[i] ?? '').trim().slice(0, 4000)]).filter(([, a]) => a));
     this.courier.send(task.peerId, { t: 'task_answer', id, qid: q.qid, ...(record ? { answers: record } : { skip: true }), ts: this.now() }, true);
     this.toAsk.delete(id);
-    const who = by === 'agent' ? 'Your Claude' : 'You';
+    const who = by === 'agent' ? 'Your agent' : 'You';
     const { question: _done, answerDraft: _draft, ...rest } = task;
     return this.put({ ...rest, steps: [...task.steps, skip ? `${who} let them decide` : `${who} answered: ${oneLine(Object.values(record ?? {}).join(' · '), 120)}`].slice(-MAX_STEPS), updatedAt: this.now() });
   }
@@ -610,7 +610,7 @@ export class Gateway {
   /** A friend's task that ran here just ended (not one you stopped or they cancelled): you hear how it went, pointing at its chat. */
   private ranHere(task: TaskView): void {
     if (task.direction !== 'received' || !task.startedAt || (task.state !== 'done' && task.state !== 'failed')) return;
-    const what = task.kind === 'run' ? `${task.peerName}'s command on your Mac` : task.kind === 'file' ? `Sending a file to ${task.peerName}` : `Your Claude's work for ${task.peerName}`;
+    const what = task.kind === 'run' ? `${task.peerName}'s command on your Mac` : task.kind === 'file' ? `Sending a file to ${task.peerName}` : `Your agent's work for ${task.peerName}`;
     this.deps.notify?.({
       kind: 'people',
       tag: 'task',
@@ -679,13 +679,13 @@ export class Gateway {
     const chat = task.chat ?? this.chatFor(task);
     if (!chat || task.chat) return task;
     const me = this.deps.selfName();
-    const who = task.by === 'agent' ? `${me}'s Claude` : me;
+    const who = task.by === 'agent' ? `${me}'s agent` : me;
     const what =
       task.kind === 'run'
         ? `asked to run \`${oneLine(task.command ?? '', 80)}\` on ${task.peerName}'s Mac`
         : task.kind === 'file'
           ? `asked ${task.peerName}'s Mac for ${(task.path ?? '').split('/').pop() || 'a file'}`
-          : `asked ${task.peerName}'s Claude: ${oneLine(task.summary?.trim() || task.ask, 140)}`;
+          : `asked ${task.peerName}'s agent: ${oneLine(task.summary?.trim() || task.ask, 140)}`;
     try {
       this.mesh?.post?.(chat, `${who} ${what}`, { task: { id: task.id, role: 'request' } });
     } catch {
@@ -811,7 +811,7 @@ export class Gateway {
       ...plainTask,
       asked: [...asked, msg.qid],
       question: { qid: msg.qid, questions: msg.questions, askedAt: this.now() },
-      steps: [...task.steps, `${task.peerName}'s Claude asks: ${oneLine(msg.questions[0]!.question, 120)}`].slice(-MAX_STEPS),
+      steps: [...task.steps, `${task.peerName}'s agent asks: ${oneLine(msg.questions[0]!.question, 120)}`].slice(-MAX_STEPS),
       updatedAt: this.now(),
     });
     // A wait_for that was waiting already took it (see wait).
@@ -821,7 +821,7 @@ export class Gateway {
       else this.askClaude(next);
       return;
     }
-    this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `${next.peerName}'s Claude has a question`, body: oneLine(msg.questions[0]!.question, 140), need: `gwq:${next.id}`, ...(next.conversation ? { channel: next.conversation } : {}) });
+    this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `${next.peerName}'s agent has a question`, body: oneLine(msg.questions[0]!.question, 140), need: `gwq:${next.id}`, ...(next.conversation ? { channel: next.conversation } : {}) });
   }
 
   /** Start a turn of your Claude with the question (once per question). */
@@ -861,7 +861,7 @@ export class Gateway {
   private announce(task: TaskView): void {
     // Your Claude asked from a conversation: it hands the answer on there (one place, not two).
     if (task.by === 'agent' && task.conversation) return;
-    const who = task.kind === 'run' ? `Your command on ${task.peerName}'s Mac` : task.kind === 'file' ? `Your file request to ${task.peerName}'s Mac` : `${task.peerName}'s Claude`;
+    const who = task.kind === 'run' ? `Your command on ${task.peerName}'s Mac` : task.kind === 'file' ? `Your file request to ${task.peerName}'s Mac` : `${task.peerName}'s agent`;
     const verb = task.state === 'done' ? (task.kind === 'run' ? 'finished' : 'replied') : task.state === 'declined' ? 'was declined' : task.state === 'cancelled' ? 'was cancelled' : 'failed';
     this.deps.notify?.({ kind: task.state === 'done' ? 'done' : 'problems', title: `${who} ${verb}`, body: oneLine((task.result?.summary ?? task.ask).replace(/[*_`#>]/g, ''), 140), ...(task.conversation ? { channel: task.conversation } : {}) });
   }

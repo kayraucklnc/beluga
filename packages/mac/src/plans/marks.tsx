@@ -4,6 +4,7 @@ import { useRef } from 'react';
 import { Icon } from '../components/Icon.js';
 import { Avatar, cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
+import { useMyAgentName } from '../lib/agent-words.js';
 import { breath, turn, useLive } from '../lib/live-motion.js';
 import { type Need, type Signal, signalOf } from '../layout/attention-model.js';
 import { SignalMark } from '../layout/signal-marks.js';
@@ -120,8 +121,9 @@ export function PlanProgress({ columns }: { columns: ReadonlyArray<readonly Bar[
 function WhoMark({ who, size = 20 }: { who: Who; size?: number }) {
   const id = useApp((s) => s.selfId);
   const name = useApp((s) => s.self?.name ?? s.network.self?.name ?? 'You');
+  const agent = useMyAgentName();
   if (who === 'you') return <Avatar name={name} id={id} size={size} />;
-  if (who === 'claude') return <Avatar name="Claude" id={id} claude size={size} />;
+  if (who === 'claude') return <Avatar name={agent} id={id} claude size={size} />;
   return (
     <span className={p.belugaMark} style={{ width: size, height: size }} aria-hidden="true">
       <Icon name="claude" size={Math.round(size * 0.55)} />

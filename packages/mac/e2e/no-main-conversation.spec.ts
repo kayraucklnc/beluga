@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from './fixtures.js';
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
-const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea):not([aria-label="Plan name"]):not([aria-label="Message Claude about the plan"])');
+const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea):not([aria-label="Plan name"]):not([aria-label="Message your agent about the plan"])');
 const projectRow = (page: Page, name: string): Locator => sidebar(page).getByRole('button', { name, exact: true }).and(page.locator('[aria-expanded]'));
 const shots = process.env.E2E_SHOTS;
 

@@ -106,20 +106,20 @@ export function ChatView() {
   const empty =
     view.kind === 'draft' ? (
       projectName ? (
-        <Empty icon="eye" title={`Ask about ${projectName}`} detail="Questions only: Claude reads the main folder and changes nothing there. Ask for a change and this chat becomes a worktree." />
+        <Empty icon="eye" title={`Ask about ${projectName}`} detail="Questions only: your agent reads the main folder and changes nothing there. Ask for a change and this chat becomes a worktree." />
       ) : (
-        <Empty icon="chat" title="A new chat with Claude" detail="Nothing is created until you send your first message." />
+        <Empty icon="chat" title="A new chat with your agent" detail="Nothing is created until you send your first message." />
       )
     ) : ws?.askOnly ? (
-      <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Claude reads the main folder and answers; it won’t change anything here. Ask for a change and this chat becomes a worktree." action={<Starters />} />
+      <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Your agent reads the main folder and answers; it won’t change anything here. Ask for a change and this chat becomes a worktree." action={<Starters />} />
     ) : view.kind === 'draft_worktree' ? (
-      <Empty icon="branch" title="A new worktree" detail="Describe the task below. Beluga makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
+      <Empty icon="branch" title="A new worktree" detail="Describe the task below. Beluga makes a branch and a folder for it from the branch you pick, and your agent starts right away." />
     ) : view.kind === 'assistant' ? (
-      <Empty icon="laptop" title="Ask your Mac" detail="Your Claude for this whole Mac, not one project: screenshots, what’s using the CPU, starting a worktree or a task. Keep several chats as tabs above; the open one is the one on your phone." action={<AssistantStarters />} />
+      <Empty icon="laptop" title="Ask your Mac" detail="Your agent for this whole Mac, not one project: screenshots, what’s using the CPU, starting a worktree or a task. Keep several chats as tabs above; the open one is the one on your phone." action={<AssistantStarters />} />
     ) : view.kind === 'room' ? (
-      <Empty icon="claude" title={solo ? 'Talk to your Claude' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give Claude a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your Claude.'} action={<Starters />} />
+      <Empty icon="claude" title={solo ? 'Talk to your agent' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give your agent a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your agent.'} action={<Starters />} />
     ) : (
-      <Empty icon="chat" title="Tell Claude what to do here" detail="It works in this folder and remembers the conversation. Start with one of these, or write your own below." action={<Starters />} />
+      <Empty icon="chat" title="Tell your agent what to do here" detail="It works in this folder and remembers the conversation. Start with one of these, or write your own below." action={<Starters />} />
     );
   // A worktree made outside Beluga: its info page until there's a conversation (or you start one).
   const other = ws?.kind === 'worktree' && ws.external && !ws.archived ? ws : undefined;

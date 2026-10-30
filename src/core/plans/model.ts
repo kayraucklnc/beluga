@@ -17,9 +17,9 @@ export type Autonomy = (typeof AUTONOMIES)[number];
  * `summary` the one sentence a choice of it shows, `hint` the longer how-it-runs.
  */
 export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly summary: string; readonly hint: string }>> = {
-  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Claude lines up what can start; you start each task' },
+  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Your agent lines up what can start; you start each task' },
   gated: { label: 'Check-ins', summary: 'Runs, then waits for you at each milestone', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
-  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
+  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: your agent checks each one; it stops only when something fails' },
 };
 
 /** When a plan runs its e2e and full test suites: once per milestone at its check, or only at the end. */

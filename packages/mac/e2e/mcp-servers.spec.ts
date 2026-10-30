@@ -11,7 +11,7 @@ test('Settings › Claude lists your MCP servers and signs you in to one', async
   await expect(page.getByRole('navigation', { name: 'Sidebar' })).toBeVisible();
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog');
-  await settings.getByRole('button', { name: 'Claude' }).click();
+  await settings.getByRole('button', { name: 'Agent' }).click();
   await expect(settings.getByText('Servers your Claude uses')).toBeVisible();
   await expect(settings.getByText('Yours, in every project · Needs you to sign in')).toBeVisible();
   await expect(settings.getByText('From the context7 plugin · Connected')).toBeVisible();

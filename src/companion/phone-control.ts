@@ -595,7 +595,7 @@ export class PhoneControl {
   private lastUsb = new Map<string, boolean>();
 
   private noteFor(state: PhoneControlState | undefined, routes: readonly PhoneRoute[], use: PhoneUse, stopped = false): string | undefined {
-    if (use === 'off') return 'Off. Turn it on to let Claude act on this phone.';
+    if (use === 'off') return 'Off. Turn it on to let your agent act on this phone.';
     if (stopped && !state) return 'The phone said Stop: turn on “Let your Mac use this phone” in its Beluga.';
     if (!state) return 'Open the Beluga app on this phone so it can say what it allows.';
     if (!state.allowed) return 'Turn on “Let your Mac use this phone” in the phone’s Beluga.';
@@ -1096,7 +1096,7 @@ export class PhoneControl {
   /** The reach for an action of this kind, after the use level has allowed it (reused a few seconds: finding it runs adb). */
   private async need(deviceId: string, kind: 'look' | 'act' | 'shell'): Promise<Reach> {
     const use = this.howUsed(deviceId);
-    if (use === 'off') throw new Error('This phone is off for Claude (turn it on in Settings › Phone).');
+    if (use === 'off') throw new Error('This phone is off for your agent (turn it on in Settings › Phone).');
     if (this.phoneSaidNo(deviceId)) throw new Error('The phone said Stop: “Let your Mac use this phone” is off in its Beluga.');
     this.lastUsed.set(deviceId, Date.now());
     const kept = this.reached.get(deviceId);
@@ -1243,7 +1243,7 @@ export class PhoneControl {
     }
     this.reached.delete(deviceId);
     this.deps.onChange();
-    return 'Beluga Link is installed and on: Claude can look at the phone and tap, type and open apps, cable or not.';
+    return 'Beluga Link is installed and on: your agent can look at the phone and tap, type and open apps, cable or not.';
   }
 
   /** Pair the Mac's adb with the phone, using a code the phone sent (over the pairing-port tunnel). */

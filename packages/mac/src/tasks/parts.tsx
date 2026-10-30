@@ -61,7 +61,7 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
       {issue.drafting ? (
         <span className={t.writing} aria-live="polite">
           <Dot tone="claude" live />
-          Claude is writing…
+          The agent is writing…
         </span>
       ) : null}
       {issue.needsChecks && STATUS_INFO[issue.status].open ? (
@@ -113,7 +113,7 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
         </span>
       ) : null}
       {!presence ? null : running ? (
-        <Tip label={doing ? `Claude: ${doing}` : 'Claude is working on it'}>
+        <Tip label={doing ? `Agent: ${doing}` : 'The agent is working on it'}>
           <span className={t.working}>
             <Dot tone="claude" live />
             {doing ? <span className={t.nowStep}>{doing}</span> : null}
@@ -239,7 +239,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         icon: 'chat',
         separate: true,
         submenu: mates.flatMap((m) => [
-          { label: `${m.name}’s Claude`, hint: `@claude:… @${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, true)) },
+          { label: `${m.name}’s agent`, hint: `@claude:… @${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, true)) },
           { label: m.name, hint: `@${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, false)) },
         ]),
         onSelect: () => undefined,
@@ -265,8 +265,8 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         ? [{ label: 'Open Worktree', icon: 'branch' as const, onSelect: () => openWorktree(worktree) }]
         : startable
           ? [
-              { label: 'Start', icon: 'play' as const, hint: 'A new worktree, Claude working on it', onSelect: () => void act(() => api.start(issue.id, { claude: true })) },
-              { label: 'Start Worktree Only', icon: 'branch' as const, hint: 'Without Claude', onSelect: () => void act(() => api.start(issue.id, {})) },
+              { label: 'Start', icon: 'play' as const, hint: 'A new worktree, your agent working on it', onSelect: () => void act(() => api.start(issue.id, { claude: true })) },
+              { label: 'Start Worktree Only', icon: 'branch' as const, hint: 'Without the agent', onSelect: () => void act(() => api.start(issue.id, {})) },
             ]
           : []),
       // Finished (or canceled) work starts again only deliberately: back to Ready, then Start.

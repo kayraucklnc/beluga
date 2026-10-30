@@ -18,7 +18,7 @@ export function RequestsNav({ whenAny }: { whenAny?: boolean } = {}) {
     <Row
       icon={<Icon name="hand" size={14} />}
       label="Requests"
-      detail={waiting ? `${waiting} waiting for you` : live ? `${live} in progress` : 'Tasks between Claudes'}
+      detail={waiting ? `${waiting} waiting for you` : live ? `${live} in progress` : 'Tasks between agents'}
       selected={selected}
       onClick={() => actions.run({ type: 'view', view: { kind: 'requests' } })}
       trailing={waiting ? <Badge count={waiting} urgent /> : null}

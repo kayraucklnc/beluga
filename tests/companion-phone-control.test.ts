@@ -125,7 +125,7 @@ describe('PhoneControl routes', () => {
     const off: DeviceRecord = { cert: cert(id), pairedAt: 1, use: 'off' };
     const link = fakeLink(id.padEnd(16, '0'), control());
     const ctl = new PhoneControl({ sys, devices: book([off]), link: () => link, onChange: () => {}, adbPath: '/fake/adb' });
-    await expect(ctl.screenshot(id.padEnd(16, '0'))).rejects.toThrow(/off for Claude/);
+    await expect(ctl.screenshot(id.padEnd(16, '0'))).rejects.toThrow(/off for your agent/);
   });
 });
 

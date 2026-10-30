@@ -138,8 +138,8 @@ describe('planSteer', () => {
   });
 
   it('a quiet spell spent thinking says so, and is never taken for dead', () => {
-    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was thinking for 1m; reading your message' });
-    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was quiet for 1m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: the agent was thinking for 1m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: the agent was quiet for 1m; reading your message' });
     expect(planSteer({ lastEventAt: now - 8 * MIN, between: false, thinking: true }, now).kind).toBe('interrupt');
   });
 });
@@ -264,7 +264,7 @@ describe('Steer on a queued message', () => {
     const t = await busy(b);
     expect(t.h.promote('r2')).toBe(true);
     // The run ends without Claude reading it (as the runner fails what it hadn't got to).
-    b.steered[0]!.onError('Claude finished before getting to this message');
+    b.steered[0]!.onError('The agent finished before getting to this message');
     expect(t.card('r2')?.status).toBe('queued');
     expect(t.toasts.at(-1)).toMatch(/runs next/);
     b.live.finish!();
@@ -400,7 +400,7 @@ describe('a steered message, sent but not read yet (BLG-54)', () => {
     await t.ask('r2', 'use pnpm', true);
     expect(await t.h.steerNow('r2')).toBe(true);
     // As the runner does when its run is stopped: what it hadn't read comes back.
-    b.steered[0]!.onError('Claude finished before getting to this message');
+    b.steered[0]!.onError('The agent finished before getting to this message');
     await waitFor(() => t.card('r2')?.text === 'did use pnpm');
     expect(b.prompts).toEqual(['slow', 'use pnpm']);
     await t.h.idle('room');
@@ -438,7 +438,7 @@ describe('the watchdog taking over a run (KLD-37 on KLD-43’s stop)', () => {
     expect(waited).toEqual(['later', 'after that']);
     // Killed before the wake could start: no second Claude in the folder, and nothing ran in between.
     expect(b.timeline).toEqual(['run slow', 'killed slow']);
-    expect(t.card('r1')?.text).toBe('Stopped by Beluga to wake Claude');
+    expect(t.card('r1')?.text).toBe('Stopped by Beluga to wake the agent');
     expect(t.card('r2')?.text).toBe('Sent along with Beluga’s wake-up');
     expect(t.card('r3')?.text).toBe('Sent along with Beluga’s wake-up');
     expect(t.h.runningIn('room')).toBe(false);

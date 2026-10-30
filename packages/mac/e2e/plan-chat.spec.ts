@@ -13,7 +13,7 @@ import { expect, test, type Locator, type Page } from './fixtures.js';
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const main = (page: Page) => page.locator('main');
 const chat = (page: Page) => page.getByRole('complementary', { name: 'Conversation' });
-const box = (page: Page) => chat(page).getByRole('textbox', { name: 'Message Claude about the plan' });
+const box = (page: Page) => chat(page).getByRole('textbox', { name: 'Message your agent about the plan' });
 
 // A 2×2 red PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64');
@@ -32,7 +32,7 @@ async function newPlan(page: Page, goal: string): Promise<void> {
   await page.getByRole('button', { name: 'New Plan', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: /^Plan in / });
   await sheet.getByLabel('Goal').fill(goal);
-  await sheet.getByRole('button', { name: 'Plan with Claude' }).click();
+  await sheet.getByRole('button', { name: 'Plan with Your Agent' }).click();
   await expect(box(page)).toBeVisible({ timeout: 20_000 });
 }
 
@@ -71,7 +71,7 @@ test('while Claude works the box still sends, and Stop ends its turn (BLG-10)', 
   await box(page).fill('add a retry budget');
   await box(page).press('Enter');
   // Claude works on it: the box says it reaches Claude now, and Stop is there.
-  const stop = chat(page).getByRole('button', { name: 'Stop Claude' });
+  const stop = chat(page).getByRole('button', { name: 'Stop the agent' });
   await expect(stop).toBeVisible({ timeout: 10_000 });
   await expect(box(page)).toHaveAttribute('placeholder', /tell it now, or stop it/);
   await expect(chat(page).getByRole('button', { name: 'Send Now' })).toBeVisible();

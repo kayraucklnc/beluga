@@ -75,7 +75,7 @@ export class QuestionBroker {
       const timer = setTimeout(() => {
         if (!this.waiting.delete(qid)) return;
         this.deps.store.dispatch({ type: 'question_remove', qid });
-        this.deps.toast(`Claude's ${question.kind === 'plan' ? 'plan' : 'question'} went unanswered, so it carried on without it`, 'warn');
+        this.deps.toast(`Your agent's ${question.kind === 'plan' ? 'plan' : 'question'} went unanswered, so it carried on without it`, 'warn');
         resolve(SKIP);
       }, this.deps.timeoutMs());
       timer.unref();

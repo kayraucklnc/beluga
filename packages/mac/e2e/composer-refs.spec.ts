@@ -103,7 +103,7 @@ test('the plan chat takes pasted images, image paths in words, and files like an
   }
   await page.locator('main').getByRole('button', { name: /^Card checkout for launch,/ }).click();
   const chat = page.getByRole('complementary', { name: 'Conversation' });
-  const box = chat.getByRole('textbox', { name: 'Message Claude about the plan' });
+  const box = chat.getByRole('textbox', { name: 'Message your agent about the plan' });
   const tray = chat.getByRole('group', { name: 'Images to send' });
   // A picture from the clipboard, where the cursor is.
   await box.fill('the bug is here and');

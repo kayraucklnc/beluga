@@ -7,6 +7,8 @@ import { commandEnv, fetchSource } from '../views/sources.js';
 import type { Source } from '../../shared/view-spec.js';
 import { gatewayOf } from '../gateway/registry.js';
 import { isFinal } from '../gateway/model.js';
+import { agentLabel } from '../../shared/agent-label.js';
+import { defaultAgentOf } from '../../protocol.js';
 import { networkOf } from '../network.js';
 import { git, status } from '../../workspaces/git.js';
 import { findPr, mergePr } from '../../workspaces/pr.js';
@@ -271,14 +273,14 @@ function chat(session: Session, store: Store): SentinelChat {
 function friends(session: Session): SentinelFriends {
   const need = () => {
     const gw = gatewayOf(session);
-    if (!gw) throw new Error('asking a friend’s Claude needs the Beluga network: turn it on in Settings › Network');
+    if (!gw) throw new Error('asking a friend’s agent needs the Beluga network: turn it on in Settings › Network');
     return gw;
   };
   return {
     ask: (input) => need().ask({ ...input, by: 'person' }).id,
     wait: async (id, ms) => {
       const t = await need().wait(id, Math.max(1, ms));
-      return { state: t.state, final: isFinal(t.state), name: `${t.peerName}’s Claude`, ...(t.result?.summary ? { summary: t.result.summary } : {}), ...(t.result?.data !== undefined ? { data: t.result.data } : {}) };
+      return { state: t.state, final: isFinal(t.state), name: agentLabel(defaultAgentOf(session.store.getState().peers.find((p) => p.peerId === t.peerId)), t.peerName, false), ...(t.result?.summary ? { summary: t.result.summary } : {}), ...(t.result?.data !== undefined ? { data: t.result.data } : {}) };
     },
     cancel: (id) => {
       try {

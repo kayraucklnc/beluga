@@ -9,6 +9,8 @@ import type { Workspace } from '../../workspaces/types.js';
 import type { WorkspaceController, WorktreeEvent } from '../workspace-controller.js';
 import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
+import { agentLabel, agentName } from '../../shared/agent-label.js';
+import { defaultAgentOf } from '../../protocol.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
 import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
@@ -154,6 +156,11 @@ export class BoardWork {
     return { kind: 'person', id: this.deps.selfId(), name: this.deps.selfName() };
   }
 
+  /** This Mac's agent by name ("Claude", "Codex"). */
+  private agent(): string {
+    return agentName(defaultAgentOf(this.deps.store.getState().self));
+  }
+
   myClaude(): Actor {
     return { kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName() };
   }
@@ -266,7 +273,7 @@ export class BoardWork {
     const made = this.addMore(now, input, d);
     if (!made.length) return;
     const list = andList(made.map((i) => i.key));
-    this.deps.toast?.(d.epic ? `${now.key} is an epic: Claude added ${list} under it` : `Claude also made ${list}, from what you wrote`);
+    this.deps.toast?.(d.epic ? `${now.key} is an epic: ${this.agent()} added ${list} under it` : `${this.agent()} also made ${list}, from what you wrote`);
   }
 
   /** A draft's `more`: beside the first (or under it, an epic), in its column, each for whom it names. */
@@ -476,7 +483,7 @@ export class BoardWork {
     return [
       '',
       'Being worked on in this project right now, in other worktrees (coordinate: don’t redo their work, and leave a task_note on theirs if you must touch what they own):',
-      ...others.map(({ issue, place, working }) => `- ${issue.key} “${issue.title}” (${issue.status === 'in_review' ? 'in review' : 'in progress'}) in worktree ${place.name}${place.branch ? ` on ${place.branch}` : ''}${working ? ', its Claude is working now' : ''}`),
+      ...others.map(({ issue, place, working }) => `- ${issue.key} “${issue.title}” (${issue.status === 'in_review' ? 'in review' : 'in progress'}) in worktree ${place.name}${place.branch ? ` on ${place.branch}` : ''}${working ? ', its agent is working now' : ''}`),
     ].join('\n');
   }
 
@@ -542,11 +549,11 @@ export class BoardWork {
     const text = await describe(project.root, project.name).catch(() => undefined);
     if (!text || this.board.state().projects[projectId]?.context) return;
     try {
-      this.board.setContext(projectId, text, `${this.deps.selfName()}’s Claude`);
+      this.board.setContext(projectId, text, agentLabel(defaultAgentOf(this.deps.store.getState().self), this.deps.selfName(), false));
     } catch {
       return; // The project went meanwhile.
     }
-    this.deps.toast?.(`Claude wrote what ${project.name} is about: Tasks › ⋯ › About This Project`);
+    this.deps.toast?.(`${this.agent()} wrote what ${project.name} is about: Tasks › ⋯ › About This Project`);
   }
 
   private onAction(action: Action): void {
@@ -622,7 +629,7 @@ export class BoardWork {
       const place = w ? this.workspaces().find((x) => x.id === w && !x.archived) : undefined;
       if (!place) return undefined;
       const working = busyChannels(this.deps.store.getState().log).has(`${WS}${place.id}`);
-      return `worktree ${place.name}${place.branch ? ` (${place.branch})` : ''}${`${WS}${place.id}` === channel ? ', this conversation' : working ? ', its Claude is working there now' : ''}`;
+      return `worktree ${place.name}${place.branch ? ` (${place.branch})` : ''}${`${WS}${place.id}` === channel ? ', this conversation' : working ? ', its agent is working there now' : ''}`;
     };
     return {
       ...(current ? { current: current.key } : {}),

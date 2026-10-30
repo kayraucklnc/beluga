@@ -55,7 +55,7 @@ const IDEAS: readonly Idea[] = [
     Icon: Activity,
     tone: 'rose',
     line: 'Your site goes down at 3 a.m.; by morning a fix waits for your merge',
-    prompt: 'Watch my website every 5 minutes. When it stops answering, have Claude find out why on its own, open a task for it, fix it in a new worktree and open a pull request for me to merge, and tell me when it’s back.',
+    prompt: 'Watch my website every 5 minutes. When it stops answering, have my agent find out why on its own, open a task for it, fix it in a new worktree and open a pull request for me to merge, and tell me when it’s back.',
     scene: () => (
       <View style={{ gap: 8 }}>
         <T v="caption" style={{ textAlign: 'center' }}>
@@ -63,7 +63,7 @@ const IDEAS: readonly Idea[] = [
         </T>
         <View style={{ flexDirection: 'row', gap: 6 }}>
           <Step Icon={Activity} tone="rose" title="Spotted it" />
-          <Step Icon={Bot} tone="peach" title="Claude looked" />
+          <Step Icon={Bot} tone="peach" title="The agent looked" />
           <Step Icon={ListTodo} tone="sky" title="Opened a task" />
           <Step Icon={GitMerge} tone="mint" title="Ready to merge" />
         </View>
@@ -87,12 +87,12 @@ const IDEAS: readonly Idea[] = [
     id: 'fix',
     Icon: Wrench,
     tone: 'peach',
-    line: 'When the tests break, Claude fixes them and asks you to merge',
-    prompt: 'When the tests fail on GitHub for one of my projects, have Claude find out why, fix it in a new worktree and open a pull request for me to merge.',
+    line: 'When the tests break, your agent fixes them and asks you to merge',
+    prompt: 'When the tests fail on GitHub for one of my projects, have my agent find out why, fix it in a new worktree and open a pull request for me to merge.',
     scene: () => (
       <View style={{ flexDirection: 'row', gap: 6 }}>
         <Step Icon={TriangleAlert} tone="rose" title="Tests failed" />
-        <Step Icon={Wrench} tone="peach" title="Claude fixed it" />
+        <Step Icon={Wrench} tone="peach" title="The agent fixed it" />
         <Step Icon={GitMerge} tone="mint" title="Ready to merge" />
       </View>
     ),
@@ -102,7 +102,7 @@ const IDEAS: readonly Idea[] = [
     Icon: GitPullRequest,
     tone: 'mint',
     line: 'Every pull request read before you get to it',
-    prompt: 'When a pull request opens in one of my projects, have Claude read the change and tell me what to look at, in a few lines.',
+    prompt: 'When a pull request opens in one of my projects, have my agent read the change and tell me what to look at, in a few lines.',
     scene: () => (
       <View style={{ padding: 10, borderRadius: radius.m, borderTopLeftRadius: 4, backgroundColor: toneBg('peach') }}>
         <T v="caption" c={color.text}>
@@ -126,7 +126,7 @@ export function SentinelIdeas({ chat }: { chat?: Topic | undefined }) {
   return (
     <View style={{ gap: 12 }}>
       <View style={{ paddingHorizontal: 20, gap: 4 }}>
-        <T v="title">Let Claude keep an eye on things</T>
+        <T v="title">Let your agent keep an eye on things</T>
         <T v="callout">Say what you want; nothing runs until you turn it on.</T>
       </View>
       <ScrollView

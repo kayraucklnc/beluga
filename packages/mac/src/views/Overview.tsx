@@ -240,7 +240,7 @@ function NothingYet() {
     <Empty
       icon="grid"
       title="No workspaces yet"
-      detail={project ? `Start a worktree in ${project.name}: its own branch, with Claude on your task.` : 'Add your projects, then give Claude a task in a worktree of its own.'}
+      detail={project ? `Start a worktree in ${project.name}: its own branch, with your agent on your task.` : 'Add your projects, then give your agent a task in a worktree of its own.'}
       action={
         <EmptyActions>
           {project ? (

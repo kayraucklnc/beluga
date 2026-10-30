@@ -33,7 +33,7 @@ export function PlanChat({ topic, drafting }: { readonly topic: Topic; readonly 
               {title}
             </T>
             <T v="caption" numberOfLines={1}>
-              {working ? `Claude is at it${since !== undefined ? ` · ${elapsed(since)}` : ''}` : turns.length ? 'Tap for the whole conversation' : 'Tell Claude what to plan'}
+              {working ? `Your agent is at it${since !== undefined ? ` · ${elapsed(since)}` : ''}` : turns.length ? 'Tap for the whole conversation' : 'Tell your agent what to plan'}
             </T>
           </View>
           {working ? <TypingDots tone="lavender" /> : <ChevronRight color={color.text3} size={17} />}
@@ -66,7 +66,7 @@ export function PlanDrafting({ working }: { readonly working: boolean }) {
         </View>
       </Breathe>
       <T v="caption" c={color.text2} style={{ textAlign: 'center' }}>
-        {working ? 'Claude is reading the code and writing the plan. Its milestones show here as they come.' : 'Claude isn’t writing the plan right now. Tell it what to plan in the chat.'}
+        {working ? 'Your agent is reading the code and writing the plan. Its milestones show here as they come.' : 'Your agent isn’t writing the plan right now. Tell it what to plan in the chat.'}
       </T>
     </Animated.View>
   );

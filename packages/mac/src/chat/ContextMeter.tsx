@@ -96,7 +96,7 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
   const at = clampThreshold(prefs.autoCompactAt);
   const compact = (): void => {
     api.session.compact(channel).then(
-      () => (model.busy ? toast(client, 'Claude compacts this conversation when it finishes what it’s doing', 'info') : undefined),
+      () => (model.busy ? toast(client, 'Your agent compacts this conversation when it finishes what it’s doing', 'info') : undefined),
       (err: unknown) => toast(client, `Couldn’t compact: ${err instanceof Error ? err.message : String(err)}`, 'error'),
     );
   };
@@ -144,11 +144,11 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
       </dl>
       {theirs ? (
         <div className={s.actions}>
-          <span className={s.hint}>This is the owner’s Claude: only they can compact it.</span>
+          <span className={s.hint}>This is the owner’s agent: only they can compact it.</span>
         </div>
       ) : (
         <div className={s.actions}>
-          <span className={s.hint}>Claude keeps decisions, open tasks and file paths. The chat stays here.</span>
+          <span className={s.hint}>Your agent keeps decisions, open tasks and file paths. The chat stays here.</span>
           <button type="button" className={s.compact} disabled={model.compacting} onClick={compact}>
             {model.compacting ? 'Compacting…' : model.busy ? 'Compact After Turn' : 'Compact Now'}
           </button>

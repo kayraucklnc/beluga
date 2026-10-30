@@ -453,7 +453,7 @@ export function SentinelChatRow() {
         Chat
       </T>
       <Card style={{ marginHorizontal: 16 }}>
-        <Row first Icon={MessagesSquare} tone="lavender" label={chat.title} sub={chat.working ? 'Claude is working…' : (chat.last ?? 'Ask about your sentinels, or tell Claude what to watch')} onPress={() => router.push(convHref(chat.topic) as never)} />
+        <Row first Icon={MessagesSquare} tone="lavender" label={chat.title} sub={chat.working ? 'Your agent is working…' : (chat.last ?? 'Ask about your sentinels, or tell your agent what to watch')} onPress={() => router.push(convHref(chat.topic) as never)} />
       </Card>
     </View>
   );

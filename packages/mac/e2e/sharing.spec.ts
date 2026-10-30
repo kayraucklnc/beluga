@@ -70,11 +70,11 @@ test('right-click a person: Trust is a submenu', async ({ page }) => {
 test("Ask Claude addresses the message with a chip, not typed text", async ({ page }) => {
   await sidebar(page).getByRole('button', { name: 'bob', exact: true }).click();
   await page.getByRole('dialog', { name: 'bob' }).getByRole('button', { name: 'Ask Claude' }).click();
-  await expect(page.getByLabel('To bob’s Claude')).toBeVisible();
+  await expect(page.getByLabel('To bob’s agent')).toBeVisible();
   await expect(composer(page)).toHaveValue('');
-  await expect(composer(page)).toHaveAttribute('placeholder', 'Message bob’s Claude');
+  await expect(composer(page)).toHaveAttribute('placeholder', 'Message bob’s agent');
   await page.getByRole('button', { name: 'Don’t address it' }).click();
-  await expect(page.getByLabel('To bob’s Claude')).toBeHidden();
+  await expect(page.getByLabel('To bob’s agent')).toBeHidden();
 });
 
 test('Share a Folder: share with one person, see it listed, stop sharing', async ({ page }) => {

@@ -46,7 +46,7 @@ function MakingWorktree() {
       icon="branch"
       mark={<span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />}
       title={`Making ${ws.name}…`}
-      detail={`A new worktree from ${ws.base ?? 'the latest origin'}. Its conversation opens here in a moment; anything you asked Claude starts then.`}
+      detail={`A new worktree from ${ws.base ?? 'the latest origin'}. Its conversation opens here in a moment; anything you asked your agent starts then.`}
     />
   );
 }

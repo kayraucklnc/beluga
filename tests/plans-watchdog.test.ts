@@ -272,7 +272,7 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     const r = t.newRun();
     t.event(r, 'started');
     t.event(r, 'tool', 'Bash npx playwright test');
-    expect(t.message('Stop: the e2e suite runs at Ship, not here.', 'steer')).toMatch(/^Steered into .+: its Claude gets it now/);
+    expect(t.message('Stop: the e2e suite runs at Ship, not here.', 'steer')).toMatch(/^Steered into .+: its agent gets it now/);
     const [m] = sent(t);
     expect(m!.prompt).toMatch(/^An urgent message from the head of the plan/);
     // It lands in the queue behind the long command: Klaud steers it in at once.
@@ -293,7 +293,7 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     const r = t.newRun();
     t.event(r, 'started');
     t.event(r, 'tool', 'Bash npx playwright test');
-    expect(t.message('FYI: KLD-9 renamed the session helper.')).toMatch(/^Queued for the Claude working on/);
+    expect(t.message('FYI: KLD-9 renamed the session helper.')).toMatch(/^Queued for the agent working on/);
     const [m] = sent(t);
     expect(m!.prompt).toMatch(/^A message from the head of the plan/);
     t.event(m!.id, 'queued', m!.prompt);
@@ -320,7 +320,7 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     await t.later(STEER_UNREAD_MS);
     expect(t.promoted).toEqual([m!.id, m!.id]);
     const feed = () => t.plans.need(t.plan.id).activity.map((a) => a.text);
-    expect(feed().at(-1)).toMatch(/hadn't read the head Claude's message in 2m: interrupted it again/);
+    expect(feed().at(-1)).toMatch(/hadn't read the plan head's message in 2m: interrupted it again/);
     // Taken into the running turn but never read: a fresh turn with it.
     t.event(m!.id, 'text', READS_AFTER_STEP);
     expect(t.task().waiting).toEqual([{ requestId: m!.id, prompt: m!.prompt, queued: false }]);

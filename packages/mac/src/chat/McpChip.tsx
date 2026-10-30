@@ -78,7 +78,7 @@ export function McpChip() {
             ))}
           </ul>
           <div className={s.foot}>
-            <span className={s.hint}>Your own Claude uses these. A friend’s request never does.</span>
+            <span className={s.hint}>Your own agent uses these. A friend’s request never does.</span>
             <button
               type="button"
               className={s.quiet}

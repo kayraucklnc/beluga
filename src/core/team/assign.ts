@@ -5,6 +5,7 @@ import { type Actor, type AnyAssignee, type Issue, personOf } from '../board/mod
 import type { TaskView } from '../gateway/model.js';
 import { isFinal } from '../gateway/model.js';
 import type { Action } from '../store.js';
+import { agentLabel } from '../../shared/agent-label.js';
 import type { TeamBoardSync } from './board-sync.js';
 import type { Field } from './crdt.js';
 import type { TeamAssignment, TeamState } from './model.js';
@@ -107,7 +108,7 @@ export class TeamAssign implements TeamPart {
     const claude: Actor = { kind: 'claude', owner: asked.peerId, ownerName: this.team.nameOf(asked.peerId) };
     const r = task.result;
     if (r.status === 'done') {
-      if (r.summary.trim()) this.deps.board.addProof(issue.id, { kind: 'text', title: `What ${claude.ownerName}'s Claude did`, body: r.summary.slice(0, 60_000) }, claude);
+      if (r.summary.trim()) this.deps.board.addProof(issue.id, { kind: 'text', title: `What ${agentLabel(undefined, claude.ownerName, false)} did`, body: r.summary.slice(0, 60_000) }, claude);
       for (const f of r.files.filter((x) => x.path)) this.deps.board.addProof(issue.id, { kind: f.image ? 'image' : 'file', title: f.name.slice(0, 120), path: f.path! }, claude);
       this.deps.board.comment(issue.id, r.summary.trim() ? r.summary.slice(0, 8000) : 'Done.', claude);
     } else this.deps.board.comment(issue.id, `${r.status === 'declined' ? 'Declined' : r.status === 'cancelled' ? 'Cancelled' : "Couldn't do it"}: ${r.summary.slice(0, 7000) || 'no reason given'}`, claude);

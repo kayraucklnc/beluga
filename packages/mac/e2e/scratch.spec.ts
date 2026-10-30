@@ -129,7 +129,7 @@ test('Scratch: a calm empty state before anything lands, saying when Claude work
   // Claude starts: the empty state says so.
   await composer(page).fill('Take a screenshot of the login page');
   await page.keyboard.press('Enter');
-  await expect(panel(page).getByRole('status').filter({ hasText: 'Claude is working' })).toBeVisible();
+  await expect(panel(page).getByRole('status').filter({ hasText: 'Your agent is working' })).toBeVisible();
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-working.png') });
 
   // A file lands in .context/ (another tool's folder Claude was told to use): it shows, tagged.
@@ -147,7 +147,7 @@ test('Scratch: a calm empty state before anything lands, saying when Claude work
   // Claude works again: a row on top of the list says so, where the next file will land.
   await composer(page).fill('And the signup page');
   await page.keyboard.press('Enter');
-  await expect(panel(page).getByRole('status').filter({ hasText: 'Claude is working' })).toBeVisible();
+  await expect(panel(page).getByRole('status').filter({ hasText: 'Your agent is working' })).toBeVisible();
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-list-working.png') });
 });
 

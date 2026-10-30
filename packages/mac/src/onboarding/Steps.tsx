@@ -33,7 +33,7 @@ export function Hello({ onStart }: { readonly onStart: () => void }) {
         </motion.span>
       </h1>
       <Rise delay={2.45} className={s.heroBody}>
-        Claude working across all your repositories in parallel. Everything it does, in view. Your friends’ Claudes, one message away.
+        Agents working across all your repositories in parallel, starting with Claude. Everything they do, in view. Your friends’ agents, one message away.
       </Rise>
       <Rise delay={2.75}>
         <GlowButton onClick={onStart} autoFocus>
@@ -137,7 +137,7 @@ export function Ready({ projects, onAddProject, onOpen }: { readonly projects: n
       </h1>
       <Rise delay={0.8} className={s.heroBody}>
         {has
-          ? `Your ${projects === 1 ? 'project is' : `${projects} projects are`} here. Start a worktree from any of them, and Claude gets to work on its own branch.`
+          ? `Your ${projects === 1 ? 'project is' : `${projects} projects are`} here. Start a worktree from any of them, and your agent gets to work on its own branch.`
           : 'Add a project to begin. Beluga finds its branches and worktrees, and every new task gets its own.'}
       </Rise>
       <Rise delay={1.05} className={s.readyButtons}>

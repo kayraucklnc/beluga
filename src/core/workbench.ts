@@ -22,6 +22,8 @@ import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
 import type { ModelChoice, PullRequest } from './work-store.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
+import { agentName } from '../shared/agent-label.js';
+import { defaultAgentOf } from '../protocol.js';
 import { type GitFixId, type GitSetup, type GitTrouble, explainGitTrouble, httpsRemoteOf, troubleLine } from '../shared/git-trouble.js';
 
 export interface WorkbenchDeps {
@@ -192,6 +194,10 @@ const envText = (vars: Readonly<Record<string, string>>): string => JSON.stringi
  * scripts, pull requests, models, how much space and usage it takes, search, templates.
  */
 export class Workbench {
+  /** This Mac's agent by name ("Claude", "Codex"). */
+  private agent(): string {
+    return agentName(defaultAgentOf(this.deps.store.getState().self));
+  }
   private diskTimer?: NodeJS.Timeout;
   private prTimer?: NodeJS.Timeout;
   private readonly watchers = new Map<string, () => void>();
@@ -304,7 +310,7 @@ export class Workbench {
     if (!this.deps.store.getState().prs[ws.id]) this.prAsked.add(ws.id);
     this.deps.controller.open(ws.id);
     this.deps.askClaude(prompt, `ws:${ws.id}`);
-    this.deps.toast('Claude is preparing the pull request…');
+    this.deps.toast(`${this.agent()} is preparing the pull request…`);
   }
 
   /**
@@ -389,7 +395,7 @@ export class Workbench {
       if (!result.ok) {
         if (result.reason === 'moved') return warn(`Someone pushed to ${base} just now: nothing was pushed, try again`);
         const files = result.files.slice(0, 3).join(', ') + (result.files.length > 3 ? '…' : '');
-        return warn(`${branch} conflicts with origin/${base} (${files}): nothing was pushed. Create a PR, or ask Claude to bring ${base} in first`);
+        return warn(`${branch} conflicts with origin/${base} (${files}): nothing was pushed. Create a PR, or ask your agent to bring ${base} in first`);
       }
       void this.deps.controller.refresh();
       void this.refreshPrs(id);
@@ -521,7 +527,7 @@ export class Workbench {
     if (!ws || !pr) return;
     this.deps.controller.open(id);
     this.deps.askClaude(resolvePrConflictsPrompt(pr, this.prBase(ws)), `ws:${id}`);
-    this.deps.toast(`Claude is resolving PR #${pr.number}’s conflicts…`);
+    this.deps.toast(`${this.agent()} is resolving PR #${pr.number}’s conflicts…`);
   }
 
   /**
@@ -560,7 +566,7 @@ export class Workbench {
     await this.deps.controller.refresh();
     this.deps.controller.open(id);
     this.deps.askClaude(catchUpPrompt(pr, base), `ws:${id}`);
-    this.deps.toast(`${ws.branch} has work since PR #${pr.number}: Claude is bringing in the latest ${base}`);
+    this.deps.toast(`${ws.branch} has work since PR #${pr.number}: ${this.agent()} is bringing in the latest ${base}`);
   }
 
   fixChecks(id: string): void {
@@ -1050,7 +1056,7 @@ export class Workbench {
     const byClaude = setup.source === 'claude';
     if (auto && (fromRepo || byClaude) && !this.manager.isScriptApproved(project.id, command)) {
       if (!this.deps.confirm) return;
-      const [title, from] = byClaude ? [`Claude worked out ${project.name}'s setup for new worktrees`, 'Claude read it from the repository'] : [`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, 'This comes from the repository'];
+      const [title, from] = byClaude ? [`${this.agent()} worked out ${project.name}'s setup for new worktrees`, `${this.agent()} read it from the repository`] : [`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, 'This comes from the repository'];
       // Worktrees made together share one question.
       const key = `${project.id}\n${command}`;
       let asking = this.askingSetup.get(key);
@@ -1262,7 +1268,7 @@ export class Workbench {
       if (looking && ws) {
         void looking.then(() => {
           if (this.manager.find(wsId) && project && this.manager.scripts(project.id).run) this.run(wsId);
-          else this.deps.toast("Claude couldn't find a way to run this project. Set one in its ⋯ menu (Setup and run commands)", 'warn');
+          else this.deps.toast(`${this.agent()} couldn't find a way to run this project. Set one in its ⋯ menu (Setup and run commands)`, 'warn');
         });
         return undefined;
       }
@@ -1430,7 +1436,7 @@ export class Workbench {
     const name = at > 0 ? text.slice(0, at).trim() : text.trim().split(/\s+/).slice(0, 4).join(' ');
     const prompt = at > 0 ? text.slice(at + 1).trim() : text.trim();
     if (!name || !prompt) {
-      this.deps.toast('Usage: /template save <name>: <what Claude should do>', 'warn');
+      this.deps.toast('Usage: /template save <name>: <what the agent should do>', 'warn');
       return;
     }
     this.deps.store.dispatch({ type: 'templates', templates: addTemplate(name, prompt, plan) });

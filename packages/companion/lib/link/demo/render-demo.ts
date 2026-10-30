@@ -1,4 +1,5 @@
 import { stripCode } from '../../../../../src/companion/strip';
+import { agentName } from '../../../../../src/shared/agent-label';
 import type { ConvView } from '../protocol';
 import { type Row, type ViewQuery, pageOf } from '../../render';
 
@@ -144,7 +145,7 @@ export function dashboardConv(now: number): ConvView {
     needsYou: [],
     turns: [
       { id: 'd1', who: 'you', name: 'You', ts: now - 20 * MIN, prose: { text: 'Show me the payments dashboard: this week’s numbers, the orders from shop.db, and how a payment flows.', code: [] } },
-      { id: 'd2', who: 'claude', name: 'Claude', ts: now - 19 * MIN, endTs: now - 17 * MIN, status: 'done', steps: 9, prose: stripCode(ANSWER), trail: [{ tool: 'read', text: 'Read schema.sql' }, { tool: 'tool', text: 'Used show' }, { tool: 'tool', text: 'Used show' }, { tool: 'tool', text: 'Used show' }] },
+      { id: 'd2', who: 'claude', name: agentName(undefined), ts: now - 19 * MIN, endTs: now - 17 * MIN, status: 'done', steps: 9, prose: stripCode(ANSWER), trail: [{ tool: 'read', text: 'Read schema.sql' }, { tool: 'tool', text: 'Used show' }, { tool: 'tool', text: 'Used show' }, { tool: 'tool', text: 'Used show' }] },
     ],
   };
 }

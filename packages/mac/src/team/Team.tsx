@@ -166,7 +166,7 @@ export function KnockCard({ id, text, children }: { id: string; text: string; ch
       <Avatar name={k.name} id={k.peerId} size={26} />
       <div className={s.offerText}>
         <span className={s.offerTitle}>{knockWords(k)}</span>
-        <span className={s.offerDetail}>{k.note ? `“${k.note}” · ` : ''}{k.key}: {k.title}. An editor can talk to your Claude here; a viewer follows along.</span>
+        <span className={s.offerDetail}>{k.note ? `“${k.note}” · ` : ''}{k.key}: {k.title}. An editor can talk to your agent here; a viewer follows along.</span>
       </div>
       <Button variant="quiet" onClick={() => say(api.team.answerKnock(k.id, 'view'))}>
         Let In as Viewer

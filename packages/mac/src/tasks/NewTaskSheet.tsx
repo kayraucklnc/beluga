@@ -65,7 +65,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
       canSubmit={Boolean((mine ? title.trim() : describe.trim()) && project)}
       width={560}
       onCancel={close}
-      footer={<Checkbox checked={start} onChange={setStart} label="Start with Claude" detail="A new worktree, with Claude working on it" />}
+      footer={<Checkbox checked={start} onChange={setStart} label="Start with your agent" detail="A new worktree, with your agent working on it" />}
       onSubmit={async () => {
         const who = choices.find((c) => c.key === assignee)?.assignee;
         const created = await api.create({
@@ -108,7 +108,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
               onChange={setDescribe}
               rows={4}
               maxLength={8000}
-              placeholder={solo ? 'Say what you want done: one task, or a few. Claude writes them.' : 'Say what you want done: one task, or a few and who each is for. Claude writes them.'}
+              placeholder={solo ? 'Say what you want done: one task, or a few. Your agent writes them.' : 'Say what you want done: one task, or a few and who each is for. Your agent writes them.'}
               onInput={(e) => grow(e.currentTarget)}
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing) return;
@@ -127,7 +127,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
       )}
       <button type="button" className={n.disclosure} aria-expanded={mine} onClick={() => setMine(!mine)}>
         <Icon name={mine ? 'chevronDown' : 'chevronRight'} size={10} />
-        {mine ? 'Let Claude write the title and goal' : 'Write title and goal myself'}
+        {mine ? 'Let your agent write the title and goal' : 'Write title and goal myself'}
       </button>
       {pickProject ? (
         <Field label="Project">

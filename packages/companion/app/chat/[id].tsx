@@ -2,6 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
 import { ArrowLeftRight, Clock, Eraser, Lock, Pencil, SquareTerminal, Trash2, TriangleAlert, X } from 'lucide-react-native';
 import { AskClaudePicker, type AskTarget, askTargets } from '../../components/AskClaudePicker';
+import { agentBadge, agentLabel } from '../../../../src/shared/agent-label';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet as RNStyleSheet, TextInput, View } from 'react-native';
 import Animated, { LinearTransition, FadeIn } from 'react-native-reanimated';
@@ -104,7 +105,7 @@ export default function Chat() {
               <T v="caption" c={ink.peach} style={{ fontWeight: '700' }}>
                 Ask: {ask.label}
               </T>
-              <Press onPress={() => setAsk(undefined)} accessibilityLabel="Don't ask Claude" hitSlop={8} style={{ width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' }}>
+              <Press onPress={() => setAsk(undefined)} accessibilityLabel="Don't ask an agent" hitSlop={8} style={{ width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' }}>
                 <X color={ink.peach} size={14} />
               </Press>
             </Press>
@@ -127,7 +128,7 @@ export default function Chat() {
             setAsk(undefined);
           }}
           // Behind the + with the photo; who's asked shows in the pill above. The Claude mark, as on the Mac.
-          more={[{ Icon: SquareTerminal, label: 'Ask: your Claude', sub: 'A Claude here answers in the chat', tone: 'peach', onPress: () => setPicking(true) }]}
+          more={[{ Icon: SquareTerminal, label: 'Ask: your agent', sub: 'An agent here answers in the chat', tone: 'peach', onPress: () => setPicking(true) }]}
         />
       </KeyboardLift>
       <Options
@@ -207,7 +208,7 @@ function People({ members }: { members: readonly ChatMemberView[] }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, backgroundColor: color.bg }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 6 }}>
       {members.slice(0, 12).map((m) => (
-        <View key={m.peerId} accessibilityLabel={`${m.me ? 'You' : m.name}: ${m.presence ?? ''}, Claude ${m.claude ?? ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 28, paddingLeft: 3, paddingRight: 10, borderRadius: 14, backgroundColor: color.card, borderWidth: 0.5, borderColor: color.hairline }}>
+        <View key={m.peerId} accessibilityLabel={`${m.me ? 'You' : m.name}: ${m.presence ?? ''}, agent ${m.claude ?? ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 28, paddingLeft: 3, paddingRight: 10, borderRadius: 14, backgroundColor: color.card, borderWidth: 0.5, borderColor: color.hairline }}>
           <Avatar name={m.name} size={22} {...(m.presence ? { presence: m.presence } : {})} />
           <T v="caption" c={color.text} style={{ fontWeight: '700' }}>
             {m.me ? 'You' : m.name}
@@ -287,15 +288,25 @@ function TaskCard({ task }: { task: NonNullable<ChatMessageView['task']> }) {
 }
 
 /** Full width under "<owner>'s Claude": a Claude's answer, or a task's card. */
-function ClaudeRow({ owner, label, first, children }: { owner: string; label: string; first: boolean; children: React.ReactNode }) {
+function ClaudeRow({ owner, label, badge, first, children }: { owner: string; label: string; badge?: string | undefined; first: boolean; children: React.ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', gap: 8, marginTop: first ? 12 : 0 }}>
       <View style={{ width: 30 }}>{first ? <Avatar name={owner} size={30} claude owner={owner} /> : null}</View>
       <View style={{ flex: 1, gap: 4 }}>
         {first ? (
-          <T v="caption" c={toneInk(hueOf(owner))} style={{ fontWeight: '700' }} numberOfLines={1}>
-            {label}
-          </T>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <T v="caption" c={toneInk(hueOf(owner))} style={{ fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+              {label}
+            </T>
+            {/* Which runtime and model answered ("GPT-5"), as on the Mac: a quiet pill. */}
+            {badge ? (
+              <View style={{ paddingHorizontal: 6, borderRadius: 8, backgroundColor: color.card, borderWidth: 0.5, borderColor: color.hairline }}>
+                <T v="caption" c={color.text2} style={{ fontSize: 11 }}>
+                  {badge}
+                </T>
+              </View>
+            ) : null}
+          </View>
         ) : null}
         {children}
       </View>
@@ -314,9 +325,10 @@ function Bubble({ m, first, last, group, pics, me }: { m: ChatMessageView; first
     );
   }
   if (m.claude) {
-    const owner = m.from.replace(/’s Claude$/, '');
+    // An older Mac names it "mia’s Claude"; now "mia’s Codex" too: the owner is before the ’s.
+    const owner = m.from.replace(/['’]s [^’']+$/, '');
     return (
-      <ClaudeRow owner={mine && me ? me : owner} label={mine ? 'Your Claude' : `${owner}’s Claude`} first={first}>
+      <ClaudeRow owner={mine && me ? me : owner} label={agentLabel(m.agent, owner, mine, { capital: mine })} badge={agentBadge(m.agent)} first={first}>
         {files.map((f) => (
           <Thumb key={f.ref} o={f} group={pics} w={f.kind === 'image' ? 220 : 200} h={f.kind === 'image' ? 170 : 92} style={{ borderRadius: 18 }} />
         ))}

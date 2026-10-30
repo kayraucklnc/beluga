@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, AgentPlace, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer } from '../agent/types.js';
 import { ALWAYS_ASK_YOU, writesCode } from '../agent/policy.js';
-import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
+import { type AgentRef, type BodyInput, type BodyOf, CLAUDE_AGENT, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
 import type { ShareService } from './shares.js';
@@ -34,6 +34,8 @@ export interface AgentHostDeps {
   readonly selfId: () => string;
   readonly send: (body: BodyInput, opts?: { to?: string; keep?: boolean }) => boolean;
   readonly agent?: () => AgentBackend | undefined;
+  /** Which agent this Mac runs (named on its run events; default: Claude). */
+  readonly agentRef?: () => AgentRef;
   readonly shares: ShareService;
   readonly sharing: WorkspaceSharing;
   readonly people: People;
@@ -188,7 +190,7 @@ export const EXIT_GRACE_MS = 3_000;
 /** How long quitting waits for stopped runs to end before the last save (see abort). */
 const QUIT_SETTLE_MS = 2_000;
 /** Said when a run that wouldn't take an interrupt was stopped for your message. */
-const STOPPED_FOR_YOU = 'Claude didn’t stop when asked, so its run was stopped for your message';
+const STOPPED_FOR_YOU = 'Your agent didn’t stop when asked, so its run was stopped for your message';
 
 
 /**
@@ -198,7 +200,7 @@ const STOPPED_FOR_YOU = 'Claude didn’t stop when asked, so its run was stopped
  */
 export function planSteer(status: LiveStatus | undefined, now: number): { kind: 'steer' } | { kind: 'interrupt' | 'restart'; note: string } {
   if (!status) return { kind: 'steer' };
-  if (status.alive === false) return { kind: 'restart', note: 'Claude’s run had ended without finishing: started over with your message' };
+  if (status.alive === false) return { kind: 'restart', note: 'The agent’s run had ended without finishing: started over with your message' };
   if (status.between) return { kind: 'steer' };
   if (status.tool) {
     const ran = now - status.tool.since;
@@ -206,8 +208,8 @@ export function planSteer(status: LiveStatus | undefined, now: number): { kind: 
   }
   const quiet = now - status.lastEventAt;
   // Thinking is Claude at work (its process still runs): interrupted, never taken for dead.
-  if (quiet >= DEAD_RUN_MS && !status.thinking) return { kind: 'restart', note: `Claude had gone quiet for ${span(quiet)}: stopped to start over with your message` };
-  if (quiet >= STEER_QUIET_MS) return { kind: 'interrupt', note: `Interrupted: Claude was ${status.thinking ? 'thinking' : 'quiet'} for ${span(quiet)}; reading your message` };
+  if (quiet >= DEAD_RUN_MS && !status.thinking) return { kind: 'restart', note: `The agent had gone quiet for ${span(quiet)}: stopped to start over with your message` };
+  if (quiet >= STEER_QUIET_MS) return { kind: 'interrupt', note: `Interrupted: the agent was ${status.thinking ? 'thinking' : 'quiet'} for ${span(quiet)}; reading your message` };
   return { kind: 'steer' };
 }
 
@@ -279,12 +281,12 @@ export class AgentHost {
    * stays). Waits for Claude's current turn there to end first; once is enough when asked twice.
    */
   compact(channel: string, instructions = ''): void {
-    if (!this.agent) return this.toast('No Claude is running on this computer', 'warn');
+    if (!this.agent) return this.toast('No agent is running on this computer', 'warn');
     const lane = this.lane(channel);
     if (lane.waiting.some((w) => w.compact)) return;
     const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: `compact-${randomUUID()}`, prompt: instructions.slice(0, 2000), viaAgent: false, channel, urgent: false, plan: false };
     lane.waiting.push({ from: this.selfId, body, compact: true });
-    if (lane.current) this.toast('Claude compacts this conversation when it finishes what it’s doing');
+    if (lane.current) this.toast('Your agent compacts this conversation when it finishes what it’s doing');
     void this.pump(lane);
   }
 
@@ -408,7 +410,7 @@ export class AgentHost {
     const run = lane.current;
     if (run && !run.signal.aborted) {
       lane.interruptedBy = 'watchdog';
-      lane.interruptNote = 'Stopped by Beluga to wake Claude';
+      lane.interruptNote = 'Stopped by Beluga to wake the agent';
       run.abort();
     }
     await this.idle(channel);
@@ -516,7 +518,7 @@ export class AgentHost {
   stopAgent(): void {
     const lanes = [...this.lanes.values()];
     if (!lanes.some((l) => l.current || l.waiting.length)) {
-      this.toast('Your Claude is not running anything');
+      this.toast('Your agent is not running anything');
       return;
     }
     for (const id of [...this.toolApprovals.keys()]) this.answerApproval('no', id);
@@ -527,7 +529,7 @@ export class AgentHost {
       lane.current?.abort();
       for (const { from, body, compact } of cancelled) if (!compact) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
     }
-    this.toast('Stopping your Claude everywhere (queued requests cancelled)', 'warn');
+    this.toast('Stopping your agent everywhere (queued requests cancelled)', 'warn');
   }
 
   /**
@@ -542,20 +544,20 @@ export class AgentHost {
     const mine = lane?.waiting.filter((w) => w.from === this.selfId) ?? [];
     if (!lane || (!lane.current && !mine.length)) {
       const busy = [...this.lanes.values()].some((l) => l.current || l.waiting.length);
-      this.toast(busy ? "Your Claude isn't working here" : 'Your Claude is not running anything');
+      this.toast(busy ? "Your agent isn't working here" : 'Your agent is not running anything');
       return { stopped: false, returned: [] };
     }
     for (const [id, at] of [...this.toolApprovals]) if (at === channel) this.answerApproval('no', id);
     this.deps.questions.cancelChannel(channel);
     lane.waiting = lane.waiting.filter((w) => w.from !== this.selfId);
-    for (const { from, body, compact } of mine) if (!compact) this.emitAgent(body.requestId, from, 'error', 'Taken out of the queue when you stopped Claude', body.channel);
+    for (const { from, body, compact } of mine) if (!compact) this.emitAgent(body.requestId, from, 'error', 'Taken out of the queue when you stopped your agent', body.channel);
     if (lane.current) {
       lane.stopping = true;
       lane.current.abort();
     }
     const n = mine.filter((w) => !w.compact).length;
     const back = n ? ` · ${n} queued message${n === 1 ? '' : 's'} back in the box` : '';
-    this.toast(`Stopped your Claude here${back}`, 'success');
+    this.toast(`Stopped your agent here${back}`, 'success');
     return { stopped: true, returned: mine.filter((w) => !w.compact).map((w) => w.body.prompt) };
   }
 
@@ -730,7 +732,7 @@ export class AgentHost {
       if (event === 'done') waiter.resolve(text);
       else waiter.reject(new Error(text || 'It stopped'));
     }
-    const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel, ...(slotWait ? { slotWait } : {}) };
+    const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel, ...(slotWait ? { slotWait } : {}), agent: this.deps.agentRef?.() ?? CLAUDE_AGENT };
     // Workspace conversations are private: events go to you and the people you invited, never to the room.
     const targets = channel === 'room' ? [{ keep: final }] : [this.selfId, ...this.deps.sharing.recipients(channel)].map((to) => ({ to }));
     for (const opts of targets) if (!this.send(body, opts) && final) this.outbox = [...this.outbox, { body, opts }].slice(-50);
@@ -860,7 +862,7 @@ export class AgentHost {
         settled();
         // The run ended before Claude read it (and you didn't stop it): it goes back in line, first.
         if (read || lane.stopping) return emit('error', reason);
-        this.jump(lane, item, 'Claude’s run ended before it read your message: it runs next', undefined);
+        this.jump(lane, item, 'The agent’s run ended before it read your message: it runs next', undefined);
       },
     };
   }
@@ -888,7 +890,7 @@ export class AgentHost {
     const lane = [...this.lanes.values()].find((l) => l.steered?.has(requestId));
     const followUp = lane?.steered?.get(requestId);
     if (!lane || !followUp) {
-      this.toast('Claude has read that message already', 'info');
+      this.toast('Your agent has read that message already', 'info');
       return false;
     }
     const steer = lane.steer;
@@ -909,7 +911,7 @@ export class AgentHost {
     }
     // No run to stop: it still waits for Claude's next step.
     this.emitAgent(requestId, this.selfId, 'text', READS_AFTER_STEP, lane.channel);
-    this.toast('Claude couldn’t be stopped: it reads your message at its next step', 'warn');
+    this.toast('Your agent couldn’t be stopped: it reads your message at its next step', 'warn');
     return false;
   }
 
@@ -990,14 +992,14 @@ export class AgentHost {
       const scope = `${from}:${body.project}`;
       if (level === 'full' || this.alwaysProjects.has(scope)) return true;
       this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
-      const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to work in ${body.project} (Always: for ${body.project}, until Beluga quits)`, body.prompt, from);
+      const answer = await this.ask('request', `${name}${body.viaAgent ? "'s agent" : ''} wants your agent to work in ${body.project} (Always: for ${body.project}, until Beluga quits)`, body.prompt, from);
       if (answer === 'always') this.alwaysProjects.add(scope);
       return answer !== 'no';
     }
     if (level === 'trusted' || level === 'full') return true;
     this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
     const reach = reachOf(state, from) === 'full' ? 'whole computer' : 'shared folders; anything else asks you';
-    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this (${reach})`, body.prompt, from, body.channel);
+    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s agent" : ''} wants your agent to run this (${reach})`, body.prompt, from, body.channel);
     if (answer === 'always') this.deps.people.setTrust(from, 'trusted');
     return answer !== 'no';
   }
@@ -1056,7 +1058,7 @@ export class AgentHost {
       const why = isAssistant(body.channel)
         ? 'Your Mac’s assistant needs the Beluga app.'
         : /^(dm|group):/.test(body.channel)
-          ? 'Your Claude acts in chats only in the Beluga app, and only when you ask it.'
+          ? 'Your agent acts in chats only in the Beluga app, and only when you ask it.'
         : this.deps.workspaces?.inChannel(body.channel)?.kind === 'main'
           ? 'The main folder has no conversation of its own: start a new chat in the project.'
           : 'That workspace is archived or missing.';
@@ -1244,13 +1246,13 @@ export class AgentHost {
     if (requester === this.selfId && toolName.startsWith('mcp__beluga_phone__') && !PHONE_LOOK_TOOLS.includes(toolName)) {
       const use = this.deps.phoneUse?.() ?? 'off';
       if (use !== 'ask') return true; // 'off'/unreachable: the tool itself explains; 'use'/'full': just run
-      const answer = await this.ask('tool', `Claude wants to use your phone (${toolName.replace('mcp__beluga_phone__', '')})`, JSON.stringify(input).slice(0, 2000), requester, channel);
+      const answer = await this.ask('tool', `Your agent wants to use your phone (${toolName.replace('mcp__beluga_phone__', '')})`, JSON.stringify(input).slice(0, 2000), requester, channel);
       return answer !== 'no';
     }
     // Deleting a sentinel or a dashboard asks you first, even when your Claude never asks otherwise: once, no Always.
     if (requester === this.selfId && ALWAYS_ASK_YOU.has(toolName)) {
       const words = this.deps.confirmTool?.(toolName, input);
-      const answer = await this.ask('tool', words?.title ?? `Your Claude wants to use ${toolName}`, words?.detail ?? JSON.stringify(input), requester, channel, { once: true });
+      const answer = await this.ask('tool', words?.title ?? `Your agent wants to use ${toolName}`, words?.detail ?? JSON.stringify(input), requester, channel, { once: true });
       return answer !== 'no';
     }
     // Your own Claude doesn't nag you (unless you asked it to); fully trusted friends don't either.
@@ -1259,7 +1261,7 @@ export class AgentHost {
     // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once, whatever was allowed before.
     if (requester !== this.selfId && writesCode(toolName, input, cwd ?? process.cwd())) {
       const file = String(input.file_path ?? input.notebook_path);
-      const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, requester, channel, { once: true });
+      const answer = await this.ask('tool', `Your agent (working for ${requesterName}) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, requester, channel, { once: true });
       return answer !== 'no';
     }
     // Invited by link to edit this project: as if you prompted, inside its folder (secrets were already refused).
@@ -1268,7 +1270,7 @@ export class AgentHost {
     const scope = `${requester}:${toolName}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input);
-    const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to use ${toolName}`, detail, requester, channel);
+    const answer = await this.ask('tool', `Your agent (working for ${requesterName}) wants to use ${toolName}`, detail, requester, channel);
     if (answer === 'always') this.alwaysTools.add(scope);
     return answer !== 'no';
   }
@@ -1285,7 +1287,7 @@ export class AgentHost {
     const file = ['file_path', 'notebook_path', 'path'].map((k) => input[k]).find((v): v is string => typeof v === 'string');
     const verb = command ? 'run a command that reads' : READS_FILE.has(toolName) ? 'read' : 'change';
     const what = command ? 'a .env file' : path.basename(file ?? '.env');
-    const answer = await this.pose('secret', `Your Claude wants to ${verb} ${what}${project ? ` in ${project}` : ''}`, command ?? file ?? '', undefined, channel, project ? { project } : {});
+    const answer = await this.pose('secret', `Your agent wants to ${verb} ${what}${project ? ` in ${project}` : ''}`, command ?? file ?? '', undefined, channel, project ? { project } : {});
     if (answer === 'project' && project) access?.allow(cwd, 'project');
     if (answer === 'always') access?.allow(cwd, 'everywhere');
     return answer !== 'no';

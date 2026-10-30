@@ -29,11 +29,11 @@ export function ClearAlert({ menu, close }: NativeMenuProps<'clear'>) {
       icon="chat"
       tone="caution"
       title={`Clear “${ws?.name ?? 'this conversation'}”?`}
-      message={more ? 'The messages here are removed, and Claude starts a fresh conversation.' : 'The messages here are removed. Claude still remembers the conversation.'}
+      message={more ? 'The messages here are removed, and your agent starts a fresh conversation.' : 'The messages here are removed. Your agent still remembers the conversation.'}
       confirm={{ label: 'Clear', destructive: true, onClick: () => pick(more ? 'clear-fresh' : 'clear-mine') }}
       onCancel={close}
     >
-      {ws ? <Checkbox checked={more} onChange={setMore} label="Start a fresh conversation" detail="Claude forgets this one" /> : null}
+      {ws ? <Checkbox checked={more} onChange={setMore} label="Start a fresh conversation" detail="Your agent forgets this one" /> : null}
     </Alert>
   );
 }

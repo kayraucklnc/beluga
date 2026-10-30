@@ -53,7 +53,7 @@ export function EditPromptSheet({ turn, onClose }: { readonly turn: TurnView | u
     mode === 'here'
       ? worktree
         ? 'What came after this goes, and the files go back to how they were then.'
-        : 'What came after this goes, and Claude forgets it.'
+        : 'What came after this goes, and your agent forgets it.'
       : worktree
         ? 'Goes on in a new worktree from this point. This one stays as it is.'
         : 'Goes on in a new chat from this point. This one stays as it is.';

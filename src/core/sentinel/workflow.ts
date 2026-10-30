@@ -56,7 +56,7 @@ function stepDetails(st: Step): string {
   if (st.kind === 'script') lines.push(st.code?.trim() ? `${SCRIPT_LANGUAGE_INFO[st.language ?? 'sh'].label}, ${st.code.split('\n').length} lines${st.command.trim() ? `, with \`${st.command.trim().slice(0, 80)}\`` : ''}.` : `\`${st.command.slice(0, 200)}\``);
   if (st.kind === 'http') lines.push(`\`${st.method} ${st.url.slice(0, 200)}\`${Object.keys(st.headers).length ? `\n\nHeaders: ${Object.keys(st.headers).join(', ')}` : ''}`);
   if (st.kind === 'measure') {
-    lines.push(st.from === 'source' ? `Reads ${st.source ? `a ${st.source.kind} source` : 'a source (none yet)'}.` : st.from === 'claude' ? 'Keeps what Claude measured.' : 'Reads the step before’s output.');
+    lines.push(st.from === 'source' ? `Reads ${st.source ? `a ${st.source.kind} source` : 'a source (none yet)'}.` : st.from === 'claude' ? 'Keeps what the agent measured.' : 'Reads the step before’s output.');
     for (const m of st.metrics) lines.push(`- ${m.label ?? m.name} (${m.kind ?? 'number'})${m.columns?.length ? `: ${m.columns.map((c) => `${c.key} as ${c.type}`).join(', ')}` : ''}`);
   }
   return lines.join('\n').slice(0, 4000);

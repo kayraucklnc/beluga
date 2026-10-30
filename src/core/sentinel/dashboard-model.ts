@@ -117,7 +117,7 @@ export const TILE_INFO: Readonly<Record<TileKind, { readonly label: string; read
   number: { label: 'A number', hint: 'Its value and its change against the last one, with a sparkline' },
   series: { label: 'A series', hint: 'Numbers over time, or an array a sentinel kept, as lines, areas or bars' },
   table: { label: 'A table', hint: 'The rows a sentinel kept last' },
-  output: { label: 'An output', hint: 'A step’s latest export: what Claude wrote, or a service’s answer' },
+  output: { label: 'An output', hint: 'A step’s latest export: what the agent wrote, or a service’s answer' },
   text: { label: 'Text', hint: 'A sentinel’s last headline or report' },
   divider: { label: 'A divider', hint: 'A title across the grid' },
 };

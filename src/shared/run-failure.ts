@@ -41,11 +41,11 @@ export function resetWords(at: number, now = Date.now()): string {
 export function failureTitle(f: RunFailure, now = Date.now()): string {
   switch (f.kind) {
     case 'usage_limit':
-      return `Claude hit your usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
+      return `You hit your Claude plan usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
     case 'crash':
       return `Claude Code stopped unexpectedly${f.exitCode !== undefined ? ` (exit ${f.exitCode})` : ''}`;
     case 'network':
-      return 'Claude lost its connection to Anthropic';
+      return 'Claude Code lost its connection to Anthropic';
     case 'api':
       return `Anthropic's API failed: ${firstLine(f.detail).slice(0, 120) || 'unknown error'}`;
     case 'stopped':

@@ -64,7 +64,7 @@ export function resolveMention(token: string, world: MentionWorld): MentionRef |
   if (theirs) {
     const who = lower(theirs[1]!);
     const peer = world.peers.find((p) => lower(p.name) === who) ?? world.friends.find((f) => lower(friendMention(f.name).slice(1)) === who);
-    return peer ? { kind: 'claude', label: `${peer.name}’s Claude`, id: peer.peerId } : undefined;
+    return peer ? { kind: 'claude', label: `${peer.name}’s agent`, id: peer.peerId } : undefined;
   }
   const friend = world.friends.find((f) => lower(friendMention(f.name).slice(1)) === t);
   if (friend) return { kind: 'friend', label: friend.name, id: friend.peerId };

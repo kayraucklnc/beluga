@@ -100,12 +100,12 @@ describe('the plan’s one sentence, its bar and its feed (KLD-22)', () => {
     const v = planView(active({ autonomy, runs: { api: { checkAsked: 1 }, ui: { passedAt: 1 } } }), NO_BOARD);
     expect(v.next.kind).toBe('checking');
     expect(planStatus(v).label).not.toBe('Waiting for you');
-    expect(headline(v)).toEqual({ who: 'claude', text: 'Claude is checking “API”' });
+    expect(headline(v)).toEqual({ who: 'claude', text: 'The agent is checking “API”' });
   });
 
   it('once the check is back, it’s yours to pass, saying what Claude checked', () => {
     const v = planView(active({ runs: { api: { checkAsked: 1, check: { at: 2, by: claude, verdict: 'pass', notes: '' } }, ui: { passedAt: 1 } } }), NO_BOARD);
-    expect(headline(v)).toEqual({ who: 'you', text: 'Pass “API” — Claude checked all 4 criteria' });
+    expect(headline(v)).toEqual({ who: 'you', text: 'Pass “API” — The agent checked all 4 criteria' });
   });
 
   it('tasks at work across milestones; a merge conflict, when the plan carries one', () => {
@@ -120,12 +120,12 @@ describe('the plan’s one sentence, its bar and its feed (KLD-22)', () => {
   it('from a task’s worktree: done, and what the milestone waits on', () => {
     const v = planView(active({ runs: { api: { checkAsked: 1 } } }), NO_BOARD);
     const asReview = { ...v, milestones: v.milestones.map((m) => ({ ...m, tasks: m.tasks.map((t) => ({ ...t, state: 'review' as const })) })) };
-    expect(taskHeadline(asReview, 'a')).toEqual({ who: 'claude', text: 'Done. Claude is checking “API”; Beluga merges this into the plan' });
+    expect(taskHeadline(asReview, 'a')).toEqual({ who: 'claude', text: 'Done. The agent is checking “API”; Beluga merges this into the plan' });
   });
 
   it('switching to Autopilot says what changes from now on, and what happens at once', () => {
     const v = planView(active({ autonomy: 'gated', runs: { api: { checkAsked: 1, check: { at: 2, by: claude, verdict: 'pass', notes: '' } }, ui: { passedAt: 1 } }, ...({ branch: 'plan/x' } as object) }), NO_BOARD);
-    expect(modeChange(v, 'autopilot')).toEqual({ title: 'Switch to Autopilot', from: 'From now on Claude passes milestones itself and merges them into plan/x. It stops only if a check fails.', now: '“API” passes now.' });
+    expect(modeChange(v, 'autopilot')).toEqual({ title: 'Switch to Autopilot', from: 'From now on the agent passes milestones itself and merges them into plan/x. It stops only if a check fails.', now: '“API” passes now.' });
     expect(modeChange(v, 'step').from).toMatch(/^From now on nothing starts by itself/);
   });
 

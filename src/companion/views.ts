@@ -1,4 +1,5 @@
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
+import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
 import { OFFER_DETAIL, offerWords, waitingOn, waitingWords, workingOn, workingWords } from '../core/team/model.js';
@@ -255,7 +256,7 @@ function taskTurns(state: DomainState, ctx: ViewContext, t: GwTask): TurnView[] 
     {
       id: `${t.id}:answer`,
       who: 'friend',
-      name: clip(`${t.peerName}'s Claude`, 100),
+      name: clip(`${t.peerName}'s agent`, 100),
       prose: proseOf(said),
       ts: t.startedAt ?? t.updatedAt,
       status,
@@ -444,7 +445,7 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
   return {
     id: item.id,
     who: 'claude',
-    name: clip(item.owner === me || !item.owner ? 'Claude' : `${item.ownerName}'s Claude`, 100),
+    name: clip(item.owner === me || !item.owner ? agentName(item.agent) : agentLabel(item.agent, item.ownerName, false), 100),
     prose: pictures(proseOf(item.text)),
     ts: item.ts,
     ...(status ? { status } : {}),
@@ -1094,7 +1095,7 @@ function runBy(s: SentinelState, r: RunSummary): string {
     return clip(name ? `after ${name}` : 'after another sentinel', 120);
   }
   if (r.by === 'event') return firstLine(r.trigger.summary, 120) || 'an event';
-  return r.by === 'phone' ? 'your phone' : r.by === 'claude' ? 'your Claude' : r.by;
+  return r.by === 'phone' ? 'your phone' : r.by === 'claude' ? 'your agent' : r.by;
 }
 
 function sentinelRunView(s: SentinelState, sn: Sentinel, r: RunSummary, ctx?: ViewContext): SentinelRunView {
@@ -1194,6 +1195,7 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     from: clip(m.mine ? myName(state) : m.name, 100),
     mine: m.mine,
     ...(m.claude ? { claude: true } : {}),
+    ...(m.claude?.agent ? { agent: m.claude.agent } : {}),
     text,
     ts: m.ts,
     ...(m.edited ? { edited: m.edited } : {}),
@@ -1208,13 +1210,13 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
 function chatTaskOf(state: DomainState, m: MessageView): ChatMessageView['task'] {
   const t = m.task ? state.gateway.tasks.find((x) => x.id === m.task?.id) : undefined;
   if (!t) return undefined;
-  const title = t.direction === 'sent' ? `To ${targetLabel(t)}` : `From ${t.peerName}${t.by === 'agent' ? '’s Claude' : ''}`;
+  const title = t.direction === 'sent' ? `To ${targetLabel(t)}` : `From ${t.peerName}${t.by === 'agent' ? '’s agent' : ''}`;
   const summary = t.result?.summary ? plainLine(stripCode(t.result.summary).text, 600) : '';
   const files = (t.result?.files ?? []).map((f) => clip(f.name, 200)).slice(0, 8);
   // Whose it is, as the Mac's chat heads it (BLG-210): "Your Claude · asked ata’s Claude", "mia’s Claude · asked your Mac".
   const sent = t.direction === 'sent';
-  const owner = t.by === 'agent' ? (sent ? 'Your Claude' : `${t.peerName}’s Claude`) : sent ? 'You' : t.peerName;
-  const who = `${owner} · asked ${sent ? targetLabel(t) : t.kind === 'ask' ? 'your Claude' : 'your Mac'}`;
+  const owner = t.by === 'agent' ? (sent ? 'Your agent' : `${t.peerName}’s agent`) : sent ? 'You' : t.peerName;
+  const who = `${owner} · asked ${sent ? targetLabel(t) : t.kind === 'ask' ? 'your agent' : 'your Mac'}`;
   return {
     id: clip(t.id, 200),
     title: clip(title, 200),
@@ -1261,7 +1263,7 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
     kind: group || conversation.startsWith('group:') ? 'group' : 'dm',
     messages,
     more,
-    live: (net.live?.[conversation] ?? []).slice(0, 20).map((l) => clip(`${l.name}'s Claude`, 100)),
+    live: (net.live?.[conversation] ?? []).slice(0, 20).map((l) => clip(`${l.name}'s agent`, 100)),
     members: chatMembers(state, dm, group, people),
     ...(waiting.length ? { waiting: waiting.slice(0, 10).map((w) => ({ text: clip(waitingLabel(w), 300), you: w.on === 'you', ...(w.target.kind === 'task' ? { task: clip(w.target.id, 200) } : {}) })) } : {}),
     ...(note ? { note: clip(note, 200) } : {}),

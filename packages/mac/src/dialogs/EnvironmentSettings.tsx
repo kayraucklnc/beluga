@@ -347,17 +347,17 @@ export function EnvEditor({ projectId }: { projectId: string }) {
         </Group>
       ) : null}
       <DatabaseTest projectId={projectId} />
-      <Group title="Your Claude">
+      <Group title="Your agent">
         <Row
           label="Read .env files without asking"
           detail={
             projectId
               ? 'In this project, and it gets the .env values above too. Off: it asks you each time it wants one. A friend’s request never gets them.'
-              : 'In every project. Off: your Claude asks you each time (or as each project says). A friend’s request never gets them.'
+              : 'In every project. Off: your agent asks you each time (or as each project says). A friend’s request never gets them.'
           }
         >
           <Switch
-            label="Your Claude reads .env files without asking"
+            label="Your agent reads .env files without asking"
             on={claudeDotenv}
             onChange={(v) => {
               setClaudeDotenv(v);
@@ -390,7 +390,7 @@ function DatabaseTest({ projectId }: { projectId: string }) {
   return (
     <Group title="Database">
       <Row
-        label="Postgres for your Claude’s views"
+        label="Postgres for your agent’s views"
         detail={
           result === undefined || result === 'testing'
             ? 'Uses DATABASE_URL (or POSTGRES_URL…), or a Supabase project’s URL and SUPABASE_DB_PASSWORD, from here or the project’s .env.'
@@ -422,7 +422,7 @@ export function EnvironmentSettings() {
         Given to your shells, setup and run commands, and your Claude, never to a friend’s request. They stay on this Mac. Changes apply right away to your Claude’s next message and to new shells; a shell or dev server already running offers to restart with them.
       </p>
       <Group>
-        <Row label="Variables for" detail={scope ? 'This project’s workspaces. They win over yours.' : 'Every shell, script and Claude run.'}>
+        <Row label="Variables for" detail={scope ? 'This project’s workspaces. They win over yours.' : 'Every shell, script and agent run.'}>
           <Select
             label="Variables for"
             value={scope}

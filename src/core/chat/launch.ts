@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { agentLabel } from '../../shared/agent-label.js';
 import os from 'node:os';
 import path from 'node:path';
 import { asks } from '../../net/mesh/extras.js';
@@ -62,17 +63,18 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
     policy: () => store.getState().prefs.chatClaude,
     trustOf: (peerId) => trustOf(store.getState(), peerId),
     model: () => store.getState().prefs.model,
+    ...(session ? { agent: () => session.agentRef } : {}),
     localize: (text) => localMentions(text, store.getState().board.issues),
     handledFile: path.join(opts.dir, 'chat-claude.json'),
     onLive: (conversation, id, state) => store.dispatch({ type: 'net_live', conversation, state, live: { peerId: mesh.peerId, name: nameOf(mesh.peerId), for: id, since: Date.now() } }),
-    onProblem: (conversation, text) => session?.notifier.notify({ kind: 'problems', title: 'Your Claude couldn’t answer', body: text, channel: conversation }),
+    onProblem: (conversation, text) => session?.notifier.notify({ kind: 'problems', title: `${agentLabel(session.agentRef, undefined, true, { capital: true })} couldn’t answer`, body: text, channel: conversation }),
   });
   // A friend's Claude answering your ask with something for their Mac: it goes there as your request (BLG-353).
   const requests = new AnswerRequests({
     mesh,
     ask: (input) => {
       const gateway = session && gatewayOf(session);
-      if (!gateway) throw new Error('Tasks between Claudes are off here');
+      if (!gateway) throw new Error('Tasks between agents are off here');
       return gateway.ask(input);
     },
     onProblem: (conversation, name, text) => session?.notifier.notify({ kind: 'problems', title: `Couldn’t send it to ${name}’s Mac`, body: text, channel: conversation }),

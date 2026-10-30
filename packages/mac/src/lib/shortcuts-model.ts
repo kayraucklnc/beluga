@@ -83,7 +83,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   def('ws-prev', 'Previous Workspace', 'Go', ['Alt+Cmd+Up']),
   def('ws-next', 'Next Workspace', 'Go', ['Alt+Cmd+Down']),
 
-  def('conv-stop', 'Stop Claude', 'Conversation', ['Cmd+.']),
+  def('conv-stop', 'Stop the Agent', 'Conversation', ['Cmd+.']),
   def('conv-plan', 'Plan First', 'Conversation', ['Alt+Cmd+P']),
   def('conv-find', 'Find…', 'Conversation', ['Cmd+F']),
   def('conv-find-next', 'Find Next', 'Conversation', ['Cmd+G']),
@@ -95,12 +95,12 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   def('ws-pr', 'Pull Request…', 'Workspace', ['Shift+Cmd+P']),
   def('ws-merge', 'Merge…', 'Workspace', ['Shift+Cmd+M']),
   def('ws-run', 'Run', 'Workspace', ['Cmd+R']),
-  def('ws-review', 'Ask Claude to Review…', 'Workspace', ['Shift+Cmd+R']),
+  def('ws-review', 'Ask Your Agent to Review…', 'Workspace', ['Shift+Cmd+R']),
   def('ws-finder', 'Show in Finder', 'Workspace', []),
   def('ws-fork', 'Fork…', 'Workspace', []),
   def('ws-archive', 'Archive…', 'Workspace', ['Ctrl+Cmd+A']),
 
-  { id: 'composer-steer', label: 'Steer', section: 'Message box', keys: ['Alt+Enter'], scope: 'composer', hint: 'Claude reads it at its next step' },
+  { id: 'composer-steer', label: 'Steer', section: 'Message box', keys: ['Alt+Enter'], scope: 'composer', hint: 'The agent reads it at its next step' },
   { id: 'composer-send-now', label: 'Send Now', section: 'Message box', keys: ['Alt+Shift+Enter'], scope: 'composer', hint: 'Your steered message goes now; its step stops' },
   { id: 'composer-mode', label: 'Switch Acting and Planning', section: 'Message box', keys: ['Shift+Tab'], scope: 'composer' },
 

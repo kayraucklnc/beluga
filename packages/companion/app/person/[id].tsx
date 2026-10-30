@@ -38,7 +38,7 @@ export default function Person() {
     haptic.commit();
     const r = await store.call<{ topic?: Topic }>(calls.screenshot(p.peerId, p.name)).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
     if (r?.topic) router.push(convHref(r.topic));
-    else store.toast({ text: `Asked ${p.name}'s Claude for a screenshot.`, tone: 'ok' });
+    else store.toast({ text: `Asked ${p.name}'s agent for a screenshot.`, tone: 'ok' });
   };
 
   const action = (Icon: typeof Sparkles, label: string, tone: Tone, onPress: () => void, disabled: boolean, delay: number) => (
@@ -78,12 +78,12 @@ export default function Person() {
 
         <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginTop: 24 }}>
           {action(MessageCircle, 'Message', 'sky', () => p.chat && router.push(chatHref(p.chat)), !p.chat, 40)}
-          {action(Sparkles, 'Ask Claude', 'peach', () => router.push({ pathname: '/ask', params: { friend: p.peerId } }), !reachable, 80)}
+          {action(Sparkles, 'Ask their agent', 'peach', () => router.push({ pathname: '/ask', params: { friend: p.peerId } }), !reachable, 80)}
           {action(Monitor, 'Screenshot', 'lavender', () => void screenshot(), !canScreen || !reachable, 120)}
         </View>
         {!canScreen ? (
           <T v="caption" style={{ textAlign: 'center', marginTop: 8 }}>
-            {p.name} hasn't shared their screen with your Claude.
+            {p.name} hasn't shared their screen with your agent.
           </T>
         ) : null}
 
@@ -97,7 +97,7 @@ export default function Person() {
         ) : null}
 
         <Animated.View entering={FadeIn.duration(180)} style={{ marginTop: 24, paddingHorizontal: 20, gap: 10 }}>
-          <T v="eyebrow">Your Claude can use</T>
+          <T v="eyebrow">Your agent can use</T>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {p.offers.length ? p.offers.map((o) => <Pill key={o} label={OFFER[o]?.label ?? o} Icon={OFFER[o]?.Icon} tone="mint" />) : <T v="callout">Only chat</T>}
           </View>

@@ -143,6 +143,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       selfId: () => session.selfId,
       send: (body, o) => session.send(body, o),
       agent: () => session.backend,
+      agentRef: () => session.agentRef,
       shares: opts.shares,
       sharing,
       people,

@@ -4,6 +4,8 @@
  * Browser-safe: types only.
  */
 
+import type { AgentRef } from '../../protocol.js';
+
 export type PresenceState = 'online' | 'away' | 'dnd' | 'offline';
 
 /** A status you set: shown to your friends and the people in your groups. */
@@ -54,6 +56,8 @@ export interface ChatRequest {
 export interface ClaudeReply {
   readonly for: string;
   readonly request?: ChatRequest;
+  /** Which of its owner's agents answered (an older Mac leaves it out: Claude). */
+  readonly agent?: AgentRef;
 }
 
 /** Who a message asks to answer: everyone's Claude in the chat, or these people's. */

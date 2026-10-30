@@ -93,7 +93,7 @@ export const calls = {
   /** Merging a worktree (its conversation): look first, merge, Claude resolves the conflicts. */
   mergeCheck: (topic: Topic): Call => make('companion.mergeCheck', [topic], 'Check the merge'),
   merge: (topic: Topic): Call => make('companion.merge', [topic], 'Merge'),
-  resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask Claude to resolve'),
+  resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask your agent to resolve'),
   /** 1.8: one of a worktree's branch steps (Archive, Squash and Merge, Fix with Claude…), as the Mac's toolbar does it. */
   branchStep: (topic: Topic, step: PhoneBranchStep, label: string): Call => make('companion.branchStep', [topic, step], label),
   /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
@@ -129,7 +129,7 @@ export const calls = {
   editMessage: (topic: Topic, id: string, text: string): Call => make('network.messages.edit', [conversationOf(topic), id, text], `Edit to "${short(text)}"`),
   clearChat: (topic: Topic): Call => make('network.clear', [conversationOf(topic)], 'Clear the chat'),
   /** Ask a friend's Claude yourself; the answer (and files) come back in the topic it returns. */
-  askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s Claude`),
+  askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s agent`),
   screenshot: (peerId: string, name: string): Call => make('companion.askPerson', [{ peerId, text: 'Take a screenshot of your desktop and send it to me.', needs: ['screen'] }], `Screenshot of ${name}'s desktop`),
   // Sentinel (1.21, docs/sentinel.md): Run Now, Pause / Turn On, one run with its report's text.
   sentinelRun: (id: string, name: string): Call => make('sentinel.run', [id], `Run ${short(name)}`),

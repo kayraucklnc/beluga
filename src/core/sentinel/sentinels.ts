@@ -71,6 +71,8 @@ import {
   toSummary,
 } from './model.js';
 import { redactSecrets } from '../../shared/steps.js';
+import { agentLabel, agentName } from '../../shared/agent-label.js';
+import { defaultAgentOf } from '../../protocol.js';
 import { dashboardAskBrief, describeSentinels, sentinelAskBrief, sentinelChatBrief, sentinelMaterial, sentinelNote } from './prompt.js';
 import { RECIPES } from './recipes.js';
 import { type ActiveRun, OUTPUT_KEPT, type SentinelChat, type SentinelClaude, type SentinelFriends, type SentinelGitHub, type SentinelPlaces, type SentinelShell, type SourceFetch, SentinelRunner, type YourAnswer, mergePinned, runSentinelShell } from './runner.js';
@@ -165,6 +167,10 @@ export class Sentinels {
   readonly folders: RunFolders;
   private readonly runner: SentinelRunner;
   private readonly now: () => number;
+  /** "Your Claude", "your Codex": this Mac's agent, in a sentence. */
+  private yourAgent(capital = true): string {
+    return agentLabel(defaultAgentOf(this.deps.store.getState().self), undefined, true, { capital });
+  }
   /** Runs going now, by sentinel. */
   private readonly active = new Map<string, ActiveRun>();
   /** A run waiting for its sentinel's run to end (one at most), by sentinel. */
@@ -596,7 +602,7 @@ export class Sentinels {
     const s = this.need(ref);
     const yours = by === 'you' || by === 'phone';
     if (s.paused && !yours) throw new Error(`“${s.name}” is paused: turn it on first`);
-    const fired: RunTrigger = trigger ?? { kind: yours || by === 'claude' ? 'manual' : s.trigger.kind, summary: by === 'you' ? 'You pressed Run' : by === 'phone' ? 'You ran it from your phone' : by === 'claude' ? 'Your Claude ran it' : scheduleSentence(s.trigger) };
+    const fired: RunTrigger = trigger ?? { kind: yours || by === 'claude' ? 'manual' : s.trigger.kind, summary: by === 'you' ? 'You pressed Run' : by === 'phone' ? 'You ran it from your phone' : by === 'claude' ? `${this.yourAgent()} ran it` : scheduleSentence(s.trigger) };
     const limit = s.limits.perDay;
     if (limit && !yours) {
       const today = startOfDay(this.now());
@@ -695,7 +701,7 @@ export class Sentinels {
     };
     if (mergeStep?.kind !== 'merge') return refuse('this sentinel has no merge step anymore');
     if (!accessAllows(s.access, 'merge')) return refuse(`it needs ${ACCESS_INFO.ship.label} access, and this sentinel has ${ACCESS_INFO[s.access].label}`);
-    if (!run.prHead) return refuse('Beluga can’t tell which commit Claude reviewed; run it again');
+    if (!run.prHead) return refuse('Beluga can’t tell which commit the agent reviewed; run it again');
     const where = { ...(run.worktreeId ? { workspaceId: run.worktreeId } : {}), ...(s.projectId ? { projectId: s.projectId } : {}) };
     const res = await mergePinned(gh, where, run.pr, mergeStep.method, run.prHead);
     if (res !== true) return refuse(res);
@@ -763,11 +769,11 @@ export class Sentinels {
   confirmWords(toolName: string, input: Record<string, unknown>): { readonly title: string; readonly detail: string } | undefined {
     if (toolName === 'mcp__beluga_sentinel__sentinel_remove') {
       const s = this.get(String(input.id ?? ''));
-      return { title: `Your Claude wants to delete the sentinel “${s?.name ?? String(input.id ?? 'a sentinel')}”`, detail: s ? `${scheduleSentence(s.trigger, (id) => this.get(id)?.name)} · ${s.steps.length} ${s.steps.length === 1 ? 'step' : 'steps'}. It stops watching, a run going now stops, and its numbers go with it.` : 'There’s no such sentinel: Decline.' };
+      return { title: `${this.yourAgent()} wants to delete the sentinel “${s?.name ?? String(input.id ?? 'a sentinel')}”`, detail: s ? `${scheduleSentence(s.trigger, (id) => this.get(id)?.name)} · ${s.steps.length} ${s.steps.length === 1 ? 'step' : 'steps'}. It stops watching, a run going now stops, and its numbers go with it.` : 'There’s no such sentinel: Decline.' };
     }
     if (toolName === 'mcp__beluga_dashboard__dashboard_remove') {
       const d = this.dashboards.get(String(input.dashboard ?? ''));
-      return { title: `Your Claude wants to delete the dashboard “${d?.name ?? String(input.dashboard ?? 'a dashboard')}”`, detail: d ? `${d.tiles.length} ${d.tiles.length === 1 ? 'tile' : 'tiles'} go; the numbers stay with their sentinels.` : 'There’s no such dashboard: Decline.' };
+      return { title: `${this.yourAgent()} wants to delete the dashboard “${d?.name ?? String(input.dashboard ?? 'a dashboard')}”`, detail: d ? `${d.tiles.length} ${d.tiles.length === 1 ? 'tile' : 'tiles'} go; the numbers stay with their sentinels.` : 'There’s no such dashboard: Decline.' };
     }
     return undefined;
   }
@@ -798,10 +804,10 @@ export class Sentinels {
     const s = this.need(ref);
     const claude = this.deps.claude;
     const places = this.deps.places;
-    if (!claude || !places) throw new Error('Asking Claude needs the Beluga app with your Claude on');
+    if (!claude || !places) throw new Error(`Asking ${this.yourAgent(false)} needs the Beluga app with it on`);
     const words = text.trim();
     if (!words) throw new Error('Say what to change');
-    if (this.asking.has(s.id) || this.asks[s.id]?.state === 'writing') throw new Error(`Claude is changing “${s.name}” already: wait for it, or open its chat`);
+    if (this.asking.has(s.id) || this.asks[s.id]?.state === 'writing') throw new Error(`${this.yourAgent()} is changing “${s.name}” already: wait for it, or open its chat`);
     // Taken before the first await: a second ask in the meantime is refused, not run twice.
     this.asking.add(s.id);
     let place: Awaited<ReturnType<SentinelPlaces['projectChat']>>;
@@ -813,7 +819,7 @@ export class Sentinels {
     }
     if (!place) {
       this.asking.delete(s.id);
-      throw new Error('Claude’s conversation couldn’t be made');
+      throw new Error('The agent’s conversation couldn’t be made');
     }
     const { channel } = place;
     this.askChannels.set(channel, s.id);
@@ -822,15 +828,15 @@ export class Sentinels {
     this.asking.delete(s.id);
     const requestId = claude.ask(words, channel, words);
     if (!requestId) {
-      this.setAsk(s.id, { ...ask, state: 'failed', answer: 'Your Claude couldn’t be asked there', endedAt: this.now() });
-      throw new Error('Your Claude couldn’t be asked there');
+      this.setAsk(s.id, { ...ask, state: 'failed', answer: `${this.yourAgent()} couldn’t be asked there`, endedAt: this.now() });
+      throw new Error(`${this.yourAgent()} couldn’t be asked there`);
     }
     // As long as one of its runs may take: then it's stopped, and the page says so.
     let over = false;
     const timer = setTimeout(
       () => {
         over = true;
-        claude.cancel(requestId, 'Stopped by Beluga: Claude took too long');
+        claude.cancel(requestId, `Stopped by Beluga: ${agentName(defaultAgentOf(this.deps.store.getState().self))} took too long`);
         this.setAsk(s.id, { ...ask, state: 'failed', answer: TOOK_TOO_LONG, endedAt: this.now() });
       },
       (s.limits.minutes || DEFAULT_LIMITS.minutes) * 60_000,
@@ -843,7 +849,7 @@ export class Sentinels {
       },
       (err: unknown) => {
         clearTimeout(timer);
-        if (!over) this.setAsk(s.id, { ...ask, state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'Claude stopped', endedAt: this.now() });
+        if (!over) this.setAsk(s.id, { ...ask, state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'The agent stopped', endedAt: this.now() });
       },
     );
     return { channel };
@@ -884,7 +890,7 @@ export class Sentinels {
     }
     const now = this.items.find((i) => i.id === s.id);
     if (!now) throw new Error(`“${s.name}” was deleted meanwhile`);
-    const run = this.recordTest(now, by, checks, by === 'claude' ? 'Your Claude tested its sources' : 'You tested its sources');
+    const run = this.recordTest(now, by, checks, by === 'claude' ? `${this.yourAgent()} tested its sources` : 'You tested its sources');
     const previews = checks.map((c) => c.preview);
     return { runId: run.id, previews, text: redactSecrets(`${run.headline}\n\n${describePreviews(previews)}`) };
   }
@@ -1773,10 +1779,10 @@ export class Sentinels {
     const d = this.dashboards.need(ref);
     const claude = this.deps.claude;
     const place = this.deps.places?.macChat();
-    if (!claude || !place) throw new Error('Asking Claude needs the Beluga app with your Claude on');
+    if (!claude || !place) throw new Error(`Asking ${this.yourAgent(false)} needs the Beluga app with it on`);
     const words = text.trim();
     if (!words) throw new Error('Say what it should show');
-    if (this.dashboardAsks[d.id]?.state === 'writing') throw new Error(`Claude is building “${d.name}” already: wait for it, or open its chat`);
+    if (this.dashboardAsks[d.id]?.state === 'writing') throw new Error(`${this.yourAgent()} is building “${d.name}” already: wait for it, or open its chat`);
     const { channel } = place;
     this.dashboardChannels.set(channel, d.id);
     const ask: SentinelAsk = { channel, startedAt: this.now(), state: 'writing', text: firstLine(words, 200) };
@@ -1790,13 +1796,13 @@ export class Sentinels {
     const latest = (): SentinelAsk => (this.dashboardAsks[d.id]?.channel === channel ? this.dashboardAsks[d.id]! : ask);
     const requestId = claude.ask(words, channel, words);
     if (!requestId) {
-      setAsk({ ...ask, state: 'failed', answer: 'Your Claude couldn’t be asked there', endedAt: this.now() });
-      throw new Error('Your Claude couldn’t be asked there');
+      setAsk({ ...ask, state: 'failed', answer: `${this.yourAgent()} couldn’t be asked there`, endedAt: this.now() });
+      throw new Error(`${this.yourAgent()} couldn’t be asked there`);
     }
     let over = false;
     const timer = setTimeout(() => {
       over = true;
-      claude.cancel(requestId, 'Stopped by Beluga: Claude took too long');
+      claude.cancel(requestId, `Stopped by Beluga: ${agentName(defaultAgentOf(this.deps.store.getState().self))} took too long`);
       setAsk({ ...latest(), state: 'failed', answer: TOOK_TOO_LONG, endedAt: this.now() });
     }, DEFAULT_LIMITS.minutes * 60_000);
     timer.unref?.();
@@ -1807,7 +1813,7 @@ export class Sentinels {
       },
       (err: unknown) => {
         clearTimeout(timer);
-        if (!over) setAsk({ ...latest(), state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'Claude stopped', endedAt: this.now() });
+        if (!over) setAsk({ ...latest(), state: 'failed', answer: firstLine(redactSecrets(err instanceof Error ? err.message : String(err)), 200) || 'The agent stopped', endedAt: this.now() });
       },
     );
     return { channel };
@@ -1890,7 +1896,7 @@ export class Sentinels {
       const s = this.need(sentinel);
       const st = s.steps.find((x) => x.id === step) ?? s.steps.find((x) => x.name.toLowerCase() === step.trim().toLowerCase()) ?? (/^(claude|http|script)$/.test(step) ? [...s.steps].reverse().find((x) => x.kind === step) : undefined);
       if (!st) throw new Error(`“${s.name}” has no step ${step} (its steps: ${s.steps.map((x) => `${x.name} (${x.id}, ${x.kind})`).join(', ') || 'none'})`);
-      if (!OUTPUT_STEP_KINDS.has(st.kind)) throw new Error(`An output tile shows what an Ask Claude, Call a service or Run a script step said; “${st.name}” is ${STEP_INFO[st.kind].label}`);
+      if (!OUTPUT_STEP_KINDS.has(st.kind)) throw new Error(`An output tile shows what an Ask your agent, Call a service or Run a script step said; “${st.name}” is ${STEP_INFO[st.kind].label}`);
       return { sentinelId: s.id, stepId: st.id };
     };
     const tileInput = (t: Partial<ToolTile>): Omit<TileInput, 'kind'> => ({
@@ -1931,7 +1937,7 @@ export class Sentinels {
               const m: Measured = { name: metricName(name), value: n, ...(u?.success ? { unit: u.data as MetricUnit } : {}), ...(label?.trim() ? { label: oneLine(label, 80) } : {}) };
               active.measured = [...(active.measured ?? []).filter((x) => x.name !== m.name), m];
               const keeps = active.sentinel.steps.some((st) => st.kind === 'measure' && st.from === 'claude');
-              return `Noted ${m.label ?? labelOf(m.name)} = ${formatMetric(n, m.unit)}.${keeps ? ' The Keep the numbers step keeps it when you’re done.' : ' This sentinel has no Keep the numbers step from Claude, so it isn’t kept: say so in your report.'}`;
+              return `Noted ${m.label ?? labelOf(m.name)} = ${formatMetric(n, m.unit)}.${keeps ? ' The Keep the numbers step keeps it when you’re done.' : ' This sentinel has no Keep the numbers step from the agent, so it isn’t kept: say so in your report.'}`;
             },
           }
         : {}),
@@ -2018,7 +2024,7 @@ export class Sentinels {
           if (broken.length) throw new Error(notSaved('Not saved', broken));
           const s = this.create({ ...draft, steps });
           onMade?.(s.id);
-          const run = this.recordTest(s, 'claude', checks, 'Your Claude checked it when setting it up');
+          const run = this.recordTest(s, 'claude', checks, `${this.yourAgent()} checked it when setting it up`);
           return `${made(s)}\n\nIts ${checks.length === 1 ? 'source was' : 'sources were'} run once (a test run in its history${run.state === 'done' ? '; what it found is kept, so its tiles fill' : ''}). Show the user this preview before you say it’s done, and fix any flagged column (sentinel_update) or ask them what it means:\n\n${redactSecrets(describePreviews(checks.map((c) => c.preview)))}`;
         })();
       },
@@ -2165,7 +2171,7 @@ interface SourceCheck {
 const toolStep = (st: ToolStep): StepDraft => StepInputSchema.parse(st.kind === 'merge' ? { ...st, require: { checks: true, approval: true } } : st) as StepDraft;
 
 /** An ask that ran past its sentinel's time limit says this. */
-export const TOOK_TOO_LONG = 'Claude took too long';
+export const TOOK_TOO_LONG = 'The agent took too long';
 
 const capitalFirst = (text: string): string => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
 

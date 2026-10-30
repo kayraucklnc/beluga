@@ -102,7 +102,7 @@ function labelOf(b: WorkspaceButton, pr: boolean): string {
     case 'pr':
       return pr ? b.label : 'Create PR';
     case 'review_claude':
-      return 'Ask Claude to Review…';
+      return 'Ask Your Agent to Review…';
     case 'commit':
       return 'Commit…';
     case 'merge':
@@ -130,7 +130,7 @@ function labelOf(b: WorkspaceButton, pr: boolean): string {
 
 /** Tooltips for the icons that ask first: what they'd do, ending in "…" (they ask before doing it). */
 function tipOf(b: WorkspaceButton): string | undefined {
-  if (b.action === 'review_claude') return 'Ask Claude to review this worktree…';
+  if (b.action === 'review_claude') return 'Ask your agent to review this worktree…';
   return asksBeforeWork(b.action) && !b.disabled ? `${b.hint}…` : undefined;
 }
 
@@ -156,15 +156,15 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   if (solve) return { ...solve, tone: 'error' };
   // GitHub can't merge a PR that conflicts with its base: resolving that comes first.
   if (pr?.state === 'OPEN' && pr.conflicts) {
-    return { id: 'resolve_pr', label: 'Resolve Merge Conflicts…', hint: `PR #${pr.number} conflicts with ${mergeTargetOf(state, ws)}: Claude merges it in here, resolves the conflicts and pushes`, icon: 'merge', action: 'resolve_pr', tone: 'error' };
+    return { id: 'resolve_pr', label: 'Resolve Merge Conflicts…', hint: `PR #${pr.number} conflicts with ${mergeTargetOf(state, ws)}: your agent merges it in here, resolves the conflicts and pushes`, icon: 'merge', action: 'resolve_pr', tone: 'error' };
   }
   if (pr?.state === 'OPEN' && pr.checks === 'failing') {
-    return { id: 'fix_checks', label: 'Fix Checks…', hint: `PR #${pr.number}'s checks are failing: Claude reads the logs and fixes them`, icon: 'wand', action: 'fix_checks', tone: 'error' };
+    return { id: 'fix_checks', label: 'Fix Checks…', hint: `PR #${pr.number}'s checks are failing: your agent reads the logs and fixes them`, icon: 'wand', action: 'fix_checks', tone: 'error' };
   }
   // On GitHub, a branch's next step is its pull request (Claude commits anything left as it opens it):
   // there its checks run live and it merges into origin. Merge Locally stays under ⋯.
   const create = !pr && onGitHub(state, ws) ? by('pr') : undefined;
-  if (create) return { ...create, label: 'Create Pull Request…', hint: `Pushes ${ws.branch ?? 'this branch'} and opens a pull request into ${mergeTargetOf(state, ws)}, with Claude or straight away; its checks show here as they run` };
+  if (create) return { ...create, label: 'Create Pull Request…', hint: `Pushes ${ws.branch ?? 'this branch'} and opens a pull request into ${mergeTargetOf(state, ws)}, with your agent or straight away; its checks show here as they run` };
   const commit = by('commit');
   if (commit) return commit;
   if (pr?.state === 'OPEN') {
@@ -254,7 +254,7 @@ function asPlanTask(all: readonly ToolAction[], owner: PlanOwner, pr: boolean): 
   const rest = all.flatMap((a): ToolAction[] => {
     if (a.action === 'pr' && !pr) return [];
     // Solving a conflict finishes a local merge: it stays, but says so and warns first (actions.run).
-    if (a.action === 'merge_claude') return [{ ...a, hint: `Claude finishes this merge by hand, which skips “${name}”: Beluga merges it into the plan itself` }];
+    if (a.action === 'merge_claude') return [{ ...a, hint: `Your agent finishes this merge by hand, which skips “${name}”: Beluga merges it into the plan itself` }];
     if (a.action !== 'merge') return [a];
     return [{ ...a, id: 'merge_anyway', label: 'Merge Anyway…', action: 'merge_anyway', hint: `Beluga merges this into “${name}” itself; merging it by hand skips the plan` }];
   });

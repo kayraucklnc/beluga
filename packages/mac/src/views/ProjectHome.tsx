@@ -18,6 +18,7 @@ import { Select } from "../components/Select.js";
 import { Button, Dot, Empty, Segmented, Tip, cx } from "../components/ui.js";
 import { useActions } from "../lib/actions.js";
 import { toast, useApi, useApp, useBeluga } from "../lib/beluga.js";
+import { useMyAgentName } from "../lib/agent-words.js";
 import { sameDeep } from "../lib/stable.js";
 import { usePrefs } from "../lib/prefs.js";
 import { mod } from "../lib/system.js";
@@ -219,6 +220,7 @@ const errorText = (err: unknown): string =>
  * opens and Claude starts planning; with no text, the New Plan sheet).
  */
 function HomeComposer({ project }: { project: Project }) {
+  const agent = useMyAgentName();
   const api = useApi();
   const actions = useActions();
   const { client } = useBeluga();
@@ -391,13 +393,13 @@ function HomeComposer({ project }: { project: Project }) {
               value: "worktree",
               label: "New Worktree",
               icon: "branch",
-              hint: "Claude works on its own branch and folder, made from the latest origin",
+              hint: "Your agent works on its own branch and folder, made from the latest origin",
             },
             {
               value: "ask",
               label: "Just Ask",
               icon: "chat",
-              hint: "A question about the project: Claude reads the main folder and changes nothing",
+              hint: "A question about the project: your agent reads the main folder and changes nothing",
             },
             // Plans run in the Beluga app only.
             ...(plansOn
@@ -406,7 +408,7 @@ function HomeComposer({ project }: { project: Project }) {
                     value: "plan" as const,
                     label: "New Plan",
                     icon: "flag" as const,
-                    hint: "Big work: Claude cuts it into milestones and tasks; nothing reaches the board until you approve",
+                    hint: "Big work: your agent cuts it into milestones and tasks; nothing reaches the board until you approve",
                   },
                 ]
               : []),
@@ -495,7 +497,7 @@ function HomeComposer({ project }: { project: Project }) {
           ) : (
             <span className={s.note}>
               <Icon name="eye" size={12} />
-              Questions only: Claude reads the main folder and won’t change
+              Questions only: your agent reads the main folder and won’t change
               anything.
             </span>
           )}
@@ -521,10 +523,10 @@ function HomeComposer({ project }: { project: Project }) {
           <Tip
             label={
               worktree
-                ? "Make the branch and folder, then Claude starts on the task"
+                ? "Make the branch and folder, then your agent starts on the task"
                 : plan
                   ? task
-                    ? "Claude reads the code and drafts milestones and tasks with you"
+                    ? "Your agent reads the code and drafts milestones and tasks with you"
                     : "Write the goal in the New Plan sheet"
                   : "Start a questions-only chat in the main folder"
             }
@@ -540,7 +542,7 @@ function HomeComposer({ project }: { project: Project }) {
                 name={worktree ? "branch" : plan ? "flag" : "chat"}
                 size={12}
               />
-              {worktree ? "Create Worktree" : plan ? "Plan with Claude" : "Ask"}
+              {worktree ? "Create Worktree" : plan ? `Plan with ${agent}` : "Ask"}
               <span className={d.createKey}>{sendKeys}</span>
             </button>
           </Tip>
@@ -582,7 +584,7 @@ function Lists({ model }: { model: HomeModel }) {
           worktrees.map((w) => <Row key={w.id} ws={w} />)
         ) : (
           <p className={s.none}>
-            No worktrees yet. Describe a task above and Claude starts one from
+            No worktrees yet. Describe a task above and your agent starts one from
             the latest origin.
           </p>
         )}
@@ -591,7 +593,7 @@ function Lists({ model }: { model: HomeModel }) {
         <Section
           title="Questions"
           count={asks.length}
-          hint="Asked in the main folder: Claude only reads there"
+          hint="Asked in the main folder: your agent only reads there"
         >
           {asks.map((w) => (
             <Row key={w.id} ws={w} ask />

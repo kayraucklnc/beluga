@@ -7,6 +7,7 @@ import { Icon } from '../../components/Icon.js';
 import { Button, Dot, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
+import { useMyAgentName } from '../../lib/agent-words.js';
 import { type MainLine, agoText } from './home-model.js';
 import s from './main-sync.module.css';
 
@@ -47,6 +48,7 @@ function useClaudeUpdating(project: Project): { id: string; worktree: boolean } 
 }
 
 export function MainSyncBar({ project, line }: { project: Project; line: MainLine }) {
+  const agent = useMyAgentName();
   const api = useApi();
   const { client } = useBeluga();
   const actions = useActions();
@@ -91,7 +93,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
         setDialog({ kind: 'claude', title: `${out.branch} and ${out.upstream} have both moved on`, message: `${out.branch} has ${plural(out.ahead, 'commit')} that ${out.ahead === 1 ? 'isn’t' : 'aren’t'} on ${out.upstream}, and ${out.upstream} has ${plural(out.behind, 'new commit')}. Bringing them together takes a merge or a rebase.` });
         return;
       case 'busy':
-        setDialog({ kind: 'claude', inMain: true, title: `A ${out.operation} is stopped halfway in main`, message: `The main folder is in the middle of a ${out.operation} (there are conflicts to resolve). Claude can finish it and then update ${branch}.` });
+        setDialog({ kind: 'claude', inMain: true, title: `A ${out.operation} is stopped halfway in main`, message: `The main folder is in the middle of a ${out.operation} (there are conflicts to resolve). Your agent can finish it and then update ${branch}.` });
         return;
       case 'failed':
         setDialog({ kind: 'claude', title: `Couldn’t update ${branch}`, message: out.message });
@@ -149,10 +151,10 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
         </div>
       ) : null}
       {claude ? (
-        <div className={cx(s.callout, s.calloutClaude)} role="status" aria-label="Claude is updating main">
+        <div className={cx(s.callout, s.calloutClaude)} role="status" aria-label="Your agent is updating main">
           <Dot tone="claude" live />
           <span className={s.calloutText}>
-            <strong>Claude is updating {branch}.</strong> {claude.worktree ? 'It works in a worktree of its own and leaves the main folder to you.' : 'It may only sync git here: fetch, merge, stash, resolve conflicts.'} Nothing is pushed.
+            <strong>Your agent is updating {branch}.</strong> {claude.worktree ? 'It works in a worktree of its own and leaves the main folder to you.' : 'It may only sync git here: fetch, merge, stash, resolve conflicts.'} Nothing is pushed.
           </span>
           <Button size="small" onClick={() => actions.run({ type: 'open_ws', id: claude.id, tab: 'chat' })}>
             Open
@@ -175,7 +177,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
           </Tip>
         ) : null}
         {sync.fetchError ? (
-          <Tip label={`${sync.fetchError.message} Click to let Claude look into it.`}>
+          <Tip label={`${sync.fetchError.message} Click to let your agent look into it.`}>
             <button type="button" className={cx(s.status, s.statusWarn, s.statusButton)} onClick={() => setDialog(fetchDialog(sync.fetchError!.message))}>
               <Icon name="alert" size={12} />
               {sync.fetchError.reason === 'auth' ? 'Sign-in needed to fetch' : sync.fetchError.reason === 'offline' ? 'Couldn’t reach the remote' : 'Couldn’t fetch'}
@@ -208,12 +210,12 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
               {dialog.message}
               <span className={s.alertNote}>
                 {dialog.inMain
-                  ? ' Claude can do it in the main folder: it may only sync git there (fetch, merge or rebase, stash, resolve conflicts), keeps your changes, never pushes, and explains what it did.'
-                  : ' Claude works it out in a worktree of its own, leaves the main folder and your changes alone, never pushes, and tells you the step left, if any.'}
+                  ? ' Your agent can do it in the main folder: it may only sync git there (fetch, merge or rebase, stash, resolve conflicts), keeps your changes, never pushes, and explains what it did.'
+                  : ' Your agent works it out in a worktree of its own, leaves the main folder and your changes alone, never pushes, and tells you the step left, if any.'}
               </span>
             </>
           }
-          confirm={{ label: 'Let Claude Handle It', onClick: askClaude }}
+          confirm={{ label: `Let ${agent} Handle It`, onClick: askClaude }}
           onCancel={() => setDialog(undefined)}
         />
       ) : null}
@@ -223,7 +225,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
           icon="alert"
           message={dialog.message}
           {...(dialog.files.length ? { table: { caption: 'Conflicts in', columns: ['File'], rows: dialog.files.slice(0, 8).map((f) => [<code key={f}>{f}</code>]) } } : {})}
-          confirm={{ label: 'Let Claude Handle It', onClick: askClaude }}
+          confirm={{ label: `Let ${agent} Handle It`, onClick: askClaude }}
           cancel="I’ll Handle It"
           onCancel={() => setDialog(undefined)}
         />

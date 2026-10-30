@@ -18,7 +18,7 @@ export type WorkMenuKind =
   | { readonly kind: 'ws_more'; readonly id: string; readonly actions: ReadonlyArray<{ readonly action: string; readonly label: string; readonly hint: string }> };
 
 const findWs = (state: AppState, id: string) => state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id);
-const SOURCE = { yours: 'set by you', claude: 'worked out by Claude', 'beluga.json': 'from beluga.json', 'klaud.json': 'from klaud.json', 'conductor.json': 'from conductor.json', detected: 'guessed from the project' } as const;
+const SOURCE = { yours: 'set by you', claude: 'worked out by your agent', 'beluga.json': 'from beluga.json', 'klaud.json': 'from klaud.json', 'conductor.json': 'from conductor.json', detected: 'guessed from the project' } as const;
 
 function prMenu(state: AppState, id: string): MenuSpec | undefined {
   const ws = findWs(state, id);
@@ -27,18 +27,18 @@ function prMenu(state: AppState, id: string): MenuSpec | undefined {
   const noGh = state.gh === false;
   const intro = [
     pr ? `${describePr(pr)} · ${pr.title}` : `No pull request for ${ws.branch ?? 'this branch'} yet.`,
-    noGh ? 'Install the GitHub CLI and sign in first: brew install gh, then gh auth login.' : 'Claude commits what belongs to the work, pushes, and writes a short description (what, why, how to test).',
+    noGh ? 'Install the GitHub CLI and sign in first: brew install gh, then gh auth login.' : 'Your agent commits what belongs to the work, pushes, and writes a short description (what, why, how to test).',
     '',
   ];
   const options = pr
     ? [
         { id: 'pr-open', label: `Open PR #${pr.number} in the browser`, hint: pr.url },
-        ...(pr.checks === 'failing' ? [{ id: 'pr-fix', label: 'Fix the failing checks', hint: 'Claude reads the CI logs, fixes and pushes' }] : []),
+        ...(pr.checks === 'failing' ? [{ id: 'pr-fix', label: 'Fix the failing checks', hint: 'your agent reads the CI logs, fixes and pushes' }] : []),
         ...(pr.state === 'OPEN' ? [{ id: 'pr-update', label: 'Push new work and update the description', hint: 'with your PR instructions' }] : []),
         { id: 'pr-refresh', label: 'Refresh status', hint: '' },
       ]
     : [
-        { id: 'pr-create', label: 'Create a pull request', hint: 'Claude does it with your PR instructions' },
+        { id: 'pr-create', label: 'Create a pull request', hint: 'your agent does it with your PR instructions' },
         { id: 'pr-create-note', label: 'Create one with extra instructions…', hint: 'type them, then Enter' },
       ];
   return { title: `Pull request · ${ws.name}`, intro, options: [...options, { id: 'pr-edit-prompt', label: 'Edit the PR instructions…', hint: state.prCustom ? 'customized' : 'built-in' }, { id: 'close', label: 'Close', hint: 'Esc' }] };
@@ -75,7 +75,7 @@ function templatesMenu(state: AppState, manage: boolean): MenuSpec {
           ? { id: `tpl-del:${t.id}`, label: `Remove "${t.name}"`, hint: t.prompt.slice(0, 60) }
           : { id: `tpl:${t.id}`, label: t.name, hint: `${t.plan ? 'plans first · ' : ''}${t.prompt.slice(0, 70)}${t.prompt.length > 70 ? '…' : ''}` },
       ),
-      { id: 'tpl-save', label: '+ Save a new template…', hint: 'name: what Claude should do' },
+      { id: 'tpl-save', label: '+ Save a new template…', hint: 'name: what your agent should do' },
       ...(manage ? [] : [{ id: 'tpl-manage', label: 'Manage templates…', hint: '' }]),
       { id: 'close', label: 'Close', hint: 'Esc' },
     ],
@@ -90,15 +90,15 @@ function handoffMenu(state: AppState, id: string): MenuSpec | undefined {
   return {
     title: `Hand off ${ws.name}`,
     intro: [
-      'Someone else takes over this work on their computer, with their own Claude:',
-      '  1. Your Claude writes a short handoff note (what is done, what is left).',
+      'Someone else takes over this work on their computer, with their own agent:',
+      '  1. Your agent writes a short handoff note (what is done, what is left).',
       '  2. Uncommitted work is committed, and the branch is sent to them (encrypted).',
-      '  3. They accept, get a worktree with the branch and the chat, and their Claude continues.',
+      '  3. They accept, get a worktree with the branch and the chat, and their agent continues.',
       'They need the same repository (same origin). You can follow along afterwards.',
       ...(people.length ? [] : ['', 'No friends to hand it to yet. Type /invite to add one.']),
       '',
     ],
-    options: [...people.map((p) => ({ id: `ho:${p.peerId}`, label: `Hand off to ${p.name}`, hint: `${p.name}'s Claude continues on ${p.name}'s computer${p.online ? '' : ' (offline: it waits for them)'}` })), { id: 'close', label: 'Cancel', hint: 'Esc' }],
+    options: [...people.map((p) => ({ id: `ho:${p.peerId}`, label: `Hand off to ${p.name}`, hint: `${p.name}'s agent continues on ${p.name}'s computer${p.online ? '' : ' (offline: it waits for them)'}` })), { id: 'close', label: 'Cancel', hint: 'Esc' }],
   };
 }
 
@@ -108,7 +108,7 @@ function remoteWsMenu(state: AppState, peerId: string): MenuSpec | undefined {
   return {
     title: `Start a worktree on ${peer.name}'s computer`,
     intro: [
-      `Pick one of ${peer.name}'s projects, then describe the task. ${peer.name} approves it, and ${peer.name}'s Claude`,
+      `Pick one of ${peer.name}'s projects, then describe the task. ${peer.name} approves it, and ${peer.name}'s agent`,
       `does the work there. You both see it in Projects (yours, and ${peer.name}'s).`,
       '',
     ],

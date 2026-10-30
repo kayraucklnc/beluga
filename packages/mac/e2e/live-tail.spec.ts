@@ -116,8 +116,8 @@ test('a message steered in mid-turn lands above Claude’s live part, which stay
   // Show Steps on the answer opens the steps of both parts.
   await tail.hover();
   await tail.getByRole('button', { name: 'Show Steps' }).click();
-  await expect(head.getByRole('list', { name: "Claude's steps" })).toBeVisible();
-  await expect(tail.getByRole('list', { name: "Claude's steps" })).toBeVisible();
+  await expect(head.getByRole('list', { name: "The agent's steps" })).toBeVisible();
+  await expect(tail.getByRole('list', { name: "The agent's steps" })).toBeVisible();
   // (Past the steps opening.)
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${OUT}/03-answered-stays-in-place.png` });
@@ -143,7 +143,7 @@ test('a queued message steered from the tray: its note sits above the live part,
   // Sent, not read yet: said on the message itself (BLG-54), till Claude's next step; then it reads as any message.
   const message = page.locator('[data-index]', { hasText: 'check the tests while you are at it' }).first();
   await expect(message.locator('[data-steer-waiting]')).toHaveCount(0, { timeout: 10_000 });
-  await expect(page.getByText('Claude read this while it worked; the answer below covers it.')).toHaveCount(0);
+  await expect(page.getByText('The agent read this while it worked; the answer below covers it.')).toHaveCount(0);
   const rows = await rowsInOrder(page);
   expect(rows.at(-1)?.part).toBe('tail');
   // Only the live part says it's working: the note doesn't.

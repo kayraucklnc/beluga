@@ -45,14 +45,14 @@ test('Investigate: a task and a worktree, Claude’s report, then Fix It in the 
   await expect(main(page).getByRole('heading', { name: 'Login returns 500 when the email has a plus sign' })).toBeVisible();
   await expect(main(page).getByText('Same here with')).toBeVisible();
   // Hand it to Claude the way a project's home starts work: Investigate (the first way), a word for Claude, Return.
-  await expect(main(page).getByText('What should Claude do?')).toBeVisible();
+  await expect(main(page).getByText('What should your agent do?')).toBeVisible();
   await expect(main(page).getByRole('tab', { name: 'Investigate' })).toHaveAttribute('aria-selected', 'true');
-  const note = main(page).getByRole('textbox', { name: /Anything Claude should know/ });
+  const note = main(page).getByRole('textbox', { name: /Anything the agent should know/ });
   await note.fill('It only fails for addresses with a plus');
   await note.press('Enter');
   // A task for it, and Claude's report once it's done (what happens, why) with Fix It.
   const status = main(page).getByTestId('issue-status');
-  await expect(status).toContainText('Claude investigated', { timeout: 30_000 });
+  await expect(status).toContainText('The agent investigated', { timeout: 30_000 });
   await expect(status).toContainText('decodes the email a second time');
   const task = page.getByRole('complementary', { name: 'Properties' }).getByRole('button', { name: /BOB-\d+/ });
   await expect(task).toBeVisible();
@@ -61,7 +61,7 @@ test('Investigate: a task and a worktree, Claude’s report, then Fix It in the 
   const where = (await status.locator('[class*="mono"]').textContent())!.trim();
   expect(where).toMatch(/^bob-\d+-login-returns-500/);
   await status.getByRole('button', { name: 'Fix It' }).click();
-  await expect(status).toContainText(/Claude is fixing it|Claude stopped before a pull request/, { timeout: 30_000 });
+  await expect(status).toContainText(/The agent is fixing it|The agent stopped before a pull request/, { timeout: 30_000 });
   await expect(status).toContainText(where);
   // The task links back to its issue, with what Claude found in its brief.
   await status.getByRole('button', { name: `Open ${key}` }).click();

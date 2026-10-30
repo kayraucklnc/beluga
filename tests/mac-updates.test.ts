@@ -60,7 +60,7 @@ describe('what the window says', () => {
   it('says what Update When Idle still waits for', () => {
     expect(idleLine([])).toMatch(/as soon as you step away/);
     expect(idleLine(['you'])).toBe('Waiting for you to step away for 10 minutes.');
-    expect(idleLine(['claude', 'terminal', 'you'])).toBe('Waiting for Claude to finish, programs in your terminals to finish and you to step away for 10 minutes.');
+    expect(idleLine(['claude', 'terminal', 'you'])).toBe('Waiting for your agent to finish, programs in your terminals to finish and you to step away for 10 minutes.');
   });
 
   it('sums up the state for Settings', () => {

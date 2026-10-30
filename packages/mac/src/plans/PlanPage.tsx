@@ -260,7 +260,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       {plan.body && plan.draft ? (
         <div className={p.changes} role="status">
           <Icon name="wand" size={13} />
-          <strong>Claude proposes changes</strong>
+          <strong>Your agent proposes changes</strong>
           <span>{changeWords(plan)}</span>
           <span className={p.grow} />
           <Button size="small" variant="quiet" onClick={() => void act(() => api.discard(plan.id))}>
@@ -392,10 +392,10 @@ function Drafting({ plan }: { plan: Plan }) {
   const since = activity.startedAt ?? plan.createdAt;
   const fresh = now - plan.createdAt < 20_000;
   const line = activity.running
-    ? `Claude is reading ${project ?? 'the code'} and writing the plan · ${formatDuration(Math.max(0, now - since))}`
+    ? `Your agent is reading ${project ?? 'the code'} and writing the plan · ${formatDuration(Math.max(0, now - since))}`
     : fresh
-      ? 'Claude is starting on the plan…'
-      : 'Claude isn’t writing the plan right now. Tell it what to plan in the conversation.';
+      ? 'Your agent is starting on the plan…'
+      : 'Your agent isn’t writing the plan right now. Tell it what to plan in the conversation.';
   return (
     <div className={p.writing}>
       <div className={p.skeleton} data-live={activity.running || fresh ? 'true' : undefined} aria-hidden="true">

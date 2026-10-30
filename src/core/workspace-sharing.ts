@@ -1,4 +1,5 @@
 import type { BodyInput, BodyOf, GuestCan, WsRole } from '../protocol.js';
+import { agentLabel } from '../shared/agent-label.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { ShareService } from './shares.js';
 import { type DomainState, type LogItem, type SaidBy, type Store, clean, peerName } from './store.js';
@@ -41,7 +42,7 @@ export function historyFor(log: readonly LogItem[], channel: string, nameOf: (id
     .map((l) =>
       l.type === 'chat'
         ? { from: nameOf(l.from), text: l.text.slice(0, 8000), ts: l.ts, byAgent: l.byAgent }
-        : { from: l.type === 'agent' ? `${l.ownerName}'s Claude` : '', text: l.type === 'agent' ? l.text.slice(0, 8000) : '', ts: l.ts, byAgent: true },
+        : { from: l.type === 'agent' ? agentLabel(l.agent, l.ownerName, false) : '', text: l.type === 'agent' ? l.text.slice(0, 8000) : '', ts: l.ts, byAgent: true },
     );
 }
 
@@ -51,7 +52,7 @@ export function historyFor(log: readonly LogItem[], channel: string, nameOf: (id
  */
 export function saidBy(state: DomainState, owner: string, h: BodyOf<'ws_invite'>['history'][number]): SaidBy {
   const name = clean(h.from).slice(0, 80);
-  const person = h.byAgent ? name.replace(/'s Claude$/, '') : name;
+  const person = h.byAgent ? name.replace(/'s .+$/, '') : name;
   const from = state.peers.find((p) => p.name === person)?.peerId ?? (person === peerName(state, owner) ? owner : `history:${person}`);
   return { from, name, text: clean(h.text), byAgent: h.byAgent, ts: h.ts };
 }

@@ -39,7 +39,7 @@ export function ContinueSheet({ wsId, close }: { wsId: string; close: () => void
     <FormSheet
       title="Continue in a New Worktree"
       icon="branch"
-      intro="This chat becomes a worktree: Claude gets its own branch and folder, keeps the conversation and starts on the task."
+      intro="This chat becomes a worktree: your agent gets its own branch and folder, keeps the conversation and starts on the task."
       submitLabel="Continue"
       onSubmit={() => {
         // Git fetches and makes the worktree behind the chat ("Making this chat a worktree…"); a failure comes back as a toast.
@@ -49,8 +49,8 @@ export function ContinueSheet({ wsId, close }: { wsId: string; close: () => void
       onCancel={close}
       width={540}
     >
-      <Field label="Task" htmlFor="continue-task" hint="Empty: Claude goes ahead with what you discussed. ⌘Return continues.">
-        <TextArea id="continue-task" value={task} onChange={setTask} rows={4} placeholder="What should Claude change?" data-autofocus />
+      <Field label="Task" htmlFor="continue-task" hint="Empty: your agent goes ahead with what you discussed. ⌘Return continues.">
+        <TextArea id="continue-task" value={task} onChange={setTask} rows={4} placeholder="What should your agent change?" data-autofocus />
       </Field>
       <Field label="Based on" htmlFor="continue-base" hint="Origin branches are fetched first, so it starts from the latest.">
         <Popup id="continue-base" label="Based on" value={chosen} options={options} onChange={setBase} />

@@ -29,7 +29,7 @@ function useSay(): (what: string, call: Promise<unknown>, done?: string) => void
 async function pickFolder(): Promise<string | undefined> {
   if (!inApp()) return undefined;
   const { open } = await import('@tauri-apps/plugin-dialog');
-  const picked = await open({ directory: true, multiple: false, title: 'A folder friends’ Claudes may read and write' });
+  const picked = await open({ directory: true, multiple: false, title: 'A folder friends’ agents may read and write' });
   return typeof picked === 'string' ? picked : undefined;
 }
 
@@ -74,12 +74,12 @@ function AskMeFor() {
   const [text, setText] = useState<string | undefined>();
   const save = (): void => {
     if (text === undefined || text === saved) return;
-    say('save it', api.gateway.setNote(text).then(() => setText(undefined)), 'Saved. Friends’ Claudes see it on your card');
+    say('save it', api.gateway.setNote(text).then(() => setText(undefined)), 'Saved. Friends’ agents see it on your card');
   };
   return (
     <div className={s.folders}>
       <div className={s.capName}>Ask me for…</div>
-      <div className={s.capDetail}>A short note friends’ Claudes see when they look for who can help.</div>
+      <div className={s.capDetail}>A short note friends’ agents see when they look for who can help.</div>
       <input className={s.input} aria-label="Ask me for" placeholder="the API, design reviews…" value={text ?? saved} maxLength={280} onChange={(e) => setText(e.target.value)} onBlur={save} onKeyDown={(e) => e.key === 'Enter' && save()} />
     </div>
   );
@@ -95,13 +95,13 @@ function AskFreely() {
   const nameOf = (id: string): string => friends.find((f) => f.peerId === id)?.name ?? roomPeers.find((p) => p.peerId === id)?.name ?? 'Someone';
   if (!peers.length) return null;
   return (
-    <div className={s.folders} role="group" aria-label="Friends your Claude asks without checking">
-      <div className={s.capName}>Your Claude asks them without checking</div>
-      <div className={s.capDetail}>You said Always when your Claude wanted to ask them. Others still get “Can I ask them?” first.</div>
+    <div className={s.folders} role="group" aria-label="Friends your agent asks without checking">
+      <div className={s.capName}>Your agent asks them without checking</div>
+      <div className={s.capDetail}>You said Always when your agent wanted to ask them. Others still get “Can I ask them?” first.</div>
       {peers.map((id) => (
         <div key={id} className={s.folder}>
           <span>{nameOf(id)}</span>
-          <Button size="small" variant="quiet" aria-label={`Ask me first about ${nameOf(id)}`} onClick={() => say('change it', api.gateway.setAskFreely(id, false), 'Your Claude asks you first again')}>
+          <Button size="small" variant="quiet" aria-label={`Ask me first about ${nameOf(id)}`} onClick={() => say('change it', api.gateway.setAskFreely(id, false), 'Your agent asks you first again')}>
             Ask Me First
           </Button>
         </div>
@@ -120,8 +120,8 @@ export function CapabilitySettings() {
     say('change it', api.gateway.setCapabilities({ levels: { [need]: row } }));
   };
   return (
-    <Group title="What your friends’ Claudes can do here">
-      <table className={s.capTable} aria-label="What friends’ Claudes can do here">
+    <Group title="What your friends’ agents can do here">
+      <table className={s.capTable} aria-label="What friends’ agents can do here">
         <thead>
           <tr>
             <th />

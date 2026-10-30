@@ -92,7 +92,7 @@ test('the plan chat takes a dropped image, and shows a message’s screenshots a
   }
   await page.locator('main').getByRole('button', { name: /^Card checkout for launch,/ }).click();
   const chat = page.getByRole('complementary', { name: 'Conversation' });
-  const box = chat.getByRole('textbox', { name: 'Message Claude about the plan' });
+  const box = chat.getByRole('textbox', { name: 'Message your agent about the plan' });
   await box.fill('this one:');
   // Dropped on the box: it waits as a thumbnail, referenced in the words.
   await chat.locator('form').evaluate((form, b64) => {

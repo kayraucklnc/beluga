@@ -27,7 +27,7 @@ const KIND_ICON: Record<SuggestionKind, IconName> = {
 export function sectionOf(sug: Suggestion, prev: Suggestion | undefined): string | undefined {
   if (sug.task?.elsewhere && !prev?.task?.elsewhere) return 'In other projects, not this one';
   if (sug.task && !sug.task.elsewhere && !prev?.task) return 'Tasks';
-  if (sug.kind === 'skill' && prev?.kind !== 'skill') return 'Claude’s skills and commands';
+  if (sug.kind === 'skill' && prev?.kind !== 'skill') return 'Your agent’s skills and commands';
   return undefined;
 }
 

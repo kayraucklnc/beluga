@@ -276,7 +276,7 @@ describe('the measure step', () => {
   it('in words, and a Claude change to a source pauses the sentinel', () => {
     const base = { id: 'm', name: 'Keep' } as const;
     expect(stepSentence({ ...base, kind: 'measure', from: 'previous', metrics: [{ name: 'subscribers', label: 'Subscribers' }] })).toBe('Keeps Subscribers from the step before');
-    expect(stepSentence({ ...base, kind: 'measure', from: 'claude', metrics: [] })).toBe('Keeps the numbers Claude measures');
+    expect(stepSentence({ ...base, kind: 'measure', from: 'claude', metrics: [] })).toBe('Keeps the numbers the agent measures');
     expect(stepSentence({ ...base, kind: 'measure', from: 'source', source: { kind: 'sqlite', path: 'a.db', query: 'select 1' }, metrics: [] })).toBe('Keeps every number from a sqlite source');
     expect(StepInputSchema.parse({ kind: 'measure' })).toEqual({ kind: 'measure', from: 'previous', metrics: [] });
     expect(StepInputSchema.safeParse({ kind: 'measure', metrics: [{ name: 'Bad Name' }] }).success).toBe(false);

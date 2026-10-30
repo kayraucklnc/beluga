@@ -430,7 +430,7 @@ export class WorkspaceController {
       if (!found?.items.length) return false;
       if (!this.onlyImported(channel)) return false; // you started talking meanwhile
       const when = new Date(found.lastModified).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-      const note: LogItem = { id: `import-${found.sessionId}`, type: 'system', channel, text: `Continuing "${found.title}" from Claude Code (last active ${when}). Claude remembers all of it.`, ts: Date.now(), level: 'info' };
+      const note: LogItem = { id: `import-${found.sessionId}`, type: 'system', channel, text: `Continuing "${found.title}" from Claude Code (last active ${when}). Your agent remembers all of it.`, ts: Date.now(), level: 'info' };
       this.deps.store.dispatch({ type: 'history', channel, items: [...found.items, note] });
       // Another tool's worktree becomes yours only once you talk in it (so opening it doesn't move it in the sidebar).
       if (external) this.pendingResume.set(id, found.sessionId);
@@ -776,7 +776,7 @@ export class WorkspaceController {
     const to = `${WS_PREFIX}${ws.id}`;
     this.loaded.delete(to);
     this.open(ws.id);
-    this.deps.store.dispatch({ type: 'system', channel: to, text: `Continued from “${source.name}”, on a new branch from ${ws.base ?? project.base}. Claude remembers the conversation.` });
+    this.deps.store.dispatch({ type: 'system', channel: to, text: `Continued from “${source.name}”, on a new branch from ${ws.base ?? project.base}. Your agent remembers the conversation.` });
     this.deps.store.dispatch({ type: 'system', channel: from, text: `Continued in the worktree ${ws.name} (${ws.branch}).` });
     this.deps.toast(`Continuing in ${ws.name}, with the conversation so far`, 'success');
     this.created(ws, { from: id, about });
@@ -803,8 +803,8 @@ export class WorkspaceController {
     if (proper) await this.renameWhenNamed(source.id, proper);
     const ws = this.deps.manager.find(source.id) ?? made.ws;
     this.open(ws.id);
-    this.deps.store.dispatch({ type: 'system', channel, text: `This chat is now the worktree ${ws.name} (${ws.branch}), on a new branch from ${ws.base ?? project.base}. Claude remembers the conversation and can make changes.` });
-    this.deps.toast(`${ws.name} is a worktree now; Claude goes on here`, 'success');
+    this.deps.store.dispatch({ type: 'system', channel, text: `This chat is now the worktree ${ws.name} (${ws.branch}), on a new branch from ${ws.base ?? project.base}. Your agent remembers the conversation and can make changes.` });
+    this.deps.toast(`${ws.name} is a worktree now; your agent goes on here`, 'success');
     this.created(ws, { from: source.id, about: opts.about });
     void (async () => {
       if (opts.after) await Promise.race([opts.after, new Promise<void>((r) => setTimeout(r, CONTINUE_WAIT_MS).unref())]);
@@ -872,7 +872,7 @@ export class WorkspaceController {
     const session = this.deps.manager.find(id)?.sessionId ?? ws.forkFromSession;
     const cut = session ? await sessionBefore(session, ws.path, { id: line.request, text: line.text }) : { sessionId: undefined };
     const snap = ws.kind === 'worktree' && line.request ? await snapshotAt(ws.path, promptRef(id, line.request)) : undefined;
-    const fresh = cut ? '' : ' Claude couldn’t go back to exactly that point, so it starts afresh from here.';
+    const fresh = cut ? '' : ' Your agent couldn’t go back to exactly that point, so it starts afresh from here.';
     if (mode === 'here') {
       if (snap && !(await this.act("Couldn't put the files back", () => restoreSnapshot(ws.path, id, snap)))) return undefined;
       this.deps.manager.rewindSession(id, cut?.sessionId ?? null);
@@ -1127,7 +1127,7 @@ export class WorkspaceController {
       this.deps.toast(`The main folder has uncommitted changes (${result.files.slice(0, 3).join(', ')}). Commit or stash them first.`, 'warn');
       return result;
     }
-    this.deps.toast(`Merge conflict in ${result.files.length} file(s). Click "Solve merge conflict" to let Claude handle it.`, 'warn');
+    this.deps.toast(`Merge conflict in ${result.files.length} file(s). Click "Solve merge conflict" to let your agent handle it.`, 'warn');
     return result;
   }
 

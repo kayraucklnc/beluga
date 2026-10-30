@@ -55,7 +55,7 @@ export function topBarModel(state: AppState, width: number): Model {
   const people = state.peers.length;
   const right: Seg[] = [];
   if (state.follow) right.push({ text: `${glyph.eye} following ${peerName(state, state.follow)}   `, color: theme.warn });
-  if (mine?.fiveHour || mine?.week) right.push({ text: `your Claude ${mine.fiveHour ? `5h ${mine.fiveHour.pct}%` : ''}${mine.fiveHour && mine.week ? ' · ' : ''}${mine.week ? `week ${mine.week.pct}%` : ''}   `, color: theme.muted });
+  if (mine?.fiveHour || mine?.week) right.push({ text: `your Claude plan ${mine.fiveHour ? `5h ${mine.fiveHour.pct}%` : ''}${mine.fiveHour && mine.week ? ' · ' : ''}${mine.week ? `week ${mine.week.pct}%` : ''}   `, color: theme.muted });
   right.push({ text: `${people} ${people === 1 ? 'person' : 'people'}   `, color: theme.muted });
   right.push({ text: `${status.icon} ${status.label}   `, color: status.color });
   const inbox = unread ? ` ● ${unread} new ` : ' Inbox ';
@@ -136,7 +136,7 @@ export function usageModel(state: AppState, width: number): Model {
   lines.push([
     { text: 'Worktrees take ', color: theme.muted },
     { text: formatBytes(totalDisk), color: theme.text, bold: true },
-    { text: '   ·   Claude used ', color: theme.muted },
+    { text: '   ·   agents used ', color: theme.muted },
     { text: totalTokens ? `${formatTokens(totalTokens)} tokens` : 'nothing yet', color: theme.text, bold: true },
     { text: totalCost ? ` (≈ $${totalCost.toFixed(2)})` : '', color: theme.muted },
   ]);
@@ -153,7 +153,7 @@ export function usageModel(state: AppState, width: number): Model {
   lines.push([
     ...pad(plain('', {}), nameW + 2),
     ...pad(plain('disk', { color: theme.muted }), cells + 10),
-    ...pad(plain('Claude tokens', { color: theme.muted }), cells + 9),
+    ...pad(plain('Agent tokens', { color: theme.muted }), cells + 9),
     { text: 'cost', color: theme.muted },
   ]);
   for (const r of rows) {
@@ -187,11 +187,11 @@ export function draftModel(state: AppState, width: number, kind: 'worktree' | 'c
   const lines: Line[] = [];
   const zones: Zone[] = [];
   if (kind === 'worktree') {
-    lines.push(plain('A new worktree from the latest origin, with its own Claude conversation.', { color: theme.text }));
-    lines.push(plain('Describe the task below. A small model names the worktree from it, then Claude gets started.', { color: theme.muted }));
+    lines.push(plain('A new worktree from the latest origin, with its own agent conversation.', { color: theme.text }));
+    lines.push(plain('Describe the task below. A small model names the worktree from it, then your agent gets started.', { color: theme.muted }));
     lines.push(plain(state.prefs.autoSetup ? 'The project’s setup (e.g. npm install) runs in its Terminal tab.' : 'Setup scripts are off (Settings → Workspaces).', { color: theme.muted }));
   } else {
-    lines.push(plain('A fresh conversation with Claude, with all its tools.', { color: theme.text }));
+    lines.push(plain('A fresh conversation with your agent, with all its tools.', { color: theme.text }));
     lines.push(plain('Type your first message below to start.', { color: theme.muted }));
   }
   lines.push(plain('Esc goes back without creating anything.', { color: theme.muted }));
@@ -216,7 +216,7 @@ export function trustCardModel(state: AppState, peerId: string, width: number): 
   const more = state.trustPrompts.length - 1;
   const lines: Line[] = [
     truncate([{ text: `${glyph.dot} `, color: theme.info }, { text: `${name} joined.`, color: theme.text, bold: true }, { text: ` How much do you trust ${name}?`, color: theme.info, bold: true }, { text: more > 0 ? `   +${more} more` : '', color: theme.muted }], width),
-    plain(`  This decides what ${name} can do with your Claude on this computer. Change it any time by clicking ${name} in People.`, { color: theme.muted }),
+    plain(`  This decides what ${name} can do with your agent on this computer. Change it any time by clicking ${name} in People.`, { color: theme.muted }),
   ];
   const y = lines.length;
   lines.push(

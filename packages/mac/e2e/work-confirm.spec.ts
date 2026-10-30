@@ -28,10 +28,10 @@ test("Review (under ⋯) says what it does and starts only when you say so", asy
   const more = toolbar(page).getByRole('button', { name: 'More for this workspace' });
   const review = async (): Promise<void> => {
     await more.click();
-    await page.getByRole('menuitem', { name: /Ask Claude to Review…/ }).click();
+    await page.getByRole('menuitem', { name: /Ask Your Agent to Review…/ }).click();
   };
   await review();
-  const pop = page.getByRole('dialog', { name: 'Ask Claude to review this worktree?' });
+  const pop = page.getByRole('dialog', { name: 'Ask your agent to review this worktree?' });
   await expect(pop).toBeVisible();
   await expect(pop).toContainText('correctness, security, tests and quality');
   await expect(pop.getByRole('button', { name: 'Start Review' })).toBeFocused();
@@ -62,7 +62,7 @@ test('the palette asks too, and a right-click on another workspace asks with an 
   await search.fill('Review');
   await page.getByRole('option', { name: /^Review…/ }).first().click();
   await expect(search).toBeHidden();
-  const pop = page.getByRole('dialog', { name: 'Ask Claude to review this worktree?' });
+  const pop = page.getByRole('dialog', { name: 'Ask your agent to review this worktree?' });
   await expect(pop).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(pop).toBeHidden();
@@ -71,8 +71,8 @@ test('the palette asks too, and a right-click on another workspace asks with an 
   const other = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
   if (!(await other.isVisible())) await sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).click();
   await other.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: /Ask Claude to Review…/ }).click();
-  const alert = page.getByRole('alertdialog', { name: 'Ask Claude to review this worktree?' });
+  await page.getByRole('menuitem', { name: /Ask Your Agent to Review…/ }).click();
+  const alert = page.getByRole('alertdialog', { name: 'Ask your agent to review this worktree?' });
   await expect(alert).toBeVisible();
   await expect(alert.getByRole('button', { name: 'Start Review' })).toBeVisible();
   await alert.getByRole('button', { name: 'Cancel' }).click();

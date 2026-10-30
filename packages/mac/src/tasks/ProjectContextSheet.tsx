@@ -29,7 +29,7 @@ export function ProjectContextSheet({ projectId, close }: { projectId: string; c
     <FormSheet
       title="About This Project"
       icon="book"
-      intro="Claude reads this whenever it writes a task here, so tasks use the project’s own words and point at the right part of the app."
+      intro="Your agent reads this whenever it writes a task here, so tasks use the project’s own words and point at the right part of the app."
       submitLabel="Save"
       width={600}
       canSubmit={changed}
@@ -37,7 +37,7 @@ export function ProjectContextSheet({ projectId, close }: { projectId: string; c
       onSubmit={async () => {
         await api.setContext(projectId, text);
         close();
-        toast(client, text.trim() ? 'Claude knows about this project now' : 'The project’s context is cleared', 'success');
+        toast(client, text.trim() ? 'Your agent knows about this project now' : 'The project’s context is cleared', 'success');
       }}
     >
       <Field label="Context" htmlFor="project-context" hint={`${shared}${saved?.text ? ` Last edited by ${saved.by}, ${ago(saved.at)}.` : ''}`}>

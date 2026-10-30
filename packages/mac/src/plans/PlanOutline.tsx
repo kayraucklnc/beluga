@@ -85,7 +85,7 @@ function Milestone({ view, plan, m, keys, marks, selected, onSelect, startable }
           <Icon name="flag" size={12} />
           <span className={p.oGateLabel}>Passes when</span>
           <span className={p.oCriteria}>{m.milestone.criteria.join(' · ')}</span>
-          {m.run.check ? <span className={cx(p.gateCheck, m.run.check.verdict === 'pass' ? p.tone_ok : p.tone_error)}>{m.run.check.verdict === 'pass' ? 'Claude: passes' : 'Claude: not yet'}</span> : null}
+          {m.run.check ? <span className={cx(p.gateCheck, m.run.check.verdict === 'pass' ? p.tone_ok : p.tone_error)}>{m.run.check.verdict === 'pass' ? 'Agent: passes' : 'Agent: not yet'}</span> : null}
         </button>
       ) : null}
     </section>
@@ -104,7 +104,7 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
     ...(t.worktree ? [{ label: 'Open Worktree', onSelect: () => openWorktree(t.worktree!) }] : []),
     ...(t.issue ? [{ label: 'Open Task', onSelect: () => openTask(t.issue!.id) }] : []),
     ...(others.length ? [{ label: 'Move to', separate: true, submenu: others.map((m) => ({ label: m.title, onSelect: () => edit([{ op: 'move_task', id: t.task.id, milestone: m.id }]) })), onSelect: () => undefined }] : []),
-    { label: t.task.assignee === 'me' ? 'Give It to Claude' : 'I’ll Do It Myself', onSelect: () => edit([{ op: 'update_task', id: t.task.id, patch: { assignee: t.task.assignee === 'me' ? 'claude' : 'me' } }]) },
+    { label: t.task.assignee === 'me' ? 'Give It to the Agent' : 'I’ll Do It Myself', onSelect: () => edit([{ op: 'update_task', id: t.task.id, patch: { assignee: t.task.assignee === 'me' ? 'claude' : 'me' } }]) },
     { label: 'Take Out of the Plan', danger: true, separate: true, onSelect: () => edit([{ op: 'remove_task', id: t.task.id }]) },
   ];
   return (

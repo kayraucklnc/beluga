@@ -184,7 +184,7 @@ describe('who a worktree’s Share sheet lists (BLG-340)', () => {
       ['Bo Lin', 'network', 'contribute', true],
       ['cy', 'network', 'none', false],
     ]);
-    expect(shareRowDetail(rows[1]!, false)).toBe('Works with your Claude across the whole project');
+    expect(shareRowDetail(rows[1]!, false)).toBe('Works with your agent across the whole project');
     expect(shareRowDetail(rows[2]!, false)).toBe('Not in this worktree');
   });
 });

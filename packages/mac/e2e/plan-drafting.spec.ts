@@ -51,10 +51,10 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
   await page.getByRole('button', { name: 'New Plan', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: /^Plan in / });
   await sheet.getByLabel('Goal').fill(GOAL);
-  await sheet.getByRole('button', { name: 'Plan with Claude' }).click();
+  await sheet.getByRole('button', { name: 'Plan with Your Agent' }).click();
 
   // One line says what's going on, under one placeholder.
-  const line = main(page).getByRole('status').filter({ hasText: /Claude is reading bob-api and writing the plan · \d+s/ });
+  const line = main(page).getByRole('status').filter({ hasText: /Your agent is reading bob-api and writing the plan · \d+s/ });
   await expect(line).toBeVisible({ timeout: 20_000 });
   const name = page.getByRole('textbox', { name: 'Plan name' });
   // Never your message: "New plan", then a short name from a quick model.
@@ -67,7 +67,7 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
 
   // No Draft pill, no "working" in the conversation's header, no run-mode control, no view toggle yet.
   await expect(main(page).getByText('Draft', { exact: true })).toHaveCount(0);
-  await expect(main(page).getByText('Claude is writing the plan…')).toHaveCount(0);
+  await expect(main(page).getByText('Your agent is writing the plan…')).toHaveCount(0);
   const chat = page.getByRole('complementary', { name: 'Conversation' });
   await expect(chat.locator('header')).not.toContainText('working');
   await expect(chat.getByText(/^Working · \d/)).toHaveCount(0);
