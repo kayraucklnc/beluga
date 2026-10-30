@@ -306,7 +306,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           askedToDefine = true;
           return { behavior: 'deny' as const, message: 'Before asking for approval, call mcp__beluga_board__task_define with the task this plan is for (title, goal in your own words, context, acceptance criteria, decisions, open questions, estimate, priority). Then call ExitPlanMode again.' };
         }
-        const plan = typeof toolInput.plan === 'string' && toolInput.plan.trim() ? toolInput.plan : lastText || '(Claude proposed a plan)';
+        const plan = typeof toolInput.plan === 'string' && toolInput.plan.trim() ? toolInput.plan : lastText || '(The agent proposed a plan)';
         const answer = await ask({ kind: 'plan', plan: plan.slice(0, 60_000) });
         if (answer.kind === 'plan' && answer.approve) {
           input.planTask?.approved();
@@ -338,7 +338,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         clearTimeout(quiet);
         if (limit) input.onFollowUps?.(undefined); // only if follow-ups were offered
         input.onSteer?.(undefined);
-        turns.failPending('Claude finished before getting to this message');
+        turns.failPending('The agent finished before getting to this message');
         prompts.close();
       };
       /** The model the session runs on, so a message picked for another one switches it first. */
