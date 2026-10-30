@@ -60,7 +60,7 @@ export const Terminal = memo(function Terminal({ code, lang, onQuote }: { code: 
   const shown = hidden ? term.lines.slice(hidden) : term.lines;
   const name = (lang ?? '').toLowerCase();
   const items: ActionItem[] = [
-    { label: 'Copy Output', icon: 'copy', onSelect: () => copy(term.plain, 'the output') },
+    { label: 'Copy Output', icon: 'copy', onSelect: () => copy(term.copy, 'the output') },
     ...(term.commands.length ? [{ label: term.commands.length === 1 ? 'Copy Command' : 'Copy Commands', icon: 'terminal' as const, onSelect: () => copy(term.commands.join('\n'), term.commands.length === 1 ? 'the command' : 'the commands') }] : []),
     { label: 'Wrap Long Lines', icon: 'wrap', separate: true, checked: wrap, onSelect: () => setWrap(!wrap) },
     ...(hidden ? [{ label: `Show All ${term.lines.length} Lines`, onSelect: () => setAll(true) }] : []),
@@ -77,7 +77,7 @@ export const Terminal = memo(function Terminal({ code, lang, onQuote }: { code: 
           {term.commands.length > 1 ? <span>{term.commands.length} commands</span> : null}
         </div>
         <div className={b.tools}>
-          <button type="button" className={b.tool} aria-label="Copy the output" onClick={() => copyNow(term.plain)}>
+          <button type="button" className={b.tool} aria-label="Copy the output" onClick={() => copyNow(term.copy)}>
             <Icon name={copied ? 'check' : 'copy'} size={12} />
             {copied ? 'Copied' : 'Copy'}
           </button>
