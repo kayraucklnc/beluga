@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { Config } from '../config.js';
 import { runtimeFor } from '../agent/runtime/registry.js';
 import { createMockBackend } from '../agent/mock.js';
+import { createCodexRuntime } from '../agent/runtime/codex/index.js';
+import { ScriptedCodex } from '../agent/runtime/codex/scripted.js';
 import { findConversation } from '../agent/runtime/claude/claude-sessions.js';
 import { otherTools } from '../agent/other-tools.js';
 import { copyNative, pasteText } from '../core/clipboard.js';
@@ -292,6 +294,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     createAgent: demo
       ? (bridge) => createMockBackend(bridge, Number(belugaEnv('DEMO_PACE')) || 2.6) // unhurried, so you can watch workspaces run side by side
       : undefined,
+    // The demo's Codex: the real Codex runtime over a scripted app-server, so a worktree can run on it (BLG-462).
+    ...(demo ? { alsoRuntimes: [createCodexRuntime({ connect: new ScriptedCodex({ stepMs: 600 }).connect })] } : {}),
     // Your agent through the runtime seam (agent/runtime): Claude, the only one registered yet.
     ...(!demo && config.agent
       ? {

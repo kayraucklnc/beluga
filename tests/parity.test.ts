@@ -89,6 +89,14 @@ describe('docs/parity.md, per runtime', () => {
     expect(claimed.filter((k) => caps[k] === (CLAUDE_CAPABILITIES as unknown as Record<string, unknown>)[k])).toEqual([]);
   });
 
+  it('says how every conformance scenario does on each runtime, live runs included (BLG-462)', () => {
+    const start = doc.indexOf('## Runtime conformance');
+    const lines = doc.slice(start, doc.indexOf('\n## ', start + 1)).split('\n').filter((l) => l.startsWith('|')).slice(2);
+    expect(lines.length).toBeGreaterThan(8);
+    const bad = lines.flatMap((l) => l.slice(1, -1).split(' | ').slice(1).map((c) => c.trim()).filter((c) => !/^(pass|waived|fallback|n\/a)\b/.test(c)).map((c) => `${l.split(' | ')[0]}: "${c}"`));
+    expect(bad).toEqual([]);
+  });
+
   it('covers the ways in that reach an agent run', () => {
     const agentRuns = ['/model', '/handoff', '/stop', '/plan', '/compact', '/fork', '/usage', 'host.stopRun', 'host.steerNow', 'host.answerApproval', 'questions.answer', 'session.compact', 'workspaces.fork', 'workspaces.editPrompt', 'workbench.setAgent', 'claudeCode.skills', 'claudeCode.mcpServers', 'agent.steps', 'gateway.decide'];
     expect(agentRuns.filter((id) => !text.includes(`\`${id}\``))).toEqual([]);

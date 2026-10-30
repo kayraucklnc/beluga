@@ -617,6 +617,24 @@ What an agent run does on each runtime (BLG-461). A cell is **pass** (it works a
 | The process watched and killed for sure | `hasProcess` | pass | pass |
 | Side calls (naming a worktree, drafting a task, chat answers) | `complete` | pass | pass (`codexComplete`) |
 
+## Runtime conformance (BLG-462)
+
+The same scenarios run on every runtime (`tests/runtime-conformance.ts`, `npx vitest run tests/runtime-conformance.test.ts`): the in-memory reference, Claude's real runner over a scripted Agent SDK `query` (`tests/fake-claude.ts`), and Codex's real runner over a scripted `codex app-server` speaking the payloads codex-cli sends (`src/agent/runtime/codex/scripted.ts`). Where runtimes may differ, a capability flag says so and the scenario checks it both ways; mutants of the reference runtime prove a difference no flag covers fails the suite. **Live** runs against a signed-in Claude Code or Codex are waived (BLG-475: no Codex sign-in on the build Mac).
+
+| Scenario | Claude | Codex | Live Claude | Live Codex |
+|---|---|---|---|---|
+| Start and answer, the step streamed | pass | pass | waived | waived |
+| A command that asks, approved | pass | pass | waived | waived |
+| A command you deny | pass | pass | waived | waived |
+| Session id: one per place, kept on resume | pass | pass | waived | waived |
+| Usage event under its session (`hasUsage`) | pass | pass | waived | waived |
+| Steer while it works (`canSteer`) | pass | pass | waived | waived |
+| Interrupt, the message answered next (`canInterrupt`) | pass | pass | waived | waived |
+| Stop on abort, the open step ended | pass | pass | waived | waived |
+| Friends' tasks and guests (`canGateEveryTool`, `hasSandbox`) | pass | pass | waived | waived |
+| Model list (`hasModelList`) | pass | pass | waived | waived |
+| A worktree on Codex: a task, an approval, Stop, hand off to Claude (`tests/codex-flow.test.ts`, through the daemon's Session; the Mac's `packages/mac/e2e/codex-flow.spec.ts` runs with the plan's e2e) | pass | pass | waived | waived |
+
 ## Beyond the shared actions
 
 | What | Where |
