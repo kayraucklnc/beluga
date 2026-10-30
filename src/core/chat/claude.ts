@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { type AgentRef, CLAUDE_AGENT } from '../../protocol.js';
+import { agentLabel } from '../../shared/agent-label.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
 import { asks } from '../../net/mesh/extras.js';
@@ -76,9 +77,9 @@ interface Job {
 
 /** Why an attached file isn't in what Claude reads. */
 function whyNot(file: ChatFile, wanted: boolean, here: boolean): string {
-  if (wanted && here) return `more pictures than Claude looks at in one answer (${MAX_IMAGES})`;
+  if (wanted && here) return `more pictures than an agent looks at in one answer (${MAX_IMAGES})`;
   if (wanted) return 'didn’t arrive in time';
-  return isTextFile(file) || isImageFile(file) ? `too big (${sizeLabel(file.size)})` : 'a kind Claude can’t read in a chat';
+  return isTextFile(file) || isImageFile(file) ? `too big (${sizeLabel(file.size)})` : 'a kind an agent can’t read in a chat';
 }
 
 export class ChatClaude {
@@ -195,7 +196,7 @@ export class ChatClaude {
       const parts = splitAnswer(text);
       parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, agent: this.agentRef(), ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
     } catch (err) {
-      if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
+      if (!this.stopped) this.opts.onProblem?.(conversation, `${agentLabel(this.agentRef(), undefined, true, { capital: true })} couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       clearInterval(beat);
       if (!this.stopped) this.live(conversation, m.id, 'idle');
@@ -220,7 +221,7 @@ export class ChatClaude {
         for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: about, agent: this.agentRef() } });
       })
       .catch((err: unknown) => {
-        if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t carry on: ${err instanceof Error ? err.message : String(err)}`);
+        if (!this.stopped) this.opts.onProblem?.(conversation, `${agentLabel(this.agentRef(), undefined, true, { capital: true })} couldn’t carry on: ${err instanceof Error ? err.message : String(err)}`);
       })
       .finally(() => {
         if (!this.stopped) this.live(conversation, about, 'idle');
@@ -261,7 +262,7 @@ export class ChatClaude {
     // (read_earlier), a turn with its tools has none and gets the longer window instead.
     const earlier = !tools && olderThanWindow(before, owner) > 0;
     return {
-      system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all', ...(tools ? { tools: true } : {}) }),
+      system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all', agent: this.agentRef(), ...(tools ? { tools: true } : {}) }),
       prompt: userPrompt({
         history: historyLines(before, owner, tools ? ACT_HISTORY : undefined),
         ask: m,

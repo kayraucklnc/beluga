@@ -85,7 +85,7 @@ describe('Claudes in chats', () => {
       expect(r.asked).toHaveLength(1);
       expect(r.asked[0]!.prompt).toContain('bob: lunch at noon?');
       expect(r.asked[0]!.prompt).toMatch(/The message to answer, from ann:\n<message>\nShould we ship on Friday\?/);
-      expect(r.asked[0]!.system).toContain("asked everyone's Claude");
+      expect(r.asked[0]!.system).toContain("asked everyone's agent");
     }
 
     // A later ask sees the earlier Claude answers as part of the history.
@@ -172,7 +172,7 @@ describe('Claudes in chats', () => {
     await settle(() => answers(ann, `dm:${id(bob)}`, ask.id).length === 1);
     const req = b.asked[0]!;
     expect(req.prompt).toContain('<file name="plan.md">\n# Plan\nShip the API first.\n</file>');
-    expect(req.prompt).toContain('blob.bin (a kind Claude can’t read in a chat)');
+    expect(req.prompt).toContain('blob.bin (a kind an agent can’t read in a chat)');
     expect(req.images).toEqual([{ name: 'shot.png', mime: 'image/png', b64: Buffer.from('89504e470d0a1a0a', 'hex').toString('base64') }]);
     a.stop();
     b.stop();

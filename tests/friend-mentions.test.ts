@@ -27,7 +27,7 @@ describe('@friend in the message box', () => {
   it('your Claude knows @claude:Name is a friend’s Claude to ask, @Name the person, and to give their notification a summary', () => {
     const prompt = buildSystemAppend('kay');
     expect(prompt).toContain('"@claude:Name" in the user');
-    expect(prompt).toContain('"@Name" alone is the person, not their Claude');
+    expect(prompt).toContain('"@Name" alone is the person, not their agent');
     expect(prompt).toContain('Give ask_person a summary');
   });
 });
