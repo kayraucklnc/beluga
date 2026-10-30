@@ -1,17 +1,19 @@
-import { Gauge } from 'lucide-react-native';
+import { Check, Gauge } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { until } from '../lib/hooks';
+import { until, useSupports } from '../lib/hooks';
+import { calls } from '../lib/link/calls';
 import type { UsageView } from '../lib/link/protocol';
+import { store } from '../lib/store';
 import { color, ink } from '../lib/theme';
 import { Sheet } from './Sheet';
-import { Card, IconBadge, Press, T } from './ui';
+import { Card, IconBadge, Pill, Press, T } from './ui';
 
 /**
- * Your allowance: one pastel bar per window (5 hours, week) with its percent and when it resets.
- * The view is a list of providers (Claude Code today, other agents later): the card shows the
- * first; tap it for all of them.
+ * Your allowance, one provider each: a pastel bar per plan window (5 hours, week) with its percent
+ * and when it resets, or a local model's tokens and speed. The card shows your default agent's;
+ * tap it for every provider, each with the chip that makes it your default (1.31).
  */
 const toneOf = (pct: number): 'mint' | 'butter' | 'rose' => (pct >= 90 ? 'rose' : pct >= 70 ? 'butter' : 'mint');
 
@@ -29,7 +31,32 @@ function Bar({ pct }: { pct: number }) {
   );
 }
 
+/** "1.2M", "84k", "512" tokens. */
+const shortTokens = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
+
+/** A provider without a plan (a local model): what it used, and how fast it answers. */
+function TokenFigures({ usage }: { readonly usage: UsageView }) {
+  const figure = (label: string, value: string, sub: string) => (
+    <View style={{ flex: 1, gap: 2 }}>
+      <T v="caption">{label}</T>
+      <T v="heading" style={{ fontVariant: ['tabular-nums'] }}>
+        {value}
+      </T>
+      <T v="caption">{sub}</T>
+    </View>
+  );
+  const t = usage.tokens;
+  return (
+    <View style={{ flexDirection: 'row', gap: 16 }}>
+      {figure('Tokens', t ? shortTokens(t.input + t.output) : '–', t ? `${shortTokens(t.input)} in · ${shortTokens(t.output)} out` : 'since your Mac started')}
+      {figure('Speed', usage.tokensPerSec !== undefined ? `${Math.round(usage.tokensPerSec)} tok/s` : '–', 'over its last run')}
+    </View>
+  );
+}
+
 export function UsageBars({ usage }: { readonly usage: UsageView }) {
+  if (usage.signedIn === false) return <T v="caption">Not signed in on your Mac.</T>;
+  if (!usage.windows.length) return <TokenFigures usage={usage} />;
   return (
     <View style={{ gap: 12 }}>
       {usage.windows.map((w) => (
@@ -77,16 +104,39 @@ export function UsageCard({ usage, title = 'Allowance', onOpen }: { readonly usa
   );
 }
 
+/** Says which provider is your default, or makes this one it (from a Mac that has it, 1.31). */
+function DefaultChip({ usage }: { readonly usage: UsageView }) {
+  const can = useSupports('providers');
+  const [busy, setBusy] = useState(false);
+  if (usage.isDefault) return <Pill label="Default" Icon={Check} />;
+  if (!can || !usage.runtime || usage.isDefault === undefined) return null;
+  const make = () => {
+    setBusy(true);
+    void store
+      .call(calls.defaultAgent(usage.runtime!), { queue: false })
+      .catch(() => store.toast({ text: 'Your Mac is away: change this when it’s linked.', tone: 'warn' }))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Press onPress={make} disabled={busy} accessibilityLabel={`Make ${usage.provider} your default agent`} hitSlop={6}>
+      <Pill label={busy ? 'Making default…' : 'Make default'} />
+    </Press>
+  );
+}
+
 export function UsageSheet({ usage, visible, onClose }: { readonly usage: readonly UsageView[]; readonly visible: boolean; readonly onClose: () => void }) {
   return (
     <Sheet window visible={visible} onDismiss={onClose}>
       <View style={{ paddingHorizontal: 20, paddingBottom: 12, gap: 22 }}>
         {usage.map((u) => (
-          <View key={u.provider} style={{ gap: 12 }}>
-            <T v="heading">
-              {u.provider}
-              {u.plan ? <T v="callout"> · {u.plan}</T> : null}
-            </T>
+          <View key={u.runtime ?? u.provider} style={{ gap: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <T v="heading" style={{ flex: 1 }}>
+                {u.provider}
+                {u.plan ? <T v="callout"> · {u.plan}</T> : null}
+              </T>
+              <DefaultChip usage={u} />
+            </View>
             <UsageBars usage={u} />
           </View>
         ))}

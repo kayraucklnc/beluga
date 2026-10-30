@@ -236,6 +236,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.post` | – the phone only: a message in a friends' chat with files from the phone |
 | `companion.askPerson` | – the phone only: ask a friend's agent yourself, as from their card in Requests (their approval and trust rules apply) |
 | `companion.keepAwake` | Settings › Phone › Keep this Mac awake (the phone's Settings has the same switch) |
+| `companion.defaultAgent` | Usage › a provider's card › Make default (the phone's usage cards have the same chip) |
 | `companion.signOut` | – the phone only: Sign Out removes that phone's own certificate (the Mac's Remove is `companion.devices.remove`) |
 | `companion.openOnMac` | – the phone only: ••• › Open on your Mac brings this window to the front on that conversation, plan or task (the window's `raise` capability and a navigate intent) |
 | `companion.icon` | – the phone only: a project's icon, small, by the checksum its views carry (the Mac shows `projects.icon`) |

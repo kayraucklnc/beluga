@@ -28,7 +28,7 @@ import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, Run
 import { keepLines, trackedSpawn } from './claude-process.js';
 import { keptBashInput } from '../../../workspaces/test-procs.js';
 import { SCRATCH_DIR } from '../../../shared/scratch-dir.js';
-import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../../../protocol.js';
+import { CLAUDE_AGENT, type ClaudeAnswer, ClaudeQuestion, type Usage } from '../../../protocol.js';
 import { claudeCodeReady } from '../../claude-code.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
@@ -419,7 +419,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           if (msg.type === 'system' && msg.subtype === 'api_retry') input.onEvent('progress', retryWords(msg.error_status, msg.attempt, msg.max_retries, Boolean(msg.no_response)));
           if (msg.type === 'rate_limit_event') {
             const update = fromRateLimitEvent(msg.rate_limit_info);
-            if (update) opts.bridge.reportUsage(update);
+            if (update) opts.bridge.reportUsage(update, CLAUDE_AGENT);
             if (msg.rate_limit_info.status === 'rejected') rejectedUntil = toMs(msg.rate_limit_info.resetsAt) ?? 0;
           }
           if (msg.type === 'assistant' && msg.error) apiError = msg.error;

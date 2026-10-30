@@ -373,6 +373,12 @@ export class DemoTransport implements Transport {
       case 'needs.dismiss':
         this.resolve(this.world.needs.find((n) => n.id === str(0)));
         return ok();
+      // ---- usage (BLG-459): one provider becomes your default agent
+      case 'companion.defaultAgent':
+        if (!w.usage.some((u) => u.runtime === str(0))) return this.frames.emit({ t: 'result', id, ok: false, error: `No ${str(0)} agent on this Mac` });
+        w.usage = w.usage.map((u) => ({ ...u, isDefault: u.runtime === str(0) })).sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+        this.touch('home');
+        return ok();
       case 'gateway.cancel':
       case 'gateway.forget':
         return ok();

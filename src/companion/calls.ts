@@ -117,6 +117,8 @@ export const PhoneCalls = {
   'companion.signOut': entry('companion.signOut', z.object({ signedOut: z.literal(true) })),
   // 1.13: whether the Mac stays awake for the phone (BLG-127).
   'companion.keepAwake': entry('companion.keepAwake', done),
+  // 1.31: one of your providers becomes the default agent (BLG-459).
+  'companion.defaultAgent': entry('companion.defaultAgent', done),
   // 1.14: Your Mac's chats: a new one (its id comes back), or one deleted for good.
   'assistant.newChat': entry('assistant.newChat', z.string()),
   'assistant.deleteChat': entry('assistant.deleteChat', done),

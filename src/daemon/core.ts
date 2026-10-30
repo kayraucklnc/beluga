@@ -363,7 +363,12 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     store.dispatch({ type: 'hosting', hosting: { phase: 'ready', copied: true } });
     session.system('Demo mode: bob, mia and every Claude are simulated. Nothing leaves your computer.');
     seedDemoContext(store);
-    setTimeout(() => session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }), 300);
+    setTimeout(() => {
+      session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } });
+      // A second and a third provider, so the Usage tab shows a card for each shape (BLG-458).
+      session.updateUsage({ plan: 'plus', windows: [{ label: 'Weekly', pct: 24 }] }, { runtime: 'codex', model: 'gpt-5', label: 'Codex' });
+      session.updateUsage({ tokens: { input: 182_000, output: 41_500 }, tokensPerSec: 38 }, { runtime: 'local', model: 'qwen3', label: 'Local' });
+    }, 300);
     // bob "arrives" a moment later so you first see how inviting works (sooner at a faster pace: the e2e tests).
     const soon = (ms: number): number => ms * Math.min(1, Number(process.env.KLAUD_DEMO_PACE) || 1);
     setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), soon(2500));
