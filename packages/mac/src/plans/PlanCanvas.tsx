@@ -6,11 +6,11 @@ import type { MilestoneView, PlanView, TaskView } from '@beluga/core/plans/progr
 import { IconButton, Working, cx } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
 import { useDocTheme } from '../components/markdown/use-doc-theme.js';
-import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
+import { type ElkInput, type ElkOutput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
 import { useSharpZoom } from '../components/graph/sharp-zoom.js';
 import { breath, turn, useLive } from '../lib/live-motion.js';
-import { MILESTONE_STATE, type MilestoneJoin, TASK_STATE, changeMarks, gateId, graphShape, groupId, lockWords, milestoneJoin, milestoneLink, startingMilestones, taskNodeId, taskWords } from './plans-model.js';
+import { MILESTONE_STATE, type MilestoneJoin, type PlanGraphShape, TASK_STATE, changeMarks, gateId, graphShape, groupId, lockWords, milestoneJoin, milestoneLink, startingMilestones, taskNodeId, taskWords } from './plans-model.js';
 import { COMPACT_STATES, FOLDS_KEY, type Folds, MILESTONE, type MilestoneFrame, PLAN_GAPS, arrowHead, isFolded, labelAt, milestoneAnchors, milestoneFrame, milestoneRoute, placeMilestones, readFolds, taskSize, withFold } from './plan-layout.js';
 import { useClock } from './use-plans.js';
 import { LockMark, TaskChatMark, TaskStateIcon } from './marks.js';
@@ -102,8 +102,12 @@ export default function PlanCanvas(props: PlanCanvasProps) {
   );
 }
 
+/** ELK's layout of each milestone's tasks, and the shape it was made for. */
+interface Inner {
+  readonly shape: PlanGraphShape;
+  readonly outs: ReadonlyMap<string, ElkOutput>;
+}
 interface Laid {
-  readonly key: string;
   readonly places: ReadonlyMap<string, Placed>;
   readonly frames: ReadonlyMap<string, MilestoneFrame>;
   readonly routes: ReadonlyMap<string, Route>;
@@ -141,7 +145,6 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
   const flow = useReactFlow<PlanNode, PlanEdge>();
   useSharpZoom();
   const shape = useMemo(() => graphShape(view.plan), [view.plan]);
-  const [laid, setLaid] = useState<Laid>();
   const [failed, setFailed] = useState(false);
   const [folds, setFolds] = useState<Folds>(loadFolds);
   const [hot, setHot] = useState<string>();
@@ -166,22 +169,18 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     [planId],
   );
 
-  // What sizes the cards (a finished task is a slim row, a folded milestone one row): the layout's other half.
-  const sizing = useMemo(() => {
-    const slim = shape.milestones.flatMap((m) => m.tasks.filter((t) => COMPACT_STATES.has(byTask.get(t)?.state ?? '')));
-    // A folded milestone is as wide as its title needs.
-    const titles = Object.fromEntries([...folded].sort().map((id) => [id, byMs.get(id)?.milestone.title ?? '']));
-    return JSON.stringify({ slim, titles });
-  }, [shape, byTask, byMs, folded]);
-  const layoutKey = `${shape.key}\n${sizing}`;
+  // What sizes the task cards (a finished task is a slim row): all ELK needs.
+  const slimKey = useMemo(() => JSON.stringify(shape.milestones.flatMap((m) => m.tasks.filter((t) => COMPACT_STATES.has(byTask.get(t)?.state ?? '')))), [shape, byTask]);
+  // What folds (a folded milestone is as wide as its title needs): plain math, no ELK.
+  const foldKey = useMemo(() => JSON.stringify(Object.fromEntries([...folded].sort().map((id) => [id, byMs.get(id)?.milestone.title ?? '']))), [byMs, folded]);
+  const [inner, setInner] = useState<Inner>();
 
-  // Lay out when the shape or a card's size changes (only then). Each milestone's tasks with ELK, then
-  // each box around them with its gate at its foot, the boxes in their rows, and their lines between.
+  // Lay out each milestone's tasks with ELK when the shape or a task card's size changes (only then).
+  // Folding doesn't: it re-places the boxes in the same render (below), so the box, its header, its
+  // cards and its lines all change together, never an open header in a folded box while ELK runs.
   useEffect(() => {
     let live = true;
-    const sized = JSON.parse(sizing) as { slim: string[]; titles: Record<string, string> };
-    const slim = new Set(sized.slim);
-    const folded = new Map(Object.entries(sized.titles));
+    const slim = new Set(JSON.parse(slimKey) as string[]);
     void Promise.all(
       shape.milestones.map((m) => {
         const inside = new Set(m.tasks.map(taskNodeId));
@@ -196,63 +195,70 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     )
       .then((outs) => {
         if (!live) return;
-        const inner = new Map(shape.milestones.map((m, i) => [m.id, outs[i]!] as const));
-        const criteria = new Map(shape.milestones.map((m) => [m.id, m.criteria] as const));
-        const frameOf = (id: string, height?: number): MilestoneFrame => {
-          const o = inner.get(id);
-          return milestoneFrame({ width: o?.width ?? 0, height: o?.height ?? 0 }, criteria.get(id) ?? [], folded.has(id), height, folded.get(id));
-        };
-        // The open milestones of a row all as tall as its tallest (their gates line up across it); folded ones stay one row.
-        const frames = new Map<string, MilestoneFrame>();
-        for (const row of shape.rows) {
-          const tall = Math.max(0, ...row.filter((id) => !folded.has(id)).map((id) => frameOf(id).height));
-          for (const id of row) frames.set(id, frameOf(id, tall));
-        }
-        const next = shape.edges.filter((e) => e.kind === 'next').map((e) => ({ id: e.id, from: e.from.replace(/^gate:/, ''), to: e.to.replace(/^m:/, '') }));
-        const parents = new Map<string, string[]>();
-        for (const e of next) parents.set(e.to, [...(parents.get(e.to) ?? []), e.from]);
-        const boxes = placeMilestones(shape.rows, frames, parents);
-
-        const places = new Map<string, Placed>();
-        const routes = new Map<string, Route>();
-        for (const m of shape.milestones) {
-          const box = boxes.get(m.id);
-          const frame = frames.get(m.id);
-          const o = inner.get(m.id);
-          if (!box || !frame || !o) continue;
-          places.set(groupId(m.id), box);
-          places.set(gateId(m.id), frame.gate);
-          for (const [nid, at] of placesOf(o)) places.set(nid, { ...at, x: at.x + frame.shiftX });
-          for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + box.x + frame.shiftX, y: pt.y + box.y })) });
-        }
-        // A milestone's lines: from the middle of its gate's foot, down the gap below it, into the top of the next.
-        // Lines into milestones at the same height run across at slightly different heights (so they never overlap).
-        const targets = [...new Set(next.map((e) => e.to))];
-        const nudge = new Map(
-          targets.map((id) => {
-            const same = targets.filter((t) => boxes.get(t)?.y === boxes.get(id)?.y).sort((a, b) => (boxes.get(a)?.x ?? 0) - (boxes.get(b)?.x ?? 0));
-            return [id, (same.indexOf(id) - (same.length - 1) / 2) * 10] as const;
-          }),
-        );
-        for (const e of next) {
-          const a = boxes.get(e.from);
-          const b = boxes.get(e.to);
-          const fa = frames.get(e.from);
-          if (!a || !b || !fa) continue;
-          const enterY = b.y - PLAN_GAPS.row / 2 + (nudge.get(e.to) ?? 0);
-          // Right under it: one run across; further down, across below it, then down a clear lane.
-          const exitY = b.y - (a.y + a.height) <= PLAN_GAPS.row ? enterY : a.y + a.height + PLAN_GAPS.row / 2;
-          const obstacles = [...boxes].filter(([id]) => id !== e.from && id !== e.to).map(([, box]) => box);
-          routes.set(e.id, { points: milestoneRoute(milestoneAnchors(a, fa.gate).out, milestoneAnchors(b).in, exitY, enterY, obstacles) });
-        }
-        setLaid({ key: layoutKey, places, frames, routes });
+        setInner({ shape, outs: new Map(shape.milestones.map((m, i) => [m.id, outs[i]!] as const)) });
         setFailed(false);
       })
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [layoutKey]);
+  }, [shape.key, slimKey]);
+
+  // Each box around its tasks with its gate at its foot, the boxes in their rows, and their lines between.
+  const laid = useMemo<Laid | undefined>(() => {
+    if (!inner) return undefined;
+    const { shape } = inner;
+    const folded = new Map(Object.entries(JSON.parse(foldKey) as Record<string, string>));
+    const criteria = new Map(shape.milestones.map((m) => [m.id, m.criteria] as const));
+    const frameOf = (id: string, height?: number): MilestoneFrame => {
+      const o = inner.outs.get(id);
+      return milestoneFrame({ width: o?.width ?? 0, height: o?.height ?? 0 }, criteria.get(id) ?? [], folded.has(id), height, folded.get(id));
+    };
+    // The open milestones of a row all as tall as its tallest (their gates line up across it); folded ones stay one row.
+    const frames = new Map<string, MilestoneFrame>();
+    for (const row of shape.rows) {
+      const tall = Math.max(0, ...row.filter((id) => !folded.has(id)).map((id) => frameOf(id).height));
+      for (const id of row) frames.set(id, frameOf(id, tall));
+    }
+    const next = shape.edges.filter((e) => e.kind === 'next').map((e) => ({ id: e.id, from: e.from.replace(/^gate:/, ''), to: e.to.replace(/^m:/, '') }));
+    const parents = new Map<string, string[]>();
+    for (const e of next) parents.set(e.to, [...(parents.get(e.to) ?? []), e.from]);
+    const boxes = placeMilestones(shape.rows, frames, parents);
+
+    const places = new Map<string, Placed>();
+    const routes = new Map<string, Route>();
+    for (const m of shape.milestones) {
+      const box = boxes.get(m.id);
+      const frame = frames.get(m.id);
+      const o = inner.outs.get(m.id);
+      if (!box || !frame || !o) continue;
+      places.set(groupId(m.id), box);
+      places.set(gateId(m.id), frame.gate);
+      for (const [nid, at] of placesOf(o)) places.set(nid, { ...at, x: at.x + frame.shiftX });
+      for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + box.x + frame.shiftX, y: pt.y + box.y })) });
+    }
+    // A milestone's lines: from the middle of its gate's foot, down the gap below it, into the top of the next.
+    // Lines into milestones at the same height run across at slightly different heights (so they never overlap).
+    const targets = [...new Set(next.map((e) => e.to))];
+    const nudge = new Map(
+      targets.map((id) => {
+        const same = targets.filter((t) => boxes.get(t)?.y === boxes.get(id)?.y).sort((a, b) => (boxes.get(a)?.x ?? 0) - (boxes.get(b)?.x ?? 0));
+        return [id, (same.indexOf(id) - (same.length - 1) / 2) * 10] as const;
+      }),
+    );
+    for (const e of next) {
+      const a = boxes.get(e.from);
+      const b = boxes.get(e.to);
+      const fa = frames.get(e.from);
+      if (!a || !b || !fa) continue;
+      const enterY = b.y - PLAN_GAPS.row / 2 + (nudge.get(e.to) ?? 0);
+      // Right under it: one run across; further down, across below it, then down a clear lane.
+      const exitY = b.y - (a.y + a.height) <= PLAN_GAPS.row ? enterY : a.y + a.height + PLAN_GAPS.row / 2;
+      const obstacles = [...boxes].filter(([id]) => id !== e.from && id !== e.to).map(([, box]) => box);
+      routes.set(e.id, { points: milestoneRoute(milestoneAnchors(a, fa.gate).out, milestoneAnchors(b).in, exitY, enterY, obstacles) });
+    }
+    return { places, frames, routes };
+  }, [inner, foldKey]);
 
   const lane = useMemo(() => new Map(shape.milestones.flatMap((m) => m.tasks.map((t) => [taskNodeId(t), m.id] as const))), [shape]);
   // What the picked task waits on, or is waited on by, in other milestones: ringed, not wired across the lanes.
@@ -699,7 +705,13 @@ const PlanLine = memo(function PlanLine({ id, source, target, sourceX, sourceY, 
   ];
   const state = data?.state ?? 'waiting';
   const look = data?.look;
-  const cls = cx(kind === 'next' ? c.flow : c.line, c[`${kind === 'next' ? 'flow' : 'line'}_${state}`], data?.current && c.lineCurrent, look && c[`look_${look}`]);
+  // Back from a folded milestone: it waits for the cards to slide in and show, then appears (never ahead of them).
+  const was = useRef(look);
+  const back = was.current === 'gone' && look !== 'gone';
+  useEffect(() => {
+    was.current = look;
+  });
+  const cls = cx(kind === 'next' ? c.flow : c.line, c[`${kind === 'next' ? 'flow' : 'line'}_${state}`], data?.current && c.lineCurrent, look && c[`look_${look}`], back && c.lineBack);
   const at = data?.label ? labelAt(points) : undefined;
   return (
     <g data-from={source} data-to={target} data-kind={kind} data-state={state} data-look={look}>

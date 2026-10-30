@@ -75,6 +75,38 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
 });
 
+test('opening a passed milestone opens its box in the same frame: never an open header in a folded box', async ({ page }, info) => {
+  await page.goto('/');
+  await sidebar(page).getByRole('button', { name: 'Card checkout for launch', exact: true }).click();
+  await expect(main(page).locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
+  const box = main(page).locator('.react-flow__node-milestone').filter({ hasText: 'Test-mode foundations' });
+  const show = box.getByRole('button', { name: /passed\. Show its/ });
+  await expect(show).toBeVisible();
+  const folded = parseFloat((await box.evaluate((el) => (el as HTMLElement).style.height)) || '0');
+  // Every frame from the click on: never the open header (its Fold button) in a box still one row tall.
+  const frames = box.evaluate(
+    (el) =>
+      new Promise<Array<{ open: boolean; height: number }>>((done) => {
+        const seen: Array<{ open: boolean; height: number }> = [];
+        const look = (): void => {
+          seen.push({ open: !!el.querySelector('[aria-expanded="true"]'), height: parseFloat((el as HTMLElement).style.height) });
+          if (seen.length < 40) requestAnimationFrame(look);
+          else done(seen);
+        };
+        el.querySelector<HTMLElement>('[aria-expanded="false"]')!.click();
+        look();
+      }),
+  );
+  const seen = await frames;
+  expect(seen.some((f) => f.open)).toBe(true);
+  expect(seen.filter((f) => f.open && f.height < folded + 100)).toEqual([]);
+  // Settled: its task and its gate show whole.
+  await expect(main(page).locator('.react-flow__node-task').filter({ hasText: 'Stripe test-mode fixtures' })).toBeVisible();
+  const shot = info.outputPath('unfolded.png');
+  await main(page).locator('.react-flow').screenshot({ path: shot });
+  await info.attach('unfolded', { path: shot, contentType: 'image/png' });
+});
+
 test('the plan’s chat shows what was said there when the plan opens, after a reload too, without sending anything (KLD-53)', async ({ page }) => {
   // The demo saved how its plan began without loading it, as a restarted daemon has it: only on disk.
   await openPlans(page);
