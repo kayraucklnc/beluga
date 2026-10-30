@@ -3,6 +3,7 @@ import type { Actor, BoardState, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { Action, Store } from '../store.js';
 import { openMilestone } from './apply.js';
+import { openMilestoneEpic } from './epics.js';
 import { type Plan, type PlanMerge, type PlanMilestone, allTasks, openMilestones, planBranchName } from './model.js';
 import type { PlanGit } from './plan-git.js';
 import type { Plans } from './plans.js';
@@ -78,6 +79,8 @@ export interface PilotDeps {
    * (the plan's chat). A milestone's Claude skips them, and what builds on them waits.
    */
   readonly forYou?: (plan: Plan, tasks: readonly TaskView[]) => void;
+  /** The plan's epics on the board, made or brought up to date (once a session here: approving keeps them true). */
+  readonly structure?: (plan: Plan) => void;
 }
 
 /** How many times the head Claude is asked to fix one task's combining conflict before it waits for you. */
@@ -179,6 +182,10 @@ export class PlanPilot {
   private readonly askingCheck = new Set<string>();
   /** Check rounds (`plan:milestone:asked`) that ended without a verdict: asked once more, then left to you. */
   private readonly checkNudged = new Map<string, 'asked' | 'told'>();
+  /** Milestones whose check moved from the head Claude to a checker this session (`plan:milestone`): once. */
+  private readonly handedOver = new Set<string>();
+  /** Plans whose epics were made or caught up this session. */
+  private readonly structured = new Set<string>();
 
   constructor(private readonly deps: PilotDeps) {
     this.watchdog = new TaskWatchdog({
@@ -270,6 +277,11 @@ export class PlanPilot {
     for (const plan of this.deps.plans.list()) {
       if (only && !only.has(plan.id)) continue;
       try {
+        // Plans from before epics: their shape goes on the board once.
+        if (plan.body && plan.status !== 'draft' && !this.structured.has(plan.id)) {
+          this.structured.add(plan.id);
+          this.deps.structure?.(plan);
+        }
         // Its branch, catching up, merges: paused or done, they go on (nothing new starts).
         if (plan.body && plan.status !== 'draft') this.tend(plan);
         // Started tasks that stopped without finishing: woken once, then they wait for you.
@@ -406,6 +418,7 @@ export class PlanPilot {
     if (this.opened.has(key)) return;
     this.opened.add(key);
     openMilestone(plan, milestoneId, this.deps.work.board, { kind: 'beluga' });
+    openMilestoneEpic(plan, milestoneId, this.deps.work.board, { kind: 'beluga' });
   }
 
   private step(plan: Plan): void {
@@ -647,6 +660,15 @@ export class PlanPilot {
       ended = !liveFrom(state).busy(channel) && (this.deps.now?.() ?? Date.now()) - asked > CHECK_QUIET_MS;
     }
     if (!ended) return;
+    // A check the head Claude was running (from before checkers, or a restart): a checker of its own takes it, fresh.
+    if (!m.run.checker && this.deps.checkerChat && !this.handedOver.has(key)) {
+      this.handedOver.add(key);
+      this.checkRuns.delete(key);
+      this.deps.plans.newRound(plan.id, m.milestone.id);
+      this.deps.plans.note(plan.id, 'note', `the check of “${m.milestone.title}” ended without a verdict: a checker of its own takes it from here`, { kind: 'beluga' });
+      this.schedule();
+      return;
+    }
     const was = this.checkNudged.get(round);
     if (was === 'told') return;
     if (was === 'asked') {

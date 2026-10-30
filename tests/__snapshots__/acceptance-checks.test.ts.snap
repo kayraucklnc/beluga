@@ -44,6 +44,7 @@ This is the plan's final check: every criterion deferred along the way must be s
 For each one: true on the combined work, tick it ("- [x]", task_brief_edit with that key); not true, fail the
 check and add a fix task for it with plan_update (name the criterion in its goal). Don't pass while one is still deferred.
 
+Everything you start ends with your turn, and nothing wakes you afterwards (no ScheduleWakeup, no waiting for a notification): run each command to the end inside this turn. In the foreground (Bash timeout up to 600000 ms); a longer one in the background with a log, waited on in foreground steps of under 10 minutes until it is done.
 This is the final step: run every test now, once, on the plan's combined work: typecheck, the full unit suite and the e2e.
 Combine the tasks' branches in one temporary worktree (git worktree add --detach, then merge each branch), run there, and remove it after.
 Run the Mac e2e with \`npm run e2e\` in packages/mac: one e2e runs at a time on this Mac (it waits, saying whose run it waits for), with its own port and demo home, and stops everything it started when it ends.

@@ -198,6 +198,8 @@ function rollUpTo(parent: Issue, kids: readonly Issue[]): { readonly to: IssueSt
   const all = kids.length === 1 ? 'its sub-task is' : `all ${kids.length} sub-tasks are`;
   let next: { to: IssueStatus; why: string } | undefined = kids.every((k) => k.status === 'done')
     ? { to: 'done', why: `${all} done` }
+    : kids.some((k) => k.status === 'in_plan') && kids.every((k) => k.status === 'in_plan' || k.status === 'done')
+      ? { to: 'in_plan', why: `${all} merged into the plan or done` }
     : kids.every((k) => STAGE[k.status] >= STAGE.in_review)
       ? { to: 'in_review', why: `${all} in review or done` }
       : kids.some((k) => STAGE[k.status] >= STAGE.in_progress)
@@ -975,8 +977,10 @@ export class Board {
   private rollUp(id: string): void {
     if (this.cascading) return;
     const parent = this.issues.find((i) => i.id === id);
-    // A plan's pilot moves its tasks; a canceled task stays put.
-    if (!parent || parent.plan || parent.status === 'canceled' || parent.status === 'in_plan') return;
+    // A plan's pilot moves its tasks; a canceled task stays put. A plan's own epics (made by it, no
+    // task of it) follow their tasks all the way, Merged into Plan included.
+    const planEpic = parent?.origin === 'plan' && !parent.plan;
+    if (!parent || parent.plan || parent.status === 'canceled' || (parent.status === 'in_plan' && !planEpic)) return;
     const step = rollUpTo(parent, this.issues.filter((i) => i.parent === id && i.status !== 'canceled'));
     if (!step) return;
     this.change(parent, { status: step.to, rank: this.lastRank(step.to), needsChecks: undefined, ...(step.to === 'done' ? { worktreeGone: undefined } : {}) }, [

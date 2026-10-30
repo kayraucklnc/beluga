@@ -90,9 +90,17 @@ export function taskTestsNote(plan: Pick<Plan, 'testsAt'>): string {
 }
 
 /** What a milestone's check runs, by the plan's test timing (and whether it's the last milestone). */
+/**
+ * Why plan checks got stuck: a check ran the e2e in the background and ended its turn waiting to be
+ * woken (ScheduleWakeup). Nothing wakes a run whose turn ended, and what it started is stopped.
+ */
+export const WAIT_IN_TURN =
+  'Everything you start ends with your turn, and nothing wakes you afterwards (no ScheduleWakeup, no waiting for a notification): run each command to the end inside this turn. In the foreground (Bash timeout up to 600000 ms); a longer one in the background with a log, waited on in foreground steps of under 10 minutes until it is done.';
+
 export function checkTestsNote(plan: Pick<Plan, 'testsAt'>, last: boolean): string {
   if (plan.testsAt === 'end' && !last) return 'This plan runs its test suites only at the end: don\'t run them for this check. Check by reading the code, the diffs, the tests the tasks wrote and their typecheck.';
   return [
+    WAIT_IN_TURN,
     last && plan.testsAt === 'end' ? 'This is the final step: run every test now, once, on the plan\'s combined work: typecheck, the full unit suite and the e2e.' : 'Run the full unit suite and the e2e once for this milestone, on its combined work (not per task): typecheck, the full unit suite, the e2e.',
     'Combine the tasks\' branches in one temporary worktree (git worktree add --detach, then merge each branch), run there, and remove it after.',
     E2E_LOCK,
@@ -165,6 +173,7 @@ export function headBrief(view: PlanView): string {
       ? 'The plan runs on Autopilot: never end a turn waiting for the user to say how to go on. Decide, act with your tools and say in a line what you did; only a task assigned to the user, a secret or an account needs them.'
       : '',
     'Each milestone is checked by a checker of its own (a separate Claude): its verdict comes to you here, and a failed one with what to fix.',
+    WAIT_IN_TURN,
     now.length ? `Now: ${now.length > 1 ? 'milestones' : 'milestone'} ${now.join(', ')}${now.length > 1 ? ', side by side' : ''}; ${view.active.length} tasks in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
     warnings.length ? `Running side by side and touching the same files (watch for conflicts):\n${warnings.join('\n')}` : '',
     '</beluga_plan_head>',
@@ -326,6 +335,7 @@ export function checkerBrief(view: PlanView, m: MilestoneView): string {
     'plan_get shows the plan; plan_gate records your verdict on this milestone. Change no code and commit nothing.',
     view.plan.branch ? `The plan's work collects on ${view.plan.branch}; diff a task against it (git diff ${view.plan.branch}...branch).` : '',
     'Always end a turn with plan_gate, never by asking the user how to go on.',
+    WAIT_IN_TURN,
     '</beluga_plan_checker>',
   ]
     .filter(Boolean)

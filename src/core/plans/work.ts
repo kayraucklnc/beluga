@@ -6,6 +6,7 @@ import type { Intent } from '../intents.js';
 import type { LogItem, Store } from '../store.js';
 import type { WorkspaceController } from '../workspace-controller.js';
 import { ApplyError, applyDraft } from './apply.js';
+import { dropEpics, syncEpics } from './epics.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
 import { type Autonomy, type Plan, type TestsAt, allTasks, checkerOf, planForHome, planTaskOfIssue, planTitle } from './model.js';
 import { type PilotDeps, PlanPilot } from './pilot.js';
@@ -83,6 +84,7 @@ export class PlansWork {
       ...(deps.workers ? { workers: deps.workers } : {}),
       ...(deps.cancel ? { cancel: deps.cancel } : {}),
       ...(deps.forYou ? { forYou: deps.forYou } : {}),
+      structure: (plan) => this.structure(plan.id),
     });
     // A task of a plan: its worktree's Claude knows the plan and what runs beside it.
     deps.board.setBriefExtra((issue) => this.workerBrief(issue));
@@ -165,7 +167,7 @@ export class PlansWork {
       throw err;
     }
     const { body, summary } = applied;
-    const done = this.plans.approved(id, body, by, summary);
+    const done = this.structure(this.plans.approved(id, body, by, summary).id);
     this.deps.store.dispatch({ type: 'system', channel: plan.home, text: plan.body ? `Changes applied: ${summary}.` : `Plan approved: ${summary} are on the board now.`, level: 'info' });
     this.pilot.schedule();
     return done;
@@ -182,7 +184,7 @@ export class PlansWork {
     if (retitle) {
       const named = this.plans.retitle(id, ops[0]!.op === 'retitle' ? ops[0]!.title! : '', this.me());
       this.nameHome(named, planTitle(plan));
-      return named;
+      return this.structure(named.id);
     }
     const direct = Boolean(plan.body) && !plan.draft;
     const next = this.plans.editDraft(id, ops, this.me());
@@ -262,7 +264,25 @@ export class PlansWork {
   }
 
   remove(id: string): void {
+    const plan = this.plans.get(id);
+    if (plan?.epics) dropEpics(plan, this.deps.board.board, { kind: 'beluga' });
     this.plans.remove(id);
+  }
+
+  /**
+   * The plan's shape on the board (an epic for it, one per milestone, its tasks under them): made or
+   * brought up to date. Never in the way: a board that can't take it leaves the plan as it is.
+   */
+  private structure(id: string): Plan {
+    const plan = this.plans.need(id);
+    if (!plan.body || plan.status === 'draft') return plan;
+    try {
+      const epics = syncEpics(plan, this.deps.board.board, { kind: 'beluga' });
+      return epics ? this.plans.setEpics(id, epics) : plan;
+    } catch (err) {
+      this.plans.note(id, 'problem', `couldn’t show the plan as epics on the board: ${err instanceof Error ? err.message : String(err)}`, { kind: 'beluga' });
+      return this.plans.need(id);
+    }
   }
 
   setStyle(text: string): void {

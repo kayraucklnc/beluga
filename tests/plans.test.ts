@@ -196,6 +196,78 @@ describe('writing a plan', () => {
   });
 });
 
+describe('a plan on the board: the plan, its milestones as epics, their tasks under them (BLG-471)', () => {
+  const approved = () => {
+    const t = setup();
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main' }, t.claude);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(BODY);
+    t.work.approve(plan.id);
+    const get = (id: string) => t.board.need(id);
+    const byTitle = (title: string) => t.store.getState().board.issues.find((i) => i.title === title)!;
+    return { ...t, plan, get, byTitle, epics: () => t.plans.need(plan.id).epics! };
+  };
+
+  it('approving makes an epic for the plan and one per milestone under it, with each milestone’s tasks under that', () => {
+    const t = approved();
+    const e = t.epics();
+    expect(t.get(e.plan)).toMatchObject({ title: 'Payments', origin: 'plan', status: 'todo' });
+    expect(t.get(e.plan).plan).toBeUndefined();
+    expect(t.get(e.milestones.safe!)).toMatchObject({ title: 'Safe payments', parent: e.plan, status: 'todo' });
+    // A milestone that waits on another starts in the Backlog, like its tasks.
+    expect(t.get(e.milestones.refunds!)).toMatchObject({ title: 'Refunds', parent: e.plan, status: 'backlog' });
+    expect(t.get(e.milestones.refunds!).brief.context).toContain('A refund works end to end');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) expect(t.byTitle(title).parent).toBe(e.milestones.safe);
+    for (const title of ['Refund endpoint', 'Live keys']) expect(t.byTitle(title).parent).toBe(e.milestones.refunds);
+  });
+
+  it('changing the plan keeps it true: a renamed milestone, a moved task, a sub-task under its own parent, a milestone taken out', () => {
+    const t = approved();
+    const e = t.epics();
+    t.work.edit(t.plan.id, [
+      { op: 'update_milestone', id: 'safe', title: 'Safe payments, everywhere' },
+      { op: 'move_task', id: 'receipts', milestone: 'refunds' },
+      { op: 'add_task', milestone: 'safe', task: { id: 'sub', title: 'Sub', parent: 'auth' } },
+    ]);
+    expect(t.get(e.milestones.safe!).title).toBe('Safe payments, everywhere');
+    expect(t.byTitle('Receipts once').parent).toBe(e.milestones.refunds);
+    expect(t.byTitle('Sub').parent).toBe(t.byTitle('Auth on payment routes').id);
+    // The same epics: nothing made twice.
+    expect(t.epics()).toEqual(e);
+    t.work.edit(t.plan.id, [{ op: 'remove_milestone', id: 'refunds' }]);
+    expect(t.get(e.milestones.refunds!).status).toBe('canceled');
+    expect(t.epics().milestones.refunds).toBeUndefined();
+  });
+
+  it('the epics follow their tasks: under way, merged into the plan, done', () => {
+    const t = approved();
+    const e = t.epics();
+    t.board.update(t.byTitle('Auth on payment routes').id, { status: 'in_progress' }, t.claude);
+    expect(t.get(e.milestones.safe!).status).toBe('in_progress');
+    expect(t.get(e.plan).status).toBe('in_progress');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(t.byTitle(title).id, { status: 'in_plan' }, t.claude);
+    expect(t.get(e.milestones.safe!).status).toBe('in_plan');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(t.byTitle(title).id, { status: 'done' }, t.claude);
+    expect(t.get(e.milestones.safe!).status).toBe('done');
+  });
+
+  it('a plan from before epics gets them once; deleting the plan cancels them and lets its tasks out', async () => {
+    const t = approved();
+    const e = t.epics();
+    // As if it was approved before epics existed.
+    for (const id of [...Object.values(e.milestones), e.plan]) t.board.remove(id);
+    t.plans.setEpics(t.plan.id, { plan: 'gone', milestones: {} });
+    const fresh = new PlansWork({ store: t.store, plans: t.plans, board: t.boardWork, askClaude: () => undefined, intend: () => undefined, delayMs: 0, git: null });
+    await tick(5);
+    const again = t.plans.need(t.plan.id).epics!;
+    expect(again.plan).not.toBe('gone');
+    expect(t.byTitle('Refund endpoint').parent).toBe(again.milestones.refunds);
+    fresh.remove(t.plan.id);
+    expect(t.get(again.plan).status).toBe('canceled');
+    expect(t.byTitle('Refund endpoint').parent).toBeUndefined();
+    fresh.stop();
+  });
+});
+
 describe('a draft stays off the board until approved', () => {
   it('Claude writes the draft; the board has nothing; Approve puts it all there', () => {
     const { store, plans, work, claude } = setup();
@@ -205,7 +277,9 @@ describe('a draft stays off the board until approved', () => {
     expect(store.getState().board.issues).toHaveLength(0);
     work.approve(plan.id);
     const issues = store.getState().board.issues;
-    expect(issues).toHaveLength(5);
+    // Its 5 tasks, and its shape: an epic for the plan, one for each of its 2 milestones.
+    expect(issues.filter((i) => i.plan)).toHaveLength(5);
+    expect(issues).toHaveLength(8);
     const byTitle = (t: string) => issues.find((i) => i.title === t)!;
     // The milestone being worked on is Ready (todo); later ones wait in the Backlog.
     expect(byTitle('Auth on payment routes')).toMatchObject({ status: 'todo', origin: 'plan', estimate: 3, plan: { id: plan.id, milestone: 'safe', task: 'auth' } });
@@ -254,7 +328,7 @@ describe('a draft stays off the board until approved', () => {
     const plan = plans.create({ projectId: 'api', home: 'ws:main' }, claude);
     work.forRun('ws:main', 'p-me')!.tools!.write({ title: 'P', goal: '', milestones: [{ title: 'M', tasks: [{ title: 'Old task', issue: old.key } as never, { title: 'New' }] }] });
     work.approve(plan.id);
-    expect(store.getState().board.issues).toHaveLength(2);
+    expect(store.getState().board.issues.filter((i) => i.plan)).toHaveLength(2);
     expect(board.need(old.id).plan?.id).toBe(plan.id);
     expect(board.need(old.id).status).toBe('in_progress');
   });
@@ -557,7 +631,9 @@ describe('review fixes', () => {
     expect(made).toBe(5);
     fail = false;
     t.work.approve(plan.id);
-    expect(t.store.getState().board.issues).toHaveLength(5);
+    expect(t.store.getState().board.issues.filter((i) => i.plan)).toHaveLength(5);
+    // And its epics once: the plan's and its 2 milestones'.
+    expect(t.store.getState().board.issues).toHaveLength(8);
   });
 
   it('Claude can’t start tasks on a step-by-step or paused plan; you can', async () => {
@@ -587,7 +663,7 @@ describe('review fixes', () => {
     t.work.approve(plan.id);
     await tick(10);
     await tick(10);
-    expect(t.store.getState().board.issues.filter((i) => i.status === 'in_progress')).toHaveLength(1);
+    expect(t.store.getState().board.issues.filter((i) => i.plan && i.status === 'in_progress')).toHaveLength(1);
   });
 
   it('the last milestone passing asks for the recap; a check can be asked again', async () => {

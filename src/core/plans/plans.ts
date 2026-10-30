@@ -18,6 +18,7 @@ import {
   MAX_PARALLEL,
   type MilestoneAgent,
   type MilestoneRun,
+  type PlanEpics,
   type Plan,
   type PlanBody,
   type PlanEvent,
@@ -304,6 +305,13 @@ export class Plans {
     const plan = this.need(id);
     const { agent: _was, ...rest } = plan.runs[milestone] ?? {};
     return this.change(plan, { runs: { ...plan.runs, [milestone]: agent ? { ...rest, agent } : rest } }, []);
+  }
+
+  /** Its epics on the board (see epics.ts). */
+  setEpics(id: string, epics: PlanEpics): Plan {
+    const plan = this.need(id);
+    if (JSON.stringify(plan.epics) === JSON.stringify(epics)) return plan;
+    return this.change(plan, { epics }, []);
   }
 
   /** The conversation that checks a milestone (undefined: none, it was archived). */

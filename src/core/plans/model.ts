@@ -245,11 +245,19 @@ export interface Plan {
   readonly shipped?: PlanShipped;
   /** Plans that ran before they had a branch were caught up once (passed milestones merged into one). */
   readonly caughtUp?: boolean;
+  /** Its shape on the board: an epic for the plan, one under it per milestone (see epics.ts). */
+  readonly epics?: PlanEpics;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly approvedAt?: number;
   readonly doneAt?: number;
+}
+
+/** A plan's epics on the board (task ids): the plan's own, and each milestone's (by milestone id). */
+export interface PlanEpics {
+  readonly plan: string;
+  readonly milestones: Readonly<Record<string, string>>;
 }
 
 export interface PlansState {
@@ -308,6 +316,18 @@ export const planById = (state: PlansState, id: string): Plan | undefined => sta
 
 /** The plan a conversation is the home of (the newest, when several were). */
 export const planForHome = (state: PlansState, channel: string): Plan | undefined => [...state.plans].reverse().find((p) => p.home === channel);
+
+/** The plan a board task stands for as an epic: the plan's own, or one of its milestones' (see epics.ts). */
+export function planEpicOf(state: PlansState, issueId: string): { readonly plan: Plan; readonly milestone?: PlanMilestone } | undefined {
+  for (const plan of state.plans) {
+    if (!plan.epics) continue;
+    if (plan.epics.plan === issueId) return { plan };
+    const id = Object.entries(plan.epics.milestones).find(([, epic]) => epic === issueId)?.[0];
+    const milestone = id ? shownBody(plan)?.milestones.find((m) => m.id === id) : undefined;
+    if (milestone) return { plan, milestone };
+  }
+  return undefined;
+}
 
 /** The plan and milestone a conversation checks (see MilestoneRun.checker). */
 export function checkerOf(state: PlansState, channel: string): { readonly plan: Plan; readonly milestone: string } | undefined {
