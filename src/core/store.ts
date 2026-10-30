@@ -1093,6 +1093,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'net_summary':
     case 'net_message':
     case 'net_messages':
+    case 'net_unsent':
+    case 'net_cleared':
     case 'net_files':
     case 'net_live':
     case 'net_main':

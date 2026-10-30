@@ -1,9 +1,9 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { ArrowLeftRight, Clock, Lock, SquareTerminal, TriangleAlert, X } from 'lucide-react-native';
+import { ArrowLeftRight, Clock, Eraser, Lock, Pencil, SquareTerminal, Trash2, TriangleAlert, X } from 'lucide-react-native';
 import { AskClaudePicker, type AskTarget, askTargets } from '../../components/AskClaudePicker';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet as RNStyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet as RNStyleSheet, TextInput, View } from 'react-native';
 import Animated, { LinearTransition, FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '../../components/Composer';
@@ -11,8 +11,10 @@ import { SendStatus } from '../../components/SendStatus';
 import { Thumb } from '../../components/Outputs';
 import { TaskWords } from '../../components/render/TaskChip';
 import { Header, Screen, useScrolled } from '../../components/Screen';
-import { Avatar, Press, T, hueOf, toneBg, toneInk } from '../../components/ui';
-import { ago, useView } from '../../lib/hooks';
+import { Options } from '../../components/Options';
+import { Sheet } from '../../components/Sheet';
+import { Avatar, Button, More, Press, T, haptic, hueOf, toneBg, toneInk } from '../../components/ui';
+import { ago, useSupports, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { ChatMemberView, ChatMessageView, ChatView, OutputView, Topic } from '../../lib/link/protocol';
 import { upload } from '../../lib/pick';
@@ -44,6 +46,13 @@ export default function Chat() {
   const targets = askTargets(c?.members, c?.kind ?? 'dm', c?.name ?? '');
   const pics: OutputView[] = c?.messages.flatMap((m) => (m.files ?? []).filter((f) => f.kind === 'image')) ?? [];
   const meName = c?.members?.find((m) => m.me)?.name;
+  // 1.30 (BLG-429): in a direct chat, long-press a message to delete it (or edit your own); Clear chat in the •••.
+  const changes = useSupports('chatEdits') && c?.kind === 'dm';
+  const [acting, setActing] = useState<ChatMessageView | undefined>();
+  const [editing, setEditing] = useState<ChatMessageView | undefined>();
+  const [menu, setMenu] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const act = (call: Parameters<typeof store.call>[0]): void => void store.call(call, { queue: false }).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
 
   useEffect(() => {
     if (c) void store.call(calls.read(topic), { queue: false }).catch(() => undefined);
@@ -51,7 +60,14 @@ export default function Chat() {
 
   return (
     <Screen>
-      <Header scrolled={scrolled} back title={c?.name ?? 'Chat'} eyebrow={c?.kind === 'group' ? 'Channel' : c?.live.length ? 'Here now' : 'Direct message'} at={view?.at} />
+      <Header
+        scrolled={scrolled}
+        back
+        title={c?.name ?? 'Chat'}
+        eyebrow={c?.kind === 'group' ? 'Channel' : c?.live.length ? 'Here now' : 'Direct message'}
+        at={view?.at}
+        right={changes ? <More onPress={() => setMenu(true)} label="Chat options" /> : undefined}
+      />
       {c?.members?.some((m) => m.claude) ? <People members={c.members} /> : null}
       {c?.waiting?.length ? <Waiting items={c.waiting} onPick={(task) => task && cards.current[task] !== undefined && scroll.current?.scrollTo({ y: Math.max(0, cards.current[task]! - 24), animated: true })} /> : null}
       <KeyboardLift>
@@ -64,7 +80,9 @@ export default function Chat() {
                 entering={i > c.messages.length - 3 ? FadeIn.duration(180) : undefined}
                 onLayout={m.task ? (e) => (cards.current[m.task!.id] = e.nativeEvent.layout.y) : undefined}
               >
-                <Bubble m={m} first={run.first} last={run.last} group={c.kind === 'group'} pics={pics} me={meName} />
+                <Press onLongPress={changes ? () => (haptic.commit(), setActing(m)) : undefined} disabled={!changes} haptics={false}>
+                  <Bubble m={m} first={run.first} last={run.last} group={c.kind === 'group'} pics={pics} me={meName} />
+                </Press>
               </Animated.View>
             );
           })}
@@ -112,8 +130,75 @@ export default function Chat() {
           more={[{ Icon: SquareTerminal, label: 'Ask: your Claude', sub: 'A Claude here answers in the chat', tone: 'peach', onPress: () => setPicking(true) }]}
         />
       </KeyboardLift>
+      <Options
+        visible={Boolean(acting)}
+        onClose={() => setActing(undefined)}
+        options={[
+          { Icon: Pencil, label: 'Edit', sub: `${c?.name ?? 'They'} sees it marked edited`, tone: 'sky', hidden: !acting?.editable, onPress: () => setEditing(acting) },
+          { Icon: Trash2, label: 'Delete for everyone', sub: `From your Mac and ${c?.name ?? 'theirs'}’s`, tone: 'rose', hidden: !acting?.mine, onPress: () => acting && act(calls.deleteMessage(topic, acting.id, true)) },
+          { Icon: Trash2, label: 'Delete for you', sub: acting?.mine ? 'From your Mac only' : `${c?.name ?? 'They'} still has it`, tone: 'rose', onPress: () => acting && act(calls.deleteMessage(topic, acting.id, false)) },
+        ]}
+      />
+      <EditMessage m={editing} topic={topic} onClose={() => setEditing(undefined)} />
+      <Options visible={menu} onClose={() => setMenu(false)} title={c?.name} options={[{ Icon: Eraser, label: 'Clear chat', sub: 'Every message goes from your Mac', tone: 'rose', onPress: () => setClearing(true) }]} />
+      <Options
+        visible={clearing}
+        onClose={() => setClearing(false)}
+        title="This can’t be undone"
+        options={[{ Icon: Eraser, label: 'Clear chat', sub: `${c?.name ?? 'Your friend'} keeps their copy`, tone: 'rose', onPress: () => act(calls.clearChat(topic)) }]}
+      />
       <AskClaudePicker visible={picking} onClose={() => setPicking(false)} targets={targets} chosen={ask} onPick={setAsk} members={c?.members} />
     </Screen>
+  );
+}
+
+/** Your message, opened to change its words: your friend sees it marked edited. */
+function EditMessage({ m, topic, onClose }: { m: ChatMessageView | undefined; topic: Topic; onClose: () => void }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (m) setText(m.text);
+  }, [m?.id]);
+  const save = async (): Promise<void> => {
+    if (!m || busy || !text.trim()) return;
+    if (text.trim() === m.text.trim()) return onClose();
+    haptic.commit();
+    setBusy(true);
+    try {
+      await store.call(calls.editMessage(topic, m.id, text.trim()), { queue: false });
+      onClose();
+    } catch (e) {
+      store.toast({ text: (e as Error).message, tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet
+      visible={Boolean(m)}
+      onDismiss={onClose}
+      header={
+        <View style={{ paddingHorizontal: 20, paddingBottom: 10 }}>
+          <T v="title" style={{ fontSize: 20 }}>
+            Edit your message
+          </T>
+        </View>
+      }
+    >
+      <View style={{ paddingHorizontal: 20, paddingBottom: 20, gap: 14 }}>
+        <TextInput
+          autoFocus
+          value={text}
+          onChangeText={setText}
+          multiline
+          editable={!busy}
+          accessibilityLabel="Edit your message"
+          placeholderTextColor={color.text3}
+          style={{ color: color.text, fontSize: 17, lineHeight: 24, minHeight: 72, maxHeight: 220, textAlignVertical: 'top', padding: 12, borderRadius: 14, backgroundColor: color.sunken, ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }}
+        />
+        <Button label={busy ? 'Saving…' : 'Save'} Icon={Pencil} disabled={busy || !text.trim()} onPress={() => void save()} />
+      </View>
+    </Sheet>
   );
 }
 
@@ -276,9 +361,9 @@ function Bubble({ m, first, last, group, pics, me }: { m: ChatMessageView; first
             </T>
           </View>
         ) : null}
-        {last ? (
+        {last || m.edited ? (
           <T v="caption" style={{ marginHorizontal: 4, fontSize: 11 }}>
-            {ago(m.ts)}
+            {[m.edited ? 'Edited' : '', last ? ago(m.ts) : ''].filter(Boolean).join(' · ')}
           </T>
         ) : null}
       </View>

@@ -394,6 +394,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `network.avatar.set` | ✓ Settings › General, your picture beside your name |
 | `network.avatar.get` | ✓ every avatar (chats, headers, tasks, team), cached as data URLs |
 | `network.read` | ✓ opening a conversation reads it (the `conversation` view is shown); Mark as Read on a group |
+| `network.messages.delete` | ✓ a direct message's right-click menu › Delete… (yours: Delete for them too) |
+| `network.messages.edit` | ✓ your direct message's right-click menu › Edit (in place: Return saves, Esc cancels) |
+| `network.clear` | ✓ a direct conversation's ⋯ menu › Clear Chat… |
 | `network.post` | ✓ a conversation's message box: words, files waiting in the box, and the Ask Claude menu (yours, everyone's, one person's); Send Again on an undelivered one |
 | `network.files.add` | ✓ the paper clip (Open panel), files dropped anywhere on a conversation |
 | `network.files.addData` | ✓ files and pictures pasted into the message box (and picked in a browser) |

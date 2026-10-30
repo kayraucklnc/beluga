@@ -47,6 +47,8 @@ export interface GatewayDeps {
   /** The screen and device info (tests pass a pretend one). */
   readonly system?: SystemPort;
   readonly questionWaitMs?: number;
+  /** How long a friend's task may run here in all (default 20 minutes; tests make it short). */
+  readonly runLimitMs?: number;
   /** Where a friend's command runs when it names no folder (PeerRun's default). */
   readonly runFolder?: (from: string) => Promise<string | undefined>;
   /** How long a piece of a big file may take to come (tests make it short). */
@@ -130,6 +132,9 @@ const TICK_MS = 10_000;
 const SILENT_MS = 24 * 3600_000;
 const DEFAULT_CONFIRM_MS = 10 * 60_000;
 const MAX_STEPS = 12;
+/** Requests one conversation's Claude may send the same person in a while (BLG-427: no asking on and on). */
+const MAX_AGENT_ASKS = 3;
+const AGENT_ASKS_WINDOW_MS = 10 * 60_000;
 
 const taskId = (): string => `t_${randomBytes(9).toString('base64url')}`;
 const isAgentFinal = (status: string): boolean => status === 'done' || status === 'error' || status === 'denied';
@@ -200,6 +205,7 @@ export class Gateway {
       now: () => this.now(),
       ...(deps.system ? { system: deps.system } : {}),
       ...(deps.questionWaitMs ? { questionWaitMs: deps.questionWaitMs } : {}),
+      ...(deps.runLimitMs ? { runLimitMs: deps.runLimitMs } : {}),
       ...(deps.runFolder ? { runFolder: deps.runFolder } : {}),
       chatOf: (from, chat) => {
         const mesh = this.mesh;
@@ -337,6 +343,13 @@ export class Gateway {
     // Their Mac said what it takes: one that can't take this hears so now, not after a week of waiting.
     const unable = this.cannotTake(peer, kind) ?? (kind === 'file' && isSecretPath(input.path?.trim() ?? '') ? this.cannotTake(peer, kind, 'task.secret') : undefined);
     if (unable) throw new Error(unable);
+    // Your Claude asking the same person's Claude again and again from one conversation: it stops and tells you instead.
+    // (Commands and files are one step each, asked about on their side: not counted.)
+    if (input.by === 'agent' && kind === 'ask') {
+      const since = this.now() - AGENT_ASKS_WINDOW_MS;
+      const recent = this.book.all().filter((t) => t.direction === 'sent' && t.by === 'agent' && t.kind === 'ask' && t.peerId === peer.peerId && t.conversation === input.conversation && t.createdAt >= since).length;
+      if (recent >= MAX_AGENT_ASKS) throw new Error(`You already sent ${peer.name} ${recent} requests from this conversation in the last ${AGENT_ASKS_WINDOW_MS / 60_000} minutes. Don't ask again: stop, and tell your user what you have so far and what's still missing, so they can decide.`);
+    }
     const level = this.trustFor(peer.peerId);
     // Your Claude asks first, unless you trust them or said Always for them (asking them, not what they may do here).
     const confirm = input.by === 'agent' && level !== 'trusted' && level !== 'full' && !this.freely().includes(peer.peerId);

@@ -291,9 +291,13 @@ of your Claude are unchanged:
 your Claude, everyone's, or one person's, for that one message. The message may have no words: the Claudes
 then read the conversation and answer what's being discussed (older Macs get "✳ Asked Claude to read the
 conversation" as its text). Each Mac whose owner's Claude was asked
-answers on that owner's Claude login: one turn, no tools, no saved session (`AgentBackend.answerChat`),
-reading the conversation as every member's Mac holds it (the last 60 messages, 30 000 characters, with
-who wrote what), the ask's text files (200 KB each, 120 000 characters in all) and pictures (4, 3.75 MB
+answers on that owner's Claude login: no tools, no saved session (`AgentBackend.answerChat`),
+reading the conversation as every member's Mac holds it: the latest 12 messages (8 000 characters, with
+who wrote what) and the newest 20 written since the ask (8 000 characters). When there's more before
+that, Claude is told so and gets one tool, `read_earlier` (BLG-428), to page further back through that
+one conversation only (up to 50 messages a page, never a locked one), and does only when the window
+isn't enough. Your own ask of your own Claude, a turn with its tools, gets the last 60 messages
+(30 000 characters) instead. It also reads the ask's text files (200 KB each, 120 000 characters in all) and pictures (4, 3.75 MB
 each). The answer goes back into the chat as "<owner>’s Claude" (split into up to four messages when long),
 so every Claude shares one history and each answer is part of what the next one reads; there is no
 per-Claude session to drift. While it works the others see "bob’s Claude is answering…" (`live` frames,
@@ -479,8 +483,10 @@ Your card tells each friend what you offer them (their Claude sees it in `who_ca
 - **See the screen**: the task's Claude gets a `screenshot` tool (MCP server `beluga_task`, only in
   runs for a request that needed `screen` and was let in): `screencapture -x` of the main display,
   or of one app's front window (found through CoreGraphics' window list). It sees a smaller JPEG
-  (`sips`); the PNG goes back with the result as an image. At most 4 per request. macOS asks you
-  once to allow Screen Recording for Beluga.
+  (`sips`); the PNG goes back with the result as an image. At most 4 per request. A command that
+  takes one (`screencapture`, `scrot`, a script grabbing the screen) is the screen too: refused in
+  a request that didn't need `screen`, asked about like the screen, and counted in the same 4.
+  macOS asks you once to allow Screen Recording for Beluga.
 - **Device info**: a `device_info` tool: macOS version and build, model and chip (from
   `system_profiler`, never the serial number), cores, memory, disk space, battery (`pmset`),
   uptime, local network addresses (no MAC addresses, nothing looked up outside), and the apps in
@@ -488,6 +494,15 @@ Your card tells each friend what you offer them (their Claude sees it in `who_ca
 - **Read and write files**: the folders you choose are added to the task's Claude's folders when
   the request needs `files`; `get_file(person, path)` (a `file` task) sends one file from them
   (anywhere with full trust); a secret only when they approve that one request (see *Secrets* above).
+
+**Limits, so a request can't loop** (BLG-427, `gateway/serve.ts`, `gateway.ts`). A friend's task
+here runs at most 50 turns and 20 minutes (sooner if its deadline is), then stops as failed
+("Stopped after 20 minutes", "Stopped after 50 turns"). It asks you to approve its steps at most 8
+times; the next one stops it instead, and so do 2 declines in a row ("Stopped: kay declined 2 of
+its steps in a row"); the requester hears why. One person has at most 5 requests open here. On the
+asking side, one conversation's Claude sends the same person's Claude at most 3 requests in 10
+minutes (commands and files aren't counted); past that, `ask_agent` tells it to stop and tell you,
+and a result that comes in later tells it not to send the same ask again.
 
 ### Big files
 

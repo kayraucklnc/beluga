@@ -258,6 +258,10 @@ sentinel's kept data (`sentinel.dataList`) lists its metrics' histories (CSV, ma
 its runs' files the same way. A kind the phone can't show offers Open on your Mac
 (`sentinel.documentOpen`, `sentinel.storageOpen`, `sentinel.runFileOpen`). An older Mac sends no
 refs, so its cells stay plain text and Kept data isn't shown.
+1.30 (BLG-429) lets the phone change a direct chat as the Mac does (BLG-425): long-press a message to
+Delete it (yours: for your friend too) or Edit your own (`network.messages.delete`, `network.messages.edit`;
+only one whose words reach the phone whole, `ChatMessageView.editable`), and Clear chat from the
+chat's ••• (`network.clear`, on the Mac only: your friend keeps theirs). An older Mac offers none of them.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 

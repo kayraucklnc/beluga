@@ -5,7 +5,7 @@ import type DHT from 'hyperdht';
 import type { BootstrapNode } from 'hyperdht';
 import type { Identity } from '../crypto.js';
 import { AvatarBook } from './avatars.js';
-import { DmBook } from './dms.js';
+import { DmBook, type DmChange } from './dms.js';
 import { type BelugaInfo, type Feature, MESH_FEATURES } from './features.js';
 import { checkMessage, parseExtras, wireNote } from './extras.js';
 import { readJson, writeJson } from './files.js';
@@ -62,6 +62,10 @@ interface MeshEvents {
   change: [];
   /** A message arrived, was sent, or changed status. */
   message: [MessageView];
+  /** A message was deleted from a conversation (here, or by its author for both of you). */
+  unsent: [string, string];
+  /** A conversation was cleared on this Mac. */
+  cleared: [string];
   /** A gateway frame from a friend (core/gateway checks and answers it). */
   gateway: [string, unknown];
   /** A sharing frame from a friend (core/friend-share checks it): shared projects, their worktrees' conversations, shared folders. */
@@ -305,6 +309,43 @@ export class Mesh extends EventEmitter<MeshEvents> {
     this.emit('message', view);
     this.emit('change');
     return view;
+  }
+
+  /** Delete a message (`dm:` only): here, or (`everyone`, your own) on their Mac too. */
+  deleteMessage(conversation: string, id: string, everyone = false): void {
+    const peerId = this.dmPeer(conversation);
+    const mine = this.dms.find(peerId, id)?.from === this.peerId;
+    const before = this.dmMessages(peerId);
+    const change = this.dms.delete(peerId, id, everyone);
+    if (change) this.links.get(peerId)?.send(changeFrame(change));
+    if (!mine) this.unread(conversation, before, id);
+    this.emit('unsent', conversation, id);
+    this.emit('change');
+  }
+
+  /** Change the text of a message you sent (`dm:` only), here and on their Mac. */
+  editMessage(conversation: string, id: string, text: string): MessageView {
+    const peerId = this.dmPeer(conversation);
+    const was = this.dms.find(peerId, id);
+    checkMessage(text, was?.x, MAX_TEXT);
+    const { dm, change } = this.dms.edit(peerId, id, text);
+    this.links.get(peerId)?.send(changeFrame(change));
+    const view = dmView(this.ctx, peerId, dm, this.dms.status(peerId));
+    this.emit('message', view);
+    this.emit('change');
+    return view;
+  }
+
+  /** Empty a conversation on this Mac (`dm:` only; your friend keeps theirs). */
+  clearConversation(conversation: string): void {
+    const peerId = this.dmPeer(conversation);
+    this.dms.clear(peerId);
+    if (this.reads[conversation]) {
+      this.reads = { ...this.reads, [conversation]: 0 };
+      writeJson(this.file('reads.json'), this.reads);
+    }
+    this.emit('cleared', conversation);
+    this.emit('change');
   }
 
   dmHistory(peerId: string, opts: { before?: number; limit?: number } = {}): MessageView[] {
@@ -617,6 +658,23 @@ export class Mesh extends EventEmitter<MeshEvents> {
     return { card: f.card, name: f.name };
   }
 
+  private dmPeer(conversation: string): string {
+    if (conversation.startsWith('group:')) throw new Error('Messages in channels can’t be deleted or edited yet');
+    const peerId = conversation.startsWith('dm:') ? conversation.slice(3) : '';
+    if (!this.friends.has(peerId)) throw new Error('No such conversation');
+    return peerId;
+  }
+
+  /** A message from them went: it no longer counts as read (`before`: the conversation as it was). */
+  private unread(conversation: string, before: readonly MessageView[], id: string): void {
+    const theirs = before.filter((m) => !m.mine);
+    const at = theirs.findIndex((m) => m.id === id);
+    const read = this.reads[conversation] ?? 0;
+    if (at < 0 || at >= read) return;
+    this.reads = { ...this.reads, [conversation]: read - 1 };
+    writeJson(this.file('reads.json'), this.reads);
+  }
+
   private dmMessages(peerId: string): MessageView[] {
     const status = this.dms.status(peerId);
     return this.dms.history(peerId).map((dm) => dmView(this.ctx, peerId, dm, status));
@@ -697,6 +755,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
     this.sendHello(link);
     this.groups.linkUp(link);
     for (const dm of this.dms.waiting(link.peerId)) link.send(dmFrame(dm));
+    for (const change of this.dms.pendingChanges(link.peerId)) link.send(changeFrame(change));
     this.emit('link', link.peerId);
     this.emit('change');
   }
@@ -753,6 +812,23 @@ export class Mesh extends EventEmitter<MeshEvents> {
         link.send({ t: 'dm_ack', id: msg.id });
         return;
       }
+      case 'dm_change': {
+        if (!this.friends.has(from)) return;
+        const conversation = dmConversation(from);
+        const before = msg.text === undefined ? this.dmMessages(from) : [];
+        const now = this.dms.changed(from, { id: msg.id, at: msg.at, ...(msg.text !== undefined ? { text: msg.text } : {}) });
+        if (now) this.emit('message', dmView(this.ctx, from, now, this.dms.status(from)));
+        else if (now === undefined) {
+          this.unread(conversation, before, msg.id);
+          this.emit('unsent', conversation, msg.id);
+        }
+        if (now !== null) this.emit('change');
+        link.send({ t: 'dm_change_ack', id: msg.id, at: msg.at });
+        return;
+      }
+      case 'dm_change_ack':
+        this.dms.changeDelivered(from, msg.id, msg.at);
+        return;
       case 'gw':
         if (this.friends.has(from)) this.emit('gateway', from, msg.p);
         return;
@@ -818,6 +894,8 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
 /** A direct message as it goes over the link. */
 const dmFrame = (dm: { id: string; text: string; ts: number; x?: ChatExtras }): LinkMessage => ({ t: 'dm', id: dm.id, text: dm.text.trim() ? dm.text : wireNote(dm.x) || dm.text, ts: dm.ts, ...(dm.x ? { x: dm.x } : {}) });
+
+const changeFrame = (c: DmChange): LinkMessage => ({ t: 'dm_change', id: c.id, at: c.at, ...(c.text !== undefined ? { text: c.text } : {}) });
 
 /** A page of a conversation: the `limit` messages before `before` (default: the latest). */
 function page(messages: readonly MessageView[], opts: { before?: number; limit?: number }): MessageView[] {

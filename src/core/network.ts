@@ -129,6 +129,8 @@ export async function startNetwork(opts: NetworkOptions): Promise<NetworkService
     store.dispatch({ type: 'net_message', message: local(message) });
     if (store.getState().attention.shown.includes(message.conversation)) mesh.markRead(message.conversation);
   });
+  mesh.on('unsent', (conversation, id) => store.dispatch({ type: 'net_unsent', conversation, id }));
+  mesh.on('cleared', (conversation) => store.dispatch({ type: 'net_cleared', conversation }));
   const offAction = store.onAction((action) => {
     if (action.type === 'attention') readShown();
   });

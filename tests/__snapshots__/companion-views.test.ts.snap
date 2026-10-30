@@ -31,6 +31,7 @@ here",
         "ts": 1760000000030,
       },
       {
+        "editable": true,
         "from": "kayra",
         "id": "m2abcdefgh",
         "mine": true,

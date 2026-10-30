@@ -473,7 +473,7 @@ export class DemoTransport implements Transport {
         const chat = w.chats.get(topic);
         if (chat) {
           const files = (a.files ?? []).map((r) => this.uploads.get(r)).filter((v): v is OutputView => !!v);
-          chat.messages = [...chat.messages, { id: `m${Date.now()}`, from: 'You', mine: true, text: a.text, ts: Date.now(), ...(files.length ? { files } : {}) }];
+          chat.messages = [...chat.messages, { id: `m${Date.now()}`, from: 'You', mine: true, text: a.text, ts: Date.now(), ...(chat.kind === 'dm' && a.text.trim() ? { editable: true } : {}), ...(files.length ? { files } : {}) }];
           chat.unread = 0;
           this.touch(topic, 'chats');
           const who = chat.kind === 'dm' ? chat.name : 'Ada';
@@ -500,6 +500,19 @@ export class DemoTransport implements Transport {
           this.touch(c.topic, 'work');
         }
         return ok({ stopped: true, returned: [] });
+      }
+      // 1.30 (BLG-429): delete, edit and clear in a direct chat.
+      case 'network.messages.delete':
+      case 'network.messages.edit':
+      case 'network.clear': {
+        const topic = `chat:${str(0)}` as Topic;
+        const chat = w.chats.get(topic);
+        if (chat) {
+          chat.messages =
+            method === 'network.clear' ? [] : method === 'network.messages.delete' ? chat.messages.filter((m) => m.id !== str(1)) : chat.messages.map((m) => (m.id === str(1) ? { ...m, text: str(2), edited: Date.now() } : m));
+          this.touch(topic, 'chats');
+        }
+        return ok();
       }
       case 'network.read': {
         const chat = w.chats.get(`chat:${str(0)}` as Topic);

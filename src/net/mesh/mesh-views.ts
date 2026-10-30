@@ -38,7 +38,7 @@ export function person(ctx: ViewContext, peerId: string, name: string): PersonVi
 export function dmView(ctx: ViewContext, peerId: string, dm: Dm, status: DmStatus): MessageView {
   const mine = dm.from === ctx.me;
   const state = !mine ? undefined : status.delivered.has(dm.id) ? 'delivered' : status.expired.has(dm.id) ? 'expired' : 'waiting';
-  return { id: dm.id, conversation: dmConversation(peerId), from: dm.from, name: mine ? 'you' : ctx.nameOf(dm.from), text: dm.text, ts: dm.ts, mine, ...extrasFields(dm.x), ...(state ? { status: state } : {}) };
+  return { id: dm.id, conversation: dmConversation(peerId), from: dm.from, name: mine ? 'you' : ctx.nameOf(dm.from), text: dm.text, ts: dm.ts, mine, ...extrasFields(dm.x), ...(state ? { status: state } : {}), ...(dm.edited ? { edited: dm.edited } : {}) };
 }
 
 export function groupMessageView(ctx: ViewContext, groupId: string, m: ReadMessage): MessageView {
