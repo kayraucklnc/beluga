@@ -306,6 +306,13 @@ export class Plans {
     return this.change(plan, { runs: { ...plan.runs, [milestone]: agent ? { ...rest, agent } : rest } }, []);
   }
 
+  /** The conversation that checks a milestone (undefined: none, it was archived). */
+  setChecker(id: string, milestone: string, checker: string | undefined): Plan {
+    const plan = this.need(id);
+    const { checker: _was, ...rest } = plan.runs[milestone] ?? {};
+    return this.change(plan, { runs: { ...plan.runs, [milestone]: checker ? { ...rest, checker } : rest } }, []);
+  }
+
   /** A task's start being combined from several branches (undefined: no longer). */
   setCombining(id: string, task: string, combining: Combining | undefined): Plan {
     const plan = this.need(id);

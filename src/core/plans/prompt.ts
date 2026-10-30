@@ -154,13 +154,17 @@ export function headBrief(view: PlanView): string {
     '- plan_stop_task: stop the Claude working on a task (going the wrong way, or the user says stop); it waits, and',
     '  plan_message_task (or the user) gets it going again with what to do instead.',
     '- plan_pause: pause the whole plan (nothing new starts) or resume it, when the user asks.',
-    '- plan_gate: after checking a finished milestone\'s pass criteria, pass or fail it with notes per criterion.',
+    '- plan_gate: record a milestone\'s check yourself (when the user asks you to check it), pass or fail with notes per criterion.',
     `  Check for real: read the tasks\' briefs, handoffs and proof, and their diffs (git diff ${plan.branch ?? 'main'}...branch).`,
     plan.branch ? `- The plan's work collects on ${plan.branch}: tasks start from it, a passed milestone's branches merge into it, and it reaches main as one pull request at the end (no PR per task or milestone).` : '',
     '- plan_update: change the plan (new tasks to fix what failed, a re-cut). The user approves changes',
     '  unless the plan runs on autopilot.',
     `Tests: ${TESTS_AT_INFO[plan.testsAt].hint.toLowerCase()}. Don't ask a task to run the full suite.`,
     plan.paused ? 'The plan is paused: nothing starts until the user resumes it.' : '',
+    (m?.autonomy ?? plan.autonomy) === 'autopilot'
+      ? 'The plan runs on Autopilot: never end a turn waiting for the user to say how to go on. Decide, act with your tools and say in a line what you did; only a task assigned to the user, a secret or an account needs them.'
+      : '',
+    'Each milestone is checked by a checker of its own (a separate Claude): its verdict comes to you here, and a failed one with what to fix.',
     now.length ? `Now: ${now.length > 1 ? 'milestones' : 'milestone'} ${now.join(', ')}${now.length > 1 ? ', side by side' : ''}; ${view.active.length} tasks in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
     warnings.length ? `Running side by side and touching the same files (watch for conflicts):\n${warnings.join('\n')}` : '',
     '</beluga_plan_head>',
@@ -246,15 +250,27 @@ export function criteriaNeedCheck(view: PlanView, m: MilestoneView): boolean {
   return m.tasks.some((t) => t.state !== 'canceled' && taskCriteria(t).some((c) => c.state === 'open')) || (last && deferredItems(view).length > 0);
 }
 
-/** Ask the head Claude to check a finished milestone. */
-export function checkPrompt(view: PlanView, m: MilestoneView): string {
+/**
+ * Check a finished milestone. `checker`: asked of the milestone's own checker (a fresh Claude in a
+ * conversation of its own, see pilot.ts), which records the verdict; the head Claude adds fix tasks.
+ */
+export function checkPrompt(view: PlanView, m: MilestoneView, opts: { readonly checker?: boolean } = {}): string {
   const last = m.index === view.milestones.length - 1;
+  const fix = opts.checker ? 'say in the notes what fix it needs (the plan\'s Claude adds the fix task)' : 'add a fix task for it with plan_update (name the criterion in its goal)';
   const tasks = m.tasks.flatMap((t) => [
     `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.state === 'stalled' && t.watch ? `: ${t.watch.reason}` : ''}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`,
     ...taskCriteria(t).map(checkLine),
   ]);
   const deferred = last ? deferredItems(view) : [];
   return [
+    ...(opts.checker
+      ? [
+          `You are the checker of milestone “${m.milestone.title}” of the plan “${view.plan.body?.title ?? 'plan'}”: a Claude of your own, not the one that`,
+          'wrote its code nor the one planning it. Check what is there; change no code and commit nothing (ticking a',
+          'criterion you checked with task_brief_edit is fine). Your verdict goes to the plan.',
+          '',
+        ]
+      : []),
     `Every task of milestone “${m.milestone.title}” is finished. Check its pass criteria for real, one by one:`,
     ...(m.milestone.criteria.length ? m.milestone.criteria.map((c, i) => `${i + 1}. ${c}`) : ['(It has none of its own: check its tasks\' acceptance criteria below.)']),
     '',
@@ -271,17 +287,58 @@ export function checkPrompt(view: PlanView, m: MilestoneView): string {
           'This is the plan\'s final check: every criterion deferred along the way must be settled now, against the full suite run:',
           ...deferred.map((d) => `- ${d.task.issue?.key ?? d.task.task.id}: ${d.criterion.text} (deferred: ${d.criterion.reason})`),
           'For each one: true on the combined work, tick it ("- [x]", task_brief_edit with that key); not true, fail the',
-          'check and add a fix task for it with plan_update (name the criterion in its goal). Don\'t pass while one is still deferred.',
+          `check and ${fix}. Don't pass while one is still deferred.`,
         ]
       : []),
     '',
     checkTestsNote(view.plan, last),
     'Then call plan_gate with pass or fail and notes that say,',
-    `per criterion, what you checked and found.${m.autonomy === 'autopilot' ? ' On pass, the plan moves on by itself.' : ' The user decides whether it passes.'} If it fails, add the`,
-    'fix tasks with plan_update.',
+    `per criterion, what you checked and found.${m.autonomy === 'autopilot' ? ' On pass, the plan moves on by itself.' : ' The user decides whether it passes.'}`,
+    opts.checker ? 'If it fails, say per failed criterion what fix it needs: the plan\'s Claude adds the fix tasks from your notes.' : 'If it fails, add the fix tasks with plan_update.',
+    'Always end your turn with plan_gate, never by asking the user how to go on: what you couldn\'t check (a command',
+    'that fails, a tool that isn\'t there) goes in the notes, and fails the check when nothing else proves it.',
   ]
     .filter((l, i, all) => l !== '' || (all[i - 1] !== '' && i > 0))
     .join('\n');
+}
+
+/** A milestone's checker failed it: the head Claude turns its notes into fix tasks. */
+export function checkFailedPrompt(title: string, notes: string, autopilot: boolean): string {
+  return [
+    `The checker of milestone “${title}” failed it. Its notes:`,
+    '',
+    notes.trim(),
+    '',
+    `Add the tasks that fix it to this milestone with plan_update (name the criterion each one fixes in its goal)${autopilot ? ': on Autopilot they apply at once and its Claude picks them up' : '; the user approves them'}.`,
+    autopilot ? 'Don\'t stop to ask the user: decide the fix tasks yourself.' : '',
+  ]
+    .filter((l, i, all) => l !== '' || all[i - 1] !== '')
+    .join('\n');
+}
+
+/** What a milestone's checker conversation knows on every run. */
+export function checkerBrief(view: PlanView, m: MilestoneView): string {
+  return [
+    '',
+    '<beluga_plan_checker>',
+    `This conversation checks milestone “${m.milestone.title}” [id ${m.milestone.id}] of the plan “${view.plan.body?.title ?? 'plan'}” in Beluga's Plans.`,
+    'You are not the Claude that wrote its code, nor the one running the plan: check what is there, independently.',
+    'plan_get shows the plan; plan_gate records your verdict on this milestone. Change no code and commit nothing.',
+    view.plan.branch ? `The plan's work collects on ${view.plan.branch}; diff a task against it (git diff ${view.plan.branch}...branch).` : '',
+    'Always end a turn with plan_gate, never by asking the user how to go on.',
+    '</beluga_plan_checker>',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** A check's turn ended without a verdict: asked once more for it. */
+export function checkNudgePrompt(title: string): string {
+  return [
+    `Your turn ended without a verdict on milestone “${title}”, so the plan is waiting on it.`,
+    'Record it now with plan_gate: pass, or fail with what is missing per criterion. Whatever you couldn\'t check',
+    'goes in the notes. Don\'t wait for the user.',
+  ].join('\n');
 }
 
 /** A task's start couldn't be combined from the branches it builds on: the head Claude fixes the conflict. */

@@ -192,6 +192,8 @@ export interface DashboardTools {
 
 /** A plan as Claude's tools (agent/plan-tools.ts, server `beluga_plan`): each answers in words. */
 export interface PlanTools {
+  /** Only these tools (their short names, like "plan_gate"): a milestone's checker gets plan_get and plan_gate. */
+  readonly only?: readonly string[];
   get(): string;
   write(body: import('../core/plans/edit.js').BodyInput): string;
   update(ops: readonly import('../core/plans/edit.js').PlanOp[], reason?: string): string;

@@ -12,6 +12,7 @@ import type { IssuePr } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
+import { planOf } from '../src/core/plans/owner.js';
 import { PLAN_TOOL_NAMES, createPlanToolDefs, milestoneInput, toOps } from '../src/agent/plan-tools.js';
 import { decideTool } from '../src/agent/policy.js';
 import { createMockBackend } from '../src/agent/mock.js';
@@ -28,6 +29,7 @@ function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titleP
   const listeners: Array<(e: WorktreeEvent) => void> = [];
   const asked: Array<{ prompt: string; channel: string; echo: boolean }> = [];
   const made: Array<{ name: string; base?: string; quiet?: boolean }> = [];
+  const archived: string[] = [];
   let n = 0;
   const add = (w: Workspace): void => {
     store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => (p.id === w.projectId ? { ...p, workspaces: [...p.workspaces, w] } : p)) });
@@ -52,17 +54,22 @@ function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titleP
     renameChat: async (id: string, name: string) => {
       store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => ({ ...p, workspaces: p.workspaces.map((w) => (w.id === id ? { ...w, name } : w)) })) });
     },
+    archive: async (id: string) => {
+      archived.push(id);
+      store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => ({ ...p, workspaces: p.workspaces.map((w) => (w.id === id ? { ...w, archived: true } : w)) })) });
+      return true;
+    },
   } as unknown as WorkspaceController;
   const board = new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name });
   const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push({ prompt, channel, echo: true }) });
   const plans = new Plans({ store, dir: null });
   const intents: unknown[] = [];
-  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => void asked.push({ prompt, channel, echo }), intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.workers ? { workers: opts.workers } : {}), ...(opts.forYou ? { forYou: opts.forYou } : {}), ...(opts.cancel ? { cancel: opts.cancel } : {}) });
+  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => `ask-${asked.push({ prompt, channel, echo })}`, intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.workers ? { workers: opts.workers } : {}), ...(opts.forYou ? { forYou: opts.forYou } : {}), ...(opts.cancel ? { cancel: opts.cancel } : {}) });
   const claude = boardWork.myClaude();
   const me = boardWork.me();
   /** Claude in a worktree finishes its run, or works. */
   const run = (channel: string, status: 'started' | 'done', id = `r-${Math.random()}`): void => store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: id, requester: 'p-me', event: status, text: '', ts: Date.now(), channel });
-  return { store, board, boardWork, plans, work, asked, made, intents, claude, me, run, add };
+  return { store, board, boardWork, plans, work, asked, made, archived, intents, claude, me, run, add };
 }
 
 describe('a new plan’s name (KLD-28)', () => {
@@ -311,27 +318,76 @@ describe('running a plan', () => {
     expect(issue(t, 'Receipts once').status).toBe('in_progress');
   });
 
-  it('finished tasks: Claude is asked to check the criteria; gated waits for you; passing opens the next milestone', async () => {
+  it('finished tasks: a checker of its own checks the criteria; gated waits for you; passing opens the next milestone', async () => {
     const t = await running('gated');
     for (const title of ['Auth on payment routes', 'Idempotent webhooks']) t.board.update(issue(t, title).id, { status: 'done' }, t.me);
     await tick(5);
     t.board.update(issue(t, 'Receipts once').id, { status: 'in_review' }, t.claude);
     await tick(5);
-    const check = t.asked.find((a) => a.channel === 'ws:main' && a.prompt.includes('Check its pass criteria'));
+    // Not the head Claude's conversation: one made for this milestone's check, folded into the plan.
+    const checker = t.plans.need(t.plan.id).runs.safe?.checker;
+    expect(checker).toBeDefined();
+    expect(t.asked.some((a) => a.channel === 'ws:main' && a.prompt.includes('Check its pass criteria'))).toBe(false);
+    const check = t.asked.find((a) => a.channel === `ws:${checker}` && a.prompt.includes('Check its pass criteria'));
     expect(check?.echo).toBe(false);
     expect(check?.prompt).toContain('401 without a session');
+    expect(check?.prompt).toContain('You are the checker of milestone');
     expect(planView(t.plans.need(t.plan.id), t.store.getState().board).current?.state).toBe('checking');
     expect(planView(t.plans.need(t.plan.id), t.store.getState().board).next.kind).toBe('checking');
-    t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', '1 ✓ 2 ✓');
+    // The checker reads the plan and records its verdict: nothing else.
+    const run = t.work.forRun(`ws:${checker}`, 'p-me')!;
+    expect(run.tools!.only).toEqual(['plan_get', 'plan_gate']);
+    expect(createPlanToolDefs(run.tools!).map((d) => d.name)).toEqual(['plan_get', 'plan_gate']);
+    expect(() => run.tools!.update([], 'no')).toThrow(/only plan_get and plan_gate/);
+    expect(() => run.tools!.gate('refunds', 'pass', 'x')).toThrow(/only/);
+    run.tools!.gate('safe', 'pass', '1 ✓ 2 ✓');
     await tick(5);
     const v = planView(t.plans.need(t.plan.id), t.store.getState().board);
     expect(v.current?.milestone.id).toBe('safe');
     expect(v.next.kind).toBe('pass');
     t.work.pass(t.plan.id, 'safe');
     await tick(5);
+    // Its checker is done: archived.
+    expect(t.archived).toEqual([checker]);
     expect(issue(t, 'Refund endpoint').status).toBe('in_progress');
     // "Live keys" is yours: it waits for you.
     expect(issue(t, 'Live keys').status).toBe('todo');
+  });
+
+  it('the head Claude’s conversation stays free: a failed check reaches it with the notes, to add the fix tasks', async () => {
+    const t = await running('autopilot');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(issue(t, title).id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    const checker = t.plans.need(t.plan.id).runs.safe!.checker!;
+    expect(t.store.getState().log.some((l) => l.channel === 'ws:main' && l.type === 'system' && /a Claude of its own is checking/.test(l.text))).toBe(true);
+    // Folded into the plan, like its home and its worktrees.
+    expect(planOf(t.store.getState(), checker)?.id).toBe(t.plan.id);
+    const said = t.work.forRun(`ws:${checker}`, 'p-me')!.tools!.gate('safe', 'fail', '2. ✗ Retries aren’t idempotent. Fix: key webhook writes by event id.');
+    expect(said).toMatch(/adds the fix tasks/);
+    const head = t.asked.filter((a) => a.channel === 'ws:main').at(-1)!;
+    expect(head.prompt).toContain('The checker of milestone “Safe payments” failed it');
+    expect(head.prompt).toContain('key webhook writes by event id');
+    expect(head.prompt).toMatch(/Don't stop to ask the user/);
+  });
+
+  it('a check that ends without a verdict is asked once more, then left to you (Autopilot never waits silently)', async () => {
+    const t = await running('autopilot');
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(issue(t, title).id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    const channel = `ws:${t.plans.need(t.plan.id).runs.safe!.checker!}`;
+    const first = t.asked.findIndex((a) => a.channel === channel);
+    t.run(channel, 'started', `ask-${first + 1}`);
+    t.run(channel, 'done', `ask-${first + 1}`);
+    await tick(5);
+    const nudge = t.asked.findIndex((a) => a.channel === channel && a.prompt.includes('ended without a verdict'));
+    expect(nudge).toBeGreaterThan(first);
+    expect(planView(t.plans.need(t.plan.id), t.store.getState().board).current?.state).toBe('checking');
+    t.run(channel, 'started', `ask-${nudge + 1}`);
+    t.run(channel, 'done', `ask-${nudge + 1}`);
+    await tick(5);
+    // Not asked a third time: the plan says so.
+    expect(t.asked.filter((a) => a.channel === channel && a.prompt.includes('ended without a verdict'))).toHaveLength(1);
+    expect(t.plans.need(t.plan.id).activity.at(-1)?.text).toMatch(/ended twice without a verdict/);
   });
 
   it.each(['step', 'gated', 'autopilot'] as const)('%s: while the head Claude checks, the plan waits on Claude; it’s yours to pass only once the check is back (KLD-22)', async (autonomy) => {

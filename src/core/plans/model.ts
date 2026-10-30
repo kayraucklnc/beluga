@@ -108,6 +108,11 @@ export interface MilestoneRun {
   readonly checkAsked?: number;
   /** The one Claude doing its tasks, in one worktree (see pilot.ts). */
   readonly agent?: MilestoneAgent;
+  /**
+   * The conversation that checks it (a workspace id): a Claude of its own, not the head's, so the
+   * plan's conversation stays free while it checks and milestones are checked side by side.
+   */
+  readonly checker?: string;
 }
 
 /**
@@ -303,6 +308,14 @@ export const planById = (state: PlansState, id: string): Plan | undefined => sta
 
 /** The plan a conversation is the home of (the newest, when several were). */
 export const planForHome = (state: PlansState, channel: string): Plan | undefined => [...state.plans].reverse().find((p) => p.home === channel);
+
+/** The plan and milestone a conversation checks (see MilestoneRun.checker). */
+export function checkerOf(state: PlansState, channel: string): { readonly plan: Plan; readonly milestone: string } | undefined {
+  if (!channel.startsWith('ws:')) return undefined;
+  const id = channel.slice(3);
+  for (const plan of state.plans) for (const [milestone, run] of Object.entries(plan.runs ?? {})) if (run?.checker === id) return { plan, milestone };
+  return undefined;
+}
 
 /**
  * The conversation is a live plan's own (its head Claude plans and runs it there): it has no

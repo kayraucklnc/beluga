@@ -4,7 +4,7 @@ import { dndActive } from '../shared/quiet.js';
 import { isSentinelChat } from './sentinel/model.js';
 import { loudestKind, type SoundChoice, type SoundPrefs, soundFor, volumeOf } from '../shared/notify-sound.js';
 import { type Issue, issueForWorkspace } from './board/model.js';
-import { type Plan, planById, planForHome, planTitle } from './plans/model.js';
+import { type Plan, checkerOf, planById, planForHome, planTitle } from './plans/model.js';
 import { type MilestoneView, planView } from './plans/progress.js';
 import { isDecisionQid } from './plans/decisions.js';
 import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
@@ -125,7 +125,7 @@ export function planOfChannel(state: Pick<DomainState, 'plans' | 'board'>, chann
   const issue = issueForWorkspace(state.board, channel.slice(3));
   const plan = issue?.plan ? planById(state.plans, issue.plan.id) : undefined;
   if (issue?.plan && plan) return { plan, issue, task: issue.plan.task };
-  const home = planForHome(state.plans, channel);
+  const home = planForHome(state.plans, channel) ?? checkerOf(state.plans, channel)?.plan;
   return home ? { plan: home } : undefined;
 }
 

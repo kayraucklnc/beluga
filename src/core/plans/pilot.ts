@@ -3,11 +3,11 @@ import type { Actor, BoardState, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { Action, Store } from '../store.js';
 import { openMilestone } from './apply.js';
-import { type Plan, type PlanMerge, allTasks, openMilestones, planBranchName } from './model.js';
+import { type Plan, type PlanMerge, type PlanMilestone, allTasks, openMilestones, planBranchName } from './model.js';
 import type { PlanGit } from './plan-git.js';
 import type { Plans } from './plans.js';
 import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, agentTasks, agentsAtWork, liveFrom, planView, startable, tidyOffer, waitingOnYou } from './progress.js';
-import { checkPrompt, criteriaNeedCheck, fixupPrompt, mergeFixupPrompt, milestoneNextPrompt, milestonePrompt, recapPrompt } from './prompt.js';
+import { checkNudgePrompt, checkPrompt, criteriaNeedCheck, fixupPrompt, mergeFixupPrompt, milestoneNextPrompt, milestonePrompt, recapPrompt } from './prompt.js';
 import { TaskWatchdog } from './watchdog.js';
 
 /**
@@ -67,6 +67,13 @@ export interface PilotDeps {
   /** Beluga no longer needs a request of its own (a check you passed past): out of the queue, or its run stopped. */
   readonly cancel?: (requestId: string) => void;
   /**
+   * A conversation of its own to check a milestone in (its workspace id), so the head Claude's stays
+   * free and milestones are checked side by side. Without it, the head Claude checks (as before).
+   */
+  readonly checkerChat?: (plan: Plan, milestone: PlanMilestone) => Promise<string | undefined>;
+  /** A checker's conversation is no longer needed (its milestone passed): archived, what was said kept. */
+  readonly retireChat?: (workspaceId: string) => void;
+  /**
    * Tasks only you can do came up (ready, in an open milestone), each once: the hook for asking you
    * (the plan's chat). A milestone's Claude skips them, and what builds on them waits.
    */
@@ -77,6 +84,8 @@ export interface PilotDeps {
 const FIXUP_ASKS = 2;
 /** A conflict left to you is looked at again this often (it starts once no markers are left). */
 const STUCK_RETRY_MS = 30_000;
+/** A check asked before a restart, with nothing running in its conversation this long after: it ended without a verdict. */
+const CHECK_QUIET_MS = 60_000;
 /** How often a plan's pull request is looked at on GitHub. */
 const PR_POLL_MS = 2 * 60_000;
 /** How often started tasks are looked at when nothing else happens (a turn can stall in silence). */
@@ -111,6 +120,7 @@ export function plansByChannel(plans: readonly Plan[], board: BoardState): Map<s
   const out = new Map<string, Set<string>>();
   const add = (channel: string, planId: string): void => void (out.get(channel) ?? out.set(channel, new Set()).get(channel)!).add(planId);
   for (const plan of plans) add(plan.home, plan.id);
+  for (const plan of plans) for (const run of Object.values(plan.runs ?? {})) if (run?.checker) add(`${WS_PREFIX}${run.checker}`, plan.id);
   for (const issue of board.issues) {
     const planId = planOfIssue.get(issue.id);
     if (planId) for (const ws of issue.worktrees) add(`${WS_PREFIX}${ws}`, planId);
@@ -165,6 +175,10 @@ export class PlanPilot {
   private readonly toldYou = new Set<string>();
   /** The head Claude's check of a milestone under way (`plan:milestone` → its request). */
   private readonly checkRuns = new Map<string, string>();
+  /** Checks whose conversation is being made now (`plan:milestone`). */
+  private readonly askingCheck = new Set<string>();
+  /** Check rounds (`plan:milestone:asked`) that ended without a verdict: asked once more, then left to you. */
+  private readonly checkNudged = new Map<string, 'asked' | 'told'>();
 
   constructor(private readonly deps: PilotDeps) {
     this.watchdog = new TaskWatchdog({
@@ -365,6 +379,9 @@ export class PlanPilot {
     if (!passed) throw new Error('That milestone isn’t in the approved plan');
     const wasOpen = new Set(openMilestones(before));
     const after = this.deps.plans.pass(planId, milestoneId, by);
+    // Its checker is done: archived (what it said is kept, and the plan still knows it).
+    const checker = after.runs[milestoneId]?.checker;
+    if (checker) this.deps.retireChat?.(checker);
     const next = openMilestones(after)
       .filter((id) => !wasOpen.has(id))
       .map((id) => after.body!.milestones.find((m) => m.id === id)!);
@@ -551,15 +568,97 @@ export class PlanPilot {
       return;
     }
     if (m.run.checkAsked === undefined) {
-      // Asked first: if asking fails, the check isn't marked as asked (it's tried again).
-      const id = this.deps.askClaude(checkPrompt(view, m), plan.home, false);
-      if (id) this.checkRuns.set(`${plan.id}:${m.milestone.id}`, id);
-      this.deps.plans.checkAsked(plan.id, m.milestone.id);
-      this.deps.system(plan.home, `Every task of “${m.milestone.title}” is finished: Claude is checking its pass criteria.`);
+      if (!this.deps.checkerChat) {
+        // Asked first: if asking fails, the check isn't marked as asked (it's tried again).
+        const id = this.deps.askClaude(checkPrompt(view, m), plan.home, false);
+        if (id) this.checkRuns.set(`${plan.id}:${m.milestone.id}`, id);
+        this.deps.plans.checkAsked(plan.id, m.milestone.id);
+        this.deps.system(plan.home, `Every task of “${m.milestone.title}” is finished: Claude is checking its pass criteria.`);
+        return;
+      }
+      const key = `${plan.id}:${m.milestone.id}`;
+      if (this.askingCheck.has(key)) return;
+      this.askingCheck.add(key);
+      void this.askCheck(plan.id, m.milestone)
+        .catch((err: unknown) => this.deps.plans.note(plan.id, 'problem', `couldn’t start the check of “${m.milestone.title}”: ${err instanceof Error ? err.message : String(err)}`, { kind: 'beluga' }))
+        .finally(() => {
+          this.askingCheck.delete(key);
+          this.schedule();
+        });
       return;
     }
     const check = m.run.check;
     if (m.autonomy === 'autopilot' && check?.verdict === 'pass' && check.at >= m.run.checkAsked) this.autoPass(plan.id, m.milestone.id, check.by);
+    else if (m.state === 'checking') this.watchCheck(plan, m);
+  }
+
+  /**
+   * A milestone's check, by a Claude of its own: a conversation made for it (once; later rounds go
+   * to the same one, which remembers what failed before), folded into the plan. The head Claude's
+   * conversation stays free for you, and milestones finishing together are checked side by side.
+   * No conversation could be made: the head Claude checks, as before.
+   */
+  private async askCheck(planId: string, milestone: PlanMilestone): Promise<void> {
+    const channel = (await this.checkerChannel(planId, milestone).catch(() => undefined)) ?? this.deps.plans.need(planId).home;
+    const plan = this.deps.plans.need(planId);
+    const run = plan.runs[milestone.id];
+    // Passed (or asked) while its conversation was being made.
+    if (run?.passedAt || run?.checkAsked !== undefined || plan.merging?.[milestone.id] || plan.status !== 'active') return;
+    const view = this.view(plan);
+    const m = view.milestones.find((x) => x.milestone.id === milestone.id);
+    if (!m) return;
+    const own = channel !== plan.home;
+    const id = this.deps.askClaude(checkPrompt(view, m, { checker: own }), channel, false);
+    if (id) this.checkRuns.set(`${plan.id}:${milestone.id}`, id);
+    this.deps.plans.checkAsked(plan.id, milestone.id);
+    this.deps.system(plan.home, own ? `Every task of “${milestone.title}” is finished: a Claude of its own is checking its pass criteria. You can keep talking here.` : `Every task of “${milestone.title}” is finished: Claude is checking its pass criteria.`);
+  }
+
+  /** The conversation that checks a milestone: the one it had (still there), or a new one. */
+  private async checkerChannel(planId: string, milestone: PlanMilestone): Promise<string | undefined> {
+    const was = this.deps.plans.need(planId).runs[milestone.id]?.checker;
+    const ws = was ? this.deps.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === was) : undefined;
+    if (ws && !ws.archived) return `${WS_PREFIX}${ws.id}`;
+    const made = await this.deps.checkerChat?.(this.deps.plans.need(planId), milestone);
+    if (!made) return undefined;
+    this.deps.plans.setChecker(planId, milestone.id, made);
+    return `${WS_PREFIX}${made}`;
+  }
+
+  /**
+   * A check whose turn ended without a verdict would leave the plan waiting for good (on every mode,
+   * Autopilot too): it's asked once more for its plan_gate, and if it ends without one again, the
+   * plan says so and it's yours (open its conversation, or Check Again).
+   */
+  private watchCheck(plan: Plan, m: MilestoneView): void {
+    const asked = m.run.checkAsked;
+    if (asked === undefined) return;
+    const key = `${plan.id}:${m.milestone.id}`;
+    const round = `${key}:${asked}`;
+    const channel = m.run.checker ? `${WS_PREFIX}${m.run.checker}` : plan.home;
+    const state = this.deps.store.getState();
+    const id = this.checkRuns.get(key);
+    let ended: boolean;
+    if (id) {
+      const item = state.log.find((l) => l.type === 'agent' && l.requestId === id);
+      ended = item?.type === 'agent' && !RUNNING.has(item.status);
+    } else {
+      // Asked before a restart: nothing has run there for a while.
+      ended = !liveFrom(state).busy(channel) && (this.deps.now?.() ?? Date.now()) - asked > CHECK_QUIET_MS;
+    }
+    if (!ended) return;
+    const was = this.checkNudged.get(round);
+    if (was === 'told') return;
+    if (was === 'asked') {
+      this.checkNudged.set(round, 'told');
+      this.deps.plans.note(plan.id, 'problem', `the check of “${m.milestone.title}” ended twice without a verdict: open its conversation, or Check Again`, { kind: 'beluga' });
+      return;
+    }
+    this.checkNudged.set(round, 'asked');
+    const again = this.deps.askClaude(checkNudgePrompt(m.milestone.title), channel, false);
+    if (again) this.checkRuns.set(key, again);
+    else this.checkRuns.delete(key);
+    this.deps.plans.note(plan.id, 'note', `the check of “${m.milestone.title}” ended without a verdict: asked for it again`, { kind: 'beluga' });
   }
 
   /** Autopilot's pass: a task still being worked on (see stillWorking) leaves it for the next look. */

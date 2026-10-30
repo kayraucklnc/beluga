@@ -128,7 +128,7 @@ function guarded(fn: () => string | Promise<string>): Promise<{ content: Array<{
 }
 
 export function createPlanToolDefs(plan: PlanTools) {
-  return [
+  const defs = [
     tool('plan_get', 'The plan: milestones with their pass criteria, tasks with ids, what waits on what, and (once approved) each task’s state: who’s working, in review, done.', {}, () => guarded(() => plan.get())),
     tool(
       'plan_write',
@@ -172,6 +172,7 @@ export function createPlanToolDefs(plan: PlanTools) {
       (a) => guarded(() => (plan.pause ? plan.pause(a.paused) : 'Pausing isn’t available here')),
     ),
   ];
+  return plan.only ? defs.filter((d) => plan.only!.includes(d.name)) : defs;
 }
 
 export function createPlanTools(plan: PlanTools) {
