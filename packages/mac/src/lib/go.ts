@@ -4,7 +4,7 @@ import { shortcutKeys } from './shortcuts.js';
 
 /**
  * The Mac app's places: Overview, Tasks and Chat (the sidebar's top), then Search, Usage,
- * Terminal and Shared files (the toolbar, the sidebar's top icons, the right panel). ⌥1…7, the
+ * Terminal and Shared files (the toolbar, the sidebar's top icons, the right panel). ⌘1…7, the
  * Go menu, ⌃Tab and the palette follow this order; each keeps its key even when it's absent.
  */
 
@@ -12,7 +12,7 @@ export type PlaceKind = TopTab['kind'] | 'tasks';
 
 export interface Place extends Omit<TopTab, 'kind'> {
   readonly kind: PlaceKind;
-  /** Its ⌥ key (1…7). */
+  /** Its ⌘ key (1…7). */
   readonly key: number;
 }
 

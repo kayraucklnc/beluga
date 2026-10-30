@@ -12,12 +12,12 @@ async function openWorkspace(page: Page, name = 'add-auth'): Promise<void> {
   await sidebar(page).getByRole('button', { name, exact: true }).click();
 }
 
-/** The full-page terminal (no sidebar row of its own: ⌥6, the Go menu, ⌘K). */
+/** The full-page terminal (no sidebar row of its own: ⌘6, the Go menu, ⌘K). */
 async function openTerminalPage(page: Page): Promise<void> {
   await expect(sidebar(page)).toBeVisible();
   // (Right after a reload the window may not be listening yet: try again.)
   await expect(async () => {
-    await page.keyboard.press('Alt+Digit6');
+    await page.keyboard.press('Meta+Digit6');
     await expect(page.locator('header').first()).toContainText('Terminal', { timeout: 1000 });
   }).toPass({ timeout: 10_000 });
 }
