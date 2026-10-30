@@ -397,6 +397,21 @@ export function mergeFixupPrompt(milestone: string, branch: string, key: string,
   ].join('\n');
 }
 
+/** The plan's pull request conflicts with main: main is being merged into its branch, and that stopped at a conflict. */
+export function mainFixupPrompt(branch: string, main: string, number: number | undefined, c: { readonly dir: string; readonly files: readonly string[] }): string {
+  return [
+    `The plan's pull request${number ? ` #${number}` : ''} conflicts with main, so Beluga is merging ${main} into the plan's branch ${branch}. It conflicted, in a worktree only for this:`,
+    '',
+    c.dir,
+    '',
+    'Conflicted files (paths in that folder):',
+    ...c.files.map((f) => `- ${f}`),
+    '',
+    "Fix each conflict there with Read and Edit, by its full path: keep what main changed and what the plan built (read the plan's tasks with task_get if you need to), and remove every conflict marker.",
+    "Change nothing else, and don't run git: when no markers are left, Beluga commits the merge, pushes the branch and the pull request can merge. End your turn with one short line.",
+  ].join('\n');
+}
+
 /** The plan is done: a short recap in its conversation. */
 export function recapPrompt(view: PlanView): string {
   return [

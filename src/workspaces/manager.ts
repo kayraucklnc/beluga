@@ -555,6 +555,13 @@ export class WorkspaceManager {
     return g.combineBranches(project.root, hidden, branch, branches);
   }
 
+  /** The default branch as GitHub has it now ("origin/main", fetched first), else the local one. */
+  async latestBase(projectId: string): Promise<string> {
+    const { root } = this.repoProject(projectId);
+    if (await g.hasRemote(root)) await g.tryGit(root, ['fetch', 'origin', '--prune']);
+    return this.baseOf(root);
+  }
+
   /** Whether a branch is already in the project's default branch. */
   async inDefaultBranch(projectId: string, branch: string): Promise<boolean> {
     const { root } = this.repoProject(projectId);

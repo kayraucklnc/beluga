@@ -3,7 +3,8 @@ import { normalizeBody } from '../src/core/plans/edit.js';
 import type { Plan } from '../src/core/plans/model.js';
 import { planView } from '../src/core/plans/progress.js';
 import { NO_BOARD } from '../src/core/board/model.js';
-import { barColumns, changeMarks, changeWords, feedOf, gateId, graphShape, groupId, headline, milestoneRows, modeChange, nextWords, planStatus, plansOf, taskHeadline, taskNodeId } from '../packages/mac/src/plans/plans-model.js';
+import { barColumns, branchFlow, changeMarks, changeWords, feedOf, gateId, graphShape, groupId, headline, milestoneRows, modeChange, nextWords, planStatus, plansOf, prWords, shipAction, taskHeadline, taskNodeId } from '../packages/mac/src/plans/plans-model.js';
+import type { PlanPr } from '../src/core/plans/model.js';
 import type { PlanEvent } from '../src/core/plans/model.js';
 import type { PlanView } from '../src/core/plans/progress.js';
 import { columnAt, edgeSpeed, isDrag, landingIndex, leanFor, neighbours, withGap } from '../packages/mac/src/tasks/board-drag.js';
@@ -204,5 +205,61 @@ describe('the composer’s modes', () => {
     expect(nextMode('act')).toBe('plan');
     expect(nextMode('plan')).toBe('act');
     expect(nextMode('tasks')).toBe('act');
+  });
+});
+
+describe('shipping the plan: its pull request, conflicts with main, and where the work goes', () => {
+  const pr = (over: Partial<PlanPr> = {}): PlanPr => ({ number: 7, url: 'https://github.com/x/y/pull/7', state: 'OPEN', title: 'P', draft: false, checks: 'passing', ...over });
+  const active = (over: Partial<Plan> = {}): Plan => plan({ status: 'active', body, draft: undefined, branch: 'plan/p', ...over });
+
+  it('the last step follows the PR: open it, bring main in when it conflicts, wait on Claude, merge now or once checks pass', () => {
+    expect(shipAction(active(), undefined)).toEqual({ kind: 'open', again: false });
+    expect(shipAction(active(), pr({ state: 'CLOSED' }))).toEqual({ kind: 'open', again: true });
+    expect(shipAction(active(), pr({ conflicts: true }))).toEqual({ kind: 'resolve' });
+    expect(shipAction(active({ mainMerge: { at: 1, main: 'origin/main' } }), pr({ conflicts: true }))).toEqual({ kind: 'catching_up', main: 'origin/main' });
+    expect(shipAction(active({ mainMerge: { at: 1, main: 'origin/main', conflict: { at: 1, dir: '/d', files: ['a.ts'] } } }), pr())).toEqual({ kind: 'fixing', files: ['a.ts'] });
+    expect(shipAction(active({ mainMerge: { at: 1, main: 'origin/main', conflict: { at: 1, dir: '/d', files: ['a.ts'], stuck: true } } }), pr()).kind).toBe('stuck');
+    expect(shipAction(active(), pr({ draft: true })).kind).toBe('draft');
+    expect(shipAction(active(), pr({ checks: 'pending' })).kind).toBe('wait');
+    expect(shipAction(active(), pr({ review: 'REVIEW_REQUIRED' })).kind).toBe('wait');
+    expect(shipAction(active(), pr({ checks: 'pending', autoMerge: true })).kind).toBe('queued');
+    expect(shipAction(active(), pr()).kind).toBe('merge');
+    expect(shipAction(active(), pr({ state: 'MERGED' })).kind).toBe('merged');
+  });
+
+  it('the PR in a few words: what stands in its way', () => {
+    expect(prWords(pr({ checks: 'pending', review: 'REVIEW_REQUIRED' }))).toBe('checks running · needs a review');
+    expect(prWords(pr({ conflicts: true, checks: 'failing' }))).toBe('conflicts with main · checks failing');
+    expect(prWords(pr({ checks: 'none' }))).toBe('ready to merge');
+    expect(prWords(pr({ state: 'MERGED' }))).toBe('merged into main');
+  });
+
+  it('where the work goes: main, the PR, the branch, then each milestone merged, merging or stuck', () => {
+    const p = active({
+      runs: { one: { passedAt: 1 } },
+      merging: { two: { at: 2, by: { kind: 'beluga' }, conflict: { at: 2, dir: '/d', merging: 'beluga/kld-9', key: 'KLD-9', files: ['src/a.ts', 'src/b.ts', 'src/c.ts'], stuck: true } } },
+      pr: pr({ checks: 'pending' }),
+    });
+    const flow = branchFlow(planView(p, NO_BOARD));
+    expect(flow.map((s) => [s.kind, s.label, s.state])).toEqual([
+      ['main', 'main', 'waiting'],
+      ['pr', 'Pull request #7', 'active'],
+      ['branch', 'plan/p', 'active'],
+      ['milestone', 'One', 'done'],
+      ['milestone', 'Two', 'problem'],
+    ]);
+    expect(flow[4]!.detail).toBe('merging into plan/p: KLD-9 conflicts in src/a.ts, src/b.ts and 1 more — needs you');
+  });
+
+  it('a milestone whose merge failed says why, in the headline and the flow', () => {
+    const p = active({ runs: { one: { mergeFailed: { at: 1, reason: 'plan/p is checked out with uncommitted changes' } } } });
+    const v = planView(p, NO_BOARD);
+    expect(branchFlow(v).find((s) => s.id === 'one')).toMatchObject({ state: 'problem', detail: 'couldn’t merge: plan/p is checked out with uncommitted changes' });
+  });
+
+  it('the feed shows the branch being made and the PR opening', () => {
+    const ev = (kind: PlanEvent['kind'], text: string, at: number): PlanEvent => ({ id: `e${at}`, at, by: { kind: 'beluga' }, kind, text });
+    const items = feedOf([ev('note', 'made the plan’s branch plan/p from main', 1), ev('note', 'opened pull request #7: plan/p → main', 2), ev('note', 'paused by you', 3)]);
+    expect(items.map((i) => i.kind)).toEqual(['pr', 'branch']);
   });
 });

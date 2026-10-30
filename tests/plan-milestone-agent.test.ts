@@ -289,6 +289,8 @@ describe('Pass Anyway is instant (BLG-16)', () => {
       openPr: async () => {
         throw new Error('no');
       },
+      push: async () => undefined,
+      mainRef: async () => 'origin/main',
       mergePr: async () => undefined,
       mergeLocal: async () => ({ ok: true }),
     };

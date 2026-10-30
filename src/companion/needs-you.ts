@@ -204,7 +204,23 @@ function stuckItems(plan: Plan, progress: PlanProgress, at: Pick<NeedsYou, 'topi
       askedAt: r.at,
       actions: [],
     }));
-  return [...stalled, ...rescued];
+  // A merge conflict Claude couldn't fix (a milestone into the plan's branch, or main into it for its PR): ask it again.
+  const merging = Object.entries(plan.merging ?? {}).filter(([, m]) => m.conflict?.stuck);
+  const conflicts = [
+    ...merging.map(([id, m]) => ({ key: id, files: m.conflict!.files, at: m.conflict!.at, what: `merging “${titles.get(id) ?? 'a milestone'}” into ${plan.branch ?? 'the plan’s branch'}` })),
+    ...(plan.mainMerge?.conflict?.stuck ? [{ key: 'main', files: plan.mainMerge.conflict.files, at: plan.mainMerge.conflict.at, what: `merging ${plan.mainMerge.main} into ${plan.branch ?? 'the plan’s branch'} for its pull request` }] : []),
+  ].map(
+    (c): NeedsYou => ({
+      id: `plan:${plan.id}:conflict:${c.key}`,
+      kind: 'stuck',
+      title: clip('A merge conflict Claude couldn’t fix', 500),
+      detail: clip(`While ${c.what}: ${c.files.join(', ')}`, 64_000),
+      ...at,
+      askedAt: c.at,
+      actions: [{ label: 'Ask Claude again', tone: 'main', method: 'plans.retryConflicts', args: [plan.id] }],
+    }),
+  );
+  return [...stalled, ...rescued, ...conflicts];
 }
 
 /** What a plan waits for from you: approving its draft, passing a milestone at its gate, or what it couldn't move on itself. */
@@ -237,12 +253,14 @@ function gateItems(plan: Plan, progress: PlanProgress, title: string, at: Pick<N
   }
   if (next.kind === 'pass') {
     const m = next.milestone.milestone;
+    // Passed once, but its work couldn't go into the plan's branch: why, and pass it again.
+    const failed = next.milestone.run.mergeFailed;
     return [
       {
         id: `plan:${plan.id}:pass:${m.id}`,
         kind: 'decision',
-        title: `“${clip(m.title, 200)}” is ready: pass it?`,
-        detail: clip(m.criteria.join('\n'), 64_000),
+        title: failed ? `“${clip(m.title, 200)}” couldn’t merge: pass it again?` : `“${clip(m.title, 200)}” is ready: pass it?`,
+        detail: clip(failed ? failed.reason : m.criteria.join('\n'), 64_000),
         ...at,
         // Send it back takes your words (the answer template).
         freeText: true,
