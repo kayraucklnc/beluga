@@ -1307,6 +1307,16 @@
   min-width: 0;
   margin: 0 0 0 -4px;
 }
+.chatCompose {
+  position: relative;
+  min-width: 0;
+  /* The @ list sits just above the box, as wide as it. */
+  --composer-inset: 10px;
+}
+.chatCompose > [role='listbox'] {
+  left: 10px;
+  right: 10px;
+}
 .chatQueue {
   min-width: 0;
   margin: 0 10px;

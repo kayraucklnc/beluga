@@ -517,3 +517,13 @@
   font-size: 10.5px;
   color: var(--text-3);
 }
+/* Its Claude being started (right after approving, or when it unlocks): said, so it never looks frozen. */
+.starting {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}

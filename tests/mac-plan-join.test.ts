@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MilestoneView } from '../src/core/plans/progress.js';
-import { lockWords, milestoneJoin, milestoneLink } from '../packages/mac/src/plans/plans-model.js';
+import { lockWords, milestoneJoin, milestoneLink, settingUp, startingMilestones } from '../packages/mac/src/plans/plans-model.js';
 
 /** A milestone that waits on several: their lines meet in one join, and each says how its merge stands (BLG-482). */
 
@@ -33,5 +33,28 @@ describe('the join', () => {
     expect(lockWords(['A'], 1, undefined)).toBe('Unlocks when “A” passes');
     expect(lockWords([], 2, 'plan/x')).toBe('Unlocked: starts from plan/x, with all 2 before it merged in');
     expect(lockWords([], 1, undefined)).toBe('Unlocked');
+  });
+});
+
+describe('right after approving', () => {
+  const task = (state: string, over: object = {}) => ({ task: { id: state, title: state }, state, forYou: false, waitsOn: [], ...over });
+  const open = (title: string, tasks: object[], over: object = {}) => ({ milestone: { id: title, title }, state: 'running', autonomy: 'gated', run: {}, tasks, ...over });
+  const view = (open: object[], plan: object = {}) => ({ plan: { status: 'active', paused: false, ...plan }, open }) as unknown as Parameters<typeof startingMilestones>[0];
+
+  it('a milestone whose Claude is being started says so, until something of it is at work', () => {
+    const a = open('API', [task('ready'), task('blocked')]);
+    expect(startingMilestones(view([a])).map((m) => m.milestone.title)).toEqual(['API']);
+    // Already a Claude of its own, a task under way, only your tasks, Step by Step, paused: not starting.
+    expect(startingMilestones(view([open('API', [task('ready')], { run: { agent: { worktree: 'w' } } })]))).toEqual([]);
+    expect(startingMilestones(view([open('API', [task('ready'), task('running', { worktree: 'w' })])]))).toEqual([]);
+    expect(startingMilestones(view([open('API', [task('ready', { forYou: true })])]))).toEqual([]);
+    expect(startingMilestones(view([open('API', [task('ready')], { autonomy: 'step' })]))).toEqual([]);
+    expect(startingMilestones(view([a], { paused: true }))).toEqual([]);
+  });
+
+  it('says what it sets up: the branch first when there is none yet', () => {
+    const ms = [open('API', []), open('UI', []), open('Docs', [])] as unknown as Parameters<typeof settingUp>[1];
+    expect(settingUp({ plan: {} } as Parameters<typeof settingUp>[0], ms.slice(0, 1))).toBe('Setting up: making the plan’s branch, then starting a Claude for “API”');
+    expect(settingUp({ plan: { branch: 'plan/x' } } as Parameters<typeof settingUp>[0], ms)).toBe('Setting up: starting a Claude for “API”, “UI” and “Docs”');
   });
 });

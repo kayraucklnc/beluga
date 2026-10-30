@@ -3,14 +3,14 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Background, BackgroundVariant, BaseEdge, type Edge, EdgeLabelRenderer, type EdgeProps, Handle, type Node, type NodeProps, Panel, Position, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { AUTONOMY_INFO } from '@beluga/core/plans/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@beluga/core/plans/progress.js';
-import { IconButton, cx } from '../components/ui.js';
+import { IconButton, Working, cx } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
 import { useDocTheme } from '../components/markdown/use-doc-theme.js';
 import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
 import { useSharpZoom } from '../components/graph/sharp-zoom.js';
 import { breath, turn, useLive } from '../lib/live-motion.js';
-import { MILESTONE_STATE, type MilestoneJoin, TASK_STATE, changeMarks, gateId, graphShape, groupId, lockWords, milestoneJoin, milestoneLink, taskNodeId, taskWords } from './plans-model.js';
+import { MILESTONE_STATE, type MilestoneJoin, TASK_STATE, changeMarks, gateId, graphShape, groupId, lockWords, milestoneJoin, milestoneLink, startingMilestones, taskNodeId, taskWords } from './plans-model.js';
 import { COMPACT_STATES, FOLDS_KEY, type Folds, MILESTONE, type MilestoneFrame, PLAN_GAPS, arrowHead, isFolded, labelAt, milestoneAnchors, milestoneFrame, milestoneRoute, placeMilestones, readFolds, taskSize, withFold } from './plan-layout.js';
 import { useClock } from './use-plans.js';
 import { LockMark, TaskChatMark, TaskStateIcon } from './marks.js';
@@ -53,6 +53,8 @@ interface MilestoneData extends Record<string, unknown> {
   readonly gated: boolean;
   /** The plan's branch: what it starts from once what it waits on is merged in. */
   readonly branch?: string;
+  /** Beluga is starting its Claude right now (see startingMilestones). */
+  readonly starting?: boolean;
   readonly onFold: (milestoneId: string, folded: boolean) => void;
 }
 interface GateData extends Record<string, unknown> {
@@ -259,6 +261,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     const me = taskNodeId(selected);
     return new Set(shape.edges.filter((e) => e.kind === 'blocks' && (e.from === me || e.to === me) && lane.get(e.from) !== lane.get(e.to)).map((e) => (e.from === me ? e.to : e.from)));
   }, [shape, lane, selected]);
+  const starting = useMemo(() => new Set(startingMilestones(view).map((m) => m.milestone.id)), [view]);
   const nodes = useMemo<PlanNode[]>(() => {
     if (!laid) return [];
     const out: PlanNode[] = [];
@@ -276,7 +279,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         style: { width: box.width, height: box.height },
         width: box.width,
         height: box.height,
-        data: { view: m, current, folded: away, waitsOn, gated: m.dependsOn.some((d) => byMs.has(d)), ...(view.plan.branch ? { branch: view.plan.branch } : {}), onFold },
+        data: { view: m, current, folded: away, waitsOn, gated: m.dependsOn.some((d) => byMs.has(d)), ...(view.plan.branch ? { branch: view.plan.branch } : {}), ...(starting.has(id) ? { starting: true } : {}), onFold },
         selectable: false,
         draggable: false,
         zIndex: -1,
@@ -306,7 +309,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       }
     }
     return out;
-  }, [laid, view, byMs, folded, keys, marks, selected, linked, startable, onStart, onFold]);
+  }, [laid, view, byMs, folded, keys, marks, selected, linked, startable, onStart, onFold, starting]);
 
   const edges = useMemo<PlanEdge[]>(() => {
     if (!laid) return [];
@@ -579,6 +582,12 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
               </span>
             ) : null}
             {m.milestone.autonomy ? <span className={p.msAuto}>{AUTONOMY_INFO[m.autonomy].label}</span> : null}
+            {data.starting ? (
+              <span className={c.starting} role="status">
+                <Working />
+                Starting its Claude…
+              </span>
+            ) : null}
             {/* Where its work starts: the plan's branch, with what it waited on merged in. */}
             {data.gated && data.branch && !locked && !passed ? (
               <span className={c.fromBranch} title={lockWords([], m.dependsOn.length, data.branch)}>
