@@ -1,5 +1,6 @@
 import type { Intent } from '../core/intents.js';
 import { planById } from '../core/plans/model.js';
+import { planConversations } from '../core/plans/owner.js';
 import {
   type Action,
   type AppState,
@@ -155,14 +156,19 @@ export function screenOf(state: AppState): ScreenState {
   };
 }
 
+/** At most this many conversations a plan's page counts as shown (the link takes 50). */
+const PLAN_SHOWN = 40;
+
 /** What this screen is looking at, for unread counts and notifications. */
 export function attentionOf(screen: ScreenState, domain?: Pick<DomainState, 'plans' | 'board'>): Attention {
   const view = screen.view;
-  // A plan's page shows its own conversation: what's new there is seen. Its tasks' chats keep their
-  // marks on the page (each one says which task has news) until you open them.
+  // A plan's page shows the whole plan: its own conversation and what each task's says (their cards),
+  // so what's new in any of them is seen, and the plan's count clears when you open it. Only its own
+  // conversation is visible: a task's news still notifies.
   const plan = view.kind === 'plan' && domain ? planById(domain.plans, view.id) : undefined;
   if (plan) {
-    return { shown: [plan.home], visible: screen.away ? [] : [plan.home], files: false, front: !screen.away };
+    const tasks = planConversations(domain!, plan.id).map((ws) => `ws:${ws}`).filter((c) => c !== plan.home);
+    return { shown: [plan.home, ...tasks].slice(0, PLAN_SHOWN), visible: screen.away ? [] : [plan.home], files: false, front: !screen.away };
   }
   const shown = shownChannel(view);
   // Overview, Search, Terminal… show no conversation: nothing is visible there, but the window is in front.

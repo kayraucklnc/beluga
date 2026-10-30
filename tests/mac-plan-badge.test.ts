@@ -5,7 +5,7 @@ import type { Plan } from '../src/core/plans/model.js';
 import type { Action, AppState } from '../src/core/store.js';
 import { type ScreenAction, attentionOf, initialAppState, initialScreen, reduceApp } from '../src/client/screen.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
-import { planRowSignal, planSignal } from '../packages/mac/src/layout/attention-model.js';
+import { planRowSignal, planSignal, unreadEntries } from '../packages/mac/src/layout/attention-model.js';
 
 /** The plan's row in the sidebar counts only what's new at the plan's level, never its tasks' worktrees summed up (BLG-12). */
 
@@ -57,13 +57,17 @@ describe('the plan row’s badge', () => {
 });
 
 describe('opening the plan clears it', () => {
-  it('its page shows its own conversation: that count clears, its tasks keep their marks', () => {
+  it('its page shows the whole plan: its own count and its tasks’ news clear (the Unread row goes)', () => {
     const s = apply(busy(), said('ws:home'));
-    expect(attentionOf({ ...initialScreen, view: { kind: 'plan', id: 'pl' } }, s)).toEqual({ shown: ['ws:home'], visible: ['ws:home'], files: false, front: true });
+    // Only its own conversation is visible: a task's news still notifies.
+    expect(attentionOf({ ...initialScreen, view: { kind: 'plan', id: 'pl' } }, s)).toEqual({ shown: ['ws:home', 'ws:t1', 'ws:t2'], visible: ['ws:home'], files: false, front: true });
     const opened = apply(s, { type: 'view', view: { kind: 'plan', id: 'pl' } });
-    expect(planRowSignal(opened, plan)).toMatchObject({ unread: 0, inside: true });
-    // Each task's chat still has news to show inside the plan.
-    expect(planSignal(opened, plan).unread).toBe(120);
+    expect(planRowSignal(opened, plan)).toMatchObject({ unread: 0, inside: false });
+    expect(planSignal(opened, plan).unread).toBe(0);
+    expect(unreadEntries(opened)).toEqual([]);
+    // Left again: what the tasks say next counts.
+    const left = apply(opened, { type: 'view', view: { kind: 'overview' } }, said('ws:t1'));
+    expect(planSignal(left, plan).unread).toBe(1);
   });
 
   it('a plan that isn’t there shows no conversation', () => {

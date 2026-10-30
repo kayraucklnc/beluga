@@ -109,9 +109,47 @@ describe('the plan graph’s geometry', () => {
     const at = placeMilestones([['a', 'b'], ['c', 'd']], sizes, new Map([['c', ['b']], ['d', ['a']]]));
     expect(at.get('a')).toEqual({ x: PLAN_GAPS.pad, y: PLAN_GAPS.pad, width: 400, height: 300 });
     expect(at.get('b')!.x).toBe(PLAN_GAPS.pad + 400 + PLAN_GAPS.side);
-    expect(at.get('c')!.y).toBe(PLAN_GAPS.pad + 300 + PLAN_GAPS.row);
-    // d waits on a (left), c on b (right): d goes first.
+    // Each only as low as what it waits on: c under b (200 tall), d under a (300 tall).
+    expect(at.get('c')!.y).toBe(PLAN_GAPS.pad + 200 + PLAN_GAPS.row);
+    expect(at.get('d')!.y).toBe(PLAN_GAPS.pad + 300 + PLAN_GAPS.row);
+    // d waits on a (left), c on b (right): d goes first, each under its own.
     expect(at.get('d')!.x).toBeLessThan(at.get('c')!.x);
+    expect(at.get('d')!.x + 150).toBe(at.get('a')!.x + 200);
+  });
+
+  it('pulls up what hangs off finished milestones, and keeps what sits under a tall one below it', () => {
+    // Two folded milestones and a tall open one in a row; one waits on the folded pair, one on the tall one.
+    const sizes = new Map([
+      ['done1', { width: 340, height: 56 }],
+      ['done2', { width: 340, height: 56 }],
+      ['open', { width: 700, height: 360 }],
+      ['next', { width: 340, height: 56 }],
+      ['after', { width: 340, height: 56 }],
+    ]);
+    const at = placeMilestones([['done1', 'done2', 'open'], ['next', 'after']], sizes, new Map([['next', ['done1', 'done2']], ['after', ['open']]]));
+    expect(at.get('next')!.y).toBe(PLAN_GAPS.pad + 56 + PLAN_GAPS.row);
+    expect(at.get('after')!.y).toBe(PLAN_GAPS.pad + 360 + PLAN_GAPS.row);
+    // Never overlapping, and centred under what each waits on.
+    const boxes = [...at.values()];
+    for (const a of boxes) for (const b of boxes) if (a !== b) expect(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(true);
+    const mid = (id: string): number => at.get(id)!.x + at.get(id)!.width / 2;
+    expect(mid('next')).toBe((mid('done1') + mid('done2')) / 2);
+    expect(mid('after')).toBe(mid('open'));
+    // Milestones wanting the same spot share it, side by side.
+    const shared = placeMilestones([['top'], ['l', 'r']], new Map([['top', { width: 400, height: 50 }], ['l', { width: 300, height: 50 }], ['r', { width: 300, height: 50 }]]), new Map([['l', ['top']], ['r', ['top']]]));
+    expect((shared.get('l')!.x + shared.get('r')!.x + 300) / 2).toBe(shared.get('top')!.x + 200);
+    expect(shared.get('r')!.x - shared.get('l')!.x).toBe(300 + PLAN_GAPS.side);
+    expect(Math.min(...[...shared.values()].map((b) => b.x))).toBe(PLAN_GAPS.pad);
+  });
+
+  it('never runs a line across a milestone in its way', () => {
+    const tall = { x: 400, y: 0, width: 300, height: 400 };
+    const route = milestoneRoute({ x: 100, y: 100 }, { x: 800, y: 600 }, 150, 550, [tall]);
+    for (let i = 1; i < route.length; i++) {
+      const [p, q] = [route[i - 1]!, route[i]!];
+      const hits = Math.max(p.x, q.x) > tall.x && Math.min(p.x, q.x) < tall.x + tall.width && Math.max(p.y, q.y) > tall.y && Math.min(p.y, q.y) < tall.y + tall.height;
+      expect(hits).toBe(false);
+    }
   });
 
   it('ends a line in a small arrowhead pointing its way, and labels it just below the gate', () => {

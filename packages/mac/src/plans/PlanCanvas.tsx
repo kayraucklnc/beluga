@@ -214,15 +214,12 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
           for (const [nid, at] of placesOf(o)) places.set(nid, { ...at, x: at.x + frame.shiftX });
           for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + box.x + frame.shiftX, y: pt.y + box.y })) });
         }
-        // A milestone's lines: from the middle of its gate's foot, down the gap below its row, into the top of the next.
-        const rowOf = new Map(shape.rows.flatMap((row, i) => row.map((id) => [id, i] as const)));
-        const rowTop = shape.rows.map((row) => Math.min(...row.map((id) => boxes.get(id)?.y ?? 0)));
-        const rowBottom = shape.rows.map((row) => Math.max(...row.map((id) => (boxes.get(id)?.y ?? 0) + (boxes.get(id)?.height ?? 0))));
-        // Lines into different milestones of a row run across at slightly different heights (so they never overlap).
+        // A milestone's lines: from the middle of its gate's foot, down the gap below it, into the top of the next.
+        // Lines into milestones at the same height run across at slightly different heights (so they never overlap).
         const targets = [...new Set(next.map((e) => e.to))];
         const nudge = new Map(
           targets.map((id) => {
-            const same = targets.filter((t) => rowOf.get(t) === rowOf.get(id)).sort((a, b) => (boxes.get(a)?.x ?? 0) - (boxes.get(b)?.x ?? 0));
+            const same = targets.filter((t) => boxes.get(t)?.y === boxes.get(id)?.y).sort((a, b) => (boxes.get(a)?.x ?? 0) - (boxes.get(b)?.x ?? 0));
             return [id, (same.indexOf(id) - (same.length - 1) / 2) * 10] as const;
           }),
         );
@@ -230,11 +227,10 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
           const a = boxes.get(e.from);
           const b = boxes.get(e.to);
           const fa = frames.get(e.from);
-          const ra = rowOf.get(e.from);
-          const rb = rowOf.get(e.to);
-          if (!a || !b || !fa || ra === undefined || rb === undefined) continue;
-          const enterY = rowTop[rb]! - PLAN_GAPS.row / 2 + (nudge.get(e.to) ?? 0);
-          const exitY = rb === ra + 1 ? enterY : rowBottom[ra]! + PLAN_GAPS.row / 2;
+          if (!a || !b || !fa) continue;
+          const enterY = b.y - PLAN_GAPS.row / 2 + (nudge.get(e.to) ?? 0);
+          // Right under it: one run across; further down, across below it, then down a clear lane.
+          const exitY = b.y - (a.y + a.height) <= PLAN_GAPS.row ? enterY : a.y + a.height + PLAN_GAPS.row / 2;
           const obstacles = [...boxes].filter(([id]) => id !== e.from && id !== e.to).map(([, box]) => box);
           routes.set(e.id, { points: milestoneRoute(milestoneAnchors(a, fa.gate).out, milestoneAnchors(b).in, exitY, enterY, obstacles) });
         }
@@ -511,7 +507,7 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
   if (data.folded) {
     const n = m.milestone.tasks.length;
     return (
-      <div className={cx(p.milestone, p.ms_passed, c.ms, c.msFolded)}>
+      <div className={cx(p.milestone, p.ms_passed, c.ms)}>
         <Handle id="in" type="target" position={Position.Top} className={p.handle} isConnectable={false} />
         <Handle id="out" type="source" position={Position.Bottom} className={p.handle} isConnectable={false} />
         {badge}

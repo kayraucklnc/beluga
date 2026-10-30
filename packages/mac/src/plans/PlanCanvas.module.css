@@ -144,11 +144,10 @@
   background: var(--bg-hover);
 }
 
-/* A passed milestone, folded: one row (FOLDED in plan-layout.ts), the whole of it a button that opens it. */
-.msFolded {
-  overflow: hidden;
-}
+/* A passed milestone, folded: one row (FOLDED in plan-layout.ts), the whole of it a button that opens it.
+   The row clips, not the box: its lock badge straddles the top edge and must show whole. */
 .foldRow {
+  overflow: hidden;
   width: 100%;
   height: 100%;
   display: flex;
