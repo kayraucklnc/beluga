@@ -133,6 +133,19 @@ describe('Session', () => {
     expect(bob.state().approvals).toHaveLength(0);
   });
 
+  it('@bob:codex reaches bob, and his Mac picks the agent: the request never names one (BLG-476)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    kay.session.submit('@bob:codex check the api');
+    await waitFor(() => bob.state().approvals.length === 1);
+    expect(bob.session.answerApproval('yes')).toBe(true);
+    await waitFor(() => bob.runs.length === 1);
+    expect(bob.runs[0]?.prompt).toContain('check the api');
+    expect(bob.runs[0]?.requesterName).toBe('kay');
+  });
+
   it('reports declined and denied requests', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');

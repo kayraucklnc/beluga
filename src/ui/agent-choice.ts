@@ -5,6 +5,7 @@ import { type AgentRef, CLAUDE_AGENT } from '../protocol.js';
  * it's Claude with each of its models; the value is the model ('' = Claude Code's default).
  */
 export function agentChoices(models: ReadonlyArray<{ readonly value: string; readonly label: string }>): Array<{ value: string; label: string }> {
+  // agent-wording: claude (these entries are the Claude runtime and its models, by name)
   return [{ value: '', label: 'Claude' }, ...models.filter((m) => m.value).map((m) => ({ value: m.value, label: `Claude · ${m.label}` }))];
 }
 

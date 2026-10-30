@@ -406,15 +406,19 @@ describe('modelLabel and modelMenu', () => {
   });
 
   it('marks the current model', () => {
+    // The picker milestone (BLG-446): one menu for the agent and its model, your default agent's models under it.
     const s = initialState('r');
-    const m = modelMenu(s, 'opus', 'this chat');
-    expect(m.title).toBe('Model for this chat');
-    expect(ids(m)).toEqual(['model:', 'model:opus', 'model:sonnet', 'model:haiku', 'close']);
-    expect(m.options.filter((o) => o.label.startsWith('◉')).map((o) => o.label)).toEqual(['◉ Opus']);
-    expect(modelMenu(s, undefined, 'x').options[0]!.label).toBe('◉ Default');
+    const m = modelMenu(s, undefined, 'this chat');
+    expect(m.title).toBe('Agent and model for this chat');
+    expect(ids(m)).toEqual(['runtime:claude', 'model:', 'model:opus', 'model:sonnet', 'model:haiku', 'runtime:codex', 'runtime:local', 'close']);
+    const on = (menu: ReturnType<typeof modelMenu>) => menu.options.filter((o) => o.label.trim().startsWith('◉')).map((o) => o.label.trim());
+    expect(on(m)).toEqual(['◉ Default']);
+    expect(on(modelMenu(reduce(s, { type: 'prefs', prefs: { model: 'opus' } }), undefined, 'x'))).toEqual(['◉ Opus']);
+    // Another runtime isn't set up: its row says why, with no models under it.
+    expect(m.options.find((o) => o.id === 'runtime:codex')?.hint).toBe("Codex isn't set up on this Mac yet");
     const custom = reduce(s, { type: 'models', models: [{ value: 'm1', label: 'M1', description: 'd' }] });
-    expect(ids(modelMenu(custom, 'nope', 'x'))).toEqual(['model:m1', 'close']);
-    expect(modelMenu(custom, 'nope', 'x').options[0]!.label).toBe('○ M1');
+    expect(ids(modelMenu(custom, undefined, 'x'))).toEqual(['runtime:claude', 'model:m1', 'runtime:codex', 'runtime:local', 'close']);
+    expect(modelMenu(custom, undefined, 'x').options[1]!.label.trim()).toBe('○ M1');
   });
 });
 

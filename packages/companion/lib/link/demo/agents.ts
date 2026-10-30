@@ -7,6 +7,7 @@ import type { AgentPickerView } from '../protocol';
 const GROUPS: AgentPickerView['groups'] = [
   {
     runtime: 'claude',
+    // agent-wording: claude (the Claude runtime's own group in the demo picker)
     label: 'Claude',
     available: true,
     isDefault: true,
