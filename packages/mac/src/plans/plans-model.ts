@@ -248,8 +248,11 @@ export function headline(view: PlanView): Headline {
       return { who: 'you', text: next.tasks.length === 1 ? `Start “${next.tasks[0]!.task.title}”` : `Start ${count(next.tasks.length, 'task')}` };
     case 'checking':
       return { who: 'claude', text: `Claude is checking ${quoted(next.milestone)}${alsoRunning}` };
-    case 'working':
-      return running.length ? { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` } : { who: 'beluga', text: 'Starting the next tasks' };
+    case 'working': {
+      if (running.length) return { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` };
+      const starting = startingMilestones(view);
+      return { who: 'beluga', text: starting.length ? settingUp(view, starting) : 'Starting the next tasks' };
+    }
     case 'waiting':
       return { who: 'beluga', text: next.why };
     case 'merging':
@@ -522,4 +525,31 @@ export function lockWords(waitsOn: readonly string[], dependsOn: number, branch:
   if (waitsOn.length) return `Unlocks when ${names} ${waitsOn.length === 1 ? 'passes' : 'pass'}${branch ? ` and ${waitsOn.length === 1 ? 'is' : 'are'} merged into ${branch}` : ''}`;
   if (!branch) return 'Unlocked';
   return `Unlocked: starts from ${branch}, with ${dependsOn === 1 ? 'the milestone before it' : `all ${dependsOn} before it`} merged in`;
+}
+
+// ---------------------------------------------------------------- setting up
+
+/**
+ * Open milestones whose Claude Beluga is starting right now: on their way (not Step by Step, where
+ * you start each task), with a task of Claude's ready and nothing of theirs begun or handed to a
+ * Claude yet. Between approving and the first step this is everything there is to see, so it's
+ * said, never left looking frozen.
+ */
+export function startingMilestones(view: Pick<PlanView, 'plan' | 'open'>): readonly MilestoneView[] {
+  if (view.plan.status !== 'active' || view.plan.paused) return [];
+  return view.open.filter(
+    (m) =>
+      m.state === 'running' &&
+      m.autonomy !== 'step' &&
+      !m.run.agent &&
+      m.tasks.some((t) => t.state === 'ready' && !t.forYou && !t.queued) &&
+      !m.tasks.some((t) => t.worktree || t.state === 'running' || t.state === 'asking' || t.state === 'idle' || t.state === 'review'),
+  );
+}
+
+/** “Setting up: making the plan's branch, then starting a Claude for “API” and “UI”” */
+export function settingUp(view: Pick<PlanView, 'plan'>, starting: readonly MilestoneView[]): string {
+  const names = starting.map((m) => `“${m.milestone.title}”`);
+  const list = names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(' and ');
+  return `Setting up: ${view.plan.branch ? '' : 'making the plan’s branch, then '}starting a Claude for ${list}`;
 }

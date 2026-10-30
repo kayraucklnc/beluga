@@ -35,9 +35,26 @@ export function PlanStrip({ workspaceId }: { workspaceId: string }) {
           </button>
         </Tip>
         {canApprove ? (
-          <Button size="small" variant="primary" onClick={() => void act(() => api.approve(home.id), home.body ? 'Changes applied' : 'Plan approved: its tasks are on the board')}>
-            {home.body ? 'Apply Changes' : 'Approve Plan'}
-          </Button>
+          <>
+            {/* The plan beside this same conversation: read it, ask about it, have it changed, then approve there. */}
+            <Tip label="See the whole plan, with this conversation beside it to talk it over">
+              <Button size="small" onClick={() => open(home.id)}>
+                Review Plan
+              </Button>
+            </Tip>
+            <Button
+              size="small"
+              variant="primary"
+              onClick={() =>
+                void act(async () => (await api.approve(home.id), true), home.body ? 'Changes applied' : 'Plan approved: its tasks are on the board').then((ok) => {
+                  // Approved: on to the plan, where it runs.
+                  if (ok && !home.body) open(home.id);
+                })
+              }
+            >
+              {home.body ? 'Apply Changes' : 'Approve Plan'}
+            </Button>
+          </>
         ) : null}
       </div>
     );
