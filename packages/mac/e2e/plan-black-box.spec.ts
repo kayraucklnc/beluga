@@ -17,7 +17,7 @@ const planRow = (page: Page) => block(page).locator('[data-plan-row]').and(page.
 const row = (page: Page, name: string) => sidebar(page).getByRole('button', { name, exact: true });
 
 async function unfold(page: Page, project: string): Promise<void> {
-  const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` });
+  const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` }).first();
   if (await show.isVisible()) await show.click();
 }
 

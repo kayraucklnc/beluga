@@ -8,6 +8,15 @@ import { expect, type Locator, type Page } from '@playwright/test';
 type Scope = Page | Locator;
 const pageOf = (scope: Scope): Page => ('goto' in scope ? scope : scope.page());
 
+/**
+ * One of Work's pages (BLG-197: Tasks, Issues, Actions and Plans are one sidebar row, Work, with a
+ * switch over its lists): the Work row, then its tab.
+ */
+export async function openWork(page: Page, tab: 'Tasks' | 'Issues' | 'Actions' | 'Plans'): Promise<void> {
+  await page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: tab }).click();
+}
+
 /** The pop-up button named `label` (its aria-label). */
 export const popup = (scope: Scope, label: string | RegExp): Locator => scope.getByRole('combobox', { name: label });
 

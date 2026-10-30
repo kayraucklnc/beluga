@@ -11,7 +11,7 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
   const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-  const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+  const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
   if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
   await row.click();
   await expect(toolbar(page)).toContainText('add-auth');
@@ -58,6 +58,17 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
 const ghFile = (): string => path.join(process.env.BELUGA_HOME!, 'fake-gh.json');
 const readGh = (): { prs: Record<string, Record<string, unknown>>; merges?: string[][]; mergeError?: string } => JSON.parse(readFileSync(ghFile(), 'utf8'));
 const writeGh = (state: object): void => writeFileSync(ghFile(), JSON.stringify(state, null, 2));
+/**
+ * Look add-auth's PR up now, as the PR sheet's Refresh does: a test writes its PR after the daemon's
+ * first look, and a branch with no PR yet is looked at again only every minute.
+ */
+const lookAgain = (page: Page): Promise<void> =>
+  page.evaluate(async () => {
+    const boot = await import('/src/lib/boot.ts');
+    const c = await boot.connect(boot.capabilities(() => ({ ok: true, message: '' })));
+    const w = c.store.getState().projects.flatMap((p) => p.workspaces).find((x) => x.name === 'add-auth')!;
+    await c.api.workbench.refreshPrs(w.id);
+  });
 const ago = (s: number): string => new Date(Date.now() - s * 1000).toISOString();
 
 function openPr(more: object = {}): Record<string, unknown> {
@@ -89,19 +100,15 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
+    await lookAgain(page);
     await expect(toolbar(page)).toContainText('add-auth');
 
-    // The PR item opens the sheet and looks the PR up at once (the toolbar's own button once the PR is known).
-    // (Create PR itself opens one straight away: the sheet is its chevron's “with Instructions”.)
-    const known = toolbar(page).getByRole('button', { name: /^PR #7/ });
-    if (await known.isVisible()) await known.click();
-    else {
-      await toolbar(page).getByRole('button', { name: 'Other steps for this branch' }).click();
-      await page.getByRole('menuitem', { name: /Create PR with Instructions/ }).click();
-    }
+    // Once the PR is known, the branch pill at the top ("Checks running #7") opens its sheet.
+    const known = toolbar(page).getByRole('group', { name: /^Branch:/ }).getByRole('button', { name: /#7$/ });
+    await known.click();
     const sheet = page.getByRole('dialog', { name: /Pull Request/ });
     await expect(sheet).toContainText('#7');
     await expect(sheet).toContainText('Protect the payments routes');
@@ -122,7 +129,8 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     for (const way of ['Squash and Merge', 'Create a Merge Commit', 'Rebase and Merge', 'Merge When Checks Pass', 'Merge Now, Skipping Checks']) await expect(page.getByRole('menuitem', { name: new RegExp(`^${way}`) })).toBeVisible();
     await page.getByRole('menuitem', { name: /Merge When Checks Pass/ }).click();
     await expect(sheet).toContainText('Merges when checks pass');
-    expect(readGh().merges).toEqual([['pr', 'merge', '7', '--squash', '--auto']]);
+    // Beluga waits for the checks itself and merges then: GitHub isn't asked yet.
+    expect(readGh().merges ?? []).toEqual([]);
 
     // GitHub says no: the sheet says why, in words you can act on.
     writeGh({ ...readGh(), mergeError: 'GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)' });
@@ -180,9 +188,10 @@ test('The chat watches the PR’s checks live, and an admin can merge past them'
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
+    await lookAgain(page);
 
     // Above the chat: the PR and its checks, open while they run. Merging is at the top only.
     const strip = page.locator('[data-pr-strip="OPEN"]');
@@ -211,9 +220,10 @@ test('A PR that conflicts says so at the top and offers Resolve with Claude; a m
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
+    await lookAgain(page);
 
     // Conflicts: said once, at the top, with Resolve with Claude (asking first); the strip only has the checks.
     const strip = page.locator('[data-pr-strip="OPEN"]');

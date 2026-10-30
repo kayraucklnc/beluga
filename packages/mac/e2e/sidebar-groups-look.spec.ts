@@ -24,7 +24,7 @@ test('groups line up with projects, and wear the icon you pick', async ({ page }
 
   // The group's triangle and a top-level project's triangle are in one column; its project steps in.
   const groupTriangle = group.locator('svg').first();
-  const topTriangle = sidebar.getByRole('button', { name: /^Fold bob-api|^Show what's in bob-api/ }).locator('svg');
+  const topTriangle = sidebar.getByRole('button', { name: /^Fold bob-api|^Show what's in bob-api/ }).first().locator('svg');
   const innerTriangle = sidebar.getByRole('button', { name: /^Fold landing|^Show what's in landing/ }).locator('svg');
   expect(Math.abs((await left(groupTriangle)) - (await left(topTriangle)))).toBeLessThan(2);
   expect((await left(innerTriangle)) - (await left(topTriangle))).toBeGreaterThan(8);

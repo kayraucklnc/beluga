@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { openWork } from './helpers.js';
 
 /** A plan's page is two parts, the plan and its chat (KLD-54): no right panel, a chat toggle in the header (⌥⌘0), a chat as wide as you leave it, and no modes in the plan's own conversation. */
 
@@ -7,7 +8,7 @@ const main = (page: Page) => page.locator('main');
 const chat = (page: Page) => page.getByRole('complementary', { name: 'Conversation' });
 
 async function openPlan(page: Page, name: RegExp): Promise<void> {
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  await openWork(page, 'Plans');
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await page.getByRole('button', { name: /^Project: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();
@@ -51,7 +52,7 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   await main(page).getByRole('button', { name: 'Show the Chat' }).click();
   expect(Math.round((await chat(page).boundingBox())!.width)).toBe(428);
   // Elsewhere, the panel is as you left it.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await openWork(page, 'Tasks');
   await expect(page.getByRole('button', { name: /^(Show|Hide) the panel/ })).toBeEnabled();
 });
 
