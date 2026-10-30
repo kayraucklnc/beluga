@@ -93,3 +93,13 @@ export function localWhy(endpoints: readonly EndpointChoice[]): string | undefin
   if (!endpoints.length) return 'Start Ollama on this Mac, or add an endpoint in Settings › Local models';
   return undefined;
 }
+
+/** Tokens per second, one decimal under 10 ("4.2"), whole above ("42"); undefined when too short to say. */
+export function tokensPerSecond(tokens: number, ms: number): number | undefined {
+  if (!(tokens > 0) || !(ms >= 250)) return undefined;
+  const tps = tokens / (ms / 1000);
+  return tps < 10 ? Math.round(tps * 10) / 10 : Math.round(tps);
+}
+
+/** "free · 42 tok/s": what a local model shows where Claude shows plan limits. */
+export const speedWords = (tps: number | undefined): string => (tps ? `free · ${tps} tok/s` : 'free');

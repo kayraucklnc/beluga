@@ -1,5 +1,6 @@
 import type { AgentBackend, AgentRunInput, FollowUp, Steer } from '../types.js';
 import { CLAUDE_CAPABILITIES, claudeRuntime } from './claude/index.js';
+import { tokensPerSecond } from '../../shared/local-endpoints.js';
 import type { AgentRuntime } from './types.js';
 
 /** The endpoint a picked model value names (core/local-endpoints.ts resolves it). */
@@ -53,7 +54,9 @@ export function localRuntime(resolve: (value: string | undefined) => LocalTarget
     // Claude Code does the gating, so every guarantee holds; the endpoint lists its own models.
     capabilities: { ...CLAUDE_CAPABILITIES, hasModelList: false },
     create: (opts) => {
-      const claude = claudeRuntime.create({ ...opts, model: undefined });
+      // No plan limits on your own endpoint: nothing it says goes into Claude's quota (no fake quota bar).
+      const bridge = Object.assign(Object.create(opts.bridge) as typeof opts.bridge, { reportUsage: () => undefined });
+      const claude = claudeRuntime.create({ ...opts, bridge, model: undefined });
       return Object.assign(Object.create(claude) as AgentBackend, {
         run: (input: AgentRunInput) => {
           const value = input.model ?? input.place?.agent?.model;
@@ -67,19 +70,51 @@ export function localRuntime(resolve: (value: string | undefined) => LocalTarget
   };
 }
 
-/** The run, on the endpoint: its env over yours, its model's own name, no effort (endpoints don't take it). */
-export function onEndpoint(input: AgentRunInput, target: LocalTarget, resolve: (value: string | undefined) => LocalTarget | undefined): AgentRunInput {
+/**
+ * A local run's usage (BLG-450): free (Claude Code prices it as if Anthropic served it, so the cost
+ * goes), and how fast the endpoint wrote: the turn's new output tokens over the time since it began.
+ * The SDK reports running totals per conversation, so the new part is what grew since the last one.
+ */
+export function usageMeter(now: () => number = Date.now): { begin: () => void; map: (json: string) => string } {
+  let since = now();
+  let last: { session?: string; output: number } | undefined;
+  return {
+    begin: () => {
+      since = now();
+    },
+    map: (json) => {
+      try {
+        const u = JSON.parse(json) as { output?: number; session?: string };
+        const output = typeof u.output === 'number' ? u.output : 0;
+        const grew = last && last.session === u.session && output >= last.output ? output - last.output : output;
+        const tps = tokensPerSecond(grew, now() - since);
+        last = { ...(u.session ? { session: u.session } : {}), output };
+        since = now();
+        return JSON.stringify({ ...u, cost: 0, free: true, ...(tps ? { tps } : {}) });
+      } catch {
+        return json;
+      }
+    },
+  };
+}
+
+/** The run, on the endpoint: its env over yours, its model's own name, no effort (endpoints don't take it), free usage with its speed. */
+export function onEndpoint(input: AgentRunInput, target: LocalTarget, resolve: (value: string | undefined) => LocalTarget | undefined, meter = usageMeter()): AgentRunInput {
+  const onEvent = (to: AgentRunInput['onEvent']): AgentRunInput['onEvent'] => (kind, text) => to(kind, kind === 'usage' ? meter.map(text) : text);
   // A model picked mid-run on the same endpoint switches; one elsewhere waits for the next run.
   const mapFollowUp = (f: FollowUp): FollowUp => {
-    if (f.model === undefined) return f;
+    meter.begin();
+    const withEvents = { ...f, onEvent: onEvent(f.onEvent) };
+    if (f.model === undefined) return withEvents;
     const next = resolve(f.model);
-    const { model: _m, ...rest } = f;
+    const { model: _m, ...rest } = withEvents;
     return next && next.baseUrl === target.baseUrl ? { ...rest, model: next.model } : rest;
   };
   const { effort: _e, ...rest } = input;
   return {
     ...rest,
     model: target.model,
+    onEvent: onEvent(input.onEvent),
     env: { ...input.env, ...endpointEnv(target) },
     ...(input.onFollowUps ? { onFollowUps: (send) => input.onFollowUps!(send && ((f) => send(mapFollowUp(f)))) } : {}),
     ...(input.onSteer ? { onSteer: (steer) => input.onSteer!(steer && wrapSteer(steer, mapFollowUp)) } : {}),

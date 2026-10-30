@@ -1,15 +1,17 @@
-import { mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentRunInput, FollowUp } from '../src/agent/types.js';
-import { endpointEnv, onEndpoint } from '../src/agent/runtime/local.js';
+import { endpointEnv, onEndpoint, usageMeter } from '../src/agent/runtime/local.js';
+import { WorkspaceManager } from '../src/workspaces/manager.js';
+import { WorkspaceStore } from '../src/workspaces/store.js';
 import { EnvVars } from '../src/core/env-vars.js';
 import { LocalEndpoints } from '../src/core/local-endpoints.js';
 import { Store, initialState } from '../src/core/store.js';
 import { agentPicker } from '../src/shared/agent-picker.js';
 import { runtimeChoices } from '../src/shared/agent-runtimes.js';
-import { OLLAMA_URL, endpointIdFor, localModelValue, localModels, localWhy, parseLocalModel } from '../src/shared/local-endpoints.js';
+import { OLLAMA_URL, endpointIdFor, localModelValue, localModels, localWhy, parseLocalModel, speedWords, tokensPerSecond } from '../src/shared/local-endpoints.js';
 
 const tmpFile = (): string => path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-local-')), 'env.json');
 
@@ -146,5 +148,46 @@ describe('local endpoints: a run', () => {
     send!({ prompt: 'a', model: 'ollama/llama3.3' } as FollowUp);
     send!({ prompt: 'b', model: 'proxy/big' } as FollowUp);
     expect(sent.map((f) => f.model)).toEqual(['llama3.3', undefined]);
+  });
+});
+
+describe('local endpoints: tokens and speed instead of a quota (BLG-450)', () => {
+  it('makes a local run free and says how fast each turn wrote, from the running totals', () => {
+    let t = 1_000;
+    const meter = usageMeter(() => t);
+    t += 10_000;
+    const first = JSON.parse(meter.map(JSON.stringify({ input: 5000, output: 420, cost: 0.41, session: 's1' })));
+    expect(first).toMatchObject({ input: 5000, output: 420, cost: 0, free: true, tps: 42 });
+    // The next turn: only what grew counts, over the time since it began.
+    meter.begin();
+    t += 4_000;
+    expect(JSON.parse(meter.map(JSON.stringify({ output: 437, cost: 0.5, session: 's1' })))).toMatchObject({ cost: 0, tps: 4.3 });
+    expect(tokensPerSecond(10, 100)).toBeUndefined();
+    expect(speedWords(42)).toBe('free · 42 tok/s');
+    expect(speedWords(undefined)).toBe('free');
+  });
+
+  it('turns a local run’s usage events through the meter, a follow-up’s too', () => {
+    const seen: string[] = [];
+    let send: ((f: FollowUp) => boolean) | undefined;
+    const input = { prompt: 'hi', model: 'ollama/q', onEvent: (k: string, x: string) => k === 'usage' && seen.push(x), onFollowUps: (s: typeof send) => (send = s) } as unknown as AgentRunInput;
+    const run = onEndpoint(input, { label: 'Ollama', baseUrl: OLLAMA_URL, model: 'q' }, () => undefined);
+    run.onEvent('usage', JSON.stringify({ output: 1, cost: 1 }));
+    const later: string[] = [];
+    run.onFollowUps!((f) => (f.onEvent('usage', JSON.stringify({ output: 2, cost: 2 })), true));
+    send!({ prompt: 'b', onEvent: (_k: string, x: string) => later.push(x) } as unknown as FollowUp);
+    expect([...seen, ...later].map((x) => JSON.parse(x).cost)).toEqual([0, 0]);
+  });
+
+  it('keeps a local workspace’s speed, with no cost', async () => {
+    const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'beluga-local-usage-')));
+    const store = new WorkspaceStore(path.join(base, 'home'));
+    store.saveConfig({ roots: [], projects: [], hidden: [] });
+    const mgr = new WorkspaceManager(store);
+    await mgr.refresh();
+    const chat = await mgr.createChat('chats', 'local');
+    mgr.addUsage(chat.id, { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: 0, session: 's', free: true, tps: 9 });
+    const u = mgr.addUsage(chat.id, { input: 200, output: 60, cacheRead: 0, cacheWrite: 0, cost: 0, session: 's', free: true });
+    expect(u).toMatchObject({ input: 200, output: 60, cost: 0, local: { tps: 9 } });
   });
 });
