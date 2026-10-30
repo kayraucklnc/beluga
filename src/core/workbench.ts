@@ -45,6 +45,8 @@ export interface WorkbenchDeps {
   readonly open?: (target: string) => void;
   /** Models your Claude Code offers (asked once). */
   readonly listModels?: () => Promise<readonly ModelChoice[] | undefined>;
+  /** Another runtime on a live conversation hands it off (core/agent-switch.ts, BLG-447); unset: a plain switch. */
+  readonly switchAgent?: (channel: string, agent: AgentRef | undefined) => Promise<unknown>;
   /** The agent picker's runtimes: which run on this Mac, and why the others don't (BLG-446). */
   readonly listRuntimes?: () => readonly RuntimeChoice[];
   /** Look for a pull request (injected in tests). */
@@ -295,8 +297,12 @@ export class Workbench {
   setAgent(channel: string, agent: AgentRef | undefined): boolean {
     const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
     if (!id || !this.manager.find(id)) return false;
-    this.manager.setAgent(id, agent);
-    void this.deps.controller.refresh();
+    // Another runtime on a live conversation is a handoff (the old agent's note seeds the new one), never a silent swap.
+    if (this.deps.switchAgent) void this.deps.switchAgent(channel, agent).finally(() => void this.deps.controller.refresh());
+    else {
+      this.manager.setAgent(id, agent);
+      void this.deps.controller.refresh();
+    }
     return true;
   }
 

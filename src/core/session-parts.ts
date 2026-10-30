@@ -1,3 +1,4 @@
+import { switchAgent } from './agent-switch.js';
 import { runtimeChoices } from '../shared/agent-runtimes.js';
 import type { SessionOptions, Session } from './session.js';
 import type { ModelChoice } from './work-store.js';
@@ -97,6 +98,21 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         confirm: (title, detail) => session.ask('request', title, detail),
         open: opts.open,
         listModels: async () => (await session.backend?.listModels?.()) as readonly ModelChoice[] | undefined,
+        switchAgent: (channel, agent) =>
+          switchAgent(
+            {
+              find: (id) => opts.workspaces?.find(id),
+              setAgent: (id, a) => opts.workspaces?.setAgent(id, a),
+              askAndWait: (prompt, ch, ms) => session.askAndWait(prompt, ch, ms),
+              start: (prompt, ch) => void session.askOwnClaude(prompt, ch, false, false),
+              system: (ch, text, level) => session.store.dispatch({ type: 'system', channel: ch, text, level: level ?? 'info' }),
+              log: () => session.store.getState().log,
+              defaultAgent: () => session.agentRef,
+              canResume: (id) => opts.runtime?.runtimes(id)?.capabilities.canResume ?? true,
+            },
+            channel,
+            agent,
+          ),
         // Your agent's runtime runs here; another, when this Beluga registers it (the demo's agent is Claude).
         listRuntimes: () => runtimeChoices((id) => (id === (opts.runtime?.agent ?? 'claude') ? (session.backend ? {} : undefined) : opts.runtime?.runtimes(id) ? {} : undefined)),
         findPr: opts.findPr,

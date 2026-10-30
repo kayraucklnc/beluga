@@ -90,6 +90,16 @@ describe('a place and its agent', () => {
     expect(ctl.place(ch)?.resume).toBeUndefined();
   });
 
+  it('a same-runtime model change keeps the conversation (BLG-447 regression)', async () => {
+    const ws = (await ctl.newWorktree(projectId(), 'models', { quiet: true }))!;
+    const ch = `ws:${ws.id}`;
+    ctl.place(ch)!.onSession('claude-session');
+    manager.setModel(ws.id, 'opus');
+    expect(ctl.place(ch)).toMatchObject({ model: 'opus', resume: 'claude-session' });
+    manager.setAgent(ws.id, { runtime: 'claude', label: 'Claude', model: 'haiku' });
+    expect(ctl.place(ch)).toMatchObject({ model: 'haiku', resume: 'claude-session', agent: { runtime: 'claude', model: 'haiku' } });
+  });
+
   it('a fork keeps its agent, and its session under that runtime', async () => {
     const ws = (await ctl.newWorktree(projectId(), 'src', { quiet: true, agent: CODEX }))!;
     ctl.place(`ws:${ws.id}`)!.onSession('codex-thread');
