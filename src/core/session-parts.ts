@@ -1,3 +1,5 @@
+import { switchAgent } from './agent-switch.js';
+import { runtimeChoices } from '../shared/agent-runtimes.js';
 import type { SessionOptions, Session } from './session.js';
 import type { ModelChoice } from './work-store.js';
 import { WorkspaceController } from './workspace-controller.js';
@@ -16,6 +18,8 @@ import { ProjectInvites } from './project-invites.js';
 import { GuestShell } from './guest-shell.js';
 import { SharedDiff } from './shared-diff.js';
 import { EnvVars } from './env-vars.js';
+import { LocalEndpoints } from './local-endpoints.js';
+import { LOCAL_RUNTIME, localModels, localWhy } from '../shared/local-endpoints.js';
 import { useViewEnv } from './views/sources.js';
 import { boardOf } from './board/registry.js';
 import { sentinelOf } from './sentinel/registry.js';
@@ -42,12 +46,22 @@ export interface SessionParts {
   readonly diff: SharedDiff;
   /** Your environment variables (kept on this computer). */
   readonly env: EnvVars;
+  readonly local: LocalEndpoints;
 }
 
 export function createSessionParts(session: Session, opts: SessionOptions): SessionParts {
   let workspaces: WorkspaceController | undefined;
   let workbench: Workbench | undefined;
   const env = new EnvVars({ store: opts.store, onChange: () => workbench?.envChanged() });
+  // Local endpoints (BLG-449) answer only where your agent runs (not in the demo).
+  const listRuntimes = () =>
+    runtimeChoices((id) => {
+      if (id === (opts.runtime?.agent ?? 'claude')) return session.backend ? {} : undefined;
+      if (id === LOCAL_RUNTIME) return opts.runtime?.runtimes('claude') && !localWhy(local.choices()) ? { models: localModels(local.choices()) } : undefined;
+      return opts.runtime?.runtimes(id) ? {} : undefined;
+    });
+  const local = new LocalEndpoints({ endpoints: () => env.endpoints(), onChange: () => opts.store.dispatch({ type: 'runtimes', runtimes: listRuntimes() }) });
+  if (opts.runtime) local.start();
   // Database views find the project's connection string (its variables, its .env).
   useViewEnv({ database: (dir) => env.viewEnv(dir), commands: (dir) => env.envFor({ dir }) });
     if (opts.workspaces) {
@@ -56,6 +70,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         store: opts.store,
         shares: opts.shares,
         selfId: () => session.selfId,
+        // Your default agent's runtime: a place that picked none resumes only its sessions.
+        defaultRuntime: () => opts.runtime?.agent ?? 'claude',
         toast: (text, level) => session.toast(text, level),
         intend: (intent) => session.intend(intent),
         askClaude: (prompt, channel, o) => session.askOwnClaude(prompt, channel, false, o?.echo ?? true),
@@ -94,6 +110,23 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         confirm: (title, detail) => session.ask('request', title, detail),
         open: opts.open,
         listModels: async () => (await session.backend?.listModels?.()) as readonly ModelChoice[] | undefined,
+        switchAgent: (channel, agent) =>
+          switchAgent(
+            {
+              find: (id) => opts.workspaces?.find(id),
+              setAgent: (id, a) => opts.workspaces?.setAgent(id, a),
+              askAndWait: (prompt, ch, ms) => session.askAndWait(prompt, ch, ms),
+              start: (prompt, ch) => void session.askOwnClaude(prompt, ch, false, false),
+              system: (ch, text, level) => session.store.dispatch({ type: 'system', channel: ch, text, level: level ?? 'info' }),
+              log: () => session.store.getState().log,
+              defaultAgent: () => session.agentRef,
+              canResume: (id) => opts.runtime?.runtimes(id)?.capabilities.canResume ?? true,
+            },
+            channel,
+            agent,
+          ),
+        // Your agent's runtime runs here; another, when this Beluga registers it (the demo's agent is Claude).
+        listRuntimes,
         findPr: opts.findPr,
         hasGh: opts.hasGh,
         envFor: (where) => env.envFor(where),
@@ -143,7 +176,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       selfId: () => session.selfId,
       send: (body, o) => session.send(body, o),
       agent: () => session.backend,
-      agentRef: () => session.agentRef,
+      agentRef: (channel) => (channel ? workspaces?.agentOf(channel, session.agentRef) : undefined) ?? session.agentRef,
       shares: opts.shares,
       sharing,
       people,
@@ -219,5 +252,5 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       openLocation: (at) => files.openLocation(at),
       search: (at, mode, query) => diff.search(at, mode, query),
     });
-  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff, env };
+  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff, env, local };
 }

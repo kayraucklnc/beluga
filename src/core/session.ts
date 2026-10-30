@@ -7,8 +7,13 @@ import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } from '../agent/runtime/types.js';
 import { guardedBackend } from '../agent/runtime/guard.js';
+import { routedBackend } from '../agent/runtime/router.js';
+import { localRuntime } from '../agent/runtime/local.js';
+import { LOCAL_RUNTIME } from '../shared/local-endpoints.js';
+import type { LocalEndpoints } from './local-endpoints.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { type AgentRef, Body, type BodyInput, type BodyOf, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
+import { type AgentRef, Body, type BodyInput, type BodyOf, CLAUDE_AGENT, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile } from '../protocol.js';
+import { type UsageUpdate, withUsage } from '../agent/usage.js';
 import { dialoguesOf } from './dialogues/registry.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { networkOf } from './network.js';
@@ -25,7 +30,7 @@ import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer
 import type { DraftContext, TaskDraft } from '../agent/task-drafter.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
-import type { Settings } from './settings.js';
+import { chosenAgent, publishedAgents, type Settings } from './settings.js';
 import { runCommand } from './commands.js';
 import { People } from './people.js';
 import { ReplayGuard } from './replay.js';
@@ -203,6 +208,8 @@ export class Session {
   readonly diff: SharedDiff;
   /** Your environment variables for shells, scripts and your Claude (never sent to the room). */
   readonly env: EnvVars;
+  /** Your local and bring-your-own endpoints (BLG-449), as they answer now. */
+  readonly local: LocalEndpoints;
   private projectsTimer?: NodeJS.Timeout;
   /** What this session asks screens to do (see core/intents.ts). */
   readonly intents = new IntentBus();
@@ -230,13 +237,24 @@ export class Session {
     this.shell = parts.shell;
     this.diff = parts.diff;
     this.env = parts.env;
+    this.local = parts.local;
     this.runtime = opts.createAgent ? undefined : opts.runtime?.runtimes(opts.runtime.agent);
     // The session layer runs a runtime only as its capabilities allow (the safety rule: see guard.ts).
-    this.agent = opts.createAgent ? opts.createAgent(this.bridge) : this.runtime && opts.runtime ? guardedBackend(this.runtime.create({ ...opts.runtime.options, bridge: this.bridge }), this.runtime.capabilities) : undefined;
+    this.agent = opts.createAgent ? opts.createAgent(this.bridge) : this.runtime && opts.runtime ? this.routed(this.runtime, opts.runtime) : undefined;
     this.attention = new AttentionRegistry(opts.store);
     opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room), home: os.homedir() });
     this.publishShares();
     this.wire();
+  }
+
+  /** Your default agent's backend, sending each turn whose place picked another runtime to that one's (agent/runtime/router.ts). */
+  private routed(main: AgentRuntime, rt: NonNullable<SessionOptions['runtime']>): AgentBackend {
+    const make = (r: AgentRuntime): AgentBackend => guardedBackend(r.create({ ...rt.options, bridge: this.bridge }), r.capabilities);
+    return routedBackend(make(main), main.id, (id) => {
+      // A local endpoint is Claude Code pointed elsewhere (BLG-449): it runs wherever Claude does.
+      const other = id === LOCAL_RUNTIME ? (rt.runtimes('claude') ? localRuntime((v) => this.local.resolve(v)) : undefined) : rt.runtimes(id);
+      return other ? make(other) : undefined;
+    });
   }
 
   get store(): Store {
@@ -319,6 +337,7 @@ export class Session {
     clearInterval(this.workspaceTimer);
     this.workspaces?.stop();
     this.workbench?.stop();
+    this.local.stop();
     this.notifier.stop();
     this.replay.flush();
     this.remote.stop();
@@ -414,9 +433,11 @@ export class Session {
         return true;
       case 'agent':
         this.sendChat(parsed.text, false);
-        for (const name of parsed.unknown) this.toast(`Nobody named "${name}" is here`, 'warn');
-        for (const target of parsed.targets) this.requestAgent(target, parsed.prompt, false, 'room', urgent && target === this.selfId);
-        if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No agent is online', 'warn');
+        for (const line of parsed.notes) this.toast(line, 'warn');
+        for (const t of parsed.to) this.requestAgent(t.peerId, parsed.prompt, false, 'room', urgent && t.peerId === this.selfId, undefined, undefined, t.agent);
+        // On your own, a name nobody has is still a line for your agent, as plain chat always is.
+        if (parsed.to.length === 0 && state.peers.length <= 1 && this.agent) this.requestAgent(this.selfId, parsed.text, false, 'room', urgent);
+        else if (parsed.to.length === 0 && parsed.notes.length === 0) this.toast('No agent is online', 'warn');
         return true;
     }
   }
@@ -520,10 +541,10 @@ export class Session {
   }
 
   /** Ask an agent (ours or a peer's) to do something. Returns the request id. */
-  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID()): string {
+  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID(), agent?: AgentRef): string {
     const plan = this.store.getState().planMode[channel] === true;
     this.questions.track(requestId, target, channel);
-    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}) }, { to: target });
+    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}), ...(agent ? { agent } : {}) }, { to: target });
     return requestId;
   }
 
@@ -1139,6 +1160,16 @@ export class Session {
     const forScreens = Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === undefined ? null : v]));
     this.store.dispatch({ type: 'prefs', prefs: forScreens });
     this.opts.saveSettings?.(Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === null ? undefined : v])) as Partial<Settings>);
+    // Your default agent rides on your peer card: friends see the change at once, no reconnect.
+    if ('defaultAgent' in prefs || 'projectAgents' in prefs) {
+      const chosen = this.store.getState().prefs;
+      this.updateProfile({ defaultAgent: chosenAgent(chosen), agents: publishedAgents(chosen) });
+    }
+  }
+
+  /** The agent that answers for work in `project` (its own default over yours; BLG-444). */
+  agentFor(project?: string): AgentRef {
+    return chosenAgent(this.store.getState().prefs, project);
   }
 
   /** Share a folder with the room (read-only unless `writable`). */
@@ -1200,16 +1231,15 @@ export class Session {
     this.opts.client.updateProfile({ ...this.opts.client.currentProfile, ...patch });
   }
 
-  /** Merge new plan-usage numbers and share them with the room. */
-  updateUsage(update: Partial<Usage>): void {
-    const prev = this.opts.client.currentProfile.usage;
-    this.updateProfile({ usage: { ...prev, ...update, updatedAt: Date.now() } });
+  /** Merge new usage numbers into that provider's (Claude's unless named) and share them with the room. */
+  updateUsage(update: UsageUpdate, agent: AgentRef = CLAUDE_AGENT): void {
+    this.updateProfile(withUsage(this.opts.client.currentProfile, agent, update));
   }
 
   /** Ask the agent backend for fresh plan usage (no prompt is sent). */
   async refreshUsage(): Promise<void> {
     const usage = await this.agent?.refreshUsage?.().catch(() => undefined);
-    if (usage) this.updateUsage(usage);
+    if (usage) this.updateUsage(usage, CLAUDE_AGENT);
   }
 
   private onAgentEvent(from: string, ts: number, body: BodyOf<'agent_event'>): void {

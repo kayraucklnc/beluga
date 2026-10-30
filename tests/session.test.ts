@@ -12,6 +12,7 @@ import { startHub, type Hub } from '../src/net/hub.js';
 import { PeerClient } from '../src/net/peer-client.js';
 import { attach, waitFor } from './helpers.js';
 import type { InProcessClient } from '../src/ipc/in-process.js';
+import { friendRooms, providerCards } from '../src/ui/usage-cards.js';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -160,6 +161,56 @@ describe('Session', () => {
     bob.session.submit('@claudes status?');
     await waitFor(() => kay.runs.length === 1 && bob.runs.length === 1);
     await waitFor(() => agentItems(bob.state()).filter((a) => a.type === 'agent' && a.status === 'done').length === 2);
+  });
+
+  it('publishes your default agent on your card at once, without reconnecting (BLG-444)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    const opus = { runtime: 'claude' as const, model: 'opus', label: 'Claude' };
+    kay.session.setPrefs({ defaultAgent: opus });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.model === 'opus');
+    expect(bob.state().peers.find((p) => p.name === 'kay')?.agents?.[0]).toEqual(opus);
+    expect(kay.session.agentRef).toEqual(opus);
+    kay.session.setPrefs({ projectAgents: { api: { runtime: 'claude', model: 'sonnet', label: 'Claude' } } });
+    expect(kay.session.agentFor('api').model).toBe('sonnet');
+    expect(kay.session.agentFor('web')).toEqual(opus);
+    kay.session.setPrefs({ defaultAgent: null });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.model === undefined);
+  });
+
+  it('make-default on a usage card sets your default and the peer card friends see (BLG-458)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    const codex = { runtime: 'codex', model: 'gpt-5', label: 'Codex' };
+    kay.session.updateUsage({ windows: [{ label: 'Weekly', pct: 24 }] }, codex);
+    // What the Codex card's chip sends.
+    kay.session.setPrefs({ defaultAgent: codex });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.runtime === 'codex');
+    await waitFor(() => (kay.state().peers.find((p) => p.name === 'kay')?.usages?.length ?? 0) > 0);
+    expect(providerCards(kay.state().peers.find((p) => p.name === 'kay'), kay.state().prefs.defaultAgent).find((c) => c.isDefault)?.key).toBe('codex');
+    const room0 = friendRooms(bob.state().peers, bob.session.selfId).find((r) => r.name === 'kay');
+    expect(room0).toMatchObject({ agent: { runtime: 'codex' }, isDefault: true, left: 76 });
+    // And Claude's chip: back to no default.
+    kay.session.setPrefs({ defaultAgent: null });
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.defaultAgent?.runtime === 'claude');
+  });
+
+  it('runs the person\'s agent with @bob and @agents, and says who a mistyped name may be', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { policy: 'auto' });
+    const bob = peer('bob', { policy: 'auto' });
+    await room(kay, bob);
+    kay.session.submit('@bob status?');
+    await waitFor(() => bob.runs.length === 1);
+    expect(kay.runs).toHaveLength(0);
+    kay.session.submit('@agents status?');
+    await waitFor(() => kay.runs.length === 1 && bob.runs.length === 2);
+    kay.session.submit('@bbo status?');
+    expect(kay.toasts).toContain('Nobody named "bbo" is here. Did you mean @bob?');
   });
 
   it('streams agent text/tool events and approves tool use', async () => {
@@ -564,6 +615,7 @@ describe('Session hardening', () => {
       policy: 'auto',
       script: async (_input, bridge) => {
         bridge.reportUsage({ fiveHour: { pct: 42 } });
+        bridge.reportUsage({ windows: [{ label: 'Weekly', pct: 7 }] }, { runtime: 'codex', label: 'Codex' });
         return 'ok';
       },
     });
@@ -573,6 +625,12 @@ describe('Session hardening', () => {
     await waitFor(() => bob.runs.length === 1);
     expect(bob.runs[0]?.scope).toBe('folder');
     await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.usage?.fiveHour?.pct === 42);
+    // Each provider's usage lands on its own entry; the old field stays Claude's.
+    await waitFor(() => (kay.state().peers.find((p) => p.name === 'bob')?.usages?.length ?? 0) === 2);
+    const shared = kay.state().peers.find((p) => p.name === 'bob')?.usages ?? [];
+    expect(shared.find((u) => u.agent.runtime === 'claude')?.fiveHour?.pct).toBe(42);
+    expect(shared.find((u) => u.agent.runtime === 'codex')?.windows?.[0]?.pct).toBe(7);
+    expect(shared.find((u) => u.agent.runtime === 'codex')?.fiveHour).toBeUndefined();
 
     bob.session.setAccess(kay.session.selfId, 'full');
     kay.session.submit('@claude:bob again');

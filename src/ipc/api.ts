@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
+import { AgentRef, ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EFFORTS, KEEP_AWAKE, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
@@ -64,6 +64,9 @@ export const PrefsPatch = z
     // null: back to the default (JSON can't carry undefined, so "unset" travels as null).
     model: z.string().max(80).nullable().optional(),
     effort: z.enum(EFFORTS).nullable().optional(),
+    // Who answers "@you" (null: back to Claude), and per-project ones by project name (BLG-444).
+    defaultAgent: AgentRef.nullable().optional(),
+    projectAgents: z.record(z.string().min(1).max(80), AgentRef),
     autoSetup: bool,
     contextMeter: bool,
     autoCompact: bool,
@@ -214,11 +217,11 @@ export const API = {
   // Load a workspace's saved conversation without going there (the Mac Overview's read-only look at an archived one).
   'workspaces.load': args(id),
   'workspaces.refresh': args(),
-  'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)) }))),
+  'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)), agent: opt(AgentRef) }))),
   'workspaces.newChat': args(id, z.string().max(200), opt(path)),
   'workspaces.startChat': args(id, str, opt(path)),
   // → the new worktree's id. `plan`: its Claude plans first. `quiet`: started from the phone, the Mac's window stays put.
-  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), quiet: opt(bool) }))),
+  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), quiet: opt(bool), agent: opt(AgentRef) }))),
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),
@@ -286,6 +289,8 @@ export const API = {
   'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000), opt(bool)),
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
+  /** A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent. */
+  'workbench.setAgent': args(channel, AgentRef.nullable()),
   'workbench.createPr': args(id, opt(str)),
   // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message, trouble? }.
   // https: push this once over HTTPS with gh's login (the SSH key isn't working; origin stays as it is).
@@ -334,6 +339,13 @@ export const API = {
   'env.importDotenv': args(id),
   // Keys a worktree adds go into the project's main .env on their own (on by default).
   'env.newKeysBack': args(id, bool),
+  // Local and bring-your-own endpoints (BLG-449): → each with its URL and models, never its key (hasKey).
+  'env.endpoints': args(),
+  // Add (no id) or change one; key unset keeps it, '' removes it → its id.
+  'env.saveEndpoint': args(z.object({ id: opt(z.string().max(20)), label: z.string().min(1).max(40), baseUrl: z.string().min(1).max(500), key: opt(z.string().max(4000)), models: opt(z.array(z.string().max(40)).max(20)) })),
+  'env.removeEndpoint': args(z.string().max(20)),
+  // Look at every endpoint again now → the list, with which answer.
+  'env.checkEndpoints': args(),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),

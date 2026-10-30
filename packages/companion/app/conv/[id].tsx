@@ -18,6 +18,7 @@ import { DeleteMacChat, MacChatsSheet, newMacChat } from '../../components/MacCh
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { EditPromptSheet } from '../../components/EditPrompt';
+import { AgentPickerSheet } from '../../components/AgentPicker';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone, toneOf } from '../../components/ui';
 import { ago, elapsed, useSince, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
@@ -83,6 +84,7 @@ export default function Conversation() {
   const [unread, setUnread] = useState<TurnView | undefined>();
   /** Your message, long-pressed to edit it (1.28): Rewind Here or New Fork. */
   const [editing, setEditing] = useState<TurnView | undefined>();
+  const [picking, setPicking] = useState(false);
   const canEdit = useSupports('editPrompt');
   const older = async () => {
     if (!c) return;
@@ -276,6 +278,7 @@ export default function Conversation() {
         </Sheet>
         {c?.mergeable ? <MergeSheet topic={topic} visible={mergeOpen} onClose={() => setMergeOpen(false)} /> : null}
         <EditPromptSheet turn={editing} onClose={() => setEditing(undefined)} />
+        <AgentPickerSheet topic={topic} picker={c?.agent} visible={picking} onClose={() => setPicking(false)} />
         <Options
           visible={Boolean(unread)}
           onClose={() => setUnread(undefined)}
@@ -298,6 +301,7 @@ export default function Conversation() {
           onClose={() => setMenu(false)}
           title={c?.title}
           options={[
+            { Icon: Bot, label: `Agent · ${c?.agent?.label ?? ''}`, sub: 'Pick the agent and model for this conversation', tone: 'lavender', hidden: !c?.agent || !store.supports('agentPicker'), onPress: () => setPicking(true) },
             { Icon: Plus, label: 'New chat', sub: 'A fresh chat with your Mac, a new tab there too', tone: 'sky', hidden: !macChats, onPress: () => newMacChat((h) => router.replace(h as never)) },
             { Icon: Square, label: askedTask ? 'Stop asking' : 'Stop the agent', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic)) },
             { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },

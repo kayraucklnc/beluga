@@ -220,3 +220,34 @@
   align-items: center;
   gap: 8px;
 }
+/* Settings › Claude › Local models: one endpoint's form (LocalModelsSettings.tsx). */
+.endpointForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 0.5px solid var(--hairline);
+}
+.endpointField {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.endpointField > span {
+  width: 64px;
+  color: var(--text-2);
+}
+.endpointField .text {
+  flex: 1;
+  width: auto;
+}
+.endpointBar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.endpointError {
+  padding: 0 14px 10px;
+  color: var(--error);
+  font-size: 0.88rem;
+}

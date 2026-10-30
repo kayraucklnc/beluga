@@ -1,3 +1,4 @@
+import { agentLabel } from '../../shared/agent-label.js';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -175,7 +176,7 @@ export function describeForClaude(task: TaskView): string {
     const incoming = task.incoming ? ` Receiving their files: ${Math.round(task.incoming.received / 1024)} of ${Math.round(task.incoming.total / 1024)} KB.` : '';
     return [`Task ${task.id} (to ${who}): ${task.state === 'confirm' ? 'waiting for your user to confirm sending it' : `not finished yet (${task.state})`}.${incoming}`, steps.length ? `Latest steps on their side:\n${steps.map((s) => `- ${s}`).join('\n')}` : ''].filter(Boolean).join('\n');
   }
-  const body: string[] = [`status: ${r.status}`, `summary:\n${r.summary}`];
+  const body: string[] = [`status: ${r.status}`, ...(r.agent ? [`answered by: ${agentLabel(r.agent, who, false, { model: true })}`] : []), `summary:\n${r.summary}`];
   if (r.data !== undefined) body.push(`data (JSON):\n${JSON.stringify(r.data, null, 2).slice(0, MAX_DATA_CHARS)}`);
   if (r.valid === false && r.problems?.length) body.push(`the data does not match what you asked for: ${r.problems.join('; ')}`);
   if (r.files.length) body.push(`files (saved on this computer):\n${r.files.map((f) => `- ${f.path ? `${f.path}${f.image ? ' (an image: you can Read it to look at it)' : ''}` : `${f.name} (not received)`}`).join('\n')}`);

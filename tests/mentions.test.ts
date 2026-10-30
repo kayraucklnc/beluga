@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseInput, parseLocation } from '../src/core/mentions.js';
-import type { PeerInfo } from '../src/protocol.js';
+import { CLAUDE_AGENT, type PeerInfo } from '../src/protocol.js';
 
 const peers: PeerInfo[] = [
   { peerId: 'me', name: 'kay', agent: true, shares: [{ name: 'app', writable: true }] },
@@ -46,5 +46,81 @@ describe('parseLocation', () => {
     expect(parseLocation('bob:nope/x', peers)).toBeUndefined();
     expect(parseLocation('zed:api/x', peers)).toBeUndefined();
     expect(parseLocation('garbage', peers)).toBeUndefined();
+  });
+});
+
+describe('parseInput: @person grammar (BLG-443)', () => {
+  const codex = { runtime: 'codex', label: 'Codex' } as const;
+  const claude = { runtime: 'claude', label: 'Claude' } as const;
+  const room: PeerInfo[] = [
+    { peerId: 'me', name: 'kay', agent: true, shares: [], agents: [claude], defaultAgent: claude },
+    { peerId: 'b', name: 'bob', agent: true, shares: [], agents: [codex, claude], defaultAgent: codex },
+    { peerId: 'o', name: 'old', agent: true, shares: [] },
+    { peerId: 'c', name: 'cat', agent: false, shares: [] },
+  ];
+
+  it('@bob asks bob\'s published default agent', () => {
+    expect(parseInput('@bob fix it', 'me', room)).toMatchObject({ kind: 'agent', prompt: 'fix it', targets: ['b'], to: [{ peerId: 'b', agent: codex }], notes: [] });
+    expect(parseInput('@BOB hi', 'me', room)).toMatchObject({ to: [{ peerId: 'b', agent: codex }] });
+  });
+
+  it('@bob:codex and @bob:claude pick one of bob\'s agents', () => {
+    expect(parseInput('@bob:claude hi', 'me', room)).toMatchObject({ to: [{ peerId: 'b', agent: claude }], notes: [] });
+    expect(parseInput('@bob:codex hi', 'me', room)).toMatchObject({ to: [{ peerId: 'b', agent: codex }], notes: [] });
+  });
+
+  it('an agent they do not run falls back to their default, with a note', () => {
+    const p = parseInput('@kay:codex hi', 'me', room);
+    expect(p).toMatchObject({ to: [{ peerId: 'me', agent: claude }] });
+    expect(p.kind === 'agent' && p.notes[0]).toMatch(/don't run codex/);
+  });
+
+  it('a person without a published default gets their Claude, with a note', () => {
+    const p = parseInput('@old look', 'me', room);
+    expect(p).toMatchObject({ to: [{ peerId: 'o', agent: CLAUDE_AGENT }] });
+    expect(p.kind === 'agent' && p.notes).toEqual(["old hasn't chosen a default agent, so their Claude will answer"]);
+  });
+
+  it('@agents hits every person\'s default; @claudes every Claude, as before', () => {
+    expect(parseInput('@agents review', 'me', room)).toMatchObject({
+      targets: ['me', 'b', 'o'],
+      to: [{ peerId: 'me', agent: claude }, { peerId: 'b', agent: codex }, { peerId: 'o', agent: CLAUDE_AGENT }],
+    });
+    expect(parseInput('@claudes review', 'me', room)).toMatchObject({ targets: ['me', 'b', 'o'], to: [{ agent: claude }, { agent: claude }, { agent: CLAUDE_AGENT }] });
+  });
+
+  it('old forms still parse exactly as before', () => {
+    expect(parseInput('@claude fix tests', 'me', room)).toMatchObject({ kind: 'agent', targets: ['me'], unknown: [], prompt: 'fix tests' });
+    expect(parseInput('@claude:bob look', 'me', room)).toMatchObject({ targets: ['b'], to: [{ peerId: 'b', agent: claude }], unknown: [] });
+    expect(parseInput('@claudes @claude review', 'me', room)).toMatchObject({ targets: ['me', 'b', 'o'] });
+    expect(parseInput('@claude:zed hi', 'me', room)).toMatchObject({ targets: [], unknown: ['zed'] });
+    expect(parseInput('@claude', 'me', room)).toEqual({ kind: 'chat', text: '@claude' });
+    expect(parseInput('hello @bob', 'me', room)).toEqual({ kind: 'chat', text: 'hello @bob' });
+  });
+
+  it('mixes people and aliases, each asked once', () => {
+    expect(parseInput('@bob @claude:bob @kay hi', 'me', room)).toMatchObject({ targets: ['b', 'me'], to: [{ peerId: 'b', agent: codex }, { peerId: 'me' }] });
+  });
+
+  it('an unknown name is reported with a suggestion, not silently chat', () => {
+    expect(parseInput('@bbo fix it', 'me', room)).toMatchObject({ kind: 'agent', targets: [], unknown: ['bbo'], notes: ['Nobody named "bbo" is here. Did you mean @bob?'] });
+    expect(parseInput('@bob @zzzzz hi', 'me', room)).toMatchObject({ targets: ['b'], unknown: ['zzzzz'], notes: ['Nobody named "zzzzz" is here'] });
+    expect(parseInput('@zed', 'me', room)).toEqual({ kind: 'chat', text: '@zed' });
+  });
+
+  it('a task key is not a person', () => {
+    expect(parseInput('@BLG-24 is done', 'me', room)).toEqual({ kind: 'chat', text: '@BLG-24 is done' });
+  });
+
+  it('a person without an agent on is said, not asked', () => {
+    expect(parseInput('@cat hi', 'me', room)).toMatchObject({ kind: 'agent', targets: [], notes: ['cat has no agent on right now'] });
+  });
+
+  it('a peer named claude: the alias wins, with a hint; @claude:claude reaches them', () => {
+    const withClaude: PeerInfo[] = [...room, { peerId: 'x', name: 'claude', agent: true, shares: [] }];
+    const p = parseInput('@claude hi', 'me', withClaude);
+    expect(p).toMatchObject({ targets: ['me'] });
+    expect(p.kind === 'agent' && p.notes).toEqual(['"@claude" means your own Claude. To ask the person named claude, write @claude:claude']);
+    expect(parseInput('@claude:claude hi', 'me', withClaude)).toMatchObject({ targets: ['x'] });
   });
 });

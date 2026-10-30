@@ -1,7 +1,8 @@
 import type { ChatAnswerRequest } from '../core/chat/claude-prompt.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from './setup-fixer.js';
 import type { DraftContext, TaskDraft } from './task-drafter.js';
-import type { ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
+import type { AgentRef, ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
+import type { UsageUpdate } from './usage.js';
 import type { StepRecord } from '../shared/steps.js';
 
 /** How far a request may reach on the owner's computer. */
@@ -388,7 +389,9 @@ export interface AgentPlace {
   readonly cwd: string;
   readonly additionalDirectories: readonly string[];
   readonly autoEdit: boolean;
-  /** Claude conversation to continue. */
+  /** The agent that runs here (unset: your default). Each run from this place goes to its runtime. */
+  readonly agent?: AgentRef;
+  /** The conversation to continue: always one `agent`'s runtime made (see session-carry.ts resumeFor). */
   readonly resume?: string;
   /** Branch `resume` into a new conversation (used by forks). */
   readonly forkSession?: boolean;
@@ -476,8 +479,8 @@ export interface RoomBridge {
   listPeerFiles(peerName: string, share: string, path: string): Promise<readonly FsEntry[]>;
   readPeerFile(peerName: string, share: string, path: string): Promise<string>;
   writeReport(title: string, markdown: string): Promise<string>;
-  /** Plan usage observed while running (rate-limit events). */
-  reportUsage(usage: Partial<Usage>): void;
+  /** Usage observed while running (rate-limit events, tokens), for that provider (Claude's unless named). */
+  reportUsage(usage: UsageUpdate, agent?: AgentRef): void;
   /** Get a file from anywhere on a peer's computer (they approve); returns where it was saved here. */
   getPeerFile(peerName: string, path: string, saveTo?: string, why?: string): Promise<string>;
   /** Send a file from this computer to a peer; it's saved on their side. */

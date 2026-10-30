@@ -1,4 +1,5 @@
 import { talkReadOnly } from '../../agent/dialogue-tools.js';
+import type { AgentRef } from '../../protocol.js';
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -87,6 +88,8 @@ export interface ServeContext {
   readonly serveShell?: ServeShell;
   readonly projectRoot: (name: string) => string | undefined;
   readonly model: () => { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' };
+  /** The agent that answers friends' asks here: your default, with your default model (you choose it, never the asker). */
+  readonly agentRef?: () => AgentRef;
   readonly notify: (title: string, body: string) => void;
   /** Where scratch folders go when the book has no folder. */
   readonly scratch: string;
@@ -768,6 +771,7 @@ export class TaskServer {
     const result: TaskOutcome = {
       status,
       summary,
+      ...(t.kind === 'ask' && this.ctx.agentRef ? { agent: this.ctx.agentRef() } : {}),
       // What's offered for fetching stays known (the result may have to be sent again); inline bytes don't.
       files: files.map((f) => ({ name: f.name, size: f.size, ...(f.image ? { image: true } : {}), ...(f.ref ? { ref: f.ref } : {}), ...(f.sha256 ? { sha256: f.sha256 } : {}) })),
       log: t.steps,
@@ -795,6 +799,7 @@ export class TaskServer {
           ts: this.ctx.now(),
           ...(result.data !== undefined ? { data: result.data } : {}),
           ...(result.secret ? { secret: result.secret } : {}),
+          ...(result.agent ? { agent: result.agent } : {}),
         },
         true,
       );

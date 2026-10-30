@@ -4,6 +4,7 @@ import { cursorFor } from '../shared/templates-text.js';
 import { MOUSE_OFF, MOUSE_ON } from './tty/codes.js';
 import type { MenuContext } from './menu-actions.js';
 import type { MenuKind } from './menus.js';
+import { agentPicker } from '../shared/agent-picker.js';
 import { TUNNEL_ORDER, type SettingsSection } from './settings-menus.js';
 import { joinArgs } from '../shared/shells.js';
 import type { WorkspaceAction } from './workspace-models.js';
@@ -87,6 +88,16 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
     void bench.setModel(menu.channel, id.slice('model:'.length));
     return true;
   }
+  if (id.startsWith('agent:') && menu.kind === 'model' && menu.channel) {
+    const [runtime = '', ...rest] = id.slice('agent:'.length).split(':');
+    const model = rest.join(':');
+    const group = agentPicker(latest, menu.channel).groups.find((g) => g.runtime === runtime && g.available);
+    // A local endpoint that isn't answering stays where it is (its row says why).
+    if (group?.models.find((m) => m.value === model)?.why) return true;
+    if (group) void bench.setAgent(menu.channel, group.isDefault && !model ? null : { runtime, label: group.label, ...(model ? { model } : {}) });
+    return true;
+  }
+  if (id.startsWith('runtime:') && menu.kind === 'model') return true;
   if (id.startsWith('trust:') && menu.kind === 'person') {
     const peer = latest.peers[menu.index];
     const level = id.slice('trust:'.length) as TrustLevel;

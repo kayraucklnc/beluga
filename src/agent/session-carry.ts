@@ -26,3 +26,24 @@ export function carrySession(sessionId: string, fromDir: string, toDir: string, 
     return false;
   }
 }
+
+/** The runtime a stored session id belongs to when none was recorded: everything before BLG-445 was Claude's. */
+export const SESSION_RUNTIME_DEFAULT = 'claude';
+
+/**
+ * The session a run on `runtime` may resume: a stored one only when that same runtime made it.
+ * Session ids are each runtime's own (a Codex thread id means nothing to Claude Code, and the
+ * other way round), so a place whose agent changed runtime starts a new conversation instead
+ * (BLG-447 hands the old one off). `pending`: a Claude Code conversation found outside Beluga.
+ */
+export function resumeFor(
+  stored: { readonly sessionId?: string; readonly forkFromSession?: string; readonly sessionRuntime?: string },
+  runtime: string,
+  pending?: string,
+): { readonly resume?: string; readonly forkSession: boolean } {
+  const own = (stored.sessionRuntime ?? SESSION_RUNTIME_DEFAULT) === runtime;
+  if (own && stored.forkFromSession) return { resume: stored.forkFromSession, forkSession: true };
+  if (own && stored.sessionId) return { resume: stored.sessionId, forkSession: false };
+  if (pending && runtime === SESSION_RUNTIME_DEFAULT && !stored.sessionId && !stored.forkFromSession) return { resume: pending, forkSession: false };
+  return { resume: undefined, forkSession: false };
+}

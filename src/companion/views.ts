@@ -1,4 +1,5 @@
 import { dialogueHeader } from '../core/dialogues/view.js';
+import { agentPicker } from '../shared/agent-picker.js';
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
@@ -23,13 +24,15 @@ import { type PlanView as PlanProgress, planView } from '../core/plans/progress.
 import { shortVersion } from '../net/mesh/features.js';
 import type { MessageView, PersonView } from '../net/mesh/views.js';
 import { chatPeople, claudePill, offlineNote, waitingIn, waitingLabel } from '../core/chat-people.js';
-import type { Usage } from '../protocol.js';
+import { type AgentRef, CLAUDE_AGENT, type Profile, defaultAgentOf } from '../protocol.js';
+import { providerCards } from '../ui/usage-cards.js';
 import {
   type BranchView,
   type ChatMessageView,
   type ChatsView,
   type ChatView,
   type ConvSummary,
+  type AgentPickerView,
   type ConvView,
   type HomeView,
   type LiveView,
@@ -138,14 +141,29 @@ const myName = (state: DomainState): string => state.self?.name ?? state.network
 
 // ---- usage
 
-/** Your allowance as a list of providers (Claude Code today; other agents later). */
-export function usageViews(usage: Usage | undefined): UsageView[] {
-  if (!usage) return [];
-  const windows = [
-    ...(usage.fiveHour ? [{ label: '5 hours', pct: usage.fiveHour.pct, ...(usage.fiveHour.resetsAt !== undefined ? { resetsAt: Math.round(usage.fiveHour.resetsAt) } : {}) }] : []),
-    ...(usage.week ? [{ label: 'Week', pct: usage.week.pct, ...(usage.week.resetsAt !== undefined ? { resetsAt: Math.round(usage.week.resetsAt) } : {}) }] : []),
-  ].map((w) => ({ ...w, pct: Math.max(0, Math.min(100, w.pct)) }));
-  return [{ provider: 'Claude Code', ...(usage.plan ? { plan: clip(usage.plan, 40) } : {}), windows, updatedAt: Math.round(usage.updatedAt) }];
+/** The phone's words for Claude's windows (the Mac says "5-hour" and "Weekly"). */
+const PHONE_WINDOW: Readonly<Record<string, string>> = { '5-hour': '5 hours', Weekly: 'Week' };
+
+/**
+ * Someone's providers as the phone's usage cards (src/ui/usage-cards.ts, as the Mac draws them):
+ * plan windows where they have them, tokens and speed where not; their default first. A provider
+ * that has said nothing yet is left out, unless it's signed out.
+ */
+export function usageViews(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined): UsageView[] {
+  const cards = providerCards(p, defaultAgent)
+    .filter((c) => c.shape !== 'empty' || !c.signedIn)
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+  return cards.slice(0, 8).map((c) => ({
+    provider: c.key === CLAUDE_AGENT.runtime ? 'Claude Code' : clip(c.agent.label, 40),
+    ...(c.plan ? { plan: clip(c.plan, 40) } : {}),
+    windows: c.windows.slice(0, 8).map((w) => ({ label: clip(PHONE_WINDOW[w.label] ?? w.label, 40), pct: Math.max(0, Math.min(100, w.pct)), ...(w.resetsAt !== undefined ? { resetsAt: Math.round(w.resetsAt) } : {}) })),
+    updatedAt: Math.round(c.updatedAt ?? 0),
+    runtime: c.key,
+    isDefault: c.isDefault,
+    ...(c.tokens ? { tokens: c.tokens } : {}),
+    ...(c.tokensPerSec !== undefined ? { tokensPerSec: c.tokensPerSec } : {}),
+    ...(c.signedIn ? {} : { signedIn: false }),
+  }));
 }
 
 // ---- conversations
@@ -594,7 +612,7 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
     // 1.14: all of Your Mac's chats, for the phone's chat list.
     ...(macChats.length ? { macChats } : {}),
     me: { name: clip(myName(state), 64), peerId: myId(state) },
-    usage: usageViews(state.self?.usage),
+    usage: usageViews(state.peers.find((p) => p.peerId === state.self?.peerId) ?? state.self, state.prefs.defaultAgent),
     needsYou: items,
     running: running.slice(0, 20),
     // Outputs live with their conversation now (ConvView `outputs`); Home only hints (`fresh`).
@@ -681,6 +699,29 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...mergeOf(state, ctx, channel),
     ...(plan && planT ? { plan: planBand(state, plan, planT) } : {}),
     ...waitingOf(state, channel),
+    ...pickerOf(state, channel, conv?.mine ?? false),
+  };
+}
+
+/** Your own worktree or chat: its agent picker, as the Mac's composer shows it (efforts stay the Mac's). */
+function pickerOf(state: DomainState, channel: string, mine: boolean): { agent?: AgentPickerView } {
+  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  if (!mine || !id || !state.projects.some((p) => p.workspaces.some((w) => w.id === id))) return {};
+  const p = agentPicker(state, channel);
+  return {
+    agent: {
+      runtime: clip(p.runtime, 32),
+      label: clip(p.label, 120),
+      groups: p.groups.slice(0, 8).map((g) => ({
+        runtime: clip(g.runtime, 32),
+        label: clip(g.label, 64),
+        available: g.available,
+        ...(g.why ? { why: clip(g.why, 200) } : {}),
+        isDefault: g.isDefault,
+        current: g.current,
+        models: g.models.slice(0, 30).map((m) => ({ value: clip(m.value, 80), label: clip(m.label, 80), description: clip(m.description, 200), on: m.on })),
+      })),
+    },
   };
 }
 
@@ -1316,7 +1357,8 @@ function chatMembers(state: DomainState, dm: { peerId: string; name: string } | 
 export function peopleView(state: DomainState): PeopleView {
   return {
     people: state.network.friends.slice(0, 600).map((f) => {
-      const usage = usageViews(state.peers.find((p) => p.peerId === f.peerId)?.usage)[0];
+      const peer = state.peers.find((p) => p.peerId === f.peerId);
+      const usage = usageViews(peer, defaultAgentOf(peer))[0];
       const card = state.gateway.cards[f.peerId];
       const chat = chatTopic(`dm:${f.peerId}`);
       return {

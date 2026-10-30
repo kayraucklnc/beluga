@@ -168,7 +168,8 @@ export const PHONE: Record<Method, Side> = {
   'workbench.runSetup': 'mac',
   'workbench.setScript': 'mac',
   'workbench.shareScripts': 'mac',
-  'workbench.setModel': 'mac',
+  'workbench.setModel': 'phone',
+  'workbench.setAgent': 'phone',
   'workbench.createPr': 'mac',
   'workbench.quickPr': 'mac',
   'workbench.mergeToBase': 'mac',
@@ -199,6 +200,10 @@ export const PHONE: Record<Method, Side> = {
   'env.testDatabase': 'mac',
   'env.importDotenv': 'mac',
   'env.newKeysBack': 'mac',
+  'env.endpoints': 'mac',
+  'env.saveEndpoint': 'mac',
+  'env.removeEndpoint': 'mac',
+  'env.checkEndpoints': 'mac',
 
   // ---- images in a message: a photo from the phone goes in as bytes, never as a Mac path
   'attachments.add': 'phone',
@@ -446,6 +451,7 @@ export const PHONE: Record<Method, Side> = {
   'companion.signOut': 'phone',
   // Your Mac's one setting the phone may change (BLG-127): whether it stays awake for the phone.
   'companion.keepAwake': 'phone',
+  'companion.defaultAgent': 'phone',
   // The Mac app's window shows what the phone has open; an icon the views named by its checksum.
   'companion.openOnMac': 'phone',
   'companion.icon': 'phone',

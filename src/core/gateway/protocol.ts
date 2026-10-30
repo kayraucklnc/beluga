@@ -1,3 +1,4 @@
+import { AgentRef } from '../../protocol.js';
 import { z } from 'zod';
 
 /**
@@ -150,6 +151,8 @@ export const TaskResult = z.object({
   log: z.array(z.string().max(300)).max(60).default([]),
   /** A file request for a secret that its owner approved, that one time ("private SSH key id_ed25519"): the requester's Claude is told so. */
   secret: z.string().min(1).max(200).optional(),
+  /** An ask: which of their agents answered (runtime and model; BLG-448). An older Mac leaves it out: Claude. */
+  agent: AgentRef.optional(),
   ts: z.number().int().min(0),
 });
 export type TaskResult = z.infer<typeof TaskResult>;

@@ -54,7 +54,7 @@ export function createRoomBridge(session: Session, cwd: () => string, channel?: 
     readPeerFile: async (name, share, p) => (await session.files.readFile({ owner: requirePeer(name).peerId, share, path: p })).content,
     // In a workspace's conversation, its own folder: the room's may be "/" when the app starts the daemon.
     writeReport: (title, markdown) => writeReport(session, (channel && session.workspaces?.inChannel(channel)?.path) || cwd(), title, markdown),
-    reportUsage: (usage) => session.updateUsage(usage),
+    reportUsage: (usage, agent) => session.updateUsage(usage, agent),
     getPeerFile: (name, file, saveTo, why) => session.remote.getFile(requirePeer(name).peerId, file, saveTo, why),
     sendFile: (name, file, note) => session.remote.sendFile(requirePeer(name).peerId, file, note),
     gateway: gatewayBridge(session, channel),

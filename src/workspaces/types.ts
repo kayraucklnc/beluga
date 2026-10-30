@@ -1,3 +1,4 @@
+import type { AgentRef } from '../protocol.js';
 import type { Status } from './git.js';
 import type { DefaultBranch, FetchProblem } from './sync.js';
 import type { ProjectScripts, ResolvedScripts } from './scripts.js';
@@ -11,6 +12,8 @@ export interface WorkspaceUsage {
   /** Estimated cost in USD (what the SDK reports; not a bill). */
   readonly cost: number;
   readonly runs: number;
+  /** A local or bring-your-own model (BLG-450): no plan, no cost; how fast its last turn wrote, in tokens a second. */
+  readonly local?: { readonly tps?: number };
   /** The SDK reports running totals per conversation; remembered to add only what's new. */
   readonly lastSession?: string;
   readonly last?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };
@@ -41,8 +44,12 @@ export interface WorkspaceRecord {
   readonly archived?: boolean;
   /** Archived smartly: how much space it freed, what it kept, and what makes the rest again. */
   readonly archive?: { readonly freedBytes: number; readonly keptBytes: number; readonly remake: readonly string[]; readonly at: number };
-  /** Claude conversation to resume in this workspace. */
+  /** The conversation to resume in this workspace (its runtime's own id: see sessionRuntime). */
   readonly sessionId?: string;
+  /** The runtime sessionId and forkFromSession belong to (unset: 'claude'); another runtime never resumes them. */
+  readonly sessionRuntime?: string;
+  /** The agent picked for this workspace (unset: your default). */
+  readonly agent?: AgentRef;
   /** Set on forks until their first run, so Claude branches the parent's conversation. */
   readonly forkFromSession?: string;
   readonly forkedFrom?: string;
