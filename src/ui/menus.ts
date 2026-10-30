@@ -7,7 +7,7 @@ import { type InboxView, type SettingsSection, inboxMenu, modelMenu, modelLabel,
 import { GRANT_INFO, TRUST_INFO, canRunOn, trustOf } from '../core/trust.js';
 import { TRUST_LEVELS } from '../shared/settings-schema.js';
 import { workMenuSpec, type WorkMenuKind } from './work-menus.js';
-import { describeWindow } from '../agent/usage.js';
+import { describeWindow } from '../agent/runtime/claude/usage.js';
 import type { Usage } from '../protocol.js';
 
 function usageLines(usage: Usage | undefined): string[] {

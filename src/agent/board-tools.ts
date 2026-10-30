@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
 import { DEFAULT_LABELS } from '../core/board/labels.js';
 import type { BoardTools } from './types.js';
@@ -148,5 +148,5 @@ export function createBoardToolDefs(board: BoardTools) {
 }
 
 export function createBoardTools(board: BoardTools) {
-  return createSdkMcpServer({ name: 'beluga_board', version: '0.1.0', tools: createBoardToolDefs(board) });
+  return toolSuite({ name: 'beluga_board', version: '0.1.0', tools: createBoardToolDefs(board) });
 }

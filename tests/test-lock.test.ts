@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import setup, { type TestRun, releaseSlot, slotCount, trySlot, waitForSlot, waitingLine, workerCount } from '../scripts/test-lock.mjs';
 import { worktreeOf } from '../scripts/e2e-lock.mjs';
-import { niceForWorktree } from '../src/agent/claude-process.js';
+import { niceForWorktree } from '../src/agent/runtime/claude/claude-process.js';
 
 const tmp = (): string => mkdtempSync(path.join(os.tmpdir(), 'klaud-tests-'));
 const run = (over: Partial<TestRun> = {}): TestRun => ({ pid: process.pid, name: 'KLD-49', worktree: '/w/kld-49', startedAt: Date.now(), ...over });

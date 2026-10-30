@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
 import type { PhoneTools } from './types.js';
 
@@ -146,7 +146,7 @@ export function createPhoneToolDefs(phone: PhoneTools) {
 }
 
 export function createPhoneTools(phone: PhoneTools) {
-  return createSdkMcpServer({ name: 'beluga_phone', version: '0.1.0', tools: createPhoneToolDefs(phone) });
+  return toolSuite({ name: 'beluga_phone', version: '0.1.0', tools: createPhoneToolDefs(phone) });
 }
 
 /** What Claude is told about the phone it can drive (added to the system prompt for the owner's runs). */

@@ -26,7 +26,7 @@ describe('room tools', () => {
 
   it('exposes every tool under the Beluga MCP namespace', () => {
     expect(defs.map((d) => `mcp__beluga__${d.name}`)).toEqual(ROOM_TOOL_NAMES);
-    expect(createRoomTools(bridge)).toMatchObject({ type: 'sdk', name: 'beluga' });
+    expect(createRoomTools(bridge)).toMatchObject({ name: 'beluga', tools: expect.arrayContaining([expect.objectContaining({ name: 'send_chat' })]) });
   });
 
   it('proxies calls to the bridge', async () => {

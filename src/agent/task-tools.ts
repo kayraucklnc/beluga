@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import { z } from 'zod';
 import type { TaskTools } from './types.js';
 
@@ -47,5 +47,5 @@ export function createTaskToolDefs(tools: TaskTools) {
 /** The MCP server with those tools (none: undefined). */
 export function createTaskTools(tools: TaskTools) {
   const defs = createTaskToolDefs(tools);
-  return defs.length ? createSdkMcpServer({ name: 'beluga_task', version: '0.1.0', tools: defs }) : undefined;
+  return defs.length ? toolSuite({ name: 'beluga_task', version: '0.1.0', tools: defs }) : undefined;
 }

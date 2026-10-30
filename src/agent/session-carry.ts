@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { claudeConfigDir, encodeProjectDir, pathVariants } from './claude-sessions.js';
+import { claudeConfigDir, encodeProjectDir, pathVariants } from './runtime/claude/claude-sessions.js';
 
 /**
  * Make a Claude Code conversation resumable from another folder. Claude Code files sessions

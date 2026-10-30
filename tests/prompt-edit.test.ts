@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { findPrompt } from '../src/agent/session-rewind.js';
-import { PromptQueue } from '../src/agent/live-run.js';
+import { findPrompt } from '../src/agent/runtime/claude/session-rewind.js';
+import { PromptQueue } from '../src/agent/runtime/claude/live-run.js';
 import { applySnapshot, dropSnapshots, promptRef, restoreSnapshot, snapshot, snapshotAt, snapshotBase } from '../src/workspaces/snapshots.js';
 
 /** Editing a message you sent (BLG-385): a worktree's files as they were then, and Claude's session cut there. */

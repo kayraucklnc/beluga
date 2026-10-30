@@ -1,4 +1,4 @@
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from './tool-kit.js';
 import { z } from 'zod';
 import { NEEDS, type Need } from '../core/gateway/protocol.js';
 import type { RoomBridge } from './types.js';

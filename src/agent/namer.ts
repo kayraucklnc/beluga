@@ -1,4 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { Complete } from './runtime/types.js';
 
 const NAME_TIMEOUT_MS = 12_000;
 const STOP_WORDS = new Set(['a', 'an', 'the', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'with', 'please', 'can', 'you', 'we', 'i', 'it', 'is', 'that', 'this', 'my', 'our', 'so', 'be', 'make', 'let', 'lets', "let's"]);
@@ -26,28 +26,19 @@ export function cleanName(raw: string): string | undefined {
  * Ask a small, fast model (Haiku) to name a worktree after the task. Runs with no tools
  * and no saved session, on your own Claude login. Falls back to `slugify` on any trouble.
  */
-export async function nameTask(prompt: string, opts: { cwd: string; claudePath?: string; model?: string }): Promise<string> {
+export async function nameTask(prompt: string, opts: { cwd: string; complete: Complete; model?: string }): Promise<string> {
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), NAME_TIMEOUT_MS);
   timer.unref();
   try {
-    const q = query({
+    const said = await opts.complete({
       prompt: `Task:\n"""\n${prompt.slice(0, 2000)}\n"""\nName a git worktree for this task.`,
-      options: {
-        cwd: opts.cwd,
-        model: opts.model ?? 'haiku',
-        tools: [],
-        maxTurns: 1,
-        settingSources: [],
-        persistSession: false,
-        abortController,
-        systemPrompt: 'You name git worktrees. Reply with only the name: 2 to 4 lowercase English words joined by hyphens (e.g. "fix-login-redirect"). No other text.',
-        ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
-      },
+      cwd: opts.cwd,
+      model: opts.model ?? 'haiku',
+      signal: abortController.signal,
+      system: 'You name git worktrees. Reply with only the name: 2 to 4 lowercase English words joined by hyphens (e.g. "fix-login-redirect"). No other text.',
     });
-    for await (const msg of q) {
-      if (msg.type === 'result' && msg.subtype === 'success') return cleanName(msg.result) ?? slugify(prompt);
-    }
+    return cleanName(said) ?? slugify(prompt);
   } catch {
     // fall through to the local name
   } finally {
@@ -71,28 +62,19 @@ export function cleanPlanTitle(raw: string): string | undefined {
  * A short name for a new plan from what you asked for (Haiku, one turn, no tools), so the plan's
  * page and the sidebar never show your message cut off. Undefined on any trouble: it stays "New plan".
  */
-export async function titlePlan(goal: string, opts: { cwd: string; claudePath?: string; model?: string }): Promise<string | undefined> {
+export async function titlePlan(goal: string, opts: { cwd: string; complete: Complete; model?: string }): Promise<string | undefined> {
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), NAME_TIMEOUT_MS);
   timer.unref();
   try {
-    const q = query({
+    const said = await opts.complete({
       prompt: `What the plan is for:\n"""\n${goal.slice(0, 3000)}\n"""\nName this plan.`,
-      options: {
-        cwd: opts.cwd,
-        model: opts.model ?? 'haiku',
-        tools: [],
-        maxTurns: 1,
-        settingSources: [],
-        persistSession: false,
-        abortController,
-        systemPrompt: `You name project plans. Reply with only the name: 2 to ${PLAN_TITLE_WORDS} plain words in sentence case that say what the plan achieves (e.g. "Card checkout for launch", "Calmer plan drafting screen"). No quotes, no end punctuation, no other text.`,
-        ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
-      },
+      cwd: opts.cwd,
+      model: opts.model ?? 'haiku',
+      signal: abortController.signal,
+      system: `You name project plans. Reply with only the name: 2 to ${PLAN_TITLE_WORDS} plain words in sentence case that say what the plan achieves (e.g. "Card checkout for launch", "Calmer plan drafting screen"). No quotes, no end punctuation, no other text.`,
     });
-    for await (const msg of q) {
-      if (msg.type === 'result' && msg.subtype === 'success') return cleanPlanTitle(msg.result);
-    }
+    return cleanPlanTitle(said);
   } catch {
     // stays "New plan" until Claude writes the plan
   } finally {

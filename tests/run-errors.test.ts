@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentBackend } from '../src/agent/types.js';
-import { keepLines, trackedSpawn } from '../src/agent/claude-process.js';
+import { keepLines, trackedSpawn } from '../src/agent/runtime/claude/claude-process.js';
 import { AgentHost } from '../src/core/agent-host.js';
 import { Board } from '../src/core/board/board.js';
 import { BoardWork } from '../src/core/board/work.js';

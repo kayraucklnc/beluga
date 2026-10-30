@@ -1,4 +1,4 @@
-import type { Usage } from '../protocol.js';
+import type { Usage } from '../../../protocol.js';
 
 /** Utilization may come as a 0–1 fraction or a 0–100 percentage depending on the source. */
 export function toPct(value: number | null | undefined): number | undefined {

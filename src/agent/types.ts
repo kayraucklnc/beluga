@@ -16,6 +16,11 @@ export interface AgentRunInput {
   readonly context: readonly string[];
   /** 'folder': only the shared folders. 'full': the whole computer (secrets still blocked). */
   readonly scope: AccessScope;
+  /**
+   * The runtime can't gate each tool call (agent/runtime/types.ts, safety rule): run sandboxed, so
+   * nothing outside the run's folders, secrets included, is reachable. Never set for Claude.
+   */
+  readonly sandbox?: boolean;
   /** The request's first answer, as soon as it's there (the run may stay open for background agents). */
   readonly onAnswered?: (text: string) => void;
   /** Asked by a guest invited into one project: the room tools (other people, their files, the room chat) are off. */

@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs';
-import type { FoundConversation } from '../agent/claude-sessions.js';
+import type { FoundConversation } from '../agent/runtime/claude/claude-sessions.js';
 import type { ConversationSummary } from '../agent/transcript.js';
-import type { WorktreeCreator } from '../agent/worktree-creators.js';
+import type { WorktreeCreator } from '../agent/runtime/claude/worktree-creators.js';
 import type { ConductorWorkspace } from '../workspaces/conductor.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import { type OriginInfo, type WorktreeSource, describeOrigin, sourceFromPath } from '../workspaces/origin.js';
