@@ -1,3 +1,4 @@
+import type { AgentRef } from '@beluga/protocol.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { waitingNote } from '@beluga/core/friend-share-people.js';
 import { type AppState, type View, channelOf, peerName } from '@beluga/core/store.js';
@@ -325,7 +326,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     // Its words left the box when it was sent; its branch and name go with them.
     worktreeChoices.delete(projectId);
     setWorktreeState({ name: '' });
-    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
+    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}), ...(worktree.agent ? { agent: worktree.agent } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
   };
   const deliver = (text: string, urgent: boolean): void => {
     if (readOnly) return;
@@ -576,7 +577,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </ActionsDropdown>
           ) : null}
           {canRunHere && sharedWs ? <RunOnChip wsId={sharedWs.id} ownerName={state.sharedProjects.find((p) => p.owner === sharedWs.owner)?.ownerName ?? 'Their'} value={runOn} onChange={setRunOn} /> : null}
-          {!shared ? <ModelPicker channel={channel} /> : null}
+          {!shared ? <ModelPicker channel={channel} {...(draftProject ? { draft: worktree.agent, onDraft: (agent: AgentRef | undefined) => setWorktree({ ...worktree, agent }) } : {})} /> : null}
           {!shared && channel !== 'draft' ? <McpChip /> : null}
           {burning && state.prefs.effort === 'max' ? (
             <Tip label={`Max effort: ${agent} thinks as hard as it can`}>

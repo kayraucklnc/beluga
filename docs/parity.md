@@ -19,7 +19,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/terminal` | `session.submit` → `runCommand` | typed in the composer · the right panel's Terminal tab (⌥⌘3) or the drawer under the chat (⌘J, Settings › Terminal picks which) · Go › Terminal (⌘6) |
 | `/setup` | `session.submit` → `runCommand` | typed in the composer · the panel terminal's Commands… |
 | `/handoff` | `session.submit` → `runCommand` | typed in the composer · Toolbar ⋯ › Hand off |
-| `/model` | `session.submit` → `runCommand` | typed in the composer · Composer model picker |
+| `/model` | `session.submit` → `runCommand` | typed in the composer (`/model codex:gpt-5` picks another agent: a live conversation is handed off) · Composer agent picker (runtimes as groups, BLG-446) |
 | `/search` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Search · ⌘⇧F |
 | `/usage` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Usage (⌘5) |
 | `/inbox` | `session.submit` → `runCommand` | typed in the composer · toolbar bell (notification centre) · the right panel's Info › Notifications · Go › Inbox · ⌘K › Notifications |
@@ -315,7 +315,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.runSetup` | ✓ |
 | `workbench.setScript` | ✓ |
 | `workbench.shareScripts` | ✓ |
-| `workbench.setModel` | ✓ |
+| `workbench.setModel` | ✓ (the composer's agent picker: a model of the same runtime, for this conversation or new ones; the phone's picker since 1.31) |
+| `workbench.setAgent` | ✓ (the agent picker's other runtimes, grouped Claude › Codex › Local model; a runtime this Mac doesn't run is greyed with why; the phone's picker since 1.31) |
 | `workbench.createPr` | ✓ |
 | `workbench.quickPr` | ✓ the toolbar's Create PR (and Create Draft PR under its chevron), the Changes panel's Create PR |
 | `workbench.mergeToBase` | ✓ the branch control's chevron › Merge into main… (no PR yet, on GitHub): asks first, then lands the branch on origin's base and pushes |
@@ -639,6 +640,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | Your Mac (BLG-47): one conversation with your own agent for the whole Mac, not one project, the same on the phone and the Mac (the `assistant` view, channel `mac:assistant`). It runs in ~/.beluga/assistant/work (its scratch folder's files are its outputs on the phone; its session and history beside it stay secret), with your usual approvals, and its tools (`mcp__beluga_mac__*`: `screenshot`, `device_info`, `list_work`, `start_worktree`, `start_task`, `start_plan`) plus the board's. What it starts it names as `worktree:<id>`, `task:<KEY>`, `plan:<id>`, drawn as links on both screens. Since BLG-102 it holds several chats, tabs above its conversation on the Mac (the `assistant` view's `chat`; channels `mac:assistant` for the first, `mac:assistant:<id>` for the others; the shared state's `assistant`): + starts one, × deletes one for good after asking (no archive), and the open tab is kept across restarts (~/.beluga/assistant/chats.json; each chat's session and history in `chats/<id>/`, the old single chat moved into `chats/main/`) | Mac (the sidebar's top row, `layout/AssistantNav.tsx`; the tabs, `chat/AssistantTabs.tsx`; core: `src/core/assistant/`, `src/agent/mac-tools.ts`); phone (the Ask sheet's first target and Home's Ask your Mac: the chat open on the Mac; its other chats by name where conversations are listed) |
 | Graphs the agent draws (`beluga-graph` blocks: interactive diagrams laid out by ELK and drawn with React Flow, in answers, reports and Markdown files; hover, details, walkthrough, full window) | Mac (`components/graph/*`; the format is `src/shared/graph-spec.ts`, the agent learns it from `agent/graph-prompt.ts`) |
 | Views the agent shows (`beluga-view` blocks and the `show` tool: tables, charts, stats, code, colors; live from a file, folder, SQLite, Postgres, a web address or a command, paged, sorted and searched without the agent) | Mac (`components/views/*`; the format is `src/shared/view-spec.ts`, sources run in `core/views/sources.ts`, the agent learns it from `agent/view-prompt.ts`) |
+| Mention grammar (BLG-443): `@bob` asks bob's default agent, `@bob:codex` one of theirs, `@agents` everyone's default; `@claude`, `@claude:bob` and `@claudes` stay aliases (a person named claude is `@claude:claude`, with a hint); a mistyped name gets "Did you mean @bob?" and a person with no published default gets their Claude, each said in a toast; the request carries the agent (`agent_request.agent`) | both (core: `core/mentions.ts` `parseInput`, `core/session.ts` `submit`; the phone sends what you type through the same `submit`) |
+| Your default agent (BLG-444): who answers `@you`, in Settings › Agent ("Answers when friends write @you") and per project in its Settings sheet (`session.setPrefs` `defaultAgent` / `projectAgents`; a project's wins, `core/settings.ts` `chosenAgent`); published on your peer card (`defaultAgent`, `agents`) at once, without reconnecting | Mac (`dialogs/Settings.tsx`, `dialogs/native/ProjectSettingsSheet.tsx`, choices from `ui/agent-choice.ts`); the phone shows friends' defaults it gets on their cards |
 
 ## Adding a feature
 

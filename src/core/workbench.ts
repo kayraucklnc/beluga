@@ -19,11 +19,13 @@ import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store, shippedText } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
-import type { ModelChoice, PullRequest, RuntimeChoice } from './work-store.js';
+import type { ModelChoice, PullRequest } from './work-store.js';
+import type { RuntimeStatus } from '../agent/runtime/types.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
-import { defaultAgentOf } from '../protocol.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import type { RuntimeChoice } from '../shared/agent-runtimes.js';
 import { type GitFixId, type GitSetup, type GitTrouble, explainGitTrouble, httpsRemoteOf, troubleLine } from '../shared/git-trouble.js';
 
 export interface WorkbenchDeps {
@@ -44,8 +46,12 @@ export interface WorkbenchDeps {
   readonly open?: (target: string) => void;
   /** Models your Claude Code offers (asked once). */
   readonly listModels?: () => Promise<readonly ModelChoice[] | undefined>;
-  /** The other agents this Mac could run (Codex), whether each is ready, and their models (BLG-455). */
-  readonly runtimeStatus?: () => Promise<readonly RuntimeChoice[]>;
+  /** Another runtime on a live conversation hands it off (core/agent-switch.ts, BLG-447); unset: a plain switch. */
+  readonly switchAgent?: (channel: string, agent: AgentRef | undefined) => Promise<unknown>;
+  /** The agent picker's runtimes: which run on this Mac, and why the others don't (BLG-446). */
+  readonly listRuntimes?: () => readonly RuntimeChoice[];
+  /** Whether each runtime that can say so is ready here (Codex: installed, signed in) and its models (BLG-455). */
+  readonly runtimeStatus?: () => Promise<ReadonlyArray<{ readonly id: string } & RuntimeStatus>>;
   /** Look for a pull request (injected in tests). */
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   /** A repository's recent PRs by branch, in one call (injected in tests; without it, with an injected findPr, PRs are looked up one by one). */
@@ -85,6 +91,16 @@ export interface WorkbenchDeps {
   readonly workOutScripts?: (dir: string, want: { setup: boolean; run: boolean }) => Promise<WorkedOutScripts | undefined> | undefined;
   /** Whether your Claude is on (it can be asked to fix a setup or run that failed). */
   readonly hasClaude?: () => boolean;
+}
+
+/** The picker's runtimes with what each said about itself: ready (its models), or greyed with why and what to do. */
+export function withRuntimeStatus(runtimes: readonly RuntimeChoice[], found: ReadonlyArray<{ readonly id: string } & RuntimeStatus>): RuntimeChoice[] {
+  return runtimes.map((r) => {
+    const st = found.find((f) => f.id === r.id);
+    if (!st) return r;
+    if (st.state === 'ready') return { id: r.id, label: r.label, available: true, models: st.models };
+    return { id: r.id, label: r.label, available: false, why: [st.state === 'missing' ? `${r.label} isn't installed on this Mac` : `${r.label} isn't signed in`, st.fix].filter(Boolean).join(': ') };
+  });
 }
 
 /** An agent that isn't ready yet (Codex not signed in) is asked about again this often. */
@@ -260,6 +276,8 @@ export class Workbench {
       this.deps.store.dispatch({ type: 'gh', ok });
       if (ok) void this.refreshPrs();
     });
+    const runtimes = this.deps.listRuntimes?.();
+    if (runtimes) this.deps.store.dispatch({ type: 'runtimes', runtimes });
     void this.deps.listModels?.().then((models) => models && this.deps.store.dispatch({ type: 'models', models }), () => undefined);
     void this.checkRuntimes();
     setTimeout(() => void this.measureDisk(), 3000).unref();
@@ -291,6 +309,19 @@ export class Workbench {
     }
     this.deps.setPrefs({ model: value || undefined });
     this.deps.toast(`New conversations use ${label}`, 'success');
+  }
+
+  /** Pick the agent for one conversation (undefined: your default); every run from there uses it. */
+  setAgent(channel: string, agent: AgentRef | undefined): boolean {
+    const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+    if (!id || !this.manager.find(id)) return false;
+    // Another runtime on a live conversation is a handoff (the old agent's note seeds the new one), never a silent swap.
+    if (this.deps.switchAgent) void this.deps.switchAgent(channel, agent).finally(() => void this.deps.controller.refresh());
+    else {
+      this.manager.setAgent(id, agent);
+      void this.deps.controller.refresh();
+    }
+    return true;
   }
 
   // ----------------------------------------------------------- pull requests
@@ -1375,12 +1406,16 @@ export class Workbench {
   }
 
   /** How much disk each worktree and chat folder takes. */
-  /** Whether the other agents are ready; asked again a while later until all are (you may sign in meanwhile). */
+  /**
+   * The picker's runtimes made true: one that can say whether it's ready here (Codex: installed,
+   * signed in) is greyed with what to do until it is, then lists its models. Asked again a while
+   * later until every one is (you may sign in meanwhile).
+   */
   private async checkRuntimes(): Promise<void> {
-    const runtimes = await this.deps.runtimeStatus?.().catch(() => undefined);
-    if (!runtimes) return;
-    this.deps.store.dispatch({ type: 'agent_runtimes', runtimes });
-    if (runtimes.some((r) => r.state !== 'ready')) {
+    const found = await this.deps.runtimeStatus?.().catch(() => undefined);
+    if (!found?.length) return;
+    this.deps.store.dispatch({ type: 'runtimes', runtimes: withRuntimeStatus(this.deps.store.getState().runtimes, found) });
+    if (found.some((r) => r.state !== 'ready')) {
       clearTimeout(this.runtimeTimer);
       this.runtimeTimer = setTimeout(() => void this.checkRuntimes(), RUNTIME_RECHECK_MS);
       this.runtimeTimer.unref();

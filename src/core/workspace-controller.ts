@@ -6,10 +6,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { slugify } from '../agent/namer.js';
-import { carrySession } from '../agent/session-carry.js';
+import { SESSION_RUNTIME_DEFAULT, carrySession, resumeFor } from '../agent/session-carry.js';
 import { sessionBefore } from '../agent/runtime/claude/session-rewind.js';
 import { promptRef, restoreSnapshot, snapshot, snapshotAt } from '../workspaces/snapshots.js';
 import type { AgentPlace } from '../agent/types.js';
+import type { AgentRef } from '../protocol.js';
+import { placeAgent } from '../shared/agent-picker.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import { type EnvChange, scanEnvFiles } from '../workspaces/env.js';
 import type { Project, Workspace } from '../workspaces/types.js';
@@ -62,6 +64,8 @@ export interface ControllerDeps {
   readonly claudeHome?: string;
   /** Move a folder to the Trash (Delete Project; default: the system's Trash, see workspaces/trash.ts). */
   readonly moveToTrash?: (dir: string) => Promise<void>;
+  /** The runtime your default agent runs on, for a place that picked none (default: 'claude'). */
+  readonly defaultRuntime?: () => string;
 }
 
 export const REVIEW_PROMPT = [
@@ -562,6 +566,7 @@ export class WorkspaceController {
     // "Let Claude handle it": this one run may sync git in the main folder (and nothing else).
     const syncMain = ws.askOnly ? this.syncRuns.get(ws.id) : undefined;
     if (syncMain) this.syncRuns.delete(ws.id);
+    const runtime = ws.agent?.runtime ?? this.deps.defaultRuntime?.() ?? SESSION_RUNTIME_DEFAULT;
     return {
       cwd: ws.path,
       additionalDirectories: [],
@@ -569,14 +574,22 @@ export class WorkspaceController {
       autoEdit: ws.kind === 'worktree',
       // A project's main folder is questions only: work happens in worktrees.
       ...(ws.askOnly ? { askOnly: { project: this.deps.manager.list.find((p) => p.root && real(p.root) === real(ws.path))?.name ?? path.basename(ws.path) } } : {}),
-      resume: ws.forkFromSession ?? ws.sessionId ?? this.pendingResume.get(ws.id),
-      forkSession: Boolean(ws.forkFromSession),
-      onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId),
+      // Only a session its own runtime made: another runtime's id is never fed to this one.
+      ...resumeFor(ws, runtime, this.pendingResume.get(ws.id)),
+      onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId, runtime),
+      ...(ws.agent ? { agent: ws.model ? { ...ws.agent, model: ws.model } : ws.agent } : {}),
       ...(ws.model ? { model: ws.model } : {}),
       ...(ws.prShipped && ws.kind === 'worktree' ? { shipped: ws.prShipped } : {}),
       ...(syncMain ? { syncMain } : {}),
       ...(ws.askOnly && this.fixups.has(ws.id) ? { fixup: this.fixups.get(ws.id)! } : {}),
     };
+  }
+
+  /** The agent that runs in a workspace conversation of yours (its pick, else `fallback`: your default), with its model. */
+  agentOf(channel: string, fallback: AgentRef): AgentRef | undefined {
+    const id = workspaceIdOf(channel);
+    const ws = id ? this.deps.manager.find(id) : undefined;
+    return ws ? placeAgent(ws, fallback) : undefined;
   }
 
   /** Let a main-folder conversation's runs edit `dir` (a hidden worktree with a conflict to fix), until it's lifted (undefined). */
@@ -637,7 +650,8 @@ export class WorkspaceController {
    * the folder; the real worktree then takes the row's place under the same id. If it can't be
    * made, the row goes again and the toast says why.
    */
-  async newWorktree(projectId: string, name: string, opts: { base?: string; quiet?: boolean } = {}): Promise<Workspace | undefined> {
+  /** `agent`: the agent it runs (unset: your default). */
+  async newWorktree(projectId: string, name: string, opts: { base?: string; quiet?: boolean; agent?: AgentRef } = {}): Promise<Workspace | undefined> {
     const project = this.deps.manager.list.find((p) => p.root !== '' && (p.id === projectId || p.root === projectId));
     const id = this.deps.manager.newWorktreeId();
     if (project) {
@@ -645,7 +659,7 @@ export class WorkspaceController {
       this.publish();
       if (!opts.quiet) this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab: 'chat' } });
     }
-    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name, opts.base, { id }));
+    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name, opts.base, { id, ...(opts.agent ? { agent: opts.agent } : {}) }));
     const shown = this.ahead.making.delete(id);
     this.publish();
     if (ws) {
@@ -702,11 +716,11 @@ export class WorkspaceController {
    * by the name the model gave it; with `nameLater`, as soon as it's made (its id stays when the
    * name comes, so a caller that only wants the id needn't wait for the model).
    */
-  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string; plan?: boolean; quiet?: boolean; nameLater?: boolean } = {}): Promise<Workspace | undefined> {
+  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string; plan?: boolean; quiet?: boolean; nameLater?: boolean; agent?: AgentRef } = {}): Promise<Workspace | undefined> {
     const text = firstMessage.trim();
     const named = opts.name?.trim();
     const proper = named || !text ? undefined : nameTask(firstMessage).catch(() => undefined);
-    const ws = await this.newWorktree(projectId, named || (text ? slugify(text) : 'worktree'), { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}) });
+    const ws = await this.newWorktree(projectId, named || (text ? slugify(text) : 'worktree'), { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}), ...(opts.agent ? { agent: opts.agent } : {}) });
     if (ws && opts.plan) this.deps.store.dispatch({ type: 'plan_mode', channel: `${WS_PREFIX}${ws.id}`, on: true });
     if (ws && text) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
     if (ws && proper) {

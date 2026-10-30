@@ -1,3 +1,4 @@
+import type { AgentRef } from '@beluga/protocol.js';
 import { useEffect, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { Select, type SelectOption } from '../components/Select.js';
@@ -9,6 +10,8 @@ import s from './draft.module.css';
 export interface WorktreeChoice {
   readonly base?: string;
   readonly name: string;
+  /** Its own agent (the composer's picker, BLG-446); unset: your default. */
+  readonly agent?: AgentRef;
 }
 
 /**

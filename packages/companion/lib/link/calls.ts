@@ -57,6 +57,9 @@ export const calls = {
   createPlan: (project: string, goal: string): Call => make('plans.create', [{ projectId: project, goal }], `Plan "${short(goal)}"`),
   /** How a plan runs (1.5): Step by Step, Check-ins or Autopilot. */
   setAutonomy: (plan: string, autonomy: 'step' | 'gated' | 'autopilot', label: string): Call => make('plans.setAutonomy', [plan, autonomy], `Run as ${label}`),
+  /** 1.31 (BLG-446): a model of this conversation's runtime, or another runtime's agent (null: your default again). */
+  setModel: (topic: Topic, value: string, label: string): Call => make('workbench.setModel', [channelOf(topic), value], `Use ${label}`),
+  setAgent: (topic: Topic, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('workbench.setAgent', [channelOf(topic), agent], `Use ${label}`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
   /** A request you asked of a friend's Claude (a `conv:task:<id>`): stop it, or (1.27) remove it from your lists. */
   /** 1.27: take a needs-you item off every list (here and the Mac's) without answering it. */

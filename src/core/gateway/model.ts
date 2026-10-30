@@ -1,3 +1,4 @@
+import type { AgentRef } from '../../protocol.js';
 import { type Capabilities, DEFAULT_CAPABILITIES, type Rule } from './access.js';
 import type { Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
 
@@ -47,6 +48,8 @@ export interface TaskOutcome {
   readonly problems?: readonly string[];
   /** The file is a secret its owner approved sending, that one time ("private SSH key id_ed25519"). */
   readonly secret?: string;
+  /** An ask: the agent that answered on their Mac (their pick, never the asker's; BLG-448). */
+  readonly agent?: AgentRef;
 }
 
 /** What kind of secret a file is (core/shares.ts secretKindOf decides). */

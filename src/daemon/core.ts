@@ -2,14 +2,13 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../config.js';
 import { runtimeFor } from '../agent/runtime/registry.js';
-import { CLAUDE_AGENT } from '../protocol.js';
 import { createMockBackend } from '../agent/mock.js';
 import { findConversation } from '../agent/runtime/claude/claude-sessions.js';
 import { otherTools } from '../agent/other-tools.js';
 import { copyNative, pasteText } from '../core/clipboard.js';
 import { DEFAULT_LINK } from '../core/project-invites.js';
 import { type SessionOptions, Session } from '../core/session.js';
-import { loadSettings, saveSettings } from '../core/settings.js';
+import { chosenAgent, loadSettings, publishedAgents, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
 import { leaveNetwork, networkSwitch } from '../core/network.js';
 import { launchBoard } from '../core/board/launch.js';
@@ -236,7 +235,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     url: room.url,
     ...(room.fallbackUrl ? { fallbackUrl: room.fallbackUrl } : {}),
     keys: deriveKeys(room.secret),
-    profile: { name: config.name, shares: shares.infos, agent: config.agent, agents: [CLAUDE_AGENT], defaultAgent: CLAUDE_AGENT },
+    profile: { name: config.name, shares: shares.infos, agent: config.agent, agents: publishedAgents(saved), defaultAgent: chosenAgent(saved) },
     identity,
   });
   const hub = room.hub;

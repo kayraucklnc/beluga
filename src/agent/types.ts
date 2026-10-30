@@ -1,7 +1,7 @@
 import type { ChatAnswerRequest } from '../core/chat/claude-prompt.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from './setup-fixer.js';
 import type { DraftContext, TaskDraft } from './task-drafter.js';
-import type { ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
+import type { AgentRef, ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
 import type { StepRecord } from '../shared/steps.js';
 
 /** How far a request may reach on the owner's computer. */
@@ -386,7 +386,9 @@ export interface AgentPlace {
   readonly cwd: string;
   readonly additionalDirectories: readonly string[];
   readonly autoEdit: boolean;
-  /** Claude conversation to continue. */
+  /** The agent that runs here (unset: your default). Each run from this place goes to its runtime. */
+  readonly agent?: AgentRef;
+  /** The conversation to continue: always one `agent`'s runtime made (see session-carry.ts resumeFor). */
   readonly resume?: string;
   /** Branch `resume` into a new conversation (used by forks). */
   readonly forkSession?: boolean;

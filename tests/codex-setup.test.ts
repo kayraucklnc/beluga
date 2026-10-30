@@ -6,7 +6,8 @@ import { CODEX_MISSING, CODEX_SIGN_IN, codexStatus } from '../src/agent/runtime/
 import { CodexSessionsWatcher, codexStepWords } from '../src/core/claude-code/codex-watch.js';
 import { type CcSession, type ClaudeCodeSlice, outsideSessions, reduceClaudeCode, sessionApp } from '../src/core/claude-code/model.js';
 import { Store, initialState } from '../src/core/store.js';
-import { runtimeSections } from '../src/ui/runtime-choices.js';
+import { runtimeChoices } from '../src/shared/agent-runtimes.js';
+import { withRuntimeStatus } from '../src/core/workbench.js';
 import { FakeCodex } from './fake-codex.js';
 
 describe('is Codex ready here', () => {
@@ -24,16 +25,13 @@ describe('is Codex ready here', () => {
     expect(await codexStatus({ bin: '/nowhere/codex' })).toEqual({ state: 'missing', fix: CODEX_MISSING, models: [] });
   });
 
-  it('the picker greys it out with why until it is ready, then lists its models', () => {
+  it("the picker greys it out with why and what to do until it's signed in, then lists its models", () => {
+    const listed = runtimeChoices((id) => (id === 'claude' || id === 'codex' ? {} : undefined));
     const models = [{ value: '', label: 'GPT-5.5', description: 'Frontier' }];
-    expect(runtimeSections([{ id: 'codex', label: 'Codex', state: 'signed_out', fix: CODEX_SIGN_IN, models: [] }])).toEqual([{ id: 'codex', label: 'Codex', ready: false, note: `Not signed in · ${CODEX_SIGN_IN}`, models: [] }]);
-    expect(runtimeSections([{ id: 'codex', label: 'Codex', state: 'ready', models }])).toEqual([{ id: 'codex', label: 'Codex', ready: true, models }]);
-  });
-
-  it('keeps what the daemon found in the shared state', () => {
-    const store = new Store(initialState('room'));
-    store.dispatch({ type: 'agent_runtimes', runtimes: [{ id: 'codex', label: 'Codex', state: 'missing', models: [] }] });
-    expect(store.getState().agentRuntimes).toHaveLength(1);
+    const out = withRuntimeStatus(listed, [{ id: 'codex', state: 'signed_out', fix: CODEX_SIGN_IN, models: [] }]);
+    expect(out.find((r) => r.id === 'codex')).toEqual({ id: 'codex', label: 'Codex', available: false, why: `Codex isn't signed in: ${CODEX_SIGN_IN}` });
+    expect(out.find((r) => r.id === 'claude')).toEqual(listed.find((r) => r.id === 'claude'));
+    expect(withRuntimeStatus(listed, [{ id: 'codex', state: 'ready', models }]).find((r) => r.id === 'codex')).toEqual({ id: 'codex', label: 'Codex', available: true, models });
   });
 });
 

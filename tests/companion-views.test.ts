@@ -355,6 +355,17 @@ describe('the views of a known Mac', () => {
     expect(home.unread).toEqual({ work: expect.any(Number), chats: 2 });
   });
 
+  it("a conversation of yours carries its agent picker (1.31), runtimes as groups", () => {
+    const w1 = ConvView.parse(viewOf(state, ctx, 'conv:ws:w1'));
+    expect(w1.agent?.runtime).toBe('claude');
+    expect(w1.agent?.groups.map((g) => [g.runtime, g.available])).toEqual([
+      ['claude', true],
+      ['codex', false],
+      ['local', false],
+    ]);
+    expect(w1.agent?.groups[1]?.why).toMatch(/Codex/);
+  });
+
   it('a conversation: code folded, steps in words, sub-agents with their outputs', () => {
     const w1 = ConvView.parse(viewOf(state, ctx, 'conv:ws:w1'));
     const answer = w1.turns.find((t) => t.who === 'claude')!;

@@ -94,7 +94,7 @@ test('Ask Sentinel’s panel is resized by its edge, and its message box stays o
   // It slid in: measured once it's there.
   await panel.evaluate((el) => Promise.allSettled(el.getAnimations({ subtree: true }).map((x) => x.finished)));
   // Narrow, the box's bar keeps one line: no chip wraps, nothing runs off the edge.
-  const bar = panel.getByRole('button', { name: 'Model and effort' }).locator('..');
+  const bar = panel.getByRole('button', { name: 'Agent, model and effort' }).locator('..');
   const fits = async (): Promise<void> => {
     const b = (await bar.boundingBox())!;
     const p = (await panel.boundingBox())!;

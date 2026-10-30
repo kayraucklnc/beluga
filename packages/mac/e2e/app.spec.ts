@@ -116,10 +116,10 @@ test("the dock terminal takes the shell's keys: Tab completes after a click in i
 
 test('picks a model and how hard Claude thinks', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByRole('button', { name: 'Model and effort' }).click();
+  await page.getByRole('button', { name: 'Agent, model and effort' }).click();
   await page.getByRole('radio', { name: /Opus/ }).click();
   await page.getByRole('radio', { name: 'High', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Model and effort' })).toHaveText(/Opus · High/);
+  await expect(page.getByRole('button', { name: 'Agent, model and effort' })).toHaveText(/Opus · High/);
   await page.getByRole('radio', { name: 'Auto' }).click();
 });
 
@@ -474,12 +474,12 @@ test('clicking a notification goes where it happened', async ({ page }) => {
 
 test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByRole('button', { name: 'Model and effort' }).click();
+  await page.getByRole('button', { name: 'Agent, model and effort' }).click();
   await page.getByRole('radio', { name: 'Max', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Model and effort' })).toHaveText(/Max/);
+  await expect(page.getByRole('button', { name: 'Agent, model and effort' })).toHaveText(/Max/);
   await page.getByRole('radio', { name: 'Auto' }).click();
   await expect(page.getByRole('radio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByRole('button', { name: 'Model and effort' })).not.toHaveText(/Max/);
+  await expect(page.getByRole('button', { name: 'Agent, model and effort' })).not.toHaveText(/Max/);
   await page.keyboard.press('Escape');
   await composer(page).click();
   await page.keyboard.press('Shift+Tab');

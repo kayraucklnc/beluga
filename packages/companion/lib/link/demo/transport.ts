@@ -1,3 +1,4 @@
+import { demoPicker } from './agents';
 import * as Device from 'expo-device';
 import { toB64, utf8 } from '../../b64';
 import {
@@ -234,7 +235,7 @@ export class DemoTransport implements Transport {
       // 1.15: the plan this chat writes and runs, and its decisions asked here too (views.ts).
       const plan = w.plans.find((p) => p.topic === topic);
       const planT = plan ? (`plan:${plan.id}` as Topic) : undefined;
-      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic || (planT && n.topic === planT)), ...this.projectOf(c), outputs, ...(plan && planT ? { plan: { topic: planT, title: plan.title, state: plan.state, ...count(plan), milestones: plan.milestones.length } } : {}), ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true } : {}), ...(merge ? { merge } : {}) };
+      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic || (planT && n.topic === planT)), ...this.projectOf(c), outputs, ...(plan && planT ? { plan: { topic: planT, title: plan.title, state: plan.state, ...count(plan), milestones: plan.milestones.length } } : {}), ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true, agent: c.agent ?? demoPicker(c.topic === 'conv:beluga.push' ? 'codex' : 'claude', c.topic === 'conv:beluga.push' ? 'gpt-5-codex' : '') } : {}), ...(merge ? { merge } : {}) };
     }
     if (topic.startsWith('plan:')) {
       const p = w.plans.find((x) => x.id === topic.slice(5));
@@ -491,6 +492,18 @@ export class DemoTransport implements Transport {
           else this.later(2400, () => this.chatReply(topic, who, files.length ? 'oh nice photo 😍' : pick(['ha, nice', 'on it 👍', 'can you send a screenshot?', 'looks great from here', 'ok, give me 5 min'])));
         }
         return ok();
+      }
+      // 1.31 (BLG-446): the agent picker: a model of the same runtime, or another runtime's agent.
+      case 'workbench.setModel':
+      case 'workbench.setAgent': {
+        const c = w.convs.get(`conv:${str(0)}`);
+        if (c) {
+          const ref = args[1] as { runtime: string; model?: string } | null;
+          const runtime = method === 'workbench.setModel' ? (c.agent?.runtime ?? 'claude') : (ref?.runtime ?? 'claude');
+          w.convs.set(c.topic, { ...c, agent: demoPicker(runtime, method === 'workbench.setModel' ? str(1) : (ref?.model ?? '')) });
+          this.touch(c.topic);
+        }
+        return ok(method === 'workbench.setAgent' ? true : null);
       }
       case 'host.stopRun': {
         const c = w.convs.get(`conv:${str(0)}`);

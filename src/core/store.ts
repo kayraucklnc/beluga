@@ -264,6 +264,10 @@ export interface Prefs {
   /** Default model for new conversations (undefined: Claude Code's default). */
   readonly model?: string;
   readonly effort?: Effort;
+  /** Who answers "@you" (core/settings.ts chosenAgent; undefined: Claude). */
+  readonly defaultAgent?: AgentRef;
+  /** Per-project defaults over `defaultAgent`, by project name. */
+  readonly projectAgents?: Readonly<Record<string, AgentRef>>;
   readonly autoSetup: boolean;
   readonly contextMeter: boolean;
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
@@ -629,7 +633,7 @@ export const DEFAULT_PREFS: Prefs = {
 
 /** The preference fields out of saved settings. */
 export function prefsFrom(settings: Partial<Settings>): Prefs {
-  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'shell', 'earningsCurrency']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
+  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'defaultAgent', 'projectAgents', 'shell', 'earningsCurrency']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
   return { ...DEFAULT_PREFS, ...picked };
 }
 
@@ -1082,7 +1086,6 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'notice_unread':
     case 'notice_clear':
     case 'models':
-    case 'agent_runtimes':
     case 'disk':
     case 'archiving':
     case 'pr':

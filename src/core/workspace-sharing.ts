@@ -1,3 +1,5 @@
+import { defaultAgentOf } from '../protocol.js';
+import { placeAgent } from '../shared/agent-picker.js';
 import type { BodyInput, BodyOf, GuestCan, WsRole } from '../protocol.js';
 import { agentLabel } from '../shared/agent-label.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
@@ -117,7 +119,7 @@ export class WorkspaceSharing {
     this.syncShare(wsId);
     const project = state.projects.find((p) => p.id === ws.projectId)?.name ?? '';
     const history = historyFor(state.log, `ws:${wsId}`, (id) => peerName(state, id));
-    this.deps.send({ kind: 'ws_invite', ws: { id: wsId, name: ws.name, project, ...(ws.branch ? { branch: ws.branch } : {}) }, role, ...(opts.can ? { can: opts.can } : {}), share: shareNameOf(wsId), history }, { to: peerId });
+    this.deps.send({ kind: 'ws_invite', ws: { id: wsId, name: ws.name, project, ...(ws.branch ? { branch: ws.branch } : {}), agent: placeAgent(ws, defaultAgentOf(state.self)) }, role, ...(opts.can ? { can: opts.can } : {}), share: shareNameOf(wsId), history }, { to: peerId });
     this.broadcastRoster(wsId);
     this.onChange?.();
     if (!opts.quiet) this.deps.toast(`${peer.name} ${role === 'contribute' ? 'can now work with you' : 'can now follow along'} in ${ws.name}`, 'success');
@@ -181,7 +183,7 @@ export class WorkspaceSharing {
     if (state.shared.some((w) => w.id === body.ws.id && w.owner !== from)) return;
     this.deps.store.dispatch({
       type: 'shared_add',
-      ws: { owner: from, id: body.ws.id, name: clean(body.ws.name), project: clean(body.ws.project), branch: body.ws.branch ? clean(body.ws.branch) : undefined, role: body.role, ...(body.can ? { can: body.can } : {}), share: body.share },
+      ws: { owner: from, id: body.ws.id, name: clean(body.ws.name), project: clean(body.ws.project), branch: body.ws.branch ? clean(body.ws.branch) : undefined, role: body.role, ...(body.can ? { can: body.can } : {}), share: body.share, ...(body.ws.agent ? { agent: body.ws.agent } : {}) },
     });
     const channel = `ws:${body.ws.id}`;
     this.deps.store.dispatch({ type: 'clear', channel });
