@@ -14,6 +14,7 @@ import type { WorkspaceController } from './workspace-controller.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
 import { StepBook, importedKey, runKey } from './step-book.js';
 import { Compactor } from './compactor.js';
+import { BtwDesk } from './btw.js';
 import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
 import { PHONE_LOOK_TOOLS } from '../agent/phone-tools.js';
@@ -261,6 +262,8 @@ export class AgentHost {
   readonly steps: StepBook;
   /** Compacting conversations, by hand or when they're nearly full (see compactor.ts). */
   private readonly compactor: Compactor;
+  /** Side questions (/btw), answered beside conversations (see btw.ts). */
+  readonly btw: BtwDesk;
 
   constructor(private readonly deps: AgentHostDeps) {
     this.steps = deps.steps ?? new StepBook();
@@ -271,6 +274,15 @@ export class AgentHost {
       emit: (requestId, kind, text, channel) => this.emitAgent(requestId, this.selfId, kind, text, channel),
       requesterName: () => peerName(this.store.getState(), this.selfId),
       modelFor: (place) => this.modelFor(place?.model),
+    });
+    this.btw = new BtwDesk({
+      store: deps.store,
+      agent: () => this.agent,
+      place: (channel) => {
+        const at = this.deps.workspaces?.btwPlace(channel);
+        const model = at && this.modelFor(at.model).model;
+        return at && { ...at, ...(model ? { model } : {}) };
+      },
     });
   }
 

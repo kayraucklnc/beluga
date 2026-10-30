@@ -21,6 +21,7 @@ import { progressCount } from '../shared/progress-count.js';
 import { resultText } from '../shared/steps.js';
 import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { answerChat } from './chat-answer.js';
+import { askBtw } from './btw.js';
 import { nameTask, titlePlan } from './namer.js';
 import { fixRun, fixSetup, workOutScripts } from './setup-fixer.js';
 import { describeProject } from './project-describer.js';
@@ -575,6 +576,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     titlePlan: (goal: string) => titlePlan(goal, { cwd: opts.cwd, claudePath: opts.claudePath }),
     answerChat: (req) => answerChat(req, { cwd: opts.cwd, ...(opts.claudePath ? { claudePath: opts.claudePath } : {}), ...(opts.model ? { model: opts.model } : {}) }),
 
+    btw: (req) => askBtw(req, { ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
     fixSetup: (dir: string, failed: string, output: string) => fixSetup(dir, failed, output, { claudePath: opts.claudePath }),
     fixRun: (dir: string, failed: string, output: string) => fixRun(dir, failed, output, { claudePath: opts.claudePath }),
     workOutScripts: (dir: string, want: { setup: boolean; run: boolean }) => workOutScripts(dir, want, { claudePath: opts.claudePath }),

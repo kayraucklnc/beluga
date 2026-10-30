@@ -19,6 +19,7 @@ import { ModelPicker } from './ModelPicker.js';
 import { ContextMeter } from './ContextMeter.js';
 import { McpChip } from './McpChip.js';
 import { QueueTray } from './QueueTray.js';
+import { BtwCard, askBtw } from './BtwCard.js';
 import { expectClaude, launchFlight } from './flight.js';
 import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
 import { sendSteerNow, stopClaude } from '../lib/commands.js';
@@ -234,6 +235,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     if (draftProject) worktreeChoices.set(draftProject, choice);
     setWorktreeState(choice);
   };
+  // A side question (/btw): "/btw " turns the box into one; it's answered in the card above, never in the chat.
+  const canBtw = channel.startsWith('ws:') && !shared;
+  const [asideIn, setAsideIn] = useState<string | undefined>(undefined);
+  const aside = canBtw && asideIn === channel;
+  const btwOpen = useApp((st) => Boolean(st.btw?.[channel]));
   const canCreate = Boolean(buffer.trim() && !buffer.trim().startsWith('/')) || Boolean(worktree.name.trim());
 
   // "@src/au" in a worktree: its folders and files (loaded as you type into a folder).
@@ -311,7 +317,10 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
 
   /** The message you were just warned holds a secret. */
   const secretWarned = useRef<string | undefined>(undefined);
-  const set = (text: string): void => {
+  const set = (raw: string): void => {
+    const btw = canBtw && !aside ? /^\/btw\s+/.exec(raw) : null;
+    if (btw) setAsideIn(channel);
+    const text = btw ? raw.slice(btw[0].length) : raw;
     ui.patch({ buffer: text, cursor: text.length });
     sug.reset();
   };
@@ -352,6 +361,13 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   };
   const send = (urgent = false): void => {
     const typed = buffer.trim();
+    if (aside) {
+      if (!typed) return;
+      askBtw(client, api, channel, typed);
+      setAsideIn(undefined);
+      ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, `/btw ${typed}`].slice(-200), historyIndex: -1 });
+      return;
+    }
     // A password on its way to the whole room: stop once and say where it belongs (sending again sends it).
     const secret = state.view.kind === 'room' && !typed.startsWith('/') ? secretIn(typed) : undefined;
     if (secret && secretWarned.current !== typed) {
@@ -425,9 +441,17 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     const modKey = e.metaKey || e.ctrlKey;
     if (sug.onKeyDown(e)) return;
     if (att.onRefKey(e)) return;
+    // Backspace in an empty side question: back to an ordinary message.
+    if (aside && e.key === 'Backspace' && !buffer) {
+      e.preventDefault();
+      setAsideIn(undefined);
+      return;
+    }
     if (e.key === 'Escape') {
-      if (pending) ui.patch({ pending: undefined, buffer: '' });
+      if (aside) setAsideIn(undefined);
+      else if (pending) ui.patch({ pending: undefined, buffer: '' });
       else if (to) ui.patch({ to: undefined });
+      else if (btwOpen && !buffer) void api.session.btwDismiss(channel);
       else if (state.view.kind === 'draft' || state.view.kind === 'draft_worktree') client.store.dispatch({ type: 'view', view: state.view.back });
       return;
     }
@@ -476,18 +500,31 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     <div className={s.wrap}>
       {att.dropTarget}
       {sug.list}
+      {canBtw ? <BtwCard channel={channel} /> : null}
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={(prompt) => void editQueued(prompt)} />
       <div
         ref={boxRef}
         style={effects ? (fireVars(prefs.maxFire) as React.CSSProperties) : undefined}
         data-fire={burning ? prefs.maxFire.show : undefined}
-        className={cx(s.box, burning ? (prefs.maxFire.border ? m.max : m.maxPlain) : effects && m.fxOnly, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
-        data-plan={plan || tasksMode || undefined}
-        data-mode={mode}
+        className={cx(s.box, burning ? (prefs.maxFire.border ? m.max : m.maxPlain) : effects && m.fxOnly, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode || aside) && s.planning)}
+        data-plan={plan || tasksMode || aside || undefined}
+        data-mode={aside ? 'btw' : mode}
         {...att.dropProps}
       >
         {effects ? <MaxFire box={boxRef} input={ref} /> : null}
-        {mode !== 'act' ? (
+        {aside ? (
+          <div className={s.planBanner} role="status">
+            <span className={s.planTag}>
+              <Icon name="sparkles" size={11} />
+              By the way
+            </span>
+            <span className={s.planHint}>A side question: answered above, Claude keeps working and won’t remember it</span>
+            <span className={s.flex} />
+            <span className={s.planKeys}>
+              <Kbd>esc</Kbd> to leave
+            </span>
+          </div>
+        ) : mode !== 'act' ? (
           <div className={s.planBanner} role="status">
             <span className={s.planTag}>
               <Icon name={mode === 'tasks' ? 'graph' : 'wand'} size={11} />
@@ -534,7 +571,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             rows={1}
             value={buffer}
             disabled={readOnly}
-            placeholder={to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : state.placeholder}
+            placeholder={aside ? 'Ask Claude something on the side…' : to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && !homePlan?.body && !homePlan?.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : state.placeholder}
             onChange={(e) => set(e.target.value)}
             onKeyDown={onKey}
             onPaste={att.onPaste}
@@ -601,6 +638,12 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
                 <span className={d.createKey}>{sendKeys}</span>
               </button>
             </Tip>
+          ) : aside ? (
+            <Tip label="Ask on the side: the answer shows above the box, the conversation never sees it" keys={sendKeys}>
+              <button type="button" className={cx(s.send, buffer.trim() && s.sendReady)} onClick={() => send(false)} aria-label="Ask on the side" disabled={!buffer.trim()}>
+                <Icon name="send" size={14} />
+              </button>
+            </Tip>
           ) : queueing ? (
             <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label="Claude is working">
               <Tip label="Claude is working: this waits its turn in the queue" keys={sendKeys}>
@@ -625,7 +668,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
         </div>
       </div>
       {/* Keys are shown only when they change what Return does (Mac apps don't keep a legend up). */}
-      {queueing || draftProject ? (
+      {(queueing && !aside) || draftProject ? (
       <div className={s.legend}>
         {queueing ? (
           <>
@@ -645,6 +688,12 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               <>
                 {' '}
                 <Kbd>{shortcutKeys('conv-stop')}</Kbd> stop
+              </>
+            ) : null}
+            {canBtw ? (
+              <>
+                {' '}
+                · <Kbd>/btw</Kbd> ask on the side
               </>
             ) : null}
           </>
