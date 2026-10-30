@@ -70,12 +70,6 @@
   .why li { font-size: 12px; padding: 4px 0 4px 18px; position: relative; color: var(--ink); }
   .why li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--mint-d); opacity: .55; }
 
-  .e2e { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; }
-  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-  .chips span { font: 10.5px "SF Mono", Menlo, monospace; background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; color: var(--soft); }
-  .pipe { display: grid; gap: 8px; margin-top: 8px; }
-  .pipe div { background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; font-size: 12px; color: var(--soft); }
-  .pipe div b { color: var(--ink); display: block; font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -227,27 +221,25 @@
   <div class="foot"><span>Beluga · a short guide</span><span>8</span></div>
 </section>
 
-<!-- 9. Your Mac + how it's tested -->
+<!-- 9. Use case: away from the desk -->
 <section class="page">
-  <span class="kicker k-rose">Keeping an eye</span>
-  <h2>Your Mac at a glance, and how we know it works</h2>
-  <div class="e2e" style="margin-top:6mm">
-    <div>
-      <img class="shot" src="img/14-activity.jpg" alt="" style="height:62mm;object-fit:cover;object-position:top left">
-      <img class="shot" src="img/15-usage.jpg" alt="" style="height:62mm;object-fit:cover;object-position:top left;margin-top:5mm">
-      <p class="cap"><b>Activity</b>: every Claude Code session on the Mac, Beluga's or not, and the background agents they started. <b>Usage</b> shows plan limits, tokens per day and disk per project with one-click clean up. The phone app mirrors what needs you, with a push.</p>
+  <div class="uc">
+    <div class="text">
+      <span class="kicker k-rose">Use case</span>
+      <h2>Four Claudes running, and you're at lunch</h2>
+      <p>Before you leave, <b>Activity</b> shows everything at work on your Mac: every Claude Code session, Beluga's or not, and the background agents each one started.</p>
+      <p><b>Usage</b> tells you if there's room for one more: how much of your plan's 5-hour and weekly limits is left, tokens per day, and which projects' old worktrees you can clear up in one click.</p>
+      <p>Then you go. When a Claude has a question, a friend asks for something or a fix waits for Merge, your phone buzzes. You answer it from the phone, and the work carries on.</p>
+      <ul class="why">
+        <li>NeedsYou on the phone: approvals, Claude's questions, friends' requests</li>
+        <li>Read a worktree's files and use its terminal from the phone</li>
+        <li>Start new work from the phone: a question, a task, a new worktree</li>
+        <li>The menu-bar whale spouts while Claude works, and its number shows what's new</li>
+      </ul>
     </div>
-    <div>
-      <h3>The end-to-end tests</h3>
-      <p style="color:var(--soft)">Every picture in this guide comes from the <b>demo</b>: a fake daemon with the projects <code>bob-api</code> and <code>landing</code>, friends bob and mia, tasks and sentinels. The e2e suite drives the real app against it, the same way a person would.</p>
-      <div class="pipe">
-        <div><b>1 · Start the demo daemon</b>A real engine with made-up projects and a simulated Claude, so runs are fast and repeatable.</div>
-        <div><b>2 · Open the app in Playwright</b>The Mac app's web view, clicked through by role and label, like a screen reader would.</div>
-        <div><b>3 · Walk a real use case</b>Make a worktree, ask a friend, merge, run a sentinel, and check what the screen says.</div>
-        <div><b>4 · Record the GIFs</b><code>scripts/gifs.mjs</code> replays the same scenes for the README.</div>
-      </div>
-      <div class="chips"><span>worktrees</span><span>merge</span><span>scratch</span><span>tasks</span><span>plans</span><span>wants-to</span><span>network</span><span>sentinel</span><span>views</span><span>graphs</span><span>phone-pairing</span><span>usage</span><span>keyboard</span><span>+ 76 more</span></div>
-      <p class="cap">Run them: <code>cd packages/mac && npm run e2e</code></p>
+    <div class="pics">
+      <img class="shot" src="img/14-activity.jpg" alt="" style="height:74mm;object-fit:cover;object-position:top left">
+      <img class="shot" src="img/15-usage.jpg" alt="" style="height:74mm;object-fit:cover;object-position:top left">
     </div>
   </div>
   <div class="foot"><span>Beluga · a short guide</span><span>9</span></div>
