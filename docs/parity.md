@@ -531,8 +531,11 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `plans.pass` | ✓ Pass Milestone on a plan's page |
 | `plans.recheck` | ✓ Check Again on a milestone Claude is checking or that failed its check |
 | `plans.openPr` | ✓ Open PR on a plan whose every milestone passed (plan/<slug> → main) |
-| `plans.mergePr` | ✓ Merge on GitHub once the plan's pull request is open |
+| `plans.mergePr` | ✓ Merge on GitHub (or Merge When Checks Pass, ⋯ › Merge Now) once the plan's pull request is open |
 | `plans.mergeLocal` | ✓ ⋯ › Merge into Main Locally on a plan ready to ship |
+| `plans.bringInMain` | ✓ Resolve Conflicts on a plan whose pull request conflicts with main |
+| `plans.retryConflicts` | ✓ Ask Claude Again on a plan's conflict that waits for you |
+| `plans.showConflict` | ✓ Show in Finder on a plan's conflict that waits for you |
 | `plans.sendBack` | ✓ Not Yet… on a milestone waiting for you |
 | `plans.startTask` | ✓ Start on a ready task (step by step, or a task for you) |
 | `plans.resumeTask` | ✓ Resume on a task that stopped (Claude ran out of usage or crashed) |

@@ -63,8 +63,14 @@ export const PLANS_API = {
   'plans.sendBack': { args: z.tuple([id, ref, z.string().min(1).max(4000)]) },
   // The plan's one pull request (plan/<slug> → main), merging it on GitHub, or merging the branch into main here → the plan.
   'plans.openPr': { args: z.tuple([id]) },
-  'plans.mergePr': { args: z.tuple([id]) },
+  // auto: GitHub merges it once its checks and reviews pass.
+  'plans.mergePr': { args: z.tuple([id, z.object({ auto: z.boolean().optional() }).strict().optional()]) },
   'plans.mergeLocal': { args: z.tuple([id]) },
+  // Its pull request conflicts with main: main merged into the plan's branch, a conflict fixed by the plan's Claude.
+  'plans.bringInMain': { args: z.tuple([id]) },
+  // A conflict Claude couldn't fix: ask it again; or show the folder it waits in (Finder).
+  'plans.retryConflicts': { args: z.tuple([id]) },
+  'plans.showConflict': { args: z.tuple([id]) },
   // Start a ready task now → what happened.
   'plans.startTask': { args: z.tuple([id, ref]) },
   // Wake a started task whose Claude stopped without finishing (it waits for you) → what happened.

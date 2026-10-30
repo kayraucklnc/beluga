@@ -109,6 +109,8 @@ export const PhoneCalls = {
   'plans.sendBack': entry('plans.sendBack', done),
   // 1.8: Resume a plan's task that stopped twice, from its Needs You card.
   'plans.resumeTask': entry('plans.resumeTask', z.string()),
+  // Ask Claude again about a plan's merge conflict, from its Needs You card.
+  'plans.retryConflicts': entry('plans.retryConflicts', done),
   'companion.older': entry('companion.older', OlderResult),
   'companion.ask': entry('companion.ask', AskResult),
   'companion.post': entry('companion.post', done),

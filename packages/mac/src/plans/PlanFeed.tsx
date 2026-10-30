@@ -29,6 +29,8 @@ const KIND_ICON: Record<FeedKind, IconName> = {
   resumed: 'play',
   done: 'flag',
   problem: 'alert',
+  branch: 'branch',
+  pr: 'pr',
 };
 
 const SHOWN = 40;
