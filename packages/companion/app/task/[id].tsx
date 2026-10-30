@@ -47,7 +47,7 @@ export default function Task() {
     const ws = await store.call<string>(calls.start(t.key), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
     setStarting(false);
     if (typeof ws === 'string') {
-      store.toast({ text: `${t.key} started: Claude is on it`, tone: 'ok' });
+      store.toast({ text: `${t.key} started: your agent is on it`, tone: 'ok' });
       router.push(convHref(`conv:ws:${ws}`));
     }
   };
@@ -81,7 +81,7 @@ export default function Task() {
                 {t.checks ? <Pill label={`${t.checks.done} of ${t.checks.total} checked`} Icon={Check} tone={t.checks.done === t.checks.total ? 'mint' : 'plain'} /> : null}
               </View>
 
-              {canStart ? <Button label={starting ? 'Starting…' : 'Start with Claude'} Icon={Play} disabled={starting} onPress={() => void start()} /> : null}
+              {canStart ? <Button label={starting ? 'Starting…' : 'Start with your agent'} Icon={Play} disabled={starting} onPress={() => void start()} /> : null}
               {t.conv ? <Button label="Open its conversation" Icon={MessageSquare} quiet onPress={() => router.push(convHref(t.conv!))} /> : null}
 
               {t.goal?.text.trim() ? (
@@ -155,7 +155,7 @@ export default function Task() {
                   </T>
                   {t.activity.map((a) => (
                     <Animated.View key={a.id} entering={FadeIn.duration(220)} layout={LinearTransition.duration(180)} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-                      <Avatar name={a.who} size={26} claude={/Claude/.test(a.who)} />
+                      <Avatar name={a.who} size={26} claude={/agent$|Claude|Codex/.test(a.who)} />
                       <View style={{ flex: 1, gap: 4 }}>
                         <T v="callout">
                           <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
@@ -191,7 +191,7 @@ export default function Task() {
         onClose={() => setMenu(false)}
         title={t ? `${t.key} ${t.title}` : undefined}
         options={[
-          { Icon: Play, label: 'Start with Claude', sub: 'A new worktree, Claude working on it', tone: 'peach', hidden: !canStart, onPress: () => void start() },
+          { Icon: Play, label: 'Start with your agent', sub: 'A new worktree, your agent working on it', tone: 'peach', hidden: !canStart, onPress: () => void start() },
           { Icon: ArrowRightLeft, label: 'Move to…', sub: st ? `Now ${st.label}` : undefined, tone: 'sky', hidden: !t?.moves.length, onPress: () => setMoving(true) },
           { Icon: Monitor, label: 'Open on your Mac', sub: 'Its brief, proof and history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
         ]}

@@ -201,7 +201,7 @@ export function makeNumbers(now = Date.now()): DemoNumbers {
         t({ kind: 'number', metric: ['sn_speed', 'home'], title: 'Site speed' }),
         t({ kind: 'chart', chart: 'area', metrics: [['sn_stripe', 'revenue']], title: 'Revenue this week' }),
         t({ kind: 'chart', chart: 'line', metrics: [['sn_yt', 'subscribers']] }),
-        t({ kind: 'divider', title: 'What Claude said' }),
+        t({ kind: 'divider', title: 'What the agent said' }),
         t({ kind: 'output', sentinelId: 'sn_stripe', title: 'Add it up', output: { look: 'markdown', text: '$3,412 yesterday, 6 new subscriptions, 1 failed payment\n\n- 20 charges, the largest $348\n- 1 declined card, nothing disputed' } }),
         t({ kind: 'output', sentinelId: 'sn_yt', title: 'YouTube’s answer', output: { look: 'tree', text: JSON.stringify({ kind: 'youtube#channelListResponse', items: [{ id: 'UCdemo', statistics: { viewCount: '1482210', subscriberCount: '12304', videoCount: '213' } }] }, null, 2) } }),
         t({ kind: 'text', sentinelId: 'sn_stripe' }),

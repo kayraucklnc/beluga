@@ -47,7 +47,7 @@ export default function Link() {
             {on ? <Pill label="On" tone="mint" Icon={CircleCheck} /> : installed ? <Pill label="Installed, not on yet" tone="butter" /> : <Pill label="Not installed" tone="plain" />}
           </View>
           <T v="body" style={{ paddingHorizontal: 6 }}>
-            Beluga Link lets Claude on your Mac look at this phone and tap, type and open apps when you ask it to. You only need it for that: everything else in Beluga works without it.
+            Beluga Link lets your agent on your Mac look at this phone and tap, type and open apps when you ask it to. You only need it for that: everything else in Beluga works without it.
           </T>
 
           {section('Why it’s a separate app')}
@@ -88,7 +88,7 @@ export default function Link() {
                 <Row Icon={Monitor} tone="sky" label="2. Set up Beluga Link on the Mac" sub="Settings › Phone" chevron={false} />
                 <Row Icon={Hand} tone="sky" label="3. Tap Allow if the phone asks" sub="“Allow USB debugging?”" chevron={false} />
               </Card>
-              {note('Or ask Claude on your Mac: “set up Beluga Link on my phone”. Your Mac installs Link and turns it on, with nothing else to do here. It needs USB debugging on; Settings › Phone on your Mac shows how if it’s off.')}
+              {note('Or ask your agent on your Mac: “set up Beluga Link on my phone”. Your Mac installs Link and turns it on, with nothing else to do here. It needs USB debugging on; Settings › Phone on your Mac shows how if it’s off.')}
 
               {section('Or download it yourself')}
               {note('Download it, open it from your notifications and tap Install. If Android blocks it, use your Mac instead. Then come back here to turn it on.')}

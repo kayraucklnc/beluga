@@ -74,7 +74,7 @@ export default function Ask() {
     // friends" (views.ts groups those under 'room', 'shared:…' and 'asked').
     for (const p of work?.data.projects ?? []) if (p.id !== 'room' && p.id !== 'asked' && !p.id.startsWith('shared:')) t.push({ kind: 'project', id: p.id, label: p.name, ...(p.icon ? { icon: p.icon } : {}) });
     for (const c of home?.data.running ?? []) if (c.topic !== mac) t.push({ kind: 'conv', topic: c.topic, label: c.title, ...(c.project ? { project: c.project } : {}), ...(c.icon ? { icon: c.icon } : {}) });
-    for (const p of people?.data.people ?? []) if (p.presence !== 'offline') t.push({ kind: 'friend', id: p.peerId, name: p.name, label: `${p.name}'s Claude` });
+    for (const p of people?.data.people ?? []) if (p.presence !== 'offline') t.push({ kind: 'friend', id: p.peerId, name: p.name, label: `${p.name}'s agent` });
     return t;
   }, [work, home, people]);
   const [sel, setSel] = useState<string | undefined>();
@@ -144,7 +144,7 @@ export default function Ask() {
     { title: '', kind: 'mac' },
     { title: 'New in a project', kind: 'project' },
     { title: 'Add to a conversation', kind: 'conv' },
-    { title: "A friend's Claude", kind: 'friend' },
+    { title: "A friend's agent", kind: 'friend' },
   ];
 
   return (
@@ -205,7 +205,7 @@ export default function Ask() {
                   value={text}
                   onChangeText={setText}
                   multiline
-                  placeholder={target?.kind === 'friend' ? `What should ${target.name}'s Claude do?` : target?.kind === 'project' && modes ? MODES.find((m) => m.mode === how)!.hint : target?.kind === 'mac' ? 'Take a screenshot and send it to me' : 'Run the tests and send me a screenshot'}
+                  placeholder={target?.kind === 'friend' ? `What should ${target.name}'s agent do?` : target?.kind === 'project' && modes ? MODES.find((m) => m.mode === how)!.hint : target?.kind === 'mac' ? 'Take a screenshot and send it to me' : 'Run the tests and send me a screenshot'}
                   placeholderTextColor={color.text3}
                   style={{ color: color.text, fontSize: 19, lineHeight: 26, minHeight: 92, maxHeight: 200, textAlignVertical: 'top', ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }}
                 />
@@ -297,7 +297,7 @@ function PlanFirst({ on, onChange }: { readonly on: boolean; readonly onChange: 
       onPress={() => (haptic.tap(), onChange(!on))}
       accessibilityRole="switch"
       accessibilityState={{ checked: on }}
-      accessibilityLabel="Plan mode: Claude plans first"
+      accessibilityLabel="Plan mode: the agent plans first"
       style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: on ? toneBg('lavender') : color.sunken }}
     >
       <ListChecks color={on ? toneInk('lavender') : color.text2} size={15} strokeWidth={1.9} />

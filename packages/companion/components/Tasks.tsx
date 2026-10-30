@@ -90,7 +90,7 @@ export function TasksList() {
         <Card style={{ marginHorizontal: 16, padding: 18 }}>
           <T v="heading">No tasks yet</T>
           <T v="callout" style={{ marginTop: 4 }}>
-            Tasks your Claude and you open on your Mac show up here.
+            Tasks your agent and you open on your Mac show up here.
           </T>
         </Card>
       ) : null}
@@ -199,14 +199,14 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
               value={text}
               onChangeText={setText}
               multiline
-              placeholder={several ? 'Say what it is, or a few tasks and who does each' : 'Say what it is: Claude writes the rest'}
+              placeholder={several ? 'Say what it is, or a few tasks and who does each' : 'Say what it is: your agent writes the rest'}
               placeholderTextColor={color.text3}
               style={{ color: color.text, fontSize: 18, lineHeight: 25, minHeight: 84, maxHeight: 180, textAlignVertical: 'top', ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }}
             />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Sparkles color={color.claude} size={15} />
               <T v="caption" style={{ flex: 1 }}>
-                {several ? 'Your Claude drafts each task and who it’s for. You see them first.' : 'Your Claude drafts the title, goal and checks. You see it first.'}
+                {several ? 'Your agent drafts each task and who it’s for. You see them first.' : 'Your agent drafts the title, goal and checks. You see it first.'}
               </T>
               <Press disabled={!text.trim() || !!busy} onPress={() => void ask()} accessibilityLabel="Draft it" style={{ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() ? color.primary : color.sunken }}>
                 {busy === 'draft' ? <ActivityIndicator color={color.onPrimary} /> : <ArrowUp color={text.trim() ? color.onPrimary : color.text3} size={22} strokeWidth={2} />}
@@ -224,7 +224,7 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
                   </T>
                 </View>
               ) : null}
-              <DraftCard draft={draft} epic={draft.epic} heading={count > 1 ? undefined : 'Claude’s draft'} />
+              <DraftCard draft={draft} epic={draft.epic} heading={count > 1 ? undefined : 'Your agent’s draft'} />
               {(draft.more ?? []).map((m, i) => (
                 <View key={i} style={draft.epic ? { marginLeft: 14 } : undefined}>
                   <DraftCard draft={m} />

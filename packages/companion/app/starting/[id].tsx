@@ -21,7 +21,7 @@ const KIND: Record<StartKind, { Icon: typeof GitBranch; tone: Tone; title: strin
   worktree: { Icon: GitBranch, tone: 'mint', title: 'New worktree', doing: 'Making the worktree on your Mac' },
   plan: { Icon: Workflow, tone: 'butter', title: 'Advanced plan', doing: 'Your Mac is setting up the plan' },
   question: { Icon: MessageCircleQuestion, tone: 'sky', title: 'Question', doing: 'Opening the conversation on your Mac' },
-  friend: { Icon: Sparkles, tone: 'lavender', title: 'Ask a friend', doing: 'Sending it to their Claude' },
+  friend: { Icon: Sparkles, tone: 'lavender', title: 'Ask a friend', doing: 'Sending it to their agent' },
 };
 
 export default function Starting() {

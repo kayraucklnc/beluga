@@ -48,7 +48,7 @@ function MacStarters({ topic }: { readonly topic: Topic }) {
       <IconBadge Icon={Laptop} tone="sky" size={56} />
       <T v="heading">Ask your Mac</T>
       <T v="callout" style={{ textAlign: 'center', paddingHorizontal: 24 }}>
-        Your Claude for the whole Mac, not one project. The same conversation as on your Mac.
+        Your agent for the whole Mac, not one project. The same conversation as on your Mac.
       </T>
       <View style={{ gap: 8, alignSelf: 'stretch', marginTop: 6 }}>
         {starters.map((s) => (
@@ -165,7 +165,7 @@ export default function Conversation() {
                       {c.plan.title}
                     </T>
                     <T v="caption" numberOfLines={1}>
-                      {c.plan.milestones ? `${c.plan.milestones} ${c.plan.milestones === 1 ? 'milestone' : 'milestones'} · ${c.plan.done} of ${c.plan.total} tasks` : 'Claude is writing the plan'}
+                      {c.plan.milestones ? `${c.plan.milestones} ${c.plan.milestones === 1 ? 'milestone' : 'milestones'} · ${c.plan.done} of ${c.plan.total} tasks` : 'Your agent is writing the plan'}
                     </T>
                   </View>
                   <Pill label={c.plan.state} tone={toneOf(c.plan.state)} />
@@ -220,7 +220,7 @@ export default function Conversation() {
             ))}
           </ScrollView>
           <Composer
-            placeholder={c?.waiting ?? (c?.working ? 'What’s next for Claude…' : 'Reply to Claude…')}
+            placeholder={c?.waiting ?? (c?.working ? 'What’s next for your agent…' : 'Reply to your agent…')}
             working={c?.working}
             disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
             photos
@@ -279,12 +279,12 @@ export default function Conversation() {
         <Options
           visible={Boolean(unread)}
           onClose={() => setUnread(undefined)}
-          title="Claude hasn't read this yet"
+          title="Your agent hasn't read this yet"
           options={[
             {
               Icon: Send,
               label: 'Send now',
-              sub: 'Stops Claude’s current step so it reads this next',
+              sub: 'Stops your agent’s current step so it reads this next',
               tone: 'peach',
               onPress: () => {
                 const request = unread?.steer?.request;
@@ -299,7 +299,7 @@ export default function Conversation() {
           title={c?.title}
           options={[
             { Icon: Plus, label: 'New chat', sub: 'A fresh chat with your Mac, a new tab there too', tone: 'sky', hidden: !macChats, onPress: () => newMacChat((h) => router.replace(h as never)) },
-            { Icon: Square, label: askedTask ? 'Stop asking' : 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic)) },
+            { Icon: Square, label: askedTask ? 'Stop asking' : 'Stop the agent', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(askedTask ? calls.cancelTask(askedTask) : calls.stop(topic)) },
             { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
             { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
             { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
@@ -339,7 +339,7 @@ function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) 
       {waiting ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4, marginRight: 4 }}>
           <Clock color={color.text2} size={12} />
-          <T v="caption">{waiting === 'stopping' ? 'Sent · Claude is stopping its step to read it' : 'Sent · waiting for Claude to read it'}</T>
+          <T v="caption">{waiting === 'stopping' ? 'Sent · your agent is stopping its step to read it' : 'Sent · waiting for your agent to read it'}</T>
         </View>
       ) : (
         <T v="caption" style={{ marginTop: 4, marginRight: 4 }}>

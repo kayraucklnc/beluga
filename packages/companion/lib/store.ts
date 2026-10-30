@@ -623,7 +623,7 @@ class Store {
     this.offAdb?.();
     this.offAdb = watchAdb(allowed, () => this.reportControl());
     // The ongoing "Your Mac is using this phone" notice (with Stop) shows while control is allowed.
-    controlNote(allowed, 'Claude can act on this phone');
+    controlNote(allowed, 'Your agent can act on this phone');
     this.reportControl();
   }
 

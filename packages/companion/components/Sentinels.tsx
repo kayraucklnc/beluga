@@ -105,7 +105,7 @@ export function SentinelsList() {
       <Card style={{ marginHorizontal: 16, padding: 18 }}>
         <T v="heading">Nothing watching yet</T>
         <T v="callout" style={{ marginTop: 4 }}>
-          {view.data.enabled ? 'A sentinel runs Claude, a script or a service on a schedule or when something happens, and leaves a report. Make one in Sentinel on your Mac.' : 'Sentinel runs in the Beluga app on your Mac.'}
+          {view.data.enabled ? 'A sentinel runs your agent, a script or a service on a schedule or when something happens, and leaves a report. Make one in Sentinel on your Mac.' : 'Sentinel runs in the Beluga app on your Mac.'}
         </T>
       </Card>
     );
