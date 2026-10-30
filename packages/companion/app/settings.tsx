@@ -1,5 +1,6 @@
+import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
-import { AtSign, Bell, Cable, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Download, Hand, HardDrive, Info, LogOut, Mic, Monitor, MonitorSmartphone, Moon, MoonStar, Network, ShieldCheck, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { ArrowDownToLine, AtSign, Bell, Cable, RefreshCw, Search, TriangleAlert, ChevronDown, ChevronUp, CircleCheck, Download, Hand, HardDrive, Info, LogOut, Mic, Monitor, MonitorSmartphone, Moon, MoonStar, Network, ShieldCheck, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform, ScrollView, Switch, View } from 'react-native';
@@ -22,6 +23,9 @@ import { askBatteryUnrestricted, batteryUnrestricted, setStay, stayAvailable, st
 import { accessibilityOn, addonInstalled, onAccessibilityChange, openAccessibilitySettings, phoneAllowed, phoneControlAvailable, setPhoneAllowed } from '../lib/phone';
 import { color, ink } from '../lib/theme';
 import { voiceAvailable, voiceChoice, voiceSetting } from '../lib/voice';
+import { UpdateSheet } from '../components/Update';
+import { appUpdate } from '../modules/app-update';
+import { appVersion, autoOn, checkForUpdate, checkOn, setAuto, setCheck, updatesAvailable, useUpdate } from '../lib/update';
 import { VOICE_MODELS } from '../../../src/shared/voice-models';
 
 /**
@@ -51,6 +55,10 @@ export default function Settings() {
   const [control, setControl] = useState(phoneAllowed());
   const [acc, setAcc] = useState(accessibilityOn());
   const [addon, setAddon] = useState(addonInstalled());
+  // Updates (BLG-426): the phone app's own, as the Mac's Settings › General › Updates.
+  const update = useUpdate();
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [canInstall, setCanInstall] = useState(appUpdate.canInstall());
   // Back from Android's settings (notifications, battery, accessibility): show what's true now.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
@@ -59,6 +67,7 @@ export default function Settings() {
       setUnrestricted(batteryUnrestricted());
       setAcc(accessibilityOn());
       setAddon(addonInstalled());
+      setCanInstall(appUpdate.canInstall());
     });
     return () => sub.remove();
   }, []);
@@ -197,6 +206,9 @@ export default function Settings() {
                 onPress={openAccessibilitySettings}
               />
             ) : null}
+            {update.release && update.phase !== 'current' ? (
+              <Row Icon={ArrowDownToLine} tone="mint" label={`Update to Beluga ${update.release.version}`} sub={update.phase === 'downloading' ? `Downloading ${Math.round((update.progress ?? 0) * 100)}%` : update.phase === 'ready' ? 'Ready to install' : 'See what’s new'} onPress={() => setUpdateOpen(true)} />
+            ) : null}
             <Row Icon={HardDrive} tone="sky" label="Storage" sub={saved.length ? `${saved.length} saved · ${sizeOf(totalBytes(saved))}` : 'What Beluga keeps on this phone'} onPress={() => router.push('/storage')} />
             <Row
               Icon={LogOut}
@@ -311,12 +323,59 @@ export default function Settings() {
               </View>
             ) : null}
 
+            {updatesAvailable() ? (
+              <View style={{ gap: 8 }}>
+                <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
+                  Updates
+                </T>
+                <Card>
+                  <Row
+                    first
+                    Icon={ArrowDownToLine}
+                    tone="mint"
+                    label="Update automatically"
+                    sub={autoOn() ? 'Installs once you leave the app' : 'You choose when, from the pill on Home'}
+                    right={toggle(autoOn(), () => {})}
+                    onPress={() => {
+                      haptic.tap();
+                      setAuto(!autoOn());
+                    }}
+                    chevron={false}
+                  />
+                  {autoOn() && !canInstall ? (
+                    <Row Icon={ShieldCheck} tone="butter" label="Let Beluga install its updates" sub="Android › Install unknown apps › Beluga. Then they go in without asking." onPress={appUpdate.allowInstalls} />
+                  ) : null}
+                  <Row
+                    Icon={Search}
+                    tone="sky"
+                    label="Check for updates"
+                    sub={checkOn() ? 'At launch and every 4 hours' : 'Only when you tap Check Now'}
+                    right={toggle(checkOn(), () => {})}
+                    onPress={() => {
+                      haptic.tap();
+                      setCheck(!checkOn());
+                    }}
+                    chevron={false}
+                  />
+                  <Row
+                    Icon={RefreshCw}
+                    tone="plain"
+                    label={update.phase === 'checking' ? 'Checking…' : 'Check Now'}
+                    sub={update.checkedAt ? `Last looked ${new Date(update.checkedAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}${update.phase === 'current' ? ' · up to date' : ''}` : undefined}
+                    onPress={() => void checkForUpdate(true)}
+                    chevron={false}
+                  />
+                </Card>
+              </View>
+            ) : null}
+
             <Card>
-              <Row first Icon={Info} tone="plain" label="About" sub={`App 0.16.0 · link ${COMPANION_PROTO.major}.${COMPANION_PROTO.minor}${link.mac ? ` · Mac ${link.mac.version}` : ''}`} />
+              <Row first Icon={Info} tone="plain" label="About" sub={`App ${appVersion() ?? (Constants.expoConfig?.version ?? '')} · link ${COMPANION_PROTO.major}.${COMPANION_PROTO.minor}${link.mac ? ` · Mac ${link.mac.version}` : ''}`} />
             </Card>
           </Animated.View>
         ) : null}
       </ScrollView>
+      <UpdateSheet visible={updateOpen} onClose={() => setUpdateOpen(false)} />
     </Screen>
   );
 }

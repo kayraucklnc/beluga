@@ -785,6 +785,10 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   notifications on or off), Remove, and Beluga Push (on by default once set up).
 - **Shared state**: `companion: { devices: DeviceView[] }` (`linked`, `lastSeen`, `push`), never keys.
 
+## Updating the app
+
+The Android app updates itself from GitHub's latest release, like Beluga for Mac (BLG-426). It shows a pill on Home and a sheet with the notes and Update Now, and has Update automatically in Settings › Advanced › Updates. It doesn't go through the Mac or the link. How it works: docs/updates.md, "The phone app".
+
 ## Staying in step with the Mac app
 
 The Mac app changes quickly; the phone must not fall behind silently.

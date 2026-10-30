@@ -27,6 +27,22 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 - **Quitting.** A downloaded update always installs when you quit, unless updates are *Off*.
 - **After an update.** The pill says "Updated to 0.5 · What's new" once.
 
+## The phone app
+
+The Android app updates itself from the same releases (BLG-426, `packages/companion/lib/update.ts`, `modules/app-update`).
+
+- **When it looks.** At launch, unless it looked less than an hour ago, and every 4 hours while the app is open (an hour after a failed look). It reads `https://api.github.com/repos/kayraucklnc/beluga/releases/latest` and takes the asset named `Beluga-<version>.apk`. When that version is newer than the installed one, it has found an update.
+- **Downloading.** On Wi-Fi the update downloads by itself, as on the Mac. On mobile data it waits until you tap Update Now, and the sheet says how many MB it is. The file is kept in the app's cache and checked before it's used. Its size and SHA-256 must match the release (GitHub's `digest`), and it must be Beluga (`sh.ratel.beluga`) with a higher `versionCode` than the installed app. A file that fails these checks is deleted.
+- **What you see.** Under Home's greeting, a small pill says "Beluga 1.8.0 is ready" ("is out" while it isn't downloaded yet). Tapping it opens a sheet with the release notes, **Update Now** and **Later**. Settings has the same thing as a row on top while there's an update.
+- **Installing.** Update Now hands the APK to Android's `PackageInstaller`. Beluga closes as the new version goes in, and on the next launch it says "Updated to Beluga X" once.
+  - The first time, Android asks to allow installs from Beluga ("Install unknown apps"), then shows its own Install confirmation.
+  - From Android 12, an app that may install apps can update itself without that confirmation (`USER_ACTION_NOT_REQUIRED`).
+  - When Android still wants a tap and the app isn't in front, a notification carries the confirmation.
+- **Settings › Advanced › Updates** has the Mac's two switches:
+  - **Update automatically** (on by default): a downloaded update installs once you leave the app, as the Mac waits until you're idle. It only does this when it can install without asking (Android 12+, installs allowed). If installs aren't allowed, a row there opens that Android setting. An update that went in while you were away posts "Beluga updated to X" (tap: open it and link again), because updating ends the link and Stay connected with it.
+  - **Check for updates** (on by default): with it off, the app looks only when you tap **Check Now**. Turning it off turns Update automatically off too.
+- **Releasing.** The phone app needs nothing new from a release. Attach the APK as `Beluga-<version>.apk` (the name it looks for), with a higher `android.versionCode` in `packages/companion/app.json`, and sign it with the same key as the installed app, or Android refuses the update.
+
 ## What an update restarts
 
 Installing restarts Beluga's engine, the daemon that the Mac app bundles. The new app runs its own daemon:

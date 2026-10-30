@@ -14,6 +14,7 @@ import { Toasts } from '../components/Screen';
 import { useScheme } from '../lib/appearance';
 import { startSaved } from '../lib/saved';
 import { store } from '../lib/store';
+import { startUpdates } from '../lib/update';
 import { startWidgets } from '../lib/widgets';
 // Loaded at once: sends that waited while your Mac was away go when it answers, whatever is on screen.
 import '../lib/sends';
@@ -30,6 +31,8 @@ export default function Root() {
     void store.boot().then(startWidgets);
     // Upright everywhere; only data full screen turns (lib/fullscreen.ts).
     allowTurning(false);
+    // The phone app keeps itself up to date (Android, lib/update.ts).
+    startUpdates();
     // A notification from Stay connected (lib/stay.ts) opens what it's about.
     if (Platform.OS === 'web') return;
     const open = (topic: unknown): void => {
