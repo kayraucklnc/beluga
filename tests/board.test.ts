@@ -220,6 +220,21 @@ describe('worktrees and pull requests', () => {
     ]);
   });
 
+  it('Continue After Merge: the merged PR is history and the task is worked on again; the next PR is its own', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'w1', {}, me);
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    expect(board.need(t.key).status).toBe('done');
+    board.continuedAfterMerge('w1', 7);
+    const again = board.need(t.key);
+    expect(again.status).toBe('in_progress');
+    expect(again.pr).toBeUndefined();
+    expect(again.activity.some((a) => a.text.includes('after pull request #7 merged'))).toBe(true);
+    board.prChanged('w1', pr({ number: 8 }));
+    expect(board.need(t.key)).toMatchObject({ status: 'in_review', pr: { number: 8 } });
+  });
+
   it('a draft stays In Progress; a canceled task stays canceled', () => {
     const { board } = setup();
     const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);

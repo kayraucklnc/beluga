@@ -25,6 +25,16 @@ describe('branchState', () => {
     expect(at(ws({ status: { changed: 0, ahead: 3, behind: 1, landed: true } }))?.kind).toBe('merged');
   });
 
+  it('after Continue After Merge, the done PR’s commits in the base are nothing new, not Merged again', () => {
+    const w = ws({ prDone: 12, status: { changed: 0, ahead: 3, behind: 0, landed: true } });
+    const b = at(w)!;
+    expect([b.kind, b.label]).toEqual(['clean', 'No changes']);
+    expect(b.detail).toContain('PR #12');
+    // New work since shows as such.
+    expect(at(ws({ prDone: 12, status: { changed: 2, ahead: 3, behind: 0, landed: true } }))?.kind).toBe('uncommitted');
+    expect(at(ws({ prDone: 12, status: { changed: 0, ahead: 4, behind: 0 } }))?.kind).toBe('unshipped');
+  });
+
   it('an open PR GitHub can merge is Ready to merge, merged in one click', () => {
     const b = at(ws(), pr())!;
     expect([b.kind, b.tone, b.steps[0]?.id]).toEqual(['ready', 'ok', 'merge_pr']);

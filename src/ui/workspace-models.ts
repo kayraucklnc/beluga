@@ -226,6 +226,8 @@ export function stateOf(state: AppState, ws: Workspace, frame: number, now = Dat
   // Work in progress, not a problem: quiet, like the branch pill (no warning dot on the row).
   if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.muted, icon: glyph.dot, tone: 'muted' };
   if (ws.kind === 'worktree' && state.prs[ws.id]?.state === 'MERGED') return { label: 'Merged on GitHub', color: theme.ok, icon: glyph.dot, tone: 'ok' };
+  // Continued after a merged PR (prDone): what's landed is that PR's work, so nothing new yet (not Merged again).
+  if (ws.kind === 'worktree' && st?.landed && ws.prDone !== undefined && !state.prs[ws.id]) return { label: 'Up to date', color: theme.ok, icon: glyph.dot, tone: 'ok' };
   if (ws.kind === 'worktree' && st?.landed && state.prs[ws.id]?.state !== 'OPEN') return { label: 'Merged', color: theme.ok, icon: glyph.dot, tone: 'ok' };
   if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot, tone: 'info' };
   return { label: ws.kind === 'main' ? 'Main folder' : 'Up to date', color: theme.ok, icon: glyph.dot, tone: 'ok' };

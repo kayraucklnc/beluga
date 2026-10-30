@@ -133,6 +133,10 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   if (pr?.state === 'MERGED') {
     return at('merged', 'Merged', 'merged', `PR #${pr.number} merged into ${into} on GitHub, so this worktree is done: archive it, or continue here with a new PR${changed ? ` (${plural(changed, 'change')} since)` : ''}`, planned ? [] : finish);
   }
+  // Continued after its PR merged: the commits already in the base are that PR's, so nothing new is here yet (not Merged again).
+  if (ws.prDone !== undefined && st?.landed && !pr && !changed) {
+    return at('clean', 'No changes', 'muted', `PR #${ws.prDone} went into ${into}: nothing new on ${ws.branch} yet, and the next change gets a new PR`, []);
+  }
   // Merged outside Beluga (on GitHub with no PR it knows of, squashed, or by hand).
   if (st?.landed && pr?.state !== 'OPEN' && !changed) {
     return at('merged', 'Merged', 'merged', `Its commits are already in ${into}, so this worktree is done: archive it, or continue here`, planned ? [] : finish);

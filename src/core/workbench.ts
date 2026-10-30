@@ -17,7 +17,7 @@ import type { SetupTools } from '../agent/types.js';
 import { buildSetupAppend } from '../agent/prompt.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
-import { type LogItem, type Prefs, type Store } from './store.js';
+import { type LogItem, type Prefs, type Store, shippedText } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
 import type { ModelChoice, PullRequest } from './work-store.js';
 import type { WorkspaceController } from './workspace-controller.js';
@@ -543,8 +543,10 @@ export class Workbench {
       return this.deps.toast(`Couldn’t fetch ${target}: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
     const done = await contentIn(ws.path, 'HEAD', target);
-    this.manager.setPrDone(id, pr.number);
+    this.manager.setPrDone(id, pr.number, { url: pr.url, into: base });
     this.deps.store.dispatch({ type: 'pr', id, pr: undefined });
+    // A line across the chat: what's above went out in this PR, what's below is the next one.
+    this.deps.store.dispatch({ type: 'system', channel: `ws:${id}`, text: shippedText(pr.number, base), shipped: { number: pr.number, url: pr.url, into: base } });
     if (done) {
       try {
         await resetTo(ws.path, target);
