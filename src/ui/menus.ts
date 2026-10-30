@@ -248,7 +248,7 @@ export { modelLabel };
 export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined {
   if (menu.kind === 'welcome') return welcomeMenu(state);
   if (menu.kind === 'settings') return settingsMenu(state, menu.section, { prCustom: state.prCustom, remembered: state.remembered });
-  if (menu.kind === 'model') return modelMenu(state, menu.channel === undefined ? state.prefs.model : modelOf(state, menu.channel), menu.channel === undefined ? 'new conversations' : 'this conversation');
+  if (menu.kind === 'model') return modelMenu(state, menu.channel, menu.channel === undefined ? 'new conversations' : 'this conversation');
   if (menu.kind === 'inbox') return inboxMenu(state, menu);
   const work = workMenuSpec(state, menu);
   if (work !== null) return work;

@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 30 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 31 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -75,8 +75,10 @@ export const COMPANION_PROTO = { major: 1, minor: 30 } as const;
  * 1.30 (BLG-429): a direct message deleted (`network.messages.delete`, yours from your friend's Mac
  * too), your own edited (`network.messages.edit`, only one whose words reach the phone whole:
  * `ChatMessageView.editable`), and a direct chat cleared on the Mac (`network.clear`).
+ * 1.31 (BLG-446): the agent picker in a conversation (`ConvView.agent`: runtimes as groups with their
+ * models, an unavailable one with why), picked with `workbench.setModel` / `workbench.setAgent`.
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -467,6 +469,26 @@ export const MergeCheckView = z.object({
 });
 export type MergeCheckView = z.infer<typeof MergeCheckView>;
 
+/** 1.31: the agent picker (BLG-446): your default agent's runtime first; one this Mac doesn't run has `why` and no models. */
+export const AgentPickerView = z.object({
+  runtime: z.string().max(32),
+  label: z.string().max(120),
+  groups: z
+    .array(
+      z.object({
+        runtime: z.string().max(32),
+        label: z.string().max(64),
+        available: z.boolean(),
+        why: z.string().max(200).optional(),
+        isDefault: z.boolean(),
+        current: z.boolean(),
+        models: z.array(z.object({ value: z.string().max(80), label: z.string().max(80), description: z.string().max(200), on: z.boolean() })).max(30),
+      }),
+    )
+    .max(8),
+});
+export type AgentPickerView = z.infer<typeof AgentPickerView>;
+
 export const ConvView = z.object({
   topic: Topic,
   title: z.string().max(300),
@@ -495,6 +517,8 @@ export const ConvView = z.object({
   plan: z.object({ topic: Topic, title: z.string().max(300), state: z.string().max(20), done: z.number().int(), total: z.number().int(), milestones: z.number().int() }).optional(),
   /** A friend's worktree shared over the network whose owner's Mac is offline: what the message box says (what you send waits for it). */
   waiting: z.string().max(200).optional(),
+  /** 1.31: your conversation's agent picker (src/ui/agent-picker.ts): the chip's words, and runtimes as groups with their models. */
+  agent: AgentPickerView.optional(),
 });
 export type ConvView = z.infer<typeof ConvView>;
 

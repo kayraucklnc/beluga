@@ -17,6 +17,7 @@ import { worktreeOrigin } from './origin.js';
 import { deleteFolderInBackground, removeWorktreeKeepingBranch, sweepSetAside } from './others.js';
 import { moveToTrash } from './trash.js';
 import { addDay, dayKey } from './usage-days.js';
+import type { AgentRef } from '../protocol.js';
 import type { MergeWait, Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
 import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, groupKey, groupOfKey, isGroupKey, keyOf, move, settle } from './arrange.js';
 
@@ -57,8 +58,19 @@ const pathId = (p: string): string => `wt-${createHash('sha1').update(real(p)).d
 const freshId = (): string => `wt-${randomUUID().slice(0, 12)}`;
 
 /** The session a fork goes on from: `session` when one was given (null: none, Claude starts fresh), else a branch of the source's. */
-const forkSessionOf = (source: Workspace, session: string | null | undefined): Pick<WorkspaceRecord, 'sessionId' | 'forkFromSession'> =>
-  session === undefined ? (source.sessionId ? { forkFromSession: source.sessionId } : {}) : session ? { sessionId: session } : {};
+/** A fork keeps the source's agent, and its session stays filed under the runtime that made it. */
+const forkSessionOf = (source: Workspace, session: string | null | undefined): Pick<WorkspaceRecord, 'sessionId' | 'forkFromSession' | 'sessionRuntime' | 'agent' | 'model'> => ({
+  ...(source.agent ? { agent: source.agent } : {}),
+  ...(source.model ? { model: source.model } : {}),
+  ...(source.sessionRuntime ? { sessionRuntime: source.sessionRuntime } : {}),
+  ...(session === undefined ? (source.sessionId ? { forkFromSession: source.sessionId } : {}) : session ? { sessionId: session } : {}),
+});
+/** A record's agent and model from one AgentRef (its model kept as the workspace's model, as setAgent does). */
+const agentFields = (agent: AgentRef | undefined): Pick<WorkspaceRecord, 'agent' | 'model'> => {
+  if (!agent) return {};
+  const { model, ...ref } = agent;
+  return { agent: ref, ...(model ? { model } : {}) };
+};
 export const mainId = (root: string): string => `${projectId(root)}:main`;
 
 /** Chats that don't belong to any project live in this pseudo-project. */
@@ -713,7 +725,8 @@ export class WorkspaceManager {
   }
 
   /** `opts.id`: the id it gets (from newWorktreeId), else a fresh one. */
-  async createWorktree(projectIdOrRoot: string, name: string, base?: string, opts: { readonly id?: string } = {}): Promise<Workspace> {
+  /** `opts.agent`: the agent it runs (unset: your default). */
+  async createWorktree(projectIdOrRoot: string, name: string, base?: string, opts: { readonly id?: string; readonly agent?: AgentRef } = {}): Promise<Workspace> {
     const project = this.projects.find((p) => p.id === projectIdOrRoot || p.root === projectIdOrRoot);
     if (!project) throw new WorkspaceError('Project not found');
     if (base !== undefined && !(await g.isCommit(project.root, base))) throw new WorkspaceError(`There's no branch called ${base}`);
@@ -724,7 +737,7 @@ export class WorkspaceManager {
     await g.addWorktree(project.root, dir, branch, from);
     await g.excludeProjectDir(dir);
     await copyEnvFiles(project.root, dir);
-    const record: WorkspaceRecord = { id: opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
+    const record: WorkspaceRecord = { id: opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...agentFields(opts.agent) };
     this.saveRecord(record);
     await this.refresh();
     return this.require(record.id);
@@ -846,7 +859,7 @@ export class WorkspaceManager {
 
   /** Go on from `sessionId` (a copy of Claude's session, cut to an earlier message), or start fresh (null). */
   rewindSession(id: string, sessionId: string | null): void {
-    this.patchRecord(id, { sessionId: sessionId ?? undefined, forkFromSession: undefined });
+    this.patchRecord(id, { sessionId: sessionId ?? undefined, forkFromSession: undefined, ...(sessionId ? {} : { sessionRuntime: undefined }) });
   }
 
   /**
@@ -999,6 +1012,16 @@ export class WorkspaceManager {
   }
 
   /**
+   * Pick the agent for one workspace (undefined: your default). Its model, when it names one, is
+   * the workspace's model. The stored session stays filed under its runtime: a different runtime
+   * starts its own conversation (see session-carry.ts resumeFor).
+   */
+  setAgent(id: string, agent: AgentRef | undefined): void {
+    this.require(id);
+    this.patchRecord(id, { agent: undefined, model: undefined, ...agentFields(agent) });
+  }
+
+  /**
    * Add one run's usage. The SDK reports running totals per conversation, so only the part
    * beyond the last total we saw for the same conversation is new.
    */
@@ -1116,7 +1139,7 @@ export class WorkspaceManager {
   }
 
   forgetSession(id: string): void {
-    this.patchRecord(id, { sessionId: undefined, forkFromSession: undefined });
+    this.patchRecord(id, { sessionId: undefined, forkFromSession: undefined, sessionRuntime: undefined });
   }
 
   rename(id: string, name: string): void {
@@ -1138,8 +1161,9 @@ export class WorkspaceManager {
     await this.refresh();
   }
 
-  rememberSession(id: string, sessionId: string): void {
-    this.patchRecord(id, { sessionId, forkFromSession: undefined });
+  /** `runtime`: the one that made `sessionId` (unset: Claude). */
+  rememberSession(id: string, sessionId: string, runtime?: string): void {
+    this.patchRecord(id, { sessionId, forkFromSession: undefined, sessionRuntime: runtime && runtime !== 'claude' ? runtime : undefined });
   }
 
   // ---------------------------------------------------------- review & merge

@@ -25,7 +25,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'terminal', desc: "open this workspace's terminal (elsewhere: your own shell, the Terminal tab)" },
   { name: 'setup', desc: "run the project's setup command again in this workspace" },
   { name: 'handoff', args: '<name>', desc: 'hand this workspace to someone; their agent continues it' },
-  { name: 'model', args: '[name]', desc: 'pick the model for this conversation' },
+  { name: 'model', args: '[name | agent[:model]]', desc: 'pick the agent and model for this conversation (another agent hands the conversation off)' },
   { name: 'search', args: '<words>', desc: 'search every conversation' },
   { name: 'usage', desc: 'disk space and agent usage per workspace' },
   { name: 'inbox', desc: 'what happened while you were elsewhere' },
@@ -167,6 +167,15 @@ export function runCommand(session: Session, name: string, args: readonly string
       runWorkspaceCommand(session, name, args, channel);
       return;
     case 'model': {
+      // "/model codex" or "/model codex:gpt-5": another runtime for this conversation (a handoff when it's live).
+      const [rt = '', ...rest] = (arg ?? '').split(':');
+      const runtime = state.runtimes.find((r) => r.available && (r.id === rt.toLowerCase() || r.label.toLowerCase() === rt.toLowerCase()));
+      const conversation = channel === 'room' || channel === 'draft' ? undefined : channel;
+      if (runtime && conversation && session.workbench) {
+        const model = rest.join(':');
+        session.workbench.setAgent(conversation, { runtime: runtime.id, label: runtime.label, ...(model ? { model } : {}) });
+        return;
+      }
       const pick = state.models.find((m) => m.value === arg || m.label.toLowerCase() === (arg ?? '').toLowerCase());
       if (!arg || !pick) return session.intend({ type: 'overlay', overlay: 'model' });
       if (session.workbench) session.workbench.setModel(channel === 'room' || channel === 'draft' ? undefined : channel, pick.value);

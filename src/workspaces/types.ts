@@ -1,3 +1,4 @@
+import type { AgentRef } from '../protocol.js';
 import type { Status } from './git.js';
 import type { DefaultBranch, FetchProblem } from './sync.js';
 import type { ProjectScripts, ResolvedScripts } from './scripts.js';
@@ -41,8 +42,12 @@ export interface WorkspaceRecord {
   readonly archived?: boolean;
   /** Archived smartly: how much space it freed, what it kept, and what makes the rest again. */
   readonly archive?: { readonly freedBytes: number; readonly keptBytes: number; readonly remake: readonly string[]; readonly at: number };
-  /** Claude conversation to resume in this workspace. */
+  /** The conversation to resume in this workspace (its runtime's own id: see sessionRuntime). */
   readonly sessionId?: string;
+  /** The runtime sessionId and forkFromSession belong to (unset: 'claude'); another runtime never resumes them. */
+  readonly sessionRuntime?: string;
+  /** The agent picked for this workspace (unset: your default). */
+  readonly agent?: AgentRef;
   /** Set on forks until their first run, so Claude branches the parent's conversation. */
   readonly forkFromSession?: string;
   readonly forkedFrom?: string;

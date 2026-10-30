@@ -7,6 +7,7 @@ import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } from '../agent/runtime/types.js';
 import { guardedBackend } from '../agent/runtime/guard.js';
+import { routedBackend } from '../agent/runtime/router.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { type AgentRef, Body, type BodyInput, type BodyOf, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
@@ -228,11 +229,20 @@ export class Session {
     this.env = parts.env;
     this.runtime = opts.createAgent ? undefined : opts.runtime?.runtimes(opts.runtime.agent);
     // The session layer runs a runtime only as its capabilities allow (the safety rule: see guard.ts).
-    this.agent = opts.createAgent ? opts.createAgent(this.bridge) : this.runtime && opts.runtime ? guardedBackend(this.runtime.create({ ...opts.runtime.options, bridge: this.bridge }), this.runtime.capabilities) : undefined;
+    this.agent = opts.createAgent ? opts.createAgent(this.bridge) : this.runtime && opts.runtime ? this.routed(this.runtime, opts.runtime) : undefined;
     this.attention = new AttentionRegistry(opts.store);
     opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room), home: os.homedir() });
     this.publishShares();
     this.wire();
+  }
+
+  /** Your default agent's backend, sending each turn whose place picked another runtime to that one's (agent/runtime/router.ts). */
+  private routed(main: AgentRuntime, rt: NonNullable<SessionOptions['runtime']>): AgentBackend {
+    const make = (r: AgentRuntime): AgentBackend => guardedBackend(r.create({ ...rt.options, bridge: this.bridge }), r.capabilities);
+    return routedBackend(make(main), main.id, (id) => {
+      const other = rt.runtimes(id);
+      return other ? make(other) : undefined;
+    });
   }
 
   get store(): Store {

@@ -19,7 +19,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/terminal` | `session.submit` → `runCommand` | typed in the composer · the right panel's Terminal tab (⌥⌘3) or the drawer under the chat (⌘J, Settings › Terminal picks which) · Go › Terminal (⌘6) |
 | `/setup` | `session.submit` → `runCommand` | typed in the composer · the panel terminal's Commands… |
 | `/handoff` | `session.submit` → `runCommand` | typed in the composer · Toolbar ⋯ › Hand off |
-| `/model` | `session.submit` → `runCommand` | typed in the composer · Composer model picker |
+| `/model` | `session.submit` → `runCommand` | typed in the composer (`/model codex:gpt-5` picks another agent: a live conversation is handed off) · Composer agent picker (runtimes as groups, BLG-446) |
 | `/search` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Search · ⌘⇧F |
 | `/usage` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Usage (⌘5) |
 | `/inbox` | `session.submit` → `runCommand` | typed in the composer · toolbar bell (notification centre) · the right panel's Info › Notifications · Go › Inbox · ⌘K › Notifications |
@@ -315,7 +315,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.runSetup` | ✓ |
 | `workbench.setScript` | ✓ |
 | `workbench.shareScripts` | ✓ |
-| `workbench.setModel` | ✓ |
+| `workbench.setModel` | ✓ (the composer's agent picker: a model of the same runtime, for this conversation or new ones; the phone's picker since 1.31) |
+| `workbench.setAgent` | ✓ (the agent picker's other runtimes, grouped Claude › Codex › Local model; a runtime this Mac doesn't run is greyed with why; the phone's picker since 1.31) |
 | `workbench.createPr` | ✓ |
 | `workbench.quickPr` | ✓ the toolbar's Create PR (and Create Draft PR under its chevron), the Changes panel's Create PR |
 | `workbench.mergeToBase` | ✓ the branch control's chevron › Merge into main… (no PR yet, on GitHub): asks first, then lands the branch on origin's base and pushes |
