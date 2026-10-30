@@ -26,6 +26,8 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   hasCompaction: false,
   hasModelList: true,
   hasProcess: true,
+  // Skills and commands translated (runtime/codex/skills.ts); built-ins and some frontmatter can't be.
+  skills: 'mapped',
   promptImages: true,
   toolMounts: ['stdio'],
 };

@@ -19,6 +19,7 @@ export const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   hasCompaction: true,
   hasModelList: true,
   hasProcess: true,
+  skills: 'native',
   promptImages: true,
   toolMounts: ['in-process'],
 };

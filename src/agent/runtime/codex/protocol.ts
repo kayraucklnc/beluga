@@ -11,7 +11,10 @@ export type SandboxPolicy =
   | { readonly type: 'workspaceWrite'; readonly writableRoots: readonly string[]; readonly networkAccess: boolean; readonly excludeTmpdirEnvVar: boolean; readonly excludeSlashTmp: boolean };
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
-export type UserInput = { readonly type: 'text'; readonly text: string; readonly text_elements: readonly unknown[] } | { readonly type: 'localImage'; readonly path: string };
+export type UserInput =
+  | { readonly type: 'text'; readonly text: string; readonly text_elements: readonly unknown[] }
+  | { readonly type: 'localImage'; readonly path: string }
+  | { readonly type: 'skill'; readonly name: string; readonly path: string };
 
 export interface Thread {
   readonly id: string;

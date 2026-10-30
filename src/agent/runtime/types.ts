@@ -93,6 +93,11 @@ export interface RuntimeCapabilities {
   readonly hasModelList: boolean;
   /** Its process can be watched and killed for sure (onProcess). */
   readonly hasProcess: boolean;
+  /**
+   * Claude Code's skills and custom commands (`/name`): 'native' (Claude Code runs them itself) or
+   * 'mapped' (skills and commands translated, what can't be said in a "not on Codex" note).
+   */
+  readonly skills: 'native' | 'mapped';
   /** Images can go in a prompt (ACP's promptCapabilities.image). */
   readonly promptImages: boolean;
   /**

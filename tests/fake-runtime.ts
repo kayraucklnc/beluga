@@ -24,6 +24,7 @@ export const FAKE_CAPABILITIES: RuntimeCapabilities = {
   hasCompaction: false,
   hasModelList: true,
   hasProcess: false,
+  skills: 'native',
   promptImages: false,
   toolMounts: ['in-process'],
 };

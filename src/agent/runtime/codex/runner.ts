@@ -16,6 +16,8 @@ import { codexComplete } from './complete.js';
 import { CodexEvents, type TurnSink, usageEvent } from './events.js';
 import type { AskForApproval, Model, ReasoningEffort, ThreadStartResponse, Turn, UserInput } from './protocol.js';
 import { codexConfinement, originOf, trustRow } from './sandbox.js';
+import { type MappedPrompt, mapSlash } from './skills.js';
+import { claudeHome } from '../../../core/claude-code/launch.js';
 
 export interface CodexBackendOptions {
   readonly cwd: string;
@@ -56,8 +58,8 @@ export function mcpConfig(servers: Readonly<Record<string, StdioServerConfig>>):
 }
 
 /** A prompt as Codex's input: the text, and images it links (Codex reads them from disk). */
-export function codexInput(text: string, prompt: string): UserInput[] {
-  return [{ type: 'text', text, text_elements: [] }, ...linkedImages(prompt).map((file) => ({ type: 'localImage' as const, path: file }))];
+export function codexInput(text: string, prompt: string, skill?: MappedPrompt['skill']): UserInput[] {
+  return [{ type: 'text', text, text_elements: [] }, ...linkedImages(prompt).map((file) => ({ type: 'localImage' as const, path: file })), ...(skill ? [{ type: 'skill' as const, ...skill }] : [])];
 }
 
 /** Friendly rows for the model picker from Codex's own list. */
@@ -163,7 +165,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           const writableRoots = planning || !autoEdit ? (fixup ? [fixup] : []) : [cwd, ...extraDirs, ...(fixup ? [fixup] : [])];
           const confined = codexConfinement(origin, input.scope, { cwd, folders: [...extraDirs, ...(fixup ? [fixup] : [])], writable: writableRoots, yourServers });
           approval = confined.approval;
-          const params = { cwd, ...(model ? { model } : {}), developerInstructions: runInstructions(input, opts.bridge.selfName(), CODEX_AGENT), config: { ...confined.config, ...mcpConfig(mounted.servers) }, approvalPolicy: confined.approval };
+          const params = { cwd, ...(model ? { model } : {}), developerInstructions: runInstructions(input, opts.bridge.selfName(), CODEX_AGENT), config: { ...confined.config, ...PROJECT_DOCS, ...mcpConfig(mounted.servers) }, approvalPolicy: confined.approval };
           let thread: ThreadStartResponse | undefined;
           if (resume) {
             thread = await rpc.request<ThreadStartResponse>('thread/resume', { threadId: resume, ...params }).catch(() => undefined);
@@ -207,12 +209,12 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         };
 
         /** One turn: its answer's text, how it ended. */
-        const runTurn = async (sink: TurnSink, text: string, prompt: string): Promise<{ text: string; turn: Turn }> => {
+        const runTurn = async (sink: TurnSink, text: string, prompt: string, skill?: MappedPrompt['skill']): Promise<{ text: string; turn: Turn }> => {
           events.beginTurn(sink);
           const done = deferred<Turn>();
           active = { done };
           // No sandboxPolicy here: a turn's would replace the thread's profile (and its .env denials).
-          const res = await rpc().request<{ turn: Turn }>('turn/start', { threadId, input: codexInput(text, prompt), approvalPolicy: approval, ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
+          const res = await rpc().request<{ turn: Turn }>('turn/start', { threadId, input: codexInput(text, prompt, skill), approvalPolicy: approval, ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
           active.id ??= res.turn.id;
           const early = ended.get(res.turn.id);
           if (early) done.resolve(early);
@@ -277,10 +279,19 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           return shelf.finish(r.text);
         };
 
+        /** What didn't map to Codex, said in the chat now and kept at the top of the answer. */
+        const noted = (m: MappedPrompt, sink: TurnSink): ((answer: string) => string) => {
+          for (const note of m.notes) sink.onEvent('text', note);
+          return (answer) => (m.notes.length ? `${m.notes.join('\n')}\n\n${answer}` : answer);
+        };
         const answers: string[] = [];
         // Plan mode, the Codex way: a read-only turn that answers with a plan, for you to approve.
-        let r = await runTurn(original, input.plan ? `${buildPrompt(input)}\n\n${PLAN_NOTE}` : buildPrompt(input), input.prompt);
-        let answer = answerOf(r, original);
+        // `/name`: one of Claude Code's skills or commands, mapped to Codex (what doesn't map is said, see skills.ts).
+        const mapped = await mapSlash(input.prompt, cwd, claudeHome());
+        const said = noted(mapped, original);
+        const asked = buildPrompt({ ...input, prompt: mapped.prompt });
+        let r = await runTurn(original, input.plan ? `${asked}\n\n${PLAN_NOTE}` : asked, input.prompt, mapped.skill);
+        let answer = said(answerOf(r, original));
         for (let round = 0; input.plan && input.askUser && round < PLAN_ROUNDS && r.turn.status === 'completed'; round++) {
           const verdict = await input.askUser({ kind: 'plan', plan: (r.text || '(Codex proposed a plan)').slice(0, 60_000) });
           if (verdict.kind !== 'plan') break;
@@ -294,7 +305,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             await planned?.proc.kill();
           }
           r = await runTurn(original, next, '');
-          answer = answerOf(r, original);
+          answer = said(answerOf(r, original));
           if (verdict.approve) break;
         }
         answers.push(answer);
@@ -311,7 +322,9 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           const sink: TurnSink = { onEvent: followUp.onEvent, ...(followUp.onStep ? { onStep: followUp.onStep } : {}) };
           followUp.onStart?.();
           try {
-            followUp.onDone(answerOf(await runTurn(sink, buildPrompt(followUp), followUp.prompt), sink));
+            const its = await mapSlash(followUp.prompt, cwd, claudeHome());
+            const note = noted(its, sink);
+            followUp.onDone(note(answerOf(await runTurn(sink, buildPrompt({ ...followUp, prompt: its.prompt }), followUp.prompt, its.skill), sink)));
           } catch (err) {
             if (aborted) throw err;
             followUp.onError(err instanceof Error ? err.message : String(err));
@@ -347,6 +360,9 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
     },
   };
 }
+
+/** A project's instructions: Codex reads AGENTS.md itself, and CLAUDE.md where a project has only that. */
+const PROJECT_DOCS = { project_doc_fallback_filenames: ['CLAUDE.md'] };
 
 /** A failed Codex run, told as Codex's (not Claude Code's). */
 const codexFailure = (end: RunEnd): RunFailedError => new RunFailedError({ ...classifyRun(end), runtime: 'codex' });

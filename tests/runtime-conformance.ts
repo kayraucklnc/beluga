@@ -89,7 +89,8 @@ export function runtimeConformance(name: string, make: () => AgentRuntime): void
       const rt = make();
       expect(rt.id).toMatch(/^[a-z][\w-]*$/);
       expect(rt.label).toBeTruthy();
-      for (const [key, value] of Object.entries(rt.capabilities)) if (key !== 'toolMounts') expect(typeof value, key).toBe('boolean');
+      for (const [key, value] of Object.entries(rt.capabilities)) if (key !== 'toolMounts' && key !== 'skills') expect(typeof value, key).toBe('boolean');
+      expect(['native', 'mapped']).toContain(rt.capabilities.skills);
       expect(rt.capabilities.toolMounts.length).toBeGreaterThan(0);
     });
 
