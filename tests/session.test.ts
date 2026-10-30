@@ -162,6 +162,20 @@ describe('Session', () => {
     await waitFor(() => agentItems(bob.state()).filter((a) => a.type === 'agent' && a.status === 'done').length === 2);
   });
 
+  it('runs the person\'s agent with @bob and @agents, and says who a mistyped name may be', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { policy: 'auto' });
+    const bob = peer('bob', { policy: 'auto' });
+    await room(kay, bob);
+    kay.session.submit('@bob status?');
+    await waitFor(() => bob.runs.length === 1);
+    expect(kay.runs).toHaveLength(0);
+    kay.session.submit('@agents status?');
+    await waitFor(() => kay.runs.length === 1 && bob.runs.length === 2);
+    kay.session.submit('@bbo status?');
+    expect(kay.toasts).toContain('Nobody named "bbo" is here. Did you mean @bob?');
+  });
+
   it('streams agent text/tool events and approves tool use', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay', {

@@ -393,9 +393,11 @@ export class Session {
         return true;
       case 'agent':
         this.sendChat(parsed.text, false);
-        for (const name of parsed.unknown) this.toast(`Nobody named "${name}" is here`, 'warn');
-        for (const target of parsed.targets) this.requestAgent(target, parsed.prompt, false, 'room', urgent && target === this.selfId);
-        if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No agent is online', 'warn');
+        for (const line of parsed.notes) this.toast(line, 'warn');
+        for (const t of parsed.to) this.requestAgent(t.peerId, parsed.prompt, false, 'room', urgent && t.peerId === this.selfId, undefined, undefined, t.agent);
+        // On your own, a name nobody has is still a line for your agent, as plain chat always is.
+        if (parsed.to.length === 0 && state.peers.length <= 1 && this.agent) this.requestAgent(this.selfId, parsed.text, false, 'room', urgent);
+        else if (parsed.to.length === 0 && parsed.notes.length === 0) this.toast('No agent is online', 'warn');
         return true;
     }
   }
@@ -499,10 +501,10 @@ export class Session {
   }
 
   /** Ask an agent (ours or a peer's) to do something. Returns the request id. */
-  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID()): string {
+  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID(), agent?: AgentRef): string {
     const plan = this.store.getState().planMode[channel] === true;
     this.questions.track(requestId, target, channel);
-    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}) }, { to: target });
+    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}), ...(agent ? { agent } : {}) }, { to: target });
     return requestId;
   }
 
