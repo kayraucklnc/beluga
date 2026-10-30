@@ -12,4 +12,18 @@ export interface ClaudeSkill {
   readonly source: 'project' | 'user' | 'plugin';
   /** A command's argument hint ("[file] [focus]"). */
   readonly args?: string;
+  /** What of it doesn't carry over to Codex ("Not on Codex: its allowed tools"), when something doesn't. */
+  readonly onCodex?: string;
 }
+
+/** Frontmatter that changes how Claude Code runs a skill or command, with no Codex equivalent (BLG-456). */
+export const NOT_ON_CODEX: Readonly<Record<string, string>> = {
+  'allowed-tools': 'its allowed tools',
+  model: 'its model',
+  context: 'its own context',
+  agent: 'its agent',
+  hooks: 'its hooks',
+};
+
+/** A skill's frontmatter fields that don't map to Codex, in words (empty: it all does). */
+export const notOnCodex = (fields: Readonly<Record<string, string>>): string[] => Object.keys(fields).flatMap((f) => (NOT_ON_CODEX[f] ? [NOT_ON_CODEX[f]] : []));

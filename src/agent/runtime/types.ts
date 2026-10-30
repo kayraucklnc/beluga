@@ -42,11 +42,17 @@ import type { AgentBackend, AgentRunInput, RoomBridge } from '../types.js';
  * SAFETY RULE. Beluga's guarantees (.env files blocked, a friend's vetTool limits, the owner
  * approving risky actions, a main folder staying read-only: agent/policy.ts) hold only when the
  * runtime asks Beluga before EVERY tool call it makes, its own built-in tools included. A runtime
- * that can't (`canGateEveryTool: false`) gets no friend's task, no guest, and no run without a
- * sandbox: the session layer must demand a sandbox default instead (see `safetyFor`).
+ * that can't (`canGateEveryTool: false`) gets no guest and no run without a sandbox, and a
+ * friend's task only when its own sandbox confines every step (`hasSandbox`; see `safetyFor`).
  */
 
-/** Which runtime: 'claude' today (the AgentRef protocol work names the rest). */
+/**
+ * How long a runtime gets to stop a running turn when asked (Steer.interrupt, Send now, Stop):
+ * the same contract for every runtime. Past it, the interrupt says it couldn't.
+ */
+export const INTERRUPT_TIMEOUT_MS = 10_000;
+
+/** Which runtime: 'claude' or 'codex' (the AgentRef protocol work names the rest). */
 export type RuntimeId = string;
 
 /** What a runtime can do, asked by the session layer, policy and the screens instead of assuming. */
@@ -57,6 +63,12 @@ export interface RuntimeCapabilities {
    * the run needs a sandbox (see the safety rule above).
    */
   readonly canGateEveryTool: boolean;
+  /**
+   * Its own sandbox confines every step it takes to the run's folders, with secrets (.env files,
+   * keys, credential stores) unreachable and the network off for friends (Codex's permission
+   * profiles). With it, a runtime that can't gate every tool may still take friends' tasks.
+   */
+  readonly hasSandbox: boolean;
   /** A message sent in while it works is taken in at its next step (Steer). */
   readonly canSteer: boolean;
   /** A running turn can be stopped and the next message answered (Steer.interrupt / force). */
@@ -81,6 +93,11 @@ export interface RuntimeCapabilities {
   readonly hasModelList: boolean;
   /** Its process can be watched and killed for sure (onProcess). */
   readonly hasProcess: boolean;
+  /**
+   * Claude Code's skills and custom commands (`/name`): 'native' (Claude Code runs them itself) or
+   * 'mapped' (skills and commands translated, what can't be said in a "not on Codex" note).
+   */
+  readonly skills: 'native' | 'mapped';
   /** Images can go in a prompt (ACP's promptCapabilities.image). */
   readonly promptImages: boolean;
   /**
@@ -138,6 +155,13 @@ export class CompletionError extends Error {
 /** A runtime's side call: the answer's text, or a CompletionError (an abort rejects as the runtime does). */
 export type Complete = (req: CompletionRequest) => Promise<string>;
 
+/** Whether a runtime is ready on this Mac (installed, signed in), what to do when not, and its models. */
+export interface RuntimeStatus {
+  readonly state: 'ready' | 'signed_out' | 'missing';
+  readonly fix?: string;
+  readonly models: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description: string; readonly efforts?: readonly string[] }>;
+}
+
 /** One agent kind Beluga can run. */
 export interface AgentRuntime {
   readonly id: RuntimeId;
@@ -148,6 +172,8 @@ export interface AgentRuntime {
   create(opts: RuntimeOptions): AgentBackend;
   /** A side call (agent/side-calls.ts): its answer's text, or a CompletionError. */
   readonly complete: Complete;
+  /** Whether it's installed and signed in here, and its models (the picker greys it out until it is). */
+  status?(): Promise<RuntimeStatus>;
 }
 
 /** How a run is kept safe on a runtime. */
@@ -159,12 +185,13 @@ export type RunSafety =
 
 /**
  * The safety rule as code: no per-tool gating ⇒ sandbox required (its secrets, .env files
- * included, kept out by the sandbox, not by asking). A friend's task (vetTool) or a guest can't
- * run at all without gating: their limits are per tool call.
+ * included, kept out by the sandbox, not by asking). A guest can't run at all without gating; a
+ * friend's task (vetTool) only on a runtime whose sandbox confines every step (BLG-452: Codex's
+ * workspace-write, network off, secrets unreachable; see runtime/codex/sandbox.ts).
  */
 export function safetyFor(caps: RuntimeCapabilities, input?: Pick<AgentRunInput, 'vetTool' | 'guest'>): RunSafety {
   if (caps.canGateEveryTool) return { kind: 'gated' };
-  const refuse = input?.vetTool
+  const refuse = input?.vetTool && !caps.hasSandbox
     ? "This agent can't check each step against a friend's limits, so it can't take friends' tasks."
     : input?.guest
       ? "This agent can't check each step, so it can't answer guests."

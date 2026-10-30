@@ -1,6 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import type { ClaudeSkill } from '../../shared/skills.js';
+import { type ClaudeSkill, notOnCodex } from '../../shared/skills.js';
 
 /**
  * The skills and custom commands Claude Code can use in a folder, for the message box's / list
@@ -28,6 +28,12 @@ export function frontmatter(text: string): { readonly fields: Readonly<Record<st
   return { fields, firstLine };
 }
 
+/** What of a skill doesn't reach Codex, for the / list (see ClaudeSkill.onCodex). */
+const codexNote = (fields: Readonly<Record<string, string>>): { onCodex?: string } => {
+  const lost = notOnCodex(fields);
+  return lost.length ? { onCodex: `Not on Codex: ${lost.join(', ')}` } : {};
+};
+
 const short = (text: string): string => (text.length > 160 ? `${text.slice(0, 157).trimEnd()}…` : text);
 
 async function list(dir: string): Promise<string[]> {
@@ -54,7 +60,7 @@ async function scan(dir: string, source: ClaudeSkill['source'], prefix = ''): Pr
     const text = await read(path.join(dir, 'skills', entry, 'SKILL.md'));
     if (text === undefined) continue;
     const { fields, firstLine } = frontmatter(text);
-    out.push({ name: `${prefix}${fields.name || entry.slice(0, -1)}`, description: short(fields.description || firstLine), kind: 'skill', source });
+    out.push({ name: `${prefix}${fields.name || entry.slice(0, -1)}`, description: short(fields.description || firstLine), kind: 'skill', source, ...codexNote(fields) });
   }
   const commands = async (sub: string): Promise<void> => {
     for (const entry of await list(path.join(dir, 'commands', sub))) {
@@ -66,7 +72,7 @@ async function scan(dir: string, source: ClaudeSkill['source'], prefix = ''): Pr
       const text = await read(path.join(dir, 'commands', sub, entry));
       if (text === undefined) continue;
       const { fields, firstLine } = frontmatter(text);
-      out.push({ name: `${prefix}${entry.slice(0, -3)}`, description: short(fields.description || firstLine), kind: 'command', source, ...(fields['argument-hint'] ? { args: fields['argument-hint'] } : {}) });
+      out.push({ name: `${prefix}${entry.slice(0, -3)}`, description: short(fields.description || firstLine), kind: 'command', source, ...(fields['argument-hint'] ? { args: fields['argument-hint'] } : {}), ...codexNote(fields) });
     }
   };
   await commands('');
@@ -101,4 +107,38 @@ export async function listSkills(cwd: string | undefined, home: string): Promise
   return found
     .filter((s) => /^[\w.:-]+$/.test(s.name) && !seen.has(s.name) && Boolean(seen.add(s.name)))
     .slice(0, MAX_SKILLS);
+}
+
+/** One skill or command found by name, with its file, frontmatter and body (for a runtime that expands them itself). */
+export interface FoundSkill {
+  readonly kind: 'skill' | 'command';
+  readonly source: ClaudeSkill['source'];
+  readonly file: string;
+  readonly fields: Readonly<Record<string, string>>;
+  /** The text after the frontmatter. */
+  readonly body: string;
+}
+
+/**
+ * `name` as `/name` means it in `cwd` (the project's first, then yours, then a plugin's
+ * `plugin:name`), the same order as listSkills. Undefined: no such skill or command.
+ */
+export async function findSkill(name: string, cwd: string | undefined, home: string): Promise<FoundSkill | undefined> {
+  if (!/^[\w.:-]+$/.test(name)) return undefined;
+  const [plugin, inPlugin] = name.includes(':') ? (name.split(':', 2) as [string, string]) : [undefined, name];
+  const dirs: Array<{ dir: string; source: ClaudeSkill['source'] }> = plugin
+    ? (await plugins(home)).filter((p) => p.name === plugin).map((p) => ({ dir: p.dir, source: 'plugin' as const }))
+    : [...(cwd ? [{ dir: path.join(cwd, '.claude'), source: 'project' as const }] : []), { dir: home, source: 'user' as const }];
+  for (const { dir, source } of dirs) {
+    for (const [kind, file] of [
+      ['skill', path.join(dir, 'skills', inPlugin, 'SKILL.md')],
+      ['command', path.join(dir, 'commands', `${inPlugin}.md`)],
+    ] as const) {
+      const text = await read(file);
+      if (text === undefined) continue;
+      const { fields } = frontmatter(text);
+      return { kind, source, file, fields, body: text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '') };
+    }
+  }
+  return undefined;
 }

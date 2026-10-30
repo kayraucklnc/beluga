@@ -20,6 +20,7 @@ import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store, shippedText } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
 import type { ModelChoice, PullRequest } from './work-store.js';
+import type { RuntimeStatus } from '../agent/runtime/types.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
@@ -49,6 +50,8 @@ export interface WorkbenchDeps {
   readonly switchAgent?: (channel: string, agent: AgentRef | undefined) => Promise<unknown>;
   /** The agent picker's runtimes: which run on this Mac, and why the others don't (BLG-446). */
   readonly listRuntimes?: () => readonly RuntimeChoice[];
+  /** Whether each runtime that can say so is ready here (Codex: installed, signed in) and its models (BLG-455). */
+  readonly runtimeStatus?: () => Promise<ReadonlyArray<{ readonly id: string } & RuntimeStatus>>;
   /** Look for a pull request (injected in tests). */
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   /** A repository's recent PRs by branch, in one call (injected in tests; without it, with an injected findPr, PRs are looked up one by one). */
@@ -90,6 +93,18 @@ export interface WorkbenchDeps {
   readonly hasClaude?: () => boolean;
 }
 
+/** The picker's runtimes with what each said about itself: ready (its models), or greyed with why and what to do. */
+export function withRuntimeStatus(runtimes: readonly RuntimeChoice[], found: ReadonlyArray<{ readonly id: string } & RuntimeStatus>): RuntimeChoice[] {
+  return runtimes.map((r) => {
+    const st = found.find((f) => f.id === r.id);
+    if (!st) return r;
+    if (st.state === 'ready') return { id: r.id, label: r.label, available: true, models: st.models };
+    return { id: r.id, label: r.label, available: false, why: [st.state === 'missing' ? `${r.label} isn't installed on this Mac` : `${r.label} isn't signed in`, st.fix].filter(Boolean).join(': ') };
+  });
+}
+
+/** An agent that isn't ready yet (Codex not signed in) is asked about again this often. */
+const RUNTIME_RECHECK_MS = 60_000;
 const DISK_EVERY_MS = 5 * 60_000;
 /** How often to see which PRs are due a look (cheap: no gh unless one is). */
 const PR_TICK_MS = 5_000;
@@ -205,6 +220,7 @@ export class Workbench {
   }
   private diskTimer?: NodeJS.Timeout;
   private prTimer?: NodeJS.Timeout;
+  private runtimeTimer?: NodeJS.Timeout;
   private readonly watchers = new Map<string, () => void>();
   /**
    * What each terminal started with: where (for its variables now) and the variables as text.
@@ -263,6 +279,7 @@ export class Workbench {
     const runtimes = this.deps.listRuntimes?.();
     if (runtimes) this.deps.store.dispatch({ type: 'runtimes', runtimes });
     void this.deps.listModels?.().then((models) => models && this.deps.store.dispatch({ type: 'models', models }), () => undefined);
+    void this.checkRuntimes();
     setTimeout(() => void this.measureDisk(), 3000).unref();
     this.diskTimer = setInterval(() => void this.measureDisk(), DISK_EVERY_MS);
     this.diskTimer.unref();
@@ -273,6 +290,7 @@ export class Workbench {
   stop(): void {
     clearInterval(this.diskTimer);
     clearInterval(this.prTimer);
+    clearTimeout(this.runtimeTimer);
     for (const off of this.watchers.values()) off();
     this.deps.terminals?.closeAll();
   }
@@ -1388,6 +1406,22 @@ export class Workbench {
   }
 
   /** How much disk each worktree and chat folder takes. */
+  /**
+   * The picker's runtimes made true: one that can say whether it's ready here (Codex: installed,
+   * signed in) is greyed with what to do until it is, then lists its models. Asked again a while
+   * later until every one is (you may sign in meanwhile).
+   */
+  private async checkRuntimes(): Promise<void> {
+    const found = await this.deps.runtimeStatus?.().catch(() => undefined);
+    if (!found?.length) return;
+    this.deps.store.dispatch({ type: 'runtimes', runtimes: withRuntimeStatus(this.deps.store.getState().runtimes, found) });
+    if (found.some((r) => r.state !== 'ready')) {
+      clearTimeout(this.runtimeTimer);
+      this.runtimeTimer = setTimeout(() => void this.checkRuntimes(), RUNTIME_RECHECK_MS);
+      this.runtimeTimer.unref();
+    }
+  }
+
   async measureDisk(): Promise<void> {
     const dirs = this.manager.list
       .flatMap((p) => p.workspaces)

@@ -44,6 +44,8 @@ export interface SuggestContext {
   readonly tasks?: readonly TaskMention[];
   /** Claude's skills and custom commands in this conversation ("/frontend-design"). */
   readonly skills?: readonly ClaudeSkill[];
+  /** How this conversation's agent takes them (its runtime's `skills` capability): 'mapped' (Codex) says what doesn't carry over. */
+  readonly skillsOn?: 'native' | 'mapped';
 }
 
 /** How a friend is written in a message: "@mia" ("@Mia Chen" → "@MiaChen", "@Zoë" stays). */
@@ -140,7 +142,7 @@ function commandSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
     .sort((a, b) => Number(!a.name.toLowerCase().startsWith(typed)) - Number(!b.name.toLowerCase().startsWith(typed)))
     .map((k) => ({
       label: `/${k.name}${k.args ? ` ${k.args}` : ''}`,
-      hint: k.description || (k.kind === 'skill' ? 'skill' : 'command'),
+      hint: [k.description || (k.kind === 'skill' ? 'skill' : 'command'), ctx.skillsOn === 'mapped' ? k.onCodex : undefined].filter(Boolean).join(' · '),
       value: `${BELUGA_COMMANDS.has(k.name.toLowerCase()) ? '//' : '/'}${k.name} `,
       enter: 'complete' as const,
       kind: 'skill' as const,
