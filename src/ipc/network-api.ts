@@ -80,6 +80,12 @@ export const NETWORK_API = {
   'network.files.preview': { args: z.tuple([sha]) },
   // Your main channel (a group with all your friends), made now if there isn't one: → its group id.
   'network.channels.main': { args: z.tuple([]) },
+  // Delete a message from a direct conversation on this Mac; `everyone`: one of yours, from your friend's Mac too.
+  'network.messages.delete': { args: z.tuple([conversation, z.string().regex(/^[\w-]{8,64}$/), z.object({ everyone: z.boolean().optional() }).optional()]) },
+  // Change the text of a message you sent in a direct conversation (your friend sees it edited): → the message.
+  'network.messages.edit': { args: z.tuple([conversation, z.string().regex(/^[\w-]{8,64}$/), text]) },
+  // Empty a direct conversation on this Mac (your friend keeps their copy).
+  'network.clear': { args: z.tuple([conversation]) },
   // Mark a conversation read: `dm:<peerId>` or `group:<id>`.
   'network.read': { args: z.tuple([conversation]) },
 } as const;

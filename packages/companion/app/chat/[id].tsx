@@ -276,9 +276,9 @@ function Bubble({ m, first, last, group, pics, me }: { m: ChatMessageView; first
             </T>
           </View>
         ) : null}
-        {last ? (
+        {last || m.edited ? (
           <T v="caption" style={{ marginHorizontal: 4, fontSize: 11 }}>
-            {ago(m.ts)}
+            {[m.edited ? 'Edited' : '', last ? ago(m.ts) : ''].filter(Boolean).join(' · ')}
           </T>
         ) : null}
       </View>

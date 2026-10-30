@@ -18,6 +18,10 @@ export type NetSheet =
   /** Delete a channel you're no longer in from this Mac. */
   | { readonly kind: 'delete_group'; readonly groupId: string }
   | { readonly kind: 'remove_member'; readonly groupId: string; readonly peerId: string }
+  /** Delete a message from a direct conversation (`mine`: it can go from their Mac too). */
+  | { readonly kind: 'delete_message'; readonly conversation: string; readonly id: string; readonly mine: boolean }
+  /** Clear a direct conversation on this Mac. */
+  | { readonly kind: 'clear_dm'; readonly peerId: string }
   /** Your status with a note and how long it lasts. */
   | { readonly kind: 'status' }
   /** A group's info (members, invite link, requests), beside the conversation's header. */

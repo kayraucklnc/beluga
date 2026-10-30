@@ -125,7 +125,8 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
 
   // They answer you (mention Claude and their Claude asks yours something).
   bob.on('message', (m) => {
-    if (m.mine) return;
+    // An edit comes as the same message again: he already answered it.
+    if (m.mine || m.edited) return;
     if (m.conversation === dmConversation(meId)) setTimeout(() => !stopped && bob.sendDm(meId, `On it: “${m.text.slice(0, 60)}”`), 1200).unref();
     if (m.conversation === dmConversation(meId) && /claude|screenshot/i.test(m.text)) setTimeout(() => !stopped && responders.bob.askBack(/screenshot/i.test(m.text) ? 'screenshot' : 'question'), 2000).unref();
   });

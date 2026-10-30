@@ -35,8 +35,8 @@ const PAGE = 100;
 const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const fullTime = (ts: number): string => new Date(ts).toLocaleString([], { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: () => void }): ActionItem[] {
-  if (m.status === 'locked') return [];
+function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: () => void; edit?: () => void; remove?: () => void }): ActionItem[] {
+  if (m.status === 'locked') return ctx.remove ? [{ label: 'Delete…', icon: 'trash', danger: true, onSelect: ctx.remove }] : [];
   const copy = (text: string, what: string): void => void copyText(text).then(() => ctx.say(`Copied ${what}`));
   const quote = (): void => void document.dispatchEvent(new CustomEvent(QUOTE_EVENT, { detail: m.text }));
   return [
@@ -56,7 +56,56 @@ function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: 
           },
         ]
       : []),
+    ...(ctx.edit ? [{ label: 'Edit', icon: 'pencil' as const, separate: true, onSelect: ctx.edit }] : []),
+    ...(ctx.remove ? [{ label: 'Delete…', icon: 'trash' as const, danger: true, separate: !ctx.edit, onSelect: ctx.remove }] : []),
   ];
+}
+
+/** Your message's words in place of its bubble: Return saves, Esc puts it back. */
+function EditBubble({ m, done }: { m: MessageView; done: () => void }) {
+  const { client } = useBeluga();
+  const [text, setText] = useState(m.text);
+  const [busy, setBusy] = useState(false);
+  const save = (): void => {
+    const next = text.trim();
+    if (!next || next === m.text.trim()) return done();
+    setBusy(true);
+    client.api.network['messages.edit'](m.conversation, m.id, next).then(done, (err: unknown) => {
+      setBusy(false);
+      client.store.dispatch({ type: 'toast', text: `Couldn’t edit it: ${errorText(err)}`, level: 'error' });
+    });
+  };
+  return (
+    <div className={cx(s.bubble, s.bubbleMine, s.editBubble)}>
+      <textarea
+        className={s.editText}
+        value={text}
+        disabled={busy}
+        autoFocus
+        aria-label="Edit message"
+        rows={Math.min(8, text.split('\n').length)}
+        onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            done();
+          } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            save();
+          }
+        }}
+      />
+      <div className={s.editHint}>
+        <button type="button" onClick={done}>
+          Cancel
+        </button>
+        <button type="button" className={s.editSave} disabled={busy || !text.trim()} onClick={save}>
+          Save
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /** A person's colour as a CSS variable, for their bubble's pastel (the same colour as their avatar and their Claude). */
@@ -70,6 +119,7 @@ const tintOf = (peerId: string): React.CSSProperties => ({ ['--person' as string
 const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, world, offer }: { m: MessageView; place: RunPlace; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string }; nameOf: (peerId: string) => string; world: MentionWorld; offer?: boolean }) {
   const prefs = usePrefs();
   const say = useSay();
+  const [editing, setEditing] = useState(false);
   const locked = m.status === 'locked';
   const expired = m.mine && m.status === 'expired';
   const asked = askedLine(m, nameOf, me?.peerId);
@@ -95,21 +145,44 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
       {asked}
     </div>
   ) : null;
-  const items = () => messageItems(m, { say, ...(expired ? { resend: () => resend(m) } : {}) });
+  // Direct messages can be deleted (yours from their Mac too) and your own words edited (BLG-425).
+  const editable = dm && m.mine && !m.claude && !m.task && !locked && Boolean(m.text.trim());
+  const items = () =>
+    messageItems(m, {
+      say,
+      ...(expired ? { resend: () => resend(m) } : {}),
+      ...(editable ? { edit: () => setEditing(true) } : {}),
+      ...(dm ? { remove: () => openNet({ kind: 'delete_message', conversation: m.conversation, id: m.id, mine: m.mine }) } : {}),
+    });
+  const edited = m.edited ? <span title={`Edited ${fullTime(m.edited)}`}>Edited</span> : null;
   // Your own words (not your Claude's): your colour, on the right; the time (and Delivered) under the run.
   if (m.mine && !m.claude && !locked)
     return (
       <ActionsContext items={items}>
         <div className={cx(s.row, s.rowMine, !place.first && s.rowCont, m.status === 'waiting' && s.waiting)} data-message={m.id} data-mine="true" style={tintOf(author)}>
           <div className={s.stack} title={fullTime(m.ts)}>
-            {m.text.trim() ? (
+            {editing ? (
+              <EditBubble m={m} done={() => setEditing(false)} />
+            ) : m.text.trim() ? (
               <div className={cx(s.bubble, s.bubbleMine, place.last && s.tailMine)}>
                 <Markdown text={m.text} mentions={world} />
               </div>
             ) : null}
             {m.files?.length ? <MessageFiles files={m.files} conversation={m.conversation} mine /> : null}
             {askedChip}
-            {deliveryState ?? (place.last ? <div className={s.under}>{[time(m.ts), dm && last && m.status === 'delivered' ? 'Delivered' : ''].filter(Boolean).join(' · ')}</div> : null)}
+            {deliveryState ??
+              (place.last || edited ? (
+                <div className={s.under}>
+                  {[edited, place.last ? time(m.ts) : null, place.last && dm && last && m.status === 'delivered' ? 'Delivered' : null]
+                    .filter(Boolean)
+                    .map((part, i) => (
+                      <span key={i}>
+                        {i ? ' · ' : ''}
+                        {part}
+                      </span>
+                    ))}
+                </div>
+              ) : null)}
           </div>
         </div>
       </ActionsContext>
@@ -141,6 +214,7 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
               </div>
             ) : null}
             {m.files?.length ? <MessageFiles files={m.files} conversation={m.conversation} mine={false} /> : null}
+            {edited ? <div className={s.under}>{edited}</div> : null}
             {askedChip}
           </div>
         </div>
@@ -446,6 +520,12 @@ function Conversation({ id }: { id: string }) {
   const latest = net.messages[id] ?? [];
   const [earlier, setEarlier] = useState<{ id: string; list: readonly MessageView[]; more: boolean }>({ id, list: [], more: true });
   const older = earlier.id === id ? earlier : { id, list: [], more: true };
+  // A message deleted or the chat cleared: earlier pages loaded here may hold it, so they go (BLG-425).
+  const count = useRef(latest.length);
+  useEffect(() => {
+    if (latest.length < count.current && earlier.list.length) setEarlier({ id, list: [], more: true });
+    count.current = latest.length;
+  }, [latest.length]);
   const messages = useMemo(() => mergeMessages(older.list, latest), [older.list, latest]);
   const more = latest.length >= KEPT && older.more;
   const { ref, onScroll } = useStickToBottom(messages, id);

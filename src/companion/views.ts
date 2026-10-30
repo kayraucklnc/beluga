@@ -1195,6 +1195,7 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     ...(m.claude ? { claude: true } : {}),
     text: stripCode(m.text).text,
     ts: m.ts,
+    ...(m.edited ? { edited: m.edited } : {}),
     ...(files.length ? { files: files.slice(0, 20) } : {}),
     ...(offerOf(state, m) ? { offer: offerOf(state, m) } : {}),
     ...(chatTaskOf(state, m) ? { task: chatTaskOf(state, m) } : {}),

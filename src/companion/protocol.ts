@@ -834,6 +834,8 @@ export const ChatMessageView = z.object({
   claude: z.boolean().optional(),
   text,
   ts,
+  /** BLG-425: when its author last changed its text (a Mac before it never says). */
+  edited: ts.optional(),
   files: z.array(OutputView).max(20).optional(),
   /** A friend's Claude answering you can't touch their Mac from the chat: what it offers to do there as a request (gateway.ask `to`). */
   offer: z.object({ to: id, ask: z.string().max(500), needs: z.array(z.enum(['project', 'shell', 'files', 'screen', 'device'])).max(5).optional() }).optional(),

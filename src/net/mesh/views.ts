@@ -95,6 +95,8 @@ export interface MessageView extends ChatExtras {
    * Group messages that can't be read (no key for them yet) are 'locked'.
    */
   readonly status?: 'waiting' | 'delivered' | 'expired' | 'locked';
+  /** When its author last changed its text (direct messages). */
+  readonly edited?: number;
 }
 
 export interface FriendView extends PersonView {

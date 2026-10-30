@@ -253,6 +253,28 @@ function Confirmations() {
   }
   if (sheet?.kind === 'leave_group') return <LeaveGroupAlert groupId={sheet.groupId} />;
   if (sheet?.kind === 'delete_group') return <DeleteGroupAlert groupId={sheet.groupId} />;
+  if (sheet?.kind === 'delete_message') return <DeleteMessageAlert conversation={sheet.conversation} id={sheet.id} mine={sheet.mine} />;
+  if (sheet?.kind === 'clear_dm') {
+    const f = net.friends.find((x) => x.peerId === sheet.peerId);
+    if (!f) return null;
+    return (
+      <Alert
+        title={`Clear your chat with ${f.name}?`}
+        message={`Every message is removed from this Mac. ${f.name} keeps their copy.`}
+        tone="caution"
+        icon="chat"
+        confirm={{
+          label: 'Clear',
+          destructive: true,
+          onClick: () => {
+            closeNet();
+            void api.clear(`dm:${f.peerId}`).catch((err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn’t clear the chat: ${errorText(err)}`, level: 'error' }));
+          },
+        }}
+        onCancel={closeNet}
+      />
+    );
+  }
   if (sheet?.kind === 'remove_member') {
     const g = net.groups.find((x) => x.id === sheet.groupId);
     const m = g?.members.find((x) => x.peerId === sheet.peerId);
@@ -275,6 +297,33 @@ function Confirmations() {
     );
   }
   return null;
+}
+
+/** Delete a message: from this Mac, and (one of yours, ticked) from your friend's too. */
+function DeleteMessageAlert({ conversation, id, mine }: { conversation: string; id: string; mine: boolean }) {
+  const { client } = useBeluga();
+  const friend = useApp((st) => st.network.friends.find((f) => `dm:${f.peerId}` === conversation));
+  const [everyone, setEveryone] = useState(mine);
+  const name = friend?.name ?? 'your friend';
+  return (
+    <Alert
+      title="Delete this message?"
+      message={everyone ? `It’s removed from this Mac and from ${name}’s.` : `It’s removed from this Mac. ${name} still has it.`}
+      tone="caution"
+      icon="trash"
+      confirm={{
+        label: 'Delete',
+        destructive: true,
+        onClick: () => {
+          closeNet();
+          void client.api.network['messages.delete'](conversation, id, everyone ? { everyone: true } : {}).catch((err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn’t delete it: ${errorText(err)}`, level: 'error' }));
+        },
+      }}
+      onCancel={closeNet}
+    >
+      {mine ? <Checkbox checked={everyone} onChange={setEveryone} label={`Delete for ${name} too`} detail="If they’re offline, it goes when they’re back" /> : null}
+    </Alert>
+  );
 }
 
 /** Talking with friends is off: say so and turn it on right here; the sheet that was asked for opens once it's on. */

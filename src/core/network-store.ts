@@ -22,6 +22,10 @@ export type NetworkAction =
   | { type: 'net_summary'; summary: NetworkSummary }
   /** A message arrived, was sent, or changed status (same id: replaced). */
   | { type: 'net_message'; message: MessageView }
+  /** A message was deleted from a conversation. */
+  | { type: 'net_unsent'; conversation: string; id: string }
+  /** A conversation was cleared on this Mac. */
+  | { type: 'net_cleared'; conversation: string }
   /** The latest messages of these conversations (on start). */
   | { type: 'net_messages'; messages: Readonly<Record<string, readonly MessageView[]>> }
   /** Chat files changed state (`null`: forget it). */
@@ -86,6 +90,13 @@ export function reduceNetwork(state: NetworkSlice, action: NetworkAction): Netwo
       const live = answered ? { ...state.network.live, [m.conversation]: was!.filter((l) => !(l.peerId === m.from && l.for === m.claude!.for)) } : state.network.live;
       return { network: { ...state.network, messages, ...(live ? { live } : {}) } };
     }
+    case 'net_unsent': {
+      const list = state.network.messages[action.conversation];
+      if (!list?.some((m) => m.id === action.id)) return state;
+      return { network: { ...state.network, messages: { ...state.network.messages, [action.conversation]: list.filter((m) => m.id !== action.id) } } };
+    }
+    case 'net_cleared':
+      return { network: { ...state.network, messages: { ...state.network.messages, [action.conversation]: [] } } };
     case 'net_files': {
       const files: Record<string, ChatFileState> = { ...state.network.files };
       for (const [sha, f] of Object.entries(action.files)) {

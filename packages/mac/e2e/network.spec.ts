@@ -45,6 +45,50 @@ test('a direct message goes to bob, and his answer comes back', async ({ page })
   await expect(friend(page, 'bob')).not.toHaveAccessibleName(/unread/);
 });
 
+/** SHOTS=<folder>: save screenshots there. */
+const shot = async (page: Page, name: string): Promise<void> => {
+  if (!process.env.SHOTS) return;
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
+};
+
+test('your direct message can be edited and deleted; the chat can be cleared (BLG-425)', async ({ page }) => {
+  await friend(page, 'bob').click();
+  const log = page.getByRole('log', { name: 'Conversation with bob' });
+  const box = page.getByRole('textbox', { name: 'Message bob' });
+  await box.fill('Lunch at 12?');
+  await box.press('Enter');
+  const mine = log.locator('[data-mine="true"]', { hasText: 'Lunch at 12?' });
+  await expect(mine).toBeVisible();
+  await mine.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Delete…' })).toBeVisible();
+  await shot(page, '01-message-menu');
+  await page.getByRole('menuitem', { name: 'Edit' }).click();
+  const editor = log.getByRole('textbox', { name: 'Edit message' });
+  await editor.fill('Lunch at 1?');
+  await shot(page, '02-editing');
+  await editor.press('Enter');
+  const edited = log.locator('[data-mine="true"]', { hasText: 'Lunch at 1?' });
+  await expect(edited).toContainText('Edited');
+  await shot(page, '03-edited');
+
+  await edited.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Delete…' }).click();
+  const alert = page.getByRole('alertdialog', { name: 'Delete this message?' }).or(page.getByRole('dialog', { name: 'Delete this message?' }));
+  await expect(alert).toContainText('bob’s');
+  await shot(page, '04-delete-alert');
+  await alert.getByRole('button', { name: 'Delete' }).click();
+  await expect(edited).toHaveCount(0);
+
+  await toolbar(page).getByRole('button', { name: 'More for bob' }).click();
+  await page.getByRole('menuitem', { name: 'Clear Chat…' }).click();
+  const clear = page.getByRole('alertdialog', { name: 'Clear your chat with bob?' }).or(page.getByRole('dialog', { name: 'Clear your chat with bob?' }));
+  await shot(page, '05-clear-alert');
+  await clear.getByRole('button', { name: 'Clear' }).click();
+  await expect(log.locator('[data-message]')).toHaveCount(0);
+});
+
 test('a new group with bob and mia: create, rename in its info, then leave', async ({ page }) => {
   await sidebar(page).getByRole('button', { name: 'New channel' }).click();
   const sheet = page.getByRole('dialog', { name: 'New Channel' });

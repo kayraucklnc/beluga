@@ -70,6 +70,7 @@ export function useConversationHeader(id: string): HeaderParts {
     const items: ActionItem[] = [
       { label: `New Channel with ${f.name}…`, icon: 'people', onSelect: () => openNet({ kind: 'new_group', with: [f.peerId] }) },
       { label: 'Copy Name', icon: 'copy', onSelect: () => void copyText(f.name).then(() => say(`Copied “${f.name}”`)) },
+      { label: 'Clear Chat…', icon: 'x', separate: true, disabled: !net.messages[id]?.length, onSelect: () => openNet({ kind: 'clear_dm', peerId: f.peerId }) },
       { label: `Remove ${f.name}…`, danger: true, separate: true, onSelect: () => openNet({ kind: 'remove_friend', peerId: f.peerId }) },
     ];
     return {
