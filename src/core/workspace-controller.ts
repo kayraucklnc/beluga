@@ -1343,6 +1343,14 @@ export class WorkspaceController {
     this.saver.changed();
   }
 
+  /** Where a side question (/btw) about a conversation runs: its folder and Claude session, nothing changed. */
+  btwPlace(channel: string): { cwd: string; resume?: string; model?: string } | undefined {
+    const ws = this.inChannel(channel);
+    if (!ws || ws.archived || ws.kind === 'main' || !existsSync(ws.path)) return undefined;
+    const resume = ws.sessionId ?? ws.forkFromSession ?? this.pendingResume.get(ws.id);
+    return { cwd: ws.path, ...(resume ? { resume } : {}), ...(ws.model ? { model: ws.model } : {}) };
+  }
+
   /** Your workspace a conversation belongs to, if any. */
   inChannel(channel: string): Workspace | undefined {
     const id = workspaceIdOf(channel);

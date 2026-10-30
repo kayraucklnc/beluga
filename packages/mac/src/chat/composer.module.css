@@ -429,6 +429,10 @@
 .planning[data-mode='tasks'] {
   --plan: #8a7ce8;
 }
+/* A side question (/btw): the peach of its answer card (btw.module.css). */
+.planning[data-mode='btw'] {
+  --plan: #e0975f;
+}
 .planning:focus-within {
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--plan) 62%, transparent),

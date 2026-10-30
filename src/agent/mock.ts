@@ -704,6 +704,12 @@ const DEMO_MCP: readonly McpServerRow[] = [
   { name: 'claude.ai Gmail', label: 'Gmail', from: 'claude.ai', status: 'connected', canSignIn: false },
 ];
 
+/** The demo's answer to a side question (/btw): short, about the work, as the real one would be. */
+export function mockBtw(question: string): string {
+  const q = question.trim().replace(/\?+$/, '');
+  return `Short answer: yes. For “${q.slice(0, 80)}”, what I’ve done so far keeps the change inside \`src/core\`, and the tests I ran passed. I haven’t touched the phone app yet, so nothing there depends on it.`;
+}
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   const context = new MockContext();
   let mcp = DEMO_MCP;
@@ -743,6 +749,18 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     titlePlan: async (goal) => {
       await new Promise((r) => setTimeout(r, 400 * pace));
       return mockPlanTitle(goal);
+    },
+    // A side question: a beat of thinking, then the answer word by word, as Claude streams it.
+    btw: async (req) => {
+      await sleep(900 * pace, req.signal);
+      const answer = mockBtw(req.question);
+      let soFar = '';
+      for (const word of answer.split(/(?<= )/)) {
+        await sleep(35 * pace, req.signal);
+        soFar += word;
+        req.onText(soFar);
+      }
+      return answer;
     },
     answerChat: async (req) => {
       await sleep(1800 * pace, req.signal);
