@@ -19,6 +19,7 @@ import {
   type MilestoneAgent,
   type MilestoneRun,
   type PlanEpics,
+  type PlanRescue,
   type Plan,
   type PlanBody,
   type PlanEvent,
@@ -305,6 +306,13 @@ export class Plans {
     const plan = this.need(id);
     const { agent: _was, ...rest } = plan.runs[milestone] ?? {};
     return this.change(plan, { runs: { ...plan.runs, [milestone]: agent ? { ...rest, agent } : rest } }, []);
+  }
+
+  /** Beluga's rescue of a stalled plan (undefined: it's moving again). */
+  setRescue(id: string, rescue: Readonly<Record<string, PlanRescue>> | undefined): Plan {
+    const plan = this.need(id);
+    if (JSON.stringify(plan.rescue) === JSON.stringify(rescue)) return plan;
+    return this.change(plan, { rescue }, []);
   }
 
   /** Its epics on the board (see epics.ts). */

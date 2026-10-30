@@ -325,6 +325,21 @@ export function checkFailedPrompt(title: string, notes: string, autopilot: boole
     .join('\n');
 }
 
+/** The plan went quiet with Claude's work left: the head Claude decides what moves it. */
+export function stuckPrompt(what: string, tried: readonly string[], autopilot: boolean): string {
+  return [
+    `The plan has gone quiet: nothing is running, and it waits on ${what}. That is Claude's to move, not the user's.`,
+    tried.length ? `Beluga already tried: ${tried.join('; ')}.` : '',
+    'Find out why with plan_get (and the task or check it waits on), then act with your tools: plan_message_task to tell',
+    'its Claude what to do, plan_stop_task and plan_start_task to start it over, plan_update to change or split the work,',
+    'or plan_gate to record a milestone\'s check yourself. Say in a line what you did.',
+    autopilot ? 'The plan runs on Autopilot: decide yourself; don\'t end your turn asking the user.' : '',
+    WAIT_IN_TURN,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 /** What a milestone's checker conversation knows on every run. */
 export function checkerBrief(view: PlanView, m: MilestoneView): string {
   return [

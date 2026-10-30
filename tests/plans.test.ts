@@ -23,7 +23,7 @@ const ws = (id: string, projectId: string, name: string, kind: Workspace['kind']
 const project = (id: string, name: string, workspaces: Workspace[] = []): Project => ({ id, name, root: `/tmp/${name}`, base: 'main', workspaces });
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titlePlan?: (goal: string) => Promise<string | undefined>; workers?: 'milestone' | 'task'; forYou?: PlansWorkDeps['forYou']; cancel?: PlansWorkDeps['cancel'] } = {}) {
+function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titlePlan?: (goal: string) => Promise<string | undefined>; workers?: 'milestone' | 'task'; forYou?: PlansWorkDeps['forYou']; cancel?: PlansWorkDeps['cancel']; rescueMs?: number; now?: () => number } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('main', 'api', 'bob-api', 'chat', { askOnly: true } as Partial<Workspace>)])] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
@@ -64,12 +64,12 @@ function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titleP
   const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push({ prompt, channel, echo: true }) });
   const plans = new Plans({ store, dir: null });
   const intents: unknown[] = [];
-  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => `ask-${asked.push({ prompt, channel, echo })}`, intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.workers ? { workers: opts.workers } : {}), ...(opts.forYou ? { forYou: opts.forYou } : {}), ...(opts.cancel ? { cancel: opts.cancel } : {}) });
+  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => `ask-${asked.push({ prompt, channel, echo })}`, intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.workers ? { workers: opts.workers } : {}), ...(opts.forYou ? { forYou: opts.forYou } : {}), ...(opts.cancel ? { cancel: opts.cancel } : {}), ...(opts.rescueMs !== undefined ? { rescueMs: opts.rescueMs } : {}), ...(opts.now ? { now: opts.now } : {}) });
   const claude = boardWork.myClaude();
   const me = boardWork.me();
   /** Claude in a worktree finishes its run, or works. */
   const run = (channel: string, status: 'started' | 'done', id = `r-${Math.random()}`): void => store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: id, requester: 'p-me', event: status, text: '', ts: Date.now(), channel });
-  return { store, board, boardWork, plans, work, asked, made, archived, intents, claude, me, run, add };
+  return { store, board, boardWork, plans, work, asked, made, archived, intents, claude, me, run, add, controller };
 }
 
 describe('a new plan’s name (KLD-28)', () => {
@@ -1217,5 +1217,97 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     const { ISSUE_STATUSES, STATUS_INFO } = await import('../src/core/board/model.js');
     expect(ISSUE_STATUSES.slice(3, 6)).toEqual(['in_review', 'in_plan', 'done']);
     expect(STATUS_INFO.in_plan.label).toBe('Merged into Plan');
+  });
+});
+
+describe('soak: a long plan on Autopilot reaches the end by itself, with Claudes that misbehave (BLG-473)', () => {
+  // Five milestones, two side by side at the start, each with two or three tasks.
+  const LONG: BodyInput = {
+    title: 'Long run',
+    goal: 'Ship it all',
+    milestones: [
+      { id: 'a', title: 'A', criteria: ['A works'], dependsOn: [], tasks: [{ id: 'a1', title: 'A one' }, { id: 'a2', title: 'A two', blockedBy: ['a1'] }] },
+      { id: 'b', title: 'B', criteria: ['B works'], dependsOn: [], tasks: [{ id: 'b1', title: 'B one' }, { id: 'b2', title: 'B two' }] },
+      { id: 'c', title: 'C', criteria: ['C works'], dependsOn: ['a'], tasks: [{ id: 'c1', title: 'C one' }, { id: 'c2', title: 'C two' }, { id: 'c3', title: 'C three', blockedBy: ['c1'] }] },
+      { id: 'd', title: 'D', criteria: ['D works'], dependsOn: ['b', 'c'], tasks: [{ id: 'd1', title: 'D one' }, { id: 'd2', title: 'D two' }] },
+      { id: 'e', title: 'E', criteria: ['E works'], dependsOn: ['d'], tasks: [{ id: 'e1', title: 'E one' }, { id: 'e2', title: 'E two' }] },
+    ],
+  } as BodyInput;
+
+  it('Claudes that stop after one task or never answer, checks without a verdict, and a restart: it still gets there, never left to you', async () => {
+    // A minute passes between looks; a milestone quiet for three is moved along.
+    let clock = 1_000_000;
+    const t = setup({ rescueMs: 3 * 60_000, now: () => clock });
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main', autonomy: 'autopilot' }, t.claude);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(LONG);
+    let work = t.work;
+    work.approve(plan.id);
+    await tick(5);
+
+    const sentTo = new Map<string, number>();
+    // C's Claude never answers; D's checker never records a verdict.
+    const deaf = new Set(['c']);
+    const deafChecker = new Set(['d']);
+    const checksOf = new Map<string, number>();
+    let seen = 0;
+    /** The fake Claudes answer what Beluga asked since they last looked, badly the first time. */
+    const answer = (): void => {
+      for (; seen < t.asked.length; seen++) {
+        const { prompt, channel } = t.asked[seen]!;
+        const now = t.plans.need(plan.id);
+        const milestoneOf = Object.entries(now.runs).find(([, r]) => r?.agent && `ws:${r.agent.worktree}` === channel)?.[0];
+        const checking = Object.entries(now.runs).find(([, r]) => r?.checker && `ws:${r.checker}` === channel)?.[0];
+        const finish = (id: string, all: boolean): void => {
+          const tasks = now.body!.milestones.find((m) => m.id === id)!.tasks.map((x) => t.board.need(x.issueId!)).filter((i) => i.status !== 'in_review' && i.status !== 'done' && i.status !== 'canceled');
+          for (const i of all ? tasks : tasks.slice(0, 1)) t.board.update(i.id, { status: 'in_review' }, t.claude);
+        };
+        if (milestoneOf && deaf.has(milestoneOf)) {
+          // This milestone's Claude never answers.
+        } else if (milestoneOf) {
+          // A milestone's Claude: the first time it does one task and stops; after that, all of them.
+          const n = (sentTo.get(milestoneOf) ?? 0) + 1;
+          sentTo.set(milestoneOf, n);
+          finish(milestoneOf, n > 1);
+        } else if (checking) {
+          // A checker: its first turn ends without a verdict; the next one passes it.
+          const n = (checksOf.get(checking) ?? 0) + 1;
+          checksOf.set(checking, n);
+          if (n > 1 && !deafChecker.has(checking)) work.forRun(channel, 'p-me')!.tools!.gate(checking, 'pass', 'Checked: works.');
+        } else if (channel === 'ws:main' && prompt.includes('The plan has gone quiet')) {
+          // The head Claude, asked to decide: it does what's stuck itself (the work, or the check).
+          const about = prompt.split('\n')[0]!;
+          for (const m of now.body!.milestones) {
+            if (!about.includes(`“${m.title}”`)) continue;
+            if (about.includes('the check of')) work.forRun('ws:main', 'p-me')!.tools!.gate(m.id, 'pass', 'Checked it myself.');
+            else finish(m.id, true);
+          }
+        }
+      }
+    };
+
+    for (let i = 0; i < 600 && t.plans.need(plan.id).status !== 'done'; i++) {
+      answer();
+      // A restart partway: everything Beluga kept in memory is gone, the plan and the board stay.
+      if (i === 40) {
+        work.stop();
+        work = new PlansWork({ store: t.store, plans: t.plans, board: t.boardWork, controller: t.controller, askClaude: (prompt, channel, echo) => `ask-${t.asked.push({ prompt, channel, echo })}`, intend: () => undefined, delayMs: 0, rescueMs: 3 * 60_000, now: () => clock });
+      }
+      clock += 60_000;
+      work.pilot.tick();
+      await tick(3);
+    }
+    work.stop();
+    const done = t.plans.need(plan.id);
+    expect(done.status).toBe('done');
+    expect(Object.values(done.runs).every((r) => r?.passedAt)).toBe(true);
+    // It had to be moved along, and was never left to you.
+    expect(done.activity.some((a) => a.text.includes(' went quiet: '))).toBe(true);
+    expect(done.activity.some((a) => a.text.startsWith('Stuck on'))).toBe(false);
+    expect(Object.values(done.rescue ?? {}).some((r) => r.yours)).toBe(false);
+    // Every rung was needed somewhere: sent on, woken, started over, asked again, a fresh checker, the head Claude.
+    const said = done.activity.map((a) => a.text).join('\n');
+    for (const rung of ['sent the Claude doing', 'woke BOB-', 'started it again', 'asked for the check of', 'to a fresh checker', 'asked the plan’s Claude to decide']) expect(said).toContain(rung);
+    // Its epics followed it: every milestone's is In Review (merged into the plan with no branch here, then done once shipped).
+    for (const id of Object.values(done.epics!.milestones)) expect(['in_review', 'in_plan', 'done']).toContain(t.board.need(id).status);
   });
 });

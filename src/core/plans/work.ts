@@ -49,6 +49,8 @@ export interface PlansWorkDeps {
   readonly cancel?: (requestId: string) => void;
   /** Tasks only you can do came up: see PilotDeps.forYou. */
   readonly forYou?: PilotDeps['forYou'];
+  /** How long a plan may sit quiet before Beluga moves it along: see PilotDeps.rescueMs. */
+  readonly rescueMs?: number;
 }
 
 const WS = 'ws:';
@@ -84,6 +86,7 @@ export class PlansWork {
       ...(deps.workers ? { workers: deps.workers } : {}),
       ...(deps.cancel ? { cancel: deps.cancel } : {}),
       ...(deps.forYou ? { forYou: deps.forYou } : {}),
+      ...(deps.rescueMs !== undefined ? { rescueMs: deps.rescueMs } : {}),
       structure: (plan) => this.structure(plan.id),
     });
     // A task of a plan: its worktree's Claude knows the plan and what runs beside it.

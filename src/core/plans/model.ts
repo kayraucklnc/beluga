@@ -247,11 +247,34 @@ export interface Plan {
   readonly caughtUp?: boolean;
   /** Its shape on the board: an epic for the plan, one under it per milestone (see epics.ts). */
   readonly epics?: PlanEpics;
+  /** Beluga moving its stalled milestones along (see the pilot's rescue), by milestone id: kept, so a restart doesn't start over. */
+  readonly rescue?: Readonly<Record<string, PlanRescue>>;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly approvedAt?: number;
   readonly doneAt?: number;
+}
+
+/**
+ * A plan with nothing running and nothing waiting on you is stalled: Beluga moves it along, a step
+ * further each time the same thing stays stuck (send it on, a fresh Claude, the head Claude decides),
+ * and only then tells you, saying what it tried.
+ */
+export interface PlanRescue {
+  /** How far the milestone had got (see milestoneMark): moving on from there starts the ladder over. */
+  readonly sig: string;
+  /** What it's stuck on now (a check, stopped tasks, idle work…): a new kind starts its ladder over. */
+  readonly kind?: string;
+  /** How many steps up the ladder it has gone for that kind. */
+  readonly tries: number;
+  /** Steps taken in all, across kinds: past a few, it's yours (no going round in circles). */
+  readonly total?: number;
+  readonly at: number;
+  /** What was tried, in words (shown when it's left to you). */
+  readonly tried: readonly string[];
+  /** Left to you: nothing more is tried until something moves. */
+  readonly yours?: boolean;
 }
 
 /** A plan's epics on the board (task ids): the plan's own, and each milestone's (by milestone id). */
