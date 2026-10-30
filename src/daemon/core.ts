@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../config.js';
+import { CLAUDE_AGENT } from '../protocol.js';
 import { createClaudeBackend } from '../agent/runner.js';
 import { createMockBackend } from '../agent/mock.js';
 import { findConversation } from '../agent/claude-sessions.js';
@@ -235,7 +236,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     url: room.url,
     ...(room.fallbackUrl ? { fallbackUrl: room.fallbackUrl } : {}),
     keys: deriveKeys(room.secret),
-    profile: { name: config.name, shares: shares.infos, agent: config.agent },
+    profile: { name: config.name, shares: shares.infos, agent: config.agent, agents: [CLAUDE_AGENT], defaultAgent: CLAUDE_AGENT },
     identity,
   });
   const hub = room.hub;

@@ -1194,6 +1194,7 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     from: clip(m.mine ? myName(state) : m.name, 100),
     mine: m.mine,
     ...(m.claude ? { claude: true } : {}),
+    ...(m.claude?.agent ? { agent: m.claude.agent } : {}),
     text,
     ts: m.ts,
     ...(m.edited ? { edited: m.edited } : {}),

@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, AgentPlace, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer } from '../agent/types.js';
 import { ALWAYS_ASK_YOU, writesCode } from '../agent/policy.js';
-import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
+import { type AgentRef, type BodyInput, type BodyOf, CLAUDE_AGENT, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
 import type { ShareService } from './shares.js';
@@ -34,6 +34,8 @@ export interface AgentHostDeps {
   readonly selfId: () => string;
   readonly send: (body: BodyInput, opts?: { to?: string; keep?: boolean }) => boolean;
   readonly agent?: () => AgentBackend | undefined;
+  /** Which agent this Mac runs (named on its run events; default: Claude). */
+  readonly agentRef?: () => AgentRef;
   readonly shares: ShareService;
   readonly sharing: WorkspaceSharing;
   readonly people: People;
@@ -730,7 +732,7 @@ export class AgentHost {
       if (event === 'done') waiter.resolve(text);
       else waiter.reject(new Error(text || 'It stopped'));
     }
-    const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel, ...(slotWait ? { slotWait } : {}) };
+    const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel, ...(slotWait ? { slotWait } : {}), agent: this.deps.agentRef?.() ?? CLAUDE_AGENT };
     // Workspace conversations are private: events go to you and the people you invited, never to the room.
     const targets = channel === 'room' ? [{ keep: final }] : [this.selfId, ...this.deps.sharing.recipients(channel)].map((to) => ({ to }));
     for (const opts of targets) if (!this.send(body, opts) && final) this.outbox = [...this.outbox, { body, opts }].slice(-50);

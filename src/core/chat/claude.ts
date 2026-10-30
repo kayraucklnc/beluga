@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { type AgentRef, CLAUDE_AGENT } from '../../protocol.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
 import { asks } from '../../net/mesh/extras.js';
@@ -55,6 +56,8 @@ export interface ChatClaudeOptions {
   /** Is this person your friend? (default: the mesh says) */
   readonly isFriend?: (peerId: string) => boolean;
   readonly model?: () => string | undefined;
+  /** Which agent answers (named on each answer; default: Claude). */
+  readonly agent?: () => AgentRef;
   /** Your Claude started or stopped answering (the others hear it over the network). */
   readonly onLive?: (conversation: string, id: string, state: 'thinking' | 'idle') => void;
   /** Something you should know (your Claude couldn't answer). */
@@ -86,6 +89,12 @@ export class ChatClaude {
   private readonly perPerson = new Map<string, number[]>();
   private readonly off: () => void;
   private stopped = false;
+
+  private agentRef(): AgentRef {
+    const ref = this.opts.agent?.() ?? CLAUDE_AGENT;
+    const model = ref.model ?? this.opts.model?.();
+    return model ? { ...ref, model } : ref;
+  }
 
   constructor(private readonly opts: ChatClaudeOptions) {
     const saved = opts.handledFile ? readJson(opts.handledFile) : undefined;
@@ -184,7 +193,7 @@ export class ChatClaude {
       // What needs this Mac comes back as a request the asker's Mac offers to send (gateway), on the last part.
       const { text, request: offer } = acting ? { text: answer } : parseRequest(answer);
       const parts = splitAnswer(text);
-      parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
+      parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, agent: this.agentRef(), ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
     } catch (err) {
       if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -208,7 +217,7 @@ export class ChatClaude {
       .act(conversation, prompt)
       .then((answer) => {
         if (this.stopped || !mesh.conversations().includes(conversation)) return;
-        for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: about } });
+        for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: about, agent: this.agentRef() } });
       })
       .catch((err: unknown) => {
         if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t carry on: ${err instanceof Error ? err.message : String(err)}`);

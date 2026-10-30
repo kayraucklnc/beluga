@@ -830,11 +830,17 @@ export type WidgetTileView = z.infer<typeof WidgetTileView>;
 export const WidgetsView = z.object({ tiles: z.array(WidgetTileView).max(120) });
 export type WidgetsView = z.infer<typeof WidgetsView>;
 
+/** Which agent it is (src/protocol.ts AgentRef, repeated here: this file is the phone's whole contract). */
+export const AgentRefView = z.object({ runtime: z.string().max(32), model: z.string().max(64).optional(), label: z.string().max(64) });
+export type AgentRefView = z.infer<typeof AgentRefView>;
+
 export const ChatMessageView = z.object({
   id,
   from: z.string().max(100),
   mine: z.boolean(),
   claude: z.boolean().optional(),
+  /** BLG-434: with `claude`, which agent answered (an older Mac leaves it out: Claude). */
+  agent: AgentRefView.optional(),
   text,
   ts,
   /** BLG-425: when its author last changed its text (a Mac before it never says). */

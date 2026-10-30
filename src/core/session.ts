@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { Body, type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
+import { type AgentRef, Body, type BodyInput, type BodyOf, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { networkOf } from './network.js';
 import { mentionNote, personMentions } from './person-mentions.js';
@@ -461,18 +461,19 @@ export class Session {
    * show on it); `steer`: it steers the turn your Claude is on (shown as not read yet from the start).
    */
   sendChat(text: string, byAgent: boolean, channel = 'room', request?: string, steer = false): void {
+    const agent = byAgent ? { agent: this.agentRef } : {};
     if (channel !== 'room') {
       // Workspace conversations stay on this computer, plus the people you invited into them.
       const id = randomUUID();
-      this.store.dispatch({ type: 'chat', id, from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel, ...(request ? { request } : {}), ...(steer ? { steer: true as const } : {}) });
-      for (const to of this.sharing.recipients(channel)) this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, channel }, { to });
+      this.store.dispatch({ type: 'chat', id, from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel, ...agent, ...(request ? { request } : {}), ...(steer ? { steer: true as const } : {}) });
+      for (const to of this.sharing.recipients(channel)) this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, channel, ...agent }, { to });
       return;
     }
     if (this.store.getState().self?.guest && !this.store.getState().peers.find((p) => p.peerId === this.selfId && !p.guest)) {
       this.toast("You came in with a link to a project, so there's no group chat here. Open it in Projects", 'warn');
       return;
     }
-    if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent }, { keep: true })) {
+    if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, ...agent }, { keep: true })) {
       this.toast('Not connected, so the message was not sent', 'error');
     }
   }
@@ -1005,7 +1006,7 @@ export class Session {
         // Workspace chats only reach people in that workspace, and only contributors may post.
         if (body.channel !== 'room' && !this.sharing.canPost(from, body.channel)) return;
         if (body.channel?.startsWith('ws:')) this.workspaces?.ensureLoaded(body.channel.slice(3));
-        this.store.dispatch({ type: 'chat', id, from, text: body.text, ts, byAgent: body.byAgent, channel: body.channel });
+        this.store.dispatch({ type: 'chat', id, from, text: body.text, ts, byAgent: body.byAgent, channel: body.channel, ...(body.agent ? { agent: body.agent } : {}) });
         return;
       case 'focus':
         return this.onFocus(from, ts, body);
@@ -1149,6 +1150,11 @@ export class Session {
     this.store.dispatch({ type: 'access', peerId, scope });
   }
 
+  /** The agent this Mac answers with (its profile's default; Claude until it names one). */
+  get agentRef(): AgentRef {
+    return defaultAgentOf(this.opts.client.currentProfile);
+  }
+
   private updateProfile(patch: Partial<Profile>): void {
     this.opts.client.updateProfile({ ...this.opts.client.currentProfile, ...patch });
   }
@@ -1184,7 +1190,7 @@ export class Session {
     }
     // Your Claude asked from a workspace: follow the friend's Claude there (only from the one you asked).
     const channel = waiter?.mirror && waiter.peer === from && body.requester === this.selfId ? waiter.mirror : body.channel;
-    this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel, ...(body.slotWait ? { slotWait: body.slotWait } : {}) });
+    this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel, ...(body.slotWait ? { slotWait: body.slotWait } : {}), ...(body.agent ? { agent: body.agent } : {}) });
     if (!waiter || waiter.peer !== from || !['done', 'error', 'denied'].includes(body.event)) return;
     clearTimeout(waiter.timer);
     this.agentWaiters.delete(body.requestId);

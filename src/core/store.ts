@@ -1,4 +1,4 @@
-import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
+import type { AgentEventKind, AgentRef, FsEntry, PeerInfo } from '../protocol.js';
 import { type AssistantChats, NO_ASSISTANT_CHATS, activeAssistantChannel, assistantChannel } from '../shared/assistant.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
@@ -66,6 +66,8 @@ export type LogItem =
       readonly text: string;
       readonly ts: number;
       readonly byAgent: boolean;
+      /** With `byAgent`: which agent wrote it (left out: Claude, from before agents were named). */
+      readonly agent?: AgentRef;
       /** The request this message is to your Claude (its card's requestId): how its card's state shows on it (a steer Claude hasn't read yet). */
       readonly request?: string;
       /** Sent to steer the turn your Claude is on (⌥↩): sent but not read until Claude reads it (see shared/claude-notices.ts steeredMessages). */
@@ -83,6 +85,8 @@ export type LogItem =
       readonly requesterName: string;
       /** Who asked (a peer id; missing on items saved before it was kept). */
       readonly requester?: string;
+      /** The agent doing the run (left out: Claude, from before agents were named). */
+      readonly agent?: AgentRef;
       /** What was asked, once known (sent with the "queued" event, for the queue). */
       readonly prompt?: string;
       /** Queued only because your Claude works in as many other conversations as it may at once. */
@@ -530,12 +534,12 @@ export type Action =
   | { type: 'hosting'; hosting: Hosting }
   | { type: 'welcome'; self: PeerInfo }
   | { type: 'peers'; peers: readonly PeerInfo[] }
-  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string; request?: string; steer?: true }
+  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string; request?: string; steer?: true; agent?: AgentRef }
   /** `id`/`ts` are stamped before reducing (see stampAction). */
   | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy; shipped?: ShippedMark }
   | { type: 'shell'; item: ShellItem }
   /** `itemId` (stamped before reducing) names the chat item a new run creates. */
-  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string; slotWait?: SlotWait }
+  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string; slotWait?: SlotWait; agent?: AgentRef }
   /** One owner's waiting requests in a conversation, in their new order (see orderQueued). */
   | { type: 'queue_order'; owner: string; ids: readonly string[] }
   | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[]; order?: readonly string[]; hidden?: readonly string[] }
@@ -819,6 +823,8 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(a.event === 'queued' && a.text ? { prompt: a.text } : {}),
     ...(a.event === 'queued' && a.slotWait ? { slotWait: a.slotWait } : {}),
     ...(existing?.status === 'queued' && a.event !== 'queued' ? { queuedUntil: a.ts } : {}),
+    // Any event may name the agent (the first one an older card saw may not have).
+    ...(a.agent ? { agent: a.agent } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
   // A new message, or a run in a workspace finishing while no screen shows it (Claude's answer is news).
@@ -919,6 +925,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
           text: clean(action.text),
           ts: action.ts,
           byAgent: action.byAgent,
+          ...(action.byAgent && action.agent ? { agent: action.agent } : {}),
           ...(action.request ? { request: action.request } : {}),
           ...(action.steer ? { steer: true as const } : {}),
         }),

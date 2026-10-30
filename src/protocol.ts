@@ -34,6 +34,30 @@ export const Usage = z.object({
 });
 export type Usage = z.infer<typeof Usage>;
 
+/** Runtimes Beluga knows by name; others (a newer Mac's) still parse, as their id. */
+export const KNOWN_RUNTIMES = ['claude', 'codex', 'local'] as const;
+export type AgentRuntime = (typeof KNOWN_RUNTIMES)[number] | (string & {});
+
+/**
+ * Which agent it is: its runtime ("claude", "codex", "local", …), the model when it's known
+ * ("opus", "gpt-5", "qwen3"), and the name its owner gave it ("Claude", "Codex"). Screens say it
+ * with shared/agent-label.ts; nothing assumes the agent is Claude.
+ */
+export const AgentRef = z.object({
+  runtime: z.string().regex(/^[a-z][\w-]{0,31}$/) as z.ZodType<AgentRuntime>,
+  model: z.string().min(1).max(64).optional(),
+  label: z.string().min(1).max(64),
+});
+export type AgentRef = z.infer<typeof AgentRef>;
+
+/** Before a Mac said which agent it runs, it was always Claude. */
+export const CLAUDE_AGENT: AgentRef = { runtime: 'claude', label: 'Claude' };
+
+/** The agent someone's Mac answers with when nobody names one: an older Mac's is Claude. */
+export function defaultAgentOf(p: { readonly agents?: readonly AgentRef[]; readonly defaultAgent?: AgentRef } | undefined): AgentRef {
+  return p?.defaultAgent ?? p?.agents?.[0] ?? CLAUDE_AGENT;
+}
+
 export const Profile = z.object({
   name: z.string().regex(/^[\w.-]{1,32}$/),
   shares: z.array(ShareInfo).max(32),
@@ -41,6 +65,10 @@ export const Profile = z.object({
   usage: Usage.optional(),
   /** Projects friends may ask to start a worktree in (names only; you approve each request). */
   projects: z.array(z.string().max(80)).max(60).optional(),
+  /** The agents this person runs (an older Mac sends none: it runs Claude). */
+  agents: z.array(AgentRef).max(8).optional(),
+  /** The one that answers when someone asks them without naming one. */
+  defaultAgent: AgentRef.optional(),
 });
 export type Profile = z.infer<typeof Profile>;
 
@@ -67,6 +95,8 @@ export const ChatBody = z.object({
   text: z.string().min(1).max(MAX_TEXT),
   byAgent: z.boolean().default(false),
   channel: Channel,
+  /** With `byAgent`: which of their agents wrote it (an older Mac leaves it out: Claude). */
+  agent: AgentRef.optional(),
 });
 
 export const FocusBody = z.object({
@@ -124,6 +154,8 @@ export const AgentEventBody = z.object({
   channel: Channel,
   /** With `queued`: it waits because its Claude works in as many conversations as it may at once (see shared/run-slots.ts). */
   slotWait: z.object({ running: z.number().int().min(0).max(1000), limit: z.number().int().min(0).max(1000) }).optional(),
+  /** The agent doing the run (an older Mac leaves it out: Claude). */
+  agent: AgentRef.optional(),
 });
 
 export const FsListBody = z.object({

@@ -707,7 +707,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
         messages: [
           { id: 'm1', from: 'Mia', mine: false, text: 'is the phone app real?? 👀', ts: now - 3 * HOUR },
           { id: 'm2', from: 'You', mine: true, editable: true, text: 'getting there. I\'m approving deploys from the couch', ts: now - 3 * HOUR + 2 * MIN },
-          { id: 'm3', from: 'Mia\'s Claude', mine: false, claude: true, text: 'Here\'s Mia\'s desktop, as you asked: the radar build is open on the left.', ts: now - 2 * HOUR, files: [desktop] },
+          { id: 'm3', from: 'Mia\'s Codex', mine: false, claude: true, agent: { runtime: 'codex', model: 'gpt-5', label: 'Codex' }, text: 'Here\'s Mia\'s desktop, as you asked: the radar build is open on the left.', ts: now - 2 * HOUR, files: [desktop] },
           { id: 'm4', from: 'Mia', mine: false, text: 'view from the office today', ts: now - 41 * MIN, files: [sunset] },
           { id: 'm5', from: 'Mia', mine: false, text: 'also my Claude wants a look at your screen for the radar thing, ok?', ts: now - 12 * MIN },
         ],

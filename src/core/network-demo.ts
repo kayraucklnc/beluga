@@ -10,6 +10,8 @@ import { ChatClaude } from './chat/claude.js';
 import { demoAnswerFromPrompt } from './chat/demo-answers.js';
 import { ChatFiles } from './chat/files.js';
 import type { Store } from './store.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import { DEMO_AGENTS } from './demo-agents.js';
 import { belugaEnv } from './beluga-env.js';
 
 const CHECKLIST = `# Friday release
@@ -21,7 +23,7 @@ const CHECKLIST = `# Friday release
 `;
 
 /** A demo friend's Mac shares files and answers when their Claude is asked, like a real one (with made-up answers). */
-function demoChat(mesh: Mesh, dir: string, pace: number): { files: ChatFiles; claude: ChatClaude } {
+function demoChat(mesh: Mesh, dir: string, pace: number, agent: AgentRef): { files: ChatFiles; claude: ChatClaude } {
   const files = new ChatFiles({ mesh, dir: path.join(dir, 'chat-files') });
   const claude = new ChatClaude({
     mesh,
@@ -30,6 +32,7 @@ function demoChat(mesh: Mesh, dir: string, pace: number): { files: ChatFiles; cl
       await new Promise((r) => setTimeout(r, (1800 + Math.random() * 1500) * pace));
       return demoAnswerFromPrompt(req.system, req.prompt);
     },
+    agent: () => agent,
     policy: () => 'everyone',
     trustOf: () => 'trusted',
   });
@@ -68,7 +71,8 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   mia.setAvatar(demoPortrait());
   let stopped = false;
   const pace = Number(belugaEnv('DEMO_PACE')) || 1;
-  const chats = { bob: demoChat(bob, path.join(base, 'bob'), pace), mia: demoChat(mia, path.join(base, 'mia'), pace) };
+  // bob answers with Claude (Opus), mia with Codex: the chat shows whose agent said what.
+  const chats = { bob: demoChat(bob, path.join(base, 'bob'), pace, defaultAgentOf(DEMO_AGENTS.bob)), mia: demoChat(mia, path.join(base, 'mia'), pace, defaultAgentOf(DEMO_AGENTS.mia)) };
   const group = bob.createGroup('launch', [meId, mia.peerId]);
   bob.sendGroup(group.id, 'Morning! Staging is green, ready when you are.');
   // bob shares the checklist and a screenshot: they come straight from his Mac.
