@@ -52,8 +52,8 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   await expect(chat(page)).toHaveCount(0);
   await main(page).getByRole('button', { name: 'Show the Chat' }).click();
   expect(Math.abs((await chat(page).boundingBox())!.width - 428)).toBeLessThanOrEqual(1);
-  // Elsewhere, the panel is as you left it.
-  await openWork(page, 'Tasks');
+  // Elsewhere (the group chat), the panel is as you left it.
+  await sidebar(page).getByRole('button', { name: /^Group chat/ }).click();
   await expect(page.getByRole('button', { name: /^(Show|Hide) the panel/ })).toBeEnabled();
 });
 
