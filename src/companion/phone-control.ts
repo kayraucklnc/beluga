@@ -8,7 +8,7 @@ import type { SystemPort } from '../core/gateway/device.js';
 import type { PhoneTools } from '../agent/types.js';
 import { phoneBrief } from '../agent/phone-tools.js';
 import { Adb, adbCandidates, findAdb, parseDevices, parseUsbPhones, usbTree } from './phone-adb.js';
-import type { DeviceBook } from './devices.js';
+import { type DeviceBook, deviceId } from './devices.js';
 import { type Macro, MacroStep, type PhoneMacros } from './phone-macros.js';
 import { type VideoPiece, adbScreenVideo } from './phone-video.js';
 import {
@@ -252,6 +252,7 @@ export class PhoneControl {
   async scanCable(): Promise<CableView | undefined> {
     const phone = await this.usbPhone();
     let next: CableView | undefined;
+    let onCable: string | undefined;
     if (phone) {
       const adb = await this.ensureAdb();
       const rows = adb ? (await this.attached()).filter((d) => d.usb) : [];
@@ -263,9 +264,21 @@ export class PhoneControl {
         this.cableFacts.set(row.serial, facts);
         const paired = this.deps.devices.all().some((r) => r.cert.platform === 'android' && r.cert.name === facts.name);
         next = { state: 'ready', name: facts.name || phone.name, ...(facts.beluga && !paired ? { canPair: true } : {}) };
+        onCable = facts.name;
       }
     }
-    if (JSON.stringify(next) !== JSON.stringify(this.cable)) {
+    // Which paired phone is on the cable now, for its Settings › Phone (Set Up Beluga Link needs it).
+    let moved = false;
+    for (const r of this.deps.devices.all()) {
+      if (r.cert.platform !== 'android') continue;
+      const id = deviceId(r.cert);
+      const usb = onCable !== undefined && r.cert.name === onCable;
+      if ((this.lastUsb.get(id) ?? false) !== usb) {
+        this.lastUsb.set(id, usb);
+        moved = true;
+      }
+    }
+    if (moved || JSON.stringify(next) !== JSON.stringify(this.cable)) {
       this.cable = next;
       this.deps.onChange();
     }

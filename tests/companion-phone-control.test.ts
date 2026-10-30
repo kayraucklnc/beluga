@@ -609,7 +609,11 @@ describe('a phone on the cable (BLG-190)', () => {
     const paired = fakeSys(script);
     const known = new PhoneControl({ sys: paired.sys, devices: book([record('Sad Printer')]), link: () => undefined, onChange: () => {}, adbPath: '/fake/adb' });
     expect(await known.scanCable()).toEqual({ state: 'ready', name: 'Sad Printer' });
-    void id;
+    // Its Settings › Phone knows it's on the cable, so Set Up Beluga Link can be pressed.
+    expect(known.controlView(id).usb).toBe(true);
+    const other = new PhoneControl({ sys: paired.sys, devices: book([record('Other Phone')]), link: () => undefined, onChange: () => {}, adbPath: '/fake/adb' });
+    await other.scanCable();
+    expect(other.controlView(id).usb).toBe(false);
   });
 
   it('reads every device’s properties only when the USB tree isn’t the one that had no phone last time (BLG-407)', async () => {
