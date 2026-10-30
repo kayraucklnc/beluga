@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { agentLabel } from '../shared/agent-label.js';
+import { KNOWN_RUNTIMES } from '../shared/agent-runtimes.js';
 import { isAssistant } from '../shared/assistant.js';
 import { assistantOf } from './assistant/registry.js';
 import os from 'node:os';
@@ -240,10 +241,17 @@ export class Session {
   /** Your default agent's backend, sending each turn whose place picked another runtime to that one's (agent/runtime/router.ts). */
   private routed(main: AgentRuntime, rt: NonNullable<SessionOptions['runtime']>): AgentBackend {
     const make = (r: AgentRuntime): AgentBackend => guardedBackend(r.create({ ...rt.options, bridge: this.bridge }), r.capabilities);
-    return routedBackend(make(main), main.id, (id) => {
-      const other = rt.runtimes(id);
-      return other ? make(other) : undefined;
-    });
+    // Every other runtime that has plan usage reports it too (Codex's windows on the usage tab).
+    const withUsage = KNOWN_RUNTIMES.map((r) => r.id).filter((id) => id !== main.id && rt.runtimes(id)?.capabilities.hasUsage);
+    return routedBackend(
+      make(main),
+      main.id,
+      (id) => {
+        const other = rt.runtimes(id);
+        return other ? make(other) : undefined;
+      },
+      withUsage,
+    );
   }
 
   get store(): Store {

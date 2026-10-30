@@ -18,8 +18,8 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   hasPlanMode: false,
   hasSubagents: false,
   hasBackgroundAgents: false,
-  // Per-turn tokens only; no plan limits yet.
-  hasUsage: false,
+  // Its plan windows (account/rateLimits) and per-turn tokens, filed under Codex (BLG-474).
+  hasUsage: true,
   canResume: true,
   canFork: false,
   canAskUser: false,

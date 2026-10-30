@@ -21,6 +21,8 @@ export class FakeCodex {
   connections = 0;
   /** Signed in (account/read says who), or not. */
   signedIn = true;
+  /** Its plan windows as the app-server says them (a signed-in Plus account's shape). */
+  rateLimits: unknown = { limitId: 'codex', limitName: null, primary: { usedPercent: 11, windowDurationMins: 300, resetsAt: 1780409235 }, secondary: { usedPercent: 5, windowDurationMins: 10080, resetsAt: 1780862132 }, credits: null, planType: 'plus', rateLimitReachedType: null };
 
   readonly connect: CodexConnect = async () => {
     this.connections++;
@@ -60,6 +62,7 @@ export class FakeCodex {
         return;
       }
       notify('item/completed', { threadId, turnId, item: { type: 'commandExecution', id: cmd, command: `/bin/zsh -lc 'echo ${words}'`, cwd: process.cwd(), status: 'completed', aggregatedOutput: `${words}\n`, exitCode: 0, durationMs: 5 } });
+      if (this.signedIn) notify('account/rateLimits/updated', { rateLimits: { ...(this.rateLimits as object), primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1780409235 } } });
       notify('item/completed', { threadId, turnId, item: { type: 'reasoning', id: `r-${turnId}`, summary: ['Saying it back.'], content: [] } });
       notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id: `m-${turnId}`, text: `echo: ${words}`, phase: null } });
       notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last: { totalTokens: 30, inputTokens: 20, cachedInputTokens: 5, outputTokens: 10, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: null } });
@@ -95,6 +98,9 @@ export class FakeCodex {
         }
         case 'account/read':
           return this.signedIn ? { account: { type: 'chatgpt', email: 'kay@example.com', planType: 'plus' }, requiresOpenaiAuth: true } : { account: null, requiresOpenaiAuth: true };
+        case 'account/rateLimits/read':
+          if (!this.signedIn) throw new Error('not signed in');
+          return { rateLimits: this.rateLimits, rateLimitsByLimitId: null };
         case 'config/read':
           return { config: { mcp_servers: { figma: { url: 'https://figma.example' } } }, origins: {} };
         case 'model/list':

@@ -16,6 +16,8 @@ import { codexComplete } from './complete.js';
 import { CodexEvents, type TurnSink, usageEvent } from './events.js';
 import type { AskForApproval, Model, ReasoningEffort, ThreadStartResponse, Turn, UserInput } from './protocol.js';
 import { codexConfinement, originOf, trustRow } from './sandbox.js';
+import { CODEX_USAGE_AGENT, type CodexRateLimits, fromRateLimits } from './rate-limits.js';
+import { findCodex } from './app-server.js';
 import { type MappedPrompt, mapSlash } from './skills.js';
 import { claudeHome } from '../../../core/claude-code/launch.js';
 
@@ -134,6 +136,8 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           stopped = gone;
           rpc.onNotification((method, params) => {
             events.handle(method, params);
+            // Codex's plan windows as they move (BLG-474): filed under Codex, never Claude.
+            if (method === 'account/rateLimits/updated') reportLimits(bridge, params.rateLimits as CodexRateLimits);
             if (method === 'turn/started' && active && !active.id) active.id = (params.turn as Turn).id;
             if (method === 'turn/completed') {
               const turn = params.turn as Turn;
@@ -172,6 +176,8 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             if (!thread) input.onEvent('progress', 'Started a new Codex conversation (the last one couldn’t be opened)');
           }
           thread ??= await rpc.request<ThreadStartResponse>('thread/start', params);
+          // Where its windows stand now, without waiting for the turn to move them.
+          void readLimits(rpc).then((limits) => reportLimits(bridge, limits));
           return thread.thread.id;
         };
         let approval: AskForApproval = 'never';
@@ -346,6 +352,19 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
     // Side calls (naming, drafting, chat answers…) through Codex's one-shot call.
     ...sideCalls((req) => codexComplete(req, { connect, ...(opts.codexPath ? { bin: opts.codexPath } : {}) }), opts.cwd, opts.model),
 
+    // Codex's plan windows without a run (the usage tab): reported for Codex, so nothing is filed as Claude's.
+    async refreshUsage() {
+      if (!opts.connect && !opts.codexPath && !findCodex()) return undefined;
+      const conn = await connect({ cwd: opts.cwd, ...(opts.codexPath ? { bin: opts.codexPath } : {}) }).catch(() => undefined);
+      if (!conn) return undefined;
+      try {
+        reportLimits(opts.bridge, await readLimits(conn.rpc));
+      } finally {
+        await conn.proc.kill();
+      }
+      return undefined;
+    },
+
     async listModels() {
       const conn = await connect({ cwd: opts.cwd, ...(opts.codexPath ? { bin: opts.codexPath } : {}) }).catch(() => undefined);
       if (!conn) return undefined;
@@ -359,6 +378,18 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       }
     },
   };
+}
+
+/** Codex's windows now (`account/rateLimits/read`); undefined when it can't say (signed out, an API key). */
+async function readLimits(rpc: CodexConnection['rpc']): Promise<CodexRateLimits | undefined> {
+  const res = await rpc.request<{ rateLimits?: CodexRateLimits | null }>('account/rateLimits/read', {}, MODEL_TIMEOUT_MS).catch(() => undefined);
+  return res?.rateLimits ?? undefined;
+}
+
+/** Codex's windows into its own usage card (the bridge files them under Codex). */
+function reportLimits(bridge: RoomBridge, limits: CodexRateLimits | undefined): void {
+  const update = fromRateLimits(limits);
+  if (update) bridge.reportUsage({ ...update, signedIn: true }, CODEX_USAGE_AGENT);
 }
 
 /** A project's instructions: Codex reads AGENTS.md itself, and CLAUDE.md where a project has only that. */
