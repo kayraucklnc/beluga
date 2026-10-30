@@ -58,7 +58,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
     runtimeChoices((id) => {
       if (id === (opts.runtime?.agent ?? 'claude')) return session.backend ? {} : undefined;
       if (id === LOCAL_RUNTIME) return opts.runtime?.runtimes('claude') && !localWhy(local.choices()) ? { models: localModels(local.choices()) } : undefined;
-      return opts.runtime?.runtimes(id) ? {} : undefined;
+      return opts.runtime?.runtimes(id) || opts.alsoRuntimes?.some((r) => r.id === id) ? {} : undefined;
     });
   const local = new LocalEndpoints({ endpoints: () => env.endpoints(), onChange: () => opts.store.dispatch({ type: 'runtimes', runtimes: listRuntimes() }) });
   if (opts.runtime) local.start();
@@ -128,7 +128,11 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         // Your agent's runtime runs here; another, when this Beluga registers it (the demo's agent is Claude).
         listRuntimes,
         // Your other agents (Codex): only with the real runtimes (never the demo's or a test's).
-        ...(opts.runtime ? { runtimeStatus: async () => (await import('../agent/runtime/registry.js')).otherRuntimes() } : {}),
+        ...(opts.runtime
+          ? { runtimeStatus: async () => (await import('../agent/runtime/registry.js')).otherRuntimes() }
+          : opts.alsoRuntimes?.some((r) => r.status)
+            ? { runtimeStatus: () => Promise.all(opts.alsoRuntimes!.filter((r) => r.status).map(async (r) => ({ id: r.id, ...(await r.status!()) }))) }
+            : {}),
         findPr: opts.findPr,
         hasGh: opts.hasGh,
         envFor: (where) => env.envFor(where),

@@ -59,6 +59,12 @@ export function createFakeRuntime(): AgentRuntime {
             if (input.signal.aborted) throw new Error('aborted');
             return undefined;
           }
+          // It gates every tool: each command waits on Beluga's say-so, and a declined one never runs.
+          if (!(await input.canUseTool('Bash', base.input))) {
+            onStep?.({ ...base, status: 'error', isError: true, output: 'Declined', endedAt: Date.now() });
+            onEvent('text', `denied: ${words}`);
+            return `denied: ${words}`;
+          }
           onStep?.({ ...base, status: 'done', output: words, endedAt: Date.now() });
           const text = `echo: ${words}`;
           onEvent('text', text);

@@ -1086,6 +1086,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'notice_unread':
     case 'notice_clear':
     case 'models':
+    // Which agents run here and their models (BLG-462: dropped before, so Codex stayed greyed in the picker).
+    case 'runtimes':
     case 'disk':
     case 'archiving':
     case 'pr':

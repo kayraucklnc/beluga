@@ -67,6 +67,11 @@ export interface SessionOptions {
    * Your agent through the runtime seam (agent/runtime): `agent` (an AgentRef's runtime, 'claude'
    * when unset) picked from `runtimes`, made with `options`. createAgent, when given, wins (the demo, tests).
    */
+  /**
+   * With createAgent: other runtimes beside it, each turn whose place picked one of them run there
+   * (the demo's scripted Codex, so the Mac e2e can drive a Codex worktree: BLG-462).
+   */
+  readonly alsoRuntimes?: readonly AgentRuntime[];
   readonly runtime?: {
     readonly runtimes: (id?: RuntimeId) => AgentRuntime | undefined;
     readonly agent?: RuntimeId;
@@ -237,11 +242,21 @@ export class Session {
     this.local = parts.local;
     this.runtime = opts.createAgent ? undefined : opts.runtime?.runtimes(opts.runtime.agent);
     // The session layer runs a runtime only as its capabilities allow (the safety rule: see guard.ts).
-    this.agent = opts.createAgent ? opts.createAgent(this.bridge) : this.runtime && opts.runtime ? this.routed(this.runtime, opts.runtime) : undefined;
+    this.agent = opts.createAgent ? this.beside(opts.createAgent(this.bridge), opts.alsoRuntimes ?? []) : this.runtime && opts.runtime ? this.routed(this.runtime, opts.runtime) : undefined;
     this.attention = new AttentionRegistry(opts.store);
     opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room), home: os.homedir() });
     this.publishShares();
     this.wire();
+  }
+
+  /** A made agent (the demo's, a test's) with `also` beside it: a turn whose place picked one of them runs there. */
+  private beside(agent: AgentBackend, also: readonly AgentRuntime[]): AgentBackend {
+    if (!also.length) return agent;
+    const options = { cwd: this.opts.agentCwd, autoEdit: true, additionalDirectories: [], bridge: this.bridge };
+    return routedBackend(agent, 'claude', (id) => {
+      const rt = also.find((r) => r.id === id);
+      return rt ? guardedBackend(rt.create(options), rt.capabilities) : undefined;
+    });
   }
 
   /** Your default agent's backend, sending each turn whose place picked another runtime to that one's (agent/runtime/router.ts). */

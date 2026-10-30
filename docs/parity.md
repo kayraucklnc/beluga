@@ -585,6 +585,56 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | Paste or drop an image | `attachments.add` | ⌘V / drop: a chip plus its picture above the text |
 | An image in a message | `attachments.read` (yours from disk, a friend's through their share) | the picture (several in a grid); click for full size, ⌘C copies, Open shows it in Preview |
 
+## Agent runs, per runtime
+
+What an agent run does on each runtime (BLG-461). A cell is **pass** (it works as on Claude), **fallback** (it works another way, or is greyed, and the UI says why: the reason is `src/shared/runtime-fallbacks.ts`, named here as `fallback:<id>`), or **n/a** (nothing of it applies on that runtime, so nothing is shown for it). `tests/parity.test.ts` fails on a blank cell, on a fallback the table and the code disagree about, on a fallback no screen shows, and on a capability Codex lacks (`src/agent/runtime/codex/index.ts`) that no row accounts for. The local model runtime has Claude's capabilities (it is Claude Code on another endpoint) except `hasModelList`, so its column would be Claude's.
+
+| What | Ways in | Claude | Codex |
+|---|---|---|---|
+| Start a run in a worktree or chat, answers streamed | `session.submit`, `workspaces.startWorktree`, `workspaces.startChat` | pass | pass (`codex app-server`, a thread per place) |
+| Pick the agent and model, hand a live conversation off | `/model`, `workbench.setAgent`, `workbench.setModel`, `/handoff` | pass | pass (models from `model/list`, efforts per model; a handoff starts a new thread with the conversation carried) |
+| Continue a conversation later | `canResume` | pass | pass (`thread/resume`; one that can't be opened starts afresh and says so) |
+| Queue and steer while it works | `host.promote`, `canSteer` | pass | pass (`turn/steer`) |
+| Stop, Send now | `host.stopRun`, `host.steerNow`, `/stop`, `canInterrupt` | pass | pass (`turn/interrupt`, then the process) |
+| Approve or deny a command or an edit | `host.answerApproval`, `canGateEveryTool` | pass (every tool through the PreToolUse hook) | pass (what leaves its sandbox asks you through the same gate; inside it, the sandbox confines it) |
+| .env files and secrets stay out | `env.claudeDotenv`, `hasSandbox` | pass (policy.ts per call) | pass (its permissions profile denies them: `runtime/codex/sandbox.ts`) |
+| A friend's task on your Mac | `gateway.decide` | pass | pass (sandboxed: network off, your MCP servers off) |
+| A guest in your room prompting your agent | `invites.create` | pass | fallback (`fallback:guests`): turned away with the reason; the Invite People sheet says it beside Prompt and Edit |
+| A main folder stays read-only | `continue_in_worktree` | pass | pass (a read-only sandbox, Continue in New Worktree) |
+| Plan first, then approve | `/plan`, `session.setPlanMode`, `plans.here`, `hasPlanMode` | pass | pass (a read-only first turn answering with a plan, then the same approval card) |
+| Images in a message | `attachments.add`, `promptImages` | pass | pass |
+| Beluga's tools (room, board, plans, views, Mac, phone, sentinels) | `toolMounts` | pass (in process) | pass (stdio, scoped by a token) |
+| Steps on the agent card | `agent.steps`, `agent.step` | pass | pass (commands, edits, MCP calls mapped to the same steps) |
+| Usage and plan limits | `/usage`, `hasUsage` | pass | pass (its plan windows, filed under Codex) |
+| Compact the conversation | `/compact`, `session.compact`, `workspaces.compact`, `hasCompaction` | pass | fallback (`fallback:compact`): Compact greyed in the toolbar with the reason; /compact and Compact now say it; auto-compact leaves Codex to compact itself |
+| Fork a worktree | `/fork`, `workspaces.fork`, `canFork` | pass | fallback (`fallback:fork`): the toolbar's Fork says it in its hint, and the fork's first run says it as it starts |
+| Edit a sent message (Rewind Here, New Fork) | `workspaces.editPrompt` | pass | fallback (`fallback:rewind`): the files go back; the line under the edit says the conversation starts afresh |
+| Skills and custom commands | `claudeCode.skills`, `skills` | pass (native) | fallback (`fallback:skills`): translated; each one in the / list says what isn't on Codex |
+| MCP servers of your own | `claudeCode.mcpServers`, `claudeCode.mcpSignIn` | pass | fallback (`fallback:mcp_servers`): Settings › Agent › MCP servers says Codex reads its own settings |
+| Questions the agent asks you mid-run | `questions.answer`, `canAskUser` | pass | n/a: Codex asks in its answer, and you reply in the box |
+| Sub-agents and background agents | `claudeCode.findAgent`, `hasSubagents`, `hasBackgroundAgents` | pass | n/a: Codex starts none, so none are listed |
+| Claude Code sessions outside Beluga | `claudeCode.steps` | pass | n/a: Claude Code's own transcripts |
+| The process watched and killed for sure | `hasProcess` | pass | pass |
+| Side calls (naming a worktree, drafting a task, chat answers) | `complete` | pass | pass (`codexComplete`) |
+
+## Runtime conformance (BLG-462)
+
+The same scenarios run on every runtime (`tests/runtime-conformance.ts`, `npx vitest run tests/runtime-conformance.test.ts`): the in-memory reference, Claude's real runner over a scripted Agent SDK `query` (`tests/fake-claude.ts`), and Codex's real runner over a scripted `codex app-server` speaking the payloads codex-cli sends (`src/agent/runtime/codex/scripted.ts`). Where runtimes may differ, a capability flag says so and the scenario checks it both ways; mutants of the reference runtime prove a difference no flag covers fails the suite. **Live** runs against a signed-in Claude Code or Codex are waived (BLG-475: no Codex sign-in on the build Mac).
+
+| Scenario | Claude | Codex | Live Claude | Live Codex |
+|---|---|---|---|---|
+| Start and answer, the step streamed | pass | pass | waived | waived |
+| A command that asks, approved | pass | pass | waived | waived |
+| A command you deny | pass | pass | waived | waived |
+| Session id: one per place, kept on resume | pass | pass | waived | waived |
+| Usage event under its session (`hasUsage`) | pass | pass | waived | waived |
+| Steer while it works (`canSteer`) | pass | pass | waived | waived |
+| Interrupt, the message answered next (`canInterrupt`) | pass | pass | waived | waived |
+| Stop on abort, the open step ended | pass | pass | waived | waived |
+| Friends' tasks and guests (`canGateEveryTool`, `hasSandbox`) | pass | pass | waived | waived |
+| Model list (`hasModelList`) | pass | pass | waived | waived |
+| A worktree on Codex: a task, an approval, Stop, hand off to Claude (`tests/codex-flow.test.ts`, through the daemon's Session; the Mac's `packages/mac/e2e/codex-flow.spec.ts` runs with the plan's e2e) | pass | pass | waived | waived |
+
 ## Beyond the shared actions
 
 | What | Where |
