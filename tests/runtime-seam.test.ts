@@ -8,18 +8,6 @@ import type { RuntimeCapabilities } from '../src/agent/runtime/types.js';
 const SRC = path.resolve(__dirname, '../src');
 const CLAUDE_DIR = path.join(SRC, 'agent/runtime/claude') + path.sep;
 
-/** Still on the SDK, each until its task moves it behind the seam. Empty once the milestone is done. */
-const NOT_YET = new Set<string>([
-  // BLG-441: side calls through runtime.complete().
-  'agent/chat-answer.ts',
-  'agent/live-run.ts',
-  'agent/namer.ts',
-  'agent/pr-reviewer.ts',
-  'agent/project-describer.ts',
-  'agent/setup-fixer.ts',
-  'agent/task-drafter.ts',
-]);
-
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const full = path.join(dir, name);
@@ -27,16 +15,15 @@ function sources(dir: string): string[] {
   });
 }
 
-const SDK_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)['"]@anthropic-ai\/claude-agent-sdk['"]/;
+/** An import of the SDK or one of its sub-paths, static or dynamic (a re-export counts too). */
+const SDK_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)['"]@anthropic-ai\/claude-agent-sdk(?:\/[^'"]*)?['"]/;
 
 describe('the runtime seam', () => {
   it('keeps every Claude Agent SDK import under src/agent/runtime/claude/', () => {
     const outside = sources(SRC)
       .filter((file) => !file.startsWith(CLAUDE_DIR) && SDK_IMPORT.test(readFileSync(file, 'utf8')))
       .map((file) => path.relative(SRC, file).split(path.sep).join('/'));
-    expect(outside.filter((file) => !NOT_YET.has(file))).toEqual([]);
-    // A file that moved comes off the list.
-    expect([...NOT_YET].filter((file) => !outside.includes(file))).toEqual([]);
+    expect(outside).toEqual([]);
   });
 
   it('registers Claude, gating every tool, as the default runtime', async () => {

@@ -1,6 +1,6 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { decideTool } from './policy.js';
+import type { Complete } from './runtime/types.js';
 
 const DRAFT_TIMEOUT_MS = 20_000;
 /** Several tasks take longer to write than one. */
@@ -199,37 +199,23 @@ export function lookVerdict(dir: string, tool: string, input: Record<string, unk
  * turn, no tools, no saved session, on your own Claude login. With `ctx.look`, it reads the code there first (read-only, a few minutes at
  * most). Undefined on any trouble (the caller keeps the first line as the title).
  */
-export async function draftTask(text: string, ctx: DraftContext, opts: { cwd: string; claudePath?: string; model?: string; timeoutMs?: number }): Promise<TaskDraft | undefined> {
+export async function draftTask(text: string, ctx: DraftContext, opts: { cwd: string; complete: Complete; model?: string; timeoutMs?: number }): Promise<TaskDraft | undefined> {
   const abortController = new AbortController();
   const look = ctx.look;
   const timer = setTimeout(() => abortController.abort(), opts.timeoutMs ?? (look ? LOOK_TIMEOUT_MS : ctx.several ? SEVERAL_TIMEOUT_MS : DRAFT_TIMEOUT_MS));
   timer.unref();
-  const verdict = (permissionDecision: 'allow' | 'deny') => ({ hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: permissionDecision === 'allow' ? 'Reading the code.' : 'Only reading the code in this folder is allowed here.' } });
+  const verdict = (decision: 'allow' | 'deny') => ({ allow: decision === 'allow', reason: decision === 'allow' ? 'Reading the code.' : 'Only reading the code in this folder is allowed here.' });
   try {
-    const q = query({
+    const said = await opts.complete({
       prompt: draftPrompt(text, ctx),
-      options: {
-        cwd: look ?? opts.cwd,
-        model: opts.model ?? 'sonnet',
-        tools: look ? [...LOOK_TOOLS] : [],
-        maxTurns: look ? LOOK_TURNS : 1,
-        settingSources: [],
-        persistSession: false,
-        abortController,
-        systemPrompt: look ? LOOK_SYSTEM : ctx.several ? SEVERAL_SYSTEM : SYSTEM,
-        ...(look
-          ? {
-              hooks: {
-                PreToolUse: [{ hooks: [async (h) => (h.hook_event_name === 'PreToolUse' ? verdict(lookVerdict(look, h.tool_name, (h.tool_input ?? {}) as Record<string, unknown>)) : {})] }],
-              },
-            }
-          : {}),
-        ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
-      },
+      cwd: look ?? opts.cwd,
+      model: opts.model ?? 'sonnet',
+      ...(look ? { tools: LOOK_TOOLS, vetTool: (tool: string, input: Record<string, unknown>) => verdict(lookVerdict(look, tool, input)) } : {}),
+      maxTurns: look ? LOOK_TURNS : 1,
+      signal: abortController.signal,
+      system: look ? LOOK_SYSTEM : ctx.several ? SEVERAL_SYSTEM : SYSTEM,
     });
-    for await (const msg of q) {
-      if (msg.type === 'result' && msg.subtype === 'success') return parseTaskDraft(msg.result, ctx.labels, ctx.several ? ctx.people : []);
-    }
+    return parseTaskDraft(said, ctx.labels, ctx.several ? ctx.people : []);
   } catch {
     // No draft: the first line stays the title.
   } finally {

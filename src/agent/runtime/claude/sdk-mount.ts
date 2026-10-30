@@ -3,7 +3,7 @@ import type { ToolSuite } from '../../tool-kit.js';
 
 /** Claude's fast path: a suite of Beluga's tools as an in-process SDK server (no transport, no token). */
 export function sdkServer(suite: ToolSuite): McpSdkServerConfigWithInstance {
-  return createSdkMcpServer({ name: suite.name, version: suite.version, tools: suite.tools as SdkMcpToolDefinition[] });
+  return createSdkMcpServer({ name: suite.name, version: suite.version, ...(suite.alwaysLoad ? { alwaysLoad: true } : {}), tools: suite.tools as SdkMcpToolDefinition[] });
 }
 
 /** Every suite of a run, by its server name, mounted in-process. */

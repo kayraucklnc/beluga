@@ -1,4 +1,5 @@
 import type { AgentRuntime, RuntimeCapabilities } from '../types.js';
+import { claudeComplete } from './complete.js';
 import { createClaudeBackend } from './runner.js';
 
 /** Claude Code through the Agent SDK can do everything Beluga asks of a runtime. */
@@ -27,6 +28,5 @@ export const claudeRuntime: AgentRuntime = {
   label: 'Claude',
   capabilities: CLAUDE_CAPABILITIES,
   create: ({ executablePath, ...opts }) => createClaudeBackend({ ...opts, ...(executablePath ? { claudePath: executablePath } : {}) }),
-  // Side calls still go to their own modules (namer.ts, task-drafter.ts…) until BLG-441.
-  complete: async () => undefined,
+  complete: (req) => claudeComplete(req),
 };

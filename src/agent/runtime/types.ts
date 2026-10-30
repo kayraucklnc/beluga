@@ -1,3 +1,4 @@
+import type { ToolSuite } from '../tool-kit.js';
 import type { AgentBackend, AgentRunInput, RoomBridge } from '../types.js';
 
 /**
@@ -103,23 +104,39 @@ export interface RuntimeOptions {
 
 /**
  * A one-shot side call (BLG-441): name a worktree, draft a task, answer room chat, fix a setup.
- * No conversation, few or no tools, one answer.
+ * No conversation, no saved session, no settings files, few or no tools, one answer.
  */
 export interface CompletionRequest {
   readonly prompt: string;
-  /** Instructions on top of the runtime's own (or instead, with `replaceSystem`). */
-  readonly system?: string;
-  readonly replaceSystem?: boolean;
+  /** Pictures the prompt is about (a chat's pasted images), before its text. Given: the prompt streams in. */
+  readonly images?: ReadonlyArray<{ readonly mime: string; readonly data: string }>;
+  /** The whole system prompt (instead of the runtime's own). */
+  readonly system: string;
   readonly cwd: string;
-  /** An alias like "haiku" / "sonnet" or a full id; unset: the runtime's default. */
+  /** "haiku" (small and fast), "sonnet", or a full id; a runtime maps an alias to its own. Unset: its default. */
   readonly model?: string;
-  readonly effort?: AgentRunInput['effort'];
-  /** 'none' (the default) or read-only looking around its folder (Read, Glob, Grep). */
-  readonly tools?: 'none' | 'read-only';
+  /** Built-in tools it may use (Read, Glob, Grep, Bash); none when unset. */
+  readonly tools?: readonly string[];
+  /** Of those (and the suites' tools, by full name), the ones that run without asking. */
+  readonly allowedTools?: readonly string[];
+  /** Beluga's tools for this call, by server name (a chat's read_earlier); nothing else is mounted. */
+  readonly suites?: Readonly<Record<string, ToolSuite>>;
+  /** Asked before each tool call: allowed (run without asking) or denied, and the reason told to the model. */
+  readonly vetTool?: (toolName: string, input: Record<string, unknown>) => { readonly allow: boolean; readonly reason: string };
+  /** At most this many turns (default 1). */
   readonly maxTurns?: number;
-  readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
 }
+
+/** Why a side call has no answer: it ran out of turns, failed, or ended saying nothing. */
+export class CompletionError extends Error {
+  constructor(readonly kind: 'max_turns' | 'failed' | 'no_answer') {
+    super(kind === 'max_turns' ? 'ran out of turns' : kind === 'failed' ? 'could not answer' : 'stopped without an answer');
+  }
+}
+
+/** A runtime's side call: the answer's text, or a CompletionError (an abort rejects as the runtime does). */
+export type Complete = (req: CompletionRequest) => Promise<string>;
 
 /** One agent kind Beluga can run. */
 export interface AgentRuntime {
@@ -129,8 +146,8 @@ export interface AgentRuntime {
   readonly capabilities: RuntimeCapabilities;
   /** A backend for one room or workspace: runs turns (AgentBackend.run) and the extras it supports. */
   create(opts: RuntimeOptions): AgentBackend;
-  /** A side call's answer text; undefined when it couldn't (callers fall back as they do today). */
-  complete(req: CompletionRequest): Promise<string | undefined>;
+  /** A side call (agent/side-calls.ts): its answer's text, or a CompletionError. */
+  readonly complete: Complete;
 }
 
 /** How a run is kept safe on a runtime. */

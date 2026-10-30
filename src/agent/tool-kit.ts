@@ -24,6 +24,8 @@ export function tool<S extends z.ZodRawShape>(name: string, description: string,
 export interface ToolSuite {
   readonly name: string;
   readonly version: string;
+  /** Its tools are in the prompt from the start, never deferred behind a tool search (a call with no built-in tools). */
+  readonly alwaysLoad?: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a suite mixes tools of every input shape
   readonly tools: ReadonlyArray<ToolDef<any>>;
 }
