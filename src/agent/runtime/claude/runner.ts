@@ -2,12 +2,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../../../core/attachments.js';
-import { buildAskOnlyAppend, buildCommitAppend, buildKeepAppend, buildPrompt, buildScratchAppend, buildShippedAppend, buildSystemAppend, summarizeTool } from '../../prompt.js';
-import { buildGraphAppend } from '../../graph-prompt.js';
-import { buildViewAppend } from '../../view-prompt.js';
+import { buildPrompt, summarizeTool } from '../../prompt.js';
+import { runInstructions } from '../../run-instructions.js';
 import { SECRET_DECLINED, decideTool, denyReason } from '../../policy.js';
 import { gateTool } from '../../tool-gate.js';
-import { buildSyncMainAppend, syncProbes } from '../../sync-main.js';
+import { syncProbes } from '../../sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse, toMs } from './usage.js';
 import { RunFailedError, classifyRun } from '../../../shared/run-failure.js';
 import { SubAgentTracker, withAgentScratch } from './subagents.js';
@@ -30,6 +29,7 @@ import { keptBashInput } from '../../../workspaces/test-procs.js';
 import { SCRATCH_DIR } from '../../../shared/scratch-dir.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../../../protocol.js';
 import { claudeCodeReady } from '../../claude-code.js';
+import { INTERRUPT_TIMEOUT_MS } from '../types.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
 /** How long a run may stay open after answering while its background agents work. */
@@ -42,8 +42,6 @@ const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
 const QUIET_MS = 15_000;
 /** Claude Code's last stderr lines kept for a failed run's details. */
 const STDERR_KEEP = 40;
-/** How long Claude Code gets to stop a turn when asked (see Steer.interrupt). */
-const INTERRUPT_TIMEOUT_MS = 10_000;
 
 export interface ClaudeBackendOptions {
   readonly cwd: string;
@@ -227,7 +225,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.phoneBrief ?? '') + (input.sentinelBrief ?? '') + (input.setup && !askOnly ? input.setup.brief : '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (input.place?.shipped && !askOnly ? buildShippedAppend(input.place.shipped) : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: runInstructions(input, opts.bridge.selfName()) },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),

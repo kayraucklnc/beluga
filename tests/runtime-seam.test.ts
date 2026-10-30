@@ -30,7 +30,8 @@ describe('the runtime seam', () => {
     const { runtimeFor } = await import('../src/agent/runtime/registry.js');
     expect(runtimeFor()?.id).toBe('claude');
     expect(runtimeFor('claude')?.capabilities.canGateEveryTool).toBe(true);
-    expect(runtimeFor('codex')).toBeUndefined();
+    expect(runtimeFor('codex')?.capabilities.canGateEveryTool).toBe(false);
+    expect(runtimeFor('nope')).toBeUndefined();
   });
 });
 

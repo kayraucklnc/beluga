@@ -46,7 +46,13 @@ import type { AgentBackend, AgentRunInput, RoomBridge } from '../types.js';
  * sandbox: the session layer must demand a sandbox default instead (see `safetyFor`).
  */
 
-/** Which runtime: 'claude' today (the AgentRef protocol work names the rest). */
+/**
+ * How long a runtime gets to stop a running turn when asked (Steer.interrupt, Send now, Stop):
+ * the same contract for every runtime. Past it, the interrupt says it couldn't.
+ */
+export const INTERRUPT_TIMEOUT_MS = 10_000;
+
+/** Which runtime: 'claude' or 'codex' (the AgentRef protocol work names the rest). */
 export type RuntimeId = string;
 
 /** What a runtime can do, asked by the session layer, policy and the screens instead of assuming. */
