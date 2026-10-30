@@ -12,6 +12,8 @@ export interface WorkspaceUsage {
   /** Estimated cost in USD (what the SDK reports; not a bill). */
   readonly cost: number;
   readonly runs: number;
+  /** A local or bring-your-own model (BLG-450): no plan, no cost; how fast its last turn wrote, in tokens a second. */
+  readonly local?: { readonly tps?: number };
   /** The SDK reports running totals per conversation; remembered to add only what's new. */
   readonly lastSession?: string;
   readonly last?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };

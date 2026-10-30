@@ -1025,7 +1025,7 @@ export class WorkspaceManager {
    * Add one run's usage. The SDK reports running totals per conversation, so only the part
    * beyond the last total we saw for the same conversation is new.
    */
-  addUsage(id: string, run: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; session?: string }, now = Date.now()): WorkspaceUsage | undefined {
+  addUsage(id: string, run: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; session?: string; free?: boolean; tps?: number }, now = Date.now()): WorkspaceUsage | undefined {
     const ws = this.find(id);
     if (!ws) return undefined;
     const prev = ws.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, runs: 0 };
@@ -1040,6 +1040,8 @@ export class WorkspaceManager {
       cacheWrite: prev.cacheWrite + delta('cacheWrite'),
       cost: prev.cost + delta('cost'),
       runs: prev.runs + 1,
+      // A local run says how fast it was (the last speed stays when a turn is too short to tell).
+      ...(run.free ? { local: { ...((run.tps ?? prev.local?.tps) ? { tps: run.tps ?? prev.local?.tps } : {}) } } : {}),
       ...(run.session ? { lastSession: run.session, last: { input: run.input, output: run.output, cacheRead: run.cacheRead, cacheWrite: run.cacheWrite, cost: run.cost } } : {}),
       // Per day too, for the Usage screen's chart and "this week".
       days: addDay(prev.days, dayKey(now), { tokens: delta('input') + delta('output') + delta('cacheWrite'), cost: delta('cost') }),

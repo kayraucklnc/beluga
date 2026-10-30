@@ -1378,9 +1378,9 @@ export class Workbench {
     const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
     if (!id) return;
     try {
-      const u = JSON.parse(json) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number; session?: string };
+      const u = JSON.parse(json) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number; session?: string; free?: boolean; tps?: number };
       const num = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : 0);
-      this.manager.addUsage(id, { input: num(u.input), output: num(u.output), cacheRead: num(u.cacheRead), cacheWrite: num(u.cacheWrite), cost: num(u.cost), session: typeof u.session === 'string' ? u.session : undefined });
+      this.manager.addUsage(id, { input: num(u.input), output: num(u.output), cacheRead: num(u.cacheRead), cacheWrite: num(u.cacheWrite), cost: num(u.cost), session: typeof u.session === 'string' ? u.session : undefined, ...(u.free === true ? { free: true, ...(num(u.tps) ? { tps: num(u.tps) } : {}) } : {}) });
       void this.deps.controller.refresh();
     } catch {
       // Not usage we understand.

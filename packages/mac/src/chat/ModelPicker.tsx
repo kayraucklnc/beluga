@@ -65,11 +65,11 @@ export function ModelPicker({ channel, draft, onDraft }: { channel: string; draf
   const rows = (g: PickerGroup) => (
     <div className={s.models} role="radiogroup" aria-label={`${g.label} models`}>
       {g.models.map((m) => (
-        <button key={m.value || 'default'} type="button" role="radio" aria-checked={m.on} className={cx(s.model, m.on && s.modelOn)} onClick={() => pick(g, m.value)}>
+        <button key={m.value || 'default'} type="button" role="radio" aria-checked={m.on} disabled={Boolean(m.why) && !m.on} title={m.why} className={cx(s.model, m.on && s.modelOn, m.why && s.modelOff)} onClick={() => pick(g, m.value)}>
           <span className={s.radio}>{m.on ? <Icon name="check" size={11} /> : null}</span>
           <span className={s.modelText}>
             <span className={s.modelName}>{m.label}</span>
-            <span className={s.modelDesc}>{m.description || flavor(m.value, m.label, g.label)}</span>
+            <span className={s.modelDesc}>{m.why ?? (m.description || flavor(m.value, m.label, g.label))}</span>
           </span>
         </button>
       ))}
