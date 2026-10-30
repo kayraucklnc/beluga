@@ -33,10 +33,10 @@ export function PlanAsk({ q }: { q: PendingQuestion }) {
     answerTyped(client, q, text);
   };
   return (
-    <div className={cx(a.card, s.card)} role="group" aria-label={decision ? 'Your call' : 'Claude asks'} data-testid="plan-ask">
+    <div className={cx(a.card, s.card)} role="group" aria-label={decision ? 'Your call' : 'Your agent asks'} data-testid="plan-ask">
       <div className={a.head}>
         <Icon name={decision ? 'hand' : 'claude'} size={13} className={a.claude} />
-        <span className={a.title}>{current.header || (decision ? 'Your call' : 'Claude asks')}</span>
+        <span className={a.title}>{current.header || (decision ? 'Your call' : 'Your agent asks')}</span>
         {total > 1 ? (
           <span className={a.more}>
             {index + 1} of {total}

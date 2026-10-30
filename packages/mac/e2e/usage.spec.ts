@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from './fixtures.js';
 /** The Usage view against the demo: plan meters, this week, disk by project, sorting, and putting things away. */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
-const breakdown = (page: Page) => page.getByRole('table', { name: 'Disk and Claude usage by workspace' });
+const breakdown = (page: Page) => page.getByRole('table', { name: 'Disk and agent usage by workspace' });
 
 /** "661k" / "1.0M" / "950" → a number, to check an order. */
 const count = (text: string): number => {
@@ -37,9 +37,9 @@ test('shows your plan, this week, and disk space by project', async ({ page }) =
   await expect(page.getByRole('meter', { name: /5-hour: \d+% used/ })).toBeVisible();
   await expect(page.getByRole('meter', { name: /Weekly: \d+% used/ })).toBeVisible();
   // Friends' windows, compact.
-  await expect(page.getByRole('list', { name: 'Friends’ Claude usage' }).getByRole('meter', { name: /^bob: 5-hour/ })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Friends’ Claude plan usage' }).getByRole('meter', { name: /^bob: 5-hour/ })).toBeVisible();
   // A bar a day, this week's tokens and cost on top.
-  await expect(page.getByRole('list', { name: 'Claude tokens per day' }).getByRole('listitem')).toHaveCount(14);
+  await expect(page.getByRole('list', { name: 'Agent tokens per day' }).getByRole('listitem')).toHaveCount(14);
   // Disk by project: a segment per project, and its legend jumps to the project's rows.
   const stack = page.getByRole('group', { name: 'Disk space by project' });
   await expect(stack.getByRole('button', { name: /^bob-api: / })).toBeVisible();

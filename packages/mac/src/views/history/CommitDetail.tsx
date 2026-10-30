@@ -7,6 +7,7 @@ import { quoteInBox } from '../../chat/message-menu.js';
 import { useActions } from '../../lib/actions.js';
 import { copyText } from '../../lib/copy.js';
 import { toast, useApi, useBeluga } from '../../lib/beluga.js';
+import { useMyAgentName } from '../../lib/agent-words.js';
 import { openExternal } from '../../lib/system.js';
 import { STATE, UnifiedDiff } from '../DiffView.js';
 import { AuthorAvatar, type RefContext, RefPill } from './HistoryList.js';
@@ -83,6 +84,7 @@ export interface CommitDetailProps {
 /** One commit: its message, who and when, its parents, what it changed (with the diffs), and what to do with it. */
 export function CommitDetail({ target, projectId, hash, refs, onSelect, onClose, compact }: CommitDetailProps) {
   const { detail, error } = useCommit(target, hash);
+  const agent = useMyAgentName();
   const { client, ui } = useBeluga();
   const api = useApi();
   const actions = useActions();
@@ -190,7 +192,7 @@ export function CommitDetail({ target, projectId, hash, refs, onSelect, onClose,
           ) : null}
           <Tip label={ws ? 'Quote it in this worktree’s chat' : 'A questions-only chat in the main folder'}>
             <Button size="small" icon="claude" onClick={askClaude}>
-              Ask Claude About This Commit
+              Ask {agent} About This Commit
             </Button>
           </Tip>
           <Tip label="A new worktree on its own branch, starting at this commit">

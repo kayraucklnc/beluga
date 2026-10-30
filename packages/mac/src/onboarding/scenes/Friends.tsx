@@ -45,7 +45,7 @@ const ERRANDS: readonly Errand[] = [
       { icon: 'terminal', text: 'Ran', code: 'gh api …/memberships' },
       { icon: 'check', text: 'Role changed to admin' },
     ],
-    result: { icon: 'check', label: 'Admin on acme/web', detail: 'Granted by Ada’s Claude' },
+    result: { icon: 'check', label: 'Admin on acme/web', detail: 'Granted by Ada’s agent' },
     after: 'Turning on branch protection',
   },
   {
@@ -81,7 +81,7 @@ function Window({ who, hue, you, children }: { readonly who: string; readonly hu
         <div>
           <strong>{you ? 'Your Mac' : `${who}’s Mac`}</strong>
           <span className={s.macClaude}>
-            <Icon name="claude" size={10} /> {you ? 'your Claude' : `${who}’s Claude`}
+            <Icon name="claude" size={10} /> {you ? 'your agent' : `${who}’s agent`}
           </span>
         </div>
       </div>
@@ -110,14 +110,14 @@ export function Friends() {
           <AnimatePresence mode="popLayout">
             <motion.div key={`${round}-${beat >= DONE}`} className={s.task} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={SPRING}>
               <Icon name={beat >= ASKING && beat < DONE ? 'clock' : 'refresh'} size={12} className={beat >= ASKING && beat < DONE ? s.waitIcon : s.spin} />
-              {beat >= DONE ? errand.after : beat >= ASKING ? 'Waiting on Ada’s Claude…' : errand.before}
+              {beat >= DONE ? errand.after : beat >= ASKING ? 'Waiting on Ada’s agent…' : errand.before}
             </motion.div>
           </AnimatePresence>
           <AnimatePresence>
             {beat >= ASKING ? (
               <motion.div key={`ask-${round}`} className={s.errandAsk} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={SPRING}>
                 <span className={s.askTag}>
-                  <Icon name="share" size={10} /> To Ada’s Claude
+                  <Icon name="share" size={10} /> To Ada’s agent
                 </span>
                 {errand.ask}
               </motion.div>
@@ -182,7 +182,7 @@ export function Friends() {
           <AnimatePresence mode="popLayout">
             {beat === WAITING || beat === ALLOWED ? (
               <motion.div key={`req-${round}`} className={s.request} initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.97 }} transition={SPRING}>
-                <span className={s.dim}>Your friend’s Claude asks</span>
+                <span className={s.dim}>Your friend’s agent asks</span>
                 <span className={s.requestText}>{errand.ask}</span>
                 <div className={s.requestButtons}>
                   <span className={s.btn}>Decline</span>

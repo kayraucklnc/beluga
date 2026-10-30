@@ -134,7 +134,7 @@ export function MergeButton({ wsId, pr, onError, size }: { wsId: string; pr: Pul
 /** GitHub can't merge a PR that conflicts with its base: Claude resolves it in the chat (asks first). */
 export function ResolveConflictsButton({ wsId, size }: { wsId: string; size?: 'small' }) {
   return (
-    <Tip label="Claude merges the latest base into this branch, resolves the conflicts in the chat, and pushes">
+    <Tip label="Your agent merges the latest base into this branch, resolves the conflicts in the chat, and pushes">
       <Button variant="danger" icon="merge" size={size ?? 'regular'} data-pr-next="resolve" onClick={() => askBeforeWork(wsId, 'resolve_pr')}>
         Resolve Merge Conflicts…
       </Button>
@@ -294,7 +294,7 @@ export function PullRequestSheet({ menu, close }: NativeMenuProps<'pr'>) {
       icon="pr"
       intro={
         <>
-          Claude commits what belongs to the work on <code>{ws.branch ?? 'this branch'}</code>, pushes it and opens a pull request with a short description: what, why, and how to test.
+          Your agent commits what belongs to the work on <code>{ws.branch ?? 'this branch'}</code>, pushes it and opens a pull request with a short description: what, why, and how to test.
         </>
       }
       submitLabel="Create Pull Request"

@@ -1,5 +1,6 @@
 /// <reference path="../net/mesh/modules.d.ts" />
 import { createHash, hkdfSync } from 'node:crypto';
+import { agentName } from '../shared/agent-label.js';
 import type DHT from 'hyperdht';
 import type { BootstrapNode, KeyPair, NoiseSocket, Server } from 'hyperdht';
 import { stat } from 'node:fs/promises';
@@ -982,7 +983,7 @@ export class CompanionHost {
       else if (wasRunning && last?.type === 'agent') {
         this.phoneRuns.delete(channel);
         const topic = convTopic(channel);
-        nudges.push({ kind: 'done', title: last.status === 'done' || last.status === 'answered' ? 'Claude answered' : 'Claude stopped', body: last.text.replace(/```[\s\S]*?(```|$)/g, '(code)').slice(0, 300), ...(topic ? { topic } : {}), priority: 'normal', collapse: `done:${channel}` });
+        nudges.push({ kind: 'done', title: `${agentName(last.agent)} ${last.status === 'done' || last.status === 'answered' ? 'answered' : 'stopped'}`, body: last.text.replace(/```[\s\S]*?(```|$)/g, '(code)').slice(0, 300), ...(topic ? { topic } : {}), priority: 'normal', collapse: `done:${channel}` });
       }
     }
     // Every other run that finished (the Mac's own "Claude finished" notices): only for a phone that

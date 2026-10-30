@@ -213,6 +213,6 @@ function helpLines(owner: string, w: SharedWorkspace): ShellLine[] {
     { text: `A read-only shell over ${owner}'s ${w.name}. Files stream in as you open them; nothing runs on ${owner}'s computer.`, tone: 'muted' },
     ...SHELL_COMMANDS.map((c) => ({ text: `  ${c.usage.padEnd(16)}${c.about}` })),
     { text: 'Tab completes names, ↑ brings back earlier commands, click any name to open it.', tone: 'muted' },
-    ...(w.can === 'edit' ? [{ text: `${owner} lets your prompts edit and run commands: ask Claude in the Chat tab to run anything there.`, tone: 'muted' as const }] : []),
+    ...(w.can === 'edit' ? [{ text: `${owner} lets your prompts edit and run commands: ask the agent in the Chat tab to run anything there.`, tone: 'muted' as const }] : []),
   ];
 }

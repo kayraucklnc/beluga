@@ -101,7 +101,7 @@ export function ModelPicker({ channel }: { channel: string }) {
             </div>
           </div>
           <div className={s.effortDetail}>
-            <strong>{effort ? EFFORT_INFO[effort].label : 'Auto'}</strong> · {effort ? EFFORT_INFO[effort].detail : 'Claude decides how much to think, case by case'}
+            <strong>{effort ? EFFORT_INFO[effort].label : 'Auto'}</strong> · {effort ? EFFORT_INFO[effort].detail : 'Your agent decides how much to think, case by case'}
           </div>
         </Popover.Content>
       </Popover.Portal>

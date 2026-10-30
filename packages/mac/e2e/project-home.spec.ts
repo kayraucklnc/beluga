@@ -58,7 +58,7 @@ test('Just Ask starts a questions-only chat in main, with the banner', async ({ 
   await page.getByLabel('Question about bob-api').press('Enter');
   const banner = page.getByRole('note', { name: 'Questions only' });
   await expect(banner).toBeVisible({ timeout: 15_000 });
-  await expect(banner).toContainText('Claude won’t change anything in main');
+  await expect(banner).toContainText('your agent won’t change anything in main');
   await expect(page.locator('textarea[placeholder="Ask about bob-api…"]')).toBeVisible();
   await expect(home(page).getByText('Where are the routes defined?').first()).toBeVisible();
 });

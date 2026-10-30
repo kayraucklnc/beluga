@@ -19,7 +19,7 @@ describe('what a mention names', () => {
   it('friends, Claudes, projects, worktrees, folders and files; anything else is just text', () => {
     expect(resolveMention('mia', world)).toEqual({ kind: 'friend', label: 'mia', id: 'mia-peer-0001' });
     expect(resolveMention('ZoëRay', world)).toEqual({ kind: 'friend', label: 'Zoë Ray', id: 'zoe-peer-0001' });
-    expect(resolveMention('claude:bob', world)).toEqual({ kind: 'claude', label: 'bob’s Claude', id: 'bob-peer-0001' });
+    expect(resolveMention('claude:bob', world)).toEqual({ kind: 'claude', label: 'bob’s agent', id: 'bob-peer-0001' });
     expect(resolveMention('bob-api', world)).toEqual({ kind: 'project', label: 'bob-api', id: 'p1' });
     expect(resolveMention('add-auth', world)).toEqual({ kind: 'workspace', label: 'add-auth', id: 'w1' });
     expect(resolveMention('src/', world)).toEqual({ kind: 'folder', label: 'src/', path: 'src/' });

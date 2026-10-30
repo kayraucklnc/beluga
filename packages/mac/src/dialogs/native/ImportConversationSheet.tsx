@@ -76,7 +76,7 @@ export function ImportConversationSheet({ projectId, close }: { projectId: strin
     <FormSheet
       title="Import from Claude Code"
       icon="claude"
-      intro={`Pick a conversation from Terminal or another app. Claude goes on with it in a new worktree of ${project.name}.`}
+      intro={`Pick a conversation from Terminal or another app. Your agent goes on with it in a new worktree of ${project.name}.`}
       submitLabel={opening ? 'Open Its Worktree' : 'Continue in a Worktree'}
       canSubmit={Boolean(chosen) && (opening || Boolean(slug(name)))}
       onSubmit={() => {

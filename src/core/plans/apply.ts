@@ -49,7 +49,7 @@ export function applyDraft(plan: Plan, board: Board, actors: ApplyActors): Appli
 function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<string, string>): Applied {
   const draft = plan.draft;
   if (!draft) throw new PlanError('There are no changes to approve');
-  if (!draft.milestones.length || !allTasks(draft).length) throw new PlanError('The plan has no tasks yet: ask Claude to write it first');
+  if (!draft.milestones.length || !allTasks(draft).length) throw new PlanError('The plan has no tasks yet: ask your agent to write it first');
   const diff = diffBodies(plan.body, draft);
   const passed = (id: string): boolean => Boolean(plan.runs[id]?.passedAt);
   const waiting = new Set(draft.milestones.filter((m) => !passed(m.id) && !milestoneDeps(draft, m).every(passed)).map((m) => m.id));

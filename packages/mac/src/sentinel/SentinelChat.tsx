@@ -42,7 +42,7 @@ function startersFor(projects: readonly string[], has: boolean): Starter[] {
     one
       ? ({ label: `A Morning Brief for ${one}`, icon: 'clock', prompt: `Every weekday morning, tell me on my phone what changed in ${one} and what needs me first.` } satisfies Starter)
       : ({ label: 'A Morning Brief', icon: 'clock', prompt: 'Every weekday morning, tell me on my phone what changed and what needs me first.' } satisfies Starter),
-    ...(two ? [{ label: `Fix ${two}’s Failing Tests`, icon: 'wrench', prompt: `When the tests fail on GitHub for ${two}, have Claude fix it in a new worktree and open a pull request for me to merge.` } satisfies Starter] : []),
+    ...(two ? [{ label: `Fix ${two}’s Failing Tests`, icon: 'wrench', prompt: `When the tests fail on GitHub for ${two}, have the agent fix it in a new worktree and open a pull request for me to merge.` } satisfies Starter] : []),
     { label: 'Make Me a Board', icon: 'gauge', prompt: 'Make me a board with the numbers that matter for my projects, and set up what keeps them fresh.' },
   ];
   return all.slice(0, 4);
@@ -153,7 +153,7 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
   };
   const more: ActionItem[] = [
     { label: 'New Chat', icon: 'plus', onSelect: () => void fresh() },
-    { label: 'Clear', icon: 'x', hint: 'Its messages go, and Claude starts afresh; the chat stays', disabled: !has, separate: true, onSelect: () => void a.act(() => api.sentinel.chatClear(id), 'Cleared. Claude starts a fresh conversation here') },
+    { label: 'Clear', icon: 'x', hint: 'Its messages go, and the agent starts afresh; the chat stays', disabled: !has, separate: true, onSelect: () => void a.act(() => api.sentinel.chatClear(id), 'Cleared. The agent starts a fresh conversation here') },
     {
       label: 'Delete Chat…',
       danger: true,
@@ -161,7 +161,7 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
         openSheet({
           kind: 'confirm',
           title: `Delete “${name}”?`,
-          message: 'Its messages and Claude’s memory of it go for good. Your sentinels and dashboards stay as they are.',
+          message: 'Its messages and the agent’s memory of it go for good. Your sentinels and dashboards stay as they are.',
           confirm: 'Delete Chat',
           destructive: true,
           run: () =>
@@ -195,7 +195,7 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
             <Icon name="chevronDown" size={10} />
           </button>
         </PickMenu>
-        {busy ? <span className={s.chatBusy}>Claude is working</span> : null}
+        {busy ? <span className={s.chatBusy}>Your agent is working</span> : null}
         <span className={s.grow} />
         <Tip label="A new conversation beside this one">
           <IconButton icon="plus" label="New Chat" onClick={() => void fresh()} />
@@ -213,7 +213,7 @@ export function SentinelChat({ onClose }: { onClose?: () => void }) {
             <Empty
               icon="sentinel"
               title="Ask Sentinel"
-              detail="Say what you’d like watched, in your own words, or let Claude look at your projects and suggest."
+              detail="Say what you’d like watched, in your own words, or let your agent look at your projects and suggest."
               action={
                 <EmptyActions>
                   {starters.map((t) => (

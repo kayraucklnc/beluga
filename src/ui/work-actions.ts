@@ -141,7 +141,7 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
   if (id.startsWith('rws:') && menu.kind === 'remote_ws') {
     patchUi({ focus: 'chat', buffer: '', cursor: 0, pending: { kind: 'remote', projectId: id.slice(4), peerId: menu.peerId } });
     const peer = latest.peers.find((p) => p.peerId === menu.peerId);
-    toast(`Describe the task for ${peer?.name ?? 'their'} Claude in ${id.slice(4)}, then Enter`);
+    toast(`Describe the task for ${peer ? `${peer.name}'s` : 'their'} agent in ${id.slice(4)}, then Enter`);
     return true;
   }
   const wsId = menu.kind === 'pr' ? menu.id : undefined;

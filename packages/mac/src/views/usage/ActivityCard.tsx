@@ -27,7 +27,7 @@ function DayChart({ days }: { days: readonly DayTotal[] }) {
   const shown = hover !== undefined ? days[hover] : undefined;
   return (
     <div className={s.chart} onMouseLeave={() => setHover(undefined)}>
-      <div className={s.columns} role="list" aria-label="Claude tokens per day">
+      <div className={s.columns} role="list" aria-label="Agent tokens per day">
         {days.map((d, i) => {
           const today = i === days.length - 1;
           return (
@@ -73,16 +73,16 @@ export function ActivityCard({ state, now }: { state: AppState; now: number }) {
   const weekTokens = sum(week, 'tokens');
   const change = delta(weekTokens, sum(before, 'tokens'));
   return (
-    <Card label="Claude activity" title="Claude this week" aside={allTokens ? <span className={s.updated}>{`${compact(allTokens)} · ${formatCost(allCost)} all time`}</span> : undefined}>
+    <Card label="Agent activity" title="Agents this week" aside={allTokens ? <span className={s.updated}>{`${compact(allTokens)} · ${formatCost(allCost)} all time`}</span> : undefined}>
       {!allTokens ? (
-        <p className={s.quiet}>Nothing yet. Tokens and cost add up here as Claude works in your projects.</p>
+        <p className={s.quiet}>Nothing yet. Tokens and cost add up here as your agent works in your projects.</p>
       ) : !hasDays ? (
         <>
           <div className={s.hero}>
             <span className={s.heroValue}>{compact(allTokens)}</span>
             <span className={s.heroUnit}>tokens · {formatCost(allCost)}</span>
           </div>
-          <p className={s.quiet}>All time so far. A day-by-day chart starts with Claude’s next run.</p>
+          <p className={s.quiet}>All time so far. A day-by-day chart starts with your agent’s next run.</p>
         </>
       ) : (
         <>

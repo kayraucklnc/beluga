@@ -88,7 +88,7 @@ export function workspaceMentions(projects: readonly Project[]): WorkspaceMentio
     const name = slug(w.name);
     const label = (counts.get(name) ?? 0) > 1 && p.root ? `@${slug(p.name)}/${name}` : `@${name}`;
     const where = p.root ? `${p.name} · ${w.kind === 'chat' ? 'chat' : 'worktree'}` : 'chat';
-    return { label, id: w.id, hint: `message the Claude in ${where}` };
+    return { label, id: w.id, hint: `message the agent in ${where}` };
   });
 }
 

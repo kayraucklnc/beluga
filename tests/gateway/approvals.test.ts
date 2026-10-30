@@ -55,7 +55,7 @@ describe('the request sheet: Approve once, Always (scoped), Decline', () => {
     kay.trust(bob.id, 'trusted');
     const first = kay.gw.ask({ person: 'bob2', ask: 'tidy the hero copy', project: 'landing', needs: ['project'], by: 'agent' });
     await settle(() => task(bob, first.id)?.state === 'awaiting_approval');
-    expect(bob.approvals[0]).toMatchObject({ kind: 'request', task: first.id, title: "kay2's Claude wants to: tidy the hero copy" });
+    expect(bob.approvals[0]).toMatchObject({ kind: 'request', task: first.id, title: "kay2's agent wants to: tidy the hero copy" });
     bob.gw.decide(first.id, { answer: 'always', scope: 'this', expiry: 'week' });
     await settle(() => task(kay, first.id)?.state === 'done');
     // The approval card went away (taken back), and the rule is there, not trust.
@@ -108,7 +108,7 @@ describe('the request sheet: Approve once, Always (scoped), Decline', () => {
     bob.trust(kay.id, 'trusted');
     const first = kay.gw.ask({ person: 'bob4', kind: 'run', ask: 'npm test', command: 'npm test', by: 'agent' });
     await settle(() => bob.approvals.length === 1);
-    expect(bob.approvals[0]!.title).toBe("kay4's Claude wants to run on your Mac: npm test");
+    expect(bob.approvals[0]!.title).toBe("kay4's agent wants to run on your Mac: npm test");
     bob.approvals[0]!.answer('always');
     await settle(() => task(kay, first.id)?.state === 'done');
     // It names no folder: the rule is for where it ran (the default folder), not anywhere.
@@ -301,7 +301,7 @@ describe('a file from their Mac', () => {
     // A secret in a shared folder, from someone bob trusts, still asks him (Allow once / Decline).
     const secret = kay.gw.ask({ person: 'bob9', kind: 'file', ask: '', path: path.join(shared, '.env'), by: 'agent' });
     await settle(() => bob.approvals.length === 1);
-    expect(bob.approvals[0]).toMatchObject({ kind: 'request', task: secret.id, once: true, title: "kay9's Claude wants your .env file .env" });
+    expect(bob.approvals[0]).toMatchObject({ kind: 'request', task: secret.id, once: true, title: "kay9's agent wants your .env file .env" });
     bob.approvals[0]!.answer('no');
     await settle(() => task(kay, secret.id)?.state === 'declined');
     expect(task(kay, secret.id)?.result?.summary).toContain('bob9 declined');
@@ -331,7 +331,7 @@ describe('a secret, with its own approval (BLG-209)', () => {
     bob.trust(kay.id, 'full');
     const first = kay.gw.ask({ person: 'bobS', kind: 'file', ask: 'my laptop needs the deploy key', path: path.join(desktop, 'id_ed25519'), by: 'agent' });
     await settle(() => bob.approvals.length === 1);
-    expect(bob.approvals[0]).toMatchObject({ kind: 'request', once: true, title: "kayS's Claude wants your private SSH key id_ed25519" });
+    expect(bob.approvals[0]).toMatchObject({ kind: 'request', once: true, title: "kayS's agent wants your private SSH key id_ed25519" });
     expect(bob.approvals[0]!.detail).toContain('asked each time');
     expect(task(bob, first.id)).toMatchObject({ state: 'awaiting_approval', secret: { kind: 'ssh-key', label: 'your private SSH key id_ed25519' } });
     // "Always" (from anywhere) counts once and writes no rule.
@@ -434,7 +434,7 @@ describe('questions from their Claude', () => {
     const t = kay.gw.ask({ person: 'bobB', ask: 'deploy staging', by: 'agent', conversation: 'ws:q1' });
     await settle(() => kay.resumes.length === 1);
     expect(kay.resumes[0]).toMatchObject({ channel: 'ws:q1' });
-    expect(kay.resumes[0]!.prompt).toContain("bobB's Claude has a question about task");
+    expect(kay.resumes[0]!.prompt).toContain("bobB's agent has a question about task");
     expect(kay.resumes[0]!.prompt).toContain('Deploy now or tonight?');
     kay.gw.answer(t.id, 'skip', 'person');
     await settle(() => task(kay, t.id)?.state === 'done');

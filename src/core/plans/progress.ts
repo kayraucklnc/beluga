@@ -171,7 +171,7 @@ function combiningStep(c: Combining): string {
   if (!c.conflict) return `Combining ${names} …`;
   if (c.conflict.stuck) return `Combining ${names}: fix the conflict in ${c.conflict.files.slice(0, 3).join(', ')} (in ${c.conflict.dir}): it starts once no markers are left`;
   const files = c.conflict.files.slice(0, 3).join(', ') + (c.conflict.files.length > 3 ? ` and ${c.conflict.files.length - 3} more` : '');
-  return `Combining ${names}: Claude is fixing a conflict in ${files}`;
+  return `Combining ${names}: the agent is fixing a conflict in ${files}`;
 }
 
 /** What a milestone merging into the plan's branch shows. */

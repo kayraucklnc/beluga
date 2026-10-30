@@ -158,7 +158,7 @@ describe('workspace UI models', () => {
     expect(text(m.lines)[0]).toContain('Terminal');
     expect(text(m.lines)[0]).toContain('Search');
     expect(text(m.lines)[0]).toContain('Usage');
-    expect(m.zones[0]?.hint).toContain('Talk with your Claude');
+    expect(m.zones[0]?.hint).toContain('Talk with your agent');
   });
 
   it('draws a simple Overview card per workspace', () => {
@@ -169,7 +169,7 @@ describe('workspace UI models', () => {
     expect(lines[0]).toContain('2 in progress');
     expect(lines[0]).toContain('1 working');
     expect(lines.some((l) => l.startsWith('app 2'))).toBe(true);
-    expect(lines.some((l) => l.includes('⌥ fix-auth') && l.includes('Claude working 5s'))).toBe(true);
+    expect(lines.some((l) => l.includes('⌥ fix-auth') && l.includes('Agent working 5s'))).toBe(true);
     expect(m.zones.filter((z) => z.action.type === 'open_ws')).toHaveLength(2);
     expect(text(overviewModel(initialState('r'), 0, 100).lines).join('\n')).toContain('Nothing in progress');
   });

@@ -35,7 +35,7 @@ import { shortcutKeys } from '../lib/shortcuts.js';
 const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> = [
   { id: 'general', label: 'General', icon: 'gear' },
   { id: 'appearance', label: 'Appearance', icon: 'eye' },
-  { id: 'claude', label: 'Claude', icon: 'spark' },
+  { id: 'claude', label: 'Agent', icon: 'spark' },
   { id: 'notifications', label: 'Notifications', icon: 'bell' },
   { id: 'workspaces', label: 'Workspaces', icon: 'branch' },
   { id: 'terminal', label: 'Terminal', icon: 'terminal' },
@@ -142,7 +142,7 @@ function General() {
           </form>
         </Row>
         <PictureRow />
-        <Row label="Friends' requests for your Claude" detail="For people you haven't picked a trust level for.">
+        <Row label="Friends' requests for your agent" detail="For people you haven't picked a trust level for.">
           <Select
             label="Default policy"
             value={state.policy}
@@ -171,7 +171,7 @@ function General() {
         <Row label="Show times next to messages">
           <Switch label="Times" on={prefs.timestamps} onChange={(v) => setPrefs({ timestamps: v })} />
         </Row>
-        <Row label="Claude's steps once it answers" detail="Folded, the answer stands on its own; Show Steps on the answer opens them again.">
+        <Row label="The agent's steps once it answers" detail="Folded, the answer stands on its own; Show Steps on the answer opens them again.">
           <Select
             label="Steps"
             value={prefs.doneSteps}
@@ -272,7 +272,7 @@ function ClaudePane() {
         <Row label="Thinking effort">
           <Select label="Effort" value={p.effort ?? ''} onChange={(v) => void api.session.setPrefs({ effort: (v || undefined) as (typeof EFFORTS)[number] | undefined })} options={[{ value: '', label: 'Default' }, ...EFFORTS.map((e) => ({ value: e, label: e[0]!.toUpperCase() + e.slice(1) }))]} />
         </Row>
-        <Row label="Ask before running commands" detail="Your own Claude. Secrets stay blocked either way.">
+        <Row label="Ask before running commands" detail="Your own agent. Secrets stay blocked either way.">
           <Switch label="Self approval" on={p.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
         </Row>
       </Group>
@@ -294,7 +294,7 @@ function ClaudePane() {
       <ContextSettings />
       <ParallelSettings />
       <Group title="Scratch folder">
-        <Row label="Give Claude a scratch folder" detail="Screenshots, JSON, logs and notes Claude makes while it works go to the workspace’s .beluga/scratch/ folder (kept out of git; never touches other tools’ .context/).">
+        <Row label="Give your agent a scratch folder" detail="Screenshots, JSON, logs and notes your agent makes while it works go to the workspace’s .beluga/scratch/ folder (kept out of git; never touches other tools’ .context/).">
           <Switch label="Scratch folder" on={p.scratchFolder} onChange={(v) => void api.session.setPrefs({ scratchFolder: v })} />
         </Row>
         <Row label="Show the Scratch tab" detail={`Watch that folder live in the right panel, newest first${shortcutKeys('panel-scratch') ? ` (${shortcutKeys('panel-scratch')})` : ''}.`}>
@@ -487,7 +487,22 @@ function About() {
   );
 }
 
-const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, fire: FireSettings, menubar: MenuBarSettings, environment: EnvironmentSettings, people: People, phone: PhoneSettings, voice: VoiceSettings, keyboard: KeyboardSettings, about: About };
+const BODY: Record<SettingsPane, () => ReactNode> = {
+  general: General,
+  appearance: Appearance,
+  claude: ClaudePane,
+  notifications: NotificationSettings,
+  workspaces: Workspaces,
+  terminal: TerminalSettings,
+  fire: FireSettings,
+  menubar: MenuBarSettings,
+  environment: EnvironmentSettings,
+  people: People,
+  phone: PhoneSettings,
+  voice: VoiceSettings,
+  keyboard: KeyboardSettings,
+  about: About,
+};
 
 /** Beluga's settings: this window's look on the left panes, Beluga's shared settings on the rest. */
 export function Settings() {

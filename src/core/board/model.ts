@@ -7,6 +7,7 @@
  */
 
 import type { LabelDef } from './labels.js';
+import { agentLabel } from '../../shared/agent-label.js';
 
 export const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled'] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
@@ -539,7 +540,7 @@ export function actorName(actor: Actor, selfId: string): string {
     case 'person':
       return actor.id === selfId ? 'You' : actor.name;
     case 'claude':
-      return actor.owner === selfId ? 'Your Claude' : `${actor.ownerName}’s Claude`;
+      return agentLabel(undefined, actor.ownerName, actor.owner === selfId, { capital: true });
     default:
       return 'Beluga';
   }
@@ -547,7 +548,7 @@ export function actorName(actor: Actor, selfId: string): string {
 
 export function assigneeName(assignee: AnyAssignee | undefined, selfId: string): string {
   if (!assignee) return 'No one';
-  return assignee.kind === 'person' ? (assignee.id === selfId ? 'You' : assignee.name) : assignee.owner === selfId ? 'Your Claude' : `${assignee.ownerName}’s Claude`;
+  return assignee.kind === 'person' ? (assignee.id === selfId ? 'You' : assignee.name) : agentLabel(undefined, assignee.ownerName, assignee.owner === selfId, { capital: true });
 }
 
 /** An activity line in words from where you look ("assigned this to your Claude"). */
@@ -555,7 +556,8 @@ export function activityText(entry: Activity, selfId: string): string {
   if (entry.kind !== 'assignee' || entry.assignee === undefined) return entry.text;
   if (entry.assignee === null) return 'unassigned this';
   const name = assigneeName(entry.assignee, selfId);
-  return `assigned this to ${name === 'You' ? 'you' : name === 'Your Claude' ? 'your Claude' : name}`;
+  const mine = entry.assignee.kind === 'claude' && entry.assignee.owner === selfId;
+  return `assigned this to ${name === 'You' ? 'you' : mine ? agentLabel(undefined, undefined, true) : name}`;
 }
 
 /** A label's color, the same everywhere (a few calm hues). */

@@ -14,7 +14,7 @@ describe('conversations at once', () => {
   });
 
   it('says in plain words why a message waits', () => {
-    expect(slotWaitDetail({ running: 10, limit: 10 })).toBe('Your Claude is working in 10 other conversations, your limit at once. This one starts as soon as one of them finishes.');
+    expect(slotWaitDetail({ running: 10, limit: 10 })).toBe('Your agent is working in 10 other conversations, your limit at once. This one starts as soon as one of them finishes.');
     expect(slotWaitDetail({ running: 1, limit: 1 })).toContain('1 other conversation,');
   });
 });

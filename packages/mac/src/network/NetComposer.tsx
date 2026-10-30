@@ -71,9 +71,9 @@ async function pickFiles(client: ReturnType<typeof useBeluga>['client'], id: str
  */
 function AskButton({ ask, setAsk, people, me }: { ask: Ask | undefined; setAsk: (a: Ask | undefined) => void; people: readonly Person[]; me?: Person }) {
   const mine = ask?.kind === 'me';
-  const whose = ask && ask.kind !== 'me' ? askLabel(ask, true) : 'your Claude';
+  const whose = ask && ask.kind !== 'me' ? askLabel(ask, true) : 'your agent';
   const toggle = (
-    <Tip label={ask ? `${askLabel(ask, true)} answers this message · click to just send it` : 'Your Claude answers this message, from this conversation · or type @claude'}>
+    <Tip label={ask ? `${askLabel(ask, true)} answers this message · click to just send it` : 'Your agent answers this message, from this conversation · or type @claude'}>
       <button type="button" className={cx(c.chip, people.length > 0 && s.askMain, ask && c.chipOn)} aria-pressed={Boolean(ask)} disabled={!me} onClick={() => setAsk(ask ? undefined : { kind: 'me' })}>
         <Icon name="claude" size={13} />
         Ask: {whose}
@@ -82,16 +82,16 @@ function AskButton({ ask, setAsk, people, me }: { ask: Ask | undefined; setAsk: 
   );
   if (!people.length) return toggle;
   const items: ActionItem[] = [
-    { label: 'Your Claude', icon: 'claude', checked: mine, hint: 'It answers here, from your Mac', onSelect: () => setAsk({ kind: 'me' }) },
-    { label: people.length === 1 ? 'Both Claudes' : 'Everyone’s Claude', icon: 'people', checked: ask?.kind === 'all', hint: 'Each answers from their own Mac', onSelect: () => setAsk({ kind: 'all' }) },
-    ...people.map((p, i) => ({ label: `${p.name}’s Claude`, separate: i === 0, checked: ask?.kind === 'person' && ask.peerId === p.peerId, hint: `From ${p.name}’s Mac`, onSelect: () => setAsk({ kind: 'person', peerId: p.peerId, name: p.name }) })),
-    ...(ask ? [{ label: 'Don’t Add a Claude', separate: true, onSelect: () => setAsk(undefined) }] : []),
+    { label: 'Your Agent', icon: 'claude', checked: mine, hint: 'It answers here, from your Mac', onSelect: () => setAsk({ kind: 'me' }) },
+    { label: people.length === 1 ? 'Both Agents' : 'Everyone’s Agent', icon: 'people', checked: ask?.kind === 'all', hint: 'Each answers from their own Mac', onSelect: () => setAsk({ kind: 'all' }) },
+    ...people.map((p, i) => ({ label: `${p.name}’s Agent`, separate: i === 0, checked: ask?.kind === 'person' && ask.peerId === p.peerId, hint: `From ${p.name}’s Mac`, onSelect: () => setAsk({ kind: 'person', peerId: p.peerId, name: p.name }) })),
+    ...(ask ? [{ label: 'Don’t Ask an Agent', separate: true, onSelect: () => setAsk(undefined) }] : []),
   ];
   return (
-    <span className={s.askSplit} role="group" aria-label="Ask a Claude">
+    <span className={s.askSplit} role="group" aria-label="Ask an agent">
       {toggle}
       <ActionsDropdown items={items} align="start">
-        <button type="button" className={cx(c.chip, s.askMore, ask && c.chipOn)} aria-label="Ask Someone Else’s Claude" disabled={!me}>
+        <button type="button" className={cx(c.chip, s.askMore, ask && c.chipOn)} aria-label="Ask Someone Else’s Agent" disabled={!me}>
           <Icon name="chevronDown" size={9} />
         </button>
       </ActionsDropdown>
@@ -201,7 +201,7 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
           <span className={c.askChip}>
             <Icon name="claude" size={12} />
             {askLabel(ask)}
-            <button type="button" aria-label="Don’t ask Claude" onClick={() => setAsk(undefined)}>
+            <button type="button" aria-label="Don’t ask an agent" onClick={() => setAsk(undefined)}>
               <Icon name="x" size={10} />
             </button>
           </span>
@@ -245,7 +245,7 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
         <div className={c.bar}>
           <AskButton ask={ask} setAsk={setAsk} people={people} {...(me ? { me } : {})} />
           {people.length ? (
-            <Tip label="Mention someone here, or their Claude · or type @">
+            <Tip label="Mention someone here, or their agent · or type @">
               <button
                 type="button"
                 className={c.chip}

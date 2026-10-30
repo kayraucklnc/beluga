@@ -174,7 +174,7 @@ test('in the chat, background work sits where it started: a live dot while it ru
   await composer.fill('run the tests and keep them watching');
   await composer.press('Enter');
   // The demo's Claude runs the tests, leaves them watching in the background, and reads on.
-  const steps = page.getByRole('list', { name: "Claude's steps" }).last();
+  const steps = page.getByRole('list', { name: "The agent's steps" }).last();
   const live = steps.locator('[data-subagent][data-running="true"]');
   await expect(live).toContainText('Background · npm test --watch', { timeout: 20_000 });
   // Running: its live dot, never folded away.
@@ -186,7 +186,7 @@ test('in the chat, background work sits where it started: a live dot while it ru
   const card = done.last();
   await card.hover();
   await card.getByRole('button', { name: 'Show Steps' }).click();
-  const shown = card.getByRole('list', { name: "Claude's steps" });
+  const shown = card.getByRole('list', { name: "The agent's steps" });
   const earlier = shown.getByRole('button', { name: /^Show \d+ earlier steps/ });
   // With the fold closed it's inside it (finished, with steps after it), not among the last few.
   // (Its full record is read back first: wait for the steps after it.)

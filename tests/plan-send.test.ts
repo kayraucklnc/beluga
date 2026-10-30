@@ -50,7 +50,7 @@ describe('plan chat send (KLD-66)', () => {
   });
 
   it('a send that resolves but did not go is an error', async () => {
-    await expect(sendPlanMessage(fakeApi({ went: false }), planMessage('hi'), 'ws:plan')).rejects.toThrow("Claude can't be asked here");
+    await expect(sendPlanMessage(fakeApi({ went: false }), planMessage('hi'), 'ws:plan')).rejects.toThrow("The agent can't be asked here");
     // Older daemons answer nothing: that's a send.
     await expect(sendPlanMessage(fakeApi({ went: undefined }), planMessage('hi'), 'ws:plan')).resolves.toBeUndefined();
   });
@@ -90,7 +90,7 @@ describe('plan chat Retry (KLD-69)', () => {
   it('Retry with images reuses the links made the first time (the box already gave its images up)', async () => {
     const api = fakeApi({ went: false });
     const message = planMessage('look at [image 3]');
-    await expect(sendPlanMessage(api, message, 'ws:plan')).rejects.toThrow("Claude can't be asked here");
+    await expect(sendPlanMessage(api, message, 'ws:plan')).rejects.toThrow("The agent can't be asked here");
     // Anything expand would say now (the images left the box with the first try) doesn't matter.
     api.attachments.expand = async () => {
       throw new Error('no such image');

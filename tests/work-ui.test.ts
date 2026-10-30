@@ -103,10 +103,10 @@ describe('topBarModel', () => {
     const line = text(topBarModel(s, 120).lines)[0]!;
     expect(line).toContain('● live');
     expect(line).toContain('2 people');
-    expect(line).toContain('your Claude 5h 40% · week 10%');
+    expect(line).toContain('your Claude plan 5h 40% · week 10%');
     expect(line).toContain('◉ following ana');
     const weekOnly = connected([{ ...ME, usage: { week: { pct: 7 }, updatedAt: 1 } }, friend]);
-    expect(text(topBarModel(weekOnly, 120).lines)[0]).toContain('your Claude week 7%');
+    expect(text(topBarModel(weekOnly, 120).lines)[0]).toContain('your Claude plan week 7%');
     expect(text(topBarModel(initialState('r'), 80).lines)[0]).toContain('connecting…');
     expect(text(topBarModel(reduce(initialState('r'), { type: 'status', status: 'disconnected' }), 80).lines)[0]).toContain('offline · reconnecting');
     // hosting alone is not "solo"
@@ -189,7 +189,7 @@ describe('usageModel', () => {
   it('says it is measuring when nothing is known yet', () => {
     const m = usageModel(withProjects([project()]), 100);
     const lines = text(m.lines);
-    expect(lines[0]).toBe('Worktrees take 0 KB   ·   Claude used nothing yet');
+    expect(lines[0]).toBe('Worktrees take 0 KB   ·   agents used nothing yet');
     expect(lines).toContain('Measuring… sizes show up in a few seconds.');
     expect(m.zones).toEqual([]);
   });
@@ -198,7 +198,7 @@ describe('usageModel', () => {
     const m = usageModel(make(), 120);
     const lines = text(m.lines);
     // totals: disk excludes main (big 200MB + ext 2MB + small 1MB); tokens & cost include everything shown
-    expect(lines[0]).toBe('Worktrees take 203 MB   ·   Claude used 6k tokens (≈ $1.75)');
+    expect(lines[0]).toBe('Worktrees take 203 MB   ·   agents used 6k tokens (≈ $1.75)');
     const rows = lines.slice(4);
     const names = rows.map((l) => l.replace(/^. app › (\S+).*$/, '$1'));
     expect(names).toEqual(['big', 'main', 'other-tool', 'small', 'question']);
@@ -227,7 +227,7 @@ describe('usageModel', () => {
     const s = withProjects([project({ workspaces: [ws({ id: 'tok', name: 'tok', usage: usage(500) })] })]);
     const m = usageModel(s, 100);
     expect(m.zones.find((z) => z.action.type === 'ws')?.hint).toBe('Archive tok to free its space');
-    expect(text(m.lines)[0]).toBe('Worktrees take 0 KB   ·   Claude used 500 tokens');
+    expect(text(m.lines)[0]).toBe('Worktrees take 0 KB   ·   agents used 500 tokens');
   });
 
   it('labels workspaces without a project root by name only', () => {
@@ -247,7 +247,7 @@ describe('draftModel', () => {
 
   it('explains a new chat', () => {
     const lines = text(draftModel(initialState('r'), 100, 'chat').lines);
-    expect(lines[0]).toBe('A fresh conversation with Claude, with all its tools.');
+    expect(lines[0]).toBe('A fresh conversation with your agent, with all its tools.');
     expect(lines).toContain('Esc goes back without creating anything.');
   });
 
@@ -285,7 +285,7 @@ describe('trustCardModel', () => {
       { type: 'trust', peerId: 'fr000001', level: 'full' },
       { type: 'trust_later', peerId: 'fr000001' },
     ]);
-    expect(m.zones.map((z) => zoneText(m.lines[2]!, z))).toEqual([" Can't use my Claude ", ' Ask me each time ', ' Trusted ', ' Full trust ', ' Later ']);
+    expect(m.zones.map((z) => zoneText(m.lines[2]!, z))).toEqual([" Can't use my agent ", ' Ask me each time ', ' Trusted ', ' Full trust ', ' Later ']);
     expect(m.zones.every((z) => z.y === 2)).toBe(true);
     expect(m.zones[0]!.x0).toBe(2);
     expect(m.zones.at(-1)!.hint).toContain('ask me each time');
@@ -484,7 +484,7 @@ describe('workMenuSpec', () => {
     const m = spec(base(), { kind: 'pr', id: 'w1' })!;
     expect(m.title).toBe('Pull request · fix-auth');
     expect(m.intro[0]).toBe('No pull request for beluga/fix-auth yet.');
-    expect(m.intro[1]).toMatch(/^Claude commits/);
+    expect(m.intro[1]).toMatch(/^Your agent commits/);
     expect(ids(m)).toEqual(['pr-create', 'pr-create-note', 'pr-edit-prompt', 'close']);
     expect(m.options[2]!.hint).toBe('built-in');
   });
@@ -493,7 +493,7 @@ describe('workMenuSpec', () => {
     const s = reduce(base(), { type: 'gh', ok: false });
     expect(spec(s, { kind: 'pr', id: 'w1' })!.intro[1]).toMatch(/Install the GitHub CLI/);
     const ok = reduce(base(), { type: 'gh', ok: true });
-    expect(spec(ok, { kind: 'pr', id: 'w1' })!.intro[1]).toMatch(/^Claude commits/);
+    expect(spec(ok, { kind: 'pr', id: 'w1' })!.intro[1]).toMatch(/^Your agent commits/);
   });
 
   it('pr: with an open PR and failing checks offers to fix and update', () => {

@@ -11,8 +11,8 @@ import { PlayButton, SoundPicker } from './SoundPicker.js';
 import s from './sound.module.css';
 
 const GROUP_LABELS: Readonly<Record<SoundGroup, string>> = {
-  needsYou: 'Claude needs you',
-  done: 'Claude finished',
+  needsYou: 'Your agent needs you',
+  done: 'Your agent finished',
   mentions: 'Messages and mentions',
   people: 'People come and go',
   background: 'Background tasks',

@@ -75,7 +75,7 @@ export function Palette() {
     : [];
   const chatHere = newChatProject(state);
   const create: Item[] = [
-    { id: 'new-chat', label: 'New chat', hint: chatHere === 'chats' ? 'Talk to Claude about anything' : `in ${state.projects.find((p) => p.id === chatHere)?.name ?? 'this project'}`, ...keysOf('new-chat'), icon: 'chat', run: () => actions.run({ type: 'new_chat', projectId: chatHere }) },
+    { id: 'new-chat', label: 'New chat', hint: chatHere === 'chats' ? 'Talk to your agent about anything' : `in ${state.projects.find((p) => p.id === chatHere)?.name ?? 'this project'}`, ...keysOf('new-chat'), icon: 'chat', run: () => actions.run({ type: 'new_chat', projectId: chatHere }) },
     ...state.projects.filter((p) => p.root).flatMap((p) => [
       { id: `new-wt:${p.id}`, label: `New worktree in ${p.name}`, hint: 'from the latest origin', icon: 'branch' as IconName, run: () => actions.run({ type: 'new_worktree', projectId: p.id }) },
       { id: `new-chat:${p.id}`, label: `New chat in ${p.name}`, hint: 'a new one, in its main folder', icon: 'chat' as IconName, run: () => actions.run({ type: 'new_chat', projectId: p.id }) },
@@ -109,8 +109,8 @@ export function Palette() {
     { id: 'terminal-toggle', label: 'Show or hide the terminal', hint: prefs.termIn === 'drawer' ? 'under the chat' : 'in the panel', ...keysOf('toggle-dock'), icon: 'terminal', run: () => void toggleTerminal(client.store.getState()) },
     { id: 'bigger', label: 'Bigger text', ...keysOf('zoom-in'), icon: 'plus', run: () => zoom('in') },
     { id: 'smaller', label: 'Smaller text', ...keysOf('zoom-out'), icon: 'x', run: () => zoom('out') },
-    { id: 'copy-answer', label: "Copy Claude's last answer", ...keysOf('conv-copy'), icon: 'copy', run: () => void client.api.session.copyLastAnswer() },
-    { id: 'stop', label: 'Stop your Claude everywhere', icon: 'stop', run: () => void client.api.session.stopAgent() },
+    { id: 'copy-answer', label: "Copy the agent's last answer", ...keysOf('conv-copy'), icon: 'copy', run: () => void client.api.session.copyLastAnswer() },
+    { id: 'stop', label: 'Stop your agent everywhere', icon: 'stop', run: () => void client.api.session.stopAgent() },
   ];
   const groups: Array<[string, Item[]]> = [
     ['Here', here],

@@ -84,7 +84,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
         { id: 'scroll', text: 'Choose file', key: '↑↓' },
         { id: 'scroll', text: 'Scroll diff', key: 'PgUp PgDn' },
         // Someone else's workspace: their diff is read-only.
-        ...(state.view.kind === 'shared' ? [] : [{ id: 'review-claude', text: 'Ask Claude to review', key: '' }]),
+        ...(state.view.kind === 'shared' ? [] : [{ id: 'review-claude', text: 'Ask your agent to review', key: '' }]),
         { id: 'chat', text: 'Back', key: 'Esc' },
       ];
     case 'people':
@@ -149,7 +149,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
       }
       return [
         ...composeButtons(compose),
-        { id: 'ask', text: 'Ask Claude', key: '@' },
+        { id: 'ask', text: 'Ask your agent', key: '@' },
         { id: 'commands', text: 'Commands', key: '/' },
         ...(state.view.kind === 'draft' || state.view.kind === 'draft_worktree' ? [{ id: 'templates', text: 'Templates', key: '' }] : []),
         { id: 'projects', text: 'Projects', key: 'Tab' },

@@ -222,8 +222,8 @@ test('A PR that conflicts says so at the top and offers Resolve with Claude; a m
     await expect(strip).not.toContainText('Conflicts');
     await expect(toolbar(page).locator('[data-branch-state="conflicts"]')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('pr-strip-conflicts.png') });
-    await toolbar(page).getByRole('button', { name: 'Resolve with Claude…' }).click();
-    const ask = page.getByRole('dialog', { name: 'Ask Claude to resolve the merge conflicts?' }).or(page.getByRole('alertdialog', { name: 'Ask Claude to resolve the merge conflicts?' }));
+    await toolbar(page).getByRole('button', { name: 'Resolve with Your Agent…' }).click();
+    const ask = page.getByRole('dialog', { name: 'Ask your agent to resolve the merge conflicts?' }).or(page.getByRole('alertdialog', { name: 'Ask your agent to resolve the merge conflicts?' }));
     await expect(ask).toContainText('merges the latest base');
     await ask.getByRole('button', { name: 'Cancel' }).click();
     await expect(ask).toBeHidden();

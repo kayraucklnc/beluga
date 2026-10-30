@@ -70,12 +70,12 @@ export function PlanCard({ state, now }: { state: AppState; now: number }) {
           {mine.week ? <WindowMeter title="Weekly" w={mine.week} now={now} /> : null}
         </div>
       ) : (
-        <p className={s.quiet}>Your plan’s limits show up here after Claude’s next run.</p>
+        <p className={s.quiet}>Your Claude plan’s limits show up here after your next run.</p>
       )}
       {friends.length ? (
         <div className={s.friends}>
           <div className={s.subhead}>Friends</div>
-          <ul className={s.friendList} aria-label="Friends’ Claude usage">
+          <ul className={s.friendList} aria-label="Friends’ Claude plan usage">
             {friends.map((p) => (
               <Friend key={p.peerId} peer={p} />
             ))}

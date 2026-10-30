@@ -25,7 +25,7 @@ export function ContextSettings() {
       </Row>
       <Row
         label="Auto-compact when the context is nearly full"
-        detail={p.autoCompact ? 'Between turns, Claude summarizes what it’s keeping and carries on. Nothing leaves the chat.' : 'Claude still compacts on its own right at the limit, so a run never breaks.'}
+        detail={p.autoCompact ? 'Between turns, your agent summarizes what it’s keeping and carries on. Nothing leaves the chat.' : 'Your agent still compacts on its own right at the limit, so a run never breaks.'}
       >
         <Switch label="Auto-compact" on={p.autoCompact} onChange={(v) => void api.session.setPrefs({ autoCompact: v })} />
       </Row>

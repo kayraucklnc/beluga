@@ -58,17 +58,17 @@ export function useIssueMenu(projectId: string): (issue: Pick<GhIssue, 'number' 
     const work: ActionItem[] =
       stage.kind === 'new' || stage.kind === 'task'
         ? [
-            { label: 'Investigate', icon: 'search', disabled: writing, hint: writing ? 'Once Claude has written the task up' : 'Claude finds out why and reproduces it; nothing is fixed yet', onSelect: () => void a.investigate(projectId, n) },
-            { label: 'Fix It', icon: 'wrench', disabled: writing, hint: writing ? 'Once Claude has written the task up' : `In a new worktree, with a pull request that closes #${n}`, onSelect: () => void a.fix(projectId, n) },
+            { label: 'Investigate', icon: 'search', disabled: writing, hint: writing ? 'Once the agent has written the task up' : 'The agent finds out why and reproduces it; nothing is fixed yet', onSelect: () => void a.investigate(projectId, n) },
+            { label: 'Fix It', icon: 'wrench', disabled: writing, hint: writing ? 'Once the agent has written the task up' : `In a new worktree, with a pull request that closes #${n}`, onSelect: () => void a.fix(projectId, n) },
             ...(stage.kind === 'new'
               ? [
-                  { label: 'Make a Task', icon: 'task' as const, hint: 'Claude writes it up from the issue', onSelect: () => void a.toTask(projectId, n) },
-                  { label: 'Make a Task After a Quick Look', hint: 'Claude reads the code first, then writes it up', onSelect: () => void a.toTask(projectId, n, true) },
+                  { label: 'Make a Task', icon: 'task' as const, hint: 'The agent writes it up from the issue', onSelect: () => void a.toTask(projectId, n) },
+                  { label: 'Make a Task After a Quick Look', hint: 'The agent reads the code first, then writes it up', onSelect: () => void a.toTask(projectId, n, true) },
                 ]
               : []),
           ]
         : stage.kind === 'investigated'
-          ? [{ label: 'Fix It', icon: 'wrench', hint: 'Where Claude investigated, with a pull request that closes it', onSelect: () => void a.fix(projectId, n) }]
+          ? [{ label: 'Fix It', icon: 'wrench', hint: 'Where the agent investigated, with a pull request that closes it', onSelect: () => void a.fix(projectId, n) }]
           : [];
     return [
       ...(opts.open === false ? [] : [{ label: 'Open', icon: 'issue' as const, onSelect: () => a.openIssue(projectId, n) }]),

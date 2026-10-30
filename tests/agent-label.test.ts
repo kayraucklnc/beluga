@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSystemAppend } from '../src/agent/prompt.js';
 import { speaker, systemPrompt } from '../src/core/chat/claude-prompt.js';
-import { agentLabel, agentName, modelName } from '../src/shared/agent-label.js';
+import { agentBadge, agentLabel, agentName, modelName } from '../src/shared/agent-label.js';
 import type { AgentRef } from '../src/protocol.js';
 
 const codex: AgentRef = { runtime: 'codex', model: 'gpt-5', label: 'Codex' };
@@ -32,6 +32,20 @@ describe('agentLabel (BLG-435)', () => {
     expect(modelName('claude-sonnet-4-5')).toBe('Sonnet 4.5');
     expect(modelName('claude-opus-4-1-20250805')).toBe('Opus 4.1');
     expect(modelName('qwen3')).toBe('Qwen3');
+  });
+});
+
+describe('agentBadge (BLG-436)', () => {
+  it('shows the model, and the runtime only when the name doesn’t say it', () => {
+    expect(agentBadge(codex)).toBe('GPT-5');
+    expect(agentBadge(opus)).toBe('Opus');
+    expect(agentBadge({ runtime: 'codex', model: 'gpt-5', label: 'Helper' })).toBe('Codex · GPT-5');
+    expect(agentBadge({ runtime: 'local', label: 'Qwen box' })).toBe('Local model');
+  });
+
+  it('adds nothing when there’s nothing to add (an older Mac’s message, or plain Claude)', () => {
+    expect(agentBadge(undefined)).toBeUndefined();
+    expect(agentBadge({ runtime: 'claude', label: 'Claude' })).toBeUndefined();
   });
 });
 

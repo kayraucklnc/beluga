@@ -115,7 +115,7 @@ function Result({ task }: { task: TaskView }) {
         <button type="button" className={s.reveal} aria-expanded={open} onClick={() => setOpen(!open)}>
           <Icon name={open ? 'chevronDown' : 'chevronRight'} size={10} />
           {open ? `Hide ${task.peerName}’s reply` : `Show ${task.peerName}’s reply`}
-          <span className={s.via}>your Claude passes it on below</span>
+          <span className={s.via}>your agent passes it on below</span>
         </button>
       ) : null}
       {r.summary && !folded ? <Markdown text={r.summary} /> : null}
@@ -214,11 +214,11 @@ function Question({ task }: { task: TaskView }) {
   // Your Claude's answer waits for you: shown to edit and send.
   const single = !draft && q.questions.length === 1 && q.questions[0]!.options.length > 0 && !q.questions[0]!.multiSelect;
   return (
-    <div className={a.question} role="group" aria-label={`${task.peerName}’s Claude asks`}>
+    <div className={a.question} role="group" aria-label={`${task.peerName}’s agent asks`}>
       {q.questions.map((item, i) => (
         <div key={i}>
           <div className={a.questionText}>
-            {task.peerName}’s Claude asks: {item.question}
+            {task.peerName}’s agent asks: {item.question}
           </div>
           {single ? (
             <div className={a.answers}>
@@ -250,7 +250,7 @@ function Question({ task }: { task: TaskView }) {
         <Button size="small" variant="quiet" onClick={() => send('skip')}>
           Let Them Decide
         </Button>
-        <span className={s.via}>{draft ? 'Your Claude’s answer: you hadn’t seen this request, so it waits for you' : task.by === 'agent' ? 'Your Claude was asked first' : ''}</span>
+        <span className={s.via}>{draft ? 'Your agent’s answer: you hadn’t seen this request, so it waits for you' : task.by === 'agent' ? 'Your agent was asked first' : ''}</span>
       </div>
     </div>
   );
@@ -265,7 +265,7 @@ function Confirm({ task }: { task: TaskView }) {
   return (
     <>
       {editing ? <textarea className={s.edit} aria-label="What to ask" value={text} onChange={(e) => setText(e.target.value)} autoFocus /> : <div className={`${s.ask} selectable`}>{task.ask}</div>}
-      <div className={s.hint}>Your Claude wants to send this, so it asks you first. Always lets it ask {task.peerName} without checking from now on (it doesn’t change what they may do on your Mac).</div>
+      <div className={s.hint}>Your agent wants to send this, so it asks you first. Always lets it ask {task.peerName} without checking from now on (it doesn’t change what they may do on your Mac).</div>
       <div className={s.actions}>
         <Button variant="primary" onClick={() => call('send it', api.gateway.confirm(task.id, true, editing && text.trim() !== task.ask ? text : undefined))}>
           Ask {task.peerName}
@@ -303,7 +303,7 @@ export const TaskCard = memo(function TaskCard({ task, inChat }: { task: TaskVie
   const sent = task.direction === 'sent';
   const working = task.incoming ? ` · ${kb(task.incoming.received)} of ${kb(task.incoming.total)}` : task.state === 'working' && task.startedAt ? ` · ${formatDuration(now - task.startedAt)}` : '';
   const done = isFinal(task.state) && task.endedAt ? ` · ${formatDuration(task.endedAt - task.createdAt)}` : '';
-  const title = task.state === 'confirm' ? `Ask ${targetLabel(task)}?` : sent ? `To ${targetLabel(task)}` : `From ${task.peerName}${task.by === 'agent' ? '’s Claude' : ''}`;
+  const title = task.state === 'confirm' ? `Ask ${targetLabel(task)}?` : sent ? `To ${targetLabel(task)}` : `From ${task.peerName}${task.by === 'agent' ? '’s agent' : ''}`;
   return (
     <section className={`${s.card} ${task.state === 'confirm' ? s.confirm : ''} ${task.secret && !isFinal(task.state) ? s.secret : ''}`} aria-label={`Task: ${title}`} data-task={task.id} data-state={task.state}>
       {/* A secret is its own approval, each time (BLG-209): the card says so before anything else. */}
@@ -316,7 +316,7 @@ export const TaskCard = memo(function TaskCard({ task, inChat }: { task: TaskVie
       <div className={s.head}>
         <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} size={20} />
         <span className={s.who}>{title}</span>
-        {sent && task.by === 'agent' && task.state !== 'confirm' ? <span className={s.via}>asked by your Claude</span> : null}
+        {sent && task.by === 'agent' && task.state !== 'confirm' ? <span className={s.via}>asked by your agent</span> : null}
         {!sent && task.where ? <span className={s.via}>{task.where}</span> : null}
         <span className={`${s.status} ${s[`tone_${tone}`]}`} role="status">
           {task.state === 'confirm' ? null : <Dot tone={tone === 'claude' ? 'claude' : tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : tone === 'error' ? 'error' : 'muted'} live={live} />}

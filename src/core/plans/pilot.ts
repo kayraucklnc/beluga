@@ -89,7 +89,7 @@ function stillWorking(m: MilestoneView): string | undefined {
   // Handed to the milestone's Claude and not begun: its worktree is still in use too.
   const busy = m.tasks.filter((t) => t.issue && !t.issue.worktreeGone && (words[t.state] || t.queued));
   if (!busy.length) return undefined;
-  const who = busy.map((t) => `${t.issue!.key} ${t.queued ? 'is next for its milestone’s Claude' : words[t.state]}`).join(', ');
+  const who = busy.map((t) => `${t.issue!.key} ${t.queued ? 'is next for its milestone’s agent' : words[t.state]}`).join(', ');
   return `“${m.milestone.title}” can’t be merged yet: ${who}. Merging retires each task’s worktree and branch, so only tasks In Review are merged: let them finish (or stop them), then pass it.`;
 }
 
@@ -302,7 +302,7 @@ export class PlanPilot {
   private async startInMilestone(plan: Plan, view: PlanView, t: TaskView, by: Actor): Promise<string> {
     const m = view.milestones.find((x) => x.milestone.id === t.milestoneId)!;
     const key = `${plan.id}:${m.milestone.id}`;
-    if (this.launching.has(key)) return `The Claude for “${m.milestone.title}” is starting`;
+    if (this.launching.has(key)) return `The agent for “${m.milestone.title}” is starting`;
     const issue = t.issue!;
     this.failed.delete(issue.id);
     if (m.agent) {
@@ -311,8 +311,8 @@ export class PlanPilot {
       this.deps.askClaude(milestoneNextPrompt(this.view(this.deps.plans.need(plan.id)), m, [t], m.autonomy === 'step' ? 'only' : 'new'), channel, false);
       this.sentOn.set(key, { sig: issue.id, ...this.after(channel), count: 1 });
       this.handed.delete(key);
-      this.deps.plans.note(plan.id, 'started', `gave ${issue.key} “${t.task.title}” to the Claude doing “${m.milestone.title}”`, by);
-      return `Gave ${issue.key} “${t.task.title}” to the Claude doing “${m.milestone.title}”, in its worktree: it does it ${liveFrom(this.deps.store.getState()).busy(channel) ? 'once its current turn ends' : 'now'}`;
+      this.deps.plans.note(plan.id, 'started', `gave ${issue.key} “${t.task.title}” to the agent doing “${m.milestone.title}”`, by);
+      return `Gave ${issue.key} “${t.task.title}” to the agent doing “${m.milestone.title}”, in its worktree: it does it ${liveFrom(this.deps.store.getState()).busy(channel) ? 'once its current turn ends' : 'now'}`;
     }
     if (agentsAtWork(view).length + this.launchingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} milestones are already at work (the plan’s limit)`);
     // A task of yours you start yourself: that one, for its Claude (it never takes yours on its own).
@@ -413,7 +413,7 @@ export class PlanPilot {
     const fresh = waitingOnYou(view).filter((t) => !this.toldYou.has(`${plan.id}:${t.task.id}`));
     if (!fresh.length) return;
     for (const t of fresh) this.toldYou.add(`${plan.id}:${t.task.id}`);
-    for (const t of fresh) this.deps.plans.note(plan.id, 'note', `${t.issue?.key ?? t.task.id} “${t.task.title}” waits for you: only you can do it${this.byMilestone ? ', so its milestone’s Claude leaves it to you' : ''}`, { kind: 'beluga' });
+    for (const t of fresh) this.deps.plans.note(plan.id, 'note', `${t.issue?.key ?? t.task.id} “${t.task.title}” waits for you: only you can do it${this.byMilestone ? ', so its milestone’s agent leaves it to you' : ''}`, { kind: 'beluga' });
     this.deps.forYou?.(plan, fresh);
   }
 
@@ -457,7 +457,7 @@ export class PlanPilot {
       if (sent?.sig === sig && sent.count >= 1) {
         if (!sent.told) {
           this.sentOn.set(key, { ...sent, told: true });
-          this.deps.plans.note(plan.id, 'problem', `the Claude doing “${m.milestone.title}” stopped again with ${ready.map((t) => t.issue!.key).join(', ')} not begun: open its chat, or Start one`, { kind: 'beluga' });
+          this.deps.plans.note(plan.id, 'problem', `the agent doing “${m.milestone.title}” stopped again with ${ready.map((t) => t.issue!.key).join(', ')} not begun: open its chat, or Start one`, { kind: 'beluga' });
         }
         continue;
       }
@@ -465,7 +465,7 @@ export class PlanPilot {
       this.handed.delete(key);
       this.deps.askClaude(milestoneNextPrompt(view, m, ready, fresher ? 'new' : 'continue'), channel, false);
       this.sentOn.set(key, { sig, ...this.after(channel), count: sent?.sig === sig ? sent.count + 1 : 1 });
-      this.deps.plans.note(plan.id, 'note', `sent the Claude doing “${m.milestone.title}” on to ${ready[0]!.issue!.key} “${ready[0]!.task.title}”`, { kind: 'beluga' });
+      this.deps.plans.note(plan.id, 'note', `sent the agent doing “${m.milestone.title}” on to ${ready[0]!.issue!.key} “${ready[0]!.task.title}”`, { kind: 'beluga' });
     }
   }
 
@@ -499,7 +499,7 @@ export class PlanPilot {
    */
   private async launch(plan: Plan, milestoneId: string, by: Actor, only?: readonly string[]): Promise<string> {
     const key = `${plan.id}:${milestoneId}`;
-    if (this.launching.has(key)) return 'Its Claude is starting';
+    if (this.launching.has(key)) return 'Its agent is starting';
     this.launching.add(key);
     let ids: string[] = [];
     try {
@@ -517,7 +517,7 @@ export class PlanPilot {
       const ws = await this.deps.work.startShared(ids, `${first.issue.key} ${m.milestone.title}`, { quiet: true, ...(base ? { base } : {}) });
       const fresh = this.deps.plans.setAgent(plan.id, milestoneId, { worktree: ws.id, ...(ws.branch ? { branch: ws.branch } : {}), at: Date.now(), tasks: ordered.map((t) => t.task.id) });
       const keys = ordered.map((t) => t.issue!.key);
-      const said = `started one Claude for “${m.milestone.title}” (${keys.join(', ')}) in a new worktree${base ? ` from ${base}` : ''}`;
+      const said = `started one agent for “${m.milestone.title}” (${keys.join(', ')}) in a new worktree${base ? ` from ${base}` : ''}`;
       this.deps.plans.note(plan.id, 'started', said, by);
       const now = this.view(fresh);
       const mv = now.milestones.find((x) => x.milestone.id === milestoneId)!;
@@ -531,7 +531,7 @@ export class PlanPilot {
     } catch (err) {
       for (const id of ids) this.failed.add(id);
       const why = err instanceof Error ? err.message : String(err);
-      this.deps.plans.note(plan.id, 'problem', `couldn’t start the Claude for “${milestoneName(plan, milestoneId)}”: ${why}`, { kind: 'beluga' });
+      this.deps.plans.note(plan.id, 'problem', `couldn’t start the agent for “${milestoneName(plan, milestoneId)}”: ${why}`, { kind: 'beluga' });
       throw err;
     } finally {
       this.launching.delete(key);
@@ -555,7 +555,7 @@ export class PlanPilot {
       const id = this.deps.askClaude(checkPrompt(view, m), plan.home, false);
       if (id) this.checkRuns.set(`${plan.id}:${m.milestone.id}`, id);
       this.deps.plans.checkAsked(plan.id, m.milestone.id);
-      this.deps.system(plan.home, `Every task of “${m.milestone.title}” is finished: Claude is checking its pass criteria.`);
+      this.deps.system(plan.home, `Every task of “${m.milestone.title}” is finished: the agent is checking its pass criteria.`);
       return;
     }
     const check = m.run.check;
@@ -682,7 +682,7 @@ export class PlanPilot {
     if (!stuck) {
       const after = this.lastRun(plan.home);
       this.fixAsked.set(issue.id, { asks: asks + 1, ...(after ? { after } : {}) });
-      if (!asks) this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: ${res.merging} conflicts in ${res.files.join(', ')}; Claude is fixing it`, { kind: 'beluga' });
+      if (!asks) this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: ${res.merging} conflicts in ${res.files.join(', ')}; the agent is fixing it`, { kind: 'beluga' });
       this.deps.askClaude(fixupPrompt(issue.key, t.task.title, from, res), plan.home, false);
     } else if (!was?.conflict?.stuck) {
       this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and ${issue.key} starts`, { kind: 'beluga' });
@@ -707,7 +707,7 @@ export class PlanPilot {
     this.starting.add(issue.id);
     try {
       const base = t.bases?.length ? await this.combinedBase(plan, t, issue) : t.base;
-      if (t.bases?.length && !base) return `${issue.key} builds on several tasks: combining their branches hit a conflict, and Claude is fixing it`;
+      if (t.bases?.length && !base) return `${issue.key} builds on several tasks: combining their branches hit a conflict, and the agent is fixing it`;
       await this.deps.work.start(issue.id, { claude: true, quiet: true, ...(base ? { base } : {}) });
       if (t.bases?.length) this.deps.plans.setCombining(plan.id, t.task.id, undefined);
       this.deps.plans.note(plan.id, 'started', `started ${issue.key} “${t.task.title}”${base ? ` from ${base}` : ''}`, by);
@@ -861,7 +861,7 @@ export class PlanPilot {
       if (!stuck) {
         const after = this.lastRun(plan.home);
         this.fixAsked.set(key, { asks: asks + 1, ...(after ? { after } : {}) });
-        if (!asks) this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: ${conflictKey} conflicts in ${res.files.join(', ')}; Claude is fixing it`, beluga);
+        if (!asks) this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: ${conflictKey} conflicts in ${res.files.join(', ')}; the agent is fixing it`, beluga);
         this.deps.askClaude(mergeFixupPrompt(m.milestone.title, branch, conflictKey, res), plan.home, false);
       } else if (!was?.stuck) {
         this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and the milestone passes`, beluga);

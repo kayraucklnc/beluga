@@ -53,16 +53,16 @@ export function WelcomeSheet({ menu, close }: NativeMenuProps<'welcome'>) {
       cancelLabel="Later"
       width={520}
     >
-      <Field label="Your Claude">
+      <Field label="Your agent">
         <PickList
-          label="Can people in this room use your Claude?"
+          label="Can people in this room use your agent?"
           value={policy}
           onChange={setPolicy}
           onChoose={(v) => pick(v)}
           rows={[
             { value: 'share-ask', name: 'Ask me each time', detail: 'Recommended: you approve every request' },
             { value: 'share-auto', name: 'Everyone can use it', detail: 'Requests run without asking' },
-            { value: 'share-deny', name: 'Keep it private', detail: 'Only you can use your Claude' },
+            { value: 'share-deny', name: 'Keep it private', detail: 'Only you can use your agent' },
           ]}
         />
       </Field>

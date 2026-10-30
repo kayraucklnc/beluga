@@ -35,7 +35,7 @@ const TOOL_TRIGGER = z
   .describe('When it runs');
 
 const TOOL_STEP = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: z.string().min(1).max(20_000).describe('What Claude does each run; may use {{date}}, {{project}}, {{tasks}}, {{previous}}'), where: z.enum(['project', 'worktree', 'mac']).describe('project: reads only (briefs, triage); worktree: changes code; mac: about the Mac itself') }),
+  z.object({ kind: z.literal('claude'), id: stepId, name: stepName, prompt: z.string().min(1).max(20_000).describe('What the agent does each run; may use {{date}}, {{project}}, {{tasks}}, {{previous}}'), where: z.enum(['project', 'worktree', 'mac']).describe('project: reads only (briefs, triage); worktree: changes code; mac: about the Mac itself') }),
   z.object({ kind: z.literal('script'), id: stepId, name: stepName, command: z.string().min(1).max(4000), cwd: z.enum(['project', 'home']).optional(), timeoutSec: z.number().int().min(1).max(3600).optional() }),
   z.object({ kind: z.literal('notify'), id: stepId, name: stepName, title: z.string().max(200).optional(), body: z.string().max(4000).optional(), phone: z.boolean().optional() }),
   z.object({
@@ -49,7 +49,7 @@ const TOOL_STEP = z.discriminatedUnion('kind', [
     timeoutSec: z.number().int().min(1).max(600).optional(),
     preset: z.enum(['groqbot', 'slack', 'discord', 'url']).optional(),
   }),
-  z.object({ kind: z.literal('pr'), id: stepId, name: stepName, draft: z.boolean().optional() }).describe('Opens a pull request from the worktree an earlier Claude step (where: worktree) made; needs work access'),
+  z.object({ kind: z.literal('pr'), id: stepId, name: stepName, draft: z.boolean().optional() }).describe('Opens a pull request from the worktree an earlier agent step (where: worktree) made; needs work access'),
   z.object({ kind: z.literal('merge'), id: stepId, name: stepName, require: z.object({ checks: z.literal(true), approval: z.boolean() }).optional(), method: z.enum(['squash', 'merge']).optional() }).describe('Merges that pull request once the checks pass, a review says ship and the user approves; needs ship access'),
   z.object({ kind: z.literal('message'), id: stepId, name: stepName, to: z.string().regex(/^(dm|group):[\w-]{1,80}$/).describe('dm:<peerId> or group:<id>'), text: z.string().min(1).max(8000) }),
   z.object({ kind: z.literal('friend'), id: stepId, name: stepName, peerId: z.string().min(1).max(80), prompt: z.string().min(1).max(20_000), project: z.string().max(200).optional() }),
@@ -59,7 +59,7 @@ const TOOL_STEP = z.discriminatedUnion('kind', [
       kind: z.literal('measure'),
       id: stepId,
       name: stepName,
-      from: z.enum(['previous', 'source', 'claude']).describe('previous: the step before’s output (a number, JSON, CSV, "name: value" lines); source: a view source run here (sqlite, postgres, http, command); claude: what the Claude step before kept with sentinel_measure'),
+      from: z.enum(['previous', 'source', 'claude']).describe('previous: the step before’s output (a number, JSON, CSV, "name: value" lines); source: a view source run here (sqlite, postgres, http, command); claude: what the agent step before kept with sentinel_measure'),
       source: TOOL_SOURCE.optional().describe('For from: source, the same JSON a view’s source takes; secrets only as $VAR'),
       metrics: z.array(TOOL_METRIC).max(40).optional().describe('Each: name (subscribers), label, pick (a JSON path like $.items[0].statistics.subscriberCount, or a column), unit (count, currency:USD, percent, ms, bytes, plain), better (up, down, none), kind (number, or rows for a table). None: every top-level number'),
       keep: z.number().int().min(1).max(200).optional().describe('Rows kept per run for a rows metric (200)'),

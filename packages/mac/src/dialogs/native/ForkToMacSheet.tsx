@@ -47,7 +47,7 @@ export function ForkToMacSheet({ owner, wsId, close }: { owner: string; wsId: st
     <FormSheet
       title={`Fork “${ws.name}” to This Mac`}
       icon="laptop"
-      intro={`A worktree of your own that starts where ${ownerName}’s is now, with your Claude. ${ownerName}’s goes on as it is.`}
+      intro={`A worktree of your own that starts where ${ownerName}’s is now, with your agent. ${ownerName}’s goes on as it is.`}
       submitLabel="Fork"
       canSubmit={Boolean(slug(name))}
       onSubmit={async () => {
@@ -60,8 +60,8 @@ export function ForkToMacSheet({ owner, wsId, close }: { owner: string; wsId: st
       <Field label="Comes with it">
         <ul className={s.list}>
           <Row icon="branch" title="Its commits and uncommitted changes" detail="Uncommitted work stays uncommitted, as it was" />
-          <Row icon="folder" title="Its Scratch" detail="Screenshots, notes and logs Claude saved" />
-          <Row icon="chat" title="The conversation" detail="Your Claude remembers it and carries on" />
+          <Row icon="folder" title="Its Scratch" detail="Screenshots, notes and logs the agent saved" />
+          <Row icon="chat" title="The conversation" detail="Your agent remembers it and carries on" />
         </ul>
       </Field>
       <Field label="Stays behind">

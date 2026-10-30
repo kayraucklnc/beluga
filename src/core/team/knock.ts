@@ -118,7 +118,7 @@ export class TeamKnocks implements TeamPart {
     const issue = this.deps.board.get(k.issueId);
     const what = issue ? `${issue.key}’s worktree` : 'their worktree';
     if (role) {
-      this.team.deps.notify?.({ kind: 'people', tag: 'joined', title: `${k.name} let you in ${roleWords(role)}`, body: `You’re in ${what}${role === 'contribute' ? ': you can talk to their Claude there' : ': you can follow along'}. It’s in Projects.`, key: `knock-in:${k.id}` });
+      this.team.deps.notify?.({ kind: 'people', tag: 'joined', title: `${k.name} let you in ${roleWords(role)}`, body: `You’re in ${what}${role === 'contribute' ? ': you can talk to their agent there' : ': you can follow along'}. It’s in Projects.`, key: `knock-in:${k.id}` });
       if (m.ws && now - k.at < OPEN_WITHIN_MS) {
         this.opening.add(k.id);
         this.openIfThere(next);

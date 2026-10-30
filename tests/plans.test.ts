@@ -353,7 +353,7 @@ describe('running a plan', () => {
     await tick(5);
     t.work.setAutonomy(t.plan.id, 'autopilot');
     const kinds = t.plans.need(t.plan.id).activity.map((e) => `${e.kind}: ${e.text}`);
-    expect(kinds.filter((k) => k.startsWith('started:'))).toEqual([expect.stringMatching(/^started: started one Claude for “Safe payments” \([A-Z]+-\d+, [A-Z]+-\d+, [A-Z]+-\d+\) in a new worktree$/)]);
+    expect(kinds.filter((k) => k.startsWith('started:'))).toEqual([expect.stringMatching(/^started: started one agent for “Safe payments” \([A-Z]+-\d+, [A-Z]+-\d+, [A-Z]+-\d+\) in a new worktree$/)]);
     expect(kinds).toContainEqual(expect.stringMatching(/^finished: finished [A-Z]+-\d+ “Idempotent webhooks”$/));
     expect(kinds.at(-1)).toBe('autonomy: switched the plan to Autopilot');
   });
@@ -762,7 +762,7 @@ describe('a task that builds on several unfinished tasks starts from their combi
     const before = t.made.length;
     await t.review('A', 'B');
     expect(t.made).toHaveLength(before);
-    expect(t.task('two')).toMatchObject({ state: 'running', step: `Combining ${t.issue('A').key} and ${t.issue('B').key}: Claude is fixing a conflict in shared.txt` });
+    expect(t.task('two')).toMatchObject({ state: 'running', step: `Combining ${t.issue('A').key} and ${t.issue('B').key}: the agent is fixing a conflict in shared.txt` });
     const fixup = t.asked.filter((a) => a.channel === 'ws:main' && a.prompt.includes('/tmp/.bases/p/two-base'));
     expect(fixup).toHaveLength(1);
     expect(fixup[0]!.prompt).toContain('shared.txt');

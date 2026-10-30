@@ -53,5 +53,5 @@ export async function sendPlanMessage(api: PlanSendApi, message: PlanMessage, ch
   } catch (err) {
     throw new Error(errorText(err));
   }
-  if (went === false) throw new Error("Claude can't be asked here");
+  if (went === false) throw new Error("The agent can't be asked here");
 }

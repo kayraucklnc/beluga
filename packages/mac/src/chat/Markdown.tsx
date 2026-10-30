@@ -96,7 +96,7 @@ function MdImage({ src, alt, all, local }: { src: string; alt: string; all: read
   // Someone else's message never makes this Mac read its own files (a path to your screenshot, say).
   if (source.kind === 'local' && !local) {
     return (
-      <span className={s.imageRef} title={`${source.path} (pictures on this Mac show only in your own and your Claude’s messages)`}>
+      <span className={s.imageRef} title={`${source.path} (pictures on this Mac show only in your own and your agent’s messages)`}>
         <Icon name="image" size={11} />
         {alt || source.path.split('/').pop()}
       </span>

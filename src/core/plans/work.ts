@@ -360,13 +360,13 @@ export class PlansWork {
         if (!w || issue.worktreeGone) throw new Error(`${issue.key} hasn't started: nothing to tell yet (start it, or change its brief)`);
         const steer = mode === 'steer';
         // Shown there as the plan's message, not as yours.
-        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `${steer ? 'Urgent, from' : 'From'} the plan’s Claude: ${text.trim().slice(0, 2000)}`, level: 'info' });
-        const prompt = `${steer ? 'An urgent message' : 'A message'} from the head of the plan “${plan.body?.title ?? ''}” (another Claude coordinating the plan, not the user):\n\n${text.trim()}`;
+        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `${steer ? 'Urgent, from' : 'From'} the plan’s agent: ${text.trim().slice(0, 2000)}`, level: 'info' });
+        const prompt = `${steer ? 'An urgent message' : 'A message'} from the head of the plan “${plan.body?.title ?? ''}” (another agent coordinating the plan, not the user):\n\n${text.trim()}`;
         const id = this.deps.askClaude(prompt, `${WS}${w}`, false);
-        if (!steer) return `Queued for the Claude working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
+        if (!steer) return `Queued for the agent working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
         // Steered: in now (interrupting a long command or a dead run), and followed until it's read.
         if (id) this.pilot.steer(planId, hit.task.id, id, prompt);
-        return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Beluga delivers it again`;
+        return `Steered into ${issue.key}: its agent gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Beluga delivers it again`;
       },
       stop: (task) => {
         const plan = plans.need(planId);
@@ -376,8 +376,8 @@ export class PlansWork {
         if (!issue || !w || issue.worktreeGone) throw new Error(`There's no started task "${task}" in this plan`);
         if (!this.deps.stopRun) throw new Error('Stopping isn’t available here');
         this.deps.stopRun(`${WS}${w}`);
-        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: 'Stopped by the plan’s Claude.', level: 'info' });
-        return `Stopped the Claude working on ${issue.key}. It waits: tell it what to do with plan_message_task, or start it again from the plan`;
+        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: 'Stopped by the plan’s agent.', level: 'info' });
+        return `Stopped the agent working on ${issue.key}. It waits: tell it what to do with plan_message_task, or start it again from the plan`;
       },
       pause: (paused) => {
         this.setPaused(planId, paused);

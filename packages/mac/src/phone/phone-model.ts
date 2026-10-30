@@ -44,18 +44,18 @@ const KEY_WORDS: Record<string, string> = { back: 'Back', home: 'Home', recents:
 export function touchCaption(t: PhoneTouchData): string {
   switch (t.op) {
     case 'tap':
-      return 'Claude tapped';
+      return 'The agent tapped';
     case 'long_press':
-      return 'Claude pressed and held';
+      return 'The agent pressed and held';
     case 'swipe':
-      return 'Claude swiped';
+      return 'The agent swiped';
     case 'type':
-      return 'Claude typed';
+      return 'The agent typed';
     case 'key':
-      return `Claude pressed ${KEY_WORDS[t.what ?? ''] ?? t.what ?? 'a key'}`;
+      return `The agent pressed ${KEY_WORDS[t.what ?? ''] ?? t.what ?? 'a key'}`;
     case 'scroll':
-      return t.what ? `Claude scrolled ${t.what}` : 'Claude scrolled';
+      return t.what ? `The agent scrolled ${t.what}` : 'The agent scrolled';
     case 'open':
-      return `Claude opened ${t.what ?? 'an app'}`;
+      return `The agent opened ${t.what ?? 'an app'}`;
   }
 }

@@ -33,9 +33,9 @@ export const IDLE_SIGNAL: Signal = { level: 'idle', unread: 0, working: false, t
 type Source = Pick<AppState, 'log' | 'unread' | 'questions' | 'approvals' | 'conflicts' | 'prs' | 'claudeCode' | 'plans' | 'board' | 'sentinel'>;
 
 const NEED_TIPS: Record<Need, string> = {
-  approval: 'Claude needs your approval',
-  question: 'Claude asks a question',
-  plan: 'Claude has a plan for you to approve',
+  approval: 'Your agent needs your approval',
+  question: 'Your agent asks a question',
+  plan: 'Your agent has a plan for you to approve',
   conflict: 'A merge conflict to resolve',
   checks: 'Checks failed on its pull request',
 };
@@ -62,7 +62,7 @@ function newsLead(state: Source, channel: string): string | undefined {
     const item = state.log[i]!;
     if (item.channel !== channel) continue;
     if (item.type !== 'agent') return undefined;
-    return item.status === 'done' ? 'Claude finished' : item.status === 'error' ? 'Claude stopped' : undefined;
+    return item.status === 'done' ? 'Your agent finished' : item.status === 'error' ? 'Your agent stopped' : undefined;
   }
   return undefined;
 }
@@ -75,7 +75,7 @@ export function signalOf(state: Source, channel: string, ws?: string): Signal {
   const news = unread ? [newsLead(state, channel), plural(unread, 'message')].filter(Boolean).join(' · ') : '';
   if (need) return { level: 'needs', unread, need, working, tip: [needTip(need), unread ? plural(unread, 'message') : ''].filter(Boolean).join(' · ') };
   if (unread) return { level: 'unread', unread, working, tip: news };
-  if (working) return { level: 'working', unread: 0, working, tip: 'Claude is working' };
+  if (working) return { level: 'working', unread: 0, working, tip: 'Your agent is working' };
   return IDLE_SIGNAL;
 }
 
@@ -144,13 +144,13 @@ export function planSignal(state: Source, plan: Plan): Signal & { readonly at?: 
   const waiting = list.find((x) => x.signal.need);
   if (waiting) {
     const owner = planOwnerOf(state.plans, state.board, waiting.ws);
-    const who = owner?.issue.key ?? 'Claude';
+    const who = owner?.issue.key ?? 'Your agent';
     const need = waiting.signal.need!;
     const at = { ws: waiting.ws, ...(owner ? { task: owner.task.id } : {}) };
     return { level: 'needs', unread, need, working, tip: [`${who} ${NEED_WORDS[need]}`, news].filter(Boolean).join(' · '), at };
   }
   if (unread) return { level: 'unread', unread, working, tip: news };
-  if (working) return { level: 'working', unread: 0, working, tip: 'Claude is working' };
+  if (working) return { level: 'working', unread: 0, working, tip: 'Your agent is working' };
   return IDLE_SIGNAL;
 }
 

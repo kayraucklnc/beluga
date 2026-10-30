@@ -20,7 +20,7 @@ export function ParallelSettings() {
   return (
     <Group title="Working at once">
       <Row
-        label="Conversations Claude works in at once"
+        label="Conversations your agent works in at once"
         detail={`Up to ${n} at the same time. Past that, a message waits its turn and says so.`}
       >
         <span className={s.sliderEnds}>

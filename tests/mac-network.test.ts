@@ -196,13 +196,13 @@ describe('@ and / in a channel', () => {
 
   it('lists your Claude, each member’s Claude, everyone’s, then the people', () => {
     const list = channelSuggestions('hi @', { people });
-    expect(list.map((s) => s.label)).toEqual(['Claude (yours)', 'Mia’s Claude', 'Bob Stone’s Claude', 'Everyone’s Claude', 'Mia', 'Bob Stone']);
-    expect(list.find((s) => s.label === 'Mia’s Claude')?.value).toBe('hi @claude:Mia ');
+    expect(list.map((s) => s.label)).toEqual(['Your agent', 'Mia’s agent', 'Bob Stone’s agent', 'Everyone’s agent', 'Mia', 'Bob Stone']);
+    expect(list.find((s) => s.label === 'Mia’s agent')?.value).toBe('hi @claude:Mia ');
     expect(list.find((s) => s.label === 'Bob Stone')?.value).toBe('hi @BobStone ');
-    expect(channelSuggestions('@cl', { people }).map((s) => s.label)).toEqual(['Claude (yours)', 'Mia’s Claude', 'Bob Stone’s Claude', 'Everyone’s Claude']);
-    expect(channelSuggestions('@mi', { people }).map((s) => s.label)).toEqual(['Mia’s Claude', 'Mia']);
+    expect(channelSuggestions('@cl', { people }).map((s) => s.label)).toEqual(['Your agent', 'Mia’s agent', 'Bob Stone’s agent', 'Everyone’s agent']);
+    expect(channelSuggestions('@mi', { people }).map((s) => s.label)).toEqual(['Mia’s agent', 'Mia']);
     // Alone: only your Claude.
-    expect(channelSuggestions('@', { people: [] }).map((s) => s.label)).toEqual(['Claude (yours)']);
+    expect(channelSuggestions('@', { people: [] }).map((s) => s.label)).toEqual(['Your agent']);
     expect(channelSuggestions('no mention', { people })).toEqual([]);
   });
 

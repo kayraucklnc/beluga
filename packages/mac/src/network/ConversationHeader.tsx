@@ -26,7 +26,7 @@ const PILLS = 4;
 /** One person in the header (BLG-210): their picture with presence, their name, what their Claude is doing. */
 function PersonPill({ p }: { p: ChatPerson }) {
   const words = claudePill(p);
-  const tip = `${p.me ? 'You' : p.name} · ${STATE_LABEL[p.presence]} · ${p.me ? 'your' : 'their'} Claude ${p.claude === 'working' && p.doing ? `is on: ${p.doing}` : words}`;
+  const tip = `${p.me ? 'You' : p.name} · ${STATE_LABEL[p.presence]} · ${p.me ? 'your' : 'their'} agent ${p.claude === 'working' && p.doing ? `is on: ${p.doing}` : words}`;
   return (
     <Tip label={tip}>
       <span className={s.pill} data-claude={p.claude} aria-label={tip}>

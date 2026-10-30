@@ -258,7 +258,7 @@ export class Plans {
   /** The head Claude was asked to check a milestone (a new round of checking). */
   checkAsked(id: string, milestone: string): Plan {
     const plan = this.need(id);
-    return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'beluga' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, Claude is checking its pass criteria`, this.now())]);
+    return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'beluga' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, the agent is checking its pass criteria`, this.now())]);
   }
 
   /** Work came back to a milestone (a task reopened, fix tasks added): its next check is a new one. */

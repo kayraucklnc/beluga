@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { agentLabel } from '../shared/agent-label.js';
 import { isAssistant } from '../shared/assistant.js';
 import { assistantOf } from './assistant/registry.js';
 import os from 'node:os';
@@ -357,7 +358,7 @@ export class Session {
     if (toWorkspace) {
       this.askOwnClaude(toWorkspace.prompt, `ws:${toWorkspace.id}`, urgent);
       this.store.dispatch({ type: 'chat', id: randomUUID(), from: this.selfId, text: raw.slice(0, MAX_TEXT), ts: Date.now(), byAgent: false });
-      this.system(`Sent to the Claude in ${toWorkspace.label.slice(1)}. Open it in the sidebar to follow along.`);
+      this.system(`Sent to the agent in ${toWorkspace.label.slice(1)}. Open it in the sidebar to follow along.`);
       return true;
     }
     switch (parsed.kind) {
@@ -375,7 +376,7 @@ export class Session {
         this.sendChat(parsed.text, false);
         for (const name of parsed.unknown) this.toast(`Nobody named "${name}" is here`, 'warn');
         for (const target of parsed.targets) this.requestAgent(target, parsed.prompt, false, 'room', urgent && target === this.selfId);
-        if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No Claude is online', 'warn');
+        if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No agent is online', 'warn');
         return true;
     }
   }
@@ -395,7 +396,7 @@ export class Session {
       return;
     }
     const ws = channel.startsWith('ws:') ? state.projects.flatMap((p) => p.workspaces.map((w) => ({ w, p }))).find(({ w }) => w.id === channel.slice(3)) : undefined;
-    const where = ws ? `${ws.w.name} (${ws.p.name})` : 'a conversation with their Claude';
+    const where = ws ? `${ws.w.name} (${ws.p.name})` : 'a conversation with their agent';
     const me = state.self?.name ?? state.network.self?.name ?? 'A friend';
     for (const f of people) {
       try {
@@ -435,10 +436,10 @@ export class Session {
   async copyLastAnswer(): Promise<void> {
     const last = [...this.store.getState().log].reverse().find((l) => l.type === 'agent' && l.status === 'done');
     if (!last || last.type !== 'agent') {
-      this.toast('No Claude answer to copy yet', 'warn');
+      this.toast('No agent answer to copy yet', 'warn');
       return;
     }
-    await this.copyOrShow(last.text, `Copied ${last.ownerName}'s Claude answer`);
+    await this.copyOrShow(last.text, `Copied ${agentLabel(last.agent, last.ownerName, false)}'s answer`);
   }
 
   /** Copy text for you to paste (shown in the chat when there's no clipboard). */
@@ -495,7 +496,7 @@ export class Session {
   askOwnClaude(prompt: string, channel: string, urgent = false, echo: boolean | string = true): string | undefined {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
-      this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
+      this.toast(`You can follow ${shared.name}, but not ask its agent. Ask the owner to let you contribute`, 'warn');
       return undefined;
     }
     // Load the saved conversation first, so what's said now is kept with it.
@@ -551,7 +552,7 @@ export class Session {
         : this.requestAgent(peerId, prompt, true, 'room', false, opts.project);
       const timer = setTimeout(() => {
         this.agentWaiters.delete(requestId);
-        reject(new Error(`${name}'s Claude did not finish in time`));
+        reject(new Error(`${name}'s agent did not finish in time`));
       }, this.opts.agentTimeoutMs ?? 15 * 60_000);
       const mirror = !shared && opts.mirror && opts.mirror !== 'room' ? opts.mirror : undefined;
       this.agentWaiters.set(requestId, { peer: peerId, resolve, reject, timer, ...(mirror ? { mirror } : {}) });
@@ -604,7 +605,7 @@ export class Session {
       const requestId = this.requestAgent(this.selfId, prompt, false, channel);
       const timer = setTimeout(() => {
         this.agentWaiters.delete(requestId);
-        reject(new Error('Claude did not finish in time'));
+        reject(new Error('The agent did not finish in time'));
       }, timeoutMs);
       this.agentWaiters.set(requestId, { peer: this.selfId, resolve, reject, timer });
     });
@@ -686,7 +687,7 @@ export class Session {
     // A plan's own conversation: its head Claude runs the plan, and stopping to have a plan of its own approved would stall it.
     if (on && isPlanHome(this.store.getState().plans, channel)) return this.toast('A plan’s own conversation has no plan mode: talk the plan through on its page', 'info');
     this.store.dispatch({ type: 'plan_mode', channel, on });
-    this.toast(on ? 'Plan mode: Claude looks first and asks you to approve a plan before changing anything' : 'Plan mode off: Claude works right away', 'success');
+    this.toast(on ? 'Plan mode: your agent looks first and asks you to approve a plan before changing anything' : 'Plan mode off: your agent works right away', 'success');
   }
 
   openLocation(at: Location, opts: { by?: string; broadcast?: boolean } = {}): Promise<void> {
@@ -739,7 +740,7 @@ export class Session {
     const peer = this.findPeer(name);
     if (!peer) return this.toast(`Nobody named "${name}" is here`, 'warn');
     this.store.dispatch({ type: 'follow', peerId: peer.peerId });
-    this.toast(`Following ${peer.name} and their Claude. /unfollow to stop`, 'success');
+    this.toast(`Following ${peer.name} and their agent. /unfollow to stop`, 'success');
     const state = this.store.getState();
     const latest = [state.focus[peer.peerId], state.focus[`${peer.peerId}:agent`]]
       .filter((f) => f !== undefined)
@@ -805,7 +806,7 @@ export class Session {
       this.workspaces?.forgetConversation(channel.slice(3));
       this.store.dispatch({ type: 'context_reset', channel });
       this.host.forgetContext(channel);
-      this.toast('Cleared. Claude starts a fresh conversation here', 'success');
+      this.toast('Cleared. Your agent starts a fresh conversation here', 'success');
       return;
     }
     if (opts.fresh && isAssistant(channel)) {
@@ -815,7 +816,7 @@ export class Session {
       this.toast('Cleared. Your Mac starts a fresh conversation', 'success');
       return;
     }
-    this.toast(channel.startsWith('ws:') || isAssistant(channel) ? 'Messages cleared. Claude still remembers the conversation' : 'Cleared on your screen', 'success');
+    this.toast(channel.startsWith('ws:') || isAssistant(channel) ? 'Messages cleared. Your agent still remembers the conversation' : 'Cleared on your screen', 'success');
   }
 
   findPeer(name: string): PeerInfo | undefined {
@@ -1036,7 +1037,7 @@ export class Session {
         return;
       }
       case 'report':
-        this.system(`${peerName(this.store.getState(), from)}'s Claude wrote a report. Open it with /open ${peerName(this.store.getState(), from)}:${body.share}/${body.path}`);
+        this.system(`${peerName(this.store.getState(), from)}'s agent wrote a report. Open it with /open ${peerName(this.store.getState(), from)}:${body.share}/${body.path}`);
         return;
     }
   }
@@ -1047,7 +1048,7 @@ export class Session {
     this.store.dispatch({ type: 'focus', actorKey: key, focus });
     const state = this.store.getState();
     if (state.follow === from && from !== this.selfId) {
-      const by = `${peerName(state, from)}${body.actor === 'agent' ? "'s Claude" : ''}`;
+      const by = `${peerName(state, from)}${body.actor === 'agent' ? "'s agent" : ''}`;
       await this.openLocation(focus, { by, broadcast: false });
     }
   }
@@ -1117,7 +1118,7 @@ export class Session {
     for (const to of only ?? []) this.send({ kind: 'share_offer', name: config.name, writable: config.writable, active: true }, { to });
     const state = this.store.getState();
     const who = only?.length ? only.map((id) => peerName(state, id)).join(', ') : 'the room';
-    this.toast(`Sharing ${spec.name} with ${who}${writable ? ' (your Claude may edit it)' : ' (read-only)'}`, 'success');
+    this.toast(`Sharing ${spec.name} with ${who}${writable ? ' (your agent may edit it)' : ' (read-only)'}`, 'success');
   }
 
   unshareFolder(name: string, quiet = false): void {

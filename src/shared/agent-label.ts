@@ -1,10 +1,13 @@
-import { type AgentRef, CLAUDE_AGENT } from '../protocol.js';
+import type { AgentRef } from '../protocol.js';
+
+/** An older Mac's agent (protocol.ts CLAUDE_AGENT; repeated so the phone imports this file alone, types only). */
+const CLAUDE_AGENT: AgentRef = { runtime: 'claude', label: 'Claude' };
 
 /**
  * The words screens and messages say for an agent (BLG-435): "your Claude", "Kayra's Codex",
  * "bob's Claude (Opus)". Nothing user-facing writes "Claude" itself: it says the agent's label,
  * so a Codex or a local model is named as what it is. Missing ref: Claude (an older Mac's).
- * Browser-safe: the Mac app and the phone import it.
+ * Browser-safe, imports types only: the Mac app and the phone import it.
  */
 
 export interface AgentLabelOptions {
@@ -39,4 +42,17 @@ export function agentLabel(ref: AgentRef | undefined, owner: string | undefined,
   const name = agentName(ref, opts);
   const phrase = self ? `your ${name}` : owner ? `${owner}'s ${name}` : name;
   return opts.capital ? phrase.charAt(0).toUpperCase() + phrase.slice(1) : phrase;
+}
+
+const RUNTIME_NAMES: Readonly<Record<string, string>> = { claude: 'Claude', codex: 'Codex', local: 'Local model' };
+
+/**
+ * A message's small badge: what runs the agent, when its name doesn't already say it, and the
+ * model ("Opus", "Codex · GPT-5" for an agent its owner named "Helper"). Nothing to add: undefined.
+ */
+export function agentBadge(ref: AgentRef | undefined): string | undefined {
+  if (!ref) return undefined;
+  const runtime = RUNTIME_NAMES[ref.runtime] ?? ref.runtime;
+  const parts = [runtime.toLowerCase() === ref.label.toLowerCase() ? '' : runtime, ref.model ? modelName(ref.model) : ''].filter(Boolean);
+  return parts.length ? parts.join(' · ') : undefined;
 }

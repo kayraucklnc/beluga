@@ -219,7 +219,7 @@ describe('Session', () => {
     kay.session.submit(':stop');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Stopped by owner'));
     kay.session.submit(':stop');
-    expect(kay.toasts).toContain('Your Claude is not running anything');
+    expect(kay.toasts).toContain('Your agent is not running anything');
   });
 
   it("browses and reads a friend's shared folder, live-reloading on change", async () => {
@@ -314,10 +314,10 @@ describe('Session', () => {
 
     kay.session.submit('@claude:bob audit');
     await waitFor(() => kay.state().viewer?.path.startsWith('.beluga/reports/') && kay.state().viewer?.content.includes('all good'));
-    expect(kay.state().viewer?.by).toBe("bob's Claude");
+    expect(kay.state().viewer?.by).toBe("bob's agent");
     const reports = readdirSync(path.join(bob.root, '.beluga', 'reports'));
     expect(readFileSync(path.join(bob.root, '.beluga', 'reports', reports[0]!), 'utf8')).toBe('# Audit Results\n\nall good');
-    expect(systemText(kay.state()).some((t) => t.includes("bob's Claude wrote a report. Open it with /open bob:proj/.beluga/reports/"))).toBe(true);
+    expect(systemText(kay.state()).some((t) => t.includes("bob's agent wrote a report. Open it with /open bob:proj/.beluga/reports/"))).toBe(true);
 
     kay.session.submit(':unfollow');
     expect(kay.state().follow).toBeUndefined();
@@ -411,7 +411,7 @@ describe('Session', () => {
     expect(kay.toasts).toContain('Invite copied. Paste it to a friend');
 
     kay.session.submit('/copy');
-    await waitFor(() => kay.toasts.includes('No Claude answer to copy yet'));
+    await waitFor(() => kay.toasts.includes('No agent answer to copy yet'));
     kay.session.submit('@claude hello');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
     kay.session.submit('/copy');
@@ -467,16 +467,16 @@ describe('Session hardening', () => {
 
     // Nothing of yours in another conversation: nothing there (or here) stops.
     expect(kay.session.host.stopRun('ws:elsewhere')).toEqual({ stopped: false, returned: [] });
-    await waitFor(() => kay.toasts.includes("Your Claude isn't working here"));
+    await waitFor(() => kay.toasts.includes("Your agent isn't working here"));
     expect(kay.state().approvals).toHaveLength(1);
 
     expect(kay.session.host.stopRun('room')).toEqual({ stopped: true, returned: ['second', 'third'] });
-    await waitFor(() => kay.toasts.includes('Stopped your Claude here · 2 queued messages back in the box'));
+    await waitFor(() => kay.toasts.includes('Stopped your agent here · 2 queued messages back in the box'));
     expect(kay.state().approvals).toHaveLength(0);
     const text = (prompt: string) => agentItems(kay.state()).find((a) => a.type === 'agent' && a.prompt === prompt);
     // The run that was going (it never queued, so its log line has no prompt) is the first one.
     await waitFor(() => agentItems(kay.state())[0]?.type === 'agent' && agentItems(kay.state())[0]?.text === 'Stopped by you');
-    for (const prompt of ['second', 'third']) expect(text(prompt)).toMatchObject({ status: 'error', text: 'Taken out of the queue when you stopped Claude' });
+    for (const prompt of ['second', 'third']) expect(text(prompt)).toMatchObject({ status: 'error', text: 'Taken out of the queue when you stopped your agent' });
     // Bob's request kept its place and runs next.
     await waitFor(() => agentItems(bob.state()).some((a) => a.type === 'agent' && a.status === 'done' && a.text === 'done: from bob'));
     expect(kay.runs.map((r) => r.prompt)).toEqual(['first', 'from bob']);
@@ -590,7 +590,7 @@ describe('Session hardening', () => {
     await room(bob, kay);
     kay.session.submit('@claude:bob look around');
     await waitFor(() => bob.state().approvals.length === 1);
-    expect(bob.state().approvals[0]?.title).toBe('kay wants your Claude to run this (shared folders; anything else asks you)');
+    expect(bob.state().approvals[0]?.title).toBe('kay wants your agent to run this (shared folders; anything else asks you)');
     bob.session.answerApproval('no');
   });
 

@@ -1,6 +1,7 @@
 import { COMMANDS } from '../core/commands.js';
 import type { Location } from '../core/store.js';
-import type { FsEntry, PeerInfo } from '../protocol.js';
+import { type FsEntry, type PeerInfo, defaultAgentOf } from '../protocol.js';
+import { agentLabel, agentName } from '../shared/agent-label.js';
 import type { ClaudeSkill } from '../shared/skills.js';
 import { MAX_ELSEWHERE_SUGGESTIONS, MAX_TASK_SUGGESTIONS, type TaskMention, matchTasks } from '../shared/task-refs.js';
 
@@ -184,7 +185,7 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
   if (PEER_COMMANDS.has(cmd)) {
     return ctx.peers
       .filter((p) => p.peerId !== ctx.selfId && p.name.toLowerCase().startsWith(lower))
-      .map((p) => ({ label: p.name, hint: p.agent ? 'has Claude on' : '', value: `/${cmd} ${p.name}`, enter: 'submit' as const, kind: 'person' as const }));
+      .map((p) => ({ label: p.name, hint: p.agent ? `has ${agentName(defaultAgentOf(p))} on` : '', value: `/${cmd} ${p.name}`, enter: 'submit' as const, kind: 'person' as const }));
   }
   // "/invite @ata": your friends by name, to add to the chat, project or worktree you're in (BLG-203).
   if (cmd === 'invite') {
@@ -216,15 +217,15 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
   }
   // `name`: the friend's handle, so "@mi" offers mia and mia's Claude alike.
   const options: Array<{ label: string; hint: string; kind: SuggestionKind; name?: string }> = [
-    { label: '@claude', hint: 'ask your Claude', kind: 'claude' },
+    { label: '@claude', hint: 'ask your agent', kind: 'claude' },
     ...ctx.peers
       .filter((p) => p.agent && p.peerId !== ctx.selfId)
-      .map((p) => ({ label: `@claude:${p.name}`, hint: `ask ${p.name}'s Claude (on their machine)`, kind: 'claude' as const })),
-    ...(ctx.peers.length > 1 ? [{ label: '@claudes', hint: 'ask every Claude in the room', kind: 'claude' as const }] : []),
+      .map((p) => ({ label: `@claude:${p.name}`, hint: `ask ${agentLabel(defaultAgentOf(p), p.name, false)} (on their machine)`, kind: 'claude' as const })),
+    ...(ctx.peers.length > 1 ? [{ label: '@claudes', hint: 'ask every agent in the room', kind: 'claude' as const }] : []),
     // Each friend twice: their Claude ("@claude:ata", asked on their Mac) and the person ("@ata", told you mentioned them).
     ...(ctx.friends ?? [])
       .filter((f) => friendMention(f.name).length > 1 && !ctx.peers.some((p) => p.agent && p.peerId !== ctx.selfId && p.name.toLowerCase() === f.name.toLowerCase()))
-      .map((f) => ({ label: `@claude:${friendMention(f.name).slice(1)}`, hint: `ask ${f.name}'s Claude, on their Mac${f.online ? '' : ' (offline: it goes when they’re back)'}`, kind: 'claude' as const, name: friendMention(f.name) })),
+      .map((f) => ({ label: `@claude:${friendMention(f.name).slice(1)}`, hint: `ask ${f.name}'s agent, on their Mac${f.online ? '' : ' (offline: it goes when they’re back)'}`, kind: 'claude' as const, name: friendMention(f.name) })),
     ...(ctx.friends ?? [])
       .filter((f) => friendMention(f.name).length > 1)
       .map((f) => ({ label: friendMention(f.name), hint: `${f.name}, the person: they're told you mentioned them`, kind: 'person' as const })),

@@ -37,7 +37,7 @@ export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
   const policy = POLICY_BY_OPTION[option.id];
   if (policy) {
     void api.session.setClaudeSharing(policy);
-    const msg = { ask: "You'll approve each request for your Claude", auto: 'Everyone in the room can use your Claude', deny: 'Your Claude is private' };
+    const msg = { ask: "You'll approve each request for your agent", auto: 'Everyone in the room can use your agent', deny: 'Your agent is private' };
     client.store.dispatch({ type: 'toast', text: msg[policy], level: 'success' });
     return;
   }

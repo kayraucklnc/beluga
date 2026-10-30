@@ -18,7 +18,7 @@ function SendOrSteer({ requestId }: { requestId: string }) {
   return (
     <>
       <span aria-hidden="true">·</span>
-      <Tip label="Claude reads it next, without stopping what it's doing">
+      <Tip label="Your agent reads it next, without stopping what it's doing">
         <button
           type="button"
           className={p.steerNow}
@@ -31,7 +31,7 @@ function SendOrSteer({ requestId }: { requestId: string }) {
         </button>
       </Tip>
       <span aria-hidden="true">·</span>
-      <Tip label="Claude reads it now: a long command or a stuck turn is interrupted">
+      <Tip label="Your agent reads it now: a long command or a stuck turn is interrupted">
         <button
           type="button"
           className={p.steerNow}
@@ -62,7 +62,7 @@ export function WaitingLine({ waiting, each }: { waiting: readonly WaitingMessag
             <Tip label={snippet(w.prompt)}>
               <span className={p.waitingWords}>{snippet(w.prompt).slice(0, 48)}</span>
             </Tip>
-            {w.queued ? <SendOrSteer requestId={w.requestId} /> : <span className={p.muted}>· read at Claude’s next step</span>}
+            {w.queued ? <SendOrSteer requestId={w.requestId} /> : <span className={p.muted}>· read at the agent’s next step</span>}
           </span>
         ))}
       </span>
@@ -74,7 +74,7 @@ export function WaitingLine({ waiting, each }: { waiting: readonly WaitingMessag
       <Tip label={waiting.map((w) => snippet(w.prompt)).join('\n')}>
         <span className={p.waitingWords}>{words}</span>
       </Tip>
-      {steer ? <SendOrSteer requestId={steer} /> : <span className={p.muted}>· read at Claude’s next step</span>}
+      {steer ? <SendOrSteer requestId={steer} /> : <span className={p.muted}>· read at the agent’s next step</span>}
     </span>
   );
 }

@@ -402,7 +402,7 @@ function JsonDetail({ record }: { record: StepRecord }) {
 }
 
 export function ThinkingDetail({ record }: { record: StepRecord }) {
-  if (!record.text) return <div className={s.quiet}>Claude didn’t share what it thought here.</div>;
+  if (!record.text) return <div className={s.quiet}>The agent didn’t share what it thought here.</div>;
   return (
     <Capped fade label="Show more">
       <div className={s.thought}>

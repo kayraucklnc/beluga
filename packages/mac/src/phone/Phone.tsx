@@ -45,8 +45,8 @@ function PhoneClaude({ d }: { d: DeviceView }) {
   const route = c.routes[0];
   return (
     <div className={s.control}>
-      <Row label="Let Claude use this phone" detail={route ? `Reached by ${ROUTE_WORDS[route] ?? route}.` : (c.note ?? 'Not reachable right now.')}>
-        <Select label="Let Claude use this phone" value={c.use} onChange={(v) => void client.api.companion['phone.use'](d.id, v as PhoneUse)} options={USE_OPTIONS.map((o) => ({ ...o }))} />
+      <Row label="Let your agent use this phone" detail={route ? `Reached by ${ROUTE_WORDS[route] ?? route}.` : (c.note ?? 'Not reachable right now.')}>
+        <Select label="Let your agent use this phone" value={c.use} onChange={(v) => void client.api.companion['phone.use'](d.id, v as PhoneUse)} options={USE_OPTIONS.map((o) => ({ ...o }))} />
       </Row>
       {c.use !== 'off' && c.accessibility !== true ? <BelugaLink id={d.id} reachable={c.usb === true || c.adb === 'connected' || c.adb === 'ready'} /> : null}
       {c.use !== 'off' && (c.usb || c.adb !== 'off') ? <OverWifi id={d.id} on={c.adb !== undefined && c.adb !== 'off'} cable={c.usb === true} path={c.wifiPath} /> : null}
@@ -82,8 +82,8 @@ function BelugaLink({ id, reachable }: { id: string; reachable: boolean }) {
     }
   };
   const detail = reachable
-    ? 'Beluga Link is the small app on the phone that lets Claude tap and type there without a cable. It’s separate so Android’s Play Protect never blocks Beluga itself; set up from here, Link isn’t blocked either. This Mac installs it and turns it on.'
-    : 'Beluga Link is the small app on the phone that lets Claude tap and type there without a cable. Downloaded on the phone, Android may block it (“App blocked to protect your device”); set up from here, it isn’t. Connect the phone with a USB cable first.';
+    ? 'Beluga Link is the small app on the phone that lets your agent tap and type there without a cable. It’s separate so Android’s Play Protect never blocks Beluga itself; set up from here, Link isn’t blocked either. This Mac installs it and turns it on.'
+    : 'Beluga Link is the small app on the phone that lets your agent tap and type there without a cable. Downloaded on the phone, Android may block it (“App blocked to protect your device”); set up from here, it isn’t. Connect the phone with a USB cable first.';
   return (
     <Row label="Beluga Link" detail={said ?? detail}>
       <Button size="small" disabled={busy || !reachable} onClick={() => void go()}>
@@ -173,7 +173,7 @@ function Reaching() {
 function DeviceList({ now, control = false }: { now: number; control?: boolean }) {
   const { client } = useBeluga();
   const devices = useDevices();
-  if (!devices.length) return <div className={s.empty}>No phone yet. Pair one to see what Claude is doing, answer and ask from anywhere.</div>;
+  if (!devices.length) return <div className={s.empty}>No phone yet. Pair one to see what your agent is doing, answer and ask from anywhere.</div>;
   return (
     <ul className={s.devices} aria-label="Your phones">
       {devices.map((d) => (
@@ -355,7 +355,7 @@ function OnTheCable() {
   const name = cable.name;
   if (cable.state === 'no-debugging')
     return (
-      <Row label="On the cable" detail={said ?? `${name} is plugged in, but USB debugging is off, so Claude can’t use the cable yet. On the phone: Settings › About phone › Software information › tap Build number seven times; then Settings › Developer options › USB debugging.`}>
+      <Row label="On the cable" detail={said ?? `${name} is plugged in, but USB debugging is off, so your agent can’t use the cable yet. On the phone: Settings › About phone › Software information › tap Build number seven times; then Settings › Developer options › USB debugging.`}>
         {linked ? (
           <Button size="small" disabled={busy} onClick={() => void run(showOnPhone)}>
             Open on the Phone
@@ -374,7 +374,7 @@ function OnTheCable() {
         </Button>
       </Row>
     );
-  return <Row label="On the cable" detail={`${name} is plugged in: Claude and the mirror use the cable, the fastest way.`}><span /></Row>;
+  return <Row label="On the cable" detail={`${name} is plugged in: your agent and the mirror use the cable, the fastest way.`}><span /></Row>;
 }
 
 /** Settings › Phone. */
@@ -394,8 +394,8 @@ export function PhoneSettings() {
         </div>
       </Group>
       {useDevices().some((d) => d.platform !== 'ios') ? (
-        <Group title="Let Claude use your phone">
-          <Row label="How it works" detail="Ask Claude on this Mac to do something on your phone — look at the screen, tap, type, open apps, install a build. It uses Wireless debugging when it can, or Beluga Link, the phone’s small add-on app. Off until you choose a level below; set it up on the phone in Beluga › Settings.">
+        <Group title="Let your agent use your phone">
+          <Row label="How it works" detail="Ask your agent on this Mac to do something on your phone — look at the screen, tap, type, open apps, install a build. It uses Wireless debugging when it can, or Beluga Link, the phone’s small add-on app. Off until you choose a level below; set it up on the phone in Beluga › Settings.">
             <span />
           </Row>
           <AdbLine />
@@ -410,7 +410,7 @@ export function PhoneSettings() {
         </Group>
       ) : null}
       <Group title="Pair a phone">
-        <Row label="The Beluga app" detail="Your phone gets its own key, signed by your Mac: it shows what Claude is doing and lets you answer, ask and chat. It never sees code. Up to 4 phones; Remove cuts one off at once.">
+        <Row label="The Beluga app" detail="Your phone gets its own key, signed by your Mac: it shows what your agent is doing and lets you answer, ask and chat. It never sees code. Up to 4 phones; Remove cuts one off at once.">
           <span />
         </Row>
         <div className={s.inSettings}>

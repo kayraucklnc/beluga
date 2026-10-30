@@ -114,7 +114,7 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
     steps: steps.filter((x): x is BranchStep => Boolean(x)),
   });
 
-  const commit: BranchStep | false = changed > 0 && { id: 'commit', label: 'Commit…', hint: `Claude commits the ${plural(changed, 'uncommitted change')} with a message`, claude: true };
+  const commit: BranchStep | false = changed > 0 && { id: 'commit', label: 'Commit…', hint: `Your agent commits the ${plural(changed, 'uncommitted change')} with a message`, claude: true };
   // Merged is done: putting it away leads; carrying on here (a new PR next) is the other way.
   const archive: BranchStep = { id: 'archive', label: 'Archive Worktree', hint: 'It’s done: put it away (the branch and the conversation are kept)' };
   const remove: BranchStep = { id: 'delete', label: 'Delete Worktree…', hint: 'Remove the folder and its branch for good', danger: true };
@@ -126,7 +126,7 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   const conflicts = state.conflicts[ws.id] ?? [];
   if (conflicts.length) {
     return at('merge_conflict', 'Merge conflict', 'error', `Merging into ${into} stopped: ${plural(conflicts.length, 'file')} conflict${conflicts.length === 1 ? 's' : ''}`, [
-      { id: 'merge_claude', label: 'Resolve with Claude…', hint: 'Claude finishes the merge: it resolves each conflict and commits', claude: true },
+      { id: 'merge_claude', label: 'Resolve with Your Agent…', hint: 'Your agent finishes the merge: it resolves each conflict and commits', claude: true },
     ]);
   }
 
@@ -146,13 +146,13 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
     const n = `PR #${pr.number}`;
     if (pr.conflicts) {
       return at('conflicts', 'Conflicts', 'error', `${n} conflicts with ${into}: GitHub can’t merge it until they’re resolved`, [
-        { id: 'resolve_pr', label: 'Resolve with Claude…', hint: `Claude merges ${into} in here, resolves the conflicts and pushes`, claude: true },
+        { id: 'resolve_pr', label: 'Resolve with Your Agent…', hint: `Your agent merges ${into} in here, resolves the conflicts and pushes`, claude: true },
         openPr,
       ]);
     }
     if (pr.checks === 'failing') {
       return at('checks_failing', 'Checks failed', 'error', `${n}’s checks are failing`, [
-        { id: 'fix_checks', label: 'Fix with Claude…', hint: 'Claude reads the failing logs, fixes them and pushes', claude: true },
+        { id: 'fix_checks', label: 'Fix with Your Agent…', hint: 'Your agent reads the failing logs, fixes them and pushes', claude: true },
         openPr,
         admin,
       ]);
@@ -173,12 +173,12 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
     if (pr.mergeState === 'behind') {
       return at('behind', `Behind ${into}`, 'warn', `${n} needs the latest ${into} before it can merge`, [
         { id: 'update_branch', label: 'Update Branch', hint: `GitHub merges the latest ${into} into ${ws.branch}` },
-        { id: 'resolve_pr', label: 'Update with Claude…', hint: `Claude merges ${into} in here, resolving anything in the way, and pushes`, claude: true },
+        { id: 'resolve_pr', label: 'Update with Your Agent…', hint: `Your agent merges ${into} in here, resolving anything in the way, and pushes`, claude: true },
         openPr,
       ]);
     }
     if (pr.review === 'CHANGES_REQUESTED') {
-      return at('changes_requested', 'Changes requested', 'warn', `A reviewer asked for changes on ${n}`, [openPr, { id: 'review_claude', label: 'Ask Claude to Review…', hint: 'Claude reviews the branch and suggests what to change', claude: true }, commit, admin]);
+      return at('changes_requested', 'Changes requested', 'warn', `A reviewer asked for changes on ${n}`, [openPr, { id: 'review_claude', label: 'Ask Your Agent to Review…', hint: 'Your agent reviews the branch and suggests what to change', claude: true }, commit, admin]);
     }
     if (pr.checks === 'pending') return at('checks_running', 'Checks running', 'wait', `${n}’s checks are running`, [auto, admin, openPr, commit]);
     if (pr.review === 'REVIEW_REQUIRED') return at('review', 'Waiting for review', 'wait', `${n} needs an approving review`, [auto, admin, openPr, commit]);
@@ -187,7 +187,7 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
       { id: 'merge_pr', label: 'Squash and Merge', hint: `One commit on ${into}, on GitHub` },
       openPr,
       commit,
-      { id: 'review_claude', label: 'Ask Claude to Review…', hint: 'Claude reviews the branch before you merge', claude: true },
+      { id: 'review_claude', label: 'Ask Your Agent to Review…', hint: 'Your agent reviews the branch before you merge', claude: true },
     ]);
   }
 
@@ -199,8 +199,8 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   const prWays: BranchStep[] =
     !planned && github
       ? [
-          { id: 'pr_claude', label: 'Create PR with Claude', hint: 'Claude commits what belongs, then writes the title and description: what, why, how to test', claude: true },
-          { id: 'pr_custom', label: 'Create PR with Instructions…', hint: 'Tell Claude anything extra for this one (a draft, an issue to mention…)', claude: true },
+          { id: 'pr_claude', label: 'Create PR with Your Agent', hint: 'Your agent commits what belongs, then writes the title and description: what, why, how to test', claude: true },
+          { id: 'pr_custom', label: 'Create PR with Instructions…', hint: 'Tell your agent anything extra for this one (a draft, an issue to mention…)', claude: true },
           { id: 'pr_draft', label: 'Create Draft PR', hint: `Like Create PR, as a draft: it can’t merge until it’s marked ready` },
           { id: 'merge_base', label: `Merge into ${into}…`, hint: `No pull request: ${changed ? 'commits what’s left, ' : ''}merges ${ws.branch} into origin/${into} and pushes it there` },
         ]

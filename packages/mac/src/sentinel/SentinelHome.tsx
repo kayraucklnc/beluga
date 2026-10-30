@@ -197,9 +197,9 @@ function Lived({ state, scope, setScope, board, setBoard }: { state: SentinelSta
           <IconButton icon="more" label="More for Sentinel" />
         </ActionsDropdown>
         {asking ? null : (
-          <Tip label="Say what you want watched; Claude sets it up beside this page">
+          <Tip label="Say what you want watched; your agent sets it up beside this page">
             <Button size="small" icon="claude" onClick={() => ask()}>
-              Ask Claude
+              Ask Your Agent
             </Button>
           </Tip>
         )}
@@ -415,7 +415,7 @@ const IDEAS: ReadonlyArray<{ readonly label: string; readonly icon: Parameters<t
   { label: 'Suggest Some for Me', icon: 'sparkles', prompt: 'I’m new to Sentinel. Look at my projects and what they use, and suggest three watchers that would help me, each in one plain line. Set them up, with a board for their numbers, when I say yes.' },
   { label: 'A Morning Brief', icon: 'clock', prompt: 'Every weekday morning, tell me on my phone what changed in my projects and what needs me first.' },
   { label: 'Watch My Website', icon: 'pulse', prompt: 'Check my website every 5 minutes and tell me the moment it stops answering, and when it’s back.' },
-  { label: 'Fix Failing Tests', icon: 'wrench', prompt: 'When the tests fail on GitHub for one of my projects, have Claude fix it and open a pull request for me to merge.' },
+  { label: 'Fix Failing Tests', icon: 'wrench', prompt: 'When the tests fail on GitHub for one of my projects, have the agent fix it and open a pull request for me to merge.' },
 ];
 
 /**
@@ -433,8 +433,8 @@ function FirstVisit() {
   };
   return (
     <div className={s.first} data-testid="sentinel-first">
-      <h1 className={s.firstTitle}>Let Claude keep an eye on things</h1>
-      <p className={s.lede}>Say what you want in your own words. Claude sets it up; nothing runs until you turn it on.</p>
+      <h1 className={s.firstTitle}>Let your agent keep an eye on things</h1>
+      <p className={s.lede}>Say what you want in your own words. Your agent sets it up; nothing runs until you turn it on.</p>
       <Showcase onPick={(slide) => ask(slide.prompt)} />
       <div className={s.composer}>
         <textarea
@@ -452,9 +452,9 @@ function FirstVisit() {
           }}
         />
         <div className={s.composerRow}>
-          <span className={s.composerHint}>Claude asks before anything new can run</span>
+          <span className={s.composerHint}>Your agent asks before anything new can run</span>
           <span className={s.grow} />
-          <IconButton icon="send" label="Ask Claude" className={s.send} disabled={!words.trim()} onClick={send} />
+          <IconButton icon="send" label="Ask Your Agent" className={s.send} disabled={!words.trim()} onClick={send} />
         </div>
       </div>
       <div className={s.ideas} role="list" aria-label="Ideas">

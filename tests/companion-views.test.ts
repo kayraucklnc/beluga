@@ -442,7 +442,7 @@ describe('the views of a known Mac', () => {
     const conv = ConvView.parse(viewOf(state, ctx, 'conv:task:t_screen000001'));
     expect(conv.turns.map((t) => [t.who, t.name, t.prose.text, t.status])).toEqual([
       ['you', 'kayra', 'Take a screenshot of your desktop', undefined],
-      ['friend', "bob's Claude", 'Here it is.', 'done'],
+      ['friend', "bob's agent", 'Here it is.', 'done'],
     ]);
     expect(conv.turns[1]!.outputs?.map((o) => [o.name, o.kind])).toEqual([['desktop.png', 'image']]);
     expect(conv.canSend).toBe(false);
@@ -453,14 +453,14 @@ describe('the views of a known Mac', () => {
     const store = new Store(state);
     store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r9', requester: ME, event: 'started', text: '', ts: T0 + 20, channel: 'ws:w1' });
     store.dispatch({ type: 'chat', id: 'c9', from: ME, text: 'look at the retries first', ts: T0 + 21, byAgent: false, channel: 'ws:w1', request: 'r10', steer: true });
-    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'text', text: 'Claude reads this after its current step', ts: T0 + 21, channel: 'ws:w1' });
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'text', text: 'Your agent reads this after its current step', ts: T0 + 21, channel: 'ws:w1' });
     const conv = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1'));
     expect(conv.turns.slice(-2).map((t) => [t.who, t.prose.text, t.steer])).toEqual([
       ['claude', '', undefined],
       ['you', 'look at the retries first', { request: 'r10', waiting: 'next_step' }],
     ]);
     // Read: your turn reads as any other.
-    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'done', text: 'Claude read this while it worked; the answer above covers it.', ts: T0 + 22, channel: 'ws:w1' });
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'done', text: 'Your agent read this while it worked; the answer above covers it.', ts: T0 + 22, channel: 'ws:w1' });
     expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.at(-1)).toMatchObject({ who: 'you', prose: { text: 'look at the retries first' } });
     expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.at(-1)?.steer).toBeUndefined();
   });
@@ -556,11 +556,11 @@ describe('the views of a known Mac', () => {
       ['bob', 'offline', 'offline'],
     ]);
     expect(chat.waiting).toEqual([
-      { text: 'Waiting on you: bob’s Claude wants your private SSH key id_ed25519', you: true, task: secret.id },
+      { text: 'Waiting on you: bob’s agent wants your private SSH key id_ed25519', you: true, task: secret.id },
       { text: 'Waiting on bob: Run the tests in bob-api', you: false, task: sent.id },
     ]);
     expect(chat.note).toBe('bob is offline: this waits for them');
-    expect(chat.messages.at(-1)?.task).toMatchObject({ who: 'bob’s Claude · asked your Mac', secret: true });
+    expect(chat.messages.at(-1)?.task).toMatchObject({ who: 'bob’s agent · asked your Mac', secret: true });
     // Nothing waiting, everyone online: no band, no note.
     const calm = ChatView.parse(viewOf(state, ctx, `chat:${conv}`));
     expect(calm.waiting).toBeUndefined();

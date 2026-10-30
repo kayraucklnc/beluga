@@ -259,7 +259,7 @@ export function StepsCard({ item, save }: { item: Sentinel; save: Save }) {
           ))}
         </div>
       ) : (
-        <p className={s.empty}>No steps yet. Add what it does, in order: ask Claude, run a script, call a service, tell you.</p>
+        <p className={s.empty}>No steps yet. Add what it does, in order: ask your agent, run a script, call a service, tell you.</p>
       )}
       <div className={s.addStep}>
         <ActionsDropdown items={add} align="start">
@@ -381,8 +381,8 @@ function StepItem({
 }
 
 const WHERE_INFO: ReadonlyArray<{ readonly value: ClaudeStep['where']; readonly label: string; readonly description: string }> = [
-  { value: 'project', label: 'In the project', description: 'A new chat in the project’s main folder; Claude reads and reports, never changes files' },
-  { value: 'worktree', label: 'In a new worktree', description: 'Its own branch: Claude edits, commits and runs the tests; later steps share it' },
+  { value: 'project', label: 'In the project', description: 'A new chat in the project’s main folder; the agent reads and reports, never changes files' },
+  { value: 'worktree', label: 'In a new worktree', description: 'Its own branch: the agent edits, commits and runs the tests; later steps share it' },
   { value: 'mac', label: 'On Your Mac', description: 'A chat in Your Mac, for things about the Mac itself' },
 ];
 
@@ -393,7 +393,7 @@ function ClaudeFields({ step, item, change }: { step: ClaudeStep; item: Sentinel
   return (
     <>
       <div className={s.field}>
-        <span className={s.fieldLabel}>What Claude does</span>
+        <span className={s.fieldLabel}>What the agent does</span>
         <div className={s.presets} role="group" aria-label="Start from">
           {CLAUDE_PRESETS.map((p) => (
             <button key={p.id} type="button" className={s.preset} onClick={() => prompt.change(p.prompt)}>
@@ -401,13 +401,13 @@ function ClaudeFields({ step, item, change }: { step: ClaudeStep; item: Sentinel
             </button>
           ))}
         </div>
-        <TextArea className={s.prompt} value={prompt.text} onChange={prompt.change} onBlur={prompt.flush} rows={6} aria-label="Claude’s prompt" placeholder="What should Claude do each run? Say when to stop: “If nothing changed, say so and stop.”" />
+        <TextArea className={s.prompt} value={prompt.text} onChange={prompt.change} onBlur={prompt.flush} rows={6} aria-label="The agent’s prompt" placeholder="What should your agent do each run? Say when to stop: “If nothing changed, say so and stop.”" />
         <span className={s.help}>{TEMPLATE_HELP}</span>
       </div>
       <div className={s.controlRow}>
         <span className={s.controlLabel}>Where</span>
         <Select
-          label="Where Claude runs"
+          label="Where the agent runs"
           size="small"
           value={step.where}
           options={WHERE_INFO.map((w) => {
@@ -637,7 +637,7 @@ function PrFields({ step, change }: { step: PrStep; change: (patch: Partial<PrSt
   return (
     <>
       <Checkbox checked={Boolean(step.draft)} onChange={(draft) => change({ draft })} label="Open it as a draft" detail="For you to look at first; a draft can’t be merged by a later step" />
-      <p className={s.hint}>From the worktree an earlier Ask Claude step made (in a new worktree), with your pull request instructions. Without one, the run stops here.</p>
+      <p className={s.hint}>From the worktree an earlier Ask Your Agent step made (in a new worktree), with your pull request instructions. Without one, the run stops here.</p>
     </>
   );
 }
@@ -648,7 +648,7 @@ function MergeFields({ step, change }: { step: MergeStep; change: (patch: Partia
     openSheet({
       kind: 'confirm',
       title: 'Merge without asking?',
-      message: 'This sentinel will merge its pull request by itself once every check passes and Claude’s review says ship. A hold still asks you. You can turn asking back on here any time.',
+      message: 'This sentinel will merge its pull request by itself once every check passes and the agent’s review says ship. A hold still asks you. You can turn asking back on here any time.',
       confirm: 'Merge Without Asking',
       destructive: true,
       run: () => change({ require: { checks: true, approval: false } }),
@@ -707,9 +707,9 @@ function FriendFields({ step, change }: { step: FriendStep; change: (patch: Part
   return (
     <>
       <div className={s.controlRow}>
-        <span className={s.controlLabel}>Whose Claude</span>
+        <span className={s.controlLabel}>Whose agent</span>
         {friends.length ? (
-          <Select label="Whose Claude" size="small" value={step.peerId} placeholder="Pick a friend" options={[...friends].sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ value: f.peerId, label: f.name }))} onChange={(peerId) => change({ peerId })} />
+          <Select label="Whose agent" size="small" value={step.peerId} placeholder="Pick a friend" options={[...friends].sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ value: f.peerId, label: f.name }))} onChange={(peerId) => change({ peerId })} />
         ) : (
           <span className={s.hint}>No friends yet: add one in People.</span>
         )}
@@ -723,7 +723,7 @@ function FriendFields({ step, change }: { step: FriendStep; change: (patch: Part
         <span className={s.controlLabel}>In their project</span>
         <TextInput value={project.text} onChange={project.change} onBlur={project.flush} placeholder="Any (their choice)" aria-label="Their project" />
       </div>
-      <p className={s.hint}>Asked as you; their trust in you decides what their Claude may do. Their answer is this step’s output.</p>
+      <p className={s.hint}>Asked as you; their trust in you decides what their agent may do. Their answer is this step’s output.</p>
     </>
   );
 }

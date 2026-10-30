@@ -7,6 +7,7 @@ import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Empty, Working } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
+import { useMyAgentName } from '../lib/agent-words.js';
 import { keepSameLists, sameItems } from '../lib/stable.js';
 import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
@@ -109,6 +110,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   // Only this conversation's items and tasks: another one streaming doesn't draw this one again (KLD-48).
   const mine = useApp((st) => st.log.filter((l) => l.channel === channel), sameItems);
   const selfId = useApp((st) => st.selfId);
+  const agent = useMyAgentName();
   // A shared workspace's earlier messages arrive as system lines; drawn here as normal messages.
   const items = useMemo(() => mine.map(chatRowOf), [mine]);
   // What waits its turn is in the queue above the box; once it runs, it's drawn where it ran (BLG-317).
@@ -251,10 +253,10 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
         {starting ? (
           <div className={f.starting} data-claude-starting="true" role="status">
             <span className={f.startingAvatar}>
-              <Avatar name="Claude" id={selfId} claude size={22} />
+              <Avatar name={agent} id={selfId} claude size={22} />
             </span>
             <Working />
-            <span>Claude is starting…</span>
+            <span>{agent} is starting…</span>
           </div>
         ) : null}
       </div>

@@ -31,8 +31,8 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
     <FormSheet
       title={name ? `Plan in ${name}` : 'New Plan'}
       icon="flag"
-      intro="Say what you want built. Claude reads the code and cuts it into milestones and tasks; you talk it through, and nothing reaches the board until you approve."
-      submitLabel="Plan with Claude"
+      intro="Say what you want built. Your agent reads the code and cuts it into milestones and tasks; you talk it through, and nothing reaches the board until you approve."
+      submitLabel="Plan with Your Agent"
       width={600}
       canSubmit={Boolean(goal.trim() && project)}
       onCancel={close}
@@ -182,7 +182,7 @@ export function PlanStyleSheet({ close }: { close: () => void }) {
     <FormSheet
       title="Planning Style"
       icon="flag"
-      intro="How you like plans cut: task size, when to add a review, what every milestone must prove. Claude follows it whenever it plans."
+      intro="How you like plans cut: task size, when to add a review, what every milestone must prove. Your agent follows it whenever it plans."
       submitLabel="Save"
       onCancel={close}
       onSubmit={async () => {
@@ -206,8 +206,8 @@ export function SendBackSheet({ planId, milestone, close }: { planId: string; mi
     <FormSheet
       title={`Not Yet: ${title}`}
       icon="flag"
-      intro="Say what’s missing. Claude adds the tasks that fix it to this milestone, for you to approve."
-      submitLabel="Send to Claude"
+      intro="Say what’s missing. Your agent adds the tasks that fix it to this milestone, for you to approve."
+      submitLabel="Send to Your Agent"
       canSubmit={Boolean(note.trim())}
       onCancel={close}
       onSubmit={async () => {

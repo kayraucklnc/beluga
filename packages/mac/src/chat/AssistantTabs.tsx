@@ -66,7 +66,7 @@ function confirmDelete(title: string, last: boolean, run: () => void): void {
   openSheet({
     kind: 'confirm',
     title: `Delete “${title}”?`,
-    message: `Its messages go from this Mac and your phone for good, and Claude forgets the conversation. Files it made stay in Your Mac’s folder.${last ? ' A fresh chat takes its place.' : ''}`,
+    message: `Its messages go from this Mac and your phone for good, and your agent forgets the conversation. Files it made stay in Your Mac’s folder.${last ? ' A fresh chat takes its place.' : ''}`,
     confirm: 'Delete Chat',
     destructive: true,
     run,

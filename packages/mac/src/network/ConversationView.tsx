@@ -25,6 +25,7 @@ import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork, useSay } from './use-net.js';
 import { inApp } from '../lib/boot.js';
 import chat from '../chat/chat.module.css';
+import { agentBadge } from '../lib/agent-words.js';
 import { PersonButton } from './PersonProfile.js';
 import s from './network.module.css';
 
@@ -47,7 +48,7 @@ function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: 
           { label: 'Copy as Markdown', onSelect: () => copy(m.text, 'as Markdown') },
           { label: 'Quote in Reply', icon: 'chat' as const, separate: true, onSelect: quote },
           {
-            label: 'Ask Claude About This',
+            label: 'Ask Your Agent About This',
             icon: 'claude' as const,
             onSelect: () => {
               quote();
@@ -231,6 +232,7 @@ const Message = memo(function Message({ m, place, dm, last, resend, me, nameOf, 
               <span className={cx(s.runAuthor, m.claude && s.claudeAuthor)} style={m.claude ? { color: claudeColor(author) } : undefined}>
                 {authorLabel(m)}
               </span>
+              {m.claude && agentBadge(m.claude.agent) ? <span className={chat.agentBadge}>{agentBadge(m.claude.agent)}</span> : null}
               {m.claude ? <span className={s.claudeTag}>on {m.mine ? 'your' : `${m.name}’s`} Mac</span> : null}
               {prefs.timestamps ? <span className={s.runTime}>{time(m.ts)}</span> : null}
             </div>
@@ -264,8 +266,8 @@ function TaskRow({ task, me }: { task: TaskView; me?: { name: string; peerId: st
   const agent = task.by === 'agent';
   const owner = sent ? (me?.peerId ?? 'me') : task.peerId;
   const ownerName = sent ? (me?.name ?? 'You') : task.peerName;
-  const label = agent ? (sent ? 'Your Claude' : `${task.peerName}’s Claude`) : sent ? 'You' : task.peerName;
-  const asked = sent ? `asked ${targetLabel(task)}` : `asked ${task.kind === 'ask' ? 'your Claude' : 'your Mac'}`;
+  const label = agent ? (sent ? 'Your agent' : `${task.peerName}’s agent`) : sent ? 'You' : task.peerName;
+  const asked = sent ? `asked ${targetLabel(task)}` : `asked ${task.kind === 'ask' ? 'your agent' : 'your Mac'}`;
   return (
     <div className={cx(s.row, s.rowClaude)} data-task-row={task.id}>
       <div className={s.side}>
@@ -387,7 +389,7 @@ function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
         End-to-end encrypted, kept on each member’s Mac
       </div>
       <div className={s.introHint}>
-        Drop files here to share them straight from your Mac. Claude answers only when you ask: type <b>@claude</b>, or click <b>Ask: your Claude</b> under the message box.
+        Drop files here to share them straight from your Mac. Your agent answers only when you ask: type <b>@claude</b>, or click <b>Ask: your agent</b> under the message box.
       </div>
       {group.admin && group.active ? (
         <div className={s.introActions}>

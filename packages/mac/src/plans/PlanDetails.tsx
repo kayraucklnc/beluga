@@ -264,7 +264,7 @@ function GateDetails({ plan, m }: { plan: Plan; m: MilestoneView }) {
       </section>
       {check ? (
         <section className={p.detailsSection}>
-          <h4>{check.verdict === 'pass' ? 'Claude’s check: passes' : 'Claude’s check: not yet'}</h4>
+          <h4>{check.verdict === 'pass' ? 'The agent’s check: passes' : 'The agent’s check: not yet'}</h4>
           <Markdown text={check.notes} />
         </section>
       ) : null}

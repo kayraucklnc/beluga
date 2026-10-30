@@ -189,14 +189,14 @@ function AskBox({ item }: { item: Sentinel }) {
     setText('');
   };
   return (
-    <section className={s.ask} aria-label="Ask Claude" data-testid="sentinel-ask">
+    <section className={s.ask} aria-label="Ask your agent" data-testid="sentinel-ask">
       <div className={s.askRow}>
         <ClaudeMark />
         <input
           className={s.askInput}
           value={text}
-          placeholder="Ask Claude about this sentinel: “make it weekly”, “why did it fail?”…"
-          aria-label="Ask Claude about this sentinel"
+          placeholder="Ask your agent about this sentinel: “make it weekly”, “why did it fail?”…"
+          aria-label="Ask your agent about this sentinel"
           spellCheck
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -206,7 +206,7 @@ function AskBox({ item }: { item: Sentinel }) {
             }
           }}
         />
-        <Tip label="The Sentinel chat opens beside this page; Claude changes it there" keys="↩">
+        <Tip label="The Sentinel chat opens beside this page; your agent changes it there" keys="↩">
           <Button size="small" icon="arrowRight" disabled={!text.trim()} onClick={send}>
             Ask
           </Button>
@@ -375,7 +375,7 @@ function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatc
       {claudeSteps ? (
         <Prop label="Model">
           <Select
-            label="Model for every Claude step"
+            label="Model for every agent step"
             size="small"
             value={model ?? 'mixed'}
             placeholder="Mixed"
@@ -385,7 +385,7 @@ function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatc
         </Prop>
       ) : null}
       <Prop label="Time limit">
-        <Select label="Time limit" size="small" value={String(item.limits.minutes)} options={limits.map((n) => ({ value: String(n), label: n < 60 ? `${n} minutes` : n === 60 ? '1 hour' : `${n / 60} hours`, description: 'Per run; Claude is stopped and the run fails as timed out' }))} onChange={(v) => save({ limits: { minutes: Number(v) } })} />
+        <Select label="Time limit" size="small" value={String(item.limits.minutes)} options={limits.map((n) => ({ value: String(n), label: n < 60 ? `${n} minutes` : n === 60 ? '1 hour' : `${n / 60} hours`, description: 'Per run; the agent is stopped and the run fails as timed out' }))} onChange={(v) => save({ limits: { minutes: Number(v) } })} />
       </Prop>
       <Prop label="Runs per day">
         <Select label="Runs per day" size="small" value={String(item.limits.perDay ?? 0)} options={perDay.map((n) => ({ value: String(n), label: perDayLabel(n) }))} onChange={(v) => save({ limits: { perDay: Number(v) } })} />

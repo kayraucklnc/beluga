@@ -1,4 +1,5 @@
 import type { AgentEventKind, AgentRef, FsEntry, PeerInfo } from '../protocol.js';
+import { agentName } from '../shared/agent-label.js';
 import { type AssistantChats, NO_ASSISTANT_CHATS, activeAssistantChannel, assistantChannel } from '../shared/assistant.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
@@ -921,7 +922,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
           type: 'chat',
           channel: action.channel ?? 'room',
           from: action.from,
-          name: peerName(state, action.from) + (action.byAgent ? "'s Claude" : ''),
+          name: peerName(state, action.from) + (action.byAgent ? `'s ${agentName(action.agent)}` : ''),
           text: clean(action.text),
           ts: action.ts,
           byAgent: action.byAgent,

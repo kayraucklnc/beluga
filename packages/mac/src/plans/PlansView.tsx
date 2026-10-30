@@ -48,7 +48,7 @@ export function PlansView() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [project]);
 
-  if (!state.enabled) return <Empty icon="flag" title="Plans need the Beluga app" detail="Open Beluga for Mac to plan big work with Claude." />;
+  if (!state.enabled) return <Empty icon="flag" title="Plans need the Beluga app" detail="Open Beluga for Mac to plan big work with your agent." />;
   if (!here) return <Empty icon="flag" title="No projects yet" detail="Plans belong to a project. Add one from the sidebar." />;
   return (
     <div className={p.list}>
@@ -82,7 +82,7 @@ export function PlansView() {
           icon="flag"
           mark={<ProjectIcon id={here.id} name={here.name} size={28} />}
           title={`No plans in ${here.name} yet`}
-          detail="Say what you want built. Claude reads the code and cuts it into milestones and tasks that run side by side, each with what proves it’s done. You talk it through; nothing reaches the board until you approve."
+          detail="Say what you want built. Your agent reads the code and cuts it into milestones and tasks that run side by side, each with what proves it’s done. You talk it through; nothing reaches the board until you approve."
           action={
             <EmptyActions>
               <Button variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })}>

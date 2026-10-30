@@ -20,6 +20,7 @@ const byLiveThenLatest = (a: TaskItem, b: TaskItem): number => Number(b.task.sta
 function itemsOf(s: CcSession): TaskItem[] {
   return (s.tasks ?? []).map((task) => {
     const agent = task.agentId ? s.agents.find((a) => a.id === task.agentId) : undefined;
+    // agent-wording: claude
     return { task, sessionId: s.id, who: agent ? agent.description || agent.name || 'An agent' : task.agentId ? 'An agent' : 'Claude' };
   });
 }

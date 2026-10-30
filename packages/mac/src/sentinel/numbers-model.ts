@@ -190,7 +190,7 @@ export interface StepChoice {
 /** Every step an output tile can show, by project then sentinel. */
 export function stepChoices(s: Pick<SentinelState, 'items'>, projectName: (id: string | undefined) => string): StepChoice[] {
   return s.items
-    .flatMap((i) => i.steps.filter((st) => OUTPUT_STEP_KINDS.has(st.kind)).map((st): StepChoice => ({ ref: { sentinelId: i.id, stepId: st.id }, label: st.name, kind: st.kind, sentinel: i.name, project: projectName(i.projectId), hint: st.kind === 'claude' ? 'What Claude wrote, as Markdown' : st.kind === 'http' ? 'The service’s answer, as a JSON tree or a table' : 'What the script printed' })))
+    .flatMap((i) => i.steps.filter((st) => OUTPUT_STEP_KINDS.has(st.kind)).map((st): StepChoice => ({ ref: { sentinelId: i.id, stepId: st.id }, label: st.name, kind: st.kind, sentinel: i.name, project: projectName(i.projectId), hint: st.kind === 'claude' ? 'What the agent wrote, as Markdown' : st.kind === 'http' ? 'The service’s answer, as a JSON tree or a table' : 'What the script printed' })))
     .sort((a, b) => a.project.localeCompare(b.project) || a.sentinel.localeCompare(b.sentinel));
 }
 

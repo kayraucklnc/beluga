@@ -16,7 +16,7 @@ import s from './usage.module.css';
 
 const SORTS: ReadonlyArray<{ value: SortKey; label: string; hint: string }> = [
   { value: 'size', label: 'Size', hint: 'Biggest on disk first' },
-  { value: 'tokens', label: 'Tokens', hint: 'Most Claude tokens first' },
+  { value: 'tokens', label: 'Tokens', hint: 'Most agent tokens first' },
   { value: 'recent', label: 'Recent', hint: 'Most recently active first' },
 ];
 
@@ -206,11 +206,11 @@ export function Breakdown({ state, rows, sort, onSort, measured, now }: { state:
         <h2 className={s.sectionTitle}>By project</h2>
         <Segmented label="Sort by" value={sort} options={SORTS} onChange={onSort} />
       </header>
-      <div role="table" aria-label="Disk and Claude usage by workspace" className={s.table}>
+      <div role="table" aria-label="Disk and agent usage by workspace" className={s.table}>
         <div role="row" className={s.columnsHead}>
           <span role="columnheader">Name</span>
           <span role="columnheader">Disk</span>
-          <span role="columnheader">Claude</span>
+          <span role="columnheader">Agent</span>
           <span role="columnheader" className={s.when}>
             Last active
           </span>

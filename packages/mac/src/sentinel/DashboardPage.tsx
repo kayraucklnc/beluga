@@ -84,7 +84,7 @@ function NoBoard({ onPick, children }: { onPick: (id: string) => void; children?
         <Icon name="plus" size={14} />
         <span>
           <strong>Put a number here</strong>
-          <span>Revenue, open pull requests, how fast your site answers, what Claude wrote this morning: it updates each time its sentinel runs.</span>
+          <span>Revenue, open pull requests, how fast your site answers, what your agent wrote this morning: it updates each time its sentinel runs.</span>
         </span>
       </button>
       {children}
@@ -253,7 +253,7 @@ function AskLine({ d }: { d: Dashboard }) {
         <div key={x.id} className={n.draft} data-testid="dashboard-draft" data-sentinel={x.id}>
           <ClaudeMark />
           <span className={n.draftText}>
-            Claude set up <strong>{x.name}</strong> to fetch it. It’s a draft: nothing runs until you turn it on.
+            Your agent set up <strong>{x.name}</strong> to fetch it. It’s a draft: nothing runs until you turn it on.
           </span>
           <Button size="small" variant="quiet" onClick={() => a.open(x.id)}>
             Review
@@ -430,7 +430,7 @@ function Grid({ d, state, tiles: only, projects = [] }: { d: Dashboard; state: S
       {drag || only ? null : (
         <button type="button" className={n.addCell} data-first={d.tiles.length ? undefined : ''} style={d.tiles.length && add ? ({ '--col': add.col + 1, '--row': add.row + 1 } as React.CSSProperties) : undefined} onClick={() => openSheet({ kind: 'add_tile', dashboardId: d.id })} aria-label="Add to the board">
           <Icon name="plus" size={14} />
-          <span>{d.tiles.length ? 'Add' : 'Add a number, a chart or what Claude wrote'}</span>
+          <span>{d.tiles.length ? 'Add' : 'Add a number, a chart or what your agent wrote'}</span>
         </button>
       )}
     </div>

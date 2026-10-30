@@ -329,7 +329,7 @@ function NextStep({ issue }: { issue: Issue }) {
           <Button variant="primary" size="small" icon="play" disabled={starting} onClick={() => void start()}>
             {starting ? 'Starting…' : 'Start'}
           </Button>
-          <span className={t.nextInfo}>A new worktree from the latest origin, with Claude working on {issue.key}{issue.brief.goal ? ' from this brief' : ''}</span>
+          <span className={t.nextInfo}>A new worktree from the latest origin, with your agent working on {issue.key}{issue.brief.goal ? ' from this brief' : ''}</span>
         </>
       )}
       <span className={t.grow} />

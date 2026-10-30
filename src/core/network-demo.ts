@@ -108,7 +108,7 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
       ata.sendGroup(api.id, 'Three endpoints to retire: /v1/session, /v1/token and /v1/me. And a todo to move auth to cookies.');
       await new Promise((r) => setTimeout(r, 400));
       bob.sendGroup(api.id, 'Yep, that’s the plan.');
-      mia.sendGroup(api.id, 'Can my Claude grab the deploy key to test against staging?');
+      mia.sendGroup(api.id, 'Can my agent grab the deploy key to test against staging?');
       me.mesh.sendGroup(api.id, 'Sure, just this once.');
       // mia's Claude asks for a secret here: only you can allow it, each time.
       try {

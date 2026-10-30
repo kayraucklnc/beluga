@@ -53,7 +53,7 @@ test('the toolbar puts what the workspace needs next up front, the rest one clic
   expect(await tools.count()).toBeLessThanOrEqual(2);
   await expect(toolbar(page).getByRole('button', { name: /^(Show|Hide) the terminal|^Everything you can do/ })).toHaveCount(0);
   await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
-  await expect(page.getByRole('menuitem', { name: /Ask Claude to Review…/ })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /Ask Your Agent to Review…/ })).toBeVisible();
   const archive = page.getByRole('menuitem', { name: /Archive…/ });
   await expect(archive).toContainText('⌃⌘A');
   await page.keyboard.press('Escape');

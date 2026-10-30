@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { agentLabel } from '../../shared/agent-label.js';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -830,7 +831,7 @@ export class FriendShares implements FriendSharing {
     const now = Date.now();
     return [
       ...history.map((h, i): LogItem => ({ id: `fk-${wsId}-${i}`, type: 'system', channel, text: `${clean(h.from)}: ${clean(h.text)}`, ts: h.ts, level: 'info', said: saidBy(state, rec.owner, h) })),
-      { id: `fk-${wsId}-from`, type: 'system', channel, text: `Forked from ${rec.ownerName}’s ${theirs}, on your branch ${branch}: its commits, ${came}.${meta.sessionId ? ' Your Claude remembers the conversation.' : ''} ${rec.ownerName}’s worktree goes on without this one.`, ts: now, level: 'info' },
+      { id: `fk-${wsId}-from`, type: 'system', channel, text: `Forked from ${rec.ownerName}’s ${theirs}, on your branch ${branch}: its commits, ${came}.${meta.sessionId ? ' Your agent remembers the conversation.' : ''} ${rec.ownerName}’s worktree goes on without this one.`, ts: now, level: 'info' },
       ...(full ? [] : [{ id: `fk-${wsId}-setup`, type: 'system' as const, channel, text: `Setup didn’t run and your .env files weren’t copied, because this came from ${rec.ownerName}. Look it over, then use Terminal → Run setup.`, ts: now, level: 'warn' as const }]),
     ];
   }
@@ -936,7 +937,7 @@ export class FriendShares implements FriendSharing {
     if (!rec || !ws) return;
     let item: HistoryItem | undefined;
     if (action.type === 'chat') item = { from: peerName(this.state, action.from), text: action.text.slice(0, HISTORY_TEXT), ts: action.ts, byAgent: action.byAgent };
-    if (action.type === 'agent_event' && action.event === 'done' && action.text.trim()) item = { from: `${peerName(this.state, action.owner)}'s Claude`, text: action.text.slice(0, HISTORY_TEXT), ts: action.ts, byAgent: true };
+    if (action.type === 'agent_event' && action.event === 'done' && action.text.trim()) item = { from: agentLabel(action.agent, peerName(this.state, action.owner), false), text: action.text.slice(0, HISTORY_TEXT), ts: action.ts, byAgent: true };
     if (!item) return;
     const history = [...(rec.history[ws] ?? []), item].slice(-HISTORY_KEPT);
     this.received = { ...this.received, [keyOf(rec.owner, rec.id)]: { ...rec, history: { ...rec.history, [ws]: history } } };

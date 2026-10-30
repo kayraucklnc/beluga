@@ -164,10 +164,10 @@ test('a column’s +: describe it, pick a priority, Create; the card lands there
   await sheet.getByRole('button', { name: 'Create Task' }).click();
   await expect(sheet).toBeHidden();
   // At once: under its first line, Claude writing; then Claude's title.
-  await expect(column.getByRole('button', { name: /please make the login page remember me/ })).toContainText('Claude is writing…');
+  await expect(column.getByRole('button', { name: /please make the login page remember me/ })).toContainText('The agent is writing…');
   const card = column.getByRole('button', { name: /Make the login page remember me$/ });
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card).not.toContainText('Claude is writing…');
+  await expect(card).not.toContainText('The agent is writing…');
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
 });
 

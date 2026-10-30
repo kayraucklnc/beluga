@@ -114,15 +114,15 @@ export function MenuBarSettings() {
         )}
       </Group>
       <Group title="The spout">
-        <Row label="When the whale spouts" detail={prefs.reduceMotion ? 'Reduce Motion is on (Appearance), so the whale keeps still.' : look.spout === 'working' ? 'Every few seconds while a Claude of yours is at work.' : look.spout === 'done' ? 'Once, each time a Claude of yours finishes.' : 'The whale keeps still.'}>
+        <Row label="When the whale spouts" detail={prefs.reduceMotion ? 'Reduce Motion is on (Appearance), so the whale keeps still.' : look.spout === 'working' ? 'Every few seconds while an agent of yours is at work.' : look.spout === 'done' ? 'Once, each time an agent of yours finishes.' : 'The whale keeps still.'}>
           <Segmented
             label="When the whale spouts"
             radio
             value={look.spout}
             onChange={(spout) => set({ spout })}
             options={[
-              { value: 'done', label: 'When Claude Finishes' },
-              { value: 'working', label: 'While Claude Works' },
+              { value: 'done', label: 'When an Agent Finishes' },
+              { value: 'working', label: 'While an Agent Works' },
               { value: 'off', label: 'Never' },
             ]}
           />

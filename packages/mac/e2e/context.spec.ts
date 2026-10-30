@@ -48,7 +48,7 @@ test('the meter shows how full the conversation is, with the details on hover', 
 async function setAutoCompact(page: Page, on: boolean): Promise<void> {
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog');
-  await settings.getByRole('button', { name: 'Claude' }).click();
+  await settings.getByRole('button', { name: 'Agent' }).click();
   const auto = settings.getByRole('switch', { name: 'Auto-compact' });
   if ((await auto.getAttribute('aria-checked')) !== String(on)) await auto.click();
   await expect(auto).toHaveAttribute('aria-checked', String(on));
@@ -86,19 +86,19 @@ test('Compact now leaves a divider that opens to show what Claude kept', async (
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(divider.getByText('What Claude kept')).toBeVisible();
+  await expect(divider.getByText('What your agent kept')).toBeVisible();
   await expect(divider.getByText('Open tasks')).toBeVisible();
   await expect(divider.getByText(/requireUser\(\)/).first()).toBeVisible();
   // Each divider opens on its own, and closes again.
   if (already) await expect(dividers(page).first().getByRole('button')).toHaveAttribute('aria-expanded', 'false');
   await toggle.click();
-  await expect(divider.getByText('What Claude kept')).toHaveCount(0);
+  await expect(divider.getByText('What your agent kept')).toHaveCount(0);
 });
 
 test('Settings › Claude has auto-compact with its threshold', async ({ page }) => {
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog');
-  await settings.getByRole('button', { name: 'Claude' }).click();
+  await settings.getByRole('button', { name: 'Agent' }).click();
   const auto = settings.getByRole('switch', { name: 'Auto-compact' });
   // Off by default: Claude 5 models have a 1M context window.
   await expect(auto).toHaveAttribute('aria-checked', 'false');
