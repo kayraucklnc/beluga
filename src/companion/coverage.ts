@@ -362,7 +362,7 @@ export const PHONE: Record<Method, Side> = {
   'plans.mergePr': 'mac',
   'plans.mergeLocal': 'mac',
   'plans.startTask': 'mac',
-  'plans.resumeTask': 'mac',
+  'plans.resumeTask': 'phone',
   'plans.remove': 'mac',
   'plans.setStyle': 'mac',
 

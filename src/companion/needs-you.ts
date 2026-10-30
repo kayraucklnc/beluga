@@ -175,11 +175,47 @@ function gatewayItems(state: DomainState, t: GwTask): NeedsYou[] {
   return [];
 }
 
-/** What a plan waits for from you: approving its draft, or passing a milestone at its gate. */
+/**
+ * What a running plan gave up on by itself, so it's yours: a task Beluga woke that stopped again
+ * (Resume), or a milestone it couldn't move on after every rescue step (saying what it tried).
+ */
+function stuckItems(plan: Plan, progress: PlanProgress, at: Pick<NeedsYou, 'topic' | 'from'>): NeedsYou[] {
+  if (plan.status !== 'active') return [];
+  const titles = new Map((progress.body?.milestones ?? []).flatMap((m) => [[m.id, m.title] as const, ...m.tasks.map((t) => [t.id, t.title] as const)]));
+  const stalled = Object.entries(plan.watch ?? {})
+    .filter(([, w]) => w.needsYou)
+    .map(([taskId, w]): NeedsYou => ({
+      id: `plan:${plan.id}:stalled:${taskId}`,
+      kind: 'decision',
+      title: clip(`“${titles.get(taskId) ?? 'A task'}” stopped twice: resume it?`, 500),
+      detail: clip(w.reason, 64_000),
+      ...at,
+      askedAt: w.at,
+      actions: [{ label: 'Resume', tone: 'main', method: 'plans.resumeTask', args: [plan.id, taskId] }],
+    }));
+  const rescued = Object.entries(plan.rescue ?? {})
+    .filter(([, r]) => r.yours)
+    .map(([unitId, r]): NeedsYou => ({
+      id: `plan:${plan.id}:rescue:${unitId}`,
+      kind: 'stuck',
+      title: clip(`Stuck${titles.has(unitId) ? ` on “${titles.get(unitId)}”` : ''}`, 500),
+      detail: clip(r.tried.length ? `Beluga tried: ${r.tried.join('; ')}` : 'Beluga couldn’t move it on by itself', 64_000),
+      ...at,
+      askedAt: r.at,
+      actions: [],
+    }));
+  return [...stalled, ...rescued];
+}
+
+/** What a plan waits for from you: approving its draft, passing a milestone at its gate, or what it couldn't move on itself. */
 function planItems(plan: Plan, progress: PlanProgress): NeedsYou[] {
   const title = clip(planTitle(plan), 200);
   const topic = planTopic(plan.id);
   const at = { ...(topic ? { topic } : {}), from: 'your plan' };
+  return [...gateItems(plan, progress, title, at), ...stuckItems(plan, progress, at)];
+}
+
+function gateItems(plan: Plan, progress: PlanProgress, title: string, at: Pick<NeedsYou, 'topic' | 'from'>): NeedsYou[] {
   const next = progress.next;
   // Claude is still writing the first plan: nothing to approve yet (the Mac's Approve Plan waits too).
   if (next.kind === 'approve' && !progress.body?.milestones.length) return [];

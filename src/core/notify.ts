@@ -206,6 +206,18 @@ function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
         out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${m.milestone.title}” is ready for you`, body, ...at, need: `plan:${plan.id}:pass:${id}`, key: `plan:${plan.id}:${id}:yours:${run.checkAsked ?? 0}:${run.check?.at ?? 0}` });
       }
     }
+    // Beluga woke a task and it stopped again, or it climbed a milestone's whole rescue ladder: only
+    // then is it yours, and you hear why (the plan goes on by itself until then).
+    const titleOf = new Map(after.milestones.flatMap((m) => [[m.milestone.id, m.milestone.title] as const, ...m.tasks.map((t) => [t.task.id, t.task.title] as const)]));
+    for (const [taskId, w] of Object.entries(plan.watch ?? {})) {
+      if (!w.needsYou || old.watch?.[taskId]?.needsYou) continue;
+      out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${titleOf.get(taskId) ?? 'A task'}” stopped twice`, body: `${w.reason}. Resume it, or open its chat`, ...at, need: `plan:${plan.id}:stalled:${taskId}`, key: `plan:${plan.id}:${taskId}:stalled:${w.at}` });
+    }
+    for (const [unitId, r] of Object.entries(plan.rescue ?? {})) {
+      if (!r.yours || old.rescue?.[unitId]?.yours) continue;
+      const what = titleOf.get(unitId);
+      out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: stuck${what ? ` on “${what}”` : ''}`, body: r.tried.length ? `Beluga tried: ${r.tried.join('; ')}` : 'Beluga couldn’t move it on by itself', ...at, need: `plan:${plan.id}:rescue:${unitId}`, key: `plan:${plan.id}:${unitId}:rescue:${r.at}` });
+    }
   }
   return out;
 }

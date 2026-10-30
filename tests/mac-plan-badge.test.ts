@@ -74,3 +74,14 @@ describe('opening the plan clears it', () => {
     expect(attentionOf({ ...initialScreen, view: { kind: 'plan', id: 'nope' } }, base()).shown).toEqual([]);
   });
 });
+
+describe('a plan that gave up on something by itself', () => {
+  it('needs you, saying which task and why; nothing stuck, nothing shows', () => {
+    const stuck: Plan = { ...plan, watch: { b: { at: 3, reason: 'it ended its turn without handing off', line: 'KLD-12 stopped', needsYou: true } } };
+    const s = { ...base(), plans: { enabled: true, plans: [stuck], style: '' } };
+    expect(planSignal(s, stuck)).toMatchObject({ level: 'needs', need: 'stuck', tip: 'KLD-12 stopped twice: it ended its turn without handing off', at: { ws: 't2', task: 'b' } });
+    const rescued: Plan = { ...plan, rescue: { m: { sig: 's', tries: 6, at: 1, tried: [], yours: true } } };
+    expect(planSignal({ ...base(), plans: { enabled: true, plans: [rescued], style: '' } }, rescued)).toMatchObject({ level: 'needs', need: 'stuck', tip: 'Stuck on “M”' });
+    expect(planSignal(base(), plan).level).toBe('idle');
+  });
+});
