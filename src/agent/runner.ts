@@ -44,6 +44,12 @@ const USAGE_TIMEOUT_MS = 20_000;
 /** How long a run may stay open after answering while its background agents work. */
 const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
 /**
+ * How long a run stays open after answering for a command or watch the main conversation left
+ * running (no agents): long enough for the full tests or a build to end and wake Claude, short
+ * enough that a server it left up doesn't hold the run for hours.
+ */
+const SHELL_LIMIT_MS = 45 * 60_000;
+/**
  * Agents all done and Claude between turns for this long: end the run. Claude normally reports
  * on finished agents (and the run ends after that answer); this covers it not doing so. Not
  * instant, because an agent can resume right after its shell finishes.
@@ -380,7 +386,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const settle = (): void => {
         if (interrupting === undefined && !background.busy && !turns.waiting) return finish();
         if (limit) return;
-        limit = setTimeout(finish, BACKGROUND_LIMIT_MS);
+        limit = setTimeout(finish, background.agents || interrupting !== undefined || turns.waiting ? BACKGROUND_LIMIT_MS : SHELL_LIMIT_MS);
         limit.unref();
         input.onFollowUps?.(send);
       };

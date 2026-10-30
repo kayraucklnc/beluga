@@ -80,16 +80,24 @@ describe('PromptQueue', () => {
 });
 
 describe('BackgroundAgents', () => {
-  it('follows the level signal, ignoring shells and ambient watchers', () => {
+  it('follows the level signal, ignoring ambient watchers', () => {
     const bg = new BackgroundAgents();
-    bg.observe({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'sh', task_type: 'local_bash' }, { task_id: 'w', task_type: 'local_agent', ambient: true }] });
+    bg.observe({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'w', task_type: 'local_agent', ambient: true }] });
     expect(bg.busy).toBe(false);
     bg.observe(tasks('a'));
-    expect(bg.busy).toBe(true);
+    expect(bg).toMatchObject({ busy: true, agents: true });
     bg.observe(tasks());
     expect(bg.busy).toBe(false);
     bg.observe({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'sh2', task_type: 'local_bash', parent_task_id: 'a' }] });
-    expect(bg.busy).toBe(true); // an agent's own shell: the agent will come back for it
+    expect(bg).toMatchObject({ busy: true, agents: true }); // an agent's own shell: the agent will come back for it
+  });
+
+  it('keeps a run open for a command the main conversation left running (its end wakes Claude), as a shell', () => {
+    const bg = new BackgroundAgents();
+    bg.observe({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'e2e', task_type: 'local_bash' }] });
+    expect(bg).toMatchObject({ busy: true, agents: false });
+    bg.observe({ type: 'system', subtype: 'task_notification', task_id: 'e2e', status: 'completed' });
+    expect(bg.busy).toBe(false);
   });
 
   it('falls back to start/finish edges', () => {

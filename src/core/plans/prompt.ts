@@ -82,6 +82,7 @@ const E2E_LOCK = 'Run the Mac e2e with `npm run e2e` in packages/mac: one e2e ru
 /** What a task runs, by the plan's test timing. */
 export function taskTestsNote(plan: Pick<Plan, 'testsAt'>): string {
   return [
+    WAIT_IN_TURN,
     'Tests: write the tests this task needs. Run only typecheck and the unit-test files you added or changed (for example',
     '`npx vitest run tests/that.test.ts`), not the e2e or the full suites: ' +
       (plan.testsAt === 'end' ? 'this plan runs those once, in its final step.' : 'they run once per milestone, at its check, on the combined work.'),

@@ -133,18 +133,48 @@ export function milestoneAnchors(box: Box, gate?: Box): { readonly in: Point; re
 }
 
 /**
- * Milestones in their rows (milestoneRows): each row below the last, its milestones side by side and
- * top-aligned, every row centred on the widest. A row whose milestones all wait on ones above sits in
- * the order of those (so lines cross as little as they can).
+ * Lefts for boxes this wide, in this order, each as near as it can be to where it wants to sit
+ * (`want`) without overlapping the one before (PLAN_GAPS.side apart): boxes that would collide
+ * share the shift between them, so a group wanting the same spot centres on it.
+ */
+function spread(widths: readonly number[], want: readonly number[]): number[] {
+  const offs: number[] = [];
+  let o = 0;
+  for (const w of widths) {
+    offs.push(o);
+    o += w + PLAN_GAPS.side;
+  }
+  // Each box's wish less its place in the row: those must not go down, so pool the ones that would.
+  const blocks: { n: number; sum: number }[] = [];
+  for (let i = 0; i < want.length; i++) {
+    blocks.push({ n: 1, sum: want[i]! - offs[i]! });
+    while (blocks.length > 1 && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.n > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.n) {
+      const last = blocks.pop()!;
+      const prev = blocks[blocks.length - 1]!;
+      prev.n += last.n;
+      prev.sum += last.sum;
+    }
+  }
+  return blocks.flatMap((b) => Array.from({ length: b.n }, () => b.sum / b.n)).map((q, i) => q + offs[i]!);
+}
+
+/**
+ * Milestones in their rows (milestoneRows), like a tree: each under the middle of the milestones it
+ * waits on (else where a row centred on the widest puts it), side by side with the rest of its row,
+ * and only as low as it has to be: just below what it waits on and what sits above it. So a finished
+ * milestone folding to one row pulls up what hangs off it, and a tall one beside it pushes down only
+ * what's under it. A row whose milestones all wait on ones above sits in the order of those (so lines
+ * cross as little as they can).
  */
 export function placeMilestones(rows: ReadonlyArray<readonly string[]>, sizes: ReadonlyMap<string, Size>, parents: ReadonlyMap<string, readonly string[]> = new Map()): Map<string, Box> {
-  const widthOf = (row: readonly string[]): number => row.reduce((w, id) => w + (sizes.get(id)?.width ?? 0), 0) + Math.max(0, row.length - 1) * PLAN_GAPS.side;
+  const sizeOf = (id: string): Size => sizes.get(id) ?? { width: 0, height: 0 };
+  const widthOf = (row: readonly string[]): number => row.reduce((w, id) => w + sizeOf(id).width, 0) + Math.max(0, row.length - 1) * PLAN_GAPS.side;
   const widest = Math.max(0, ...rows.map(widthOf));
   const out = new Map<string, Box>();
-  let y = PLAN_GAPS.pad;
   for (const raw of rows) {
+    const above = (id: string): Box[] => (parents.get(id) ?? []).map((p) => out.get(p)).filter((b): b is Box => !!b);
     const centre = (id: string): number | undefined => {
-      const at = (parents.get(id) ?? []).map((p) => out.get(p)).filter((b): b is Box => !!b);
+      const at = above(id);
       return at.length ? at.reduce((s, b) => s + b.x + b.width / 2, 0) / at.length : undefined;
     };
     const row = raw.every((id) => centre(id) !== undefined)
@@ -154,19 +184,31 @@ export function placeMilestones(rows: ReadonlyArray<readonly string[]>, sizes: R
           .map((x) => x.id)
       : raw;
     let x = PLAN_GAPS.pad + (widest - widthOf(row)) / 2;
-    let tall = 0;
-    for (const id of row) {
-      const s = sizes.get(id) ?? { width: 0, height: 0 };
-      out.set(id, { x: Math.round(x), y, width: s.width, height: s.height });
-      x += s.width + PLAN_GAPS.side;
-      tall = Math.max(tall, s.height);
-    }
-    y += tall + PLAN_GAPS.row;
+    const want = row.map((id) => {
+      const w = sizeOf(id).width;
+      const c = centre(id);
+      const at = c === undefined ? x : c - w / 2;
+      x += w + PLAN_GAPS.side;
+      return at;
+    });
+    const lefts = spread(row.map((id) => sizeOf(id).width), want);
+    const placed = [...out.values()];
+    row.forEach((id, i) => {
+      const s = sizeOf(id);
+      const left = Math.round(lefts[i]!);
+      const over = placed.filter((b) => b.x < left + s.width + PLAN_GAPS.side / 2 && b.x + b.width > left - PLAN_GAPS.side / 2);
+      const y = Math.max(PLAN_GAPS.pad, ...[...over, ...above(id)].map((b) => b.y + b.height + PLAN_GAPS.row));
+      out.set(id, { x: left, y, width: s.width, height: s.height });
+    });
   }
+  // Pulled under their parents, rows can reach past the left edge: the plan starts at the pad again.
+  const shift = PLAN_GAPS.pad - Math.min(PLAN_GAPS.pad, ...[...out.values()].map((b) => b.x));
+  if (shift) for (const [id, b] of out) out.set(id, { ...b, x: b.x + shift });
   return out;
 }
 
 const crosses = (b: Box, x: number, y0: number, y1: number, margin: number): boolean => x > b.x - margin && x < b.x + b.width + margin && Math.max(y0, y1) > b.y && Math.min(y0, y1) < b.y + b.height;
+const crossesAcross = (b: Box, y: number, x0: number, x1: number): boolean => y > b.y && y < b.y + b.height && Math.max(x0, x1) > b.x && Math.min(x0, x1) < b.x + b.width;
 
 /** Corners in a line that don't turn (or that repeat a point) dropped. */
 function tidy(points: readonly Point[]): Point[] {
@@ -191,7 +233,8 @@ function tidy(points: readonly Point[]): Point[] {
 export function milestoneRoute(from: Point, to: Point, exitY: number, enterY: number, obstacles: readonly Box[] = []): Point[] {
   if (enterY - exitY < 1) return tidy([from, { x: from.x, y: enterY }, { x: to.x, y: enterY }, to]);
   const margin = PLAN_GAPS.side / 4;
-  const clear = (x: number): boolean => !obstacles.some((b) => crosses(b, x, exitY, enterY, margin));
+  // Its lane down clear of the milestones in between, and its runs across (below its own and above the next) too.
+  const clear = (x: number): boolean => !obstacles.some((b) => crosses(b, x, exitY, enterY, margin) || crossesAcross(b, exitY, from.x, x) || crossesAcross(b, enterY, x, to.x));
   const mid = (from.x + to.x) / 2;
   const candidates = [to.x, from.x, ...obstacles.flatMap((b) => [b.x - PLAN_GAPS.side / 2, b.x + b.width + PLAN_GAPS.side / 2])].sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
   const lane = candidates.find(clear) ?? Math.min(from.x, to.x, ...obstacles.map((b) => b.x)) - PLAN_GAPS.side / 2;
