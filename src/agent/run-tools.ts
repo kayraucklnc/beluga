@@ -20,7 +20,7 @@ export function runToolSuites(input: AgentRunInput, bridge: RoomBridge, shelf: V
   // A friend's task brings the tools its owner allowed (the screen, device info) as a server of their own.
   const task = input.taskTools ? createTaskTools(input.taskTools) : undefined;
   return {
-    beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined, askOnly ? undefined : input.setup),
+    beluga: createRoomTools(bridge, askOnly ? input.continueInWorktree : undefined, askOnly ? undefined : input.setup, input.dialogue),
     ...(task ? { beluga_task: task } : {}),
     // Your own runs get the task board (core/board): the task they're doing, and tools to keep it true.
     ...(input.board ? { beluga_board: createBoardTools(input.board) } : {}),
