@@ -1,3 +1,4 @@
+import { agentPicker } from '../shared/agent-picker.js';
 import type { AppState } from '../core/store.js';
 import type { Settings } from '../shared/settings-schema.js';
 import { TRUST_INFO, defaultTrust, trustOf } from '../core/trust.js';
@@ -208,14 +209,27 @@ function envHint(state: AppState): string {
 }
 
 /** Pick the model for one conversation (or the default for new ones). */
-export function modelMenu(state: AppState, current: string | undefined, forWhat: string): MenuSpec {
+/**
+ * /model (BLG-446): the agent picker as a menu. Your default agent's models, then each other
+ * runtime with its own, or greyed with what's missing. A model of the same runtime switches models
+ * (`model:<value>`); one of another runtime switches agent (`agent:<runtime>:<value>`).
+ */
+export function modelMenu(state: AppState, channel: string | undefined, forWhat: string): MenuSpec {
+  const picker = agentPicker(state, channel ?? 'draft');
+  const options = picker.groups.flatMap((g) => {
+    const head = picker.groups.length > 1 ? [{ id: `runtime:${g.runtime}`, label: `${g.label}${g.isDefault ? ' (your default)' : ''}`, ...(g.why ? { hint: g.why } : {}) }] : [];
+    const rows = g.models.map((m) => ({
+      id: g.current || !picker.conversation ? `model:${m.value}` : `agent:${g.runtime}:${m.value}`,
+      label: `  ${m.on ? '◉' : '○'} ${m.label}`,
+      hint: m.description,
+    }));
+    // New conversations take your default agent's models; another runtime is picked per worktree.
+    return !picker.conversation && !g.isDefault ? head.map((h) => ({ ...h, hint: g.why ?? 'Pick it in a worktree' })) : [...head, ...rows];
+  });
   return {
-    title: `Model for ${forWhat}`,
-    intro: ['Each conversation can use its own model. It applies from the next message.', ''],
-    options: [
-      ...state.models.map((m) => ({ id: `model:${m.value}`, label: `${(current ?? '') === m.value ? '◉' : '○'} ${m.label}`, hint: m.description })),
-      { id: 'close', label: 'Cancel', hint: 'Esc' },
-    ],
+    title: `Agent and model for ${forWhat}`,
+    intro: ['Each conversation can use its own agent and model. A model applies from the next message; another agent starts its own conversation.', ''],
+    options: [...options, { id: 'close', label: 'Cancel', hint: 'Esc' }],
   };
 }
 

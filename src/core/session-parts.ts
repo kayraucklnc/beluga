@@ -1,3 +1,4 @@
+import { runtimeChoices } from '../shared/agent-runtimes.js';
 import type { SessionOptions, Session } from './session.js';
 import type { ModelChoice } from './work-store.js';
 import { WorkspaceController } from './workspace-controller.js';
@@ -96,6 +97,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         confirm: (title, detail) => session.ask('request', title, detail),
         open: opts.open,
         listModels: async () => (await session.backend?.listModels?.()) as readonly ModelChoice[] | undefined,
+        // Your agent's runtime runs here; another, when this Beluga registers it (the demo's agent is Claude).
+        listRuntimes: () => runtimeChoices((id) => (id === (opts.runtime?.agent ?? 'claude') ? (session.backend ? {} : undefined) : opts.runtime?.runtimes(id) ? {} : undefined)),
         findPr: opts.findPr,
         hasGh: opts.hasGh,
         envFor: (where) => env.envFor(where),

@@ -24,8 +24,9 @@ describe('what the phone may call', () => {
 
   it('keeps code, git, terminals, settings, files by path and hosting on the Mac', () => {
     const macOnly = /^(git|terminals|env|workbench|diff|shell|files|projects|local|stripe|invites|sharing|remote|view|daemon|people)\./;
-    // Answering someone at the door is the one exception: it's an answer, like an approval.
-    expect(METHODS.filter((m) => macOnly.test(m) && PHONE[m] === 'phone')).toEqual(['invites.letIn', 'invites.decline']);
+    // Answering someone at the door is an exception: it's an answer, like an approval. So is picking a
+    // conversation's agent (BLG-446): the composer's picker, the phone's too.
+    expect(METHODS.filter((m) => macOnly.test(m) && PHONE[m] === 'phone').sort()).toEqual(['invites.decline', 'invites.letIn', 'workbench.setAgent', 'workbench.setModel']);
     for (const m of ['session.setPrefs', 'session.newInviteLink', 'session.setRoomOpen', 'workspaces.merge', 'workspaces.commit', 'agent.step', 'claudeCode.step', 'plans.edit', 'board.update', 'companion.pair.start', 'companion.devices.remove'] as const) expect(PHONE[m]).toBe('mac');
     for (const m of ['companion.ask', 'companion.post', 'companion.askPerson', 'companion.signOut', 'network.groups.approve', 'session.submit', 'host.answerApproval', 'host.stopRun', 'questions.answer', 'gateway.decide', 'gateway.confirm', 'plans.approve', 'plans.pass', 'network.dm.send', 'network.post', 'workspaces.startChat', 'companion.older', 'workspaces.startWorktree', 'plans.create'] as const) expect(PHONE[m]).toBe('phone');
     // BLG-42: a worktree's files (read-only, through the file gate) and terminals (shared with the Mac) are the phone's own methods; the Mac's own stay the Mac's.

@@ -24,6 +24,7 @@ import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
 import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import type { RuntimeChoice } from '../shared/agent-runtimes.js';
 import { type GitFixId, type GitSetup, type GitTrouble, explainGitTrouble, httpsRemoteOf, troubleLine } from '../shared/git-trouble.js';
 
 export interface WorkbenchDeps {
@@ -44,6 +45,8 @@ export interface WorkbenchDeps {
   readonly open?: (target: string) => void;
   /** Models your Claude Code offers (asked once). */
   readonly listModels?: () => Promise<readonly ModelChoice[] | undefined>;
+  /** The agent picker's runtimes: which run on this Mac, and why the others don't (BLG-446). */
+  readonly listRuntimes?: () => readonly RuntimeChoice[];
   /** Look for a pull request (injected in tests). */
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   /** A repository's recent PRs by branch, in one call (injected in tests; without it, with an injected findPr, PRs are looked up one by one). */
@@ -255,6 +258,8 @@ export class Workbench {
       this.deps.store.dispatch({ type: 'gh', ok });
       if (ok) void this.refreshPrs();
     });
+    const runtimes = this.deps.listRuntimes?.();
+    if (runtimes) this.deps.store.dispatch({ type: 'runtimes', runtimes });
     void this.deps.listModels?.().then((models) => models && this.deps.store.dispatch({ type: 'models', models }), () => undefined);
     setTimeout(() => void this.measureDisk(), 3000).unref();
     this.diskTimer = setInterval(() => void this.measureDisk(), DISK_EVERY_MS);

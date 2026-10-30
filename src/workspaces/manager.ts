@@ -1018,7 +1018,7 @@ export class WorkspaceManager {
    */
   setAgent(id: string, agent: AgentRef | undefined): void {
     this.require(id);
-    this.patchRecord(id, agent ? { model: undefined, ...agentFields(agent) } : { agent: undefined });
+    this.patchRecord(id, { agent: undefined, model: undefined, ...agentFields(agent) });
   }
 
   /**

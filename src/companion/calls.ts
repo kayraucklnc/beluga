@@ -38,6 +38,9 @@ export const PhoneCalls = {
   'host.steerNow': entry('host.steerNow', done),
   // 1.28 (BLG-387): edit a message you sent → the conversation it went on in (a fork's channel).
   'workspaces.editPrompt': entry('workspaces.editPrompt', z.string().optional()),
+  // 1.31 (BLG-446): the agent picker: a model of this conversation's runtime, or another runtime's agent.
+  'workbench.setModel': entry('workbench.setModel', done),
+  'workbench.setAgent': entry('workbench.setAgent', z.boolean().optional()),
   'host.stopRun': entry('host.stopRun', z.object({ stopped: z.boolean(), returned: z.array(z.string()) }).partial().passthrough().optional()),
   'host.cancelQueued': entry('host.cancelQueued', done),
   'inbox.read': entry('inbox.read', done),

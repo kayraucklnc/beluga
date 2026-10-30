@@ -1,3 +1,4 @@
+import { agentPicker } from '../shared/agent-picker.js';
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
@@ -29,6 +30,7 @@ import {
   type ChatsView,
   type ChatView,
   type ConvSummary,
+  type AgentPickerView,
   type ConvView,
   type HomeView,
   type LiveView,
@@ -666,6 +668,29 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...mergeOf(state, ctx, channel),
     ...(plan && planT ? { plan: planBand(state, plan, planT) } : {}),
     ...waitingOf(state, channel),
+    ...pickerOf(state, channel, conv?.mine ?? false),
+  };
+}
+
+/** Your own worktree or chat: its agent picker, as the Mac's composer shows it (efforts stay the Mac's). */
+function pickerOf(state: DomainState, channel: string, mine: boolean): { agent?: AgentPickerView } {
+  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  if (!mine || !id || !state.projects.some((p) => p.workspaces.some((w) => w.id === id))) return {};
+  const p = agentPicker(state, channel);
+  return {
+    agent: {
+      runtime: clip(p.runtime, 32),
+      label: clip(p.label, 120),
+      groups: p.groups.slice(0, 8).map((g) => ({
+        runtime: clip(g.runtime, 32),
+        label: clip(g.label, 64),
+        available: g.available,
+        ...(g.why ? { why: clip(g.why, 200) } : {}),
+        isDefault: g.isDefault,
+        current: g.current,
+        models: g.models.slice(0, 30).map((m) => ({ value: clip(m.value, 80), label: clip(m.label, 80), description: clip(m.description, 200), on: m.on })),
+      })),
+    },
   };
 }
 

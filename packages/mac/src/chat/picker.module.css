@@ -115,6 +115,36 @@
   color: var(--text-3);
   font-size: 0.84rem;
 }
+.others {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+.others:hover {
+  background: var(--bg-hover);
+}
+.group {
+  margin: 2px 0 4px 8px;
+}
+.groupName {
+  padding: 4px 8px 2px;
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+.groupOff .groupName {
+  color: var(--text-3);
+}
+.why {
+  padding: 2px 8px 8px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
 .meterRow {
   display: flex;
   align-items: flex-end;
