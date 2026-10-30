@@ -324,7 +324,7 @@ describe('the views of a known Mac', () => {
 
   it('home: you, your allowance, what needs you with its buttons, what runs, outputs', () => {
     const home = HomeView.parse(homeView(state, ctx));
-    expect(home.usage).toEqual([{ provider: 'Claude Code', plan: 'max', windows: [{ label: '5 hours', pct: 12, resetsAt: T0 + 3_600_000 }, { label: 'Week', pct: 38 }], updatedAt: T0 }]);
+    expect(home.usage).toEqual([{ provider: 'Claude Code', plan: 'max', windows: [{ label: '5 hours', pct: 12, resetsAt: T0 + 3_600_000 }, { label: 'Week', pct: 38 }], updatedAt: T0, runtime: 'claude', isDefault: true }]);
     expect(home.needsYou.map((n) => n.id)).toEqual(['approval:ap1', 'confirm:t_confirm000001', 'request:t_request00001', 'knock:' + ZOE, 'join:' + GROUP + ':' + ZOE, 'plan:pl_auth:approve:3', 'sentinel:run_f1', 'question:q1', 'question:q2']);
     const knock = home.needsYou.find((n) => n.id.startsWith('knock:'))!;
     expect(knock.actions.map((a) => [a.method, a.args])).toEqual([

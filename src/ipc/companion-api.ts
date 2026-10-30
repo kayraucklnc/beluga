@@ -91,6 +91,8 @@ export const COMPANION_API = {
   'companion.signOut': { args: z.tuple([]) },
   // Keep the Mac awake for the phone (Settings › Phone's own switch, from the phone): off, on power, always (BLG-127).
   'companion.keepAwake': { args: z.tuple([z.enum(KEEP_AWAKE)]) },
+  // Make one of your providers the default agent, from the phone's usage cards, by its runtime (BLG-459).
+  'companion.defaultAgent': { args: z.tuple([z.string().regex(/^[a-z][\w-]{0,31}$/)]) },
   // Open on your Mac: the Mac app's window comes to the front showing what the phone has open (a
   // topic, or a needs-you item without one) → { opened, why? } (why not: the Mac app isn't open).
   'companion.openOnMac': {

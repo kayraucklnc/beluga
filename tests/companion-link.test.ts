@@ -38,7 +38,7 @@ function mac(callLog: Array<{ client: string; method: string; args: readonly unk
   const identity = generateIdentity();
   const store = new Store(initialState('test room'));
   store.dispatch({ type: 'identity', selfId: identity.peerId, isHost: true });
-  store.dispatch({ type: 'welcome', self: { peerId: identity.peerId, name: 'kayra', shares: [], agent: true, usage: { plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 }, updatedAt: 1 } } });
+  store.dispatch({ type: 'welcome', self: { peerId: identity.peerId, name: 'kayra', shares: [], agent: true, usage: { plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 }, updatedAt: 1 }, usages: [{ agent: { runtime: 'claude', label: 'Claude' }, plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 }, updatedAt: 1 }, { agent: { runtime: 'codex', model: 'gpt-5', label: 'Codex' }, windows: [{ label: 'Weekly', pct: 24 }], updatedAt: 1 }] } });
   const devices = new DeviceBook(path.join(dir, 'devices.json'));
   const host = new CompanionHost({
     identity,
@@ -72,7 +72,7 @@ function mac(callLog: Array<{ client: string; method: string; args: readonly unk
     coalesceMs: 50,
     ...(awake ? { awake } : {}),
   });
-  const session = { setPrefs: (prefs: object) => store.dispatch({ type: 'prefs', prefs }) };
+  const session = { setPrefs: (prefs: object) => store.dispatch({ type: 'prefs', prefs }), store, selfId: identity.peerId };
   attachCompanion(session, host);
   cleanup.push(async () => {
     await host.stop();
@@ -222,6 +222,13 @@ describe('pairing a phone and its link', () => {
     await waitFor(() => started.length > 0, 5_000);
     expect(started[0]![0]).toBe('-s');
     expect(store.getState().prefs.keepAwake).toBe('power');
+
+    // Make Codex the default agent from the phone's usage cards: it reaches the Mac's settings (BLG-459).
+    await client.call('companion.defaultAgent', ['codex']);
+    expect(store.getState().prefs.defaultAgent).toEqual({ runtime: 'codex', model: 'gpt-5', label: 'Codex' });
+    await client.call('companion.defaultAgent', ['claude']);
+    expect(store.getState().prefs.defaultAgent).toBeUndefined();
+    await expect(client.call('companion.defaultAgent', ['local'])).rejects.toThrow(/No local agent/);
   }, 60_000);
 
   it('takes photos and files from the phone, asks in a new chat, asks a friend, and signs out only itself', async () => {
