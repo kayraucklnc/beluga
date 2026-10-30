@@ -1,3 +1,4 @@
+import { dialogueHeader } from '../core/dialogues/view.js';
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
@@ -421,6 +422,20 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
   }
   if (item.type === 'system') {
     // Earlier lines of a shared workspace's conversation ("bob: …") read as that person's turn.
+    // A dialogue's header (BLG-466): the card the Mac draws, in words, with Stop / Continue.
+    if (item.dialogue) {
+      const d = state.dialogues[item.dialogue.id];
+      if (!d) return undefined;
+      const h = dialogueHeader(d);
+      return {
+        id: item.id,
+        who: 'system',
+        name: 'Dialogue',
+        prose: proseOf(clip(h.topic, 500)),
+        ts: item.ts,
+        dialogue: { id: clip(d.id, 200), topic: clip(h.topic, 500), mode: h.mode, who: clip(h.who, 200), progress: h.progress, ...(h.budget ? { budget: h.budget } : {}), status: clip(h.status, 300), tone: h.tone, canStop: h.actions.includes('stop') || h.actions.includes('cancel'), canContinue: h.actions.includes('continue') },
+      };
+    }
     if (item.said) return { id: item.id, who: item.said.byAgent ? 'claude' : item.said.from === me ? 'you' : 'friend', name: clip(item.said.name, 100), prose: proseOf(item.said.text), ts: item.said.ts };
     if (item.level === 'info') return undefined;
     return { id: item.id, who: 'system', name: 'Beluga', prose: proseOf(item.text), ts: item.ts };

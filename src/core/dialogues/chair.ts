@@ -10,6 +10,7 @@ import {
   type Participant,
   Dialogue,
   DialogueError,
+  confirmDialogue,
   continueDialogue,
   createDialogue,
   failDialogue,
@@ -64,6 +65,7 @@ export class Chair {
   private dialogues = new Map<string, DialogueT>();
   private readonly inflight = new Map<string, AbortController>();
   private readonly drives = new Map<string, Promise<void>>();
+  private readonly again = new Set<string>();
   private readonly now: () => number;
   private readOnlyFile = false;
 
@@ -86,7 +88,14 @@ export class Chair {
     const d = createDialogue({ ...start, id: start.id ?? `dlg_${randomUUID().replace(/-/g, '').slice(0, 12)}` }, this.now());
     if (this.dialogues.has(d.id)) throw new DialogueError('That dialogue already exists');
     this.put(d);
-    this.drive(d.id);
+    if (d.status === 'running') this.drive(d.id);
+    return d;
+  }
+
+  /** A proposal's caps confirmed: it starts. */
+  confirm(id: string, caps?: { readonly turnCap?: number; readonly budget?: number | null }): DialogueT {
+    const d = this.put(confirmDialogue(this.need(id), this.now(), caps));
+    this.drive(id);
     return d;
   }
 
@@ -115,8 +124,8 @@ export class Chair {
   }
 
   /** Resolves when the dialogue's loop has nothing more to do (paused, over, or idle). */
-  settled(id: string): Promise<void> {
-    return this.drives.get(id) ?? Promise.resolve();
+  async settled(id: string): Promise<void> {
+    for (let loop = this.drives.get(id); loop; loop = this.drives.get(id)) await loop;
   }
 
   /** Stop every loop (the daemon closing): nothing is marked stopped, so resume() goes on later. */
@@ -126,8 +135,12 @@ export class Chair {
   }
 
   private drive(id: string): void {
-    if (this.drives.has(id)) return;
-    const loop = this.loop(id).finally(() => this.drives.delete(id));
+    // A loop is on its way out: it looks again once it's done (it may have just seen a pause).
+    if (this.drives.has(id)) return void this.again.add(id);
+    const loop = this.loop(id).finally(() => {
+      this.drives.delete(id);
+      if (this.again.delete(id)) this.drive(id);
+    });
     this.drives.set(id, loop);
   }
 

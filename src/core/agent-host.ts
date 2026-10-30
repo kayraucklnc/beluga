@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import type { AgentBackend, AgentPlace, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer } from '../agent/types.js';
+import type { AgentBackend, AgentPlace, AgentRunInput, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer } from '../agent/types.js';
 import { ALWAYS_ASK_YOU, writesCode } from '../agent/policy.js';
 import { type AgentRef, type BodyInput, type BodyOf, CLAUDE_AGENT, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
@@ -1224,6 +1224,36 @@ export class AgentHost {
     }
   }
 
+  /**
+   * One turn of a chaired dialogue (core/dialogues) between your own agents: an ordinary run on
+   * `backend` (the participant's runtime) with what the chair decided (its prompt, brief,
+   * end_dialogue tool, talk mode's read-only vetTool), your approvals for the rest. Not in a lane:
+   * the chair runs its turns one after another itself. Its answer and the tokens it spent.
+   */
+  async runDialogueTurn(channel: string, backend: AgentBackend, input: Pick<AgentRunInput, 'prompt' | 'signal' | 'vetTool' | 'dialogue'>, opts: { readonly place?: AgentPlace; readonly defaultModel?: boolean } = {}): Promise<{ text: string; tokens: number }> {
+    const requestId = randomUUID();
+    const requesterName = peerName(this.store.getState(), this.selfId);
+    this.deps.questions.track(requestId, this.selfId, channel);
+    let tokens = 0;
+    const text = await backend.run({
+      ...input,
+      requesterName,
+      viaAgent: false,
+      context: [],
+      scope: 'full',
+      channel,
+      ...(opts.place ? { place: opts.place } : {}),
+      onEvent: (kind, payload) => {
+        if (kind === 'usage') tokens += usageTokens(payload);
+      },
+      onFileTouched: (abs) => this.announceAgentFocus(abs),
+      canUseTool: (toolName, toolInput) => this.authorizeTool(this.selfId, requesterName, toolName, toolInput, channel, opts.place?.cwd),
+      askUser: (question) => this.deps.questions.ask(this.selfId, requestId, channel, question),
+      ...(opts.defaultModel ? this.modelFor(opts.place?.model) : {}),
+    });
+    return { text, tokens };
+  }
+
   /** The model and effort for a run: the conversation's own pick, else your defaults. */
   private modelFor(own: string | undefined): { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } {
     const prefs = this.store.getState().prefs;
@@ -1321,5 +1351,15 @@ export class AgentHost {
       .filter((l) => l.type === 'chat' && l.channel === channel)
       .slice(-CONTEXT_LINES)
       .map((l) => (l.type === 'chat' ? `${l.name}: ${l.text}`.slice(0, 1000) : ''));
+  }
+}
+
+/** A run's 'usage' event → the tokens it spent (input and output; cache reads are not new work). */
+export function usageTokens(payload: string): number {
+  try {
+    const u = JSON.parse(payload) as { input?: unknown; output?: unknown };
+    return (typeof u.input === 'number' ? u.input : 0) + (typeof u.output === 'number' ? u.output : 0);
+  } catch {
+    return 0;
   }
 }

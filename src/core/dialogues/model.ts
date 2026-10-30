@@ -40,11 +40,11 @@ export const DialogueTurn = z.object({
 export type DialogueTurn = z.infer<typeof DialogueTurn>;
 
 /**
- * running: turns go on · paused: the cap was reached, Continue? · stopped: someone pressed Stop ·
+ * proposed: started from the composer, waiting for you to confirm its caps · running: turns go on · paused: the cap was reached, Continue? · stopped: someone pressed Stop ·
  * ended: an agent called end_dialogue (or a fixed template finished) · budget: the token budget ran out ·
  * failed: a turn couldn't run.
  */
-export const DialogueStatus = z.enum(['running', 'paused', 'stopped', 'ended', 'budget', 'failed']);
+export const DialogueStatus = z.enum(['proposed', 'running', 'paused', 'stopped', 'ended', 'budget', 'failed']);
 export type DialogueStatus = z.infer<typeof DialogueStatus>;
 
 export const Dialogue = z.object({
@@ -84,6 +84,8 @@ export interface DialogueStart {
   readonly channel?: string;
   readonly startedBy?: string;
   readonly worktree?: string;
+  /** Waits for you to confirm its caps first (the composer's forms). */
+  readonly propose?: boolean;
 }
 
 export class DialogueError extends Error {}
@@ -102,7 +104,7 @@ export function createDialogue(start: DialogueStart, now: number): Dialogue {
     ...(start.budget ? { budget: Math.floor(start.budget) } : {}),
     used: 0,
     turns: [],
-    status: 'running',
+    status: start.propose ? 'proposed' : 'running',
     ...(start.channel ? { channel: start.channel } : {}),
     ...(start.startedBy ? { startedBy: start.startedBy } : {}),
     ...(start.worktree ? { worktree: start.worktree } : {}),
@@ -148,6 +150,15 @@ export function turnDone(d: Dialogue, done: TurnDone, now: number): Dialogue {
   return next;
 }
 
+/** A proposal confirmed (its caps as shown, or changed on the card): it starts. */
+export function confirmDialogue(d: Dialogue, now: number, caps: { readonly turnCap?: number; readonly budget?: number | null } = {}): Dialogue {
+  if (d.status !== 'proposed') throw new DialogueError('This dialogue already started');
+  const turnCap = d.mode === 'cross-reference' ? d.turnCap : Math.max(1, Math.floor(caps.turnCap ?? d.turnCap));
+  const { budget: _b, ...rest } = d;
+  const budget = caps.budget === null ? undefined : caps.budget !== undefined ? Math.max(1, Math.floor(caps.budget)) : d.budget;
+  return { ...rest, ...(budget ? { budget } : {}), turnCap, pauseAt: turnCap, status: 'running', updatedAt: now };
+}
+
 /** Continue? → yes: another stretch of `more` turns (the cap by default). */
 export function continueDialogue(d: Dialogue, now: number, more?: number): Dialogue {
   if (d.status !== 'paused') throw new DialogueError(isOver(d) ? 'This dialogue is over' : 'This dialogue is not paused');
@@ -173,4 +184,33 @@ export function interject(d: Dialogue, text: string, name: string, now: number):
   const body = text.trim();
   if (!body) throw new DialogueError('Nothing to say');
   return { ...d, turns: [...d.turns, { n: agentTurns(d), by: 'person', name, text: body, tokens: 0, at: now }], updatedAt: now };
+}
+
+// ------------------------------------------------------------------ the store's slice
+
+/** Every dialogue on this Mac, by id (the screens draw a thread's header card from it). */
+export interface DialoguesSlice {
+  readonly dialogues: Readonly<Record<string, Dialogue>>;
+}
+
+export const initialDialogues: DialoguesSlice = { dialogues: {} };
+
+export type DialoguesAction = { type: 'dialogue_put'; dialogue: Dialogue } | { type: 'dialogue_remove'; id: string } | { type: 'dialogues_init'; dialogues: readonly Dialogue[] };
+
+export function reduceDialogues(state: DialoguesSlice, action: DialoguesAction): DialoguesSlice {
+  switch (action.type) {
+    case 'dialogues_init':
+      return { dialogues: Object.fromEntries(action.dialogues.map((d) => [d.id, d])) };
+    case 'dialogue_put':
+      return { dialogues: { ...state.dialogues, [action.dialogue.id]: action.dialogue } };
+    case 'dialogue_remove': {
+      const { [action.id]: _gone, ...rest } = state.dialogues;
+      return { dialogues: rest };
+    }
+  }
+}
+
+/** The dialogue going on in a conversation (running, paused or proposed), if any. */
+export function liveDialogueIn(state: DialoguesSlice, channel: string): Dialogue | undefined {
+  return Object.values(state.dialogues).find((d) => (d.channel ?? 'room') === channel && !isOver(d));
 }

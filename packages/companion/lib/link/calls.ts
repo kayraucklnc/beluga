@@ -128,6 +128,9 @@ export const calls = {
   deleteMessage: (topic: Topic, id: string, everyone: boolean): Call => make('network.messages.delete', [conversationOf(topic), id, everyone ? { everyone: true } : {}], 'Delete the message'),
   editMessage: (topic: Topic, id: string, text: string): Call => make('network.messages.edit', [conversationOf(topic), id, text], `Edit to "${short(text)}"`),
   clearChat: (topic: Topic): Call => make('network.clear', [conversationOf(topic)], 'Clear the chat'),
+  /** 1.31 (BLG-466): a dialogue between agents: Stop it, or Continue? → yes. */
+  dialogueStop: (id: string): Call => make('dialogues.stop', [id], 'Stop the dialogue'),
+  dialogueContinue: (id: string): Call => make('dialogues.continue', [id], 'Continue the dialogue'),
   /** Ask a friend's Claude yourself; the answer (and files) come back in the topic it returns. */
   askPerson: (peerId: string, name: string, text: string): Call => make('companion.askPerson', [{ peerId, text }], `Ask ${name}'s agent`),
   screenshot: (peerId: string, name: string): Call => make('companion.askPerson', [{ peerId, text: 'Take a screenshot of your desktop and send it to me.', needs: ['screen'] }], `Screenshot of ${name}'s desktop`),

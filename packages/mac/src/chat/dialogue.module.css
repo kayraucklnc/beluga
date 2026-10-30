@@ -1,0 +1,71 @@
+/* A dialogue's header card in the chat (DialogueCard.tsx): soft, solid, one main action. */
+.card {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--bg-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.live {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hairline));
+}
+.failed {
+  border-color: color-mix(in srgb, var(--error) 35%, var(--hairline));
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 0.86rem;
+}
+.mode {
+  font-weight: 600;
+  color: var(--text);
+}
+.who::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--text-3);
+}
+.topic {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.status {
+  color: var(--text-2);
+}
+.caps {
+  display: flex;
+  gap: 12px;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+.caps label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.caps input {
+  width: 70px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--text);
+}
+.actions {
+  display: flex;
+  gap: 6px;
+}

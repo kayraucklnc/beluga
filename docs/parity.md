@@ -536,6 +536,11 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `plans.remove` | ✓ a plan's ⋯ › Delete Plan… (its tasks stay on the board) |
 | `plans.tidyUp` | ✓ Tidy Up / No on a plan's leftover task worktrees (merged into its branch, then archived) |
 | `plans.setStyle` | ✓ Plans › ⋯ › Planning Style… |
+| `dialogues.start` | ✓ the composer: `@my:claude @my:codex talk about X, 6 turns` or `/dialogue claude codex …` (`session.submit` proposes it; the API starts one too) |
+| `dialogues.confirm` | ✓ the dialogue's card in the chat › Start (Turns and Budget set on the card first) |
+| `dialogues.continue` | ✓ the dialogue's card › Continue (when it paused at its cap) · the phone's card |
+| `dialogues.stop` | ✓ the dialogue's card › Stop / Cancel · `/dialogue stop` in its conversation · the phone's card |
+| `dialogues.interject` | ✓ the composer in a conversation with a dialogue going on: what you type lands as a turn (`session.submit`) |
 | `claudeCode.steps` | ✓ a Claude Code session's or agent's live, read-only transcript (Activity, the strip above a workspace's chat, the Inspector's Claude Code panel) |
 | `claudeCode.step` | ✓ opening a tool call or thinking line in that transcript: the command and its output, the file, the diff, the thinking |
 | `claudeCode.findAgent` | ✓ opening a sub-agent's own worktree whose agent finished a while ago: it's found again and followed live |

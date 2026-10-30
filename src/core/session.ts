@@ -9,6 +9,7 @@ import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } fro
 import { guardedBackend } from '../agent/runtime/guard.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { type AgentRef, Body, type BodyInput, type BodyOf, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
+import { dialoguesOf } from './dialogues/registry.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { networkOf } from './network.js';
 import { mentionNote, personMentions } from './person-mentions.js';
@@ -208,6 +209,9 @@ export class Session {
   /** What the attached screens look at (unread counts and notifications follow it). */
   readonly attention: AttentionRegistry;
 
+  /** Backends for your other agents' runtimes (a dialogue's Codex beside your Claude), made when first needed. */
+  private readonly otherBackends = new Map<string, AgentBackend>();
+
   constructor(private readonly opts: SessionOptions) {
     this.bridge = createRoomBridge(this, () => opts.agentCwd);
     const parts = createSessionParts(this, opts);
@@ -237,6 +241,21 @@ export class Session {
 
   get store(): Store {
     return this.opts.store;
+  }
+
+  /**
+   * The backend for one of your agents' runtimes: your default agent's own, or one made for that
+   * runtime (guarded the same way). The demo's fake agent answers for all of them.
+   */
+  backendFor(runtime: string): AgentBackend | undefined {
+    if (!this.runtime || runtime === this.runtime.id) return this.agent;
+    const made = this.otherBackends.get(runtime);
+    if (made) return made;
+    const rt = this.opts.runtime?.runtimes(runtime);
+    if (!rt || !this.opts.runtime) return undefined;
+    const backend = guardedBackend(rt.create({ ...this.opts.runtime.options, bridge: this.bridge }), rt.capabilities);
+    this.otherBackends.set(runtime, backend);
+    return backend;
   }
 
   get selfId(): string {
@@ -352,6 +371,8 @@ export class Session {
       this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
       return true;
     }
+    // A dialogue between your agents: started here (proposed, you confirm its caps), or what you say into one (core/dialogues).
+    if (dialoguesOf(this)?.fromComposer(raw, channel)) return true;
     const parsed = parseInput(raw, this.selfId, state.peers);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
