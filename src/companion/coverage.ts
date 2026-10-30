@@ -200,6 +200,10 @@ export const PHONE: Record<Method, Side> = {
   'env.testDatabase': 'mac',
   'env.importDotenv': 'mac',
   'env.newKeysBack': 'mac',
+  'env.endpoints': 'mac',
+  'env.saveEndpoint': 'mac',
+  'env.removeEndpoint': 'mac',
+  'env.checkEndpoints': 'mac',
 
   // ---- images in a message: a photo from the phone goes in as bytes, never as a Mac path
   'attachments.add': 'phone',

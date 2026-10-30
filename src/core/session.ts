@@ -8,6 +8,9 @@ import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } from '../agent/runtime/types.js';
 import { guardedBackend } from '../agent/runtime/guard.js';
 import { routedBackend } from '../agent/runtime/router.js';
+import { localRuntime } from '../agent/runtime/local.js';
+import { LOCAL_RUNTIME } from '../shared/local-endpoints.js';
+import type { LocalEndpoints } from './local-endpoints.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { type AgentRef, Body, type BodyInput, type BodyOf, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
@@ -203,6 +206,8 @@ export class Session {
   readonly diff: SharedDiff;
   /** Your environment variables for shells, scripts and your Claude (never sent to the room). */
   readonly env: EnvVars;
+  /** Your local and bring-your-own endpoints (BLG-449), as they answer now. */
+  readonly local: LocalEndpoints;
   private projectsTimer?: NodeJS.Timeout;
   /** What this session asks screens to do (see core/intents.ts). */
   readonly intents = new IntentBus();
@@ -227,6 +232,7 @@ export class Session {
     this.shell = parts.shell;
     this.diff = parts.diff;
     this.env = parts.env;
+    this.local = parts.local;
     this.runtime = opts.createAgent ? undefined : opts.runtime?.runtimes(opts.runtime.agent);
     // The session layer runs a runtime only as its capabilities allow (the safety rule: see guard.ts).
     this.agent = opts.createAgent ? opts.createAgent(this.bridge) : this.runtime && opts.runtime ? this.routed(this.runtime, opts.runtime) : undefined;
@@ -240,7 +246,8 @@ export class Session {
   private routed(main: AgentRuntime, rt: NonNullable<SessionOptions['runtime']>): AgentBackend {
     const make = (r: AgentRuntime): AgentBackend => guardedBackend(r.create({ ...rt.options, bridge: this.bridge }), r.capabilities);
     return routedBackend(make(main), main.id, (id) => {
-      const other = rt.runtimes(id);
+      // A local endpoint is Claude Code pointed elsewhere (BLG-449): it runs wherever Claude does.
+      const other = id === LOCAL_RUNTIME ? (rt.runtimes('claude') ? localRuntime((v) => this.local.resolve(v)) : undefined) : rt.runtimes(id);
       return other ? make(other) : undefined;
     });
   }
@@ -310,6 +317,7 @@ export class Session {
     clearInterval(this.workspaceTimer);
     this.workspaces?.stop();
     this.workbench?.stop();
+    this.local.stop();
     this.notifier.stop();
     this.replay.flush();
     this.remote.stop();

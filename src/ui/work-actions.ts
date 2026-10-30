@@ -92,6 +92,8 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
     const [runtime = '', ...rest] = id.slice('agent:'.length).split(':');
     const model = rest.join(':');
     const group = agentPicker(latest, menu.channel).groups.find((g) => g.runtime === runtime && g.available);
+    // A local endpoint that isn't answering stays where it is (its row says why).
+    if (group?.models.find((m) => m.value === model)?.why) return true;
     if (group) void bench.setAgent(menu.channel, group.isDefault && !model ? null : { runtime, label: group.label, ...(model ? { model } : {}) });
     return true;
   }

@@ -338,6 +338,13 @@ export const API = {
   'env.importDotenv': args(id),
   // Keys a worktree adds go into the project's main .env on their own (on by default).
   'env.newKeysBack': args(id, bool),
+  // Local and bring-your-own endpoints (BLG-449): → each with its URL and models, never its key (hasKey).
+  'env.endpoints': args(),
+  // Add (no id) or change one; key unset keeps it, '' removes it → its id.
+  'env.saveEndpoint': args(z.object({ id: opt(z.string().max(20)), label: z.string().min(1).max(40), baseUrl: z.string().min(1).max(500), key: opt(z.string().max(4000)), models: opt(z.array(z.string().max(40)).max(20)) })),
+  'env.removeEndpoint': args(z.string().max(20)),
+  // Look at every endpoint again now → the list, with which answer.
+  'env.checkEndpoints': args(),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),

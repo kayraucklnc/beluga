@@ -264,6 +264,20 @@ export const HANDLERS = {
   'env.testDatabase': (s, projectId) => testDatabase(s.env.viewEnvOf(projectId)),
   'env.importDotenv': (s, projectId) => s.env.importDotenv(projectId),
   'env.newKeysBack': (s, projectId, on) => s.env.setNewKeysBack(projectId, on),
+  'env.endpoints': (s) => s.local.views(),
+  'env.saveEndpoint': async (s, change) => {
+    const saved = s.env.saveEndpoint(change);
+    await s.local.look();
+    return saved;
+  },
+  'env.removeEndpoint': async (s, id) => {
+    s.env.removeEndpoint(id);
+    await s.local.look();
+  },
+  'env.checkEndpoints': async (s) => {
+    await s.local.look();
+    return s.local.views();
+  },
 
   'attachments.add': async (_s, ext, base64) => {
     const bytes = Buffer.from(base64, 'base64');

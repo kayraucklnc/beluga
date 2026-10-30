@@ -18,6 +18,8 @@ import { ProjectInvites } from './project-invites.js';
 import { GuestShell } from './guest-shell.js';
 import { SharedDiff } from './shared-diff.js';
 import { EnvVars } from './env-vars.js';
+import { LocalEndpoints } from './local-endpoints.js';
+import { LOCAL_RUNTIME, localModels, localWhy } from '../shared/local-endpoints.js';
 import { useViewEnv } from './views/sources.js';
 import { boardOf } from './board/registry.js';
 import { sentinelOf } from './sentinel/registry.js';
@@ -44,12 +46,22 @@ export interface SessionParts {
   readonly diff: SharedDiff;
   /** Your environment variables (kept on this computer). */
   readonly env: EnvVars;
+  readonly local: LocalEndpoints;
 }
 
 export function createSessionParts(session: Session, opts: SessionOptions): SessionParts {
   let workspaces: WorkspaceController | undefined;
   let workbench: Workbench | undefined;
   const env = new EnvVars({ store: opts.store, onChange: () => workbench?.envChanged() });
+  // Local endpoints (BLG-449) answer only where your agent runs (not in the demo).
+  const listRuntimes = () =>
+    runtimeChoices((id) => {
+      if (id === (opts.runtime?.agent ?? 'claude')) return session.backend ? {} : undefined;
+      if (id === LOCAL_RUNTIME) return opts.runtime?.runtimes('claude') && !localWhy(local.choices()) ? { models: localModels(local.choices()) } : undefined;
+      return opts.runtime?.runtimes(id) ? {} : undefined;
+    });
+  const local = new LocalEndpoints({ endpoints: () => env.endpoints(), onChange: () => opts.store.dispatch({ type: 'runtimes', runtimes: listRuntimes() }) });
+  if (opts.runtime) local.start();
   // Database views find the project's connection string (its variables, its .env).
   useViewEnv({ database: (dir) => env.viewEnv(dir), commands: (dir) => env.envFor({ dir }) });
     if (opts.workspaces) {
@@ -114,7 +126,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
             agent,
           ),
         // Your agent's runtime runs here; another, when this Beluga registers it (the demo's agent is Claude).
-        listRuntimes: () => runtimeChoices((id) => (id === (opts.runtime?.agent ?? 'claude') ? (session.backend ? {} : undefined) : opts.runtime?.runtimes(id) ? {} : undefined)),
+        listRuntimes,
         findPr: opts.findPr,
         hasGh: opts.hasGh,
         envFor: (where) => env.envFor(where),
@@ -240,5 +252,5 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       openLocation: (at) => files.openLocation(at),
       search: (at, mode, query) => diff.search(at, mode, query),
     });
-  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff, env };
+  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff, env, local };
 }

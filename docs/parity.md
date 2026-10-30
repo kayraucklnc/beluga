@@ -345,6 +345,10 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `env.set` | ✓ Settings › Environment, and a project's Environment… |
 | `env.importDotenv` | ✓ a project's Environment › Keep a Copy in Beluga |
 | `env.newKeysBack` | ✓ a project's Environment › Worktrees › New keys go to the main folder |
+| `env.endpoints` | ✓ Settings › Claude › Local models |
+| `env.saveEndpoint` | ✓ Settings › Claude › Local models › Add Endpoint / Save |
+| `env.removeEndpoint` | ✓ Settings › Claude › Local models › Remove |
+| `env.checkEndpoints` | ✓ Settings › Claude › Local models › Check Again |
 | `env.testDatabase` | ✓ Settings › Environment › Database (Test Connection) |
 | `env.claudeDotenv` | ✓ Settings › Environment › Your agent (and a .env approval's Always) |
 | `attachments.add` | ✓ |

@@ -14,6 +14,7 @@ import { EnvironmentSettings } from './EnvironmentSettings.js';
 import { ContextSettings } from './ContextSettings.js';
 import { ParallelSettings } from './ParallelSettings.js';
 import { McpSettings } from './McpSettings.js';
+import { LocalModelsSettings } from './LocalModelsSettings.js';
 import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { VoiceSettings } from './VoiceSettings.js';
@@ -281,6 +282,7 @@ function ClaudePane() {
         </Row>
       </Group>
       <McpSettings />
+      <LocalModelsSettings />
       <Group title="In the chat">
         <Row label="Sub-agents">
           <Select

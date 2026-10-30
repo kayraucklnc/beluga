@@ -11,6 +11,8 @@ export interface RuntimeModel {
   readonly label: string;
   readonly description: string;
   readonly efforts?: readonly string[];
+  /** Can't be picked now, and why (a local endpoint that isn't answering). */
+  readonly why?: string;
 }
 
 /** A runtime as a picker shows it: its models when it runs here, why not when it doesn't. */
