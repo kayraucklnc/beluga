@@ -1,5 +1,6 @@
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { liveFrom } from '@beluga/core/plans/progress.js';
+import { planEpicOf, planTitle } from '@beluga/core/plans/model.js';
 import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
 import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, childrenOf, isArchived, isOpen, isStartable, issueById, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
@@ -56,6 +57,8 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   // The plan (and milestone) it's part of.
   const plan = useApp((s) => (issue.plan ? s.plans.plans.find((x) => x.id === issue.plan!.id) : undefined));
   const milestone = plan && issue.plan ? (plan.body ?? plan.draft)?.milestones.find((m) => m.id === issue.plan!.milestone)?.title : undefined;
+  // A plan's own epic, or one of its milestones'.
+  const epic = useApp((s) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined));
   return (
     <span className={cx(t.meta, compact && t.metaCompact)}>
       {issue.drafting ? (
@@ -74,6 +77,14 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
           <span className={t.planMark}>
             <Icon name="flag" size={11} />
             {compact ? null : milestone}
+          </span>
+        </Tip>
+      ) : null}
+      {epic ? (
+        <Tip label={epic.milestone ? `A milestone of the plan “${planTitle(epic.plan)}”: its tasks are under it` : 'A plan: its milestones are under it, and their tasks under them'}>
+          <span className={t.planMark}>
+            <Icon name="flag" size={11} />
+            {compact ? null : epic.milestone ? 'Milestone' : 'Plan'}
           </span>
         </Tip>
       ) : null}
