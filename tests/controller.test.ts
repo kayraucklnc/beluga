@@ -113,6 +113,36 @@ describe('WorkspaceController', () => {
     expect(await ctl.branches(projectId())).toMatchObject({ base: 'origin/main', branches: expect.arrayContaining(['origin/main', 'feature']) });
   });
 
+  it('shows your first message while the worktree is made, then asks Claude under the same request (BLG-531)', async () => {
+    const said: Array<{ prompt: string; channel: string; shown?: string }> = [];
+    const c = new WorkspaceController({
+      manager: new WorkspaceManager(new WorkspaceStore(path.join(repo, '..', '..', 'home'))),
+      store,
+      shares,
+      selfId: () => 'me',
+      toast: (t) => void toasts.push(t),
+      intend: () => undefined,
+      showAsk: (prompt, channel) => {
+        store.dispatch({ type: 'chat', id: 'm1', from: 'me', text: prompt, ts: 1, byAgent: false, channel, request: 'r1' });
+        return 'r1';
+      },
+      askClaude: (prompt, channel, o) => void said.push({ prompt, channel, ...(o?.shown ? { shown: o.shown } : {}) }),
+      claudeHome: claude,
+    });
+    await c.refresh();
+    let shownBefore = false;
+    const unsub = store.subscribe(() => {
+      // The pending row is up: the message is on its page already.
+      const making = store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.pending);
+      if (making && store.getState().log.some((l) => l.channel === `ws:${making.id}` && l.text === 'fix it')) shownBefore = true;
+    });
+    const ws = (await c.startWorktree(projectId(), 'fix it', async () => 'fix', { name: 'early' }))!;
+    unsub();
+    expect(shownBefore).toBe(true);
+    expect(said).toEqual([{ prompt: 'fix it', channel: `ws:${ws.id}`, shown: 'r1' }]);
+    expect(store.getState().log.filter((l) => l.channel === `ws:${ws.id}`)).toHaveLength(1);
+  });
+
   it('makes the worktree right away while a model names it, then takes that name', async () => {
     let name!: (n: string) => void;
     const naming = new Promise<string>((r) => (name = r));

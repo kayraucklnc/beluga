@@ -456,7 +456,7 @@ export class WorkspaceManager {
     const named = loaded
       .map((p) => ((counts.get(p.name) ?? 0) > 1 ? { ...p, name: `${p.name} (${path.basename(path.dirname(p.root))})` } : p))
       .sort((a, b) => a.name.localeCompare(b.name));
-    this.projects = [this.chatsProject(new Set(roots)), ...named];
+    this.projects = this.withAdopted([this.chatsProject(new Set(roots)), ...named]);
     return this.projects;
   }
 
@@ -771,8 +771,37 @@ export class WorkspaceManager {
     await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...agentFields(opts.agent) };
     this.saveRecord(record);
-    await this.refresh();
-    return this.require(record.id);
+    const status = await g.status(dir, from).catch(() => undefined);
+    return this.adopt(project, { ...record, projectId: project.id, external: false, ...(status ? { status } : {}) });
+  }
+
+  /**
+   * A workspace just made, listed at once: no re-scan of every project on the way to its first
+   * message (that took seconds with many projects, BLG-531). The next full refresh lists it as it
+   * finds it; one that began before it was made keeps it here until then.
+   */
+  private adopt(project: Project, ws: Workspace): Workspace {
+    this.adopted.set(ws.id, ws);
+    this.projects = this.projects.map((p) => (p.id === project.id ? { ...p, workspaces: [...p.workspaces.filter((w) => w.id !== ws.id), ws].sort(order) } : p));
+    return ws;
+  }
+
+  /** Workspaces listed by `adopt` that a full refresh hasn't found yet, by id. */
+  private readonly adopted = new Map<string, Workspace>();
+
+  /** A scan's projects, with what was made while it ran (it read the disk before them). */
+  private withAdopted(projects: Project[]): Project[] {
+    if (!this.adopted.size) return projects;
+    const found = new Set(projects.flatMap((p) => p.workspaces.map((w) => w.id)));
+    const kept = new Set(this.records.map((r) => r.id));
+    // Found by now, or deleted meanwhile: nothing to keep.
+    for (const id of this.adopted.keys()) if (found.has(id) || !kept.has(id)) this.adopted.delete(id);
+    if (!this.adopted.size) return projects;
+    return projects.map((p) => {
+      // Its record as it is now (renamed, a session remembered since).
+      const add = [...this.adopted.values()].filter((w) => w.projectId === p.id).map((w) => ({ ...w, ...this.records.find((r) => r.id === w.id) }));
+      return add.length ? { ...p, workspaces: [...p.workspaces, ...add].sort(order) } : p;
+    });
   }
 
   /** The branches a new worktree can start from, the project's default base first. */
@@ -816,8 +845,8 @@ export class WorkspaceManager {
     if (!project) throw new WorkspaceError('Project not found');
     const record: WorkspaceRecord = { id: `chat-${randomUUID().slice(0, 8)}`, projectRoot: project.root, name: title.trim().slice(0, 40) || 'chat', path: project.root, kind: 'chat', createdAt: Date.now() };
     this.saveRecord(record);
-    await this.refresh();
-    return this.require(record.id);
+    // Questions only, like every chat in a project's main folder (see loadProject).
+    return this.adopt(project, { ...record, projectId: project.id, external: false, askOnly: true });
   }
 
   /** A Claude chat with no project: its own scratch folder for anything Claude makes. */
@@ -828,8 +857,14 @@ export class WorkspaceManager {
     mkdirSync(dir, { recursive: true });
     const record: WorkspaceRecord = { id, projectRoot: '', name: title.trim().slice(0, 40) || 'chat', path: real(dir), kind: 'chat', createdAt: Date.now() };
     this.saveRecord(record);
-    await this.refresh();
-    return this.require(record.id);
+    const chats = this.projects.find((p) => p.id === CHATS_PROJECT);
+    if (!chats) {
+      await this.refresh();
+      return this.require(record.id);
+    }
+    // Started in a project's main folder: questions only (see chatsProject).
+    const askOnly = this.projects.some((p) => p.root && real(p.root) === record.path);
+    return this.adopt(chats, { ...record, projectId: CHATS_PROJECT, external: false, ...(askOnly ? { askOnly: true } : {}) });
   }
 
   /**

@@ -236,6 +236,20 @@ describe('worktree lifecycle', () => {
     }
   });
 
+  it('lists a new worktree or chat at once, and a refresh that began before it keeps it (BLG-531)', async () => {
+    const before = mgr.refresh();
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'quick');
+    const chat = await mgr.createChat(repos()[0]!.id, 'Ask');
+    const ids = () => repos()[0]!.workspaces.map((w) => w.id);
+    expect(ids()).toEqual(expect.arrayContaining([ws.id, chat.id]));
+    expect(chat.askOnly).toBe(true);
+    expect(ws.status).toBeDefined();
+    await before;
+    expect(ids()).toEqual(expect.arrayContaining([ws.id, chat.id]));
+    await mgr.refresh();
+    expect(repos()[0]!.workspaces.find((w) => w.id === ws.id)).toMatchObject({ kind: 'worktree', external: false });
+  });
+
   it('creates chats in the main folder without a worktree', async () => {
     const chat = await mgr.createChat(repos()[0]!.id, 'Quick question');
     expect(chat).toMatchObject({ kind: 'chat', name: 'Quick question', path: repo });
