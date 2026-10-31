@@ -7,6 +7,7 @@ import { Button, IconButton, Tip } from '../ui.js';
 import { copyText } from '../../lib/copy.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { quoteInBox } from '../../chat/message-menu.js';
+import { goToCode } from '../../lib/go-to-code.js';
 import { CodeLines } from './CodeLines.js';
 import s from './code.module.css';
 
@@ -31,8 +32,8 @@ function useWorkspaceHere(): string | undefined {
 
 /**
  * A ```beluga-code block (shared/code-ref.ts): those lines of the worktree, read live, with the
- * highlighted ones marked. The path opens the file in your editor at the first marked line; a
- * click on line numbers picks lines (Shift for a range) to quote in your reply.
+ * highlighted ones marked. The path goes to the file at the first marked line (or your editor,
+ * beside it); a click on line numbers picks lines (Shift for a range) to quote in your reply.
  */
 export function CodeRefBlock({ code }: { code: string }) {
   const ref = useMemo(() => parseCodeRef(code), [code]);
@@ -71,6 +72,10 @@ export function CodeRefView({ ref_: ref, wsId }: { ref_: CodeRef; wsId: string |
   const rows = excerpt?.lines.map((text, i) => ({ text, n: excerpt.from + i, marked: marked.has(excerpt.from + i) })) ?? [];
   const lang = langOf(ref.path);
   const first = ref.highlight[0] ?? excerpt?.from ?? ref.from;
+  // The path goes straight to the file at that line, across the center; the editor is a button away.
+  const goTo = (): void => {
+    if (wsId) void goToCode(client, wsId, ref.path, first);
+  };
   const open = (): void => {
     if (wsId) void api.workbench.openCode(wsId, ref.path, first);
   };
@@ -95,6 +100,7 @@ export function CodeRefView({ ref_: ref, wsId }: { ref_: CodeRef; wsId: string |
   const say = (text: string): void => toast(client, text, 'success');
   const all = excerpt ? excerpt.lines.join('\n') : '';
   const items: ActionItem[] = [
+    { label: 'Go to File', icon: 'file', disabled: !wsId, onSelect: goTo },
     { label: 'Open in Editor', icon: 'external', disabled: !wsId, onSelect: open },
     { label: 'Copy Code', icon: 'copy', separate: true, onSelect: () => void copyText(all).then(() => say('Copied the code')) },
     { label: 'Copy Path', onSelect: () => void copyText(where(ref.path, first)).then(() => say('Copied the path')) },
@@ -104,8 +110,8 @@ export function CodeRefView({ ref_: ref, wsId }: { ref_: CodeRef; wsId: string |
     <ActionsContext items={items}>
       <figure className={s.ref} data-code-ref={ref.path}>
         <figcaption className={s.refHead}>
-          <Tip label={wsId ? 'Open in your editor at this line' : ref.path}>
-            <button type="button" className={s.refPath} onClick={open} disabled={!wsId}>
+          <Tip label={wsId ? 'Go to this line in the file' : ref.path}>
+            <button type="button" className={s.refPath} data-go-to-code={ref.path} onClick={goTo} disabled={!wsId}>
               <Icon name="file" size={12} />
               <span>{ref.path}</span>
               {excerpt ? <em className={s.refLines}>{where('', excerpt.from, excerpt.to).slice(1)}</em> : null}

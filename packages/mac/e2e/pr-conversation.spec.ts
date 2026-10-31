@@ -27,47 +27,48 @@ const conversation = {
   },
 };
 
-test('PR comments: the strip counts them, the panel shows each thread on its code, and you reply and resolve from Beluga', async ({ page }) => {
+/** Open add-auth, and its PR (the sheet looks it up). */
+async function openAddAuth(page: Page): Promise<void> {
+  await page.goto('/');
+  await expect(sidebar(page)).toBeVisible();
+  const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
+  const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
+  if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
+  await row.click();
+  const toolbar = page.locator('main header').first();
+  const known = toolbar.getByRole('button', { name: /^(Open )?PR #7/ });
+  if (await known.waitFor({ timeout: 3000 }).then(() => true, () => false)) await known.click();
+  else {
+    await toolbar.getByRole('button', { name: 'Other steps for this branch' }).click();
+    await page.getByRole('menuitem', { name: /Create PR with Instructions/ }).click();
+  }
+  await expect(page.getByRole('dialog', { name: /Pull Request/ })).toContainText('#7');
+}
+
+test('The PR page: every comment with the code it is on, and you reply, resolve and comment there, not in the chat', async ({ page }) => {
   writeFileSync(ghFile(), JSON.stringify({ prs: { 'add-auth': pr }, conversations: { 7: conversation } }, null, 2));
   try {
-    await page.goto('/');
-    await expect(sidebar(page)).toBeVisible();
-    const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
-    if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
-    await row.click();
-
-    // The PR sheet looks the PR up; its Comments opens the conversation above the chat.
-    const toolbar = page.locator('main header').first();
-    const known = toolbar.getByRole('button', { name: /^PR #7/ });
-    if (await known.isVisible()) await known.click();
-    else {
-      await toolbar.getByRole('button', { name: 'Other steps for this branch' }).click();
-      await page.getByRole('menuitem', { name: /Create PR with Instructions/ }).click();
-    }
+    await openAddAuth(page);
     const sheet = page.getByRole('dialog', { name: /Pull Request/ });
-    await expect(sheet).toContainText('#7');
     await sheet.getByRole('button', { name: 'Comments' }).click();
     await expect(sheet).toBeHidden();
 
-    // The strip above the chat says one thread is still open.
-    const strip = page.locator('[data-pr-strip="OPEN"]');
-    const comments = strip.locator('[data-pr-comments]');
-    await expect(comments).toHaveText(/1 open/);
-
-    const panel = page.locator('[data-pr-conversation="7"]');
-    await expect(panel).toContainText('Conversation');
-    await expect(panel).toContainText('requested changes');
-    await expect(panel).toContainText('cover refunds');
+    // Its own page across the center, the chat a click (or Esc) away.
+    const prPage = page.locator('[data-pr-page="7"]');
+    await expect(prPage).toContainText('Protect the payments routes');
+    await expect(prPage).toContainText('1 open thread');
+    await expect(page.getByRole('button', { name: 'Back to Chat' })).toBeVisible();
+    await expect(prPage).toContainText('requested changes');
+    await expect(prPage).toContainText('cover refunds');
     // The open thread: its file and lines, the diff with the commented lines marked, and what was said.
-    const thread = panel.locator('[data-pr-thread="T1"]');
+    const thread = prPage.locator('[data-pr-thread="T1"]');
     await expect(thread).toContainText('src/routes.ts');
     await expect(thread).toContainText(':21-23');
     await expect(thread.locator('[data-line="22"]')).toBeVisible();
     await expect(thread).toContainText('Could this loop live in');
     // The resolved one is out of the way until you ask.
-    await expect(panel.locator('[data-pr-thread="T2"]')).toHaveCount(0);
-    await page.screenshot({ path: shot('pr-conversation.png') });
+    await expect(prPage.locator('[data-pr-thread="T2"]')).toHaveCount(0);
+    await page.screenshot({ path: shot('pr-page.png') });
 
     // Reply in the thread: posted as you, and there once GitHub is read again.
     await thread.getByRole('button', { name: 'Reply' }).click();
@@ -79,18 +80,58 @@ test('PR comments: the strip counts them, the panel shows each thread on its cod
     await expect(reply).toContainText('replied');
     expect(readGh().posts?.[0]).toContain('thread=T1');
 
-    // Resolve: it folds away, and the strip has nothing open.
+    // Resolve: it folds away.
     await thread.getByRole('button', { name: 'Resolve' }).click();
-    await expect(panel.locator('[data-pr-thread="T1"]')).toHaveCount(0);
-    await panel.getByRole('button', { name: /Show 2 resolved threads/ }).click();
-    await expect(panel.locator('[data-pr-thread="T2"]')).toContainText('Outdated');
-    await expect(comments).toHaveText(/comments/);
+    await expect(prPage.locator('[data-pr-thread="T1"]')).toHaveCount(0);
+    await prPage.getByRole('button', { name: /Show 2 resolved threads/ }).click();
+    await expect(prPage.locator('[data-pr-thread="T2"]')).toContainText('Outdated');
 
     // A comment on the PR itself.
-    await panel.getByRole('textbox', { name: 'Comment on #7' }).fill('Pushed the fixes.');
-    await panel.getByRole('button', { name: 'Comment', exact: true }).click();
-    await expect(panel.locator('article').filter({ hasText: 'Pushed the fixes.' })).toBeVisible();
-    await page.screenshot({ path: shot('pr-conversation-after.png') });
+    await prPage.getByRole('textbox', { name: 'Comment on #7' }).fill('Pushed the fixes.');
+    await prPage.getByRole('button', { name: 'Comment', exact: true }).click();
+    await expect(prPage.locator('article').filter({ hasText: 'Pushed the fixes.' })).toBeVisible();
+
+    // Back to the chat: nothing of the conversation in it, the strip counts what was said.
+    await page.getByRole('button', { name: 'Back to Chat' }).click();
+    await expect(prPage).toHaveCount(0);
+    await expect(page.locator('[data-pr-strip="OPEN"] [data-pr-comments]')).toHaveText(/comments/);
+    await expect(page.locator('[data-pr-thread]')).toHaveCount(0);
+  } finally {
+    rmSync(ghFile(), { force: true });
+  }
+});
+
+test('In the chat: Claude shows the PR comments and the code it means, read-only, and both go where you answer or look', async ({ page }) => {
+  writeFileSync(ghFile(), JSON.stringify({ prs: { 'add-auth': pr }, conversations: { 7: conversation } }, null, 2));
+  try {
+    await openAddAuth(page);
+    await page.keyboard.press('Escape');
+    const composer = page.locator('textarea:not(.xterm-helper-textarea)').last();
+    await composer.fill('What are the comments on this PR?');
+    await composer.press('Enter');
+
+    // The comments as cards, with the code they're on; nothing to type into.
+    const block = page.locator('[data-pr-comments-block="7"]');
+    await expect(block.locator('[data-pr-thread="T1"]')).toContainText('Could this loop live in', { timeout: 20_000 });
+    await expect(block.locator('[data-pr-thread="T1"] [data-line="22"]')).toBeVisible();
+    await expect(block.locator('[data-pr-thread="T2"]')).toHaveCount(0);
+    await expect(block.getByRole('button', { name: 'Resolve' })).toHaveCount(0);
+    await expect(block.locator('textarea')).toHaveCount(0);
+    // Claude points at code: those lines of the worktree, the highlighted one marked.
+    const code = page.locator('[data-code-ref="src/auth.ts"]');
+    await expect(code).toContainText('requireUser');
+    await expect(code.locator('[data-line="2"]')).toBeVisible();
+    await page.screenshot({ path: shot('pr-comments-in-chat.png') });
+
+    // The code's path goes straight to the file.
+    await code.locator('[data-go-to-code]').click();
+    await expect(page.getByRole('button', { name: 'Back to Chat' })).toBeVisible();
+    await expect(page.locator('main')).toContainText('unauthorized');
+    await page.keyboard.press('Escape');
+
+    // Answering is the PR page.
+    await block.getByRole('button', { name: 'Reply on the PR Page' }).click();
+    await expect(page.locator('[data-pr-page="7"]')).toBeVisible();
   } finally {
     rmSync(ghFile(), { force: true });
   }

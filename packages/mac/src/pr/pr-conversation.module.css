@@ -1,20 +1,58 @@
-/* A worktree's PR conversation, under the PR strip above the chat. */
-.panel {
+/* A PR's conversation: its page across the center, and the comments a chat message shows. */
+.page {
+  height: 100%;
+  overflow-y: auto;
+}
+.pageColumn {
   display: flex;
   flex-direction: column;
-  max-height: min(62vh, 640px);
-  border-bottom: 1px solid var(--hairline);
-  background: var(--bg);
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 22px 28px 40px;
 }
-.head {
+.pageHead {
   display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 10px 0 16px;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--hairline);
+}
+.pageTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-2);
+}
+.pageTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.pageNumber {
+  color: var(--text-3);
+  font-size: 17px;
+}
+.pageMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: var(--text-3);
   font-size: 12.5px;
+}
+.pageBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+}
+.pageBody > * {
+  flex: none;
+}
+.pageComment {
+  margin-top: 8px;
 }
 .grow {
   flex: 1;
@@ -23,21 +61,9 @@
   color: var(--text-3);
   font-size: 12px;
 }
-.scroll > * {
-  flex: none;
-}
-.scroll {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-  padding: 12px 16px;
-  overflow-y: auto;
-}
-.foot {
-  flex: none;
-  padding: 8px 16px 12px;
-  border-top: 1px solid var(--hairline);
+.small {
+  width: 24px;
+  height: 24px;
 }
 .empty,
 .problem {
@@ -295,4 +321,42 @@
   gap: 5px;
   color: var(--text-3);
   font-size: 11px;
+}
+
+/* PR comments in a chat message: read-only cards under one header, the page one click away. */
+.chatBlock {
+  max-width: 100%;
+  margin: 0.4em 0 0.7em;
+  border-radius: var(--radius-l);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  overflow: hidden;
+}
+.chatHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--bg-sunken) 70%, var(--bg));
+  font-size: 12.5px;
+}
+.chatTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chatItems {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+.chatItems > * {
+  flex: none;
+}
+.chatNote {
+  color: var(--text-3);
+  font-size: 12px;
 }

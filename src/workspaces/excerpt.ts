@@ -28,7 +28,8 @@ export async function readExcerpt(root: string, file: string, from = 1, to = fro
   });
   const rel = path.relative(base, real);
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.split(path.sep).includes('.git')) throw new Error(`${file} isn’t in this worktree`);
-  if (isSecretPath(rel) || isSecretPath(real)) throw new Error(`${file} may hold secrets, so it isn’t shown`);
+  // Inside the worktree only: worktrees themselves live in ~/.beluga, which counts as private as a whole.
+  if (isSecretPath(rel)) throw new Error(`${file} may hold secrets, so it isn’t shown`);
   const info = await stat(real);
   if (!info.isFile()) throw new Error(`${file} isn’t a file`);
   if (info.size > MAX_BYTES) throw new Error(`${file} is too big to show`);

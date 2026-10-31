@@ -6,13 +6,19 @@ import { CodeLines, type CodeRow } from '../components/code/CodeLines.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
-import { showGitTrouble } from '../lib/git-trouble.js';
+import { useApi, useBeluga } from '../lib/beluga.js';
+import { goToCode } from '../lib/go-to-code.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { agoWords } from '../issues/issues-model.js';
-import { type ConversationItem, conversationCounts, timeline, usePrConversation } from './use-pr-conversation.js';
+import type { ConversationItem } from './use-pr-conversation.js';
 import s from './pr-conversation.module.css';
+
+/**
+ * The pieces a PR's conversation is drawn with: someone's words, a review's verdict, and a thread
+ * on lines with the code it's on. The PR page (PrPage.tsx) adds your replies to them; a chat
+ * message (PrCommentsBlock.tsx) shows them as they are, one click from the page.
+ */
 
 /** How many lines of the diff a thread shows above its comment. */
 const HUNK_ROWS = 8;
@@ -46,8 +52,11 @@ const lineWords = (t: PrThread): string => {
   return range[0] === range[1] ? `:${range[1]}` : `:${range[0]}-${range[1]}`;
 };
 
+/** Where a thread's code is now (its first line), for going there. */
+export const threadLine = (t: PrThread): number | undefined => t.startLine ?? t.line ?? t.originalStartLine ?? t.originalLine;
+
 /** A box to write in: grows with the text, sends with your send key. */
-function WriteBox({ placeholder, label, busyLabel, onSend, onCancel, autoFocus }: { placeholder: string; label: string; busyLabel: string; onSend: (body: string) => Promise<boolean>; onCancel?: () => void; autoFocus?: boolean }) {
+export function WriteBox({ placeholder, label, busyLabel, onSend, onCancel, autoFocus }: { placeholder: string; label: string; busyLabel: string; onSend: (body: string) => Promise<boolean>; onCancel?: () => void; autoFocus?: boolean }) {
   const prefs = usePrefs();
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
@@ -115,7 +124,7 @@ function WriteBox({ placeholder, label, busyLabel, onSend, onCancel, autoFocus }
 }
 
 /** One person's words: who, when, and what (yours are marked "you"). */
-function Said({ c, what = 'commented', compact }: { c: PrComment; what?: string; compact?: boolean }) {
+export function Said({ c, what = 'commented', compact }: { c: PrComment; what?: string; compact?: boolean }) {
   const actions = useActions();
   return (
     <article className={cx(s.said, compact && s.saidCompact)}>
@@ -142,39 +151,42 @@ function Said({ c, what = 'commented', compact }: { c: PrComment; what?: string;
   );
 }
 
-/** A conversation on lines: the code it's on, what was said, and your reply, resolve, or Claude. */
-function Thread({ wsId, thread, posted }: { wsId: string; thread: PrThread; posted: () => void }) {
+/** A review: its verdict as a mark, and what the reviewer said. */
+export function ReviewCard({ review }: { review: PrReview }) {
+  const verdict = VERDICT[review.state];
+  return (
+    <div className={s.review}>
+      {verdict.icon ? (
+        <span className={cx(s.verdict, verdict.tone)}>
+          <Icon name={verdict.icon} size={11} />
+        </span>
+      ) : null}
+      <Said c={review} what={verdict.words} />
+    </div>
+  );
+}
+
+/**
+ * A conversation on lines: where (the path goes straight to the file at that line), the code it's
+ * on, and what was said. `children`: what you can do with it, under the comments (the page's
+ * Reply and Resolve; a chat message's way to the page).
+ */
+export function ThreadCard({ wsId, thread, folded = thread.resolved, children }: { wsId: string; thread: PrThread; folded?: boolean; children?: React.ReactNode }) {
   const api = useApi();
-  const [open, setOpen] = useState(!thread.resolved);
-  const [replying, setReplying] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { client } = useBeluga();
+  const [open, setOpen] = useState(!folded);
   const rows = hunkRows(thread);
   const lang = langOf(thread.path);
   const first = thread.comments[0];
-  const goTo = (): void => void api.workbench.openCode(wsId, thread.path, thread.startLine ?? thread.line ?? thread.originalLine);
-  const post = async (p: Parameters<typeof api.workbench.prPost>[1]): Promise<boolean> => {
-    const out = await api.workbench.prPost(wsId, p);
-    if (!out) return false;
-    if (!out.ok) {
-      showGitTrouble(wsId, out, 'none');
-      return false;
-    }
-    posted();
-    return true;
-  };
-  const resolve = async (): Promise<void> => {
-    setBusy(true);
-    if (await post({ kind: thread.resolved ? 'unresolve' : 'resolve', thread: thread.id })) setOpen(thread.resolved);
-    setBusy(false);
-  };
+  const line = threadLine(thread);
   return (
     <section className={cx(s.thread, thread.resolved && s.resolved)} data-pr-thread={thread.id} aria-label={`Comments on ${thread.path}`}>
       <header className={s.threadHead}>
         <button type="button" className={s.fold} aria-expanded={open} aria-label={open ? 'Fold' : 'Unfold'} onClick={() => setOpen(!open)}>
           <Icon name={open ? 'chevronDown' : 'chevronRight'} size={11} />
         </button>
-        <Tip label="Open in your editor at this line">
-          <button type="button" className={s.path} onClick={goTo}>
+        <Tip label="Go to this line in the file">
+          <button type="button" className={s.path} data-go-to-code={thread.path} onClick={() => void goToCode(client, wsId, thread.path, line)}>
             <Icon name="file" size={12} />
             <span>{thread.path}</span>
             <em>{lineWords(thread)}</em>
@@ -195,6 +207,7 @@ function Thread({ wsId, thread, posted }: { wsId: string; thread: PrThread; post
           <span className={s.grow} />
         )}
         <span className={s.count}>{thread.comments.length > 1 ? `${thread.comments.length} comments` : ''}</span>
+        <IconButton icon="external" label="Open in Editor" className={s.small} onClick={() => void api.workbench.openCode(wsId, thread.path, line)} />
       </header>
       {open ? (
         <>
@@ -208,123 +221,16 @@ function Thread({ wsId, thread, posted }: { wsId: string; thread: PrThread; post
               <Said key={c.id} c={c} compact what={i === 0 ? 'commented' : 'replied'} />
             ))}
           </div>
-          {replying ? (
-            <WriteBox autoFocus placeholder="Reply…" label="Reply" busyLabel="Replying…" onCancel={() => setReplying(false)} onSend={async (body) => (await post({ kind: 'reply', thread: thread.id, body })) && (setReplying(false), true)} />
-          ) : (
-            <div className={s.threadActions}>
-              <Button size="small" icon="chat" onClick={() => setReplying(true)}>
-                Reply
-              </Button>
-              <Tip label="Claude reads the code there and addresses this comment in the chat">
-                <Button size="small" icon="claude" onClick={() => void api.workbench.addressPrComments(wsId, thread.id)}>
-                  Ask Claude
-                </Button>
-              </Tip>
-              <span className={s.grow} />
-              <Button size="small" variant="quiet" icon={thread.resolved ? 'refresh' : 'check'} disabled={busy} onClick={() => void resolve()}>
-                {thread.resolved ? 'Reopen' : 'Resolve'}
-              </Button>
-            </div>
-          )}
+          {children}
         </>
       ) : null}
     </section>
   );
 }
 
-function Item({ wsId, item, posted }: { wsId: string; item: ConversationItem; posted: () => void }) {
-  if (item.kind === 'thread') return <Thread wsId={wsId} thread={item.thread} posted={posted} />;
+/** One thing in the conversation, read-only (`thread` draws threads, for what's around them). */
+export function ItemCard({ wsId, item, thread }: { wsId: string; item: ConversationItem; thread?: (t: PrThread) => React.ReactNode }) {
+  if (item.kind === 'thread') return <>{thread ? thread(item.thread) : <ThreadCard wsId={wsId} thread={item.thread} />}</>;
   if (item.kind === 'comment') return <Said c={item.comment} />;
-  const verdict = VERDICT[item.review.state];
-  return (
-    <div className={s.review}>
-      {verdict.icon ? (
-        <span className={cx(s.verdict, verdict.tone)}>
-          <Icon name={verdict.icon} size={11} />
-        </span>
-      ) : null}
-      <Said c={item.review} what={verdict.words} />
-    </div>
-  );
-}
-
-/**
- * A worktree's PR conversation, under the PR strip above the chat: what everyone said on GitHub in
- * time order (comments, reviews, and threads on lines with the code they're on), and your answers.
- * Open threads first by default; resolved ones fold to a line.
- */
-export function PrConversation({ wsId, onClose }: { wsId: string; onClose: () => void }) {
-  const api = useApi();
-  const { client } = useBeluga();
-  const actions = useActions();
-  const pr = useApp((st) => st.prs[wsId]);
-  const { data, error, loading, refresh } = usePrConversation(wsId);
-  const [all, setAll] = useState(false);
-  if (!pr) return null;
-  const counts = conversationCounts(data);
-  const items = data ? timeline(data) : [];
-  const shown = all ? items : items.filter((i) => i.kind !== 'thread' || !i.thread.resolved);
-  const hidden = items.length - shown.length;
-  return (
-    <section className={s.panel} aria-label={`Conversation on PR #${pr.number}`} data-pr-conversation={pr.number}>
-      <header className={s.head}>
-        <strong>Conversation</strong>
-        <span className={s.when}>
-          {data ? `${counts.said} ${counts.said === 1 ? 'comment' : 'comments'}${counts.open ? ` · ${counts.open} open ${counts.open === 1 ? 'thread' : 'threads'}` : ''}` : loading ? 'Reading GitHub…' : ''}
-        </span>
-        <span className={s.grow} />
-        {counts.open ? (
-          <Tip label="Claude works through every open comment in the chat: changes the code or says why not, then commits">
-            <Button size="small" variant="primary" icon="claude" onClick={() => void api.workbench.addressPrComments(wsId)}>
-              Address All With Claude
-            </Button>
-          </Tip>
-        ) : null}
-        <IconButton icon="refresh" label="Read GitHub again" disabled={loading} onClick={refresh} />
-        <IconButton icon="external" label="Open on GitHub" onClick={() => actions.openLink({ kind: 'url', url: pr.url })} />
-        <IconButton icon="x" label="Close" onClick={onClose} />
-      </header>
-      <div className={s.scroll}>
-        {error && !data ? (
-          <div className={s.problem}>
-            <Icon name="alert" size={12} />
-            {error}
-          </div>
-        ) : null}
-        {data && !items.length ? <div className={s.empty}>Nobody has said anything on #{pr.number} yet.</div> : null}
-        {shown.map((item) => (
-          <Item key={item.id} wsId={wsId} item={item} posted={refresh} />
-        ))}
-        {hidden || (all && items.some((i) => i.kind === 'thread' && i.thread.resolved)) ? (
-          <button type="button" className={s.more} onClick={() => setAll(!all)}>
-            {all ? 'Hide resolved threads' : `Show ${hidden} resolved ${hidden === 1 ? 'thread' : 'threads'}`}
-          </button>
-        ) : null}
-        {data?.more ? (
-          <button type="button" className={s.more} onClick={() => actions.openLink({ kind: 'url', url: pr.url })}>
-            Older comments are on GitHub <Icon name="external" size={11} />
-          </button>
-        ) : null}
-      </div>
-      {data && pr.state === 'OPEN' ? (
-        <footer className={s.foot}>
-          <WriteBox
-            placeholder={`Comment on #${pr.number}…`}
-            label="Comment"
-            busyLabel="Posting…"
-            onSend={async (body) => {
-              const out = await api.workbench.prPost(wsId, { kind: 'comment', body });
-              if (!out?.ok) {
-                if (out) showGitTrouble(wsId, out, 'none');
-                return false;
-              }
-              toast(client, out.message, 'success');
-              refresh();
-              return true;
-            }}
-          />
-        </footer>
-      ) : null}
-    </section>
-  );
+  return <ReviewCard review={item.review} />;
 }

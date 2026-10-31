@@ -15,7 +15,7 @@ import { askBeforeWork } from '../../lib/work-confirm.js';
 import { useClock } from '../../lib/window-active.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
-import { showPrConversation } from '../../pr/use-pr-conversation.js';
+import { openPrPage } from '../../pr/use-pr-conversation.js';
 import s from './menus.module.css';
 
 const STATE: Record<PullRequest['state'], string> = { OPEN: 'Open', CLOSED: 'Closed', MERGED: 'Merged' };
@@ -208,8 +208,8 @@ function PrCard({ wsId, pr, pick, refresh, close }: { wsId: string; pr: PullRequ
       <div className={s.prActions}>
         {open ? pr.conflicts ? <ResolveConflictsButton wsId={wsId} /> : <MergeButton wsId={wsId} pr={pr} onError={setError} /> : null}
         {pr.state === 'MERGED' ? <AfterMergeButton wsId={wsId} /> : null}
-        <Tip label="What reviewers said, with the code they mean, above the chat: reply, resolve, or ask Claude">
-          <Button icon="chat" onClick={() => (showPrConversation(wsId), close())}>
+        <Tip label="The PR’s page: what reviewers said, with the code they mean; reply, resolve, or ask Claude">
+          <Button icon="chat" onClick={() => (openPrPage(wsId), close())}>
             Comments
           </Button>
         </Tip>

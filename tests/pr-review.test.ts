@@ -123,6 +123,20 @@ describe('excerpts', () => {
     expect(e.lines).toEqual(['line 48', 'line 49', 'line 50']);
   });
 
+  it('reads a worktree that lives in ~/.beluga (where Beluga keeps them)', async () => {
+    const home = mkdtempSync(path.join(tmpdir(), 'beluga-home-'));
+    const wt = path.join(home, '.beluga', 'workspaces', 'p', 'w');
+    mkdirSync(path.join(wt, 'src'), { recursive: true });
+    writeFileSync(path.join(wt, 'src/auth.ts'), 'export const a = 1;\n');
+    const was = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      expect((await readExcerpt(wt, 'src/auth.ts')).lines).toEqual(['export const a = 1;']);
+    } finally {
+      process.env.HOME = was;
+    }
+  });
+
   it('never reads outside it or a secret', async () => {
     await expect(readExcerpt(root, '../../etc/passwd')).rejects.toThrow(/isn’t in this worktree/);
     await expect(readExcerpt(root, 'link.txt')).rejects.toThrow(/isn’t in this worktree/);

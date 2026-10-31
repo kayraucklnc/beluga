@@ -2,11 +2,12 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import type { PrConversation, PrThread } from '@beluga/core/work-store.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { everyWhileShown } from '../lib/window-active.js';
+import { openFocus } from '../lib/panel.js';
 
 /**
- * A worktree's PR conversation, kept per worktree for the window: the strip above the chat and
- * the panel share it. Asked again when the PR changes (a push, a review), when you post, and
- * every two minutes while the panel is open.
+ * A worktree's PR conversation, kept per worktree for the window: the strip above the chat, the
+ * PR page and a chat message's comments share it. Asked again when the PR changes (a push, a
+ * review), when you post, and every two minutes while the PR page is open.
  */
 interface Entry {
   readonly data?: PrConversation;
@@ -17,7 +18,6 @@ interface Entry {
 }
 
 const entries = new Map<string, Entry>();
-const open = new Set<string>();
 const listeners = new Set<() => void>();
 let version = 0;
 const emit = (): void => {
@@ -29,21 +29,9 @@ const subscribe = (l: () => void): (() => void) => {
   return () => listeners.delete(l);
 };
 
-/** Whether the conversation panel is open above a worktree's chat. */
-export function usePanelOpen(wsId: string): [boolean, (open: boolean) => void] {
-  useSyncExternalStore(subscribe, () => version);
-  const set = useCallback((value: boolean) => {
-    if (value) open.add(wsId);
-    else open.delete(wsId);
-    emit();
-  }, [wsId]);
-  return [open.has(wsId), set];
-}
-
-/** Open the panel from elsewhere (the PR sheet). */
-export function showPrConversation(wsId: string): void {
-  open.add(wsId);
-  emit();
+/** The PR's page across the center (from the strip, the PR sheet, or comments in a chat message). */
+export function openPrPage(wsId: string): void {
+  openFocus('pr', wsId);
 }
 
 type Fetch = (wsId: string) => Promise<{ ok: true; conversation: PrConversation } | { ok: false; message: string } | undefined>;
@@ -67,22 +55,22 @@ export function conversationCounts(c: PrConversation | undefined): { said: numbe
   return { said: c.comments.length + c.reviews.filter((r) => r.body.trim()).length + inThreads, open: c.threads.filter((t) => !t.resolved).length };
 }
 
-export function usePrConversation(wsId: string): { data?: PrConversation; error?: string; loading: boolean; refresh: () => void } {
+export function usePrConversation(wsId: string, opts: { readonly live?: boolean } = {}): { data?: PrConversation; error?: string; loading: boolean; refresh: () => void } {
   const api = useApi();
   const pr = useApp((st) => st.prs[wsId]);
   useSyncExternalStore(subscribe, () => version);
   const fetch: Fetch = useCallback((id) => api.workbench.prConversation(id) as ReturnType<Fetch>, [api]);
   const key = pr ? `${pr.number}/${pr.head ?? ''}/${pr.review ?? ''}/${pr.state}` : undefined;
-  const isOpen = open.has(wsId);
+  const live = Boolean(opts.live);
   useEffect(() => {
     if (!key) return;
     const had = entries.get(wsId);
     if (had?.key !== key && !had?.loading) void load(fetch, wsId, key);
   }, [wsId, key, fetch]);
   useEffect(() => {
-    if (!key || !isOpen) return;
+    if (!key || !live) return;
     return everyWhileShown(() => void load(fetch, wsId, key), 120_000);
-  }, [wsId, key, isOpen, fetch]);
+  }, [wsId, key, live, fetch]);
   const entry = entries.get(wsId);
   const refresh = useCallback(() => {
     if (key) void load(fetch, wsId, key);

@@ -31,6 +31,9 @@ import { RichBlock, useRichFence } from '../components/blocks/RichBlock.js';
 import { loadHighlighter } from '../lib/highlight.js';
 import { CODE_FENCE } from '@beluga/shared/code-ref.js';
 import { CodeRefBlock } from '../components/code/CodeRefBlock.js';
+import { PR_COMMENTS_FENCE } from '@beluga/shared/pr-comments-ref.js';
+import { PrCommentsBlock } from '../pr/PrCommentsBlock.js';
+import { goToCode } from '../lib/go-to-code.js';
 import s from './chat.module.css';
 
 
@@ -231,6 +234,7 @@ function boardKeys(issues: readonly { readonly key: string }[]): string {
  */
 export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions, live = false, tasks = false }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld; live?: boolean; tasks?: boolean }) {
   const actions = useActions();
+  const { client } = useBeluga();
   // The board's keys as one string, so a task changing doesn't draw every message again.
   const keys = useApp((st) => (tasks ? boardKeys(st.board.issues) : ''));
   const source = useMemo(() => {
@@ -278,6 +282,12 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
           if (href.startsWith('beluga-path:')) {
             const [raw, line] = href.slice('beluga-path:'.length).split('#');
             const p = decodeURIComponent(raw ?? '');
+            // A file of this worktree ("src/auth.ts:42"): straight to it, at that line.
+            const view = client.store.getState().view;
+            if (view.kind === 'workspace' && !p.endsWith('/') && !/^[~/]/.test(p)) {
+              void goToCode(client, view.id, p, line ? Number(line) : undefined);
+              return;
+            }
             actions.openLink({ kind: 'local', path: p, dir: p.endsWith('/'), ...(line ? { line: Number(line) } : {}) });
             return;
           }
@@ -302,6 +312,8 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       if (lang === TASKS_FENCE) return <TaskCards code={code} />;
       // Lines of the repository Claude points at (shared/code-ref.ts): read from the worktree, marked, openable.
       if (lang === CODE_FENCE) return <CodeRefBlock code={code} />;
+      // The worktree's PR comments, when you asked what reviewers said (shared/pr-comments-ref.ts): read-only, the PR page answers them.
+      if (lang === PR_COMMENTS_FENCE) return <PrCommentsBlock code={code} />;
       // Tables, charts, stats, code and colors (docs/views.md): data, drawn live.
       const view = viewFenceType(lang);
       if (view) return <MessageView code={code} type={view} local={localImages} />;
@@ -320,7 +332,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
         }
       />
     ),
-  }), [actions, localImages]);
+  }), [actions, client, localImages]);
   return (
     <LiveText.Provider value={live}>
       <MessageImages.Provider value={images}>

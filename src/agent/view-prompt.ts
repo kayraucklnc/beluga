@@ -1,6 +1,7 @@
 import { CHART_KINDS, COLUMN_TYPES, VIEW_FENCE } from '../shared/view-spec.js';
 import { TASKS_FENCE } from '../shared/task-refs.js';
 import { CODE_FENCE } from '../shared/code-ref.js';
+import { PR_COMMENTS_FENCE } from '../shared/pr-comments-ref.js';
 
 /**
  * Teaching Claude what it can show (src/shared/view-spec.ts, docs/views.md): what's there, and
@@ -26,7 +27,11 @@ export function buildViewAppend(): string {
     `Code in this repository: when you point at lines (what you changed, where a bug is, what a reviewer meant),`,
     `show them with a \`\`\`${CODE_FENCE} block instead of pasting them: its first line is the path from the`,
     'project root and the lines ("src/auth.ts:40-62"), then optionally "highlight: 44-46, 51" and "note: one line".',
-    'The app reads those lines from the worktree, marks the highlighted ones, and opens them in the editor.',
+    'The app reads those lines from the worktree, marks the highlighted ones, and goes to that file at a click.',
+    `A pull request's comments: when asked what reviewers said on this worktree's PR, show them with a`,
+    `\`\`\`${PR_COMMENTS_FENCE} block ("show: open", or "show: all" for resolved threads too; optionally`,
+    '"path: src/payments" for one part) instead of retyping them; the app draws each comment with its code.',
+    'Then say in words what they ask for. Replying and resolving happen on the PR page, not in chat.',
     '',
     'mcp__beluga_view__show takes one JSON element and returns its token: put that exact token on its own line',
     'in your answer where the element goes. Write only tokens the tool returned, never one by hand (a token',
