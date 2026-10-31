@@ -36,12 +36,13 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   await expect(main(page).getByRole('button', { name: 'Hide the Chat' })).toHaveAttribute('aria-pressed', 'true');
 
   // 380 wide, wider from the keyboard on its edge, and kept.
-  expect(Math.round((await chat(page).boundingBox())!.width)).toBe(380);
+  // (Within a pixel: its edge's hairline is drawn on one side or the other.)
+  expect(Math.abs((await chat(page).boundingBox())!.width - 380)).toBeLessThanOrEqual(1);
   const edge = page.getByRole('separator', { name: 'Resize the chat' });
   await edge.focus();
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
-  await expect.poll(async () => Math.round((await chat(page).boundingBox())!.width)).toBe(428);
+  await expect.poll(async () => Math.abs((await chat(page).boundingBox())!.width - 428)).toBeLessThanOrEqual(1);
 
   // Hidden, then back after a reload: still hidden, and as wide when shown again.
   await main(page).getByRole('button', { name: 'Hide the Chat' }).click();
@@ -50,9 +51,9 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch');
   await expect(chat(page)).toHaveCount(0);
   await main(page).getByRole('button', { name: 'Show the Chat' }).click();
-  expect(Math.round((await chat(page).boundingBox())!.width)).toBe(428);
-  // Elsewhere, the panel is as you left it.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  expect(Math.abs((await chat(page).boundingBox())!.width - 428)).toBeLessThanOrEqual(1);
+  // Elsewhere (a page with the panel: the Tasks board has none), the panel is as you left it.
+  await sidebar(page).getByRole('button', { name: /^Overview/ }).click();
   await expect(page.getByRole('button', { name: /^(Show|Hide) the panel/ })).toBeEnabled();
 });
 

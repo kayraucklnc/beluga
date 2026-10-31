@@ -370,6 +370,10 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         preventScrolling={!inline}
         zoomOnPinch
         panOnDrag
+        // React Flow listens for these on the whole window: in a conversation or a document Space
+        // scrolls the page (it held Space for panning), and nothing in a graph is deleted by a key.
+        panActivationKeyCode={inline ? null : 'Space'}
+        deleteKeyCode={null}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} className={g.dots} />
         {!inline ? <MiniMap pannable zoomable className={g.minimap} nodeClassName={(n) => (n.type === 'group' ? g.miniGroup! : g.miniNode!)} /> : null}

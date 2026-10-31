@@ -188,11 +188,10 @@ test('a relative .md link opens in the reader at its section; other files open i
 test('mermaid draws its diagrams, KaTeX typesets math, and images next to the file show', async ({ page }) => {
   await openGuide(page);
   const doc = center(page).locator('[data-markdown-doc]');
-  const diagrams = doc.getByRole('img', { name: 'Diagram' });
+  // Mermaid blocks are drawn as Beluga's own interactive graphs.
+  const diagrams = doc.getByRole('figure', { name: 'Graph' });
   await expect(diagrams).toHaveCount(2);
-  await expect(diagrams.first().locator('svg')).toBeAttached({ timeout: 20_000 });
-  await expect(diagrams.nth(1).locator('svg')).toBeAttached({ timeout: 20_000 });
-  await expect(diagrams.first()).toContainText('charge.succeeded');
+  await expect(diagrams.first()).toContainText('charge.succeeded', { timeout: 20_000 });
   // No script from a diagram ran, and nothing it left behind is in the page.
   await expect(page.locator('body > [id^="dbeluga-mermaid"], body > [id^="beluga-mermaid"]')).toHaveCount(0);
   await expect(doc.locator('.katex').first()).toBeAttached({ timeout: 15_000 });

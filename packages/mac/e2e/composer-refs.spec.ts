@@ -78,11 +78,12 @@ test('an image path inside pasted words becomes the image; the words stay (plain
   await sidebar(page).getByRole('button', { name: 'Group chat' }).click();
   const box = composer(page);
   const tray = page.getByRole('group', { name: 'Images to send' });
-  for (const [i, written] of [shot, `"${shot}"`, `“${shot}”`, shot.replace(/ /g, '\\ ')].entries()) {
+  for (const written of [shot, `"${shot}"`, `“${shot}”`, shot.replace(/ /g, '\\ ')]) {
+    // Emptying the box takes its image off the tray too (an image leaves with its reference).
     await box.fill('');
     await pasteText(box, `the header is cut off in ${written}, can you fix it`);
     await expect(box).toHaveValue(/^the header is cut off in \[(?:image \d+|\d+\u2007[^\]\n]+)\], can you fix it$/);
-    await expect(tray.locator('img')).toHaveCount(i + 1);
+    await expect(tray.locator('img')).toHaveCount(1);
   }
   // Paths that aren't images here stay words.
   await box.fill('');

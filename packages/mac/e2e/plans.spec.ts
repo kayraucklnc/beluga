@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
-import { openPlans as toPlans } from './helpers.js';
+import { openPlans as toPlans, openTasks } from './helpers.js';
 
 /** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
 
@@ -366,17 +366,17 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   await chat.getByRole('textbox', { name: 'Message Claude about the plan' }).press('Enter');
   await expect(main(page).locator('.react-flow__node').filter({ hasText: /Rate limits on the export endpoint/i })).toBeVisible({ timeout: 20_000 });
   // Not on the board yet.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await openTasks(page);
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await expect(page.getByRole('grid', { name: 'Tasks' })).not.toContainText('Data model and migration');
   await toPlans(page);
   await main(page).getByRole('button', { name: /^Export orders accounting,/ }).click();
   await page.getByRole('button', { name: 'Approve Plan' }).first().click();
   await expect(page.getByRole('button', { name: 'Approve Plan' })).toHaveCount(0);
-  // On the board now, each with its plan.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  // On the board now: the plan as an epic holding its tasks (BLG-469).
+  await openTasks(page);
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
-  await expect(page.getByRole('grid', { name: 'Tasks' })).toContainText('Data model and migration');
+  await expect(page.getByRole('grid', { name: 'Tasks' })).toContainText(/Export orders accounting\s*Plan\s*0\/3/);
 });
 
 test('the composer: Plan with Tasks makes the conversation a plan once you send', async ({ page }) => {

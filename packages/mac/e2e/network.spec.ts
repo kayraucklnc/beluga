@@ -19,6 +19,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the Friends card turns the network on, and friends show with their status', async ({ page }) => {
+  // The run's demo starts with the network on (its friends are on it): off first, from Settings.
+  await page.keyboard.press('ControlOrMeta+,');
+  await page.getByRole('button', { name: 'People & access' }).click();
+  const on = page.getByRole('switch', { name: 'Talk with friends directly' });
+  if ((await on.getAttribute('aria-checked')) === 'true') await on.click();
+  await expect(on).toHaveAttribute('aria-checked', 'false');
+  await page.keyboard.press('Escape');
   const card = sidebar(page).getByRole('group', { name: 'Talk with friends' });
   await expect(card).toContainText('No server');
   await card.getByRole('button', { name: 'Turn On' }).click();

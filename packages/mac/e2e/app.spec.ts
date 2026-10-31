@@ -29,7 +29,8 @@ test.beforeEach(async ({ page }) => {
 
 test('shows the room, its people and projects', async ({ page }) => {
   await expect(sidebar(page).getByRole('button', { name: /^bob, / })).toBeVisible();
-  await expect(sidebar(page).getByText('bob-api')).toBeVisible();
+  // Yours, and bob's shared copy of it under bob's conversations.
+  await expect(sidebar(page).getByText('bob-api').first()).toBeVisible();
   await expect(page.getByText('hey! just pushed my API notes')).toBeVisible();
 });
 
@@ -123,10 +124,11 @@ test('picks a model and how hard Claude thinks', async ({ page }) => {
   await page.getByRole('radio', { name: 'Auto' }).click();
 });
 
-test("opens a person's card beside their row", async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: /^bob, / }).click();
+test("opens a person's room card from their row", async ({ page }) => {
+  // bob in the room (under Not friends yet: the demo's room bob isn't the friend bob): his row opens his room card.
+  await sidebar(page).getByRole('button', { name: 'bob Add bob as a friend' }).click();
   const card = page.getByRole('dialog', { name: 'bob' });
-  await expect(card.getByRole('radiogroup', { name: 'Trust bob' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Ask Claude' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(card).toBeHidden();
 });
@@ -484,8 +486,8 @@ test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', as
   await page.keyboard.press('Escape');
   await composer(page).click();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('status').filter({ hasText: 'Plan mode' }).filter({ hasText: 'to act' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Planning' }).filter({ hasText: 'to act' })).toBeVisible();
   await expect(composer(page)).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('status').filter({ hasText: 'Plan mode' }).filter({ hasText: 'to act' })).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'Planning' }).filter({ hasText: 'to act' })).toHaveCount(0);
 });

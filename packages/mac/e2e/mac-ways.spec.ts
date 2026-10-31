@@ -46,7 +46,8 @@ test('■ Stop stops Claude here, and what was queued comes back to the box', as
 
 test('the toolbar puts what the workspace needs next up front, the rest one click away with its keys', async ({ page }) => {
   await openWorkspace(page, 'add-auth');
-  const primary = toolbar(page).locator('button[class*="primary"]');
+  // The main step (its chevron next to it is primary too).
+  const primary = toolbar(page).locator('button[class*="primary"]').first();
   await expect(primary).toHaveText(/Merge|Commit|Create PR|PR #|Fix Checks|Solve Conflict|Run/);
   // Calm: the one thing to do next, Run, and ⋯ (no row of git icons, no terminal or ⌘K buttons).
   const tools = toolbar(page).getByRole('group', { name: 'Workspace actions' }).getByRole('button');
