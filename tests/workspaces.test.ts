@@ -159,6 +159,97 @@ describe('worktree lifecycle', () => {
     expect(sh(repo, 'for-each-ref', 'refs/beluga/')).toBe('');
   });
 
+  it('deleting a worktree for good forgets its Claude Code sessions, never another folder filed alike', async () => {
+    const claude = path.join(base, 'claude');
+    process.env.CLAUDE_CONFIG_DIR = claude;
+    try {
+      const ws = await mgr.createWorktree(repos()[0]!.id, 'chatty');
+      const filed = path.join(claude, 'projects', ws.path.replace(/[^a-zA-Z0-9]/g, '-'));
+      mkdirSync(path.join(filed, 's1', 'subagents'), { recursive: true });
+      writeFileSync(path.join(filed, 's1.jsonl'), `${JSON.stringify({ type: 'user', cwd: ws.path })}\n`);
+      // Filed under the same name but ran elsewhere ("a/b-c" and "a-b/c" are filed alike): stays.
+      writeFileSync(path.join(filed, 's2.jsonl'), `${JSON.stringify({ type: 'user', cwd: '/elsewhere' })}\n`);
+      mkdirSync(path.join(claude, 'file-history', 's1'), { recursive: true });
+      mkdirSync(path.join(claude, 'todos'), { recursive: true });
+      writeFileSync(path.join(claude, 'todos', 's1-agent-s1.json'), '[]');
+      writeFileSync(path.join(claude, 'todos', 's2-agent-s2.json'), '[]');
+      await mgr.remove(ws.id);
+      expect(existsSync(path.join(filed, 's1.jsonl'))).toBe(false);
+      expect(existsSync(path.join(filed, 's1'))).toBe(false);
+      expect(existsSync(path.join(filed, 's2.jsonl'))).toBe(true);
+      expect(existsSync(path.join(claude, 'file-history', 's1'))).toBe(false);
+      expect(existsSync(path.join(claude, 'todos', 's1-agent-s1.json'))).toBe(false);
+      expect(existsSync(path.join(claude, 'todos', 's2-agent-s2.json'))).toBe(true);
+      // Only its own: the folder goes with it.
+      const solo = await mgr.createWorktree(repos()[0]!.id, 'solo');
+      const soloFiled = path.join(claude, 'projects', solo.path.replace(/[^a-zA-Z0-9]/g, '-'));
+      mkdirSync(soloFiled, { recursive: true });
+      writeFileSync(path.join(soloFiled, 's3.jsonl'), `${JSON.stringify({ type: 'user', cwd: solo.path })}\n`);
+      await mgr.archive(solo.id);
+      // Archived keeps it (restore brings the conversation back).
+      expect(existsSync(path.join(soloFiled, 's3.jsonl'))).toBe(true);
+      await mgr.remove(solo.id);
+      expect(existsSync(soloFiled)).toBe(false);
+      // Codex's rollouts that ran there go too; another folder's stay.
+      const codex = process.env.CODEX_HOME!;
+      const day = path.join(codex, 'sessions', '2026', '10', '31');
+      mkdirSync(day, { recursive: true });
+      const rollout = (id: string, cwd: string) => {
+        const f = path.join(day, `rollout-2026-10-31T20-00-00-${id}.jsonl`);
+        writeFileSync(f, `${JSON.stringify({ type: 'session_meta', payload: { id, cwd } })}\n`);
+        return f;
+      };
+      const cx = await mgr.createWorktree(repos()[0]!.id, 'codexy');
+      const there = rollout('t1', cx.path);
+      const elsewhere = rollout('t2', '/elsewhere');
+      await mgr.remove(cx.id);
+      expect([existsSync(there), existsSync(elsewhere)]).toEqual([false, true]);
+      // A Codex chat forgets its own thread.
+      const chat = await mgr.createChat(repos()[0]!.id, 'Codex chat');
+      mgr.rememberSession(chat.id, 't2', 'codex');
+      await mgr.remove(chat.id);
+      expect(existsSync(elsewhere)).toBe(false);
+    } finally {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    }
+  });
+
+  it("deleting a chat in the main folder forgets only its own Claude Code session", async () => {
+    const claude = path.join(base, 'claude');
+    process.env.CLAUDE_CONFIG_DIR = claude;
+    try {
+      const filed = path.join(claude, 'projects', repo.replace(/[^a-zA-Z0-9]/g, '-'));
+      mkdirSync(path.join(filed, 'mine'), { recursive: true });
+      for (const s of ['mine', 'shared', 'other']) writeFileSync(path.join(filed, `${s}.jsonl`), '{}\n');
+      const chat = await mgr.createChat(repos()[0]!.id, 'Quick');
+      mgr.rememberSession(chat.id, 'mine');
+      const twin = await mgr.createChat(repos()[0]!.id, 'Twin');
+      mgr.rememberSession(twin.id, 'shared');
+      const fork = await mgr.createChat(repos()[0]!.id, 'Fork');
+      mgr.rememberSession(fork.id, 'shared');
+      await mgr.remove(chat.id);
+      // Another chat still resumes "shared": it stays.
+      await mgr.remove(twin.id);
+      expect(['mine', 'mine.jsonl', 'shared.jsonl', 'other.jsonl'].map((f) => existsSync(path.join(filed, f)))).toEqual([false, false, true, true]);
+    } finally {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    }
+  });
+
+  it('lists a new worktree or chat at once, and a refresh that began before it keeps it (BLG-531)', async () => {
+    const before = mgr.refresh();
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'quick');
+    const chat = await mgr.createChat(repos()[0]!.id, 'Ask');
+    const ids = () => repos()[0]!.workspaces.map((w) => w.id);
+    expect(ids()).toEqual(expect.arrayContaining([ws.id, chat.id]));
+    expect(chat.askOnly).toBe(true);
+    expect(ws.status).toBeDefined();
+    await before;
+    expect(ids()).toEqual(expect.arrayContaining([ws.id, chat.id]));
+    await mgr.refresh();
+    expect(repos()[0]!.workspaces.find((w) => w.id === ws.id)).toMatchObject({ kind: 'worktree', external: false });
+  });
+
   it('creates chats in the main folder without a worktree', async () => {
     const chat = await mgr.createChat(repos()[0]!.id, 'Quick question');
     expect(chat).toMatchObject({ kind: 'chat', name: 'Quick question', path: repo });

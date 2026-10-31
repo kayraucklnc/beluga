@@ -596,9 +596,10 @@ export class Session {
    * Send a message to the Claude of a workspace conversation: yours, or (in a workspace
    * someone shared with you) theirs. `echo: false` leaves the prompt out of the chat (it's there already);
    * a string shows that instead (a short line for a long brief: Claude still gets the whole prompt).
-   * Returns the request's id (undefined when you can't ask there).
+   * Returns the request's id (undefined when you can't ask there). `shown`: the message is in the
+   * chat already, under this request id (see showAsk), so it isn't drawn again.
    */
-  askOwnClaude(prompt: string, channel: string, urgent = false, echo: boolean | string = true): string | undefined {
+  askOwnClaude(prompt: string, channel: string, urgent = false, echo: boolean | string = true, shown?: string): string | undefined {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
       this.toast(`You can follow ${shared.name}, but not ask its agent. Ask the owner to let you contribute`, 'warn');
@@ -606,12 +607,23 @@ export class Session {
     }
     // Load the saved conversation first, so what's said now is kept with it.
     if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
-    const requestId = randomUUID();
+    const requestId = shown ?? randomUUID();
     // How a worktree is as you send this, so editing the message later can go back to it (BLG-385).
-    if (!shared && echo) void this.workspaces?.snapshotPrompt(channel, requestId);
+    if (!shared && (echo || shown)) void this.workspaces?.snapshotPrompt(channel, requestId);
     // Steering your own Claude at work here: the message says it isn't read yet from the moment it's drawn.
-    if (echo) this.sendChat(typeof echo === 'string' ? echo : prompt, false, channel, requestId, urgent && !shared && this.host.runningIn(channel));
+    if (echo && !shown) this.sendChat(typeof echo === 'string' ? echo : prompt, false, channel, requestId, urgent && !shared && this.host.runningIn(channel));
     return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent, undefined, requestId);
+  }
+
+  /**
+   * Your first message in a conversation that isn't there yet (a worktree being made), drawn at
+   * once so sending it shows something (BLG-531); askOwnClaude with `shown` sends it when it's
+   * ready. Returns the request id it's drawn under.
+   */
+  showAsk(prompt: string, channel: string): string {
+    const requestId = randomUUID();
+    this.sendChat(prompt, false, channel, requestId);
+    return requestId;
   }
 
   /** Run your Claude for someone else in one of your workspaces (they were invited to work there). */

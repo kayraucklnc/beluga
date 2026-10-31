@@ -27,6 +27,16 @@
 .loading {
   flex: 1;
 }
+/* Where the message box will be, while a worktree is being made with your message in it. */
+.makingLine {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 16px 18px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
 .toasts {
   position: fixed;
   left: 50%;

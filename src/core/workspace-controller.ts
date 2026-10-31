@@ -44,7 +44,10 @@ export interface ControllerDeps {
    * without posting the prompt as your message (it is already in the conversation); a string: posted
    * as your message instead of the prompt (a handoff's prompt carries the conversation, BLG-506).
    */
-  readonly askClaude: (prompt: string, channel: string, opts?: { readonly echo?: boolean | string }) => void;
+  /** `shown`: the message is in the conversation already under this request id (see showAsk). */
+  readonly askClaude: (prompt: string, channel: string, opts?: { readonly echo?: boolean | string; readonly shown?: string }) => void;
+  /** Draw your first message in a conversation that isn't there yet (a worktree being made) → its request id. */
+  readonly showAsk?: (prompt: string, channel: string) => string;
   /** Stop your Claude in a conversation, resolving once nothing runs there (editing a message cuts it there). */
   readonly stopHere?: (channel: string) => Promise<void>;
   /** A conversation went back to an earlier point: forget how full its context was. */
@@ -700,11 +703,17 @@ export class WorkspaceController {
     };
   }
 
-  /** `back`: what failing put back as it was (shown after why). */
-  private async act<T>(label: string, fn: () => Promise<T>, back?: string): Promise<T | undefined> {
+  /**
+   * `back`: what failing put back as it was (shown after why). `later`: shown at once and every
+   * project re-read in the background (something just made is listed already: see manager.adopt).
+   */
+  private async act<T>(label: string, fn: () => Promise<T>, back?: string, opts: { readonly later?: boolean } = {}): Promise<T | undefined> {
     try {
       const result = await fn();
-      await this.refresh();
+      if (opts.later) {
+        this.publish();
+        void this.refresh().catch(() => undefined);
+      } else await this.refresh();
       return result;
     } catch (err) {
       const why = errorText(err);
@@ -721,15 +730,16 @@ export class WorkspaceController {
    * made, the row goes again and the toast says why.
    */
   /** `agent`: the agent it runs (unset: your default). */
-  async newWorktree(projectId: string, name: string, opts: { base?: string; quiet?: boolean; agent?: AgentRef } = {}): Promise<Workspace | undefined> {
+  /** `id`: the id it gets (from newWorktreeId), else a fresh one. */
+  async newWorktree(projectId: string, name: string, opts: { base?: string; quiet?: boolean; agent?: AgentRef; id?: string } = {}): Promise<Workspace | undefined> {
     const project = this.deps.manager.list.find((p) => p.root !== '' && (p.id === projectId || p.root === projectId));
-    const id = this.deps.manager.newWorktreeId();
+    const id = opts.id ?? this.deps.manager.newWorktreeId();
     if (project) {
       this.ahead.making.set(id, pendingWorktree({ id, project, name: slugify(name) || 'worktree', ...(opts.base ? { base: opts.base } : {}) }));
       this.publish();
       if (!opts.quiet) this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab: 'chat' } });
     }
-    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name, opts.base, { id, ...(opts.agent ? { agent: opts.agent } : {}) }));
+    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name, opts.base, { id, ...(opts.agent ? { agent: opts.agent } : {}) }), undefined, { later: true });
     const shown = this.ahead.making.delete(id);
     this.publish();
     if (ws) {
@@ -748,7 +758,7 @@ export class WorkspaceController {
 
   /** `quiet`: made for something else's page (a plan's conversation), so it doesn't take you there. */
   async newChat(projectId: string, title: string, inDir?: string, opts: { readonly quiet?: boolean } = {}): Promise<Workspace | undefined> {
-    const ws = await this.act("Couldn't start the chat", () => this.deps.manager.createChat(projectId, title, inDir));
+    const ws = await this.act("Couldn't start the chat", () => this.deps.manager.createChat(projectId, title, inDir), undefined, { later: true });
     if (ws && !opts.quiet) this.open(ws.id);
     return ws;
   }
@@ -790,9 +800,14 @@ export class WorkspaceController {
     const text = firstMessage.trim();
     const named = opts.name?.trim();
     const proper = named || !text ? undefined : nameTask(firstMessage).catch(() => undefined);
-    const ws = await this.newWorktree(projectId, named || (text ? slugify(text) : 'worktree'), { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}), ...(opts.agent ? { agent: opts.agent } : {}) });
-    if (ws && opts.plan) this.deps.store.dispatch({ type: 'plan_mode', channel: `${WS_PREFIX}${ws.id}`, on: true });
-    if (ws && text) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
+    const id = this.deps.manager.newWorktreeId();
+    const channel = `${WS_PREFIX}${id}`;
+    // Your message shows at once on its page while git makes the folder (BLG-531); Claude gets it when that's done.
+    const shown = text && this.deps.showAsk ? this.deps.showAsk(firstMessage, channel) : undefined;
+    const ws = await this.newWorktree(projectId, named || (text ? slugify(text) : 'worktree'), { id, ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}), ...(opts.agent ? { agent: opts.agent } : {}) });
+    if (!ws && shown) this.deps.store.dispatch({ type: 'clear', channel });
+    if (ws && opts.plan) this.deps.store.dispatch({ type: 'plan_mode', channel, on: true });
+    if (ws && text) this.deps.askClaude(firstMessage, channel, shown ? { shown } : undefined);
     if (ws && proper) {
       if (opts.nameLater) void this.renameWhenNamed(ws.id, proper);
       else await this.renameWhenNamed(ws.id, proper);

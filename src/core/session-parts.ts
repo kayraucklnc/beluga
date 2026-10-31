@@ -76,7 +76,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         defaultAgent: (project) => session.agentFor(project),
         toast: (text, level) => session.toast(text, level),
         intend: (intent) => session.intend(intent),
-        askClaude: (prompt, channel, o) => session.askOwnClaude(prompt, channel, false, o?.echo ?? true),
+        askClaude: (prompt, channel, o) => session.askOwnClaude(prompt, channel, false, o?.echo ?? true, o?.shown),
+        showAsk: (prompt, channel) => session.showAsk(prompt, channel),
         compact: (channel, instructions) => session.compact(channel, instructions),
         stopHere: async (channel) => {
           if (host.runningIn(channel)) host.stopRun(channel);
