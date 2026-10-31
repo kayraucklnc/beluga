@@ -19,7 +19,8 @@ import { WaitingMark, WorkingMark } from '../team/Team.js';
  * status, priority and assignee change from their own menus; the rest of the row opens the task.
  * ↑↓ move, Return opens, right-click for everything else.
  */
-export function TaskList({ issues, statuses, projectId, emptyGroups, archived = false }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; emptyGroups: boolean; archived?: boolean }) {
+/** `projectId`: the board shown; `repo`: the one repo you're looking at on a board of several (new tasks run there). */
+export function TaskList({ issues, statuses, projectId, repo, emptyGroups, archived = false }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; repo?: string; emptyGroups: boolean; archived?: boolean }) {
   const prefs = useTasksPrefs();
   const { open } = useTaskActions();
   const [cursor, setCursor] = useState<string>();
@@ -65,7 +66,7 @@ export function TaskList({ issues, statuses, projectId, emptyGroups, archived = 
                 <span className={t.groupCount}>{g.items.length}</span>
               </button>
               {g.status === 'done' && !archived ? <ArchiveDoneButton projectId={projectId} /> : null}
-              {archived ? null : <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { projectId } : {}) })} />}
+              {archived ? null : <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />}
             </header>
             {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} {...(revealing(issue.parent) ? { pop: pop++ } : {})} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
             {!folded && !g.items.length ? <div className={t.groupEmpty}>Nothing here</div> : null}

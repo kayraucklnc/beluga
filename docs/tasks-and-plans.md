@@ -53,7 +53,8 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 
 | Field | Notes |
 |---|---|
-| `key` | `BOB-12`: a per-project prefix (from the project's name, changeable with `board.setPrefix`) and a counter |
+| `key` | `BOB-12`: its board's prefix (from the name, changeable with `board.setPrefix`) and a counter |
+| `projectId`, `board` | the repo it runs in (Start makes its worktree there), and the board it's on when that isn't its repo's own (BLG-500, below) |
 | `title`, `status` | Backlog · Ready · In Progress · In Review · Done · Canceled (the board's columns) |
 | `priority`, `labels`, `estimate`, `due` | Linear's set (estimates 1, 2, 3, 5, 8) |
 | `assignee` | a person: you or a friend (peer id), never a Claude (BLG-278; an older one for someone's Claude reads as theirs). Who's on it now shows on its own, under its card |
@@ -64,6 +65,8 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 | `proof` | screenshots, pages, files, graphs and results, attached by people or Claude |
 | `activity` | an append-only feed: who changed what, comments, Claude's notes, pull request events (the last 200). One field changed again by the same person within two minutes is one line ("estimated this at 5 points", from where it started; back where it was, no line) |
 | `plan` | the plan, milestone and plan task it came from |
+
+**Boards and repos are many to many (BLG-500).** Every repo has a board of its own (keyed by its project id in `board.json`'s `projects`), and a board can cover more repos (`repos`); a board of its own (`board_…`, made with New Board… in the board switcher) covers only the repos it names and has a `name`. A task is on one board (`boardOf`: its `board`, else its repo's) and runs in one repo. Its key, labels and About This Board come from the board; Start, the worktree, team boards and Linear sync go by its repo. New work in a repo lands on the repo's own board, unless that board is empty and another covers the repo (`boardForRepo`); a sub-task is on its parent's board, in whichever repo. Moving a task to another repo keeps its board and key, and a board takes in a repo once a task there runs in it. The window shows one board at a time; on a board of several repos a **Repos** filter picks whose tasks show (all by default), each card says its repo, New Task asks for the repo, and a task's page has a Repo menu. Claude's runs on such a board are told its repos (`reposPrompt`): `task_create` puts a task on the run's board in its repo, `project` names another repo, `board` another board, and `task_list` says each task's repo. A teammate's tasks arrive on the board your repo's work goes on (boards are yours; the team shares repos).
 
 **The brief** is what later agents rely on. It's Markdown in fixed sections: **Goal**, **Context**, **Acceptance criteria** (checkboxes you tick on the page; one that can't be true yet carries its reason on its line, `- [ ] … — deferred: why` or `— not done: why`, and shows as Deferred or Not done), **Decisions** (what was decided and why), **Open questions** and **Notes for the next agent**. Each edit is a revision with its author (a person or a Claude) and a one-line reason. A section's history shows every version; **Restore This** puts one back (as a new revision).
 

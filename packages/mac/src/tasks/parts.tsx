@@ -2,7 +2,7 @@ import { activityOf } from '@beluga/ui/workspace-models.js';
 import { liveFrom } from '@beluga/core/plans/progress.js';
 import { planEpicOf, planTitle } from '@beluga/core/plans/model.js';
 import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, childrenOf, isArchived, isOpen, isStartable, issueById, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, boardOf, childrenOf, isArchived, isOpen, isStartable, issueById, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Dot, IconButton, Tip, cx } from '../components/ui.js';
@@ -13,7 +13,8 @@ import { useClock } from '../plans/use-plans.js';
 import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
 import { doneCount, dueText, onIt, onItTip, onItWords, toggleOpened } from './tasks-model.js';
-import type { LogItem } from '@beluga/core/store.js';
+import { RepoChip, useSeveralRepos } from './boards.js';
+import type { AppState, LogItem } from '@beluga/core/store.js';
 import { revealSubTasks, setTasksPrefs, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import { teammatesOf, workingOn } from '@beluga/core/team/model.js';
 import { sameDeep } from '../lib/stable.js';
@@ -38,6 +39,8 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const done = useApp((s) => progressOf(s.board, issue).done);
   const total = useApp((s) => progressOf(s.board, issue).total);
   const progress = { done, total };
+  // On a board of several repos: which one it runs in.
+  const several = useSeveralRepos(issue);
   // The epic it's part of (its parent).
   const epicKey = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.key : undefined));
   const epicTitle = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.title : undefined));
@@ -58,7 +61,11 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const plan = useApp((s) => (issue.plan ? s.plans.plans.find((x) => x.id === issue.plan!.id) : undefined));
   const milestone = plan && issue.plan ? (plan.body ?? plan.draft)?.milestones.find((m) => m.id === issue.plan!.milestone)?.title : undefined;
   // A plan's own epic, or one of its milestones'.
-  const epic = useApp((s) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined));
+  // (Its plan and milestone apart: planEpicOf makes a new object each time, and a snapshot must stay the same.)
+  const planEpic = (s: AppState) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined);
+  const epicPlan = useApp((s) => planEpic(s)?.plan);
+  const epicMilestone = useApp((s) => planEpic(s)?.milestone);
+  const epic = epicPlan ? { plan: epicPlan, milestone: epicMilestone } : undefined;
   return (
     <span className={cx(t.meta, compact && t.metaCompact)}>
       {issue.drafting ? (
@@ -116,7 +123,8 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
         </Tip>
       ) : null}
       <IssueMark issue={issue} compact={compact} />
-      {labels ? issue.labels.slice(0, compact ? 3 : 4).map((l) => <LabelChip key={l} label={l} projectId={issue.projectId} iconOnly={compact} />) : null}
+      {several ? <RepoChip projectId={issue.projectId} compact={compact} /> : null}
+      {labels ? issue.labels.slice(0, compact ? 3 : 4).map((l) => <LabelChip key={l} label={l} projectId={boardOf(issue)} iconOnly={compact} />) : null}
       {due ? (
         <span className={cx(t.due, due.late && STATUS_INFO[issue.status].open && t.dueLate)}>
           <Icon name="calendar" size={11} />

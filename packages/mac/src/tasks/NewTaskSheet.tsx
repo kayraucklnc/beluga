@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
-import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, issueById } from '@beluga/core/board/model.js';
+import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, boardForRepo, boardOf, issueById, reposOf } from '@beluga/core/board/model.js';
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
 import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
@@ -8,7 +8,7 @@ import f from '../components/form.module.css';
 import { cx } from '../components/ui.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { PriorityIcon } from './marks.js';
-import { assigneeChoices } from './tasks-model.js';
+import { assigneeChoices, boardChoices } from './tasks-model.js';
 import { useTaggable } from './use-taggable.js';
 import { useBoard, usePeople, useSelf, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import n from './NewTaskSheet.module.css';
@@ -21,10 +21,11 @@ const SCALE: readonly Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
  * labels (or write them yourself), and how much it matters on a scale if you like. The box can ask
  * for several tasks, or an epic with its parts, and say who each is for: Create makes them all
  * (BLG-319), no chat in between. "@" in the box names a teammate or a friend, so Claude knows who
- * you mean (BLG-342). It goes in the
- * project and column you opened it from. Start with Claude makes the worktree and puts Claude on it.
+ * you mean (BLG-342). It goes on the
+ * board and in the column you opened it from, running in the repo you pick when the board covers
+ * several. Start with Claude makes the worktree (in that repo) and puts Claude on it.
  */
-export function NewTaskSheet({ projectId, status, parent, close }: { projectId?: string; status?: IssueStatus; parent?: string; close: () => void }) {
+export function NewTaskSheet({ boardId, projectId, status, parent, close }: { boardId?: string; projectId?: string; status?: IssueStatus; parent?: string; close: () => void }) {
   const board = useBoard();
   const prefs = useTasksPrefs();
   const allProjects = useApp((s) => s.projects);
@@ -33,13 +34,23 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const { client } = useBeluga();
   const { api, act, open } = useTaskActions();
   const parentIssue = parent ? issueById(board, parent) : undefined;
-  // The project you're in (Tasks is always one project's).
-  const firstProject = parentIssue?.projectId ?? projectId ?? (projects.some((p) => p.id === prefs.project) ? prefs.project : undefined) ?? projects[0]?.id ?? '';
+  const boards = useMemo(() => boardChoices(board, projects, prefs.board), [board, projects, prefs.board]);
+  const known = (id: string | undefined): id is string => Boolean(id && boards.some((b) => b.id === id));
+  // The board you're on (a sub-task: its parent's), else the one your last project's work goes on.
+  const firstBoard = parentIssue ? boardOf(parentIssue) : known(boardId) ? boardId : projectId && known(boardForRepo(board, projectId)) ? boardForRepo(board, projectId) : known(prefs.board) ? prefs.board : prefs.project && known(boardForRepo(board, prefs.project)) ? boardForRepo(board, prefs.project) : (boards[0]?.id ?? '');
+  const [onBoard, setOnBoard] = useState(firstBoard);
+  const repos = useMemo(() => {
+    const covered = reposOf(board, onBoard).filter((r) => projects.some((p) => p.id === r));
+    return parentIssue && !covered.includes(parentIssue.projectId) ? [...covered, parentIssue.projectId] : covered;
+  }, [board, onBoard, projects, parentIssue]);
+  // The repo it runs in: the one asked for, the parent's, the one you were last in, else the board's own.
+  const repoFor = (list: readonly string[]): string => [projectId, parentIssue?.projectId, prefs.project].find((r): r is string => Boolean(r && list.includes(r))) ?? list[0] ?? '';
   const [describe, setDescribe] = useState('');
   const [mine, setMine] = useState(false);
   const [title, setTitle] = useState('');
   const [goal, setGoal] = useState('');
-  const [project, setProject] = useState(firstProject);
+  const [chosenRepo, setProject] = useState(() => repoFor(repos));
+  const project = repos.includes(chosenRepo) ? chosenRepo : repoFor(repos);
   const column: IssueStatus = status ?? parentIssue?.status ?? (prefs.scope === 'backlog' ? 'backlog' : 'todo');
   const [priority, setPriority] = useState<Priority>('none');
   const people = usePeople(project);
@@ -53,9 +64,10 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   if (!projects.length) {
     return <FormSheet title="New Task" intro="Tasks belong to a project. Add a project first (File › Add Project…)." submitLabel="OK" hideSubmit onSubmit={close} onCancel={close} />;
   }
-  // Where it goes, quietly: the project (unless you pick it below) and the column.
-  const pickProject = !projectId && !parentIssue;
-  const where = [pickProject ? '' : projects.find((p) => p.id === project)?.name, STATUS_INFO[start ? 'todo' : column].label].filter(Boolean).join(' · ');
+  // Where it goes, quietly: the board (unless you pick it below) and the column; the repo when the board has several.
+  const pickBoard = !known(boardId) && !parentIssue && boards.length > 1;
+  const pickRepo = repos.length > 1;
+  const where = [pickBoard ? '' : boards.find((b) => b.id === onBoard)?.name, STATUS_INFO[start ? 'todo' : column].label].filter(Boolean).join(' · ');
   return (
     <FormSheet
       title={parentIssue ? `New Sub-task of ${parentIssue.key}` : 'New Task'}
@@ -70,6 +82,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
         const who = choices.find((c) => c.key === assignee)?.assignee;
         const created = await api.create({
           projectId: project,
+          board: onBoard,
           ...(mine ? { title: title.trim(), ...(goal.trim() ? { goal: goal.trim() } : {}) } : { describe: describe.trim() }),
           status: start ? 'todo' : column,
           priority,
@@ -129,9 +142,15 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
         <Icon name={mine ? 'chevronDown' : 'chevronRight'} size={10} />
         {mine ? 'Let Claude write the title and goal' : 'Write title and goal myself'}
       </button>
-      {pickProject ? (
-        <Field label="Project">
-          <Popup label="Project" value={project} options={projects.map((p) => ({ value: p.id, label: p.name }))} onChange={setProject} />
+      {pickBoard ? (
+        <Field label="Board">
+          <Popup label="Board" value={onBoard} options={boards.map((b) => ({ value: b.id, label: b.name }))} onChange={setOnBoard} />
+        </Field>
+      ) : null}
+      {/* A board of several repos: which one it runs in (its worktree is made there). */}
+      {pickRepo ? (
+        <Field label="Repo">
+          <Popup label="Repo" value={project} options={repos.map((r) => ({ value: r, label: projects.find((p) => p.id === r)?.name ?? r }))} onChange={setProject} />
         </Field>
       ) : null}
       <Field label="Priority">
