@@ -23,6 +23,7 @@ import {
   waitForLock,
   waitingLine,
   workerCount,
+  busyShare,
   cpuSeconds,
   pidsUnder,
   usageLine,
@@ -74,13 +75,22 @@ describe('names, ports and homes', () => {
     expect(slotHomes(homes, 2, 1)).toEqual({ home: `${homes.home}-2b`, claude: `${homes.claude}-2b` });
   });
 
-  it('runs 3 workers, fewer on a small Mac, 1 on a busy one, unless E2E_WORKERS says', () => {
+  it('runs 3 workers, fewer on a small Mac or as the idle CPU runs out, unless E2E_WORKERS says', () => {
     expect(workerCount({}, 14, 0.3)).toBe(3);
-    expect(workerCount({}, 4, 0.3)).toBe(2);
+    expect(workerCount({}, 4, 0.1)).toBe(2);
     expect(workerCount({}, 2, 0)).toBe(1);
+    // A busy Mac steps down a worker at a time, not straight to 1.
+    expect(workerCount({}, 14, 0.7)).toBe(2);
+    expect(workerCount({}, 14, 0.9)).toBe(1);
     expect(workerCount({}, 14, 1.2)).toBe(1);
-    expect(workerCount({ E2E_WORKERS: '4' }, 14, 3)).toBe(4);
+    expect(workerCount({ E2E_WORKERS: '4' }, 14, 1)).toBe(4);
     expect(workerCount({ E2E_WORKERS: 'lots' }, 14, 0.3)).toBe(3);
+  });
+
+  it('measures how busy the CPU is', async () => {
+    const busy = await busyShare(50);
+    expect(busy).toBeGreaterThanOrEqual(0);
+    expect(busy).toBeLessThanOrEqual(1);
   });
 });
 
