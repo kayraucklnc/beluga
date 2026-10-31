@@ -52,6 +52,12 @@ import type { AgentBackend, AgentRunInput, RoomBridge } from '../types.js';
  */
 export const INTERRUPT_TIMEOUT_MS = 10_000;
 
+/**
+ * How long a run may stay open after answering while its background agents (Claude's) or
+ * sub-agents (Codex's) still work: the same limit for every runtime.
+ */
+export const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
+
 /** Which runtime: 'claude' or 'codex' (the AgentRef protocol work names the rest). */
 export type RuntimeId = string;
 

@@ -188,6 +188,10 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       send: (body, o) => session.send(body, o),
       agent: () => session.backend,
       agentRef: (channel) => (channel ? workspaces?.agentOf(channel, session.agentRef) : undefined) ?? session.agentRef,
+      // A room ask that names one of your agents (BLG-520): the ones your card lists, and whether each runs here.
+      agents: () => opts.client.currentProfile.agents ?? [],
+      runsAgent: (agent) => session.runsAgent(agent),
+      backendFor: (runtime) => session.backendFor(runtime),
       shares: opts.shares,
       sharing,
       people,

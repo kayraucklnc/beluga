@@ -1,4 +1,5 @@
 import { type AgentRef, CLAUDE_AGENT, defaultAgentOf, type PeerInfo } from '../protocol.js';
+import { KNOWN_RUNTIMES } from '../shared/agent-runtimes.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import type { Project } from '../workspaces/types.js';
 
@@ -6,6 +7,17 @@ import type { Project } from '../workspaces/types.js';
 export interface MentionTarget {
   readonly peerId: string;
   readonly agent: AgentRef;
+  /**
+   * The words named this agent ("@codex", "@bob:codex", BLG-520): the ask carries it, so their Mac
+   * runs that one. Unset: "@bob", "@agents" and the old "@claude…" forms, answered by their default.
+   */
+  readonly named?: true;
+}
+
+/** What parseInput knows besides the room. */
+export interface ParseOptions {
+  /** Whether your Mac runs an agent of this runtime now ("@codex": your Codex, even when your card doesn't list it). */
+  readonly runs?: (runtime: string) => boolean;
 }
 
 export type ParsedInput =
@@ -31,6 +43,8 @@ const MENTION = /^@([\w.-]+)(?::([\w.-]+))?$/;
 /** "@BLG-24": a task on the board, not a person. */
 const TASK_KEY = /^[a-z][a-z0-9]*-\d+$/i;
 const ALIASES = new Set(['claude', 'claudes', 'agents']);
+/** "@codex", "@local": your own agent of that runtime ("@claude" is the old alias for yours, above). */
+const RUNTIME_WORDS = new Set(KNOWN_RUNTIMES.map((r) => r.id).filter((id) => id !== CLAUDE_AGENT.runtime));
 
 /**
  * Turn a line typed in the prompt into an action.
@@ -38,11 +52,12 @@ const ALIASES = new Set(['claude', 'claudes', 'agents']);
  *   @bob fix it       -> bob's default agent (runs on bob's machine, on bob's subscription)
  *   @bob:codex hi     -> bob's Codex
  *   @agents review    -> every person's default agent in the room
+ *   @codex hi         -> your Codex (any runtime word: yours, when nobody here has that name; BLG-520)
  *   @claude, @claude:bob, @claudes -> your Claude, bob's Claude, every Claude (kept forever)
  *   anything else     -> group chat
  * "@claude" and the others are aliases first: a person named "claude" is "@claude:claude".
  */
-export function parseInput(raw: string, selfId: string, peers: readonly PeerInfo[]): ParsedInput {
+export function parseInput(raw: string, selfId: string, peers: readonly PeerInfo[], opts: ParseOptions = {}): ParsedInput {
   const text = raw.trim();
   if (!text) return { kind: 'empty' };
   if (text.startsWith('//')) return { kind: 'chat', text: text.slice(1) };
@@ -59,8 +74,8 @@ export function parseInput(raw: string, selfId: string, peers: readonly PeerInfo
   const note = (line: string) => {
     if (!notes.includes(line)) notes.push(line);
   };
-  const ask = (peerId: string, agent: AgentRef) => {
-    if (!to.some((t) => t.peerId === peerId)) to.push({ peerId, agent });
+  const ask = (peerId: string, agent: AgentRef, named = false) => {
+    if (!to.some((t) => t.peerId === peerId)) to.push({ peerId, agent, ...(named ? { named: true as const } : {}) });
   };
   const self = peers.find((p) => p.peerId === selfId);
   const missing = (name: string) => {
@@ -76,6 +91,9 @@ export function parseInput(raw: string, selfId: string, peers: readonly PeerInfo
     if (runtime) {
       const hit = runs.find((a) => a.runtime === runtime.toLowerCase());
       if (hit) return hit;
+      // Your own: any agent your Mac runs, listed on your card or not.
+      const known = KNOWN_RUNTIMES.find((r) => r.id === runtime.toLowerCase());
+      if (known && (!peer || peer.peerId === selfId) && opts.runs?.(known.id)) return { runtime: known.id, label: known.label };
       if (runtime.toLowerCase() === 'claude' && !peer?.agents?.length) return CLAUDE_AGENT;
       note(`${who} ${who === 'You' ? "don't" : "doesn't"} run ${runtime}, so ${who === 'You' ? 'your' : 'their'} ${defaultAgentOf(peer).label} will answer`);
       return defaultAgentOf(peer);
@@ -111,12 +129,15 @@ export function parseInput(raw: string, selfId: string, peers: readonly PeerInfo
       else missing(second);
     } else {
       const peer = byName(root);
-      if (!peer) {
+      if (!peer && !second && RUNTIME_WORDS.has(lower)) {
+        // "@codex": your own Codex (a person named codex would have been found first).
+        ask(selfId, agentOf(self, lower), true);
+      } else if (!peer) {
         if (i === 0 && !second) break; // "@zed" alone could be anyone: it stays chat, said once below
         missing(root);
       } else if (!peer.agent && peer.peerId !== selfId) {
         note(`${peer.name} has no agent on right now`);
-      } else ask(peer.peerId, agentOf(peer, second));
+      } else ask(peer.peerId, agentOf(peer, second), Boolean(second));
     }
   }
   if (i === 0) {

@@ -33,11 +33,9 @@ import { claudeCodeReady } from '../../claude-code.js';
 import { claudeHome } from '../../../core/claude-code/launch.js';
 import { belugaHome } from '../../../core/home.js';
 import { expandCommand, mayBeCommand, skillOptions } from './skill-plugins.js';
-import { INTERRUPT_TIMEOUT_MS } from '../types.js';
+import { BACKGROUND_LIMIT_MS, INTERRUPT_TIMEOUT_MS } from '../types.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
-/** How long a run may stay open after answering while its background agents work. */
-const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
 /**
  * How long a run stays open after answering for a command or watch the main conversation left
  * running (no agents): long enough for the full tests or a build to end and wake Claude, short

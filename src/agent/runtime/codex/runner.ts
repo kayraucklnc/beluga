@@ -11,14 +11,16 @@ import { sideCalls } from '../../side-calls.js';
 import { syncProbes } from '../../sync-main.js';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, Steer } from '../../types.js';
 import { ViewShelf } from '../../view-tools.js';
-import { INTERRUPT_TIMEOUT_MS } from '../types.js';
+import { BACKGROUND_LIMIT_MS, INTERRUPT_TIMEOUT_MS } from '../types.js';
 import { type CodexConnect, type CodexConnection, spawnAppServer } from './app-server.js';
+import { CodexSubAgents } from './subagents.js';
 import { codexComplete } from './complete.js';
 import { CodexEvents, type TurnSink, contextEvent, usageEvent } from './events.js';
 import { type AskForApproval, type Model, REASONING_EFFORTS, type ReasoningEffort, type ThreadStartResponse, type ThreadTokenUsage, type Turn, type UserInput } from './protocol.js';
 import { approvalFor, codexConfinement, originOf, trustRow } from './sandbox.js';
 import { CODEX_USAGE_AGENT, type CodexRateLimits, fromRateLimits } from './rate-limits.js';
 import { findCodex } from './app-server.js';
+import { CodexMcp } from './mcp.js';
 import { type MappedPrompt, mapSlash } from './skills.js';
 import { claudeHome } from '../../../core/claude-code/launch.js';
 
@@ -101,10 +103,16 @@ export function mcpConfig(servers: Readonly<Record<string, StdioServerConfig>>):
 }
 
 /**
- * Codex's own features a Beluga run never uses, whoever asks: its multi-agent (agents it spawns
- * itself, which Beluga would never show; Beluga's own ask_agent and friends do that job).
+ * Codex's own features a side call (complete.ts) never uses: its multi-agent (a one-shot answer
+ * spawns no helpers).
  */
 export const RUN_FEATURES_OFF = { 'features.multi_agent': false } as const;
+
+/**
+ * Codex's multi-agent for a run (BLG-519): on for your own runs, its sub-agents shown as Claude's
+ * are (subagents.ts); off for a friend's task (the trust table's "your Codex tools", sandbox.ts).
+ */
+export const runFeatures = (yourTools: boolean): Record<string, boolean> => ({ 'features.multi_agent': yourTools });
 
 /** A prompt as Codex's input: the text, and images it links (Codex reads them from disk). */
 export function codexInput(text: string, prompt: string, skill?: MappedPrompt['skill']): UserInput[] {
@@ -137,6 +145,11 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
   let sessionId: string | undefined;
   const connect = opts.connect ?? spawnAppServer;
   const host = (): ToolHost => opts.toolHost ?? toolHost();
+  // Your Codex MCP servers for Settings (BLG-518): asked of an app-server of their own, started where
+  // Claude's list starts (Codex has no per-request folder for the list, so a project's own
+  // .codex/config.toml servers show only for that folder: the room's, here).
+  const mcp = new CodexMcp((cwd) => connect({ cwd, ...(opts.codexPath ? { bin: opts.codexPath } : {}) }));
+  const mcpCwd = (_projects: readonly string[]): string => opts.cwd;
 
   return {
     async run(input: AgentRunInput): Promise<string> {
@@ -177,12 +190,16 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       // Beluga's tools, served for this run alone and gated per call (vetTool, policy, you).
       const mounted = await host().mount(runToolSuites(input, bridge, shelf, cwd), (name, args) => gateTool(name, args, input, policy));
       let conn: CodexConnection | undefined;
-      const events = new CodexEvents(cwd, { onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) }, { onFileTouched: input.onFileTouched, expand: (t) => shelf.expand(t), onTokens });
+      // Codex's sub-agents (BLG-519): rows and steps on the request's card, as Claude's are.
+      const subAgents = new CodexSubAgents(cwd, { onSub: (e) => input.onEvent('sub', JSON.stringify(e)), ...(input.onStep ? { onStep: input.onStep } : {}), onFileTouched: input.onFileTouched });
+      const events = new CodexEvents(cwd, { onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) }, { onFileTouched: input.onFileTouched, expand: (t) => shelf.expand(t), onTokens, subAgents });
       let failed = true;
       let closed = false;
       try {
         // Turns: the one running now, and how each ended (one can end before turn/start answers).
         let active: { id?: string; readonly done: ReturnType<typeof deferred<Turn>> } | undefined;
+        /** A turn Codex started by itself (not asked for by a request): the run waits for it too. */
+        let selfStarted: typeof active;
         const ended = new Map<string, Turn>();
         /** Rejects when the app-server behind the run goes away on its own. */
         let stopped = deferred<never>();
@@ -204,7 +221,15 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             events.handle(method, params);
             // Codex's plan windows as they move (BLG-474): filed under Codex, never Claude.
             if (method === 'account/rateLimits/updated') reportLimits(bridge, params.rateLimits as CodexRateLimits);
+            // A sub-agent's turns are its own (subagents.ts), never the run's.
+            if (typeof params.threadId === 'string' && subAgents.lead && params.threadId !== subAgents.lead) return;
             if (method === 'turn/started' && active && !active.id) active.id = (params.turn as Turn).id;
+            // A turn Codex starts by itself, between Beluga's (its sub-agents done): the request's, as Claude's are.
+            else if (method === 'turn/started' && !active && !closed) {
+              active = { id: (params.turn as Turn).id, done: deferred<Turn>() };
+              selfStarted = active;
+              events.beginTurn({ onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) });
+            }
             if (method === 'turn/completed') {
               const turn = params.turn as Turn;
               if (active?.id === turn.id) active.done.resolve(turn);
@@ -241,13 +266,14 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             settled = true;
             await settle(rpc, input.model ?? place?.model ?? opts.model);
           }
-          const params = { cwd, ...(model ? { model } : {}), developerInstructions: runInstructions(input, opts.bridge.selfName(), CODEX_AGENT), config: { ...confined.config, ...PROJECT_DOCS, ...RUN_FEATURES_OFF, ...mcpConfig(mounted.servers) }, approvalPolicy: approval };
+          const params = { cwd, ...(model ? { model } : {}), developerInstructions: runInstructions(input, opts.bridge.selfName(), CODEX_AGENT), config: { ...confined.config, ...PROJECT_DOCS, ...runFeatures(confined.row.yourTools), ...mcpConfig(mounted.servers) }, approvalPolicy: approval };
           let thread: ThreadStartResponse | undefined;
           if (resume) {
             thread = await rpc.request<ThreadStartResponse>('thread/resume', { threadId: resume, ...params }).catch(() => undefined);
             if (!thread) input.onEvent('progress', 'Started a new Codex conversation (the last one couldn’t be opened)');
           }
           thread ??= await rpc.request<ThreadStartResponse>('thread/start', params);
+          subAgents.lead = thread.thread.id;
           threadModel = thread.model || threadModel;
           // Where its windows stand now, without waiting for the turn to move them.
           void readLimits(rpc).then((limits) => reportLimits(bridge, limits));
@@ -269,7 +295,8 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         const abort = deferred<never>();
         const onAbort = (): void => {
           aborted = true;
-          void interruptTurn().finally(() => {
+          // Its sub-agents stop with it: each one's turn interrupted, so it ends saying it was stopped.
+          void Promise.all([interruptTurn(), stopSubAgents()]).finally(() => {
             abort.reject(new Error('aborted'));
             void conn?.proc.kill();
           });
@@ -294,6 +321,21 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             return true;
           })().catch(() => false);
           return Promise.race([stop, late]).finally(() => clearTimeout(timer));
+        };
+
+        /** Ask Codex to stop every sub-agent's running turn (`turn/interrupt` on its thread), within INTERRUPT_TIMEOUT_MS. */
+        const stopSubAgents = async (): Promise<void> => {
+          const turns = subAgents.running();
+          if (!turns.length || !conn) return;
+          let timer: NodeJS.Timeout | undefined;
+          const late = new Promise<void>((resolve) => (timer = setTimeout(resolve, INTERRUPT_TIMEOUT_MS)));
+          const asked = Promise.allSettled(turns.map((t) => rpc().request('turn/interrupt', { threadId: t.threadId, turnId: t.turnId })));
+          // Then until they say they've stopped (their turns end), or the time's up.
+          const settled = (async () => {
+            await asked;
+            while (subAgents.running().length) await subAgents.changed();
+          })();
+          await Promise.race([settled, late]).finally(() => clearTimeout(timer));
         };
 
         /** One turn: its answer's text, how it ended. */
@@ -422,12 +464,50 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         answers.push(answer);
         input.onAnswered?.(answer);
 
-        // Then each message that waits for a turn of its own.
+        // Then each message that waits for a turn of its own. While Codex's sub-agents still work
+        // (spawned, not waited for), the run stays open for them, taking messages as turns of their
+        // own, as Claude's background agents keep theirs (BACKGROUND_LIMIT_MS); past it they're stopped.
+        let wake: (() => void) | undefined;
+        let until: number | undefined;
+        const send = (followUp: FollowUp): boolean => {
+          if (closed || aborted) return false;
+          pending.push(followUp);
+          wake?.();
+          return true;
+        };
         while (!aborted) {
           const followUp = pending.shift();
           if (!followUp) {
-            if (!inflight.size) break;
-            await Promise.allSettled([...inflight]);
+            if (inflight.size) {
+              await Promise.allSettled([...inflight]);
+              continue;
+            }
+            // A turn Codex started by itself (its sub-agents came back): its words are the request's.
+            const own = selfStarted;
+            if (own) {
+              const turn = await Promise.race([own.done.promise, stopped.promise, abort.promise]);
+              const said = events.endTurn(turn.status === 'completed');
+              if (said.usage) original.onEvent('usage', usageEvent(said.usage, threadId));
+              if (active === own) active = undefined;
+              selfStarted = undefined;
+              if (turn.status === 'completed' && said.text) answers.push(shelf.finish(said.text));
+              continue;
+            }
+            if (!subAgents.busy) break;
+            if (until === undefined) {
+              until = Date.now() + BACKGROUND_LIMIT_MS;
+              input.onFollowUps?.(send);
+            }
+            const left = until - Date.now();
+            if (left <= 0) {
+              await stopSubAgents();
+              break;
+            }
+            let timer: NodeJS.Timeout | undefined;
+            await Promise.race([subAgents.changed(), new Promise<void>((resolve) => ((wake = resolve), (timer = setTimeout(resolve, left)))), stopped.promise, abort.promise]).finally(() => {
+              clearTimeout(timer);
+              wake = undefined;
+            });
             continue;
           }
           const sink: TurnSink = { onEvent: followUp.onEvent, ...(followUp.onStep ? { onStep: followUp.onStep } : {}) };
@@ -442,6 +522,9 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             followUp.onError(err instanceof Error ? err.message : String(err));
           }
         }
+        if (until !== undefined) input.onFollowUps?.(undefined);
+        // Stopped while its sub-agents worked: stopped, as a turn stopped is.
+        if (aborted) throw new Error('aborted');
         for (const left of pending.splice(0)) left.onError('Codex finished before getting to this message');
         input.signal.removeEventListener('abort', onAbort);
         failed = false;
@@ -450,6 +533,8 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         closed = true;
         input.onSteer?.(undefined);
         events.finish(failed || input.signal.aborted);
+        // Sub-agents still working end with the run (its app-server goes with it).
+        subAgents.finish(failed || input.signal.aborted);
         mounted.close();
         await conn?.proc.kill();
       }
@@ -470,6 +555,12 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       }
       return undefined;
     },
+
+    // Your Codex MCP servers (codex/mcp.ts): what your own Codex runs get from ~/.codex/config.toml.
+    mcpServers: (projects) => mcp.list(mcpCwd(projects)),
+    mcpSignIn: (projects, name) => mcp.signIn(mcpCwd(projects), name),
+    mcpSignedIn: (name) => mcp.signedIn(name),
+    mcpSetEnabled: (projects, name, enabled) => mcp.setEnabled(mcpCwd(projects), name, enabled),
 
     async listModels() {
       const conn = await connect({ cwd: opts.cwd, ...(opts.codexPath ? { bin: opts.codexPath } : {}) }).catch(() => undefined);

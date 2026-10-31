@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { CLAUDE_AI_CONNECTORS_URL } from '@beluga/shared/mcp.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, cx } from '../components/ui.js';
-import { useBeluga } from '../lib/beluga.js';
-import { MCP_FROM, MCP_STATUS, checkMcp, mcpSummary, signInMcp, useMcp } from '../lib/mcp.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
+import { myRuntime } from './ModelPicker.js';
+import { MCP_FROM, MCP_STATUS, checkMcp, mcpRuntimeOf, mcpSummary, signInMcp, useMcp } from '../lib/mcp.js';
 import { openExternal } from '../lib/system.js';
 import s from './mcp.module.css';
 
@@ -18,7 +19,9 @@ const CLOSE_DELAY_MS = 180;
  */
 export function McpChip() {
   const { client, ui } = useBeluga();
-  const { rows, checking, signingIn } = useMcp(client);
+  // Your agent's servers (Codex's own when it's Codex, BLG-518): the same list as Settings shows.
+  const runtime = mcpRuntimeOf(useApp((st) => myRuntime(st.prefs)));
+  const { rows, checking, signingIn } = useMcp(client, runtime);
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -48,7 +51,7 @@ export function McpChip() {
         <Popover.Content className={s.popover} side="top" align="start" sideOffset={8} collisionPadding={12} aria-label="MCP servers" {...hover} onOpenAutoFocus={(e) => e.preventDefault()}>
           <div className={s.head}>
             <span className={s.title}>MCP servers</span>
-            <button type="button" className={s.quiet} disabled={checking} onClick={() => void checkMcp(client)} aria-label="Check again">
+            <button type="button" className={s.quiet} disabled={checking} onClick={() => void checkMcp(client, runtime)} aria-label="Check again">
               <Icon name="refresh" size={12} className={cx(checking && s.turning)} />
             </button>
           </div>
@@ -62,7 +65,7 @@ export function McpChip() {
                   <span className={s.from}>{MCP_FROM[row.from](row.where)}</span>
                 </span>
                 {row.canSignIn ? (
-                  <button type="button" className={s.signIn} disabled={signingIn !== undefined} onClick={() => void signInMcp(client, row)}>
+                  <button type="button" className={s.signIn} disabled={signingIn !== undefined} onClick={() => void signInMcp(client, row, runtime)}>
                     {signingIn === row.name ? 'Waiting…' : 'Sign In'}
                   </button>
                 ) : row.from === 'claude.ai' && row.status === 'needs-auth' ? (

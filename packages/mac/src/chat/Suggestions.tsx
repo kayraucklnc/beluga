@@ -36,9 +36,10 @@ export function SuggestionBody({ sug, asking = false }: { sug: Suggestion; askin
   if (sug.task) return <TaskOption task={sug.task} asking={asking} />;
   return (
     <>
-      {sug.kind ? (
+      {sug.kind || sug.mark ? (
         <span className={s.sugIcon} aria-hidden="true">
-          <Icon name={KIND_ICON[sug.kind]} size={12} />
+          {/* An agent's tag shows its own mark (BLG-520): Claude Code's, Codex's, a local model's. */}
+          <Icon name={sug.mark ?? KIND_ICON[sug.kind!]} size={12} />
         </span>
       ) : null}
       <span className={s.sugLabel}>{sug.label}</span>

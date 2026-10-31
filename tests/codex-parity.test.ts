@@ -99,10 +99,13 @@ describe("Beluga's tools on Codex", () => {
     expect(config['mcp_servers.beluga']!.tool_timeout_sec).toBe(TOOL_TIMEOUT_SEC);
   });
 
-  it("turns Codex's own multi-agent off for every run (its agents would never show)", async () => {
+  it("turns Codex's own multi-agent on for your runs (its sub-agents show, BLG-519), off for side calls", async () => {
     const codex = new FakeCodex();
     await backend(codex).run(input('hello'));
-    expect((codex.sent('thread/start')[0]!.config as Record<string, unknown>)['features.multi_agent']).toBe(false);
+    expect((codex.sent('thread/start')[0]!.config as Record<string, unknown>)['features.multi_agent']).toBe(true);
+    const side = new FakeCodex();
+    await codexComplete({ system: 'Name it.', prompt: 'name this', cwd }, { connect: side.connect });
+    expect((side.sent('thread/start')[0]!.config as Record<string, unknown>)['features.multi_agent']).toBe(false);
   });
 });
 

@@ -6,6 +6,7 @@ import { localDirKey } from '@beluga/core/local-key.js';
 import { workspaceMentions } from '@beluga/core/mentions.js';
 import { composeState, queueIn } from '@beluga/ui/compose.js';
 import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@beluga/ui/suggest.js';
+import { roomAgentTags } from '@beluga/shared/agent-tags.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { secretIn } from '@beluga/shared/secret-text.js';
 import { steeredMessages } from '@beluga/shared/claude-notices.js';
@@ -263,6 +264,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   // On Codex they're translated: each says what doesn't carry over (BLG-461).
   const skillsOn = useApp((st) => (fallbackFor(runtimeHere(st.projects.flatMap((p) => p.workspaces).find((w) => w.id === wsId)?.agent, st.self), 'skills') ? 'mapped' : 'native'));
 
+  // Your agents (which run on this Mac), for the room's "@codex" (BLG-520).
+  const runtimes = useApp((st) => st.runtimes);
   // Suggestions as you type: commands, people and Claudes, workspaces, folders, tasks.
   const suggestions: Suggestion[] = useMemo(
     () =>
@@ -274,6 +277,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             dirCache: state.dirCache,
             listLocalDirs: (dir) => state.dirCache[localDirKey(dir)] ?? [],
             workspaces: state.view.kind === 'room' ? workspaceMentions(state.projects) : [],
+            // In the room: each agent by name, with its mark ("@codex", "@bob:codex", BLG-520).
+            ...(state.view.kind === 'room' ? { agentTags: roomAgentTags(state.peers, state.selfId, runtimes) } : {}),
             friends: state.friends,
             projects: state.projects.filter((p) => p.root),
             ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
@@ -281,7 +286,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             skills,
             skillsOn,
           }),
-    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills, skillsOn],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.friends, wsId, mentionWorld.tasks, skills, skillsOn, runtimes],
   );
   const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 

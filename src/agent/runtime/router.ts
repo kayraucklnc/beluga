@@ -75,5 +75,11 @@ export function routedBackend(fallback: AgentBackend, fallbackRuntime: RuntimeId
       for (const id of alsoUsage) if (id !== fallbackRuntime) void pick(id)?.refreshUsage?.().catch(() => undefined);
       return fallback.refreshUsage?.();
     },
+    // MCP servers (Settings, BLG-518): the asked runtime's own (Codex's from its config.toml), else the default's.
+    mcpServers: async (projects: readonly string[], runtime?: RuntimeId) => (await pick(runtime ?? fallbackRuntime)?.mcpServers?.(projects)) ?? [],
+    mcpSignIn: async (projects: readonly string[], name: string, runtime?: RuntimeId) => (await pick(runtime ?? fallbackRuntime)?.mcpSignIn?.(projects, name)) ?? { error: `${runtime === 'codex' ? 'Codex' : 'Your agent'} isn’t running here.` },
+    mcpSignedIn: (name: string, runtime?: RuntimeId) => pick(runtime ?? fallbackRuntime)?.mcpSignedIn?.(name) ?? Promise.resolve(undefined),
+    mcpSetEnabled: async (projects: readonly string[], name: string, enabled: boolean, runtime?: RuntimeId) =>
+      (await pick(runtime ?? fallbackRuntime)?.mcpSetEnabled?.(projects, name, enabled)) ?? { error: 'This agent’s servers are turned on and off in its own settings.' },
   });
 }

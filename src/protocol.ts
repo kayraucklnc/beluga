@@ -143,8 +143,13 @@ export const AgentRequestBody = z.object({
   plan: z.boolean().default(false),
   /** Run in one of the owner's projects (by name) instead of their shared folder. */
   project: z.string().min(1).max(80).optional(),
-  // No `agent` here (BLG-448, BLG-476): the requester never picks the runtime on someone's Mac;
-  // their default (or the place's pin) answers. A field a sender adds anyway is dropped on parse.
+  /**
+   * BLG-520: the agent a room message named ("@codex", "@bob:codex"). Their Mac runs it when its
+   * card lists it and it runs there (your own: any that runs here), else its default, and says so
+   * (`AgentEventBody.fallback`). Only for the room; a place's pin (a worktree's agent) still wins
+   * there. An older Mac drops it and its default answers; a malformed one is dropped alone.
+   */
+  agent: AgentRef.optional().catch(undefined),
 });
 
 export const AgentEventKind = z.enum([
@@ -182,6 +187,8 @@ export const AgentEventBody = z.object({
   slotWait: z.object({ running: z.number().int().min(0).max(1000), limit: z.number().int().min(0).max(1000) }).optional(),
   /** The agent doing the run (an older Mac leaves it out: Claude). */
   agent: AgentRef.optional(),
+  /** BLG-520: the request named another agent, which doesn't run there: why `agent` answers instead (in words). */
+  fallback: z.string().max(300).optional(),
 });
 
 export const FsListBody = z.object({

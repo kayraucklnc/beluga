@@ -574,6 +574,11 @@ export const ConvView = z.object({
   waiting: z.string().max(200).optional(),
   /** 1.32: your conversation's agent picker (src/ui/agent-picker.ts): the chip's words, and runtimes as groups with their models. */
   agent: AgentPickerView.optional(),
+  /**
+   * BLG-520, the room only: its agent tags for "@" in the message box (shared/agent-tags.ts), each
+   * agent by name with its mark ("@codex" yours, "@bob:codex" bob's). An older Mac leaves it out.
+   */
+  tags: z.array(z.object({ tag: z.string().max(80), hint: z.string().max(200), agent: AgentRefView })).max(40).optional(),
 });
 export type ConvView = z.infer<typeof ConvView>;
 

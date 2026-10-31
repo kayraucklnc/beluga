@@ -25,8 +25,9 @@ Claude Code asks Beluga before every step it takes, so the rules above are check
 
 - Writes go only to the run's own folders. A project's main folder, and a plan while it's being made, are read only.
 - `.env` files, keys and credential stores (`.ssh`, `.aws`, the GitHub CLI's token, the keychains, Beluga's own files in `~/.beluga`, Codex's and Claude's logins) can't be read at all, so no command reaches them however it's written. Templates like `.env.example` are hidden too: the sandbox can't tell them apart.
-- A friend's task runs with the network off, without your own Codex MCP servers, plugins and hooks, and without your environment's tokens. It can never ask to go past the sandbox. Beluga's own tools (the room, the board) still check each call against the friend's limits.
+- A friend's task runs with the network off, without your own Codex MCP servers, plugins, hooks and sub-agents (Codex's multi-agent), and without your environment's tokens. It can never ask to go past the sandbox. Beluga's own tools (the room, the board) still check each call against the friend's limits.
 - Your own run may ask to go past the sandbox (a command that needs more): you get the same approval prompt as for Claude.
+- Your own run may start Codex sub-agents. They work under the same run, in the same sandbox, and what they ask to go past it comes to you the same way. Stopping the run stops them.
 - Guests can't use Codex.
 - Quick side calls on Codex (answering in a chat, naming a worktree, drafting a task) run as tightly as a friend's task, whoever asked: read only, your home and `.env` files out of reach, none of your own Codex tools, and no network unless the call runs commands (a pull request's review). A call given no tools can't read the folder either.
 - A talk or cross-reference between agents only looks: a Codex speaker's sandbox writes nowhere, whatever the worktree allows.

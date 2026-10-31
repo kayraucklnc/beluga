@@ -30,6 +30,7 @@ import { explainTaskMentions } from '../shared/task-refs.js';
 import { isAssistant } from '../shared/assistant.js';
 import { type SlotWait, clampParallelRuns } from '../shared/run-slots.js';
 import { fallbackFor } from '../shared/runtime-fallbacks.js';
+import { agentForAsk } from './gateway/serve.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -39,6 +40,12 @@ export interface AgentHostDeps {
   /** Which agent this Mac runs (named on its run events; default: Claude). */
   /** The agent that runs in `channel` (its place's pick, else your default; BLG-448). */
   readonly agentRef?: (channel?: string) => AgentRef;
+  /** The agents your card lists: a friend's room ask may name one of those (BLG-520). */
+  readonly agents?: () => readonly AgentRef[];
+  /** Whether this Mac runs that agent now (unset: only your default). */
+  readonly runsAgent?: (agent: AgentRef) => boolean;
+  /** The backend for one of your agents' runtimes (unset: your default's for every run). */
+  readonly backendFor?: (runtime: string) => AgentBackend | undefined;
   readonly shares: ShareService;
   readonly sharing: WorkspaceSharing;
   readonly people: People;
@@ -255,6 +262,11 @@ export class AgentHost {
   private readonly promptIds = new Set<string>();
   /** Tool approvals waiting → the conversation whose run asked for them. */
   private readonly toolApprovals = new Map<string, string>();
+  /**
+   * Room asks that named an agent (BLG-520), by request id: the one that runs (its events name it),
+   * and, until the first event has said it, why it isn't the one named.
+   */
+  private readonly named = new Map<string, { readonly agent: AgentRef; fallback?: string }>();
   /** Turns in friends' chats waiting for their answer (runChat), by request id. */
   private readonly chatWaiters = new Map<string, { resolve: (text: string) => void; reject: (err: Error) => void }>();
   /** Waiting for a conversation's current run to end (see idle). */
@@ -754,7 +766,11 @@ export class AgentHost {
       if (event === 'done') waiter.resolve(text);
       else waiter.reject(new Error(text || 'It stopped'));
     }
-    const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel, ...(slotWait ? { slotWait } : {}), agent: this.deps.agentRef?.(channel) ?? CLAUDE_AGENT };
+    const named = this.named.get(requestId);
+    const fallback = named?.fallback;
+    if (named) named.fallback = undefined;
+    if (named && final) this.named.delete(requestId);
+    const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel, ...(slotWait ? { slotWait } : {}), agent: named?.agent ?? this.deps.agentRef?.(channel) ?? CLAUDE_AGENT, ...(fallback ? { fallback } : {}) };
     // Workspace conversations are private: events go to you and the people you invited, never to the room.
     const targets = channel === 'room' ? [{ keep: final }] : [this.selfId, ...this.deps.sharing.recipients(channel)].map((to) => ({ to }));
     for (const opts of targets) if (!this.send(body, opts) && final) this.outbox = [...this.outbox, { body, opts }].slice(-50);
@@ -766,6 +782,7 @@ export class AgentHost {
     if (this.seenRequests.includes(key)) return;
     this.seenRequests.push(key);
     if (this.seenRequests.length > SEEN_REQUESTS) this.seenRequests.shift();
+    this.pickNamed(from, body);
     if (!this.agent) {
       this.emitAgent(body.requestId, from, 'denied', 'No agent is running on this machine.', body.channel);
       return;
@@ -787,6 +804,22 @@ export class AgentHost {
       return;
     }
     this.enqueue(from, body);
+  }
+
+  /**
+   * A room ask that named an agent ("@codex", "@bob:codex", BLG-520): yours runs any agent this Mac
+   * runs; a friend's, one your card lists that runs here (agentForAsk), else your default with why.
+   * A project's ask keeps the project's agent.
+   */
+  private pickNamed(from: string, body: BodyOf<'agent_request'>): void {
+    if (!body.agent || body.channel !== 'room' || body.project) return;
+    const mine = this.deps.agentRef?.(body.channel) ?? CLAUDE_AGENT;
+    const runs = this.deps.runsAgent;
+    const own = from === this.selfId && body.agent.runtime !== mine.runtime && runs?.(body.agent);
+    const picked = own ? { agent: body.agent } : agentForAsk(body.agent, mine, this.deps.agents?.() ?? [], runs);
+    if (picked.agent.runtime === mine.runtime && !picked.note) return;
+    this.named.set(body.requestId, { agent: picked.agent, ...(picked.note ? { fallback: picked.note } : {}) });
+    if (this.named.size > 200) this.named.delete(this.named.keys().next().value!);
   }
 
   /**
@@ -1056,7 +1089,10 @@ export class AgentHost {
 
   /** `release`: gives back this run's slot for working at once, when it only waits on background agents. */
   private async runAgent(from: string, body: BodyOf<'agent_request'>, lane: Lane, askTo = from, release?: () => void): Promise<void> {
-    const agent = this.agent as AgentBackend;
+    // A room ask that named another of your agents (BLG-520) runs on that one's backend, with its model.
+    const named = this.named.get(body.requestId)?.agent;
+    const other = named && named.runtime !== (this.deps.agentRef?.(body.channel) ?? CLAUDE_AGENT).runtime ? this.deps.backendFor?.(named.runtime) : undefined;
+    const agent = other ?? (this.agent as AgentBackend);
     const controller = new AbortController();
     lane.current = controller;
     lane.currentRequest = { id: body.requestId, controller };
@@ -1201,7 +1237,7 @@ export class AgentHost {
           // Anything that queued up behind this run from the same person can go in now.
           if (send) lane.waiting = lane.waiting.filter((w) => !this.sendFollowUp(lane, w.from, w.body));
         },
-        ...this.modelFor(place?.model, place?.agent, place?.effort),
+        ...this.modelFor(place?.model, place?.agent ?? named, place?.effort),
         // Your MCP servers (your logins: Figma, Linear…) are for runs you asked for, never a friend's.
         ...(from === this.selfId ? { ownerMcp: true } : {}),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.

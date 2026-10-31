@@ -7,7 +7,7 @@
  * and the phone import it.
  */
 
-export type FallbackId = 'compact' | 'fork' | 'rewind' | 'skills' | 'mcp_servers' | 'guests';
+export type FallbackId = 'compact' | 'fork' | 'rewind' | 'skills' | 'guests';
 
 export interface RuntimeFallback {
   /** The RuntimeCapabilities flag it stands in for (runtime/types.ts), when there's one. */
@@ -23,7 +23,6 @@ export const RUNTIME_FALLBACKS: Readonly<Record<string, Readonly<Partial<Record<
     fork: { capability: 'canFork', reason: 'On Codex a fork starts a new conversation: the files come along, the chat so far doesn’t.' },
     rewind: { capability: 'canFork', reason: 'On Codex, going back puts the files back but starts a new conversation from your edited message.' },
     skills: { capability: 'skills', reason: 'Skills and commands are translated for Codex; what can’t be says “Not on Codex”.' },
-    mcp_servers: { reason: 'Codex uses the MCP servers in its own settings (~/.codex/config.toml). This list is Claude Code’s; Beluga’s own tools reach both.' },
     // agent-wording: claude (the way out is the Claude runtime, by name)
   guests: { capability: 'canGateEveryTool', reason: 'Codex can’t check each step, so it can’t answer guests. Switch this conversation to Claude for them.' },
   },

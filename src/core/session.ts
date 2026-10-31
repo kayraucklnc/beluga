@@ -227,6 +227,8 @@ export class Session {
 
   /** Backends for your other agents' runtimes (a dialogue's Codex beside your Claude), made when first needed. */
   private readonly otherBackends = new Map<string, AgentBackend>();
+  /** Room asks that named an agent ("@bob:codex", BLG-520), until their run says which one answers. */
+  private readonly namedAsks = new Map<string, { readonly peer: string; readonly agent: AgentRef }>();
 
   constructor(private readonly opts: SessionOptions) {
     if (opts.workspaces) opts.workspaces.branchPrefix = () => opts.store.getState().prefs.branchPrefix;
@@ -426,7 +428,8 @@ export class Session {
     }
     // A dialogue between your agents: started here (proposed, you confirm its caps), or what you say into one (core/dialogues).
     if (dialoguesOf(this)?.fromComposer(raw, channel)) return true;
-    const parsed = parseInput(raw, this.selfId, state.peers);
+    // "@codex": your own Codex when it runs here, listed on your card or not (BLG-520).
+    const parsed = parseInput(raw, this.selfId, state.peers, { runs: (runtime) => this.runsAgent({ runtime, label: runtime }) });
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
       // A leading "@claude" is just you talking to your Claude; "@claude:ata" stays in the words, so your
@@ -468,7 +471,8 @@ export class Session {
       case 'agent':
         this.sendChat(parsed.text, false);
         for (const line of parsed.notes) this.toast(line, 'warn');
-        for (const t of parsed.to) this.requestAgent(t.peerId, parsed.prompt, false, 'room', urgent && t.peerId === this.selfId, undefined, undefined, t.agent);
+        // A named agent ("@codex", "@bob:codex") rides the ask; "@bob" and the "@claude…" forms leave it to their default.
+        for (const t of parsed.to) this.requestAgent(t.peerId, parsed.prompt, false, 'room', urgent && t.peerId === this.selfId, undefined, undefined, t.named ? t.agent : undefined);
         // On your own, a name nobody has is still a line for your agent, as plain chat always is.
         if (parsed.to.length === 0 && state.peers.length <= 1 && this.agent) this.requestAgent(this.selfId, parsed.text, false, 'room', urgent);
         else if (parsed.to.length === 0 && parsed.notes.length === 0) this.toast('No agent is online', 'warn');
@@ -578,13 +582,13 @@ export class Session {
   requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID(), agent?: AgentRef): string {
     const plan = this.store.getState().planMode[channel] === true;
     this.questions.track(requestId, target, channel);
-    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}) }, { to: target });
-    // "@bob:codex": their Mac decides which of its agents answers (the agent never rides the request).
-    if (agent && target !== this.selfId) {
-      const peer = this.store.getState().peers.find((p) => p.peerId === target);
-      const theirs = peer ? defaultAgentOf(peer) : undefined;
-      if (peer && theirs && theirs.runtime !== agent.runtime) this.toast(`${peer.name}'s Mac answers with its ${agentName(theirs)}: it picks which of its agents runs`, 'info');
+    // "@bob:codex" (BLG-520): the agent rides the ask, in the room only; their Mac runs it or says which one did (see namedAsks).
+    const named = agent && channel === 'room' ? { agent: { runtime: agent.runtime, label: agent.label, ...(agent.model ? { model: agent.model } : {}) } } : {};
+    if (named.agent) {
+      this.namedAsks.set(requestId, { peer: target, agent: named.agent });
+      if (this.namedAsks.size > 200) this.namedAsks.delete(this.namedAsks.keys().next().value!);
     }
+    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}), ...named }, { to: target });
     return requestId;
   }
 
@@ -1367,6 +1371,25 @@ export class Session {
     if (usage) this.updateUsage(usage, CLAUDE_AGENT);
   }
 
+  /**
+   * A room ask that named an agent, at its first word back (BLG-520): when another agent answers,
+   * a line says which and why: it isn't set up there, or their Mac is older and runs its default.
+   */
+  private sayWhoAnswers(from: string, body: BodyOf<'agent_event'>): void {
+    const asked = this.namedAsks.get(body.requestId);
+    if (!asked || asked.peer !== from) return;
+    this.namedAsks.delete(body.requestId);
+    const by = body.agent ?? CLAUDE_AGENT;
+    if (by.runtime === asked.agent.runtime && !body.fallback) return;
+    const mine = from === this.selfId;
+    const name = peerName(this.store.getState(), from);
+    const wanted = agentName(asked.agent);
+    const answered = agentName(by);
+    if (mine) this.system(`Your ${wanted} isn’t set up on this Mac, so your ${answered} answers`, 'warn');
+    else if (body.fallback) this.system(`${name}’s ${wanted} isn’t set up on their Mac, so their ${answered} answers`, 'warn');
+    else this.system(`${name}’s Mac can’t pick an agent by name yet (an older Beluga), so their ${answered} answers`, 'warn');
+  }
+
   private onAgentEvent(from: string, ts: number, body: BodyOf<'agent_event'>): void {
     // Only your own Claude writes into your workspaces; in one shared with you, only its owner's Claude.
     if (body.channel !== 'room' && from !== this.selfId && this.sharing.sharedFor(body.channel)?.owner !== from) return;
@@ -1384,6 +1407,7 @@ export class Session {
       }
       return;
     }
+    this.sayWhoAnswers(from, body);
     // Your Claude asked from a workspace: follow the friend's Claude there (only from the one you asked).
     const channel = waiter?.mirror && waiter.peer === from && body.requester === this.selfId ? waiter.mirror : body.channel;
     this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel, ...(body.slotWait ? { slotWait: body.slotWait } : {}), ...(body.agent ? { agent: body.agent } : {}) });

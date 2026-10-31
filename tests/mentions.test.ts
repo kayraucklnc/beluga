@@ -123,4 +123,40 @@ describe('parseInput: @person grammar (BLG-443)', () => {
     expect(p.kind === 'agent' && p.notes).toEqual(['"@claude" means your own Claude. To ask the person named claude, write @claude:claude']);
     expect(parseInput('@claude:claude hi', 'me', withClaude)).toMatchObject({ targets: ['x'] });
   });
+
+  describe('agent tags (BLG-520)', () => {
+    const runsCodex = { runs: (rt: string) => rt === 'codex' };
+    const named = (raw: string, opts = {}) => {
+      const p = parseInput(raw, 'me', room, opts);
+      return p.kind === 'agent' ? p.to.map((t) => ({ peerId: t.peerId, runtime: t.agent.runtime, named: Boolean(t.named) })) : p;
+    };
+
+    it('@codex is your own Codex when your Mac runs it, listed on your card or not', () => {
+      expect(named('@codex fix the test', runsCodex)).toEqual([{ peerId: 'me', runtime: 'codex', named: true }]);
+      expect(parseInput('@codex fix the test', 'me', room, runsCodex)).toMatchObject({ prompt: 'fix the test', notes: [] });
+    });
+
+    it('@codex when your Mac has no Codex: your default, with a note', () => {
+      const p = parseInput('@codex hi', 'me', room);
+      expect(p).toMatchObject({ to: [{ peerId: 'me', agent: claude }] });
+      expect(p.kind === 'agent' && p.notes[0]).toMatch(/don't run codex/);
+    });
+
+    it('@bob:codex and @bob:claude are named; @bob and the @claude forms are not', () => {
+      expect(named('@bob:codex hi')).toEqual([{ peerId: 'b', runtime: 'codex', named: true }]);
+      expect(named('@bob:claude hi')).toEqual([{ peerId: 'b', runtime: 'claude', named: true }]);
+      expect(named('@bob hi')).toEqual([{ peerId: 'b', runtime: 'codex', named: false }]);
+      expect(named('@claude:bob hi')).toEqual([{ peerId: 'b', runtime: 'claude', named: false }]);
+      expect(named('@claude hi')).toEqual([{ peerId: 'me', runtime: 'claude', named: false }]);
+      expect(named('@codex @bob:codex both', runsCodex)).toEqual([
+        { peerId: 'me', runtime: 'codex', named: true },
+        { peerId: 'b', runtime: 'codex', named: true },
+      ]);
+    });
+
+    it('a person named codex is still the person', () => {
+      const withCodex: PeerInfo[] = [...room, { peerId: 'x', name: 'codex', agent: true, shares: [] }];
+      expect(parseInput('@codex hi', 'me', withCodex, runsCodex)).toMatchObject({ targets: ['x'] });
+    });
+  });
 });

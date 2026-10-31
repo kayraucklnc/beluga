@@ -21,6 +21,45 @@ export type UserInput =
 export interface Thread {
   readonly id: string;
   readonly cwd?: string;
+  /** Set only on a sub-agent's thread: the thread that spawned it (multi_agent, BLG-519; codex-cli 0.166). */
+  readonly parentThreadId?: string | null;
+  /** A spawned sub-agent's random nickname, and the role it was given (agent_role). */
+  readonly agentNickname?: string | null;
+  readonly agentRole?: string | null;
+  /** Usually the thread's first user message. */
+  readonly preview?: string;
+}
+
+/** Codex's multi-agent tools (codex-cli 0.166's CollabAgentTool). */
+export type CollabAgentTool = 'spawnAgent' | 'sendInput' | 'resumeAgent' | 'wait' | 'closeAgent' | 'sendMessage' | 'followupTask' | 'interruptAgent' | 'listAgents';
+/** Where a sub-agent stands, as its lead last heard (CollabAgentStatus). */
+export type CollabAgentStatus = 'pendingInit' | 'running' | 'interrupted' | 'completed' | 'errored' | 'shutdown' | 'notFound';
+export interface CollabAgentState {
+  readonly status: CollabAgentStatus;
+  readonly message: string | null;
+}
+/** A lead's call to one of its sub-agent tools (ThreadItem `collabAgentToolCall`). */
+export interface CollabAgentToolCall {
+  readonly type: 'collabAgentToolCall';
+  readonly id: string;
+  readonly tool: CollabAgentTool;
+  readonly status: 'inProgress' | 'completed' | 'failed' | 'interrupted';
+  readonly senderThreadId: string;
+  /** The sub-agents it's about: for a spawn, the new one's thread (once spawned). */
+  readonly receiverThreadIds: readonly string[];
+  readonly prompt: string | null;
+  readonly model?: string | null;
+  readonly reasoningEffort?: string | null;
+  readonly agentsStates: Readonly<Record<string, CollabAgentState | undefined>>;
+}
+/** A sub-agent's lifecycle as its lead's item (ThreadItem `subAgentActivity`, multi_agent_v2). */
+export interface SubAgentActivity {
+  readonly type: 'subAgentActivity';
+  readonly id: string;
+  readonly kind: 'started' | 'interacted' | 'interrupted' | 'completed';
+  readonly agentThreadId: string;
+  readonly agentPath: string;
+  readonly model?: string | null;
 }
 export interface ThreadStartResponse {
   readonly thread: Thread;
@@ -74,6 +113,8 @@ export type ThreadItem =
   | { readonly type: 'webSearch'; readonly id: string; readonly query: string }
   | { readonly type: 'imageView'; readonly id: string; readonly path: string }
   | { readonly type: 'contextCompaction'; readonly id: string }
+  | CollabAgentToolCall
+  | SubAgentActivity
   | { readonly type: string; readonly id: string };
 
 export interface TokenUsageBreakdown {

@@ -3,6 +3,8 @@ import type { Location } from '../core/store.js';
 import { type FsEntry, type PeerInfo, defaultAgentOf } from '../protocol.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import type { ClaudeSkill } from '../shared/skills.js';
+import type { AgentMark } from '../shared/agent-marks.js';
+import type { AgentTag } from '../shared/agent-tags.js';
 import { MAX_ELSEWHERE_SUGGESTIONS, MAX_TASK_SUGGESTIONS, type TaskMention, matchTasks } from '../shared/task-refs.js';
 
 /** What a suggestion is (the list shows its icon). */
@@ -24,6 +26,8 @@ export interface Suggestion {
   readonly task?: TaskMention;
   /** What it is, for its icon (and its section: Claude's skills come under their own heading). */
   readonly kind?: SuggestionKind;
+  /** An agent's tag ("@bob:codex", BLG-520): its mark, drawn instead of the kind's icon. */
+  readonly mark?: AgentMark;
 }
 
 export interface SuggestContext {
@@ -46,6 +50,8 @@ export interface SuggestContext {
   readonly skills?: readonly ClaudeSkill[];
   /** How this conversation's agent takes them (its runtime's `skills` capability): 'mapped' (Codex) says what doesn't carry over. */
   readonly skillsOn?: 'native' | 'mapped';
+  /** The room's agent tags ("@codex", "@bob:codex"; shared/agent-tags.ts roomAgentTags), in the room only (BLG-520). */
+  readonly agentTags?: readonly AgentTag[];
 }
 
 /** How a friend is written in a message: "@mia" ("@Mia Chen" → "@MiaChen", "@Zoë" stays). */
@@ -218,8 +224,10 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
       .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const, kind: o.folder ? ('folder' as const) : ('file' as const) }));
   }
   // `name`: the friend's handle, so "@mi" offers mia and mia's Claude alike.
-  const options: Array<{ label: string; hint: string; kind: SuggestionKind; name?: string }> = [
+  const options: Array<{ label: string; hint: string; kind: SuggestionKind; name?: string; mark?: AgentMark }> = [
     { label: '@claude', hint: 'ask your agent', kind: 'claude' },
+    // Each agent by name, with its mark (BLG-520): yours ("@codex"), then each person's ("@bob:codex").
+    ...(ctx.agentTags ?? []).map((t) => ({ label: t.tag, hint: t.hint, kind: 'claude' as const, mark: t.mark, ...(t.person ? { name: t.person } : {}) })),
     ...ctx.peers
       .filter((p) => p.agent && p.peerId !== ctx.selfId)
       .map((p) => ({ label: `@claude:${p.name}`, hint: `ask ${agentLabel(defaultAgentOf(p), p.name, false)} (on their machine)`, kind: 'claude' as const })),
@@ -237,8 +245,8 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
   ];
   const named = options
     .filter((o) => (o.label.toLowerCase().startsWith(token) || (o.name !== undefined && o.name.toLowerCase().startsWith(token))) && o.label.toLowerCase() !== token)
-    // The person first, then their Claude.
-    .sort((a, b) => Number(a.name !== undefined) - Number(b.name !== undefined))
+    // The person first, then their Claude (agent tags keep their place: right under @claude).
+    .sort((a, b) => Number(a.name !== undefined && !a.mark) - Number(b.name !== undefined && !b.mark))
     .map(({ name: _name, ...o }) => ({ ...o, value: `${before}${o.label} `, enter: 'complete' as const }));
   const seen = new Set(named.map((o) => o.label.toLowerCase()));
   // Tasks, the very key included ("@BLG-24" completes to itself, so Return never picks a neighbour).

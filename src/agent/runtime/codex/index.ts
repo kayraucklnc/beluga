@@ -16,8 +16,10 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   canInterrupt: true,
   // No plan mode: a plan is a read-only first turn, then approval (runner.ts).
   hasPlanMode: false,
-  hasSubagents: false,
-  hasBackgroundAgents: false,
+  // Its own multi-agent on your runs (BLG-519): each sub-agent a row with its steps (subagents.ts),
+  // and the run stays open while ones it didn't wait for still work (runner.ts).
+  hasSubagents: true,
+  hasBackgroundAgents: true,
   // Its plan windows (account/rateLimits) and per-turn tokens, filed under Codex (BLG-474).
   hasUsage: true,
   canResume: true,

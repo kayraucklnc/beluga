@@ -133,7 +133,8 @@ describe('Session', () => {
     expect(bob.state().approvals).toHaveLength(0);
   });
 
-  it('@bob:codex reaches bob, and his Mac picks the agent: the request never names one (BLG-476)', async () => {
+  // The ask names Codex since BLG-520; bob's card lists no Codex here, so his default answers (tests/room-agent-tags.test.ts).
+  it('@bob:codex reaches bob, and his Mac decides which agent runs (BLG-476, BLG-520)', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
     const bob = peer('bob');

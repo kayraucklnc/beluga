@@ -225,6 +225,8 @@ export default function Conversation() {
           <Composer
             placeholder={c?.waiting ?? (c?.working ? 'What’s next for your agent…' : 'Reply to your agent…')}
             working={c?.working}
+            // The room: "@codex", "@bob:codex" as you type @ (BLG-520).
+            {...(c?.tags?.length ? { tags: c.tags } : {})}
             disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
             photos
             onSend={(text, photos) => {

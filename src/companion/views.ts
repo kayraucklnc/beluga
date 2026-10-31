@@ -1,5 +1,6 @@
 import { dialogueHeader } from '../core/dialogues/view.js';
 import { agentPicker } from '../shared/agent-picker.js';
+import { roomAgentTags } from '../shared/agent-tags.js';
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
@@ -701,7 +702,15 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...(plan && planT ? { plan: planBand(state, plan, planT) } : {}),
     ...waitingOf(state, channel),
     ...pickerOf(state, channel, conv?.mine ?? false),
+    ...tagsOf(state, channel),
   };
+}
+
+/** The room's agent tags for "@" (BLG-520): yours that run here, and each person's their card lists. */
+function tagsOf(state: DomainState, channel: string): Pick<ConvView, 'tags'> {
+  if (channel !== 'room') return {};
+  const tags = roomAgentTags(state.peers, state.selfId, state.runtimes).slice(0, 40);
+  return tags.length ? { tags: tags.map((t) => ({ tag: clip(t.tag, 80), hint: clip(t.hint, 200), agent: agentRefView(t.agent) })) } : {};
 }
 
 /** Your own worktree or chat: its agent picker, as the Mac's composer shows it (efforts stay the Mac's). */

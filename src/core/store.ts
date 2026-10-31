@@ -843,7 +843,8 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(progress ? { progress } : {}),
     ...(between ? { between, betweenAt } : {}),
     status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? 'started' : a.event,
-    subagents: a.event === 'sub' ? applySub(base.subagents, a.text, a.ts) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
+    // The run ended: ones still running end with it; one that failed or was stopped stays so.
+    subagents: a.event === 'sub' ? applySub(base.subagents, a.text, a.ts) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => (s.status === 'running' ? { ...s, status: 'done' as const } : s)) : base.subagents,
     text:
       // A steered message's note ("reads this after its current step") isn't Claude's words: its own turn starting (or going back in line) ends it, a newer note replaces it.
       noted && (a.event === 'started' || a.event === 'text' || a.event === 'queued')

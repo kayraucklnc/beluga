@@ -40,8 +40,10 @@ describe('a joined worktree', () => {
 describe('the requester never picks the runtime on a peer’s machine', () => {
   it('drops any agent or runtime a request names, before it reaches the owner', () => {
     const named = { agent: CODEX, runtime: 'codex', model: 'gpt-5' };
-    expect(AgentRequestBody.parse({ kind: 'agent_request', requestId: 'r1', prompt: 'hi', channel: 'room', ...named })).not.toHaveProperty('agent');
+    // A room ask may name one too (BLG-520, "@bob:codex"): their Mac still decides (agent-host pickNamed).
+    expect(AgentRequestBody.parse({ kind: 'agent_request', requestId: 'r1', prompt: 'hi', channel: 'room', ...named }).agent).toEqual(CODEX);
     expect(AgentRequestBody.parse({ kind: 'agent_request', requestId: 'r1', prompt: 'hi', channel: 'room', ...named })).not.toHaveProperty('runtime');
+    expect(AgentRequestBody.parse({ kind: 'agent_request', requestId: 'r1', prompt: 'hi', channel: 'room', ...named })).not.toHaveProperty('model');
     expect(WsRequestBody.parse({ kind: 'ws_request', reqId: 'q1', project: 'landing', task: 'fix it', ...named })).not.toHaveProperty('agent');
     // A gateway ask may name one of the agents their card lists (BLG-503): their Mac still decides (serve.ts agentForAsk).
     const req = TaskRequest.parse({ t: 'task_request', id: 't_aaaaaaaaaaaa', from: 'kay0000000', to: 'bob0000000', kind: 'ask', ask: 'hi', ts: 1, ...named });

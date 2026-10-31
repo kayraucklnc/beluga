@@ -461,12 +461,17 @@ export interface AgentBackend {
   reviewPr?(input: import('./pr-reviewer.js').PrReviewInput): Promise<import('./pr-reviewer.js').PrReview | undefined>;
   /** Models this Claude Code offers, for the model picker. */
   listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
-  /** Your MCP servers for these project folders, with how each is now (agent/mcp-connect.ts). */
-  mcpServers?(projects: readonly string[]): Promise<readonly import('../shared/mcp.js').McpServerRow[]>;
+  /**
+   * Your MCP servers for these project folders, with how each is now (Claude: claude/mcp-connect.ts,
+   * Codex: codex/mcp.ts). `runtime`: whose (a routed backend asks that runtime's; unset: the default's).
+   */
+  mcpServers?(projects: readonly string[], runtime?: string): Promise<readonly import('../shared/mcp.js').McpServerRow[]>;
   /** Start signing in to one of them: the page to open in your browser. */
-  mcpSignIn?(projects: readonly string[], name: string): Promise<import('../shared/mcp.js').McpSignIn>;
+  mcpSignIn?(projects: readonly string[], name: string, runtime?: string): Promise<import('../shared/mcp.js').McpSignIn>;
   /** Waits for that sign-in: true once connected, false when it gave up, undefined when none is waiting. */
-  mcpSignedIn?(name: string): Promise<boolean | undefined>;
+  mcpSignedIn?(name: string, runtime?: string): Promise<boolean | undefined>;
+  /** Turn one on or off where its agent keeps it (Codex: config.toml). Only rows with canTurnOff. */
+  mcpSetEnabled?(projects: readonly string[], name: string, enabled: boolean, runtime?: string): Promise<import('../shared/mcp.js').McpTurned>;
 }
 
 /** One person as the agent sees them in list_peers. */

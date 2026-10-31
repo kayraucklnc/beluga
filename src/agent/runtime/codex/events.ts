@@ -121,6 +121,8 @@ export class CodexEvents {
       readonly now?: () => number;
       /** Each token update (the context meter). */
       readonly onTokens?: (usage: ThreadTokenUsage) => void;
+      /** Codex's sub-agents (subagents.ts): sees each notification first; what it takes is theirs, not the lead's. */
+      readonly subAgents?: { handle(method: string, params: Record<string, unknown>): boolean };
     } = {},
   ) {
     this.sink = sink;
@@ -150,6 +152,7 @@ export class CodexEvents {
 
   handle(method: string, params: Record<string, unknown>): void {
     this.lastEventAt = (this.opts.now ?? Date.now)();
+    if (this.opts.subAgents?.handle(method, params)) return;
     if (method === 'item/started') return this.started(params.item as ThreadItem);
     if (method === 'item/completed') return this.completed(params.item as ThreadItem);
     if (method === 'item/reasoning/summaryTextDelta' || method === 'item/reasoning/textDelta') this.thinking = true;
