@@ -11,7 +11,7 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
   const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-  const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+  const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
   if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
   await row.click();
   await expect(toolbar(page)).toContainText('add-auth');
@@ -89,7 +89,7 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
     await expect(toolbar(page)).toContainText('add-auth');
@@ -180,7 +180,7 @@ test('The chat watches the PR’s checks live, and an admin can merge past them'
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
 
@@ -211,7 +211,7 @@ test('A PR that conflicts says so at the top and offers Resolve with Claude; a m
     await page.goto('/');
     await expect(sidebar(page)).toBeVisible();
     const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first();
     if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
     await row.click();
 

@@ -19,7 +19,7 @@ async function shot(page: Page, name: string): Promise<void> {
 
 async function unfold(page: Page, project: string): Promise<void> {
   await expect(projectRow(page, project)).toBeVisible();
-  const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` });
+  const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` }).first();
   if (await show.isVisible()) await show.click();
   await expect(projectRow(page, project)).toHaveAttribute('aria-expanded', 'true');
 }

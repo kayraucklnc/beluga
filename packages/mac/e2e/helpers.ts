@@ -38,3 +38,9 @@ export async function optionLabels(button: Locator): Promise<string[]> {
   await expect(popupMenu(page)).toHaveCount(0);
   return labels;
 }
+
+/** Plans: the sidebar's Work row (Tasks, Issues, Actions and Plans, BLG-197), then its Plans tab. */
+export async function openPlans(page: Page): Promise<void> {
+  await page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: /^Work/ }).first().click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: /^Plans/ }).click();
+}

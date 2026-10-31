@@ -2,6 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from './fixtures.js';
+import { openPlans } from './helpers.js';
 
 /**
  * A pasted image is referenced in the words where the cursor was ("[image 1]"), and the project
@@ -96,7 +97,7 @@ test('the plan chat takes pasted images, image paths in words, and files like an
   const notes = path.join(dir, 'release notes.md');
   writeFileSync(notes, '# Notes');
   await page.goto('/');
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  await openPlans(page);
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await page.getByRole('button', { name: /^Project: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();

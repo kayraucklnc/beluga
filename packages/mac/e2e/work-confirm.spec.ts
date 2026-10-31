@@ -9,7 +9,7 @@ const REVIEW_SENT = /Review everything done in this workspace/;
 /** Open a workspace from the sidebar (unfolding its project if another test folded it). */
 async function openWorkspace(page: Page, project: string, name: string): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
-  const unfold = sidebar(page).getByRole('button', { name: `Show what's in ${project}` });
+  const unfold = sidebar(page).getByRole('button', { name: `Show what's in ${project}` }).first();
   if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
   await row.click();
   await expect(toolbar(page)).toContainText(name);
@@ -69,7 +69,7 @@ test('the palette asks too, and a right-click on another workspace asks with an 
 
   // Another workspace than the one on screen: no toolbar button to hang from, so an alert.
   const other = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
-  if (!(await other.isVisible())) await sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).click();
+  if (!(await other.isVisible())) await sidebar(page).getByRole('button', { name: "Show what's in bob-api" }).first().click();
   await other.click({ button: 'right' });
   await page.getByRole('menuitem', { name: /Ask Claude to Review…/ }).click();
   const alert = page.getByRole('alertdialog', { name: 'Ask Claude to review this worktree?' });

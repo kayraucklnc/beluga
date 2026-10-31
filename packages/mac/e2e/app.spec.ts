@@ -28,7 +28,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('shows the room, its people and projects', async ({ page }) => {
-  await expect(sidebar(page).getByRole('button', { name: 'bob', exact: true })).toBeVisible();
+  await expect(sidebar(page).getByRole('button', { name: /^bob, / })).toBeVisible();
   await expect(sidebar(page).getByText('bob-api')).toBeVisible();
   await expect(page.getByText('hey! just pushed my API notes')).toBeVisible();
 });
@@ -124,7 +124,7 @@ test('picks a model and how hard Claude thinks', async ({ page }) => {
 });
 
 test("opens a person's card beside their row", async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'bob', exact: true }).click();
+  await sidebar(page).getByRole('button', { name: /^bob, / }).click();
   const card = page.getByRole('dialog', { name: 'bob' });
   await expect(card.getByRole('radiogroup', { name: 'Trust bob' })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -256,7 +256,8 @@ test('adds a project from the Add Projects sheet, with its own icon', async ({ p
   await expect(row.locator('img')).toHaveAttribute('src', /^data:image\/svg\+xml/);
   // Nothing in it yet: no fold arrow (a project with worktrees keeps its own).
   await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) pixel-app/ })).toHaveCount(0);
-  await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) bob-api/ })).toHaveCount(1);
+  // bob-api keeps its arrow (and bob's shared copy of it has one too, under bob's conversations).
+  await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) bob-api/ }).first()).toBeVisible();
   if (process.env.SHOTS) await sidebar(page).screenshot({ path: `${process.env.SHOTS}/sidebar-empty-project.png` });
 });
 

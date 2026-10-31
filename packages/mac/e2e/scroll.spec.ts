@@ -90,7 +90,7 @@ test('full size, every kind of file scrolls', async ({ page }) => {
 });
 
 test('the Files view (a friend’s shared folder) scrolls every kind of file', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'Shared files' }).click();
+  await sidebar(page).getByRole('button', { name: /^Files/ }).click();
   await center(page).getByRole('option', { name: /^bob · api/ }).click();
   for (const f of FILES) {
     await pickInList(page, f.folder, f.name);

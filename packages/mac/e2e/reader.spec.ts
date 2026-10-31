@@ -38,7 +38,7 @@ async function openGuide(page: Page): Promise<void> {
   await openWorkspace(page);
   const region = await preview(page, 'docs', 'GUIDE.md');
   await expect(region.getByRole('heading', { name: 'bob-api guide' })).toBeVisible();
-  await region.getByRole('button', { name: 'Open in full' }).click();
+  await region.getByRole('button', { name: 'Open in full' }).first().click();
   await expect(center(page).getByRole('region', { name: 'GUIDE.md' })).toBeVisible();
 }
 
@@ -206,7 +206,7 @@ test('mermaid draws its diagrams, KaTeX typesets math, and images next to the fi
 test('a long code file full size: line numbers, scrolling, wrap, and ⌘F', async ({ page }) => {
   await openWorkspace(page);
   const region = await preview(page, 'src', 'payments.ts');
-  await region.getByRole('button', { name: 'Open in full' }).click();
+  await region.getByRole('button', { name: 'Open in full' }).first().click();
   const file = center(page).getByRole('region', { name: 'payments.ts' });
   await expect(file.locator('[data-n="120"]')).toBeAttached();
   const pageEl = reading(page);

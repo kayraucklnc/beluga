@@ -16,7 +16,7 @@ const projectRow = (page: Page, name: string): Locator => sidebar(page).getByRol
 async function openWorkspace(page: Page, name: string, project: string): Promise<void> {
   await expect(projectRow(page, project)).toBeVisible();
   if (!(await row(page, name).isVisible())) {
-    const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` });
+    const show = sidebar(page).getByRole('button', { name: `Show what's in ${project}` }).first();
     if (await show.isVisible()) await show.click();
   }
   await row(page, name).click();
@@ -61,7 +61,7 @@ test('a run that finishes while you are elsewhere marks its row and project unti
   await project.getByRole('button', { name: 'Fold bob-api' }).click();
   await expect(auth).toBeHidden();
   await expect(project.locator('[data-tally]')).toBeVisible();
-  await project.getByRole('button', { name: "Show what's in bob-api" }).click();
+  await project.getByRole('button', { name: "Show what's in bob-api" }).first().click();
 
   // It's in Unread, a click away; opening it reads it (it stays there, plain, while you're in it).
   const listed = unreadSection(page).getByRole('button', { name: /^add-auth · Claude finished/ });

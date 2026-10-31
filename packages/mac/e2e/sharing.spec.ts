@@ -14,11 +14,13 @@ test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
-  await expect(sidebar(page).getByRole('button', { name: 'bob', exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(sidebar(page).getByRole('button', { name: /^bob, / })).toBeVisible({ timeout: 15_000 });
 });
 
 test('the Invite sheet copies a link, lists it, and revokes it', async ({ page }) => {
+  // Invite opens the room's card first; Invite People… there opens the sheet.
   await sidebar(page).getByRole('button', { name: 'Invite', exact: true }).click();
+  await page.getByRole('button', { name: 'Invite People…' }).click();
   const sheet = page.getByRole('dialog', { name: 'Invite People' });
   await expect(sheet).toBeVisible();
   await pick(sheet, 'Invite to', 'bob-api');
@@ -41,7 +43,7 @@ test('the Invite sheet copies a link, lists it, and revokes it', async ({ page }
 });
 
 test("a person's card changes how much you trust them, and remembers it", async ({ page }) => {
-  const row = sidebar(page).getByRole('button', { name: 'mia', exact: true });
+  const row = sidebar(page).getByRole('button', { name: /^mia, / });
   await row.click();
   const card = page.getByRole('dialog', { name: 'mia' });
   const trust = card.getByRole('radiogroup', { name: 'Trust mia' });
@@ -58,17 +60,17 @@ test("a person's card changes how much you trust them, and remembers it", async 
 });
 
 test('right-click a person: Trust is a submenu', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'mia', exact: true }).click({ button: 'right' });
+  await sidebar(page).getByRole('button', { name: /^mia, / }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: /^Trust/ }).hover();
   await page.getByRole('menuitemradio', { name: /^Full trust/ }).click();
-  await sidebar(page).getByRole('button', { name: 'mia', exact: true }).click({ button: 'right' });
+  await sidebar(page).getByRole('button', { name: /^mia, / }).click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: /^Trust/ })).toContainText('Full trust');
   await page.getByRole('menuitem', { name: /^Trust/ }).hover();
   await page.getByRole('menuitemradio', { name: /^Ask me each time/ }).click();
 });
 
 test("Ask Claude addresses the message with a chip, not typed text", async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'bob', exact: true }).click();
+  await sidebar(page).getByRole('button', { name: /^bob, / }).click();
   await page.getByRole('dialog', { name: 'bob' }).getByRole('button', { name: 'Ask Claude' }).click();
   await expect(page.getByLabel('To bob’s Claude')).toBeVisible();
   await expect(composer(page)).toHaveValue('');
@@ -88,7 +90,8 @@ test('Share a Folder: share with one person, see it listed, stop sharing', async
   await sheet.getByRole('textbox', { name: 'Folder path' }).fill(dir);
   await sheet.getByRole('radio', { name: 'Only…' }).click();
   await expect(sheet.getByRole('button', { name: 'Share', exact: true })).toBeDisabled();
-  await sheet.getByRole('checkbox', { name: 'bob' }).check();
+  // bob is in the room and a friend too: either one is him.
+  await sheet.getByRole('checkbox', { name: 'bob' }).first().check();
   await sheet.getByRole('button', { name: 'Share', exact: true }).click();
   const row = sheet.getByRole('list', { name: 'Shared folders' }).getByRole('listitem', { name: 'sketches' });
   await expect(row).toContainText('only bob');

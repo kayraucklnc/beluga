@@ -104,7 +104,8 @@ export async function startDemo({ home, claude, port }: { home: string; claude: 
     env: {
       ...process.env,
       TMPDIR: `${tmp}/`,
-      ...both({ HOME: home, CLAUDE_HOME: claude, GH: path.join(import.meta.dirname, 'fake-gh.mjs'), FAKE_GH: path.join(home, 'fake-gh.json'), DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', ALLOW_ORIGINS: `http://localhost:${port}` }),
+      // The demo's friends (bob, mia) are on the Beluga network, off by default: on here, whatever the shell running the tests says.
+      ...both({ HOME: home, CLAUDE_HOME: claude, GH: path.join(import.meta.dirname, 'fake-gh.mjs'), FAKE_GH: path.join(home, 'fake-gh.json'), DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', ALLOW_ORIGINS: `http://localhost:${port}`, NETWORK: '1' }),
     },
     stdio: ['ignore', out, out],
   });
