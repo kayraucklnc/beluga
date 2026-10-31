@@ -113,7 +113,8 @@ describe("a sub-agent's own scratch folder", () => {
     expect(AGENT_SCRATCH_DIR).toBe('.beluga/scratch/agents');
   });
 
-  it('is handed to each sub-agent in its prompt', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('is handed to each sub-agent in its prompt', () => {
     const patched = withAgentScratch('Agent', { description: 'Check the UI', prompt: 'Take screenshots.' }, 'toolu_01xyz0123456789', '/work/app/.beluga/scratch');
     expect(patched?.prompt).toContain('Take screenshots.');
     expect(patched?.prompt).toContain('/work/app/.beluga/scratch/agents/0123456789/');

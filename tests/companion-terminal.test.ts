@@ -102,7 +102,8 @@ async function setup() {
   cleanup.push(async () => {
     await host.stop();
     terminals.closeAll();
-    rmSync(dir, { recursive: true, force: true });
+    // Windows lets go of a closed shell's folder a moment later.
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   await host.start();
 

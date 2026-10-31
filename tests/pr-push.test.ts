@@ -66,7 +66,8 @@ afterEach(() => {
 const remoteFeat = (): string => git(work, 'ls-remote', 'origin', 'refs/heads/feat').split(/\s+/)[0]!;
 
 describe('pushing for a pull request after the last one was squash-merged', () => {
-  it('replaces GitHub’s copy when it is exactly the merged PR’s head', async () => {
+  // Not on Windows: a stand-in gh written as a shell script.
+  it.skipIf(process.platform === 'win32')('replaces GitHub’s copy when it is exactly the merged PR’s head', async () => {
     const mergedHead = remoteFeat();
     writeFileSync(ghAnswer, JSON.stringify({ state: 'MERGED', headRefOid: mergedHead }));
     expect(await pushForPr(work, 'feat')).toBe('replaced');

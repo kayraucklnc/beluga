@@ -379,7 +379,8 @@ describe('choosing the base branch', () => {
 });
 
 describe('helpers', () => {
-  it('slugs names and parses worktree lists', () => {
+  // Not on Windows: POSIX paths in the fixtures (git paths become C:\… there).
+  it.skipIf(process.platform === 'win32')('slugs names and parses worktree lists', () => {
     expect(slug('  Fix: Auth / Login!! ')).toBe('fix-auth-login');
     expect(slug('!!!')).toBe('workspace');
     expect(parseWorktreeList('worktree /a\nHEAD 1\nbranch refs/heads/main\n\nworktree /b\nHEAD 2\ndetached\n')).toEqual([
