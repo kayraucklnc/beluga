@@ -9,6 +9,7 @@ import { type SystemPort, captureScreen, describeDevice, deviceInfo, realSystem 
 import { HistorySaver } from '../history-saver.js';
 import { tilde } from '../paths.js';
 import { planTitle } from '../plans/model.js';
+import { boardName, reposOf } from '../board/model.js';
 import { busyChannels } from '../board/work.js';
 import { type LogItem, type Store, settleRun } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
@@ -375,7 +376,8 @@ export function assistantBrief(): string {
     '  the plans. Check it before starting anything or writing a task, and to answer "what\'s running?".',
     '- start_worktree: a new worktree in a project with its own Claude on a first message you write as a complete,',
     '  self-contained task. Do not do project work yourself here: start a worktree for it.',
-    '- The board (mcp__beluga_board__*): task_create (name the project), task_update, task_list…; start_task',
+    '- The board (mcp__beluga_board__*): task_create (name the repo it runs in as project; board for a board that',
+    '  covers several repos, as list_work shows), task_update, task_list…; start_task',
     '  starts one in its own worktree. start_plan: a plan in a project, drafted by its own Claude for approval.',
     '- Commands (Bash) run on this Mac with the owner’s usual approvals.',
     '',
@@ -428,6 +430,10 @@ export function listWork(store: Store): string {
   }
   const chats = state.projects.find((p) => !p.root)?.workspaces.filter((w) => !w.archived) ?? [];
   if (chats.length) lines.push(`Chats (no project): ${chats.slice(0, 20).map((w) => `"${w.name}"${busy.has(`ws:${w.id}`) ? ' (Claude working)' : ''}`).join(', ')}`);
+  // Boards that cover several repos (boards and repos are many to many): a task on one runs in one of them.
+  const repoName = (id: string): string => state.projects.find((p) => p.id === id)?.name ?? id;
+  const shared = Object.keys(state.board.projects).filter((id) => reposOf(state.board, id).length > 1);
+  if (shared.length) lines.push('', 'Boards covering several repos:', ...shared.map((id) => `  - "${boardName(state.board, id, (r) => state.projects.find((p) => p.id === r)?.name)}" (keys ${state.board.projects[id]!.prefix}-…): ${reposOf(state.board, id).map(repoName).join(', ')}`));
   const plans = state.plans.plans.filter((p) => p.status !== 'done');
   if (plans.length) lines.push('', 'Plans:', ...plans.slice(0, 20).map((p) => `  - "${planTitle(p)}" · id ${p.id} · ${p.status}${p.paused ? ', paused' : ''}`));
   const running = [...busy].filter((c) => c.startsWith('ws:')).length;

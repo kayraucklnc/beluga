@@ -36,8 +36,12 @@ import {
   type Proof,
   SECTION_INFO,
   STATUS_INFO,
+  boardForRepo,
+  boardOf,
   byRank,
   findIssue,
+  isOwnBoard,
+  reposOf,
   isArchived,
   isOpen,
   prefixFor,
@@ -65,7 +69,10 @@ export interface BoardDeps {
 }
 
 export interface NewIssue {
+  /** The repo it runs in. */
   readonly projectId: string;
+  /** The board it goes on (a board id); left out: its parent's, else the one the repo's work goes on (boardForRepo). */
+  readonly board?: string;
   readonly title: string;
   readonly status?: IssueStatus;
   readonly priority?: Priority;
@@ -105,6 +112,15 @@ export interface IssuePatch {
   readonly due?: string | null;
   /** null: not a sub-task any more. */
   readonly parent?: string | null;
+  /** The repo it runs in (a project id): it stays on its board, which covers the repo from then on. */
+  readonly projectId?: string;
+}
+
+/** A board of its own: what it's called, the repos it covers, and its key prefix (worked out from the name when left out). */
+export interface NewBoard {
+  readonly name: string;
+  readonly repos: readonly string[];
+  readonly prefix?: string;
 }
 
 export type Relation = 'blocked_by' | 'blocks' | 'related';
@@ -113,6 +129,9 @@ const MAX_TITLE = 200;
 const MAX_SECTION = 20_000;
 const MAX_COMMENT = 8_000;
 const MAX_LABELS = 12;
+const MAX_BOARD_NAME = 60;
+/** Repos one board covers, at most. */
+const MAX_REPOS = 20;
 
 const SavedLabel = z.object({ name: z.string().regex(LABEL_NAME), icon: z.enum(LABEL_ICONS), color: z.enum(LABEL_COLORS), hint: z.string().max(80).optional() });
 
@@ -132,6 +151,8 @@ const BoardFile = z.object({
         labels: z.array(z.unknown()).optional().transform((list) => list?.flatMap((l) => { const r = SavedLabel.safeParse(l); return r.success ? [r.data as LabelDef] : []; })),
         // One that doesn't read is left out, not the project.
         context: z.unknown().optional().transform((c) => { const r = SavedContext.safeParse(c); return r.success ? r.data : undefined; }),
+        name: z.string().max(MAX_BOARD_NAME).optional().catch(undefined),
+        repos: z.array(z.string().max(200)).max(MAX_REPOS).optional().catch(undefined),
       }),
     )
     .default({}),
@@ -277,10 +298,12 @@ export class Board {
   create(input: NewIssue, by: Actor, origin: Issue['origin'] = 'manual'): Issue {
     const title = oneLine(input.title, MAX_TITLE);
     if (!title) throw new Error('A task needs a title');
-    const project = this.projectFor(input.projectId);
-    const status = input.status ?? 'todo';
+    this.needRepo(input.projectId);
     const parent = input.parent ? this.need(input.parent) : undefined;
-    if (parent && parent.projectId !== input.projectId) throw new Error('A sub-task belongs to its parent’s project');
+    const boardId = input.board ?? (parent ? boardOf(parent) : boardForRepo(this.state(), input.projectId));
+    if (parent && boardOf(parent) !== boardId) throw new Error('A sub-task is on its parent’s board');
+    const project = this.covering(this.projectFor(boardId), boardId, input.projectId);
+    const status = input.status ?? 'todo';
     const blockers = (input.blockedBy ?? []).map((ref) => this.need(ref).id);
     const at = this.now();
     const number = project.next;
@@ -296,12 +319,13 @@ export class Board {
       key: `${project.prefix}-${number}`,
       number,
       projectId: input.projectId,
+      ...(boardId !== input.projectId ? { board: boardId } : {}),
       title,
       ...(input.autoTitle ? { autoTitle: true } : {}),
       ...(input.drafting ? { drafting: true } : {}),
       status,
       priority: input.priority ?? 'none',
-      labels: this.allowedLabels(input.projectId, input.labels ?? [], [], by, origin),
+      labels: this.allowedLabels(boardId, input.labels ?? [], [], by, origin),
       ...(input.estimate ? { estimate: input.estimate } : {}),
       ...(input.due && DAY.test(input.due) ? { due: input.due } : {}),
       ...(input.assignee ? { assignee: personOf(input.assignee as AnyAssignee) } : {}),
@@ -322,7 +346,7 @@ export class Board {
       ...(isOpen(status) ? {} : { closedAt: at }),
       origin,
     };
-    this.projects = { ...this.projects, [input.projectId]: { ...project, next: number + 1 } };
+    this.projects = { ...this.projects, [boardId]: { ...project, next: number + 1 } };
     this.issues = [...this.issues, issue];
     this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
     this.deps.store.dispatch({ type: 'board_issue', issue });
@@ -360,7 +384,7 @@ export class Board {
       notes.push({ kind: 'assignee', text: assignee ? `assigned this to ${assignee.name}` : 'unassigned this', assignee, was: assigneeId(issue.assignee), now: assigneeId(assignee ?? undefined) });
     }
     if (patch.labels) {
-      const labels = this.allowedLabels(issue.projectId, patch.labels, issue.labels, by);
+      const labels = this.allowedLabels(boardOf(issue), patch.labels, issue.labels, by);
       if (labels.join('\0') !== issue.labels.join('\0')) {
         const added = labels.filter((l) => !issue.labels.includes(l));
         const removed = issue.labels.filter((l) => !labels.includes(l));
@@ -381,13 +405,24 @@ export class Board {
       if (patch.parent) {
         const parent = this.need(patch.parent);
         if (parent.id === issue.id || this.isAncestor(issue.id, parent.id)) throw new Error('A task can’t be a sub-task of itself or of its own sub-tasks');
-        if (parent.projectId !== issue.projectId) throw new Error('A sub-task belongs to its parent’s project');
+        if (boardOf(parent) !== boardOf(issue)) throw new Error('A sub-task is on its parent’s board');
         next.parent = parent.id;
         notes.push({ kind: 'parent', text: `made this a sub-task of ${parent.key}` });
       } else {
         next.parent = undefined;
         notes.push({ kind: 'parent', text: 'made this a task of its own' });
       }
+    }
+    if (patch.projectId && patch.projectId !== issue.projectId) {
+      this.needRepo(patch.projectId);
+      const boardId = boardOf(issue);
+      // It stays on its board (its key with it); the board covers the repo from now on.
+      next.projectId = patch.projectId;
+      next.board = boardId === patch.projectId ? undefined : boardId;
+      const covered = this.covering(this.projectFor(boardId), boardId, patch.projectId);
+      if (covered !== this.projects[boardId]) this.meta({ ...this.projects, [boardId]: covered });
+      const name = (id: string): string => this.deps.projectName(id) ?? 'another repo';
+      notes.push({ kind: 'project', text: `moved this to run in ${name(patch.projectId)}`, was: issue.projectId, now: patch.projectId });
     }
     if (!notes.length) return issue;
     const at = this.now();
@@ -430,7 +465,7 @@ export class Board {
         drafting: undefined,
         ...(title && !renamed ? { title } : {}),
         brief,
-        labels: cleanLabels([...issue.labels, ...inSet(labelsFor(this.state(), issue.projectId), draft.labels).known]),
+        labels: cleanLabels([...issue.labels, ...inSet(labelsFor(this.state(), boardOf(issue)), draft.labels).known]),
         ...(draft.priority && issue.priority === 'none' ? { priority: draft.priority } : {}),
       },
       [this.entry(by, 'brief', 'wrote the title and goal')],
@@ -621,9 +656,9 @@ export class Board {
     return archived;
   }
 
-  /** Every Done task to the Archive (in one project, or all of them). → how many went. */
-  archiveDone(by: Actor, projectId?: string): number {
-    const done = this.issues.filter((i) => i.status === 'done' && !isArchived(i) && (!projectId || i.projectId === projectId));
+  /** Every Done task to the Archive (on one board, or all of them). → how many went. */
+  archiveDone(by: Actor, boardId?: string): number {
+    const done = this.issues.filter((i) => i.status === 'done' && !isArchived(i) && (!boardId || boardOf(i) === boardId));
     for (const issue of done) this.archive(issue.id, by);
     return done.length;
   }
@@ -635,9 +670,9 @@ export class Board {
     return this.change(issue, { archivedAt: undefined }, [this.entry(by, 'status', 'brought this back from the Archive')]);
   }
 
-  /** Delete every archived task for good (in one project, or all of them). → how many went. */
-  emptyArchive(projectId?: string): number {
-    const gone = this.issues.filter((i) => isArchived(i) && (!projectId || i.projectId === projectId));
+  /** Delete every archived task for good (on one board, or all of them). → how many went. */
+  emptyArchive(boardId?: string): number {
+    const gone = this.issues.filter((i) => isArchived(i) && (!boardId || boardOf(i) === boardId));
     for (const issue of gone) this.remove(issue.id);
     return gone.length;
   }
@@ -805,10 +840,13 @@ export class Board {
    */
   adoptTeam(input: Omit<Issue, 'key' | 'number' | 'rank' | 'revisions' | 'worktrees' | 'proof' | 'updatedAt'>): Issue {
     if (this.issues.some((i) => i.id === input.id)) return this.need(input.id);
-    const project = this.projectFor(input.projectId);
+    // On the board this repo's work goes on here (a teammate's boards are theirs).
+    const { board: _theirs, ...task } = input as typeof input & { board?: string };
+    const boardId = boardForRepo(this.state(), input.projectId);
+    const project = this.projectFor(boardId);
     const number = project.next;
-    const issue: Issue = { ...input, key: `${project.prefix}-${number}`, number, rank: this.lastRank(input.status), revisions: [], worktrees: [], proof: [], updatedAt: this.now(), ...(isOpen(input.status) ? {} : { closedAt: input.closedAt ?? this.now() }) };
-    this.projects = { ...this.projects, [input.projectId]: { ...project, next: number + 1 } };
+    const issue: Issue = { ...task, ...(boardId !== input.projectId ? { board: boardId } : {}), key: `${project.prefix}-${number}`, number, rank: this.lastRank(input.status), revisions: [], worktrees: [], proof: [], updatedAt: this.now(), ...(isOpen(input.status) ? {} : { closedAt: input.closedAt ?? this.now() }) };
+    this.projects = { ...this.projects, [boardId]: { ...project, next: number + 1 } };
     this.issues = [...this.issues, issue];
     this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
     this.deps.store.dispatch({ type: 'board_issue', issue, origin: 'team' });
@@ -859,10 +897,7 @@ export class Board {
 
   /** Keys start with this from now on (tasks keep the keys they have). */
   setPrefix(projectId: string, prefix: string): void {
-    const clean = prefix.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-    if (clean.length < 2) throw new Error('A prefix is 2 to 6 letters or digits');
-    // Old keys stay as they were: a prefix another project's tasks still use is taken too.
-    if (Object.entries(this.projects).some(([id, p]) => id !== projectId && p.prefix === clean) || this.issues.some((i) => i.projectId !== projectId && i.key.startsWith(`${clean}-`))) throw new Error(`Another project's keys already start with ${clean}`);
+    const clean = this.freePrefix(prefix, projectId);
     const project = this.projectFor(projectId);
     this.projects = { ...this.projects, [projectId]: { ...project, prefix: clean } };
     this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
@@ -914,6 +949,51 @@ export class Board {
     return true;
   }
 
+  // ------------------------------------------------------------------ boards (many to many with repos)
+
+  /** A board of its own covering a few repos → its id. */
+  createBoard(input: NewBoard): string {
+    const name = oneLine(input.name, MAX_BOARD_NAME);
+    if (!name) throw new Error('A board needs a name');
+    const repos = this.cleanRepos(input.repos);
+    if (!repos.length) throw new Error('A board covers one repo at least');
+    const prefix = input.prefix ? this.freePrefix(input.prefix) : prefixFor(name, this.takenPrefixes());
+    const id = short('board');
+    this.meta({ ...this.projects, [id]: { prefix, next: 1, name, repos } });
+    return id;
+  }
+
+  /**
+   * Rename a board (a repo's board: empty goes back to the repo's name) or change the repos it
+   * covers. Tasks stay where they are: a repo taken off keeps the tasks running in it on the board.
+   */
+  editBoard(boardId: string, patch: { readonly name?: string; readonly repos?: readonly string[] }): void {
+    const own = isOwnBoard(boardId);
+    const board = this.projectFor(boardId);
+    let next: BoardProject = board;
+    if (patch.name !== undefined) {
+      const name = oneLine(patch.name, MAX_BOARD_NAME);
+      if (!name && own) throw new Error('A board needs a name');
+      const { name: _old, ...rest } = next;
+      next = name && name !== this.deps.projectName(boardId) ? { ...rest, name } : rest;
+    }
+    if (patch.repos) {
+      const repos = this.cleanRepos(patch.repos).filter((r) => r !== boardId);
+      if (own && !repos.length) throw new Error('A board covers one repo at least');
+      const { repos: _old, ...rest } = next;
+      next = repos.length ? { ...rest, repos } : rest;
+    }
+    if (next !== board) this.meta({ ...this.projects, [boardId]: next });
+  }
+
+  /** A board of its own, gone: only once nothing is on it (archived tasks included). */
+  removeBoard(boardId: string): void {
+    if (!isOwnBoard(boardId) || !this.projects[boardId]) throw new Error('Only a board you made can be removed');
+    if (this.issues.some((i) => boardOf(i) === boardId)) throw new Error('This board still has tasks: move them to another board first');
+    const { [boardId]: _gone, ...rest } = this.projects;
+    this.meta(rest);
+  }
+
   /** Write anything waiting now (on the way out). */
   flush(): void {
     if (!this.saveTimer) return;
@@ -924,13 +1004,49 @@ export class Board {
 
   // ------------------------------------------------------------------ inside
 
-  private projectFor(projectId: string): BoardProject {
-    const known = this.projects[projectId];
+  /** A board's settings (a repo's board is made on first use, its prefix from the repo's name). */
+  private projectFor(boardId: string): BoardProject {
+    const known = this.projects[boardId];
     if (known) return known;
-    const name = this.deps.projectName(projectId);
-    if (!name) throw new Error('That project isn’t here');
-    const taken = new Set([...Object.values(this.projects).map((p) => p.prefix), ...this.issues.map((i) => i.key.replace(/-\d+$/, ''))]);
-    return { prefix: prefixFor(name, taken), next: 1 };
+    const name = isOwnBoard(boardId) ? undefined : this.deps.projectName(boardId);
+    if (!name) throw new Error(isOwnBoard(boardId) ? 'That board isn’t here' : 'That project isn’t here');
+    return { prefix: prefixFor(name, this.takenPrefixes()), next: 1 };
+  }
+
+  /** A repo tasks can run in: one that's here (or that has a board here already). */
+  private needRepo(projectId: string): void {
+    if (isOwnBoard(projectId) || (!this.projects[projectId] && !this.deps.projectName(projectId))) throw new Error('That project isn’t here');
+  }
+
+  /** A board's settings, covering a repo too (a task runs in it now). */
+  private covering(board: BoardProject, boardId: string, projectId: string): BoardProject {
+    if (reposOf({ projects: { [boardId]: board } }, boardId).includes(projectId) || (board.repos?.length ?? 0) >= MAX_REPOS) return board;
+    return { ...board, repos: [...(board.repos ?? []), projectId] };
+  }
+
+  /** Repos as a board keeps them: ones that are here, once each. */
+  private cleanRepos(repos: readonly string[]): string[] {
+    return [...new Set(repos)].filter((r) => !isOwnBoard(r) && (this.deps.projectName(r) !== undefined || this.projects[r] !== undefined)).slice(0, MAX_REPOS);
+  }
+
+  /** Prefixes in use: every board's, and every key's (old keys keep theirs). */
+  private takenPrefixes(): Set<string> {
+    return new Set([...Object.values(this.projects).map((p) => p.prefix), ...this.issues.map((i) => i.key.replace(/-\d+$/, ''))]);
+  }
+
+  /** A prefix as keys write it, free for this board: no other board has it, and no other board's tasks still use it. */
+  private freePrefix(prefix: string, boardId?: string): string {
+    const clean = prefix.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    if (clean.length < 2) throw new Error('A prefix is 2 to 6 letters or digits');
+    if (Object.entries(this.projects).some(([id, p]) => id !== boardId && p.prefix === clean) || this.issues.some((i) => boardOf(i) !== boardId && i.key.startsWith(`${clean}-`))) throw new Error(`Another board's keys already start with ${clean}`);
+    return clean;
+  }
+
+  /** Boards changed: every screen hears, and it's saved. */
+  private meta(projects: Record<string, BoardProject>): void {
+    this.projects = projects;
+    this.deps.store.dispatch({ type: 'board_meta', projects: this.projects, autoTasks: this.autoTasks });
+    this.save();
   }
 
   /**

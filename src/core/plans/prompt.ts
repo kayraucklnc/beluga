@@ -111,7 +111,7 @@ export function checkTestsNote(plan: Pick<Plan, 'testsAt'>, last: boolean): stri
 
 /** Planning (a draft, or changes to an approved plan): in the plan's home conversation. */
 export function planningBrief(plan: Plan, board: BoardState, style: string): string {
-  const existing = filterIssues(board, { projectId: plan.projectId, scope: 'all' })
+  const existing = filterIssues(board, { repos: [plan.projectId], scope: 'all' })
     .filter((i) => i.status !== 'canceled' && i.plan?.id !== plan.id)
     .slice(0, 30)
     .map((i) => `- ${i.key} · ${STATUS_INFO[i.status].label} · ${i.title}`);

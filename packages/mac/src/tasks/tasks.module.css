@@ -2285,3 +2285,123 @@
   padding: 3px 9px;
   font-size: 11px;
 }
+
+/* Boards and repos (many to many): a board of several repos shows its repos' icons a little stacked. */
+.repoStack {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.repoStackItem {
+  display: inline-flex;
+  border-radius: calc(var(--repo-size) * 0.3);
+  box-shadow: 0 0 0 1.5px var(--bg);
+  background: var(--bg);
+}
+.repoStackItem + .repoStackItem {
+  margin-left: calc(var(--repo-size) * -0.12);
+}
+
+/* Which repos' tasks a board of several shows: all of them, or the ones you ticked (tinted then). */
+.repoFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.repoFilter:hover,
+.repoFilter[data-state='open'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.repoFilter > svg {
+  color: var(--text-3);
+}
+.repoFilterOn {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--text);
+}
+
+/* The repo a task runs in, on its card or row (boards of several repos only). */
+.repoChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 140px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.repoChipName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repoChipCompact {
+  max-width: 110px;
+}
+
+/* New Board / a board's settings: the repos it covers, each a row to tick. */
+.repoList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+}
+.repoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.repoRow:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.repoRow > svg {
+  color: var(--text-3);
+}
+.repoRowOn {
+  color: var(--text);
+}
+.repoRowOn > svg {
+  color: var(--accent);
+}
+.repoRow:disabled {
+  cursor: default;
+}
+.repoRowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repoRowNote {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
