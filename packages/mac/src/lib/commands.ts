@@ -124,6 +124,7 @@ export function commandState(state: AppState, id: CommandId): CommandState {
       return chatShowing(state) && state.view.kind !== 'draft' && state.view.kind !== 'draft_worktree' ? ON : OFF('Open a conversation to find in it');
     case 'conv-terminal': {
       const w = currentWorkspace(state);
+      if (!getPrefs().termView) return OFF('Turn on the terminal view in Settings › Terminal');
       return w && terminalCapable(state, w.id) ? { enabled: true, checked: convoModeOf(getPrefs().convoModes, getPrefs().convoDefault, w.id) !== 'chat' } : OFF('Open a worktree or a chat on Claude Code to see it as a terminal');
     }
     case 'conv-copy':

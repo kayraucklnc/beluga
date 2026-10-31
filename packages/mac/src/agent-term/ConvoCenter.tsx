@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { ResizeHandle } from '../layout/panel/ResizeHandle.js';
 import { useApp } from '../lib/beluga.js';
-import { BOTH_MAX, BOTH_MIN, clampBoth, convoModeOf, terminalCapable } from '../lib/convo-mode.js';
+import { BOTH_MAX, BOTH_MIN, clampBoth, shownMode, terminalCapable } from '../lib/convo-mode.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { ChatView } from '../views/ChatView.js';
 import { AgentTermView } from './AgentTermView.js';
@@ -17,7 +17,7 @@ export const useTerminalCapable = (wsId: string | undefined): boolean => useApp(
 export function ConvoCenter({ wsId }: { readonly wsId: string }) {
   const prefs = usePrefs();
   const capable = useTerminalCapable(wsId);
-  const mode = capable ? convoModeOf(prefs.convoModes, prefs.convoDefault, wsId) : 'chat';
+  const mode = capable ? shownMode(prefs, wsId) : 'chat';
   const box = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<number | undefined>(undefined);
   if (mode === 'chat') return <ChatView />;

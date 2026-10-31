@@ -17,7 +17,8 @@ export function setConvoMode(wsId: string, mode: ConvoMode): void {
 export function ConvoSwitch({ wsId, iconOnly }: { readonly wsId: string; readonly iconOnly?: boolean }) {
   const prefs = usePrefs();
   const capable = useTerminalCapable(wsId);
-  if (!capable) return null;
+  // Only for people who turned the terminal view on (Settings › Terminal): everyone else has the chat.
+  if (!capable || !prefs.termView) return null;
   const mode = convoModeOf(prefs.convoModes, prefs.convoDefault, wsId);
   return (
     <Segmented

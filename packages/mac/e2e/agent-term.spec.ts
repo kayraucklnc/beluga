@@ -30,14 +30,35 @@ const screen = (page: Page, key: RegExp) =>
     return lines.join('\n');
   }, key.source);
 
+/** The terminal view is something you turn on (Settings › Terminal): these tests have it on. */
+async function viewOn(page: Page): Promise<void> {
+  await page.addInitScript(() => localStorage.setItem('beluga.prefs.v1', JSON.stringify({ ...JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}'), termView: true })));
+}
+
 async function typeInTerminal(page: Page, text: string): Promise<void> {
   await page.locator('[data-pane="agent"] .xterm').click();
   await page.keyboard.type(text);
   await page.keyboard.press('Enter');
 }
 
+test('only who turns the terminal view on gets it: the chat has no switch until then', async ({ page }) => {
+  await page.goto('/');
+  await openWorkspace(page, 'webhook-retries');
+  await expect(modes(page)).toHaveCount(0);
+  await page.screenshot({ path: '../../.beluga/scratch/terminal-real/09-normal-chat-no-switch.png' });
+  await page.keyboard.press('Meta+,');
+  await page.getByRole('dialog').getByRole('button', { name: 'Terminal', exact: true }).click();
+  await page.getByRole('switch', { name: 'Use Claude Code’s own terminal' }).scrollIntoViewIfNeeded();
+  await page.getByRole('switch', { name: 'Use Claude Code’s own terminal' }).click();
+  await page.screenshot({ path: '../../.beluga/scratch/terminal-real/10-advanced-setting.png' });
+  await expect(page.getByRole('radiogroup', { name: 'Open conversations as' }).or(page.getByRole('tablist', { name: 'Open conversations as' }))).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(modes(page).getByRole('tab', { name: 'Terminal' })).toBeVisible();
+});
+
 test('a conversation as its agent’s terminal: links open visuals beside it, and the chat keeps up', async ({ page }) => {
   test.setTimeout(120_000);
+  await viewOn(page);
   await page.goto('/');
   await openWorkspace(page, 'webhook-retries');
   await expect(page.getByRole('button', { name: 'Stop Claude' })).toHaveCount(0, { timeout: 90_000 });
@@ -90,6 +111,7 @@ test('a conversation as its agent’s terminal: links open visuals beside it, an
 
 test('shells split beside the agent’s terminal', async ({ page }) => {
   test.setTimeout(90_000);
+  await viewOn(page);
   await page.goto('/');
   await openWorkspace(page, 'add-auth');
   await modes(page).getByRole('tab', { name: 'Terminal' }).click();
@@ -112,7 +134,7 @@ test('a preset theme (Dracula) is the agent’s terminal’s, links in its colou
   const dracula = { name: 'Dracula', from: 'Beluga', colors: { background: '#282a36', foreground: '#f8f8f2', cursor: '#f8f8f2', selection: '#44475a', ansi: ['#21222c', '#ff5555', '#50fa7b', '#f1fa8c', '#bd93f9', '#ff79c6', '#8be9fd', '#f8f8f2', '#6272a4', '#ff6e6e', '#69ff94', '#ffffa5', '#d6acff', '#ff92df', '#a4ffff', '#ffffff'] } };
   await page.addInitScript((theme) => {
     const prefs = JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}');
-    localStorage.setItem('beluga.prefs.v1', JSON.stringify({ ...prefs, appearance: 'dark', inspector: false, termTheme: theme, termFontSize: 13 }));
+    localStorage.setItem('beluga.prefs.v1', JSON.stringify({ ...prefs, appearance: 'dark', inspector: false, termTheme: theme, termFontSize: 13, termView: true }));
   }, dracula);
   await page.goto('/');
   await openWorkspace(page, 'webhook-retries');

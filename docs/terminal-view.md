@@ -1,9 +1,11 @@
 # The terminal view
 
-A conversation in a worktree or a chat can show three ways, picked in its header (Chat · Terminal ·
-Both, or ⇧⌘T): the chat as Beluga draws it, the agent's own terminal app on the same conversation,
-or that terminal with the chat beside it. Settings › Terminal › Conversations picks how ones you
-haven't switched open.
+An advanced mode, off by default: conversations are the chat, as always, and nothing here shows.
+Turned on in Settings › Terminal › Advanced ("Use Claude Code's own terminal"), a conversation in a
+worktree or a chat can show three ways, picked in its header (Chat · Terminal · Both, or ⇧⌘T): the
+chat as Beluga draws it, the agent's own terminal app on the same conversation, or that terminal
+with the chat beside it. Settings › Terminal › Advanced then also picks how ones you haven't
+switched open.
 
 ## One conversation, two ways in
 

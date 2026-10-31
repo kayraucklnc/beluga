@@ -18,6 +18,11 @@ const KEEP = 200;
 export const isConvoMode = (v: unknown): v is ConvoMode => typeof v === 'string' && (CONVO_MODES as readonly string[]).includes(v);
 
 /** A conversation's mode: the one you picked there, else your default. */
+/** How a conversation shows given your settings: always the chat while the terminal view is off. */
+export function shownMode(prefs: { readonly termView: boolean; readonly convoModes: Readonly<Record<string, ConvoMode>>; readonly convoDefault: ConvoMode }, wsId: string): ConvoMode {
+  return prefs.termView ? convoModeOf(prefs.convoModes, prefs.convoDefault, wsId) : 'chat';
+}
+
 export function convoModeOf(modes: Readonly<Record<string, ConvoMode>>, fallback: ConvoMode, wsId: string): ConvoMode {
   const m = modes[wsId];
   return isConvoMode(m) ? m : fallback;

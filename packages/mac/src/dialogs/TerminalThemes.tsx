@@ -61,12 +61,19 @@ export function ThemeGroup() {
   );
 }
 
-/** How a conversation you haven't switched opens: the chat, or your agent's terminal (BLG-534). */
+/**
+ * The terminal view (BLG-534), for people who'd rather talk to Claude in Claude Code's own
+ * terminal app: off by default (everyone has the chat); on, each conversation's header can show it
+ * as the chat, the terminal, or both, and this picks how ones you haven't switched open.
+ */
 export function ViewGroup() {
   const prefs = usePrefs();
   return (
-    <Group title="Conversations">
-      <Row label="Open conversations as" detail={prefs.convoDefault === 'chat' ? 'The chat, drawn. The header’s switch shows the terminal for one conversation.' : prefs.convoDefault === 'terminal' ? 'Your agent’s own terminal; graphs and tables open beside it from their links.' : 'Your agent’s terminal with the chat beside it.'}>
+    <Group title="Advanced">
+      <Row label="Use Claude Code’s own terminal" detail={prefs.termView ? 'A conversation’s header shows Chat · Terminal · Both (⇧⌘T switches). Graphs, tables and tasks open beside the terminal from their links.' : 'Off: conversations are the chat. On, you can talk to Claude in Claude Code’s own terminal app instead, on the same conversation.'}>
+        <Switch label="Use Claude Code’s own terminal" on={prefs.termView} onChange={(v) => setPrefs({ termView: v })} />
+      </Row>
+      {prefs.termView ? <Row label="Open conversations as" detail={prefs.convoDefault === 'chat' ? 'The chat, drawn. The header’s switch shows the terminal for one conversation.' : prefs.convoDefault === 'terminal' ? 'Your agent’s own terminal; graphs and tables open beside it from their links.' : 'Your agent’s terminal with the chat beside it.'}>
         <Segmented
           label="Open conversations as"
           value={prefs.convoDefault}
@@ -77,7 +84,7 @@ export function ViewGroup() {
             { value: 'both', label: 'Both', icon: 'columns' },
           ]}
         />
-      </Row>
+      </Row> : null}
     </Group>
   );
 }

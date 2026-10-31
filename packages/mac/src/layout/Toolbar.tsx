@@ -19,7 +19,7 @@ import { type ToolAction, isPrStep, shortOf, toolbarActions } from './toolbar-ac
 import { type BranchFold, BranchControl, pillHidden, shortLabel } from './BranchControl.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
-import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { togglePanel } from '../lib/panel.js';
 import { panelFits } from '../lib/panel-model.js';
 import { mod } from '../lib/system.js';
@@ -172,7 +172,7 @@ export function Toolbar() {
     const stepW = (fold: BranchFold): number => (branch?.steps[0] ? (fold === 'all' ? shortLabel(branch.steps[0]).length * 7.4 + 42 : branch.steps[0].label.length * 7.4 + 42) + 34 : 0);
     const primaryW = (fold: BranchFold): number => (primary ? (fold === 'all' ? shortOf(primary).length * 7.4 + 48 : primary.label.length * 7.4 + 48) : 0);
     // The Chat · Terminal · Both switch (BLG-534): with its words while there's room, then its icons.
-    const switchW = terminalCapable(client.store.getState(), ws.id) ? (width >= 1180 ? SWITCH_W : SWITCH_ICONS_W) : 0;
+    const switchW = getPrefs().termView && terminalCapable(client.store.getState(), ws.id) ? (width >= 1180 ? SWITCH_W : SWITCH_ICONS_W) : 0;
     const fixedAt = (fold: BranchFold): number => TITLE_MIN + RIGHT_FIXED + switchW + pillW(fold) + stepW(fold) + primaryW(fold) + 34;
     const fold = FOLDS.find((f) => fixedAt(f) <= width) ?? 'all';
     const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixedAt(fold)) / 30)));

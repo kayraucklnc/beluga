@@ -70,6 +70,11 @@ export interface UiPrefs {
   readonly termKeys: TermKeysPref | null;
   /** In the terminal view, the terminal's keys win over Beluga's shortcuts (⌘T, ⌘W, ⌘1…). */
   readonly termKeysFirst: boolean;
+  /**
+   * The terminal view is on (BLG-534): conversations can show as Claude Code's own terminal app, and
+   * their header has Chat · Terminal · Both. Off (as for most people): every conversation is the chat.
+   */
+  readonly termView: boolean;
   /** How each conversation shows (BLG-534): the chat, the agent's own terminal, or both side by side (workspace id → mode). */
   readonly convoModes: Readonly<Record<string, ConvoMode>>;
   /** How a conversation you haven't switched opens. */
@@ -161,6 +166,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   termOptionMeta: true,
   termKeys: null,
   termKeysFirst: true,
+  termView: false,
   convoModes: {},
   convoDefault: 'chat',
   bothChat: 0.38,
@@ -190,7 +196,7 @@ function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
     const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
-    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, convoDefault: isConvoMode(saved.convoDefault) ? saved.convoDefault : 'chat', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout), maxFire: fireLookOf(saved.maxFire), menuBar: menuBarLookOf(saved.menuBar), termTheme: themeOf(saved.termTheme), shortcuts: overridesOf(saved.shortcuts), convoModes: saved.convoModes && typeof saved.convoModes === 'object' ? saved.convoModes : {}, convoDefault: isConvoMode(saved.convoDefault) ? saved.convoDefault : 'chat', bothChat: clampBoth(saved.bothChat), termKeys: termKeysOf(saved.termKeys), termKeysFirst: saved.termKeysFirst !== false, termView: saved.termView === true };
   } catch {
     return DEFAULT_PREFS;
   }

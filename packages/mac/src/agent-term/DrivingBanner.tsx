@@ -15,7 +15,7 @@ export function DrivingBanner({ wsId }: { readonly wsId: string }) {
   const { client } = useBeluga();
   const driving = useApp((st) => st.agentTerms[wsId]);
   if (!driving) return null;
-  const mode = convoModeOf(getPrefs().convoModes, getPrefs().convoDefault, wsId);
+  const mode = getPrefs().termView ? convoModeOf(getPrefs().convoModes, getPrefs().convoDefault, wsId) : 'off';
   const takeOver = async (): Promise<void> => {
     try {
       await api.agentTerm.takeOver(wsId);

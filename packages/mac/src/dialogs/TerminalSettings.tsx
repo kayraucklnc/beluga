@@ -141,15 +141,16 @@ function PlaceGroup() {
 
 /** Settings › Terminal: the shell (for every screen), where it opens and how terminals look here. */
 export function TerminalSettings() {
+  const prefs = usePrefs();
   return (
     <>
-      <ViewGroup />
       <PlaceGroup />
       <ShellGroup />
       <ImportGroup />
       <ThemeGroup />
       <LookGroup />
-      <KeysGroup />
+      <ViewGroup />
+      {prefs.termView ? <KeysGroup /> : null}
       <p className={t.note}>The shell applies to new terminals; ones already open keep theirs. The look changes right away.</p>
     </>
   );
