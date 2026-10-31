@@ -48,8 +48,9 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
   // What its Claude is doing right now, and the messages waiting for it (the head Claude's, yours).
-  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined));
-  const waiting = useApp((s) => (worktree && STATUS_INFO[issue.status].open ? liveOf(s.log).waiting?.(`ws:${worktree}`) : undefined)) ?? NONE;
+  // (Each read builds them anew: compared by value, or the store would re-render forever.)
+  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined), sameDeep);
+  const waiting = useApp((s) => (worktree && STATUS_INFO[issue.status].open ? liveOf(s.log).waiting?.(`ws:${worktree}`) : undefined), sameDeep) ?? NONE;
   const pulse = running ? pulseOf(run, false, undefined) : undefined;
   const now = useClock(pulse?.kind === 'working' || pulse?.kind === 'command');
   const doing = pulse && !compact ? pulseWords(pulse, now).sub : undefined;
@@ -58,7 +59,7 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const plan = useApp((s) => (issue.plan ? s.plans.plans.find((x) => x.id === issue.plan!.id) : undefined));
   const milestone = plan && issue.plan ? (plan.body ?? plan.draft)?.milestones.find((m) => m.id === issue.plan!.milestone)?.title : undefined;
   // A plan's own epic, or one of its milestones'.
-  const epic = useApp((s) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined));
+  const epic = useApp((s) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined), sameDeep);
   return (
     <span className={cx(t.meta, compact && t.metaCompact)}>
       {issue.drafting ? (
