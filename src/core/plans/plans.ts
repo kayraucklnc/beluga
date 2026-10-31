@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AgentRef } from '../../protocol.js';
 import { agentName } from '../../shared/agent-label.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
-import { type Actor, type IssuePr, renamedActors } from '../board/model.js';
+import { type Actor, renamedActors } from '../board/model.js';
 import type { Store } from '../store.js';
 import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from './edit.js';
 import {
@@ -26,7 +26,9 @@ import {
   type PlanBody,
   type PlanEvent,
   type PlanEventKind,
+  type PlanMainMerge,
   type PlanMerge,
+  type PlanPr,
   type PlanShipped,
   type PlansState,
   type TaskWatch,
@@ -304,7 +306,8 @@ export class Plans {
     const plan = this.need(id);
     if (plan.runs[milestone]?.passedAt) return plan;
     const at = this.now();
-    const next = this.change(plan, { runs: withRun(plan, milestone, { passedAt: at, passedBy: by }) }, [event(by, 'passed', `passed ${milestoneName(plan, milestone)}`, at)]);
+    const { mergeFailed: _failed, ...run } = plan.runs[milestone] ?? {};
+    const next = this.change(plan, { runs: { ...plan.runs, [milestone]: { ...run, passedAt: at, passedBy: by } } }, [event(by, 'passed', `passed ${milestoneName(plan, milestone)}`, at)]);
     const left = (next.body?.milestones ?? []).filter((m) => !next.runs[m.id]?.passedAt);
     return left.length ? next : this.change(next, { status: 'done', doneAt: at }, [event({ kind: 'beluga' }, 'done', 'every milestone passed: the plan is done', at)]);
   }
@@ -316,6 +319,14 @@ export class Plans {
     if (!run?.passedAt) return plan;
     const { passedAt: _p, passedBy: _b, check: _c, checkAsked: _a, ...rest } = run;
     return this.change(plan, { runs: { ...plan.runs, [milestone]: rest }, status: 'active', doneAt: undefined }, [event(by, 'note', `reopened ${milestoneName(plan, milestone)}`, this.now())]);
+  }
+
+  /** Passing a milestone couldn't merge it into the plan's branch (undefined: cleared, it's being passed again). */
+  setMergeFailed(id: string, milestone: string, reason: string | undefined): Plan {
+    const plan = this.need(id);
+    const { mergeFailed: _was, ...rest } = plan.runs[milestone] ?? {};
+    if (!reason && !_was) return plan;
+    return this.change(plan, { runs: { ...plan.runs, [milestone]: reason ? { ...rest, mergeFailed: { at: this.now(), reason } } : rest } }, []);
   }
 
   /** A milestone's own Claude and the tasks handed to it (undefined: none, its worktree went). */
@@ -378,14 +389,24 @@ export class Plans {
     return this.change(plan, { merging: Object.keys(next).length ? next : undefined }, []);
   }
 
+  /** Main being merged into the plan's branch (undefined: it's in, or nothing's under way). */
+  setMainMerge(id: string, mainMerge: PlanMainMerge | undefined): Plan {
+    const plan = this.need(id);
+    if (!mainMerge && !plan.mainMerge) return plan;
+    return this.change(plan, { mainMerge }, []);
+  }
+
   /** The branch's pull request as last seen (what changed goes in the activity). */
-  setPr(id: string, pr: IssuePr): Plan {
+  setPr(id: string, found: PlanPr): Plan {
     const plan = this.need(id);
     const before = plan.pr;
-    if (before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.title === pr.title && before.draft === pr.draft) return plan;
+    // Only what the plan shows (GitHub's answer carries more, like each check run).
+    const { number, url, state, title, draft, checks, review, conflicts, autoMerge, mergeState } = found;
+    const pr: PlanPr = { number, url, state, title, draft, checks, ...(review ? { review } : {}), ...(conflicts ? { conflicts } : {}), ...(autoMerge ? { autoMerge } : {}), ...(mergeState ? { mergeState } : {}) };
+    if (before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.title === pr.title && before.draft === pr.draft && before.conflicts === pr.conflicts && before.autoMerge === pr.autoMerge && before.mergeState === pr.mergeState) return plan;
     const notes: PlanEvent[] = [];
     const at = this.now();
-    if (!before || before.number !== pr.number) notes.push(event({ kind: 'beluga' }, 'note', `pull request #${pr.number} is open for ${plan.branch ?? 'the plan'}`, at));
+    if (!before || before.number !== pr.number) notes.push(event({ kind: 'beluga' }, 'note', `opened pull request #${pr.number}: ${plan.branch ?? 'the plan’s branch'} → main`, at));
     if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') notes.push(event({ kind: 'beluga' }, 'problem', `pull request #${pr.number} was closed without merging: its tasks stay merged into the plan`, at));
     return this.change(plan, { pr }, notes);
   }

@@ -19,6 +19,11 @@ export type TrustLevel = (typeof TRUST_LEVELS)[number];
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORTS)[number];
 
+/** What new worktrees' branches start with (`beluga/fix-login`); empty: just the name. */
+export const BRANCH_PREFIX_DEFAULT = 'beluga/';
+/** A prefix git accepts in front of a slug: letters, digits, `. _ - /`, no `..`, `//`, or part starting with `.` `-` `/`. */
+export const BRANCH_PREFIX_RE = /^(?![./-])(?!.*\.\.)(?!.*\/\/)(?!.*\/[.-])[\w./-]{0,40}$/;
+
 /** Keep the Mac awake for your phone: never, only on power, or always (the display may still sleep). */
 export const KEEP_AWAKE = ['off', 'power', 'always'] as const;
 export type KeepAwake = (typeof KEEP_AWAKE)[number];
@@ -86,6 +91,8 @@ export const Settings = z.object({
   defaultAgent: AgentRef.optional(),
   /** A project's own default agent (by project name), over `defaultAgent` for work in that project. */
   projectAgents: z.record(z.string().min(1).max(80), AgentRef).optional(),
+  /** What new worktrees' branches start with (`beluga/<name>`); empty: no prefix. */
+  branchPrefix: z.string().regex(BRANCH_PREFIX_RE).catch(BRANCH_PREFIX_DEFAULT),
   /** Run the project's setup script (e.g. npm install) in every new worktree. */
   autoSetup: z.boolean().default(true),
   /** Show how full each conversation's context is. */

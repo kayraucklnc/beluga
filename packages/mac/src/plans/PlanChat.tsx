@@ -35,6 +35,13 @@ const errorText = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
 /**
+ * What you typed in each plan's box, and a send that failed there (by channel): kept while you
+ * hide the chat or look at another plan, so coming back finds it as you left it.
+ */
+const typed = new Map<string, string>();
+const unsent = new Map<string, { message: PlanMessage; error: string }>();
+
+/**
  * Talking the plan through with Claude, beside it: the plan's own conversation (its head Claude
  * plans and runs it there), and a box to say what to change. The plan updates as Claude writes.
  * The box takes pasted, dropped and path-named images and files as every message box does. This
@@ -60,10 +67,12 @@ export function PlanChat({
   const api = useApi();
   const { client } = useBeluga();
   const actions = useActions();
-  const [text, setTextState] = useState("");
-  const words = useRef("");
+  const [text, setTextState] = useState(() => typed.get(channel) ?? "");
+  const words = useRef(text);
   const setText = (next: string): void => {
     words.current = next;
+    if (next) typed.set(channel, next);
+    else typed.delete(channel);
     setTextState(next);
   };
   const box = useRef<HTMLTextAreaElement>(null);
@@ -129,10 +138,15 @@ export function PlanChat({
   });
   const loading = !useConversationLoaded(channel);
   /** A message that didn't go: said under the box, with Retry. */
-  const [failed, setFailed] = useState<{
+  const [failed, setFailedState] = useState<{
     message: PlanMessage;
     error: string;
-  }>();
+  } | undefined>(() => unsent.get(channel));
+  const setFailed = (next: { message: PlanMessage; error: string } | undefined): void => {
+    if (next) unsent.set(channel, next);
+    else unsent.delete(channel);
+    setFailedState(next);
+  };
   const att = useAttachments({
     channel,
     box,

@@ -8,7 +8,7 @@ import { overlaps, planView, tidyOffer, waves } from '../src/core/plans/progress
 import { PlansWork, type PlansWorkDeps } from '../src/core/plans/work.js';
 import type { CombineResult } from '../src/workspaces/git.js';
 import type { PlanGit } from '../src/core/plans/plan-git.js';
-import type { IssuePr } from '../src/core/board/model.js';
+import type { PlanPr } from '../src/core/plans/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
@@ -937,11 +937,12 @@ describe('a task that builds on several unfinished tasks starts from their combi
 describe('the plan’s branch: tasks start from it, milestones merge into it, one PR at the end', () => {
   /** A fake of git and GitHub: what was asked, and what it answers. */
   function fakeGit() {
-    const log = { ensured: [] as string[], merged: [] as Array<{ into: string; branches: readonly string[] }>, retired: [] as Array<{ ws: string; branch?: string }> };
+    const log = { pushed: [] as string[], ensured: [] as string[], merged: [] as Array<{ into: string; branches: readonly string[] }>, retired: [] as Array<{ ws: string; branch?: string }> };
     const existing = new Set<string>();
     const inMain = new Set<string>();
-    let pr: IssuePr | undefined;
+    let pr: PlanPr | undefined;
     let conflict: ((branches: readonly string[]) => CombineResult | undefined) | undefined;
+    let mergeError: string | undefined;
     const git: PlanGit = {
       ensureBranch: async (_p, b) => {
         log.ensured.push(b);
@@ -957,10 +958,15 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
       retire: async (_p, ws, branch) => void log.retired.push({ ws: ws ?? '', ...(branch ? { branch } : {}) }),
       findPr: async () => pr,
       openPr: async (_p, _branch, title) => (pr = { number: 7, url: 'https://github.com/bob/api/pull/7', state: 'OPEN', title, draft: false, checks: 'pending' }),
-      mergePr: async () => void (pr = { ...pr!, state: 'MERGED' }),
+      push: async (_p, b) => void log.pushed.push(b),
+      mainRef: async () => 'origin/main',
+      mergePr: async (_p, _n, opts) => {
+        if (mergeError) throw new Error(mergeError);
+        pr = opts?.auto ? { ...pr!, autoMerge: true } : { ...pr!, state: 'MERGED' };
+      },
       mergeLocal: async () => ({ ok: true }),
     };
-    return { git, log, existing, inMain, setPr: (p: IssuePr | undefined) => (pr = p), setConflict: (c: typeof conflict) => (conflict = c) };
+    return { git, log, existing, inMain, setPr: (p: PlanPr | undefined) => (pr = p), setConflict: (c: typeof conflict) => (conflict = c), failMerge: (why: string | undefined) => (mergeError = why) };
   }
 
   async function running(autonomy: 'gated' | 'autopilot' = 'gated', body: BodyInput = BODY) {
@@ -1144,6 +1150,70 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.issue('Live keys').status).toBe('canceled');
     expect(t.plans.need(t.plan.id).shipped).toMatchObject({ how: 'pr', number: 7 });
     expect(t.view().next.kind).toBe('done');
+  });
+
+  it('a milestone whose merge fails (not a conflict) keeps why on it until it’s passed again', async () => {
+    const t = await running();
+    t.setConflict(() => {
+      throw new Error('fatal: plan/payments is checked out with uncommitted changes\nmore');
+    });
+    await t.passSafe();
+    const run = () => t.plans.need(t.plan.id).runs['safe'];
+    expect(run()?.passedAt).toBeUndefined();
+    expect(run()?.mergeFailed?.reason).toBe('fatal: plan/payments is checked out with uncommitted changes');
+    t.setConflict(undefined);
+    t.work.pass(t.plan.id, 'safe');
+    expect(run()?.mergeFailed).toBeUndefined();
+    await t.settle();
+    expect(run()?.passedAt).toBeDefined();
+  });
+
+  it('Merge on GitHub pushes the branch first, asks GitHub again, and says GitHub’s no in plain words', async () => {
+    const t = await running();
+    await t.passSafe();
+    await t.work.openPr(t.plan.id);
+    t.log.pushed.length = 0;
+    // GitHub says no: the reason in words, nothing shipped.
+    t.failMerge('GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)');
+    await expect(t.work.mergePr(t.plan.id)).rejects.toThrow(/approving review/);
+    expect(t.log.pushed).toEqual(['plan/payments']);
+    expect(t.plans.need(t.plan.id).shipped).toBeUndefined();
+    // Merge When Checks Pass: queued, shown as auto-merge on.
+    t.failMerge(undefined);
+    await t.work.mergePr(t.plan.id, { auto: true });
+    expect(t.plans.need(t.plan.id).pr).toMatchObject({ state: 'OPEN', autoMerge: true });
+    expect(t.plans.need(t.plan.id).shipped).toBeUndefined();
+    // Merged on GitHub meanwhile: the click finds it merged, and the plan ships.
+    t.setPr({ ...t.plans.need(t.plan.id).pr!, state: 'MERGED' });
+    await t.work.mergePr(t.plan.id);
+    expect(t.plans.need(t.plan.id).shipped).toMatchObject({ how: 'pr', number: 7 });
+  });
+
+  it('a PR that conflicts with main: Resolve Conflicts merges main into the plan’s branch, a conflict goes to the plan’s Claude, then it’s pushed', async () => {
+    const t = await running();
+    await t.passSafe();
+    await t.work.openPr(t.plan.id);
+    let fixed = false;
+    t.setConflict((branches) => (fixed || branches[0] !== 'origin/main' ? undefined : { ok: false, branch: 'plan/payments', dir: '/tmp/.bases/p/plan-payments', merging: 'origin/main', files: ['src/pay.ts'] }));
+    t.log.pushed.length = 0;
+    await t.work.bringInMain(t.plan.id);
+    expect(t.plans.need(t.plan.id).mainMerge).toMatchObject({ main: 'origin/main', conflict: { files: ['src/pay.ts'] } });
+    expect(t.asked.at(-1)?.prompt).toContain('merging origin/main into the plan\'s branch plan/payments');
+    expect(t.log.pushed).toEqual([]);
+    fixed = true;
+    await t.work.bringInMain(t.plan.id);
+    expect(t.plans.need(t.plan.id).mainMerge).toBeUndefined();
+    expect(t.log.pushed).toEqual(['plan/payments']);
+    expect(t.plans.need(t.plan.id).activity.map((e) => e.text)).toContain('merged origin/main into plan/payments');
+  });
+
+  it('a PR closed on GitHub is said at once on Merge, not merged', async () => {
+    const t = await running();
+    await t.passSafe();
+    await t.work.openPr(t.plan.id);
+    t.setPr({ ...t.plans.need(t.plan.id).pr!, state: 'CLOSED' });
+    await expect(t.work.mergePr(t.plan.id)).rejects.toThrow(/closed on GitHub/);
+    expect(t.plans.need(t.plan.id).pr?.state).toBe('CLOSED');
   });
 
   it('a PR closed without merging leaves its tasks Merged into Plan and says so on the plan', async () => {

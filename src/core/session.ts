@@ -229,6 +229,7 @@ export class Session {
   private readonly otherBackends = new Map<string, AgentBackend>();
 
   constructor(private readonly opts: SessionOptions) {
+    if (opts.workspaces) opts.workspaces.branchPrefix = () => opts.store.getState().prefs.branchPrefix;
     this.bridge = createRoomBridge(this, () => opts.agentCwd);
     const parts = createSessionParts(this, opts);
     this.workspaces = parts.workspaces;

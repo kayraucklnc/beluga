@@ -1859,3 +1859,138 @@ textarea.goalBox {
   bottom: 0;
   left: 0;
 }
+
+/* ---------- Shipping the plan: what went wrong, conflicts, the PR, the branch flow ---------- */
+
+/* Kept on the page until dismissed or it works: soft amber, never a flash. */
+.trouble {
+  background: color-mix(in srgb, var(--warn) 9%, var(--bg));
+  border-bottom-color: color-mix(in srgb, var(--warn) 26%, transparent);
+}
+.trouble > svg {
+  color: var(--warn);
+}
+.troubleWhy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conflictFile {
+  margin-right: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* The button says what's under way while it waits. */
+.busyButton {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+/* The plan's pull request in the header: its state in the icon's colour. */
+.prChip[data-state='open'] svg {
+  color: var(--info);
+}
+.prChip[data-state='problem'] svg {
+  color: var(--warn);
+}
+.prChip[data-state='merged'] svg {
+  color: var(--ok);
+}
+
+/* Where the work goes: one line down the steps, each with its mark. */
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.flowStep {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 16px;
+}
+.flowStep:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 10.5px;
+  top: 22px;
+  bottom: 0;
+  border-left: 1.5px solid var(--hairline-strong);
+}
+.flowStep[data-state='done']:not(:last-child)::before {
+  border-left-color: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+.flowMark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+.flowStep[data-state='done'] .flowMark {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 10%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.flowStep[data-state='active'] .flowMark {
+  color: var(--claude);
+  background: color-mix(in srgb, var(--claude) 10%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--claude) 35%, transparent);
+}
+.flowStep[data-state='problem'] .flowMark {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.flowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.flowLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.flowLabel code {
+  font-size: 12px;
+}
+.flowState {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.flowStep[data-state='problem'] .flowState {
+  color: var(--warn);
+}
+.flowDetail {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+/* A long branch name stays one line in the toolbar (whole in its tooltip). */
+.branchButton {
+  min-width: 0;
+  max-width: 240px;
+}
+.branchButton > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

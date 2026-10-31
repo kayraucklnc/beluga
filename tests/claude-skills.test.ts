@@ -194,19 +194,23 @@ describe('a local model', () => {
 });
 
 describe("Claude Code's built-ins typed in a conversation", () => {
-  it('say what Beluga has instead, and never go to the agent as text', () => {
+  it('say what Beluga has instead, and never go to the agent as text (unless a skill of yours has that name)', async () => {
     expect(builtInInstead('context')).toMatch(/context meter/);
     expect(builtInInstead('rewind')).toMatch(/Edit/);
     expect(builtInInstead('review')).toBeUndefined();
     expect(builtInInstead('fruit')).toBeUndefined();
     const toast = vi.fn();
     const askOwnClaude = vi.fn();
-    const session = { store: { getState: () => ({}) }, toast, askOwnClaude, workspaces: { inChannel: () => ({}) } } as unknown as Session;
+    let own = false;
+    const session = { store: { getState: () => ({}) }, toast, askOwnClaude, ownSkill: async () => own, workspaces: { inChannel: () => ({}) } } as unknown as Session;
     runCommand(session, 'context', [], 'ws:w1', '/context');
-    expect(toast).toHaveBeenCalledWith(expect.stringMatching(/context meter/), 'info');
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringMatching(/context meter/), 'info'));
     runCommand(session, 'fruit', ['kiwi'], 'ws:w1', '/fruit kiwi');
     expect(askOwnClaude).toHaveBeenCalledWith('/fruit kiwi', 'ws:w1');
     expect(askOwnClaude).toHaveBeenCalledTimes(1);
+    own = true;
+    runCommand(session, 'status', [], 'ws:w1', '/status');
+    await vi.waitFor(() => expect(askOwnClaude).toHaveBeenCalledWith('/status', 'ws:w1'));
   });
 });
 

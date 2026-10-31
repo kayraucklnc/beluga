@@ -114,6 +114,8 @@ export interface MilestoneRun {
    * plan's conversation stays free while it checks and milestones are checked side by side.
    */
   readonly checker?: string;
+  /** Passing it couldn't merge its tasks into the plan's branch (not a conflict: a dirty checkout, no git identity): why, until it's passed again. */
+  readonly mergeFailed?: { readonly at: number; readonly reason: string };
 }
 
 /**
@@ -144,6 +146,30 @@ export interface Combining {
     /** Claude was asked and it's still there: it waits for you. */
     readonly stuck?: boolean;
   };
+}
+
+/** Main merged into the plan's branch (its PR conflicts with main): in the hidden worktree, a conflict there fixed by the plan's Claude. */
+export interface PlanMainMerge {
+  readonly at: number;
+  /** What was merged in ("origin/main"). */
+  readonly main: string;
+  readonly conflict?: {
+    readonly at: number;
+    readonly dir: string;
+    readonly files: readonly string[];
+    /** Claude was asked and it's still there: it waits for you. */
+    readonly stuck?: boolean;
+  };
+}
+
+/** The plan's pull request as GitHub last showed it: what stands in the way of merging it too. */
+export interface PlanPr extends IssuePr {
+  /** GitHub says it conflicts with main. */
+  readonly conflicts?: boolean;
+  /** Auto-merge is on: GitHub merges it once its checks and reviews pass. */
+  readonly autoMerge?: boolean;
+  /** Behind main (main needs merging in first), or blocked by main's rules. */
+  readonly mergeState?: 'behind' | 'blocked';
 }
 
 /**
@@ -243,8 +269,10 @@ export interface Plan {
   readonly branch?: string;
   /** Passed milestones being merged into the branch (by milestone id). */
   readonly merging?: Readonly<Record<string, PlanMerge>>;
+  /** Main being merged into the plan's branch (its PR conflicted with main), or stopped at a conflict for Claude to fix. */
+  readonly mainMerge?: PlanMainMerge;
   /** The branch's pull request into main, as last seen. */
-  readonly pr?: IssuePr;
+  readonly pr?: PlanPr;
   readonly shipped?: PlanShipped;
   /** Plans that ran before they had a branch were caught up once (passed milestones merged into one). */
   readonly caughtUp?: boolean;

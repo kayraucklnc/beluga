@@ -413,6 +413,23 @@ describe('work that ships from another task’s worktree (BLG-29)', () => {
     expect(board.need(t.key).status).toBe('done');
   });
 
+  it('a merge finishes the worktree’s task and what Claude moved along there, never what it only filed or mentioned', async () => {
+    const { store, board, work, open } = setup();
+    open(ws('w1', 'api', 'buglist'));
+    const own = board.create({ projectId: 'api', title: 'Buglist', status: 'in_progress' }, work.me());
+    board.linkWorktree(own.key, 'w1', {}, work.me());
+    const mentioned = board.create({ projectId: 'api', title: 'Someone else’s' }, work.me());
+    const tools = work.forRun('ws:w1', 'p-me')!.tools!;
+    const key = (said: string) => /Created (\S+):/.exec(said)![1]!;
+    const later = key(tools.create({ title: 'Found for later', parent: own.key }));
+    const done = key(tools.create({ title: 'Fixed here too', parent: own.key }));
+    tools.update(done, { status: 'in_progress' });
+    tools.note(mentioned.key, 'Related to the buglist');
+    store.dispatch({ type: 'pr', id: 'w1', pr: { number: 3, url: 'u', state: 'MERGED', title: 'Buglist', draft: false, checks: 'passing' } });
+    await tick();
+    expect([own.key, done, later, mentioned.key].map((k) => board.need(k).status)).toEqual(['done', 'done', 'todo', 'todo']);
+  });
+
   it('the sweep finds a merged pull request for a task whose worktree went, and leaves live ones to the workbench', async () => {
     const store = new Store(initialState('room'));
     store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [{ ...ws('w2', 'api', 'live'), archived: false } as Workspace])] });

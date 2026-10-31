@@ -454,6 +454,13 @@
 }
 .look_gone {
   opacity: 0;
+  transition: opacity 140ms var(--ease-out);
+}
+/* Its milestone opened again: after its cards (they fade in from 200ms, and slide for 520ms). */
+.lineBack {
+  transition:
+    stroke 300ms var(--ease-out),
+    opacity 240ms var(--ease-out) 420ms;
 }
 
 /* Between milestones: bolder, dashed while what it leads to is locked, solid green once its gate passed. */

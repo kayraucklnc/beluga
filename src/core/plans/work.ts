@@ -268,12 +268,27 @@ export class PlansWork {
     return this.pilot.openPr(id);
   }
 
-  mergePr(id: string): Promise<Plan> {
-    return this.pilot.mergePr(id);
+  mergePr(id: string, opts: { readonly auto?: boolean } = {}): Promise<Plan> {
+    return this.pilot.mergePr(id, opts);
   }
 
   mergeLocal(id: string): Promise<Plan> {
     return this.pilot.mergeLocal(id);
+  }
+
+  /** A conflict Claude couldn't fix: asked again now. */
+  retryConflicts(id: string): Plan {
+    return this.pilot.retryConflicts(id);
+  }
+
+  /** Where its conflict waits to be fixed (undefined: none). */
+  conflictDir(id: string): string | undefined {
+    return this.pilot.conflictDir(id);
+  }
+
+  /** Its pull request conflicts with main: main merged into the plan's branch (a conflict goes to its Claude). */
+  bringInMain(id: string): Promise<Plan> {
+    return this.pilot.bringInMain(id);
   }
 
   /** `agent` (Start with…, BLG-506): who works it this once; none: the task's own, the plan's, or your default. */
