@@ -345,7 +345,7 @@ function teamOfferItems(state: DomainState): NeedsYou[] {
     .map((o) => ({
       id: `team:${o.peerId}:${o.projectId}`,
       kind: 'request' as const,
-      title: clip(`${offerWords(o)}. Team up?`, 500),
+      title: clip(`${offerWords(o)}. ${o.state === 'invited' && o.team?.length ? 'Join?' : 'Team up?'}`, 500),
       detail: OFFER_DETAIL,
       from: clip(o.name, 100),
       askedAt: o.at,

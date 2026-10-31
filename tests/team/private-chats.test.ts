@@ -60,8 +60,8 @@ describe('conversations in a team', () => {
     expect(kay.store.getState().shared).toEqual([]);
     expect(kay.store.getState().sharedProjects).toEqual([]);
     expect(kay.store.getState().log.some((l) => 'text' in l && String(l.text).includes('private thought'))).toBe(false);
-    // Nothing a team frame can carry is a chat (a knock's note is a few words asking in, BLG-416; the chat comes only once they're let in).
-    expect(TeamMsg.options.map((o) => o.shape.k.value).sort()).toEqual(['accept', 'context', 'decline', 'digest', 'invite', 'knock', 'knock_answer', 'knock_cancel', 'leave', 'ops', 'plan', 'plan_gone', 'repos', 'review']);
+    // Nothing a team frame can carry is a chat (a knock's note is a few words asking in, BLG-416; the chat comes only once they're let in; a roster is names, BLG-510).
+    expect(TeamMsg.options.map((o) => o.shape.k.value).sort()).toEqual(['accept', 'context', 'decline', 'digest', 'invite', 'knock', 'knock_answer', 'knock_cancel', 'leave', 'ops', 'plan', 'plan_gone', 'repos', 'review', 'roster']);
     expect(teamShareChoices(ata.store.getState().team, ata.store.getState().members[ws.id], project.id)).toMatchObject({ mates: [{ peerId: kay.id, shared: false }], sharedWith: [] });
 
     // Share with Team › kay: that one worktree, live, and the conversation shows who can see it.

@@ -78,7 +78,8 @@ export class TeamKnocks implements TeamPart {
     const to = peerId ?? on[0]?.peerId;
     if (!to) throw new Error('No teammate is working on that task right now');
     const link = this.team.linksOf(issue.projectId).find((l) => l.peerId === to);
-    if (!link) throw new Error(`${this.team.nameOf(to)} isn’t on this project’s team`);
+    // On the team through others (BLG-510): a worktree is shared over your own link.
+    if (!link) throw new Error(this.team.rosters.members(issue.projectId, this.team.self).some((m) => m.peerId === to) ? `${this.team.nameOf(to)} is on the team through others: team up with them yourself to knock on their worktree` : `${this.team.nameOf(to)} isn’t on this project’s team`);
     const why = this.team.cannot(to, 'team.knock');
     if (why) throw new Error(why);
     const had = this.mine.find((k) => k.issueId === issueId && k.peerId === to && k.state === 'waiting');

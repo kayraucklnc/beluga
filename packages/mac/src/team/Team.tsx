@@ -1,4 +1,4 @@
-import { OFFER_DETAIL, knockOf, knockWords, myKnockOn, myKnockWords, offerWords, teamShareChoices, teammateOn, teammatesOf, waitingDetail, waitingOn, waitingWords, workingOn, workingWords } from '@beluga/core/team/model.js';
+import { OFFER_DETAIL, andNames, knockOf, knockWords, myKnockOn, myKnockWords, offerWords, teamShareChoices, teammateOn, teammatesOf, waitingDetail, waitingOn, waitingWords, workingOn, workingWords } from '@beluga/core/team/model.js';
 import type { ReactNode } from 'react';
 import { useActions } from '../lib/actions.js';
 import { ago } from '../tasks/tasks-model.js';
@@ -65,7 +65,7 @@ export function TeamBadge({ projectId }: { projectId: string }) {
   const team = useApp((st) => st.team.teams[projectId], sameDeep);
   const online = useApp((st) => (team ? team.mates.filter((m) => st.network.friends.some((f) => f.peerId === m.peerId && shownState(f) === 'online')).map((m) => m.name) : []), sameDeep);
   if (!team?.mates.length) return null;
-  const names = team.mates.map((m) => m.name).join(', ');
+  const names = andNames(team.mates.map((m) => m.name));
   const tip = `Team on ${team.repo}: you and ${names}${online.length ? ` · ${online.join(', ')} online` : ''}`;
   return (
     <Tip label={tip}>
@@ -77,14 +77,29 @@ export function TeamBadge({ projectId }: { projectId: string }) {
   );
 }
 
-/** "Leave Team" (one item per teammate when there are several) for a project's menu. */
+/**
+ * A project's team in its menu (BLG-510): Invite to Team ▸ (friends with the repository who aren't
+ * on it; anyone on the team can), and Leave Team (off it for everyone; your tasks stay yours).
+ */
 export function useTeamMenuItems(projectId: string): readonly ActionItem[] {
   const mates = useApp((st) => teammatesOf(st.team, projectId), sameDeep);
+  const invitable = useApp((st) => st.team.teams[projectId]?.invitable ?? [], sameDeep);
   const api = useApi();
   const say = useSay();
   if (!mates.length) return [];
-  if (mates.length === 1) return [{ label: `Leave Team with ${mates[0]!.name}`, icon: 'people', separate: true, onSelect: () => say(api.team.leave(projectId)) }];
-  return [{ label: 'Leave Team', icon: 'people', separate: true, onSelect: () => say(api.team.leave(projectId)) }];
+  const invite: ActionItem[] = invitable.length
+    ? [
+        {
+          label: 'Invite to Team',
+          icon: 'plus',
+          separate: true,
+          submenu: invitable.map((f) => ({ label: f.name, hint: f.state === 'asked' ? 'Invited' : 'Has this repository', disabled: f.state === 'asked', onSelect: () => say(api.team.answer(f.peerId, projectId, true)) })),
+          onSelect: () => undefined,
+        },
+      ]
+    : [];
+  const leave: ActionItem = { label: mates.length === 1 ? `Leave Team with ${mates[0]!.name}` : 'Leave Team', icon: 'people', separate: !invite.length, hint: mates.length > 1 ? `Off it for ${andNames(mates.map((m) => m.name))}; your tasks stay` : undefined, onSelect: () => say(api.team.leave(projectId)) };
+  return [...invite, leave];
 }
 
 /** "Ata is working on this" with their avatars, for a task, and Knock to Join on their worktree. */

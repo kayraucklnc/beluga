@@ -510,7 +510,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `ci.log` | ✓ a failed job on a run's page › Show the Log (its end, where it failed) |
 | `ci.rerun` | ✓ a run's page › Re-run Failed Jobs, and ⋯ › Re-run All Jobs; a run's right-click menu |
 | `ci.cancel` | ✓ a running run's page › Cancel Run (asks first); a running run's right-click menu |
-| `team.answer` | ✓ the offer strip on a project's home and at the top of its Tasks (Team Up; ••• › Not Now, or Take Back while you wait for them); the phone's card (Team Up / Not Now) |
+| `team.answer` | ✓ the offer strip on a project's home and at the top of its Tasks (Team Up; ••• › Not Now, or Take Back while you wait for them); project ••• › Invite to Team ▸ (friends with the repository who aren't on the team, BLG-510); the phone's card (Team Up / Not Now) |
 | `team.ackAssignment` | ✓ Got It on the strip a task a teammate gave you shows on its page; the phone's card (Got It) |
 | `team.sharePlan` | ✓ a plan's ••• › Share Plan with Team / Stop Sharing with Team (only in a project worked on as a team) |
 | `team.reviewPlan` | ✓ a teammate's shared plan (Plans › Shared by Your Team): Approve, Comment, and Suggest a Change… on a task or milestone; the phone's card (Approve, or words as a comment) |
@@ -519,7 +519,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `team.knock` | ✓ a task's page, after "Ata is working on this": Knock to Join (pick whose worktree when several teammates are on it); Knock Again after a Not Now |
 | `team.cancelKnock` | ✓ Take Back next to "Knocked. Waiting for Ata to let you in" on the task's page |
 | `team.answerKnock` | ✓ the knock's card in the worktree's chat (Let In as Editor, Let In as Viewer; ••• › Not Now) and the bell's row; the phone's card (Let In as Editor / Not Now / Let In as Viewer) |
-| `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates) |
+| `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates: off it for everyone, BLG-510) |
 | `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (Claude plans in the conversation you're in) |
 | `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation |
