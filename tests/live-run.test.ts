@@ -233,6 +233,39 @@ describe('steering', () => {
     expect(got).toEqual(['a folded', 'f started']);
   });
 
+  it('a steered message is read once Claude Code lists it mid-turn, not only when the turn ends', () => {
+    const got: string[] = [];
+    const turns = new TurnRouter({ onEvent: () => undefined });
+    turns.current();
+    turns.queue(route(got, 'a'), 'ua', true);
+    turns.queue(route(got, 'b'), 'ub', true);
+    turns.queue(route(got, 'n'), 'un', false);
+    turns.read(['u0', 'ua', 'un']);
+    // Only steered messages: one sent to be its own turn (Send now) never reads as folded in early.
+    expect(got).toEqual(['a folded']);
+    turns.end(true, 'did it', ['u0', 'ua', 'ub']);
+    expect(got).toEqual(['a folded', 'b folded']);
+  });
+
+  it('a long turn says a steered message was read at the step that took it in', async () => {
+    let steer: ((f: FollowUp) => boolean) | undefined;
+    const got: string[] = [];
+    let release!: () => void;
+    const held = new Promise<object>((r) => (release = () => r(result('all done'))));
+    script.prompts = [];
+    script.turns = [
+      () => {
+        expect(steer!({ prompt: 'use pnpm', promptId: 'p-steer', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'steer') })).toBe(true);
+        return [text('working'), { ...text('switching to pnpm'), user_message_uuids: ['p-first', 'p-steer'] }, held];
+      },
+    ];
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ promptId: 'p-first', onSteer: (s) => void (steer = s) }));
+    await vi.waitFor(() => expect(got).toEqual(['steer folded']));
+    release();
+    expect(await running).toBe('all done');
+    expect(got).toEqual(['steer folded']);
+  });
+
   it('offers steering while the run works, without stopping the turn', async () => {
     let steer: ((f: FollowUp) => boolean) | undefined;
     const got: string[] = [];

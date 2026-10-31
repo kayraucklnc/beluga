@@ -460,6 +460,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           }
           const route = msg.type === 'assistant' && msg.parent_tool_use_id === null ? turns.current() : undefined;
           if (route) stepTo = route.onStep;
+          // A message steered in, read now (not only once the turn ends).
+          if (route && msg.type === 'assistant' && msg.user_message_uuids?.length) turns.read(msg.user_message_uuids);
           recorder.observe(msg as RecorderMessage);
           if (msg.type === 'user' && msg.parent_tool_use_id === null) {
             for (const e of subagents.user(msg.message.content as never)) input.onEvent('sub', JSON.stringify(e));

@@ -180,6 +180,21 @@ export class TurnRouter {
   }
 
   /**
+   * Mid-turn, Claude Code says which prompts the turn has taken in so far (an assistant frame's
+   * user_message_uuids): messages waiting among them are read now, not when the turn ends (a
+   * turn kept going by background work can run for an hour). Send now's message stays its own.
+   */
+  read(took: readonly string[]): void {
+    if (!this.inTurn) return;
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const p = this.pending[i]!;
+      if (p.uuid === undefined || !p.steer || !took.includes(p.uuid)) continue;
+      this.pending.splice(i, 1);
+      p.route.onFolded?.();
+    }
+  }
+
+  /**
    * A steered message to be answered in a turn of its own (Send now): never taken as folded into
    * the turn it was sent during unless that turn says it took it. False: not waiting any more.
    */

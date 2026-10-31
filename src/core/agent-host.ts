@@ -851,7 +851,11 @@ export class AgentHost {
   private sendFollowUp(lane: Lane, from: string, body: BodyOf<'agent_request'>): boolean {
     // A request for one of your projects runs in that project's folder, so it never joins a run elsewhere.
     if (!lane.followUps || lane.runFrom !== from || body.plan || body.project) return false;
-    const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
+    // Claude went on working (a background job reported back): it isn't between turns, so the
+    // message goes into the turn it's on, read at its next step, like a steer (urgent: see rush).
+    const steer = lane.steer;
+    if (steer?.status && !steer.status().between) return !body.urgent && this.steerIn(lane, { from, body }, steer);
+    const emit =(event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
     const sent = lane.followUps({
       prompt: this.promptOf(body),
       ...this.promptIdOf(body),
