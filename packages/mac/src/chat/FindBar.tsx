@@ -84,11 +84,15 @@ export function FindBar({ items, logRef, onGo }: { items: readonly LogItem[]; lo
   const current = matches[at];
 
   useEffect(() => {
+    // In a terminal (the agent's, beside the chat), ⌘F finds in that terminal instead (agent-term/TermPane.tsx).
+    const inTerminal = (): boolean => Boolean(document.activeElement?.closest('.xterm, [data-term-find]'));
     const open = (): void => {
+      if (inTerminal()) return;
       setFind((f) => ({ ...f, open: true }));
       requestAnimationFrame(() => input.current?.select());
     };
     const step = (e: Event): void => {
+      if (inTerminal()) return;
       const delta = (e as CustomEvent<number>).detail || 1;
       setFind((f) => (f.open ? { ...f, at: f.at + delta } : { ...f, open: true }));
     };

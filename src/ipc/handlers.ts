@@ -36,6 +36,7 @@ import { COMPANION_HANDLERS } from './companion-handlers.js';
 import { ASSISTANT_HANDLERS } from './assistant-handlers.js';
 import { VOICE_HANDLERS } from './voice-handlers.js';
 import { TERMINAL_IMPORT_HANDLERS } from './terminal-import-handlers.js';
+import { AGENT_TERM_HANDLERS } from './agent-term-handlers.js';
 import { waitingNeeds } from '../companion/needs-you.js';
 import { saveDismissedNeeds, withDismissed } from '../core/dismissed-needs.js';
 
@@ -381,6 +382,7 @@ export const HANDLERS = {
   ...ASSISTANT_HANDLERS,
   ...VOICE_HANDLERS,
   ...TERMINAL_IMPORT_HANDLERS,
+  ...AGENT_TERM_HANDLERS,
 } satisfies Handlers;
 
 export type Result<M extends Method> = Awaited<ReturnType<(typeof HANDLERS)[M]>>;

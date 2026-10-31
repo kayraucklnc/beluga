@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 35 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 36 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -93,8 +93,11 @@ export const COMPANION_PROTO = { major: 1, minor: 35 } as const;
  * may carry the `agent` that spoke, for its mark (an older Mac sends none: the phone guesses by name).
  * Start with… (BLG-506), also SINCE.workAgents: `board.start` takes the `agent` that works this start,
  * and `companion.ask`'s worktree target the `agent` a new worktree runs (an older Mac: your default).
+ * 1.36 (BLG-534): the agent's own terminal on the Mac drives a conversation (`ConvView.terminal`):
+ * the phone says so in place of its message box, and Take Over gives it back to the chat
+ * (`agentTerm.takeOver`). An older Mac sends none, and never refuses a message for it.
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 32, providers: 33, dialogues: 34, workAgents: 35 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 32, providers: 33, dialogues: 34, workAgents: 35, terminalView: 36 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -579,6 +582,8 @@ export const ConvView = z.object({
    * agent by name with its mark ("@codex" yours, "@bob:codex" bob's). An older Mac leaves it out.
    */
   tags: z.array(z.object({ tag: z.string().max(80), hint: z.string().max(200), agent: AgentRefView })).max(40).optional(),
+  /** 1.36: the agent's own terminal on the Mac drives this conversation (its agent's name): messages wait for Take Over. */
+  terminal: z.object({ label: z.string().max(80) }).optional(),
 });
 export type ConvView = z.infer<typeof ConvView>;
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import type { AgentBackend, AgentPlace, AgentRunInput, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer } from '../agent/types.js';
+import type { AgentBackend, AgentPlace, AgentRunInput, BoardTools, FollowUp, LiveStatus, MacTools, RunProcess, Steer, TerminalLaunch, TerminalSink } from '../agent/types.js';
 import { ALWAYS_ASK_YOU, writesCode } from '../agent/policy.js';
 import { type AgentRef, type BodyInput, type BodyOf, CLAUDE_AGENT, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
@@ -87,6 +87,8 @@ export interface AgentHostDeps {
   /** Your own worktree runs: the project's setup, and Claude's tool to correct it (core/workbench). */
   readonly setup?: (channel: string) => import('../agent/types.js').SetupTools | undefined;
   readonly phoneUse?: () => 'off' | 'ask' | 'use' | 'full';
+  /** The agent's own terminal is driving this conversation now (BLG-534): the chat waits until you take over. */
+  readonly terminalDriving?: (channel: string) => boolean;
 }
 
 /** File tools an Edit guest may use without asking, and the input naming their file. */
@@ -200,6 +202,8 @@ export const EXIT_GRACE_MS = 3_000;
 /** How long quitting waits for stopped runs to end before the last save (see abort). */
 const QUIT_SETTLE_MS = 2_000;
 /** Said when a run that wouldn't take an interrupt was stopped for your message. */
+/** A message in a conversation its terminal is driving (BLG-534). */
+export const TERMINAL_DRIVING = 'The terminal is driving this conversation: type there, or Take over to talk here.';
 const STOPPED_FOR_YOU = 'Your agent didn’t stop when asked, so its run was stopped for your message';
 
 
@@ -321,6 +325,7 @@ export class AgentHost {
 
   /** Why this conversation's runtime can't be compacted by Beluga (Codex compacts itself); undefined when it can. */
   private noCompact(channel: string): string | undefined {
+    if (this.deps.terminalDriving?.(channel)) return TERMINAL_DRIVING;
     return fallbackFor(this.deps.agentRef?.(channel).runtime, 'compact');
   }
 
@@ -373,6 +378,11 @@ export class AgentHost {
   /** Keep the steps of turns imported from a Claude Code transcript (by session, then chat item). */
   keepImported(sessionId: string, steps: Readonly<Record<string, readonly StepRecord[]>>): void {
     for (const [itemId, records] of Object.entries(steps)) if (records.length) this.steps.putAll(importedKey(sessionId, itemId), records);
+  }
+
+  /** Keep the steps of the agent's terminal turns (BLG-534), by each card's request id (its own id). */
+  keepTerminalSteps(steps: Readonly<Record<string, readonly StepRecord[]>>): void {
+    for (const [requestId, records] of Object.entries(steps)) if (records.length) this.steps.putAll(runKey(requestId), records);
   }
 
   private stepKey(channel: string, itemId: string): string | undefined {
@@ -1093,6 +1103,8 @@ export class AgentHost {
 
   /** `release`: gives back this run's slot for working at once, when it only waits on background agents. */
   private async runAgent(from: string, body: BodyOf<'agent_request'>, lane: Lane, askTo = from, release?: () => void): Promise<void> {
+    // The agent's own terminal has this conversation (BLG-534): two at once would split it in two.
+    if (this.deps.terminalDriving?.(body.channel)) return this.emitAgent(body.requestId, from, 'error', TERMINAL_DRIVING, body.channel);
     // A room ask that named another of your agents (BLG-520) runs on that one's backend, with its model.
     const named = this.named.get(body.requestId)?.agent;
     const other = named && named.runtime !== (this.deps.agentRef?.(body.channel) ?? CLAUDE_AGENT).runtime ? this.deps.backendFor?.(named.runtime) : undefined;
@@ -1286,6 +1298,55 @@ export class AgentHost {
       // Only this folder's git status: a run ending elsewhere changed nothing in the others.
       if (body.channel !== 'room' && place) void this.deps.workspaces?.refreshWorkspace(place.cwd).catch(() => undefined);
     }
+  }
+
+  /**
+   * What the agent's own terminal on a conversation is given (BLG-534): what your own run there
+   * would get (its folder and session, the task and its tools, your phone, your variables, the
+   * worktree's tag), less what's only for a turn. Launched on the conversation's runtime.
+   */
+  async terminalLaunch(channel: string, sink: TerminalSink): Promise<TerminalLaunch> {
+    const agent = this.agent as AgentBackend;
+    if (!agent.terminal) throw new Error('This agent has no terminal of its own in Beluga.');
+    if (this.runningIn(channel)) throw new Error('Your agent is still on a turn in the chat here: let it finish (or stop it), then open the terminal.');
+    const place = this.deps.workspaces?.place(channel);
+    if (!place) throw new Error('That conversation is archived or its folder is gone.');
+    const requesterName = peerName(this.store.getState(), this.selfId);
+    const worktree = place.autoEdit && !place.askOnly ? place.cwd : undefined;
+    const tag: Record<string, string> = worktree ? belugaEnvBoth('WORKTREE', worktree) : {};
+    const scratch = !place.askOnly && this.store.getState().prefs.scratchFolder && (await ensureScratch(place.cwd)) ? SCRATCH_DIR : undefined;
+    const phone = this.deps.phone?.(scratch ? path.join(place.cwd, scratch) : undefined);
+    const board = place.askOnly ? undefined : this.deps.board?.(channel, this.selfId, { plan: false });
+    const setup = worktree && channel.startsWith('ws:') ? this.deps.setup?.(channel) : undefined;
+    const requestId = `term-${randomUUID()}`;
+    this.deps.questions.track(requestId, this.selfId, channel);
+    return agent.terminal(
+      {
+        terminal: true,
+        prompt: '',
+        requesterName,
+        viaAgent: false,
+        context: [],
+        place,
+        channel,
+        scope: 'full',
+        signal: new AbortController().signal,
+        onEvent: () => undefined,
+        onFileTouched: (abs) => this.announceAgentFocus(abs),
+        canUseTool: (toolName, input) => this.authorizeTool(this.selfId, requesterName, toolName, input, channel, place.cwd),
+        canUseSecret: (toolName, input) => this.authorizeSecret(toolName, input, channel, place.cwd),
+        askUser: (question) => this.deps.questions.ask(this.selfId, requestId, channel, question),
+        ...(scratch ? { scratchDir: scratch } : {}),
+        ...(board?.tools ? { board: board.tools } : {}),
+        ...(board?.brief ? { taskBrief: board.brief } : {}),
+        ...(phone ? { phoneTools: phone.tools, phoneBrief: phone.brief } : {}),
+        ...(setup ? { setup } : {}),
+        ...this.modelFor(place.model, place.agent, place.effort),
+        ownerMcp: true,
+        env: { ...this.deps.envFor?.(channel, place.cwd), ...(phone?.env ?? {}), ...tag },
+      },
+      sink,
+    );
   }
 
   /**

@@ -20,6 +20,7 @@ import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
 import { ConnectionStatus } from './room/ConnectionStatus.js';
 import { AssistantTabs } from '../chat/AssistantTabs.js';
+import { DrivingBanner } from '../agent-term/DrivingBanner.js';
 
 /** A conversation and the box to add to it: the room, a workspace, a shared workspace, a draft. */
 /** One-click ways to begin, under an empty conversation. */
@@ -126,6 +127,8 @@ export function ChatView() {
   const hasItems = useApp((st) => st.log.some((l) => l.channel === channel));
   // A plan's own conversation plans: it never moves to a worktree.
   const planHome = useApp((st) => Boolean(planForHome(st.plans, channel)));
+  // The agent's own terminal drives this conversation (BLG-534): the chat follows along until you take over.
+  const driving = useApp((st) => (view.kind === 'workspace' ? Boolean(st.agentTerms[view.id]) : false));
   const started = useWorktreeFlag('started', other?.id ?? '');
   const about = useWorktreeFlag('about', other?.id ?? '');
   // A sub-agent's own worktree is the agent, followed live (never a place to start a conversation).
@@ -142,11 +145,12 @@ export function ChatView() {
       {view.kind === 'workspace' ? <PrStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <SharedStrip wsId={view.id} /> : null}
       {view.kind === 'workspace' ? <EnvStrip workspaceId={view.id} /> : null}
-      {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}
+      {/* Its own terminal driving it: the banner below says so (not a Claude Code session beside it). */}
+      {view.kind === 'workspace' && !driving ? <LiveStrip workspaceId={view.id} /> : null}
       <ChatLog key={channel} channel={channel === 'draft' ? '__draft__' : channel} empty={empty} />
       {ws?.askOnly && !ws.archived && !planHome ? <AskBanner wsId={ws.id} /> : null}
       <Attention />
-      <Composer />
+      {driving && view.kind === 'workspace' ? <DrivingBanner wsId={view.id} /> : <Composer />}
     </div>
   );
   // The terminal is in the right panel or the drawer under the center (layout/panel), not beside the chat.

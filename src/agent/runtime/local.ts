@@ -1,4 +1,4 @@
-import type { AgentBackend, AgentRunInput, FollowUp, Steer } from '../types.js';
+import type { AgentBackend, AgentRunInput, FollowUp, Steer, TerminalSink } from '../types.js';
 import { CLAUDE_CAPABILITIES, claudeRuntime } from './claude/index.js';
 import { createClaudeBackend } from './claude/runner.js';
 import { askBtw } from './claude/btw.js';
@@ -70,6 +70,12 @@ export function localRuntime(resolve: (value: string | undefined) => LocalTarget
           const target = resolve(value);
           if (!target) return Promise.reject(new Error(GONE));
           return claude.run(onEndpoint(input, target, (v) => resolve(v)));
+        },
+        // Its terminal (BLG-534): Claude Code on the endpoint, as its runs are.
+        terminal: (input: AgentRunInput, sink: TerminalSink) => {
+          const target = resolve(input.model ?? input.place?.agent?.model);
+          if (!target) return Promise.reject(new Error(GONE));
+          return claude.terminal!(onEndpoint(input, target, (v) => resolve(v)), sink);
         },
         // A side question forks the conversation on its own endpoint: a local conversation never goes to Anthropic.
         btw: (req: BtwRequest) => {

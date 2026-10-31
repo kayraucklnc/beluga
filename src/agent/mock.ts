@@ -6,6 +6,7 @@ import { type DraftContext, MAX_TASKS, type TaskDraft, firstLineTitle, matchPers
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
 import { MOCK_GRAPH_ANSWER } from './mock-graphs.js';
+import { mockTerminal } from './mock-terminal.js';
 import { MOCK_VIEWS_ANSWER } from './mock-views.js';
 
 interface Script {
@@ -735,6 +736,8 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   let mcp = DEMO_MCP;
   const signing = new Map<string, Promise<boolean>>();
   return {
+    // The terminal view (BLG-534) on the demo's stand-in for Claude Code's terminal app.
+    terminal: async (input, sink) => mockTerminal(input, sink),
     mcpServers: async () => {
       await new Promise((r) => setTimeout(r, 300 * pace));
       return mcp;

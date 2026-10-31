@@ -354,6 +354,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `terminals.close` | ✓ |
 | `terminals.restart` | ✓ the terminal's "started before your variables changed · Restart" |
 | `terminals.rename` | ✓ double-click a shell tab, or right-click › Rename… (Return saves, Escape cancels, empty resets) |
+| `agentTerm.open` | ✓ with Settings › Terminal › Advanced on: the Chat · Terminal · Both switch in a worktree's or chat's header (or ⇧⌘T): the agent's own terminal app on the same conversation (BLG-534) |
+| `agentTerm.takeOver` | ✓ Take over on the chat's “The terminal is driving” banner; closing the terminal (phone: Take over on the conversation's banner) |
+| `agentTerm.visual` | ✓ a graph or view link in the terminal, or ⌘↩ for the newest: opens it in the panel beside the terminal (BLG-535) |
 | `env.get` | ✓ Settings › Environment, and a project's Environment… (••• menu, project page) (values only go to the screen that asks) |
 | `env.set` | ✓ Settings › Environment, and a project's Environment… |
 | `env.importDotenv` | ✓ a project's Environment › Keep a Copy in Beluga |

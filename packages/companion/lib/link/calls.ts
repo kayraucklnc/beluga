@@ -66,6 +66,8 @@ export const calls = {
   setModel: (topic: Topic, value: string, label: string): Call => make('workbench.setModel', [channelOf(topic), value], `Use ${label}`),
   setAgent: (topic: Topic, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('workbench.setAgent', [channelOf(topic), agent], `Use ${label}`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
+  /** Give a conversation the Mac's terminal drives back to the chat (1.36, BLG-534). */
+  takeOver: (topic: Topic): Call => make('agentTerm.takeOver', [channelOf(topic).replace(/^ws:/, '')], 'Take over'),
   /** A request you asked of a friend's Claude (a `conv:task:<id>`): stop it, or (1.27) remove it from your lists. */
   /** 1.27: take a needs-you item off every list (here and the Mac's) without answering it. */
   dismissNeed: (id: string): Call => make('needs.dismiss', [id], 'Dismiss'),

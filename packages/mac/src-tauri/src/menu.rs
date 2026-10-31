@@ -66,7 +66,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &item(app, "onboarding", "Onboard Again…", None)?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::close_window(app, None)?,
+            // Our own Close Window (not the predefined one), so its ⌘W can let go while the
+            // keyboard is in the terminal view, where ⌘W closes a pane (set_menu_keys, BLG-537).
+            &item(app, "close-window", "Close Window", Some("CmdOrCtrl+W"))?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -256,6 +258,12 @@ fn conversation_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>
                 Some("Shift+CmdOrCtrl+G"),
             )?,
             &PredefinedMenuItem::separator(app)?,
+            &item(
+                app,
+                "conv-terminal",
+                "Show as Terminal",
+                Some("Shift+CmdOrCtrl+T"),
+            )?,
             &item(app, "conv-copy", "Copy Last Answer", None)?,
             &item(
                 app,
@@ -372,6 +380,16 @@ pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
+            }
+        }
+        // As the predefined item did: the window in front closes (the main one hides, see lib.rs).
+        "close-window" => {
+            if let Some(w) = app
+                .webview_windows()
+                .into_values()
+                .find(|w| w.is_focused().unwrap_or(false))
+            {
+                let _ = w.close();
             }
         }
         _ => {

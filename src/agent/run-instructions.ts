@@ -2,6 +2,7 @@ import type { AgentRef } from '../protocol.js';
 import { buildGraphAppend } from './graph-prompt.js';
 import { buildAskOnlyAppend, buildCommitAppend, buildKeepAppend, buildScratchAppend, buildShippedAppend, buildSystemAppend } from './prompt.js';
 import { buildSyncMainAppend } from './sync-main.js';
+import { buildTerminalAppend } from './terminal-prompt.js';
 import type { AgentRunInput } from './types.js';
 import { buildViewAppend } from './view-prompt.js';
 
@@ -31,6 +32,7 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
     (worktree ? buildKeepAppend(agent) : '') +
     (worktree && !input.planBrief && !askOnly ? buildCommitAppend() : '') +
     (place?.shipped && !askOnly ? buildShippedAppend(place.shipped) : '') +
-    (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '')
+    (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') +
+    (input.terminal ? buildTerminalAppend() : '')
   );
 }

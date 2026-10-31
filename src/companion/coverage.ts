@@ -513,6 +513,11 @@ export const PHONE: Record<Method, Side> = {
   'voice.transcribe': 'mac',
   // Settings › Terminal › Import from…, and the welcome's terminal step: Mac settings only.
   'terminalImport.detect': 'mac',
+  // The agent's own terminal in a conversation (BLG-534) opens on the Mac, and its visuals open
+  // beside it there. The phone sees when it drives a conversation, and can give it back to the chat.
+  'agentTerm.open': 'mac',
+  'agentTerm.visual': 'mac',
+  'agentTerm.takeOver': 'phone',
   // Sentinel (docs/sentinel.md): the phone runs one, pauses or resumes it, reads its runs and
   // reports, and answers a run waiting for a merge. Making and changing sentinels is the Mac's.
   'sentinel.run': 'phone',

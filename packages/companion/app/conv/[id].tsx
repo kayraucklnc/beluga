@@ -222,12 +222,13 @@ export default function Conversation() {
               </Animated.View>
             ))}
           </ScrollView>
+          {c?.terminal ? <TerminalBand label={c.terminal.label} onTakeOver={() => void store.call(calls.takeOver(topic)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))} /> : null}
           <Composer
             placeholder={c?.waiting ?? (c?.working ? 'What’s next for your agent…' : 'Reply to your agent…')}
             working={c?.working}
             // The room: "@codex", "@bob:codex" as you type @ (BLG-520).
             {...(c?.tags?.length ? { tags: c.tags } : {})}
-            disabled={c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
+            disabled={c?.terminal ? `${c.terminal.label}’s terminal on your Mac has this conversation: Take Over to write here.` : c && !c.canSend ? 'You can read this conversation, not write in it.' : undefined}
             photos
             onSend={(text, photos) => {
               atEnd.current = true;
@@ -459,5 +460,21 @@ function ClaudeTurn({ t, all, onAgent, topic, runtime }: { t: TurnView; all: Out
         </View>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * The Mac's terminal view drives this conversation (1.36, BLG-534): what you'd send here waits,
+ * and Take Over gives it back to the chat (the terminal on the Mac closes, what was said there is here).
+ */
+function TerminalBand({ label, onTakeOver }: { readonly label: string; readonly onTakeOver: () => void }) {
+  return (
+    <Card tone="lavender" style={{ marginHorizontal: 16, marginBottom: 8, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <IconBadge Icon={SquareTerminal} tone="lavender" size={30} />
+      <T v="caption" style={{ flex: 1 }}>{`${label}’s terminal on your Mac is driving this conversation.`}</T>
+      <Press onPress={onTakeOver} accessibilityRole="button" accessibilityLabel="Take over" style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9, backgroundColor: color.card }}>
+        <T v="caption" style={{ fontWeight: '600' }}>Take Over</T>
+      </Press>
+    </Card>
   );
 }

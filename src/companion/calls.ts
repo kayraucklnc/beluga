@@ -41,6 +41,8 @@ export const PhoneCalls = {
   // 1.32 (BLG-446): the agent picker: a model of this conversation's runtime, or another runtime's agent.
   'workbench.setModel': entry('workbench.setModel', done),
   'workbench.setAgent': entry('workbench.setAgent', z.boolean().optional()),
+  // Give a conversation its terminal drives back to the chat (BLG-534).
+  'agentTerm.takeOver': entry('agentTerm.takeOver', done),
   'host.stopRun': entry('host.stopRun', z.object({ stopped: z.boolean(), returned: z.array(z.string()) }).partial().passthrough().optional()),
   'host.cancelQueued': entry('host.cancelQueued', done),
   'inbox.read': entry('inbox.read', done),

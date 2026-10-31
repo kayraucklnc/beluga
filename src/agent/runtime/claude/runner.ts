@@ -19,6 +19,7 @@ import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from '.
 import { sideCalls } from '../../side-calls.js';
 import { claudeComplete } from './complete.js';
 import { askBtw } from './btw.js';
+import { claudeTerminal } from './terminal.js';
 import { ViewShelf } from '../../view-tools.js';
 import { runToolSuites } from '../../run-tools.js';
 import { sdkServers } from './sdk-mount.js';
@@ -552,6 +553,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     },
 
     // Side calls (naming, drafting, chat answers…) through the same one-shot call any runtime offers.
+    // Claude Code's own terminal app on a conversation (BLG-534).
+    terminal: (input, sink) => claudeTerminal(input, sink, { bridge: opts.bridge, ...(opts.claudePath ? { claudePath: opts.claudePath } : {}), ...(opts.model ? { model: opts.model } : {}), ...(opts.agentOf ? { agentOf: opts.agentOf } : {}) }),
     ...sideCalls((req) => claudeComplete(req, opts.claudePath), opts.cwd, opts.model),
     btw: (req) => askBtw(req, { ...(opts.claudePath ? { claudePath: opts.claudePath } : {}) }),
 

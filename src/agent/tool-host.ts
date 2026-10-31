@@ -8,6 +8,9 @@ import { type ToolSuite, toolName } from './tool-kit.js';
 /** Whether one call may run (agent/tool-gate.ts): undefined allows, a string denies and says why. */
 export type ToolGate = (toolName: string, input: Record<string, unknown>) => Promise<string | undefined>;
 
+/** Answers one of Claude Code's hook calls (its JSON in, the hook's JSON out), for a terminal's `--settings` hooks. */
+export type HookAnswer = (input: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
 /** How the stdio server is started: this Beluga's own `cli.js mcp-serve <suite>`. */
 export interface ServeCommand {
   readonly command: string;
@@ -27,6 +30,8 @@ export interface MountedRun {
   readonly token: string;
   /** By suite name (`beluga`, `beluga_board`…), so every tool keeps its `mcp__<suite>__<tool>` name. */
   readonly servers: Record<string, StdioServerConfig>;
+  /** Where its hook calls go (POST with the token), when it was mounted with one. */
+  readonly hookUrl?: string;
   close(): void;
 }
 
@@ -45,21 +50,21 @@ export function selfServeCommand(): ServeCommand {
  * Tools run here, in the daemon, where the run's bridge lives.
  */
 export class ToolHost {
-  private readonly runs = new Map<string, { readonly suites: Readonly<Record<string, ToolSuite>>; readonly gate: ToolGate }>();
+  private readonly runs = new Map<string, { readonly suites: Readonly<Record<string, ToolSuite>>; readonly gate: ToolGate; readonly hook?: HookAnswer }>();
   private listening?: Promise<string>;
   private server?: http.Server;
 
   constructor(private readonly serve: ServeCommand = selfServeCommand()) {}
 
   /** Mount a run's suites behind a new token; close() unmounts it (calls with the token fail from then). */
-  async mount(suites: Readonly<Record<string, ToolSuite>>, gate: ToolGate): Promise<MountedRun> {
+  async mount(suites: Readonly<Record<string, ToolSuite>>, gate: ToolGate, hook?: HookAnswer): Promise<MountedRun> {
     const url = await this.listen();
     const token = randomBytes(32).toString('hex');
-    this.runs.set(token, { suites, gate });
+    this.runs.set(token, { suites, gate, ...(hook ? { hook } : {}) });
     const servers = Object.fromEntries(
       Object.keys(suites).map((suite) => [suite, { type: 'stdio' as const, command: this.serve.command, args: [...this.serve.args, 'mcp-serve', suite], env: { BELUGA_TOOLS_URL: url, BELUGA_TOOLS_TOKEN: token } }]),
     );
-    return { token, servers, close: () => void this.runs.delete(token) };
+    return { token, servers, ...(hook ? { hookUrl: `${url}/hook` } : {}), close: () => void this.runs.delete(token) };
   }
 
   async close(): Promise<void> {
@@ -84,6 +89,7 @@ export class ToolHost {
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (req.url === '/hook') return this.handleHook(req, res);
     const suiteName = /^\/mcp\/([\w-]+)$/.exec(req.url ?? '')?.[1];
     const token = /^Bearer ([0-9a-f]{64})$/.exec(req.headers.authorization ?? '')?.[1];
     const run = token ? this.runs.get(token) : undefined;
@@ -105,6 +111,27 @@ export class ToolHost {
     });
     await server.connect(transport);
     await transport.handleRequest(req, res, body);
+  }
+
+  /** A hook call from a terminal's Claude Code (via its hook script): the run's answer, as JSON. */
+  private async handleHook(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const token = /^Bearer ([0-9a-f]{64})$/.exec(req.headers.authorization ?? '')?.[1];
+    const hook = token ? this.runs.get(token)?.hook : undefined;
+    if (!hook) return void res.writeHead(401).end();
+    if (req.method !== 'POST') return void res.writeHead(405, { allow: 'POST' }).end();
+    let body: unknown;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return void res.writeHead(400).end();
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return void res.writeHead(400).end();
+    try {
+      const answer = await hook(body as Record<string, unknown>);
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(answer));
+    } catch {
+      res.writeHead(500).end();
+    }
   }
 }
 

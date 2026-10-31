@@ -1,5 +1,5 @@
 import { sideCalls } from '../side-calls.js';
-import type { AgentBackend, AgentRunInput } from '../types.js';
+import type { AgentBackend, AgentRunInput, TerminalSink } from '../types.js';
 import type { Complete, RuntimeId } from './types.js';
 
 /** The side calls a backend may offer (agent/side-calls.ts). */
@@ -61,6 +61,13 @@ export function routedBackend(fallback: AgentBackend, fallbackRuntime: RuntimeId
       const backend = pick(id);
       if (!backend) return Promise.reject(new Error(`${input.place?.agent?.label ?? id} isn't set up on this Mac. Pick another agent for this worktree.`));
       return backend.run(input);
+    },
+    // The agent's own terminal on a conversation (BLG-534): its runtime's, as its turns are.
+    terminal: (input: AgentRunInput, sink: TerminalSink) => {
+      const id = input.place?.agent?.runtime ?? fallbackRuntime;
+      const backend = pick(id);
+      if (!backend?.terminal) return Promise.reject(new Error(`${input.place?.agent?.label ?? id} conversations stay in the chat: the terminal view is Claude Code’s (and local models’, which run in it).`));
+      return backend.terminal(input, sink);
     },
     // A side question (/btw) forks the conversation's own session: on its runtime, or not at all.
     btw: (req: Parameters<NonNullable<AgentBackend['btw']>>[0]) => {

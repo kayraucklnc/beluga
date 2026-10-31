@@ -9,6 +9,8 @@ import { describePr } from '@beluga/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js';
+import { ConvoSwitch, SWITCH_ICONS_W, SWITCH_W } from '../agent-term/ConvoSwitch.js';
+import { terminalCapable } from '../lib/convo-mode.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep, sameFields } from '../lib/stable.js';
@@ -17,7 +19,7 @@ import { type ToolAction, isPrStep, shortOf, toolbarActions } from './toolbar-ac
 import { type BranchFold, BranchControl, pillHidden, shortLabel } from './BranchControl.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
-import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { togglePanel } from '../lib/panel.js';
 import { panelFits } from '../lib/panel-model.js';
 import { mod } from '../lib/system.js';
@@ -169,7 +171,9 @@ export function Toolbar() {
     const pillW = (fold: BranchFold): number => (branch && !pillHidden(branch, fold) ? (fold === 'none' ? branch.label.length * 6.6 + 40 : 38) + (branch.pr ? 28 : 0) : 0);
     const stepW = (fold: BranchFold): number => (branch?.steps[0] ? (fold === 'all' ? shortLabel(branch.steps[0]).length * 7.4 + 42 : branch.steps[0].label.length * 7.4 + 42) + 34 : 0);
     const primaryW = (fold: BranchFold): number => (primary ? (fold === 'all' ? shortOf(primary).length * 7.4 + 48 : primary.label.length * 7.4 + 48) : 0);
-    const fixedAt = (fold: BranchFold): number => TITLE_MIN + RIGHT_FIXED + pillW(fold) + stepW(fold) + primaryW(fold) + 34;
+    // The Chat · Terminal · Both switch (BLG-534): with its words while there's room, then its icons.
+    const switchW = getPrefs().termView && terminalCapable(client.store.getState(), ws.id) ? (width >= 1180 ? SWITCH_W : SWITCH_ICONS_W) : 0;
+    const fixedAt = (fold: BranchFold): number => TITLE_MIN + RIGHT_FIXED + switchW + pillW(fold) + stepW(fold) + primaryW(fold) + 34;
     const fold = FOLDS.find((f) => fixedAt(f) <= width) ?? 'all';
     const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixedAt(fold)) / 30)));
     // Icons that don't fit lead ⋯ as a section of their own.
@@ -222,6 +226,7 @@ export function Toolbar() {
             ) : null}
           </>
         }
+        center={switchW ? <ConvoSwitch wsId={ws.id} iconOnly={switchW === SWITCH_ICONS_W} /> : undefined}
         right={
           <>
             {/* Friends you shared it with over the network, each with how they're doing (or that only you see it). */}

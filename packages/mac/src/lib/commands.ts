@@ -8,6 +8,8 @@ import type { Workspace } from '@beluga/workspaces/types.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import type { Actions } from './actions.js';
 import type { UiStore } from './beluga.js';
+import { convoModeOf, terminalCapable, toggledMode, withConvoMode } from './convo-mode.js';
+import { getPrefs, setPrefs } from './prefs.js';
 
 /**
  * The window's commands that the menu bar, the keyboard and the buttons share: what each does,
@@ -39,6 +41,7 @@ export const COMMAND_IDS = [
   'conv-find-prev',
   'conv-copy',
   'conv-clear',
+  'conv-terminal',
   'ws-commit',
   'ws-pr',
   'ws-merge',
@@ -119,6 +122,11 @@ export function commandState(state: AppState, id: CommandId): CommandState {
     case 'conv-find-next':
     case 'conv-find-prev':
       return chatShowing(state) && state.view.kind !== 'draft' && state.view.kind !== 'draft_worktree' ? ON : OFF('Open a conversation to find in it');
+    case 'conv-terminal': {
+      const w = currentWorkspace(state);
+      if (!getPrefs().termView) return OFF('Turn on the terminal view in Settings › Terminal');
+      return w && terminalCapable(state, w.id) ? { enabled: true, checked: convoModeOf(getPrefs().convoModes, getPrefs().convoDefault, w.id) !== 'chat' } : OFF('Open a worktree or a chat on Claude Code to see it as a terminal');
+    }
     case 'conv-copy':
       return state.log.some((l) => l.type === 'agent' && l.status === 'done') ? ON : OFF('No answer to copy yet');
     case 'conv-clear':
@@ -212,6 +220,10 @@ export function runCommand(ctx: CommandCtx, id: CommandId): void {
     case 'conv-find-next':
     case 'conv-find-prev':
       document.dispatchEvent(new CustomEvent('beluga:find-step', { detail: id === 'conv-find-next' ? 1 : -1 }));
+      return;
+    case 'conv-terminal':
+      // Chat ⇄ Terminal (Both goes back to the chat), BLG-534.
+      if (ws) setPrefs({ convoModes: withConvoMode(getPrefs().convoModes, ws.id, toggledMode(convoModeOf(getPrefs().convoModes, getPrefs().convoDefault, ws.id))) });
       return;
     case 'conv-copy':
       void client.api.session.copyLastAnswer();
