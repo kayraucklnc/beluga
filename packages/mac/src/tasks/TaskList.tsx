@@ -10,7 +10,7 @@ import { ArchiveDoneButton, IssueMeta, PrivateMark, TuckButton, useIssueMenu } f
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
-import { revealing, setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import { revealing, setTasksPrefs, tuckOrder, useSelfId, useSolo, useTaskActions, useTasksPrefs, useTucking } from './use-tasks.js';
 import t from './tasks.module.css';
 import { WaitingMark, WorkingMark } from '../team/Team.js';
 
@@ -50,8 +50,9 @@ export function TaskList({ issues, statuses, projectId, repo, emptyGroups, archi
 
   const fold = (status: IssueStatus): void => setTasksPrefs({ folded: prefs.folded.includes(status) ? prefs.folded.filter((s) => s !== status) : [...prefs.folded, status] });
 
-  // Sub-tasks just opened out pop in one after another, top to bottom.
+  // Sub-tasks just opened out pop in one after another, top to bottom; tucked back, bottom to top.
   let pop = 0;
+  const outs = tuckOrder(useTucking(), visible);
   return (
     <div ref={list} className={t.list} role="grid" aria-label="Tasks" tabIndex={0} onKeyDown={onKeyDown}>
       {groups.map((g) => {
@@ -68,7 +69,7 @@ export function TaskList({ issues, statuses, projectId, repo, emptyGroups, archi
               {g.status === 'done' && !archived ? <ArchiveDoneButton projectId={projectId} /> : null}
               {archived ? null : <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />}
             </header>
-            {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} {...(revealing(issue.parent) ? { pop: pop++ } : {})} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
+            {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} {...(revealing(issue.parent) ? { pop: pop++ } : {})} {...(outs?.has(issue.id) ? { out: outs.get(issue.id)! } : {})} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
             {!folded && !g.items.length ? <div className={t.groupEmpty}>Nothing here</div> : null}
           </section>
         );
@@ -77,7 +78,7 @@ export function TaskList({ issues, statuses, projectId, repo, emptyGroups, archi
   );
 }
 
-const Row = memo(function Row({ issue, pop, cursor, onCursor }: { issue: Issue; pop?: number; cursor: boolean; onCursor: () => void }) {
+const Row = memo(function Row({ issue, pop, out, cursor, onCursor }: { issue: Issue; pop?: number; out?: number; cursor: boolean; onCursor: () => void }) {
   const selfId = useSelfId();
   const solo = useSolo(issue.projectId);
   const { api, act, open } = useTaskActions();
@@ -91,8 +92,8 @@ const Row = memo(function Row({ issue, pop, cursor, onCursor }: { issue: Issue; 
         tabIndex={-1}
         data-issue={issue.id}
         {...taskDropProps(issue)}
-        className={cx(t.row, cursor && t.rowCursor, pop !== undefined && t.pop)}
-        style={pop !== undefined ? ({ '--pop': pop } as CSSProperties) : undefined}
+        className={cx(t.row, cursor && t.rowCursor, out !== undefined ? t.tuckOut : pop !== undefined && t.pop)}
+        style={(out ?? pop) !== undefined ? ({ '--pop': out ?? pop } as CSSProperties) : undefined}
         onClick={() => open(issue)}
         onMouseDown={onCursor}
         aria-label={`${issue.key} ${issue.title}, ${STATUS_INFO[issue.status].label}${issue.private ? ', private' : ''}`}

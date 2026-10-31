@@ -161,6 +161,53 @@ export function revealSubTasks(epics: readonly string[]): void {
 /** Whether a task with this parent is popping in (read as it first shows). */
 export const revealing = (parent: string | undefined): boolean => Boolean(parent && reveal.epics.has(parent) && Date.now() - reveal.at < 800);
 
+// ---- sub-tasks tucking back
+
+/** How long one sub-task takes to tuck away, and how far apart they start (see .tuckOut). */
+const TUCK_MS = 240;
+const TUCK_STEP_MS = 45;
+/** The epics tucking their sub-tasks back: they fade out one after another, then leave the board. */
+let tuck: ReadonlySet<string> = new Set();
+const tuckListeners = new Set<() => void>();
+const tuckChanged = (next: ReadonlySet<string>): void => {
+  tuck = next;
+  for (const l of [...tuckListeners]) l();
+};
+
+/**
+ * Tuck an epic's sub-tasks back under it: the opening played backwards, last one first, and only
+ * then out of the prefs (so the cards stay to fade). `n`: how many there are, for how long it takes.
+ */
+export function tuckSubTasks(epic: string, n: number): void {
+  if (tuck.has(epic)) return;
+  const done = (): void => {
+    setTasksPrefs({ opened: prefs.opened.filter((id) => id !== epic) });
+    tuckChanged(new Set([...tuck].filter((id) => id !== epic)));
+  };
+  const still = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (still || n < 1) return done();
+  tuckChanged(new Set([...tuck, epic]));
+  setTimeout(done, TUCK_MS + (Math.min(n, 15) - 1) * TUCK_STEP_MS + 30);
+}
+
+/** The epics tucking their sub-tasks back right now (a new set each time it changes). */
+export function useTucking(): ReadonlySet<string> {
+  return useSyncExternalStore(
+    (l) => {
+      tuckListeners.add(l);
+      return () => void tuckListeners.delete(l);
+    },
+    () => tuck,
+  );
+}
+
+/** Each tucking sub-task's turn, in the order they show: the last one goes first. */
+export function tuckOrder(tucking: ReadonlySet<string>, shown: readonly Issue[]): ReadonlyMap<string, number> | undefined {
+  if (!tucking.size) return undefined;
+  const going = shown.filter((i) => i.parent && tucking.has(i.parent));
+  return new Map(going.map((i, k) => [i.id, going.length - 1 - k]));
+}
+
 // ---- acting
 
 const message = (err: unknown): string => (err instanceof Error ? err.message.replace(/^Error: /, '') : String(err));
