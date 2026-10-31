@@ -782,3 +782,46 @@ describe('epics (BLG-267)', () => {
     expect(isEpic(board.state(), epic)).toBe(true);
   });
 });
+
+describe('an epic’s person is its sub-tasks’ person (BLG-512)', () => {
+  const kay = { kind: 'person', id: 'p-me', name: 'Kay' } as const;
+  const bob = { kind: 'person', id: 'p-bob', name: 'bob' } as const;
+  const mia = { kind: 'person', id: 'p-mia', name: 'mia' } as const;
+
+  it('a new sub-task, or one moved under it, is for whoever has the epic unless it’s given to someone', () => {
+    const { board } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Auth', assignee: bob }, me);
+    expect(board.create({ projectId: 'api', title: 'Login', parent: epic.key }, me).assignee).toEqual(bob);
+    expect(board.create({ projectId: 'api', title: 'Logout', parent: epic.key, assignee: mia }, me).assignee).toEqual(mia);
+    const loose = board.create({ projectId: 'api', title: 'Reset' }, me);
+    expect(board.update(loose.key, { parent: epic.key }, me).assignee).toEqual(bob);
+    const mias = board.create({ projectId: 'api', title: 'Signup', assignee: mia }, me);
+    expect(board.update(mias.key, { parent: epic.key }, me).assignee).toEqual(mia);
+  });
+
+  it('giving the epic to someone else takes its open sub-tasks along, all the way down, but not ones given to another person or finished', () => {
+    const { board } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Auth', assignee: bob }, me);
+    const login = board.create({ projectId: 'api', title: 'Login', parent: epic.key }, me);
+    const form = board.create({ projectId: 'api', title: 'Form', parent: login.key }, me);
+    const free = board.create({ projectId: 'api', title: 'Free', parent: epic.key }, me);
+    board.update(free.key, { assignee: null }, me);
+    const mias = board.create({ projectId: 'api', title: 'Logout', parent: epic.key, assignee: mia }, me);
+    const done = board.create({ projectId: 'api', title: 'Spike', parent: epic.key, status: 'done' }, me);
+
+    board.update(epic.key, { assignee: kay }, me);
+    expect(board.get(login.key)?.assignee).toEqual(kay);
+    expect(board.get(form.key)?.assignee).toEqual(kay);
+    expect(board.get(free.key)?.assignee).toEqual(kay);
+    expect(board.get(mias.key)?.assignee).toEqual(mia);
+    expect(board.get(done.key)?.assignee).toEqual(bob);
+    expect(board.get(login.key)?.activity.at(-1)?.text).toBe('assigned this to Kay');
+
+    // Changed later: a sub-task keeps its own person (and its own sub-tasks follow it) when the epic moves on.
+    board.update(login.key, { assignee: mia }, me);
+    board.update(epic.key, { assignee: null }, me);
+    expect(board.get(login.key)?.assignee).toEqual(mia);
+    expect(board.get(form.key)?.assignee).toEqual(mia);
+    expect(board.get(free.key)?.assignee).toBeUndefined();
+  });
+});
