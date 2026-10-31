@@ -6,7 +6,8 @@ const run = (cmd: string, args: readonly string[]): Promise<void> =>
 
 /**
  * Move a folder to the Trash, where you can put it back (never deleted outright). macOS's own
- * `trash` (15 and later), else Finder; on Linux, `gio trash`. Throws when it couldn't.
+ * `trash` (15 and later), else Finder; on Linux, `gio trash`; on Windows, the Recycle Bin
+ * (through .NET's FileSystem, as Explorer does it). Throws when it couldn't.
  */
 export async function moveToTrash(dir: string): Promise<void> {
   if (!existsSync(dir)) return;
@@ -16,5 +17,9 @@ export async function moveToTrash(dir: string): Promise<void> {
     return run('osascript', ['-e', `tell application "Finder" to delete (POSIX file "${quoted}" as alias)`]);
   }
   if (process.platform === 'linux') return run('gio', ['trash', dir]);
+  if (process.platform === 'win32') {
+    const quoted = `'${dir.replace(/'/g, "''")}'`;
+    return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(${quoted}, 'OnlyErrorDialogs', 'SendToRecycleBin')`]);
+  }
   throw new Error('Moving to the Trash isn’t supported on this system');
 }
