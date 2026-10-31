@@ -107,8 +107,8 @@ function tabsOfView(view: View, wsKind?: WsKind): PanelTab[] {
   // Scratch: what Claude saves to the workspace's .beluga/scratch/ while it works, live.
   // Background: the commands Claude and its agents run there in the background (dev servers, tests), live.
   if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : PANEL_TABS.filter((t) => t !== 'phone');
-  // A project's home (and its History page): the project's history too.
-  if (view.kind === 'project') return ['terminal', 'info', 'history'];
+  // A project's home (and its History page): its main folder's Files, and the project's history too.
+  if (view.kind === 'project') return ['files', 'terminal', 'info', 'history'];
   // A plan's page is the plan and its chat, side by side; the Tasks board, a task's page and the plans have the whole window.
   if (!panelFits(view)) return [];
   // A shared workspace's shell is its owner's (its Scratch you see, read over the link); the Terminal view is already all shells.

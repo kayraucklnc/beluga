@@ -96,6 +96,8 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
   const wsName = useApp((st) => findWorkspace(st.projects, wsId)?.name);
   const selfId = useApp((st) => st.selfId);
   const local = useApp((st) => localPathOf(st, viewer));
+  // Opened from a project's page (its main folder's Files): Esc goes back to the project.
+  const back = useApp((st) => (st.view.kind === 'project' ? 'Back to Project' : 'Back to Chat'));
   const page = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const [mode, setModeNow] = useState<ReaderMode>(() => (pendingLine(viewer) ? 'source' : initialMode(viewer)));
@@ -146,9 +148,9 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
   return (
     <section className={r.focus} aria-label={name}>
       <header className={r.bar}>
-        <button type="button" className={r.back} onClick={closeFocus} aria-label="Back to Chat">
+        <button type="button" className={r.back} onClick={closeFocus} aria-label={back}>
           <Icon name="back" size={12} />
-          Back to Chat
+          {back}
           <Kbd>Esc</Kbd>
         </button>
         <span className={r.divider} />

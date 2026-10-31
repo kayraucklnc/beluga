@@ -1,9 +1,9 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { type ReactNode, lazy, Suspense, useEffect } from 'react';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { Icon } from '../../components/Icon.js';
 import { Kbd } from '../../components/ui.js';
 import { useApp } from '../../lib/beluga.js';
-import { type FocusKind, closeFocus, usePanelRuntime } from '../../lib/panel.js';
+import { type FocusKind, closeFocus, filesWsOf, usePanelRuntime } from '../../lib/panel.js';
 import { ChatView } from '../../views/ChatView.js';
 import s from './panel.module.css';
 
@@ -83,4 +83,11 @@ export function WorkspaceCenter() {
   const wsId = view.kind === 'workspace' ? view.id : undefined;
   const focus = usePanelRuntime((r) => (wsId && r.focus?.wsId === wsId ? r.focus.kind : undefined));
   return focus && wsId ? <FocusView kind={focus} wsId={wsId} /> : <ChatView />;
+}
+
+/** A project's page, or for a while a file of its main folder in full (Open in Full from its Files tab). */
+export function ProjectCenter({ children }: { children: ReactNode }) {
+  const mainId = useApp((st) => (st.view.kind === 'project' ? filesWsOf(st) : undefined));
+  const file = usePanelRuntime((r) => Boolean(mainId && r.focus?.wsId === mainId && r.focus.kind === 'file'));
+  return file && mainId ? <FocusView kind="file" wsId={mainId} /> : children;
 }

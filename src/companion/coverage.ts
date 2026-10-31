@@ -448,6 +448,7 @@ export const PHONE: Record<Method, Side> = {
   'git.worktreeAt': 'mac',
   'view.fetch': 'mac',
   'files.searchContent': 'mac',
+  'files.searchNames': 'mac',
   'files.save': 'mac',
   'files.formatter': 'mac',
   'files.format': 'mac',

@@ -107,7 +107,7 @@ test('Changes: a file’s diff right in the panel, closed with Esc, and in full 
   await expect(composer(page)).toBeVisible();
 });
 
-test('Files: a tree you filter by name, a preview with colors, and the file in full', async ({ page }) => {
+test('Files: a tree you search by name, a preview with colors, and the file in full', async ({ page }) => {
   await openWorkspace(page);
   await tab(page, 'Files').click();
   await showAuthInTree(page);
@@ -115,11 +115,11 @@ test('Files: a tree you filter by name, a preview with colors, and the file in f
   const preview = panel(page).getByRole('region', { name: 'auth.ts' });
   await expect(preview.getByText('requireUser').first()).toBeVisible();
   // Filtering keeps the folders above a match and drops the rest.
-  await panel(page).getByLabel('Filter files').fill('serv');
+  await panel(page).getByLabel('Search file names').fill('serv');
   await expect(panel(page).getByRole('treeitem', { name: 'server.ts' })).toBeVisible();
   await expect(panel(page).getByRole('treeitem', { name: 'auth.ts' })).toBeHidden();
   await expect(panel(page).getByRole('treeitem', { name: 'NOTES.md' })).toBeHidden();
-  await panel(page).getByLabel('Filter files').press('Escape');
+  await panel(page).getByLabel('Search file names').press('Escape');
   await expect(panel(page).getByRole('treeitem', { name: 'NOTES.md' })).toBeVisible();
   // In full, then back.
   await preview.getByRole('button', { name: 'Open in full' }).click();

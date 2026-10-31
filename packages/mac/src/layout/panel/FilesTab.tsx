@@ -18,12 +18,12 @@ import { useRowItems } from '../../views/FilesView.js';
 import { type ReaderMode, hasRenderedLook, initialMode, isPdfFile } from '../../views/reader/reader-model.js';
 import { EditTools } from '../../views/reader/EditTools.js';
 import { pendingLine, revealLine } from '../../views/reader/reveal.js';
-import { ContentResultsList, FlagToggles, type SearchFlags, useContentSearch } from './ContentSearch.js';
+import { ContentResultsList, FlagToggles, type SearchFlags, useContentSearch, useNameSearch } from './ContentSearch.js';
 import { useEditSession } from '../../views/reader/edit-store.js';
 import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
-import { type TreeRow, ancestorsOf, filterLoads, treeRows } from './tree.js';
+import { type TreeRow, ancestorsOf, foundRows, treeRows } from './tree.js';
 import s from './panel.module.css';
 import k from './content-search.module.css';
 
@@ -37,17 +37,22 @@ type SearchIn = 'names' | 'contents';
 /** What the search box last searched (names or contents, and how), kept while the window is open. */
 const lastSearch: { in: SearchIn; flags: SearchFlags } = { in: 'names', flags: { caseSensitive: false, regex: false, wholeWord: false } };
 
-/** A name with the part you typed highlighted. */
-function Marked({ name, query }: { name: string; query: string }): ReactNode {
-  const at = query ? name.toLowerCase().indexOf(query.toLowerCase()) : -1;
-  if (at < 0) return name;
-  return (
-    <>
-      {name.slice(0, at)}
-      <mark className={s.mark}>{name.slice(at, at + query.length)}</mark>
-      {name.slice(at + query.length)}
-    </>
-  );
+/** A name with what the search matched highlighted. */
+function Marked({ name, marks }: { name: string; marks: TreeRow['marks'] }): ReactNode {
+  if (!marks?.length) return name;
+  const out: ReactNode[] = [];
+  let at = 0;
+  marks.forEach(([a, b], i) => {
+    if (a > at) out.push(name.slice(at, a));
+    out.push(
+      <mark key={i} className={s.mark}>
+        {name.slice(Math.max(a, at), b)}
+      </mark>,
+    );
+    at = Math.max(at, b);
+  });
+  if (at < name.length) out.push(name.slice(at));
+  return out;
 }
 
 /** The open file under the tree: Markdown formatted (or as source), code in color, images as they are. */
@@ -102,10 +107,12 @@ function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: 
 }
 
 /**
- * The right panel's Files: the workspace's folder as a tree (filter it by name), and the file you
- * pick, previewed under it. Double-click opens a file in its app; right-click for the rest.
+ * The right panel's Files: the workspace's folder as a tree (search it by name or by contents),
+ * and the file you pick, previewed under it. Double-click opens a file in its app; right-click for
+ * the rest. On a project's page (`project`) it's the project's main folder: the same, without
+ * Show Changes (that's a worktree's Changes tab).
  */
-export function FilesTab({ wsId }: { wsId: string }) {
+export function FilesTab({ wsId, project = false }: { wsId: string; project?: boolean }) {
   const api = useApi();
   const { client } = useBeluga();
   const prefs = usePrefs();
@@ -135,21 +142,18 @@ export function FilesTab({ wsId }: { wsId: string }) {
   };
   const contents = searchIn === 'contents';
   const found = useContentSearch(wsId, query, flags, contents);
+  const named = useNameSearch(wsId, query, flags, !contents);
   const list = useRef<HTMLDivElement>(null);
   const hitList = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
-  const requested = useRef(new Set<string>());
   // A line found in the contents: the file opens there.
   const openAt = (path: string, line: number): void => {
     revealLine(at(path), line);
     void api.files.open(at(path));
   };
 
-  const load = (path: string): void => {
-    requested.current.add(path);
-    void api.files.loadDir(at(path));
-  };
+  const load = (path: string): void => void api.files.loadDir(at(path));
   const expand = (next: ReadonlySet<string>): void => {
     opened.set(wsId, next);
     setExpanded(next);
@@ -160,12 +164,8 @@ export function FilesTab({ wsId }: { wsId: string }) {
     for (const p of ['', ...expanded]) load(p);
   }, [wsId, expanded]);
 
-  // Filtering looks a few levels deep (not into node_modules, .git, build output…).
+  // Searching names: every file in the folder whose path matches, as a tree (the last answer while the next one comes).
   const q = contents ? '' : query.trim();
-  useEffect(() => {
-    if (!q) return;
-    for (const p of filterLoads(entriesOf, requested.current)) load(p);
-  }, [q, cache]);
 
   // A file opened from the chat or a diff: show it in the tree.
   const shown = viewer && viewer.owner === selfId && viewer.share === share ? viewer : undefined;
@@ -202,7 +202,9 @@ export function FilesTab({ wsId }: { wsId: string }) {
     const dirs = new Set([...files.keys()].flatMap(ancestorsOf));
     return { files, dirs };
   }, [review]);
-  const rows = treeRows(entriesOf, expanded, q);
+  const foundTree = useMemo(() => foundRows(named.results?.files ?? []), [named.results]);
+  const rows = q ? foundTree : treeRows(entriesOf, expanded);
+  const canShowChange = (path: string): boolean => !project && changes.files.has(path);
 
   const toggle = (path: string): void => {
     const next = new Set(expanded);
@@ -212,7 +214,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
   };
   const activate = (row: TreeRow): void => {
     setCursor(row.path);
-    if (row.dir) return toggle(row.path);
+    if (row.dir) return q ? undefined : toggle(row.path);
     void api.files.open(at(row.path));
   };
   const localOf = (path: string): string | undefined => localPathOf(client.store.getState(), at(path));
@@ -222,7 +224,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
     if (row.dir) return base;
     return [
       base[0]!,
-      ...(changes.files.has(row.path) ? [{ label: 'Show Changes', icon: 'diff' as const, onSelect: () => void showChange(client.store.getState(), row.path) }] : []),
+      ...(canShowChange(row.path) ? [{ label: 'Show Changes', icon: 'diff' as const, onSelect: () => void showChange(client.store.getState(), row.path) }] : []),
       { label: 'Open in Full', icon: 'expand', keys: `${mod()}↩`, onSelect: () => void api.files.open(at(row.path)).then(() => openFocus('file', wsId)) },
       ...(local ? [{ label: 'Open With Its App', icon: 'external' as const, onSelect: () => void openWithDefaultApp(client, local) }] : []),
       ...base.slice(1),
@@ -272,8 +274,8 @@ export function FilesTab({ wsId }: { wsId: string }) {
             <input
               ref={field}
               value={query}
-              placeholder={contents ? 'Search in files' : 'Filter by name'}
-              aria-label={contents ? 'Search in the files’ contents' : 'Filter files'}
+              placeholder={contents ? 'Search in files' : 'Search file names'}
+              aria-label={contents ? 'Search in the files’ contents' : 'Search file names'}
               spellCheck={false}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -282,7 +284,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
                 else if (e.key === 'ArrowDown') (e.preventDefault(), list.current?.focus(), setCursor(rows.find((r) => r.kind === 'entry')?.path));
               }}
             />
-            {contents ? <FlagToggles flags={flags} onChange={setFlags} /> : null}
+            <FlagToggles flags={flags} onChange={setFlags} />
           </label>
           {contents ? null : <IconButton icon="chevronUp" label="Collapse all folders" onClick={() => expand(new Set())} disabled={!expanded.size} />}
           <IconButton icon="folder" label="Show in Finder" onClick={() => void api.workspaces.openInFinder(wsId)} />
@@ -297,7 +299,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
               field.current?.focus();
             }}
             options={[
-              { value: 'names', label: 'Names', hint: 'Filter the tree by file name' },
+              { value: 'names', label: 'Names', hint: 'Find files by name or path, anywhere in the folder' },
               { value: 'contents', label: 'Contents', hint: 'Search inside the files (ripgrep)' },
             ]}
           />
@@ -335,7 +337,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
                     <span className={s.chevron}>{row.dir ? <Icon name={row.open ? 'chevronDown' : 'chevronRight'} size={9} /> : null}</span>
                     <Icon name={row.dir ? 'folder' : 'file'} size={13} className={row.dir ? s.dirIcon : s.fileIcon} />
                     <span className={cx(s.rowName, look?.tone)}>
-                      <Marked name={row.name} query={q} />
+                      <Marked name={row.name} marks={row.marks} />
                     </span>
                     {look ? <span className={cx(d.letter, look.tone)}>{look.letter}</span> : row.dir && changes.dirs.has(row.path) ? <span className={s.changedDot} title="Has changes" /> : null}
                     {!row.dir && !look && row.size !== undefined && on ? <span className={s.size}>{row.size < 1024 ? `${row.size} B` : formatBytes(row.size)}</span> : null}
@@ -343,7 +345,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
                 </ActionsContext>
               );
             })}
-            {q && !rows.length ? <div className={s.treeNote}>No names with “{q}” in the folders looked at</div> : null}
+            {q ? <NameNote state={named} count={rows.filter((r) => !r.dir).length} /> : null}
           </div>
         )}
       </div>
@@ -359,9 +361,18 @@ export function FilesTab({ wsId }: { wsId: string }) {
             onReset={() => setPrefs({ panelSplit: SPLIT_DEFAULT })}
             onStep={(dir) => setPrefs({ panelSplit: clampShare(split - dir * 0.04, SPLIT_MIN, SPLIT_MAX) })}
           />
-          <Preview viewer={previewed} wsId={wsId} local={local} changed={changes.files.has(previewed.path)} />
+          <Preview viewer={previewed} wsId={wsId} local={local} changed={canShowChange(previewed.path)} />
         </>
       ) : null}
     </div>
   );
+}
+
+/** Under the names found: still looking, a pattern that didn't parse, none, or only the first ones. */
+function NameNote({ state, count }: { state: ReturnType<typeof useNameSearch>; count: number }) {
+  if (state.error) return <div className={cx(s.treeNote, k.error)}>{state.error}</div>;
+  if (state.searching && !state.results) return <div className={s.treeNote}>Searching…</div>;
+  if (!state.results) return null;
+  if (!count) return <div className={s.treeNote}>No file names with “{state.query?.trim()}”</div>;
+  return state.results.truncated ? <div className={s.treeNote}>The first {count.toLocaleString()} files shown; type more to narrow it</div> : null;
 }
