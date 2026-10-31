@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
-import { EFFORTS } from '@beluga/shared/settings-schema.js';
+import { BRANCH_PREFIX_RE, EFFORTS } from '@beluga/shared/settings-schema.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
@@ -341,6 +341,30 @@ function HiddenProjectsGroup() {
   );
 }
 
+/** What new worktrees' branches start with: saved when you leave the field, if git would take it. */
+function BranchPrefixRow() {
+  const api = useApi();
+  const saved = useApp((st) => st.prefs.branchPrefix);
+  const [value, setValue] = useState(saved);
+  useEffect(() => setValue(saved), [saved]);
+  const ok = BRANCH_PREFIX_RE.test(value);
+  const save = (): void => {
+    if (ok && value !== saved) void api.session.setPrefs({ branchPrefix: value });
+  };
+  return (
+    <Row label="Branch prefix" detail={ok ? `New worktrees get branches like ${value}fix-login. Leave it empty for no prefix.` : 'Use letters, digits and . _ - / only.'}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        <input aria-label="Branch prefix" className={s.text} value={value} placeholder="none" spellCheck={false} onChange={(e) => setValue(e.target.value.trim())} onBlur={save} />
+      </form>
+    </Row>
+  );
+}
+
 function Workspaces() {
   const api = useApi();
   const p = useApp((st) => st.prefs);
@@ -350,6 +374,7 @@ function Workspaces() {
         <Row label="Run setup in new worktrees" detail="The project's setup command (npm install, …) runs in each new worktree.">
           <Switch label="Auto setup" on={p.autoSetup} onChange={(v) => void api.session.setPrefs({ autoSetup: v })} />
         </Row>
+        <BranchPrefixRow />
         <Row label="Friends may start work here" detail="They ask to start a worktree or hand work to you; you approve each one.">
           <Switch label="Friend worktrees" on={p.friendWorktrees === 'ask'} onChange={(v) => void api.session.setFriendWorktrees(v ? 'ask' : 'off')} />
         </Row>

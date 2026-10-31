@@ -2,7 +2,7 @@ import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
 import { type AssistantChats, NO_ASSISTANT_CHATS, activeAssistantChannel, assistantChannel } from '../shared/assistant.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
-import { NotifySettings as NotifySchema } from '../shared/settings-schema.js';
+import { BRANCH_PREFIX_DEFAULT, NotifySettings as NotifySchema } from '../shared/settings-schema.js';
 import type { Review } from '../workspaces/git.js';
 import type { Project, ProjectGroup } from '../workspaces/types.js';
 import type { EnvChange } from '../workspaces/env.js';
@@ -260,6 +260,8 @@ export interface Prefs {
   readonly model?: string;
   readonly effort?: Effort;
   readonly autoSetup: boolean;
+  /** What new worktrees' branches start with (`beluga/`; empty: none). */
+  readonly branchPrefix: string;
   readonly contextMeter: boolean;
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
   readonly autoCompact: boolean;
@@ -627,6 +629,7 @@ export const DEFAULT_PREFS: Prefs = {
   selfApproval: 'never',
   notify: NotifySchema.parse({}),
   autoSetup: true,
+  branchPrefix: BRANCH_PREFIX_DEFAULT,
   contextMeter: true,
   autoCompact: false,
   autoCompactAt: AUTO_COMPACT_DEFAULT,
