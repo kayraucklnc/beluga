@@ -50,6 +50,8 @@ export interface TerminalLook {
   readonly scrollback?: number;
   /** Option (Alt) sends Meta (Esc+), instead of typing special characters. */
   readonly optionMeta?: boolean;
+  /** Its keys (new tab, splits, keys that type something), in Beluga's terms (keys.ts, BLG-537). */
+  readonly keys?: readonly import('./keys.js').ImportedKey[];
 }
 
 /** One terminal on this Mac: installed or not, the file its settings came from, and what they are. */

@@ -703,7 +703,14 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...waitingOf(state, channel),
     ...pickerOf(state, channel, conv?.mine ?? false),
     ...tagsOf(state, channel),
+    ...terminalOf(state, channel),
   };
+}
+
+/** The Mac's terminal view drives this conversation (BLG-534): who, so the phone can say so and take it back. */
+function terminalOf(state: DomainState, channel: string): Pick<ConvView, 'terminal'> {
+  const term = channel.startsWith('ws:') ? state.agentTerms[channel.slice(3)] : undefined;
+  return term ? { terminal: { label: clip(term.label, 80) } } : {};
 }
 
 /** The room's agent tags for "@" (BLG-520): yours that run here, and each person's their card lists. */

@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { getPrefs, subscribePrefs } from './prefs.js';
-import { type Bindings, type KeyPress, bindingsOf, chordOfAccel, keysLabel, menuKeys, pressed } from './shortcuts-model.js';
+import { type Bindings, type KeyPress, bindingsOf, chordOfAccel, keysLabel, menuAccel, menuKeys, pressed } from './shortcuts-model.js';
 
 /**
  * Your keyboard shortcuts in this window (BLG-289): the keys each shortcut has now (Settings ›
@@ -67,13 +67,32 @@ function once(by: 'key' | 'menu', id: string, run: () => void): void {
 export const fromKey = (id: string, run: () => void): void => once('key', id, run);
 export const fromMenu = (id: string, run: () => void): void => (recording ? undefined : once('menu', id, run));
 
+/* ---------- The terminal's keys (BLG-537) ---------- */
+
+/** Keys the terminal view has the keyboard for now (its ⌘T, ⌘W, ⌘1…): the menu bar lets go of them. */
+let terminalChords: ReadonlySet<string> = new Set();
+
+/** The terminal view took the keyboard with these keys (none: it let go). */
+export function setTerminalChords(chords: readonly string[] | undefined): void {
+  const next = new Set(chords ?? []);
+  if (next.size === terminalChords.size && [...next].every((c) => terminalChords.has(c))) return;
+  terminalChords = next;
+  sendMenuKeys();
+}
+
+/** Whether Beluga has a shortcut on this chord (so the terminal leaves it, when Beluga's keys come first). */
+export const belugaHas = (chord: string): boolean => Object.values(getBindings()).some((list) => list.includes(chord)) || chord === 'Cmd+W';
+
 /* ---------- The menu bar ---------- */
 
 let sentMenu = '';
 
 function sendMenuKeys(): void {
   if (!inApp()) return;
-  const keys = menuKeys(getBindings());
+  // Close Window is the menu's own item (menu.rs), with ⌘W unless the terminal has it.
+  const keys: Record<string, string | null> = { ...menuKeys(getBindings()), 'close-window': 'CmdOrCtrl+W' };
+  const taken = new Set([...terminalChords].map(menuAccel).filter(Boolean));
+  for (const [id, accel] of Object.entries(keys)) if (accel && taken.has(accel)) keys[id] = null;
   // Recording: every item lets go of its key, so pressing ⌘R to record it doesn't run Run.
   const out = recording ? Object.fromEntries(Object.keys(keys).map((k) => [k, null])) : keys;
   const json = JSON.stringify(out);

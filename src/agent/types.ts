@@ -10,6 +10,8 @@ export type AccessScope = 'folder' | 'full';
 
 export interface AgentRunInput {
   readonly prompt: string;
+  /** Instructions for the agent's own terminal (BLG-534), not a turn: visuals as tokens, no fences (agent/terminal-prompt.ts). */
+  readonly terminal?: boolean;
   /** The prompt's id in Claude's transcript (a UUID: the request's own), so editing that message can cut the session there. */
   readonly promptId?: string;
   readonly requesterName: string;
@@ -435,8 +437,35 @@ export interface SubAgentEvent {
 }
 
 /** Something that can run an agent turn and return its final answer. */
+/** Where the terminal's `show` keeps each visual (core/agent-term.ts): its number, for the token. */
+export interface TerminalSink {
+  add(block: string): number;
+}
+
+/**
+ * The agent's own terminal app on a conversation (BLG-534): Claude Code's (a local model's too,
+ * which runs in it; Codex's conversations stay in the chat). The program to run in a pty, and the
+ * conversation it goes on with. Beluga's tools are served for it until close().
+ */
+export interface TerminalLaunch {
+  readonly file: string;
+  readonly args: readonly string[];
+  /** Over the terminal's own (your variables, the worktree's tag, a local model's endpoint). */
+  readonly env: Readonly<Record<string, string>>;
+  /** Where its transcripts are kept, when not the agent's usual folder (the demo's stand-in). */
+  readonly transcriptHome?: string;
+  /** The conversation it writes to (Claude Code's session: resumed, or a new id it was given up front). */
+  readonly session: string;
+  /** It starts a conversation (not one the workspace already had). */
+  readonly fresh: boolean;
+  /** Stop serving its tools. */
+  close(): void;
+}
+
 export interface AgentBackend {
   run(input: AgentRunInput): Promise<string>;
+  /** The agent's own terminal app on `input.place`'s conversation, with Beluga's tools and rules (BLG-534). */
+  terminal?(input: AgentRunInput, sink: TerminalSink): Promise<TerminalLaunch>;
   /** Fetch current plan usage without running a turn, when supported. */
   refreshUsage?(): Promise<Usage | undefined>;
   /** A short worktree name for a task (a small model names it). */

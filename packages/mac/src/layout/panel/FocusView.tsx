@@ -5,6 +5,7 @@ import { Kbd } from '../../components/ui.js';
 import { useApp } from '../../lib/beluga.js';
 import { type FocusKind, closeFocus, usePanelRuntime } from '../../lib/panel.js';
 import { ChatView } from '../../views/ChatView.js';
+import { ConvoCenter } from '../../agent-term/ConvoCenter.js';
 import s from './panel.module.css';
 
 const DiffView = lazy(() => import('../../views/DiffView.js').then((m) => ({ default: m.DiffView })));
@@ -77,10 +78,10 @@ function FocusView({ kind, wsId }: { kind: FocusKind; wsId: string }) {
   );
 }
 
-/** A workspace's center: its conversation, or for a while a diff, a file, its terminal or its PR in full. */
+/** A workspace's center: its conversation (as a chat, its agent's terminal, or both), or for a while a diff, a file, its terminal or its PR in full. */
 export function WorkspaceCenter() {
   const view = useApp((st) => st.view);
   const wsId = view.kind === 'workspace' ? view.id : undefined;
   const focus = usePanelRuntime((r) => (wsId && r.focus?.wsId === wsId ? r.focus.kind : undefined));
-  return focus && wsId ? <FocusView kind={focus} wsId={wsId} /> : <ChatView />;
+  return focus && wsId ? <FocusView kind={focus} wsId={wsId} /> : wsId ? <ConvoCenter wsId={wsId} /> : <ChatView />;
 }

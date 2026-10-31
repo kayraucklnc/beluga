@@ -578,6 +578,8 @@ export type Action =
   | { type: 'conflicts'; id: string; files: readonly string[] }
   | { type: 'review'; review?: ReviewDomain }
   | { type: 'history'; channel: string; items: readonly LogItem[] }
+  /** Items put into a conversation as they come (the agent's terminal turns, BLG-534): each replaces the one with its id, else goes at the end. */
+  | { type: 'log_upsert'; channel: string; items: readonly LogItem[] }
   /** klaud is stopping: `owner`'s runs that haven't ended (their end won't come now) are interrupted. */
   | { type: 'runs_interrupted'; owner: string }
   | { type: 'env_changes'; id: string; changes: readonly EnvChange[] }
@@ -1003,6 +1005,16 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       const others = state.log.filter((l) => l.channel !== action.channel);
       return { ...state, log: [...action.items.slice(-LOG_LIMIT).map((i) => ({ ...i, channel: action.channel })), ...others] };
     }
+    case 'log_upsert': {
+      let log = state.log;
+      for (const raw of action.items) {
+        const item = { ...raw, channel: action.channel } as LogItem;
+        const idx = log.findIndex((l) => l.id === item.id && l.channel === action.channel);
+        if (idx < 0) log = appendLog(log, item);
+        else if (JSON.stringify(log[idx]) !== JSON.stringify(item)) log = log.map((l, i) => (i === idx ? item : l));
+      }
+      return log === state.log ? state : { ...state, log };
+    }
     case 'shell': {
       const item = { ...action.item, command: clean(action.item.command), output: clean(action.item.output), ...(action.item.cwd ? { cwd: clean(action.item.cwd) } : {}), ...(action.item.error ? { error: clean(action.item.error) } : {}) };
       const idx = state.log.findIndex((l) => l.id === item.id);
@@ -1133,6 +1145,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'terminal_exit':
     case 'terminal_name':
     case 'terminal_env_stale':
+    case 'agent_term':
+    case 'term_visuals':
     case 'shell_choices':
     case 'env_keys':
     case 'pr_custom':

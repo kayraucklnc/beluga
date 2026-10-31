@@ -219,6 +219,8 @@ export class Session {
   readonly env: EnvVars;
   /** Your local and bring-your-own endpoints (BLG-449), as they answer now. */
   readonly local: LocalEndpoints;
+  /** The agent's own terminal on a conversation (BLG-534). */
+  readonly agentTerms?: import('./agent-term.js').AgentTerminals;
   private projectsTimer?: NodeJS.Timeout;
   /** What this session asks screens to do (see core/intents.ts). */
   readonly intents = new IntentBus();
@@ -250,6 +252,7 @@ export class Session {
     this.diff = parts.diff;
     this.env = parts.env;
     this.local = parts.local;
+    this.agentTerms = parts.agentTerms;
     this.runtime = opts.createAgent ? undefined : opts.runtime?.runtimes(opts.runtime.agent);
     // The session layer runs a runtime only as its capabilities allow (the safety rule: see guard.ts).
     this.agent = opts.createAgent ? this.beside(opts.createAgent(this.bridge), opts.alsoRuntimes ?? []) : this.runtime && opts.runtime ? this.routed(this.runtime, opts.runtime) : undefined;
@@ -365,6 +368,8 @@ export class Session {
 
   async stop(): Promise<void> {
     await this.host.abort();
+    // The terminal's last words come back to the chat before it's saved.
+    this.agentTerms?.closeAll();
     // A run that didn't end in time (or whose end never came back) won't now: not saved as running.
     this.store.dispatch({ type: 'runs_interrupted', owner: this.selfId });
     this.opts.client.close();

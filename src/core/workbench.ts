@@ -161,7 +161,7 @@ export function fixFailedPrompt(kind: 'setup' | 'run', command: string, code: nu
 }
 
 export { shellId, setupId, runId, githubId, globalShellId, isGlobalShell, globalShellNumber, globalShellDir } from '../shared/terminal-keys.js';
-import { githubId, runId, setupId, shellId, isGlobalShell, globalShellNumber, cleanTerminalName } from '../shared/terminal-keys.js';
+import { agentTermId, githubId, runId, setupId, shellId, isGlobalShell, globalShellNumber, cleanTerminalName } from '../shared/terminal-keys.js';
 
 /**
  * What changed about a pull request that's worth telling you. A PR showing up is only news
@@ -1110,6 +1110,26 @@ export class Workbench {
     return this.openSession(key, { path: dir }, undefined, size);
   }
 
+  /**
+   * A program in a workspace's folder as one of its terminals, not your shell: the agent's own
+   * terminal app (BLG-534). Your variables and the worktree's, the program's own over them. One
+   * already there under `key` is closed first.
+   */
+  openProgram(key: string, ws: Workspace, program: { readonly file: string; readonly args: readonly string[]; readonly env: Readonly<Record<string, string>>; readonly title: string }, size = START_SIZE): PtyProcess | undefined {
+    const terminals = this.deps.terminals;
+    if (!terminals) return undefined;
+    if (terminals.get(key)) this.closeTerminal(key);
+    const vars = this.deps.envFor?.({ workspaceId: ws.id }) ?? {};
+    const session = terminals.open(key, { cwd: ws.path, cols: size.cols, rows: size.rows, env: { ...vars, ...scriptEnv(ws), ...program.env }, shell: program.file, args: [...program.args], title: program.title });
+    this.deps.store.dispatch({ type: 'terminal', id: key, title: session.title });
+    const report = (code: number | null): void => {
+      if (this.deps.terminals?.get(key) === session) this.deps.store.dispatch({ type: 'terminal_exit', id: key, code });
+    };
+    if (session.exited) report(session.exited.code);
+    else session.onExit((exit) => report(exit.code));
+    return session;
+  }
+
   /** The global Terminal tab's shells, in the order they were opened. */
   globalShells(): string[] {
     return (this.deps.terminals?.list() ?? []).map((s) => s.id).filter(isGlobalShell).sort((a, b) => globalShellNumber(a) - globalShellNumber(b));
@@ -1171,7 +1191,9 @@ export class Workbench {
 
   /** Stop a workspace's shell, setup and run terminals (it's being archived or deleted). */
   closeTerminals(wsId: string): void {
-    for (const key of [shellId(wsId), setupId(wsId), runId(wsId), githubId(wsId)]) if (this.deps.terminals?.get(key)) this.closeTerminal(key);
+    for (const key of [shellId(wsId), setupId(wsId), runId(wsId), githubId(wsId), agentTermId(wsId)]) if (this.deps.terminals?.get(key)) this.closeTerminal(key);
+    // Shells split beside the agent's terminal.
+    for (const s of this.deps.terminals?.list() ?? []) if (s.id.startsWith(`${wsId}:pane:`)) this.closeTerminal(s.id);
   }
 
   private watchExit(key: string, session: PtyProcess, onExit: (code: number | null) => void): void {

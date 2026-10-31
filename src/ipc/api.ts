@@ -25,6 +25,7 @@ import { COMPANION_API } from './companion-api.js';
 import { ASSISTANT_API } from './assistant-api.js';
 import { VOICE_API } from './voice-api.js';
 import { TERMINAL_IMPORT_API } from './terminal-import-api.js';
+import { AGENT_TERM_API } from './agent-term-api.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -437,6 +438,8 @@ export const API = {
   ...VOICE_API,
   // ---- bringing another terminal's look into Beluga's (terminal-import-api.ts)
   ...TERMINAL_IMPORT_API,
+  // ---- the agent's own terminal on a conversation, and its visuals (agent-term-api.ts)
+  ...AGENT_TERM_API,
 } as const;
 
 export type Api = typeof API;

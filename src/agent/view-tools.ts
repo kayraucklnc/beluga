@@ -11,6 +11,8 @@ import { fetchSource } from '../core/views/sources.js';
 import { viewDataDir } from '../core/views/kept.js';
 import { planScript, writeScript } from '../core/views/scripts.js';
 import { mentionsSecret } from './policy.js';
+import { visualToken } from '../shared/term-visuals.js';
+import type { TerminalSink } from './types.js';
 
 /**
  * Claude's `show` tool (mcp__beluga_view__show): a table, chart, stat tiles, code, colors, gantt, heatmap, calendar or a
@@ -206,4 +208,18 @@ export async function showView(shelf: ViewShelf, cwd: string, raw: Record<string
   if (view.controls.length) notes.push(`Controls: ${view.controls.map((c) => c.label ?? c.id).join(', ')} (they work without you).`);
   const token = shelf.add(viewBlock(out, VIEW_FENCE));
   return [`Shown as ${token}. Put ${token} on its own line in your answer where it goes.`, ...notes].join('\n');
+}
+
+/**
+ * The views of the agent's own terminal (BLG-535): each kept by the daemon (`sink`), and its token
+ * `[[visual:N]]` is what Claude writes; the Mac draws a link over it (shared/term-visuals.ts).
+ */
+export class TerminalShelf extends ViewShelf {
+  constructor(private readonly sink: TerminalSink) {
+    super();
+  }
+
+  override add(block: string): string {
+    return visualToken(this.sink.add(block));
+  }
 }

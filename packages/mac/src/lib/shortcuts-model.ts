@@ -88,6 +88,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   def('conv-find', 'Find…', 'Conversation', ['Cmd+F']),
   def('conv-find-next', 'Find Next', 'Conversation', ['Cmd+G']),
   def('conv-find-prev', 'Find Previous', 'Conversation', ['Shift+Cmd+G']),
+  def('conv-terminal', 'Show as Terminal', 'Conversation', ['Shift+Cmd+T'], { hint: 'Your agent’s own terminal on the conversation, and back to the chat' }),
   def('conv-copy', 'Copy Last Answer', 'Conversation', []),
   def('conv-clear', 'Clear Conversation…', 'Conversation', ['Shift+Cmd+K']),
 

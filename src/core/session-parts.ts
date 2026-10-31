@@ -27,6 +27,8 @@ import { plansOf } from './plans/registry.js';
 import { assistantOf } from './assistant/registry.js';
 import { companionOf } from '../companion/registry.js';
 import { stopTestProcesses } from '../workspaces/test-procs.js';
+import { AgentTerminals } from './agent-term.js';
+import { claudeHome } from './claude-code/launch.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
 export interface SessionParts {
@@ -47,6 +49,8 @@ export interface SessionParts {
   /** Your environment variables (kept on this computer). */
   readonly env: EnvVars;
   readonly local: LocalEndpoints;
+  /** The agent's own terminal on a conversation (BLG-534). */
+  readonly agentTerms?: AgentTerminals;
 }
 
 export function createSessionParts(session: Session, opts: SessionOptions): SessionParts {
@@ -218,7 +222,29 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       phone: (scratchDir) => companionOf(session)?.control.toolsFor(scratchDir),
       phoneUse: () => companionOf(session)?.control.useLevel() ?? 'off',
       setup: (channel) => workbench?.setupForRun(channel.slice(3)),
+      terminalDriving: (channel) => agentTerms?.driving(channel) ?? false,
     });
+    const terminals = opts.terminals;
+    const agentTerms =
+      workspaces && workbench && terminals && opts.workspaces
+        ? new AgentTerminals({
+            store: opts.store,
+            find: (id) => opts.workspaces?.find(id),
+            ensureLoaded: (id) => void workspaces?.ensureLoaded(id),
+            launch: (channel, sink) => host.terminalLaunch(channel, sink),
+            openProgram: (key, ws, program, size) => workbench?.openProgram(key, ws, program, size),
+            closeTerminal: (key) => workbench?.closeTerminal(key),
+            pty: (key) => terminals.get(key),
+            agentOf: (id) => {
+              const agent = workspaces?.agentIn(`ws:${id}`) ?? session.agentRef;
+              return { runtime: agent.runtime, label: agent.label };
+            },
+            rememberSession: (id, sessionId, runtime) => opts.workspaces?.rememberSession(id, sessionId, runtime),
+            self: () => ({ id: session.selfId, name: session.store.getState().self?.name ?? 'you' }),
+            keepSteps: (steps) => host.keepTerminalSteps(steps),
+            claudeConfigDir: claudeHome(),
+          })
+        : undefined;
     const remote = new RemoteWork({
       store: opts.store,
       selfId: () => session.selfId,
@@ -267,5 +293,5 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       openLocation: (at) => files.openLocation(at),
       search: (at, mode, query) => diff.search(at, mode, query),
     });
-  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff, env, local };
+  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff, env, local, ...(agentTerms ? { agentTerms } : {}) };
 }

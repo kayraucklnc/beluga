@@ -2,7 +2,8 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Terminal } from '@xterm/xterm';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { type ITheme, Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef } from 'react';
 import { useBeluga } from '../lib/beluga.js';
@@ -16,10 +17,39 @@ const MAC_LINE_KEYS: Readonly<Record<string, string>> = { ArrowLeft: '\x01', Arr
 
 const css = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 /** Beluga's colours for the window's appearance, with the ones you brought from another terminal over them. */
-const themeNow = () => ({ background: css('--term-bg') || css('--bg'), foreground: css('--text'), cursor: css('--accent') === 'AccentColor' ? css('--text') : css('--accent'), selectionBackground: 'rgba(120,140,190,0.35)', ...importedTheme(getPrefs()) });
+export const themeNow = (): ITheme & { background: string } => ({ background: css('--term-bg') || css('--bg'), foreground: css('--text'), cursor: css('--accent') === 'AccentColor' ? css('--text') : css('--accent'), selectionBackground: 'rgba(120,140,190,0.35)', ...importedTheme(getPrefs()) });
+
+/** What a terminal's owner may add to it once it's made (links, find, keys of its own). */
+export interface XtermTools {
+  readonly search: SearchAddon;
+  /** Type into the program, as if from the keyboard. */
+  readonly write: (data: string) => void;
+}
+
+export interface XtermProps {
+  readonly termKey: string;
+  /** Start the program; a promise: attached once it settles (a program that takes a moment). */
+  readonly start: (size: { cols: number; rows: number }) => void | Promise<unknown>;
+  readonly focus?: boolean;
+  /** Draw with the GPU (WebGL), falling back to the DOM when it can't: for a big, busy terminal. */
+  readonly gpu?: boolean;
+  /** Add to the terminal once it's made → how to take that down. */
+  readonly extend?: (term: Terminal, tools: XtermTools) => (() => void) | undefined;
+  /** A key for the owner first (⌘F, ⌘D…): true when it took it (the program never sees it). */
+  readonly onKey?: (e: KeyboardEvent, term: Terminal) => boolean;
+  /**
+   * Resize the program once its box has settled (a panel sliding in), not at every step: a
+   * full-screen program like Claude Code draws itself again at each new size.
+   */
+  readonly settleMs?: number;
+  /** Start at the bottom row, the way a chat sits (Claude Code's prompt is at the bottom from the first line). */
+  readonly fromBottom?: boolean;
+}
 
 /** One terminal program, drawn by xterm.js from its raw bytes (the program runs in Beluga). */
-export function Xterm({ termKey, start, focus = true }: { termKey: string; start: (size: { cols: number; rows: number }) => void; focus?: boolean }) {
+export function Xterm({ termKey, start, focus = true, gpu = false, extend, onKey, settleMs = 0, fromBottom = false }: XtermProps) {
+  const own = useRef({ extend, onKey });
+  own.current = { extend, onKey };
   const { client } = useBeluga();
   const box = useRef<HTMLDivElement>(null);
   const live = useRef<{ term: Terminal; refit: () => void } | undefined>(undefined);
@@ -55,22 +85,60 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
     term.loadAddon(fit);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = '11';
-    term.loadAddon(new SearchAddon());
+    const search = new SearchAddon();
+    term.loadAddon(search);
     term.loadAddon(new WebLinksAddon((_e, uri) => void openExternal(uri)));
     term.open(el);
+    // The GPU draws a full-window terminal smoothly; when WebGL isn't there (or its context is lost), the DOM does.
+    let webgl: WebglAddon | undefined;
+    if (gpu) {
+      try {
+        webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl?.dispose();
+          webgl = undefined;
+        });
+        term.loadAddon(webgl);
+      } catch {
+        webgl = undefined;
+      }
+    }
     fit.fit();
-    if (startedFor.current !== termKey && !(termKey in client.store.getState().terminals)) start({ cols: term.cols, rows: term.rows });
+    const started = startedFor.current !== termKey && !(termKey in client.store.getState().terminals) ? start({ cols: term.cols, rows: term.rows }) : undefined;
     startedFor.current = termKey;
-    const link = client.attachTerminal(termKey);
-    const offData = link.onData((d) => term.write(d));
-    const offExit = link.onExit((e) => term.write(`\r\n\x1b[2m[exited${e.code !== null ? ` with ${e.code}` : ''}]\x1b[0m\r\n`));
-    const input = term.onData((d) => link.write(d));
+    // A program that takes a moment to start (the agent's terminal: Claude Code made ready, its
+    // tools served) is attached to once it's there; until then what you type waits.
+    let link: ReturnType<typeof client.attachTerminal> | undefined;
+    let offData: (() => void) | undefined;
+    let offExit: (() => void) | undefined;
+    let gone = false;
+    const waiting: string[] = [];
+    const send = (d: string): void => (link ? link.write(d) : void waiting.push(d));
+    const attach = (): void => {
+      if (gone) return;
+      // What it prints starts on the last row and scrolls up, as in a chat (the rows above stay blank).
+      if (fromBottom) term.write('\n'.repeat(Math.max(0, term.rows - 1)));
+      const l = client.attachTerminal(termKey);
+      link = l;
+      offData = l.onData((d) => term.write(d));
+      offExit = l.onExit((e) => term.write(`\r\n\x1b[2m[exited${e.code !== null ? ` with ${e.code}` : ''}]\x1b[0m\r\n`));
+      l.resize(term.cols, term.rows);
+      for (const d of waiting.splice(0)) l.write(d);
+    };
+    if (started && typeof (started as Promise<unknown>).then === 'function') void (started as Promise<unknown>).then(attach, attach);
+    else attach();
+    const input = term.onData(send);
+    const extra = own.current.extend?.(term, { search, write: send });
     // The Mac's line keys, as Terminal and iTerm send them: xterm leaves ⌘ keys to the app.
     term.attachCustomKeyEventHandler((e) => {
+      if (e.type === 'keydown' && own.current.onKey?.(e, term)) {
+        e.preventDefault();
+        return false;
+      }
       const line = e.type === 'keydown' && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey ? MAC_LINE_KEYS[e.key] : undefined;
       if (!line) return true;
       e.preventDefault();
-      link.write(line);
+      send(line);
       return false;
     });
     // A click in the padding around the text types here too, so Tab completes instead of moving focus away.
@@ -81,17 +149,24 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
       }
     };
     el.addEventListener('mousedown', grab);
-    link.resize(term.cols, term.rows);
     const refit = (): void => {
       try {
         fit.fit();
-        link.resize(term.cols, term.rows);
+        link?.resize(term.cols, term.rows);
       } catch {
         // detached
       }
     };
+    // A box that's still moving (a panel sliding in) is fitted once it stops.
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const settled = (): void => {
+      clearTimeout(settle);
+      settle = setTimeout(refit, settleMs);
+    };
     live.current = { term, refit };
-    const resize = new ResizeObserver(refit);
+    // The e2e tests read what a terminal shows (a GPU-drawn one has no text in the page).
+    if (import.meta.env.DEV) ((window as unknown as { __belugaTerms?: Record<string, Terminal> }).__belugaTerms ??= {})[termKey] = term;
+    const resize = new ResizeObserver(settleMs > 0 ? settled : refit);
     resize.observe(el);
     // Follow the appearance (light/dark, accent) as it changes.
     const restyle = new MutationObserver(() => {
@@ -102,13 +177,17 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
     if (focus) term.focus();
     return () => {
       live.current = undefined;
+      clearTimeout(settle);
       el.removeEventListener('mousedown', grab);
       resize.disconnect();
       restyle.disconnect();
+      extra?.();
       input.dispose();
-      offData();
-      offExit();
-      link.close?.();
+      webgl?.dispose();
+      gone = true;
+      offData?.();
+      offExit?.();
+      link?.close?.();
       term.dispose();
     };
   }
