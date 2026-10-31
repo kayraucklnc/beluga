@@ -238,6 +238,7 @@ export const HANDLERS = {
   'workbench.quickPr': (s, id, opts) => bench(s)?.quickPr(id, opts),
   'workbench.mergeToBase': (s, id, opts) => bench(s)?.mergeToBase(id, opts),
   'workbench.gitFix': (s, id, fix, retry) => bench(s)?.gitFix(id, fix, retry),
+  'workbench.signInClaude': (s, key, channel) => bench(s)?.signInClaude(key, channel),
   'workbench.fixChecks': (s, id) => bench(s)?.fixChecks(id),
   'workbench.resolvePrConflicts': (s, id) => bench(s)?.resolvePrConflicts(id),
   'workbench.continueAfterMerge': (s, id) => bench(s)?.continueAfterMerge(id),

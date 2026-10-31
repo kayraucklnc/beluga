@@ -51,6 +51,17 @@ const QUIET_MS = 15_000;
 /** Claude Code's last stderr lines kept for a failed run's details. */
 const STDERR_KEEP = 40;
 
+/**
+ * Which settings files a run loads. Your own runs get your Claude Code as you set it up: your
+ * user settings (~/.claude/settings.json: hooks, permission rules, plugins) and your skills and
+ * commands. A project's .claude/ settings are never loaded, for anyone: it sits in the folder a
+ * friend with :rw access may write to, so they could plant hooks or permission rules there (its
+ * skills and commands come in alone, see skill-plugins.ts). A friend's or a guest's run loads nothing of yours.
+ */
+export function ownerSettings(input: Pick<AgentRunInput, 'ownerMcp' | 'guest'>): { settingSources: Array<'user'>; skills?: 'all' } {
+  return input.ownerMcp && !input.guest ? { settingSources: ['user'], skills: 'all' } : { settingSources: [] };
+}
+
 export interface ClaudeBackendOptions {
   readonly cwd: string;
   /** Let the agent edit files in cwd without asking (share was marked :rw). */
@@ -245,8 +256,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           ],
         },
         systemPrompt: { type: 'preset', preset: 'claude_code', append: runInstructions(input, opts.bridge.selfName(), opts.agentOf?.(input) ?? input.place?.agent) },
-        // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
-        settingSources: [],
+        ...ownerSettings(input),
         ...skills,
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),

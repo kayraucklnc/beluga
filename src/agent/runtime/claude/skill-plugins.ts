@@ -2,25 +2,22 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Options, SdkPluginConfig } from '@anthropic-ai/claude-agent-sdk';
-import { fillArguments, findSkill, plugins } from '../../../core/claude-code/skills.js';
+import { fillArguments, findSkill } from '../../../core/claude-code/skills.js';
 
 /**
- * Claude Code's skills and custom commands on your own runs (BLG-505). Runs load no settings files
- * (settingSources: [], so a friend with :rw can't plant permissions or hooks), and that also hid
- * every skill and command. They come back as plugins, the one way that loads them without settings:
- * the project's .claude, yours (~/.claude) and your enabled plugins (the / menu's list).
- *
- * A plugin also brings hooks (its hooks/hooks.json runs: confirmed live) and MCP servers, so none is
- * loaded from its own folder: each is a folder of Beluga's that links only what it may bring, under
- * a manifest without hooks or servers. Hooks stay Beluga's alone; MCP is Beluga's to mount
- * (skipMcpDiscovery). Custom commands Claude Code then names "project:fruit", so Beluga fills
- * them in itself before sending (expandCommand), the same as on Codex.
+ * A project's skills and custom commands on your own runs (BLG-505). Your own runs load your user
+ * settings, so yours (~/.claude) and your enabled plugins come in natively (ownerSettings in
+ * runner.ts, BLG-521); a project's .claude/ settings never load (a friend with :rw could plant
+ * permissions or hooks there), and that also hid the project's skills and commands. They come back
+ * as a plugin: a folder of Beluga's that links only the project's skills and commands, under a
+ * manifest without hooks or servers (a plugin's own hooks/hooks.json would run: confirmed live).
+ * Custom commands Claude Code then names "project:fruit", so Beluga fills them in itself before
+ * sending (expandCommand), the same as on Codex. `shadowPlugin` also serves a plugin folder of yours
+ * minus its hooks and servers, should one ever need loading this way.
  */
 
 /** What a .claude folder (the project's, yours) brings: its skills and commands, nothing else. */
 const FROM_CLAUDE_DIR = new Set(['skills', 'commands']);
-/** What a plugin brings that's left off: its hooks, MCP and LSP servers, settings, and its manifest (rewritten). */
-const LEFT_OFF = new Set(['hooks', '.mcp.json', '.lsp.json', 'settings.json', 'settings.local.json', '.claude-plugin']);
 const MANIFEST_LEFT_OFF = ['hooks', 'mcpServers', 'lspServers'];
 /** A folder not used for this long goes when another is made. */
 const STALE_MS = 30 * 24 * 60 * 60_000;
@@ -84,18 +81,15 @@ export function shadowPlugin(src: string, name: string, keep: (entry: string) =>
 }
 
 /**
- * The plugins option of an own run in `cwd`: the project's skills and commands, yours (`home`,
- * Claude Code's folder), then your enabled plugins', each without hooks or MCP. Folders go under `root`.
+ * The plugins option of an own run in `cwd`: the project's skills and commands, without hooks or MCP
+ * (yours and your plugins' load with your user settings). Folders go under `root`.
  */
 export async function skillPlugins(cwd: string, home: string, root: string): Promise<SdkPluginConfig[]> {
   const project = path.resolve(cwd, '.claude');
-  const own = (entry: string): boolean => FROM_CLAUDE_DIR.has(entry);
-  const dirs = [
-    shadowPlugin(project, 'project', own, root),
-    path.resolve(home) === project ? undefined : shadowPlugin(home, 'user', own, root),
-    ...(await plugins(home).catch(() => [])).map((p) => shadowPlugin(p.dir, p.name, (entry) => !LEFT_OFF.has(entry), root)),
-  ];
-  return dirs.flatMap((dir) => (dir ? [{ type: 'local' as const, path: dir, skipMcpDiscovery: true }] : []));
+  // Your own folder as the project (a run in ~): it already loads as your user settings.
+  if (path.resolve(home) === project) return [];
+  const dir = shadowPlugin(project, 'project', (entry) => FROM_CLAUDE_DIR.has(entry), root);
+  return dir ? [{ type: 'local' as const, path: dir, skipMcpDiscovery: true }] : [];
 }
 
 /** What a run's options add for skills: on your own runs every skill found; a friend's or a guest's get none. */

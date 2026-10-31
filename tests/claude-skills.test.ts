@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { expandCommand, skillOptions, skillPlugins } from '../src/agent/runtime/claude/skill-plugins.js';
+import { expandCommand, shadowPlugin, skillOptions, skillPlugins } from '../src/agent/runtime/claude/skill-plugins.js';
 import { createClaudeBackend } from '../src/agent/runtime/claude/runner.js';
 import { localRuntime } from '../src/agent/runtime/local.js';
 import { resumable, resumeFor } from '../src/agent/session-carry.js';
@@ -81,22 +81,22 @@ afterAll(() => {
 beforeEach(() => void sdk.calls.splice(0));
 
 describe('skills as plugins, without hooks or MCP from disk', () => {
-  it("loads the project's, yours and your enabled plugins' as plugins that link only what they may bring", async () => {
+  it("loads the project's skills and commands as a plugin that links only them (yours and your plugins load with your user settings)", async () => {
     const root = path.join(state, 'plugins-a');
     const found = await skillPlugins(project, home, root);
-    expect(found).toHaveLength(3);
-    for (const p of found) expect(p).toMatchObject({ type: 'local', skipMcpDiscovery: true });
-    const [own, yours, tools] = found.map((p) => p.path);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ type: 'local', skipMcpDiscovery: true });
+    const own = found[0]!.path;
     // The project's: skills and commands, linked; never its hooks or settings.
-    expect(readdirSync(own!).sort()).toEqual(['.claude-plugin', 'commands', 'skills']);
-    expect(lstatSync(path.join(own!, 'skills')).isSymbolicLink()).toBe(true);
-    expect(JSON.parse(readFileSync(path.join(own!, '.claude-plugin', 'plugin.json'), 'utf8'))).toEqual({ name: 'project' });
-    expect(readdirSync(yours!).sort()).toEqual(['.claude-plugin', 'commands']);
-    // A plugin keeps what its skills use (scripts) but not its hooks, MCP, or their manifest entries.
-    expect(readdirSync(tools!).sort()).toEqual(['.claude-plugin', 'commands', 'scripts', 'skills']);
-    expect(JSON.parse(readFileSync(path.join(tools!, '.claude-plugin', 'plugin.json'), 'utf8'))).toEqual({ name: 'tools', version: '1.0.0' });
-    // The same sources: the same folders, reused.
-    expect((await skillPlugins(project, home, root)).map((p) => p.path)).toEqual([own, yours, tools]);
+    expect(readdirSync(own).sort()).toEqual(['.claude-plugin', 'commands', 'skills']);
+    expect(lstatSync(path.join(own, 'skills')).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(own, '.claude-plugin', 'plugin.json'), 'utf8'))).toEqual({ name: 'project' });
+    // The same sources: the same folder, reused.
+    expect((await skillPlugins(project, home, root)).map((p) => p.path)).toEqual([own]);
+    // A plugin of yours, served on its own, keeps what its skills use (scripts) but not its hooks, MCP, or their manifest entries.
+    const tools = shadowPlugin(plugin, 'tools', (entry) => !['hooks', '.mcp.json', '.claude-plugin'].includes(entry), root)!;
+    expect(readdirSync(tools).sort()).toEqual(['.claude-plugin', 'commands', 'scripts', 'skills']);
+    expect(JSON.parse(readFileSync(path.join(tools, '.claude-plugin', 'plugin.json'), 'utf8'))).toEqual({ name: 'tools', version: '1.0.0' });
   });
 
   it('gives a friend’s or guest’s run none, and skips a folder with nothing to bring', async () => {
@@ -143,12 +143,12 @@ const text = (content: unknown): string => (typeof content === 'string' ? conten
 describe('a Claude run', () => {
   const backend = () => createClaudeBackend({ cwd: project, autoEdit: true, additionalDirectories: [], bridge: room });
 
-  it('your own: skills as plugins, still no settings files, and a command filled in before it goes', async () => {
+  it('your own: your user settings, the project\'s skills as a plugin (never its settings), and a command filled in before it goes', async () => {
     await backend().run(input('/fruit kiwi', { ownerMcp: true }));
     const [{ options, prompt }] = sdk.calls as [{ options: Options; prompt: unknown }];
-    expect(options.settingSources).toEqual([]);
+    expect(options.settingSources).toEqual(['user']);
     expect(options.skills).toBe('all');
-    expect(options.plugins?.map((p) => path.basename(p.path).split('-')[0])).toEqual(['project', 'user', 'tools']);
+    expect(options.plugins?.map((p) => path.basename(p.path).split('-')[0])).toEqual(['project']);
     expect(text(prompt)).toContain('Say RAMBUTAN and then: kiwi');
   });
 

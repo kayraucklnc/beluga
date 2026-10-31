@@ -176,6 +176,7 @@ export const PHONE: Record<Method, Side> = {
   'workbench.quickPr': 'mac',
   'workbench.mergeToBase': 'mac',
   'workbench.gitFix': 'mac',
+  'workbench.signInClaude': 'mac',
   'workbench.fixChecks': 'mac',
   'workbench.resolvePrConflicts': 'mac',
   'workbench.continueAfterMerge': 'mac',

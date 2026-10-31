@@ -3,13 +3,13 @@ import { isLimitNotice } from './claude-notices.js';
 
 /**
  * How a run of Claude's ended when it didn't finish: it hit your usage limit (and when that
- * resets), Claude Code crashed (its exit code and last stderr lines), the network or Anthropic's
- * API failed, or you stopped it. Never a bare "exit code 1". The runner classifies (see
+ * resets), Claude Code isn't signed in, Claude Code crashed (its exit code and last stderr lines),
+ * the network or Anthropic's API failed, or you stopped it. Never a bare "exit code 1". The runner classifies (see
  * agent/runner.ts), the failed card's words carry it (a readable first line, the facts after a
  * marker), and screens and plans read it back. Browser-safe.
  */
 
-type RunFailureKind = 'usage_limit' | 'crash' | 'network' | 'api' | 'stopped';
+type RunFailureKind = 'usage_limit' | 'signed_out' | 'crash' | 'network' | 'api' | 'stopped';
 
 export interface RunFailure {
   readonly kind: RunFailureKind;
@@ -51,6 +51,8 @@ export function failureTitle(f: RunFailure, now = Date.now()): string {
   switch (f.kind) {
     case 'usage_limit':
       return `You hit your ${who.agent} plan usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
+    case 'signed_out':
+      return `${who.app} isn’t signed in on this Mac`;
     case 'crash':
       return `${who.app} stopped unexpectedly${f.exitCode !== undefined ? ` (exit ${f.exitCode})` : ''}`;
     case 'network':
@@ -154,6 +156,8 @@ function codexRetryAt(text: string, now: number): number | undefined {
 const CODEX_LIMIT_INFO = 'usageLimitExceeded';
 /** Codex's limit words: "You've hit your usage limit. …" (longer than Claude's notice, so not one of those). */
 const CODEX_LIMIT = /you['’]ve hit your usage limit/i;
+// Claude Code has no login here ("Not logged in · Please run /login"), or the one it had stopped working.
+const SIGNED_OUT = /\bnot logged in\b|please run \/login|oauth token (has )?(expired|been revoked)/i;
 
 const NETWORK = /\b(ECONNRESET|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|fetch failed|network error|connection error|getaddrinfo)\b/i;
 const EXIT = /exited with code (-?\d+)|terminated by signal (\w+)/i;
@@ -177,7 +181,7 @@ export interface RunEnd {
   readonly errorInfo?: unknown;
 }
 
-/** How a run ended, in one of five kinds; never a bare "exit code 1". */
+/** How a run ended, in one of six kinds; never a bare "exit code 1". */
 export function classifyRun(end: RunEnd, now = Date.now()): RunFailure {
   const stderr = (end.stderr ?? []).slice(-STDERR_LINES).join('\n').trim();
   const said = [end.result, end.error].filter(Boolean).join('\n').trim();
@@ -189,6 +193,7 @@ export function classifyRun(end: RunEnd, now = Date.now()): RunFailure {
     const resetsAt = end.rejectedUntil || (limitLine ? resetFromText(limitLine, now) : undefined) || resetFromText(all, now);
     return { kind: 'usage_limit', ...(resetsAt ? { resetsAt } : {}), detail };
   }
+  if (SIGNED_OUT.test(all)) return { kind: 'signed_out', detail };
   if (NETWORK.test(all)) return { kind: 'network', detail };
   if (end.apiError && API_ERRORS.has(end.apiError)) return { kind: 'api', detail };
   const exit = EXIT.exec(end.error ?? '');
