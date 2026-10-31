@@ -48,7 +48,7 @@ test('the item under the pointer lights up, in the right-click menu and the ⋯ 
   await hide.hover();
   await expect.poll(() => background(finder)).toBe(CLEAR);
   await expect.poll(() => background(hide)).not.toBe(CLEAR);
-  await page.screenshot({ path: '../../.klaud/scratch/01-project-menu-hover.png' });
+  await page.screenshot({ path: '../../.beluga/scratch/01-project-menu-hover.png' });
   await page.keyboard.press('Escape');
 
   await project(page, 'bob-api').hover();
@@ -80,7 +80,7 @@ test('Delete Project… asks first; it leaves Beluga and the folder is never tou
   // No way to send the folder anywhere from here.
   await expect(alert.getByRole('checkbox')).toHaveCount(0);
   await expect(alert).toContainText('isn’t touched');
-  await page.screenshot({ path: '../../.klaud/scratch/02-delete-project-alert.png' });
+  await page.screenshot({ path: '../../.beluga/scratch/02-delete-project-alert.png' });
   // Cancel does nothing.
   await alert.getByRole('button', { name: 'Cancel' }).click();
   await expect(project(page, 'del-one')).toBeVisible();
@@ -108,6 +108,6 @@ test('a long folder path wraps inside the Delete Project alert', async ({ page }
   const box = (await alert.boundingBox())!;
   const rect = (await code.boundingBox())!;
   expect(rect.x + rect.width).toBeLessThanOrEqual(box.x + box.width);
-  await alert.screenshot({ path: '../../.klaud/scratch/03-delete-alert-long-path.png' });
+  await alert.screenshot({ path: '../../.beluga/scratch/03-delete-alert-long-path.png' });
   await alert.getByRole('button', { name: 'Cancel' }).click();
 });

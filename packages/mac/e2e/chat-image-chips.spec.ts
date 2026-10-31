@@ -7,7 +7,7 @@ import { expect, test, type Locator, type Page } from './fixtures.js';
  * the first word included.
  */
 
-const SHOTS = process.env.E2E_SHOTS ?? path.join(import.meta.dirname, '../../../.klaud/scratch');
+const SHOTS = process.env.E2E_SHOTS ?? path.join(import.meta.dirname, '../../../.beluga/scratch');
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const composer = (page: Page) => page.locator('main textarea:not(.xterm-helper-textarea)').last();
 

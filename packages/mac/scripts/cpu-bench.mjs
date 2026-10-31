@@ -4,7 +4,7 @@
 // opens the app in Playwright's WebKit (the engine Beluga's window runs; --headed draws it on
 // screen, which is what counts), sets the plan's in-progress task to work, and for each scene
 // measures CPU while the window is in front and while it's in the background (blurred and hidden,
-// as when you switch apps or cover Beluga). Results print and land in .klaud/scratch/cpu-<label>.json.
+// as when you switch apps or cover Beluga). Results print and land in .beluga/scratch/cpu-<label>.json.
 // To find what costs what: --peek (screenshots, running animations, DOM changes and socket
 // traffic while away), --kill=<selector> / --css=<rules> (inject style), --still (Reduce Motion),
 // --sample=<front|background> (a macOS `sample` of the web content process).
@@ -22,7 +22,7 @@ const secs = Number(flag('secs', 20));
 const scenes = flag('scenes', 'plan,board,chat').split(',');
 const port = Number(flag('port', 1491));
 const repo = path.resolve(import.meta.dirname, '../../..');
-const out = path.join(repo, '.klaud/scratch');
+const out = path.join(repo, '.beluga/scratch');
 
 const home = mkdtempSync(path.join(os.tmpdir(), 'beluga-bench-'));
 const children = [];

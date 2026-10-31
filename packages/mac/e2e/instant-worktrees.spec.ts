@@ -10,7 +10,7 @@ import { expect, test, type Page } from './fixtures.js';
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const panel = (page: Page) => page.getByRole('complementary', { name: 'Panel' });
-const SHOTS = process.env.BELUGA_SHOTS ?? path.resolve(import.meta.dirname, '../../../.klaud/scratch');
+const SHOTS = process.env.BELUGA_SHOTS ?? path.resolve(import.meta.dirname, '../../../.beluga/scratch');
 
 async function showProject(page: Page, row: string): Promise<void> {
   await expect(sidebar(page).getByRole('button', { name: 'bob-api' }).first()).toBeVisible();

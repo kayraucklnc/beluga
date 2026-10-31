@@ -8,7 +8,7 @@ import { expect, test, type Page } from './fixtures.js';
  * looked like a second square with a phone icon.)
  */
 
-const SHOTS = process.env.E2E_SHOTS ?? path.join(import.meta.dirname, '../../../.klaud/scratch');
+const SHOTS = process.env.E2E_SHOTS ?? path.join(import.meta.dirname, '../../../.beluga/scratch');
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const settings = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
 
