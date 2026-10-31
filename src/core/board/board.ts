@@ -230,7 +230,7 @@ export class Board {
   private autoTasks = false;
   /** Sub-tasks are going Done with their parent: parents wait until it's over to follow them. */
   private cascading = 0;
-  /** A merge is moving tasks to Done (see shipping): their sub-tasks stay where they are. */
+  /** A merge is moving tasks to Done (see shipping): only their sub-tasks under way go with them. */
   private merging = 0;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   /** board.json couldn't be read nor moved aside: changes stay in memory rather than overwrite it. */
@@ -796,8 +796,8 @@ export class Board {
   }
 
   /**
-   * A merge moving a task to Done: its sub-tasks don't go with it (they may be work for later, or
-   * done elsewhere); the ones done in the same worktree follow it there themselves.
+   * A merge moving a task to Done: only its sub-tasks under way with no worktree of their own go with
+   * it (see doneWithParent); ones filed for later stay, ones a worktree does follow that worktree.
    */
   private shipping<T>(fn: () => T): T {
     this.merging++;
@@ -987,7 +987,7 @@ export class Board {
     this.issues = this.issues.map((i) => (i.id === issue.id ? next : i));
     this.deps.store.dispatch({ type: 'board_issue', issue: next, ...(origin ? { origin } : {}) });
     this.save();
-    if (status === 'done' && issue.status !== 'done' && !this.merging) this.doneWithParent(next);
+    if (status === 'done' && issue.status !== 'done') this.doneWithParent(next);
     // Its parent follows its sub-tasks: this one moved, or moved to another parent.
     const moved = status !== issue.status;
     if (issue.parent && (moved || next.parent !== issue.parent)) this.rollUp(issue.parent);
@@ -1012,12 +1012,17 @@ export class Board {
     ]);
   }
 
-  /** A task reached Done: its sub-tasks still open go with it (theirs with them, in turn). */
+  /**
+   * A task reached Done: its sub-tasks still open go with it (theirs with them, in turn). By a merge,
+   * only the ones under way with no worktree of their own: one filed for later stays, and one a
+   * worktree does or carries follows that worktree.
+   */
   private doneWithParent(parent: Issue): void {
     const beluga: Actor = { kind: 'beluga' };
+    const goes = (kid: Issue): boolean => !this.merging || ((kid.status === 'in_progress' || kid.status === 'in_review') && !kid.worktrees.length && !kid.carriedBy);
     this.cascading++;
     try {
-      for (const kid of this.issues.filter((i) => i.parent === parent.id && isOpen(i.status))) {
+      for (const kid of this.issues.filter((i) => i.parent === parent.id && isOpen(i.status) && goes(i))) {
         this.change(kid, { status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [this.entry(beluga, 'status', `done with its parent ${parent.key}: ${statusText(STATUS_INFO[kid.status].label, STATUS_INFO.done.label)}`)]);
       }
     } finally {

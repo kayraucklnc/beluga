@@ -457,8 +457,10 @@ describe('work carried by another worktree, and sub-tasks done with their parent
     const t2 = board.create({ projectId: 'api', title: 'y', status: 'in_progress' }, me);
     board.linkWorktree(t2.key, 'w3', {}, me);
     const kid = board.create({ projectId: 'api', title: 'z', parent: t2.key }, me);
+    const underway = board.create({ projectId: 'api', title: 'moved along by hand', status: 'in_progress', parent: t2.key }, me);
     board.worktreeMerged('w3');
-    expect([t2, kid].map((i) => board.need(i.key).status)).toEqual(['done', 'todo']);
+    expect([t2, kid, underway].map((i) => board.need(i.key).status)).toEqual(['done', 'todo', 'done']);
+    expect(board.need(underway.key).activity.at(-1)?.text).toBe(`done with its parent ${t2.key}: moved this from In Progress to Done`);
   });
 
   it('a carried task moved back out of the work no longer ships with that worktree', () => {
