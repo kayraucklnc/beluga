@@ -45,6 +45,16 @@ describe('visuals in the terminal', () => {
     expect(out).toMatch(/And\s*gone\./);
   });
 
+  it('leaves out, in the chat, the rows written under a table’s token for the terminal', () => {
+    const table = viewBlock(TABLE, VIEW_FENCE);
+    const graph = viewBlock(GRAPH, GRAPH_FENCE);
+    const text = 'Top customers:\n\n[[visual:1]]\n\n| name | revenue |\n|---|---|\n| Acme | 1 |\n\nAnd the flow:\n[[visual:2]]\n| kept | because a graph |\n';
+    const out = expandVisuals(text, (n) => (n === 1 ? table : n === 2 ? graph : undefined));
+    expect(out).not.toContain('| Acme | 1 |');
+    expect(out).toContain('| kept | because a graph |');
+    expect(out).toContain(table);
+  });
+
   it('the terminal’s show tool keeps the view and answers with its token', async () => {
     const kept: string[] = [];
     const shelf = new TerminalShelf({ add: (b) => kept.push(b) + 6 });

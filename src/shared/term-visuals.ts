@@ -82,7 +82,13 @@ export function visualsIn(text: string): number[] {
  */
 export function expandVisuals(text: string, blockOf: (n: number) => string | undefined): string {
   if (!text.includes('[[visual:')) return text;
-  return text
+  // A table's first rows, written under its token for the terminal, go: the live table is right there.
+  const echo = /(\[\[visual:(\d{1,6})\]\]`?[ \t]*\n)(?:[ \t]*\n)*((?:[ \t]*\|[^\n]*\|[ \t]*(?:\n|$))+)/g;
+  const lean = text.replace(echo, (whole, token: string, n: string) => {
+    const block = blockOf(Number(n));
+    return block && describeVisual(Number(n), block).kind === 'table' ? token : whole;
+  });
+  return lean
     .replace(/[ \t]*`?\[\[visual:(\d{1,6})\]\]`?[ \t]*/g, (_m, n: string) => {
       const block = blockOf(Number(n));
       return block ? `\n\n${block}\n\n` : '';

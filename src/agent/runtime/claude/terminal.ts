@@ -110,6 +110,12 @@ export async function claudeTerminal(input: AgentRunInput, sink: TerminalSink, o
       'user',
       '--mcp-config',
       JSON.stringify({ mcpServers: mounted.servers }),
+      // Beluga's own tools are checked by Beluga (the tool host's gate: its rules, and you for the
+      // risky ones), as in a chat run: Claude Code doesn't ask about them a second time.
+      '--allowedTools',
+      Object.keys(mounted.servers)
+        .map((suite) => `mcp__${suite}`)
+        .join(','),
       '--settings',
       JSON.stringify(gateHookSettings(opts.node ?? process.execPath, gateHookFile(opts.home))),
       '--append-system-prompt',

@@ -145,7 +145,8 @@ export function ChatView() {
       {view.kind === 'workspace' ? <PrStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <SharedStrip wsId={view.id} /> : null}
       {view.kind === 'workspace' ? <EnvStrip workspaceId={view.id} /> : null}
-      {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}
+      {/* Its own terminal driving it: the banner below says so (not a Claude Code session beside it). */}
+      {view.kind === 'workspace' && !driving ? <LiveStrip workspaceId={view.id} /> : null}
       <ChatLog key={channel} channel={channel === 'draft' ? '__draft__' : channel} empty={empty} />
       {ws?.askOnly && !ws.archived && !planHome ? <AskBanner wsId={ws.id} /> : null}
       <Attention />

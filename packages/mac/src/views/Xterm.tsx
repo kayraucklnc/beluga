@@ -42,7 +42,10 @@ export interface XtermProps {
    * full-screen program like Claude Code draws itself again at each new size.
    */
   readonly settleMs?: number;
-  /** Start at the bottom row, the way a chat sits (Claude Code's prompt is at the bottom from the first line). */
+  /**
+   * Keep what's shown against the bottom, the way a chat sits: while the program's lines don't fill
+   * the terminal (a fresh start, after it clears), they're drawn at its foot, the prompt last.
+   */
   readonly fromBottom?: boolean;
 }
 
@@ -116,8 +119,6 @@ export function Xterm({ termKey, start, focus = true, gpu = false, extend, onKey
     const send = (d: string): void => (link ? link.write(d) : void waiting.push(d));
     const attach = (): void => {
       if (gone) return;
-      // What it prints starts on the last row and scrolls up, as in a chat (the rows above stay blank).
-      if (fromBottom) term.write('\n'.repeat(Math.max(0, term.rows - 1)));
       const l = client.attachTerminal(termKey);
       link = l;
       offData = l.onData((d) => term.write(d));
@@ -157,6 +158,25 @@ export function Xterm({ termKey, start, focus = true, gpu = false, extend, onKey
         // detached
       }
     };
+    // Against the bottom: the screen is moved down by the rows under the last one in use (until it's full).
+    const anchored = fromBottom
+      ? term.onRender(() => {
+          const b = term.buffer.active;
+          const box = term.element;
+          if (!box) return;
+          let last = b.cursorY;
+          for (let y = term.rows - 1; y > last; y--) {
+            if (b.getLine(b.viewportY + y)?.translateToString(true).trim()) {
+              last = y;
+              break;
+            }
+          }
+          const free = b.baseY > 0 || b.type === 'alternate' ? 0 : term.rows - 1 - last;
+          const row = (box.querySelector('.xterm-screen') as HTMLElement | null)?.clientHeight ?? 0;
+          const shift = free > 0 && row ? Math.round((free * row) / term.rows) : 0;
+          box.style.transform = shift ? `translateY(${shift}px)` : '';
+        })
+      : undefined;
     // A box that's still moving (a panel sliding in) is fitted once it stops.
     let settle: ReturnType<typeof setTimeout> | undefined;
     const settled = (): void => {
@@ -178,6 +198,7 @@ export function Xterm({ termKey, start, focus = true, gpu = false, extend, onKey
     return () => {
       live.current = undefined;
       clearTimeout(settle);
+      anchored?.dispose();
       el.removeEventListener('mousedown', grab);
       resize.disconnect();
       restyle.disconnect();

@@ -45,8 +45,8 @@ test('a conversation as its agent’s terminal: links open visuals beside it, an
   await modes(page).getByRole('tab', { name: 'Terminal' }).click();
   await expect(page.locator('[data-pane="agent"] .xterm')).toBeVisible();
   await expect.poll(() => screen(page, /:agent$/), { timeout: 20_000 }).toContain('Claude Code');
-  // It starts at the bottom, as a chat does: the rows above its first line are blank.
-  expect((await screen(page, /:agent$/)).split('\n').slice(0, 5).join('').trim()).toBe('');
+  // It sits at the bottom, as a chat does: the screen is moved down while its lines don't fill it.
+  await expect(page.locator('[data-pane="agent"] .xterm')).toHaveCSS('transform', /^matrix\(1, 0, 0, 1, 0, [1-9]/);
 
   // A graph: its link is drawn over the token, and opens the real graph beside the terminal.
   await typeInTerminal(page, 'map how a payment flows');
