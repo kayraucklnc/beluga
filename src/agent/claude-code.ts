@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { chmod, rename, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -53,6 +54,20 @@ export const claudeCodeBinary = (pin: ClaudeCodePin, home = belugaHome()): strin
 export function claudeCodePath(): string | undefined {
   const pin = claudeCodePin();
   return pin ? claudeCodeBinary(pin) : undefined;
+}
+
+/**
+ * The `claude` Beluga runs, to start by hand (signing in): the downloaded one, else the SDK's own
+ * platform package, else whichever is on PATH.
+ */
+export function claudeCodeCommand(): string {
+  const pinned = claudeCodePath();
+  if (pinned && existsSync(pinned)) return pinned;
+  try {
+    return createRequire(import.meta.url).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`);
+  } catch {
+    return 'claude';
+  }
 }
 
 /** The base64 sha512 of a file, as npm's integrity writes it. */

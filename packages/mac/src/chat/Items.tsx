@@ -35,6 +35,9 @@ import { PersonButton } from '../network/PersonProfile.js';
 import { KnockCard } from '../team/Team.js';
 import s from './chat.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
+import { revealTerminal } from '../lib/panel.js';
+import { claimShell } from '../lib/ws-shells.js';
+import { globalShellId, globalShellNumber, isGlobalShell } from '@beluga/shared/terminal-keys.js';
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
@@ -424,6 +427,15 @@ function TurnCard({
   // The same session goes on, ahead of what queued behind the failed turn (that follows, in order).
   const resume = (): void =>
     void client.api.session.submit(`${item.channel === 'room' && group ? '@claude ' : ''}${CONTINUE_PROMPT}`, { channel: item.channel, urgent: true }).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  // Claude Code isn't signed in: Continue would fail the same way. Sign In runs `claude auth login` in a
+  // shell you can see (the worktree's own, else the Terminal's), and Claude goes on once it ends well.
+  const signIn = (): void => {
+    const terminals = client.store.getState().terminals;
+    const key = item.channel.startsWith('ws:') ? claimShell(item.channel.slice(3), terminals) : globalShellId(Math.max(0, ...Object.keys(terminals).filter(isGlobalShell).map(globalShellNumber)) + 1);
+    ui.patch({ termKey: key });
+    requestAnimationFrame(() => revealTerminal(client.store.getState(), true));
+    void client.api.workbench.signInClaude(key, item.channel).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  };
   const hasSteps = item.steps.length > 0 || item.subagents.length > 0;
   const folded = answered && prefs.doneSteps === 'fold' && !steps.shown;
   const lead: ActionItem[] = stoppable
@@ -488,7 +500,13 @@ function TurnCard({
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>
           ) : null}
-          {limited ? (
+          {limited && failure?.kind === 'signed_out' ? (
+            <div className={s.limitActions}>
+              <Button size="small" icon="person" onClick={signIn} title="Sign in to Claude in your browser; then Claude picks up where it stopped">
+                Sign In
+              </Button>
+            </div>
+          ) : limited ? (
             <div className={s.limitActions}>
               <Button size="small" icon="play" onClick={resume} title="Send “continue”: Claude picks up where it stopped">
                 Continue
