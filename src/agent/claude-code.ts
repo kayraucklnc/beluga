@@ -44,7 +44,10 @@ export function claudeCodePin(file: URL | string = MANIFEST): ClaudeCodePin | un
 export const claudeCodeDir = (home = belugaHome()): string => path.join(home, 'claude-code');
 
 /** Where this pin's binary lives once downloaded. */
-export const claudeCodeBinary = (pin: ClaudeCodePin, home = belugaHome()): string => path.join(claudeCodeDir(home), pin.version, 'claude');
+/** The binary's name in its package: claude, or claude.exe on Windows. */
+const CLAUDE_EXE = process.platform === 'win32' ? 'claude.exe' : 'claude';
+
+export const claudeCodeBinary = (pin: ClaudeCodePin, home = belugaHome()): string => path.join(claudeCodeDir(home), pin.version, CLAUDE_EXE);
 
 /**
  * The path to hand the SDK (`pathToClaudeCodeExecutable`), known at once: the downloaded one in a
@@ -64,7 +67,7 @@ export function claudeCodeCommand(): string {
   const pinned = claudeCodePath();
   if (pinned && existsSync(pinned)) return pinned;
   try {
-    return createRequire(import.meta.url).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`);
+    return createRequire(import.meta.url).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/${CLAUDE_EXE}`);
   } catch {
     return 'claude';
   }
@@ -107,7 +110,7 @@ export async function installClaudeCode(pin: ClaudeCodePin, opts: { home?: strin
     await rm(unpack, { recursive: true, force: true });
     mkdirSync(unpack, { recursive: true });
     await promisify(execFile)('tar', ['-xzf', tgz, '-C', unpack, '--strip-components=1', 'package/claude']);
-    await chmod(path.join(unpack, 'claude'), 0o755);
+    await chmod(path.join(unpack, CLAUDE_EXE), 0o755);
     await rm(path.dirname(bin), { recursive: true, force: true });
     await rename(unpack, path.dirname(bin));
   } finally {

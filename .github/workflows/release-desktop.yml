@@ -1,0 +1,82 @@
+name: Release for Linux and Windows
+
+# When the Mac release is published (scripts/release-mac.mjs makes it), or by hand for a tag:
+# build Beluga for Linux (AppImage, deb, rpm) and Windows (installer), put them on the same
+# release, and add both to its latest.json so installed copies update themselves.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release's tag (v1.9.0-mac)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-desktop-${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  build:
+    # Only the app's releases (CI's npm releases are tagged v<version> without -mac).
+    if: github.event_name == 'workflow_dispatch' || endsWith(github.event.release.tag_name, '-mac')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Linux's web view, tray and packaging libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev rpm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: packages/mac/src-tauri
+      - run: npm ci
+      - run: npm ci
+        working-directory: packages/mac
+      - name: Beluga's engine and Node, bundled
+        run: node scripts/build-sidecar.mjs
+      - name: The app
+        working-directory: packages/mac
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build
+      - run: node scripts/release-desktop.mjs collect --tag "$TAG" --out release-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beluga-${{ runner.os }}
+          path: release-out
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: node scripts/release-desktop.mjs publish --tag "$TAG" --dir artifacts
