@@ -131,6 +131,48 @@ describe('a team board over the network', () => {
     }
   }, 90_000);
 
+  it('private tasks stay home, sharing sends them, and making one private again takes it back (BLG-501)', async () => {
+    net = await crowd();
+    const ata = await teamMac(net, 'ata', [{ id: 'pa', name: 'api', repo: 'acme/api' }], withSync);
+    const kay = await teamMac(net, 'kay', [{ id: 'pk', name: 'api', repo: 'acme/api' }], withSync);
+    macs.push(ata, kay);
+    const shared = ata.board.create({ projectId: 'pa', title: 'Shared' }, personOf(ata));
+    const mine = ata.board.create({ projectId: 'pa', title: 'X launch thread', private: true }, personOf(ata));
+    const kid = ata.board.create({ projectId: 'pa', title: 'Draft the hook', parent: mine.id }, personOf(ata));
+    expect(kid.private).toBe(true);
+    await befriend(ata.person, kay.person);
+    await teamUp(ata, 'pa', kay, 'pk');
+    await settle(() => issue(kay, shared.id));
+
+    // Made after teaming up, changed: still never sent.
+    const later = ata.board.create({ projectId: 'pa', title: 'Bio rewrite', private: true }, personOf(ata));
+    ata.board.update(mine.id, { status: 'in_progress' }, personOf(ata));
+    ata.board.comment(shared.id, 'marker', personOf(ata));
+    await settle(() => issue(kay, shared.id)?.activity.some((a) => a.body === 'marker'));
+    for (const t of [mine, kid, later]) expect(issue(kay, t.id)).toBeUndefined();
+
+    // Share with Team: the task and its sub-tasks arrive as they are now.
+    ata.board.setPrivate(mine.id, false, personOf(ata));
+    await settle(() => issue(kay, mine.id) && issue(kay, kid.id));
+    expect(issue(kay, mine.id)).toMatchObject({ title: 'X launch thread', status: 'in_progress' });
+    expect(issue(kay, kid.id)?.parent).toBe(mine.id);
+    expect(issue(kay, mine.id)!.private).toBeUndefined();
+
+    // Kay edits it; then ata takes it back: gone from kay's board, ata's copy untouched by kay's later word.
+    kay.board.update(mine.id, { priority: 'high' }, personOf(kay));
+    await settle(() => issue(ata, mine.id)?.priority === 'high');
+    ata.board.setPrivate(mine.id, true, personOf(ata));
+    await settle(() => !issue(kay, mine.id) && !issue(kay, kid.id));
+    expect(issue(ata, mine.id)).toMatchObject({ private: true, title: 'X launch thread', priority: 'high' });
+    expect(issue(ata, kid.id)?.private).toBe(true);
+
+    // Shared again: back on kay's board with what it had, and the newest of ata's changes.
+    ata.board.update(mine.id, { title: 'X launch thread v2' }, personOf(ata));
+    ata.board.setPrivate(mine.id, false, personOf(ata));
+    await settle(() => issue(kay, mine.id)?.title === 'X launch thread v2' && issue(kay, kid.id));
+    expect(issue(kay, mine.id)?.priority).toBe('high');
+  }, 90_000);
+
   it('three teammates agree even where two of them aren’t friends', async () => {
     net = await crowd();
     const ata = await teamMac(net, 'ata', [{ id: 'pa', name: 'api', repo: 'acme/api' }], withSync);

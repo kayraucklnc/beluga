@@ -253,13 +253,14 @@ export class TaskSync {
         seen.add(remote.id);
         cursor = Math.max(cursor ?? 0, remote.updatedAt);
         const issue = this.byRemote(projectId, start.provider, remote.id);
-        if (issue) await this.eachAsync(counts, () => this.merge(provider, start, issue, remote, counts));
+        // Private here (BLG-501): left alone both ways until it's shared again.
+        if (issue && !issue.private) await this.eachAsync(counts, () => this.merge(provider, start, issue, remote, counts));
       }
       // New here: sent over, parents first.
       for (const issue of this.toSend(projectId, start)) await this.eachAsync(counts, () => this.send(provider, start, issue, counts));
       // Changed here only (the tracker's side is as it was).
       for (const issue of this.deps.board.list()) {
-        if (issue.projectId !== projectId || issue.link?.provider !== start.provider || seen.has(issue.link.id) || isArchived(issue)) continue;
+        if (issue.projectId !== projectId || issue.link?.provider !== start.provider || seen.has(issue.link.id) || isArchived(issue) || issue.private) continue;
         await this.eachAsync(counts, () => this.merge(provider, start, issue, undefined, counts));
       }
       if (counts.failed) error = { code: 'remote', message: `${counts.failed === 1 ? 'A task' : `${counts.failed} tasks`} couldn’t be synced. Beluga tries again next time.`, at: this.now() };
@@ -337,7 +338,7 @@ export class TaskSync {
   /** Tasks here to send over: made since connecting (or open ones from before, when asked), parents first. */
   private toSend(projectId: string, e: Entry): Issue[] {
     const board = this.deps.board;
-    const ready = board.list().filter((i) => i.projectId === projectId && !i.link && !isArchived(i) && !i.drafting && (i.createdAt >= e.connectedAt || (e.pushExisting && isOpen(i.status))));
+    const ready = board.list().filter((i) => i.projectId === projectId && !i.link && !isArchived(i) && !i.drafting && !i.private && (i.createdAt >= e.connectedAt || (e.pushExisting && isOpen(i.status))));
     const depth = (i: Issue): number => {
       let n = 0;
       for (let at = i.parent; at && n < 50; n++) at = board.get(at)?.parent;

@@ -2,6 +2,7 @@ import { NewLabelSheet } from '../../tasks/NewLabelSheet.js';
 import { ProjectContextSheet } from '../../tasks/ProjectContextSheet.js';
 import { EnvironmentSheet } from '../EnvironmentSheet.js';
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
+import { BoardSheet } from '../../tasks/boards.js';
 import { NewSentinelSheet } from '../../sentinel/NewSentinelSheet.js';
 import { AddTileSheet } from '../../sentinel/AddTileSheet.js';
 import { DocumentSheet } from '../../sentinel/DocumentSheet.js';
@@ -192,7 +193,9 @@ export function NativeSheets() {
     case 'share_project':
       return <ShareProjectSheet key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_task':
-      return <NewTaskSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
+      return <NewTaskSheet {...(sheet.boardId ? { boardId: sheet.boardId } : {})} {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
+    case 'task_board':
+      return <BoardSheet key={sheet.boardId ?? 'new'} {...(sheet.boardId ? { boardId: sheet.boardId } : {})} {...(sheet.repos ? { repos: sheet.repos } : {})} close={close} />;
     case 'new_label':
       return <NewLabelSheet key={sheet.projectId} projectId={sheet.projectId} {...(sheet.issueId ? { issueId: sheet.issueId } : {})} close={close} />;
     case 'task_sync':

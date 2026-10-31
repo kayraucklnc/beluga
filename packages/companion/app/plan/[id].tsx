@@ -48,7 +48,7 @@ export default function Plan() {
   const [menu, setMenu] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
   const [picking, setPicking] = useState(false);
-  // Who works its milestones and tasks (1.34, BLG-498): its own pick, else your default; changed from ⋯.
+  // Who works its milestones and tasks (1.35, BLG-498): its own pick, else your default; changed from ⋯.
   const defaultGroup = p?.agents?.groups.find((g) => g.isDefault);
   const agentWords = p?.agent ? agentName(p.agent, { model: true }) : defaultGroup ? `Your agent (${defaultGroup.label})` : 'Your agent';
   const agentRuntime = p?.agent?.runtime ?? defaultGroup?.runtime;

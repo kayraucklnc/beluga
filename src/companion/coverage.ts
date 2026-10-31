@@ -182,6 +182,11 @@ export const PHONE: Record<Method, Side> = {
   'workbench.openPr': 'mac',
   'workbench.mergePr': 'mac',
   'workbench.prStep': 'mac',
+  'workbench.prConversation': 'mac',
+  'workbench.prPost': 'mac',
+  'workbench.addressPrComments': 'mac',
+  'workbench.excerpt': 'mac',
+  'workbench.openCode': 'mac',
   'workbench.cancelMergeWhenReady': 'mac',
   'workbench.refreshPrs': 'mac',
   'workbench.editPrPrompt': 'mac',
@@ -326,6 +331,7 @@ export const PHONE: Record<Method, Side> = {
   // ---- the board: a comment and a task's status (moving it along), nothing structural
   'board.create': 'mac',
   'board.update': 'mac',
+  'board.setPrivate': 'mac',
   'board.move': 'phone',
   'board.editBrief': 'mac',
   'board.restoreRevision': 'mac',
@@ -340,6 +346,9 @@ export const PHONE: Record<Method, Side> = {
   'board.setAgent': 'phone',
   'board.settleGone': 'mac',
   'board.setAutoTasks': 'mac',
+  'board.createBoard': 'mac',
+  'board.editBoard': 'mac',
+  'board.removeBoard': 'mac',
   'board.setPrefix': 'mac',
   'board.createLabel': 'mac',
   'board.setContext': 'mac',
@@ -408,6 +417,7 @@ export const PHONE: Record<Method, Side> = {
   // Team boards: answering an offer is the phone's (a NeedsYou card); leaving a team is the Mac's.
   'team.answer': 'phone',
   'team.leave': 'mac',
+  'team.befriend': 'mac',
   'team.ackAssignment': 'phone',
   // Shared plans: sharing one is the Mac's (its menu); reviewing one and settling suggestions are answers, the phone's too.
   'team.sharePlan': 'mac',

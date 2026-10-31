@@ -18,6 +18,8 @@ export const TEAM_API = {
   'team.answer': { args: z.tuple([peerId, projectId, z.boolean()]) },
   // Leave a project's team (one teammate, or everyone): your tasks stay on your board, they stop staying in step.
   'team.leave': { args: z.tuple([projectId, peerId.optional()]) },
+  // Ask someone on a project's team who isn't your friend to be friends (BLG-510): it reaches them through the team; added only if they accept → their name.
+  'team.befriend': { args: z.tuple([projectId, peerId]) },
   // A task a teammate gave you: you've seen it (it leaves your inbox; it stays yours).
   'team.ackAssignment': { args: z.tuple([z.string().min(1).max(40)]) },
   // Share Plan with Team (true) or Stop Sharing (false): teammates see its draft read-only, with live changes.

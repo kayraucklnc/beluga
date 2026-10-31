@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowUp, Check, Circle, CircleDashed, CircleDot, Eye, Layers, type LucideIcon, Plus, Sparkles, User, X, XCircle } from 'lucide-react-native';
+import { ArrowUp, Check, Circle, CircleDashed, CircleDot, Eye, Layers, Lock, type LucideIcon, Plus, Sparkles, User, X, XCircle } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -43,7 +43,7 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
   return (
     <View>
       {!first ? <Hairline style={{ marginLeft: 56 }} /> : null}
-      <Press onPress={() => router.push(taskHref(t))} accessibilityLabel={`${t.key} ${t.title}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
+      <Press onPress={() => router.push(taskHref(t))} accessibilityLabel={`${t.key} ${t.title}${t.private ? ', private' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
         <View style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
           <st.Icon color={toneInk(st.tone)} size={18} />
         </View>
@@ -55,12 +55,13 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
             <T v="caption" style={{ fontWeight: '600', fontVariant: ['tabular-nums'] }}>
               {t.key}
             </T>
-            {[t.epic ? (t.epic.total ? `Epic, ${t.epic.done}/${t.epic.total} done` : 'Epic') : undefined, t.epicKey ? `in ${t.epicKey}` : undefined, t.assignee, t.working, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined]
+            {[t.epic ? (t.epic.total ? `Epic, ${t.epic.done}/${t.epic.total} done` : 'Epic') : undefined, t.epicKey ? `in ${t.epicKey}` : undefined, t.repo, t.assignee, t.working, t.checks ? `${t.checks.done}/${t.checks.total} checked` : undefined, t.pr ? `PR #${t.pr.number}` : undefined]
               .filter(Boolean)
               .map((x) => `  ·  ${x}`)
               .join('')}
           </T>
         </View>
+        {t.private ? <Lock color={color.text3} size={14} /> : null}
         {pr && (t.priority === 'urgent' || t.priority === 'high') ? <Pill label={pr.label} tone={pr.tone} /> : null}
       </Press>
     </View>
@@ -178,7 +179,7 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
     if (!p || !draft || busy) return;
     haptic.success();
     setBusy('add');
-    // The agent goes only to a Mac that takes it (1.34), and only when it isn't your default.
+    // The agent goes only to a Mac that takes it (1.35), and only when it isn't your default.
     const base = calls.addTask(p.id, draft);
     const call: Call = agent && agentPicksSupported() ? withAgent(base as Call<'companion.addTask'>, agent) : base;
     const r = await store.call<{ id: string; key: string; more?: Array<{ id: string; key: string }> }>(call, { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));

@@ -499,7 +499,7 @@ export class DemoTransport implements Transport {
         }
         return ok();
       }
-      // 1.31 (BLG-446): the agent picker: a model of the same runtime, or another runtime's agent.
+      // 1.32 (BLG-446): the agent picker: a model of the same runtime, or another runtime's agent.
       case 'workbench.setModel':
       case 'workbench.setAgent': {
         const c = w.convs.get(`conv:${str(0)}`);

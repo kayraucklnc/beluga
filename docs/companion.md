@@ -262,7 +262,10 @@ refs, so its cells stay plain text and Kept data isn't shown.
 Delete it (yours: for your friend too) or Edit your own (`network.messages.delete`, `network.messages.edit`;
 only one whose words reach the phone whole, `ChatMessageView.editable`), and Clear chat from the
 chat's ••• (`network.clear`, on the Mac only: your friend keeps theirs). An older Mac offers none of them.
-1.31 (BLG-446) gives the phone the composer's agent picker: a conversation's ••• › Agent opens runtimes as
+1.31 (BLG-500): boards and repos are many to many. `TasksView.projects` are boards (a repo's own, or one
+covering several), a task on a board of several says which repo it runs in (`TaskSummary.repo`), and
+`companion.draftTask` / `addTask` take a board's id too.
+1.32 (BLG-446) gives the phone the composer's agent picker: a conversation's ••• › Agent opens runtimes as
 groups with their models (`ConvView.agent`), your default agent first, one your Mac doesn't run greyed with
 what's missing. A model of the same runtime is `workbench.setModel`; another runtime, `workbench.setAgent`.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.

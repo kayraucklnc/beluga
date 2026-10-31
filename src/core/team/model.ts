@@ -26,19 +26,29 @@ export interface TeamOffer {
   readonly repo: string;
   readonly state: TeamOfferState;
   readonly at: number;
+  /** Who's on their team already (their invite said so, BLG-510), or on yours (you'd bring them in). */
+  readonly team?: readonly string[];
 }
 
 export interface Teammate {
   readonly peerId: string;
   readonly name: string;
   readonly since: number;
+  /**
+   * On the team through others (BLG-510): you two didn't team up yourselves, and may not be friends.
+   * Tasks and their changes reach them all the same; a chat or a worktree can only be shared with a friend.
+   */
+  readonly indirect?: true;
 }
 
 /** A project of yours worked on as a team. */
 export interface ProjectTeam {
   readonly projectId: string;
   readonly repo: string;
+  /** Everyone on the team but you: those you teamed up with, and those on it through them (BLG-510). */
   readonly mates: readonly Teammate[];
+  /** Friends of yours with the repository who aren't on the team: anyone on it can invite them (BLG-510). */
+  readonly invitable?: ReadonlyArray<{ readonly peerId: string; readonly name: string; readonly state?: TeamOfferState }>;
 }
 
 /** A teammate gave you a task (or your Claude): it waits in your inbox until you've seen it. */
@@ -215,10 +225,18 @@ export function workingWords(names: readonly string[]): string | undefined {
 }
 
 /** "Ata also works on acme/api" / "Ata wants to team up on acme/api": what an offer says. */
-export function offerWords(offer: Pick<TeamOffer, 'name' | 'repo' | 'state'>): string {
-  if (offer.state === 'invited') return `${offer.name} wants to team up on ${offer.repo}`;
-  if (offer.state === 'asked') return `Waiting for ${offer.name} to team up on ${offer.repo}`;
-  return `${offer.name} also works on ${offer.repo}`;
+export function offerWords(offer: Pick<TeamOffer, 'name' | 'repo' | 'state' | 'team'>): string {
+  const others = offer.team?.filter((n) => n !== offer.name) ?? [];
+  if (offer.state === 'invited') return others.length ? `${offer.name} invited you to the ${offer.repo} team, with ${andNames(others)}` : `${offer.name} wants to team up on ${offer.repo}`;
+  if (offer.state === 'asked') return `Waiting for ${offer.name} to join the ${offer.repo} team`;
+  return others.length ? `${offer.name} also works on ${offer.repo}: invite them to the team` : `${offer.name} also works on ${offer.repo}`;
+}
+
+/** "Ata", "Ata and Mia", "Ata, Mia and 2 others". */
+export function andNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length <= 3) return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return `${names.slice(0, 2).join(', ')} and ${names.length - 2} others`;
 }
 
 /** The plain words under an offer: what teaming up shares, and what it doesn't. */
@@ -274,6 +292,7 @@ export const knockWords = (k: Pick<TeamKnock, 'name' | 'worktree'>): string => `
  * with them now (friend-share's members). Conversations are private until you pick someone.
  */
 export function teamShareChoices(team: TeamState, members: Readonly<Record<string, unknown>> | undefined, projectId: string): { readonly mates: ReadonlyArray<Teammate & { readonly shared: boolean }>; readonly sharedWith: readonly string[] } {
-  const mates = teammatesOf(team, projectId).map((m) => ({ ...m, shared: Boolean(members?.[m.peerId]) }));
+  // Only friends: a conversation is shared over your own link (one on the team through others can't be).
+  const mates = teammatesOf(team, projectId).filter((m) => !m.indirect).map((m) => ({ ...m, shared: Boolean(members?.[m.peerId]) }));
   return { mates, sharedWith: mates.filter((m) => m.shared).map((m) => m.peerId) };
 }

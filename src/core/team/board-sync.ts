@@ -219,6 +219,11 @@ export class TeamBoardSync implements TeamPart {
     const byId = this.tasks[issue.projectId];
     if (!byId || !this.team.teamed(issue.projectId)) return;
     const rec = byId[issue.id];
+    // Private (BLG-501): never sent; one teammates had is taken back from them, as a delete.
+    if (issue.private) {
+      if (rec && rec.fields.deleted?.v !== true) this.takeBack(issue.projectId, issue.id, rec);
+      return;
+    }
     const ws = worktreeDoing(issue, this.deps.live);
     const mine = fieldsOf(issue, this.self, ws !== undefined, ws !== undefined && (this.deps.running?.(ws) ?? false));
     const changed: Record<string, Field> = {};
@@ -256,12 +261,17 @@ export class TeamBoardSync implements TeamPart {
   private removed(id: string): void {
     for (const [projectId, byId] of Object.entries(this.tasks)) {
       const rec = byId[id];
-      if (!rec || rec.fields.deleted?.v === true) continue;
-      const f: Field = { v: true, l: this.tick(projectId), a: this.self };
-      byId[id] = { ...rec, fields: { ...rec.fields, deleted: f } };
-      this.save();
-      for (const link of this.team.linksOf(projectId)) this.team.send(link.peerId, { k: 'ops', link: link.id, tasks: [{ id, fields: { deleted: f }, acts: [] }] });
+      if (rec && rec.fields.deleted?.v !== true) this.takeBack(projectId, id, rec);
     }
+  }
+
+  /** Gone from the team: deleted here, or made private (sharing it again later is `deleted: false`, newer). */
+  private takeBack(projectId: string, id: string, rec: SharedTask): void {
+    const f: Field = { v: true, l: this.tick(projectId), a: this.self };
+    this.tasks[projectId]![id] = { ...rec, fields: { ...rec.fields, deleted: f } };
+    this.save();
+    for (const link of this.team.linksOf(projectId)) this.team.send(link.peerId, { k: 'ops', link: link.id, tasks: [{ id, fields: { deleted: f }, acts: [] }] });
+    this.team.publish();
   }
 
   // ------------------------------------------------------------------ theirs
@@ -301,6 +311,8 @@ export class TeamBoardSync implements TeamPart {
     const value = (name: string): unknown => onBoard(name, task.fields[name]?.v, this.has);
     const existing = board.get(task.id);
     {
+      // My private task stays mine, whatever teammates' copies say (BLG-501).
+      if (existing?.private) return undefined;
       if (task.fields.deleted?.v === true) {
         if (existing) board.remove(existing.id);
         return undefined;

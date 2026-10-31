@@ -2,7 +2,7 @@ import { activityOf } from '@beluga/ui/workspace-models.js';
 import { liveFrom } from '@beluga/core/plans/progress.js';
 import { planEpicOf, planTitle } from '@beluga/core/plans/model.js';
 import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, childrenOf, isArchived, isOpen, isStartable, issueById, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, boardOf, childrenOf, isArchived, isOpen, isStartable, issueById, openBlockers, progressOf, worktreeDoing, worktreeOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Dot, IconButton, Tip, cx } from '../components/ui.js';
@@ -13,8 +13,9 @@ import { useClock } from '../plans/use-plans.js';
 import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
 import { doneCount, dueText, onIt, onItTip, onItWords, toggleOpened } from './tasks-model.js';
-import type { LogItem } from '@beluga/core/store.js';
-import { revealSubTasks, setTasksPrefs, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import { RepoChip, useSeveralRepos } from './boards.js';
+import type { AppState, LogItem } from '@beluga/core/store.js';
+import { revealSubTasks, setTasksPrefs, tuckSubTasks, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import { teammatesOf, workingOn } from '@beluga/core/team/model.js';
 import { sameDeep } from '../lib/stable.js';
 import { askAboutTask } from '../network/chat-model.js';
@@ -43,6 +44,8 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const done = useApp((s) => progressOf(s.board, issue).done);
   const total = useApp((s) => progressOf(s.board, issue).total);
   const progress = { done, total };
+  // On a board of several repos: which one it runs in.
+  const several = useSeveralRepos(issue);
   // The epic it's part of (its parent).
   const epicKey = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.key : undefined));
   const epicTitle = useApp((s) => (issue.parent ? issueById(s.board, issue.parent)?.title : undefined));
@@ -53,7 +56,7 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
   // What its Claude is doing right now, and the messages waiting for it (the head Claude's, yours).
-  // Compared by value: each read makes a fresh list (useSyncExternalStore would otherwise render forever).
+  // (Each read builds them anew: compared by value, or the store would re-render forever.)
   const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined), sameDeep);
   const waiting = useApp((s) => (worktree && STATUS_INFO[issue.status].open ? liveOf(s.log).waiting?.(`ws:${worktree}`) : undefined), sameDeep) ?? NONE;
   const pulse = running ? pulseOf(run, false, undefined) : undefined;
@@ -64,11 +67,11 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const plan = useApp((s) => (issue.plan ? s.plans.plans.find((x) => x.id === issue.plan!.id) : undefined));
   const milestone = plan && issue.plan ? (plan.body ?? plan.draft)?.milestones.find((m) => m.id === issue.plan!.milestone)?.title : undefined;
   // A plan's own epic, or one of its milestones'.
-  // A fresh pair each read: the same when its plan and milestone are (else it would render forever).
-  const epic = useApp(
-    (s) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined),
-    (a, b) => a?.plan === b?.plan && a?.milestone === b?.milestone,
-  );
+  // (Its plan and milestone apart: planEpicOf makes a new object each time, and a snapshot must stay the same.)
+  const planEpic = (s: AppState) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined);
+  const epicPlan = useApp((s) => planEpic(s)?.plan);
+  const epicMilestone = useApp((s) => planEpic(s)?.milestone);
+  const epic = epicPlan ? { plan: epicPlan, milestone: epicMilestone } : undefined;
   return (
     <span className={cx(t.meta, compact && t.metaCompact)}>
       {issue.drafting ? (
@@ -126,7 +129,8 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
         </Tip>
       ) : null}
       <IssueMark issue={issue} compact={compact} />
-      {labels ? issue.labels.slice(0, compact ? 3 : 4).map((l) => <LabelChip key={l} label={l} projectId={issue.projectId} iconOnly={compact} />) : null}
+      {several ? <RepoChip projectId={issue.projectId} compact={compact} /> : null}
+      {labels ? issue.labels.slice(0, compact ? 3 : 4).map((l) => <LabelChip key={l} label={l} projectId={boardOf(issue)} iconOnly={compact} />) : null}
       {due ? (
         <span className={cx(t.due, due.late && STATUS_INFO[issue.status].open && t.dueLate)}>
           <Icon name="calendar" size={11} />
@@ -206,7 +210,7 @@ export function EpicBar({ issue }: { issue: Issue }) {
 
 /**
  * The eye on an epic: its sub-tasks start tucked under it (the epic's card stands for them); the
- * eye pops them out, one after another, or tucks them back. Always there, never behind a menu;
+ * eye pops them out, one after another, or tucks them back the same way, last one first. Always there, never behind a menu;
  * tinted, with how many, while they're tucked away. Your choice alone: others' boards don't change.
  */
 export function TuckButton({ issue }: { issue: Issue }) {
@@ -228,7 +232,8 @@ export function TuckButton({ issue }: { issue: Issue }) {
         onKeyDown={stop}
         onClick={(e) => {
           e.stopPropagation();
-          if (away) revealSubTasks([issue.id]);
+          if (!away) return tuckSubTasks(issue.id, n);
+          revealSubTasks([issue.id]);
           setTasksPrefs({ opened: toggleOpened(opened, issue.id) });
         }}
       >
@@ -240,6 +245,41 @@ export function TuckButton({ issue }: { issue: Issue }) {
 }
 
 /** Right-click (and ⋯) on a task: open it, its worktree, start one (or reopen a finished one), change it, copy, delete. */
+/**
+ * Whether a project's tasks reach anyone but you (teammates on its team board, or Linear): only
+ * then is a task's privacy worth offering (BLG-501). Its words when it does: who'd see it.
+ */
+export function useSharedWith(): (projectId: string) => string | undefined {
+  const team = useApp((s) => s.team);
+  const sync = useApp((s) => s.board.sync);
+  return (projectId) => {
+    const mates = teammatesOf(team, projectId).map((m) => m.name);
+    const tracker = sync?.[projectId] ? 'Linear' : undefined;
+    const all = [...mates, ...(tracker ? [tracker] : [])];
+    return all.length ? (all.length === 1 ? all[0] : `${all.slice(0, -1).join(', ')} and ${all.at(-1)}`) : undefined;
+  };
+}
+
+/** A private task's lock (BLG-501): beside its key, or with the word on a task's page. */
+export function PrivateMark({ issue, labelled }: { readonly issue: Pick<Issue, 'private'>; readonly labelled?: boolean }) {
+  if (!issue.private) return null;
+  return (
+    <Tip label="Private: only you see it. Share with Team from its ⋯ when it’s ready">
+      <span className={cx(t.privateTag, labelled && t.labelled)} aria-label="Private">
+        <Icon name="lock" size={11} />
+        {labelled ? 'Private' : null}
+      </span>
+    </Tip>
+  );
+}
+
+/** Make Private or Share with Team, as the one item a task's menu has for it (BLG-501). */
+export function privacyItem(issue: Issue, sharedWith: string | undefined, setPrivate: (on: boolean) => void): ActionItem[] {
+  if (issue.private) return [{ label: 'Share with Team', icon: 'people', hint: sharedWith ? 'Everyone on the team will see it' : 'Teammates will see it once you team up', onSelect: () => setPrivate(false) }];
+  if (!sharedWith) return [];
+  return [{ label: 'Make Private', icon: 'lock', hint: 'Only you; the team won’t see it', onSelect: () => setPrivate(true) }];
+}
+
 export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const { api, act, open, openWorktree } = useTaskActions();
   const { client } = useBeluga();
@@ -269,10 +309,12 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
     ),
     onSelect: () => undefined,
   });
+  const sharedWith = useSharedWith();
   /** Your chat with a teammate, the task in the box (BLG-263: you ask, nothing is given to their Claude). */
   const askIn = (issue: Issue): ActionItem[] => {
     const mates = teammatesOf(team, issue.projectId).filter((m) => friends.some((f) => f.peerId === m.peerId));
-    if (!mates.length) return [];
+    // Private: nothing to ask a teammate about.
+    if (!mates.length || issue.private) return [];
     const go = (peerId: string, text: string): void => {
       draftIn(`dm:${peerId}`, text);
       client.store.dispatch({ type: 'view', view: { kind: 'conversation', id: `dm:${peerId}` } });
@@ -330,6 +372,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
       },
       ...(startable ? [agentMenu(issue)] : []),
       { label: 'Add Sub-task…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_task', projectId: issue.projectId, parent: issue.id }) },
+      ...privacyItem(issue, sharedWith(issue.projectId), (on) => void act(() => api.setPrivate(issue.id, on), on ? `${issue.key} is private: only you see it` : `Shared ${issue.key} with the team`)),
       ...(isOpen(issue.status) ? [] : [{ label: 'Archive', icon: 'archive' as const, hint: 'Off the board; its proof files let go', onSelect: () => void act(() => api.archive(issue.id), `Archived ${issue.key}`) }]),
       { label: 'Copy Key', icon: 'copy', separate: true, hint: issue.key, onSelect: () => void copyText(issue.key).then(() => toast(client, `Copied ${issue.key}`, 'success')) },
       { label: 'Copy Title and Key', onSelect: () => void copyText(`${issue.key} ${issue.title}`).then(() => toast(client, 'Copied', 'success')) },

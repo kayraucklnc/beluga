@@ -1,5 +1,6 @@
 import type { NoticeEvent } from '../../src/core/notify.js';
 import { Board } from '../../src/core/board/board.js';
+import { keepFriendOffer } from '../../src/core/friend-offers.js';
 import { Store, initialState } from '../../src/core/store.js';
 import { TeamBoards, type TeamPart } from '../../src/core/team/service.js';
 import type { Project } from '../../src/workspaces/types.js';
@@ -58,6 +59,7 @@ export async function teamMac(net: Crowd, name: string, projects: readonly RepoP
         return { host: 'github.com', owner, repo: r, url: `https://github.com/${repo}` };
       },
       notify: (e) => notices.push(e),
+      onFriendAsk: (ask) => keepFriendOffer({ store, notify: (e) => notices.push(e) }, ask),
     });
     for (const part of parts({ team, store, board, name, id: person.identity.peerId, dir: person.dir })) team.use(part);
     await team.start();

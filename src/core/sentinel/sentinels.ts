@@ -1356,7 +1356,7 @@ export class Sentinels {
   /** Beluga's own data for templates: open tasks (as task_list prints them), worktrees, plans. */
   private belugaData(projectId: string | undefined): { tasks: string; worktrees: string; plans: string } {
     const st = this.deps.store.getState();
-    const tasks = st.board.enabled ? describeList(filterIssues(st.board, { scope: 'all', selfId: this.deps.selfId(), ...(projectId ? { projectId } : {}) }).filter((i) => isOpen(i.status))) : '';
+    const tasks = st.board.enabled ? describeList(filterIssues(st.board, { scope: 'all', selfId: this.deps.selfId(), ...(projectId ? { repos: [projectId] } : {}) }).filter((i) => isOpen(i.status))) : '';
     const projects = st.projects.filter((p) => !projectId || p.id === projectId);
     const worktrees = projects.flatMap((p) => p.workspaces.filter((w) => w.kind === 'worktree' && !w.archived).map((w) => `${p.name}/${w.name}${w.branch ? ` (${w.branch})` : ''}`)).join('\n');
     const plans = st.plans.plans.filter((p) => (!projectId || p.projectId === projectId) && p.status !== 'done').map((p) => `${planTitle(p)} · ${p.status}`).join('\n');

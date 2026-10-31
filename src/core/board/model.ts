@@ -109,7 +109,7 @@ export interface BriefRevision {
   readonly reason?: string;
 }
 
-export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan' | 'link';
+export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan' | 'link' | 'private';
 
 export interface Activity {
   readonly id: string;
@@ -174,10 +174,16 @@ export interface IssuePr {
 
 export interface Issue {
   readonly id: string;
-  /** "BOB-12": the project's prefix and the task's number in it. */
+  /** "BOB-12": its board's prefix and the task's number on it. */
   readonly key: string;
   readonly number: number;
+  /** The repo (project) it runs in: Start makes its worktree there. */
   readonly projectId: string;
+  /**
+   * The board it's on, when that isn't its repo's own board (a board covering several repos, see
+   * BoardProject.repos). Left out: its repo's board, as every task was before boards and repos split.
+   */
+  readonly board?: string;
   readonly title: string;
   /** The title came from a worktree's name and follows it until someone renames the task. */
   readonly autoTitle?: boolean;
@@ -231,7 +237,19 @@ export interface Issue {
   readonly github?: IssueGitHub;
   /** The agent (and model) that works it when it starts (BLG-497): its worktree's own. None: your default agent. */
   readonly agent?: AgentRef;
+  /**
+   * Only you see it (BLG-501): it stays on this Mac, never reaching teammates on a team board or
+   * another tracker (Linear), until Share with Team. A private task's sub-tasks are private too.
+   */
+  readonly private?: true;
 }
+
+/**
+ * Words asking for a task to stay yours ("just for me", "keep it private", "don't share"): New
+ * Task makes it private from the start, before anything could reach the team (BLG-501).
+ */
+export const asksPrivate = (text: string): boolean => PRIVATE_ASK.test(text);
+const PRIVATE_ASK = /(^\s*private\b|\bprivate (task|todo|to-do|note|one|board)s?\b|\b(make|keep|leave) (it|this|them|these)( tasks?)? (private|to myself|off the team)\b|\b(just|only) (for )?me\b|\bfor my eyes only\b|\bdon[’']?t share\b|\bnot for the team\b|\b(is|as|stays?) private\b)/i;
 
 /** What Claude was last asked to do about a task's GitHub issue: find out why it happens (Investigate), or fix it. */
 export type GitHubStep = 'investigate' | 'fix';
@@ -307,7 +325,11 @@ export interface IssuePlan {
   readonly task: string;
 }
 
-/** A project's board settings. */
+/**
+ * A board's settings. Every repo has a board of its own (keyed by the repo's project id); a board
+ * can cover other repos too, and boards of their own (keyed `board_…`) cover only the repos they
+ * name. Boards and repos are many to many: a task is on one board and runs in one repo.
+ */
 export interface BoardProject {
   /** "BOB": what keys start with. */
   readonly prefix: string;
@@ -317,6 +339,42 @@ export interface BoardProject {
   readonly labels?: readonly LabelDef[];
   /** What the project is, for Claude writing its tasks (BLG-298): shared with its teammates. */
   readonly context?: ProjectContext;
+  /** What it's called, when not its repo's name (a board of its own always has one). */
+  readonly name?: string;
+  /** The repos it covers (project ids): a repo's own board covers its repo first, then these. */
+  readonly repos?: readonly string[];
+}
+
+/** A board of its own (made in Tasks, covering the repos it names), not one repo's. */
+export const isOwnBoard = (boardId: string): boolean => boardId.startsWith('board_');
+
+/** The board a task is on. */
+export const boardOf = (issue: Pick<Issue, 'board' | 'projectId'>): string => issue.board ?? issue.projectId;
+
+/** The repos a board covers (project ids), its own repo first. */
+export function reposOf(board: Pick<BoardState, 'projects'>, boardId: string): readonly string[] {
+  const more = board.projects[boardId]?.repos ?? [];
+  return isOwnBoard(boardId) ? more : [boardId, ...more.filter((r) => r !== boardId)];
+}
+
+/** Boards that cover a repo: its own first, then the others that name it. */
+export function boardsWithRepo(board: Pick<BoardState, 'projects'>, projectId: string): string[] {
+  return [projectId, ...Object.keys(board.projects).filter((id) => id !== projectId && reposOf(board, id).includes(projectId))];
+}
+
+/**
+ * The board new work in a repo goes on when no one says which: the repo's own board, unless it has
+ * nothing on it and another board covers the repo (its work moved there).
+ */
+export function boardForRepo(board: Pick<BoardState, 'projects' | 'issues'>, projectId: string): string {
+  const [own, ...others] = boardsWithRepo(board, projectId);
+  if (!others.length || board.issues.some((i) => boardOf(i) === own && !isArchived(i))) return own!;
+  return others[0]!;
+}
+
+/** A board's name: its own, else its repo's (`repoName` finds a repo's name). */
+export function boardName(board: Pick<BoardState, 'projects'>, boardId: string, repoName: (projectId: string) => string | undefined): string {
+  return board.projects[boardId]?.name ?? repoName(boardId) ?? 'Board';
 }
 
 /**
@@ -495,7 +553,10 @@ export const isMine = (issue: Issue, selfId: string): boolean => issue.assignee?
 export interface IssueFilter {
   /** Every scope but `archived` leaves archived tasks out. */
   readonly scope?: 'mine' | 'active' | 'backlog' | 'all' | 'archived';
-  readonly projectId?: string;
+  /** On this board. */
+  readonly boardId?: string;
+  /** Running in one of these repos (project ids). */
+  readonly repos?: readonly string[];
   readonly query?: string;
   readonly selfId?: string;
   /** Keep closed (Done, Canceled) tasks closed in the last this-many ms (the default: a week). */
@@ -513,12 +574,13 @@ export function matches(issue: Issue, query: string): boolean {
   return words.every((w) => hay.includes(w));
 }
 
-/** The tasks a view shows (scope, project, words), in list order. */
+/** The tasks a view shows (scope, board, repos, words), in list order. */
 export function filterIssues(board: BoardState, f: IssueFilter = {}): Issue[] {
   const now = f.now ?? Date.now();
   const within = f.closedWithin ?? WEEK;
   return board.issues
-    .filter((i) => (f.projectId ? i.projectId === f.projectId : true))
+    .filter((i) => (f.boardId ? boardOf(i) === f.boardId : true))
+    .filter((i) => (f.repos ? f.repos.includes(i.projectId) : true))
     .filter((i) => (f.scope === 'archived') === isArchived(i))
     .filter((i) => {
       switch (f.scope ?? 'all') {

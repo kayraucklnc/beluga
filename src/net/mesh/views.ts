@@ -166,6 +166,8 @@ export interface FriendOfferView {
   readonly dir: 'in' | 'out';
   readonly at: number;
   readonly expiresAt: number;
+  /** Asked through a team you're both on, not a room (BLG-510): its repository ("acme/api"). */
+  readonly via?: string;
 }
 
 /** A group you asked to join and that hasn't let you in yet. */

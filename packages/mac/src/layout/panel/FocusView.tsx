@@ -9,9 +9,10 @@ import s from './panel.module.css';
 
 const DiffView = lazy(() => import('../../views/DiffView.js').then((m) => ({ default: m.DiffView })));
 const FileFocus = lazy(() => import('../../views/reader/FileFocus.js').then((m) => ({ default: m.FileFocus })));
+const PrPage = lazy(() => import('../../pr/PrPage.js').then((m) => ({ default: m.PrPage })));
 const TerminalView = lazy(() => import('../../views/TerminalView.js').then((m) => ({ default: m.TerminalView })));
 
-const TITLES: Record<FocusKind, string> = { diff: 'Changes', file: 'File', terminal: 'Terminal' };
+const TITLES: Record<FocusKind, string> = { diff: 'Changes', file: 'File', terminal: 'Terminal', pr: 'Pull Request' };
 
 /** Escape goes back to the chat, unless it's closing something else first (a menu, a field, the terminal's own use). */
 function useEscapeBack(): void {
@@ -70,13 +71,13 @@ function FocusView({ kind, wsId }: { kind: FocusKind; wsId: string }) {
         </span>
       </div>
       <Suspense fallback={<div className={s.loading} />}>
-        <div className={s.focusBody}>{kind === 'diff' ? <DiffView /> : <TerminalView />}</div>
+        <div className={s.focusBody}>{kind === 'diff' ? <DiffView /> : kind === 'pr' ? <PrPage wsId={wsId} /> : <TerminalView />}</div>
       </Suspense>
     </div>
   );
 }
 
-/** A workspace's center: its conversation, or for a while a diff, a file or its terminal in full. */
+/** A workspace's center: its conversation, or for a while a diff, a file, its terminal or its PR in full. */
 export function WorkspaceCenter() {
   const view = useApp((st) => st.view);
   const wsId = view.kind === 'workspace' ? view.id : undefined;

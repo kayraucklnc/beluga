@@ -68,13 +68,15 @@ export function homesFor(worktree) {
 export const slotHomes = ({ home, claude }, worker, slot) => ({ home: `${home}-${worker}${'ab'[slot]}`, claude: `${claude}-${worker}${'ab'[slot]}` });
 
 /**
- * How many playwright workers a run uses: E2E_WORKERS, else 3 (fewer on a small Mac, 1 on one that's
- * already busy: more work than cores). Most of a run is waiting on the demo, so 3 is fast enough.
+ * How many playwright workers a run uses: E2E_WORKERS, else one per 2 idle cores, up to 3 (fewer on a
+ * small Mac, 1 on one with next to nothing idle). Most of a run is waiting on the demo, so 3 is fast enough.
+ * `busy` is the share of the CPU in use (0–1): measured by the lock (busyShare), else guessed from the load.
  */
-export function workerCount(env = process.env, cores = os.cpus().length, load = loadPerCore()) {
+export function workerCount(env = process.env, cores = os.cpus().length, busy = Math.min(1, loadPerCore())) {
   const asked = Number.parseInt(env.E2E_WORKERS ?? '', 10);
   if (asked > 0) return asked;
-  return load > 1 ? 1 : Math.max(1, Math.min(3, Math.floor(cores / 2)));
+  const idleCores = cores * (1 - Math.min(1, Math.max(0, busy)));
+  return Math.max(1, Math.min(3, Math.floor(cores / 2), Math.round(idleCores / 2)));
 }
 
 /** Whether a process is alive (and ours to signal). */
@@ -313,6 +315,24 @@ export async function stopRun(run, opts) {
 /** The 1-minute load per core (1 = every core busy). */
 export const loadPerCore = () => os.loadavg()[0] / Math.max(1, os.cpus().length);
 
+/**
+ * The share of the CPU actually in use (0–1) over `ms`. Not the load average: on a Mac that counts
+ * threads waiting on disk and the like, and reads 1–2× the cores while a third of the CPU sits idle.
+ */
+export async function busyShare(ms = 1000) {
+  const ticks = () => os.cpus().map((c) => ({ idle: c.times.idle, all: Object.values(c.times).reduce((a, b) => a + b, 0) }));
+  const before = ticks();
+  await new Promise((r) => setTimeout(r, ms));
+  const after = ticks();
+  let idle = 0;
+  let all = 0;
+  after.forEach((c, i) => {
+    idle += c.idle - (before[i]?.idle ?? c.idle);
+    all += c.all - (before[i]?.all ?? c.all);
+  });
+  return all > 0 ? 1 - idle / all : 0;
+}
+
 /** CPU seconds from ps's time column ("1:02.50", "1:01:02.50", "2-01:01:02"). */
 export function cpuSeconds(time) {
   const [days, rest] = time.includes('-') ? time.split('-') : ['0', time];
@@ -493,6 +513,13 @@ async function main(argv) {
   if (busy) {
     console.error(`The e2e can't start: ${busy}`);
     return void finish(1);
+  }
+
+  // How many workers, from how busy the CPU really is now (playwright.config.ts takes E2E_WORKERS as is).
+  if (!(Number.parseInt(env.E2E_WORKERS ?? '', 10) > 0)) {
+    const busy = await busyShare();
+    env.E2E_WORKERS = String(workerCount({}, os.cpus().length, busy));
+    console.log(`${env.E2E_WORKERS} worker${env.E2E_WORKERS === '1' ? '' : 's'}: ${Math.round(busy * 100)}% of the ${os.cpus().length} cores busy (E2E_WORKERS=3 to choose)`);
   }
 
   const [cmd, ...args] = argv;

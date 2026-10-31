@@ -6,11 +6,11 @@ import { IconButton, Tip, cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, IssueMeta, TuckButton, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, IssueMeta, PrivateMark, TuckButton, useIssueMenu } from './parts.js';
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
-import { revealing, setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import { revealing, setTasksPrefs, tuckOrder, useSelfId, useSolo, useTaskActions, useTasksPrefs, useTucking } from './use-tasks.js';
 import t from './tasks.module.css';
 import { WaitingMark, WorkingMark } from '../team/Team.js';
 
@@ -19,7 +19,8 @@ import { WaitingMark, WorkingMark } from '../team/Team.js';
  * status, priority and assignee change from their own menus; the rest of the row opens the task.
  * ↑↓ move, Return opens, right-click for everything else.
  */
-export function TaskList({ issues, statuses, projectId, emptyGroups, archived = false }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; emptyGroups: boolean; archived?: boolean }) {
+/** `projectId`: the board shown; `repo`: the one repo you're looking at on a board of several (new tasks run there). */
+export function TaskList({ issues, statuses, projectId, repo, emptyGroups, archived = false }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; repo?: string; emptyGroups: boolean; archived?: boolean }) {
   const prefs = useTasksPrefs();
   const { open } = useTaskActions();
   const [cursor, setCursor] = useState<string>();
@@ -49,8 +50,9 @@ export function TaskList({ issues, statuses, projectId, emptyGroups, archived = 
 
   const fold = (status: IssueStatus): void => setTasksPrefs({ folded: prefs.folded.includes(status) ? prefs.folded.filter((s) => s !== status) : [...prefs.folded, status] });
 
-  // Sub-tasks just opened out pop in one after another, top to bottom.
+  // Sub-tasks just opened out pop in one after another, top to bottom; tucked back, bottom to top.
   let pop = 0;
+  const outs = tuckOrder(useTucking(), visible);
   return (
     <div ref={list} className={t.list} role="grid" aria-label="Tasks" tabIndex={0} onKeyDown={onKeyDown}>
       {groups.map((g) => {
@@ -65,9 +67,9 @@ export function TaskList({ issues, statuses, projectId, emptyGroups, archived = 
                 <span className={t.groupCount}>{g.items.length}</span>
               </button>
               {g.status === 'done' && !archived ? <ArchiveDoneButton projectId={projectId} /> : null}
-              {archived ? null : <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { projectId } : {}) })} />}
+              {archived ? null : <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />}
             </header>
-            {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} {...(revealing(issue.parent) ? { pop: pop++ } : {})} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
+            {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} {...(revealing(issue.parent) ? { pop: pop++ } : {})} {...(outs?.has(issue.id) ? { out: outs.get(issue.id)! } : {})} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
             {!folded && !g.items.length ? <div className={t.groupEmpty}>Nothing here</div> : null}
           </section>
         );
@@ -76,7 +78,7 @@ export function TaskList({ issues, statuses, projectId, emptyGroups, archived = 
   );
 }
 
-const Row = memo(function Row({ issue, pop, cursor, onCursor }: { issue: Issue; pop?: number; cursor: boolean; onCursor: () => void }) {
+const Row = memo(function Row({ issue, pop, out, cursor, onCursor }: { issue: Issue; pop?: number; out?: number; cursor: boolean; onCursor: () => void }) {
   const selfId = useSelfId();
   const solo = useSolo(issue.projectId);
   const { api, act, open } = useTaskActions();
@@ -90,11 +92,11 @@ const Row = memo(function Row({ issue, pop, cursor, onCursor }: { issue: Issue; 
         tabIndex={-1}
         data-issue={issue.id}
         {...taskDropProps(issue)}
-        className={cx(t.row, cursor && t.rowCursor, pop !== undefined && t.pop)}
-        style={pop !== undefined ? ({ '--pop': pop } as CSSProperties) : undefined}
+        className={cx(t.row, cursor && t.rowCursor, out !== undefined ? t.tuckOut : pop !== undefined && t.pop)}
+        style={(out ?? pop) !== undefined ? ({ '--pop': out ?? pop } as CSSProperties) : undefined}
         onClick={() => open(issue)}
         onMouseDown={onCursor}
-        aria-label={`${issue.key} ${issue.title}, ${STATUS_INFO[issue.status].label}`}
+        aria-label={`${issue.key} ${issue.title}, ${STATUS_INFO[issue.status].label}${issue.private ? ', private' : ''}`}
       >
         <span className={t.rowCell} onClick={stop}>
           <PriorityPicker issue={issue}>
@@ -118,6 +120,7 @@ const Row = memo(function Row({ issue, pop, cursor, onCursor }: { issue: Issue; 
             </span>
           </Tip>
         ) : null}
+        <PrivateMark issue={issue} />
         <span className={cx(t.title, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</span>
         <IssueMeta issue={issue} />
         {epic ? <TuckButton issue={issue} /> : null}

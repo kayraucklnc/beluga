@@ -38,7 +38,7 @@ export const PhoneCalls = {
   'host.steerNow': entry('host.steerNow', done),
   // 1.28 (BLG-387): edit a message you sent → the conversation it went on in (a fork's channel).
   'workspaces.editPrompt': entry('workspaces.editPrompt', z.string().optional()),
-  // 1.31 (BLG-446): the agent picker: a model of this conversation's runtime, or another runtime's agent.
+  // 1.32 (BLG-446): the agent picker: a model of this conversation's runtime, or another runtime's agent.
   'workbench.setModel': entry('workbench.setModel', done),
   'workbench.setAgent': entry('workbench.setAgent', z.boolean().optional()),
   'host.stopRun': entry('host.stopRun', z.object({ stopped: z.boolean(), returned: z.array(z.string()) }).partial().passthrough().optional()),
@@ -89,7 +89,7 @@ export const PhoneCalls = {
   'network.messages.delete': entry('network.messages.delete', done),
   'network.messages.edit': entry('network.messages.edit', done),
   'network.clear': entry('network.clear', done),
-  // 1.33 (BLG-466): a dialogue between agents, stopped or continued from the phone.
+  // 1.34 (BLG-466): a dialogue between agents, stopped or continued from the phone.
   'dialogues.stop': entry('dialogues.stop', done),
   'dialogues.continue': entry('dialogues.continue', done),
   'dialogues.confirm': entry('dialogues.confirm', done),
@@ -125,7 +125,7 @@ export const PhoneCalls = {
   'companion.signOut': entry('companion.signOut', z.object({ signedOut: z.literal(true) })),
   // 1.13: whether the Mac stays awake for the phone (BLG-127).
   'companion.keepAwake': entry('companion.keepAwake', done),
-  // 1.31: one of your providers becomes the default agent (BLG-459).
+  // 1.32: one of your providers becomes the default agent (BLG-459).
   'companion.defaultAgent': entry('companion.defaultAgent', done),
   // 1.14: Your Mac's chats: a new one (its id comes back), or one deleted for good.
   'assistant.newChat': entry('assistant.newChat', z.string()),
@@ -141,7 +141,7 @@ export const PhoneCalls = {
   'companion.draftTask': entry('companion.draftTask', TaskDraftResult),
   'companion.addTask': entry('companion.addTask', z.object({ id: z.string(), key: z.string(), more: z.array(z.object({ id: z.string(), key: z.string() })).optional() })),
   'board.start': entry('board.start', z.string()),
-  // 1.34 (BLG-498): who works a task, and a plan's work, from their next start → what happened, in words.
+  // 1.35 (BLG-498): who works a task, and a plan's work, from their next start → what happened, in words.
   'board.setAgent': entry('board.setAgent', z.string()),
   'plans.setWorkAgent': entry('plans.setWorkAgent', z.string()),
   // 1.7: a worktree's files (read-only) and terminals (shared with the Mac).

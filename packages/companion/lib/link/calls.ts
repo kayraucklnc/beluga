@@ -39,7 +39,7 @@ type PhoneDraft = { title: string; goal: string; acceptance: string[]; labels: s
 export const calls = {
   /** Since 1.13 (BLG-127): keep the Mac awake for the phone, never, on power or always. */
   keepAwake: (mode: 'off' | 'power' | 'always'): Call => make('companion.keepAwake', [mode], 'Keep your Mac awake'),
-  /** Since 1.31 (BLG-459): one of your providers (by its runtime) becomes your default agent. */
+  /** Since 1.32 (BLG-459): one of your providers (by its runtime) becomes your default agent. */
   defaultAgent: (runtime: string): Call => make('companion.defaultAgent', [runtime], 'Make it your default agent'),
   /** 1.14: a new empty chat on Your Mac (open on the Mac now) → its id; one deleted for good. */
   newMacChat: (): Call => make('assistant.newChat', [], 'New chat'),
@@ -55,14 +55,14 @@ export const calls = {
    * with Claude on your words (`plan`: it plans first, as the Mac's Plan mode), → its id; or a plan
    * Claude drafts for you to approve, → the plan.
    */
-  // `agent` (1.34, BLG-506): who works it; only to a Mac with SINCE.workAgents (the caller checks).
+  // `agent` (1.35, BLG-506): who works it; only to a Mac with SINCE.workAgents (the caller checks).
   startWorktree: (project: string, text: string, plan = false, agent?: PickedRef): Call => make('workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}), ...(agent ? { agent } : {}) }], `Start "${short(text)}"`),
   /** 1.12: a new worktree with photos: its words and photos go the way a question's do → its topic. */
   startWorktreeWith: (project: string, text: string, plan: boolean, files: Files, agent?: PickedRef): Call => make('companion.ask', [{ target: { project, worktree: true, ...(plan ? { plan: true } : {}), ...(agent ? { agent } : {}) }, text, ...withFiles(files) }], `Start "${short(text)}"`),
   createPlan: (project: string, goal: string): Call => make('plans.create', [{ projectId: project, goal }], `Plan "${short(goal)}"`),
   /** How a plan runs (1.5): Step by Step, Check-ins or Autopilot. */
   setAutonomy: (plan: string, autonomy: 'step' | 'gated' | 'autopilot', label: string): Call => make('plans.setAutonomy', [plan, autonomy], `Run as ${label}`),
-  /** 1.31 (BLG-446): a model of this conversation's runtime, or another runtime's agent (null: your default again). */
+  /** 1.32 (BLG-446): a model of this conversation's runtime, or another runtime's agent (null: your default again). */
   setModel: (topic: Topic, value: string, label: string): Call => make('workbench.setModel', [channelOf(topic), value], `Use ${label}`),
   setAgent: (topic: Topic, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('workbench.setAgent', [channelOf(topic), agent], `Use ${label}`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
@@ -89,11 +89,11 @@ export const calls = {
   comment: (key: string, text: string): Call => make('board.comment', [key, text], `Comment on ${key}`),
   move: (key: string, status: string, label: string): Call => make('board.move', [key, status as never], `Move ${key} to ${label}`),
   /** Start a task in a new worktree with Claude on it (the Mac's Start with Claude) → the worktree's id. */
-  // `agent` (1.34, BLG-506, Start with…): who works this start; only to a Mac with SINCE.workAgents (the caller checks).
+  // `agent` (1.35, BLG-506, Start with…): who works this start; only to a Mac with SINCE.workAgents (the caller checks).
   start: (key: string, agent?: PickedRef): Call => make('board.start', [key, { claude: true, ...(agent ? { agent } : {}) }], agent ? `Start ${key} with ${agent.label}` : `Start ${key}`),
-  /** 1.34 (BLG-498): who works a task from its next start (null: your default) → what happened, in words. */
+  /** 1.35 (BLG-498): who works a task from its next start (null: your default) → what happened, in words. */
   setTaskAgent: (key: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('board.setAgent', [key, agent], `${key}: ${label}`),
-  /** 1.34 (BLG-498): who works a plan's milestones and tasks from here on (null: your default) → in words. */
+  /** 1.35 (BLG-498): who works a plan's milestones and tasks from here on (null: your default) → in words. */
   setPlanAgent: (planId: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('plans.setWorkAgent', [planId, agent], `Plan's agent: ${label}`),
   /** A task described in words: Claude's draft first, then it's added. */
   // 1.24 (BLG-322) `several`: only to a Mac that has it (SINCE.severalTasks); an older one drafts one task.
@@ -141,7 +141,7 @@ export const calls = {
   deleteMessage: (topic: Topic, id: string, everyone: boolean): Call => make('network.messages.delete', [conversationOf(topic), id, everyone ? { everyone: true } : {}], 'Delete the message'),
   editMessage: (topic: Topic, id: string, text: string): Call => make('network.messages.edit', [conversationOf(topic), id, text], `Edit to "${short(text)}"`),
   clearChat: (topic: Topic): Call => make('network.clear', [conversationOf(topic)], 'Clear the chat'),
-  /** 1.33 (BLG-466): a dialogue between agents: Stop it, or Continue? → yes. */
+  /** 1.34 (BLG-466): a dialogue between agents: Stop it, or Continue? → yes. */
   dialogueStop: (id: string): Call => make('dialogues.stop', [id], 'Stop the dialogue'),
   dialogueContinue: (id: string): Call => make('dialogues.continue', [id], 'Continue the dialogue'),
   dialogueConfirm: (id: string): Call => make('dialogues.confirm', [id], 'Start the dialogue'),

@@ -239,12 +239,17 @@ export interface BoardTools {
     readonly decisions?: string;
     readonly questions?: string;
     readonly estimate?: number;
+    /** The repo it runs in (a project's name). */
     readonly project?: string;
+    /** The board it goes on (its name or key prefix). */
+    readonly board?: string;
     readonly parent?: string;
     readonly blockedBy?: readonly string[];
     readonly status?: 'backlog' | 'todo';
     readonly priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
     readonly labels?: readonly string[];
+    /** Only the user sees it (BLG-501). */
+    readonly private?: boolean;
   }): string;
   update(
     key: string | undefined,
@@ -255,6 +260,8 @@ export interface BoardTools {
       readonly labels?: readonly string[];
       readonly estimate?: number | null;
       readonly assign?: 'me' | 'claude' | 'nobody';
+      /** The repo it runs in from now on (a project's name). */
+      readonly project?: string;
     },
   ): string;
   editBrief(key: string | undefined, section: 'goal' | 'context' | 'acceptance' | 'decisions' | 'questions' | 'handoff', content: string, reason?: string, mode?: 'replace' | 'append'): string;

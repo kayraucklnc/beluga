@@ -150,3 +150,62 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* Who's on a project's team (BLG-510): the badge's card, with Add Friend for the rest. */
+.badge {
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+.badge:hover {
+  color: var(--text-2);
+}
+.teamCard {
+  z-index: 50;
+  width: 280px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--hairline-strong),
+    0 10px 30px -10px rgba(0, 0, 0, 0.22);
+}
+.teamList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.teamHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.teamRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 4px;
+  border-radius: 8px;
+}
+.teamWho {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.teamName {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.teamSub {
+  font-size: 11.5px;
+  color: var(--text-3);
+}

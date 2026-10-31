@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { labelTitle, labelsFor } from '@beluga/core/board/labels.js';
-import { type Assignee, type Issue, type IssueStatus, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, type Priority, STATUS_INFO } from '@beluga/core/board/model.js';
+import { type Assignee, type Issue, type IssueStatus, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, type Priority, STATUS_INFO, boardOf } from '@beluga/core/board/model.js';
 import { Avatar } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
 import { openSheet } from '../lib/sheets.js';
@@ -80,7 +80,7 @@ export function AssigneePicker({ projectId, value, onChange, children, align }: 
 export function LabelsPicker({ issue, children, align }: { issue: Issue; children: ReactNode; align?: 'start' | 'end' }) {
   const board = useBoard();
   const { api, act } = useTaskActions();
-  const set = labelsFor(board, issue.projectId);
+  const set = labelsFor(board, boardOf(issue));
   const others = issue.labels.filter((l) => !set.some((d) => d.name === l));
   const save = (labels: readonly string[]): void => void act(() => api.update(issue.id, { labels: [...labels] }));
   return (
@@ -95,7 +95,7 @@ export function LabelsPicker({ issue, children, align }: { issue: Issue; childre
       ]}
       chosen={issue.labels}
       onPick={(l) => save(issue.labels.includes(l) ? issue.labels.filter((x) => x !== l) : [...issue.labels, l])}
-      actions={[{ label: 'New Label…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_label', projectId: issue.projectId, issueId: issue.id }) }]}
+      actions={[{ label: 'New Label…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_label', projectId: boardOf(issue), issueId: issue.id }) }]}
     >
       {children}
     </PickMenu>

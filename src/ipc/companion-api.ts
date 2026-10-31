@@ -67,7 +67,7 @@ export const COMPANION_API = {
       z
         .object({
           target: z.union([
-            // `agent` (1.34, BLG-506): who works a new worktree; none: your default.
+            // `agent` (1.35, BLG-506): who works a new worktree; none: your default.
             z.object({ project: z.string().min(1).max(200), worktree: z.literal(true).optional(), plan: z.boolean().optional(), agent: AgentRef.optional() }).strict(),
             z.object({ topic: z.string().regex(/^conv:[\w:.-]{1,200}$/) }).strict(),
           ]),
@@ -139,7 +139,7 @@ export const COMPANION_API = {
   'companion.draftTask': { args: z.tuple([z.object({ projectId: z.string().min(1).max(200), text: z.string().min(1).max(8000), several: z.boolean().optional() }).strict()]) },
   // Add a draft (maybe changed on the phone) as a task in a project → the task ({ id, key }); 1.24: with
   // `more` (under it when `epic`; at most MAX_TASKS in all, agent/task-drafter.ts), those too (`more` in
-  // the answer), each for the teammate `for` names. 1.34 (BLG-498) `agent`: who works them when they start (none: your default).
+  // the answer), each for the teammate `for` names. 1.35 (BLG-498) `agent`: who works them when they start (none: your default).
   'companion.addTask': { args: z.tuple([phoneDraft.extend({ projectId: z.string().min(1).max(200), epic: z.boolean().optional(), more: z.array(phoneDraft).max(11).optional(), agent: AgentRef.optional() }).strict()]) },
   // A worktree's files, read-only (BLG-42), through the file gate: never outside the worktree (links
   // followed and checked again), never a secret. A folder → FolderView; names that match → FoundView;

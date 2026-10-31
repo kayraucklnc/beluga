@@ -435,20 +435,20 @@ for (const width of [1440, 2560]) {
   });
 }
 
-test('Tasks is one project at a time: the one you came from, and the switcher changes it', async ({ page }) => {
+test('Tasks is one board at a time: the one your project’s work is on, and the switcher changes it', async ({ page }) => {
   await page.goto('/');
   const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
   if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
   await sidebar(page).getByRole('button', { name: 'Work', exact: true }).click();
   await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Tasks' }).click();
-  await expect(page.getByRole('button', { name: 'Project: landing' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Board: landing' })).toBeVisible();
   const list = page.getByRole('grid', { name: 'Tasks' });
   await expect(list).toContainText('New hero for the launch');
   await expect(list).not.toContainText('Payments API v1');
-  await page.getByRole('button', { name: 'Project: landing' }).click();
+  await page.getByRole('button', { name: 'Board: landing' }).click();
   await page.getByRole('menuitem', { name: /bob-api/ }).click();
-  await expect(page.getByRole('button', { name: 'Project: bob-api' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Board: bob-api' })).toBeVisible();
   // Its sub-tasks are tucked under their epic: the epic stands for them.
   await expect(list).toContainText('Payments API v1');
   await expect(list).not.toContainText('New hero for the launch');
@@ -457,8 +457,8 @@ test('Tasks is one project at a time: the one you came from, and the switcher ch
 test('the board: a card picked up lifts, the column makes room, and it lands where it was dropped', async ({ page }) => {
   await openTasks(page);
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
-  if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
-    await page.getByRole('button', { name: /^Project: / }).click();
+  if (!(await page.getByRole('button', { name: 'Board: bob-api' }).isVisible())) {
+    await page.getByRole('button', { name: /^Board: / }).click();
     await page.getByRole('menuitem', { name: /bob-api/ }).click();
   }
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();

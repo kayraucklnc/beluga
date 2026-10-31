@@ -335,7 +335,7 @@ function offerItems(state: DomainState): NeedsYou[] {
     .map((o) => ({
       id: `friend:${o.peerId}`,
       kind: 'request' as const,
-      title: clip(`${o.name} wants to add you as a friend`, 500),
+      title: clip(o.via ? `${o.name} from the ${o.via} team wants to add you as a friend` : `${o.name} wants to add you as a friend`, 500),
       detail: 'You’re in the same room. As friends you can talk, share and ask each other’s agents, with nobody hosting',
       from: clip(o.name, 100),
       askedAt: o.at,
@@ -353,7 +353,7 @@ function teamOfferItems(state: DomainState): NeedsYou[] {
     .map((o) => ({
       id: `team:${o.peerId}:${o.projectId}`,
       kind: 'request' as const,
-      title: clip(`${offerWords(o)}. Team up?`, 500),
+      title: clip(`${offerWords(o)}. ${o.state === 'invited' && o.team?.length ? 'Join?' : 'Team up?'}`, 500),
       detail: OFFER_DETAIL,
       from: clip(o.name, 100),
       askedAt: o.at,

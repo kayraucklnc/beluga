@@ -14,7 +14,7 @@ import { Card, IconBadge, Pill, Press, T } from './ui';
 /**
  * Your allowance, one provider each: a pastel bar per plan window (5 hours, week) with its percent
  * and when it resets, or a local model's tokens and speed. The card shows your default agent's;
- * tap it for every provider, each with the chip that makes it your default (1.31). A provider that
+ * tap it for every provider, each with the chip that makes it your default (1.32). A provider that
  * says its runtime leads with that agent's mark (BLG-497).
  */
 const toneOf = (pct: number): 'mint' | 'butter' | 'rose' => (pct >= 90 ? 'rose' : pct >= 70 ? 'butter' : 'mint');
@@ -109,7 +109,7 @@ export function UsageCard({ usage, title = 'Allowance', onOpen }: { readonly usa
   );
 }
 
-/** Says which provider is your default, or makes this one it (from a Mac that has it, 1.31). */
+/** Says which provider is your default, or makes this one it (from a Mac that has it, 1.32). */
 function DefaultChip({ usage }: { readonly usage: UsageView }) {
   const can = useSupports('providers');
   const [busy, setBusy] = useState(false);

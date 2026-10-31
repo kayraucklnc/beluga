@@ -13,10 +13,13 @@ import {
   activityText,
   assigneeName,
   blocking,
+  boardName,
+  boardOf,
   childrenOf,
   isEpic,
   issueById,
   openBlockers,
+  reposOf,
   taskFiles,
   taskProof,
 } from './model.js';
@@ -41,7 +44,8 @@ const commentsOf = (issue: Issue): Activity[] => issue.activity.filter((a) => (a
 /** The files people added to a task, one line each: where to read it on this Mac (or that it's gone). */
 const fileLines = (issue: Issue): string[] => taskFiles(issue).map((f) => `- ${f.title}: ${f.path && !f.gone && !f.thumb ? f.path : f.url ?? 'its file is gone'}`);
 
-const line = (i: Issue): string => `${i.key} · ${STATUS_INFO[i.status].label}${i.priority !== 'none' ? ` · ${PRIORITY_INFO[i.priority].label}` : ''} · ${i.title}`;
+const line = (i: Issue): string => lineIn(i);
+const lineIn = (i: Issue, repo?: string): string => `${i.key} · ${STATUS_INFO[i.status].label}${i.priority !== 'none' ? ` · ${PRIORITY_INFO[i.priority].label}` : ''}${repo ? ` · in ${repo}` : ''}${i.private ? ' · private' : ''} · ${i.title}`;
 
 /** The task this run's worktree is doing: its brief and where it sits, and how to keep it true. */
 export function briefPrompt(board: BoardState, issue: Issue): string {
@@ -63,7 +67,7 @@ export function briefPrompt(board: BoardState, issue: Issue): string {
     issue.github ? gitHubLine(issue.github) : '',
     blockers.length ? `It waits on: ${blockers.map(line).join('; ')}.` : '',
     waiting.length ? `Waiting on it: ${waiting.map(line).join('; ')}.` : '',
-    `Labels on this board (task labels come only from these; people add new ones): ${labelsFor(board, issue.projectId).map((l) => (l.hint ? `${l.name} (${l.hint.toLowerCase()})` : l.name)).join(', ')}.`,
+    `Labels on this board (task labels come only from these; people add new ones): ${labelsFor(board, boardOf(issue)).map((l) => (l.hint ? `${l.name} (${l.hint.toLowerCase()})` : l.name)).join(', ')}.`,
     kids.length ? `It's an epic (a task with sub-tasks): it moves as they do. Its sub-tasks: ${kids.map(line).join('; ')}.` : '',
     '',
     brief.length ? '<task_brief>' : 'Its brief is empty: write its goal, context and acceptance criteria as you understand them.',
@@ -115,11 +119,29 @@ const HOW_TASKS_WORK = [
 ];
 
 /**
- * What a project is about, as its people wrote it (BLG-298): runs in it read it before they write a
- * task there. Empty when no one has.
+ * Where a run's tasks go when its board covers several repos (boards and repos are many to many):
+ * the board, its repos, and how to put a task on it in the right one. Empty for a board of one repo.
  */
-export function aboutPrompt(board: Pick<BoardState, 'projects'>, projectId: string): string {
-  const text = board.projects[projectId]?.context?.text.trim();
+export function reposPrompt(board: Pick<BoardState, 'projects'>, boardId: string, projectId: string, repoName: (projectId: string) => string | undefined): string {
+  const repos = reposOf(board, boardId);
+  if (repos.length < 2 && repos[0] === projectId) return '';
+  const prefix = board.projects[boardId]?.prefix;
+  const names = repos.map((r) => `${repoName(r) ?? r}${r === projectId ? ' (this one)' : ''}`);
+  return [
+    '',
+    `This work's board is "${boardName(board, boardId, repoName)}"${prefix ? ` (keys ${prefix}-…)` : ''}, and it covers ${repos.length === 1 ? 'the repo' : 'these repos'}: ${names.join(', ')}.`,
+    'Each task on it runs in one repo, where its worktree is made. task_create puts a task on this board, running in',
+    'this repo; for work that belongs in another of its repos, pass project (that repo\'s name), and split work that',
+    'spans repos into an epic with one sub-task per repo. task_list shows each task\'s repo.',
+  ].join('\n');
+}
+
+/**
+ * What a project is about, as its people wrote it (BLG-298): runs in it read it before they write a
+ * task there. Empty when no one has. A board of several repos may have its own words: they come first.
+ */
+export function aboutPrompt(board: Pick<BoardState, 'projects'>, projectId: string, boardId = projectId): string {
+  const text = [...new Set([board.projects[boardId]?.context?.text.trim(), board.projects[projectId]?.context?.text.trim()])].filter(Boolean).join('\n\n');
   if (!text) return '';
   return [
     '',
@@ -136,7 +158,7 @@ export function aboutPrompt(board: Pick<BoardState, 'projects'>, projectId: stri
 export function boardNote(): string {
   return [
     '',
-    'Tasks: Beluga has a task board per project (mcp__beluga_board__*: task_list, task_get, task_create, task_update,',
+    'Tasks: Beluga has task boards (mcp__beluga_board__*: task_list, task_get, task_create, task_update,',
     'task_brief_edit, task_note, task_relate, task_attach_proof). Use it when the user talks about tasks, issues,',
     'a backlog or what to do next, asks you to track or plan work, or asks for several things at once.',
     ...HOW_TASKS_WORK,
@@ -159,7 +181,7 @@ export function definePrompt(hasTask: boolean): string {
 }
 
 /** One task in full, for task_get. */
-export function describeIssue(board: BoardState, issue: Issue, selfId: string): string {
+export function describeIssue(board: BoardState, issue: Issue, selfId: string, repoName?: (projectId: string) => string | undefined): string {
   const parent = issue.parent ? issueById(board, issue.parent) : undefined;
   const blockers = issue.blockedBy.map((id) => issueById(board, id)).filter((i): i is Issue => Boolean(i));
   const waiting = blocking(board, issue);
@@ -167,6 +189,8 @@ export function describeIssue(board: BoardState, issue: Issue, selfId: string): 
   const facts = [
     `# ${issue.key}: ${issue.title}`,
     kids.length ? 'Epic: a task with sub-tasks (it follows them to Done)' : '',
+    issue.private ? 'Private: only the user sees it (never their teammates or Linear). Don’t bring it up in chats with friends or teammates.' : '',
+    repoName ? `Board: ${boardName(board, boardOf(issue), repoName)} · Runs in the repo: ${repoName(issue.projectId) ?? issue.projectId}` : '',
     `Status: ${STATUS_INFO[issue.status].label} · Priority: ${PRIORITY_INFO[issue.priority].label} · Assigned to: ${assigneeName(issue.assignee, selfId)}`,
     issue.labels.length ? `Labels: ${issue.labels.join(', ')}` : '',
     issue.estimate ? `Estimate: ${issue.estimate}` : '',
@@ -205,9 +229,13 @@ export function gitHubLine(gh: IssueGitHub): string {
   return `It's for GitHub issue ${gh.repo}#${gh.number} (${gh.url}): read it and its comments with \`gh issue view ${gh.number} ${where} --comments\`. Its pull request says "Fixes #${gh.number}" in the description, so merging it closes the issue.`;
 }
 
-/** Tasks one per line, for task_list (epics say so, when the board is at hand). */
-export function describeList(issues: readonly Issue[], board?: Pick<BoardState, 'issues'>): string {
+/**
+ * Tasks one per line, for task_list (epics say so, when the board is at hand). With `repoName`, a
+ * task on a board of several repos says which one it runs in.
+ */
+export function describeList(issues: readonly Issue[], board?: Pick<BoardState, 'issues' | 'projects'>, repoName?: (projectId: string) => string | undefined): string {
   if (!issues.length) return 'No tasks match.';
   const shown = issues.slice(0, 60);
-  return [...shown.map((i) => (board && isEpic(board, i) ? `${line(i)} · epic` : line(i))), ...(issues.length > shown.length ? [`… and ${issues.length - shown.length} more (narrow it with project or query)`] : [])].join('\n');
+  const repoOf = (i: Issue): string | undefined => (board?.projects && repoName && reposOf(board, boardOf(i)).length > 1 ? repoName(i.projectId) : undefined);
+  return [...shown.map((i) => (board && isEpic(board, i) ? `${lineIn(i, repoOf(i))} · epic` : lineIn(i, repoOf(i)))), ...(issues.length > shown.length ? [`… and ${issues.length - shown.length} more (narrow it with project or query)`] : [])].join('\n');
 }

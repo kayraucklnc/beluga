@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isEpic, progressOf, isFinished, issueById, taskProof, worktreeDoing } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, PROVIDER_INFO, STATUS_INFO, actorName, assigneeName, boardName, boardOf, isArchived, isEpic, progressOf, isFinished, issueById, taskProof, worktreeDoing } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
@@ -17,7 +17,7 @@ import { usePlanActions } from '../plans/use-plans.js';
 import { ActivityFeed } from './Activity.js';
 import { Brief } from './Brief.js';
 import { AssigneeMark, LabelChip, PrChip, PriorityIcon, StatusIcon } from './marks.js';
-import { useIssueMenu } from './parts.js';
+import { useIssueMenu, useSharedWith } from './parts.js';
 import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker } from './pickers.js';
 import { FilesList, ProofList, Relations, SubTasks } from './TaskSections.js';
 import { taskDropProps, useTaskFileDrop } from './use-task-drop.js';
@@ -31,6 +31,8 @@ import { FixItButton, GitHubIssueProp, useInvestigated } from '../issues/task-bi
 import t from './tasks.module.css';
 import { AssignedToYou, WaitingFor, WorkingOn } from '../team/Team.js';
 import { shortcutKeys } from '../lib/shortcuts.js';
+import { ProjectIcon } from '../components/ProjectIcon.js';
+import { RepoPicker, useSeveralRepos } from './boards.js';
 
 /**
  * One task: its title (click to rename), what to do next (start a worktree with Claude on it, or
@@ -52,7 +54,7 @@ export function TaskPage({ id }: { id: string }) {
 function IssuePage({ issue }: { issue: Issue }) {
   const wrap = useRef<HTMLDivElement>(null);
   const { back } = useTaskActions();
-  const swipe = useSwipeBack(wrap, () => back(issue.projectId));
+  const swipe = useSwipeBack(wrap, () => back(boardOf(issue)));
   const proofFirst = isFinished(issue.status) && taskProof(issue).length > 0;
   // Files dropped anywhere on the page are added to the task.
   const dropping = useTaskFileDrop();
@@ -85,7 +87,7 @@ function IssuePage({ issue }: { issue: Issue }) {
 
 function Header({ issue }: { issue: Issue }) {
   const board = useBoard();
-  const project = useApp((s) => s.projects.find((p) => p.id === issue.projectId));
+  const onBoard = useApp((s) => boardName(s.board, boardOf(issue), (id) => s.projects.find((p) => p.id === id)?.name));
   const parent = issue.parent ? issueById(board, issue.parent) : undefined;
   const { open, openList, back } = useTaskActions();
   const menu = useIssueMenu();
@@ -93,12 +95,14 @@ function Header({ issue }: { issue: Issue }) {
   return (
     <>
       <nav className={t.crumbs} aria-label="Where this task is">
-        <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={() => back(issue.projectId)} />
-        <button type="button" className={t.crumb} onClick={() => openList(issue.projectId)}>
+        <IconButton icon="back" label="Back" keys={shortcutKeys('page-back')} className={t.crumbBack} onClick={() => back(boardOf(issue))} />
+        <button type="button" className={t.crumb} onClick={() => openList(boardOf(issue))}>
           Tasks
         </button>
         <Icon name="chevronRight" size={10} />
-        <span className={t.crumbPlain}>{project?.name ?? 'Project'}</span>
+        <button type="button" className={t.crumb} onClick={() => openList(boardOf(issue))}>
+          {onBoard}
+        </button>
         {parent ? (
           <>
             <Icon name="chevronRight" size={10} />
@@ -119,6 +123,7 @@ function Header({ issue }: { issue: Issue }) {
         <WorkingOn issueId={issue.id} />
         <WaitingFor issueId={issue.id} />
         <AssignedToYou issueId={issue.id} />
+        <PrivateBanner issue={issue} />
         <ArchivedBanner issue={issue} />
         <GoneBanner issue={issue} />
         <ChecksBanner issue={issue} />
@@ -195,6 +200,28 @@ function ChecksBanner({ issue }: { issue: Issue }) {
   );
 }
 
+/** Private (BLG-501): only you see it, and who would once it's shared, in one click. */
+function PrivateBanner({ issue }: { issue: Issue }) {
+  const { api, act } = useTaskActions();
+  const board = useBoard();
+  const sharedWith = useSharedWith()(issue.projectId);
+  if (!issue.private || isArchived(issue)) return null;
+  const kids = board.issues.filter((i) => i.parent === issue.id && i.private).length;
+  return (
+    <div className={t.banner} role="status">
+      <Icon name="lock" size={14} />
+      <span className={t.bannerText}>
+        <strong>Private.</strong> Only you see it{sharedWith ? '; your team won’t until you share it' : ''}.
+      </span>
+      {sharedWith ? (
+        <Button size="small" onClick={() => void act(() => api.setPrivate(issue.id, false), `Shared ${issue.key}${kids ? ' and its sub-tasks' : ''} with the team`)}>
+          Share with Team
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** In the Archive: off the board, its words kept, its proof files let go. Back out, or gone for good. */
 function ArchivedBanner({ issue }: { issue: Issue }) {
   const { api, act, back } = useTaskActions();
@@ -218,7 +245,7 @@ function ArchivedBanner({ issue }: { issue: Issue }) {
             message: `“${issue.title}”, its brief, its history and what’s left of its proof go away. This can’t be undone.`,
             confirm: 'Delete for Good',
             destructive: true,
-            run: () => void act(() => api.remove(issue.id), `Deleted ${issue.key}`).then(() => back(issue.projectId)),
+            run: () => void act(() => api.remove(issue.id), `Deleted ${issue.key}`).then(() => back(boardOf(issue))),
           })
         }
       >
@@ -416,7 +443,9 @@ function Properties({ issue }: { issue: Issue }) {
   const project = useApp((s) => s.projects.find((p) => p.id === issue.projectId));
   const parent = issue.parent ? issueById(board, issue.parent) : undefined;
   const due = issue.due ? dueText(issue.due) : undefined;
-  const parents = board.issues.filter((i) => i.id !== issue.id && i.projectId === issue.projectId && i.parent !== issue.id);
+  const parents = board.issues.filter((i) => i.id !== issue.id && boardOf(i) === boardOf(issue) && i.parent !== issue.id);
+  const several = useSeveralRepos(issue);
+  const boardTitle = useApp((s) => boardName(s.board, boardOf(issue), (id) => s.projects.find((p) => p.id === id)?.name));
   return (
     <aside className={t.props} aria-label="Properties">
       <Prop label="Status">
@@ -427,6 +456,17 @@ function Properties({ issue }: { issue: Issue }) {
           </button>
         </StatusPicker>
       </Prop>
+      {/* A board of several repos: the one it runs in (Start makes its worktree there). */}
+      {several ? (
+        <Prop label="Repo">
+          <RepoPicker issue={issue}>
+            <button type="button" className={t.propValue}>
+              <ProjectIcon id={issue.projectId} name={project?.name ?? 'Repo'} size={16} />
+              {project?.name ?? 'Repo'}
+            </button>
+          </RepoPicker>
+        </Prop>
+      ) : null}
       <Prop label="Priority">
         <PriorityPicker issue={issue} align="end">
           <button type="button" className={t.propValue}>
@@ -447,7 +487,7 @@ function Properties({ issue }: { issue: Issue }) {
       <Prop label="Labels">
         <div className={t.propLabels}>
           {issue.labels.map((l) => (
-            <LabelChip key={l} label={l} projectId={issue.projectId} onRemove={() => void act(() => api.update(issue.id, { labels: issue.labels.filter((x) => x !== l) }))} />
+            <LabelChip key={l} label={l} projectId={boardOf(issue)} onRemove={() => void act(() => api.update(issue.id, { labels: issue.labels.filter((x) => x !== l) }))} />
           ))}
           <LabelsPicker issue={issue} align="end">
             <button type="button" className={cx(t.propValue, t.propAdd)}>
@@ -490,8 +530,9 @@ function Properties({ issue }: { issue: Issue }) {
         )}
       </Prop>
       <div className={t.propsRule} />
-      <Prop label="Project" quiet>
-        <span className={t.propStatic}>{project?.name ?? '—'}</span>
+      {/* On a board of several repos the repo is up top: here, the board it's on. */}
+      <Prop label={several ? 'Board' : 'Project'} quiet>
+        <span className={t.propStatic}>{several ? boardTitle : (project?.name ?? '—')}</span>
       </Prop>
       {issue.branch ? (
         <Prop label="Branch" quiet>

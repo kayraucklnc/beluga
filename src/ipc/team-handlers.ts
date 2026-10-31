@@ -13,6 +13,7 @@ type TeamHandlers = { readonly [M in TeamMethod]: (s: Session, ...args: Args<M>)
 export const TEAM_HANDLERS = {
   'team.answer': (s, peerId, projectId, yes) => needTeam(s).answer(peerId, projectId, yes),
   'team.leave': (s, projectId, peerId) => needTeam(s).leave(projectId, peerId),
+  'team.befriend': (s, projectId, peerId) => needTeam(s).befriend(projectId, peerId),
   'team.ackAssignment': (s, issueId) => needTeam(s).part(TeamAssign).ack(issueId),
   'team.sharePlan': (s, planId, on) => needTeam(s).part(TeamPlans).share(planId, on),
   'team.reviewPlan': (s, owner, planId, review) => needTeam(s).part(TeamPlans).review(owner, planId, review),

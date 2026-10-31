@@ -5,7 +5,7 @@ import { Store, initialState } from '../src/core/store.js';
 import { createMockBackend } from '../src/agent/mock.js';
 import type { RoomBridge } from '../src/agent/types.js';
 import { BoardWork } from '../src/core/board/work.js';
-import { DEFAULT_TASKS_PREFS, assigneeChoices, fromV1TasksPrefs, assigneeKey, assigneesIn, checklist, connected, dueText, isFor, isSolo, onIt, onItTip, onItWords, projectToShow, readTasksPrefs, scopeCounts, scoped, statusesFor, taskGraph, toggleCheck, toggleOpened, untucked } from '../packages/mac/src/tasks/tasks-model.js';
+import { DEFAULT_TASKS_PREFS, assigneeChoices, boardChoices, boardRepos, boardToShow, pickedRepos, reposLabel, fromV1TasksPrefs, assigneeKey, assigneesIn, checklist, connected, dueText, isFor, isSolo, onIt, onItTip, onItWords, projectToShow, readTasksPrefs, scopeCounts, scoped, statusesFor, taskGraph, toggleCheck, toggleOpened, untucked } from '../packages/mac/src/tasks/tasks-model.js';
 import { parseGraph } from '../src/shared/graph-spec.js';
 import { NO_TEAM, canAssign } from '../src/core/team/model.js';
 import type { Project } from '../src/workspaces/types.js';
@@ -50,7 +50,7 @@ describe('the Tasks view', () => {
   it('reads saved prefs kindly', () => {
     expect(readTasksPrefs(null)).toEqual(DEFAULT_TASKS_PREFS);
     expect(readTasksPrefs('{oops')).toEqual(DEFAULT_TASKS_PREFS);
-    expect(readTasksPrefs(JSON.stringify({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done', 'nope'], opened: ['i-1', 2] }))).toEqual({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done'], opened: ['i-1'] });
+    expect(readTasksPrefs(JSON.stringify({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done', 'nope'], opened: ['i-1', 2] }))).toEqual({ scope: 'backlog', display: 'board', project: 'api', board: '', repos: [], who: 'claude:p-me', folded: ['done'], opened: ['i-1'] });
     // "My Tasks" mixed projects: it's gone (an old window's choice reads as Active).
     expect(readTasksPrefs(JSON.stringify({ scope: 'mine', display: 1 }))).toMatchObject({ scope: 'active', display: 'board', who: '' });
     expect(readTasksPrefs(fromV1TasksPrefs(JSON.stringify({ scope: 'backlog', display: 'list' })))).toMatchObject({ scope: 'backlog', display: 'board' });
@@ -111,6 +111,30 @@ describe('the Tasks view', () => {
     b.create({ projectId: 'api', title: 'Api task' }, me);
     b.create({ projectId: 'land', title: 'Landing task' }, me);
     expect(scoped(store.getState().board, { scope: 'all', project: 'land', who: '' }, 'p-me').map((i) => i.title)).toEqual(['Landing task']);
+  });
+
+  it('offers each repo’s board and boards of several; one whose work moved to a board covering it steps aside', () => {
+    const { store, b } = board();
+    const projects = [{ id: 'api', name: 'api' }, { id: 'land', name: 'landing' }];
+    store.dispatch({ type: 'projects', projects: [...store.getState().projects, { id: 'land', name: 'landing', root: '/tmp/l', base: 'main', workspaces: [] }] });
+    b.create({ projectId: 'api', title: 'Api task' }, me);
+    const id = b.createBoard({ name: 'Launch', repos: ['api', 'land'] });
+    const hero = b.create({ projectId: 'land', board: id, title: 'Hero' }, me);
+    const s = store.getState().board;
+    const choices = boardChoices(s, projects);
+    expect(choices.map((c) => [c.name, c.repos, c.own])).toEqual([['api', ['api'], false], ['Launch', ['api', 'land'], true]]);
+    // Showing it anyway (asked for): it's offered.
+    expect(boardChoices(s, projects, 'land').map((c) => c.id)).toContain('land');
+    // A repo asked for opens the board its work goes on; the last board stays while it covers your last repo.
+    expect(boardToShow(s, choices, 'land', '', '')).toBe(id);
+    expect(boardToShow(s, choices, undefined, 'api', id)).toBe(id);
+    expect(boardToShow(s, choices, undefined, 'api', '')).toBe('api');
+    expect(boardRepos(s, id, projects)).toEqual(['api', 'land']);
+    expect(scoped(s, { scope: 'all', project: id, who: '', repos: ['land'] }, 'p-me').map((i) => i.id)).toEqual([hero.id]);
+    expect(pickedRepos(['land', 'gone'], ['api', 'land'])).toEqual(['land']);
+    expect(reposLabel([], () => undefined)).toBe('All repos');
+    expect(reposLabel(['land'], () => 'landing')).toBe('landing');
+    expect(reposLabel(['api', 'land'], () => 'x')).toBe('2 repos');
   });
 
   it('opens on the project asked for, else the one you were in, else the busiest', () => {

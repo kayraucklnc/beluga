@@ -11,11 +11,11 @@ import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, PrivateMark, useIssueMenu } from './parts.js';
 import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
-import { revealing, useBoard, useSelf, useSelfId, useTaskActions } from './use-tasks.js';
+import { revealing, tuckOrder, useBoard, useSelf, useSelfId, useTaskActions, useTucking } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -68,7 +68,8 @@ function sideScroller(el: HTMLElement): HTMLElement {
 
 const order = (a: Issue, b: Issue): number => byRank(a, b) || PRIORITY_INFO[a.priority].rank - PRIORITY_INFO[b.priority].rank;
 
-export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string }) {
+/** `projectId`: the board shown; `repo`: the one repo you're looking at on a board of several (new tasks run there). */
+export function TaskBoard({ issues, statuses, projectId, repo }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; repo?: string }) {
   const { api, act } = useTaskActions();
   const reduce = useReducedMotion() ?? false;
   const [lift, setLift] = useState<Lift>();
@@ -309,6 +310,9 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
   }, [lift, lifted]);
   // Sub-tasks just opened out pop in one after another: down each column, then the next one along.
   let popped = 0;
+  // Tucked back, they go the other way: the last one first.
+  const tucking = useTucking();
+  const outs = useMemo(() => tuckOrder(tucking, columns.flatMap((c) => c.items)), [tucking, columns]);
   return (
     <div ref={boardRef} className={cx(t.board, lift && t.boardDragging)} role="list" aria-label="Board">
       {columns.map(({ status, items }) => {
@@ -324,7 +328,9 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
             {...(target ? { gapAt: over.index, gapHeight: lift.height } : {})}
             reduce={reduce}
             popFrom={popFrom}
+            {...(outs ? { outs } : {})}
             {...(projectId ? { projectId } : {})}
+            {...(repo ? { repo } : {})}
             onPress={press}
             onNudge={nudge}
             suppressClick={justDragged}
@@ -359,7 +365,9 @@ const Column = memo(function Column({
   gapHeight,
   reduce,
   popFrom,
+  outs,
   projectId,
+  repo,
   onPress,
   onNudge,
   suppressClick,
@@ -378,7 +386,10 @@ const Column = memo(function Column({
   reduce: boolean;
   /** How many cards popping in come before this column's (the stagger carries on across). */
   popFrom: number;
+  /** Each card tucking back under its epic, and its turn. */
+  outs?: ReadonlyMap<string, number>;
   projectId?: string;
+  repo?: string;
   onPress: (e: ReactPointerEvent<HTMLElement>, issue: Issue, index: number) => void;
   onNudge: (issue: Issue, key: string) => void;
   suppressClick: { current: boolean };
@@ -402,7 +413,7 @@ const Column = memo(function Column({
         <span className={t.grow} />
         {status === 'in_plan' ? <PlanPrs issues={items} /> : null}
         {status === 'done' ? <ArchiveDoneButton projectId={projectId} /> : null}
-        <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { projectId } : {}) })} />
+        <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />
       </header>
       <div ref={(el) => register('stacks', status, el)} className={t.cards}>
         {shown.map((item) =>
@@ -420,7 +431,7 @@ const Column = memo(function Column({
             />
           ) : (
             <motion.div key={item.id} data-card={item.id} layout={reduce ? false : 'position'} transition={SPRING} className={t.cardSlot}>
-              <Card issue={item} index={index++} {...(revealing(item.parent) ? { pop: pop++ } : {})} onPress={onPress} onNudge={onNudge} suppressClick={suppressClick} menu={menu} selfId={selfId} solo={solo.includes(item.projectId)} />
+              <Card issue={item} index={index++} {...(revealing(item.parent) ? { pop: pop++ } : {})} {...(outs?.has(item.id) ? { out: outs.get(item.id)! } : {})} onPress={onPress} onNudge={onNudge} suppressClick={suppressClick} menu={menu} selfId={selfId} solo={solo.includes(item.projectId)} />
             </motion.div>
           ),
         )}
@@ -438,6 +449,7 @@ const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue;
     <>
       <div className={t.cardTop}>
         <span className={t.key}>{issue.key}</span>
+        <PrivateMark issue={issue} />
         {epic ? (
           <span className={t.epicTag}>
             <Icon name="epic" size={11} />
@@ -461,6 +473,7 @@ const Card = memo(function Card({
   issue,
   index,
   pop,
+  out,
   onPress,
   onNudge,
   suppressClick,
@@ -473,6 +486,8 @@ const Card = memo(function Card({
   index: number;
   /** Its turn popping in, when its epic was just opened out. */
   pop?: number;
+  /** Its turn tucking back, when its epic was just closed. */
+  out?: number;
   onPress: (e: ReactPointerEvent<HTMLElement>, issue: Issue, index: number) => void;
   onNudge: (issue: Issue, key: string) => void;
   suppressClick: { current: boolean };
@@ -485,11 +500,11 @@ const Card = memo(function Card({
   return (
     <ActionsContext items={() => menu(issue)}>
       <article
-        className={cx(t.card, epic && t.cardEpic, pop !== undefined && t.pop)}
-        style={pop !== undefined ? ({ '--pop': pop } as CSSProperties) : undefined}
+        className={cx(t.card, epic && t.cardEpic, issue.private && t.cardPrivate, out !== undefined ? t.tuckOut : pop !== undefined && t.pop)}
+        style={(out ?? pop) !== undefined ? ({ '--pop': out ?? pop } as CSSProperties) : undefined}
         role="button"
         tabIndex={0}
-        aria-label={`${issue.key} ${issue.title}`}
+        aria-label={`${issue.key} ${issue.title}${issue.private ? ', private' : ''}`}
         {...taskDropProps(issue)}
         onPointerDown={(e) => onPress(e, issue, index)}
         onClick={() => {

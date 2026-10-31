@@ -356,7 +356,7 @@ describe('the views of a known Mac', () => {
     expect(home.unread).toEqual({ work: expect.any(Number), chats: 2 });
   });
 
-  it("a conversation of yours carries its agent picker (1.31), runtimes as groups", () => {
+  it("a conversation of yours carries its agent picker (1.32), runtimes as groups", () => {
     const w1 = ConvView.parse(viewOf(state, ctx, 'conv:ws:w1'));
     expect(w1.agent?.runtime).toBe('claude');
     expect(w1.agent?.groups.map((g) => [g.runtime, g.available])).toEqual([

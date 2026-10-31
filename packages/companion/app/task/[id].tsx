@@ -60,7 +60,7 @@ export default function Task() {
     }
   };
 
-  // Who works it (1.34, BLG-498): its own agent, else your default; changed from ⋯ › Agent.
+  // Who works it (1.35, BLG-498): its own agent, else your default; changed from ⋯ › Agent.
   const defaultLabel = t?.agents?.groups.find((g) => g.isDefault)?.label;
   const agentWords = t?.agent ? agentName(t.agent, { model: true }) : defaultLabel ? `Your agent (${defaultLabel})` : 'Your agent';
   const agentRuntime = t?.agent?.runtime ?? t?.agents?.groups.find((g) => g.isDefault)?.runtime;

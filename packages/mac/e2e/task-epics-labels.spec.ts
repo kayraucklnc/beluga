@@ -88,9 +88,14 @@ test('sub-tasks start tucked under their epic; the eye pops them out one by one,
     await page.screenshot({ path: `${SHOTS}/06-sub-tasks-shown.png` });
   }
 
-  // Tucked back; a filter still finds them; the list tucks them too, and Show All opens them out.
-  await epic.getByRole('button', { name: 'Tuck its sub-tasks under it' }).click();
+  // Tucked back the same way, last one first: they fade out before they leave (BLG-513).
+  const tuck = epic.getByRole('button', { name: 'Tuck its sub-tasks under it' });
+  if (SHOTS) await tuck.hover();
+  await tuck.click();
+  await expect(sub).toHaveClass(/tuckOut/);
+  if (SHOTS) for (let n = 0; n < 40; n++) await page.screenshot({ path: `${SHOTS}/gif-tuck/${String(n).padStart(3, '0')}.png` });
   await expect(sub).toHaveCount(0);
+  // A filter still finds them; the list tucks them too, and Show All opens them out.
   await page.getByLabel('Filter tasks').fill('Refund');
   await expect(sub).toBeVisible();
   await page.getByLabel('Filter tasks').fill('');

@@ -35,7 +35,10 @@ export type NativeSheet =
   /** Delete Project…: out of Beluga with the worktrees it made (archived); the project's folder is never touched. */
   | { readonly kind: 'delete_project'; readonly projectId: string }
   /** A new task (in a project, a status, under a parent). */
-  | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('../../../../src/core/board/model.js').IssueStatus; readonly parent?: string }
+  /** boardId: the board it goes on; projectId: the repo it runs in (both: the sheet's first pick). */
+  | { readonly kind: 'new_task'; readonly boardId?: string; readonly projectId?: string; readonly status?: import('../../../../src/core/board/model.js').IssueStatus; readonly parent?: string }
+  /** New Board (no boardId; repos ticked to start with), or a board's settings. */
+  | { readonly kind: 'task_board'; readonly boardId?: string; readonly repos?: readonly string[] }
   /** A new label in a project's set (a name, an icon, a color), put on a task too when it's opened from one; and its own labels, to remove. */
   | { readonly kind: 'new_label'; readonly projectId: string; readonly issueId?: string }
   /** Sync a project's tasks with Linear: connect a key and a team, or see how it syncs. */

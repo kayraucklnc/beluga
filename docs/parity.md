@@ -271,7 +271,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.newWorktree` | ✓ |
 | `workspaces.newChat` | ✓ |
 | `workspaces.startChat` | ✓ |
-| `workspaces.startWorktree` | ✓ (→ the new worktree's id; `plan`: its agent plans first; `quiet`: the window stays put; `agent`: who works it, from the home composer's Create Worktree ▾ › Start with ▸ (BLG-506). The phone's Ask › a project › Worktree, with Plan first, since 1.5, and its agent chip (1.34); Your Mac's `start_worktree`) |
+| `workspaces.startWorktree` | ✓ (→ the new worktree's id; `plan`: its agent plans first; `quiet`: the window stays put; `agent`: who works it, from the home composer's Create Worktree ▾ › Start with ▸ (BLG-506). The phone's Ask › a project › Worktree, with Plan first, since 1.5, and its agent chip (1.35); Your Mac's `start_worktree`) |
 | `workspaces.branches` | New worktree › Based on popup |
 | `workspaces.fork` | ✓ |
 | `workspaces.editPrompt` | Edit on your own message (hover, or right-click › Edit Message) › the message opens in place: Rewind Here or New Fork, then ↩ |
@@ -319,8 +319,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.runSetup` | ✓ |
 | `workbench.setScript` | ✓ |
 | `workbench.shareScripts` | ✓ |
-| `workbench.setModel` | ✓ (the composer's agent picker: a model of the same runtime, for this conversation or new ones; the phone's picker since 1.31) |
-| `workbench.setAgent` | ✓ (the agent picker's other runtimes, grouped Claude › Codex › Local model; a runtime this Mac doesn't run is greyed with why; the phone's picker since 1.31) |
+| `workbench.setModel` | ✓ (the composer's agent picker: a model of the same runtime, for this conversation or new ones; the phone's picker since 1.32) |
+| `workbench.setAgent` | ✓ (the agent picker's other runtimes, grouped Claude › Codex › Local model; a runtime this Mac doesn't run is greyed with why; the phone's picker since 1.32) |
 | `workbench.createPr` | ✓ |
 | `workbench.quickPr` | ✓ the toolbar's Create PR (and Create Draft PR under its chevron), the Changes panel's Create PR |
 | `workbench.mergeToBase` | ✓ the branch control's chevron › Merge into main… (no PR yet, on GitHub): asks first, then lands the branch on origin's base and pushes |
@@ -332,6 +332,11 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.refreshPrs` | ✓ |
 | `workbench.mergePr` | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass; Merge Now, Skipping Checks), also in the PR strip above the chat |
 | `workbench.prStep` | ✓ the toolbar's branch state › Update Branch (the PR is behind its base), Mark Ready for Review (a draft) |
+| `workbench.prConversation` | ✓ the PR page (the PR strip's comments count, or the PR sheet's Comments): comments, reviews and threads on lines with their code; a `beluga-pr-comments` block in chat shows them read-only (phone: not yet) |
+| `workbench.prPost` | ✓ the PR page: Reply in a thread, Resolve / Reopen, and a comment on the PR |
+| `workbench.addressPrComments` | ✓ the PR page: Ask Claude (one thread) and Address All With Claude |
+| `workbench.excerpt` | ✓ a `beluga-code` block in chat draws those lines of the worktree, highlighted; its path goes to the file at that line |
+| `workbench.openCode` | ✓ Open in Editor on a `beluga-code` block or a PR thread (Cursor, VS Code or Zed at the line, else the default app) |
 | `workbench.cancelMergeWhenReady` | ✓ the toolbar's branch state › Cancel Auto-Merge (while Merge When Ready waits) |
 | `workbench.editPrPrompt` | ✓ |
 | `workbench.resetPrPrompt` | ✓ |
@@ -438,8 +443,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `gateway.removeRule` | ✓ Settings › People & access › Rules, and a friend's card: Delete |
 | `gateway.setCapabilities` | ✓ Settings › People & access › What your friends’ agents can do here (per capability and trust level, the folders) |
 | `gateway.image` | ✓ screenshots on a task card's result |
-| `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…), sub-tasks on a task page; its Agent pop-up (BLG-497) picks the agent and model its worktree runs when it starts |
-| `board.update` | ✓ a task's properties (status, priority, assignee, labels, estimate, due date, parent), its title in place, row and card menus |
+| `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…; on a board of several repos, its Repo picker), sub-tasks on a task page; its Agent pop-up (BLG-497) picks the agent and model its worktree runs when it starts |
+| `board.update` | ✓ a task's properties (status, priority, assignee, labels, estimate, due date, parent, and the repo it runs in on a board of several), its title in place, row and card menus |
+| `board.setPrivate` | ✓ a task's ⋯ › Make Private / Share with Team (only offered when teammates or Linear would see it), the Share with Team button on a private task's page, New Task's Who Sees It |
 | `board.move` | ✓ dragging a card between columns on the board, or within one |
 | `board.editBrief` | ✓ a section of the brief on a task page (click to edit, ⌘↩ saves) |
 | `board.restoreRevision` | ✓ History › Restore on a brief section |
@@ -448,14 +454,17 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.addProof` | ✓ Add Proof (a picture, a page, a file) on a task page; the agent's task_attach_proof |
 | `board.removeProof` | ✓ a proof item's ✕ |
 | `board.remove` | ✓ Delete Task… (an alert, with Cancel) |
-| `board.setAgent` | ✓ a task page's Agent property (your agent, or any agent and model, each with its mark) and a task's ⋯ / right-click › Agent ▸ (BLG-498): from its next start, a worktree already on it keeps its agent (the toast says so); the phone's task page › ⋯ › Agent (1.34) |
-| `board.start` | ✓ Start on a task (its page, its ⋯ and right-click menu: a new worktree, In Progress, your agent on it with its brief, and you there; the task's own agent, else its plan's, else your default); Start's ▾ and the menus' Start with ▸ (BLG-506): every agent and model, this start only, one not set up greyed with why; ⋯ › Start Worktree Only; a task a worktree already does or carries shows Open Worktree instead. The phone's task › Start, and ⋯ › Start with… (1.34) |
+| `board.setAgent` | ✓ a task page's Agent property (your agent, or any agent and model, each with its mark) and a task's ⋯ / right-click › Agent ▸ (BLG-498): from its next start, a worktree already on it keeps its agent (the toast says so); the phone's task page › ⋯ › Agent (1.35) |
+| `board.start` | ✓ Start on a task (its page, its ⋯ and right-click menu: a new worktree, In Progress, your agent on it with its brief, and you there; the task's own agent, else its plan's, else your default); Start's ▾ and the menus' Start with ▸ (BLG-506): every agent and model, this start only, one not set up greyed with why; ⋯ › Start Worktree Only; a task a worktree already does or carries shows Open Worktree instead. The phone's task › Start, and ⋯ › Start with… (1.35) |
 | `board.settleGone` | ✓ the banner on a task whose worktree was archived or deleted (Cancel Task / Back to Backlog / Keep) |
 | `board.archive` | ✓ a finished task's ⋯ › Archive |
 | `board.archiveDone` | ✓ the archive button on Done (list group, board column), Tasks ⋯ › Archive Done Tasks |
 | `board.unarchive` | ✓ an archived task's banner (Restore), ⋯ › Restore from Archive |
 | `board.emptyArchive` | ✓ Tasks › Archive › Empty Archive |
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
+| `board.createBoard` | ✓ Tasks › the board switcher › New Board… (a name, the repos it covers, its keys) |
+| `board.editBoard` | ✓ Tasks › the board switcher › Board Settings…, ⋯ › Board Settings… / Repos on This Board…, the Repos filter's Repos on This Board…, a task's Repo menu |
+| `board.removeBoard` | ✓ a board of its own's settings sheet › Delete Board… (only once nothing is on it) |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
 | `board.createLabel` | ✓ a task's Labels menu › New Label… (a name, an icon, a color) |
 | `board.removeLabel` | ✓ the New Label sheet: a project label's remove button (under Labels of this project) |
@@ -518,7 +527,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `ci.log` | ✓ a failed job on a run's page › Show the Log (its end, where it failed) |
 | `ci.rerun` | ✓ a run's page › Re-run Failed Jobs, and ⋯ › Re-run All Jobs; a run's right-click menu |
 | `ci.cancel` | ✓ a running run's page › Cancel Run (asks first); a running run's right-click menu |
-| `team.answer` | ✓ the offer strip on a project's home and at the top of its Tasks (Team Up; ••• › Not Now, or Take Back while you wait for them); the phone's card (Team Up / Not Now) |
+| `team.answer` | ✓ the offer strip on a project's home and at the top of its Tasks (Team Up; ••• › Not Now, or Take Back while you wait for them); project ••• › Invite to Team ▸ (friends with the repository who aren't on the team, BLG-510); the phone's card (Team Up / Not Now) |
 | `team.ackAssignment` | ✓ Got It on the strip a task a teammate gave you shows on its page; the phone's card (Got It) |
 | `team.sharePlan` | ✓ a plan's ••• › Share Plan with Team / Stop Sharing with Team (only in a project worked on as a team) |
 | `team.reviewPlan` | ✓ a teammate's shared plan (Plans › Shared by Your Team): Approve, Comment, and Suggest a Change… on a task or milestone; the phone's card (Approve, or words as a comment) |
@@ -527,7 +536,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `team.knock` | ✓ a task's page, after "Ata is working on this": Knock to Join (pick whose worktree when several teammates are on it); Knock Again after a Not Now |
 | `team.cancelKnock` | ✓ Take Back next to "Knocked. Waiting for Ata to let you in" on the task's page |
 | `team.answerKnock` | ✓ the knock's card in the worktree's chat (Let In as Editor, Let In as Viewer; ••• › Not Now) and the bell's row; the phone's card (Let In as Editor / Not Now / Let In as Viewer) |
-| `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates) |
+| `team.befriend` | ✓ the team badge on a project's row › its card › Add Friend beside someone on the team who isn't a friend (BLG-510); they Accept like any friend request |
+| `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates: off it for everyone, BLG-510) |
 | `plans.create` | ✓ Plans › New Plan (a goal; the agent plans in a conversation of its own in the project's main folder; More options › Agent picks who works its milestones and tasks, BLG-497); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (the agent plans in the conversation you're in) |
 | `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation; Approve Plan's ▾ › Approve, worked by ▸ (BLG-506: `plans.setWorkAgent`, then approve) |
@@ -536,7 +546,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `plans.setAutonomy` | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu); the phone plan page's autonomy chip (1.5) |
 | `plans.setPaused` | ✓ Pause / Resume on a plan's page |
 | `plans.setParallel` | ✓ a plan's ⋯ › Run at Once ▸ |
-| `plans.setWorkAgent` | ✓ a plan's ⋯ › Agent for Its Work ▸ (BLG-498): who works the milestones and tasks that start from now on (ones at work keep theirs, the toast says so); the phone's plan page › ⋯ › Agent for its work (1.34) |
+| `plans.setWorkAgent` | ✓ a plan's ⋯ › Agent for Its Work ▸ (BLG-498): who works the milestones and tasks that start from now on (ones at work keep theirs, the toast says so); the phone's plan page › ⋯ › Agent for its work (1.35) |
 | `plans.setTestsAt` | ✓ a plan's ⋯ › When to Run Tests ▸ (each milestone, or once at the end) |
 | `plans.pass` | ✓ Pass Milestone on a plan's page |
 | `plans.recheck` | ✓ Check Again on a milestone the agent is checking or that failed its check |

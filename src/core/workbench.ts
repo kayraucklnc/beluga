@@ -22,8 +22,11 @@ import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store, shippedText } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
-import type { ModelChoice, PullRequest } from './work-store.js';
+import type { ModelChoice, PrConversation, PrThread, PullRequest } from './work-store.js';
 import type { RuntimeStatus } from '../agent/runtime/types.js';
+import { type PrPost, addressCommentsPrompt, postOnPr, prConversation } from '../workspaces/pr-review.js';
+import { type Excerpt, readExcerpt } from '../workspaces/excerpt.js';
+import { openCode } from '../workspaces/open-code.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 import { agentName } from '../shared/agent-label.js';
@@ -69,6 +72,9 @@ export interface WorkbenchDeps {
   readonly deleteRemoteBranch?: (dir: string, branch: string) => Promise<void>;
   /** A PR's one-click step on GitHub (injected in tests; throws gh's error). */
   readonly prStep?: (dir: string, number: number, step: PrStepKind) => Promise<void>;
+  /** A PR's comments, reviews and threads, and posting on it (injected in tests). */
+  readonly prConversation?: (dir: string, number: number) => Promise<PrConversation>;
+  readonly postOnPr?: (dir: string, number: number, post: PrPost) => Promise<void>;
   /** Push and open a pull request without Claude (tests stand in for gh). */
   readonly createPr?: typeof createPr;
   readonly mergeToBase?: typeof mergeToBase;
@@ -787,6 +793,74 @@ export class Workbench {
   openPr(id: string): void {
     const pr = this.deps.store.getState().prs[id];
     if (pr) (this.deps.open ?? systemOpen)(pr.url);
+  }
+
+  /** Everything said on a worktree's PR: its comments, reviews and threads on lines. */
+  async prConversation(id: string): Promise<{ readonly ok: true; readonly conversation: PrConversation } | (GitHubOutcome & { readonly ok: false })> {
+    const ws = this.manager.find(id);
+    const pr = this.deps.store.getState().prs[id];
+    if (!ws || !pr) return { ok: false, message: 'This worktree has no pull request' };
+    try {
+      return { ok: true, conversation: await (this.deps.prConversation ?? prConversation)(ws.path, pr.number) };
+    } catch (err) {
+      const trouble = await this.troubleOf(ws, err);
+      return { ok: false, message: trouble ? troubleLine(trouble) : `GitHub didn’t give the comments: ${firstLine(err)}`, ...(trouble ? { trouble } : {}) };
+    }
+  }
+
+  /** Say something on a worktree's PR as you: a comment, a reply in a thread, or a thread resolved or opened again. */
+  async prPost(id: string, post: PrPost): Promise<GitHubOutcome> {
+    const ws = this.manager.find(id);
+    const pr = this.deps.store.getState().prs[id];
+    if (!ws || !pr) return { ok: false, message: 'This worktree has no pull request' };
+    try {
+      await (this.deps.postOnPr ?? postOnPr)(ws.path, pr.number, post);
+    } catch (err) {
+      return this.troubleOr(ws, err, post.kind === 'resolve' ? 'GitHub didn’t resolve it' : post.kind === 'unresolve' ? 'GitHub didn’t open it again' : 'GitHub didn’t post it');
+    }
+    const message = post.kind === 'resolve' ? 'Resolved' : post.kind === 'unresolve' ? 'Opened again' : post.kind === 'reply' ? 'Replied on GitHub' : `Commented on PR #${pr.number}`;
+    return { ok: true, message };
+  }
+
+  /** Claude works through the PR's review comments in the chat (all open threads, or one). */
+  async addressPrComments(id: string, threadId?: string): Promise<void> {
+    const pr = this.deps.store.getState().prs[id];
+    if (!pr) return;
+    let thread: PrThread | undefined;
+    if (threadId) {
+      const got = await this.prConversation(id);
+      thread = got.ok ? got.conversation.threads.find((t) => t.id === threadId) : undefined;
+      if (!thread) {
+        this.deps.toast('That comment isn’t on GitHub anymore', 'warn');
+        return;
+      }
+    }
+    this.deps.controller.open(id);
+    this.deps.askClaude(addressCommentsPrompt(pr, thread), `ws:${id}`);
+  }
+
+  /** A workspace's file in your editor at a line. */
+  async openCode(id: string, file: string, line?: number): Promise<{ readonly ok: boolean; readonly message?: string }> {
+    const ws = this.manager.find(id);
+    if (!ws) return { ok: false, message: 'That workspace is gone' };
+    try {
+      await openCode(ws.path, file, line, (full) => (this.deps.open ?? systemOpen)(full));
+      return { ok: true };
+    } catch (err) {
+      this.deps.toast(firstLine(err), 'warn');
+      return { ok: false, message: firstLine(err) };
+    }
+  }
+
+  /** Lines of a file in a workspace, for a code block in chat (never outside it, never a secret). */
+  async excerpt(id: string, file: string, from?: number, to?: number): Promise<{ readonly ok: true; readonly excerpt: Excerpt } | { readonly ok: false; readonly message: string }> {
+    const ws = this.manager.find(id);
+    if (!ws) return { ok: false, message: 'That workspace is gone' };
+    try {
+      return { ok: true, excerpt: await readExcerpt(ws.path, file, from, to) };
+    } catch (err) {
+      return { ok: false, message: firstLine(err) };
+    }
   }
 
   /**

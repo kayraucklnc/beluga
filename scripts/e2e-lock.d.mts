@@ -20,8 +20,10 @@ export function portFor(worktree: string): number;
 export function homesFor(worktree: string): { readonly home: string; readonly claude: string };
 /** One of a run's demo homes: worker `worker`'s slot 0 or 1 (in use, warming up), next to the run's home. */
 export function slotHomes(homes: { readonly home: string; readonly claude: string }, worker: number, slot: 0 | 1): { readonly home: string; readonly claude: string };
-/** How many playwright workers a run uses: E2E_WORKERS, else 3 (fewer on a small Mac, 1 on a busy one). */
-export function workerCount(env?: Record<string, string | undefined>, cores?: number, load?: number): number;
+/** How many playwright workers a run uses: E2E_WORKERS, else one per 2 idle cores, up to 3. `busy` is the CPU share in use (0–1). */
+export function workerCount(env?: Record<string, string | undefined>, cores?: number, busy?: number): number;
+/** The share of the CPU actually in use (0–1) over `ms`. */
+export function busyShare(ms?: number): Promise<number>;
 /** CPU seconds from ps's time column. */
 export function cpuSeconds(time: string): number;
 export function pidsUnder(root: number, table: ReadonlyArray<{ pid: number; ppid: number }>): Set<number>;

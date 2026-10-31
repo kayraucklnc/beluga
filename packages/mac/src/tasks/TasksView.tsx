@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { PROVIDER_INFO, type ProjectSync, isOpen, worksOn, worktreeOf } from '@beluga/core/board/model.js';
+import { PROVIDER_INFO, type ProjectSync, boardOf, isOpen, worksOn, worktreeOf } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
@@ -10,7 +10,8 @@ import { TaskBoard } from './TaskBoard.js';
 import { TaskList } from './TaskList.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { PickMenu } from './PickMenu.js';
-import { type Display, SCOPES, ago, type Scope, assigneesIn, connected, doneCount, projectToShow, scopeCounts, scoped, statusesFor, taskGraph, untucked } from './tasks-model.js';
+import { type Display, SCOPES, ago, type Scope, assigneesIn, boardChoices, boardRepos, boardToShow, connected, doneCount, pickedRepos, reposLabel, scopeCounts, scoped, statusesFor, taskGraph, untucked } from './tasks-model.js';
+import { BoardMark, RepoStack } from './boards.js';
 import { useTaskFileDrop } from './use-task-drop.js';
 import { revealSubTasks, setTasksPrefs, useBoard, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -21,7 +22,9 @@ import { shortcutKeys } from '../lib/shortcuts.js';
 const FlowGraph = lazy(() => import('../components/graph/FlowGraph.js'));
 
 /**
- * Tasks: one project's board at a time (the one you're in; the switcher at the top changes it),
+ * Tasks: one board at a time (the one covering the project you're in; the switcher at the top
+ * changes it, and makes new boards). A board covers one repo or several: with several, a filter
+ * picks which repos' tasks show, and each card says which repo it runs in.
  * Active, Backlog or All, for everyone or one person when you work with others, as a list grouped
  * by status, a board to drag cards across, or a graph of what waits on what. A task opens into
  * its page. ⌘N (or C) makes a new one, ⌘F finds. The Archive (finished tasks put away) is a list,
@@ -39,26 +42,39 @@ export function TasksView() {
   const [query, setQuery] = useState('');
   const find = useRef<HTMLInputElement>(null);
   const { api, act, open, openList, openWorktreeTasks } = useTaskActions();
-  const project = projectToShow(board, projects, view.kind === 'tasks' ? view.projectId : undefined, prefs.project);
+  const asked0 = view.kind === 'tasks' ? view.projectId : undefined;
+  const boards = useMemo(() => boardChoices(board, projects, asked0 ?? prefs.board), [board, projects, asked0, prefs.board]);
+  // `project` is the board shown: a repo's own board has the repo's id, so most of what follows reads the same.
+  const project = boardToShow(board, boards, asked0, prefs.project, prefs.board);
+  const here = boards.find((b) => b.id === project);
+  // A board of several repos: the ones its tasks run in, and the ones you picked to see (none: all).
+  const repos = useMemo(() => boardRepos(board, project, projects), [board, project, projects]);
+  const several = repos.length > 1;
+  const picked = useMemo(() => (several ? pickedRepos(prefs.repos, repos) : []), [several, prefs.repos, repos]);
+  const repoName = (id: string): string | undefined => projects.find((p) => p.id === id)?.name;
+  useEffect(() => {
+    if (project && project !== prefs.board) setTasksPrefs({ board: project });
+  }, [project, prefs.board]);
   const solo = useSolo(project);
   const people = useMemo(() => (solo ? [] : assigneesIn(board, project, selfId)), [solo, board, project, selfId]);
   // A filter for someone who has no tasks here any more shows everyone's.
-  const who = !solo && (prefs.who === 'nobody' || people.some((p) => p.key === prefs.who)) ? prefs.who : '';
-  // The worktrees doing or carrying this project's tasks, to filter by (one asked for that's gone: every task).
+  const hasPrivate = useMemo(() => board.issues.some((i) => boardOf(i) === project && i.private && !i.archivedAt), [board, project]);
+  const who = !solo && (prefs.who === 'nobody' || (prefs.who === 'private' && hasPrivate) || people.some((p) => p.key === prefs.who)) ? prefs.who : '';
+  // The worktrees doing or carrying this board's tasks, in any of its repos, to filter by (one asked for that's gone: every task).
   const worktrees = useMemo(() => {
-    const ids = new Set(board.issues.filter((i) => i.projectId === project && !i.archivedAt).flatMap((i) => [worktreeOf(i), i.worktrees.at(-1)]).filter((w): w is string => Boolean(w)));
-    return (allProjects.find((p) => p.id === project)?.workspaces ?? []).filter((w) => ids.has(w.id) && !w.archived).map((w) => ({ id: w.id, name: w.name }));
-  }, [board, project, allProjects]);
+    const ids = new Set(board.issues.filter((i) => boardOf(i) === project && !i.archivedAt).flatMap((i) => [worktreeOf(i), i.worktrees.at(-1)]).filter((w): w is string => Boolean(w)));
+    return allProjects.filter((p) => repos.includes(p.id)).flatMap((p) => p.workspaces).filter((w) => ids.has(w.id) && !w.archived).map((w) => ({ id: w.id, name: w.name }));
+  }, [board, project, allProjects, repos]);
   const asked = view.kind === 'tasks' ? view.worktree : undefined;
   const worktree = asked && worktrees.some((w) => w.id === asked) ? asked : '';
   const found = useMemo(() => {
-    const all = project ? scoped(board, { scope: prefs.scope, project, who }, selfId, query) : [];
+    const all = project ? scoped(board, { scope: prefs.scope, project, who, repos: picked }, selfId, query) : [];
     return worktree ? all.filter((i) => worksOn(i, worktree)) : all;
-  }, [board, prefs.scope, project, who, selfId, query, worktree]);
+  }, [board, prefs.scope, project, who, selfId, query, worktree, picked]);
   // Sub-tasks stay tucked under their epics until you open one out (the eye on it); the graph shows them all.
   const tuck = useMemo(() => (prefs.display === 'graph' ? { shown: found, hidden: 0, tucked: [] } : untucked(found, prefs.opened, query)), [found, prefs.display, prefs.opened, query]);
   const issues = tuck.shown;
-  const counts = useMemo(() => (project ? scopeCounts(board, project, who, selfId) : { active: 0, backlog: 0, all: 0, archived: 0 }), [board, project, who, selfId]);
+  const counts = useMemo(() => (project ? scopeCounts(board, project, who, selfId, Date.now(), picked) : { active: 0, backlog: 0, all: 0, archived: 0 }), [board, project, who, selfId, picked]);
   const statuses = statusesFor(prefs.scope);
   const archive = prefs.scope === 'archived';
   // The Archive is a list: nothing in it moves or waits on anything.
@@ -69,8 +85,10 @@ export function TasksView() {
     const tied = connected(board, issues);
     return tied.length ? taskGraph(board, tied) : undefined;
   }, [display, board, issues]);
-  const here = projects.find((p) => p.id === project);
-  const sync = project ? board.sync?.[project] : undefined;
+  // Linear sync and teams are a repo's: a board of its own has neither.
+  const sync = project && here && !here.own ? board.sync?.[project] : undefined;
+  // A new task goes on this board, in the one repo you're looking at (when you picked one).
+  const newTask = { boardId: project, ...(picked.length === 1 ? { projectId: picked[0] } : {}) };
 
   // ⌘F finds, ⌘N or C (outside a field) makes a task (or your keys for them: Settings › Keyboard).
   useEffect(() => {
@@ -85,34 +103,58 @@ export function TasksView() {
       } else if (isShortcut('page-new', e) && (!typing || e.metaKey || e.ctrlKey || e.altKey)) {
         e.preventDefault();
         e.stopPropagation();
-        openSheet({ kind: 'new_task', projectId: project });
+        openSheet({ kind: 'new_task', ...newTask });
       }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [project]);
+  }, [project, newTask.projectId]);
 
   if (!board.enabled) return <Empty icon="task" title="Tasks need the Beluga app" detail="Open Beluga for Mac to plan and track work here." />;
   if (!projects.length || !here) return <Empty icon="task" title="No projects yet" detail="Tasks belong to a project. Add one from the sidebar, then plan its work here." />;
 
-  const none = !board.issues.some((i) => i.projectId === project);
+  const none = !board.issues.some((i) => boardOf(i) === project);
   return (
     <div className={t.view}>
       {dropping}
       <div className={t.bar}>
         <div className={cx(t.barGroup, t.barFilters)}>
         <PickMenu<string>
-          label="Project"
-          choices={projects.map((p) => ({ value: p.id, label: p.name, mark: <ProjectIcon id={p.id} name={p.name} size={16} />, hint: openCount(board, p.id) }))}
+          label="Board"
+          choices={boards.map((b) => ({ value: b.id, label: b.name, mark: <BoardMark repos={b.repos} names={repoName} size={16} />, ...(boards.some((x) => x.own) ? { section: b.own ? 'Boards' : 'Projects' } : {}), hint: boardHint(board, b.id, b.repos.length) }))}
           chosen={[here.id]}
           onPick={(id) => openList(id)}
+          actions={[
+            { label: 'New Board…', icon: 'plus', onSelect: () => openSheet({ kind: 'task_board', repos: here.repos }) },
+            { label: 'Board Settings…', icon: 'gear', onSelect: () => openSheet({ kind: 'task_board', boardId: here.id }) },
+          ]}
         >
-          <button type="button" className={t.projectSwitch} aria-label={`Project: ${here.name}`}>
-            <ProjectIcon id={here.id} name={here.name} size={18} />
+          <button type="button" className={t.projectSwitch} aria-label={`Board: ${here.name}`}>
+            <BoardMark repos={here.repos} names={repoName} size={18} />
             <span className={t.projectName}>{here.name}</span>
             <Icon name="chevronDown" size={11} />
           </button>
         </PickMenu>
+        {/* A board of several repos: whose tasks show (all, or the ones you tick). */}
+        {several ? (
+          <PickMenu<string>
+            label="Repos"
+            multiple
+            choices={repos.map((r) => ({ value: r, label: repoName(r) ?? r, mark: <ProjectIcon id={r} name={repoName(r) ?? r} size={16} /> }))}
+            chosen={picked}
+            onPick={(r) => setTasksPrefs({ repos: picked.includes(r) ? picked.filter((x) => x !== r) : [...picked, r] })}
+            actions={[
+              ...(picked.length ? [{ label: 'Show All Repos', icon: 'eye' as const, onSelect: () => setTasksPrefs({ repos: [] }) }] : []),
+              { label: 'Repos on This Board…', icon: 'gear', onSelect: () => openSheet({ kind: 'task_board', boardId: here.id }) },
+            ]}
+          >
+            <button type="button" className={cx(t.repoFilter, picked.length > 0 && t.repoFilterOn)} aria-label={`Repos: ${reposLabel(picked, repoName)}`}>
+              <RepoStack repos={picked.length ? picked : repos} names={repoName} size={14} />
+              <span>{reposLabel(picked, repoName)}</span>
+              <Icon name="chevronDown" size={9} />
+            </button>
+          </PickMenu>
+        ) : null}
         <Segmented<Scope>
           label="Show"
           value={prefs.scope}
@@ -126,7 +168,7 @@ export function TasksView() {
             size="small"
             value={who}
             onChange={(w) => setTasksPrefs({ who: w })}
-            options={[{ value: '', label: 'Everyone' }, ...people.map((p) => ({ value: p.key, label: p.label })), { value: 'nobody', label: 'No one yet' }]}
+            options={[{ value: '', label: 'Everyone' }, ...people.map((p) => ({ value: p.key, label: p.label })), { value: 'nobody', label: 'No one yet' }, ...(hasPrivate ? [{ value: 'private', label: 'Private (only you see them)' }] : [])]}
           />
         ) : null}
         {/* Which worktree works on what: only its tasks. */}
@@ -185,8 +227,9 @@ export function TasksView() {
         {sync ? <SyncPill sync={sync} onClick={() => openSheet({ kind: 'task_sync', projectId: here.id })} /> : null}
         <ActionsDropdown
           items={[
-            { label: 'About This Project…', icon: 'book', onSelect: () => openSheet({ kind: 'project_context', projectId: here.id }) },
-            { label: sync ? 'Linear Sync…' : 'Sync with Linear…', icon: 'refresh', onSelect: () => openSheet({ kind: 'task_sync', projectId: here.id }) },
+            { label: several ? 'Repos on This Board…' : 'Board Settings…', icon: 'gear', onSelect: () => openSheet({ kind: 'task_board', boardId: here.id }) },
+            { label: here.own ? 'About This Board…' : 'About This Project…', icon: 'book', onSelect: () => openSheet({ kind: 'project_context', projectId: here.id }) },
+            ...(here.own ? [] : [{ label: sync ? 'Linear Sync…' : 'Sync with Linear…', icon: 'refresh' as const, onSelect: () => openSheet({ kind: 'task_sync', projectId: here.id }) }]),
             ...(sync ? [{ label: 'Sync Now', disabled: Boolean(sync.syncing), onSelect: () => void act(() => api.syncNow(project)) }] : []),
             { label: 'Open a Task for Every New Worktree', separate: true, checked: board.autoTasks, onSelect: () => void act(() => api.setAutoTasks(!board.autoTasks)) },
             { label: 'Archive Done Tasks', icon: 'archive', separate: true, disabled: !doneCount(board, project), onSelect: () => void act(() => api.archiveDone(project), 'Done tasks are in the Archive') },
@@ -195,21 +238,21 @@ export function TasksView() {
         >
           <IconButton icon="more" label="Tasks Options" />
         </ActionsDropdown>
-        <Button variant="primary" size="small" icon="plus" className={t.newTask} aria-label="New Task" onClick={() => openSheet({ kind: 'new_task', projectId: project })} title={`New Task${shortcutKeys('page-new') ? ` (${shortcutKeys('page-new')})` : ''}`}>
+        <Button variant="primary" size="small" icon="plus" className={t.newTask} aria-label="New Task" onClick={() => openSheet({ kind: 'new_task', ...newTask })} title={`New Task${shortcutKeys('page-new') ? ` (${shortcutKeys('page-new')})` : ''}`}>
           New Task
         </Button>
         </div>
       </div>
       <div className={cx(t.body, display === 'board' && t.bodyBoard, display === 'graph' && t.bodyGraph)}>
-        {project ? <TeamOffers projectId={project} /> : null}
+        {project && !here.own ? <TeamOffers projectId={project} /> : null}
         {none ? (
           <Empty
             icon="task"
             title="Plan the work"
-            detail="Every new worktree opens a task here, and its pull request moves it along. Or write down what needs doing."
+            detail={several ? `Tasks here run in ${repos.map((r) => repoName(r)).join(', ')}: each in the repo you pick. Write down what needs doing.` : 'Every new worktree opens a task here, and its pull request moves it along. Or write down what needs doing.'}
             action={
               <EmptyActions>
-                <Button variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_task', projectId: project })}>
+                <Button variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_task', ...newTask })}>
                   New Task
                 </Button>
               </EmptyActions>
@@ -222,7 +265,7 @@ export function TasksView() {
             <Empty icon="task" title={query ? 'Nothing matches' : worktree ? 'Nothing from this worktree here' : who ? 'Nothing for them here' : 'Nothing here'} detail={query ? 'Try fewer words.' : SCOPES.find((s) => s.value === prefs.scope)?.hint} />
           )
         ) : display === 'board' ? (
-          <TaskBoard issues={issues} statuses={statuses} projectId={project} />
+          <TaskBoard issues={issues} statuses={statuses} projectId={project} {...(newTask.projectId ? { repo: newTask.projectId } : {})} />
         ) : display === 'graph' && !graph ? (
           <Empty icon="graph" title="Nothing waits on anything here" detail="Mark what blocks what, or add sub-tasks, on a task’s page: they show up here as a graph." />
         ) : display === 'graph' && graph ? (
@@ -232,7 +275,7 @@ export function TasksView() {
             </Suspense>
           </div>
         ) : (
-          <TaskList issues={issues} statuses={statuses} emptyGroups={prefs.scope === 'active' || prefs.scope === 'backlog'} projectId={project} archived={archive} />
+          <TaskList issues={issues} statuses={statuses} emptyGroups={prefs.scope === 'active' || prefs.scope === 'backlog'} projectId={project} {...(newTask.projectId ? { repo: newTask.projectId } : {})} archived={archive} />
         )}
       </div>
       {issues.length && display !== 'graph' ? (
@@ -264,8 +307,8 @@ function SyncPill({ sync, onClick }: { sync: ProjectSync; onClick: () => void })
   );
 }
 
-/** "3 open" (or nothing), beside each project in the switcher. */
-function openCount(board: ReturnType<typeof useBoard>, projectId: string): string | undefined {
-  const n = board.issues.filter((i) => i.projectId === projectId && isOpen(i.status)).length;
-  return n ? `${n} open` : undefined;
+/** "3 repos · 4 open" (or less), beside each board in the switcher. */
+function boardHint(board: ReturnType<typeof useBoard>, boardId: string, repos: number): string | undefined {
+  const n = board.issues.filter((i) => boardOf(i) === boardId && isOpen(i.status) && !i.archivedAt).length;
+  return [repos > 1 ? `${repos} repos` : '', n ? `${n} open` : ''].filter(Boolean).join(' · ') || undefined;
 }

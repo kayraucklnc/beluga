@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 34 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 35 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -75,14 +75,18 @@ export const COMPANION_PROTO = { major: 1, minor: 34 } as const;
  * 1.30 (BLG-429): a direct message deleted (`network.messages.delete`, yours from your friend's Mac
  * too), your own edited (`network.messages.edit`, only one whose words reach the phone whole:
  * `ChatMessageView.editable`), and a direct chat cleared on the Mac (`network.clear`).
- * 1.31 (BLG-446): the agent picker in a conversation (`ConvView.agent`: runtimes as groups with their
+ * 1.31 (BLG-500): boards and repos are many to many. `TasksView.projects` are boards (a repo's own,
+ * by its project id, or one covering several, `board_…`), and a task on a board of several says
+ * which repo it runs in (`TaskSummary.repo`). `companion.draftTask` / `addTask` take a board's id
+ * too (the task runs in its first repo).
+ * 1.32 (BLG-446): the agent picker in a conversation (`ConvView.agent`: runtimes as groups with their
  * models, an unavailable one with why), picked with `workbench.setModel` / `workbench.setAgent`.
- * 1.32 (BLG-459): usage per provider: each `UsageView` says its agent (`runtime`, `isDefault`),
+ * 1.33 (BLG-459): usage per provider: each `UsageView` says its agent (`runtime`, `isDefault`),
  * a local model's `tokens` and `tokensPerSec`, and `signedIn`; the phone makes one the default
  * agent (`companion.defaultAgent`). An older Mac sends Claude Code alone, as before.
- * 1.33 (BLG-466): a dialogue between agents in a conversation (`TurnView.dialogue`): its header card,
+ * 1.34 (BLG-466): a dialogue between agents in a conversation (`TurnView.dialogue`): its header card,
  * and Stop / Continue? from the phone (`dialogues.stop`, `dialogues.continue`).
- * 1.34 (BLG-498): who works a task and a plan's work: `TaskPageView.agent` / `PlanView.agent` (none:
+ * 1.35 (BLG-498): who works a task and a plan's work: `TaskPageView.agent` / `PlanView.agent` (none:
  * your default) and `agents`, the list to change it from (`board.setAgent`, `plans.setWorkAgent`).
  * An older Mac sends neither, and the phone offers no change. SINCE.workAgents: `companion.addTask` and
  * `plans.create` take the `agent` a new task or plan is worked by; each turn and task activity line
@@ -90,7 +94,7 @@ export const COMPANION_PROTO = { major: 1, minor: 34 } as const;
  * Start with… (BLG-506), also SINCE.workAgents: `board.start` takes the `agent` that works this start,
  * and `companion.ask`'s worktree target the `agent` a new worktree runs (an older Mac: your default).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31, providers: 32, dialogues: 33, workAgents: 34 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 32, providers: 33, dialogues: 34, workAgents: 35 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -189,20 +193,20 @@ export const DataListView = z.object({
 export type DataListView = z.infer<typeof DataListView>;
 
 export const UsageWindowView = z.object({ label: z.string().max(40), pct: z.number().min(0).max(100), resetsAt: ts.optional() });
-/** One agent provider's allowance: plan windows where it has them, tokens and speed where not (1.32). */
+/** One agent provider's allowance: plan windows where it has them, tokens and speed where not (1.33). */
 export const UsageView = z.object({
   provider: z.string().max(40),
   plan: z.string().max(40).optional(),
   windows: z.array(UsageWindowView).max(8),
   updatedAt: ts,
-  /** 1.32: its runtime ("claude", "codex", "local"), what `companion.defaultAgent` takes. */
+  /** 1.33: its runtime ("claude", "codex", "local"), what `companion.defaultAgent` takes. */
   runtime: z.string().max(32).optional(),
-  /** 1.32: the agent that answers when nobody names one. */
+  /** 1.33: the agent that answers when nobody names one. */
   isDefault: z.boolean().optional(),
-  /** 1.32: a local model's tokens since the Mac started, and its speed over the last run. */
+  /** 1.33: a local model's tokens since the Mac started, and its speed over the last run. */
   tokens: z.object({ input: z.number().min(0), output: z.number().min(0) }).optional(),
   tokensPerSec: z.number().min(0).optional(),
-  /** 1.32: false when it's installed on the Mac but not signed in. */
+  /** 1.33: false when it's installed on the Mac but not signed in. */
   signedIn: z.boolean().optional(),
 });
 export type UsageView = z.infer<typeof UsageView>;
@@ -388,7 +392,7 @@ export const TurnView = z.object({
    */
   edit: z.object({ ws: id, kind: z.enum(['worktree', 'chat']) }).optional(),
   /**
-   * 1.33 (BLG-466): where a dialogue between agents begins (core/dialogues view.ts, in words): its
+   * 1.34 (BLG-466): where a dialogue between agents begins (core/dialogues view.ts, in words): its
    * topic, who talks, turn n of the cap, the budget left, and whether Stop / Continue apply now.
    * Its turns follow as `claude` turns named for their agent.
    */
@@ -520,7 +524,7 @@ export const MergeCheckView = z.object({
 });
 export type MergeCheckView = z.infer<typeof MergeCheckView>;
 
-/** 1.31: the agent picker (BLG-446): your default agent's runtime first; one this Mac doesn't run has `why` and no models. */
+/** 1.32: the agent picker (BLG-446): your default agent's runtime first; one this Mac doesn't run has `why` and no models. */
 export const AgentPickerView = z.object({
   runtime: z.string().max(32),
   label: z.string().max(120),
@@ -568,7 +572,7 @@ export const ConvView = z.object({
   plan: z.object({ topic: Topic, title: z.string().max(300), state: z.string().max(20), done: z.number().int(), total: z.number().int(), milestones: z.number().int() }).optional(),
   /** A friend's worktree shared over the network whose owner's Mac is offline: what the message box says (what you send waits for it). */
   waiting: z.string().max(200).optional(),
-  /** 1.31: your conversation's agent picker (src/ui/agent-picker.ts): the chip's words, and runtimes as groups with their models. */
+  /** 1.32: your conversation's agent picker (src/ui/agent-picker.ts): the chip's words, and runtimes as groups with their models. */
   agent: AgentPickerView.optional(),
 });
 export type ConvView = z.infer<typeof ConvView>;
@@ -613,7 +617,7 @@ export const PlanView = z.object({
   paused: z.boolean().optional(),
   parallel: z.number().int().min(0).optional(),
   running: z.number().int().min(0).optional(),
-  /** 1.34 (BLG-498): who works its milestones and tasks from here on (none: your default), and the list to change it from (`plans.setWorkAgent`). */
+  /** 1.35 (BLG-498): who works its milestones and tasks from here on (none: your default), and the list to change it from (`plans.setWorkAgent`). */
   agent: AgentRefView.optional(),
   agents: AgentPickerView.optional(),
 });
@@ -650,6 +654,10 @@ export const TaskSummary = z.object({
   epic: z.object({ done: z.number().int().min(0), total: z.number().int().min(0) }).optional(),
   /** The epic it's part of: its key. */
   epicKey: z.string().max(40).optional(),
+  /** The repo it runs in (its name), when its board covers several (1.31). */
+  repo: z.string().max(200).optional(),
+  /** Only you see it (BLG-501): it never reaches teammates or Linear. */
+  private: z.literal(true).optional(),
   updatedAt: ts,
 });
 export type TaskSummary = z.infer<typeof TaskSummary>;
@@ -689,7 +697,7 @@ export const TaskPageView = TaskSummary.extend({
   pr: z.object({ number: z.number().int().min(0), state: z.string().max(20), title: z.string().max(300), checks: z.string().max(20).optional() }).optional(),
   /** Where it may be moved from the phone (board.move), with their labels. */
   moves: z.array(z.object({ status: TaskStatus, label: z.string().max(40) })).max(10),
-  /** 1.34 (BLG-498): the agent that works it from its next start (none: your default), and while it can start, the list to change it from (`board.setAgent`). */
+  /** 1.35 (BLG-498): the agent that works it from its next start (none: your default), and while it can start, the list to change it from (`board.setAgent`). */
   agent: AgentRefView.optional(),
   agents: AgentPickerView.optional(),
 });

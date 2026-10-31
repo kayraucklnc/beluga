@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
 import { labelDef, labelsFor } from '../src/core/board/labels.js';
-import { type Actor, type Issue, filterIssues, isEpic, issueForWorkspace } from '../src/core/board/model.js';
+import { type Actor, type Issue, asksPrivate, boardForRepo, boardOf, filterIssues, isEpic, isOwnBoard, issueForWorkspace, reposOf } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -43,12 +43,91 @@ describe('making tasks', () => {
     expect(store.getState().board.projects.api).toEqual({ prefix: 'BOB', next: 3 });
   });
 
-  it('refuses a task with no title, in an unknown project, or under a parent elsewhere', () => {
+  it('refuses a task with no title, in an unknown project, or under a parent on another board', () => {
     const { board } = setup();
     expect(() => board.create({ projectId: 'api', title: '   ' }, me)).toThrow(/title/);
     expect(() => board.create({ projectId: 'nope', title: 'x' }, me)).toThrow(/project/);
     const p = board.create({ projectId: 'api', title: 'Parent' }, me);
-    expect(() => board.create({ projectId: 'land', title: 'x', parent: p.key }, me)).toThrow(/parent/);
+    expect(() => board.create({ projectId: 'land', board: 'land', title: 'x', parent: p.key }, me)).toThrow(/parent/);
+  });
+});
+
+describe('boards and repos, many to many (BLG-500)', () => {
+  it('a sub-task in another repo stays on its parent’s board, which covers that repo from then on', () => {
+    const { board, store } = setup();
+    const p = board.create({ projectId: 'api', title: 'Launch' }, me);
+    const kid = board.create({ projectId: 'land', title: 'Hero copy', parent: p.key }, me);
+    expect(kid).toMatchObject({ key: 'BOB-2', projectId: 'land', board: 'api', parent: p.id });
+    expect(boardOf(kid)).toBe('api');
+    expect(reposOf(store.getState().board, 'api')).toEqual(['api', 'land']);
+  });
+
+  it('a board of its own covers the repos it names, keys its tasks, and runs each in its repo', () => {
+    const { board, store } = setup();
+    const id = board.createBoard({ name: 'Launch Week', repos: ['api', 'land', 'nope'] });
+    expect(isOwnBoard(id)).toBe(true);
+    expect(store.getState().board.projects[id]).toMatchObject({ name: 'Launch Week', prefix: 'LW', repos: ['api', 'land'] });
+    const a = board.create({ projectId: 'land', board: id, title: 'Hero' }, me);
+    const b = board.create({ projectId: 'api', board: id, title: 'Pricing API' }, me);
+    expect([a.key, b.key]).toEqual(['LW-1', 'LW-2']);
+    expect(a).toMatchObject({ projectId: 'land', board: id });
+    expect(filterIssues(store.getState().board, { boardId: id }).map((i) => i.title).sort()).toEqual(['Hero', 'Pricing API']);
+    expect(filterIssues(store.getState().board, { boardId: id, repos: ['api'] }).map((i) => i.title)).toEqual(['Pricing API']);
+    // The repos' own boards stay empty: their work is on Launch Week now.
+    expect(filterIssues(store.getState().board, { boardId: 'api' })).toEqual([]);
+    expect(boardForRepo(store.getState().board, 'land')).toBe(id);
+    expect(() => board.createBoard({ name: 'x', repos: [] })).toThrow(/one repo/);
+    expect(() => board.createBoard({ name: 'Other', repos: ['api'], prefix: 'LW' })).toThrow(/already/);
+  });
+
+  it('new work in a repo goes on its own board while that has tasks, else on a board that covers it', () => {
+    const { board, store } = setup();
+    board.create({ projectId: 'api', title: 'Old' }, me);
+    const id = board.createBoard({ name: 'Launch', repos: ['api', 'land'] });
+    expect(board.create({ projectId: 'api', title: 'Next' }, me).key).toBe('BOB-2');
+    expect(board.create({ projectId: 'land', title: 'Hero' }, me)).toMatchObject({ board: id, key: 'LNC-1' });
+    expect(boardForRepo(store.getState().board, 'api')).toBe('api');
+  });
+
+  it('moving a task to another repo keeps its board and key, and says so', () => {
+    const { board, store } = setup();
+    const t = board.create({ projectId: 'api', title: 'Hero' }, me);
+    const moved = board.update(t.key, { projectId: 'land' }, me);
+    expect(moved).toMatchObject({ key: t.key, projectId: 'land', board: 'api' });
+    expect(moved.activity.at(-1)!.text).toBe('moved this to run in landing');
+    expect(reposOf(store.getState().board, 'api')).toEqual(['api', 'land']);
+    // Back home: no board field again (it's its repo's own).
+    expect(board.update(t.key, { projectId: 'api' }, me).board).toBeUndefined();
+    expect(() => board.update(t.key, { projectId: 'nope' }, me)).toThrow(/project/);
+  });
+
+  it('a board is renamed and given repos; one of its own goes only once it is empty', () => {
+    const { board, store } = setup();
+    board.editBoard('api', { name: 'Payments', repos: ['land', 'api'] });
+    expect(store.getState().board.projects.api).toMatchObject({ name: 'Payments', repos: ['land'] });
+    expect(reposOf(store.getState().board, 'api')).toEqual(['api', 'land']);
+    board.editBoard('api', { name: '', repos: [] });
+    expect(store.getState().board.projects.api).toEqual({ prefix: 'BOB', next: 1 });
+    const id = board.createBoard({ name: 'Launch', repos: ['land'] });
+    expect(() => board.editBoard(id, { repos: [] })).toThrow(/one repo/);
+    const t = board.create({ projectId: 'land', board: id, title: 'x' }, me);
+    expect(() => board.removeBoard(id)).toThrow(/still has tasks/);
+    board.remove(t.id);
+    board.removeBoard(id);
+    expect(store.getState().board.projects[id]).toBeUndefined();
+    expect(() => board.removeBoard('api')).toThrow(/Only a board you made/);
+  });
+
+  it('keeps boards and where tasks run across a restart', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-boards-'));
+    dirs.push(dir);
+    const first = setup({ dir });
+    const id = first.board.createBoard({ name: 'Launch', repos: ['api', 'land'] });
+    first.board.create({ projectId: 'land', board: id, title: 'Hero' }, me);
+    first.board.flush();
+    const again = setup({ dir });
+    expect(again.store.getState().board.projects[id]).toMatchObject({ name: 'Launch', repos: ['api', 'land'] });
+    expect(again.board.list()[0]).toMatchObject({ projectId: 'land', board: id });
   });
 
   it('a new prefix applies to new tasks only, and is unique', () => {
@@ -108,6 +187,27 @@ describe('changing tasks', () => {
     expect(() => board.update(a.id, { parent: c.id }, me)).toThrow(/itself/);
     expect(() => board.update(a.id, { parent: a.id }, me)).toThrow(/itself/);
     expect(board.update(c.id, { parent: null }, me).parent).toBeUndefined();
+  });
+
+  it('keeps a private task’s whole tree private, and shares it all at once (BLG-501)', () => {
+    const { board, store } = setup({ dir: mkdtempSync(path.join(os.tmpdir(), 'board-')) });
+    const epic = board.create({ projectId: 'api', title: 'X stuff', private: true }, me);
+    const kid = board.create({ projectId: 'api', title: 'Thread', parent: epic.id }, me);
+    const grandkid = board.create({ projectId: 'api', title: 'Hook', parent: kid.id }, me);
+    const loose = board.create({ projectId: 'api', title: 'Loose' }, me);
+    expect([kid.private, grandkid.private, loose.private]).toEqual([true, true, undefined]);
+    // Moved under a private task: private like the rest.
+    expect(board.update(loose.id, { parent: epic.id }, me).private).toBe(true);
+    board.setPrivate(epic.id, false, me);
+    expect([epic, kid, grandkid, loose].map((i) => board.get(i.id)!.private)).toEqual([undefined, undefined, undefined, undefined]);
+    expect(board.get(epic.id)!.activity.at(-1)).toMatchObject({ kind: 'private', text: 'shared this with the team' });
+    board.setPrivate(kid.id, true, me);
+    expect([epic, kid, grandkid].map((i) => Boolean(store.getState().board.issues.find((x) => x.id === i.id)!.private))).toEqual([false, true, true]);
+  });
+
+  it('hears a description asking to keep the task to yourself, and not one about private keys (BLG-501)', () => {
+    for (const t of ['draft my X launch thread, just for me', 'Private: plan the posts', 'keep it private', 'a private task to tidy notes', 'don’t share this: write a bio']) expect(asksPrivate(t)).toBe(true);
+    for (const t of ['rotate the private key', 'make the repo private', 'fix the personal access token', 'Add a private API flag']) expect(asksPrivate(t)).toBe(false);
   });
 
   it('drops a card between two others', () => {
@@ -326,7 +426,8 @@ describe('what screens show', () => {
     expect(titles({ scope: 'active' })).toEqual(['Theirs', 'Mine']);
     expect(titles({ scope: 'backlog' })).toEqual(['Later']);
     expect(titles({ scope: 'all' })).not.toContain(old.title);
-    expect(titles({ scope: 'all', projectId: 'land' })).toEqual(['Theirs']);
+    expect(titles({ scope: 'all', boardId: 'land' })).toEqual(['Theirs']);
+    expect(titles({ scope: 'all', repos: ['land'] })).toEqual(['Theirs']);
     expect(titles({ query: 'lat' })).toEqual(['Later']);
   });
 });
@@ -679,5 +780,48 @@ describe('epics (BLG-267)', () => {
     expect(isEpic(board.state(), epic)).toBe(false);
     board.create({ projectId: 'api', title: 'Login', parent: epic.key }, me);
     expect(isEpic(board.state(), epic)).toBe(true);
+  });
+});
+
+describe('an epic’s person is its sub-tasks’ person (BLG-512)', () => {
+  const kay = { kind: 'person', id: 'p-me', name: 'Kay' } as const;
+  const bob = { kind: 'person', id: 'p-bob', name: 'bob' } as const;
+  const mia = { kind: 'person', id: 'p-mia', name: 'mia' } as const;
+
+  it('a new sub-task, or one moved under it, is for whoever has the epic unless it’s given to someone', () => {
+    const { board } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Auth', assignee: bob }, me);
+    expect(board.create({ projectId: 'api', title: 'Login', parent: epic.key }, me).assignee).toEqual(bob);
+    expect(board.create({ projectId: 'api', title: 'Logout', parent: epic.key, assignee: mia }, me).assignee).toEqual(mia);
+    const loose = board.create({ projectId: 'api', title: 'Reset' }, me);
+    expect(board.update(loose.key, { parent: epic.key }, me).assignee).toEqual(bob);
+    const mias = board.create({ projectId: 'api', title: 'Signup', assignee: mia }, me);
+    expect(board.update(mias.key, { parent: epic.key }, me).assignee).toEqual(mia);
+  });
+
+  it('giving the epic to someone else takes its open sub-tasks along, all the way down, but not ones given to another person or finished', () => {
+    const { board } = setup();
+    const epic = board.create({ projectId: 'api', title: 'Auth', assignee: bob }, me);
+    const login = board.create({ projectId: 'api', title: 'Login', parent: epic.key }, me);
+    const form = board.create({ projectId: 'api', title: 'Form', parent: login.key }, me);
+    const free = board.create({ projectId: 'api', title: 'Free', parent: epic.key }, me);
+    board.update(free.key, { assignee: null }, me);
+    const mias = board.create({ projectId: 'api', title: 'Logout', parent: epic.key, assignee: mia }, me);
+    const done = board.create({ projectId: 'api', title: 'Spike', parent: epic.key, status: 'done' }, me);
+
+    board.update(epic.key, { assignee: kay }, me);
+    expect(board.get(login.key)?.assignee).toEqual(kay);
+    expect(board.get(form.key)?.assignee).toEqual(kay);
+    expect(board.get(free.key)?.assignee).toEqual(kay);
+    expect(board.get(mias.key)?.assignee).toEqual(mia);
+    expect(board.get(done.key)?.assignee).toEqual(bob);
+    expect(board.get(login.key)?.activity.at(-1)?.text).toBe('assigned this to Kay');
+
+    // Changed later: a sub-task keeps its own person (and its own sub-tasks follow it) when the epic moves on.
+    board.update(login.key, { assignee: mia }, me);
+    board.update(epic.key, { assignee: null }, me);
+    expect(board.get(login.key)?.assignee).toEqual(mia);
+    expect(board.get(form.key)?.assignee).toEqual(mia);
+    expect(board.get(free.key)?.assignee).toBeUndefined();
   });
 });

@@ -39,7 +39,7 @@ export interface SharedTask {
 /** Lines kept per task (the board keeps as many). */
 export const KEEP_ACTS = 200;
 /** Activity that never travels: it names worktrees, plans, proof files or other trackers that are this Mac's own. */
-export const LOCAL_ACTS: ReadonlySet<Activity['kind']> = new Set(['worktree', 'plan', 'proof', 'project']);
+export const LOCAL_ACTS: ReadonlySet<Activity['kind']> = new Set(['worktree', 'plan', 'proof', 'project', 'private']);
 
 /** JSON with keys in order: the same value always reads the same. */
 export function canon(v: unknown): string {

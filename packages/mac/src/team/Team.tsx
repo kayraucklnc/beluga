@@ -1,5 +1,6 @@
-import { OFFER_DETAIL, knockOf, knockWords, myKnockOn, myKnockWords, offerWords, teamShareChoices, teammateOn, teammatesOf, waitingDetail, waitingOn, waitingWords, workingOn, workingWords } from '@beluga/core/team/model.js';
-import type { ReactNode } from 'react';
+import { OFFER_DETAIL, andNames, knockOf, knockWords, myKnockOn, myKnockWords, offerWords, teamShareChoices, teammateOn, teammatesOf, waitingDetail, waitingOn, waitingWords, workingOn, workingWords } from '@beluga/core/team/model.js';
+import * as Popover from '@radix-ui/react-popover';
+import { type ReactNode, useState } from 'react';
 import { useActions } from '../lib/actions.js';
 import { ago } from '../tasks/tasks-model.js';
 import { Icon } from '../components/Icon.js';
@@ -8,7 +9,8 @@ import { Avatar, Button, IconButton, Tip } from '../components/ui.js';
 import { AvatarStack } from '../network/Avatars.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
-import { shownState } from '../network/net-model.js';
+import { offerSent, shownState } from '../network/net-model.js';
+import { answerOffer } from '../network/use-net.js';
 import type { AppState } from '@beluga/core/store.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import s from './team.module.css';
@@ -64,27 +66,95 @@ export function TeamOffers({ projectId }: { projectId: string }) {
 export function TeamBadge({ projectId }: { projectId: string }) {
   const team = useApp((st) => st.team.teams[projectId], sameDeep);
   const online = useApp((st) => (team ? team.mates.filter((m) => st.network.friends.some((f) => f.peerId === m.peerId && shownState(f) === 'online')).map((m) => m.name) : []), sameDeep);
+  const [open, setOpen] = useState(false);
   if (!team?.mates.length) return null;
-  const names = team.mates.map((m) => m.name).join(', ');
+  const names = andNames(team.mates.map((m) => m.name));
   const tip = `Team on ${team.repo}: you and ${names}${online.length ? ` · ${online.join(', ')} online` : ''}`;
+  // Click: who's on the team, and Add Friend for anyone on it who isn't a friend yet (BLG-510).
   return (
-    <Tip label={tip}>
-      <span className={s.badge} aria-label={tip} role="img">
-        <Icon name="people" size={12} />
-        {online.length ? <span className={s.badgeOnline} /> : null}
-      </span>
-    </Tip>
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Tip label={tip}>
+        <Popover.Trigger asChild>
+          <button type="button" className={s.badge} aria-label={tip} onClick={(e) => e.stopPropagation()}>
+            <Icon name="people" size={12} />
+            {online.length ? <span className={s.badgeOnline} /> : null}
+          </button>
+        </Popover.Trigger>
+      </Tip>
+      <Popover.Portal>
+        <Popover.Content className={s.teamCard} side="right" align="start" sideOffset={8} collisionPadding={12} aria-label={`Team on ${team.repo}`} onClick={(e) => e.stopPropagation()}>
+          <TeamCard projectId={projectId} />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
-/** "Leave Team" (one item per teammate when there are several) for a project's menu. */
+/** Everyone on a project's team: friends, and the rest with Add Friend (they're asked; added only if they accept). */
+export function TeamCard({ projectId }: { projectId: string }) {
+  const team = useApp((st) => st.team.teams[projectId], sameDeep);
+  const friends = useApp((st) => st.network.friends.map((f) => f.peerId), sameDeep);
+  const offers = useApp((st) => st.network.offers, sameDeep);
+  const api = useApi();
+  const { client } = useBeluga();
+  const say = useSay();
+  if (!team) return null;
+  return (
+    <div className={s.teamList}>
+      <div className={s.teamHead}>
+        <Icon name="people" size={13} />
+        Team on {team.repo}
+      </div>
+      {team.mates.map((m) => {
+        const friend = friends.includes(m.peerId);
+        const asked = offerSent(offers, m.peerId);
+        const theyAsked = (offers ?? []).some((o) => o.dir === 'in' && o.peerId === m.peerId);
+        return (
+          <div key={m.peerId} className={s.teamRow} aria-label={m.name}>
+            <Avatar name={m.name} id={m.peerId} size={22} />
+            <span className={s.teamWho}>
+              <span className={s.teamName}>{m.name}</span>
+              <span className={s.teamSub}>{friend ? 'Friend' : 'On the team, not a friend yet'}</span>
+            </span>
+            {friend ? null : theyAsked ? (
+              <Button size="small" variant="primary" onClick={() => void answerOffer(client, m.peerId, m.name, true)}>
+                Accept
+              </Button>
+            ) : (
+              <Button size="small" disabled={asked} onClick={() => say(api.team.befriend(projectId, m.peerId).then(() => toast(client, `Asked ${m.name} to be friends`, 'success')))}>
+                {asked ? 'Asked' : 'Add Friend'}
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * A project's team in its menu (BLG-510): Invite to Team ▸ (friends with the repository who aren't
+ * on it; anyone on the team can), and Leave Team (off it for everyone; your tasks stay yours).
+ */
 export function useTeamMenuItems(projectId: string): readonly ActionItem[] {
   const mates = useApp((st) => teammatesOf(st.team, projectId), sameDeep);
+  const invitable = useApp((st) => st.team.teams[projectId]?.invitable ?? [], sameDeep);
   const api = useApi();
   const say = useSay();
   if (!mates.length) return [];
-  if (mates.length === 1) return [{ label: `Leave Team with ${mates[0]!.name}`, icon: 'people', separate: true, onSelect: () => say(api.team.leave(projectId)) }];
-  return [{ label: 'Leave Team', icon: 'people', separate: true, onSelect: () => say(api.team.leave(projectId)) }];
+  const invite: ActionItem[] = invitable.length
+    ? [
+        {
+          label: 'Invite to Team',
+          icon: 'plus',
+          separate: true,
+          submenu: invitable.map((f) => ({ label: f.name, hint: f.state === 'asked' ? 'Invited' : 'Has this repository', disabled: f.state === 'asked', onSelect: () => say(api.team.answer(f.peerId, projectId, true)) })),
+          onSelect: () => undefined,
+        },
+      ]
+    : [];
+  const leave: ActionItem = { label: mates.length === 1 ? `Leave Team with ${mates[0]!.name}` : 'Leave Team', icon: 'people', separate: !invite.length, hint: mates.length > 1 ? `Off it for ${andNames(mates.map((m) => m.name))}; your tasks stay` : undefined, onSelect: () => say(api.team.leave(projectId)) };
+  return [...invite, leave];
 }
 
 /** "Ata is working on this" with their avatars, for a task, and Knock to Join on their worktree. */
