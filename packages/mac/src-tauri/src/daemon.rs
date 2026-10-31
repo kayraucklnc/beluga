@@ -135,6 +135,26 @@ fn outdated(running: Option<&str>, keep_alive: bool, bundled: Option<&str>) -> b
     keep_alive && matches!((running, bundled), (Some(r), Some(b)) if r != b)
 }
 
+/// The process that started `pid` (1 once that one is gone), if it can be told.
+fn parent_of(pid: u32) -> Option<u32> {
+    let out = Command::new("/bin/ps")
+        .args(["-o", "ppid=", "-p", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
+/// Whether a running daemon was left behind by a Mac app that's gone (it crashed, was force
+/// quit or killed): kept alive for an app, now launchd's. Quitting never stops one this app
+/// didn't start, and such a daemon can lose your login session (its terminals can't read the
+/// Keychain, so Claude Code isn't signed in, nor open a browser or copy), so it's replaced.
+/// One started by hand is left alone.
+fn orphaned(keep_alive: bool, parent: Option<u32>) -> bool {
+    keep_alive && parent == Some(1)
+}
+
 /// If the daemon this app started has quit, let go of it (so it doesn't linger) and say how.
 fn reap(app: &AppHandle) -> Option<ExitStatus> {
     let state = app.try_state::<AppState>()?;
@@ -398,15 +418,24 @@ pub async fn ensure(app: &AppHandle, args: &[String]) -> Result<Endpoint, String
     let _one_at_a_time = state.lock.lock().await;
     if let Some(info) = running(app) {
         let bundled = bundled_version(app);
-        if !outdated(info.version.as_deref(), info.keep_alive, bundled.as_deref()) {
+        let old = outdated(info.version.as_deref(), info.keep_alive, bundled.as_deref());
+        let left = !old && orphaned(info.keep_alive, parent_of(info.pid));
+        if !old && !left {
             return Ok(info.into());
         }
-        // After an update: the screens reconnect to the new one by themselves.
-        eprintln!(
-            "beluga: replacing Beluga {} with this app's {}",
-            info.version.as_deref().unwrap_or("?"),
-            bundled.as_deref().unwrap_or("?")
-        );
+        // After an update, or an app that's gone: the screens reconnect to the new one by themselves.
+        if left {
+            eprintln!(
+                "beluga: replacing the Beluga a closed app left running (pid {})",
+                info.pid
+            );
+        } else {
+            eprintln!(
+                "beluga: replacing Beluga {} with this app's {}",
+                info.version.as_deref().unwrap_or("?"),
+                bundled.as_deref().unwrap_or("?")
+            );
+        }
         stop_running(app).await?;
     }
     start(app, args).await
@@ -516,6 +545,23 @@ mod tests {
         // Development (nothing bundled), or a daemon that doesn't say.
         assert!(!outdated(Some("0.4.0"), true, None));
         assert!(!outdated(None, true, Some("0.5.0")));
+    }
+
+    #[test]
+    fn replaces_a_kept_alive_daemon_whose_app_is_gone() {
+        assert!(orphaned(true, Some(1)));
+        // Its app still runs, or we couldn't tell.
+        assert!(!orphaned(true, Some(4730)));
+        assert!(!orphaned(true, None));
+        // A daemon started by hand stays, even under launchd.
+        assert!(!orphaned(false, Some(1)));
+    }
+
+    #[test]
+    fn tells_a_process_parent() {
+        let me = std::process::id();
+        assert_eq!(parent_of(me), Some(std::os::unix::process::parent_id()));
+        assert_eq!(parent_of(u32::MAX), None);
     }
 
     #[test]
