@@ -230,6 +230,8 @@ export class Board {
   private autoTasks = false;
   /** Sub-tasks are going Done with their parent: parents wait until it's over to follow them. */
   private cascading = 0;
+  /** A merge is moving tasks to Done (see shipping): their sub-tasks stay where they are. */
+  private merging = 0;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   /** board.json couldn't be read nor moved aside: changes stay in memory rather than overwrite it. */
   private readOnly = false;
@@ -349,6 +351,11 @@ export class Board {
       next.rank = this.lastRank(patch.status);
       // It moved on (a person's choice, or every criterion settled): no longer held for its checks.
       if (issue.needsChecks) next.needsChecks = undefined;
+      // Moved back out of the work: the worktree that carried it no longer ships it (nor does its branch).
+      if (issue.carriedBy && (patch.status === 'backlog' || patch.status === 'todo' || patch.status === 'canceled')) {
+        next.carriedBy = undefined;
+        if (!issue.worktrees.length) next.branch = undefined;
+      }
     }
     if (patch.priority && patch.priority !== issue.priority) {
       next.priority = patch.priority;
@@ -723,7 +730,7 @@ export class Board {
       if (!before || before.number !== pr.number) notes.push(this.entry(beluga, 'pr', `opened pull request #${pr.number}`));
       if (pr.state === 'MERGED' && before?.state !== 'MERGED') {
         notes.push(this.entry(beluga, 'pr', `pull request #${pr.number} was merged`));
-        if (issue.status !== 'canceled') status = 'done';
+        if (issue.status !== 'canceled' && shipsWith(issue, workspaceId)) status = 'done';
       } else if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') {
         notes.push(this.entry(beluga, 'pr', `pull request #${pr.number} was closed without merging`));
       } else if (pr.state === 'OPEN') {
@@ -742,7 +749,7 @@ export class Board {
       }
       if (status && status !== issue.status) notes.push(this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`));
       const moved = status && status !== issue.status;
-      this.change(issue, { pr, ...(moved ? { status, rank: this.lastRank(status!), needsChecks: undefined } : {}), ...(open.length ? { needsChecks: true } : {}) }, notes);
+      this.shipping(() => this.change(issue, { pr, ...(moved ? { status, rank: this.lastRank(status!), needsChecks: undefined } : {}), ...(open.length ? { needsChecks: true } : {}) }, notes));
     }
   }
 
@@ -771,18 +778,33 @@ export class Board {
     const issue = this.need(ref);
     if (pr.state !== 'MERGED' || !isOpen(issue.status) || isArchived(issue)) return issue;
     const beluga: Actor = { kind: 'beluga' };
-    return this.change(issue, { pr, status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [
-      this.entry(beluga, 'pr', `pull request #${pr.number} was merged`),
-      this.entry(beluga, 'status', statusText(STATUS_INFO[issue.status].label, STATUS_INFO.done.label)),
-    ]);
+    return this.shipping(() =>
+      this.change(issue, { pr, status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [
+        this.entry(beluga, 'pr', `pull request #${pr.number} was merged`),
+        this.entry(beluga, 'status', statusText(STATUS_INFO[issue.status].label, STATUS_INFO.done.label)),
+      ]),
+    );
   }
 
   /** The worktree was merged into the project's main folder here. */
   worktreeMerged(workspaceId: string): void {
     for (const issue of this.issues) {
-      if (!followsWorktree(issue, workspaceId) || issue.status === 'done' || issue.status === 'canceled') continue;
+      if (!shipsWith(issue, workspaceId) || issue.status === 'done' || issue.status === 'canceled') continue;
       const beluga: Actor = { kind: 'beluga' };
-      this.change(issue, { status: 'done' }, [this.entry(beluga, 'worktree', 'its worktree was merged into main'), this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to Done`)]);
+      this.shipping(() => this.change(issue, { status: 'done' }, [this.entry(beluga, 'worktree', 'its worktree was merged into main'), this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to Done`)]));
+    }
+  }
+
+  /**
+   * A merge moving a task to Done: its sub-tasks don't go with it (they may be work for later, or
+   * done elsewhere); the ones done in the same worktree follow it there themselves.
+   */
+  private shipping<T>(fn: () => T): T {
+    this.merging++;
+    try {
+      return fn();
+    } finally {
+      this.merging--;
     }
   }
 
@@ -965,7 +987,7 @@ export class Board {
     this.issues = this.issues.map((i) => (i.id === issue.id ? next : i));
     this.deps.store.dispatch({ type: 'board_issue', issue: next, ...(origin ? { origin } : {}) });
     this.save();
-    if (status === 'done' && issue.status !== 'done') this.doneWithParent(next);
+    if (status === 'done' && issue.status !== 'done' && !this.merging) this.doneWithParent(next);
     // Its parent follows its sub-tasks: this one moved, or moved to another parent.
     const moved = status !== issue.status;
     if (issue.parent && (moved || next.parent !== issue.parent)) this.rollUp(issue.parent);
@@ -983,6 +1005,8 @@ export class Board {
     if (!parent || parent.plan || parent.status === 'canceled' || (parent.status === 'in_plan' && !planEpic)) return;
     const step = rollUpTo(parent, this.issues.filter((i) => i.parent === id && i.status !== 'canceled'));
     if (!step) return;
+    // Its own work shipped (a merge made it Done): sub-tasks still open are later work, they don't reopen it.
+    if (parent.status === 'done' && step.to !== 'done' && (this.merging || parent.pr?.state === 'MERGED')) return;
     this.change(parent, { status: step.to, rank: this.lastRank(step.to), needsChecks: undefined, ...(step.to === 'done' ? { worktreeGone: undefined } : {}) }, [
       this.entry({ kind: 'beluga' }, 'status', `${step.why}: ${statusText(STATUS_INFO[parent.status].label, STATUS_INFO[step.to].label)}`),
     ]);
@@ -1108,6 +1132,8 @@ function keepRevisions(revisions: readonly BriefRevision[]): BriefRevision[] {
 
 /** The worktree whose pull request and merge move this task: the one doing it now, or one carrying it. */
 const followsWorktree = (issue: Issue, workspaceId: string): boolean => issue.worktrees.at(-1) === workspaceId || issue.carriedBy === workspaceId;
+/** Whether merging this worktree's work finishes the task: the one doing it, or one it carries that's still under way there. */
+const shipsWith = (issue: Issue, workspaceId: string): boolean => issue.worktrees.at(-1) === workspaceId || (issue.carriedBy === workspaceId && (issue.status === 'in_progress' || issue.status === 'in_review'));
 
 function sameAssignee(a: Assignee | undefined, b: Assignee | undefined): boolean {
   return !a || !b ? a === b : a.id === b.id;

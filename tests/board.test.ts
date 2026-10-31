@@ -441,6 +441,38 @@ describe('work carried by another worktree, and sub-tasks done with their parent
     expect(board.need(t.key).status).toBe('done');
   });
 
+  it('a merge finishes only the work done in that worktree: sub-tasks filed for later, or done elsewhere, stay open', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'Fix sign-in', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'w1', {}, me);
+    const later = board.create({ projectId: 'api', title: 'Found: retry on 429', parent: t.key }, claude);
+    const elsewhere = board.create({ projectId: 'api', title: 'Other fix', status: 'in_progress', parent: t.key }, claude);
+    board.linkWorktree(elsewhere.key, 'w2', {}, claude);
+    const here = board.create({ projectId: 'api', title: 'Also here', parent: t.key }, claude);
+    board.carry(here.key, { id: 'w1' }, () => false);
+    board.update(here.key, { status: 'in_review' }, claude);
+    board.prChanged('w1', pr('MERGED'));
+    expect([t, here, later, elsewhere].map((i) => board.need(i.key).status)).toEqual(['done', 'done', 'todo', 'in_progress']);
+
+    const t2 = board.create({ projectId: 'api', title: 'y', status: 'in_progress' }, me);
+    board.linkWorktree(t2.key, 'w3', {}, me);
+    const kid = board.create({ projectId: 'api', title: 'z', parent: t2.key }, me);
+    board.worktreeMerged('w3');
+    expect([t2, kid].map((i) => board.need(i.key).status)).toEqual(['done', 'todo']);
+  });
+
+  it('a carried task moved back out of the work no longer ships with that worktree', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.carry(t.key, { id: 'w1', branch: 'beluga/buglist' }, () => false);
+    board.update(t.key, { status: 'backlog' }, me);
+    expect(board.need(t.key).carriedBy).toBeUndefined();
+    expect(board.need(t.key).branch).toBeUndefined();
+    board.prChanged('w1', pr('MERGED'));
+    board.worktreeMerged('w1');
+    expect(board.need(t.key).status).toBe('backlog');
+  });
+
   it('a parent reaching Done takes its open sub-tasks with it, all the way down; canceled ones stay', () => {
     const { board } = setup();
     const parent = board.create({ projectId: 'api', title: 'Buglist', status: 'in_review' }, me);
