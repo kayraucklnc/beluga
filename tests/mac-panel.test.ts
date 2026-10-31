@@ -22,7 +22,7 @@ import {
   pickPanelTab,
   rememberTab,
 } from '../packages/mac/src/lib/panel-model.js';
-import { ancestorsOf, filterLoads, treeRows, type Entry } from '../packages/mac/src/layout/panel/tree.js';
+import { ancestorsOf, foundRows, nameRanges, treeRows, type Entry } from '../packages/mac/src/layout/panel/tree.js';
 
 const ws: View = { kind: 'workspace', id: 'w1', tab: 'chat' };
 const room: View = { kind: 'room' };
@@ -34,8 +34,8 @@ describe('the right panel’s two panes', () => {
     expect(paneTabs(DEFAULT_LAYOUT, 'bottom', all)).toEqual(['terminal', 'background']);
     expect(viewsOf('changes', all)).toEqual(['changes', 'history']);
     expect(viewsOf('history', all)).toEqual(['changes', 'history']);
-    // A project's home has History where Changes would be; a chat has no Changes at all.
-    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor({ kind: 'project', id: 'p' }))).toEqual(['history', 'info']);
+    // A project's home has History where Changes would be (and its main folder's Files); a chat has no Changes at all.
+    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor({ kind: 'project', id: 'p' }))).toEqual(['history', 'files', 'info']);
     expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor(ws, 'chat'))).toEqual(['files', 'scratch', 'info']);
   });
 
@@ -70,7 +70,7 @@ describe('the right panel’s tabs', () => {
   });
   it('a workspace has every tab; a chat has no Changes; a friend’s workspace Info and its Scratch; the Terminal view only Info', () => {
     expect(panelTabsFor(ws, 'worktree')).toEqual(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background']);
-    expect(panelTabsFor({ kind: 'project', id: 'p' })).toEqual(['terminal', 'info', 'history']);
+    expect(panelTabsFor({ kind: 'project', id: 'p' })).toEqual(['files', 'terminal', 'info', 'history']);
     expect(panelTabsFor(ws, 'chat')).toEqual(['files', 'terminal', 'info', 'scratch', 'background']);
     expect(panelTabsFor({ kind: 'shared', owner: 'o', id: 'x', tab: 'chat' })).toEqual(['info', 'scratch']);
     expect(panelTabsFor({ kind: 'terminal' })).toEqual(['info']);
@@ -161,33 +161,28 @@ describe('the Files tab’s tree', () => {
     'src/lib': [{ name: 'auth.ts', dir: false }],
     node_modules: [{ name: 'server-thing', dir: true }],
   };
-  const entriesOf = (p: string): Entry[] | undefined => fs[p];
-
   it('shows opened folders under their parent, with a loading row for one on its way', () => {
-    const rows = treeRows((p) => (p === 'src/lib' ? undefined : fs[p]), new Set(['src', 'src/lib']), '');
+    const rows = treeRows((p) => (p === 'src/lib' ? undefined : fs[p]), new Set(['src', 'src/lib']));
     expect(rows.map((r) => `${'  '.repeat(r.depth)}${r.kind === 'loading' ? '…' : r.name}`)).toEqual(['src', '  lib', '    …', '  server.ts', 'node_modules', 'README.md']);
     expect(rows[0]).toMatchObject({ dir: true, open: true });
   });
 
-  it('filters by name, keeping the folders above a match (and never looking into node_modules)', () => {
-    const rows = treeRows(entriesOf, new Set(), 'auth');
-    expect(rows.map((r) => r.path)).toEqual(['src', 'src/lib', 'src/lib/auth.ts']);
-    expect(treeRows(entriesOf, new Set(), 'server').map((r) => r.path)).toEqual(['src', 'src/server.ts']);
-    // A folder whose own name matches shows closed.
-    expect(treeRows(entriesOf, new Set(), 'lib').map((r) => [r.path, r.open])).toEqual([
-      ['src', true],
-      ['src/lib', false],
+  it('lays the files a name search found out as a tree, folders first, with the match marked in the name', () => {
+    const rows = foundRows([
+      { path: 'src/server.ts', ranges: [[4, 7]] },
+      { path: 'README.md', ranges: [[0, 3]] },
+      { path: 'src/lib/auth.ts', ranges: [[0, 3]] },
     ]);
-    // …and opening it shows everything in it.
-    expect(treeRows(entriesOf, new Set(['src/lib']), 'lib').map((r) => r.path)).toEqual(['src', 'src/lib', 'src/lib/auth.ts']);
-    expect(treeRows(entriesOf, new Set(), 'zzz')).toEqual([]);
+    expect(rows.map((r) => `${'  '.repeat(r.depth)}${r.name}`)).toEqual(['src', '  lib', '    auth.ts', '  server.ts', 'README.md']);
+    expect(rows.every((r) => !r.dir || r.open)).toBe(true);
+    expect(rows.find((r) => r.name === 'server.ts')?.marks).toEqual([[0, 3]]);
+    // A match only in the folders above: nothing to mark in the name.
+    expect(rows.find((r) => r.name === 'auth.ts')?.marks).toEqual([]);
   });
 
-  it('while filtering, loads the folders not looked at yet (skipping dependencies and ones asked for)', () => {
-    const partial = (p: string): Entry[] | undefined => (p === '' ? fs[''] : undefined);
-    expect(filterLoads(partial, new Set())).toEqual(['src']);
-    expect(filterLoads(partial, new Set(['src']))).toEqual([]);
-    expect(filterLoads(entriesOf, new Set())).toEqual([]);
+  it('clips a path’s matches to its name', () => {
+    expect(nameRanges('a/bc/def.ts', [[2, 8]])).toEqual([[0, 3]]);
+    expect(nameRanges('top.ts', [[1, 2]])).toEqual([[1, 2]]);
   });
 
   it('knows the folders above a path', () => {

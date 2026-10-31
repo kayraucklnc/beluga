@@ -52,6 +52,14 @@ export function usePanelRuntime<T>(pick: (r: Runtime) => T): T {
 
 const workspaceOf = (state: PanelState): Workspace | undefined => (state.view.kind === 'workspace' ? findWorkspace(state.projects, state.view.id) : undefined);
 
+/** The folder the Files tab (and a file opened in full) is about: the workspace on screen, or on a project's page its main folder. */
+export function filesWsOf(state: PanelState): string | undefined {
+  const { view } = state;
+  if (view.kind === 'workspace') return view.id;
+  if (view.kind === 'project') return state.projects.find((p) => p.id === view.id)?.workspaces.find((w) => w.kind === 'main' && !w.archived)?.id;
+  return undefined;
+}
+
 /** Uncommitted files or commits ahead of its base. */
 export const hasChanges = (ws: Workspace | undefined): boolean => (ws?.status?.changed ?? 0) + (ws?.status?.ahead ?? 0) > 0;
 
@@ -302,8 +310,7 @@ export function useWorkspaceTabBridge(client: SocketClient): void {
   useEffect(
     () =>
       client.store.subscribe(() => {
-        const view = client.store.getState().view;
-        if (runtime.focus && (view.kind !== 'workspace' || view.id !== runtime.focus.wsId)) closeFocus();
+        if (runtime.focus && filesWsOf(client.store.getState()) !== runtime.focus.wsId) closeFocus();
       }),
     [client],
   );

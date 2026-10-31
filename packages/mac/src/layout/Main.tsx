@@ -5,7 +5,7 @@ import { useApp } from '../lib/beluga.js';
 import { useMaking } from '../lib/making.js';
 import { ChatView } from '../views/ChatView.js';
 import { Toolbar } from './Toolbar.js';
-import { WorkspaceCenter } from './panel/FocusView.js';
+import { ProjectCenter, WorkspaceCenter } from './panel/FocusView.js';
 import { TerminalDrawer } from './panel/TerminalDrawer.js';
 import { WorkFrame } from '../work/WorkNav.js';
 import s from './Shell.module.css';
@@ -118,7 +118,11 @@ function Route() {
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':
-      return view.page === 'history' ? <HistoryView projectId={view.id} /> : <ProjectHome id={view.id} />;
+      return view.page === 'history' ? <HistoryView projectId={view.id} /> : (
+        <ProjectCenter>
+          <ProjectHome id={view.id} />
+        </ProjectCenter>
+      );
   }
 }
 

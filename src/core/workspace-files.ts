@@ -341,6 +341,79 @@ export async function searchContents(root: string, query: string, opts: ContentS
   return rg ? searchWithRipgrep(rg, root, query, opts, signal) : searchWithNode(root, query, opts, signal);
 }
 
+// ---- searching names
+
+export interface NameMatch {
+  /** Relative to the workspace, with `/`. */
+  readonly path: string;
+  /** Where the query matched in `path` (UTF-16 offsets, [start, end)). */
+  readonly ranges: ReadonlyArray<readonly [number, number]>;
+}
+
+export interface NameResults {
+  readonly files: readonly NameMatch[];
+  /** Stopped at MAX_NAMES: there are more. */
+  readonly truncated: boolean;
+  readonly cancelled?: boolean;
+  readonly error?: string;
+}
+
+/** At most this many files found by name. */
+export const MAX_NAMES = 500;
+
+/** Every file under `root` as ripgrep lists it (hidden ones too, not .git or what .gitignore leaves out), or undefined without ripgrep. */
+function rgFiles(rg: string, root: string, signal: AbortSignal | undefined): Promise<string[] | undefined> {
+  return new Promise((resolve) => {
+    const child = spawn(rg, ['--files', '--hidden', '--no-require-git', '--glob', '!.git', '--no-messages'], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], signal });
+    const chunks: Buffer[] = [];
+    child.stdout.on('data', (c: Buffer) => chunks.push(c));
+    child.on('error', () => resolve(undefined));
+    // 1: no files at all; 2 with some listed: a folder it couldn't read.
+    child.on('close', () => resolve(signal?.aborted ? undefined : Buffer.concat(chunks).toString('utf8').split('\n').filter(Boolean)));
+  });
+}
+
+/**
+ * Files whose path matches the query (plain text, or a regular expression with `regex`), anywhere
+ * in the workspace: what ripgrep lists, else what git knows about, else a walk. The query runs
+ * against the whole relative path, so `^src/.*\.test\.ts$` works as well as `readme`.
+ */
+export async function searchNames(root: string, query: string, opts: ContentSearchOptions = {}, signal?: AbortSignal, engine: 'auto' | 'node' = 'auto'): Promise<NameResults> {
+  if (!query) return { files: [], truncated: false };
+  let re: RegExp;
+  try {
+    re = queryRegex(query, opts);
+  } catch (err) {
+    return { files: [], truncated: false, error: `Not a valid pattern: ${(err as Error).message.replace(/^Invalid regular expression:\s*/i, '')}` };
+  }
+  const rg = engine === 'auto' ? findRipgrep() : undefined;
+  const listed = rg ? await rgFiles(rg, root, signal) : undefined;
+  if (signal?.aborted) return { files: [], truncated: false, cancelled: true };
+  const all = listed ?? (await gitFiles(root)) ?? (await walk(root, signal));
+  if (signal?.aborted) return { files: [], truncated: false, cancelled: true };
+  const files: NameMatch[] = [];
+  let truncated = false;
+  for (const rel of all.map((p) => p.replace(/^\.\//, '')).sort((a, b) => a.localeCompare(b))) {
+    if (rel.split('/').includes('.git')) continue;
+    re.lastIndex = 0;
+    const ranges: Array<[number, number]> = [];
+    for (let m = re.exec(rel); m; m = re.exec(rel)) {
+      if (m[0].length === 0) {
+        re.lastIndex++;
+        continue;
+      }
+      ranges.push([m.index, m.index + m[0].length]);
+    }
+    if (!ranges.length) continue;
+    if (files.length >= MAX_NAMES) {
+      truncated = true;
+      break;
+    }
+    files.push({ path: rel, ranges });
+  }
+  return { files, truncated };
+}
+
 // ---- where a path may go
 
 export class FileEditError extends Error {}

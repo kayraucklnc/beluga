@@ -217,6 +217,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.scratch` | ✓ the panel's Scratch tab: the workspace's `.beluga/scratch/` and `.context/` folders, newest first, live; the preview shows the newest until you pick one, and a file scrolled to its end (or Follow the End) follows what's written to it; drawn in outline (moving while the agent works) until something lands; the sort menu puts what can be looked at first (pictures, videos, PDFs, web pages; BLG-111), web pages are drawn in a sandboxed frame (no scripts), and full size ← → steps through the viewable files in that order, stopping at the ends |
 | `files.read` | ✓ a changed file as itself in Changes (Markdown formatted), without moving the Files tab's open file |
 | `files.searchContent` | ✓ the Files tab's search box on Contents: lines by file (ripgrep, else Node), Match Case / Whole Word / Regular Expression; a line opens the file there |
+| `files.searchNames` | ✓ the Files tab's search box on Names: every file in the folder whose path matches (ripgrep's list, else git's), Match Case / Whole Word / Regular Expression; shown as a tree, a file opens |
 | `files.save` | ✓ Edit in a file's header (files open read-only), then Save or ⌘S; asks before overwriting a change made since |
 | `files.formatter` | ✓ whether a file's Format button is on (the project's Prettier), and why not in its tooltip |
 | `files.format` | ✓ Format (the wand) in a file's header: the project's Prettier lays out the text you're editing (Save writes it) |
