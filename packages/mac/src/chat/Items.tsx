@@ -1,6 +1,6 @@
 import { type ReactNode, createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LogItem, ShellItem } from '@beluga/core/store.js';
-import { isRunning } from '@beluga/ui/format.js';
+import { HIDDEN_STEPS, isRunning } from '@beluga/ui/format.js';
 import { formatDuration } from '@beluga/shared/text.js';
 import { splitImages } from '@beluga/shared/attachment-links.js';
 import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR, type SteeredMessage, isLimitNotice } from '@beluga/shared/claude-notices.js';
@@ -332,6 +332,8 @@ function TurnHead({ item, part, mine }: { item: AgentItem; part: TurnPart; mine:
   const steps = useDisclosure(`${item.channel}/${item.id}`);
   const running = isRunning(item.status) && item.status !== 'queued';
   const folded = item.status === 'done' && Boolean(item.text) && prefs.doneSteps === 'fold' && !steps.shown;
+  // No step yet: a head would be a bare name over "continues below". Its tail says it all.
+  if (!item.steps.some((x) => !HIDDEN_STEPS.test(x))) return null;
   return (
     <div className={cx(s.message, s.agent, s.turnHead)} data-turn={item.status} data-turn-part="head">
       <div className={s.gutter}>
