@@ -2,6 +2,7 @@ import type { CcStep } from './model.js';
 import { boundInput, boundText, redactSecrets, resultText, thinkingOf } from '../../shared/steps.js';
 import { type OutputRef, pathsInText, refsOfTool } from './outputs.js';
 import { type BgLaunch, bgLaunchOf, outputFileOf, taskIdOf } from './tasks.js';
+import { underPart } from '../../shared/path-inside.js';
 
 /**
  * Claude Code's transcript lines → what Beluga shows: readable steps ("Reading src/app.ts", Claude's
@@ -157,7 +158,8 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** A path shown relative to the folder Claude works in. */
 function rel(p: string, cwd?: string): string {
-  if (cwd && p.startsWith(`${cwd}/`)) return p.slice(cwd.length + 1);
+  const rel = cwd ? underPart(cwd, p) : undefined;
+  if (rel) return rel;
   return p;
 }
 

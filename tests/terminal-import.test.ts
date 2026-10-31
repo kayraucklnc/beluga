@@ -278,7 +278,8 @@ describe('detecting the terminals on a Mac', () => {
     writeFileSync(file, body);
   };
 
-  it('finds each one by its app or its settings, and reads them', async () => {
+  // Not on Windows: reads Mac apps and their settings.
+  it.skipIf(process.platform === 'win32')('finds each one by its app or its settings, and reads them', async () => {
     put('Apps/Ghostty.app/Contents/Resources/ghostty/themes/Catppuccin Mocha', CATPPUCCIN);
     put('Apps/Warp.app/Contents/Info.plist', '');
     put('.config/ghostty/config', 'theme = Catppuccin Mocha\nfont-size = 14\nconfig-file = more\n');

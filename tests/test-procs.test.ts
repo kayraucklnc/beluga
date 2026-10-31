@@ -8,7 +8,9 @@ import { type ProcRow, isTestRunner, keptBashInput, lockTargets, stopTestProcess
 const W = '/w/kld-5-playwright-fix';
 const row = (pid: number, ppid: number, line: string): ProcRow => ({ pid, ppid, line });
 
-describe('which processes are a worktree’s test runs', () => {
+// Not on Windows: reads ps, which Windows doesn’t have.
+
+describe.skipIf(process.platform === 'win32')('which processes are a worktree’s test runs', () => {
   it('judges the command, not the worktree’s name', () => {
     expect(isTestRunner(`node ${W}/node_modules/.bin/vitest run`, W)).toBe(true);
     expect(isTestRunner(`node ${W}/node_modules/@playwright/test/cli.js test`, W)).toBe(true);
@@ -95,7 +97,9 @@ afterEach(() => {
   for (const c of children.splice(0)) c.kill('SIGKILL');
 });
 
-describe('a stale e2e lock never stops someone else’s process', () => {
+// Not on Windows: reads ps, which Windows doesn’t have.
+
+describe.skipIf(process.platform === 'win32')('a stale e2e lock never stops someone else’s process', () => {
   const run = { pid: 4100, worktree: '/w/kld-39', id: 'r9', groups: [4100, 4200], daemon: 4300, file: '/tmp/lock.json' };
   it('the lock holder verified (e2e-lock.mjs under its worktree): its groups, and its daemon when tagged', () => {
     const rows: ProcRow[] = [

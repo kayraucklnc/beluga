@@ -14,6 +14,10 @@ import {
 } from '../src/terminal/index.js';
 import { lineWidth, type Line } from '../src/ui/text.js';
 import { waitFor } from './helpers.js';
+import { posixSh } from '../src/terminal/pty.js';
+
+/** sh, or Git Bash on Windows (ConPTY then carries it). */
+const SH = posixSh() ?? '/bin/sh';
 
 const open: TerminalSession[] = [];
 afterEach(() => {
@@ -21,7 +25,7 @@ afterEach(() => {
 });
 
 function sh(script: string, extra: Partial<TerminalOptions> = {}): TerminalSession {
-  const s = new TerminalSession({ id: 't', cwd: process.cwd(), cols: 40, rows: 8, shell: '/bin/sh', args: ['-c', script], ...extra });
+  const s = new TerminalSession({ id: 't', cwd: process.cwd(), cols: 40, rows: 8, shell: SH, args: ['-c', script], ...extra });
   open.push(s);
   return s;
 }

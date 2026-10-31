@@ -6,11 +6,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { claudeCodeBinary, claudeCodePin, installClaudeCode } from '../src/agent/claude-code.js';
 
-/** A tarball shaped like npm's platform package (package/claude), and its npm integrity. */
+/** A tarball shaped like npm's platform package (package/claude, package/claude.exe on Windows), and its npm integrity. */
 function fakePackage(dir: string, body: string): { tgz: string; integrity: string } {
   const src = path.join(dir, 'src');
   mkdirSync(path.join(src, 'package'), { recursive: true });
-  writeFileSync(path.join(src, 'package', 'claude'), body);
+  writeFileSync(path.join(src, 'package', process.platform === 'win32' ? 'claude.exe' : 'claude'), body);
   writeFileSync(path.join(src, 'package', 'README.md'), 'readme');
   const tgz = path.join(dir, `pkg-${body.length}.tgz`);
   execFileSync('tar', ['-czf', tgz, '-C', src, 'package']);
@@ -44,7 +44,8 @@ describe('Claude Code, downloaded on first launch (BLG-384)', () => {
     const bin = await installClaudeCode(pin, { home, download: copyAsDownload(tgz), onProgress: (p) => seen.push(p.got) });
     expect(bin).toBe(claudeCodeBinary(pin, home));
     expect(readFileSync(bin, 'utf8')).toContain('echo claude');
-    expect(statSync(bin).mode & 0o111).not.toBe(0);
+    // Windows runs any .exe: no executable bit to check.
+    if (process.platform !== 'win32') expect(statSync(bin).mode & 0o111).not.toBe(0);
     expect(existsSync(path.join(path.dirname(bin), 'README.md'))).toBe(false);
     expect(existsSync(path.join(home, 'claude-code', '0.3.200'))).toBe(false);
     expect(seen.length).toBeGreaterThan(0);

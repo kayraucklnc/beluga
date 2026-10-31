@@ -230,7 +230,8 @@ describe('saving', () => {
     const res = await writeWorkspaceFile(dir, 'src/a.ts', 'two\n', { expect: hashText('one\n') });
     expect(res).toEqual({ ok: true, hash: hashText('two\n') });
     expect(readFileSync(path.join(dir, 'src/a.ts'), 'utf8')).toBe('two\n');
-    expect(statSync(path.join(dir, 'src/a.ts')).mode & 0o777).toBe(0o755);
+    // Windows keeps no executable bit.
+    if (process.platform !== 'win32') expect(statSync(path.join(dir, 'src/a.ts')).mode & 0o777).toBe(0o755);
   });
 
   it('asks first when the file changed since you started, and saves when forced', async () => {

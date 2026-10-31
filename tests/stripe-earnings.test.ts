@@ -195,7 +195,8 @@ describe('the earnings service', () => {
     expect(JSON.stringify(result)).not.toContain(KEY);
     // Kept only in the file, readable only by you.
     expect(loadStripeFile(file!).projects['/code/shop']?.key).toBe(KEY);
-    expect(statSync(file!).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file!).mode & 0o777).toBe(0o600);
     // A new service (Beluga restarting) shows the same, without asking Stripe.
     const store2 = new Store(initialState('room'));
     const again = new StripeEarnings({ store: store2, file: file!, stripe: { fetch: stripe.fetch } });

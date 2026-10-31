@@ -144,7 +144,7 @@ export function plainLine(markdown: string, max = 300): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-const base = (p: string): string => p.replace(/\/+$/, '').split('/').at(-1) ?? p;
+const base = (p: string): string => p.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) ?? p;
 const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
 /** A step's words in both tenses: what it did ("Edited store.ts") and what it's doing ("Editing store.ts"), and its tool's kind. */

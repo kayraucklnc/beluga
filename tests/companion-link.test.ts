@@ -121,7 +121,7 @@ describe('pairing a phone and its link', () => {
     // A certificate changed after signing doesn't verify.
     expect(verifyCert({ ...result.cert, name: 'Evil phone' })).toBe(false);
     expect(devices.size).toBe(1);
-    expect((statSync(path.join(dir, 'devices.json')).mode & 0o777).toString(8)).toBe('600');
+    if (process.platform !== 'win32') expect((statSync(path.join(dir, 'devices.json')).mode & 0o777).toString(8)).toBe('600');
     // Single use: the pairing is gone.
     await waitFor(() => !store.getState().companion.pairing, 5_000);
 

@@ -83,7 +83,8 @@ describe('gh answers', () => {
 });
 
 describe('MainSync.githubInfo', () => {
-  it('caches gh’s answers for an hour, and says when a remote isn’t GitHub', async () => {
+  // Not on Windows: a fake gh written as a shell script.
+  it.skipIf(process.platform === 'win32')('caches gh’s answers for an hour, and says when a remote isn’t GitHub', async () => {
     const { MainSync } = await import('../src/core/main-sync.js');
     const { mkdtempSync, writeFileSync } = await import('node:fs');
     const { ghHosts } = await import('../src/workspaces/github.js');

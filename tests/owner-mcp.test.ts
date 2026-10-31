@@ -44,7 +44,8 @@ function home(): { home: string; repo: string; worktree: string } {
 }
 
 describe('ownerMcpServers', () => {
-  it("brings your user, local and plugins' servers, named as Claude Code names them", () => {
+  // Not on Windows: the plugin root keeps its "/" there, which Windows takes as it is.
+  it.skipIf(process.platform === 'win32')("brings your user, local and plugins' servers, named as Claude Code names them", () => {
     const h = home();
     const servers = ownerMcpServers(h.worktree, {}, h.home);
     expect(Object.keys(servers).sort()).toEqual(['figma', 'linear', 'plugin:context7:context7', 'plugin:tools:run']);

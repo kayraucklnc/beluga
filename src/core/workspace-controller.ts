@@ -92,6 +92,7 @@ export const workspaceIdOf = (channel: string): string | undefined => (channel.s
 export { shareNameOf } from '../shared/share-names.js';
 import { shareNameOf } from '../shared/share-names.js';
 import { SCRATCH_DIR, type ScratchFile, ensureScratch, listScratch } from '../workspaces/scratch.js';
+import { isUnder } from '../shared/path-inside.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -256,7 +257,7 @@ export class WorkspaceController {
   /** A run in this folder ended: its git status only (not every project's), published if it changed. */
   async refreshWorkspace(dir: string): Promise<void> {
     if (await this.deps.manager.refreshWorkspace(dir)) this.publish();
-    const project = this.deps.store.getState().projects.find((p) => p.workspaces.some((w) => !w.archived && (w.path === dir || dir.startsWith(`${w.path}/`))));
+    const project = this.deps.store.getState().projects.find((p) => p.workspaces.some((w) => !w.archived && isUnder(w.path, dir)));
     if (project) await this.checkEnv(project.id);
   }
 

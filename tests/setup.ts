@@ -1,6 +1,10 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+// GitHub's Windows runners name the temp folder the short 8.3 way (C:\Users\RUNNER~1\…), while git
+// and Beluga see it by its long name: use the long one, so the folders the tests make match.
+if (process.platform === 'win32') process.env.TEMP = process.env.TMP = realpathSync.native(os.tmpdir());
 
 // Never read or write the developer's real ~/.beluga (or an old ~/.klaud) during tests.
 process.env.BELUGA_HOME = mkdtempSync(path.join(os.tmpdir(), 'beluga-test-home-'));

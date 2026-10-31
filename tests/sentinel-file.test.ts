@@ -27,7 +27,8 @@ describe('sentinel.json', () => {
     await until(() => a.sentinels.runGet(run.id).run.state === 'done');
     a.sentinels.stopAll();
     const file = path.join(dir, 'sentinel.json');
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     const saved = JSON.parse(readFileSync(file, 'utf8')) as { version: number; runAtOnce: number; items: unknown[]; runs: Array<{ steps: Array<{ output?: string }> }> };
     expect(saved).toMatchObject({ version: 1, runAtOnce: 2 });
     expect(saved.items).toHaveLength(1);

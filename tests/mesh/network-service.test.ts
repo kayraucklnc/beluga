@@ -136,7 +136,8 @@ describe('the network as a core service', () => {
 });
 
 describe('turning the network on and off while Beluga runs', () => {
-  it('starts it live, stops it, and says why when it can’t start', async () => {
+  // Not on Windows: chmod can’t make a folder unwritable on Windows.
+  it.skipIf(process.platform === 'win32')('starts it live, stops it, and says why when it can’t start', async () => {
     const before = process.env.KLAUD_NETWORK;
     delete process.env.KLAUD_NETWORK;
     try {

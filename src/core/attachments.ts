@@ -262,7 +262,8 @@ export interface PathInfo {
 }
 
 export function pathInfo(p: string): PathInfo {
-  const abs = p.replace(/^~(?=$|\/)/, os.homedir());
+  // ~ and ~/x, or ~\x on Windows: the rest joined the system's way (C:\Users\you\x).
+  const abs = /^~(?=$|[\\/])/.test(p) ? path.join(os.homedir(), p.slice(1)) : p;
   const base = { path: abs, name: path.basename(abs), size: 0, image: IMAGE_EXT.test(abs) };
   if (!path.isAbsolute(abs)) return { ...base, kind: 'missing' };
   try {

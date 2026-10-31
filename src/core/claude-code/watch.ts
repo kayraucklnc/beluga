@@ -12,6 +12,7 @@ import { agentScratchDir, outputsOnDisk, readOutput } from './output-files.js';
 import { type PageOptions, TranscriptTracker } from './sessions.js';
 import type { StepRecord } from '../../shared/steps.js';
 import type { Facts } from './transcript.js';
+import { isUnder } from '../../shared/path-inside.js';
 
 /**
  * Watches the transcripts Claude Code writes (~/.claude/projects/<folder>/<session>.jsonl, and
@@ -171,7 +172,7 @@ function ownPlace(projects: readonly Project[], sessionId: string, cwd: string):
 
 /** The Beluga project and workspace a folder belongs to (the deepest workspace folder containing it). */
 export function placeOf(projects: readonly Project[], cwd: string): { projectId?: string; workspaceId?: string } {
-  const within = (root: string): boolean => Boolean(root) && (cwd === root || cwd.startsWith(`${root}/`));
+  const within = (root: string): boolean => isUnder(root, cwd);
   let best: { projectId: string; workspaceId: string; len: number } | undefined;
   for (const p of projects) {
     for (const w of p.workspaces) {

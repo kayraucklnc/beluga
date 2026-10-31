@@ -9,6 +9,7 @@ import { theme } from './theme.js';
 import { findWorkspace } from './workspace-models.js';
 
 import type { LinkTarget } from '../shared/link-target.js';
+import { isUnder } from '../shared/path-inside.js';
 
 export type { LinkTarget };
 
@@ -221,7 +222,7 @@ const shortPath = (p: string): string => tilde(p);
 export function linkHint(link: LinkTarget, cwd?: string): string {
   // Relative to the conversation's folder (in the room: your project or a shared folder), as people write them.
   const rel = (p: string): string => {
-    const base = [...(cwd ? [cwd] : []), ...env.roots()].find((r) => p.startsWith(`${r}/`));
+    const base = [...(cwd ? [cwd] : []), ...env.roots()].find((r) => r !== p && isUnder(r, p));
     return base ? p.slice(base.length + 1) : shortPath(p);
   };
   switch (link.kind) {

@@ -163,7 +163,8 @@ describe('questions: once each, a few per task, and your answer seen first', () 
 });
 
 describe('nothing left hanging when the disk says no', () => {
-  it('a result that can’t be saved ends the task (failed), saying why', async () => {
+  // Not on Windows: chmod can’t make a file unwritable on Windows.
+  it.skipIf(process.platform === 'win32')('a result that can’t be saved ends the task (failed), saying why', async () => {
     const [kay, bob] = await pair('fixD1', 'fixD2');
     kay.trust(bob.id, 'trusted');
     bob.trust(kay.id, 'trusted');
@@ -181,7 +182,8 @@ describe('nothing left hanging when the disk says no', () => {
     expect(task(kay, t.id)?.result?.summary).toContain("couldn't be saved on this Mac");
   }, 60_000);
 
-  it('Always whose rule can’t be saved fails (doesn’t hang); a file that can’t be read fails too', async () => {
+  // Not on Windows: chmod can’t make a file unreadable on Windows.
+  it.skipIf(process.platform === 'win32')('Always whose rule can’t be saved fails (doesn’t hang); a file that can’t be read fails too', async () => {
     const blocker = path.join(scratch('d-rules'), 'a-file');
     writeFileSync(blocker, 'x');
     const shared = scratch('d-shared2');

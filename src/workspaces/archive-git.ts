@@ -207,7 +207,7 @@ export async function pack(dir: string, rels: readonly string[], file: string): 
     const gnu = (await tarFlavor()) === 'gnu';
     const level = gnu ? [] : ['--options', 'xz:compression-level=9'];
     await run('tar', ['-c', '-J', ...level, '-f', file, '-C', dir, '--null', '-T', list], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS, ...(gnu ? { env: { XZ_OPT: '-9' } } : {}) });
-    const listed = new Set((await run('tar', ['-t', '-f', file], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS })).split('\n').map((l) => l.replace(/\/$/, '')));
+    const listed = new Set((await run('tar', ['-t', '-f', file], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS })).split(/\r?\n/).map((l) => l.replace(/\/$/, '')));
     const missing = names.find((n) => !listed.has(n));
     if (missing) throw new ArchiveError(`Couldn’t pack ${missing}`);
   } finally {

@@ -679,7 +679,7 @@ function planBand(state: DomainState, plan: Plan, topic: Topic): NonNullable<Con
   return { topic, title: clip(planTitle(plan), 300), state: planState(plan, progress), done: progress.done, total: progress.total, milestones: progress.milestones.length };
 }
 
-const base = (p: string): string => p.split('/').at(-1) ?? p;
+const base = (p: string): string => p.split(/[\\/]/).at(-1) ?? p;
 
 /**
  * A worktree's merge as the phone follows it: what the phone started (merging, Claude resolving),

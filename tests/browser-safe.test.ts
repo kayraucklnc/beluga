@@ -70,13 +70,13 @@ describe('browser-safe client code', () => {
   for (const e of ENTRIES) walk(e, graph);
 
   it('covers the shared reducer and the protocol', () => {
-    const files = [...graph.keys()].map((f) => path.relative(process.cwd(), f));
+    const files = [...graph.keys()].map((f) => path.relative(process.cwd(), f).replaceAll(path.sep, '/'));
     expect(files).toEqual(expect.arrayContaining(['src/core/store.ts', 'src/core/collab-store.ts', 'src/core/work-store.ts', 'src/protocol.ts', 'src/shared/settings-schema.ts']));
   });
 
   it('needs nothing from Node, and only pure packages', () => {
     const offenders = [...graph.entries()].flatMap(([file, imports]) =>
-      imports.filter((spec) => !spec.startsWith('.') && (NODE.has(spec) || !ALLOWED_PACKAGES.has(spec))).map((spec) => `${path.relative(process.cwd(), file)} → ${spec}`),
+      imports.filter((spec) => !spec.startsWith('.') && (NODE.has(spec) || !ALLOWED_PACKAGES.has(spec))).map((spec) => `${path.relative(process.cwd(), file).replaceAll(path.sep, '/')} → ${spec}`),
     );
     expect(offenders).toEqual([]);
   });
@@ -87,7 +87,7 @@ describe('browser-safe client code', () => {
         .split('\n')
         .map((line, i) => ({ line, i }))
         .filter(({ line }) => /\bprocess\.(env|platform|cwd|argv|stdout|stdin)/.test(line) && !line.includes("typeof process") && !line.trim().startsWith('//') && !line.trim().startsWith('*'))
-        .map(({ i }) => `${path.relative(process.cwd(), file)}:${i + 1}`),
+        .map(({ i }) => `${path.relative(process.cwd(), file).replaceAll(path.sep, '/')}:${i + 1}`),
     );
     // The core's command handlers run in the daemon, never in a web view.
     expect(offenders.filter((o) => !o.startsWith('src/core/commands.ts'))).toEqual([]);

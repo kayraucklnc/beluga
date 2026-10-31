@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { getSessionMessages, listSessions } from '@anthropic-ai/claude-agent-sdk';
 import { type Conversation, type ConversationSummary, type TranscriptMessage, transcriptToTurns, typedText } from './transcript.js';
+import { isUnder } from '../shared/path-inside.js';
 
 /**
  * Finding the Claude Code conversations that ran in a folder (a worktree made by Conductor or
@@ -180,7 +181,7 @@ export async function conversationsUnder(dir: string, limit = UNDER_MAX): Promis
   const roots = pathVariants(dir);
   const prefixes = roots.map(encodeProjectDir);
   const exact = new Set(prefixes);
-  const inside = (cwd: string): boolean => pathVariants(cwd).some((c) => roots.some((r) => c === r || c.startsWith(`${r}/`)));
+  const inside = (cwd: string): boolean => pathVariants(cwd).some((c) => roots.some((r) => isUnder(r, c)));
   const files: Array<{ file: string; folder: string; mtime: number; size: number }> = [];
   for (const folder of names.filter((n) => prefixes.some((p) => n === p || n.startsWith(`${p}-`)))) {
     for (const file of transcriptsIn(path.join(projects, folder))) {

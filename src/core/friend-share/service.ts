@@ -223,7 +223,7 @@ export class FriendShares implements FriendSharing {
       // A one-off pack for one friend (a copy, a fork, a handoff's branch) isn't a folder you share.
       if (this.isOutbox(share.root)) continue;
       const peers = share.private ? (share.allowed ?? []).filter((p) => mesh.isFriend(p) && !cannotTake('', mesh.belugaOf(p), 'share.folder', mesh.isLinked(p))) : [];
-      if (peers.length) next[share.name] = { label: share.root.split('/').filter(Boolean).pop() ?? share.name, writable: Boolean(share.writable), peers };
+      if (peers.length) next[share.name] = { label: share.root.split(/[\\/]/).filter(Boolean).pop() ?? share.name, writable: Boolean(share.writable), peers };
     }
     if (JSON.stringify(next) === JSON.stringify(this.folders)) return;
     const msg = (name: string, g: FolderGrant, active: boolean): ShareMsg => ({ k: 'folder', name, label: g.label.slice(0, 200), writable: g.writable, active });

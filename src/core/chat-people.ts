@@ -154,7 +154,7 @@ export function waitingIn(opts: { readonly conversation: string; readonly tasks:
   for (const t of here) {
     const target = { kind: 'task' as const, id: t.id };
     if (t.direction === 'received' && t.state === 'awaiting_approval') {
-      const text = t.secret ? `${who(t)} wants ${t.secret.label}` : t.kind === 'run' && t.command ? `${who(t)} wants to run ${oneLine(t.command, 60)}` : t.kind === 'file' && t.path ? `${who(t)} wants ${t.path.split('/').pop() || 'a file'}` : `${who(t)} wants to: ${requestGist(t, 70)}`;
+      const text = t.secret ? `${who(t)} wants ${t.secret.label}` : t.kind === 'run' && t.command ? `${who(t)} wants to run ${oneLine(t.command, 60)}` : t.kind === 'file' && t.path ? `${who(t)} wants ${t.path.split(/[\\/]/).pop() || 'a file'}` : `${who(t)} wants to: ${requestGist(t, 70)}`;
       you.push({ on: 'you', onName: 'you', text, kind: t.secret ? 'secret' : 'approval', target });
     } else if (t.direction === 'sent' && t.state === 'confirm') {
       you.push({ on: 'you', onName: 'you', text: `Your Claude wants to ask ${targetLabel(t)}`, kind: 'confirm', target });

@@ -51,7 +51,9 @@ afterEach(() => {
   }
 });
 
-describe('names, ports and homes', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('names, ports and homes', () => {
   it('names a run after its task branch, else its worktree', () => {
     expect(runName('/w/kld-12-smarter-pr', 'klaud/kld-12-smarter-pr-polling')).toBe('KLD-12');
     expect(runName('/w/some-fix', 'main')).toBe('some-fix');
@@ -94,7 +96,9 @@ describe('names, ports and homes', () => {
   });
 });
 
-describe('what a run costs', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('what a run costs', () => {
   it("reads ps's CPU time", () => {
     expect(cpuSeconds('0:01.50')).toBe(1.5);
     expect(cpuSeconds('2:03.00')).toBe(123);
@@ -120,7 +124,9 @@ describe('what a run costs', () => {
   });
 });
 
-describe('the machine-wide lock', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('the machine-wide lock', () => {
   it('lets one run in and says who holds it to the next', () => {
     const file = path.join(tmp(), 'lock.json');
     expect(tryLock(run(), { file })).toEqual({ ok: true });
@@ -163,7 +169,9 @@ describe('the machine-wide lock', () => {
   });
 });
 
-describe('teardown: nothing a run started survives it', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('teardown: nothing a run started survives it', () => {
   it('finds the groups under a process, even children that started their own', () => {
     const table = [
       { pid: 10, ppid: 1, pgid: 10 },
@@ -201,7 +209,9 @@ describe('teardown: nothing a run started survives it', () => {
   });
 });
 
-describe('a stale lock’s cleanup only stops what it can verify is its own', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('a stale lock’s cleanup only stops what it can verify is its own', () => {
   const rows = [
     { pid: 501, pgid: 501, line: 'node /w/kld-39/node_modules/.bin/vite --port 14321 PWD=/w/kld-39/packages/mac KLAUD_E2E_RUN=r1' },
     { pid: 502, pgid: 502, line: '/Users/me/Library/Caches/ms-playwright/chromium/chrome-headless-shell PWD=/w/kld-39/packages/mac KLAUD_E2E_RUN=r1' },
@@ -236,7 +246,9 @@ describe('a stale lock’s cleanup only stops what it can verify is its own', ()
   });
 });
 
-describe('failures under load', () => {
+// Not on Windows: the Mac app’s e2e tooling (ps, process groups).
+
+describe.skipIf(process.platform === 'win32')('failures under load', () => {
   it('re-runs only the failed playwright tests', () => {
     expect(rerunArgs(['playwright', 'test', 'e2e/plans.spec.ts'])).toEqual(['playwright', 'test', 'e2e/plans.spec.ts', '--last-failed']);
     expect(rerunArgs(['playwright', 'test', '--last-failed'])).toEqual(['playwright', 'test', '--last-failed']);

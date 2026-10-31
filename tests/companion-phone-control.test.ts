@@ -68,7 +68,8 @@ function fakeLink(id: string, state: PhoneControlState | undefined, onReq?: (op:
 }
 
 describe('phone-adb', () => {
-  it('lists likely adb locations, SDK first', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('lists likely adb locations, SDK first', () => {
     const list = adbCandidates('/Users/x');
     expect(list[0]).toBe('/Users/x/Library/Android/sdk/platform-tools/adb');
     expect(list).toContain('/opt/homebrew/bin/adb');

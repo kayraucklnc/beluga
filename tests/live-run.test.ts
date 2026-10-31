@@ -416,7 +416,8 @@ describe('what a steer sees of the run', () => {
     expect(seen[1]).not.toHaveProperty('thinking');
   });
 
-  it('ends Claude Code for sure: SIGTERM, then SIGKILL when it ignores that', async () => {
+  // Not on Windows: Windows has no signals to ignore: a kill is final.
+  it.skipIf(process.platform === 'win32')('ends Claude Code for sure: SIGTERM, then SIGKILL when it ignores that', async () => {
     const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000); console.log('up')"], { stdio: ['ignore', 'pipe', 'ignore'] });
     await new Promise((r) => child.stdout.once('data', r));
     const t0 = Date.now();

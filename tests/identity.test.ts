@@ -15,7 +15,8 @@ describe('loadIdentity', () => {
     const file = path.join(dir, 'sub', 'identity.json');
     const first = loadIdentity(file);
     expect(existsSync(file)).toBe(true);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix modes: the user profile's own ACL keeps it private there.
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(file, 'utf8')).privateKey).toMatch(/BEGIN PRIVATE KEY/);
     expect(existsSync(`${file}.${process.pid}.tmp`)).toBe(false);
     const second = loadIdentity(file);
