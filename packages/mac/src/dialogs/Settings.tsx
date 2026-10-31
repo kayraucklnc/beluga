@@ -31,6 +31,7 @@ import { UpdateAboutRow, UpdateSettingsGroup } from './UpdateSettings.js';
 import { GITHUB_URL, openSupport } from '../lib/support.js';
 import { openExternal } from '../lib/system.js';
 import { shortcutKeys } from '../lib/shortcuts.js';
+import { keyPlatform } from '../lib/shortcuts-model.js';
 
 const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> = [
   { id: 'general', label: 'General', icon: 'gear' },
@@ -249,9 +250,11 @@ function Appearance() {
         <Row label="Reduce motion">
           <Switch label="Reduce motion" on={prefs.reduceMotion} onChange={(v) => setPrefs({ reduceMotion: v })} />
         </Row>
-        <Row label="Reduce transparency" detail="A solid sidebar, with no blur behind the window. Lighter on slower Macs.">
-          <Switch label="Reduce transparency" on={prefs.reduceTransparency} onChange={(v) => setPrefs({ reduceTransparency: v })} />
-        </Row>
+        {keyPlatform() === 'mac' && (
+          <Row label="Reduce transparency" detail="A solid sidebar, with no blur behind the window. Lighter on slower Macs.">
+            <Switch label="Reduce transparency" on={prefs.reduceTransparency} onChange={(v) => setPrefs({ reduceTransparency: v })} />
+          </Row>
+        )}
       </Group>
     </>
   );

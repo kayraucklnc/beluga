@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { DEFAULT_FIRE, type FireLook, fireLookOf } from '../chat/fire-look.js';
 import { DEFAULT_MENU_BAR, type MenuBarLook, menuBarLookOf } from '../menubar/menubar-look.js';
 import { type TermThemePref, themeOf } from './terminal-import-model.js';
-import { type ShortcutOverrides, overridesOf } from './shortcuts-model.js';
+import { type ShortcutOverrides, keyPlatform, overridesOf } from './shortcuts-model.js';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
 /**
@@ -218,8 +218,11 @@ export function apply(p: UiPrefs = current): void {
   root.dataset.theme = p.appearance === 'system' ? (dark() ? 'dark' : 'light') : p.appearance;
   root.dataset.density = p.density;
   root.dataset.motion = p.reduceMotion ? 'reduce' : 'full';
-  root.dataset.transparency = p.reduceTransparency ? 'reduce' : 'full';
-  vibrancy(!p.reduceTransparency);
+  // Only a Mac's window blurs what's behind it: Linux and Windows get the solid look.
+  const blur = !p.reduceTransparency && keyPlatform() === 'mac';
+  root.dataset.os = keyPlatform();
+  root.dataset.transparency = blur ? 'full' : 'reduce';
+  vibrancy(blur);
   root.style.setProperty('--accent', ACCENTS[p.accent]);
   root.style.setProperty('--text-size', `${p.textSize}px`);
   root.style.setProperty('--sidebar-w', `${p.sidebarWidth}px`);

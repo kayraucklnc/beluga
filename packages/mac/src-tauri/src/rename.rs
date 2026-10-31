@@ -86,7 +86,11 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
         if kind.is_dir() {
             copy_dir(&entry.path(), &target)?;
         } else if kind.is_symlink() {
+            #[cfg(unix)]
             std::os::unix::fs::symlink(std::fs::read_link(entry.path())?, &target)?;
+            // Klaud was only ever a Mac app: nothing to bring over anywhere else.
+            #[cfg(not(unix))]
+            std::fs::copy(entry.path(), &target)?;
         } else {
             std::fs::copy(entry.path(), &target)?;
         }
