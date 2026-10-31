@@ -9,7 +9,9 @@ export type SandboxPolicy =
   | { readonly type: 'dangerFullAccess' }
   | { readonly type: 'readOnly'; readonly networkAccess: boolean }
   | { readonly type: 'workspaceWrite'; readonly writableRoots: readonly string[]; readonly networkAccess: boolean; readonly excludeTmpdirEnvVar: boolean; readonly excludeSlashTmp: boolean };
-export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+/** Lowest to highest; newer models list 'max' (and 'ultra') in their supportedReasoningEfforts. */
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export type UserInput =
   | { readonly type: 'text'; readonly text: string; readonly text_elements: readonly unknown[] }
@@ -80,6 +82,13 @@ export interface TokenUsageBreakdown {
   readonly cachedInputTokens: number;
   readonly outputTokens: number;
   readonly reasoningOutputTokens: number;
+}
+
+/** `thread/tokenUsage/updated`'s tokenUsage: the last response's tokens, the thread's, and the model's window. */
+export interface ThreadTokenUsage {
+  readonly last?: TokenUsageBreakdown;
+  readonly total?: Partial<TokenUsageBreakdown>;
+  readonly modelContextWindow?: number | null;
 }
 
 export interface Model {

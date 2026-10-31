@@ -118,7 +118,7 @@ export function createGatewayToolDefs(bridge: RoomBridge) {
     ),
     tool(
       'answer_question',
-      'Answer the question another person’s Claude asked while working on your task (wait_for, check or a new turn shows it): one answer per question, in order (an option’s label, or your own words). Answer from what you know in this conversation; if you don’t know, ask your user first (AskUserQuestion). Never put secrets in an answer (a secret goes only as a file its owner approves, through get_file). skip: true lets them go on with their best judgment.',
+      'Answer the question another person’s Claude asked while working on your task (wait_for, check or a new turn shows it): one answer per question, in order (an option’s label, or your own words). Answer from what you know in this conversation; if you don’t know, ask your user first (your question tool if you have one, else end your turn with the question to them). Never put secrets in an answer (a secret goes only as a file its owner approves, through get_file). skip: true lets them go on with their best judgment.',
       {
         task: taskArg,
         answers: z.array(z.string().max(4000)).max(4).optional().describe('One answer per question, in order'),

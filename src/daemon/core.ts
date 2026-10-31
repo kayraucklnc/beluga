@@ -2,6 +2,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../config.js';
 import { runtimeFor } from '../agent/runtime/registry.js';
+import { claudeStatus } from '../agent/runtime/claude/status.js';
+import type { AgentRuntime, RuntimeId } from '../agent/runtime/types.js';
 import { createMockBackend } from '../agent/mock.js';
 import { createCodexRuntime } from '../agent/runtime/codex/index.js';
 import { ScriptedCodex } from '../agent/runtime/codex/scripted.js';
@@ -60,6 +62,14 @@ interface Room {
 }
 
 const roomInvite = (room: Room): string | undefined => (room.reach ? encodeInvite({ ...room.reach, secret: room.secret }) : undefined);
+
+let claudeWithStatus: AgentRuntime | undefined;
+/** The runtimes, Claude's saying whether it's signed in (a local model's side calls go to Claude only then, BLG-503). */
+function withClaudeStatus(id?: RuntimeId): AgentRuntime | undefined {
+  const rt = runtimeFor(id);
+  if (!rt || rt.id !== 'claude' || rt.status) return rt;
+  return (claudeWithStatus ??= { ...rt, status: () => claudeStatus() });
+}
 
 function lanAddress(): string | undefined {
   return Object.values(os.networkInterfaces())
@@ -300,8 +310,10 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     // Your agent through the runtime seam (agent/runtime): Claude, the only one registered yet.
     ...(!demo && config.agent
       ? {
+          // runtime.agent stays unset (Claude): the routed backend's fallback, so side calls and usage keep a
+          // Claude to fall back on; each run follows its place's agent, side calls your default (session.sideRoute).
           runtime: {
-            runtimes: runtimeFor,
+            runtimes: withClaudeStatus,
             options: {
               cwd: agentCwd,
               autoEdit: primary?.writable ?? false,

@@ -8,6 +8,7 @@ export function buildSystemAppend(ownerName: string, agent: AgentRef = CLAUDE_AG
     `You are ${agentLabel(agent, ownerName, false)}, running inside Beluga: a multiplayer terminal where several humans`,
     'and their own agents (Claude, Codex, a local model) share a live group chat. Each agent runs on its owner\'s machine with',
     "its owner's subscription and can only touch that machine's shared folders.",
+    ...(agent.runtime === 'local' ? [`You are ${agent.model ? `the model ${agent.model}` : 'a local model'} served on this Mac, not Claude, whatever other instructions call you.`] : []),
     '',
     'Room tools (mcp__beluga__*):',
     '- send_chat: post to the group chat ONLY for mid-task updates, questions, or messages aimed at other people.',
@@ -61,8 +62,17 @@ export function buildSystemAppend(ownerName: string, agent: AgentRef = CLAUDE_AG
     'force-pushing, changing system settings, spending money) unless that exact thing was asked for. When',
     'unsure, ask instead of acting. Secrets (.env files, keys, credentials): never read or send them on your own.',
     'A secret its owner explicitly approved through Beluga (a get_file result that says so) is fine to pass to your user: say where it was saved.',
-    "On your owner's own computer, when they asked: reading or changing a project's .env file asks them first",
-    '(Beluga shows them the request). Never repeat a secret value in chat, a report or a file; say which names you used.',
+    ...(agent.runtime === 'codex'
+      ? [
+          // Codex's sandbox denies them outright (runtime/codex/sandbox.ts): nothing to ask for.
+          "On your owner's own computer too, your sandbox denies .env files, keys and credential stores: don't try to",
+          'read or change them. If the work needs a value from one, ask your owner to set it up or paste the name you need.',
+          'Never repeat a secret value in chat, a report or a file; say which names you used.',
+        ]
+      : [
+          "On your owner's own computer, when they asked: reading or changing a project's .env file asks them first",
+          '(Beluga shows them the request). Never repeat a secret value in chat, a report or a file; say which names you used.',
+        ]),
     '',
     'Be a good teammate: keep chat messages short, write longer findings to a report, and say which',
     'machine you changed files on.',
@@ -81,14 +91,28 @@ export function buildScratchAppend(dir: string): string {
   ].join('\n');
 }
 
-/** A worktree's run: what it leaves running is stopped when the turn ends, unless kept on purpose (see workspaces/test-procs.ts). */
-export function buildKeepAppend(): string {
+/**
+ * A worktree's run: what it leaves running is stopped when the turn ends, unless kept on purpose (see
+ * workspaces/test-procs.ts). Claude Code's Bash call is rewritten to detach a kept one (keptBashInput);
+ * Codex's commands can't be, so Codex is told to detach it itself (nohup, output to a file, `&`).
+ */
+export function buildKeepAppend(agent: AgentRef = CLAUDE_AGENT): string {
+  const how =
+    agent.runtime === 'codex'
+      ? [
+          'BELUGA_KEEP=1 in front, detached with its output in a file, e.g.',
+          '`BELUGA_KEEP=1 nohup npm run dev > .beluga/dev.log 2>&1 &` (so your command returns at once),',
+          'and say in your answer that it is still running and where its output goes. Not for one you only',
+        ]
+      : [
+          'BELUGA_KEEP=1 in front, e.g. `BELUGA_KEEP=1 npm run dev &` (run_in_background works too: Beluga keeps it',
+          'and tells you where its output goes), and say in your answer that it is still running. Not for one you only',
+        ];
   return [
     '',
     'Processes you start here (dev servers, watchers, test runs) are stopped when your turn ends. When the user',
     'asks you to run or start a server, an app or a watcher (or to keep one up), keep it: start it with',
-    'BELUGA_KEEP=1 in front, e.g. `BELUGA_KEEP=1 npm run dev &` (run_in_background works too: Beluga keeps it',
-    'and tells you where its output goes), and say in your answer that it is still running. Not for one you only',
+    ...how,
     'started to check something yourself, and never a test run (vitest, playwright, an e2e run): always stopped.',
   ].join('\n');
 }

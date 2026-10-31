@@ -79,6 +79,8 @@ export async function remoteTurn(gw: DialogueGateway, run: DialogueTurnRun, chai
     by: 'agent',
     ...(d.channel ? { conversation: d.channel } : {}),
     dialogue: envelopeFor(d, run.turn, run.speaker, chair),
+    // Their agent the dialogue names (BLG-503): their Mac runs it there, or says which one did.
+    agent: p.agent,
   });
   const signal = run.input.signal;
   const stop = (): void => {

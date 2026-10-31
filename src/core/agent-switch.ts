@@ -2,6 +2,7 @@ import type { AgentRef } from '../protocol.js';
 import { agentName } from '../shared/agent-label.js';
 import type { LogItem } from './store.js';
 import type { Workspace } from '../workspaces/types.js';
+import { resumable } from '../agent/session-carry.js';
 
 /**
  * Picking another runtime on a live conversation (BLG-447). Sessions don't move between runtimes
@@ -59,7 +60,7 @@ export function transcriptOf(log: readonly LogItem[], channel: string, limit = T
 /** Does moving `ws` to `runtime` need a handoff (a live session another runtime holds, or one it can't resume)? */
 export function needsHandoff(ws: Pick<Workspace, 'sessionId' | 'forkFromSession' | 'sessionRuntime'>, runtime: string, canResume: (runtime: string) => boolean = () => true): boolean {
   if (!ws.sessionId && !ws.forkFromSession) return false;
-  return (ws.sessionRuntime ?? 'claude') !== runtime || !canResume(runtime);
+  return !resumable(ws.sessionRuntime, runtime) || !canResume(runtime);
 }
 
 export async function switchAgent(deps: AgentSwitchDeps, channel: string, agent: AgentRef | undefined): Promise<SwitchOutcome> {

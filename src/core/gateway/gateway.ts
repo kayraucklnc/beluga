@@ -1,4 +1,4 @@
-import { defaultAgentOf } from '../../protocol.js';
+import { type AgentRef, CLAUDE_AGENT, defaultAgentOf } from '../../protocol.js';
 import { randomBytes } from 'node:crypto';
 import type { AgentBackend } from '../../agent/types.js';
 import { type NoticeEvent, presenceQuiet } from '../notify.js';
@@ -38,6 +38,8 @@ export interface GatewayDeps {
   /** Where scratch folders go when `dir` is null. */
   readonly scratch?: string;
   readonly agent: () => AgentBackend | undefined;
+  /** Whether this Mac runs that agent now (a friend asked for one your card lists, BLG-503). Unset: only your default. */
+  readonly runs?: (agent: AgentRef) => boolean;
   /** Ask you (today's approval cards, linked to the task they're about), with a way to take the question back. */
   readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string, opts?: ApproveOpts) => Pending;
   /** ~/.beluga/rules.json (null or missing: rules stay in memory). */
@@ -98,6 +100,8 @@ export interface AskInput {
   readonly answer?: string;
   /** A turn of a chaired dialogue (core/dialogues): only the chair sets it, never an agent's tools. */
   readonly dialogue?: DialogueEnvelope;
+  /** ask: which of their agents (their card lists it), BLG-503. Unset: their default. */
+  readonly agent?: AgentRef;
 }
 
 /** What the gateway tells core/dialogues (see GatewayDeps.dialogues). */
@@ -209,11 +213,14 @@ export class Gateway {
       access: { decide: (facts, trust) => this.rules.decide(facts, trust), remember: (facts, name, d) => this.rules.remember(facts, name, d), capabilities: () => this.rules.capabilities() },
       ...(deps.serveShell ? { serveShell: deps.serveShell } : {}),
       projectRoot: deps.projectRoot,
+      // The label is the agent that runs it (BLG-503): Settings' model is Claude's, never another agent's.
       agentRef: () => {
         const st = deps.store.getState();
         const ref = defaultAgentOf(st.self);
-        return st.prefs.model && !ref.model ? { ...ref, model: st.prefs.model } : ref;
+        return st.prefs.model && !ref.model && ref.runtime === CLAUDE_AGENT.runtime ? { ...ref, model: st.prefs.model } : ref;
       },
+      agents: () => deps.store.getState().self?.agents ?? [],
+      ...(deps.runs ? { runs: deps.runs } : {}),
       model: () => {
         const prefs = deps.store.getState().prefs;
         return { ...(prefs.model ? { model: prefs.model } : {}), ...(prefs.effort ? { effort: prefs.effort } : {}) };
@@ -413,6 +420,7 @@ export class Gateway {
       ...(input.conversation ? { conversation: input.conversation } : {}),
       ...(input.answer ? { answer: input.answer } : {}),
       ...(input.dialogue ? { dialogue: input.dialogue, confirmed: true } : {}),
+      ...(input.agent && kind === 'ask' ? { onAgent: input.agent } : {}),
     });
     if (confirm) {
       this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your agent wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s agent'}`, body: oneLine(input.summary?.trim() || ask, 140), need: `confirm:${task.id}`, ...(input.conversation ? { channel: input.conversation } : {}) });
@@ -785,6 +793,7 @@ export class Gateway {
         ...(task.path ? { path: task.path } : {}),
         ...(task.chat?.startsWith('group:') ? { chat: task.chat } : {}),
         ...(task.dialogue ? { dialogue: task.dialogue } : {}),
+        ...(task.onAgent ? { agent: task.onAgent } : {}),
       },
       true,
     );

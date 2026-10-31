@@ -1,7 +1,12 @@
 import type { AgentBackend, AgentRunInput, FollowUp, Steer } from '../types.js';
 import { CLAUDE_CAPABILITIES, claudeRuntime } from './claude/index.js';
+import { createClaudeBackend } from './claude/runner.js';
+import { askBtw } from './claude/btw.js';
 import { tokensPerSecond } from '../../shared/local-endpoints.js';
 import type { AgentRuntime } from './types.js';
+import type { BtwRequest } from '../btw.js';
+
+const GONE = "That local model isn't set up on this Mac any more. Pick another in Settings › Local models.";
 
 /** The endpoint a picked model value names (core/local-endpoints.ts resolves it). */
 export interface LocalTarget {
@@ -53,16 +58,24 @@ export function localRuntime(resolve: (value: string | undefined) => LocalTarget
     label: 'Local model',
     // Claude Code does the gating, so every guarantee holds; the endpoint lists its own models.
     capabilities: { ...CLAUDE_CAPABILITIES, hasModelList: false },
-    create: (opts) => {
+    create: ({ executablePath, ...opts }) => {
       // No plan limits on your own endpoint: nothing it says goes into Claude's quota (no fake quota bar).
       const bridge = Object.assign(Object.create(opts.bridge) as typeof opts.bridge, { reportUsage: () => undefined });
-      const claude = claudeRuntime.create({ ...opts, bridge, model: undefined });
+      const claudePath = executablePath ? { claudePath: executablePath } : {};
+      // The model is told its own name, not Claude's (run-instructions.ts).
+      const claude = createClaudeBackend({ ...opts, ...claudePath, bridge, model: undefined, agentOf: (input) => ({ runtime: 'local', label: input.model ?? 'Local model' }) });
       return Object.assign(Object.create(claude) as AgentBackend, {
         run: (input: AgentRunInput) => {
           const value = input.model ?? input.place?.agent?.model;
           const target = resolve(value);
-          if (!target) return Promise.reject(new Error("That local model isn't set up on this Mac any more. Pick another in Settings › Local models."));
+          if (!target) return Promise.reject(new Error(GONE));
           return claude.run(onEndpoint(input, target, (v) => resolve(v)));
+        },
+        // A side question forks the conversation on its own endpoint: a local conversation never goes to Anthropic.
+        btw: (req: BtwRequest) => {
+          const target = resolve(req.model);
+          if (!target) return Promise.reject(new Error(GONE));
+          return askBtw({ ...req, model: target.model }, { ...claudePath, env: endpointEnv(target) });
         },
       });
     },

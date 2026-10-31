@@ -42,8 +42,11 @@ const HEARTBEAT_MS = 60_000;
 export interface ChatClaudeOptions {
   readonly mesh: Mesh;
   readonly files?: ChatFiles;
-  /** Your Claude's answer (undefined: this Beluga has no Claude to answer with). */
-  readonly answer: ((req: ChatAnswerRequest) => Promise<string>) | undefined;
+  /**
+   * Your agent's answer (undefined: this Beluga has no agent to answer with); with `agent`, the one
+   * that really answered (Claude, when your default couldn't), named on the answer instead.
+   */
+  readonly answer: ((req: ChatAnswerRequest) => Promise<string | { readonly text: string; readonly agent?: AgentRef }>) | undefined;
   /**
    * Your own asks of your own Claude (BLG-207): a real turn with its tools in this conversation
    * (agent-host runChat), its final answer back for the chat. Missing: they're answered like
@@ -93,7 +96,8 @@ export class ChatClaude {
 
   private agentRef(): AgentRef {
     const ref = this.opts.agent?.() ?? CLAUDE_AGENT;
-    const model = ref.model ?? this.opts.model?.();
+    // Settings' model is Claude's: another agent without its own model answers on its default.
+    const model = ref.model ?? (ref.runtime === CLAUDE_AGENT.runtime ? this.opts.model?.() : undefined);
     return model ? { ...ref, model } : ref;
   }
 
@@ -188,14 +192,16 @@ export class ChatClaude {
       // You asked your own Claude: a real turn, with its tools (BLG-207). Anyone else: one answer, no tools.
       const acting = m.from === mesh.peerId && this.acts();
       const request = await this.request(m, job.abort.signal, acting);
-      const answer = acting ? await this.opts.act!(conversation, `${request.system}\n\n${request.prompt}`) : await this.opts.answer!(request);
+      const said = acting ? await this.opts.act!(conversation, `${request.system}\n\n${request.prompt}`) : await this.opts.answer!(request);
+      const answer = typeof said === 'string' ? said : said.text;
+      const by = (typeof said === 'string' ? undefined : said.agent) ?? this.agentRef();
       if (this.stopped || job.abort.signal.aborted) return;
       // Still in the conversation? (you may have left the group, or they unfriended you, meanwhile)
       if (!mesh.conversations().includes(conversation)) return;
       // What needs this Mac comes back as a request the asker's Mac offers to send (gateway), on the last part.
       const { text, request: offer } = acting ? { text: answer } : parseRequest(answer);
       const parts = splitAnswer(text);
-      parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, agent: this.agentRef(), ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
+      parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, agent: by, ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
     } catch (err) {
       if (!this.stopped) this.opts.onProblem?.(conversation, `${agentLabel(this.agentRef(), undefined, true, { capital: true })} couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -274,7 +280,7 @@ export class ChatClaude {
       }),
       images,
       ...(earlier ? { earlier: (ask: EarlierAsk) => earlierPage(this.before(m.conversation, m.id), owner, ask) } : {}),
-      ...(this.opts.model?.() ? { model: this.opts.model() } : {}),
+      ...(this.agentRef().model ? { model: this.agentRef().model } : {}),
       signal,
     };
   }

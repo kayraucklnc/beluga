@@ -1,0 +1,155 @@
+import { motion } from 'motion/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { runtimeMark } from '@beluga/shared/agent-marks.js';
+import type { RuntimeChoice } from '@beluga/shared/agent-runtimes.js';
+import { myModel, myRuntime, setMyAgent } from '../chat/ModelPicker.js';
+import { Icon } from '../components/Icon.js';
+import { cx } from '../components/ui.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { copyText } from '../lib/copy.js';
+import { openExternal } from '../lib/system.js';
+import { type AgentRow, CODEX_DOWNLOAD, CODEX_NPM, FIX_LABEL, agentRows, pickDefault } from './agent-setup.js';
+import { EASE_OUT, Rise, SPRING, Words } from './fx.js';
+import { Glass } from './Glass.js';
+import s from './onboarding.module.css';
+
+/** Where Settings › Agent keeps its local models (Settings.tsx), to scroll to. */
+export const LOCAL_MODELS_ID = 'settings-local-models';
+
+/**
+ * Your agents as this Mac has them (BLG-507): asked when shown and again when you come back to the
+ * window (from Terminal's sign-in, say), with Check Again for the rest; and what each row's button
+ * does: sign in (in Terminal), get Codex, or set up a local model (Settings › Agent).
+ */
+export function useAgents(): { rows: AgentRow[]; checking: boolean; checked: boolean; check: () => Promise<readonly RuntimeChoice[] | undefined>; act: (row: AgentRow) => void } {
+  const api = useApi();
+  const { ui } = useBeluga();
+  const runtimes = useApp((st) => st.runtimes);
+  const [checked, setChecked] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const check = useCallback(async (): Promise<readonly RuntimeChoice[] | undefined> => {
+    setChecking(true);
+    try {
+      return await api.workbench.checkAgents();
+    } catch {
+      return undefined;
+    } finally {
+      setChecking(false);
+      setChecked(true);
+    }
+  }, [api]);
+  useEffect(() => {
+    void check();
+    const again = (): void => void check();
+    window.addEventListener('focus', again);
+    return () => window.removeEventListener('focus', again);
+  }, [check]);
+  const act = (row: AgentRow): void => {
+    if (row.fix === 'sign_in') void api.workbench.agentSignIn(row.id);
+    else if (row.fix === 'install') void openExternal(CODEX_DOWNLOAD);
+    else if (row.fix === 'set_up') {
+      ui.patch({ settings: 'claude' });
+      setTimeout(() => document.getElementById(LOCAL_MODELS_ID)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 120);
+    }
+  };
+  return { rows: agentRows(runtimes, checked), checking, checked, check, act };
+}
+
+/** Codex's npm command, a tap to copy. */
+export function CopyCommand({ className }: { readonly className?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={`Copy ${CODEX_NPM}`}
+      onClick={() => {
+        void copyText(CODEX_NPM);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+      }}
+    >
+      <code>{CODEX_NPM}</code>
+      <Icon name={copied ? 'check' : 'copy'} size={11} />
+    </button>
+  );
+}
+
+/**
+ * Onboarding's "Your agents" step, right after the welcome: every agent Beluga can run with where it
+ * stands here, the first ready one already picked as yours (Claude Code before Codex before a local
+ * model, or the one you had), and Sign In / Get Codex / Set Up beside the rest. With none ready it
+ * says so and lets you go on.
+ */
+export function AgentsStep() {
+  const api = useApi();
+  const prefs = useApp((st) => st.prefs);
+  const mine = myRuntime(prefs);
+  const { rows, checking, checked, check, act } = useAgents();
+  // The first look picks yours, once; after that only you do.
+  const picked = useRef(false);
+  useEffect(() => {
+    // Only once every agent has been asked (before that, one listed as running may not be signed in).
+    if (picked.current || checking || !checked) return;
+    picked.current = true;
+    const to = pickDefault(rows, mine);
+    if (to && to !== mine) choose(rows.find((r) => r.id === to)!);
+  });
+  const choose = (row: AgentRow): void => {
+    picked.current = true;
+    setMyAgent(api, row.id, row.label, row.id === mine ? myModel(prefs) : '');
+  };
+  const anyReady = rows.some((r) => r.state === 'ready');
+  const asked = checked;
+  return (
+    <div className={s.setup}>
+      <h2 className={s.title}>
+        <Words text="Which agent is yours?" />
+      </h2>
+      <Rise delay={0.2} className={s.body}>
+        Beluga runs the coding agents you already use. Yours starts every new conversation and answers friends; any conversation can pick another.
+      </Rise>
+      <Glass radius={16} width="100%" className={s.rows}>
+        <div role="radiogroup" aria-label="Your agent">
+          {rows.map((row, i) => {
+            const ready = row.state === 'ready';
+            const on = ready && row.id === mine;
+            return (
+              <motion.div key={row.id} className={cx(s.row, s.agentRow)} data-on={on ? '' : undefined} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE_OUT, delay: 0.25 + i * 0.06 }}>
+                <button type="button" role="radio" aria-checked={on} aria-label={row.label} disabled={!ready} className={s.agentPick} onClick={() => choose(row)}>
+                  <span className={s.agentRadio} aria-hidden="true">
+                    {on ? <motion.span layoutId="agent-on" className={s.agentRadioOn} transition={SPRING} /> : null}
+                  </span>
+                  <Icon name={runtimeMark(row.id)} size={20} className={s.agentMark} />
+                  <span className={s.rowText}>
+                    <span className={s.rowLabel}>
+                      {row.label}
+                      <span className={s.grant} data-grant={ready ? 'granted' : undefined} data-testid={`agent-state-${row.id}`}>
+                        {ready ? <Icon name="check" size={10} /> : null}
+                        {row.words}
+                      </span>
+                    </span>
+                    <span className={s.rowDetail}>{row.detail}</span>
+                  </span>
+                </button>
+                {row.fix === 'install' ? <CopyCommand className={s.agentCommand} /> : null}
+                {row.fix ? (
+                  <button type="button" className={cx(s.input, s.rowButton)} onClick={() => act(row)}>
+                    {FIX_LABEL[row.fix]}
+                  </button>
+                ) : null}
+              </motion.div>
+            );
+          })}
+        </div>
+      </Glass>
+      <Rise delay={0.5} className={s.agentsBar}>
+        <span>{!asked ? 'Looking for your agents…' : anyReady ? 'Change it any time in Settings › Agent.' : 'None of your agents is ready yet. Sign in to one now, or go on and set one up later in Settings › Agent.'}</span>
+        <button type="button" className={s.agentsCheck} disabled={checking} onClick={() => void check()}>
+          <Icon name="refresh" size={12} />
+          {checking ? 'Checking…' : 'Check Again'}
+        </button>
+      </Rise>
+    </div>
+  );
+}

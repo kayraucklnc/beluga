@@ -94,6 +94,7 @@ export function launchGateway(host: GatewayHost): () => void {
     selfId: () => session.selfId,
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'me',
     agent: () => session.backend,
+    runs: (agent) => session.runsAgent(agent),
     approve: approvals(session),
     rulesFile: path.join(host.demo ? dir : belugaHome(), 'rules.json'),
     loadCaps: () => (host.demo ? caps : loadSettings().capabilities),

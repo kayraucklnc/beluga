@@ -1,5 +1,43 @@
+import { sideCalls } from '../side-calls.js';
 import type { AgentBackend, AgentRunInput } from '../types.js';
-import type { RuntimeId } from './types.js';
+import type { Complete, RuntimeId } from './types.js';
+
+/** The side calls a backend may offer (agent/side-calls.ts). */
+export type SideCallBackend = Pick<AgentBackend, 'nameTask' | 'titlePlan' | 'answerChat' | 'fixSetup' | 'fixRun' | 'workOutScripts' | 'draftTask' | 'describeProject' | 'reviewPr'>;
+
+/**
+ * Where a side call goes (BLG-503): `own`, your default agent's runtime's one-shot call (Codex's),
+ * then `claude`, Claude's backend, when there's no `own`, or it failed. Neither: the plain answer.
+ */
+export interface SideRoute {
+  readonly own?: { readonly complete: Complete; readonly cwd: string; readonly model?: string };
+  readonly claude?: () => SideCallBackend | undefined | Promise<SideCallBackend | undefined>;
+}
+
+/**
+ * A side call (naming a worktree, a draft, a setup fix…) on your agent's runtime, falling back to
+ * Claude's when that one failed. The side calls keep their own plain fallbacks (a slug, no draft),
+ * so a failure is seen at its runtime call: any that threw (not stopped by its own time limit).
+ */
+export async function routeSideCall<T>(route: SideRoute, run: (on: SideCallBackend) => Promise<T> | undefined, plain: T): Promise<T> {
+  if (route.own) {
+    const { complete, cwd, model } = route.own;
+    let failed = false;
+    const watched: Complete = (req) =>
+      complete(req).catch((err: unknown) => {
+        if (!req.signal?.aborted) failed = true;
+        throw err;
+      });
+    const out = await Promise.resolve(run(sideCalls(watched, cwd, model))).catch(() => {
+      failed = true;
+      return undefined;
+    });
+    if (!failed) return out ?? plain;
+  }
+  const claude = await Promise.resolve(route.claude?.()).catch(() => undefined);
+  const out = claude ? await Promise.resolve(run(claude)).catch(() => undefined) : undefined;
+  return out ?? plain;
+}
 
 /**
  * One backend for the session layer that runs each turn on its place's runtime (BLG-445): this

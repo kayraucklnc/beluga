@@ -11,6 +11,7 @@ import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
 import { agentLabel, agentName } from '../../shared/agent-label.js';
 import { type AgentRef, defaultAgentOf } from '../../protocol.js';
+import { chosenAgent } from '../settings.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
 import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
@@ -182,10 +183,13 @@ export class BoardWork {
     return { kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName(), agent: this.agentIn(channel) };
   }
 
-  /** The agent that runs in a conversation (`ws:<id>`): its workspace's pick, else your default. */
+  /** The agent that runs in a conversation (`ws:<id>`): its workspace's pick, else its project's agent (agentFor), else your default. */
   private agentIn(channel: string | undefined): AgentRef {
     const ws = channel?.startsWith(WS) ? this.workspaces().find((w) => w.id === channel.slice(WS.length)) : undefined;
-    return ws?.agent ?? defaultAgentOf(this.deps.store.getState().self);
+    if (ws?.agent) return ws.agent;
+    const st = this.deps.store.getState();
+    const project = ws ? st.projects.find((p) => p.id === ws.projectId)?.name : undefined;
+    return project && st.prefs.projectAgents?.[project] ? chosenAgent(st.prefs, project) : defaultAgentOf(st.self);
   }
 
   /**

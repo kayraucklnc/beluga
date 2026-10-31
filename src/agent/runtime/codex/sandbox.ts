@@ -52,6 +52,16 @@ export function trustRow(origin: RunOrigin, scope: 'folder' | 'full'): TrustRow 
   return CODEX_TRUST_TABLE.find((r) => r.origin === origin && (r.scope === 'any' || r.scope === scope))!;
 }
 
+/**
+ * When this run's Codex asks you, beyond the row: while planning, never (it only looks; anything
+ * past its read-only sandbox is declined anyway); your own run with "My agent asks before
+ * commands" on, for every command that isn't plainly read-only ('untrusted'). Friends' rows never change.
+ */
+export function approvalFor(row: TrustRow, opts: { readonly planning?: boolean; readonly askBeforeCommands?: boolean }): AskForApproval {
+  if (opts.planning) return 'never';
+  return row.origin === 'own' && opts.askBeforeCommands ? 'untrusted' : row.approval;
+}
+
 /** Credential stores in your home, denied to every Codex run (shares.ts's secret paths). */
 const HOME_SECRETS = [
   '.ssh',

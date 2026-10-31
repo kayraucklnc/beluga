@@ -60,7 +60,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       if (id === LOCAL_RUNTIME) return opts.runtime?.runtimes('claude') && !localWhy(local.choices()) ? { models: localModels(local.choices()) } : undefined;
       return opts.runtime?.runtimes(id) || opts.alsoRuntimes?.some((r) => r.id === id) ? {} : undefined;
     });
-  const local = new LocalEndpoints({ endpoints: () => env.endpoints(), onChange: () => opts.store.dispatch({ type: 'runtimes', runtimes: listRuntimes() }) });
+  // Listed again with what each runtime last said about itself (BLG-507: a local endpoint answering never wipes Codex's sign-in state and models).
+  const local = new LocalEndpoints({ endpoints: () => env.endpoints(), onChange: () => (workbench ? workbench.runtimesChanged() : opts.store.dispatch({ type: 'runtimes', runtimes: listRuntimes() })) });
   if (opts.runtime) local.start();
   // Database views find the project's connection string (its variables, its .env).
   useViewEnv({ database: (dir) => env.viewEnv(dir), commands: (dir) => env.envFor({ dir }) });
@@ -128,9 +129,12 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
           ),
         // Your agent's runtime runs here; another, when this Beluga registers it (the demo's agent is Claude).
         listRuntimes,
-        // Your other agents (Codex): only with the real runtimes (never the demo's or a test's).
+        // Your agents (Claude Code signed in? Codex installed and signed in?): only with the real runtimes (never the demo's or a test's).
         ...(opts.runtime
-          ? { runtimeStatus: async () => (await import('../agent/runtime/registry.js')).otherRuntimes() }
+          ? {
+              runtimeStatus: async () => (await import('../agent/runtime/registry.js')).runtimeStatuses(),
+              signInCommand: async (id: string) => (await import('../agent/runtime/registry.js')).signInCommand(id),
+            }
           : opts.alsoRuntimes?.some((r) => r.status)
             ? { runtimeStatus: () => Promise.all(opts.alsoRuntimes!.filter((r) => r.status).map(async (r) => ({ id: r.id, ...(await r.status!()) }))) }
             : {}),

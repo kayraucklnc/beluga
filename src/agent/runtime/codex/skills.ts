@@ -1,5 +1,7 @@
-import { findSkill } from '../../../core/claude-code/skills.js';
-import { notOnCodex } from '../../../shared/skills.js';
+import { fillArguments, findSkill } from '../../../core/claude-code/skills.js';
+import { CLAUDE_BUILT_INS, notOnCodex } from '../../../shared/skills.js';
+
+export { fillArguments };
 
 /**
  * Claude Code's skills and custom commands on Codex (BLG-456). A message starting `/name` means
@@ -11,10 +13,6 @@ import { notOnCodex } from '../../../shared/skills.js';
  * Capability `skills: 'mapped'` tells the screens so.
  */
 
-/** Claude Code's own commands: nothing on Codex does them. */
-const CLAUDE_BUILT_INS = new Set(['add-dir', 'agents', 'bug', 'clear', 'compact', 'config', 'context', 'cost', 'doctor', 'export', 'help', 'hooks', 'ide', 'init', 'install-github-app', 'login', 'logout', 'mcp', 'memory', 'model', 'output-style', 'permissions', 'plugin', 'pr-comments', 'privacy-settings', 'release-notes', 'resume', 'review', 'rewind', 'security-review', 'status', 'statusline', 'terminal-setup', 'todos', 'upgrade', 'usage', 'vim']);
-
-
 export interface MappedPrompt {
   /** The message as Codex gets it. */
   readonly prompt: string;
@@ -22,14 +20,6 @@ export interface MappedPrompt {
   readonly skill?: { readonly name: string; readonly path: string };
   /** What didn't map, in words, for the chat. */
   readonly notes: readonly string[];
-}
-
-/** A command's text with its arguments put in ($ARGUMENTS, $1…; appended when it names none). */
-export function fillArguments(body: string, args: string): string {
-  const parts = args.split(/\s+/).filter(Boolean);
-  const named = /\$ARGUMENTS|\$\d/.test(body);
-  const filled = body.replace(/\$ARGUMENTS/g, args).replace(/\$(\d)/g, (_m, n: string) => parts[Number(n) - 1] ?? '');
-  return named || !args ? filled.trim() : `${filled.trim()}\n\n${args}`;
 }
 
 export async function mapSlash(prompt: string, cwd: string, home: string): Promise<MappedPrompt> {
@@ -46,5 +36,5 @@ export async function mapSlash(prompt: string, cwd: string, home: string): Promi
   const unmapped = notOnCodex(found.fields);
   const notes = unmapped.length ? [`/${name} runs on Codex without ${unmapped.join(', ')} (not on Codex).`] : [];
   if (found.kind === 'skill') return { prompt: args ? `Use the ${name} skill: ${args}` : `Use the ${name} skill.`, skill: { name, path: found.file }, notes };
-  return { prompt: fillArguments(found.body, args), notes };
+  return { prompt: fillArguments(found.body, args, found.source === 'plugin' ? found.dir : undefined), notes };
 }

@@ -15,8 +15,11 @@ import { taskChatsItem } from '../layout/plan-task-chats.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
-import { YOUR_AGENT, agentMenuItems, useAgentEntries } from '../components/agent-options.js';
+import { YOUR_AGENT, agentMenuItems, useAgentEntries, useStartWith } from '../components/agent-options.js';
+import { SplitButton } from '../components/SplitButton.js';
+import { useMyAgent } from '../lib/agent-words.js';
 import { agentForChoice } from '@beluga/ui/agent-choice.js';
+import type { AgentRef } from '@beluga/protocol.js';
 import { openSheet } from '../lib/sheets.js';
 import { mod, openExternal } from '../lib/system.js';
 import { MilestoneBar, PlanProgress, Said, TonePill } from './marks.js';
@@ -122,6 +125,8 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const { client } = useBeluga();
   const runtimes = useApp((s) => s.runtimes);
   const agents = useAgentEntries();
+  const startWith = useStartWith();
+  const mine = useMyAgent();
   // The plan's conversation (its chat, the head Claude's last turn) loads with the page, the chat shown or not.
   useConversationLoaded(plan.home);
   const uiPrefs = usePrefs();
@@ -150,7 +155,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   }, []);
   const chatWidth = drag ?? clampChatWidth(prefs.chatWidth, areaWidth || window.innerWidth);
   const start = useCallback(
-    (taskId: string) => (view.ready.some((t) => t.task.id === taskId && t.forYou) ? showChat(true) : void act(() => api.startTask(plan.id, taskId))),
+    (taskId: string, agent?: AgentRef) => (view.ready.some((t) => t.task.id === taskId && t.forYou) ? showChat(true) : void act(() => api.startTask(plan.id, taskId, agent))),
     [plan.id, act, api, view, showChat],
   );
   // Decide… on a task of yours (the outline, its details): the conversation, where its card is.
@@ -165,10 +170,24 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   // Claude is writing the first plan: one placeholder and one line say so, nothing else.
   const drafting = !plan.body && !body?.milestones.length;
 
-  const primary = ((): { label: string; run: () => void; icon?: 'check' | 'play' } | undefined => {
+  // Start with ▸ (BLG-506): "Your agent" over a plan with its own agent is yours by name (none would mean the plan's again).
+  const startTasks = (tasks: readonly { readonly task: { readonly id: string } }[], agent?: AgentRef): void => tasks.forEach((t) => void act(() => api.startTask(plan.id, t.task.id, agent)));
+  // `with`: the same action by another agent, as the ▾ of a split button.
+  const primary = ((): { label: string; run: () => void; icon?: 'check' | 'play'; with?: { readonly label: string; readonly items: ActionItem[] } } | undefined => {
     switch (next.kind) {
       case 'approve':
-        return body?.milestones.length ? { label: 'Approve Plan', icon: 'check', run: () => void act(() => api.approve(plan.id), 'Plan approved: its tasks are on the board') } : undefined;
+        // Approve, worked by ▸: who works its milestones and tasks, set as it's approved.
+        return body?.milestones.length
+          ? {
+              label: 'Approve Plan',
+              icon: 'check',
+              run: () => void act(() => api.approve(plan.id), 'Plan approved: its tasks are on the board'),
+              with: {
+                label: 'Approve, worked by another agent',
+                items: startWith(plan.agent, (a) => void act(async () => (await api.setWorkAgent(plan.id, a ?? null), api.approve(plan.id)), 'Plan approved: its tasks are on the board'), 'Approve, worked by'),
+              },
+            }
+          : undefined;
       case 'review_changes':
         return { label: 'Apply Changes', icon: 'check', run: () => void act(() => api.approve(plan.id), 'Changes applied') };
       case 'resume':
@@ -176,7 +195,12 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       case 'start':
         // Yours: the plan's conversation, where its card asks you; Claude's: started.
         if (next.tasks.every((t) => t.forYou)) return { label: words.title, run: () => showChat(true) };
-        return { label: words.title, icon: 'play', run: () => next.tasks.filter((t) => !t.forYou).forEach((t) => void act(() => api.startTask(plan.id, t.task.id))) };
+        return {
+          label: words.title,
+          icon: 'play',
+          run: () => startTasks(next.tasks.filter((t) => !t.forYou)),
+          with: { label: 'Start with another agent', items: startWith(plan.agent, (a) => startTasks(next.tasks.filter((t) => !t.forYou), a ?? (plan.agent ? mine : undefined))) },
+        };
       case 'pass':
         return { label: 'Pass Milestone', icon: 'check', run: () => void act(() => api.pass(plan.id, next.milestone.milestone.id)) };
       case 'failed':
@@ -258,7 +282,13 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           <ActionsDropdown items={more}>
             <IconButton icon="more" label="Plan Options" />
           </ActionsDropdown>
-          {primary ? (
+          {primary?.with ? (
+            <SplitButton label={primary.with.label} items={primary.with.items}>
+              <Button variant="primary" size="small" {...(primary.icon ? { icon: primary.icon } : {})} onClick={primary.run}>
+                {primary.label}
+              </Button>
+            </SplitButton>
+          ) : primary ? (
             <Button variant="primary" size="small" {...(primary.icon ? { icon: primary.icon } : {})} onClick={primary.run}>
               {primary.label}
             </Button>

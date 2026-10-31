@@ -29,6 +29,8 @@ export const conversationOf = (topic: Topic): string => topic.replace(/^chat:/, 
 const short = (text: string): string => (text.length > 32 ? `${text.slice(0, 31)}…` : text);
 /** `up:` refs of files the phone `put` (store.put), to send along. */
 type Files = readonly string[] | undefined;
+/** An agent as the calls send it (src/protocol.ts AgentRef). */
+type PickedRef = { runtime: string; label: string; model?: string };
 const withFiles = (files: Files) => (files?.length ? { files: [...files] } : {});
 
 /** One task's draft as the phone sends it back to be added. */
@@ -53,9 +55,10 @@ export const calls = {
    * with Claude on your words (`plan`: it plans first, as the Mac's Plan mode), → its id; or a plan
    * Claude drafts for you to approve, → the plan.
    */
-  startWorktree: (project: string, text: string, plan = false): Call => make('workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}) }], `Start "${short(text)}"`),
+  // `agent` (1.34, BLG-506): who works it; only to a Mac with SINCE.workAgents (the caller checks).
+  startWorktree: (project: string, text: string, plan = false, agent?: PickedRef): Call => make('workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}), ...(agent ? { agent } : {}) }], `Start "${short(text)}"`),
   /** 1.12: a new worktree with photos: its words and photos go the way a question's do → its topic. */
-  startWorktreeWith: (project: string, text: string, plan: boolean, files: Files): Call => make('companion.ask', [{ target: { project, worktree: true, ...(plan ? { plan: true } : {}) }, text, ...withFiles(files) }], `Start "${short(text)}"`),
+  startWorktreeWith: (project: string, text: string, plan: boolean, files: Files, agent?: PickedRef): Call => make('companion.ask', [{ target: { project, worktree: true, ...(plan ? { plan: true } : {}), ...(agent ? { agent } : {}) }, text, ...withFiles(files) }], `Start "${short(text)}"`),
   createPlan: (project: string, goal: string): Call => make('plans.create', [{ projectId: project, goal }], `Plan "${short(goal)}"`),
   /** How a plan runs (1.5): Step by Step, Check-ins or Autopilot. */
   setAutonomy: (plan: string, autonomy: 'step' | 'gated' | 'autopilot', label: string): Call => make('plans.setAutonomy', [plan, autonomy], `Run as ${label}`),
@@ -86,7 +89,8 @@ export const calls = {
   comment: (key: string, text: string): Call => make('board.comment', [key, text], `Comment on ${key}`),
   move: (key: string, status: string, label: string): Call => make('board.move', [key, status as never], `Move ${key} to ${label}`),
   /** Start a task in a new worktree with Claude on it (the Mac's Start with Claude) → the worktree's id. */
-  start: (key: string): Call => make('board.start', [key, { claude: true }], `Start ${key}`),
+  // `agent` (1.34, BLG-506, Start with…): who works this start; only to a Mac with SINCE.workAgents (the caller checks).
+  start: (key: string, agent?: PickedRef): Call => make('board.start', [key, { claude: true, ...(agent ? { agent } : {}) }], agent ? `Start ${key} with ${agent.label}` : `Start ${key}`),
   /** 1.34 (BLG-498): who works a task from its next start (null: your default) → what happened, in words. */
   setTaskAgent: (key: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('board.setAgent', [key, agent], `${key}: ${label}`),
   /** 1.34 (BLG-498): who works a plan's milestones and tasks from here on (null: your default) → in words. */

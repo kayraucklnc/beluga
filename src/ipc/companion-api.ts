@@ -67,7 +67,8 @@ export const COMPANION_API = {
       z
         .object({
           target: z.union([
-            z.object({ project: z.string().min(1).max(200), worktree: z.literal(true).optional(), plan: z.boolean().optional() }).strict(),
+            // `agent` (1.34, BLG-506): who works a new worktree; none: your default.
+            z.object({ project: z.string().min(1).max(200), worktree: z.literal(true).optional(), plan: z.boolean().optional(), agent: AgentRef.optional() }).strict(),
             z.object({ topic: z.string().regex(/^conv:[\w:.-]{1,200}$/) }).strict(),
           ]),
           text: z.string().max(64_000),

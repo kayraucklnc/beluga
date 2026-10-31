@@ -93,7 +93,8 @@ describe('stepping through it', () => {
   it('goes from the welcome through the tour to the settings and the end', () => {
     expect(STEPS[0]).toBe('hello');
     expect(STEPS.at(-1)).toBe('ready');
-    expect(stepBy('hello', 1)).toBe('parallel');
+    expect(stepBy('hello', 1)).toBe('yourAgents');
+    expect(stepBy('yourAgents', 1)).toBe('parallel');
     expect(stepBy('hello', -1)).toBe('hello');
     expect(stepBy('ready', 1)).toBe('ready');
   });

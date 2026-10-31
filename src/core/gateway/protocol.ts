@@ -114,6 +114,11 @@ export const TaskRequest = z.object({
   chat: z.string().regex(/^group:[\w-]{1,80}$/).optional(),
   /** A turn of a chaired dialogue (an older Mac drops it and runs it as a plain ask). */
   dialogue: DialogueEnvelope.optional(),
+  /**
+   * ask: which of their agents (one their card lists, BLG-503). Their Mac runs it there when it's set
+   * up, else on their default agent and says so; an older Mac drops it and runs its default.
+   */
+  agent: AgentRef.optional(),
   ts: z.number().int().min(0),
 });
 export type TaskRequest = z.infer<typeof TaskRequest>;

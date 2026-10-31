@@ -28,8 +28,11 @@ import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, Run
 import { keepLines, trackedSpawn } from './claude-process.js';
 import { keptBashInput } from '../../../workspaces/test-procs.js';
 import { SCRATCH_DIR } from '../../../shared/scratch-dir.js';
-import { CLAUDE_AGENT, type ClaudeAnswer, ClaudeQuestion, type Usage } from '../../../protocol.js';
+import { type AgentRef, CLAUDE_AGENT, type ClaudeAnswer, ClaudeQuestion, type Usage } from '../../../protocol.js';
 import { claudeCodeReady } from '../../claude-code.js';
+import { claudeHome } from '../../../core/claude-code/launch.js';
+import { belugaHome } from '../../../core/home.js';
+import { expandCommand, mayBeCommand, skillOptions } from './skill-plugins.js';
 import { INTERRUPT_TIMEOUT_MS } from '../types.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
@@ -58,6 +61,8 @@ export interface ClaudeBackendOptions {
   readonly bridge: RoomBridge;
   readonly model?: string;
   readonly claudePath?: string;
+  /** Who the agent is told it is, when not the place's agent (a local model: its own name). */
+  readonly agentOf?: (input: AgentRunInput) => AgentRef | undefined;
 }
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
@@ -182,6 +187,15 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       let rejectedUntil: number | undefined;
       let apiError: string | undefined;
       let failedResult: string | undefined;
+      // Your own runs get your skills and custom commands (never a friend's or a guest's: see skill-plugins.ts).
+      const own = Boolean(input.ownerMcp && !input.guest);
+      const home = claudeHome();
+      const skills = await skillOptions(own, cwd, home, path.join(belugaHome(), 'claude-plugins'));
+      /** A message as Claude gets it: a custom command (`/fruit apples`) filled in first, on your own runs. */
+      const content = (msg: Pick<FollowUp, 'prompt' | 'requesterName' | 'viaAgent' | 'context'>): PromptContent | Promise<PromptContent> => {
+        const build = (prompt: string): PromptContent => imageContent(buildPrompt({ ...msg, prompt }), linkedImages(msg.prompt));
+        return own && mayBeCommand(msg.prompt) ? expandCommand(msg.prompt, cwd, home).then(build) : build(msg.prompt);
+      };
       const options: Options = {
         cwd,
         additionalDirectories: [...extraDirs, ...(fixup ? [fixup] : [])],
@@ -232,9 +246,10 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: runInstructions(input, opts.bridge.selfName()) },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: runInstructions(input, opts.bridge.selfName(), opts.agentOf?.(input) ?? input.place?.agent) },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
+        ...skills,
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
         // Set, this replaces Claude Code's whole environment, so it starts from ours.
@@ -284,7 +299,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       // Streaming input keeps Claude Code alive after it answers while background agents still
       // work: a one-shot prompt would cut them off 10 minutes later, rejecting their next step.
       const prompts = new PromptQueue();
-      prompts.push(isCompactCommand(input.prompt) ? input.prompt.trim() : imageContent(buildPrompt(input), linkedImages(input.prompt)), { uuid: input.promptId });
+      prompts.push(isCompactCommand(input.prompt) ? input.prompt.trim() : content(input), { uuid: input.promptId });
       const background = new BackgroundAgents();
       const turns = new TurnRouter({ onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}), ...(input.onAnswered ? { onDone: input.onAnswered } : {}) });
       // Steps in detail go to the request whose turn it is (a follow-up's turn: the follow-up).
@@ -316,7 +331,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         }
         // Between turns it starts one now: thinking before its first step counts from here.
         if (turns.between) recorder.begin();
-        const uuid = prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)), { steer: steer && !turns.between, uuid: followUp.promptId });
+        const uuid = prompts.push(content(followUp), { steer: steer && !turns.between, uuid: followUp.promptId });
         if (uuid === false) return false;
         turns.queue(followUp, uuid, steer && !turns.between);
         return uuid;

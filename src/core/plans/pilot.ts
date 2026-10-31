@@ -1,3 +1,4 @@
+import type { AgentRef } from '../../protocol.js';
 import type { CombineResult } from '../../workspaces/git.js';
 import type { Actor, BoardState, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
@@ -380,8 +381,12 @@ export class PlanPilot {
     }
   }
 
-  /** Start one task now (you, or the head Claude when you asked it). */
-  async startNow(planId: string, taskId: string, by: Actor): Promise<string> {
+  /**
+   * Start one task now (you, or the head Claude when you asked it). `agent` (Start with…, BLG-506):
+   * who works it this once, instead of the task's own agent or the plan's; a milestone whose agent
+   * is already at work keeps that one.
+   */
+  async startNow(planId: string, taskId: string, by: Actor, agent?: AgentRef): Promise<string> {
     const plan = this.deps.plans.need(planId);
     if (plan.status !== 'active' || !plan.body) throw new Error('The plan isn’t approved yet');
     if (plan.draft) throw new Error('Changes to the plan are waiting for approval: approve or discard them first');
@@ -398,10 +403,10 @@ export class PlanPilot {
       this.fixAsked.delete(t.issue.id);
       this.deps.plans.setCombining(plan.id, t.task.id, { ...t.combining, ...(t.combining.conflict ? { conflict: { ...t.combining.conflict, stuck: false } } : {}) });
     } else if (t.state !== 'ready') throw new Error(`“${t.task.title}” can’t start: ${t.why ?? t.state}`);
-    if (this.byMilestone) return this.startInMilestone(plan, view, t, by);
+    if (this.byMilestone) return this.startInMilestone(plan, view, t, by, agent);
     if (view.active.length + this.startingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} tasks are already running (the plan’s limit)`);
     this.failed.delete(t.issue!.id);
-    return this.start(plan, t, by);
+    return this.start(plan, t, by, agent);
   }
 
   /** One milestone, one Claude (see the top): unless the plan says a worktree per task. */
@@ -410,7 +415,7 @@ export class PlanPilot {
   }
 
   /** Start a task of a milestone: its Claude gets it (started first if there's none yet). */
-  private async startInMilestone(plan: Plan, view: PlanView, t: TaskView, by: Actor): Promise<string> {
+  private async startInMilestone(plan: Plan, view: PlanView, t: TaskView, by: Actor, agent?: AgentRef): Promise<string> {
     const m = view.milestones.find((x) => x.milestone.id === t.milestoneId)!;
     const key = `${plan.id}:${m.milestone.id}`;
     if (this.launching.has(key)) return `The agent for “${m.milestone.title}” is starting`;
@@ -423,11 +428,13 @@ export class PlanPilot {
       this.sentOn.set(key, { sig: issue.id, ...this.after(channel), count: 1 });
       this.handed.delete(key);
       this.deps.plans.note(plan.id, 'started', `gave ${issue.key} “${t.task.title}” to the agent doing “${m.milestone.title}”`, by);
-      return `Gave ${issue.key} “${t.task.title}” to the agent doing “${m.milestone.title}”, in its worktree: it does it ${liveFrom(this.deps.store.getState()).busy(channel) ? 'once its current turn ends' : 'now'}`;
+      // Started with another agent: the milestone's agent at work keeps it (one worktree, one agent).
+      const keeps = agent ? ' (a milestone already at work keeps its agent)' : '';
+      return `Gave ${issue.key} “${t.task.title}” to the agent doing “${m.milestone.title}”, in its worktree: it does it ${liveFrom(this.deps.store.getState()).busy(channel) ? 'once its current turn ends' : 'now'}${keeps}`;
     }
     if (agentsAtWork(view).length + this.launchingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} milestones are already at work (the plan’s limit)`);
     // A task of yours you start yourself: that one, for its Claude (it never takes yours on its own).
-    return this.launch(plan, m.milestone.id, by, m.autonomy === 'step' || t.forYou ? [t.task.id] : undefined);
+    return this.launch(plan, m.milestone.id, by, m.autonomy === 'step' || t.forYou ? [t.task.id] : undefined, agent);
   }
 
   /**
@@ -825,7 +832,7 @@ export class PlanPilot {
    * A milestone's one Claude: one worktree for its tasks (`only`: just these, when you start them
    * one by one), from the plan's branch (or what its first task builds on), and its brief.
    */
-  private async launch(plan: Plan, milestoneId: string, by: Actor, only?: readonly string[]): Promise<string> {
+  private async launch(plan: Plan, milestoneId: string, by: Actor, only?: readonly string[], pick?: AgentRef): Promise<string> {
     const key = `${plan.id}:${milestoneId}`;
     if (this.launching.has(key)) return 'Its agent is starting';
     this.launching.add(key);
@@ -842,8 +849,9 @@ export class PlanPilot {
       const ordered = [first, ...tasks.filter((t) => t !== first)];
       ids = ordered.map((t) => t.issue!.id);
       const base = first.bases?.length ? plan.branch : first.base;
-      // The plan's agent works it (BLG-497); none: your default.
-      const ws = await this.deps.work.startShared(ids, `${first.issue.key} ${m.milestone.title}`, { quiet: true, ...(base ? { base } : {}), ...(plan.agent ? { agent: plan.agent } : {}) });
+      // The agent you started it with (BLG-506), else the plan's (BLG-497); none: your default.
+      const agent = pick ?? plan.agent;
+      const ws = await this.deps.work.startShared(ids, `${first.issue.key} ${m.milestone.title}`, { quiet: true, ...(base ? { base } : {}), ...(agent ? { agent } : {}) });
       const fresh = this.deps.plans.setAgent(plan.id, milestoneId, { worktree: ws.id, ...(ws.branch ? { branch: ws.branch } : {}), at: Date.now(), tasks: ordered.map((t) => t.task.id) });
       const keys = ordered.map((t) => t.issue!.key);
       const said = `started one agent for “${m.milestone.title}” (${keys.join(', ')}) in a new worktree${base ? ` from ${base}` : ''}`;
@@ -1120,7 +1128,7 @@ export class PlanPilot {
     return undefined;
   }
 
-  private async start(plan: Plan, t: TaskView, by: Actor): Promise<string> {
+  private async start(plan: Plan, t: TaskView, by: Actor, pick?: AgentRef): Promise<string> {
     const issue = t.issue;
     if (!issue) throw new Error('That task isn’t on the board');
     if (this.starting.has(issue.id)) return `${issue.key} is starting`;
@@ -1128,8 +1136,8 @@ export class PlanPilot {
     try {
       const base = t.bases?.length ? await this.combinedBase(plan, t, issue) : t.base;
       if (t.bases?.length && !base) return `${issue.key} builds on several tasks: combining their branches hit a conflict, and the agent is fixing it`;
-      // The task's own agent, else the plan's (BLG-497), else your default.
-      const agent = issue.agent ?? plan.agent;
+      // The agent you started it with (BLG-506), else the task's own, else the plan's (BLG-497), else your default.
+      const agent = pick ?? issue.agent ?? plan.agent;
       await this.deps.work.start(issue.id, { claude: true, quiet: true, ...(base ? { base } : {}), ...(agent ? { agent } : {}) });
       if (t.bases?.length) this.deps.plans.setCombining(plan.id, t.task.id, undefined);
       this.deps.plans.note(plan.id, 'started', `started ${issue.key} “${t.task.title}”${base ? ` from ${base}` : ''}`, by);

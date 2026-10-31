@@ -60,8 +60,10 @@ export default function Ask() {
   const [picking, setPicking] = useState(false);
   const [mode, setMode] = useState<Mode>(() => MODES.find((m) => m.mode === back?.how)?.mode ?? 'worktree');
   const [planFirst, setPlanFirst] = useState(false);
-  // Who works an advanced plan's milestones and tasks (BLG-498): none is your default agent.
-  const [planAgent, setPlanAgent] = useState<PickedAgent | undefined>();
+  // Who works a new worktree (BLG-506) or an advanced plan's milestones and tasks (BLG-498): none is your default agent.
+  const [agent, setAgent] = useState<PickedAgent | undefined>();
+  // Sent only to a Mac that takes it (SINCE.workAgents); an older one starts with your default.
+  const picked = agent && agentPicksSupported() ? agent : undefined;
   // An older Mac (before 1.5) has neither Your Mac nor worktrees and plans from here.
   const modes = store.supports('askModes');
   // Speaking (BLG-161): ■ puts the words in the box to edit; ↑ sends them as you said them, once written down.
@@ -126,9 +128,9 @@ export default function Ask() {
         target.kind === 'friend'
           ? make(() => calls.askPerson(target.id, target.name, words))
           : how === 'worktree'
-            ? make((files) => (files.length ? calls.startWorktreeWith(target.id, words, planFirst, files) : calls.startWorktree(target.id, words, planFirst)))
+            ? make((files) => (files.length ? calls.startWorktreeWith(target.id, words, planFirst, files, picked) : calls.startWorktree(target.id, words, planFirst, picked)))
             : how === 'plan'
-              ? make(() => planCall(target.id, words, planAgent))
+              ? make(() => planCall(target.id, words, agent))
               : make((files) => calls.ask(target.id, words, files));
       const id = sends.start({ kind, label: target.label, target: keyOf(target), ...(target.kind === 'project' ? { project: target.label, ...(target.icon ? { icon: target.icon } : {}) } : {}), ...(kind === 'worktree' && planFirst ? { plan: true } : {}) }, words, call, opts);
       href = `/starting/${id}`;
@@ -224,7 +226,7 @@ export default function Ask() {
               ) : null}
               <VoiceNote voice={voice} />
             </View>
-            {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} planFirst={planFirst} onPlanFirst={setPlanFirst} agent={planAgent} onAgent={setPlanAgent} /> : null}
+            {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} planFirst={planFirst} onPlanFirst={setPlanFirst} agent={agent} onAgent={setAgent} /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 10 }}>
               <Press onPress={() => setPicking(true)} accessibilityLabel="Where it goes" style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingLeft: 6, paddingRight: 12, borderRadius: 22, backgroundColor: color.sunken }}>
                 {target ? mark(target, 32) : null}
@@ -276,7 +278,7 @@ function planCall(project: string, goal: string, agent: PickedAgent | undefined)
 
 /**
  * A project's three ways in, as icon chips (as the Mac's project home offers them), and Plan first beside a worktree's (wrapping on a narrow phone, so the send row keeps only where it goes, a photo, the mic and send).
- * An advanced plan's agent (BLG-498) sits beside it the same way: Your agent unless you pick another.
+ * Who works a new worktree (BLG-506) or an advanced plan (BLG-498) sits beside them the same way: Your agent unless you pick another.
  */
 function ModeChips({ mode, onMode, planFirst, onPlanFirst, agent, onAgent }: { readonly mode: Mode; readonly onMode: (m: Mode) => void; readonly planFirst: boolean; readonly onPlanFirst: (on: boolean) => void; readonly agent: PickedAgent | undefined; readonly onAgent: (a: PickedAgent | undefined) => void }) {
   return (
@@ -300,7 +302,7 @@ function ModeChips({ mode, onMode, planFirst, onPlanFirst, agent, onAgent }: { r
         );
       })}
       {mode === 'worktree' ? <PlanFirst on={planFirst} onChange={onPlanFirst} /> : null}
-      {mode === 'plan' && agentPicksSupported() ? <AgentChoice value={agent} onChange={onAgent} /> : null}
+      {mode !== 'question' && agentPicksSupported() ? <AgentChoice value={agent} onChange={onAgent} /> : null}
     </View>
   );
 }

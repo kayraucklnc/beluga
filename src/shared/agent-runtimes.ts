@@ -24,7 +24,14 @@ export interface RuntimeChoice {
   readonly why?: string;
   /** Its models (Claude's come from Claude Code itself: the state's `models`). */
   readonly models?: readonly RuntimeModel[];
+  /** Where it stands on this Mac, once asked (BLG-507): onboarding and Settings › Agent say it in words. */
+  readonly state?: RuntimeState;
+  /** Not ready: what to do, in plain words ("Run codex login in Terminal…"). */
+  readonly fix?: string;
 }
+
+/** Ready; installed but not signed in; not installed; or (a local model) no endpoint answering. */
+export type RuntimeState = 'ready' | 'signed_out' | 'missing' | 'no_endpoint';
 
 /** Every runtime Beluga knows of, in picker order, with what's missing when it isn't set up. */
 export const KNOWN_RUNTIMES: ReadonlyArray<{ readonly id: string; readonly label: string; readonly missing: string }> = [
@@ -37,6 +44,8 @@ export const KNOWN_RUNTIMES: ReadonlyArray<{ readonly id: string; readonly label
 export function runtimeChoices(runs: (id: string) => { readonly models?: readonly RuntimeModel[] } | undefined): RuntimeChoice[] {
   return KNOWN_RUNTIMES.map((r) => {
     const here = runs(r.id);
-    return here ? { id: r.id, label: r.label, available: true, ...(here.models ? { models: here.models } : {}) } : { id: r.id, label: r.label, available: false, why: r.missing };
+    if (here) return { id: r.id, label: r.label, available: true, ...(here.models ? { models: here.models } : {}) };
+    // A local model's only way to be missing is no endpoint answering; the others say once asked (withRuntimeStatus).
+    return { id: r.id, label: r.label, available: false, why: r.missing, ...(r.id === 'local' ? { state: 'no_endpoint' as const } : {}) };
   });
 }

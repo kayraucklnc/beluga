@@ -3,7 +3,8 @@ import type { StepRecord } from '../../../shared/steps.js';
 import { summarizeTool } from '../../prompt.js';
 import { StepRecorder } from '../../step-recorder.js';
 import type { AgentRunInput } from '../../types.js';
-import type { FileUpdateChange, ThreadItem, TokenUsageBreakdown } from './protocol.js';
+import { contextWindowFor } from '../../../shared/context-usage.js';
+import type { FileUpdateChange, ThreadItem, ThreadTokenUsage, TokenUsageBreakdown } from './protocol.js';
 
 /**
  * A Codex turn as Beluga's transcript and steps (BLG-453). Codex's items become the tool calls
@@ -85,6 +86,18 @@ export function usageEvent(last: TokenUsageBreakdown, session: string): string {
   return JSON.stringify({ input: Math.max(0, last.inputTokens - last.cachedInputTokens), output: last.outputTokens, cacheRead: last.cachedInputTokens, cacheWrite: 0, cost: 0, session });
 }
 
+/**
+ * The context meter's event (as ContextReport sends Claude's): what's in the window after the last
+ * response (its whole input, cached included, plus what it wrote, as Codex counts it) and the
+ * model's window, as Codex reported it (else Beluga's guess for `model`). Undefined: nothing used yet.
+ */
+export function contextEvent(usage: ThreadTokenUsage | undefined, model?: string): string | undefined {
+  const used = usage?.last ? usage.last.totalTokens || usage.last.inputTokens + usage.last.outputTokens : 0;
+  if (!(used > 0)) return undefined;
+  const window = contextWindowFor(model, usage?.modelContextWindow ?? undefined);
+  return JSON.stringify({ used, window, ...(model ? { model } : {}) });
+}
+
 /** Follows one run's notifications: events and steps to the current turn's sink. */
 export class CodexEvents {
   private sink: TurnSink;
@@ -102,7 +115,13 @@ export class CodexEvents {
   constructor(
     private readonly cwd: string,
     sink: TurnSink,
-    private readonly opts: { readonly onFileTouched?: (abs: string) => void; readonly expand?: (text: string) => string; readonly now?: () => number } = {},
+    private readonly opts: {
+      readonly onFileTouched?: (abs: string) => void;
+      readonly expand?: (text: string) => string;
+      readonly now?: () => number;
+      /** Each token update (the context meter). */
+      readonly onTokens?: (usage: ThreadTokenUsage) => void;
+    } = {},
   ) {
     this.sink = sink;
     this.recorder = new StepRecorder({ cwd, emit: (record) => this.sink.onStep?.(record), ...(opts.now ? { now: opts.now } : {}) });
@@ -135,7 +154,11 @@ export class CodexEvents {
     if (method === 'item/completed') return this.completed(params.item as ThreadItem);
     if (method === 'item/reasoning/summaryTextDelta' || method === 'item/reasoning/textDelta') this.thinking = true;
     if (method === 'item/agentMessage/delta') this.thinking = false;
-    if (method === 'thread/tokenUsage/updated') this.usage = (params.tokenUsage as { last?: TokenUsageBreakdown } | undefined)?.last;
+    if (method === 'thread/tokenUsage/updated') {
+      const tokens = params.tokenUsage as ThreadTokenUsage | undefined;
+      this.usage = tokens?.last;
+      if (tokens) this.opts.onTokens?.(tokens);
+    }
     if (method === 'thread/compacted') this.sink.onEvent('progress', 'Compacted the conversation');
     if (method === 'error' && params.willRetry) this.sink.onEvent('progress', 'Codex is retrying');
   }

@@ -57,7 +57,8 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
   const claude = new ChatClaude({
     mesh,
     files,
-    answer: session?.backend?.answerChat ? (req) => session.backend!.answerChat!(req) : undefined,
+    // On your default agent (Claude when it can't), named by the one that answered (BLG-503).
+    answer: session?.answersChats ? (req) => session.answerChat(req) : undefined,
     // You asking your own Claude: a real turn with its tools, in this chat (BLG-207).
     // It works in Your Mac's folder: only where that is (the Mac app's daemon).
     ...(session?.backend ? { act: (conversation: string, prompt: string) => session.host.runChat(conversation, prompt), canAct: () => Boolean(assistantOf(session)) } : {}),

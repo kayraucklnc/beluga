@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { AgentRef } from '@beluga/protocol.js';
-import { agentChoices, choiceForAgent } from '@beluga/ui/agent-choice.js';
+import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { runtimeMark } from '@beluga/shared/agent-marks.js';
 import { agentName } from '@beluga/shared/agent-label.js';
 import { useApp } from '../lib/beluga.js';
@@ -53,4 +53,20 @@ export function agentMenuItems(entries: readonly SelectEntry<string>[], current:
     onSelect: () => pick(o.value),
   });
   return entries.flatMap((e) => ('section' in e ? e.options.map((o, i) => item(o, i === 0)) : [item(e, false)]));
+}
+
+/**
+ * "Start with ▸" (BLG-506): the same list as rows of a split button's menu or a submenu, each
+ * `${verb} <agent>` with its mark (no verb: the names alone, for a submenu that says it), one not
+ * set up here greyed with why. `current`: who the main
+ * button starts with (checked; none: your agent). `pick` gets the agent, or undefined for your agent.
+ */
+export function useStartWith(): (current: AgentRef | undefined, pick: (agent: AgentRef | undefined) => void, verb?: string) => ActionItem[] {
+  const entries = useAgentEntries();
+  const runtimes = useApp((s) => s.runtimes);
+  return useCallback(
+    (current, pick, verb = 'Start with') =>
+      agentMenuItems(entries, current, (v) => pick(v === YOUR_AGENT ? undefined : agentForChoice(v, runtimes))).map((it) => (verb ? { ...it, label: `${verb} ${it.label.startsWith('Your agent') ? `y${it.label.slice(1)}` : it.label}` } : it)),
+    [entries, runtimes],
+  );
 }

@@ -20,7 +20,10 @@ import { sameDeep } from '../lib/stable.js';
 import { askAboutTask } from '../network/chat-model.js';
 import { draftIn } from '../network/NetComposer.js';
 import { IssueMark } from '../issues/task-bits.js';
-import { YOUR_AGENT, agentMenuItems, useAgentEntries } from '../components/agent-options.js';
+import { YOUR_AGENT, agentMenuItems, useAgentEntries, useStartWith } from '../components/agent-options.js';
+import { useMyAgent } from '../lib/agent-words.js';
+import { agentName } from '@beluga/shared/agent-label.js';
+import type { AgentRef } from '@beluga/protocol.js';
 import { agentForChoice } from '@beluga/ui/agent-choice.js';
 import t from './tasks.module.css';
 
@@ -50,8 +53,9 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
   // What its Claude is doing right now, and the messages waiting for it (the head Claude's, yours).
-  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined));
-  const waiting = useApp((s) => (worktree && STATUS_INFO[issue.status].open ? liveOf(s.log).waiting?.(`ws:${worktree}`) : undefined)) ?? NONE;
+  // Compared by value: each read makes a fresh list (useSyncExternalStore would otherwise render forever).
+  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined), sameDeep);
+  const waiting = useApp((s) => (worktree && STATUS_INFO[issue.status].open ? liveOf(s.log).waiting?.(`ws:${worktree}`) : undefined), sameDeep) ?? NONE;
   const pulse = running ? pulseOf(run, false, undefined) : undefined;
   const now = useClock(pulse?.kind === 'working' || pulse?.kind === 'command');
   const doing = pulse && !compact ? pulseWords(pulse, now).sub : undefined;
@@ -60,7 +64,11 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const plan = useApp((s) => (issue.plan ? s.plans.plans.find((x) => x.id === issue.plan!.id) : undefined));
   const milestone = plan && issue.plan ? (plan.body ?? plan.draft)?.milestones.find((m) => m.id === issue.plan!.milestone)?.title : undefined;
   // A plan's own epic, or one of its milestones'.
-  const epic = useApp((s) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined));
+  // A fresh pair each read: the same when its plan and milestone are (else it would render forever).
+  const epic = useApp(
+    (s) => (issue.origin === 'plan' && !issue.plan ? planEpicOf(s.plans, issue.id) : undefined),
+    (a, b) => a?.plan === b?.plan && a?.milestone === b?.milestone,
+  );
   return (
     <span className={cx(t.meta, compact && t.metaCompact)}>
       {issue.drafting ? (
@@ -154,7 +162,7 @@ export function OnItLine({ issue, self }: { issue: Issue; self: { readonly id: s
   const last = worktreeOf(issue);
   const worktree = useApp((s) => (last && STATUS_INFO[issue.status].open && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
-  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined));
+  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined), sameDeep);
   // What it's doing is only in the tooltip, as of now: the card just says working (no ticking step and timer on every card).
   const pulse = running ? pulseOf(run, false, undefined) : undefined;
   const doing = pulse ? pulseWords(pulse, Date.now()).sub : undefined;
@@ -240,6 +248,17 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const friends = useApp((s) => s.network.friends);
   const runtimes = useApp((s) => s.runtimes);
   const agents = useAgentEntries();
+  const startWith = useStartWith();
+  const mine = useMyAgent();
+  const plans = useApp((s) => s.plans.plans);
+  /** Its own agent, else its plan's (BLG-497); none: yours. */
+  const ownAgent = (issue: Issue): AgentRef | undefined => issue.agent ?? (issue.plan ? plans.find((p) => p.id === issue.plan!.id)?.agent : undefined);
+  const startIt = (issue: Issue, agent: AgentRef | undefined): void => void act(() => api.start(issue.id, { claude: true, ...(agent ? { agent } : {}) }));
+  /** Start with ▸ (BLG-506): every agent and model, this start only; "your agent" over its own is yours by name. */
+  const startWithMenu = (issue: Issue): ActionItem => {
+    const own = ownAgent(issue);
+    return { label: 'Start with', icon: 'play', submenu: startWith(own, (a) => startIt(issue, a ?? (own ? mine : undefined)), ''), onSelect: () => undefined };
+  };
   /** Agent ▸ (BLG-498): who works it from its next start, the task page's Agent list as a submenu. */
   const agentMenu = (issue: Issue): ActionItem => ({
     label: 'Agent',
@@ -290,7 +309,8 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         ? [{ label: 'Open Worktree', icon: 'branch' as const, onSelect: () => openWorktree(worktree) }]
         : startable
           ? [
-              { label: 'Start', icon: 'play' as const, hint: 'A new worktree, your agent working on it', onSelect: () => void act(() => api.start(issue.id, { claude: true })) },
+              { label: 'Start', icon: 'play' as const, hint: `A new worktree, ${ownAgent(issue) ? agentName(ownAgent(issue)) : 'your agent'} working on it`, onSelect: () => startIt(issue, ownAgent(issue)) },
+              startWithMenu(issue),
               { label: 'Start Worktree Only', icon: 'branch' as const, hint: 'Without the agent', onSelect: () => void act(() => api.start(issue.id, {})) },
             ]
           : []),

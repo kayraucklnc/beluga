@@ -26,6 +26,8 @@ const WRITE_TOOLS: Readonly<Record<string, string>> = {
 const ALWAYS_OK = new Set([
   'TodoWrite',
   'ToolSearch',
+  // A skill only loads its instructions; every tool it then uses is gated as usual.
+  'Skill',
   // continue_in_worktree is only offered in main folders, and decides who must confirm itself.
   ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report', 'continue_in_worktree'].map((n) => `mcp__beluga__${n}`),
   // set_project_setup: only your own worktree runs have it, and what it sets asks you before it first runs by itself.

@@ -12,6 +12,8 @@ import { planTitle } from '../plans/model.js';
 import { busyChannels } from '../board/work.js';
 import { type LogItem, type Store, settleRun } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
+import { type AgentRef, CLAUDE_AGENT } from '../../protocol.js';
+import { chosenAgent } from '../settings.js';
 
 /**
  * "Your Mac" (BLG-47, docs/companion.md): one conversation with your own Claude that isn't tied to
@@ -51,6 +53,8 @@ export interface AssistantDeps {
 
 interface Saved {
   readonly sessionId?: string;
+  /** The runtime that session is of ('claude' when unset: before any other ran here). */
+  readonly runtime?: string;
 }
 
 /** What chats.json holds: the chats in tab order, and the one open. */
@@ -247,20 +251,31 @@ export class MacAssistant {
     for (const dir of new Set(pathVariants(this.workDir))) await fs.rm(path.join(root, encodeProjectDir(dir), `${sessionId}.jsonl`), { force: true }).catch(() => undefined);
   }
 
-  /** Where a chat's Claude runs: the shared folder, the chat's own resumable session. */
+  /** Your default agent now (BLG-503): Your Mac's chats and "On Your Mac" steps run on it. */
+  private agent(): AgentRef {
+    return chosenAgent(this.deps.store.getState().prefs);
+  }
+
+  /**
+   * Where a chat's agent runs: the shared folder, on your default agent, the chat's own resumable
+   * session while it's that same agent's (another agent's session can't be picked up: it starts afresh).
+   */
   place(channel: string = ASSISTANT_CHANNEL): AgentPlace {
     const id = assistantChatOf(channel) ?? FIRST_CHAT;
-    const sessionId = this.saved.get(id)?.sessionId;
+    const agent = this.agent();
+    const was = this.saved.get(id);
+    const sessionId = (was?.runtime ?? CLAUDE_AGENT.runtime) === agent.runtime ? was?.sessionId : undefined;
     return {
       cwd: this.workDir,
       additionalDirectories: [],
       // Its own folder only: files it makes there (a screenshot, a report to send) need no approval.
       autoEdit: true,
+      agent,
       ...(sessionId ? { resume: sessionId } : {}),
       onSession: (next) => {
         // A chat deleted while it ran keeps nothing.
         if (!this.has(id) || next === this.saved.get(id)?.sessionId) return;
-        const saved = { ...this.saved.get(id), sessionId: next };
+        const saved = { ...this.saved.get(id), sessionId: next, runtime: agent.runtime };
         this.saved.set(id, saved);
         writeJson(this.chatFile(id, 'state.json'), saved);
       },
@@ -298,7 +313,7 @@ export class MacAssistant {
    */
   forChat(channel: string, from: string): { readonly place: AgentPlace; readonly tools: MacTools; readonly brief: string } | undefined {
     if (from !== this.deps.selfId() || !/^(dm|group):/.test(channel)) return undefined;
-    return { place: { cwd: this.workDir, additionalDirectories: [], autoEdit: true, onSession: () => undefined }, tools: this.tools(), brief: chatBrief() };
+    return { place: { cwd: this.workDir, additionalDirectories: [], autoEdit: true, agent: this.agent(), onSession: () => undefined }, tools: this.tools(), brief: chatBrief() };
   }
 
   /** Its outputs (what's in its scratch folder), newest first: what the phone shows with it. */

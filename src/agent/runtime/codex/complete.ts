@@ -1,11 +1,12 @@
 import { ToolHost } from '../../tool-host.js';
 import { CompletionError, type CompletionRequest } from '../types.js';
 import { type CodexConnect, spawnAppServer } from './app-server.js';
-import type { ThreadItem, ThreadStartResponse, Turn } from './protocol.js';
-import { codexModel, mcpConfig } from './runner.js';
+import type { Model, ThreadItem, ThreadStartResponse, Turn } from './protocol.js';
+import { RUN_FEATURES_OFF, mcpConfig, pickCodexModel } from './runner.js';
 import { sideCallConfinement } from './sandbox.js';
 
 let host: ToolHost | undefined;
+const MODEL_LIST_TIMEOUT_MS = 10_000;
 
 /**
  * A side call on Codex (agent/side-calls.ts): one turn on an ephemeral thread (nothing saved),
@@ -36,7 +37,8 @@ export async function codexComplete(req: CompletionRequest, deps: { readonly con
       }),
     );
     const gone = rpc.closed.then(() => undefined);
-    const model = codexModel(req.model);
+    // Claude's 'haiku' (a quick side call): Codex's small, fast model when it lists one; 'sonnet'/'opus': its default.
+    const model = await pickCodexModel(req.model, () => rpc.request<{ data: Model[] }>('model/list', {}, MODEL_LIST_TIMEOUT_MS).then((r) => r.data));
     const yourServers = await rpc.request<{ config?: { mcp_servers?: Record<string, unknown> } }>('config/read', {}).then((r) => Object.keys(r.config?.mcp_servers ?? {}), () => []);
     const confined = sideCallConfinement(req.cwd, { ...(req.tools ? { tools: req.tools } : {}), yourServers });
     const thread = await rpc.request<ThreadStartResponse>('thread/start', {
@@ -45,7 +47,7 @@ export async function codexComplete(req: CompletionRequest, deps: { readonly con
       ephemeral: true,
       approvalPolicy: 'never',
       baseInstructions: req.system,
-      config: { ...confined.config, ...(mounted ? mcpConfig(mounted.servers) : {}) },
+      config: { ...confined.config, ...RUN_FEATURES_OFF, ...(mounted ? mcpConfig(mounted.servers) : {}) },
     });
     await rpc.request('turn/start', {
       threadId: thread.thread.id,

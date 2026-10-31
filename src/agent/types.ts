@@ -60,6 +60,11 @@ export interface AgentRunInput {
   /** Ask the owner whether a non-preapproved tool may run. */
   readonly canUseTool: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
   /**
+   * Your own run, with "My agent asks before commands" on (Settings' selfApproval 'ask'): a runtime
+   * that runs commands without asking Beluga first (Codex) asks for each one instead.
+   */
+  readonly askBeforeCommands?: boolean;
+  /**
    * Your own Claude wants a .env file (policy.ts 'secret'): ask you, even when nothing else would.
    * Without it (a friend's request, a task from outside) .env files are refused like every secret.
    */

@@ -29,9 +29,9 @@ describe('is Codex ready here', () => {
     const listed = runtimeChoices((id) => (id === 'claude' || id === 'codex' ? {} : undefined));
     const models = [{ value: '', label: 'GPT-5.5', description: 'Frontier' }];
     const out = withRuntimeStatus(listed, [{ id: 'codex', state: 'signed_out', fix: CODEX_SIGN_IN, models: [] }]);
-    expect(out.find((r) => r.id === 'codex')).toEqual({ id: 'codex', label: 'Codex', available: false, why: `Codex isn't signed in: ${CODEX_SIGN_IN}` });
+    expect(out.find((r) => r.id === 'codex')).toEqual({ id: 'codex', label: 'Codex', available: false, why: `Codex isn't signed in: ${CODEX_SIGN_IN}`, state: 'signed_out', fix: CODEX_SIGN_IN });
     expect(out.find((r) => r.id === 'claude')).toEqual(listed.find((r) => r.id === 'claude'));
-    expect(withRuntimeStatus(listed, [{ id: 'codex', state: 'ready', models }]).find((r) => r.id === 'codex')).toEqual({ id: 'codex', label: 'Codex', available: true, models });
+    expect(withRuntimeStatus(listed, [{ id: 'codex', state: 'ready', models }]).find((r) => r.id === 'codex')).toEqual({ id: 'codex', label: 'Codex', available: true, models, state: 'ready' });
   });
 });
 

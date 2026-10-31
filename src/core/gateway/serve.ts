@@ -90,6 +90,10 @@ export interface ServeContext {
   readonly model: () => { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' };
   /** The agent that answers friends' asks here: your default, with your default model (you choose it, never the asker). */
   readonly agentRef?: () => AgentRef;
+  /** The agents your card lists (an asker may pick one of those, BLG-503). */
+  readonly agents?: () => readonly AgentRef[];
+  /** Whether this Mac can run that agent now (its runtime is here). Unset: only your default. */
+  readonly runs?: (agent: AgentRef) => boolean;
   readonly notify: (title: string, body: string) => void;
   /** Where scratch folders go when the book has no folder. */
   readonly scratch: string;
@@ -142,6 +146,18 @@ const toolNeeds = (tool: string, input: Record<string, unknown>): Need[] => {
 };
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * The agent a friend's ask runs on here (BLG-503): the one they asked for when your card lists it
+ * (same runtime, and model when they named one) and it runs here, with your own pick of its model;
+ * else your default, with a note saying so.
+ */
+export function agentForAsk(asked: AgentRef | undefined, mine: AgentRef, listed: readonly AgentRef[], runs?: (agent: AgentRef) => boolean): { readonly agent: AgentRef; readonly note?: string } {
+  if (!asked || (asked.runtime === mine.runtime && (!asked.model || asked.model === mine.model))) return { agent: mine };
+  const found = listed.find((a) => a.runtime === asked.runtime && (!asked.model || a.model === asked.model)) ?? listed.find((a) => a.runtime === asked.runtime);
+  if (found && (runs?.(found) ?? false)) return { agent: found };
+  return { agent: mine, note: `${asked.label} isn’t set up here, so ${mine.label} does it` };
+}
 const SKIP: ClaudeAnswer = { kind: 'skip' };
 
 type QuestionWaiter = { readonly task: string; readonly from: string; readonly resolve: (a: ClaudeAnswer) => void };
@@ -163,6 +179,8 @@ export class TaskServer {
   private readonly shots = new Map<string, number>();
   /** Steps a task asked you to approve, and your declines in a row. */
   private readonly toolAsks = new Map<string, { asked: number; declined: number }>();
+  /** The agent each ask ran on (its result names it). */
+  private readonly ranOn = new Map<string, AgentRef>();
   readonly offers: FileOffers;
 
   constructor(private readonly ctx: ServeContext) {
@@ -480,14 +498,22 @@ export class TaskServer {
     if (!agent) return this.finish(task, 'failed', `${ctx.selfName()}'s agent isn't running`);
     const found = this.place(task, req);
     const { where, folders } = found;
+    // On the agent its card says (your default), or the one they asked for when it runs here (BLG-503).
+    const picked = ctx.agentRef ? agentForAsk(req.agent, ctx.agentRef(), ctx.agents?.() ?? [], ctx.runs) : undefined;
+    if (picked) this.ranOn.set(task.id, picked.agent);
     // A talk (or cross-reference) dialogue's turn changes nothing, on any agent: no edits, even in a scratch folder.
-    const place = task.dialogue && task.dialogue.mode !== 'work' ? { ...found.place, autoEdit: false } : found.place;
+    const withAgent = picked ? { ...found.place, agent: picked.agent } : found.place;
+    const place = task.dialogue && task.dialogue.mode !== 'work' ? { ...withAgent, autoEdit: false } : withAgent;
+    // Settings' model is Claude's: another agent takes its own pick, or its default.
+    const settings = ctx.model();
+    const model = picked ? (picked.agent.model ?? (picked.agent.runtime === 'claude' ? settings.model : undefined)) : settings.model;
+    const runModel = { ...(model ? { model } : {}), ...(settings.effort ? { effort: settings.effort } : {}) };
     const full = ctx.trustFor(task.peerId) === 'full';
     const tools = this.toolsFor(task, req);
     const toolNames = [...(tools.screenshot ? ['screenshot'] : []), ...(tools.deviceInfo ? ['device_info'] : [])];
     const controller = new AbortController();
     this.controllers.set(task.id, controller);
-    this.update(task.id, { state: 'working', startedAt: ctx.now(), where });
+    this.update(task.id, { state: 'working', startedAt: ctx.now(), where }, picked?.note);
     let lastSent = 0;
     let held: string | undefined;
     let timer: NodeJS.Timeout | undefined;
@@ -535,7 +561,7 @@ export class TaskServer {
         canUseTool: (tool, input) => this.authorizeTool(task, tool, input, full, place.cwd),
         askUser: (question) => this.askRequester(task, question, controller.signal),
         ...(toolNames.length ? { taskTools: tools } : {}),
-        ...ctx.model(),
+        ...runModel,
         maxTurns: MAX_TURNS,
       });
       clearTimeout(timer);
@@ -774,7 +800,7 @@ export class TaskServer {
     const result: TaskOutcome = {
       status,
       summary,
-      ...(t.kind === 'ask' && this.ctx.agentRef ? { agent: this.ctx.agentRef() } : {}),
+      ...(t.kind === 'ask' && this.ctx.agentRef ? { agent: this.ranOn.get(t.id) ?? this.ctx.agentRef() } : {}),
       // What's offered for fetching stays known (the result may have to be sent again); inline bytes don't.
       files: files.map((f) => ({ name: f.name, size: f.size, ...(f.image ? { image: true } : {}), ...(f.ref ? { ref: f.ref } : {}), ...(f.sha256 ? { sha256: f.sha256 } : {}) })),
       log: t.steps,
@@ -782,6 +808,7 @@ export class TaskServer {
       ...(extra.problems?.length ? { problems: extra.problems } : {}),
       ...(extra.secret ? { secret: extra.secret } : {}),
     };
+    this.ranOn.delete(t.id);
     const done = this.ctx.put({ ...t, state: status, result, endedAt: this.ctx.now(), updatedAt: this.ctx.now() });
     this.sendResult(done, result, files);
     if (done.dialogue) this.ctx.dialogues?.turn(done);

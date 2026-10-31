@@ -103,6 +103,8 @@ export interface TaskView {
   readonly answer?: string;
   /** A turn of a chaired dialogue (BLG-468): the chair waits for it, and nothing resumes a conversation with it. */
   readonly dialogue?: DialogueEnvelope;
+  /** Sent: which of their agents it asks for (BLG-503); their Mac says so when another one does it. */
+  readonly onAgent?: AgentRef;
   readonly state: TaskState;
   /** The latest steps (short lines). */
   readonly steps: readonly string[];

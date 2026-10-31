@@ -271,11 +271,11 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.newWorktree` | ✓ |
 | `workspaces.newChat` | ✓ |
 | `workspaces.startChat` | ✓ |
-| `workspaces.startWorktree` | ✓ (→ the new worktree's id; `plan`: its agent plans first; `quiet`: the window stays put. The phone's Ask › a project › Worktree, with Plan first, since 1.5; Your Mac's `start_worktree`) |
+| `workspaces.startWorktree` | ✓ (→ the new worktree's id; `plan`: its agent plans first; `quiet`: the window stays put; `agent`: who works it, from the home composer's Create Worktree ▾ › Start with ▸ (BLG-506). The phone's Ask › a project › Worktree, with Plan first, since 1.5, and its agent chip (1.34); Your Mac's `start_worktree`) |
 | `workspaces.branches` | New worktree › Based on popup |
 | `workspaces.fork` | ✓ |
 | `workspaces.editPrompt` | Edit on your own message (hover, or right-click › Edit Message) › the message opens in place: Rewind Here or New Fork, then ↩ |
-| `workspaces.continueInWorktree` | Continue in New Worktree… (toolbar and the ask banner) › sheet: Task, Based on, Name (the chat becomes the worktree) |
+| `workspaces.continueInWorktree` | Continue in New Worktree… (toolbar and the ask banner) › sheet: Task, Based on, Agent (BLG-506: one that can't resume the conversation starts fresh, handed it, and the sheet says so), Name (the chat becomes the worktree) |
 | `workspaces.archive` | ✓ |
 | `workspaces.restore` | ✓ |
 | `workspaces.archivePlan` | ✓ the Archive dialog says how much space it frees |
@@ -336,6 +336,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.editPrPrompt` | ✓ |
 | `workbench.resetPrPrompt` | ✓ |
 | `workbench.measureDisk` | ✓ |
+| `workbench.checkAgents` | ✓ Check Again on onboarding's Your agents step and in Settings › Agent › Your agents |
+| `workbench.agentSignIn` | ✓ Sign In beside an agent that isn't signed in (onboarding, Settings › Agent) |
 | `workbench.search` | ✓ |
 | `workbench.openHit` | ✓ |
 | `workbench.saveTemplate` | ✓ |
@@ -447,7 +449,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.removeProof` | ✓ a proof item's ✕ |
 | `board.remove` | ✓ Delete Task… (an alert, with Cancel) |
 | `board.setAgent` | ✓ a task page's Agent property (your agent, or any agent and model, each with its mark) and a task's ⋯ / right-click › Agent ▸ (BLG-498): from its next start, a worktree already on it keeps its agent (the toast says so); the phone's task page › ⋯ › Agent (1.34) |
-| `board.start` | ✓ Start on a task (its page, its ⋯ and right-click menu: a new worktree, In Progress, your agent on it with its brief, and you there; the task's own agent, else your default); ⋯ › Start Worktree Only; a task a worktree already does or carries shows Open Worktree instead |
+| `board.start` | ✓ Start on a task (its page, its ⋯ and right-click menu: a new worktree, In Progress, your agent on it with its brief, and you there; the task's own agent, else its plan's, else your default); Start's ▾ and the menus' Start with ▸ (BLG-506): every agent and model, this start only, one not set up greyed with why; ⋯ › Start Worktree Only; a task a worktree already does or carries shows Open Worktree instead. The phone's task › Start, and ⋯ › Start with… (1.34) |
 | `board.settleGone` | ✓ the banner on a task whose worktree was archived or deleted (Cancel Task / Back to Backlog / Keep) |
 | `board.archive` | ✓ a finished task's ⋯ › Archive |
 | `board.archiveDone` | ✓ the archive button on Done (list group, board column), Tasks ⋯ › Archive Done Tasks |
@@ -528,7 +530,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `team.leave` | ✓ project ••• › Leave Team with Ata (Leave Team with several teammates) |
 | `plans.create` | ✓ Plans › New Plan (a goal; the agent plans in a conversation of its own in the project's main folder; More options › Agent picks who works its milestones and tasks, BLG-497); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (the agent plans in the conversation you're in) |
-| `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation |
+| `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation; Approve Plan's ▾ › Approve, worked by ▸ (BLG-506: `plans.setWorkAgent`, then approve) |
 | `plans.discard` | ✓ Discard Draft / Discard Changes on a plan's page |
 | `plans.edit` | ✓ editing a plan's outline (rename, criteria, move, remove, what waits on what) |
 | `plans.setAutonomy` | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu); the phone plan page's autonomy chip (1.5) |
@@ -542,7 +544,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `plans.mergePr` | ✓ Merge on GitHub once the plan's pull request is open |
 | `plans.mergeLocal` | ✓ ⋯ › Merge into Main Locally on a plan ready to ship |
 | `plans.sendBack` | ✓ Not Yet… on a milestone waiting for you |
-| `plans.startTask` | ✓ Start on a ready task (step by step, or a task for you) |
+| `plans.startTask` | ✓ Start on a ready task (step by step, or a task for you); `agent` (BLG-506): Start's ▾ in its details, the outline's right-click › Start with ▸, and Start N Tasks' ▾ on the plan's page (a milestone already at work keeps its agent) |
 | `plans.resumeTask` | ✓ Resume on a task that stopped (the agent ran out of usage or crashed) |
 | `plans.remove` | ✓ a plan's ⋯ › Delete Plan… (its tasks stay on the board) |
 | `plans.tidyUp` | ✓ Tidy Up / No on a plan's leftover task worktrees (merged into its branch, then archived) |

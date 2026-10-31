@@ -14,9 +14,9 @@ import { ViewShelf } from '../../view-tools.js';
 import { INTERRUPT_TIMEOUT_MS } from '../types.js';
 import { type CodexConnect, type CodexConnection, spawnAppServer } from './app-server.js';
 import { codexComplete } from './complete.js';
-import { CodexEvents, type TurnSink, usageEvent } from './events.js';
-import type { AskForApproval, Model, ReasoningEffort, ThreadStartResponse, Turn, UserInput } from './protocol.js';
-import { codexConfinement, originOf, trustRow } from './sandbox.js';
+import { CodexEvents, type TurnSink, contextEvent, usageEvent } from './events.js';
+import { type AskForApproval, type Model, REASONING_EFFORTS, type ReasoningEffort, type ThreadStartResponse, type ThreadTokenUsage, type Turn, type UserInput } from './protocol.js';
+import { approvalFor, codexConfinement, originOf, trustRow } from './sandbox.js';
 import { CODEX_USAGE_AGENT, type CodexRateLimits, fromRateLimits } from './rate-limits.js';
 import { findCodex } from './app-server.js';
 import { type MappedPrompt, mapSlash } from './skills.js';
@@ -50,15 +50,61 @@ export function codexModel(model: string | undefined): string | undefined {
   return model;
 }
 
-/** Beluga's effort names as Codex's ('max' is Codex's 'xhigh'). */
+/** Words in a Codex model's name or description that say it's the small, fast one. */
+const SMALL_MODEL = /\b(mini|nano|small|spark|lite|fast)\b/i;
+
+/** Codex's small, fast model (what Claude's 'haiku' asks for), from its own list; undefined: none, so its default. */
+export function smallCodexModel(models: readonly Model[]): string | undefined {
+  return models.find((m) => !m.hidden && !m.isDefault && SMALL_MODEL.test(`${m.id} ${m.displayName} ${m.description}`))?.id;
+}
+
+/**
+ * The model to ask Codex for: a Codex model as is; Claude's 'haiku' (a side call wanting a quick
+ * answer) as Codex's small, fast model when its list has one; anything else Claude's, its default.
+ * `''` (the picker's default, chosen after a run started): the default by name, so a turn switches back.
+ */
+export async function pickCodexModel(model: string | undefined, list: () => Promise<readonly Model[]>): Promise<string | undefined> {
+  if (model && /haiku/i.test(model)) return smallCodexModel(await list().catch(() => []));
+  if (model === '') return (await list().catch(() => [])).find((m) => m.isDefault)?.id;
+  return codexModel(model);
+}
+
+/** Beluga's effort names as Codex's ('max' is Codex's 'xhigh' where a model has no 'max'). */
 export function codexEffort(effort: AgentRunInput['effort']): ReasoningEffort | undefined {
   return effort === 'max' ? 'xhigh' : effort;
 }
 
+/**
+ * The effort a model can take: the one asked if it lists it ('max' too, on a model that has it),
+ * else the highest it lists below that, else its lowest. Unknown efforts (no list): as codexEffort says.
+ */
+export function clampEffort(effort: AgentRunInput['effort'], supported: readonly string[] | undefined): ReasoningEffort | undefined {
+  if (!effort) return undefined;
+  const known = (supported ?? []).filter((e): e is ReasoningEffort => (REASONING_EFFORTS as readonly string[]).includes(e));
+  if (!known.length) return codexEffort(effort);
+  if (known.includes(effort)) return effort;
+  const rank = (e: ReasoningEffort): number => REASONING_EFFORTS.indexOf(e);
+  const want = rank(codexEffort(effort)!);
+  const below = known.filter((e) => rank(e) <= want).sort((a, b) => rank(b) - rank(a));
+  return below[0] ?? [...known].sort((a, b) => rank(a) - rank(b))[0];
+}
+
+/**
+ * How long Codex waits on one of Beluga's tools (its default is 60 s). Long on purpose: a call can
+ * wait for you to approve it, and ask_agent, wait_for and run_on_peer wait up to 10 minutes.
+ */
+export const TOOL_TIMEOUT_SEC = 3600;
+
 /** Beluga's tool servers as Codex config overrides (`mcp_servers.<name>`), for one thread. */
 export function mcpConfig(servers: Readonly<Record<string, StdioServerConfig>>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(servers).map(([name, s]) => [`mcp_servers.${name}`, { command: s.command, args: s.args, env: s.env }]));
+  return Object.fromEntries(Object.entries(servers).map(([name, s]) => [`mcp_servers.${name}`, { command: s.command, args: s.args, env: s.env, tool_timeout_sec: TOOL_TIMEOUT_SEC }]));
 }
+
+/**
+ * Codex's own features a Beluga run never uses, whoever asks: its multi-agent (agents it spawns
+ * itself, which Beluga would never show; Beluga's own ask_agent and friends do that job).
+ */
+export const RUN_FEATURES_OFF = { 'features.multi_agent': false } as const;
 
 /** A prompt as Codex's input: the text, and images it links (Codex reads them from disk). */
 export function codexInput(text: string, prompt: string, skill?: MappedPrompt['skill']): UserInput[] {
@@ -107,13 +153,31 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, dotenv: Boolean(input.canUseSecret) && !input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const shelf = new ViewShelf();
-      const model = codexModel(input.model ?? place?.model ?? opts.model);
-      const effort = codexEffort(input.effort);
+      // The model and effort, settled once Codex can list its models (see settle), and again when another model is picked mid-run.
+      let model: string | undefined;
+      let effort: ReasoningEffort | undefined;
+      /** The model the thread runs on, as Codex said when it opened it (its default when none was asked). */
+      let threadModel: string | undefined;
+      let models: Promise<readonly Model[]> | undefined;
+      const listOf = (rpc: CodexConnection['rpc']): Promise<readonly Model[]> => (models ??= rpc.request<{ data: Model[] }>('model/list', {}, MODEL_TIMEOUT_MS).then((r) => r.data, () => []));
+      const settle = async (rpc: CodexConnection['rpc'], want: string | undefined): Promise<void> => {
+        model = await pickCodexModel(want, () => listOf(rpc));
+        if (!input.effort) return;
+        const list = await listOf(rpc);
+        const its = list.find((m) => (model ? m.id === model || m.model === model : m.isDefault));
+        effort = clampEffort(input.effort, its?.supportedReasoningEfforts.map((e) => e.reasoningEffort));
+      };
+      // The context meter, as Claude's (agent/context-report.ts): what's in the window after each response.
+      let lastContext: string | undefined;
+      const onTokens = (usage: ThreadTokenUsage): void => {
+        const ev = contextEvent(usage, model ?? threadModel);
+        if (ev && ev !== lastContext) input.onEvent('context', (lastContext = ev));
+      };
 
       // Beluga's tools, served for this run alone and gated per call (vetTool, policy, you).
       const mounted = await host().mount(runToolSuites(input, bridge, shelf, cwd), (name, args) => gateTool(name, args, input, policy));
       let conn: CodexConnection | undefined;
-      const events = new CodexEvents(cwd, { onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) }, { onFileTouched: input.onFileTouched, expand: (t) => shelf.expand(t) });
+      const events = new CodexEvents(cwd, { onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) }, { onFileTouched: input.onFileTouched, expand: (t) => shelf.expand(t), onTokens });
       let failed = true;
       let closed = false;
       try {
@@ -152,6 +216,8 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           });
           // Codex asking to go past its sandbox (your own runs only): the same gate as every other tool, so you decide.
           rpc.onRequest(async (method, params) => {
+            // Planning only looks: nothing past its read-only sandbox, whoever would allow it (Claude's plan mode the same).
+            if (planning && (method === 'item/commandExecution/requestApproval' || method === 'execCommandApproval' || method === 'item/fileChange/requestApproval' || method === 'applyPatchApproval')) return { decision: 'decline' };
             if (method === 'item/commandExecution/requestApproval' || method === 'execCommandApproval') {
               const command = typeof params.command === 'string' ? params.command : Array.isArray(params.command) ? params.command.join(' ') : '';
               const denied = await gateTool('Bash', { command, ...(params.reason ? { description: params.reason } : {}) }, input, policy);
@@ -170,19 +236,25 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           const yourServers = trustRow(origin, input.scope).yourTools ? [] : await rpc.request<{ config?: { mcp_servers?: Record<string, unknown> } }>('config/read', {}).then((r) => Object.keys(r.config?.mcp_servers ?? {}), () => []);
           const writableRoots = planning || !autoEdit ? (fixup ? [fixup] : []) : [cwd, ...extraDirs, ...(fixup ? [fixup] : [])];
           const confined = codexConfinement(origin, input.scope, { cwd, folders: [...extraDirs, ...(fixup ? [fixup] : [])], writable: writableRoots, yourServers });
-          approval = confined.approval;
-          const params = { cwd, ...(model ? { model } : {}), developerInstructions: runInstructions(input, opts.bridge.selfName(), CODEX_AGENT), config: { ...confined.config, ...PROJECT_DOCS, ...mcpConfig(mounted.servers) }, approvalPolicy: confined.approval };
+          approval = approvalFor(confined.row, { planning, ...(input.askBeforeCommands ? { askBeforeCommands: true } : {}) });
+          if (!settled) {
+            settled = true;
+            await settle(rpc, input.model ?? place?.model ?? opts.model);
+          }
+          const params = { cwd, ...(model ? { model } : {}), developerInstructions: runInstructions(input, opts.bridge.selfName(), CODEX_AGENT), config: { ...confined.config, ...PROJECT_DOCS, ...RUN_FEATURES_OFF, ...mcpConfig(mounted.servers) }, approvalPolicy: approval };
           let thread: ThreadStartResponse | undefined;
           if (resume) {
             thread = await rpc.request<ThreadStartResponse>('thread/resume', { threadId: resume, ...params }).catch(() => undefined);
             if (!thread) input.onEvent('progress', 'Started a new Codex conversation (the last one couldn’t be opened)');
           }
           thread ??= await rpc.request<ThreadStartResponse>('thread/start', params);
+          threadModel = thread.model || threadModel;
           // Where its windows stand now, without waiting for the turn to move them.
           void readLimits(rpc).then((limits) => reportLimits(bridge, limits));
           return thread.thread.id;
         };
         let approval: AskForApproval = 'never';
+        let settled = false;
         // A fork can't branch a Codex thread (canFork: false): resuming it would write into the source's
         // own conversation, so a fork starts a new one, and says so (BLG-461).
         const forked = Boolean(place?.forkSession && place.resume);
@@ -250,9 +322,21 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         /** Steers Codex hasn't answered yet: one it turns down still gets a turn of its own. */
         const inflight = new Set<Promise<unknown>>();
         let interrupting: string | undefined;
+        /**
+         * Another model picked for the conversation since the run started (the chat's picker): the
+         * next turn runs on it (Codex keeps a turn's model for the turns after), effort clamped to it.
+         */
+        let wanted = input.model ?? place?.model ?? opts.model;
+        const switchTo = async (pick: string | undefined): Promise<void> => {
+          if (pick === undefined || pick === (wanted ?? '')) return;
+          wanted = pick;
+          await settle(rpc(), pick);
+        };
         const steerIn = (followUp: FollowUp): boolean => {
           const turn = active;
           if (closed || !turn?.id) return false;
+          // Steered into a turn already running: its model holds; the switch is for the next turn.
+          void switchTo(followUp.model).catch(() => undefined);
           const sent = rpc()
             .request('turn/steer', { threadId, input: codexInput(buildPrompt(followUp), followUp.prompt), expectedTurnId: turn.id })
             .then(
@@ -291,7 +375,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
             sink.onEvent('text', note);
             return r.text ? `${shelf.finish(r.text)}\n\n${note}` : note;
           }
-          if (r.turn.status === 'failed') throw codexFailure({ result: `${r.turn.error?.message ?? 'Codex stopped'}${r.turn.error?.codexErrorInfo === 'unauthorized' ? SIGN_IN : ''}`, ...(r.turn.error?.additionalDetails ? { error: r.turn.error.additionalDetails } : {}), stderr: conn?.stderr() ?? [] });
+          if (r.turn.status === 'failed') throw codexFailure({ result: `${r.turn.error?.message ?? 'Codex stopped'}${r.turn.error?.codexErrorInfo === 'unauthorized' ? SIGN_IN : ''}`, ...(r.turn.error?.additionalDetails ? { error: r.turn.error.additionalDetails } : {}), ...(typeof r.turn.error?.codexErrorInfo === 'string' ? { errorInfo: r.turn.error.codexErrorInfo } : {}), stderr: conn?.stderr() ?? [] });
           if (r.turn.status === 'interrupted') throw new Error('aborted');
           return shelf.finish(r.text);
         };
@@ -309,12 +393,20 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
         const asked = buildPrompt({ ...input, prompt: mapped.prompt });
         let r = await runTurn(original, input.plan ? `${asked}\n\n${PLAN_NOTE}` : asked, input.prompt, mapped.skill);
         let answer = said(answerOf(r, original));
+        let askedToDefine = false;
         for (let round = 0; input.plan && input.askUser && round < PLAN_ROUNDS && r.turn.status === 'completed'; round++) {
+          // The plan is for a task: Codex defines it (in its own words) before the plan comes to you. Asked once, as Claude is.
+          if (input.planTask?.needsDefinition() && !askedToDefine) {
+            askedToDefine = true;
+            r = await runTurn(original, DEFINE_NOTE, '');
+            answer = said(answerOf(r, original));
+            if (r.turn.status !== 'completed') break;
+          }
           const verdict = await input.askUser({ kind: 'plan', plan: (r.text || '(Codex proposed a plan)').slice(0, 60_000) });
           if (verdict.kind !== 'plan') break;
           if (verdict.approve) input.planTask?.approved();
-          const next = verdict.approve ? 'The plan is approved. Do the work now.' : verdict.feedback ? `Change the plan: ${verdict.feedback}\n\n${PLAN_NOTE}` : undefined;
-          if (!next) break;
+          // Kept planning without a word: Codex asks what to change (and the run ends on its question), as Claude does.
+          const next = verdict.approve ? 'The plan is approved. Do the work now.' : verdict.feedback ? `Change the plan: ${verdict.feedback}\n\n${PLAN_NOTE}` : NOT_YET_NOTE;
           // Approved: the thread is reopened confined for work.
           if (verdict.approve) {
             const planned = conn;
@@ -325,7 +417,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           }
           r = await runTurn(original, next, '');
           answer = said(answerOf(r, original));
-          if (verdict.approve) break;
+          if (verdict.approve || next === NOT_YET_NOTE) break;
         }
         answers.push(answer);
         input.onAnswered?.(answer);
@@ -341,6 +433,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
           const sink: TurnSink = { onEvent: followUp.onEvent, ...(followUp.onStep ? { onStep: followUp.onStep } : {}) };
           followUp.onStart?.();
           try {
+            await switchTo(followUp.model);
             const its = await mapSlash(followUp.prompt, cwd, claudeHome());
             const note = noted(its, sink);
             followUp.onDone(note(answerOf(await runTurn(sink, buildPrompt({ ...followUp, prompt: its.prompt }), followUp.prompt, its.skill), sink)));
@@ -413,3 +506,6 @@ const codexFailure = (end: RunEnd): RunFailedError => new RunFailedError({ ...cl
 const SIGN_IN = ' Sign in to Codex again (`codex login`), then resend.';
 
 const PLAN_NOTE = 'Plan only: look around read-only, change nothing, and answer with a step-by-step plan for the person to approve.';
+const DEFINE_NOTE =
+  'Before the plan goes to the person for approval, call mcp__beluga_board__task_define with the task this plan is for (title, goal in your own words, context, acceptance criteria, decisions, open questions, estimate, priority). Then answer with the plan again, in full.';
+const NOT_YET_NOTE = 'The person did not approve the plan yet. Ask them what they would like to change, and change nothing.';

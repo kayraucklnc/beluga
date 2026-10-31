@@ -15,7 +15,7 @@ const FINISHED = new Set(['completed', 'failed', 'killed', 'stopped']);
 export type PromptContent = SDKUserMessage['message']['content'];
 
 export class PromptQueue implements AsyncIterable<SDKUserMessage> {
-  private readonly items: Array<{ content: PromptContent; uuid: SDKUserMessage['uuid']; priority?: 'next' }> = [];
+  private readonly items: Array<{ content: PromptContent | Promise<PromptContent>; uuid: SDKUserMessage['uuid']; priority?: 'next' }> = [];
   private wake?: () => void;
   private ended = false;
 
@@ -27,8 +27,9 @@ export class PromptQueue implements AsyncIterable<SDKUserMessage> {
    * Returns the prompt's id (Claude Code says which prompts each turn took in), or false once
    * closed. `steer`: sent while Claude works, it's folded into the running turn at its next step.
    * `uuid`: the id it gets in Claude's transcript (a message's request id, so an edit can cut there).
+   * `content` may still be on its way (a custom command being read): it goes in, in its turn, once it's there.
    */
-  push(content: PromptContent, { steer = false, uuid = randomUUID() }: { steer?: boolean; uuid?: string | undefined } = {}): string | false {
+  push(content: PromptContent | Promise<PromptContent>, { steer = false, uuid = randomUUID() }: { steer?: boolean; uuid?: string | undefined } = {}): string | false {
     if (this.ended) return false;
     this.items.push({ content, uuid: uuid as SDKUserMessage['uuid'], ...(steer ? { priority: 'next' as const } : {}) });
     this.wake?.();
@@ -44,7 +45,8 @@ export class PromptQueue implements AsyncIterable<SDKUserMessage> {
     for (;;) {
       const item = this.items.shift();
       if (item !== undefined) {
-        yield { type: 'user', message: { role: 'user', content: item.content }, parent_tool_use_id: null, uuid: item.uuid, ...(item.priority ? { priority: item.priority } : {}) };
+        const content = item.content instanceof Promise ? await item.content : item.content;
+        yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: item.uuid, ...(item.priority ? { priority: item.priority } : {}) };
         continue;
       }
       if (this.ended) return;

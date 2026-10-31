@@ -6,7 +6,7 @@ import { type AgentRef, defaultAgentOf } from '../../protocol.js';
 import { gatewayOf } from '../gateway/registry.js';
 import type { FriendAgent } from './start.js';
 import { runtimeFor } from '../../agent/runtime/registry.js';
-import type { AgentPlace } from '../../agent/types.js';
+import type { AgentBackend, AgentPlace, AgentRunInput } from '../../agent/types.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import { attachDialogues, detachDialogues } from './registry.js';
@@ -92,7 +92,10 @@ export function launchDialogues(host: DialoguesHost): () => void {
       if (!backend) throw new Error(`${run.participant.agent.label} can't run on this Mac`);
       const channel = run.dialogue.channel ?? 'room';
       const place = channel === 'room' ? undefined : turnPlace(session.workspaces?.place(channel), run.participant.agent, run.dialogue.mode !== 'work');
-      return session.host.runDialogueTurn(channel, backend, run.input, { ...(place ? { place } : {}), defaultModel: runtime === own().runtime });
+      // No place (the room): the speaker's own model rides the run, or a local model wouldn't know its endpoint (BLG-503).
+      const model = run.participant.agent.model;
+      const on = !place && model ? (Object.assign(Object.create(backend) as AgentBackend, { run: (input: AgentRunInput) => backend.run({ ...input, model }) })) : backend;
+      return session.host.runDialogueTurn(channel, on, run.input, { ...(place ? { place } : {}), defaultModel: runtime === own().runtime });
     },
   });
   attachDialogues(session, dialogues);

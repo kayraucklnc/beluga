@@ -11,6 +11,9 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   // The beluga opens the welcome, and comes back on the last step.
   await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
   await welcome.getByRole('button', { name: /Get Started/ }).click();
+  // Your agents (BLG-507, its own spec: onboarding-agents.spec.ts), then the tour.
+  await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(welcome.getByRole('heading', { name: 'Work on everything at once.' })).toBeVisible();
 
   // Skip Tour goes straight to the look.
@@ -98,6 +101,9 @@ test('a permission macOS already allows shows as allowed, and the tour shows a r
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await welcome.getByRole('button', { name: /Get Started/ }).click();
+  // Your agents, then the tour's first two.
+  await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   // The table weave: Claude picks Postgres, connects, and the answer is a table that sorts.
@@ -122,6 +128,8 @@ test('the tour explains Sentinel: a sentence becomes a sentinel, then real ones 
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await welcome.getByRole('button', { name: /Get Started/ }).click();
+  await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   for (const heading of ['Work on everything at once.', 'See every agent work. Steer any of them.', 'Answers you can sort, not just read.', 'Your agent, and your friends’ agents.']) {
     await expect(welcome.getByRole('heading', { name: heading })).toBeVisible();
     await welcome.getByRole('button', { name: 'Continue', exact: true }).click();

@@ -87,6 +87,8 @@ export const COMPANION_PROTO = { major: 1, minor: 34 } as const;
  * An older Mac sends neither, and the phone offers no change. SINCE.workAgents: `companion.addTask` and
  * `plans.create` take the `agent` a new task or plan is worked by; each turn and task activity line
  * may carry the `agent` that spoke, for its mark (an older Mac sends none: the phone guesses by name).
+ * Start with… (BLG-506), also SINCE.workAgents: `board.start` takes the `agent` that works this start,
+ * and `companion.ask`'s worktree target the `agent` a new worktree runs (an older Mac: your default).
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31, providers: 32, dialogues: 33, workAgents: 34 } as const;
 

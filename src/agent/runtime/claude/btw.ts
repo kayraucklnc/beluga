@@ -7,9 +7,10 @@ const BTW_TIMEOUT_MS = 3 * 60_000;
 /**
  * Answer a side question (/btw): a fork of the conversation's session, so Claude knows the whole
  * conversation, with no tools, one turn, and nothing saved, so the conversation never sees it.
- * Runs beside a live run without touching it.
+ * Runs beside a live run without touching it. `env`: over yours, for Claude Code (a local model's
+ * endpoint, so a local conversation's side question goes there, never to Anthropic).
  */
-export async function askBtw(req: BtwRequest, opts: { claudePath?: string } = {}): Promise<string> {
+export async function askBtw(req: BtwRequest, opts: { claudePath?: string; env?: Readonly<Record<string, string>> } = {}): Promise<string> {
   const abortController = new AbortController();
   const stop = (): void => abortController.abort();
   req.signal.addEventListener('abort', stop, { once: true });
@@ -30,6 +31,7 @@ export async function askBtw(req: BtwRequest, opts: { claudePath?: string } = {}
         abortController,
         ...(req.model ? { model: req.model } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
+        ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}),
       },
     });
     for await (const msg of q) {

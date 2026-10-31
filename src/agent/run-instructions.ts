@@ -8,8 +8,8 @@ import { buildViewAppend } from './view-prompt.js';
 /**
  * What Beluga adds to an agent's own instructions for one run: who it is in the room, graphs and
  * views, the task's brief, the scratch folder, a worktree's keep/commit rules, a main folder's
- * ask-only rules. Plain text, the same for every runtime: Claude appends it to its system prompt,
- * Codex takes it as developer instructions.
+ * ask-only rules. Plain text: Claude appends it to its system prompt, Codex takes it as developer
+ * instructions. `agent` words what differs to be true for its runtime (.env files, kept processes).
  */
 export function runInstructions(input: AgentRunInput, ownerName: string, agent?: AgentRef): string {
   const place = input.place;
@@ -28,7 +28,7 @@ export function runInstructions(input: AgentRunInput, ownerName: string, agent?:
     (input.dialogue?.brief ?? '') +
     (input.setup && !askOnly ? input.setup.brief : '') +
     (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') +
-    (worktree ? buildKeepAppend() : '') +
+    (worktree ? buildKeepAppend(agent) : '') +
     (worktree && !input.planBrief && !askOnly ? buildCommitAppend() : '') +
     (place?.shipped && !askOnly ? buildShippedAppend(place.shipped) : '') +
     (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '')

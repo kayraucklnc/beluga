@@ -76,7 +76,12 @@ export class PlansWork {
       // Each milestone's check: a conversation of its own in the project (folded into the plan), archived once it passed.
       ...(deps.controller
         ? {
-            checkerChat: async (plan, milestone) => (await deps.controller!.newChat(plan.projectId, `Check: ${milestone.title}`.slice(0, 40), undefined, { quiet: true }))?.id,
+            // On the plan's agent (BLG-503), like its workers; none picked: the project's.
+            checkerChat: async (plan, milestone) => {
+              const ws = await deps.controller!.newChat(plan.projectId, `Check: ${milestone.title}`.slice(0, 40), undefined, { quiet: true });
+              if (ws && plan.agent) deps.controller!.manager.setAgent(ws.id, plan.agent);
+              return ws?.id;
+            },
             retireChat: (id) => void deps.controller!.archive(id, false, { quiet: true }).catch(() => undefined),
           }
         : {}),
@@ -271,8 +276,9 @@ export class PlansWork {
     return this.pilot.mergeLocal(id);
   }
 
-  startTask(id: string, task: string): Promise<string> {
-    return this.pilot.startNow(id, task, this.me());
+  /** `agent` (Start with…, BLG-506): who works it this once; none: the task's own, the plan's, or your default. */
+  startTask(id: string, task: string, agent?: AgentRef): Promise<string> {
+    return this.pilot.startNow(id, task, this.me(), agent);
   }
 
   /** Wake a task whose Claude stopped without finishing (Resume on its card). */

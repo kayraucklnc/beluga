@@ -1,4 +1,7 @@
 import { existsSync } from 'node:fs';
+import { chmod, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { type PtyProcess, type TerminalManager, listShells, scriptShell } from '../terminal/index.js';
 import { type ShellChoice, shellArgs } from '../shared/shells.js';
@@ -52,6 +55,8 @@ export interface WorkbenchDeps {
   readonly listRuntimes?: () => readonly RuntimeChoice[];
   /** Whether each runtime that can say so is ready here (Codex: installed, signed in) and its models (BLG-455). */
   readonly runtimeStatus?: () => Promise<ReadonlyArray<{ readonly id: string } & RuntimeStatus>>;
+  /** How to sign in to a runtime, as a command for Terminal (BLG-507); undefined: it has none. */
+  readonly signInCommand?: (id: string) => Promise<readonly string[] | undefined>;
   /** Look for a pull request (injected in tests). */
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   /** A repository's recent PRs by branch, in one call (injected in tests; without it, with an injected findPr, PRs are looked up one by one). */
@@ -93,13 +98,18 @@ export interface WorkbenchDeps {
   readonly hasClaude?: () => boolean;
 }
 
-/** The picker's runtimes with what each said about itself: ready (its models), or greyed with why and what to do. */
+/**
+ * The picker's runtimes with what each said about itself: ready (its models), or greyed with why
+ * and what to do. A runtime that lists no models of its own (Claude: they come from Claude Code,
+ * the state's `models`) keeps whatever the list had.
+ */
 export function withRuntimeStatus(runtimes: readonly RuntimeChoice[], found: ReadonlyArray<{ readonly id: string } & RuntimeStatus>): RuntimeChoice[] {
   return runtimes.map((r) => {
     const st = found.find((f) => f.id === r.id);
     if (!st) return r;
-    if (st.state === 'ready') return { id: r.id, label: r.label, available: true, models: st.models };
-    return { id: r.id, label: r.label, available: false, why: [st.state === 'missing' ? `${r.label} isn't installed on this Mac` : `${r.label} isn't signed in`, st.fix].filter(Boolean).join(': ') };
+    const models = st.models.length ? st.models : r.models;
+    if (st.state === 'ready') return { id: r.id, label: r.label, available: true, ...(models ? { models } : {}), state: 'ready' };
+    return { id: r.id, label: r.label, available: false, why: [st.state === 'missing' ? `${r.label} isn't installed on this Mac` : `${r.label} isn't signed in`, st.fix].filter(Boolean).join(': '), state: st.state, ...(st.fix ? { fix: st.fix } : {}) };
   });
 }
 
@@ -221,6 +231,9 @@ export class Workbench {
   private diskTimer?: NodeJS.Timeout;
   private prTimer?: NodeJS.Timeout;
   private runtimeTimer?: NodeJS.Timeout;
+  /** What the runtimes last said about themselves, kept so a new list (a local endpoint answering) doesn't wipe it. */
+  private runtimeFound: ReadonlyArray<{ readonly id: string } & RuntimeStatus> = [];
+  private runtimeCheck?: Promise<void>;
   private readonly watchers = new Map<string, () => void>();
   /**
    * What each terminal started with: where (for its variables now) and the variables as text.
@@ -1411,15 +1424,56 @@ export class Workbench {
    * signed in) is greyed with what to do until it is, then lists its models. Asked again a while
    * later until every one is (you may sign in meanwhile).
    */
-  private async checkRuntimes(): Promise<void> {
+  private checkRuntimes(): Promise<void> {
+    // One look at a time (onboarding, Settings and the timer may ask together: Codex's costs a process).
+    this.runtimeCheck ??= this.lookAtRuntimes().finally(() => (this.runtimeCheck = undefined));
+    return this.runtimeCheck;
+  }
+
+  private async lookAtRuntimes(): Promise<void> {
     const found = await this.deps.runtimeStatus?.().catch(() => undefined);
     if (!found?.length) return;
-    this.deps.store.dispatch({ type: 'runtimes', runtimes: withRuntimeStatus(this.deps.store.getState().runtimes, found) });
+    // Merged over what was found before: a runtime that didn't answer this time keeps its last word.
+    this.runtimeFound = [...found, ...this.runtimeFound.filter((old) => !found.some((f) => f.id === old.id))];
+    this.runtimesChanged();
+    clearTimeout(this.runtimeTimer);
     if (found.some((r) => r.state !== 'ready')) {
-      clearTimeout(this.runtimeTimer);
       this.runtimeTimer = setTimeout(() => void this.checkRuntimes(), RUNTIME_RECHECK_MS);
       this.runtimeTimer.unref();
     }
+  }
+
+  /**
+   * The runtimes' list changed (a local endpoint started or stopped answering): listed again, with
+   * what each said about itself last kept, so Codex doesn't lose its sign-in state and models.
+   */
+  runtimesChanged(): void {
+    const listed = this.deps.listRuntimes?.() ?? this.deps.store.getState().runtimes;
+    this.deps.store.dispatch({ type: 'runtimes', runtimes: withRuntimeStatus(listed, this.runtimeFound) });
+  }
+
+  /** Check Again (onboarding, Settings › Agent): every runtime asked now → the runtimes as the pickers have them. */
+  async checkAgents(): Promise<readonly RuntimeChoice[]> {
+    await this.checkRuntimes();
+    return this.deps.store.getState().runtimes;
+  }
+
+  /**
+   * Sign in to a runtime (Claude Code, Codex): its own sign-in, in Terminal, since it asks there
+   * (a browser page, then back). A `.command` file Terminal opens; Check Again sees the result.
+   */
+  async agentSignIn(id: string): Promise<boolean> {
+    const command = await this.deps.signInCommand?.(id);
+    if (!command || !this.deps.open) {
+      this.deps.toast('Signing in from here isn’t available. Run its sign-in in Terminal.', 'warn');
+      return false;
+    }
+    const file = path.join(os.tmpdir(), `beluga-sign-in-${id.replace(/[^\w-]/g, '')}.command`);
+    const quote = (arg: string): string => (/^[\w./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`);
+    await writeFile(file, `#!/bin/sh\nclear\n${command.map(quote).join(' ')}\necho\necho 'Done? Go back to Beluga and press Check Again.'\n`, { mode: 0o700 });
+    await chmod(file, 0o700);
+    this.deps.open(file);
+    return true;
   }
 
   async measureDisk(): Promise<void> {

@@ -231,7 +231,8 @@ export const API = {
   // Edit a message you sent (workspace, message id, its new words, how): 'here' rewinds this conversation to it (files too), 'fork' goes on in a new worktree or chat → the conversation it went on in.
   'workspaces.editPrompt': args(id, id, str, z.enum(['here', 'fork'])),
   // Carry a conversation (an ask chat in a main folder, or any chat) into a new worktree and go on there → the new workspace's id.
-  'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }).strict())),
+  // `agent` (BLG-506): who goes on there; unset: the conversation's own. One that can't resume the conversation starts fresh, handed it.
+  'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), agent: opt(AgentRef) }).strict())),
   'workspaces.archive': args(id, opt(bool)),
   'workspaces.restore': args(id),
   // What archiving (or freeing space) would throw away and keep → ArchivePreview (none: not a worktree that's there).
@@ -318,6 +319,10 @@ export const API = {
   'workbench.editPrPrompt': args(),
   'workbench.resetPrPrompt': args(),
   'workbench.measureDisk': args(),
+  // Check Again (BLG-507): every agent asked now (Claude Code signed in? Codex installed and signed in?) → RuntimeChoice[].
+  'workbench.checkAgents': args(),
+  // An agent's own sign-in (claude auth login, codex login), opened in Terminal → true when it opened.
+  'workbench.agentSignIn': args(z.string().regex(/^[a-z][\w-]{0,31}$/)),
   'workbench.search': args(z.string().max(500)),
   'workbench.openHit': args(z.number().int().min(0)),
   'workbench.saveTemplate': args(str, opt(bool)),

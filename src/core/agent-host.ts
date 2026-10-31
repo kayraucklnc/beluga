@@ -1179,6 +1179,8 @@ export class AgentHost {
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input, body.channel, place?.cwd),
         // Only your own Claude may ask for a .env file; for anyone else it stays refused.
         ...(from === this.selfId ? { canUseSecret: (toolName: string, input: Record<string, unknown>) => this.authorizeSecret(toolName, input, body.channel, place?.cwd) } : {}),
+        // "My agent asks before commands": a runtime that doesn't ask per command on its own (Codex) asks for each.
+        ...(from === this.selfId && this.store.getState().prefs.selfApproval === 'ask' ? { askBeforeCommands: true } : {}),
         askUser: (question) => this.deps.questions.ask(askTo, body.requestId, body.channel, question),
         plan: body.plan,
         // A plan's conversation plans; it doesn't move to a worktree.

@@ -5,6 +5,7 @@ import { runEnvCommand, runShellCommand } from './terminal-commands.js';
 import { type InvitePlace, friendNamed, inviteRoute, namesLine, parseInvite } from '../shared/invite-route.js';
 import { defaultAgentOf } from '../protocol.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
+import { builtInInstead } from '../shared/skills.js';
 
 export interface CommandSpec {
   readonly name: string;
@@ -329,12 +330,23 @@ export function runCommand(session: Session, name: string, args: readonly string
       session.setPrefs({ theme: arg as ThemeName });
       session.toast(`Theme: ${arg}`, 'success');
       return;
-    default:
+    default: {
+      // Claude Code's own commands (/context, /rewind…) do nothing as a message: say what Beluga has instead.
+      // …unless a skill or command of your own has that name: then it's yours.
+      const instead = builtInInstead(name);
+      if (instead) {
+        void session.ownSkill(name, channel).then((own) => {
+          if (own && raw) session.askOwnClaude(raw.trim().replace(/^:/, '/'), channel);
+          else session.toast(instead, 'info');
+        });
+        return;
+      }
       if (raw && channel !== 'room' && session.workspaces?.inChannel(channel)) {
         session.askOwnClaude(raw.trim().replace(/^:/, '/'), channel);
         return;
       }
       session.toast(`Unknown command /${name}. Type /help (or // to send a message starting with /)`, 'warn');
+    }
   }
 }
 

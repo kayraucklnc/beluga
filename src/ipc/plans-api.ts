@@ -70,8 +70,9 @@ export const PLANS_API = {
   'plans.openPr': { args: z.tuple([id]) },
   'plans.mergePr': { args: z.tuple([id]) },
   'plans.mergeLocal': { args: z.tuple([id]) },
-  // Start a ready task now → what happened.
-  'plans.startTask': { args: z.tuple([id, ref]) },
+  // Start a ready task now → what happened. `agent` (Start with…, BLG-506): who works it this once,
+  // instead of the task's own agent or the plan's (a milestone already at work keeps its agent).
+  'plans.startTask': { args: z.tuple([id, ref, AgentRef.optional()]) },
   // Wake a started task whose Claude stopped without finishing (it waits for you) → what happened.
   'plans.resumeTask': { args: z.tuple([id, ref]) },
   'plans.remove': { args: z.tuple([id]) },

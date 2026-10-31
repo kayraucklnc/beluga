@@ -30,6 +30,8 @@ export class ScriptedCodex {
   /** Signed in (account/read says who), or not. */
   signedIn = true;
   /** Its plan windows as the app-server says them (a signed-in Plus account's shape). */
+  /** Its models, as model/list gives them. */
+  models: unknown[] = [{ id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5', description: 'Frontier', hidden: false, isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }];
   rateLimits: unknown = { limitId: 'codex', limitName: null, primary: { usedPercent: 11, windowDurationMins: 300, resetsAt: 1780409235 }, secondary: { usedPercent: 5, windowDurationMins: 10080, resetsAt: 1780862132 }, credits: null, planType: 'plus', rateLimitReachedType: null };
 
   readonly connect: CodexConnect = async () => {
@@ -63,14 +65,15 @@ export class ScriptedCodex {
         notify('item/started', { threadId, turnId, item });
         this.approvals.push(await ask('item/fileChange/requestApproval', { threadId, turnId, itemId: item.id, reason: 'outside the workspace' }));
       }
-      if (words.startsWith('ask')) {
+      // Asks also when the request asked, under a note after it (a plan's turn ends with its note).
+      if (words.startsWith('ask') || /^Request from [^\n]*:\nask/m.test(text)) {
         const verdict = (await ask('item/commandExecution/requestApproval', { threadId, turnId, itemId: cmd, command: `echo ${words}`, cwd: process.cwd() })) as { decision?: string } | undefined;
         this.approvals.push(verdict);
         // Declined: the command never runs, and Codex says so (as codex-cli does: the item ends `declined`).
         if (verdict?.decision === 'decline') {
           notify('item/completed', { threadId, turnId, item: { type: 'commandExecution', id: cmd, command: `/bin/zsh -lc 'echo ${words}'`, cwd: process.cwd(), status: 'declined', aggregatedOutput: null, exitCode: null, durationMs: null } });
           notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id: `m-${turnId}`, text: `denied: ${words}`, phase: null } });
-          notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last: { totalTokens: 30, inputTokens: 20, cachedInputTokens: 5, outputTokens: 10, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: null } });
+          notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last: { totalTokens: 30, inputTokens: 20, cachedInputTokens: 5, outputTokens: 10, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: 258400 } });
           notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed', error: null, items: [] } });
           return;
         }
@@ -85,7 +88,7 @@ export class ScriptedCodex {
       if (this.signedIn) notify('account/rateLimits/updated', { rateLimits: { ...(this.rateLimits as object), primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1780409235 } } });
       notify('item/completed', { threadId, turnId, item: { type: 'reasoning', id: `r-${turnId}`, summary: ['Saying it back.'], content: [] } });
       notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id: `m-${turnId}`, text: `echo: ${words}`, phase: null } });
-      notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last: { totalTokens: 30, inputTokens: 20, cachedInputTokens: 5, outputTokens: 10, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: null } });
+      notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last: { totalTokens: 30, inputTokens: 20, cachedInputTokens: 5, outputTokens: 10, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: 258400 } });
       notify('turn/completed', { threadId, turn: { id: turnId, status: 'completed', error: null, items: [] } });
     };
 
@@ -124,7 +127,7 @@ export class ScriptedCodex {
         case 'config/read':
           return { config: { mcp_servers: { figma: { url: 'https://figma.example' } } }, origins: {} };
         case 'model/list':
-          return { data: [{ id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5', description: 'Frontier', hidden: false, isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }], nextCursor: null };
+          return { data: this.models, nextCursor: null };
         default:
           throw new Error(`unknown method ${method}`);
       }

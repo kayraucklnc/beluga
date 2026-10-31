@@ -18,6 +18,7 @@ import { Avatar, Button, Card, haptic, IconBadge, More, Pill, Press, T, toneBg, 
 import { ago, useSupports, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { TaskPageView, Topic } from '../../lib/link/protocol';
+import { agentPicksSupported } from '../../lib/agent-picks';
 import { openOnMac } from '../../lib/mac';
 import { store } from '../../lib/store';
 import { color } from '../../lib/theme';
@@ -40,18 +41,21 @@ export default function Task() {
   const [moving, setMoving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [picking, setPicking] = useState(false);
+  // Start with… (BLG-506): this start only, by another agent; the task's own stays as it is.
+  const [startWith, setStartWith] = useState(false);
   const st = t ? statusOf(t.status) : undefined;
   const pr = t ? PRIORITY[t.priority] : undefined;
   const canStart = t && !t.conv && (t.status === 'todo' || t.status === 'backlog' || t.status === 'in_progress');
 
-  const start = async () => {
+  /** Start it in a new worktree: by its own agent (else your default), or by `agent` this once (a Mac with SINCE.workAgents). */
+  const start = async (agent?: { runtime: string; label: string; model?: string }) => {
     if (!t || starting) return;
     haptic.commit();
     setStarting(true);
-    const ws = await store.call<string>(calls.start(t.key), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
+    const ws = await store.call<string>(calls.start(t.key, agent), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
     setStarting(false);
     if (typeof ws === 'string') {
-      store.toast({ text: `${t.key} started: your agent is on it`, tone: 'ok' });
+      store.toast({ text: `${t.key} started: ${agent ? agent.label : t.agent ? agentName(t.agent) : 'your agent'} is on it`, tone: 'ok' });
       router.push(convHref(`conv:ws:${ws}`));
     }
   };
@@ -60,6 +64,9 @@ export default function Task() {
   const defaultLabel = t?.agents?.groups.find((g) => g.isDefault)?.label;
   const agentWords = t?.agent ? agentName(t.agent, { model: true }) : defaultLabel ? `Your agent (${defaultLabel})` : 'Your agent';
   const agentRuntime = t?.agent?.runtime ?? t?.agents?.groups.find((g) => g.isDefault)?.runtime;
+  // The main Start is its own agent's (else yours); Start with… lists every agent, from ⋯.
+  const startLabel = t?.agent ? `Start with ${agentName(t.agent)}` : 'Start with your agent';
+  const canStartWith = Boolean(canStart && t?.agents && agentPicksSupported());
   const setAgent = (agent: { runtime: string; label: string; model?: string } | null, label: string): void => {
     if (!t) return;
     void store.call<string>(calls.setTaskAgent(t.key, agent, label)).then(
@@ -98,7 +105,7 @@ export default function Task() {
                 {t.checks ? <Pill label={`${t.checks.done} of ${t.checks.total} checked`} Icon={Check} tone={t.checks.done === t.checks.total ? 'mint' : 'plain'} /> : null}
               </View>
 
-              {canStart ? <Button label={starting ? 'Starting…' : 'Start with your agent'} Icon={Play} disabled={starting} onPress={() => void start()} /> : null}
+              {canStart ? <Button label={starting ? 'Starting…' : startLabel} Icon={Play} disabled={starting} onPress={() => void start()} /> : null}
               {t.conv ? <Button label="Open its conversation" Icon={MessageSquare} quiet onPress={() => router.push(convHref(t.conv!))} /> : null}
 
               {t.goal?.text.trim() ? (
@@ -208,7 +215,8 @@ export default function Task() {
         onClose={() => setMenu(false)}
         title={t ? `${t.key} ${t.title}` : undefined}
         options={[
-          { Icon: Play, label: 'Start with your agent', sub: 'A new worktree, your agent working on it', tone: 'peach', hidden: !canStart, onPress: () => void start() },
+          { Icon: Play, label: startLabel, sub: `A new worktree, ${t?.agent ? agentName(t.agent) : 'your agent'} working on it`, tone: 'peach', hidden: !canStart, onPress: () => void start() },
+          { Icon: markIcon(runtimeMark(agentRuntime)), label: 'Start with…', sub: 'Another agent or model, for this start only', tone: 'mint', hidden: !canStartWith, onPress: () => setStartWith(true) },
           { Icon: markIcon(runtimeMark(agentRuntime)), label: 'Agent', sub: `${agentWords}, from its next start`, tone: 'lavender', hidden: !t?.agents, onPress: () => setPicking(true) },
           { Icon: ArrowRightLeft, label: 'Move to…', sub: st ? `Now ${st.label}` : undefined, tone: 'sky', hidden: !t?.moves.length, onPress: () => setMoving(true) },
           { Icon: Monitor, label: 'Open on your Mac', sub: 'Its brief, proof and history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
@@ -231,6 +239,14 @@ export default function Task() {
         onClose={() => setPicking(false)}
         yours={{ on: !t?.agent, onPick: () => setAgent(null, 'Your agent') }}
         onPick={(g, value, label) => setAgent(agentOfRow(g, value), value ? `${g.label} · ${label}` : g.label)}
+      />
+      <AgentChoiceSheet
+        title="Start with"
+        caption={`A new worktree for ${t?.key ?? 'it'}, worked by the agent you pick. Its own agent stays ${agentWords}.`}
+        picker={t?.agents}
+        visible={startWith}
+        onClose={() => setStartWith(false)}
+        onPick={(g, value) => void start(agentOfRow(g, value))}
       />
     </Screen>
   );

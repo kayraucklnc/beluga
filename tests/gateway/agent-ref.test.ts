@@ -43,8 +43,9 @@ describe('the requester never picks the runtime on a peer’s machine', () => {
     expect(AgentRequestBody.parse({ kind: 'agent_request', requestId: 'r1', prompt: 'hi', channel: 'room', ...named })).not.toHaveProperty('agent');
     expect(AgentRequestBody.parse({ kind: 'agent_request', requestId: 'r1', prompt: 'hi', channel: 'room', ...named })).not.toHaveProperty('runtime');
     expect(WsRequestBody.parse({ kind: 'ws_request', reqId: 'q1', project: 'landing', task: 'fix it', ...named })).not.toHaveProperty('agent');
+    // A gateway ask may name one of the agents their card lists (BLG-503): their Mac still decides (serve.ts agentForAsk).
     const req = TaskRequest.parse({ t: 'task_request', id: 't_aaaaaaaaaaaa', from: 'kay0000000', to: 'bob0000000', kind: 'ask', ask: 'hi', ts: 1, ...named });
-    expect(req).not.toHaveProperty('agent');
+    expect(req.agent).toEqual(CODEX);
     expect(req).not.toHaveProperty('runtime');
     expect(req).not.toHaveProperty('model');
   });
@@ -75,5 +76,27 @@ describe("a friend's answer", () => {
     expect(describeForClaude(task(kay, t.id)!)).toContain("answered by: bob's Codex (GPT-5-codex)");
     // An older Mac's result has none.
     expect(TaskResult.parse({ t: 'task_result', id: 't_aaaaaaaaaaaa', status: 'done', summary: 'ok', ts: 1 }).agent).toBeUndefined();
+    // BLG-503: it ran on that agent there (place.agent), with its own model, not Settings' Claude model.
+    expect(bob.claude.runs[0]?.place?.agent).toEqual(CODEX);
+    expect(bob.claude.runs[0]?.model).toBe('gpt-5-codex');
+  }, 30_000);
+
+  it('runs on the agent of theirs it asked for when it runs there, else on their default and says so (BLG-503)', async () => {
+    const kay = await node(net, 'kay2');
+    const bob = await node(net, 'bob2', { runs: (a) => a.runtime === 'claude' });
+    await befriend(kay.person, bob.person);
+    bob.store.dispatch({ type: 'welcome', self: { peerId: bob.id, name: 'bob2', shares: [], agent: true, defaultAgent: CODEX, agents: [CODEX, CLAUDE, { runtime: 'local', label: 'Local model', model: 'ollama/qwen3' }] } });
+    bob.trust(kay.id, 'full');
+    kay.trust(bob.id, 'trusted');
+    const asked = kay.gw.ask({ person: 'bob2', ask: 'look', by: 'agent', agent: CLAUDE });
+    await settle(() => task(kay, asked.id)?.state === 'done');
+    expect(bob.claude.runs[0]?.place?.agent).toEqual(CLAUDE);
+    expect(task(kay, asked.id)?.result?.agent).toEqual(CLAUDE);
+    // Their local model isn't running there: their default does it, and the steps say so.
+    const local = kay.gw.ask({ person: 'bob2', ask: 'look again', by: 'agent', agent: { runtime: 'local', label: 'Local model' } });
+    await settle(() => task(kay, local.id)?.state === 'done');
+    expect(bob.claude.runs[1]?.place?.agent).toEqual(CODEX);
+    expect(task(kay, local.id)?.result?.agent).toEqual(CODEX);
+    expect(task(bob, local.id)?.steps.join('\n')).toContain('Local model isn’t set up here, so Codex does it');
   }, 30_000);
 });

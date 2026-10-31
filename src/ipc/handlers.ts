@@ -186,7 +186,7 @@ export const HANDLERS = {
   'workspaces.editPrompt': (s, id, line, text, mode) => ctl(s)?.editPrompt(id, line, text, mode),
   'workspaces.continueInWorktree': async (s, id, opts) =>
     // Claude starts there once whatever runs in the conversation now has finished (its session is complete then).
-    (await ctl(s)?.continueInWorktree(id, (prompt) => s.nameTask(prompt), { ...(opts?.task ? { task: opts.task } : {}), ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), after: s.host.idle(`ws:${id}`) }))?.id,
+    (await ctl(s)?.continueInWorktree(id, (prompt) => s.nameTask(prompt), { ...(opts?.task ? { task: opts.task } : {}), ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), ...(opts?.agent ? { agent: opts.agent } : {}), after: s.host.idle(`ws:${id}`) }))?.id,
   'workspaces.archive': (s, id, force) => ctl(s)?.archive(id, force),
   'workspaces.restore': (s, id) => ctl(s)?.restore(id),
   'workspaces.archivePlan': (s, id) => ctl(s)?.archivePlan(id),
@@ -249,6 +249,8 @@ export const HANDLERS = {
   'workbench.editPrPrompt': (s) => bench(s)?.editPrPrompt(),
   'workbench.resetPrPrompt': (s) => bench(s)?.resetPrPrompt(),
   'workbench.measureDisk': (s) => bench(s)?.measureDisk(),
+  'workbench.checkAgents': async (s) => (await bench(s)?.checkAgents()) ?? s.store.getState().runtimes,
+  'workbench.agentSignIn': (s, runtime) => bench(s)?.agentSignIn(runtime) ?? false,
   'workbench.search': (s, query) => bench(s)?.search(query),
   'workbench.openHit': (s, index) => bench(s)?.openHit(index),
   'workbench.saveTemplate': (s, text, plan) => bench(s)?.saveTemplate(text, plan),

@@ -19,6 +19,9 @@ import { Button, Dot, Empty, Segmented, Tip, cx } from "../components/ui.js";
 import { useActions } from "../lib/actions.js";
 import { toast, useApi, useApp, useBeluga } from "../lib/beluga.js";
 import { useMyAgentName } from "../lib/agent-words.js";
+import { useStartWith } from "../components/agent-options.js";
+import { SplitButton } from "../components/SplitButton.js";
+import type { AgentRef } from "@beluga/protocol.js";
 import { sameDeep } from "../lib/stable.js";
 import { usePrefs } from "../lib/prefs.js";
 import { mod } from "../lib/system.js";
@@ -281,8 +284,11 @@ function HomeComposer({ project }: { project: Project }) {
   // "@src/…" offers the main folder's files (the new worktree starts with the same ones), "/" the commands.
   const mainId = project.workspaces.find((w) => w.kind === "main")?.id;
   const box = useBoxSuggestions({ text, setText, filesOf: mainId });
+  // Create Worktree's ▾ (BLG-506): the same worktree, worked by another agent.
+  const startWith = useStartWith();
 
-  const send = async (): Promise<void> => {
+  /** `agent`: who works the new worktree (Start with…); none: your default. */
+  const send = async (agent?: AgentRef): Promise<void> => {
     if (task.startsWith("/")) {
       setText("");
       actions.submit(task);
@@ -340,6 +346,7 @@ function HomeComposer({ project }: { project: Project }) {
         .startWorktree(project.id, message, {
           ...(base ? { base } : {}),
           ...(named ? { name: named } : {}),
+          ...(agent ? { agent } : {}),
         })
         .catch((err: unknown) =>
           toast(
@@ -375,6 +382,36 @@ function HomeComposer({ project }: { project: Project }) {
     e.preventDefault();
     void send();
   };
+
+  // The send button (Create Worktree, Plan with…, Ask).
+  const createButton = (
+    <Tip
+      label={
+        worktree
+          ? "Make the branch and folder, then your agent starts on the task"
+          : plan
+            ? task
+              ? "Your agent reads the code and drafts milestones and tasks with you"
+              : "Write the goal in the New Plan sheet"
+            : "Start a questions-only chat in the main folder"
+      }
+      keys={sendKeys}
+    >
+      <button
+        type="button"
+        className={cx(d.create, ready && d.createReady)}
+        aria-disabled={!ready || busy}
+        onClick={() => void send()}
+      >
+        <Icon
+          name={worktree ? "branch" : plan ? "flag" : "chat"}
+          size={12}
+        />
+        {worktree ? "Create Worktree" : plan ? `Plan with ${agent}` : "Ask"}
+        <span className={d.createKey}>{sendKeys}</span>
+      </button>
+    </Tip>
+  );
 
   return (
     <section className={s.composer} aria-label="Start something" data-drop-zone>
@@ -520,32 +557,14 @@ function HomeComposer({ project }: { project: Project }) {
             </label>
           ) : null}
           <MicButton box={ref} />
-          <Tip
-            label={
-              worktree
-                ? "Make the branch and folder, then your agent starts on the task"
-                : plan
-                  ? task
-                    ? "Your agent reads the code and drafts milestones and tasks with you"
-                    : "Write the goal in the New Plan sheet"
-                  : "Start a questions-only chat in the main folder"
-            }
-            keys={sendKeys}
-          >
-            <button
-              type="button"
-              className={cx(d.create, ready && d.createReady)}
-              aria-disabled={!ready || busy}
-              onClick={() => void send()}
-            >
-              <Icon
-                name={worktree ? "branch" : plan ? "flag" : "chat"}
-                size={12}
-              />
-              {worktree ? "Create Worktree" : plan ? `Plan with ${agent}` : "Ask"}
-              <span className={d.createKey}>{sendKeys}</span>
-            </button>
-          </Tip>
+          {worktree ? (
+            // Create Worktree, and its ▾: the same worktree worked by another agent (BLG-506).
+            <SplitButton label="Create with another agent" caretClassName={cx(d.create, ready && d.createReady)} items={startWith(undefined, (a) => void send(a))}>
+              {createButton}
+            </SplitButton>
+          ) : (
+            createButton
+          )}
         </div>
       </div>
     </section>

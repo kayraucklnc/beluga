@@ -187,6 +187,9 @@ export const PHONE: Record<Method, Side> = {
   'workbench.editPrPrompt': 'mac',
   'workbench.resetPrPrompt': 'mac',
   'workbench.measureDisk': 'mac',
+  // Setting up your agents (onboarding, Settings › Agent): the Mac's.
+  'workbench.checkAgents': 'mac',
+  'workbench.agentSignIn': 'mac',
   'workbench.search': 'mac',
   'workbench.openHit': 'mac',
   'workbench.saveTemplate': 'mac',

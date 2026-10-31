@@ -9,7 +9,7 @@ import { type MilestoneView, planView } from './plans/progress.js';
 import { isDecisionQid } from './plans/decisions.js';
 import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 import { allNeeds, needMatches } from '../companion/needs-you.js';
-import { defaultAgentOf } from '../protocol.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
 import { agentLabel, agentName } from '../shared/agent-label.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
@@ -253,6 +253,16 @@ function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
   return [...out, ...finishedTasks(next, before)];
 }
 
+/** The agent of your latest run in a conversation (the one asking there now, BLG-503); none: your default. */
+function speakerIn(state: DomainState, channel: string | undefined): AgentRef {
+  const selfId = state.self?.peerId;
+  const run = state.log
+    .slice(-RECENT_LOG)
+    .reverse()
+    .find((l): l is AgentItem => l.type === 'agent' && l.channel === channel && l.owner === selfId);
+  return run?.agent ?? defaultAgentOf(state.self);
+}
+
 /** A long run of yours ended and nothing else runs or waits its turn in that conversation: everything there is finished. */
 function allDone(state: DomainState, item: AgentItem): boolean {
   if (item.endTs === undefined || item.endTs - item.ts < WATCHED_RUN_MS) return false;
@@ -403,12 +413,13 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     for (const q of next.questions) {
       if (seen.has(q.qid)) continue;
       const where = placeName(next, q.channel);
+      const who = agentName(speakerIn(next, q.channel));
       out.push(
         q.question.kind === 'plan'
-          ? { kind: 'needsYou', tag: 'plan', ref: q.qid, title: `${agentName(defaultAgentOf(next.self))} has a plan for ${where}`, body: 'Approve it, or say what to change', channel: q.channel }
+          ? { kind: 'needsYou', tag: 'plan', ref: q.qid, title: `${who} has a plan for ${where}`, body: 'Approve it, or say what to change', channel: q.channel }
           : isDecisionQid(q.qid)
             ? { kind: 'needsYou', tag: 'question', ref: q.qid, title: `Your call in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel }
-            : { kind: 'needsYou', tag: 'question', ref: q.qid, title: `${agentName(defaultAgentOf(next.self))} asks in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel },
+            : { kind: 'needsYou', tag: 'question', ref: q.qid, title: `${who} asks in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel },
       );
     }
   }

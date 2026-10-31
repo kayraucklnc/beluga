@@ -6,7 +6,11 @@ import { agentChoices, agentForChoice, choiceForAgent } from '@beluga/ui/agent-c
 import { EFFORT_INFO, agentEntries, modelInfo, myModel, myRuntime, setMyAgent } from '../chat/ModelPicker.js';
 import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon, type IconName } from '../components/Icon.js';
-import { Avatar, Button, cx } from '../components/ui.js';
+import { Avatar, Button, Dot, cx } from '../components/ui.js';
+import { runtimeMark } from '@beluga/shared/agent-marks.js';
+import type { RuntimeState } from '@beluga/shared/agent-runtimes.js';
+import { CopyCommand, LOCAL_MODELS_ID, useAgents } from '../onboarding/AgentsStep.js';
+import { FIX_LABEL } from '../onboarding/agent-setup.js';
 import { APP_VERSION } from '../lib/boot.js';
 import { revealInFinder } from '../lib/files.js';
 import { type SettingsPane, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
@@ -260,6 +264,54 @@ function Appearance() {
   );
 }
 
+const TONE: Record<RuntimeState, 'ok' | 'warn' | 'muted'> = { ready: 'ok', signed_out: 'warn', missing: 'muted', no_endpoint: 'muted' };
+
+/**
+ * Your agents (BLG-507): each one Beluga can run with where it stands on this Mac, and its one fix
+ * (Sign In, Get Codex, Set Up…); Check Again asks them all now. The same rows as onboarding's.
+ */
+function AgentsGroup({ mine }: { mine: string }) {
+  const { rows, checking, check, act } = useAgents();
+  return (
+    <Group title="Your agents">
+      {rows.map((row) => (
+        <div key={row.id} className={s.row} data-testid={`settings-agent-${row.id}`}>
+          <Icon name={runtimeMark(row.id)} size={18} />
+          <div className={s.rowText}>
+            <div className={s.rowLabel}>
+              {row.label}
+              {row.id === mine && row.state === 'ready' ? <span className={s.agentYours}> · yours</span> : null}
+            </div>
+            <div className={s.rowDetail}>
+              {row.detail}
+              {row.fix === 'install' ? (
+                <>
+                  {' '}
+                  <CopyCommand className={s.agentCommand} />
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div className={s.control}>
+            <Dot tone={row.state ? TONE[row.state] : 'muted'} />
+            {row.words}
+            {row.fix ? (
+              <Button size="small" onClick={() => act(row)}>
+                {FIX_LABEL[row.fix]}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ))}
+      <Row label="Signed in or installed one just now?" detail="Beluga looks again by itself when you come back to the window.">
+        <Button variant="quiet" icon="refresh" disabled={checking} onClick={() => void check()}>
+          {checking ? 'Checking…' : 'Check Again'}
+        </Button>
+      </Row>
+    </Group>
+  );
+}
+
 /**
  * Your agent (BLG-497): one pick of runtime and model, for every conversation that picked none of
  * its own and for @you; then how hard it thinks (only the levels its model takes) and the rest.
@@ -298,8 +350,11 @@ function AgentPane() {
           <Switch label="Self approval" on={p.selfApproval === 'ask'} onChange={(v) => void api.session.setPrefs({ selfApproval: v ? 'ask' : 'never' })} />
         </Row>
       </Group>
+      <AgentsGroup mine={runtime} />
       <McpSettings />
-      <LocalModelsSettings />
+      <div id={LOCAL_MODELS_ID}>
+        <LocalModelsSettings />
+      </div>
       <Group title="In the chat">
         <Row label="Sub-agents">
           <Select
@@ -533,11 +588,13 @@ export function Settings() {
   const pane = useUi((u) => u.settings);
   if (!pane) return null;
   const Body = BODY[pane];
+  // Opened from the welcome (Set Up… on Your agents): over it, not hidden behind it.
+  const overWelcome = document.querySelector('[data-welcome]') ? '' : undefined;
   return (
     <Dialog.Root open onOpenChange={(v) => (v ? undefined : ui.patch({ settings: undefined }))}>
       <Dialog.Portal>
-        <Dialog.Overlay className={s.overlay} />
-        <Dialog.Content className={s.window} aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
+        <Dialog.Overlay className={s.overlay} data-over-welcome={overWelcome} />
+        <Dialog.Content className={s.window} data-over-welcome={overWelcome} aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
           <nav className={s.nav}>
             <Dialog.Title className={s.title}>Settings</Dialog.Title>
             {PANES.map((p) => (

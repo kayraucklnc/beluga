@@ -13,6 +13,10 @@ import { TaskChatMark, TaskStateIcon, TonePill } from './marks.js';
 import { openDecision } from './plan-ask-model.js';
 import { PlanFeed } from './PlanFeed.js';
 import { useClock, usePlanActions } from './use-plans.js';
+import { useStartWith } from '../components/agent-options.js';
+import { SplitButton } from '../components/SplitButton.js';
+import { useMyAgent } from '../lib/agent-words.js';
+import type { AgentRef } from '@beluga/protocol.js';
 import { WaitingLine } from './WaitingLine.js';
 import p from './plans.module.css';
 
@@ -102,14 +106,25 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
   // The board's checklist when it has one (ticked, or explained with its reason: deferred, not done), else the plan's.
   const onBoard = criteria(t.issue?.brief.acceptance);
   const checks: readonly Criterion[] = onBoard.length ? onBoard : t.task.acceptance.map((text) => ({ text, state: 'open' as const }));
+  const startWith = useStartWith();
+  const mine = useMyAgent();
+  // Its own agent, else the plan's: who Start uses. The ▾ (BLG-506): another, this start only.
+  const own = t.issue?.agent ?? view.plan.agent;
+  const startIt = (agent?: AgentRef): void => void act(() => api.startTask(view.plan.id, t.task.id, agent));
   return (
     <>
       {t.why && (t.state === 'blocked' || t.state === 'later') ? <p className={p.muted}>{t.why}</p> : null}
       <div className={p.detailsActions}>
-        {canStart ? (
-          <Button size="small" variant="primary" icon={t.forYou ? 'hand' : 'play'} onClick={() => (t.forYou ? openDecision() : void act(() => api.startTask(view.plan.id, t.task.id)))}>
-            {t.forYou ? 'Decide…' : 'Start'}
+        {canStart && t.forYou ? (
+          <Button size="small" variant="primary" icon="hand" onClick={() => openDecision()}>
+            Decide…
           </Button>
+        ) : canStart ? (
+          <SplitButton label="Start with another agent" items={startWith(own, (a) => startIt(a ?? (own ? mine : undefined)))}>
+            <Button size="small" variant="primary" icon="play" onClick={() => startIt()}>
+              Start
+            </Button>
+          </SplitButton>
         ) : null}
         {canResume ? (
           <Button size="small" variant="primary" icon="play" onClick={() => void act(() => api.resumeTask(view.plan.id, t.task.id))}>

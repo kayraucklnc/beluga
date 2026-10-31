@@ -94,10 +94,12 @@ async function scan(dir: string, source: ClaudeSkill['source'], prefix = ''): Pr
 }
 
 /** Your enabled plugins' folders, with their names (installed_plugins.json, minus those settings.json turns off). */
-async function plugins(home: string): Promise<Array<{ name: string; dir: string }>> {
+export async function plugins(home: string): Promise<Array<{ name: string; dir: string }>> {
+  // Whole files: both easily pass read()'s 8 KB, and a cut one parses as nothing (no plugins at all).
+  const whole = (file: string): Promise<string> => readFile(file, 'utf8').catch(() => '{}');
   try {
-    const installed = JSON.parse((await read(path.join(home, 'plugins', 'installed_plugins.json'))) ?? '{}') as { plugins?: Record<string, Array<{ installPath?: string }>> };
-    const settings = JSON.parse((await read(path.join(home, 'settings.json'))) ?? '{}') as { enabledPlugins?: Record<string, boolean> };
+    const installed = JSON.parse(await whole(path.join(home, 'plugins', 'installed_plugins.json'))) as { plugins?: Record<string, Array<{ installPath?: string }>> };
+    const settings = JSON.parse(await whole(path.join(home, 'settings.json'))) as { enabledPlugins?: Record<string, boolean> };
     const enabled = settings.enabledPlugins;
     return Object.entries(installed.plugins ?? {})
       .filter(([id]) => !enabled || enabled[id] === true)
@@ -128,6 +130,8 @@ export interface FoundSkill {
   readonly kind: 'skill' | 'command';
   readonly source: ClaudeSkill['source'];
   readonly file: string;
+  /** The folder it's from: the project's .claude, yours, or the plugin's (its ${CLAUDE_PLUGIN_ROOT}). */
+  readonly dir: string;
   readonly fields: Readonly<Record<string, string>>;
   /** The text after the frontmatter. */
   readonly body: string;
@@ -135,26 +139,46 @@ export interface FoundSkill {
 
 /**
  * `name` as `/name` means it in `cwd` (the project's first, then yours, then a plugin's
- * `plugin:name`), the same order as listSkills. Undefined: no such skill or command.
+ * `plugin:name`), the same order as listSkills. `folder:name` with no such plugin: a command in a
+ * subfolder (commands/folder/name.md). Undefined: no such skill or command.
  */
 export async function findSkill(name: string, cwd: string | undefined, home: string): Promise<FoundSkill | undefined> {
   if (!/^[\w.:-]+$/.test(name)) return undefined;
   const [plugin, inPlugin] = name.includes(':') ? (name.split(':', 2) as [string, string]) : [undefined, name];
-  const dirs: Array<{ dir: string; source: ClaudeSkill['source'] }> = plugin
-    ? (await plugins(home)).filter((p) => p.name === plugin).map((p) => ({ dir: p.dir, source: 'plugin' as const }))
-    : [...(cwd ? [{ dir: path.join(cwd, '.claude'), source: 'project' as const }] : []), { dir: home, source: 'user' as const }];
-  const found = (kind: 'skill' | 'command', source: ClaudeSkill['source'], file: string, text: string): FoundSkill => ({ kind, source, file, fields: frontmatter(text).fields, body: text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '') });
+  const own = [...(cwd ? [{ dir: path.join(cwd, '.claude'), source: 'project' as const }] : []), { dir: home, source: 'user' as const }];
+  const dirs: Array<{ dir: string; source: ClaudeSkill['source'] }> = plugin ? (await plugins(home)).filter((p) => p.name === plugin).map((p) => ({ dir: p.dir, source: 'plugin' as const })) : own;
+  const found = (kind: 'skill' | 'command', source: ClaudeSkill['source'], dir: string, file: string, text: string): FoundSkill => ({ kind, source, file, dir, fields: frontmatter(text).fields, body: text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '') });
   for (const { dir, source } of dirs) {
     for (const [kind, file] of [
       ['skill', path.join(dir, 'skills', inPlugin, 'SKILL.md')],
       ['command', path.join(dir, 'commands', `${inPlugin}.md`)],
     ] as const) {
       const text = await read(file);
-      if (text !== undefined) return found(kind, source, file, text);
+      if (text !== undefined) return found(kind, source, dir, file, text);
     }
     // Named as the / list names it: a skill by its frontmatter name, a command in a subfolder.
     const listed = (await entries(dir)).find((e) => e.name === inPlugin);
-    if (listed) return found(listed.kind, source, listed.file, listed.text);
+    if (listed) return found(listed.kind, source, dir, listed.file, listed.text);
+  }
+  // "git:sync" where no plugin is called git: commands/git/sync.md, the project's then yours.
+  if (plugin && /^[\w.-]+$/.test(plugin)) {
+    for (const { dir, source } of own) {
+      const file = path.join(dir, 'commands', plugin, `${inPlugin}.md`);
+      const text = await read(file);
+      if (text !== undefined) return found('command', source, dir, file, text);
+    }
   }
   return undefined;
+}
+
+/**
+ * A command's text with its arguments put in, as Claude Code does: $ARGUMENTS, $1…, and
+ * ${CLAUDE_PLUGIN_ROOT} (`root`, a plugin's folder); the arguments are appended when it names none.
+ */
+export function fillArguments(body: string, args: string, root?: string): string {
+  const parts = args.split(/\s+/).filter(Boolean);
+  const named = /\$ARGUMENTS|\$\d/.test(body);
+  const rooted = root ? body.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, root) : body;
+  const filled = rooted.replace(/\$ARGUMENTS/g, args).replace(/\$(\d)/g, (_m, n: string) => parts[Number(n) - 1] ?? '');
+  return named || !args ? filled.trim() : `${filled.trim()}\n\n${args}`;
 }

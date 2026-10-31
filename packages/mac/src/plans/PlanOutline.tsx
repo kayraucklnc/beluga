@@ -9,6 +9,9 @@ import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel, milestoneRows
 import { TaskChatMark, TaskStateIcon } from './marks.js';
 import { openDecision } from './plan-ask-model.js';
 import { useClock, usePlanActions } from './use-plans.js';
+import { useStartWith } from '../components/agent-options.js';
+import { useMyAgent } from '../lib/agent-words.js';
+import type { AgentRef } from '@beluga/protocol.js';
 
 /** A change you make to a plan (as the API takes it). */
 type PlanOp = Parameters<ReturnType<typeof usePlanActions>['api']['edit']>[1][number];
@@ -99,8 +102,20 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
   const now = useClock(t.pulse?.kind === 'working' || t.pulse?.kind === 'command');
   const info = taskWords(t, now);
   const others = (body?.milestones ?? []).filter((m) => m.id !== t.milestoneId);
+  const startWith = useStartWith();
+  const mine = useMyAgent();
+  // Its own agent, else the plan's: who Start uses. Start with ▸ (BLG-506): another, this start only.
+  const own = t.issue?.agent ?? plan.agent;
+  const startIt = (agent?: AgentRef): void => void act(() => api.startTask(plan.id, t.task.id, agent));
   const menu = (): ActionItem[] => [
-    ...(canStart ? [t.forYou ? { label: 'Decide…', icon: 'hand' as const, onSelect: openDecision } : { label: 'Start', icon: 'play' as const, onSelect: () => void act(() => api.startTask(plan.id, t.task.id)) }] : []),
+    ...(canStart
+      ? t.forYou
+        ? [{ label: 'Decide…', icon: 'hand' as const, onSelect: openDecision }]
+        : [
+            { label: 'Start', icon: 'play' as const, onSelect: () => startIt() },
+            { label: 'Start with', icon: 'play' as const, submenu: startWith(own, (a) => startIt(a ?? (own ? mine : undefined)), ''), onSelect: () => undefined },
+          ]
+      : []),
     ...(t.worktree ? [{ label: 'Open Worktree', onSelect: () => openWorktree(t.worktree!) }] : []),
     ...(t.issue ? [{ label: 'Open Task', onSelect: () => openTask(t.issue!.id) }] : []),
     ...(others.length ? [{ label: 'Move to', separate: true, submenu: others.map((m) => ({ label: m.title, onSelect: () => edit([{ op: 'move_task', id: t.task.id, milestone: m.id }]) })), onSelect: () => undefined }] : []),

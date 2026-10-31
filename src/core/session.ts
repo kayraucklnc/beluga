@@ -8,7 +8,9 @@ import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } from '../agent/runtime/types.js';
 import { guardedBackend } from '../agent/runtime/guard.js';
-import { routedBackend } from '../agent/runtime/router.js';
+import { type SideRoute, routeSideCall, routedBackend } from '../agent/runtime/router.js';
+import { sideCalls } from '../agent/side-calls.js';
+import type { ChatAnswerRequest } from './chat/claude-prompt.js';
 import { localRuntime } from '../agent/runtime/local.js';
 import { LOCAL_RUNTIME } from '../shared/local-endpoints.js';
 import type { LocalEndpoints } from './local-endpoints.js';
@@ -293,11 +295,18 @@ export class Session {
     if (!this.runtime || runtime === this.runtime.id) return this.agent;
     const made = this.otherBackends.get(runtime);
     if (made) return made;
-    const rt = this.opts.runtime?.runtimes(runtime);
+    // A local endpoint is Claude Code pointed elsewhere (BLG-449), as in routed(): it runs wherever Claude does.
+    const rt = runtime === LOCAL_RUNTIME ? (this.opts.runtime?.runtimes('claude') ? localRuntime((v) => this.local.resolve(v)) : undefined) : this.opts.runtime?.runtimes(runtime);
     if (!rt || !this.opts.runtime) return undefined;
     const backend = guardedBackend(rt.create({ ...this.opts.runtime.options, bridge: this.bridge }), rt.capabilities);
     this.otherBackends.set(runtime, backend);
     return backend;
+  }
+
+  /** Whether this Mac can run that agent now: its runtime is here (a local model: its endpoint is set up). */
+  runsAgent(agent: AgentRef): boolean {
+    if (agent.runtime === LOCAL_RUNTIME && this.runtime) return Boolean(this.opts.runtime?.runtimes(CLAUDE_AGENT.runtime) && this.local.resolve(agent.model));
+    return Boolean(this.backendFor(agent.runtime));
   }
 
   get selfId(): string {
@@ -729,59 +738,124 @@ export class Session {
     this.toast(value === 'ask' ? 'Friends can ask to start work on this computer; you approve each request' : 'Friends can no longer start work on this computer', 'success');
   }
 
-  /** A worktree name for a task: from a small model when your Claude is on, else from its words. */
+  /** Whether Claude is signed in here, asked once in a while (a local model's side calls go to Claude only then). */
+  private claudeReadyAt?: { readonly at: number; readonly ready: Promise<boolean> };
+
+  /**
+   * Where a side call goes now (BLG-503): your default agent (the project's own, when one is named)
+   * decides each time, so a change in Settings counts at once. Codex: its own one-shot call, then
+   * Claude's when it fails. A local model: Claude's only when Claude is signed in here (its side calls
+   * can't run on the endpoint yet), never quietly to Anthropic otherwise. Claude, the demo, tests: the backend's.
+   */
+  private sideRoute(project?: string): SideRoute {
+    const rt = this.opts.runtime;
+    if (!this.runtime || !rt) return { claude: () => this.agent };
+    const claude = (): AgentBackend | undefined => (this.runtime?.id === CLAUDE_AGENT.runtime ? this.agent : this.backendFor(CLAUDE_AGENT.runtime));
+    const agent = this.agentFor(project);
+    if (agent.runtime === CLAUDE_AGENT.runtime) return { claude };
+    if (agent.runtime === LOCAL_RUNTIME) return { claude: async () => ((await this.claudeSignedIn()) ? claude() : undefined) };
+    const own = rt.runtimes(agent.runtime);
+    if (!own) return { claude };
+    // Claude's aliases ('haiku': quick) are the runtime's to map (Codex: its small model, else its default).
+    return { own: { complete: own.complete, cwd: this.opts.agentCwd, ...(agent.model ? { model: agent.model } : {}) }, claude };
+  }
+
+  /** Claude's runtime is here and, when it can say, signed in (asked again after a minute). */
+  private claudeSignedIn(): Promise<boolean> {
+    const claude = this.opts.runtime?.runtimes(CLAUDE_AGENT.runtime);
+    if (!claude) return Promise.resolve(false);
+    if (!claude.status) return Promise.resolve(true);
+    if (!this.claudeReadyAt || Date.now() - this.claudeReadyAt.at > 60_000) {
+      this.claudeReadyAt = { at: Date.now(), ready: claude.status().then((s) => s.state === 'ready', () => false) };
+    }
+    return this.claudeReadyAt.ready;
+  }
+
+  /** A worktree name for a task: from a small model on your agent (Claude when it can't), else from its words. */
   async nameTask(prompt: string): Promise<string> {
-    return this.agent?.nameTask ? this.agent.nameTask(prompt).catch(() => slugify(prompt)) : slugify(prompt);
+    return routeSideCall(this.sideRoute(), (on) => on.nameTask?.(prompt), slugify(prompt));
   }
 
-  /** A short name for a new plan (undefined without your Claude, or when the model couldn't). */
+  /** A short name for a new plan (undefined without an agent to ask, or when the model couldn't). */
   async titlePlan(goal: string): Promise<string | undefined> {
-    return this.agent?.titlePlan ? this.agent.titlePlan(goal).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.titlePlan?.(goal), undefined);
   }
 
-  /** What a project's setup should be after it failed in a worktree (undefined without your Claude). */
+  /** What a project's setup should be after it failed in a worktree (undefined without an agent to ask). */
   async fixSetup(dir: string, failed: string, output: string): Promise<SetupFix | undefined> {
-    return this.agent?.fixSetup ? this.agent.fixSetup(dir, failed, output).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.fixSetup?.(dir, failed, output), undefined);
   }
 
-  /** What a project's run command should be after it failed in a worktree (undefined without your Claude). */
+  /** What a project's run command should be after it failed in a worktree (undefined without an agent to ask). */
   async fixRun(dir: string, failed: string, output: string): Promise<ScriptFix | undefined> {
-    return this.agent?.fixRun ? this.agent.fixRun(dir, failed, output).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.fixRun?.(dir, failed, output), undefined);
   }
 
-  /** Whether your Claude can work out a project's setup and run commands. */
+  /** Some agent here can answer in a friends' chat. */
+  get answersChats(): boolean {
+    return Boolean(this.agent?.answerChat);
+  }
+
+  /**
+   * A friends' chat answer (core/chat/claude.ts) on your default agent, or on Claude when that one has
+   * no one-shot call or it failed, with the agent that really answered (its name goes on the answer).
+   * Its trouble is said, not swallowed: the chat tells you why it couldn't.
+   */
+  async answerChat(req: ChatAnswerRequest): Promise<{ readonly text: string; readonly agent: AgentRef }> {
+    const route = this.sideRoute();
+    const mine = this.agentFor();
+    let trouble: unknown;
+    if (route.own) {
+      try {
+        return { text: await sideCalls(route.own.complete, route.own.cwd, route.own.model).answerChat(req), agent: mine };
+      } catch (err) {
+        if (req.signal.aborted) throw err;
+        trouble = err;
+      }
+    }
+    const claude = await route.claude?.();
+    if (!claude?.answerChat) throw trouble ?? new Error(mine.runtime === LOCAL_RUNTIME ? 'a local model can’t answer in chats yet, and Claude isn’t signed in here' : 'no agent here can answer');
+    // Not your default's model on Claude: Settings' (Claude's) one.
+    const asClaude = this.runtime && mine.runtime !== CLAUDE_AGENT.runtime;
+    const model = asClaude ? this.store.getState().prefs.model : req.model;
+    const { model: _m, ...rest } = req;
+    const text = await claude.answerChat({ ...rest, ...(model ? { model } : {}) });
+    return { text, agent: asClaude ? { ...CLAUDE_AGENT, ...(model ? { model } : {}) } : mine };
+  }
+
+  /** Whether an agent here can work out a project's setup and run commands. */
   get worksOutScripts(): boolean {
     return Boolean(this.agent?.workOutScripts);
   }
 
-  /** A project's setup and/or run command from its files (undefined without your Claude, or on trouble). */
+  /** A project's setup and/or run command from its files (undefined without an agent to ask, or on trouble). */
   async workOutScripts(dir: string, want: { setup: boolean; run: boolean }): Promise<WorkedOutScripts | undefined> {
-    return this.agent?.workOutScripts ? this.agent.workOutScripts(dir, want).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.workOutScripts?.(dir, want), undefined);
   }
 
-  /** Your Claude can write a task from a description (Tasks' New Task). */
+  /** An agent here can write a task from a description (Tasks' New Task). */
   get draftsTasks(): boolean {
     return Boolean(this.agent?.draftTask);
   }
 
-  /** A task written from a description by your Claude (undefined on any trouble, or without it). */
+  /** A task written from a description by the project's agent (undefined on any trouble, or without one). */
   async draftTask(text: string, ctx: DraftContext): Promise<TaskDraft | undefined> {
-    return this.agent?.draftTask ? this.agent.draftTask(text, ctx).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.draftTask?.(text, ctx), undefined);
   }
 
-  /** Your Claude can write what a project is about (About This Project). */
+  /** An agent here can write what a project is about (About This Project). */
   get describesProjects(): boolean {
     return Boolean(this.agent?.describeProject);
   }
 
-  /** What a project is about, from a quick look at its folder by your Claude (undefined on any trouble, or without it). */
+  /** What a project is about, from a quick look at its folder by its agent (undefined on any trouble, or without one). */
   async describeProject(dir: string, project: string): Promise<string | undefined> {
-    return this.agent?.describeProject ? this.agent.describeProject(dir, project).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.describeProject?.(dir, project), undefined);
   }
 
-  /** A pull request reviewed before a sentinel merges it (undefined without your Claude, or on trouble). */
+  /** A pull request reviewed before a sentinel merges it (undefined without an agent to ask, or on trouble). */
   async reviewPr(input: import('../agent/pr-reviewer.js').PrReviewInput): Promise<import('../agent/pr-reviewer.js').PrReview | undefined> {
-    return this.agent?.reviewPr ? this.agent.reviewPr(input).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.reviewPr?.(input), undefined);
   }
 
   /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */
@@ -1206,6 +1280,15 @@ export class Session {
       const chosen = this.store.getState().prefs;
       this.updateProfile({ defaultAgent: chosenAgent(chosen), agents: publishedAgents(chosen) });
     }
+  }
+
+  /** Whether `/name` is a skill or command of your own in this conversation's folder (it wins over a Claude Code built-in of that name). */
+  async ownSkill(name: string, channel: string): Promise<boolean> {
+    const dir = channel === 'room' ? undefined : this.workspaces?.inChannel(channel)?.path;
+    if (!dir) return false;
+    const { findSkill } = await import('./claude-code/skills.js');
+    const { claudeHome } = await import('./claude-code/launch.js');
+    return Boolean(await findSkill(name, dir, claudeHome()).catch(() => undefined));
   }
 
   /** The agent that answers for work in `project` (its own default over yours; BLG-444). */
