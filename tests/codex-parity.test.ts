@@ -193,3 +193,17 @@ describe('wording true to Codex', () => {
     expect(claude).toContain('run_in_background works too');
   });
 });
+
+describe("a model Codex's config names that the account can't use", () => {
+  it("falls back to the account's default; a usable or a picked one is left alone", async () => {
+    const { pickCodexModel } = await import('../src/agent/runtime/codex/runner.js');
+    const list = async () => [
+      { id: 'gpt-6-luna', model: 'gpt-6-luna', displayName: 'GPT-6 Luna', description: '', hidden: false, isDefault: true, supportedReasoningEfforts: [] },
+      { id: 'gpt-5.6-terra', model: 'gpt-5.6-terra', displayName: 'GPT-5.6 Terra', description: '', hidden: false, isDefault: false, supportedReasoningEfforts: [] },
+    ] as never;
+    expect(await pickCodexModel(undefined, list, async () => 'gpt-5.5')).toBe('gpt-6-luna');
+    expect(await pickCodexModel(undefined, list, async () => 'gpt-5.6-terra')).toBeUndefined();
+    expect(await pickCodexModel(undefined, list, async () => undefined)).toBeUndefined();
+    expect(await pickCodexModel('gpt-5.6-terra', list, async () => 'gpt-5.5')).toBe('gpt-5.6-terra');
+  });
+});

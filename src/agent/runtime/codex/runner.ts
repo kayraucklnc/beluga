@@ -64,11 +64,22 @@ export function smallCodexModel(models: readonly Model[]): string | undefined {
  * The model to ask Codex for: a Codex model as is; Claude's 'haiku' (a side call wanting a quick
  * answer) as Codex's small, fast model when its list has one; anything else Claude's, its default.
  * `''` (the picker's default, chosen after a run started): the default by name, so a turn switches back.
+ * None picked: Codex's own config decides, unless the model it names isn't one this account can use
+ * (a ChatGPT sign-in can't run every API model): then the account's default, else every turn fails.
  */
-export async function pickCodexModel(model: string | undefined, list: () => Promise<readonly Model[]>): Promise<string | undefined> {
+export async function pickCodexModel(model: string | undefined, list: () => Promise<readonly Model[]>, configured?: () => Promise<string | undefined>): Promise<string | undefined> {
   if (model && /haiku/i.test(model)) return smallCodexModel(await list().catch(() => []));
   if (model === '') return (await list().catch(() => [])).find((m) => m.isDefault)?.id;
-  return codexModel(model);
+  const picked = codexModel(model);
+  if (picked || !configured) return picked;
+  const [own, models] = await Promise.all([configured().catch(() => undefined), list().catch(() => [] as readonly Model[])]);
+  if (!own || !models.length || models.some((m) => m.id === own || m.model === own)) return undefined;
+  return models.find((m) => m.isDefault)?.id;
+}
+
+/** The model Codex's own config names (~/.codex/config.toml `model`), when it names one. */
+export function configuredModel(rpc: CodexConnection['rpc']): Promise<string | undefined> {
+  return rpc.request<{ config?: { model?: unknown } }>('config/read', {}, MODEL_TIMEOUT_MS).then((r) => (typeof r.config?.model === 'string' ? r.config.model : undefined));
 }
 
 /** Beluga's effort names as Codex's ('max' is Codex's 'xhigh' where a model has no 'max'). */
@@ -174,7 +185,7 @@ export function createCodexBackend(opts: CodexBackendOptions): AgentBackend {
       let models: Promise<readonly Model[]> | undefined;
       const listOf = (rpc: CodexConnection['rpc']): Promise<readonly Model[]> => (models ??= rpc.request<{ data: Model[] }>('model/list', {}, MODEL_TIMEOUT_MS).then((r) => r.data, () => []));
       const settle = async (rpc: CodexConnection['rpc'], want: string | undefined): Promise<void> => {
-        model = await pickCodexModel(want, () => listOf(rpc));
+        model = await pickCodexModel(want, () => listOf(rpc), () => configuredModel(rpc));
         if (!input.effort) return;
         const list = await listOf(rpc);
         const its = list.find((m) => (model ? m.id === model || m.model === model : m.isDefault));
