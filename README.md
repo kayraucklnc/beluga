@@ -6,14 +6,16 @@
 </p>
 
 <p align="center">
-  <b>A Mac app for every project and the Claude working in each.<br>And your Claude can talk to your friends' Claudes, Mac to Mac.</b>
+  <b>A desktop app for every project and the Claude working in each.<br>And your Claude can talk to your friends' Claudes, computer to computer.</b>
 </p>
 
 <p align="center">
   <a href="https://github.com/kayraucklnc/beluga/releases/latest"><img src="https://img.shields.io/github/v/release/kayraucklnc/beluga?label=Download%20for%20Mac&logo=apple&color=0a84ff&style=for-the-badge" alt="Download Beluga for Mac"></a>
+  <a href="https://github.com/kayraucklnc/beluga/releases/latest"><img src="https://img.shields.io/github/v/release/kayraucklnc/beluga?label=Download%20for%20Linux&logo=linux&logoColor=white&color=e8a33d&style=for-the-badge" alt="Download Beluga for Linux"></a>
+  <a href="https://github.com/kayraucklnc/beluga/releases/latest"><img src="https://img.shields.io/github/v/release/kayraucklnc/beluga?label=Download%20for%20Windows&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0wIDMuNCA5LjggMnY5LjRIMHptMTEgLTEuNkwyNCAwdjExLjNIMTF6TTAgMTIuNmg5LjhWMjJMMCAyMC42em0xMSAwaDEzVjI0bC0xMy0xLjh6Ii8%2BPC9zdmc%2B&color=4f9de0&style=for-the-badge" alt="Download Beluga for Windows"></a>
 </p>
 <p align="center">
-  <sub>Apple Silicon · macOS 13+ · updates itself</sub>
+  <sub>macOS 13+ (Apple Silicon) · Linux x64 (AppImage, .deb, .rpm) · Windows 10+ x64 · updates itself</sub>
 </p>
 
 ---
@@ -190,8 +192,11 @@ Light and dark, your accent colour, right-click everywhere, drag and drop, ⌘K 
 
 ## 📦 Install
 
-1. **[Download Beluga](https://github.com/kayraucklnc/beluga/releases/latest)**, open the `.dmg` and drag Beluga into Applications.
-2. The first time, open Beluga, click **Done** on the warning, then go to **System Settings › Privacy & Security** and click **Open Anyway** (Beluga isn't notarized by Apple yet).
+1. **[Download Beluga](https://github.com/kayraucklnc/beluga/releases/latest)** for your computer:
+   - **Mac:** open the `.dmg` and drag Beluga into Applications.
+   - **Linux:** the `.AppImage` (make it executable, then open it; it updates itself), or the `.deb` / `.rpm` for your package manager.
+   - **Windows:** run `Beluga_…_x64-setup.exe`. Windows may say it protected your PC: click **More info › Run anyway** (the installer isn't signed yet). Commands Beluga runs for you need [Git for Windows](https://git-scm.com/download/win), which Claude Code needs too.
+2. On a Mac, the first time, open Beluga, click **Done** on the warning, then go to **System Settings › Privacy & Security** and click **Open Anyway** (Beluga isn't notarized by Apple yet).
    If macOS says Beluga **"is damaged"** (older downloads), run this once in Terminal, then open it again:
    ```sh
    xattr -dr com.apple.quarantine /Applications/Beluga.app
@@ -201,7 +206,7 @@ Light and dark, your accent colour, right-click everywhere, drag and drop, ⌘K 
 
 ## ⚙️ How it works
 
-The engine (projects, Claude, terminals, friends) runs in the background on your Mac, and the app is the window onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
+The engine (projects, Claude, terminals, friends) runs in the background on your computer, and the app is the window onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
 
 More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [peer-to-peer connections](docs/p2p.md) · [the friends network](docs/network.md) · [updates](docs/updates.md) · [every action and where it is](docs/parity.md).
 
