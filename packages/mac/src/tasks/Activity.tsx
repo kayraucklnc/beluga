@@ -32,6 +32,7 @@ const KIND_ICON: Partial<Record<ActivityKind, IconName>> = {
   proof: 'image',
   due: 'calendar',
   parent: 'outline',
+  private: 'lock',
 };
 
 function Who({ entry, selfId }: { entry: Entry; selfId: string }) {

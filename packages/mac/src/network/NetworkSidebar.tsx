@@ -283,9 +283,9 @@ function OfferRow({ o }: { o: FriendOfferView }) {
       <Row
         data-offer-row={o.peerId}
         icon={<Avatar name={o.name} id={o.peerId} size={18} />}
-        aria-label={`${o.name} wants to add you as a friend`}
+        aria-label={o.via ? `${o.name} from the ${o.via} team wants to add you as a friend` : `${o.name} wants to add you as a friend`}
         label={<span className={s.whoName}>{o.name} wants to add you</span>}
-        detail={`${o.name} is in your room and asks to be friends on the Beluga network`}
+        detail={o.via ? `${o.name} is on the ${o.via} team with you and asks to be friends on the Beluga network` : `${o.name} is in your room and asks to be friends on the Beluga network`}
         onClick={() => void answerOffer(client, o.peerId, o.name, true)}
         trailing={
           <Button size="small" variant="primary" onClick={(e) => (e.stopPropagation(), void answerOffer(client, o.peerId, o.name, true))}>

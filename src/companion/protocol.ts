@@ -578,6 +578,8 @@ export const TaskSummary = z.object({
   epicKey: z.string().max(40).optional(),
   /** The repo it runs in (its name), when its board covers several (1.31). */
   repo: z.string().max(200).optional(),
+  /** Only you see it (BLG-501): it never reaches teammates or Linear. */
+  private: z.literal(true).optional(),
   updatedAt: ts,
 });
 export type TaskSummary = z.infer<typeof TaskSummary>;

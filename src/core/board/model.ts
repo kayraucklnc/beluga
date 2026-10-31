@@ -101,7 +101,7 @@ export interface BriefRevision {
   readonly reason?: string;
 }
 
-export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan' | 'link';
+export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan' | 'link' | 'private';
 
 export interface Activity {
   readonly id: string;
@@ -227,7 +227,19 @@ export interface Issue {
   readonly link?: IssueLink;
   /** The GitHub issue it's for (made from it in Issues): its pull request says "Fixes #n", so merging closes the issue. */
   readonly github?: IssueGitHub;
+  /**
+   * Only you see it (BLG-501): it stays on this Mac, never reaching teammates on a team board or
+   * another tracker (Linear), until Share with Team. A private task's sub-tasks are private too.
+   */
+  readonly private?: true;
 }
+
+/**
+ * Words asking for a task to stay yours ("just for me", "keep it private", "don't share"): New
+ * Task makes it private from the start, before anything could reach the team (BLG-501).
+ */
+export const asksPrivate = (text: string): boolean => PRIVATE_ASK.test(text);
+const PRIVATE_ASK = /(^\s*private\b|\bprivate (task|todo|to-do|note|one|board)s?\b|\b(make|keep|leave) (it|this|them|these)( tasks?)? (private|to myself|off the team)\b|\b(just|only) (for )?me\b|\bfor my eyes only\b|\bdon[’']?t share\b|\bnot for the team\b|\b(is|as|stays?) private\b)/i;
 
 /** What Claude was last asked to do about a task's GitHub issue: find out why it happens (Investigate), or fix it. */
 export type GitHubStep = 'investigate' | 'fix';

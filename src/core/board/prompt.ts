@@ -44,7 +44,7 @@ const commentsOf = (issue: Issue): Activity[] => issue.activity.filter((a) => (a
 const fileLines = (issue: Issue): string[] => taskFiles(issue).map((f) => `- ${f.title}: ${f.path && !f.gone && !f.thumb ? f.path : f.url ?? 'its file is gone'}`);
 
 const line = (i: Issue): string => lineIn(i);
-const lineIn = (i: Issue, repo?: string): string => `${i.key} · ${STATUS_INFO[i.status].label}${i.priority !== 'none' ? ` · ${PRIORITY_INFO[i.priority].label}` : ''}${repo ? ` · in ${repo}` : ''} · ${i.title}`;
+const lineIn = (i: Issue, repo?: string): string => `${i.key} · ${STATUS_INFO[i.status].label}${i.priority !== 'none' ? ` · ${PRIORITY_INFO[i.priority].label}` : ''}${repo ? ` · in ${repo}` : ''}${i.private ? ' · private' : ''} · ${i.title}`;
 
 /** The task this run's worktree is doing: its brief and where it sits, and how to keep it true. */
 export function briefPrompt(board: BoardState, issue: Issue): string {
@@ -188,6 +188,7 @@ export function describeIssue(board: BoardState, issue: Issue, selfId: string, r
   const facts = [
     `# ${issue.key}: ${issue.title}`,
     kids.length ? 'Epic: a task with sub-tasks (it follows them to Done)' : '',
+    issue.private ? 'Private: only the user sees it (never their teammates or Linear). Don’t bring it up in chats with friends or teammates.' : '',
     repoName ? `Board: ${boardName(board, boardOf(issue), repoName)} · Runs in the repo: ${repoName(issue.projectId) ?? issue.projectId}` : '',
     `Status: ${STATUS_INFO[issue.status].label} · Priority: ${PRIORITY_INFO[issue.priority].label} · Assigned to: ${assigneeName(issue.assignee, selfId)}`,
     issue.labels.length ? `Labels: ${issue.labels.join(', ')}` : '',

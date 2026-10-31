@@ -51,8 +51,9 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
   // What its Claude is doing right now, and the messages waiting for it (the head Claude's, yours).
-  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined));
-  const waiting = useApp((s) => (worktree && STATUS_INFO[issue.status].open ? liveOf(s.log).waiting?.(`ws:${worktree}`) : undefined)) ?? NONE;
+  // (Each read builds them anew: compared by value, or the store would re-render forever.)
+  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined), sameDeep);
+  const waiting = useApp((s) => (worktree && STATUS_INFO[issue.status].open ? liveOf(s.log).waiting?.(`ws:${worktree}`) : undefined), sameDeep) ?? NONE;
   const pulse = running ? pulseOf(run, false, undefined) : undefined;
   const now = useClock(pulse?.kind === 'working' || pulse?.kind === 'command');
   const doing = pulse && !compact ? pulseWords(pulse, now).sub : undefined;
@@ -238,16 +239,53 @@ export function TuckButton({ issue }: { issue: Issue }) {
 }
 
 /** Right-click (and ⋯) on a task: open it, its worktree, start one (or reopen a finished one), change it, copy, delete. */
+/**
+ * Whether a project's tasks reach anyone but you (teammates on its team board, or Linear): only
+ * then is a task's privacy worth offering (BLG-501). Its words when it does: who'd see it.
+ */
+export function useSharedWith(): (projectId: string) => string | undefined {
+  const team = useApp((s) => s.team);
+  const sync = useApp((s) => s.board.sync);
+  return (projectId) => {
+    const mates = teammatesOf(team, projectId).map((m) => m.name);
+    const tracker = sync?.[projectId] ? 'Linear' : undefined;
+    const all = [...mates, ...(tracker ? [tracker] : [])];
+    return all.length ? (all.length === 1 ? all[0] : `${all.slice(0, -1).join(', ')} and ${all.at(-1)}`) : undefined;
+  };
+}
+
+/** A private task's lock (BLG-501): beside its key, or with the word on a task's page. */
+export function PrivateMark({ issue, labelled }: { readonly issue: Pick<Issue, 'private'>; readonly labelled?: boolean }) {
+  if (!issue.private) return null;
+  return (
+    <Tip label="Private: only you see it. Share with Team from its ⋯ when it’s ready">
+      <span className={cx(t.privateTag, labelled && t.labelled)} aria-label="Private">
+        <Icon name="lock" size={11} />
+        {labelled ? 'Private' : null}
+      </span>
+    </Tip>
+  );
+}
+
+/** Make Private or Share with Team, as the one item a task's menu has for it (BLG-501). */
+export function privacyItem(issue: Issue, sharedWith: string | undefined, setPrivate: (on: boolean) => void): ActionItem[] {
+  if (issue.private) return [{ label: 'Share with Team', icon: 'people', hint: sharedWith ? 'Everyone on the team will see it' : 'Teammates will see it once you team up', onSelect: () => setPrivate(false) }];
+  if (!sharedWith) return [];
+  return [{ label: 'Make Private', icon: 'lock', hint: 'Only you; the team won’t see it', onSelect: () => setPrivate(true) }];
+}
+
 export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const { api, act, open, openWorktree } = useTaskActions();
   const { client } = useBeluga();
   const projects = useApp((s) => s.projects);
   const team = useApp((s) => s.team);
   const friends = useApp((s) => s.network.friends);
+  const sharedWith = useSharedWith();
   /** Your chat with a teammate, the task in the box (BLG-263: you ask, nothing is given to their Claude). */
   const askIn = (issue: Issue): ActionItem[] => {
     const mates = teammatesOf(team, issue.projectId).filter((m) => friends.some((f) => f.peerId === m.peerId));
-    if (!mates.length) return [];
+    // Private: nothing to ask a teammate about.
+    if (!mates.length || issue.private) return [];
     const go = (peerId: string, text: string): void => {
       draftIn(`dm:${peerId}`, text);
       client.store.dispatch({ type: 'view', view: { kind: 'conversation', id: `dm:${peerId}` } });
@@ -303,6 +341,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         onSelect: () => undefined,
       },
       { label: 'Add Sub-task…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_task', projectId: issue.projectId, parent: issue.id }) },
+      ...privacyItem(issue, sharedWith(issue.projectId), (on) => void act(() => api.setPrivate(issue.id, on), on ? `${issue.key} is private: only you see it` : `Shared ${issue.key} with the team`)),
       ...(isOpen(issue.status) ? [] : [{ label: 'Archive', icon: 'archive' as const, hint: 'Off the board; its proof files let go', onSelect: () => void act(() => api.archive(issue.id), `Archived ${issue.key}`) }]),
       { label: 'Copy Key', icon: 'copy', separate: true, hint: issue.key, onSelect: () => void copyText(issue.key).then(() => toast(client, `Copied ${issue.key}`, 'success')) },
       { label: 'Copy Title and Key', onSelect: () => void copyText(`${issue.key} ${issue.title}`).then(() => toast(client, 'Copied', 'success')) },

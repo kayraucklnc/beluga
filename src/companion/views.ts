@@ -839,6 +839,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
     ...(isEpic(state.board, i) ? { epic: boardProgress(state.board, i) } : {}),
     ...(epicKey ? { epicKey: clip(epicKey, 40) } : {}),
     ...(repo ? { repo: clip(repo, 200) } : {}),
+    ...(i.private ? { private: true as const } : {}),
     updatedAt: Math.round(i.updatedAt),
   };
 }

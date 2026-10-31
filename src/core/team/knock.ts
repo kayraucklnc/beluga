@@ -78,7 +78,12 @@ export class TeamKnocks implements TeamPart {
     const to = peerId ?? on[0]?.peerId;
     if (!to) throw new Error('No teammate is working on that task right now');
     const link = this.team.linksOf(issue.projectId).find((l) => l.peerId === to);
-    if (!link) throw new Error(`${this.team.nameOf(to)} isn’t on this project’s team`);
+    // You knock on friends only (BLG-510): friends on one team link up by themselves, someone else is a friend request away.
+    if (!link) {
+      const name = this.team.nameOf(to);
+      if (!this.team.rosters.members(issue.projectId, this.team.self).some((m) => m.peerId === to)) throw new Error(`${name} isn’t on this project’s team`);
+      throw new Error(this.team.deps.mesh.isFriend(to) ? `Connecting you and ${name} on this team. Knock again in a moment` : `You can knock on friends only. Add ${name} as a friend from their profile first`);
+    }
     const why = this.team.cannot(to, 'team.knock');
     if (why) throw new Error(why);
     const had = this.mine.find((k) => k.issueId === issueId && k.peerId === to && k.state === 'waiting');

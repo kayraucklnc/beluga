@@ -162,6 +162,26 @@ describe('both ways', () => {
     expect(tracker.calls.create).toBe(calls.create);
   });
 
+  it('leaves a private task alone both ways until it’s shared (BLG-501)', async () => {
+    const { sync, tracker, board, tick } = setup();
+    const remote = tracker.add({ title: 'Linked' });
+    await connect(sync);
+    const linked = board.list()[0]!;
+    tick();
+    const mine = board.create({ projectId: 'api', title: 'Just mine', private: true }, me);
+    board.setPrivate(linked.id, true, me);
+    tick();
+    board.update(linked.id, { title: 'Renamed in private' }, me);
+    tracker.edit(remote.id, { status: 'in_review' });
+    await sync.sync('api');
+    expect([...tracker.issues.values()].map((i) => i.title)).toEqual(['Linked']);
+    expect(board.get(linked.id)).toMatchObject({ title: 'Renamed in private', status: 'todo' });
+
+    board.setPrivate(mine.id, false, me);
+    await sync.sync('api');
+    expect([...tracker.issues.values()].map((i) => i.title).sort()).toEqual(['Just mine', 'Linked']);
+  });
+
   it('keeps both sides’ changes to different fields, and the newer one to the same field', async () => {
     const { sync, tracker, board, tick } = setup();
     const remote = tracker.add({ title: 'Fix login' });

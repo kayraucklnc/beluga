@@ -235,6 +235,8 @@ export interface BoardTools {
     readonly status?: 'backlog' | 'todo';
     readonly priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
     readonly labels?: readonly string[];
+    /** Only the user sees it (BLG-501). */
+    readonly private?: boolean;
   }): string;
   update(
     key: string | undefined,

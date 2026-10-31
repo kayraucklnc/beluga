@@ -6,7 +6,7 @@ import { IconButton, Tip, cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, IssueMeta, TuckButton, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, IssueMeta, PrivateMark, TuckButton, useIssueMenu } from './parts.js';
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
@@ -95,7 +95,7 @@ const Row = memo(function Row({ issue, pop, cursor, onCursor }: { issue: Issue; 
         style={pop !== undefined ? ({ '--pop': pop } as CSSProperties) : undefined}
         onClick={() => open(issue)}
         onMouseDown={onCursor}
-        aria-label={`${issue.key} ${issue.title}, ${STATUS_INFO[issue.status].label}`}
+        aria-label={`${issue.key} ${issue.title}, ${STATUS_INFO[issue.status].label}${issue.private ? ', private' : ''}`}
       >
         <span className={t.rowCell} onClick={stop}>
           <PriorityPicker issue={issue}>
@@ -119,6 +119,7 @@ const Row = memo(function Row({ issue, pop, cursor, onCursor }: { issue: Issue; 
             </span>
           </Tip>
         ) : null}
+        <PrivateMark issue={issue} />
         <span className={cx(t.title, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</span>
         <IssueMeta issue={issue} />
         {epic ? <TuckButton issue={issue} /> : null}

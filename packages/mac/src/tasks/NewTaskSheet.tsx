@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
-import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, boardForRepo, boardOf, issueById, reposOf } from '@beluga/core/board/model.js';
+import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, asksPrivate, boardForRepo, boardOf, issueById, reposOf } from '@beluga/core/board/model.js';
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
 import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
@@ -8,6 +8,7 @@ import f from '../components/form.module.css';
 import { cx } from '../components/ui.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { PriorityIcon } from './marks.js';
+import { useSharedWith } from './parts.js';
 import { assigneeChoices, boardChoices } from './tasks-model.js';
 import { useTaggable } from './use-taggable.js';
 import { useBoard, usePeople, useSelf, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
@@ -57,6 +58,12 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
   const choices = assigneeChoices(self, people);
   const [assignee, setAssignee] = useState('');
   const [start, setStart] = useState(false);
+  // Only you see it (BLG-501): words asking for it pick it, until you pick yourself.
+  const [only, setOnly] = useState<boolean>();
+  const sharedWith = useSharedWith()(project);
+  const asked = !mine && asksPrivate(describe);
+  const forced = Boolean(parentIssue?.private);
+  const isPrivate = forced || (only ?? asked);
   const solo = useSolo(project);
   const tagged = useTaggable(project, self.id, projects.find((p) => p.id === project)?.name);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -88,12 +95,13 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
           priority,
           ...(who ? { assignee: who } : {}),
           ...(parentIssue ? { parent: parentIssue.id } : {}),
+          private: isPrivate,
         });
         close();
         // (The sheet is gone: a problem starting shows as a toast, and the task is there to start again.)
         if (start) await act(() => api.start(created.id, { claude: true }));
         else {
-          toast(client, `Created ${created.key}`, 'success');
+          toast(client, `Created ${created.key}${created.private ? ', private' : ''}`, 'success');
           if (parentIssue) open(parentIssue);
         }
       }}
@@ -156,6 +164,21 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
       <Field label="Priority">
         <PriorityScale value={priority} onChange={setPriority} />
       </Field>
+      {/* Only worth asking when someone else would see it (teammates, Linear), or it's under a private task. */}
+      {sharedWith || forced ? (
+        <Field label="Who Sees It" hint={forced ? 'Its parent is private, so it is too' : isPrivate ? (only === undefined ? 'Your words asked to keep it to yourself' : undefined) : sharedWith ? `Everyone on the team: ${sharedWith}, and whoever they team up with` : undefined}>
+          <div className={n.scale} role="radiogroup" aria-label="Who sees it">
+            <button type="button" role="radio" aria-checked={!isPrivate} disabled={forced} className={cx(n.step, !isPrivate && n.stepOn)} onClick={() => setOnly(false)}>
+              <Icon name="people" size={12} />
+              Your Team
+            </button>
+            <button type="button" role="radio" aria-checked={isPrivate} className={cx(n.step, isPrivate && n.stepOn)} onClick={() => setOnly(true)}>
+              <Icon name="lock" size={12} />
+              Only You
+            </button>
+          </div>
+        </Field>
+      ) : null}
       {/* Alone on a project, every task is yours and your Claude's: nothing to choose. */}
       {solo ? null : (
         <Field label="Assignee">

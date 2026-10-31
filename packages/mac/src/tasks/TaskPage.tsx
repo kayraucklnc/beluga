@@ -11,7 +11,7 @@ import { usePlanActions } from '../plans/use-plans.js';
 import { ActivityFeed } from './Activity.js';
 import { Brief } from './Brief.js';
 import { AssigneeMark, LabelChip, PrChip, PriorityIcon, StatusIcon } from './marks.js';
-import { useIssueMenu } from './parts.js';
+import { useIssueMenu, useSharedWith } from './parts.js';
 import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker } from './pickers.js';
 import { FilesList, ProofList, Relations, SubTasks } from './TaskSections.js';
 import { taskDropProps, useTaskFileDrop } from './use-task-drop.js';
@@ -117,6 +117,7 @@ function Header({ issue }: { issue: Issue }) {
         <WorkingOn issueId={issue.id} />
         <WaitingFor issueId={issue.id} />
         <AssignedToYou issueId={issue.id} />
+        <PrivateBanner issue={issue} />
         <ArchivedBanner issue={issue} />
         <GoneBanner issue={issue} />
         <ChecksBanner issue={issue} />
@@ -189,6 +190,28 @@ function ChecksBanner({ issue }: { issue: Issue }) {
       <span className={t.bannerText}>
         <strong>Needs its checks.</strong> {open.length === 1 ? 'A criterion is' : `${open.length} criteria are`} neither ticked nor explained, so it stays out of review: tick each one, or add “— deferred: why” after it.
       </span>
+    </div>
+  );
+}
+
+/** Private (BLG-501): only you see it, and who would once it's shared, in one click. */
+function PrivateBanner({ issue }: { issue: Issue }) {
+  const { api, act } = useTaskActions();
+  const board = useBoard();
+  const sharedWith = useSharedWith()(issue.projectId);
+  if (!issue.private || isArchived(issue)) return null;
+  const kids = board.issues.filter((i) => i.parent === issue.id && i.private).length;
+  return (
+    <div className={t.banner} role="status">
+      <Icon name="lock" size={14} />
+      <span className={t.bannerText}>
+        <strong>Private.</strong> Only you see it{sharedWith ? '; your team won’t until you share it' : ''}.
+      </span>
+      {sharedWith ? (
+        <Button size="small" onClick={() => void act(() => api.setPrivate(issue.id, false), `Shared ${issue.key}${kids ? ' and its sub-tasks' : ''} with the team`)}>
+          Share with Team
+        </Button>
+      ) : null}
     </div>
   );
 }

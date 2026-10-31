@@ -53,14 +53,24 @@ export async function sendFriendOffer(host: OfferHost, mesh: Pick<Mesh, 'createI
 
 /** Someone in the room sent you a friend request: keep its link here, show it, and tell you. */
 export function receiveFriendOffer(host: OfferHost, from: string, body: BodyOf<'friend_offer'>): void {
+  keepFriendOffer(host, { from, name: nameIn(host.store, from), link: body.link, expiresAt: body.expiresAt });
+}
+
+/**
+ * A friend request to keep and show (from your room, or, with `via`, from someone on a team you're
+ * on, passed on by your teammates: BLG-510). Accept is the same either way (answerFriendOffer):
+ * the invitation only pairs with them, so it's only added if you say yes.
+ */
+export function keepFriendOffer(host: Pick<OfferHost, 'store' | 'notify'>, ask: { readonly from: string; readonly name: string; readonly link: string; readonly expiresAt: number; readonly via?: string }): void {
+  const { from, link, expiresAt, via } = ask;
   const state = host.store.getState();
-  if (from === state.self?.peerId || isFriend(host.store, from) || body.expiresAt <= Date.now()) return;
-  const name = nameIn(host.store, from).slice(0, 64);
+  if (from === state.self?.peerId || from === state.selfId || isFriend(host.store, from) || expiresAt <= Date.now()) return;
+  const name = ask.name.slice(0, 64) || 'Someone';
   const map = linksOf(host.store);
   const fresh = !map.has(from);
-  map.set(from, { link: body.link, expiresAt: body.expiresAt });
-  host.store.dispatch({ type: 'net_offer', offer: { peerId: from, name, dir: 'in', at: Date.now(), expiresAt: body.expiresAt } });
-  if (fresh) host.notify?.({ kind: 'needsYou', tag: 'invited', title: `${name} wants to add you as a friend`, body: 'Accept to talk, share and ask each other’s Claude over the Beluga network', need: `friend:${from}`, key: `friend-offer:${from}:${body.expiresAt}` });
+  map.set(from, { link, expiresAt });
+  host.store.dispatch({ type: 'net_offer', offer: { peerId: from, name, dir: 'in', at: Date.now(), expiresAt, ...(via ? { via: via.slice(0, 200) } : {}) } });
+  if (fresh) host.notify?.({ kind: 'needsYou', tag: 'invited', title: via ? `${name} from the ${via} team wants to add you as a friend` : `${name} wants to add you as a friend`, body: 'Accept to talk, share and ask each other’s Claude over the Beluga network', need: `friend:${from}`, key: `friend-offer:${from}:${expiresAt}` });
 }
 
 /** Accept (you're friends once your Macs pair) or turn down someone's friend request. */
