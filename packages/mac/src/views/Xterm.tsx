@@ -8,6 +8,8 @@ import { useEffect, useRef } from 'react';
 import { useBeluga } from '../lib/beluga.js';
 import { getPrefs, usePrefs } from '../lib/prefs.js';
 import { importedTheme, terminalOptions } from '../lib/terminal-look.js';
+import { copyText } from '../lib/copy.js';
+import { keyPlatform } from '../lib/shortcuts-model.js';
 import { openExternal } from '../lib/system.js';
 import s from '../views/terminal.module.css';
 
@@ -67,7 +69,15 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
     const input = term.onData((d) => link.write(d));
     // The Mac's line keys, as Terminal and iTerm send them: xterm leaves ⌘ keys to the app.
     term.attachCustomKeyEventHandler((e) => {
-      const line = e.type === 'keydown' && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey ? MAC_LINE_KEYS[e.key] : undefined;
+      // Linux and Windows terminals copy and paste with Ctrl+Shift+C and V (Ctrl+C is the shell's).
+      if (keyPlatform() !== 'mac' && e.ctrlKey && e.shiftKey && !e.altKey && /^[cv]$/i.test(e.key)) {
+        if (e.type !== 'keydown') return false;
+        e.preventDefault();
+        if (e.key.toLowerCase() === 'c') void copyText(term.getSelection());
+        else void navigator.clipboard.readText().then((t) => t && term.paste(t), () => undefined);
+        return false;
+      }
+      const line = keyPlatform() === 'mac' && e.type === 'keydown' && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey ? MAC_LINE_KEYS[e.key] : undefined;
       if (!line) return true;
       e.preventDefault();
       link.write(line);

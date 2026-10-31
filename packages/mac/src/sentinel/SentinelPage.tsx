@@ -44,6 +44,7 @@ import { useRunsFolder, useSentinelActions, useSentinelState } from './use-senti
 import t from '../tasks/tasks.module.css';
 import s from './sentinel.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
+import { primaryKey } from '../lib/shortcuts-model.js';
 
 /**
  * A sentinel's page: the editor and its history in one. The name is renamed in place, When and
@@ -310,7 +311,7 @@ function History({ item }: { item: Sentinel }) {
                   data-run={r.id}
                   onClick={() => a.openRun(r.id)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.metaKey) {
+                    if (e.key === 'Enter' && primaryKey(e)) {
                       e.preventDefault();
                       const channel = r.channel ?? r.steps.find((x) => x.channel)?.channel;
                       if (chatPlaceOf(channel)) a.openChannel(channel);

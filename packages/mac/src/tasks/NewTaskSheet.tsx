@@ -13,6 +13,7 @@ import { assigneeChoices, boardChoices } from './tasks-model.js';
 import { useTaggable } from './use-taggable.js';
 import { useBoard, usePeople, useSelf, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import n from './NewTaskSheet.module.css';
+import { chordLabel } from '../lib/shortcuts-model.js';
 
 /** The priority scale, left to right: its keys are 0 to 4. */
 const SCALE: readonly Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
@@ -111,7 +112,7 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
           <Field label="Title" htmlFor="task-title">
             <TextInput id="task-title" value={title} onChange={setTitle} maxLength={200} placeholder="Rate-limit the login endpoint" data-autofocus />
           </Field>
-          <Field label="Goal" htmlFor="task-goal" hint="What it’s for and what done looks like. Markdown; ⌘↩ creates it.">
+          <Field label="Goal" htmlFor="task-goal" hint={`What it’s for and what done looks like. Markdown; ${chordLabel('Cmd+Enter')} creates it.`}>
             <TextArea id="task-goal" value={goal} onChange={setGoal} rows={4} placeholder="10 tries a minute per IP, then 429. Logins from the app keep working." />
           </Field>
         </>
@@ -141,8 +142,8 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
           </div>
           <div className={n.hint}>
             {solo
-              ? 'Ask for several tasks, or an epic with its parts, and Create makes them all. @ names a friend. ⌘↩ creates it.'
-              : 'Ask for several tasks, or an epic with its parts, and name who each is for (@ picks them): Create makes and assigns them all. ⌘↩ creates it.'}
+              ? `Ask for several tasks, or an epic with its parts, and Create makes them all. @ names a friend. ${chordLabel('Cmd+Enter')} creates it.`
+              : `Ask for several tasks, or an epic with its parts, and name who each is for (@ picks them): Create makes and assigns them all. ${chordLabel('Cmd+Enter')} creates it.`}
           </div>
         </div>
       )}

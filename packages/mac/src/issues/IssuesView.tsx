@@ -17,6 +17,7 @@ import t from '../tasks/tasks.module.css';
 import s from './issues.module.css';
 import arr from '../lib/arrive.module.css';
 import { useLateArrival } from '../lib/last-seen.js';
+import { primaryKey } from '../lib/shortcuts-model.js';
 
 const STATES: ReadonlyArray<{ readonly value: GhIssueState; readonly label: string; readonly hint: string }> = [
   { value: 'open', label: 'Open', hint: 'Issues still open on GitHub' },
@@ -62,7 +63,7 @@ export function IssuesView() {
   // ⌘F searches.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.defaultPrevented || currentSheet() || !e.metaKey || e.key.toLowerCase() !== 'f') return;
+      if (e.defaultPrevented || currentSheet() || !primaryKey(e) || e.key.toLowerCase() !== 'f') return;
       e.preventDefault();
       find.current?.focus();
       find.current?.select();

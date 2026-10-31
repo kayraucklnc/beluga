@@ -5,7 +5,48 @@
  *
  * A chord is written "Ctrl+Alt+Shift+Cmd+K": the modifiers in that order, then the key. A key is
  * a capital letter or digit, a character ("." "[" "Ç"), or a name (Up, Tab, Enter, F5…).
+ *
+ * "Cmd" is the main modifier, as Tauri's CmdOrCtrl: ⌘ on a Mac, Ctrl on Linux and Windows. "Ctrl"
+ * is the Mac's ⌃, which is the Windows (Super) key elsewhere; the few defaults that use it have
+ * keys of their own there (OFF_MAC_KEYS).
  */
+
+export type KeyPlatform = 'mac' | 'windows' | 'linux';
+
+/** Which keyboard this window has. Off a window (the tests, Node) it's a Mac's. */
+function detectPlatform(): KeyPlatform {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'mac';
+  const ua = `${navigator.platform ?? ''} ${navigator.userAgent ?? ''}`;
+  return /Mac|iPhone|iPad/.test(ua) ? 'mac' : /Win/.test(ua) ? 'windows' : 'linux';
+}
+
+let platform: KeyPlatform = detectPlatform();
+/** Which keyboard shortcuts read and show for (tests set it; the window knows its own). */
+export const keyPlatform = (): KeyPlatform => platform;
+export const setKeyPlatform = (p: KeyPlatform): void => void (platform = p);
+const onMac = (): boolean => platform === 'mac';
+
+/** The main modifier held: ⌘ on a Mac, Ctrl elsewhere (for handlers outside the shortcut table). */
+export const primaryKey = (e: { readonly metaKey: boolean; readonly ctrlKey: boolean }): boolean => (onMac() ? e.metaKey : e.ctrlKey);
+
+/**
+ * Defaults that use the Mac's ⌃, as Linux and Windows have them: ⌃⌘ there would be Ctrl+Windows
+ * (the system's), ⌃N would be New Chat's Ctrl+N, and Ctrl+Tab is already the main modifier.
+ */
+export const OFF_MAC_KEYS: Readonly<Record<string, readonly string[]>> = {
+  'toggle-sidebar': ['Cmd+B'],
+  'place-next': ['Cmd+Tab'],
+  'place-prev': ['Shift+Cmd+Tab'],
+  'ws-archive': [],
+  'approve-yes': ['Alt+Shift+Y'],
+  'approve-no': ['Alt+Shift+N'],
+  'approve-always': ['Alt+Shift+A'],
+  'project-up': ['Alt+Shift+Up'],
+  'project-down': ['Alt+Shift+Down'],
+};
+
+/** A shortcut's keys out of the box on this keyboard. */
+export const keysOn = (id: string, keys: readonly string[], p: KeyPlatform = platform): readonly string[] => (p === 'mac' ? keys : (OFF_MAC_KEYS[id] ?? keys));
 
 export type ShortcutScope =
   /** Anywhere in the window. */
@@ -46,7 +87,7 @@ const PANEL_NAMES: Record<(typeof PANEL)[number], string> = { changes: 'Changes'
 /** The talk shortcut (Settings › Voice) shows and clashes here too; it's kept in its own setting. */
 export const TALK_ID = 'voice-talk';
 
-export const SHORTCUTS: readonly ShortcutDef[] = [
+const MAC_SHORTCUTS: readonly ShortcutDef[] = [
   def('palette', 'Everything You Can Do…', 'General', ['Cmd+K']),
   def('settings', 'Settings…', 'General', ['Cmd+,']),
   def('help-keys', 'Keyboard Shortcuts', 'General', ['Cmd+/']),
@@ -116,13 +157,19 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'project-down', label: 'Move Project Down', section: 'Sidebar', keys: ['Ctrl+Cmd+Down'], scope: 'sidebar' },
 ];
 
+/** Every shortcut with a Mac's keys (tests check the other keyboards' with keysOn). */
+export const MAC_SHORTCUTS_FOR_TESTS = MAC_SHORTCUTS;
+
+/** Every shortcut, with this keyboard's keys out of the box. */
+export const SHORTCUTS: readonly ShortcutDef[] = MAC_SHORTCUTS.map((d) => ({ ...d, keys: keysOn(d.id, d.keys) }));
+
 export const SECTIONS: readonly ShortcutSection[] = ['General', 'View', 'Go', 'Conversation', 'Workspace', 'Message box', 'Pages', 'Requests', 'Sidebar'];
 
 const BY_ID = new Map(SHORTCUTS.map((d) => [d.id, d]));
 export const shortcutDef = (id: string): ShortcutDef | undefined => BY_ID.get(id);
 
 /** What macOS (or every Mac app) keeps for itself: never given to a shortcut. */
-export const BUILT_IN: ReadonlyArray<readonly [string, string]> = [
+const MAC_BUILT_IN: ReadonlyArray<readonly [string, string]> = [
   ['Cmd+Q', 'Quit Beluga'],
   ['Cmd+W', 'Close Window'],
   ['Cmd+H', 'Hide Beluga'],
@@ -143,6 +190,29 @@ export const BUILT_IN: ReadonlyArray<readonly [string, string]> = [
   ['Shift+Cmd+4', 'Screenshot'],
   ['Shift+Cmd+5', 'Screenshot'],
 ];
+
+/** The same on Linux and Windows ("Cmd" is Ctrl there, "Ctrl" the Windows key). */
+const OTHER_BUILT_IN: ReadonlyArray<readonly [string, string]> = [
+  ['Cmd+Q', 'Quit Beluga'],
+  ['Cmd+W', 'Close Window'],
+  ['Alt+F4', 'Close Window'],
+  ['Cmd+Z', 'Undo'],
+  ['Cmd+Y', 'Redo'],
+  ['Shift+Cmd+Z', 'Redo'],
+  ['Cmd+X', 'Cut'],
+  ['Cmd+C', 'Copy'],
+  ['Cmd+V', 'Paste'],
+  ['Cmd+A', 'Select All'],
+  ['F11', 'Full Screen'],
+  ['Alt+Tab', 'Switch Apps'],
+  ['Ctrl+L', 'Lock Screen'],
+  ['Ctrl+D', 'Show Desktop'],
+  ['Ctrl+E', 'Files'],
+  ['Shift+Ctrl+S', 'Screenshot'],
+  ['Alt+Cmd+Delete', 'Security Options'],
+];
+
+export const BUILT_IN: ReadonlyArray<readonly [string, string]> = onMac() ? MAC_BUILT_IN : OTHER_BUILT_IN;
 
 /* ---------- Chords ---------- */
 
@@ -222,7 +292,8 @@ export function chordsOf(e: KeyPress): string[] {
   const byChar = keyFromChar(e.key);
   const byCode = keyFromCode(e.code);
   const order = e.altKey || e.shiftKey ? [byCode, byChar] : [byChar, byCode];
-  const mods = { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, cmd: e.metaKey };
+  // Off a Mac the main modifier is Ctrl, and the Windows key stands where ⌃ does.
+  const mods = onMac() ? { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, cmd: e.metaKey } : { ctrl: e.metaKey, alt: e.altKey, shift: e.shiftKey, cmd: e.ctrlKey };
   return [...new Set(order.filter((k): k is string => !!k).map((key) => chordText({ ...mods, key })))];
 }
 
@@ -231,15 +302,29 @@ export const chordOf = (e: KeyPress): string | undefined => chordsOf(e)[0];
 
 const KEY_GLYPHS: Record<string, string> = { Up: '↑', Down: '↓', Left: '←', Right: '→', Enter: '↩', Tab: '⇥', Backspace: '⌫', Delete: '⌦', Escape: 'esc', Space: 'Space', Home: '↖', End: '↘', PageUp: '⇞', PageDown: '⇟', '-': '−' };
 
-/** A chord as a Mac shows it: ⌃⌥⇧⌘ then the key. */
+/** Key names as Linux and Windows write them ("Ctrl+Shift+Enter"). */
+const KEY_WORDS: Record<string, string> = { Up: '↑', Down: '↓', Left: '←', Right: '→', Escape: 'Esc', PageUp: 'PgUp', PageDown: 'PgDn', Delete: 'Del' };
+const superName = (): string => (platform === 'windows' ? 'Win' : 'Super');
+
+/** Modifiers as this keyboard shows them: ⌃⌥⇧⌘ on a Mac, "Ctrl+Win+Alt+Shift+" elsewhere. */
+function modsLabel(m: { readonly ctrl: boolean; readonly alt: boolean; readonly shift: boolean; readonly cmd: boolean }): string {
+  if (onMac()) return `${m.ctrl ? '⌃' : ''}${m.alt ? '⌥' : ''}${m.shift ? '⇧' : ''}${m.cmd ? '⌘' : ''}`;
+  return [m.cmd && 'Ctrl', m.ctrl && superName(), m.alt && 'Alt', m.shift && 'Shift'].filter(Boolean).map((w) => `${w}+`).join('');
+}
+
+/** A chord as this keyboard shows it: ⌃⌥⇧⌘ then the key on a Mac, "Ctrl+Shift+K" elsewhere. */
 export function chordLabel(s: string): string {
   const c = parseChord(s);
   if (!c) return s;
-  return `${c.ctrl ? '⌃' : ''}${c.alt ? '⌥' : ''}${c.shift ? '⇧' : ''}${c.cmd ? '⌘' : ''}${KEY_GLYPHS[c.key] ?? c.key}`;
+  return `${modsLabel(c)}${onMac() ? (KEY_GLYPHS[c.key] ?? c.key) : (KEY_WORDS[c.key] ?? c.key)}`;
 }
 
+/** The main modifier's name in words that mention it ("⌘", or "Ctrl" off a Mac). */
+export const primaryLabel = (): string => (onMac() ? '⌘' : 'Ctrl');
+
 /** The modifiers held right now, for the recorder's live preview ("⌥⌘…"). */
-export const heldLabel = (e: Pick<KeyPress, 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>): string => `${e.ctrlKey ? '⌃' : ''}${e.altKey ? '⌥' : ''}${e.shiftKey ? '⇧' : ''}${e.metaKey ? '⌘' : ''}`;
+export const heldLabel = (e: Pick<KeyPress, 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>): string =>
+  modsLabel(onMac() ? { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, cmd: e.metaKey } : { ctrl: e.metaKey, alt: e.altKey, shift: e.shiftKey, cmd: e.ctrlKey });
 
 const MENU_KEYS = new Set(['.', ',', '/', ';', "'", '[', ']', '\\', '`', '-', '=', 'Up', 'Down', 'Left', 'Right', 'Tab', 'Space', 'Enter', 'Backspace', 'Delete', 'Home', 'End', 'PageUp', 'PageDown']);
 
@@ -248,7 +333,7 @@ export function menuAccel(s: string): string | undefined {
   const c = parseChord(s);
   if (!c) return undefined;
   if (!/^[A-Z0-9]$/.test(c.key) && !/^F\d{1,2}$/.test(c.key) && !MENU_KEYS.has(c.key)) return undefined;
-  return [c.ctrl && 'Ctrl', c.alt && 'Alt', c.shift && 'Shift', c.cmd && 'CmdOrCtrl', c.key].filter(Boolean).join('+');
+  return [c.ctrl && (onMac() ? 'Ctrl' : 'Super'), c.alt && 'Alt', c.shift && 'Shift', c.cmd && 'CmdOrCtrl', c.key].filter(Boolean).join('+');
 }
 
 /** The talk shortcut's accelerator ("CommandOrControl+Shift+D", Settings › Voice) as a chord, and back. */
@@ -349,18 +434,18 @@ export function refusal(id: string, chord: string): string | undefined {
   const d = BY_ID.get(id);
   if (!c || !d) return 'That isn’t a key';
   const taken = builtInFor(chord);
-  if (taken) return `${chordLabel(chord)} is ${taken}: macOS keeps it`;
+  if (taken) return `${chordLabel(chord)} is ${taken}: ${onMac() ? 'macOS' : platform === 'windows' ? 'Windows' : 'the system'} keeps it`;
   if (c.key === 'Escape' && !c.cmd && !c.ctrl && !c.alt) return 'esc closes things: pick another key';
   // The talk shortcut is held down: ↩ and esc are what you press while it listens.
   if (id === TALK_ID && (c.key === 'Enter' || c.key === 'Escape')) return `${chordLabel(chord)} sends while you talk: pick another key`;
   const fn = /^F\d{1,2}$/.test(c.key);
   // ⌥ alone over a letter, digit or sign types a character on many keyboards (⌥3 is # on a British
   // or Turkish Mac, ⌥L is @ on a German one), and the menu bar would take it from every text box.
-  if (c.alt && !c.cmd && !c.ctrl && [...c.key].length === 1) return `${chordLabel(chord)} types a character on some keyboards: add ⌘ or ⌃`;
+  if (c.alt && !c.cmd && !c.ctrl && [...c.key].length === 1) return `${chordLabel(chord)} types a character on some keyboards: add ${onMac() ? '⌘ or ⌃' : 'Ctrl'}`;
   if (c.cmd || c.ctrl || c.alt || fn) return undefined;
   if (d.scope === 'composer' && c.shift && (c.key === 'Enter' || c.key === 'Tab')) return undefined;
   if (d.bare && !c.shift) return undefined;
-  return `${chordLabel(chord)} would type: add ⌘, ⌃ or ⌥`;
+  return `${chordLabel(chord)} would type: add ${onMac() ? '⌘, ⌃ or ⌥' : 'Ctrl or Alt'}`;
 }
 
 /** A gentle word about a chord that works, but not everywhere. */

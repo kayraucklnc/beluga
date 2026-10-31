@@ -10,6 +10,7 @@ import { useApi, useApp } from '../../lib/beluga.js';
 import type { AskedWork } from '../../lib/work-confirm.js';
 import { MergeReview } from './MergeReview.js';
 import s from './work-confirm.module.css';
+import { primaryKey } from '../../lib/shortcuts-model.js';
 
 /**
  * Before a workspace action that starts Claude working or changes git: what will happen, in a
@@ -185,7 +186,7 @@ export function WorkConfirm({ wsId, action, close }: { wsId: string; action: Ask
           // Its own button pressed again closes it (see askBeforeWork), instead of closing and reopening.
           onPointerDownOutside={(e) => (anchor.contains(e.target as Node) ? e.preventDefault() : undefined)}
           onKeyDown={(e) => {
-            if (e.key !== 'Enter' || e.metaKey || e.shiftKey) return;
+            if (e.key !== 'Enter' || primaryKey(e) || e.shiftKey) return;
             if ((e.target as HTMLElement).tagName === 'BUTTON' && e.target !== start.current) return;
             e.preventDefault();
             go();

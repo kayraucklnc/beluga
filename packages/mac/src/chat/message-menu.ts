@@ -2,6 +2,7 @@ import type { LinkedImage } from '@beluga/shared/attachment-links.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import type { UiStore } from '../lib/beluga.js';
+import { chordLabel } from '../lib/shortcuts-model.js';
 
 /**
  * What right-clicking a message offers: copy it (as you read it, or as Markdown), quote it in
@@ -76,7 +77,7 @@ export function messageItems(o: MessageMenuOptions): ActionItem[] {
     ...(o.lead ?? []),
     ...(hasText
       ? [
-          { label: picked ? 'Copy Selection' : 'Copy', icon: 'copy' as const, ...(picked ? { keys: '⌘C' } : {}), separate: Boolean(o.lead?.length), onSelect: () => copy(picked || plainText(o.text), picked ? 'the selection' : 'the message') },
+          { label: picked ? 'Copy Selection' : 'Copy', icon: 'copy' as const, ...(picked ? { keys: chordLabel('Cmd+C') } : {}), separate: Boolean(o.lead?.length), onSelect: () => copy(picked || plainText(o.text), picked ? 'the selection' : 'the message') },
           { label: 'Copy as Markdown', onSelect: () => copy(o.text, 'as Markdown') },
           { label: 'Quote in Reply', icon: 'chat' as const, separate: true, onSelect: () => quoteInBox(o.ui, picked || o.text) },
           ...(o.askPrefix !== undefined ? [{ label: 'Ask Claude About This', icon: 'claude' as const, onSelect: () => quoteInBox(o.ui, picked || o.text, o.askPrefix) }] : []),

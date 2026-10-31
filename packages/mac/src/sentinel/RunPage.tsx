@@ -20,6 +20,7 @@ import v from '../views/views.module.css';
 import t from '../tasks/tasks.module.css';
 import s from './sentinel.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
+import { chordLabel, primaryKey } from '../lib/shortcuts-model.js';
 
 /**
  * One run: its headline, who started it and how long it took, each step with how it went (its
@@ -68,12 +69,12 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
   const why = run.steps.find((x) => x.why && x.state === 'running')?.why;
   const more: ActionItem[] = [
     ...(isRunning(run.state) ? [{ label: 'Stop', icon: 'stop' as const, danger: true, onSelect: () => void a.act(() => a.api.stop(run.id), 'Stopped') }] : []),
-    ...(chat && chatPlaceOf(chat) ? [{ label: 'Open Chat', icon: 'chat' as const, keys: '⌘↩', onSelect: () => a.openChannel(chat) }] : []),
+    ...(chat && chatPlaceOf(chat) ? [{ label: 'Open Chat', icon: 'chat' as const, keys: chordLabel('Cmd+Enter'), onSelect: () => a.openChannel(chat) }] : []),
     ...(sentinel ? [{ label: `Open ${sentinel.name}`, icon: 'sentinel' as const, onSelect: () => a.open(sentinel.id) }] : []),
   ];
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.defaultPrevented || !e.metaKey || e.key !== 'Enter' || !chat || !chatPlaceOf(chat)) return;
+      if (e.defaultPrevented || !primaryKey(e) || e.key !== 'Enter' || !chat || !chatPlaceOf(chat)) return;
       if ((e.target as HTMLElement | null)?.closest('input, textarea, [role="dialog"], [role="menu"]')) return;
       e.preventDefault();
       a.openChannel(chat);

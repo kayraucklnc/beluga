@@ -3,6 +3,7 @@ import { Icon } from '../Icon.js';
 import { IconButton } from '../ui.js';
 import { rangesIn, scrollParent } from './md-dom.js';
 import f from '../../chat/find.module.css';
+import { chordLabel } from '../../lib/shortcuts-model.js';
 
 type HighlightCtor = new (...ranges: Range[]) => unknown;
 const registry = (): Map<string, unknown> | undefined => (globalThis.CSS as unknown as { highlights?: Map<string, unknown> } | undefined)?.highlights;
@@ -125,8 +126,8 @@ export function DocFind({ root, version }: { root: RefObject<HTMLElement | null>
         {query.trim() ? (count ? `${current + 1} of ${count}` : 'No matches') : ''}
       </span>
       <span className={f.steps}>
-        <IconButton icon="chevronUp" label="Previous match" keys="⇧⌘G" disabled={!count} onClick={() => setAt((a) => a - 1)} />
-        <IconButton icon="chevronDown" label="Next match" keys="⌘G" disabled={!count} onClick={() => setAt((a) => a + 1)} />
+        <IconButton icon="chevronUp" label="Previous match" keys={chordLabel('Shift+Cmd+G')} disabled={!count} onClick={() => setAt((a) => a - 1)} />
+        <IconButton icon="chevronDown" label="Next match" keys={chordLabel('Cmd+G')} disabled={!count} onClick={() => setAt((a) => a + 1)} />
       </span>
       <button type="button" className={f.done} onClick={close}>
         Done

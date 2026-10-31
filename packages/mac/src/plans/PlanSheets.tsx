@@ -8,6 +8,7 @@ import { useTasksPrefs } from '../tasks/use-tasks.js';
 import { modeChange } from './plans-model.js';
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
+import { chordLabel } from '../lib/shortcuts-model.js';
 
 const AUTONOMY_ICON: Record<Autonomy, IconName> = { step: 'hand', gated: 'flag', autopilot: 'wand' };
 
@@ -46,7 +47,7 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
           Goal
         </label>
         <GoalBox value={goal} onChange={setGoal} />
-        <div className={p.newPlanHint}>What it’s for and what done looks like. ⌘↩ starts planning.</div>
+        <div className={p.newPlanHint}>What it’s for and what done looks like. {chordLabel('Cmd+Enter')} starts planning.</div>
         {known ? null : (
           <div className={p.newPlanRow}>
             <span className={p.newPlanLabel}>Project</span>

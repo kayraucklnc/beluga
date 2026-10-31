@@ -15,6 +15,7 @@ import { ago } from './tasks-model.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
+import { primaryKey, primaryLabel } from '../lib/shortcuts-model.js';
 
 /** A task page's lists: its sub-tasks, what waits on what, the files added for the work, and the proof that it works. */
 
@@ -310,13 +311,13 @@ function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnTy
   // A file opens over this page at once; ⌘-click shows it in the Files view (as it used to).
   const open = (e: MouseEvent): void => {
     if (url) actions.openLink({ kind: 'url', url });
-    else if (path && e.metaKey) actions.openLink({ kind: 'local', path, dir: false });
+    else if (path && primaryKey(e)) actions.openLink({ kind: 'local', path, dir: false });
     else if (path) setPreview(true);
   };
   return (
     <figure className={cx(t.proofItem, t.proofCard)}>
       {preview && path ? <ProofPreview proof={{ ...proof, path }} onClose={() => setPreview(false)} /> : null}
-      <Tip label={url ?? (path ? `${path} · ⌘-click to show in Files` : proof.title)}>
+      <Tip label={url ?? (path ? `${path} · ${primaryLabel()}-click to show in Files` : proof.title)}>
         <button type="button" className={t.proofLink} onClick={open} onPointerEnter={path && !url ? preloadReader : undefined}>
           <Icon name={url ? 'globe' : 'file'} size={14} />
           <span className={t.proofTitle}>{proof.title}</span>
