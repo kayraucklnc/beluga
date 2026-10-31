@@ -51,4 +51,37 @@ if (args[0] === 'pr' && args[1] === 'merge') {
   process.exit(0);
 }
 
+// A PR's conversation (src/workspaces/pr-review.ts): `conversations` holds each PR's pullRequest
+// node by number; replies, resolves and comments change it and are kept in `posts`.
+const field = (name) => args.find((a, i) => args[i - 1]?.match(/^-[fF]$/) && a.startsWith(`${name}=`))?.slice(name.length + 1);
+if (args[0] === 'api' && args[1] === 'graphql') {
+  const query = field('query') ?? '';
+  const conv = state.conversations ?? {};
+  if (query.includes('reviewThreads')) {
+    const pr = conv[field('number') ?? ''];
+    process.stdout.write(JSON.stringify({ data: { viewer: { login: 'you' }, repository: { pullRequest: pr ?? null } } }));
+    process.exit(0);
+  }
+  const thread = field('thread');
+  const pr = Object.values(conv).find((p) => p.reviewThreads.nodes.some((t) => t.id === thread));
+  const t = pr?.reviewThreads.nodes.find((x) => x.id === thread);
+  if (!t) fail('GraphQL: Could not resolve to a node');
+  state.posts = [...(state.posts ?? []), args.filter((a) => !a.startsWith('query='))];
+  if (query.includes('addPullRequestReviewThreadReply')) t.comments.nodes.push({ id: `R${Date.now()}`, author: { login: 'you' }, body: field('body'), createdAt: new Date().toISOString(), url: `${pr.url}#reply` });
+  else t.isResolved = !query.includes('unresolveReviewThread');
+  writeFileSync(file, JSON.stringify(state, null, 2));
+  process.stdout.write('{"data":{}}');
+  process.exit(0);
+}
+
+if (args[0] === 'pr' && args[1] === 'comment') {
+  const pr = (state.conversations ?? {})[args[2]];
+  if (!pr) fail(`no pull request ${args[2]}`);
+  const body = args[args.indexOf('--body') + 1];
+  pr.comments.nodes.push({ id: `C${Date.now()}`, author: { login: 'you' }, body, createdAt: new Date().toISOString(), url: `${pr.url}#comment` });
+  state.posts = [...(state.posts ?? []), args];
+  writeFileSync(file, JSON.stringify(state, null, 2));
+  process.exit(0);
+}
+
 fail(`fake gh: ${args.join(' ')} isn't something it knows`);

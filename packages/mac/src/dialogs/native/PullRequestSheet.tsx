@@ -15,6 +15,7 @@ import { askBeforeWork } from '../../lib/work-confirm.js';
 import { useClock } from '../../lib/window-active.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
+import { openPrPage } from '../../pr/use-pr-conversation.js';
 import s from './menus.module.css';
 
 const STATE: Record<PullRequest['state'], string> = { OPEN: 'Open', CLOSED: 'Closed', MERGED: 'Merged' };
@@ -167,7 +168,7 @@ export function AfterMergeButton({ wsId, size }: { wsId: string; size?: 'small' 
 }
 
 /** The PR you have: its state and checks at a glance, and what to do next. */
-function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pick: (id: string) => boolean; refresh: () => void }) {
+function PrCard({ wsId, pr, pick, refresh, close }: { wsId: string; pr: PullRequest; pick: (id: string) => boolean; refresh: () => void; close: () => void }) {
   const actions = useActions();
   const [error, setError] = useState<string>();
   const checks = CHECKS[pr.checks];
@@ -207,6 +208,11 @@ function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pi
       <div className={s.prActions}>
         {open ? pr.conflicts ? <ResolveConflictsButton wsId={wsId} /> : <MergeButton wsId={wsId} pr={pr} onError={setError} /> : null}
         {pr.state === 'MERGED' ? <AfterMergeButton wsId={wsId} /> : null}
+        <Tip label="The PR’s page: what reviewers said, with the code they mean; reply, resolve, or ask Claude">
+          <Button icon="chat" onClick={() => (openPrPage(wsId), close())}>
+            Comments
+          </Button>
+        </Tip>
         <Button onClick={() => pick('pr-open')}>Open on GitHub</Button>
         {pr.checks === 'failing' && open ? (
           <Button icon="claude" onClick={() => pick('pr-fix')}>
@@ -283,7 +289,7 @@ export function PullRequestSheet({ menu, close }: NativeMenuProps<'pr'>) {
   if (pr) {
     return (
       <FormSheet width={560} title={`Pull Request · ${ws.name}`} intro={<>From <code>{ws.branch ?? 'this branch'}</code></>} submitLabel="" hideSubmit onSubmit={() => undefined} onCancel={close} footer={instructions}>
-        <PrCard wsId={menu.id} pr={pr} pick={pick} refresh={() => void api.workbench.refreshPrs(menu.id).then(() => toast(client, 'Pull request status refreshed'))} />
+        <PrCard wsId={menu.id} pr={pr} pick={pick} refresh={() => void api.workbench.refreshPrs(menu.id).then(() => toast(client, 'Pull request status refreshed'))} close={close} />
       </FormSheet>
     );
   }

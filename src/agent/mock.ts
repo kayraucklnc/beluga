@@ -108,6 +108,26 @@ const SCRIPTS: readonly Script[] = [
     ].join('\n'),
   },
   {
+    // Asking what reviewers said: the PR's comments as cards, and the code they're about (BLG-514).
+    match: /comments on (this|the) (pr|pull request)|what did (the )?reviewers? say/i,
+    steps: ['Bash gh pr view --comments'],
+    answer: [
+      'One thread is still open: bob wants the refund routes registered next to their handlers. mia also asked to cover refunds.',
+      '',
+      '```beluga-pr-comments',
+      'show: open',
+      '```',
+      '',
+      'The check every route goes through is here:',
+      '',
+      '```beluga-code',
+      'src/auth.ts:1-3',
+      'highlight: 2',
+      'note: requireUser throws without a session',
+      '```',
+    ].join('\n'),
+  },
+  {
     // A long task, so you can try queueing messages (and sending one now) while Claude works.
     match: /deep dive|take your time/i,
     stepMs: 2500,

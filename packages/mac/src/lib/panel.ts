@@ -15,7 +15,7 @@ import { type UiPrefs, getPrefs, setPrefs } from './prefs.js';
  * (a diff or a file across the whole center for a while, Esc goes back to the chat).
  */
 
-export type FocusKind = 'diff' | 'file' | 'terminal';
+export type FocusKind = 'diff' | 'file' | 'terminal' | 'pr';
 
 interface Runtime {
   /** The center shows this instead of the chat (for this workspace only). */

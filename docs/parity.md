@@ -330,6 +330,11 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.refreshPrs` | ✓ |
 | `workbench.mergePr` | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass; Merge Now, Skipping Checks), also in the PR strip above the chat |
 | `workbench.prStep` | ✓ the toolbar's branch state › Update Branch (the PR is behind its base), Mark Ready for Review (a draft) |
+| `workbench.prConversation` | ✓ the PR page (the PR strip's comments count, or the PR sheet's Comments): comments, reviews and threads on lines with their code; a `beluga-pr-comments` block in chat shows them read-only (phone: not yet) |
+| `workbench.prPost` | ✓ the PR page: Reply in a thread, Resolve / Reopen, and a comment on the PR |
+| `workbench.addressPrComments` | ✓ the PR page: Ask Claude (one thread) and Address All With Claude |
+| `workbench.excerpt` | ✓ a `beluga-code` block in chat draws those lines of the worktree, highlighted; its path goes to the file at that line |
+| `workbench.openCode` | ✓ Open in Editor on a `beluga-code` block or a PR thread (Cursor, VS Code or Zed at the line, else the default app) |
 | `workbench.cancelMergeWhenReady` | ✓ the toolbar's branch state › Cancel Auto-Merge (while Merge When Ready waits) |
 | `workbench.editPrPrompt` | ✓ |
 | `workbench.resetPrPrompt` | ✓ |
