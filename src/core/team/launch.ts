@@ -1,3 +1,4 @@
+import { keepFriendOffer } from '../friend-offers.js';
 import type { GitHubRepo } from '../../workspaces/github.js';
 import type { NoticeEvent } from '../notify.js';
 import { watchNetwork } from '../network.js';
@@ -41,7 +42,7 @@ export function launchTeam(host: TeamHost): () => void {
     services.delete(session);
     current = undefined;
     if (!service) return;
-    const team = new TeamBoards({ store, mesh: service.mesh, dir: host.dir, repoOf: host.repoOf, notify: host.notify, toast: host.toast });
+    const team = new TeamBoards({ store, mesh: service.mesh, dir: host.dir, repoOf: host.repoOf, notify: host.notify, toast: host.toast, onFriendAsk: (ask) => keepFriendOffer({ store, notify: host.notify }, ask) });
     for (const part of host.parts(team)) team.use(part);
     current = team;
     services.set(session, team);

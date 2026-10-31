@@ -390,6 +390,7 @@ export const PHONE: Record<Method, Side> = {
   // Team boards: answering an offer is the phone's (a NeedsYou card); leaving a team is the Mac's.
   'team.answer': 'phone',
   'team.leave': 'mac',
+  'team.befriend': 'mac',
   'team.ackAssignment': 'phone',
   // Shared plans: sharing one is the Mac's (its menu); reviewing one and settling suggestions are answers, the phone's too.
   'team.sharePlan': 'mac',

@@ -49,6 +49,8 @@ export interface TeamMesh {
   /** How long a frame waits for their link before it's mailed (undefined: no mailbox). */
   readonly mailAfterMs?: number | undefined;
   offer(features: readonly Feature[], on: boolean): void;
+  /** A one-time friend invitation only `for` can use (a friend request to a teammate, BLG-510). */
+  createInvite?(opts: { ttlMs?: number; for?: string }): Promise<{ readonly id: string; readonly link: string; readonly expiresAt: number }>;
   on(event: 'team', fn: (from: string, payload: unknown) => void): unknown;
   on(event: 'link', fn: (peerId: string) => void): unknown;
   off(event: 'team', fn: (from: string, payload: unknown) => void): unknown;
@@ -64,8 +66,13 @@ export interface TeamDeps {
   readonly repoOf: (projectId: string) => Promise<GitHubRepo | undefined>;
   readonly notify?: (e: NoticeEvent) => void;
   readonly toast?: (text: string, level: 'info' | 'success' | 'warn' | 'error') => void;
+  /** Someone on a team of yours asked to be friends (BLG-510): shown like a friend request from a room. */
+  readonly onFriendAsk?: (ask: { readonly from: string; readonly name: string; readonly link: string; readonly expiresAt: number; readonly via: string }) => void;
   readonly now?: () => number;
 }
+
+/** How long a friend request to a teammate lasts (as one from a room). */
+const BEFRIEND_TTL_MS = 24 * 60 * 60_000;
 
 /** One pair of teammates on one project: the id both Macs use for it. */
 export interface TeamLink {
@@ -89,6 +96,8 @@ interface OfferRec {
   readonly dismissed?: boolean;
   /** Who their invite said is on the team already. */
   readonly team?: readonly string[];
+  /** Two friends already on one team, linked by themselves (never shown as an offer). */
+  readonly auto?: boolean;
 }
 
 /** What other parts of team boards add to the state, and hear about links (board-sync.ts, plan-share.ts). */
@@ -123,6 +132,8 @@ export class TeamBoards {
   private readonly parts: TeamPart[] = [];
   private readonly offs: Array<() => void> = [];
   private reposTimer: NodeJS.Timeout | undefined;
+  /** Friend requests already passed on (each goes through a Mac once). */
+  private readonly befriended = new Set<string>();
   private stopped = false;
   readonly now: () => number;
   /** Who's on each team (BLG-510). */
@@ -291,7 +302,44 @@ export class TeamBoards {
     this.deps.toast?.(gone.length === 1 ? `You left the team with ${this.nameOf(gone[0]!.peerId)} on ${repo}` : `You left the team on ${repo}`, 'success');
   }
 
-  private join(peerId: string, projectId: string, id: string, theirProject: string): void {
+  /**
+   * Ask someone on a project's team who isn't your friend to be friends (BLG-510): a one-time
+   * invitation only they can use, passed on by teammates until it reaches them. Nothing changes
+   * unless they accept.
+   */
+  async befriend(projectId: string, peerId: string): Promise<{ name: string }> {
+    const { mesh, store } = this.deps;
+    const member = this.rosters.members(projectId, this.self).find((m) => m.peerId === peerId);
+    if (!member) throw new Error('They aren’t on this project’s team');
+    if (mesh.isFriend(peerId)) throw new Error(`${member.name} is already your friend`);
+    if (!mesh.createInvite || !this.linksOf(projectId).length) throw new Error('Turn on talking with friends first');
+    const invite = await mesh.createInvite({ ttlMs: BEFRIEND_TTL_MS, for: peerId });
+    const id = randomBytes(9).toString('base64url');
+    this.befriended.add(id);
+    for (const link of this.linksOf(projectId)) this.send(link.peerId, { k: 'befriend', link: link.id, id, from: this.self, to: peerId, name: this.selfName().slice(0, 80), invite: invite.link, expiresAt: invite.expiresAt });
+    const repo = this.repos.get(projectId)?.label ?? this.projectName(projectId);
+    store.dispatch({ type: 'net_offer', offer: { peerId, name: member.name.slice(0, 64), dir: 'out', at: this.now(), expiresAt: invite.expiresAt, via: repo } });
+    return { name: member.name };
+  }
+
+  /** A friend request on its way through the team: theirs to keep, or passed on to the rest (once). */
+  private onBefriend(link: TeamLink, m: Extract<TeamMsg, { k: 'befriend' }>): void {
+    if (this.befriended.has(m.id) || m.expiresAt <= this.now()) return;
+    this.befriended.add(m.id);
+    if (this.befriended.size > 500) this.befriended.delete(this.befriended.values().next().value!);
+    const roster = this.rosters.of(link.projectId);
+    if (m.to === this.self) {
+      if (!roster[m.from]?.on) return;
+      this.deps.onFriendAsk?.({ from: m.from, name: m.name, link: m.invite, expiresAt: m.expiresAt, via: this.repos.get(link.projectId)?.label ?? this.projectName(link.projectId) });
+      return;
+    }
+    // Only between people on this team.
+    if (!roster[m.from]?.on || !roster[m.to]?.on) return;
+    for (const l of this.linksOf(link.projectId)) if (l.peerId !== link.peerId) this.send(l.peerId, { ...m, link: l.id });
+  }
+
+  /** `quiet`: two friends already on the team, linked by themselves (nothing new to tell). */
+  private join(peerId: string, projectId: string, id: string, theirProject: string, quiet = false): void {
     const already = Object.values(this.links).find((l) => l.peerId === peerId && l.projectId === projectId);
     if (already) return;
     const link: TeamLink = { id, peerId, projectId, theirProject: theirProject.slice(0, 200), since: this.now() };
@@ -302,7 +350,7 @@ export class TeamBoards {
     const repo = this.repos.get(projectId)?.label ?? this.projectName(projectId);
     const others = this.teamNames(projectId).filter((n) => n !== this.nameOf(peerId));
     this.onRoster(link, link.since);
-    this.deps.notify?.({ kind: 'people', tag: 'joined', title: others.length ? `${this.nameOf(peerId)} is on the ${repo} team with you` : `You and ${this.nameOf(peerId)} are a team on ${repo}`, body: 'Your tasks for it stay in step from now on. Chats stay on your own Mac.', key: `team:${id}` });
+    if (!quiet) this.deps.notify?.({ kind: 'people', tag: 'joined', title: others.length ? `${this.nameOf(peerId)} is on the ${repo} team with you` : `You and ${this.nameOf(peerId)} are a team on ${repo}`, body: 'Your tasks for it stay in step from now on. Chats stay on your own Mac.', key: `team:${id}` });
     for (const p of this.parts) p.joined?.(link, true);
     this.publish();
   }
@@ -338,6 +386,8 @@ export class TeamBoards {
     const mineSince = this.rosters.of(link.projectId)[this.self]?.since ?? 0;
     const won = this.rosters.merge(link.projectId, members, this.self);
     if (!won.length) return;
+    // A friend of mine turned out to be on the team: link up with them (findOffers).
+    if (won.some((m) => m.on && this.deps.mesh.isFriend(m.peerId))) queueMicrotask(() => this.findOffers());
     const repo = this.repos.get(link.projectId)?.label ?? this.projectName(link.projectId);
     for (const m of won) {
       // Who joined after you, through someone else (not the friend you teamed up with: you heard).
@@ -432,6 +482,11 @@ export class TeamBoards {
         if (!link || link.peerId !== from) return;
         return this.takeRoster(link, m.members);
       }
+      case 'befriend': {
+        const link = this.links[m.link];
+        if (!link || link.peerId !== from) return;
+        return this.onBefriend(link, m);
+      }
       default:
         for (const p of this.parts) if (p.receive?.(from, m)) return;
     }
@@ -453,6 +508,17 @@ export class TeamBoards {
       for (const [projectId, repo] of this.repos) {
         if (!prints.has(fingerprint(key, repo.key))) continue;
         if (this.linksOf(projectId).some((l) => l.peerId === peerId)) continue;
+        // Friends who are on the team already (through others): linked without asking, so knocking
+        // and sharing a chat work between them too (BLG-510).
+        if (this.rosters.of(projectId)[peerId]?.on && this.linksOf(projectId).length) {
+          const rec = this.offers[keyOf(peerId, projectId)];
+          if (rec?.state === 'asked' && rec.auto) continue;
+          const link = newLink();
+          this.offers = { ...this.offers, [keyOf(peerId, projectId)]: { peerId, projectId, state: 'asked', at: this.now(), link, auto: true } };
+          this.send(peerId, { k: 'invite', print: fingerprint(key, repo.key), link, project: this.projectName(projectId) });
+          changed = true;
+          continue;
+        }
         if (this.offers[keyOf(peerId, projectId)]) continue;
         this.offers = { ...this.offers, [keyOf(peerId, projectId)]: { peerId, projectId, state: 'found', at: this.now() } };
         changed = true;
@@ -479,7 +545,13 @@ export class TeamBoards {
       // Both said yes at once: the smaller id is the team's.
       const id = rec.link < link ? rec.link : link;
       this.send(from, { k: 'accept', print, link: id, project: this.projectName(projectId) });
-      this.join(from, projectId, id, theirProject);
+      this.join(from, projectId, id, theirProject, rec.auto);
+      return;
+    }
+    // A friend already on this team with me (through others): yes without asking (BLG-510).
+    if (this.rosters.of(projectId)[from]?.on && this.linksOf(projectId).length) {
+      this.send(from, { k: 'accept', print, link, project: this.projectName(projectId) });
+      this.join(from, projectId, link, theirProject, true);
       return;
     }
     this.offers = { ...this.offers, [keyOf(from, projectId)]: { peerId: from, projectId, state: 'invited', at: this.now(), link, theirProject: theirProject.slice(0, 200), ...(team?.length ? { team: team.slice(0, 50) } : {}) } };
@@ -500,7 +572,7 @@ export class TeamBoards {
       this.send(from, { k: 'leave', link });
       return;
     }
-    this.join(from, projectId, link, theirProject);
+    this.join(from, projectId, link, theirProject, rec.auto);
   }
 
   private onDecline(from: string, print: string): void {
@@ -562,7 +634,7 @@ export class TeamBoards {
     const { mesh } = this.deps;
     const projects = new Set(this.deps.store.getState().projects.map((p) => p.id));
     const offers: TeamOffer[] = Object.values(this.offers)
-      .filter((o) => !o.dismissed && projects.has(o.projectId) && mesh.isFriend(o.peerId) && this.repos.has(o.projectId))
+      .filter((o) => !o.dismissed && !o.auto && projects.has(o.projectId) && mesh.isFriend(o.peerId) && this.repos.has(o.projectId))
       .map((o) => {
         // Invited: who's on their team. Otherwise: who's on yours (you'd bring them in).
         const team = o.state === 'invited' ? o.team : this.teamNames(o.projectId);

@@ -327,7 +327,7 @@ function offerItems(state: DomainState): NeedsYou[] {
     .map((o) => ({
       id: `friend:${o.peerId}`,
       kind: 'request' as const,
-      title: clip(`${o.name} wants to add you as a friend`, 500),
+      title: clip(o.via ? `${o.name} from the ${o.via} team wants to add you as a friend` : `${o.name} wants to add you as a friend`, 500),
       detail: 'You’re in the same room. As friends you can talk, share and ask each other’s Claude, with nobody hosting',
       from: clip(o.name, 100),
       askedAt: o.at,

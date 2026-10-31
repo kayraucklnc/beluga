@@ -126,6 +126,9 @@ export const TeamMsg = z.discriminatedUnion('k', [
   z.object({ k: z.literal('decline'), print: hex32 }),
   // `all`: they left the whole team, not only the two of you (BLG-510).
   z.object({ k: z.literal('leave'), link: linkId, all: z.literal(true).optional() }),
+  // A friend request to someone on the team who isn't your friend (BLG-510), passed on by teammates
+  // until it reaches them: a one-time invitation only they can use (`invite`), so it pairs with them alone.
+  z.object({ k: z.literal('befriend'), link: linkId, id: z.string().regex(/^[\w-]{8,40}$/), from: peerId, to: peerId, name: words(80), invite: z.string().min(1).max(4000), expiresAt: z.number().int().min(0) }),
   // Who's on the team, as this Mac knows it (BLG-510): each line last-writer-wins on `at`.
   z.object({ k: z.literal('roster'), link: linkId, members: z.array(z.object({ peerId, name: words(80), since: z.number().int().min(0), on: z.boolean(), at: z.number().int().min(0) })).max(200) }),
   z.object({ k: z.literal('ops'), link: linkId, tasks: z.array(TaskDelta).max(50) }),

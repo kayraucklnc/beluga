@@ -1,5 +1,6 @@
 import { OFFER_DETAIL, andNames, knockOf, knockWords, myKnockOn, myKnockWords, offerWords, teamShareChoices, teammateOn, teammatesOf, waitingDetail, waitingOn, waitingWords, workingOn, workingWords } from '@beluga/core/team/model.js';
-import type { ReactNode } from 'react';
+import * as Popover from '@radix-ui/react-popover';
+import { type ReactNode, useState } from 'react';
 import { useActions } from '../lib/actions.js';
 import { ago } from '../tasks/tasks-model.js';
 import { Icon } from '../components/Icon.js';
@@ -8,7 +9,8 @@ import { Avatar, Button, IconButton, Tip } from '../components/ui.js';
 import { AvatarStack } from '../network/Avatars.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
-import { shownState } from '../network/net-model.js';
+import { offerSent, shownState } from '../network/net-model.js';
+import { answerOffer } from '../network/use-net.js';
 import type { AppState } from '@beluga/core/store.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import s from './team.module.css';
@@ -64,16 +66,69 @@ export function TeamOffers({ projectId }: { projectId: string }) {
 export function TeamBadge({ projectId }: { projectId: string }) {
   const team = useApp((st) => st.team.teams[projectId], sameDeep);
   const online = useApp((st) => (team ? team.mates.filter((m) => st.network.friends.some((f) => f.peerId === m.peerId && shownState(f) === 'online')).map((m) => m.name) : []), sameDeep);
+  const [open, setOpen] = useState(false);
   if (!team?.mates.length) return null;
   const names = andNames(team.mates.map((m) => m.name));
   const tip = `Team on ${team.repo}: you and ${names}${online.length ? ` · ${online.join(', ')} online` : ''}`;
+  // Click: who's on the team, and Add Friend for anyone on it who isn't a friend yet (BLG-510).
   return (
-    <Tip label={tip}>
-      <span className={s.badge} aria-label={tip} role="img">
-        <Icon name="people" size={12} />
-        {online.length ? <span className={s.badgeOnline} /> : null}
-      </span>
-    </Tip>
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Tip label={tip}>
+        <Popover.Trigger asChild>
+          <button type="button" className={s.badge} aria-label={tip} onClick={(e) => e.stopPropagation()}>
+            <Icon name="people" size={12} />
+            {online.length ? <span className={s.badgeOnline} /> : null}
+          </button>
+        </Popover.Trigger>
+      </Tip>
+      <Popover.Portal>
+        <Popover.Content className={s.teamCard} side="right" align="start" sideOffset={8} collisionPadding={12} aria-label={`Team on ${team.repo}`} onClick={(e) => e.stopPropagation()}>
+          <TeamCard projectId={projectId} />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/** Everyone on a project's team: friends, and the rest with Add Friend (they're asked; added only if they accept). */
+export function TeamCard({ projectId }: { projectId: string }) {
+  const team = useApp((st) => st.team.teams[projectId], sameDeep);
+  const friends = useApp((st) => st.network.friends.map((f) => f.peerId), sameDeep);
+  const offers = useApp((st) => st.network.offers, sameDeep);
+  const api = useApi();
+  const { client } = useBeluga();
+  const say = useSay();
+  if (!team) return null;
+  return (
+    <div className={s.teamList}>
+      <div className={s.teamHead}>
+        <Icon name="people" size={13} />
+        Team on {team.repo}
+      </div>
+      {team.mates.map((m) => {
+        const friend = friends.includes(m.peerId);
+        const asked = offerSent(offers, m.peerId);
+        const theyAsked = (offers ?? []).some((o) => o.dir === 'in' && o.peerId === m.peerId);
+        return (
+          <div key={m.peerId} className={s.teamRow} aria-label={m.name}>
+            <Avatar name={m.name} id={m.peerId} size={22} />
+            <span className={s.teamWho}>
+              <span className={s.teamName}>{m.name}</span>
+              <span className={s.teamSub}>{friend ? 'Friend' : 'On the team, not a friend yet'}</span>
+            </span>
+            {friend ? null : theyAsked ? (
+              <Button size="small" variant="primary" onClick={() => void answerOffer(client, m.peerId, m.name, true)}>
+                Accept
+              </Button>
+            ) : (
+              <Button size="small" disabled={asked} onClick={() => say(api.team.befriend(projectId, m.peerId).then(() => toast(client, `Asked ${m.name} to be friends`, 'success')))}>
+                {asked ? 'Asked' : 'Add Friend'}
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

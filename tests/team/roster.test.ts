@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { TeamBoardSync } from '../../src/core/team/board-sync.js';
 import { canAssign, offerWords, teamShareChoices, teammatesOf } from '../../src/core/team/model.js';
 import { mergeRoster } from '../../src/core/team/roster.js';
+import { answerFriendOffer } from '../../src/core/friend-offers.js';
 import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type PartsFor, type TeamMac, personOf, teamMac } from './helpers.js';
 
@@ -76,7 +77,18 @@ describe('a team of three', () => {
     const t = kay.board.create({ projectId: 'pk', title: 'For mia', assignee: { kind: 'person', id: mia.id, name: 'mia' } }, personOf(kay));
     await settle(() => mia.board.get(t.id)?.assignee?.id === mia.id);
 
-    // Mia leaves the team: gone for everyone, though kay only heard it from ata.
+    // Kay asks mia to be friends from the team: it reaches her through ata; nothing until she accepts.
+    await kay.team.befriend('pk', mia.id);
+    await settle(() => mia.store.getState().network.offers?.some((o) => o.dir === 'in' && o.peerId === kay.id));
+    expect(mia.notices.some((n) => n.title === 'kay from the acme/api team wants to add you as a friend')).toBe(true);
+    expect(kay.person.mesh.isFriend(mia.id)).toBe(false);
+    await answerFriendOffer({ store: mia.store, send: () => false }, mia.person.mesh, kay.id, true);
+    await settle(() => kay.person.mesh.isFriend(mia.id));
+    // Friends on one team link up by themselves: no offer to answer, and mia is no longer "through others".
+    await settle(() => mates(kay, 'pk').find((m) => m.peerId === mia.id)?.indirect === undefined);
+    expect(kay.store.getState().team.offers.filter((o) => o.peerId === mia.id)).toEqual([]);
+
+    // Mia leaves the team: gone for everyone.
     mia.team.leave('pm');
     await settle(() => names(kay, 'pk').length === 1 && names(ata, 'pa').length === 1);
     expect(names(kay, 'pk')).toEqual(['ata']);
