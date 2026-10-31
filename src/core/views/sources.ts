@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { needPosixSh } from '../../terminal/pty.js';
+import { killTree, ownGroup } from '../process-tree.js';
 import {
   type Cell,
   MAX_SOURCE_ROWS,
@@ -555,7 +557,7 @@ function fill(template: string, q: ViewQuery | undefined, quote: (s: string) => 
 
 async function shell(command: string, cwd: string, timeout: number): Promise<string> {
   // The same variables your Claude's own commands get there (yours, the project's, its .env when on).
-  return run('/bin/sh', ['-c', command], { cwd, timeout, env: viewEnv.commands(cwd) });
+  return run(needPosixSh(), ['-c', command], { cwd, timeout, env: viewEnv.commands(cwd) });
 }
 
 async function httpGet(source: Extract<Source, { kind: 'http' }>, url: string, timeout: number, body?: string): Promise<{ text: string; json?: unknown }> {
@@ -590,7 +592,8 @@ function run(cmd: string, args: readonly string[], opts: { cwd?: string; timeout
     const child = spawn(cmd, args, {
       cwd: opts.cwd ?? os.homedir(),
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
+      detached: ownGroup(),
+      windowsHide: true,
       env: { ...process.env, ...opts.env, NO_COLOR: '1', TERM: 'dumb', PAGER: 'cat', GIT_PAGER: 'cat', CI: '1' },
     });
     const out: Buffer[] = [];
@@ -605,13 +608,7 @@ function run(cmd: string, args: readonly string[], opts: { cwd?: string; timeout
       } else out.push(b);
     });
     child.stderr.on('data', (b: Buffer) => (err = (err + b.toString('utf8')).slice(-4000)));
-    const kill = (): void => {
-      try {
-        if (child.pid) process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        // Already gone.
-      }
-    };
+    const kill = (): void => killTree(child);
     const timer = setTimeout(() => {
       kill();
       reject(new Error(`Took longer than ${Math.round(opts.timeout / 1000)}s`));

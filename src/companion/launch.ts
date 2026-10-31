@@ -143,7 +143,7 @@ function macName(): string {
   } catch {
     // no scutil: the host name will do
   }
-  named ??= os.hostname().replace(/\.local$/, '').replace(/-/g, ' ') || 'Your Mac';
+  named ??= os.hostname().replace(/\.local$/, '').replace(/-/g, ' ') || (process.platform === 'darwin' ? 'Your Mac' : 'Your computer');
   return named;
 }
 
