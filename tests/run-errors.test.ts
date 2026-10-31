@@ -67,6 +67,15 @@ describe('how a run ended, in words', () => {
     expect(classifyRun({ error: 'aborted', stopped: true }).kind).toBe('stopped');
   });
 
+  it('Claude Code with no login is signed out (Sign In, not Continue), not an API failure', () => {
+    const f = classifyRun({ result: 'Not logged in · Please run /login', apiError: 'authentication_failed' });
+    expect(f.kind).toBe('signed_out');
+    expect(failureTitle(f)).toBe('Claude Code isn’t signed in on this Mac');
+    expect(classifyRun({ error: 'Claude Code process exited with code 1', stderr: ['OAuth token has expired'] }).kind).toBe('signed_out');
+    // A bad API key is yours to fix in your variables: signing in wouldn't help.
+    expect(classifyRun({ result: 'Invalid API key · Fix external API key', apiError: 'authentication_failed' }).kind).toBe('api');
+  });
+
   it("the card's words carry it: a readable line first, the facts after", () => {
     const f = classifyRun({ error: 'Claude Code process exited with code 1', stderr: ['boom'] });
     const text = new RunFailedError(f).message;

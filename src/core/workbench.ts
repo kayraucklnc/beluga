@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { type PtyProcess, type TerminalManager, listShells, scriptShell } from '../terminal/index.js';
@@ -15,6 +16,8 @@ import { clonedSetup } from '../workspaces/setup-clone.js';
 import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer.js';
 import type { SetupTools } from '../agent/types.js';
 import { buildSetupAppend } from '../agent/prompt.js';
+import { claudeCodeCommand } from '../agent/claude-code.js';
+import { CONTINUE_PROMPT } from '../shared/run-failure.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store, shippedText } from './store.js';
@@ -173,6 +176,8 @@ export type GitRetry = 'pr' | 'pr_draft' | 'merge_base' | 'none';
 
 /** How long a terminal step (installing gh, logging in) may take before Beluga stops waiting for it. */
 const GITHUB_STEP_MS = 15 * 60_000;
+
+const shQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** Run `tasks`, at most `limit` at a time. */
 async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number): Promise<void> {
@@ -511,6 +516,38 @@ export class Workbench {
     const sshTrouble = trouble && (trouble.kind === 'ssh_denied' || trouble.kind === 'host_key');
     const https = Boolean(ok && sshTrouble && (fix === 'gh_login' || fix === 'install_gh') && httpsRemoteOf(setup.remote));
     return again(https);
+  }
+
+  /**
+   * Claude Code isn't signed in on this Mac: `claude auth login` in one of your shells (`key`, a
+   * global shell the screen picked, so it shows it), and once it ends well the Claude that stopped
+   * in `channel` goes on where it left off.
+   */
+  async signInClaude(key: string, channel: string): Promise<{ ok: boolean; message: string }> {
+    if (!isGlobalShell(key)) return { ok: false, message: 'That isn’t one of your shells' };
+    const ws = channel.startsWith('ws:') ? this.manager.find(channel.slice(3)) : undefined;
+    this.closeTerminal(key);
+    const session = this.openSession(key, { path: ws?.path ?? os.homedir() }, `${shQuote(claudeCodeCommand())} auth login`);
+    if (!session) return { ok: false, message: 'There’s no terminal here to run it in' };
+    this.deps.store.dispatch({ type: 'terminal_name', id: key, name: 'Claude sign-in' });
+    this.deps.toast('Sign in to Claude in your browser…');
+    const code = await new Promise<number | null | 'stopped'>((resolve) => {
+      const timer = setTimeout(() => resolve('stopped'), GITHUB_STEP_MS);
+      timer.unref?.();
+      this.watchExit(key, session, (c) => {
+        clearTimeout(timer);
+        resolve(c);
+      });
+    });
+    if (code !== 0) {
+      const message = code === 'stopped' ? 'Stopped waiting for Claude’s sign-in in the terminal' : `Claude’s sign-in didn’t finish (exit ${code ?? '?'}): have a look in the terminal`;
+      this.deps.toast(message, 'warn');
+      return { ok: false, message };
+    }
+    this.deps.askClaude(CONTINUE_PROMPT, channel);
+    const message = 'Signed in: Claude goes on where it left off';
+    this.deps.toast(message, 'success');
+    return { ok: true, message };
   }
 
   /** The branch a worktree's PRs go into ("main"). */
