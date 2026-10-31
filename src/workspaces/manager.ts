@@ -16,6 +16,8 @@ import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWo
 import { worktreeOrigin } from './origin.js';
 import { deleteFolderInBackground, removeWorktreeKeepingBranch, sweepSetAside } from './others.js';
 import { moveToTrash } from './trash.js';
+import { dropFolderSessions, dropSession } from '../agent/runtime/claude/claude-sessions.js';
+import { dropCodexSessions } from '../agent/runtime/codex/codex-sessions.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { AgentRef } from '../protocol.js';
 import type { MergeWait, Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
@@ -971,10 +973,16 @@ export class WorkspaceManager {
   async remove(id: string): Promise<void> {
     const ws = this.require(id);
     if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be deleted from Beluga");
+    // Only ever delete Beluga's own scratch folders, never a folder you started a chat in.
+    const scratch = ws.projectRoot === '' && real(ws.path).startsWith(real(this.chatsDir) + path.sep);
+    // Claude Code's sessions for a folder of ours that's gone for good (BLG-532): another tool's folder keeps its own.
+    // Resolved while the folder is still there, so it's filed under the same spelling Claude Code used.
+    const sessionsDir = real(ws.path);
+    const ours = scratch || (ws.kind === 'worktree' && !ws.external && sessionsDir.startsWith(real(this.store.workspacesDir) + path.sep));
     if (ws.kind === 'worktree') {
       // Made by another tool (Conductor, Claude Code), even if you've talked in it here: never force-remove it
       // (its uncommitted work isn't ours to discard) and keep its branch.
-      const foreign = ws.external || !real(ws.path).startsWith(real(this.store.workspacesDir) + path.sep);
+      const foreign = ws.external || !sessionsDir.startsWith(real(this.store.workspacesDir) + path.sep);
       if (!ws.archived) await stopTestProcesses(ws.path, { leaving: true }).catch(() => 0);
       // Set aside and deleted in the background: a big folder deleted in place froze the Mac (see removeWorktreeKeepingBranch).
       if (!ws.archived && existsSync(ws.path) && (await isWorktreeOf(ws.projectRoot, ws.path))) await removeWorktreeKeepingBranch(ws.projectRoot, ws.path, !foreign);
@@ -990,11 +998,28 @@ export class WorkspaceManager {
     rmSync(this.store.historyFile(id), { force: true });
     if (ws.kind === 'worktree' && existsSync(ws.projectRoot)) await dropSnapshots(ws.projectRoot, id).catch(() => undefined);
     if (ws.archived) await dropArchive(ws.projectRoot, this.store.archivesDir, id).catch(() => undefined);
-    // Only ever delete Beluga's own scratch folders, never a folder you started a chat in.
-    if (ws.projectRoot === '' && real(ws.path).startsWith(real(this.chatsDir) + path.sep)) rmSync(ws.path, { recursive: true, force: true });
+    if (scratch) rmSync(ws.path, { recursive: true, force: true });
+    if (ours) {
+      // Claude Code's (your own Claude and local models alike) and Codex's, whichever agent ran there.
+      for (const dir of new Set([sessionsDir, path.resolve(ws.path)])) await dropFolderSessions(dir).catch(() => 0);
+      await dropCodexSessions({ dir: sessionsDir }).catch(() => 0);
+    } else if (ws.kind === 'chat' && this.ownSession(ws)) {
+      if (ws.sessionRuntime === 'codex') await dropCodexSessions({ threadId: ws.sessionId! }).catch(() => 0);
+      else await dropSession(sessionsDir, ws.sessionId!).catch(() => undefined);
+    }
     this.records = this.records.filter((r) => r.id !== id);
     this.store.saveRecords(this.records);
     await this.refresh();
+  }
+
+  /**
+   * A chat's Claude Code session that's its alone: not one brought in from outside Beluga, and
+   * not one another workspace resumes or branches from.
+   */
+  private ownSession(ws: WorkspaceRecord): boolean {
+    const id = ws.sessionId;
+    if (!id || id === ws.importedSession) return false;
+    return !this.records.some((r) => r.id !== ws.id && (r.sessionId === id || r.forkFromSession === id || r.importedSession === id));
   }
 
   /**
