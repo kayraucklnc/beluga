@@ -18,6 +18,9 @@ import { runId, setupId } from '../src/core/workbench.js';
 import { attach, waitFor } from './helpers.js';
 import { posixSh } from '../src/terminal/pty.js';
 
+/** Windows' runners make worktrees and start Git Bash several times slower. */
+const SLOW = process.platform === 'win32' ? 3 : 1;
+
 /** bash, or Git Bash on Windows. */
 const BASH = process.platform === 'win32' ? (posixSh() ?? 'bash') : '/bin/bash';
 
@@ -115,9 +118,9 @@ describe('setup and run scripts', () => {
     expect(kay.state().approvals[0]?.title).toBe("app's klaud.json wants to run its setup in new worktrees");
     kay.session.answerApproval('always');
     // A new worktree and a login shell can take a while on a busy CI runner: generous waits.
-    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 20_000);
+    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', SLOW * 20_000);
     const next = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'second');
-    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', 20_000);
+    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', SLOW * 20_000);
     expect(kay.state().approvals).toHaveLength(0);
     const setup = terminals.get(setupId(ws!.id))!;
     expect(setup.backlog()).toContain('installing');

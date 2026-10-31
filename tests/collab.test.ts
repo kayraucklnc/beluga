@@ -280,7 +280,7 @@ describe('Claude Code agent worktrees', () => {
     await mgr.refresh();
     const res = await mgr.cleanAgentWorktrees(api.id);
     expect(res).toEqual({ removed: 1, kept: 1 });
-    const left = mgr.list.find((p) => p.id === api.id)!.workspaces.filter((w) => w.path.includes('/.claude/worktrees/'));
+    const left = mgr.list.find((p) => p.id === api.id)!.workspaces.filter((w) => /[\\/]\.claude[\\/]worktrees[\\/]/.test(w.path));
     expect(left.map((w) => w.id)).toEqual([agents[0]!.id]);
   });
 });
