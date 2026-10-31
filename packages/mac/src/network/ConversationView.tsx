@@ -413,20 +413,42 @@ function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
   );
 }
 
-/** Keeps the log at the bottom while you're there; leaves it alone while you read further up. */
+/**
+ * Keeps the log at the bottom while you're there; leaves it alone while you read further up.
+ * Opening a conversation starts at the bottom, and stays there while what's drawn after the first
+ * paint (pictures, code, task cards, the log's own height) grows under it.
+ */
 function useStickToBottom(dep: unknown, key: string) {
-  const ref = useRef<HTMLDivElement>(null);
+  const [log, ref] = useState<HTMLDivElement | null>(null);
   const stick = useRef(true);
-  useEffect(() => {
-    stick.current = true;
-  }, [key]);
+  const shown = useRef(key);
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [dep, key]);
+    // A new conversation starts at the bottom (reset here, before scrolling, not in a later effect).
+    if (shown.current !== key) {
+      shown.current = key;
+      stick.current = true;
+    }
+    if (log && stick.current) log.scrollTop = log.scrollHeight;
+  }, [dep, key, log]);
+  useEffect(() => {
+    if (!log || typeof ResizeObserver === 'undefined') return;
+    const pin = (): void => {
+      if (stick.current) log.scrollTop = log.scrollHeight;
+    };
+    const sizes = new ResizeObserver(pin);
+    sizes.observe(log);
+    for (const child of Array.from(log.children)) sizes.observe(child);
+    const added = new MutationObserver((changes) => {
+      for (const change of changes) for (const node of Array.from(change.addedNodes)) if (node instanceof Element) sizes.observe(node);
+    });
+    added.observe(log, { childList: true });
+    return () => {
+      sizes.disconnect();
+      added.disconnect();
+    };
+  }, [log]);
   const onScroll = (): void => {
-    const el = ref.current;
-    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    if (log) stick.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
   };
   return { ref, onScroll };
 }
