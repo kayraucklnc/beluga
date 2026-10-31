@@ -432,6 +432,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `gateway.image` | ✓ screenshots on a task card's result |
 | `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…), sub-tasks on a task page |
 | `board.update` | ✓ a task's properties (status, priority, assignee, labels, estimate, due date, parent), its title in place, row and card menus |
+| `board.setPrivate` | ✓ a task's ⋯ › Make Private / Share with Team (only offered when teammates or Linear would see it), the Share with Team button on a private task's page, New Task's Who Sees It |
 | `board.move` | ✓ dragging a card between columns on the board, or within one |
 | `board.editBrief` | ✓ a section of the brief on a task page (click to edit, ⌘↩ saves) |
 | `board.restoreRevision` | ✓ History › Restore on a brief section |

@@ -2285,3 +2285,38 @@
   padding: 3px 9px;
   font-size: 11px;
 }
+
+/* Private (BLG-501): only you see it. A dashed edge and a face a shade back from the shared
+   cards, with a small lock by its key; it reads as "not sent" without shouting. */
+.cardPrivate {
+  background: color-mix(in srgb, var(--bg-sunken) 55%, var(--bg-raised));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+.cardPrivate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px dashed color-mix(in srgb, var(--text) 26%, transparent);
+  pointer-events: none;
+}
+.cardPrivate:hover {
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.14);
+}
+.cardPrivate:hover::before {
+  border-color: color-mix(in srgb, var(--text) 38%, transparent);
+}
+.privateTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-3);
+}
+.privateTag.labelled {
+  height: 17px;
+  padding: 0 6px 0 5px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}

@@ -318,6 +318,7 @@ export const PHONE: Record<Method, Side> = {
   // ---- the board: a comment and a task's status (moving it along), nothing structural
   'board.create': 'mac',
   'board.update': 'mac',
+  'board.setPrivate': 'mac',
   'board.move': 'phone',
   'board.editBrief': 'mac',
   'board.restoreRevision': 'mac',

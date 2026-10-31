@@ -89,6 +89,7 @@ export function createBoardToolDefs(board: BoardTools) {
         status: z.enum(['backlog', 'todo']).optional(),
         priority: PRIORITY.optional(),
         labels: LABELS(8),
+        private: z.boolean().optional().describe('Only the user sees it: never sent to their teammates or to Linear. Only when the user asks for it ("just for me", "private"). A private task’s sub-tasks are private anyway'),
       },
       (a) =>
         guarded(() =>
@@ -106,6 +107,7 @@ export function createBoardToolDefs(board: BoardTools) {
             ...(a.status ? { status: a.status } : {}),
             ...(a.priority ? { priority: a.priority } : {}),
             ...(a.labels ? { labels: a.labels } : {}),
+            ...(a.private ? { private: true } : {}),
           }),
         ),
     ),

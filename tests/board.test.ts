@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
 import { labelDef, labelsFor } from '../src/core/board/labels.js';
-import { type Actor, type Issue, filterIssues, isEpic, issueForWorkspace } from '../src/core/board/model.js';
+import { type Actor, type Issue, asksPrivate, filterIssues, isEpic, issueForWorkspace } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -108,6 +108,27 @@ describe('changing tasks', () => {
     expect(() => board.update(a.id, { parent: c.id }, me)).toThrow(/itself/);
     expect(() => board.update(a.id, { parent: a.id }, me)).toThrow(/itself/);
     expect(board.update(c.id, { parent: null }, me).parent).toBeUndefined();
+  });
+
+  it('keeps a private task’s whole tree private, and shares it all at once (BLG-501)', () => {
+    const { board, store } = setup({ dir: mkdtempSync(path.join(os.tmpdir(), 'board-')) });
+    const epic = board.create({ projectId: 'api', title: 'X stuff', private: true }, me);
+    const kid = board.create({ projectId: 'api', title: 'Thread', parent: epic.id }, me);
+    const grandkid = board.create({ projectId: 'api', title: 'Hook', parent: kid.id }, me);
+    const loose = board.create({ projectId: 'api', title: 'Loose' }, me);
+    expect([kid.private, grandkid.private, loose.private]).toEqual([true, true, undefined]);
+    // Moved under a private task: private like the rest.
+    expect(board.update(loose.id, { parent: epic.id }, me).private).toBe(true);
+    board.setPrivate(epic.id, false, me);
+    expect([epic, kid, grandkid, loose].map((i) => board.get(i.id)!.private)).toEqual([undefined, undefined, undefined, undefined]);
+    expect(board.get(epic.id)!.activity.at(-1)).toMatchObject({ kind: 'private', text: 'shared this with the team' });
+    board.setPrivate(kid.id, true, me);
+    expect([epic, kid, grandkid].map((i) => Boolean(store.getState().board.issues.find((x) => x.id === i.id)!.private))).toEqual([false, true, true]);
+  });
+
+  it('hears a description asking to keep the task to yourself, and not one about private keys (BLG-501)', () => {
+    for (const t of ['draft my X launch thread, just for me', 'Private: plan the posts', 'keep it private', 'a private task to tidy notes', 'don’t share this: write a bio']) expect(asksPrivate(t)).toBe(true);
+    for (const t of ['rotate the private key', 'make the repo private', 'fix the personal access token', 'Add a private API flag']) expect(asksPrivate(t)).toBe(false);
   });
 
   it('drops a card between two others', () => {

@@ -81,6 +81,8 @@ export interface NewIssue {
   readonly plan?: IssuePlan;
   /** The GitHub issue it's made from. */
   readonly github?: IssueGitHub;
+  /** Only you see it (BLG-501); a private parent's sub-tasks are private whatever this says. */
+  readonly private?: boolean;
 }
 
 /** What Claude wrote for a task made from a description (agent/task-drafter.ts). */
@@ -308,6 +310,7 @@ export class Board {
       ...(parent ? { parent: parent.id } : {}),
       ...(input.plan ? { plan: input.plan } : {}),
       ...(input.github ? { github: input.github } : {}),
+      ...(input.private || parent?.private ? { private: true as const } : {}),
       blockedBy: [...new Set(blockers)],
       related: [],
       rank: this.lastRank(status),
@@ -402,6 +405,8 @@ export class Board {
       return this.change(issue, next, entries, true, true);
     }
     issue = this.change(issue, next, notes.map((n) => this.entry(by, n.kind, n.text, undefined, at, n.assignee, n.was !== undefined ? { was: n.was, now: n.now! } : undefined)));
+    // Under a private task now: private like the rest of it (BLG-501).
+    if (next.parent && !issue.private && this.get(next.parent)?.private) issue = this.setPrivate(issue.id, true, by);
     return issue;
   }
 
@@ -640,6 +645,23 @@ export class Board {
     const gone = this.issues.filter((i) => isArchived(i) && (!projectId || i.projectId === projectId));
     for (const issue of gone) this.remove(issue.id);
     return gone.length;
+  }
+
+  /**
+   * Only you see it, or the team does again (BLG-501). Its sub-tasks go with it, all the way
+   * down, so a private epic is a board of your own inside the shared one. Making a shared task
+   * private takes it back from teammates (team-board sync sends them a delete); sharing it sends
+   * it as it is now. Another tracker (Linear) leaves a private task alone.
+   */
+  setPrivate(ref: string, on: boolean, by: Actor): Issue {
+    const issue = this.need(ref);
+    const tree = [issue, ...this.issues.filter((i) => this.isAncestor(issue.id, i.id))];
+    for (const t of tree) {
+      if (Boolean(t.private) === on) continue;
+      const text = on ? (t === issue ? 'made this private' : 'made this private with its parent') : t === issue ? 'shared this with the team' : 'shared this with its parent';
+      this.change(this.need(t.id), { private: on ? true : undefined }, [this.entry(by, 'private', text)]);
+    }
+    return this.need(issue.id);
   }
 
   /** Delete a task: its sub-tasks become tasks of their own, and nothing waits on it any more. */

@@ -12,17 +12,17 @@ import type { TeamState } from './model.js';
 
 export const TASK_ID_SCHEME = 'beluga-task-id:';
 
-type Shared = Pick<Issue, 'id' | 'key' | 'projectId' | 'archivedAt'>;
+type Shared = Pick<Issue, 'id' | 'key' | 'projectId' | 'archivedAt' | 'private'>;
 
 /** The projects you're teamed up on with any of these people. */
 export function sharedProjects(team: Pick<TeamState, 'teams'>, peers: readonly string[]): ReadonlySet<string> {
   return new Set(Object.values(team.teams).flatMap((t) => (t.mates.some((m) => peers.includes(m.peerId)) ? [t.projectId] : [])));
 }
 
-/** The tasks a chat with these people can name: the live ones of the projects you share with them. */
+/** The tasks a chat with these people can name: the live ones of the projects you share with them (not your private ones). */
 export function sharedTasks<I extends Shared>(issues: readonly I[], team: Pick<TeamState, 'teams'>, peers: readonly string[]): I[] {
   const projects = sharedProjects(team, peers);
-  return projects.size ? issues.filter((i) => !i.archivedAt && projects.has(i.projectId)) : [];
+  return projects.size ? issues.filter((i) => !i.archivedAt && !i.private && projects.has(i.projectId)) : [];
 }
 
 /** Code (fenced or `inline`) and links are left as they are; each other piece goes through `edit`. */

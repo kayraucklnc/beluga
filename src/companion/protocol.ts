@@ -572,6 +572,8 @@ export const TaskSummary = z.object({
   epic: z.object({ done: z.number().int().min(0), total: z.number().int().min(0) }).optional(),
   /** The epic it's part of: its key. */
   epicKey: z.string().max(40).optional(),
+  /** Only you see it (BLG-501): it never reaches teammates or Linear. */
+  private: z.literal(true).optional(),
   updatedAt: ts,
 });
 export type TaskSummary = z.infer<typeof TaskSummary>;

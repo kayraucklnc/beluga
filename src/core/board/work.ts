@@ -282,6 +282,8 @@ export class BoardWork {
           ...(m.priority ? { priority: m.priority } : input.priority ? { priority: input.priority } : {}),
           ...(who ? { assignee: who } : {}),
           ...(d.epic ? { parent: first.id } : input.parent ? { parent: input.parent } : {}),
+          // Asked for as private, the rest of them are too (BLG-501).
+          ...(first.private ? { private: true } : {}),
           brief: draftBrief(m),
         },
         this.me(),
@@ -671,12 +673,13 @@ export class BoardWork {
             ...(input.labels ? { labels: input.labels } : {}),
             ...(input.parent ? { parent: input.parent } : {}),
             ...(input.blockedBy ? { blockedBy: input.blockedBy } : {}),
+            ...(input.private ? { private: true } : {}),
             brief,
           },
           by(),
           'claude',
         );
-        return `Created ${issue.key}: ${issue.title} (${issue.status})${leftOut(projectId, input.labels)}`;
+        return `Created ${issue.key}: ${issue.title} (${issue.status}${issue.private ? ', private: only the user sees it' : ''})${leftOut(projectId, input.labels)}`;
       },
       update: (key, patch) => {
         const issue = pick(key);

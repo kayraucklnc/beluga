@@ -11,7 +11,7 @@ import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, PrivateMark, useIssueMenu } from './parts.js';
 import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
 import { taskDropProps } from './use-task-drop.js';
@@ -438,6 +438,7 @@ const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue;
     <>
       <div className={t.cardTop}>
         <span className={t.key}>{issue.key}</span>
+        <PrivateMark issue={issue} />
         {epic ? (
           <span className={t.epicTag}>
             <Icon name="epic" size={11} />
@@ -485,11 +486,11 @@ const Card = memo(function Card({
   return (
     <ActionsContext items={() => menu(issue)}>
       <article
-        className={cx(t.card, epic && t.cardEpic, pop !== undefined && t.pop)}
+        className={cx(t.card, epic && t.cardEpic, issue.private && t.cardPrivate, pop !== undefined && t.pop)}
         style={pop !== undefined ? ({ '--pop': pop } as CSSProperties) : undefined}
         role="button"
         tabIndex={0}
-        aria-label={`${issue.key} ${issue.title}`}
+        aria-label={`${issue.key} ${issue.title}${issue.private ? ', private' : ''}`}
         {...taskDropProps(issue)}
         onPointerDown={(e) => onPress(e, issue, index)}
         onClick={() => {

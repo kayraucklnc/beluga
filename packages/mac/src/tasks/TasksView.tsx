@@ -43,7 +43,8 @@ export function TasksView() {
   const solo = useSolo(project);
   const people = useMemo(() => (solo ? [] : assigneesIn(board, project, selfId)), [solo, board, project, selfId]);
   // A filter for someone who has no tasks here any more shows everyone's.
-  const who = !solo && (prefs.who === 'nobody' || people.some((p) => p.key === prefs.who)) ? prefs.who : '';
+  const hasPrivate = useMemo(() => board.issues.some((i) => i.projectId === project && i.private && !i.archivedAt), [board, project]);
+  const who = !solo && (prefs.who === 'nobody' || (prefs.who === 'private' && hasPrivate) || people.some((p) => p.key === prefs.who)) ? prefs.who : '';
   // The worktrees doing or carrying this project's tasks, to filter by (one asked for that's gone: every task).
   const worktrees = useMemo(() => {
     const ids = new Set(board.issues.filter((i) => i.projectId === project && !i.archivedAt).flatMap((i) => [worktreeOf(i), i.worktrees.at(-1)]).filter((w): w is string => Boolean(w)));
@@ -126,7 +127,7 @@ export function TasksView() {
             size="small"
             value={who}
             onChange={(w) => setTasksPrefs({ who: w })}
-            options={[{ value: '', label: 'Everyone' }, ...people.map((p) => ({ value: p.key, label: p.label })), { value: 'nobody', label: 'No one yet' }]}
+            options={[{ value: '', label: 'Everyone' }, ...people.map((p) => ({ value: p.key, label: p.label })), { value: 'nobody', label: 'No one yet' }, ...(hasPrivate ? [{ value: 'private', label: 'Private (only you see them)' }] : [])]}
           />
         ) : null}
         {/* Which worktree works on what: only its tasks. */}

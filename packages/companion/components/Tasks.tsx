@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowUp, Check, Circle, CircleDashed, CircleDot, Eye, Layers, type LucideIcon, Plus, Sparkles, User, X, XCircle } from 'lucide-react-native';
+import { ArrowUp, Check, Circle, CircleDashed, CircleDot, Eye, Layers, Lock, type LucideIcon, Plus, Sparkles, User, X, XCircle } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -41,7 +41,7 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
   return (
     <View>
       {!first ? <Hairline style={{ marginLeft: 56 }} /> : null}
-      <Press onPress={() => router.push(taskHref(t))} accessibilityLabel={`${t.key} ${t.title}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
+      <Press onPress={() => router.push(taskHref(t))} accessibilityLabel={`${t.key} ${t.title}${t.private ? ', private' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
         <View style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
           <st.Icon color={toneInk(st.tone)} size={18} />
         </View>
@@ -59,6 +59,7 @@ export function TaskRow({ t, first }: { readonly t: TaskSummary; readonly first?
               .join('')}
           </T>
         </View>
+        {t.private ? <Lock color={color.text3} size={14} /> : null}
         {pr && (t.priority === 'urgent' || t.priority === 'high') ? <Pill label={pr.label} tone={pr.tone} /> : null}
       </Press>
     </View>

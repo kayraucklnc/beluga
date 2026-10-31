@@ -16,7 +16,7 @@ export interface TasksPrefs {
   readonly display: Display;
   /** The project you were last in (Tasks opens on it). Tasks never mix projects. */
   readonly project: string;
-  /** Whose tasks ('' = everyone's): an assignee key (assigneeKey), or 'nobody'. */
+  /** Whose tasks ('' = everyone's): an assignee key (assigneeKey), 'nobody', or 'private' (BLG-501). */
   readonly who: string;
   /** Status groups folded in the list. */
   readonly folded: readonly IssueStatus[];
@@ -109,8 +109,8 @@ export function untucked(issues: readonly Issue[], opened: readonly string[], qu
 /** Opens an epic's sub-tasks out, or tucks them back under it. */
 export const toggleOpened = (opened: readonly string[], epicId: string): string[] => (opened.includes(epicId) ? opened.filter((id) => id !== epicId) : [...opened, epicId]);
 
-/** Whether a task is for `who` ('' = anyone, 'nobody' = unassigned, else an assignee key). */
-export const isFor = (issue: Issue, who: string): boolean => (!who ? true : who === 'nobody' ? !issue.assignee : assigneeKey(issue.assignee) === who);
+/** Whether a task is for `who` ('' = anyone, 'nobody' = unassigned, 'private' = only you see it, else an assignee key). */
+export const isFor = (issue: Issue, who: string): boolean => (!who ? true : who === 'nobody' ? !issue.assignee : who === 'private' ? Boolean(issue.private) : assigneeKey(issue.assignee) === who);
 
 /** One project's tasks in a scope, for someone, matching words, in list order. */
 export function scoped(board: BoardState, prefs: Pick<TasksPrefs, 'scope' | 'project' | 'who'>, selfId: string, query = '', now = Date.now()): Issue[] {

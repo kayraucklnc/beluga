@@ -1,6 +1,7 @@
 import { isSecretPath } from '../core/shares.js';
 import { needBoard } from '../core/board/registry.js';
 import { syncOf } from '../core/board/sync/sync.js';
+import { asksPrivate } from '../core/board/model.js';
 import { canAssign } from '../core/team/model.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
@@ -20,7 +21,9 @@ export const BOARD_HANDLERS = {
   'board.create': (s, input) => {
     const work = needBoard(s);
     onTeam(s, input.projectId, input.assignee);
-    const { goal, describe, title, ...rest } = input;
+    const { goal, describe, title, private: only, ...given } = input;
+    // Words asking for it to stay yours make it private, unless the sheet said otherwise (BLG-501).
+    const rest = { ...given, private: only ?? Boolean(describe && asksPrivate(describe)) };
     // New Task's words may ask for several tasks and say who each is for (BLG-319).
     if (!title?.trim() && describe) return work.createDescribed(rest, describe, { several: true });
     return work.board.create({ ...rest, title: title ?? '', ...(goal?.trim() ? { brief: { goal } } : {}) }, work.me());
@@ -31,6 +34,10 @@ export const BOARD_HANDLERS = {
     // Keeping who it's already for is fine (a task given before BLG-299); a new someone must be on the team.
     if (issue && patch.assignee && patch.assignee.id !== issue.assignee?.id) onTeam(s, issue.projectId, patch.assignee);
     return work.board.update(ref, patch, work.me());
+  },
+  'board.setPrivate': (s, ref, on) => {
+    const work = needBoard(s);
+    return work.board.setPrivate(ref, on, work.me());
   },
   'board.move': (s, ref, status, between) => {
     const work = needBoard(s);

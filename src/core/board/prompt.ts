@@ -40,7 +40,7 @@ const commentsOf = (issue: Issue): Activity[] => issue.activity.filter((a) => (a
 /** The files people added to a task, one line each: where to read it on this Mac (or that it's gone). */
 const fileLines = (issue: Issue): string[] => taskFiles(issue).map((f) => `- ${f.title}: ${f.path && !f.gone && !f.thumb ? f.path : f.url ?? 'its file is gone'}`);
 
-const line = (i: Issue): string => `${i.key} · ${STATUS_INFO[i.status].label}${i.priority !== 'none' ? ` · ${PRIORITY_INFO[i.priority].label}` : ''} · ${i.title}`;
+const line = (i: Issue): string => `${i.key} · ${STATUS_INFO[i.status].label}${i.priority !== 'none' ? ` · ${PRIORITY_INFO[i.priority].label}` : ''}${i.private ? ' · private' : ''} · ${i.title}`;
 
 /** The task this run's worktree is doing: its brief and where it sits, and how to keep it true. */
 export function briefPrompt(board: BoardState, issue: Issue): string {
@@ -166,6 +166,7 @@ export function describeIssue(board: BoardState, issue: Issue, selfId: string): 
   const facts = [
     `# ${issue.key}: ${issue.title}`,
     kids.length ? 'Epic: a task with sub-tasks (it follows them to Done)' : '',
+    issue.private ? 'Private: only the user sees it (never their teammates or Linear). Don’t bring it up in chats with friends or teammates.' : '',
     `Status: ${STATUS_INFO[issue.status].label} · Priority: ${PRIORITY_INFO[issue.priority].label} · Assigned to: ${assigneeName(issue.assignee, selfId)}`,
     issue.labels.length ? `Labels: ${issue.labels.join(', ')}` : '',
     issue.estimate ? `Estimate: ${issue.estimate}` : '',

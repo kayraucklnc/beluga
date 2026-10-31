@@ -39,6 +39,8 @@ export const BOARD_API = {
         parent: ref.optional(),
         blockedBy: z.array(ref).max(20).optional(),
         goal: z.string().max(20_000).optional(),
+        // Only you see it (BLG-501). Left out: private when the description asks for it ("just for me").
+        private: z.boolean().optional(),
       }).refine((t) => Boolean(t.title?.trim() || t.describe?.trim()), 'A task needs a title or a description'),
     ]),
   },
@@ -58,6 +60,8 @@ export const BOARD_API = {
       }),
     ]),
   },
+  // Only you see it (true), or the team does again (false): its sub-tasks go with it (BLG-501).
+  'board.setPrivate': { args: z.tuple([ref, z.boolean()]) },
   // Drop a task in a status, between two others (their keys or ids).
   'board.move': { args: z.tuple([ref, status, z.object({ before: ref.optional(), after: ref.optional() }).optional()]) },
   // Write one section of a task's brief (the old text is kept as a revision).
