@@ -9,11 +9,11 @@ import { useApi, useApp } from '../lib/beluga.js';
 import s from './agent-term.module.css';
 
 /** One thing open beside the terminal: a visual it showed, or a task it named. */
-export type Opened = { readonly kind: 'visual'; readonly n: number } | { readonly kind: 'task'; readonly key: string };
+export type Opened = { readonly kind: 'visual'; readonly n: number } | { readonly kind: 'task'; readonly key: string } | { readonly kind: 'image'; readonly path: string };
 
-export const openedId = (o: Opened): string => (o.kind === 'visual' ? `v${o.n}` : `t:${o.key}`);
+export const openedId = (o: Opened): string => (o.kind === 'visual' ? `v${o.n}` : o.kind === 'task' ? `t:${o.key}` : `i:${o.path}`);
 
-const ICONS: Record<string, IconName> = { graph: 'graph', table: 'table', chart: 'chartLine', stats: 'gauge', code: 'file', colors: 'palette', gantt: 'gantt', heatmap: 'heat', calendar: 'calendar' };
+const ICONS: Record<string, IconName> = { graph: 'graph', table: 'table', chart: 'chartLine', stats: 'gauge', code: 'file', colors: 'palette', gantt: 'gantt', heatmap: 'heat', calendar: 'calendar', tasks: 'task', source: 'file', comments: 'chat', diagram: 'graph', image: 'image', block: 'file' };
 
 /** A visual's block, fetched once per conversation and kept while the view is open. */
 const blocks = new Map<string, string | null>();
@@ -39,7 +39,7 @@ function VisualBody({ wsId, n }: { readonly wsId: string; readonly n: number }) 
   }, [id]);
   if (block === undefined) return <div className={s.visualLoading} />;
   if (block === null) return <p className={s.visualGone}>This visual isn’t kept any more.</p>;
-  return <Markdown text={block} tasks />;
+  return <Markdown text={block} tasks paths localImages />;
 }
 
 /**
@@ -52,6 +52,7 @@ export function VisualsPanel({ wsId, opened, active, onPick, onClose, onCloseAll
   const board = useApp((st) => st.board);
   const about = (o: Opened): { title: string; icon: IconName } => {
     if (o.kind === 'task') return { title: o.key, icon: 'task' };
+    if (o.kind === 'image') return { title: o.path.split('/').pop() ?? 'Picture', icon: 'image' };
     const v: TermVisual | undefined = visuals?.find((x) => x.n === o.n);
     return { title: v?.title ?? `Visual ${o.n}`, icon: ICONS[v?.kind ?? 'table'] ?? 'table' };
   };
@@ -92,7 +93,7 @@ export function VisualsPanel({ wsId, opened, active, onPick, onClose, onCloseAll
         <IconButton icon="x" label="Close the Panel" keys="Esc" onClick={onCloseAll} />
       </div>
       <div className={s.visualBody} role="tabpanel">
-        {current?.kind === 'visual' ? <VisualBody key={openedId(current)} wsId={wsId} n={current.n} /> : current?.kind === 'task' ? findIssue(board, current.key) ? <Markdown text={'```' + TASKS_FENCE + '\n' + current.key + '\n```'} tasks /> : <p className={s.visualGone}>{current.key} isn’t on your board.</p> : null}
+        {current?.kind === 'visual' ? <VisualBody key={openedId(current)} wsId={wsId} n={current.n} /> : current?.kind === 'image' ? <Markdown text={`![${current.path.split('/').pop() ?? 'Picture'}](<${current.path}>)`} paths localImages /> : current?.kind === 'task' ? findIssue(board, current.key) ? <Markdown text={'```' + TASKS_FENCE + '\n' + current.key + '\n```'} tasks /> : <p className={s.visualGone}>{current.key} isn’t on your board.</p> : null}
       </div>
     </section>
   );

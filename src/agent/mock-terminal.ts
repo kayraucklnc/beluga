@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { belugaHome } from '../core/home.js';
 import { GRAPH_FENCE } from '../shared/graph-spec.js';
@@ -27,6 +28,7 @@ const file = process.env.DEMO_TRANSCRIPT;
 const session = process.env.DEMO_SESSION;
 const cwd = process.cwd();
 const graph = process.env.DEMO_GRAPH, table = process.env.DEMO_TABLE, task = process.env.DEMO_TASK || '';
+const cards = process.env.DEMO_CARDS, picture = process.env.DEMO_PICTURE || '';
 const E = '\x1b[';
 const dim = (s) => E + '2m' + s + E + '22m', bold = (s) => E + '1m' + s + E + '22m';
 const copper = (s) => E + '38;2;223;148;106m' + s + E + '39m', green = (s) => E + '32m' + s + E + '39m';
@@ -43,7 +45,8 @@ const answer = (text) => {
   const t = text.toLowerCase();
   if (/graph|diagram|map|flow|visual/.test(t)) return ['Here is how a payment moves through the system:', '', '[[visual:' + graph + ']]', '', 'Webhooks retry with backoff when the shop is down.'];
   if (/table|customer|revenue|rows/.test(t)) return ['Your top customers by revenue:', '', '[[visual:' + table + ']]', '', '| customer | revenue |', '|---|---|', '| Acme | $84,210 |', '| Globex | $61,900 |', '| Initech | $47,350 |'];
-  if (/task/.test(t) && task) return ['That is ' + task + ' on the board; it is in progress.'];
+  if (/task/.test(t)) return ['Auth BOB-3 waits on bob\'s review; the webhook retries are under way:', '', '[[visual:' + cards + ']]'];
+  if (/picture|screenshot|image/.test(t) && picture) return ['I took a screenshot of the checkout page:', '', picture];
   return ['Done. I looked through the project and everything is in order.'];
 };
 const reply = (text) => {
@@ -91,11 +94,14 @@ export function mockTerminal(input: AgentRunInput, sink: TerminalSink, home?: st
   const dir = demoClaudeDir(home);
   const graph = sink.add(viewBlock(PAYMENT_FLOW, GRAPH_FENCE));
   const table = sink.add(viewBlock(DEMO_CUSTOMERS, VIEW_FENCE));
+  // What show_block keeps: task cards, as the chat draws them.
+  const cards = sink.add('```beluga-tasks\nBOB-3\nBOB-4\n```');
+  const picture = [path.resolve('docs/guide/img/02-working.jpg'), path.resolve('../../docs/guide/img/02-working.jpg')].find((p) => existsSync(p)) ?? '';
   const transcript = path.join(dir, 'projects', place.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${session}.jsonl`);
   return {
     file: process.execPath,
     args: ['-e', SCRIPT],
-    env: { ...input.env, DEMO_TRANSCRIPT: transcript, DEMO_SESSION: session, DEMO_GRAPH: String(graph), DEMO_TABLE: String(table), DEMO_TOKEN: visualToken(graph) },
+    env: { ...input.env, DEMO_TRANSCRIPT: transcript, DEMO_SESSION: session, DEMO_GRAPH: String(graph), DEMO_TABLE: String(table), DEMO_CARDS: String(cards), DEMO_PICTURE: picture, DEMO_TOKEN: visualToken(graph) },
     transcriptHome: dir,
     session,
     fresh: !resume,

@@ -16,8 +16,8 @@ export const visualToken = (n: number): string => `[[visual:${n}]]`;
 /** What a link says about the visual behind it, without the visual itself. */
 export interface TermVisual {
   readonly n: number;
-  /** 'graph', or the view's type (table, chart, stats…). */
-  readonly kind: 'graph' | ViewType;
+  /** 'graph', a view's type (table, chart, stats…), or another thing the chat draws (BlockKind). */
+  readonly kind: 'graph' | ViewType | BlockKind;
   readonly title: string;
   /** A few words on what's in it: "6 parts · 5 links", "124 rows". */
   readonly meta: string;
@@ -31,9 +31,42 @@ function splitBlock(block: string): { lang: string; body: string } | undefined {
   return m ? { lang: m[1]!, body: m[2]! } : undefined;
 }
 
-/** What a link to `block` (a beluga-graph or beluga-view fence) says. */
+/**
+ * Everything else the chat draws, kept the same way (`show_block`): task cards, code from the
+ * repository, a PR's comments, a mermaid diagram, a picture, a file tree or other block.
+ */
+export type BlockKind = 'tasks' | 'source' | 'comments' | 'diagram' | 'image' | 'block';
+
+const OWN_BLOCKS = new Set(['beluga-tasks', 'beluga-code', 'beluga-pr-comments', 'mermaid']);
+
+const BLOCK_TITLES: Readonly<Record<string, string>> = { console: 'Terminal output', shell: 'Terminal output', json: 'JSON', diff: 'Diff', tree: 'Files' };
+
+/** What a link to Markdown the chat draws says (not a graph or a view). */
+function describeBlock(n: number, block: string): TermVisual | undefined {
+  const text = block.trim();
+  const fence = splitBlock(text);
+  if (fence?.lang === 'beluga-tasks') {
+    const keys = fence.body.split(/[\s,]+/).filter((k) => /^[A-Za-z][A-Za-z0-9]{0,11}-\d{1,6}$/.test(k));
+    return { n, kind: 'tasks', title: keys.length === 1 ? keys[0]! : 'Tasks', meta: keys.length > 1 ? `${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ` +${keys.length - 3}` : ''}` : 'task card' };
+  }
+  if (fence?.lang === 'beluga-code') return { n, kind: 'source', title: fence.body.split('\n')[0]!.trim().slice(0, 80) || 'Code', meta: 'from this repository' };
+  if (fence?.lang === 'beluga-pr-comments') return { n, kind: 'comments', title: 'Pull request comments', meta: /show:\s*all/.test(fence.body) ? 'all threads' : 'open threads' };
+  if (fence?.lang === 'mermaid') return { n, kind: 'diagram', title: 'Diagram', meta: fence.body.trim().split(/\s/)[0] ?? '' };
+  const image = /^!\[([^\]]*)\]\(<?([^)>]+)>?\)$/.exec(text);
+  if (image) return { n, kind: 'image', title: image[1]?.trim() || image[2]!.split('/').pop()!, meta: 'picture' };
+  if (fence) return { n, kind: 'block', title: BLOCK_TITLES[fence.lang] ?? (fence.lang ? fence.lang.toUpperCase() : 'Text'), meta: plural(fence.body.split('\n').length, 'line') };
+  if (splitBlock(text) === undefined && !text.startsWith('```')) return { n, kind: 'block', title: (text.split('\n').find((l) => l.trim()) ?? 'Note').replace(/^#+\s*/, '').slice(0, 60), meta: '' };
+  return undefined;
+}
+
+/** What a link to `block` (a beluga-graph or beluga-view fence, or other Markdown the chat draws) says. */
 export function describeVisual(n: number, block: string): TermVisual {
   const fence = splitBlock(block);
+  // The chat's own blocks first: `beluga-code` is code from the repository, not a view of type code.
+  if (!fence || OWN_BLOCKS.has(fence.lang) || (fence.lang !== GRAPH_FENCE && !viewFenceType(fence.lang))) {
+    const other = describeBlock(n, block);
+    if (other) return other;
+  }
   if (fence?.lang === GRAPH_FENCE) {
     const g = parseGraph(fence.body);
     if (g.ok) {

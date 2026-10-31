@@ -9,7 +9,7 @@ import { childEnv } from '../src/terminal/pty.js';
 import { readFileSync } from 'node:fs';
 import { GATE_HOOK_SCRIPT, gateHookSettings, shellQuote, terminalHookAnswer } from '../src/agent/terminal-hook.js';
 import { runInstructions } from '../src/agent/run-instructions.js';
-import { TerminalShelf, showView } from '../src/agent/view-tools.js';
+import { TerminalShelf, ViewShelf, createViewTools, showView } from '../src/agent/view-tools.js';
 import { ToolHost } from '../src/agent/tool-host.js';
 import { AgentHost, TERMINAL_DRIVING } from '../src/core/agent-host.js';
 import { AgentTerminals } from '../src/core/agent-term.js';
@@ -43,6 +43,28 @@ describe('visuals in the terminal', () => {
     expect(out).toContain(block);
     expect(out).not.toContain('[[visual:');
     expect(out).toMatch(/And\s*gone\./);
+  });
+
+  it('says what any other block the chat draws is: task cards, code, comments, diagrams, pictures', () => {
+    expect(describeVisual(1, '```beluga-tasks\nBLG-1\nBLG-2\n```')).toMatchObject({ kind: 'tasks', title: 'Tasks', meta: 'BLG-1, BLG-2' });
+    expect(describeVisual(2, '```beluga-tasks\nBLG-1\n```')).toMatchObject({ kind: 'tasks', title: 'BLG-1' });
+    expect(describeVisual(3, '```beluga-code\nsrc/auth.ts:40-62\nhighlight: 44\n```')).toMatchObject({ kind: 'source', title: 'src/auth.ts:40-62' });
+    expect(describeVisual(4, '```beluga-pr-comments\nshow: all\n```')).toMatchObject({ kind: 'comments', meta: 'all threads' });
+    expect(describeVisual(5, '```mermaid\nflowchart LR\nA-->B\n```')).toMatchObject({ kind: 'diagram', meta: 'flowchart' });
+    expect(describeVisual(6, '![Login page](/Users/me/s/01.png)')).toMatchObject({ kind: 'image', title: 'Login page' });
+    expect(describeVisual(7, '![](/Users/me/s/01.png)')).toMatchObject({ kind: 'image', title: '01.png' });
+    expect(describeVisual(8, '```console\n$ npm test\nok\n```')).toMatchObject({ kind: 'block', title: 'Terminal output', meta: '2 lines' });
+    expect(describeVisual(9, '## Notes\nsome words')).toMatchObject({ kind: 'block', title: 'Notes' });
+  });
+
+  it('the terminal’s show_block keeps any Markdown and answers with its token; a chat run has no show_block', async () => {
+    const kept: string[] = [];
+    const term = createViewTools(new TerminalShelf({ add: (b) => kept.push(b) }), os.tmpdir());
+    const block = term.tools.find((t) => t.name === 'show_block')!;
+    const out = await block.handler({ markdown: '```beluga-tasks\nBLG-1\n```' }, {});
+    expect(JSON.stringify(out)).toContain('[[visual:1]]');
+    expect(kept).toEqual(['```beluga-tasks\nBLG-1\n```']);
+    expect(createViewTools(new ViewShelf(), os.tmpdir()).tools.some((t) => t.name === 'show_block')).toBe(false);
   });
 
   it('leaves out, in the chat, the rows written under a table’s token for the terminal', () => {

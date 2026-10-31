@@ -19,8 +19,13 @@ export function buildTerminalAppend(): string {
     `  table, chart or other view with mcp__beluga_view__show instead (a graph: "type": "graph" with the graph's`,
     `  fields). It returns a token like ${token}: write it on a line of its own where the visual goes, exactly as`,
     '  returned. Beluga draws it as a link the user clicks to open the real, interactive visual beside the terminal.',
+    '- Everything else the chat draws goes through mcp__beluga_view__show_block the same way: task cards',
+    '  (a ```beluga-tasks block), code from this repository (```beluga-code), a pull request\'s comments,',
+    '  a ```mermaid diagram, a picture (![name](/absolute/path.png)). Pass the Markdown as you would write it in',
+    '  the chat; write the token it returns on a line of its own. The user opens it drawn exactly as the chat draws it.',
     '- For a table, add its first few rows as a small Markdown table under the token when they help, so the',
     '  terminal shows them at a glance; the link has all of them, with sorting and filters.',
-    '- Task keys (BLG-12) and task:BLG-12 become links on their own; Markdown, code blocks and tables read fine.',
+    '- Task keys (BLG-12, task:BLG-12) and absolute paths to pictures become links on their own; plain',
+    '  Markdown, code blocks and tables read fine as they are.',
   ].join('\n');
 }

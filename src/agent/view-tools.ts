@@ -108,11 +108,32 @@ function preview(page: ViewPage): string {
   ].join('\n');
 }
 
+/** The most Markdown one block from `show_block` keeps. */
+const MAX_BLOCK = 60_000;
+
+/**
+ * The terminal's `show_block` (BLG-535): anything else the chat draws, kept like a view, so it opens
+ * beside the terminal exactly as the chat draws it. Only in the agent's terminal.
+ */
+const blockTool = (shelf: ViewShelf) =>
+  tool(
+    'show_block',
+    'In Beluga\'s terminal view only: show anything the chat draws that a terminal can\'t (task cards in a ```beluga-tasks block, code from this repository in a ```beluga-code block, a pull request\'s comments, a ```mermaid diagram, a picture as ![name](/absolute/path.png), a file tree or any other Markdown). Pass the Markdown exactly as you would write it in the chat. Returns a token: write it on a line of its own where the block goes; the user opens it beside the terminal, drawn as in the chat.',
+    { markdown: z.string().min(1).max(MAX_BLOCK).describe('The Markdown, as the chat would draw it') },
+    async (a) => {
+      const text = a.markdown.trim();
+      if (!text) return { content: [{ type: 'text' as const, text: 'Nothing to show.' }], isError: true };
+      const token = shelf.add(text);
+      return { content: [{ type: 'text' as const, text: `Shown as ${token}. Put ${token} on its own line in your answer where it goes.` }] };
+    },
+  );
+
 export function createViewTools(shelf: ViewShelf, cwd: string) {
   return toolSuite({
     name: 'beluga_view',
     version: '0.1.0',
     tools: [
+      ...(shelf instanceof TerminalShelf ? [blockTool(shelf)] : []),
       tool(
         'show',
         'Show data to the user as a live element in your answer: a table, chart (line, area, bar, pie, donut, scatter), stat tiles, code, a color palette (or picker), a gantt (bars over time), a heatmap (x by y by value), a calendar (values by day), or a graph. Pass the element as JSON (the beluga-view format; for a graph, type "graph" with the beluga-graph fields). Give rows in "data", or a "source" the app fetches more from on its own (file, folder, sqlite, postgres, http, command, or script: code you write for it): it runs once now and the first rows come back to you. Returns the element\'s token: put that exact token on its own line in your answer where the element goes (else it is added at the end). Only tokens this tool returned mean anything: never write one by hand (one with no element is dropped), and show a picture you made as a Markdown image with its absolute path, not with this tool.',

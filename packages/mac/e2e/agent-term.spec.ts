@@ -139,12 +139,40 @@ test('a preset theme (Dracula) is the agent’s terminal’s, links in its colou
   await expect(page.getByRole('region', { name: 'Visuals' }).locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
   await page.screenshot({ path: '../../.beluga/scratch/terminal-real/06-dracula-graph.png' });
 
+  // Everything else the chat draws comes as a link too: task cards, and a picture by its path.
+  await page.getByRole('button', { name: 'Close the Panel' }).click();
+  await typeInTerminal(page, 'where do the tasks stand');
+  const cards = page.locator('[data-visual]').filter({ hasText: 'Tasks' }).last();
+  await expect(cards).toContainText('BOB-3, BOB-4');
+  await cards.dispatchEvent('mousedown', { button: 0 });
+  const visuals = page.getByRole('region', { name: 'Visuals' });
+  await expect(visuals.getByRole('tab', { name: 'Tasks' })).toHaveAttribute('aria-selected', 'true');
+  await expect(visuals.getByRole('tabpanel')).toContainText('BOB-3');
+  await page.getByRole('button', { name: 'Close the Panel' }).click();
+  await typeInTerminal(page, 'take a screenshot of the checkout');
+  await expect.poll(async () => (await screen(page, /:agent$/)).replace(/\n/g, '')).toContain('02-working.jpg');
+  await page.waitForTimeout(400);
+  const box = await page.locator('[data-pane="agent"] [class*="taskLine"]').last().boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.waitForTimeout(150);
+  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await expect(visuals.getByRole('tab', { name: '02-working.jpg' })).toHaveAttribute('aria-selected', 'true');
+  await expect(visuals.getByRole('tabpanel').locator('img')).toBeVisible();
+  await page.screenshot({ path: '../../.beluga/scratch/terminal-real/07-tasks-and-picture.png' });
+
   // A new tab: a shell of its own; ⌘1 goes back to the agent's.
   await page.getByRole('button', { name: 'New Tab' }).click();
   const tabs = page.getByRole('tablist', { name: 'Terminal tabs' });
   await expect(tabs.getByRole('tab')).toHaveCount(2);
   await expect(tabs.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('[data-tab-shown="true"] [data-pane="shell"] .xterm')).toBeVisible();
+  // A long output scrolls back with the wheel, as in any terminal.
+  await page.keyboard.type('seq 1 400');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => Object.entries((window as unknown as { __belugaTerms: Record<string, { buffer: { active: { baseY: number } } }> }).__belugaTerms).find(([k]) => k.includes(':pane:'))?.[1].buffer.active.baseY ?? 0)).toBeGreaterThan(100);
+  await page.locator('[data-tab-shown="true"] [data-pane="shell"] .xterm').hover();
+  for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -400);
+  await expect.poll(() => page.evaluate(() => { const t = Object.entries((window as unknown as { __belugaTerms: Record<string, { buffer: { active: { baseY: number; viewportY: number } } }> }).__belugaTerms).find(([k]) => k.includes(':pane:'))?.[1]; return t ? t.buffer.active.baseY - t.buffer.active.viewportY : 0; })).toBeGreaterThan(20);
   await page.keyboard.press('Meta+1');
   await expect(tabs.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
 });

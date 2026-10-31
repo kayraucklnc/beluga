@@ -285,6 +285,7 @@ export function AgentTermView({ wsId }: { readonly wsId: string }) {
                 onTitle={(title) => setTitles((was) => (was[key] === title ? was : { ...was, [key]: title.slice(0, 60) }))}
                 openVisual={(n) => open({ kind: 'visual', n })}
                 openTask={(k) => open({ kind: 'task', key: k })}
+                openImage={(p) => open({ kind: 'image', path: p })}
                 openNewest={openNewest}
               />
             );

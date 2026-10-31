@@ -41,6 +41,23 @@ export function taskHits(text: string, has: (key: string) => boolean): TaskHit[]
   return out;
 }
 
+export interface ImageHit {
+  readonly path: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+/** Each absolute path to a picture in a line (a screenshot Claude took, an image it made). */
+export function imageHits(text: string): ImageHit[] {
+  if (!/\.(png|jpe?g|gif|webp|svg)/i.test(text)) return [];
+  const out: ImageHit[] = [];
+  for (const m of text.matchAll(/(^|[\s(<'"`[])((?:~|\/)[^\s()<>'"`[\]]*\.(?:png|jpe?g|gif|webp|svg))(?=$|[\s)>'"`\].,:;])/gi)) {
+    const start = m.index! + m[1]!.length;
+    out.push({ path: m[2]!, start, end: start + m[2]!.length });
+  }
+  return out;
+}
+
 /**
  * How many cells a chip over a token may take: the token's own, and the blank cells after it on
  * the line (Claude writes the token on a line of its own), up to `want`.

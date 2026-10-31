@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ghosttyAction, ghosttyChord, ghosttyKeys, itermChord, itermKeys, menuEquivalentChord } from '../src/terminal/import/keys.js';
 import { ghosttyLines, parseGhostty } from '../src/terminal/import/parsers.js';
-import { chipCells, taskHits, visualHits } from '../packages/mac/src/lib/term-links.js';
+import { chipCells, imageHits, taskHits, visualHits } from '../packages/mac/src/lib/term-links.js';
 import { AGENT_TAB, addTab, closePane, closeTab, firstTabs, gotoTab, nextPaneNumber, pane, paneKeys, resizeSplit, splitPane, stepTab, tabsOf, toggleZoom, treeOf, withTree } from '../packages/mac/src/lib/term-panes.js';
 import { clampBoth, convoModeOf, toggledMode, withConvoMode } from '../packages/mac/src/lib/convo-mode.js';
 import { DEFAULT_TERM_KEYS, actionLabel, termKeyFor, termKeyRows, termKeysOf } from '../packages/mac/src/lib/term-keys.js';
@@ -23,6 +23,14 @@ describe('links in the terminal', () => {
       { key: 'BLG-12', start: 9, end: 15 },
       { key: 'BLG-12', start: 20, end: 31 },
     ]);
+  });
+
+  it('finds pictures by their absolute path', () => {
+    expect(imageHits('I took /Users/me/.beluga/scratch/01-login.png, and (~/shots/a.jpeg).')).toEqual([
+      { path: '/Users/me/.beluga/scratch/01-login.png', start: 7, end: 45 },
+      { path: '~/shots/a.jpeg', start: 52, end: 66 },
+    ]);
+    expect(imageHits('src/logo.png is relative, http://x/y.png a URL')).toEqual([]);
   });
 
   it('lets a chip take the blank cells after its token, up to what it wants', () => {

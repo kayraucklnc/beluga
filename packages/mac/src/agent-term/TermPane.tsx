@@ -13,6 +13,17 @@ import { type TermAction, type TermKey, termKeyFor, termKeysOf } from '../lib/te
 import { belugaHas, setTerminalChords } from '../lib/shortcuts.js';
 import { chordLabel } from '../lib/shortcuts-model.js';
 
+/** The last visual token in a terminal, from the bottom up. */
+function newestOnScreen(t: Terminal): number | undefined {
+  const b = t.buffer.active;
+  for (let y = b.length - 1; y >= 0; y--) {
+    const text = b.getLine(y)?.translateToString(true) ?? '';
+    const last = [...text.matchAll(/\[\[visual:(\d{1,6})\]\]/g)].pop();
+    if (last) return Number(last[1]);
+  }
+  return undefined;
+}
+
 /** The first key for an action, as a tooltip shows it. */
 const keyFor = (keys: readonly TermKey[], action: TermAction): string | undefined => {
   const k = keys.find((x) => x.action === action);
@@ -40,6 +51,7 @@ export interface TermPaneProps {
   readonly onTitle?: (title: string) => void;
   readonly openVisual: (n: number) => void;
   readonly openTask: (key: string) => void;
+  readonly openImage: (path: string) => void;
   /** ⌘↩: the newest visual the terminal showed. */
   readonly openNewest: () => void;
 }
@@ -107,7 +119,7 @@ function FindBar({ search, onClose }: { readonly search: SearchAddon; readonly o
  * (lib/term-keys.ts: yours from Ghostty or iTerm2 over iTerm2's and Ghostty's own), and while it
  * has the keyboard they win over Beluga's shortcuts (Settings › Terminal can turn that off).
  */
-export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSplit, onClose, onAction, onTitle, openVisual, openTask, openNewest }: TermPaneProps) {
+export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSplit, onClose, onAction, onTitle, openVisual, openTask, openImage, openNewest }: TermPaneProps) {
   const api = useApi();
   const { client } = useBeluga();
   const [error, setError] = useState<string | undefined>(undefined);
@@ -131,8 +143,8 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
   const claimed = useMemo(() => keys.filter((k) => prefs.termKeysFirst || !belugaHas(k.chord)), [keys, prefs.termKeysFirst]);
   const chipVars = { '--chip-accent': theme?.['blue'] ?? '#a99ad9', ...(theme?.['background'] ? { '--chip-bg': theme['background'] } : {}), ...(theme?.['foreground'] ? { '--chip-fg': theme['foreground'] } : {}) } as React.CSSProperties;
   // What the links read (the latest, without remaking the terminal).
-  const linkOpts = useRef({ visuals, openVisual, openTask, openNewest, onAction, onTitle, claimed });
-  linkOpts.current = { visuals, openVisual, openTask, openNewest, onAction, onTitle, claimed };
+  const linkOpts = useRef({ visuals, openVisual, openTask, openImage, openNewest, onAction, onTitle, claimed });
+  linkOpts.current = { visuals, openVisual, openTask, openImage, openNewest, onAction, onTitle, claimed };
   const refreshLinks = useRef<(() => void) | undefined>(undefined);
   useEffect(() => refreshLinks.current?.(), [visuals]);
 
@@ -200,7 +212,12 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
     else if (a === 'copy') void navigator.clipboard?.writeText(t?.getSelection() ?? '').catch(() => undefined);
     else if (a === 'paste') void navigator.clipboard?.readText().then((text) => t?.paste(text)).catch(() => undefined);
     else if (a === 'split_right' || a === 'split_down') onSplit(a === 'split_right' ? 'right' : 'down');
-    else if (a === 'newest_visual') linkOpts.current.openNewest();
+    else if (a === 'newest_visual') {
+      // The newest link the terminal shows (else the newest it ever showed).
+      const n = t ? newestOnScreen(t) : undefined;
+      if (n !== undefined) linkOpts.current.openVisual(n);
+      else linkOpts.current.openNewest();
+    }
     else linkOpts.current.onAction(a, termKey);
     return true;
   };
@@ -220,6 +237,7 @@ export function TermPane({ wsId, termKey, kind, cwd, split, focusOnMount, onSpli
       openVisual: (n) => linkOpts.current.openVisual(n),
       hasTask: (key) => Boolean(findIssue(client.store.getState().board, key)),
       openTask: (key) => linkOpts.current.openTask(key),
+      openImage: (path) => linkOpts.current.openImage(path),
     }));
     refreshLinks.current = links.refresh;
     return () => {

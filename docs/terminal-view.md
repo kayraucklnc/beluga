@@ -35,10 +35,12 @@ terminal. Codex runs under the sandbox and approvals Beluga gives your own Codex
 ## Visuals as links
 
 A terminal can't draw a graph or a live table, so in the terminal the `show` tool keeps the
-visual in the daemon (`~/.beluga/terminal/visuals/<workspace>.json`) and answers with a token,
+visual in the daemon (and `show_block`, terminal-only, does the same for everything else the chat
+draws: task cards, code from the repository, a PR's comments, a mermaid diagram, a picture) (`~/.beluga/terminal/visuals/<workspace>.json`) and answers with a token,
 `[[visual:7]]`, that Claude writes on a line of its own. The Mac draws a chip over the token (what
 it is, Open), and a click (or ⌘↩ for the newest) opens the real visual in a panel beside the
-terminal, one tab each. Task keys the board has are links too. In the chat, each token is the
+terminal, one tab each, drawn by the chat's own renderer. Task keys the board has and absolute paths
+to pictures are links too (a long path over wrapped rows included). In the chat, each token is the
 visual itself.
 
 ## A terminal you'd use

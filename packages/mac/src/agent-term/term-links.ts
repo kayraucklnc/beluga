@@ -1,6 +1,6 @@
 import type { IDecoration, IMarker, Terminal } from '@xterm/xterm';
 import type { TermVisual } from '@beluga/shared/term-visuals.js';
-import { chipCells, taskHits, visualHits } from '../lib/term-links.js';
+import { chipCells, imageHits, taskHits, visualHits } from '../lib/term-links.js';
 import s from './agent-term.module.css';
 
 /**
@@ -17,6 +17,8 @@ export interface TermLinkOptions {
   readonly openVisual: (n: number) => void;
   readonly hasTask: (key: string) => boolean;
   readonly openTask: (key: string) => void;
+  /** A picture by its path, opened beside the terminal. */
+  readonly openImage: (path: string) => void;
 }
 
 /** One line's text, and the cell each character sits in (wide characters take two). */
@@ -37,6 +39,31 @@ function lineText(term: Terminal, y: number): { text: string; cells: number[] } 
   return { text: text.replace(/\s+$/, ''), cells };
 }
 
+/**
+ * A whole line as the program wrote it, over the rows the terminal wrapped it onto, and where
+ * each character is (column and row, in the buffer): a long path is one link across its rows.
+ */
+function wrappedText(term: Terminal, y: number): { text: string; at: Array<{ x: number; y: number }> } | undefined {
+  const buf = term.buffer.active;
+  let first = y;
+  while (first > 0 && buf.getLine(first)?.isWrapped) first--;
+  let text = '';
+  const at: Array<{ x: number; y: number }> = [];
+  for (let row = first; row < buf.length && (row === first || buf.getLine(row)?.isWrapped); row++) {
+    const line = buf.getLine(row);
+    if (!line) break;
+    for (let x = 0; x < line.length; x++) {
+      const cell = line.getCell(x);
+      if (!cell) break;
+      if (cell.getWidth() === 0) continue;
+      const chars = cell.getChars() || ' ';
+      for (let i = 0; i < chars.length; i++) at.push({ x, y: row });
+      text += chars;
+    }
+  }
+  return text ? { text, at } : undefined;
+}
+
 const ICON: Record<string, string> = {
   graph: 'M4 4.5a1.5 1.5 0 1 0 0-.01 M12 8a1.5 1.5 0 1 0 0-.01 M4 11.5a1.5 1.5 0 1 0 0-.01 M5.4 5.2l5.2 2.3 M5.4 10.8l5.2-2.3',
   table: 'M2.5 3.5h11v9h-11z M2.5 6.5h11 M2.5 9.5h11 M6.5 3.5v9',
@@ -45,6 +72,13 @@ const ICON: Record<string, string> = {
   gantt: 'M2.5 2.5v11 M4.5 4.5h4.5 M6.5 8h6.5 M5.5 11.5h3.5',
   heatmap: 'M2.5 2.5h11v11h-11z M2.5 8h11 M8 2.5v11',
   calendar: 'M2.5 4h11v9.5h-11z M2.5 6.5h11 M5.5 2.5v3 M10.5 2.5v3',
+  tasks: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M5.75 8.1l1.55 1.55 2.95-3.2',
+  source: 'M4 2.5h5l3 3v8H4z M9 2.5v3h3',
+  code: 'M4 2.5h5l3 3v8H4z M9 2.5v3h3',
+  block: 'M4 2.5h5l3 3v8H4z M9 2.5v3h3',
+  comments: 'M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H7l-3 2.5V11h.5A1.5 1.5 0 0 1 3 9.5z',
+  diagram: 'M4 4.5a1.5 1.5 0 1 0 0-.01 M12 8a1.5 1.5 0 1 0 0-.01 M4 11.5a1.5 1.5 0 1 0 0-.01 M5.4 5.2l5.2 2.3 M5.4 10.8l5.2-2.3',
+  image: 'M2.5 3.5h11v9h-11z M2.5 10.5l3-2.75 3 2.5 2-1.5 3 2.25 M10.25 6.25h.01',
 };
 
 const svg = (kind: string): string => `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON[kind] ?? ICON.table}"/></svg>`;
@@ -59,7 +93,8 @@ function chipHtml(n: number, v: TermVisual | undefined): string {
 }
 
 /** How many cells a chip would like (its words), so it isn't cut when there's room. */
-const wantCells = (n: number, v: TermVisual | undefined): number => 4 + (v?.title ?? `Visual ${n}`).length + (v?.meta ? v.meta.length + 2 : 0) + 8;
+// Its words, plus room for the icon, the gaps and "Open →" (about 14 cells at any size).
+const wantCells = (n: number, v: TermVisual | undefined): number => (v?.title ?? `Visual ${n}`).length + (v?.meta ? v.meta.length + 2 : 0) + 16;
 
 interface Placed {
   readonly marker: IMarker;
@@ -137,7 +172,7 @@ export function attachTermLinks(term: Terminal, options: () => TermLinkOptions):
     const want = new Map<number, Array<{ id: string; col: number; cells: number; n?: number }>>();
     for (let y = from; y < end; y++) {
       const line = lineText(term, y);
-      if (!line || !line.text.includes('[[visual:') && !/[A-Z]-\d/.test(line.text)) continue;
+      if (!line || (!line.text.includes('[[visual:') && !/[A-Z]-\d/.test(line.text) && !/\.(png|jpe?g|gif|webp|svg)/i.test(line.text))) continue;
       const here: Array<{ id: string; col: number; cells: number; n?: number }> = [];
       for (const hit of visualHits(line.text)) {
         const col = line.cells[hit.start] ?? hit.start;
@@ -148,6 +183,10 @@ export function attachTermLinks(term: Terminal, options: () => TermLinkOptions):
       for (const hit of taskHits(line.text, opts.hasTask)) {
         const col = line.cells[hit.start] ?? hit.start;
         here.push({ id: `t:${hit.key}`, col, cells: (line.cells[hit.end] ?? hit.end) - col });
+      }
+      for (const hit of imageHits(line.text)) {
+        const col = line.cells[hit.start] ?? hit.start;
+        here.push({ id: `i:${hit.path}`, col, cells: (line.cells[hit.end] ?? hit.end) - col });
       }
       if (here.length) want.set(y, here);
     }
@@ -185,7 +224,18 @@ export function attachTermLinks(term: Terminal, options: () => TermLinkOptions):
       const found = [
         ...visualHits(line.text).map((h) => ({ range: range(h.start, h.end), text: line.text.slice(h.start, h.end), activate: () => opts.openVisual(h.n), decorations: { pointerCursor: true, underline: false } })),
         ...taskHits(line.text, opts.hasTask).map((h) => ({ range: range(h.start, h.end), text: line.text.slice(h.start, h.end), activate: () => opts.openTask(h.key), decorations: { pointerCursor: true, underline: true } })),
+
       ];
+      // Pictures by their path, which may run over several rows.
+      const whole = wrappedText(term, y - 1);
+      if (whole) {
+        for (const h of imageHits(whole.text)) {
+          const from = whole.at[h.start];
+          const to = whole.at[h.end - 1];
+          if (!from || !to || from.y > y - 1 || to.y < y - 1) continue;
+          found.push({ range: { start: { x: from.x + 1, y: from.y + 1 }, end: { x: to.x + 1, y: to.y + 1 } }, text: h.path, activate: () => opts.openImage(h.path), decorations: { pointerCursor: true, underline: true } });
+        }
+      }
       callback(found.length ? found : undefined);
     },
   });

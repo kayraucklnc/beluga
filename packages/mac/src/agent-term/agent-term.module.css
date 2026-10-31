@@ -273,14 +273,22 @@
   background: color-mix(in srgb, var(--chip-accent, #a99ad9) 20%, transparent);
 }
 .chipTitle {
+  flex: 0 1 auto;
+  min-width: 3ch;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The details give way first, then the title. */
 .chipMeta {
+  flex: 0 100 auto;
+  min-width: 0;
   opacity: 0.6;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.chipOpen {
+  flex: none;
 }
 .chipOpen {
   margin-left: auto;
