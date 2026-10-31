@@ -1,0 +1,298 @@
+/* A worktree's PR conversation, under the PR strip above the chat. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(62vh, 640px);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12.5px;
+}
+.grow {
+  flex: 1;
+}
+.when {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.scroll > * {
+  flex: none;
+}
+.scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+.foot {
+  flex: none;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--hairline);
+}
+.empty,
+.problem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.problem {
+  color: var(--error);
+}
+.more {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.more:hover {
+  background: var(--bg-hover);
+}
+
+/* Someone's words. */
+.said {
+  border-radius: var(--radius-l);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  overflow: hidden;
+}
+.saidHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px 6px 10px;
+  background: color-mix(in srgb, var(--bg-sunken) 70%, var(--bg));
+  font-size: 12px;
+}
+.saidHead strong {
+  font-weight: 600;
+}
+.saidCompact {
+  border-radius: 0;
+  box-shadow: none;
+}
+.saidCompact .saidHead {
+  padding: 6px 8px 0 10px;
+  background: none;
+}
+.you {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.body {
+  padding: 2px 12px 4px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.saidCompact .body {
+  padding-left: 35px;
+}
+.link {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.link:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* A review's verdict, beside its words. */
+.review {
+  position: relative;
+}
+.verdict {
+  position: absolute;
+  top: 7px;
+  right: 34px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  color: var(--text-2);
+}
+.ok {
+  background: color-mix(in srgb, var(--ok) 16%, var(--bg));
+  color: var(--ok);
+}
+.bad {
+  background: color-mix(in srgb, var(--error) 14%, var(--bg));
+  color: var(--error);
+}
+
+/* A thread on lines of code. */
+.thread {
+  border-radius: var(--radius-l);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  overflow: hidden;
+}
+.resolved {
+  opacity: 0.85;
+}
+.threadHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px 0 4px;
+  background: color-mix(in srgb, var(--bg-sunken) 70%, var(--bg));
+  font-size: 12px;
+}
+.fold {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.fold:hover {
+  background: var(--bg-hover);
+}
+.path {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.path span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.path em {
+  color: var(--text-3);
+  font-style: normal;
+}
+.path:hover span {
+  text-decoration: underline;
+}
+.pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  color: var(--text-2);
+  font-size: 10.5px;
+  line-height: 17px;
+}
+.peek {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peek strong {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.count {
+  flex: none;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.code {
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.comments {
+  display: flex;
+  flex-direction: column;
+}
+.threadActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 8px 10px;
+}
+.thread .write {
+  margin: 4px 10px 10px;
+}
+
+/* Writing a reply or a comment. */
+.write {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.write:focus-within {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, var(--hairline));
+}
+.busy {
+  opacity: 0.7;
+}
+.writeInput {
+  min-height: 38px;
+  padding: 9px 12px 4px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  resize: none;
+}
+.writeBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 6px 12px;
+}
+.writeNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+}

@@ -132,6 +132,9 @@ export function toolCommand(name: string, pathEnv = process.env.PATH ?? '', exis
 /** The GitHub CLI to run: BELUGA_GH (the Mac app's end-to-end tests point it at a stand-in), else gh on PATH or in Homebrew's folders. */
 const gh = (): string => belugaEnv('GH') || toolCommand('gh');
 
+/** Run the GitHub CLI in `dir` → what it printed. Throws gh's error. */
+export const runGh = (args: readonly string[], dir: string, timeoutMs = 30_000): Promise<string> => run(gh(), args, dir, timeoutMs);
+
 export type GhState = 'ok' | 'logged_out' | 'missing';
 let ghReady: Promise<GhState> | undefined;
 /** The GitHub CLI: installed and logged in, installed but logged out, or missing (checked once; forgetGh asks again). */

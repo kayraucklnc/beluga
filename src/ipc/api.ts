@@ -305,6 +305,13 @@ export const API = {
   'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool), admin: opt(bool) }).strict()),
   // A PR's one-click step on GitHub: bring its base in ('update_branch') or mark a draft ready ('ready') → { ok, message }.
   'workbench.prStep': args(id, z.enum(['update_branch', 'ready'])),
+  // A worktree's PR conversation: comments, reviews and threads on lines (BLG-514).
+  'workbench.prConversation': args(id),
+  'workbench.prPost': args(id, z.discriminatedUnion('kind', [z.object({ kind: z.literal('comment'), body: z.string().min(1).max(60_000) }).strict(), z.object({ kind: z.literal('reply'), thread: z.string().min(1).max(200), body: z.string().min(1).max(60_000) }).strict(), z.object({ kind: z.enum(['resolve', 'unresolve']), thread: z.string().min(1).max(200) }).strict()])),
+  'workbench.addressPrComments': args(id, opt(z.string().min(1).max(200))),
+  // Lines of a file in a workspace, for a beluga-code block in chat → { ok, excerpt | message }.
+  'workbench.openCode': args(id, z.string().min(1).max(1000), opt(z.number().int().min(1))),
+  'workbench.excerpt': args(id, z.string().min(1).max(1000), opt(z.number().int().min(1)), opt(z.number().int().min(1))),
   // Stop Merge When Ready from merging it (GitHub's auto-merge too) → { ok, message }.
   'workbench.cancelMergeWhenReady': args(id),
   // A worktree's PR now (or all of them; true: check gh again), or { reason } to look at what's due:

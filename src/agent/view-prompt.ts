@@ -1,5 +1,6 @@
 import { CHART_KINDS, COLUMN_TYPES, VIEW_FENCE } from '../shared/view-spec.js';
 import { TASKS_FENCE } from '../shared/task-refs.js';
+import { CODE_FENCE } from '../shared/code-ref.js';
 
 /**
  * Teaching Claude what it can show (src/shared/view-spec.ts, docs/views.md): what's there, and
@@ -22,6 +23,10 @@ export function buildViewAppend(): string {
     'as a Markdown image with its absolute path: ![Login page](/Users/…/.beluga/scratch/01-login.png), in <…>',
     'if the path has spaces. A GIF plays; png, jpg, gif, webp or svg, up to 10 MB. Your owner sees it, others in',
     'the room see its name (send_file gives them the file). It is not a view: no token, no show.',
+    `Code in this repository: when you point at lines (what you changed, where a bug is, what a reviewer meant),`,
+    `show them with a \`\`\`${CODE_FENCE} block instead of pasting them: its first line is the path from the`,
+    'project root and the lines ("src/auth.ts:40-62"), then optionally "highlight: 44-46, 51" and "note: one line".',
+    'The app reads those lines from the worktree, marks the highlighted ones, and opens them in the editor.',
     '',
     'mcp__beluga_view__show takes one JSON element and returns its token: put that exact token on its own line',
     'in your answer where the element goes. Write only tokens the tool returned, never one by hand (a token',

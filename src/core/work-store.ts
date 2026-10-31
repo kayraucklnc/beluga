@@ -49,6 +49,53 @@ export interface PrCheck {
   readonly completedAt?: string;
 }
 
+/** One comment on a pull request: in its conversation, a review's summary, or in a thread on a line. */
+export interface PrComment {
+  /** GitHub's node id. */
+  readonly id: string;
+  readonly author: string;
+  readonly body: string;
+  /** ms since epoch. */
+  readonly at: number;
+  readonly url: string;
+  /** It's yours (the account gh is logged in as). */
+  readonly mine?: boolean;
+}
+
+/** A review's verdict, with what it said (a review with only line comments shows up as its threads). */
+export interface PrReview extends PrComment {
+  readonly state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED';
+}
+
+/** A conversation on lines of code: where, the diff around it, and its comments, oldest first. */
+export interface PrThread {
+  readonly id: string;
+  readonly path: string;
+  /** The line it's on (the last of a range), in the file as the PR has it; missing once outdated. */
+  readonly line?: number;
+  readonly startLine?: number;
+  /** Where it was when written (outdated threads keep only this). */
+  readonly originalLine?: number;
+  readonly originalStartLine?: number;
+  /** The diff hunk GitHub shows above the first comment (ends at the commented line). */
+  readonly diffHunk?: string;
+  readonly resolved: boolean;
+  /** The code it's on has changed since. */
+  readonly outdated: boolean;
+  readonly comments: readonly PrComment[];
+}
+
+/** Everyone's words on a pull request. */
+export interface PrConversation {
+  readonly number: number;
+  readonly url: string;
+  readonly comments: readonly PrComment[];
+  readonly reviews: readonly PrReview[];
+  readonly threads: readonly PrThread[];
+  /** GitHub has more than were read (open it there for the rest). */
+  readonly more?: boolean;
+}
+
 /** A pull request for a worktree's branch, as `gh` reports it. */
 export interface PullRequest {
   readonly number: number;

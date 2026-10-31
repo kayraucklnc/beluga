@@ -28,19 +28,11 @@ import { prepareMath, splitInlineMath } from '@beluga/shared/render/math.js';
 import { MathTex } from '../components/markdown/MathTex.js';
 import { Diagram } from '../components/markdown/Diagram.js';
 import { RichBlock, useRichFence } from '../components/blocks/RichBlock.js';
+import { loadHighlighter } from '../lib/highlight.js';
+import { CODE_FENCE } from '@beluga/shared/code-ref.js';
+import { CodeRefBlock } from '../components/code/CodeRefBlock.js';
 import s from './chat.module.css';
 
-/** Syntax colors load on demand (shiki is big), then stay. */
-let highlighter: Promise<{ codeToHtml: (code: string, opts: { lang: string; themes: { light: string; dark: string } }) => string; langs: Set<string> }> | undefined;
-
-function loadHighlighter() {
-  highlighter ??= import('shiki').then(async ({ createHighlighter }) => {
-    const langs = ['ts', 'tsx', 'js', 'jsx', 'json', 'bash', 'sh', 'python', 'go', 'rust', 'css', 'html', 'md', 'yaml', 'sql', 'diff', 'swift', 'java', 'kotlin', 'c', 'cpp', 'ruby', 'toml'];
-    const h = await createHighlighter({ themes: ['github-light', 'github-dark-dimmed'], langs });
-    return { codeToHtml: (code, opts) => h.codeToHtml(code, opts), langs: new Set(h.getLoadedLanguages() as string[]) };
-  });
-  return highlighter;
-}
 
 function Code({ code, lang }: { code: string; lang?: string }) {
   const [html, setHtml] = useState<string | undefined>();
@@ -308,6 +300,8 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       if (isGraphFence(lang)) return <MessageGraph code={code} localImages={localImages} />;
       // Board tasks Claude shows (shared/task-refs.ts): live cards that open the task.
       if (lang === TASKS_FENCE) return <TaskCards code={code} />;
+      // Lines of the repository Claude points at (shared/code-ref.ts): read from the worktree, marked, openable.
+      if (lang === CODE_FENCE) return <CodeRefBlock code={code} />;
       // Tables, charts, stats, code and colors (docs/views.md): data, drawn live.
       const view = viewFenceType(lang);
       if (view) return <MessageView code={code} type={view} local={localImages} />;
