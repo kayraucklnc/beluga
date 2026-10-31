@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ISSUE_STATUSES, MAX_PROJECT_CONTEXT } from '../board/model.js';
+import { AgentRef } from '../../protocol.js';
 
 /**
  * What teammates' Macs say inside the mesh's `team` frame (a Noise link between two friends; see
@@ -44,7 +45,8 @@ export const peerId = z.string().regex(/^[\w-]{32}$/);
 const words = (max: number) => z.string().max(max);
 export const ActorSchema = z.union([
   z.object({ kind: z.literal('person'), id: peerId, name: words(80) }),
-  z.object({ kind: z.literal('claude'), owner: peerId, ownerName: words(80) }),
+  // BLG-498: which agent (an older Mac leaves it out: Claude; a bad one is dropped, not the line).
+  z.object({ kind: z.literal('claude'), owner: peerId, ownerName: words(80), agent: AgentRef.optional().catch(undefined) }),
   z.object({ kind: z.literal('beluga') }),
 ]);
 export const AssigneeSchema = z.union([z.object({ kind: z.literal('person'), id: peerId, name: words(80) }), z.object({ kind: z.literal('claude'), owner: peerId, ownerName: words(80) })]);

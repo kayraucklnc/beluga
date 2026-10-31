@@ -60,7 +60,7 @@ export interface ChatClaudeOptions {
   /** Which agent answers (named on each answer; default: Claude). */
   readonly agent?: () => AgentRef;
   /** Your Claude started or stopped answering (the others hear it over the network). */
-  readonly onLive?: (conversation: string, id: string, state: 'thinking' | 'idle') => void;
+  readonly onLive?: (conversation: string, id: string, state: 'thinking' | 'idle', agent: AgentRef) => void;
   /** Something you should know (your Claude couldn't answer). */
   readonly onProblem?: (conversation: string, text: string) => void;
   /** Words as this Mac reads them (a team task by its own key: core/team/mentions.ts). */
@@ -172,8 +172,9 @@ export class ChatClaude {
   }
 
   private live(conversation: string, id: string, state: 'thinking' | 'idle'): void {
-    this.opts.mesh.sendLive(conversation, id, state);
-    this.opts.onLive?.(conversation, id, state);
+    const agent = this.agentRef();
+    this.opts.mesh.sendLive(conversation, id, state, agent);
+    this.opts.onLive?.(conversation, id, state, agent);
   }
 
   private async run(job: Job): Promise<void> {

@@ -214,6 +214,8 @@ export interface LiveClaude {
   /** The message it answers. */
   readonly for: string;
   readonly since: number;
+  /** Which agent (BLG-498: its mark); an older Mac's leaves it out: Claude. */
+  readonly agent?: AgentRef;
 }
 
 export interface NetworkState extends NetworkSummary {

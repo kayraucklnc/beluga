@@ -74,8 +74,8 @@ export const COMPANION_HANDLERS = {
     return phoneDraft(d, a.several);
   },
   'companion.addTask': (s, a) => {
-    const { projectId, more, epic, ...first } = a;
-    const [issue, ...rest] = needBoard(s).addDraft(projectId, { ...first, ...(more?.length ? { more } : {}), ...(epic ? { epic: true as const } : {}) });
+    const { projectId, more, epic, agent, ...first } = a;
+    const [issue, ...rest] = needBoard(s).addDraft(projectId, { ...first, ...(more?.length ? { more } : {}), ...(epic ? { epic: true as const } : {}) }, agent);
     return { id: issue!.id, key: issue!.key, ...(rest.length ? { more: rest.map((i) => ({ id: i.id, key: i.key })) } : {}) };
   },
   'companion.files.list': (s, topic, rel) => needCompanion(s).filesList(topic, rel),

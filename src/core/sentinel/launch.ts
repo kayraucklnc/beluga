@@ -187,9 +187,10 @@ function places(session: Session): SentinelPlaces | undefined {
     },
     archive: (workspaceId) => ctl.archive(workspaceId, false, { quiet: true }),
     // A run's own chat or worktree (no one else's conversation): set outright, no handoff note.
-    setAgent: (workspaceId, agent) => {
+    setAgent: (workspaceId, agent, effort) => {
       if (!ctl.manager.find(workspaceId)) return;
       ctl.manager.setAgent(workspaceId, agent);
+      ctl.manager.setEffort(workspaceId, effort);
       void ctl.refresh();
     },
   };

@@ -87,6 +87,10 @@ export const calls = {
   move: (key: string, status: string, label: string): Call => make('board.move', [key, status as never], `Move ${key} to ${label}`),
   /** Start a task in a new worktree with Claude on it (the Mac's Start with Claude) → the worktree's id. */
   start: (key: string): Call => make('board.start', [key, { claude: true }], `Start ${key}`),
+  /** 1.34 (BLG-498): who works a task from its next start (null: your default) → what happened, in words. */
+  setTaskAgent: (key: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('board.setAgent', [key, agent], `${key}: ${label}`),
+  /** 1.34 (BLG-498): who works a plan's milestones and tasks from here on (null: your default) → in words. */
+  setPlanAgent: (planId: string, agent: { runtime: string; label: string; model?: string } | null, label: string): Call => make('plans.setWorkAgent', [planId, agent], `Plan's agent: ${label}`),
   /** A task described in words: Claude's draft first, then it's added. */
   // 1.24 (BLG-322) `several`: only to a Mac that has it (SINCE.severalTasks); an older one drafts one task.
   draftTask: (projectId: string, text: string, several = false): Call => make('companion.draftTask', [{ projectId, text, ...(several ? { several } : {}) }], 'Draft a task'),

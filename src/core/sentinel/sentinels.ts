@@ -271,6 +271,13 @@ export class Sentinels {
       ...(deps.fetchSource ? { fetchSource: deps.fetchSource } : {}),
       ...(deps.serviceEnv ? { serviceEnv: deps.serviceEnv } : {}),
       keep: (active, measured) => this.keepNumbers(active.sentinel, active.run.id, measured),
+      // A step's model's effort levels, as its runtime lists them (Claude's: Claude Code's own); your default's aren't known here.
+      efforts: (agent) => {
+        if (!agent) return undefined;
+        const st = deps.store.getState();
+        const models = agent.runtime === 'claude' ? st.models : st.runtimes.find((r) => r.id === agent.runtime)?.models;
+        return models?.find((m) => m.value === (agent.model ?? ''))?.efforts;
+      },
     });
     this.expireWaiting();
     for (const item of this.items) this.ensureSecret(item);

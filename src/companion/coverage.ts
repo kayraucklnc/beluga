@@ -333,6 +333,8 @@ export const PHONE: Record<Method, Side> = {
   'board.remove': 'mac',
   // Start a task in a new worktree (with Claude on it), as the Mac's Start does.
   'board.start': 'phone',
+  // Who works a task from its next start (BLG-498): a pick from a list, as the Mac's task page has it.
+  'board.setAgent': 'phone',
   'board.settleGone': 'mac',
   'board.setAutoTasks': 'mac',
   'board.setPrefix': 'mac',
@@ -368,6 +370,8 @@ export const PHONE: Record<Method, Side> = {
   'plans.setPaused': 'mac',
   'plans.setParallel': 'mac',
   'plans.setTestsAt': 'mac',
+  // Who works the plan's milestones and tasks from here on (BLG-498): a pick from a list.
+  'plans.setWorkAgent': 'phone',
   'plans.tidyUp': 'mac',
   'plans.pass': 'phone',
   'plans.recheck': 'phone',

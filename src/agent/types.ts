@@ -400,6 +400,8 @@ export interface AgentPlace {
   readonly onSession: (sessionId: string) => void;
   /** The model picked for this conversation. */
   readonly model?: string;
+  /** The thinking effort picked for this conversation (unset: Settings'). */
+  readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** A project's main folder: questions only, nothing may change (see policy.ts). */
   readonly askOnly?: { readonly project: string };
   /** With askOnly, for one run: Claude brings the default branch up to date (git syncing only; see sync-main.ts). */

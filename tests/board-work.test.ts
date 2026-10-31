@@ -228,7 +228,7 @@ describe('Claude and the board', () => {
     expect(run.brief).toContain('Only signed-in users pay.');
     expect(run.tools?.current).toBe('BOB-2');
     expect(run.tools!.editBrief(undefined, 'decisions', '- Signed cookies', 'chosen', 'append')).toBe('Updated the decisions of BOB-2');
-    expect(board.need('BOB-2').activity.at(-1)?.by).toEqual({ kind: 'claude', owner: 'p-me', ownerName: 'Kay' });
+    expect(board.need('BOB-2').activity.at(-1)?.by).toEqual({ kind: 'claude', owner: 'p-me', ownerName: 'Kay', agent: { runtime: 'claude', label: 'Claude' } });
     expect(run.tools!.create({ title: 'Expired sessions', parent: 'BOB-2', acceptance: '- [ ] 401' })).toBe('Created BOB-3: Expired sessions (todo)');
     expect(board.need('BOB-3').origin).toBe('claude');
     expect(run.tools!.relate(undefined, 'blocks', 'BOB-3')).toBe('BOB-2 now blocks BOB-3');

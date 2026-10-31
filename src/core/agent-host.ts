@@ -277,7 +277,7 @@ export class AgentHost {
       place: (channel) => this.deps.workspaces?.place(channel),
       emit: (requestId, kind, text, channel) => this.emitAgent(requestId, this.selfId, kind, text, channel),
       requesterName: () => peerName(this.store.getState(), this.selfId),
-      modelFor: (place) => this.modelFor(place?.model, place?.agent),
+      modelFor: (place) => this.modelFor(place?.model, place?.agent, place?.effort),
     });
     this.btw = new BtwDesk({
       store: deps.store,
@@ -1199,7 +1199,7 @@ export class AgentHost {
           // Anything that queued up behind this run from the same person can go in now.
           if (send) lane.waiting = lane.waiting.filter((w) => !this.sendFollowUp(lane, w.from, w.body));
         },
-        ...this.modelFor(place?.model, place?.agent),
+        ...this.modelFor(place?.model, place?.agent, place?.effort),
         // Your MCP servers (your logins: Figma, Linear…) are for runs you asked for, never a friend's.
         ...(from === this.selfId ? { ownerMcp: true } : {}),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
@@ -1271,7 +1271,7 @@ export class AgentHost {
       onFileTouched: (abs) => this.announceAgentFocus(abs),
       canUseTool: (toolName, toolInput) => this.authorizeTool(this.selfId, requesterName, toolName, toolInput, channel, opts.place?.cwd),
       askUser: (question) => this.deps.questions.ask(this.selfId, requestId, channel, question),
-      ...(opts.defaultModel ? this.modelFor(opts.place?.model, opts.place?.agent) : {}),
+      ...(opts.defaultModel ? this.modelFor(opts.place?.model, opts.place?.agent, opts.place?.effort) : {}),
     });
     return { text, tokens };
   }
@@ -1279,11 +1279,13 @@ export class AgentHost {
   /**
    * The model and effort for a run: the conversation's own pick, else its agent's (a project's own
    * agent, or yours), else Settings' model, which is Claude's: another runtime then takes its default.
+   * The effort: the conversation's own (a Sentinel step's), else Settings'.
    */
-  private modelFor(own: string | undefined, agent?: AgentRef): { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } {
+  private modelFor(own: string | undefined, agent?: AgentRef, ownEffort?: AgentPlace['effort']): { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } {
     const prefs = this.store.getState().prefs;
     const model = own ?? agent?.model ?? (agent && agent.runtime !== CLAUDE_AGENT.runtime ? undefined : prefs.model);
-    return { ...(model ? { model } : {}), ...(prefs.effort ? { effort: prefs.effort } : {}) };
+    const effort = ownEffort ?? prefs.effort;
+    return { ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
   }
 
   /**

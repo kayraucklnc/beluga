@@ -14,7 +14,9 @@ import { ResizeHandle } from '../layout/panel/ResizeHandle.js';
 import { taskChatsItem } from '../layout/plan-task-chats.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useBeluga } from '../lib/beluga.js';
+import { toast, useApp, useBeluga } from '../lib/beluga.js';
+import { YOUR_AGENT, agentMenuItems, useAgentEntries } from '../components/agent-options.js';
+import { agentForChoice } from '@beluga/ui/agent-choice.js';
 import { openSheet } from '../lib/sheets.js';
 import { mod, openExternal } from '../lib/system.js';
 import { MilestoneBar, PlanProgress, Said, TonePill } from './marks.js';
@@ -117,6 +119,9 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     return () => document.removeEventListener(PLAN_CHAT_TOGGLE, toggle);
   }, [plan.id, setPrefs]);
   const { api, act, openList, openWorktree } = usePlanActions();
+  const { client } = useBeluga();
+  const runtimes = useApp((s) => s.runtimes);
+  const agents = useAgentEntries();
   // The plan's conversation (its chat, the head Claude's last turn) loads with the page, the chat shown or not.
   useConversationLoaded(plan.home);
   const uiPrefs = usePrefs();
@@ -190,9 +195,15 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   })();
 
   const teamItems = usePlanTeamItems(plan.id, plan.projectId);
+  // Agent for Its Work ▸ (BLG-498): who works what starts from now on; milestones at work keep theirs (the toast says so).
+  const workAgent = (v: string): void =>
+    void act(() => api.setWorkAgent(plan.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes))).then((said) => {
+      if (typeof said === 'string') toast(client, said, 'success');
+    });
   const more: ActionItem[] = [
     ...(plan.body && plan.status === 'active' ? [{ label: plan.paused ? 'Resume' : 'Pause', onSelect: () => void act(() => api.setPaused(plan.id, !plan.paused)) }] : []),
     { label: 'Run at Once', submenu: [1, 2, 3, 4, 6, MAX_PARALLEL].map((n) => ({ label: `${n} ${n === 1 ? 'milestone' : 'milestones'}`, checked: plan.maxParallel === n, onSelect: () => void act(() => api.setParallel(plan.id, n)) })), onSelect: () => undefined },
+    ...(plan.status !== 'done' ? [{ label: 'Agent for Its Work', submenu: agentMenuItems(agents, plan.agent, workAgent), onSelect: () => undefined }] : []),
     { label: 'When to Run Tests', submenu: TESTS_AT.map((t) => ({ label: TESTS_AT_INFO[t].label, hint: TESTS_AT_INFO[t].hint, checked: plan.testsAt === t, onSelect: () => void act(() => api.setTestsAt(plan.id, t), t === 'end' ? 'From now on, milestone checks skip the test suites; they all run once, in the final step' : 'From now on, each milestone’s check runs the full suites once, on its combined work') })), onSelect: () => undefined },
     ...(next.kind === 'stalled' ? next.tasks.flatMap((t) => (t.worktree ? [{ label: `Open ${t.issue?.key ?? 'Its'} Chat`, onSelect: () => openWorktree(t.worktree!) }] : [])) : []),
     ...(next.kind === 'pass' ? [{ label: 'Not Yet…', onSelect: () => openSheet({ kind: 'plan_send_back', planId: plan.id, milestone: next.milestone.milestone.id }) }] : []),

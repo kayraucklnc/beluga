@@ -183,3 +183,18 @@ describe('a Codex run', () => {
     expect(toCodexModelChoices([{ id: 'x', model: 'x', displayName: 'X', description: '', hidden: true, isDefault: false, supportedReasoningEfforts: [] }])).toEqual([]);
   });
 });
+
+describe('the Codex runtime', () => {
+  it("never runs Claude Code's binary as Codex (the Mac app's executablePath is Claude's)", async () => {
+    const { createCodexRuntime } = await import('../src/agent/runtime/codex/index.js');
+    const codex = new FakeCodex();
+    const bins: Array<string | undefined> = [];
+    const connect: typeof codex.connect = (opts) => {
+      bins.push(opts.bin);
+      return codex.connect(opts);
+    };
+    const backend = createCodexRuntime({ connect }).create({ cwd, autoEdit: true, additionalDirectories: [], bridge: room, executablePath: '/Applications/Beluga.app/claude' });
+    expect(await backend.run(input('hello'))).toBe('echo: hello');
+    expect(bins).toEqual([undefined]);
+  });
+});

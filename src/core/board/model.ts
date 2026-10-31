@@ -67,7 +67,13 @@ export const ESTIMATES = [1, 2, 3, 5, 8] as const;
  */
 export type Actor =
   | { readonly kind: 'person'; readonly id: string; readonly name: string }
-  | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string }
+  | {
+      readonly kind: 'claude';
+      readonly owner: string;
+      readonly ownerName: string;
+      /** Which agent it was (BLG-498: Codex, a local model…); left out on older entries: Claude, as before. */
+      readonly agent?: AgentRef;
+    }
   | { readonly kind: 'beluga' };
 
 /**
@@ -543,7 +549,7 @@ export function actorName(actor: Actor, selfId: string): string {
     case 'person':
       return actor.id === selfId ? 'You' : actor.name;
     case 'claude':
-      return agentLabel(undefined, actor.ownerName, actor.owner === selfId, { capital: true });
+      return agentLabel(actor.agent, actor.ownerName, actor.owner === selfId, { capital: true });
     default:
       return 'Beluga';
   }

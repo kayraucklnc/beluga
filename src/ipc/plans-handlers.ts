@@ -17,6 +17,7 @@ export const PLANS_HANDLERS = {
   'plans.setPaused': (s, id, paused) => needPlans(s).setPaused(id, paused),
   'plans.setParallel': (s, id, n) => needPlans(s).setParallel(id, n),
   'plans.setTestsAt': (s, id, when) => needPlans(s).setTestsAt(id, when),
+  'plans.setWorkAgent': (s, id, agent) => needPlans(s).setWorkAgent(id, agent),
   'plans.tidyUp': (s, id, yes) => needPlans(s).tidyUp(id, yes),
   'plans.pass': (s, id, milestone) => needPlans(s).pass(id, milestone),
   'plans.recheck': (s, id, milestone) => needPlans(s).recheck(id, milestone),

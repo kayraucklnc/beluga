@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { agentLabel } from '../../shared/agent-label.js';
+import type { AgentRef } from '../../protocol.js';
 import os from 'node:os';
 import path from 'node:path';
 import { asks } from '../../net/mesh/extras.js';
@@ -66,7 +67,7 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
     ...(session ? { agent: () => session.agentRef } : {}),
     localize: (text) => localMentions(text, store.getState().board.issues),
     handledFile: path.join(opts.dir, 'chat-claude.json'),
-    onLive: (conversation, id, state) => store.dispatch({ type: 'net_live', conversation, state, live: { peerId: mesh.peerId, name: nameOf(mesh.peerId), for: id, since: Date.now() } }),
+    onLive: (conversation, id, state, agent) => store.dispatch({ type: 'net_live', conversation, state, live: { peerId: mesh.peerId, name: nameOf(mesh.peerId), for: id, since: Date.now(), agent } }),
     onProblem: (conversation, text) => session?.notifier.notify({ kind: 'problems', title: `${agentLabel(session.agentRef, undefined, true, { capital: true })} couldn’t answer`, body: text, channel: conversation }),
   });
   // A friend's Claude answering your ask with something for their Mac: it goes there as your request (BLG-353).
@@ -81,9 +82,9 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
     handledFile: path.join(opts.dir, 'chat-requests.json'),
   });
   // Someone's Claude is answering: only for an ask you have that called their Claude in.
-  const onLive = (e: { conversation: string; from: string; for: string; state: 'thinking' | 'idle' }): void => {
+  const onLive = (e: { conversation: string; from: string; for: string; state: 'thinking' | 'idle'; agent?: AgentRef }): void => {
     const known = store.getState().network.messages[e.conversation]?.some((m) => m.id === e.for && asks(m, e.from));
-    if (known || e.state === 'idle') store.dispatch({ type: 'net_live', conversation: e.conversation, state: e.state, live: { peerId: e.from, name: nameOf(e.from), for: e.for, since: Date.now() } });
+    if (known || e.state === 'idle') store.dispatch({ type: 'net_live', conversation: e.conversation, state: e.state, live: { peerId: e.from, name: nameOf(e.from), for: e.for, since: Date.now(), ...(e.agent ? { agent: e.agent } : {}) } });
   };
   mesh.on('live', onLive);
   const main = new MainChannel(mesh, opts.loadMain, (id) => {

@@ -584,6 +584,7 @@ export class WorkspaceController {
       onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId, runtime),
       ...(agent ? { agent: ws.model ? { ...agent, model: ws.model } : agent } : {}),
       ...(ws.model ? { model: ws.model } : {}),
+      ...(ws.effort ? { effort: ws.effort } : {}),
       ...(ws.prShipped && ws.kind === 'worktree' ? { shipped: ws.prShipped } : {}),
       ...(syncMain ? { syncMain } : {}),
       ...(ws.askOnly && this.fixups.has(ws.id) ? { fixup: this.fixups.get(ws.id)! } : {}),

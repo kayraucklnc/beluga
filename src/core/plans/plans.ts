@@ -3,6 +3,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { AgentRef } from '../../protocol.js';
+import { agentName } from '../../shared/agent-label.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import { type Actor, type IssuePr, renamedActors } from '../board/model.js';
 import type { Store } from '../store.js';
@@ -259,6 +260,18 @@ export class Plans {
     const plan = this.need(id);
     if (plan.testsAt === testsAt) return plan;
     return this.change(plan, { testsAt }, [event(by, 'note', testsAt === 'end' ? 'runs the test suites only at the end, in the final step' : 'runs the test suites once per milestone, at its check', this.now())]);
+  }
+
+  /**
+   * The agent (and model) its milestones and tasks are worked on by from here on (BLG-498);
+   * undefined: your default. Milestones and tasks already at work keep the agent they opened with.
+   */
+  setWorkAgent(id: string, agent: AgentRef | undefined, by: Actor): Plan {
+    const plan = this.need(id);
+    const was = plan.agent;
+    if (was?.runtime === agent?.runtime && was?.model === agent?.model && was?.label === agent?.label) return plan;
+    const text = agent ? `gave its work to ${agentName(agent, { model: true })} from here on` : 'gave its work to the default agent from here on';
+    return this.change(plan, { agent: agent ? { runtime: agent.runtime, label: agent.label, ...(agent.model ? { model: agent.model } : {}) } : undefined }, [event(by, 'note', text, this.now())]);
   }
 
   /** The head Claude was asked to check a milestone (a new round of checking). */

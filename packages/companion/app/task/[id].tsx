@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isAgentActor, markOfName } from '../../components/AgentMark';
+import { agentMark, isAgentActor, markIcon, markOfName, runtimeMark } from '../../components/AgentMark';
+import { AgentChoiceSheet, agentOfRow } from '../../components/AgentPicker';
 import { Composer } from '../../components/Composer';
 import { convHref, Prose } from '../../components/Conv';
 import { KeyboardLift } from '../../components/KeyboardLift';
@@ -20,6 +21,7 @@ import type { TaskPageView, Topic } from '../../lib/link/protocol';
 import { openOnMac } from '../../lib/mac';
 import { store } from '../../lib/store';
 import { color } from '../../lib/theme';
+import { agentName } from '../../../../src/shared/agent-label';
 
 /**
  * One task (BLG-48): its goal (code folded), the acceptance criteria with their ticks, the
@@ -37,6 +39,7 @@ export default function Task() {
   const [menu, setMenu] = useState(false);
   const [moving, setMoving] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [picking, setPicking] = useState(false);
   const st = t ? statusOf(t.status) : undefined;
   const pr = t ? PRIORITY[t.priority] : undefined;
   const canStart = t && !t.conv && (t.status === 'todo' || t.status === 'backlog' || t.status === 'in_progress');
@@ -51,6 +54,18 @@ export default function Task() {
       store.toast({ text: `${t.key} started: your agent is on it`, tone: 'ok' });
       router.push(convHref(`conv:ws:${ws}`));
     }
+  };
+
+  // Who works it (1.34, BLG-498): its own agent, else your default; changed from ⋯ › Agent.
+  const defaultLabel = t?.agents?.groups.find((g) => g.isDefault)?.label;
+  const agentWords = t?.agent ? agentName(t.agent, { model: true }) : defaultLabel ? `Your agent (${defaultLabel})` : 'Your agent';
+  const agentRuntime = t?.agent?.runtime ?? t?.agents?.groups.find((g) => g.isDefault)?.runtime;
+  const setAgent = (agent: { runtime: string; label: string; model?: string } | null, label: string): void => {
+    if (!t) return;
+    void store.call<string>(calls.setTaskAgent(t.key, agent, label)).then(
+      (said) => store.toast({ text: typeof said === 'string' ? said : `${label} works ${t.key}`, tone: 'ok' }),
+      (e: Error) => store.toast({ text: e.message, tone: 'error' }),
+    );
   };
 
   return (
@@ -77,6 +92,7 @@ export default function Task() {
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {pr && t.priority !== 'none' ? <Pill label={pr.label} tone={pr.tone} /> : null}
                 <Pill label={t.assignee ?? 'No one'} Icon={User} tone={t.assignee ? 'lavender' : 'plain'} />
+                {t.agent || t.agents ? <Pill label={agentWords} Icon={markIcon(runtimeMark(agentRuntime))} tone="plain" /> : null}
                 {t.working ? <Pill label={t.working} Icon={User} tone="mint" /> : null}
                 {t.waiting ? <Pill label={t.waiting} Icon={Clock} tone="butter" /> : null}
                 {t.checks ? <Pill label={`${t.checks.done} of ${t.checks.total} checked`} Icon={Check} tone={t.checks.done === t.checks.total ? 'mint' : 'plain'} /> : null}
@@ -156,7 +172,7 @@ export default function Task() {
                   </T>
                   {t.activity.map((a) => (
                     <Animated.View key={a.id} entering={FadeIn.duration(220)} layout={LinearTransition.duration(180)} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-                      <Avatar name={a.who} size={26} {...(isAgentActor(a.who) ? { mark: markOfName(a.who, 'claude') } : {})} />
+                      <Avatar name={a.who} size={26} {...(a.agent ? { mark: agentMark(a.agent) } : isAgentActor(a.who) ? { mark: markOfName(a.who, 'claude') } : {})} />
                       <View style={{ flex: 1, gap: 4 }}>
                         <T v="callout">
                           <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
@@ -193,6 +209,7 @@ export default function Task() {
         title={t ? `${t.key} ${t.title}` : undefined}
         options={[
           { Icon: Play, label: 'Start with your agent', sub: 'A new worktree, your agent working on it', tone: 'peach', hidden: !canStart, onPress: () => void start() },
+          { Icon: markIcon(runtimeMark(agentRuntime)), label: 'Agent', sub: `${agentWords}, from its next start`, tone: 'lavender', hidden: !t?.agents, onPress: () => setPicking(true) },
           { Icon: ArrowRightLeft, label: 'Move to…', sub: st ? `Now ${st.label}` : undefined, tone: 'sky', hidden: !t?.moves.length, onPress: () => setMoving(true) },
           { Icon: Monitor, label: 'Open on your Mac', sub: 'Its brief, proof and history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
         ]}
@@ -205,6 +222,15 @@ export default function Task() {
           const s = statusOf(m.status);
           return { Icon: s.Icon, label: m.label, tone: s.tone, onPress: () => void store.call(calls.move(t!.key, m.status, m.label)).then(() => store.toast({ text: `${t!.key} is ${m.label}`, tone: 'ok' }), (e: Error) => store.toast({ text: e.message, tone: 'error' })) };
         })}
+      />
+      <AgentChoiceSheet
+        title="Agent"
+        caption={t?.conv ? 'For its next start: the worktree on it keeps its agent' : 'Works this task when it starts'}
+        picker={t?.agents}
+        visible={picking}
+        onClose={() => setPicking(false)}
+        yours={{ on: !t?.agent, onPick: () => setAgent(null, 'Your agent') }}
+        onPick={(g, value, label) => setAgent(agentOfRow(g, value), value ? `${g.label} · ${label}` : g.label)}
       />
     </Screen>
   );

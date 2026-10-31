@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
-import { agentChoices } from '@beluga/ui/agent-choice.js';
+import type { AgentRef } from '@beluga/protocol.js';
+import { agentChoices, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { runtimeMark } from '@beluga/shared/agent-marks.js';
 import { agentName } from '@beluga/shared/agent-label.js';
 import { useApp } from '../lib/beluga.js';
 import { useMyAgent } from '../lib/agent-words.js';
 import type { SelectEntry, SelectOption } from './select-parts.js';
+import type { ActionItem } from './SpecMenu.js';
 
 /** The pop-up value for "your agent" (whatever your default is when the work starts). */
 export const YOUR_AGENT = '';
@@ -33,4 +35,22 @@ export function useAgentEntries(): SelectEntry<string>[] {
       })),
     ];
   }, [runtimes, models, mine]);
+}
+
+/**
+ * The same list as a ••• submenu's rows (BLG-498): a line above each runtime's section, the agent
+ * now in use checked (none: your agent). `pick` gets the row's value (YOUR_AGENT or `runtime:model`).
+ */
+export function agentMenuItems(entries: readonly SelectEntry<string>[], current: AgentRef | undefined, pick: (value: string) => void): ActionItem[] {
+  const now = current ? choiceForAgent(current) : YOUR_AGENT;
+  const item = (o: SelectOption<string>, separate: boolean): ActionItem => ({
+    label: o.label,
+    ...(typeof o.icon === 'string' ? { icon: o.icon } : {}),
+    ...(o.disabled ? { disabled: true } : {}),
+    ...(o.description && o.disabled ? { hint: o.description } : {}),
+    ...(separate ? { separate: true } : {}),
+    checked: o.value === now,
+    onSelect: () => pick(o.value),
+  });
+  return entries.flatMap((e) => ('section' in e ? e.options.map((o, i) => item(o, i === 0)) : [item(e, false)]));
 }

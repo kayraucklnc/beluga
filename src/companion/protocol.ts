@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 33 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 34 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -82,8 +82,13 @@ export const COMPANION_PROTO = { major: 1, minor: 33 } as const;
  * agent (`companion.defaultAgent`). An older Mac sends Claude Code alone, as before.
  * 1.33 (BLG-466): a dialogue between agents in a conversation (`TurnView.dialogue`): its header card,
  * and Stop / Continue? from the phone (`dialogues.stop`, `dialogues.continue`).
+ * 1.34 (BLG-498): who works a task and a plan's work: `TaskPageView.agent` / `PlanView.agent` (none:
+ * your default) and `agents`, the list to change it from (`board.setAgent`, `plans.setWorkAgent`).
+ * An older Mac sends neither, and the phone offers no change. SINCE.workAgents: `companion.addTask` and
+ * `plans.create` take the `agent` a new task or plan is worked by; each turn and task activity line
+ * may carry the `agent` that spoke, for its mark (an older Mac sends none: the phone guesses by name).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31, providers: 32, dialogues: 33 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30, agentPicker: 31, providers: 32, dialogues: 33, workAgents: 34 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -347,10 +352,16 @@ export const SubAgentDetailView = z.object({
 });
 export type SubAgentDetailView = z.infer<typeof SubAgentDetailView>;
 
+/** Which agent it is (src/protocol.ts AgentRef, repeated here: this file is the phone's whole contract). */
+export const AgentRefView = z.object({ runtime: z.string().max(32), model: z.string().max(64).optional(), label: z.string().max(64) });
+export type AgentRefView = z.infer<typeof AgentRefView>;
+
 export const TurnView = z.object({
   id,
   who: z.enum(['you', 'claude', 'friend', 'system']),
   name: z.string().max(100),
+  /** BLG-498: with `claude`, which agent it is (its mark); an older Mac leaves it out (the phone goes by the name). */
+  agent: AgentRefView.optional(),
   prose: ProseView,
   ts,
   status: z.enum(['queued', 'working', 'done', 'failed', 'stopped']).optional(),
@@ -600,6 +611,9 @@ export const PlanView = z.object({
   paused: z.boolean().optional(),
   parallel: z.number().int().min(0).optional(),
   running: z.number().int().min(0).optional(),
+  /** 1.34 (BLG-498): who works its milestones and tasks from here on (none: your default), and the list to change it from (`plans.setWorkAgent`). */
+  agent: AgentRefView.optional(),
+  agents: AgentPickerView.optional(),
 });
 export type PlanView = z.infer<typeof PlanView>;
 export const PlansView = z.object({ plans: z.array(PlanView.pick({ id: true, title: true, state: true, topic: true }).extend({ done: z.number().int(), total: z.number().int() })).max(100) });
@@ -667,11 +681,15 @@ export const TaskPageView = TaskSummary.extend({
   goal: ProseView.optional(),
   acceptance: z.array(z.object({ text: z.string().max(1000), state: z.union([z.enum(['done', 'deferred', 'not_done', 'open']), z.string().max(20)]), reason: z.string().max(1000).optional() })).max(60),
   /** Newest last. */
-  activity: z.array(z.object({ id, at: ts, who: z.string().max(80), text: z.string().max(500), body: z.string().max(8000).optional(), comment: z.boolean().optional() })).max(60),
+  /** `agent` (BLG-498): an agent's line, which agent it was (its mark); an older Mac leaves it out (the phone goes by `who`). */
+  activity: z.array(z.object({ id, at: ts, who: z.string().max(80), agent: AgentRefView.optional(), text: z.string().max(500), body: z.string().max(8000).optional(), comment: z.boolean().optional() })).max(60),
   worktree: z.string().max(200).optional(),
   pr: z.object({ number: z.number().int().min(0), state: z.string().max(20), title: z.string().max(300), checks: z.string().max(20).optional() }).optional(),
   /** Where it may be moved from the phone (board.move), with their labels. */
   moves: z.array(z.object({ status: TaskStatus, label: z.string().max(40) })).max(10),
+  /** 1.34 (BLG-498): the agent that works it from its next start (none: your default), and while it can start, the list to change it from (`board.setAgent`). */
+  agent: AgentRefView.optional(),
+  agents: AgentPickerView.optional(),
 });
 export type TaskPageView = z.infer<typeof TaskPageView>;
 
@@ -892,9 +910,6 @@ export type WidgetTileView = z.infer<typeof WidgetTileView>;
 export const WidgetsView = z.object({ tiles: z.array(WidgetTileView).max(120) });
 export type WidgetsView = z.infer<typeof WidgetsView>;
 
-/** Which agent it is (src/protocol.ts AgentRef, repeated here: this file is the phone's whole contract). */
-export const AgentRefView = z.object({ runtime: z.string().max(32), model: z.string().max(64).optional(), label: z.string().max(64) });
-export type AgentRefView = z.infer<typeof AgentRefView>;
 
 export const ChatMessageView = z.object({
   id,

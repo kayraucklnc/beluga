@@ -51,7 +51,7 @@ function Row({ task, open, onToggle }: { task: TaskView; open: boolean; onToggle
           }
         }}
       >
-        <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} size={20} />
+        <Avatar name={task.peerName} id={task.peerId} claude={task.kind === 'ask'} agent={task.kind === 'ask' ? task.result?.agent : undefined} size={20} />
         <span className={s.rowWho}>{who}</span>
         <span className={s.rowAsk}>{task.kind === 'run' && task.command ? `$ ${task.command}` : oneLine(task.ask, 140)}</span>
         <span className={`${s.status} ${s[`tone_${tone}`]}`}>

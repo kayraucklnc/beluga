@@ -139,6 +139,9 @@ export const PhoneCalls = {
   'companion.draftTask': entry('companion.draftTask', TaskDraftResult),
   'companion.addTask': entry('companion.addTask', z.object({ id: z.string(), key: z.string(), more: z.array(z.object({ id: z.string(), key: z.string() })).optional() })),
   'board.start': entry('board.start', z.string()),
+  // 1.34 (BLG-498): who works a task, and a plan's work, from their next start → what happened, in words.
+  'board.setAgent': entry('board.setAgent', z.string()),
+  'plans.setWorkAgent': entry('plans.setWorkAgent', z.string()),
   // 1.7: a worktree's files (read-only) and terminals (shared with the Mac).
   'companion.files.list': entry('companion.files.list', FolderView),
   'companion.files.find': entry('companion.files.find', FoundView),

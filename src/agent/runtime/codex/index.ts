@@ -38,7 +38,8 @@ export function createCodexRuntime(deps: { readonly connect?: CodexConnect } = {
     id: 'codex',
     label: 'Codex',
     capabilities: CODEX_CAPABILITIES,
-    create: ({ executablePath, ...opts }) => createCodexBackend({ ...opts, ...(executablePath ? { codexPath: executablePath } : {}), ...(deps.connect ? { connect: deps.connect } : {}) }),
+    // `executablePath` is Claude Code's (the Mac app's pinned binary): never Codex's. Codex finds its own (findCodex, BELUGA_CODEX_PATH).
+    create: ({ executablePath: _claudePath, ...opts }) => createCodexBackend({ ...opts, ...(deps.connect ? { connect: deps.connect } : {}) }),
     complete: (req) => codexComplete(req, deps.connect ? { connect: deps.connect } : {}),
     status: () => codexStatus(deps.connect ? { connect: deps.connect } : {}),
   };

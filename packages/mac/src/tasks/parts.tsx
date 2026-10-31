@@ -20,6 +20,8 @@ import { sameDeep } from '../lib/stable.js';
 import { askAboutTask } from '../network/chat-model.js';
 import { draftIn } from '../network/NetComposer.js';
 import { IssueMark } from '../issues/task-bits.js';
+import { YOUR_AGENT, agentMenuItems, useAgentEntries } from '../components/agent-options.js';
+import { agentForChoice } from '@beluga/ui/agent-choice.js';
 import t from './tasks.module.css';
 
 const NONE: readonly never[] = [];
@@ -236,6 +238,18 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const projects = useApp((s) => s.projects);
   const team = useApp((s) => s.team);
   const friends = useApp((s) => s.network.friends);
+  const runtimes = useApp((s) => s.runtimes);
+  const agents = useAgentEntries();
+  /** Agent ▸ (BLG-498): who works it from its next start, the task page's Agent list as a submenu. */
+  const agentMenu = (issue: Issue): ActionItem => ({
+    label: 'Agent',
+    submenu: agentMenuItems(agents, issue.agent, (v) =>
+      void act(() => api.setAgent(issue.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes))).then((said) => {
+        if (typeof said === 'string') toast(client, said, 'success');
+      }),
+    ),
+    onSelect: () => undefined,
+  });
   /** Your chat with a teammate, the task in the box (BLG-263: you ask, nothing is given to their Claude). */
   const askIn = (issue: Issue): ActionItem[] => {
     const mates = teammatesOf(team, issue.projectId).filter((m) => friends.some((f) => f.peerId === m.peerId));
@@ -294,6 +308,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         submenu: PRIORITIES.map((p) => ({ label: PRIORITY_INFO[p].label, checked: issue.priority === p, onSelect: () => void act(() => api.update(issue.id, { priority: p })) })),
         onSelect: () => undefined,
       },
+      ...(startable ? [agentMenu(issue)] : []),
       { label: 'Add Sub-task…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_task', projectId: issue.projectId, parent: issue.id }) },
       ...(isOpen(issue.status) ? [] : [{ label: 'Archive', icon: 'archive' as const, hint: 'Off the board; its proof files let go', onSelect: () => void act(() => api.archive(issue.id), `Archived ${issue.key}`) }]),
       { label: 'Copy Key', icon: 'copy', separate: true, hint: issue.key, onSelect: () => void copyText(issue.key).then(() => toast(client, `Copied ${issue.key}`, 'success')) },

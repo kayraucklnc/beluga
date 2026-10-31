@@ -448,7 +448,7 @@ function LiveRow({ id, me }: { id: string; me?: string }) {
     <div className={s.live} role="status" aria-live="polite">
       <span className={s.liveAvatars}>
         {live.slice(0, 3).map((l) => (
-          <Avatar key={`${l.peerId}:${l.for}`} name={l.name} id={l.peerId} size={18} claude agent={l.peerId === me ? myAgent : undefined} />
+          <Avatar key={`${l.peerId}:${l.for}`} name={l.name} id={l.peerId} size={18} claude agent={l.agent ?? (l.peerId === me ? myAgent : undefined)} />
         ))}
       </span>
       <span>{liveLine(live, me)}</span>

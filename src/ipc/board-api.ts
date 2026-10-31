@@ -72,8 +72,12 @@ export const BOARD_API = {
   'board.addProof': { args: z.tuple([ref, z.object({ kind: z.enum(['image', 'url', 'file', 'graph', 'text']), title: z.string().min(1).max(120), path: z.string().min(1).max(4096).optional(), url: z.string().url().max(2000).optional(), body: z.string().max(60_000).optional(), context: z.boolean().optional() })]) },
   'board.removeProof': { args: z.tuple([ref, z.string().min(1).max(40)]) },
   'board.remove': { args: z.tuple([ref]) },
-  // Start a worktree for a task (and open it); with claude, your Claude starts on it there → the workspace id.
-  'board.start': { args: z.tuple([ref, z.object({ claude: z.boolean().optional(), base: z.string().min(1).max(200).optional() }).optional()]) },
+  // Who works a task (BLG-498): an agent (and model), or null for your default. It takes effect at the
+  // task's next start; a worktree already working it keeps its agent → what happened, in words.
+  'board.setAgent': { args: z.tuple([ref, AgentRef.nullable()]) },
+  // Start a worktree for a task (and open it); with claude, your agent starts on it there → the workspace id.
+  // `agent`: this start only, instead of the task's own agent (or your default).
+  'board.start': { args: z.tuple([ref, z.object({ claude: z.boolean().optional(), base: z.string().min(1).max(200).optional(), agent: AgentRef.optional() }).optional()]) },
   // The Archive: one finished task (and its finished sub-tasks), or every Done one (in a project); back out; deleted for good.
   'board.archive': { args: z.tuple([ref]) },
   'board.archiveDone': { args: z.tuple([projectId.optional()]) },

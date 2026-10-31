@@ -1,5 +1,6 @@
 import type { PlanTools } from '../../agent/types.js';
 import type { AgentRef } from '../../protocol.js';
+import { agentName } from '../../shared/agent-label.js';
 import type { Actor, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { CombineResult } from '../../workspaces/git.js';
@@ -216,6 +217,18 @@ export class PlansWork {
   /** When the plan runs its test suites: each milestone's check, or only the final step. */
   setTestsAt(id: string, testsAt: TestsAt): Plan {
     return this.plans.setTestsAt(id, testsAt, this.me());
+  }
+
+  /**
+   * Who works the plan's milestones and tasks (BLG-498): `agent`, or your default (null). Work that
+   * starts from now on gets it; milestones and tasks already at work keep the agent they opened with
+   * (switching mid-run would lose their sessions). A task's own agent still beats it. → in words.
+   */
+  setWorkAgent(id: string, agent: AgentRef | null): string {
+    const plan = this.plans.setWorkAgent(id, agent ?? undefined, this.me());
+    const who = agent ? agentName(agent, { model: true }) : 'your default agent';
+    const busy = Object.values(plan.runs).filter((r) => r?.agent && !r.passedAt).length;
+    return busy ? `${who} works what starts next; the ${busy === 1 ? 'milestone' : `${busy} milestones`} already at work keep${busy === 1 ? 's' : ''} ${busy === 1 ? 'its' : 'their'} agent` : `${who} works this plan’s milestones and tasks`;
   }
 
   pass(id: string, milestone: string): Plan {

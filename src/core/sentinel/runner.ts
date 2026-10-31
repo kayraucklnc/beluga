@@ -7,6 +7,7 @@ import type { NoticeEvent } from '../notify.js';
 import { type Named, mentionNote, personMentions } from '../person-mentions.js';
 import type { RunFolders } from './files.js';
 import type { AgentRef } from '../../protocol.js';
+import type { Effort } from '../../shared/settings-schema.js';
 import {
   type ClaudeStep,
   type FriendStep,
@@ -32,6 +33,7 @@ import {
   firstLine,
   stepAvailable,
   stepAgent,
+  stepEffort,
 } from './model.js';
 import type { Row, Source } from '../../shared/view-spec.js';
 import { type Measured, keptWords, measureFrom, readOutput } from './metrics.js';
@@ -82,8 +84,11 @@ export interface SentinelPlaces {
   madeChanges(workspaceId: string): Promise<boolean | undefined>;
   /** Archive a worktree quietly (nothing of yours is lost). */
   archive(workspaceId: string): Promise<unknown>;
-  /** The agent a run's own chat or worktree runs for the next step (BLG-497); undefined: your default. */
-  setAgent?(workspaceId: string, agent: AgentRef | undefined): void;
+  /**
+   * The agent a run's own chat or worktree runs for the next step (BLG-497); undefined: your default.
+   * `effort`: the step's thinking effort (undefined: Settings' effort).
+   */
+  setAgent?(workspaceId: string, agent: AgentRef | undefined, effort?: Effort): void;
 }
 
 /** A pull request as GitHub sees it now (for the merge gate, §5). */
@@ -196,6 +201,8 @@ export interface RunnerDeps {
   readonly fetchSource?: SourceFetch;
   /** Variables only Call a service steps get, from Beluga's own connections (the project's Earnings key as $STRIPE_EARNINGS_KEY). */
   readonly serviceEnv?: (projectId: string | undefined) => Record<string, string>;
+  /** The effort levels an agent's model takes (undefined agent: your default), when they're known. */
+  readonly efforts?: (agent: AgentRef | undefined) => readonly string[] | undefined;
   /** Keep a run's numbers (the files, the state, the first dashboard) → their names as kept. */
   readonly keep?: (active: ActiveRun, measured: readonly Measured[]) => void;
 }
@@ -863,7 +870,11 @@ export class SentinelRunner {
     const { channel } = place;
     // The step's agent and model (BLG-497): the run's chat or worktree runs it for this step (steps
     // sharing one can each pick their own). Your Mac's chats run your default agent.
-    if (place.workspaceId) this.deps.places?.setAgent?.(place.workspaceId, stepAgent(step));
+    // Its effort too, when its model takes it (else Settings' effort).
+    if (place.workspaceId) {
+      const agent = stepAgent(step);
+      this.deps.places?.setAgent?.(place.workspaceId, agent, stepEffort(step, this.deps.efforts?.(agent)));
+    }
     // Earlier outputs filled in are material in tags, never instructions; a big one is its file and a preview.
     const prompt = render(step.prompt, { ...this.context(active, outputs), material: stepMaterial }).trim();
     if (!prompt) return { kind: 'failed', why: 'its prompt is empty', channel };

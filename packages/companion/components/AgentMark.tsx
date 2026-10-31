@@ -51,7 +51,8 @@ export function markOfName(name: string, fallback?: string): AgentMark {
 
 /**
  * Whether a task's activity line is an agent's (the board names it "Your Claude", "mia's Codex"):
- * a person is "You" or their name, Beluga is "Beluga".
+ * a person is "You" or their name, Beluga is "Beluga". Only for an older Mac's lines: a newer one
+ * sends the line's `agent` (BLG-498).
  */
 export function isAgentActor(who: string): boolean {
   return /^your\s/i.test(who) || /['’]s\s\S/.test(who);

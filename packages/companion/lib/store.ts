@@ -715,6 +715,11 @@ class Store {
     return this.views.get(topic) as CachedView<T> | undefined;
   }
 
+  /** Every view kept now (on screen, or the last ones), newest first. */
+  cachedViews(): Array<[Topic, CachedView]> {
+    return [...this.views].sort((a, b) => b[1].at - a[1].at) as Array<[Topic, CachedView]>;
+  }
+
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private persistViews(): void {
     if (this.persistTimer) return;

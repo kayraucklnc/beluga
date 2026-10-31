@@ -88,6 +88,10 @@ here",
         "who": "you",
       },
       {
+        "agent": {
+          "label": "Claude",
+          "runtime": "claude",
+        },
         "endTs": 1760000000009,
         "id": "i-ra1",
         "name": "Claude",
@@ -358,6 +362,10 @@ here",
         "who": "you",
       },
       {
+        "agent": {
+          "label": "Claude",
+          "runtime": "claude",
+        },
         "endTs": 1760000000006,
         "id": "i-r1",
         "name": "Claude",
@@ -575,6 +583,10 @@ Then protect \`/api/payments\`.",
     "topic": "conv:ws:w2",
     "turns": [
       {
+        "agent": {
+          "label": "Claude",
+          "runtime": "claude",
+        },
         "id": "i-r2",
         "live": {
           "agents": 1,
@@ -1295,6 +1307,63 @@ Pull request #53",
     ],
   },
   "plan:pl_auth": {
+    "agents": {
+      "groups": [
+        {
+          "available": true,
+          "current": true,
+          "isDefault": true,
+          "label": "Claude",
+          "models": [
+            {
+              "description": "Claude Code's choice",
+              "label": "Default",
+              "on": false,
+              "value": "",
+            },
+            {
+              "description": "most capable, for complex work",
+              "label": "Opus",
+              "on": false,
+              "value": "opus",
+            },
+            {
+              "description": "fast and very capable",
+              "label": "Sonnet",
+              "on": false,
+              "value": "sonnet",
+            },
+            {
+              "description": "fastest, for quick tasks",
+              "label": "Haiku",
+              "on": false,
+              "value": "haiku",
+            },
+          ],
+          "runtime": "claude",
+        },
+        {
+          "available": false,
+          "current": false,
+          "isDefault": false,
+          "label": "Codex",
+          "models": [],
+          "runtime": "codex",
+          "why": "Codex isn't set up on this Mac yet",
+        },
+        {
+          "available": false,
+          "current": false,
+          "isDefault": false,
+          "label": "Local model",
+          "models": [],
+          "runtime": "local",
+          "why": "No local model endpoint is set",
+        },
+      ],
+      "label": "Default",
+      "runtime": "claude",
+    },
     "autonomy": "gated",
     "goal": "Protect the payment routes",
     "id": "pl_auth",
@@ -1665,6 +1734,10 @@ Pull request #53",
         "who": "You",
       },
       {
+        "agent": {
+          "label": "Claude",
+          "runtime": "claude",
+        },
         "at": 1760000000002,
         "body": "Done, see:
 (code)",

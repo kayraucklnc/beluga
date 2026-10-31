@@ -1,6 +1,9 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Check, ChevronDown, ChevronRight, Gauge, Hand, Monitor, Rocket, User } from 'lucide-react-native';
 import { Options } from '../../components/Options';
+import { AgentMarkIcon, markIcon, runtimeMark } from '../../components/AgentMark';
+import { AgentChoiceSheet, agentOfRow } from '../../components/AgentPicker';
+import { agentName } from '../../../../src/shared/agent-label';
 import { openOnMac } from '../../lib/mac';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
@@ -44,6 +47,17 @@ export default function Plan() {
   const done = tasks.filter((t) => t.state === 'done').length;
   const [menu, setMenu] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  // Who works its milestones and tasks (1.34, BLG-498): its own pick, else your default; changed from ⋯.
+  const defaultGroup = p?.agents?.groups.find((g) => g.isDefault);
+  const agentWords = p?.agent ? agentName(p.agent, { model: true }) : defaultGroup ? `Your agent (${defaultGroup.label})` : 'Your agent';
+  const agentRuntime = p?.agent?.runtime ?? defaultGroup?.runtime;
+  const setAgent = (agent: { runtime: string; label: string; model?: string } | null, label: string): void => {
+    void store.call<string>(calls.setPlanAgent(id ?? '', agent, label)).then(
+      (said) => store.toast({ text: typeof said === 'string' ? said : `${label} works this plan`, tone: 'ok' }),
+      (e: Error) => store.toast({ text: e.message, tone: 'error' }),
+    );
+  };
   const how = p?.autonomy && p.autonomy in AUTONOMY ? AUTONOMY[p.autonomy as Autonomy] : undefined;
   const titles = new Map(tasks.map((t) => [t.id, t.title]));
   const milestoneTitles = new Map((p?.milestones ?? []).map((m) => [m.id, m.title]));
@@ -70,7 +84,24 @@ export default function Plan() {
             <More onPress={() => setMenu(true)} label="Plan options" />
           </View>
         } />
-      <Options visible={menu} onClose={() => setMenu(false)} title={p?.title} options={[{ Icon: Monitor, label: 'Open on your Mac', sub: 'Its graph, outline and conversation', tone: 'plain', onPress: () => void openOnMac({ topic }) }]} />
+      <Options
+        visible={menu}
+        onClose={() => setMenu(false)}
+        title={p?.title}
+        options={[
+          { Icon: markIcon(runtimeMark(agentRuntime)), label: 'Agent for its work', sub: agentWords, tone: 'lavender', hidden: !p?.agents, onPress: () => setPicking(true) },
+          { Icon: Monitor, label: 'Open on your Mac', sub: 'Its graph, outline and conversation', tone: 'plain', onPress: () => void openOnMac({ topic }) },
+        ]}
+      />
+      <AgentChoiceSheet
+        title="Agent for its work"
+        caption={p?.running ? 'For what starts next: milestones at work keep their agent' : 'Works its milestones and tasks'}
+        picker={p?.agents}
+        visible={picking}
+        onClose={() => setPicking(false)}
+        yours={{ on: !p?.agent, onPick: () => setAgent(null, 'Your agent') }}
+        onPick={(g, value, label) => setAgent(agentOfRow(g, value), value ? `${g.label} · ${label}` : g.label)}
+      />
       <Options
         visible={howOpen}
         onClose={() => setHowOpen(false)}
@@ -110,6 +141,14 @@ export default function Plan() {
                   </T>
                   <ChevronDown color={toneInk('lavender')} size={14} />
                 </Press>
+              ) : null}
+              {p.agent || p.agents ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <AgentMarkIcon mark={runtimeMark(agentRuntime)} size={14} color={color.text2} />
+                  <T v="caption" c={color.text2}>
+                    Worked by {agentWords}
+                  </T>
+                </View>
               ) : null}
               {p.topic ? <PlanChat topic={p.topic} drafting={drafting} /> : null}
             </View>

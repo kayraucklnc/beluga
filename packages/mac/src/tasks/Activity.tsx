@@ -39,8 +39,8 @@ function Who({ entry, selfId }: { entry: Entry; selfId: string }) {
   const by = entry.by;
   const mine = useMyAgent();
   if (by.kind === 'person') return <Avatar name={by.name} id={by.id} size={20} />;
-  // Yours: your agent's mark; someone else's (whose runtime the board doesn't keep): the Claude mark.
-  if (by.kind === 'claude') return <Avatar name={by.ownerName} id={by.owner} claude agent={by.owner === selfId ? mine : undefined} size={20} />;
+  // The agent the board recorded (BLG-498); an older entry: yours, your agent's mark; someone else's, the Claude mark.
+  if (by.kind === 'claude') return <Avatar name={by.ownerName} id={by.owner} claude agent={by.agent ?? (by.owner === selfId ? mine : undefined)} size={20} />;
   return (
     <span className={t.belugaMark} aria-label={actorName(by, selfId)}>
       <Icon name="claude" size={11} />

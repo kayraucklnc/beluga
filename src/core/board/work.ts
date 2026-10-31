@@ -161,8 +161,31 @@ export class BoardWork {
     return agentName(defaultAgentOf(this.deps.store.getState().self));
   }
 
-  myClaude(): Actor {
-    return { kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName() };
+  /**
+   * Who works a task (BLG-498): `agent`, or your default (null). It takes effect at the task's next
+   * start; a worktree already working it keeps the agent it opened with (switching an agent mid-run
+   * would lose its session). → what happened, in words, for the screen to show.
+   */
+  setAgent(ref: string, agent: AgentRef | null): string {
+    const issue = this.board.setAgent(ref, agent ?? undefined, this.me());
+    const who = agent ? agentName(agent, { model: true }) : `${this.agent()} (your default)`;
+    const doing = worktreeDoing(issue, (id) => this.workspaces().some((w) => w.id === id && !w.archived));
+    const ws = doing ? this.workspaces().find((w) => w.id === doing) : undefined;
+    return ws ? `${ws.name} keeps the agent it started with; ${who} works ${issue.key} from its next start` : `${who} works ${issue.key} when it starts`;
+  }
+
+  /**
+   * Your agent, as the board records it (BLG-498: its activity shows the real agent's mark): the
+   * one picked for `channel`'s conversation (`ws:<id>`), else your default.
+   */
+  myClaude(channel?: string): Actor {
+    return { kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName(), agent: this.agentIn(channel) };
+  }
+
+  /** The agent that runs in a conversation (`ws:<id>`): its workspace's pick, else your default. */
+  private agentIn(channel: string | undefined): AgentRef {
+    const ws = channel?.startsWith(WS) ? this.workspaces().find((w) => w.id === channel.slice(WS.length)) : undefined;
+    return ws?.agent ?? defaultAgentOf(this.deps.store.getState().self);
   }
 
   /**
@@ -222,11 +245,12 @@ export class BoardWork {
   /**
    * A draft (from draft, maybe changed) added as a task: its title, goal, criteria, labels and
    * priority, for whoever it names on the team; with `more`, those too (under it when `epic`). → the first (or the epic), then the rest.
+   * `agent` (BLG-498): who works them when they start (none: your default).
    */
-  addDraft(projectId: string, d: TaskDraft): Issue[] {
+  addDraft(projectId: string, d: TaskDraft, agent?: AgentRef): Issue[] {
     const who = d.epic ? undefined : this.whom(projectId, d.for);
-    const first = this.board.create({ projectId, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), ...(who ? { assignee: who } : {}), brief: draftBrief(d) }, this.me());
-    return [first, ...this.addMore(first, {}, d)];
+    const first = this.board.create({ projectId, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), ...(who ? { assignee: who } : {}), ...(agent ? { agent } : {}), brief: draftBrief(d) }, this.me());
+    return [first, ...this.addMore(first, agent ? { agent } : {}, d)];
   }
 
   /** The person a draft names, if they're on the project's team (you or a teammate). */
@@ -425,7 +449,7 @@ export class BoardWork {
 
   /** Make (or rewrite) the task a conversation is doing from Claude's definition. */
   private define(channel: string, def: TaskDefinition, current: Issue | undefined): Issue {
-    const by: Actor = this.myClaude();
+    const by: Actor = this.myClaude(channel);
     const wsId = channel.startsWith(WS) ? channel.slice(WS.length) : undefined;
     const ws = wsId ? this.workspaces().find((w) => w.id === wsId) : undefined;
     const projectId = current?.projectId ?? ws?.projectId;
@@ -604,7 +628,7 @@ export class BoardWork {
 
   private toolsFor(channel: string, current: Issue | undefined, planning = false): BoardTools {
     const board = this.board;
-    const by = (): Actor => ({ kind: 'claude', owner: this.deps.selfId(), ownerName: this.deps.selfName() });
+    const by = (): Actor => this.myClaude(channel);
     const state = (): ReturnType<Board['state']> => board.state();
     const pick = (key: string | undefined): Issue => {
       if (key) return board.need(key);

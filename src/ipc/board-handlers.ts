@@ -62,6 +62,7 @@ export const BOARD_HANDLERS = {
     return work.board.removeProof(ref, proofId, work.me());
   },
   'board.remove': (s, ref) => needBoard(s).board.remove(ref),
+  'board.setAgent': (s, ref, agent) => needBoard(s).setAgent(ref, agent),
   'board.start': (s, ref, opts) => needBoard(s).start(ref, opts ?? {}),
   'board.archive': (s, ref) => {
     const work = needBoard(s);

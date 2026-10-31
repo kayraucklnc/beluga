@@ -19,6 +19,7 @@ import { moveToTrash } from './trash.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { AgentRef } from '../protocol.js';
 import type { MergeWait, Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
+import type { Effort } from '../shared/settings-schema.js';
 import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, groupKey, groupOfKey, isGroupKey, keyOf, move, settle } from './arrange.js';
 
 /** A project (by id) or a group (by name), for arranging the sidebar. */
@@ -1018,7 +1019,14 @@ export class WorkspaceManager {
    */
   setAgent(id: string, agent: AgentRef | undefined): void {
     this.require(id);
-    this.patchRecord(id, { agent: undefined, model: undefined, ...agentFields(agent) });
+    // Another agent's model may not take the effort picked for the last one: Settings' again.
+    this.patchRecord(id, { agent: undefined, model: undefined, effort: undefined, ...agentFields(agent) });
+  }
+
+  /** Pick the thinking effort for one workspace's conversation (undefined: Settings'). */
+  setEffort(id: string, effort: Effort | undefined): void {
+    this.require(id);
+    this.patchRecord(id, { effort });
   }
 
   /**

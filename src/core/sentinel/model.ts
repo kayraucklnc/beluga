@@ -1,5 +1,6 @@
 import type { AgentRef } from '../../protocol.js';
 import { KNOWN_RUNTIMES } from '../../shared/agent-runtimes.js';
+import { EFFORTS, type Effort } from '../../shared/settings-schema.js';
 import type { Row, Source } from '../../shared/view-spec.js';
 import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
@@ -125,6 +126,15 @@ export function stepAgent(step: Pick<ClaudeStep, 'runtime' | 'model'>): AgentRef
   const runtime = step.runtime ?? 'claude';
   const label = KNOWN_RUNTIMES.find((r) => r.id === runtime)?.label ?? runtime;
   return { runtime, label, ...(step.model ? { model: step.model } : {}) };
+}
+
+/**
+ * The thinking effort a step's run takes: its own, when it's one Beluga knows and its model takes
+ * it (`efforts`: the model's levels, when known). Undefined: Settings' effort, as any run.
+ */
+export function stepEffort(step: Pick<ClaudeStep, 'effort'>, efforts: readonly string[] | undefined): Effort | undefined {
+  const effort = EFFORTS.find((e) => e === step.effort);
+  return effort && (!efforts || efforts.includes(effort)) ? effort : undefined;
 }
 
 /** The languages a script step's own code runs in (BLG-350), with what runs it. */

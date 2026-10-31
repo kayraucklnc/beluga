@@ -422,6 +422,8 @@ describe('the views of a known Mac', () => {
       ['You', 'created this', undefined, undefined],
       ['Your Claude', 'commented', 'Done, see:\n(code)', true],
     ]);
+    // BLG-498: an agent's line says which agent (an entry from before agents were named: Claude); a person's says none.
+    expect(page.activity.map((a) => a.agent)).toEqual([undefined, { runtime: 'claude', label: 'Claude' }]);
     expect(page.moves.map((m) => m.status)).toEqual(['todo', 'in_progress', 'done', 'backlog', 'canceled']);
     expect(viewOf(state, ctx, 'task:nope')).toBeUndefined();
   });
@@ -497,9 +499,18 @@ describe('the views of a known Mac', () => {
     store.dispatch({ type: 'chat', id: 'dt1', from: ME, text: 'A queue.', ts: T0 + 41, byAgent: true, agent: { runtime: 'codex', label: 'Codex' }, channel: 'ws:w1', dialogue: { id: 'dlg1', turn: 1 } });
     const turns = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns;
     expect(turns.find((t) => t.id === 'dh')?.dialogue).toMatchObject({ id: 'dlg1', mode: 'Talk', who: 'Claude and Codex', progress: 'Turn 1 of 6', canStop: true, canContinue: false });
-    expect(turns.find((t) => t.id === 'dt1')).toMatchObject({ who: 'claude', name: expect.stringContaining('Codex') });
+    expect(turns.find((t) => t.id === 'dt1')).toMatchObject({ who: 'claude', name: expect.stringContaining('Codex'), agent: { runtime: 'codex', label: 'Codex' } });
     store.dispatch({ type: 'dialogue_put', dialogue: { ...d, status: 'stopped', note: 'Stopped by kayra' } });
     expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.find((t) => t.id === 'dh')?.dialogue).toMatchObject({ status: 'Stopped by kayra', canStop: false });
+  });
+
+  it('an agent’s turn says which agent answered, so the phone draws its mark (BLG-498)', () => {
+    const store = new Store(state);
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'rx1', requester: ME, event: 'started', text: '', ts: T0 + 50, channel: 'ws:w1', agent: { runtime: 'codex', label: 'Codex' } });
+    const turn = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.find((t) => t.who === 'claude' && t.ts === T0 + 50);
+    expect(turn).toMatchObject({ name: 'Codex', agent: { runtime: 'codex', label: 'Codex' } });
+    // A run from before agents were named: Claude's.
+    expect(ConvView.parse(viewOf(state, ctx, 'conv:ws:w1')).turns.filter((t) => t.who === 'claude').every((t) => t.agent?.runtime === 'claude')).toBe(true);
   });
 
   it('pages back through older turns', () => {

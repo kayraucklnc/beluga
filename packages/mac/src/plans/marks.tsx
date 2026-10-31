@@ -136,8 +136,8 @@ export function ActorMark({ by, size = 18 }: { by: Actor; size?: number }) {
   const selfId = useApp((s) => s.selfId);
   const mine = useMyAgent();
   if (by.kind === 'person') return <Avatar name={by.name} id={by.id} size={size} />;
-  // Yours: your agent's mark; someone else's (whose runtime the board doesn't keep): the Claude mark.
-  if (by.kind === 'claude') return <Avatar name={by.ownerName} id={by.owner} claude agent={by.owner === selfId ? mine : undefined} size={size} />;
+  // The agent the board recorded (BLG-498); an older entry: yours, your agent's mark; someone else's, the Claude mark.
+  if (by.kind === 'claude') return <Avatar name={by.ownerName} id={by.owner} claude agent={by.agent ?? (by.owner === selfId ? mine : undefined)} size={size} />;
   return <WhoMark who="beluga" size={size} />;
 }
 

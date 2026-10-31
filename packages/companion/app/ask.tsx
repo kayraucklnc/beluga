@@ -5,9 +5,11 @@ import { ArrowUp, ChevronDown, Folder, GitBranch, ImagePlus, Laptop, ListChecks,
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { AgentChoice, type PickedAgent } from '../components/AgentChoice';
 import { convHref } from '../components/Conv';
 import { Sheet } from '../components/Sheet';
 import { Avatar, haptic, IconBadge, Press, T, type Tone, toneBg, toneInk } from '../components/ui';
+import { agentPicksSupported } from '../lib/agent-picks';
 import { useView } from '../lib/hooks';
 import { type Call, calls } from '../lib/link/calls';
 import { type HomeView, type PeopleView, type Topic, type WorkView, isMacTopic } from '../lib/link/protocol';
@@ -58,6 +60,8 @@ export default function Ask() {
   const [picking, setPicking] = useState(false);
   const [mode, setMode] = useState<Mode>(() => MODES.find((m) => m.mode === back?.how)?.mode ?? 'worktree');
   const [planFirst, setPlanFirst] = useState(false);
+  // Who works an advanced plan's milestones and tasks (BLG-498): none is your default agent.
+  const [planAgent, setPlanAgent] = useState<PickedAgent | undefined>();
   // An older Mac (before 1.5) has neither Your Mac nor worktrees and plans from here.
   const modes = store.supports('askModes');
   // Speaking (BLG-161): ■ puts the words in the box to edit; ↑ sends them as you said them, once written down.
@@ -124,7 +128,7 @@ export default function Ask() {
           : how === 'worktree'
             ? make((files) => (files.length ? calls.startWorktreeWith(target.id, words, planFirst, files) : calls.startWorktree(target.id, words, planFirst)))
             : how === 'plan'
-              ? make(() => calls.createPlan(target.id, words))
+              ? make(() => planCall(target.id, words, planAgent))
               : make((files) => calls.ask(target.id, words, files));
       const id = sends.start({ kind, label: target.label, target: keyOf(target), ...(target.kind === 'project' ? { project: target.label, ...(target.icon ? { icon: target.icon } : {}) } : {}), ...(kind === 'worktree' && planFirst ? { plan: true } : {}) }, words, call, opts);
       href = `/starting/${id}`;
@@ -220,7 +224,7 @@ export default function Ask() {
               ) : null}
               <VoiceNote voice={voice} />
             </View>
-            {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} planFirst={planFirst} onPlanFirst={setPlanFirst} /> : null}
+            {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} planFirst={planFirst} onPlanFirst={setPlanFirst} agent={planAgent} onAgent={setPlanAgent} /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 10 }}>
               <Press onPress={() => setPicking(true)} accessibilityLabel="Where it goes" style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingLeft: 6, paddingRight: 12, borderRadius: 22, backgroundColor: color.sunken }}>
                 {target ? mark(target, 32) : null}
@@ -263,8 +267,18 @@ export default function Ask() {
   );
 }
 
-/** A project's three ways in, as icon chips (as the Mac's project home offers them), and Plan first beside a worktree's (wrapping on a narrow phone, so the send row keeps only where it goes, a photo, the mic and send). */
-function ModeChips({ mode, onMode, planFirst, onPlanFirst }: { readonly mode: Mode; readonly onMode: (m: Mode) => void; readonly planFirst: boolean; readonly onPlanFirst: (on: boolean) => void }) {
+/** A new plan, with who works it when picked (plans.create takes `agent` from 1.34; an older Mac, just the goal). */
+function planCall(project: string, goal: string, agent: PickedAgent | undefined): Call {
+  const c = calls.createPlan(project, goal) as Call<'plans.create'>;
+  if (!agent || !agentPicksSupported()) return c as unknown as Call;
+  return { ...c, args: [{ ...c.args[0], agent }] } as Call<'plans.create'> as unknown as Call;
+}
+
+/**
+ * A project's three ways in, as icon chips (as the Mac's project home offers them), and Plan first beside a worktree's (wrapping on a narrow phone, so the send row keeps only where it goes, a photo, the mic and send).
+ * An advanced plan's agent (BLG-498) sits beside it the same way: Your agent unless you pick another.
+ */
+function ModeChips({ mode, onMode, planFirst, onPlanFirst, agent, onAgent }: { readonly mode: Mode; readonly onMode: (m: Mode) => void; readonly planFirst: boolean; readonly onPlanFirst: (on: boolean) => void; readonly agent: PickedAgent | undefined; readonly onAgent: (a: PickedAgent | undefined) => void }) {
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 10 }}>
       {MODES.map((m) => {
@@ -286,6 +300,7 @@ function ModeChips({ mode, onMode, planFirst, onPlanFirst }: { readonly mode: Mo
         );
       })}
       {mode === 'worktree' ? <PlanFirst on={planFirst} onChange={onPlanFirst} /> : null}
+      {mode === 'plan' && agentPicksSupported() ? <AgentChoice value={agent} onChange={onAgent} /> : null}
     </View>
   );
 }

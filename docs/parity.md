@@ -446,7 +446,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.addProof` | ✓ Add Proof (a picture, a page, a file) on a task page; the agent's task_attach_proof |
 | `board.removeProof` | ✓ a proof item's ✕ |
 | `board.remove` | ✓ Delete Task… (an alert, with Cancel) |
-| `board.start` | ✓ Start on a task (its page, its ⋯ and right-click menu: a new worktree, In Progress, your agent on it with its brief, and you there); ⋯ › Start Worktree Only; a task a worktree already does or carries shows Open Worktree instead |
+| `board.setAgent` | ✓ a task page's Agent property (your agent, or any agent and model, each with its mark) and a task's ⋯ / right-click › Agent ▸ (BLG-498): from its next start, a worktree already on it keeps its agent (the toast says so); the phone's task page › ⋯ › Agent (1.34) |
+| `board.start` | ✓ Start on a task (its page, its ⋯ and right-click menu: a new worktree, In Progress, your agent on it with its brief, and you there; the task's own agent, else your default); ⋯ › Start Worktree Only; a task a worktree already does or carries shows Open Worktree instead |
 | `board.settleGone` | ✓ the banner on a task whose worktree was archived or deleted (Cancel Task / Back to Backlog / Keep) |
 | `board.archive` | ✓ a finished task's ⋯ › Archive |
 | `board.archiveDone` | ✓ the archive button on Done (list group, board column), Tasks ⋯ › Archive Done Tasks |
@@ -533,6 +534,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `plans.setAutonomy` | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu); the phone plan page's autonomy chip (1.5) |
 | `plans.setPaused` | ✓ Pause / Resume on a plan's page |
 | `plans.setParallel` | ✓ a plan's ⋯ › Run at Once ▸ |
+| `plans.setWorkAgent` | ✓ a plan's ⋯ › Agent for Its Work ▸ (BLG-498): who works the milestones and tasks that start from now on (ones at work keep theirs, the toast says so); the phone's plan page › ⋯ › Agent for its work (1.34) |
 | `plans.setTestsAt` | ✓ a plan's ⋯ › When to Run Tests ▸ (each milestone, or once at the end) |
 | `plans.pass` | ✓ Pass Milestone on a plan's page |
 | `plans.recheck` | ✓ Check Again on a milestone the agent is checking or that failed its check |

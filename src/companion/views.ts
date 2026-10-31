@@ -5,7 +5,7 @@ import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
 import { OFFER_DETAIL, offerWords, waitingOn, waitingWords, workingOn, workingWords } from '../core/team/model.js';
-import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived, isEpic, issueById, progressOf as boardProgress } from '../core/board/model.js';
+import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived, isEpic, isStartable, issueById, progressOf as boardProgress } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
 import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
@@ -436,7 +436,7 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
     const who = item.byAgent ? 'claude' : item.from === me ? 'you' : 'friend';
     const prose = who === 'claude' ? pictures(proseOf(item.text)) : proseOf(item.text);
     const edit = who === 'you' && !steer ? editOf(state, item.channel, item.text, prose) : undefined;
-    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose, ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}), ...(edit ? { edit } : {}) };
+    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), ...(who === 'claude' ? { agent: item.agent ?? CLAUDE_AGENT } : {}), prose, ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}), ...(edit ? { edit } : {}) };
   }
   if (item.type === 'system') {
     // Earlier lines of a shared workspace's conversation ("bob: …") read as that person's turn.
@@ -479,6 +479,7 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
     id: item.id,
     who: 'claude',
     name: clip(item.owner === me || !item.owner ? agentName(item.agent) : agentLabel(item.agent, item.ownerName, false), 100),
+    agent: item.agent ?? CLAUDE_AGENT,
     prose: pictures(proseOf(item.text)),
     ts: item.ts,
     ...(status ? { status } : {}),
@@ -707,21 +708,34 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
 function pickerOf(state: DomainState, channel: string, mine: boolean): { agent?: AgentPickerView } {
   const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
   if (!mine || !id || !state.projects.some((p) => p.workspaces.some((w) => w.id === id))) return {};
-  const p = agentPicker(state, channel);
+  return { agent: pickerView(agentPicker(state, channel)) };
+}
+
+/**
+ * 1.34 (BLG-498): the list a task's or a plan's agent is picked from: your default agent's runtime
+ * first, `ref` (the task's or plan's own pick; none: your default) the one marked on.
+ */
+function workPicker(state: DomainState, ref: AgentRef | undefined): AgentPickerView {
+  const p = pickerView(agentPicker(state, 'draft', defaultAgentOf(state.self).runtime, ref));
+  // None picked: the phone's "Your agent" row is the one on, not your default's model.
+  return ref ? p : { ...p, groups: p.groups.map((g) => ({ ...g, models: g.models.map((m) => ({ ...m, on: false })) })) };
+}
+
+const agentRefView = (a: AgentRef): AgentRef => ({ runtime: clip(a.runtime, 32), label: clip(a.label, 64), ...(a.model ? { model: clip(a.model, 64) } : {}) });
+
+function pickerView(p: ReturnType<typeof agentPicker>): AgentPickerView {
   return {
-    agent: {
-      runtime: clip(p.runtime, 32),
-      label: clip(p.label, 120),
-      groups: p.groups.slice(0, 8).map((g) => ({
-        runtime: clip(g.runtime, 32),
-        label: clip(g.label, 64),
-        available: g.available,
-        ...(g.why ? { why: clip(g.why, 200) } : {}),
-        isDefault: g.isDefault,
-        current: g.current,
-        models: g.models.slice(0, 30).map((m) => ({ value: clip(m.value, 80), label: clip(m.label, 80), description: clip(m.description, 200), on: m.on })),
-      })),
-    },
+    runtime: clip(p.runtime, 32),
+    label: clip(p.label, 120),
+    groups: p.groups.slice(0, 8).map((g) => ({
+      runtime: clip(g.runtime, 32),
+      label: clip(g.label, 64),
+      available: g.available,
+      ...(g.why ? { why: clip(g.why, 200) } : {}),
+      isDefault: g.isDefault,
+      current: g.current,
+      models: g.models.slice(0, 30).map((m) => ({ value: clip(m.value, 80), label: clip(m.label, 80), description: clip(m.description, 200), on: m.on })),
+    })),
   };
 }
 
@@ -846,6 +860,10 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
     needsYou: needsYou(state)
       .filter((n) => n.topic === topic || (home && n.topic === home))
       .slice(0, 20),
+
+    // 1.34 (BLG-498): who works its milestones and tasks (none: your default), and the list to change it from.
+    ...(plan.agent ? { agent: agentRefView(plan.agent) } : {}),
+    ...(plan.status !== 'done' ? { agents: workPicker(state, plan.agent) } : {}),
   };
 }
 
@@ -959,6 +977,8 @@ export function taskPageView(state: DomainState, id: string, ctx?: ViewContext):
       id: clip(a.id, 200),
       at: Math.round(a.at),
       who: clip(actorName(a.by, me), 80),
+      // An agent's line says which agent (BLG-498); an entry from before agents were named: Claude.
+      ...(a.by.kind === 'claude' ? { agent: a.by.agent ?? CLAUDE_AGENT } : {}),
       text: clip(plainLine(activityText(a, me), 500), 500),
       ...(a.body ? { body: words(a.body, 8000) } : {}),
       ...(a.kind === 'comment' ? { comment: true } : {}),
@@ -966,6 +986,9 @@ export function taskPageView(state: DomainState, id: string, ctx?: ViewContext):
     ...(worktree ? { worktree: clip(worktree, 200) } : {}),
     ...(i.pr ? { pr: { number: i.pr.number, state: i.pr.state, title: clip(plainLine(i.pr.title, 300), 300), checks: i.pr.checks } } : {}),
     moves: MOVES.filter((s) => s !== i.status).map((s) => ({ status: s, label: STATUS_INFO[s].label })),
+    // 1.34 (BLG-498): who works it (none: your default), and while it can still start, the list to change it from.
+    ...(i.agent ? { agent: agentRefView(i.agent) } : {}),
+    ...(isStartable(i) ? { agents: workPicker(state, i.agent) } : {}),
   };
 }
 

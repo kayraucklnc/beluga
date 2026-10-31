@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useFolded, useSupports, useView } from '../lib/hooks';
-import { calls } from '../lib/link/calls';
+import { agentPicksSupported } from '../lib/agent-picks';
+import { type Call, calls } from '../lib/link/calls';
 import type { TaskSummary, TasksView } from '../lib/link/protocol';
 import { store } from '../lib/store';
 import { color, radius } from '../lib/theme';
+import { AgentChoice, type PickedAgent } from './AgentChoice';
 import { ProjectMark } from './ProjectMark';
 import { Sheet } from './Sheet';
 import { Button, Card, FoldHead, haptic, Hairline, Pill, Press, T, type Tone, toneBg, toneInk } from './ui';
@@ -147,6 +149,8 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
   const [text, setText] = useState('');
   const [draft, setDraft] = useState<TaskDraftResult | undefined>();
   const [busy, setBusy] = useState<'draft' | 'add' | undefined>();
+  // Who works it when it starts (BLG-498): none is your default agent.
+  const [agent, setAgent] = useState<PickedAgent | undefined>();
   const [last, setLast] = useState(project);
   if (project && project !== last) setLast(project);
   const p = project ?? last;
@@ -159,6 +163,7 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
       setText('');
       setDraft(undefined);
       setBusy(undefined);
+      setAgent(undefined);
     }, 250);
   };
   const ask = async () => {
@@ -173,7 +178,10 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
     if (!p || !draft || busy) return;
     haptic.success();
     setBusy('add');
-    const r = await store.call<{ id: string; key: string; more?: Array<{ id: string; key: string }> }>(calls.addTask(p.id, draft), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
+    // The agent goes only to a Mac that takes it (1.34), and only when it isn't your default.
+    const base = calls.addTask(p.id, draft);
+    const call: Call = agent && agentPicksSupported() ? withAgent(base as Call<'companion.addTask'>, agent) : base;
+    const r = await store.call<{ id: string; key: string; more?: Array<{ id: string; key: string }> }>(call, { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
     setBusy(undefined);
     if (!r) return;
     store.toast({ text: `Added ${andList([r.key, ...(r.more ?? []).map((m) => m.key)])}`, tone: 'ok' });
@@ -231,6 +239,12 @@ export function NewTaskSheet({ project, onClose }: { readonly project?: { id: st
                 </View>
               ))}
             </ScrollView>
+            {agentPicksSupported() ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                <T v="caption">Worked by</T>
+                <AgentChoice value={agent} onChange={setAgent} />
+              </View>
+            ) : null}
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <Button label="Change" quiet flex={1} onPress={() => setDraft(undefined)} />
               <Button label={busy === 'add' ? 'Adding…' : count > 1 ? `Add ${count} tasks` : 'Add task'} Icon={Plus} flex={1.4} disabled={!!busy} onPress={() => void add()} />
@@ -299,6 +313,9 @@ function DraftCard({ draft, heading, epic }: { readonly draft: Omit<TaskDraftRes
     </Card>
   );
 }
+
+/** A new task's call with who works it (calls.addTask has no `agent` of its own). */
+const withAgent = (c: Call<'companion.addTask'>, agent: PickedAgent): Call => ({ ...c, args: [{ ...c.args[0], agent }] }) as Call<'companion.addTask'> as unknown as Call;
 
 /** "BLG-1", "BLG-1 and BLG-2", "BLG-1, BLG-2 and BLG-3". */
 const andList = (items: readonly string[]): string => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);

@@ -6,7 +6,10 @@ import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp } from '../lib/beluga.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { Select } from '../components/Select.js';
+import { YOUR_AGENT, useAgentEntries } from '../components/agent-options.js';
+import { agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { usePlanActions } from '../plans/use-plans.js';
 import { ActivityFeed } from './Activity.js';
 import { Brief } from './Brief.js';
@@ -434,6 +437,7 @@ function Properties({ issue }: { issue: Issue }) {
           </button>
         </AssigneePicker>
       </Prop>}
+      <AgentProp issue={issue} />
       <Prop label="Labels">
         <div className={t.propLabels}>
           {issue.labels.map((l) => (
@@ -501,6 +505,26 @@ function Properties({ issue }: { issue: Issue }) {
         <span className={t.propStatic}>{ago(issue.updatedAt)}</span>
       </Prop>
     </aside>
+  );
+}
+
+/**
+ * Who works the task (BLG-498): your default agent, or an agent and model of its own, each with its
+ * mark. It takes effect at the next start: a worktree already on it keeps its agent (the toast says so).
+ */
+function AgentProp({ issue }: { issue: Issue }) {
+  const { api, act } = useTaskActions();
+  const { client } = useBeluga();
+  const runtimes = useApp((s) => s.runtimes);
+  const agents = useAgentEntries();
+  const pick = async (v: string): Promise<void> => {
+    const said = await act(() => api.setAgent(issue.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes)));
+    if (typeof said === 'string') toast(client, said, 'success');
+  };
+  return (
+    <Prop label="Agent">
+      <Select label="Agent and model that work this task" size="small" value={issue.agent ? choiceForAgent(issue.agent) : YOUR_AGENT} options={agents} onChange={(v) => void pick(v)} />
+    </Prop>
   );
 }
 

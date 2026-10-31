@@ -19,7 +19,7 @@ import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { EditPromptSheet } from '../../components/EditPrompt';
 import { AgentPickerSheet } from '../../components/AgentPicker';
-import { markIcon, markOfName, runtimeMark } from '../../components/AgentMark';
+import { agentMark, markIcon, markOfName, runtimeMark } from '../../components/AgentMark';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone, toneOf } from '../../components/ui';
 import { ago, elapsed, useSince, useSupports, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
@@ -410,7 +410,7 @@ function DialogueTurn({ d }: { d: NonNullable<TurnView['dialogue']> }) {
   );
 }
 
-/** An agent's turn, under its name with its mark (BLG-497: by the name, else the conversation's runtime). */
+/** An agent's turn, under its name with its mark (BLG-498: the agent the Mac sends; an older Mac's, by the name, else the conversation's runtime). */
 function ClaudeTurn({ t, all, onAgent, topic, runtime }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic; runtime?: string | undefined }) {
   const working = t.status === 'working';
   const outs = t.outputs ?? [];
@@ -419,7 +419,7 @@ function ClaudeTurn({ t, all, onAgent, topic, runtime }: { t: TurnView; all: Out
   return (
     <View style={{ gap: 12, paddingTop: 2 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <Avatar name={t.name} size={26} {...(t.who === 'claude' ? { mark: markOfName(t.name, runtime) } : {})} />
+        <Avatar name={t.name} size={26} {...(t.who === 'claude' ? { mark: t.agent ? agentMark(t.agent) : markOfName(t.name, runtime) } : {})} />
         <T v="callout" c={color.text} style={{ fontWeight: '700' }}>
           {t.name}
         </T>
