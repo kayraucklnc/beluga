@@ -74,7 +74,7 @@ export const BOARD_API = {
   'board.remove': { args: z.tuple([ref]) },
   // Who works a task (BLG-498): an agent (and model), or null for your default. It takes effect at the
   // task's next start; a worktree already working it keeps its agent → what happened, in words.
-  'board.setAgent': { args: z.tuple([ref, AgentRef.nullable()]) },
+  'board.setAgent': { args: z.tuple([ref, AgentRef.nullish()]) },
   // Start a worktree for a task (and open it); with claude, your agent starts on it there → the workspace id.
   // `agent`: this start only, instead of the task's own agent (or your default).
   'board.start': { args: z.tuple([ref, z.object({ claude: z.boolean().optional(), base: z.string().min(1).max(200).optional(), agent: AgentRef.optional() }).optional()]) },

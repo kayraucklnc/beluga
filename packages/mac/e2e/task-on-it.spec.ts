@@ -8,9 +8,14 @@ test.use(SHOT ? { deviceScaleFactor: 2 } : {});
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 
 async function openBoard(page: Page) {
-  await sidebar(page).getByRole('button', { name: /^(Tasks|Work)$/ }).first().click();
+  // Tasks lives under Work (BLG-197).
+  await sidebar(page).getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Tasks' }).click();
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+  // The demo's task is a sub-task, tucked under its epic until opened out.
+  const showAll = page.getByRole('button', { name: 'Show All' });
+  if (await showAll.isVisible()) await showAll.click();
   return page.getByRole('list', { name: 'Board' }).getByRole('listitem', { name: /^In Progress/ });
 }
 
@@ -29,7 +34,8 @@ test('a card says who is on it, and moves while their Claude works', async ({ pa
   // Claude at work in its worktree: the card says so while it runs.
   await card().click();
   await page.getByRole('button', { name: 'Open Worktree' }).first().click();
-  const composer = page.locator('textarea:not(.xterm-helper-textarea)');
+  // The worktree's own box (the task page may still be on screen beside it, with its title and comment boxes).
+  const composer = page.getByRole('textbox', { name: /^Tell Claude what to do in / });
   await expect(page.getByRole('button', { name: 'Stop Claude' })).toHaveCount(0, { timeout: 90_000 });
   await composer.fill('run the full test suite');
   await composer.press('Enter');

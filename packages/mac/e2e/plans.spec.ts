@@ -376,6 +376,8 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   // On the board now, each with its plan.
   await openWork(page, 'Tasks');
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  // The plan is an epic in Tasks (its milestones under it, their tasks under them), all tucked away until opened out.
+  await page.getByRole('button', { name: 'Show All' }).click();
   await expect(page.getByRole('grid', { name: 'Tasks' })).toContainText('Data model and migration');
 });
 

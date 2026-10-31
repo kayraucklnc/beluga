@@ -13,6 +13,23 @@ async function openTasks(page: Page): Promise<void> {
   await expect(page.getByRole('tablist', { name: 'Show' })).toBeVisible();
 }
 
+/** Every task as a list, sub-tasks opened out from under their epics (they start tucked away). */
+async function allAsList(page: Page): Promise<void> {
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+  const showAll = page.getByRole('button', { name: 'Show All' });
+  if (await showAll.isVisible()) await showAll.click();
+}
+
+/** The demo's friends (bob, mia…) come with the network on: turn it on (once the sidebar has drawn), and wait for bob. */
+async function friendsOn(page: Page): Promise<void> {
+  const card = sidebar(page).getByRole('group', { name: 'Talk with friends' });
+  const bob = sidebar(page).getByRole('button', { name: /^bob, / });
+  await expect(card.or(bob).first()).toBeVisible({ timeout: 30_000 });
+  if (await card.isVisible()) await card.getByRole('button', { name: 'Turn On' }).click();
+  await expect(bob).toBeVisible({ timeout: 30_000 });
+}
+
 test.describe.configure({ mode: 'serial' });
 
 test('lists the demo’s tasks by status; scopes and the board', async ({ page }) => {
@@ -193,11 +210,9 @@ test('one New Task message asking for two tasks makes both on Create, no chat in
 test('"@" in a task\'s comment box names someone, and the comment shows them as a pill (BLG-419)', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto('/');
-  const card = sidebar(page).getByRole('group', { name: 'Talk with friends' });
-  if (await card.isVisible().catch(() => false)) await card.getByRole('button', { name: 'Turn On' }).click();
-  await expect(sidebar(page).getByRole('button', { name: /^bob, / })).toBeVisible({ timeout: 30_000 });
+  await friendsOn(page);
   await openTasks(page);
-  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await allAsList(page);
   await page.getByRole('row', { name: /Add auth to the payment routes/ }).click();
   const box = page.getByRole('textbox', { name: 'Comment' });
   await box.pressSequentially('thoughts @');
@@ -222,9 +237,7 @@ test('"@" in New Task offers your friends, puts the one you pick in, and Escape 
   test.setTimeout(90_000);
   // The demo's friends (bob, mia…) come with the network on.
   await page.goto('/');
-  const card = sidebar(page).getByRole('group', { name: 'Talk with friends' });
-  if (await card.isVisible().catch(() => false)) await card.getByRole('button', { name: 'Turn On' }).click();
-  await expect(sidebar(page).getByRole('button', { name: /^bob, / })).toBeVisible({ timeout: 30_000 });
+  await friendsOn(page);
   await openTasks(page);
   await page.getByRole('button', { name: 'New Task', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: 'New Task' });
@@ -266,7 +279,7 @@ test('a worktree shows the task it’s doing, and opens it', async ({ page }) =>
 
 test('out of a task: Back stays at the top while scrolling; Esc, ⌘[ and a two-finger swipe right go back (BLG-5)', async ({ page }, info) => {
   await openTasks(page);
-  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await allAsList(page);
   const list = page.getByRole('grid', { name: 'Tasks' });
   const row = list.getByRole('row', { name: /Add auth to the payment routes, In Review/ });
   const title = page.getByRole('textbox', { name: 'Title' });
@@ -387,6 +400,7 @@ test('a narrow window: the bar wraps and New Task stays in reach; a task’s pro
   await page.getByRole('button', { name: 'New Task', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'New Task' })).toBeVisible();
   await page.keyboard.press('Escape');
+  await allAsList(page);
   await page.getByRole('row', { name: /Add auth to the payment routes/ }).first().click();
   const props = page.getByRole('complementary', { name: 'Properties' });
   const title = page.getByRole('textbox', { name: 'Title' });
@@ -399,7 +413,7 @@ for (const width of [1440, 2560]) {
   test(`a ${width}px window: the task page spans the middle area and prose keeps a readable line`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await openTasks(page);
-    await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+    await allAsList(page);
     await page.getByRole('row', { name: /Add auth to the payment routes/ }).first().click();
     const props = page.getByRole('complementary', { name: 'Properties' });
     const activity = page.getByRole('region', { name: 'Activity' });
@@ -431,11 +445,12 @@ test('Tasks is one project at a time: the one you came from, and the switcher ch
   await expect(page.getByRole('button', { name: 'Project: landing' })).toBeVisible();
   const list = page.getByRole('grid', { name: 'Tasks' });
   await expect(list).toContainText('New hero for the launch');
-  await expect(list).not.toContainText('Add auth to the payment routes');
+  await expect(list).not.toContainText('Payments API v1');
   await page.getByRole('button', { name: 'Project: landing' }).click();
   await page.getByRole('menuitem', { name: /bob-api/ }).click();
   await expect(page.getByRole('button', { name: 'Project: bob-api' })).toBeVisible();
-  await expect(list).toContainText('Add auth to the payment routes');
+  // Its sub-tasks are tucked under their epic: the epic stands for them.
+  await expect(list).toContainText('Payments API v1');
   await expect(list).not.toContainText('New hero for the launch');
 });
 
@@ -474,8 +489,7 @@ test('the board: a card picked up lifts, the column makes room, and it lands whe
 
 test('Done’s one click puts every Done task in the Archive; an archived task reads as it was and comes back (BLG-27)', async ({ page }) => {
   await openTasks(page);
-  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
-  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+  await allAsList(page);
   const list = page.getByRole('grid', { name: 'Tasks' });
   const done = list.getByRole('region', { name: 'Done' });
   await expect(done.getByRole('row', { name: /Stripe test-mode fixtures, Done/ })).toBeVisible();
@@ -499,6 +513,6 @@ test('Done’s one click puts every Done task in the Archive; an archived task r
   await banner.getByRole('button', { name: 'Restore' }).click();
   await expect(banner).toHaveCount(0);
   await openTasks(page);
-  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await allAsList(page);
   await expect(page.getByRole('grid', { name: 'Tasks' }).getByRole('row', { name: /Stripe test-mode fixtures, Done/ })).toBeVisible();
 });

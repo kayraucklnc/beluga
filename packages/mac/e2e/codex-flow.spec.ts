@@ -49,10 +49,11 @@ test('start a worktree on Codex, run a task, approve a command, stop mid-turn, h
   await approval.getByRole('button', { name: 'Allow', exact: true }).click();
   await expect(page.getByText('echo: ask to run the tests').last()).toBeVisible({ timeout: 20_000 });
 
-  // 3. Stop it mid-turn.
+  // 3. Stop it mid-turn: the box names the agent at work here, Codex (not your default).
+  await expect(page.getByRole('textbox', { name: 'Tell Codex what to do in e2e-codex' })).toBeVisible();
   await composer(page).fill('wait for the build');
   await composer(page).press('Enter');
-  const stop = page.getByRole('button', { name: 'Stop the agent' });
+  const stop = page.getByRole('button', { name: 'Stop Codex' });
   await expect(stop).toBeVisible({ timeout: 15_000 });
   await stop.click();
   await expect(stop).toHaveCount(0, { timeout: 15_000 });

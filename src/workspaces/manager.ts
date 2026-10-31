@@ -505,7 +505,15 @@ export class WorkspaceManager {
       const known = mainStatus ? { current: mainStatus.branch && mainStatus.branch !== 'HEAD' ? mainStatus.branch : undefined, dirty: mainStatus.changed } : undefined;
       const line = await sync.defaultBranch(root, base, known).catch(() => undefined);
       const syncInfo: ProjectSync | undefined = line ? { ...line, ...this.fetchState.get(root) } : undefined;
-      return { id, name, root, base, workspaces: withStatus.sort(order), scripts: resolveScripts(root, this.config.scripts?.[root]), ...(syncInfo ? { sync: syncInfo } : {}) };
+      // Git was read meanwhile: a record changed since (an agent picked, a session remembered, a rename)
+      // is taken as it is now, never put back as it was when this read began.
+      const current = (w: Workspace): Workspace => {
+        const now = this.records.find((r) => r.id === w.id);
+        if (!now || now === records.find((r) => r.id === w.id)) return w;
+        const branch = w.kind === 'worktree' || w.kind === 'main' ? (trees.find((t) => real(t.path) === real(w.path))?.branch ?? now.branch) : now.branch;
+        return { ...now, ...(branch ? { branch } : {}), base: now.base ?? base, projectId: id, external: false, ...(w.askOnly ? { askOnly: true } : {}), ...(w.status ? { status: w.status } : {}) };
+      };
+      return { id, name, root, base, workspaces: withStatus.map(current).sort(order), scripts: resolveScripts(root, this.config.scripts?.[root]), ...(syncInfo ? { sync: syncInfo } : {}) };
     } catch (err) {
       return { id, name, root, base: 'HEAD', workspaces: [], error: err instanceof Error ? err.message : String(err) };
     }

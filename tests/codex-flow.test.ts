@@ -126,12 +126,15 @@ describe('a worktree on Codex, end to end', () => {
     session.host.stopRun(channel);
     await waitFor(() => codex.sent('turn/interrupt').length === 1, 8000);
 
-    // 4. Hand off to Claude: the next message is Claude's.
+    // 4. Hand off to Claude: Codex writes its note, Claude starts seeded with it, and the next message is Claude's.
+    // Two Claude runs come close together (the seeded one, then yours): each is waited for by what it says,
+    // never by a count a busy machine can step over.
     expect(session.workbench!.setAgent(channel, undefined)).toBe(true);
     await waitFor(() => !workspaces.find(ws.id)?.agent, 8000);
+    await waitFor(() => claudeRuns.some((r) => r.prompt.includes('taking over this conversation from Codex')), 8000);
     session.submit('carry on', { channel });
-    await waitFor(() => claudeRuns.length === 1, 8000);
-    expect(claudeRuns[0]!.place?.agent?.runtime).toBe('claude');
-    await waitFor(() => said('claude: on it'), 8000);
+    await waitFor(() => claudeRuns.some((r) => r.prompt === 'carry on'), 8000);
+    expect(claudeRuns.find((r) => r.prompt === 'carry on')!.place?.agent?.runtime).toBe('claude');
+    await waitFor(() => store.getState().log.filter((l) => l.channel === channel && l.type === 'agent' && l.text === 'claude: on it').length === 2, 8000);
   }, 30_000);
 });

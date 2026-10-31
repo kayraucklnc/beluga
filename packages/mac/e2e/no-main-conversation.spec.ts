@@ -28,9 +28,12 @@ async function unfold(page: Page, project: string): Promise<void> {
 async function newChat(page: Page, text: string): Promise<void> {
   await projectRow(page, 'bob-api').hover();
   await sidebar(page).getByRole('button', { name: 'New chat in bob-api' }).click();
+  // The new chat's own box (the last chat's may still be on screen for a moment, and words typed there go with it).
+  await expect(page.locator('main').getByText('New Chat', { exact: true }).first()).toBeVisible();
   await expect(composer(page)).toBeVisible();
   await expect(composer(page)).toHaveValue('');
   await composer(page).fill(text);
+  await expect(composer(page)).toHaveValue(text);
   await composer(page).press('Enter');
   await expect(sidebar(page).getByRole('button', { name: text, exact: true })).toBeVisible({ timeout: 15_000 });
 }
@@ -78,6 +81,9 @@ test('⌘N in a project starts a new chat there', async ({ page }) => {
   await projectRow(page, 'bob-api').click();
   await expect(page.getByRole('heading', { level: 1, name: 'bob-api' })).toBeVisible();
   await page.keyboard.press('Meta+n');
+  await expect(page.locator('main').getByText('New Chat', { exact: true }).first()).toBeVisible();
+  await composer(page).fill('Is there a health check route?');
+  await expect(composer(page)).toHaveValue('Is there a health check route?');
   await composer(page).press('Enter');
   const row = sidebar(page).getByRole('button', { name: 'Is there a health check route?', exact: true });
   await expect(row).toBeVisible({ timeout: 15_000 });

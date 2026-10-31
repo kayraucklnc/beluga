@@ -294,8 +294,8 @@ export const API = {
   'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000), opt(bool)),
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
-  /** A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent. */
-  'workbench.setAgent': args(channel, AgentRef.nullable()),
+  /** A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent (nullish: over the socket a null arrives as undefined, see daemon/dispatch.ts). */
+  'workbench.setAgent': args(channel, AgentRef.nullish()),
   'workbench.createPr': args(id, opt(str)),
   // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message, trouble? }.
   // https: push this once over HTTPS with gh's login (the SSH key isn't working; origin stays as it is).

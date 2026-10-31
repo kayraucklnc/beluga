@@ -89,7 +89,8 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
   if (v.kind === 'workspace') {
     const ws = state.projects.flatMap((x) => x.workspaces).find((w) => w.id === v.id);
     if (ws?.askOnly) return `Ask about ${state.projects.find((x) => x.root && x.workspaces.includes(ws))?.name ?? 'this project'}…`;
-    return `Tell ${agent} what to do in ${ws?.name ?? 'this workspace'}`;
+    // The worktree's own agent (a Codex worktree says Codex), else yours.
+    return `Tell ${ws?.agent ? agentName(ws.agent) : agent} what to do in ${ws?.name ?? 'this workspace'}`;
   }
   if (v.kind === 'shared') {
     const w = state.shared.find((x) => x.id === v.id);
@@ -622,7 +623,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           {!shared ? <ModelPicker channel={channel} {...(draftProject ? { draft: worktree.agent, onDraft: (agent: AgentRef | undefined) => setWorktree({ ...worktree, agent }) } : {})} /> : null}
           {!shared && channel !== 'draft' ? <McpChip /> : null}
           {burning && state.prefs.effort === 'max' ? (
-            <Tip label={`Max effort: ${agent} thinks as hard as it can`}>
+            <Tip label={`Max effort: ${agentHere} thinks as hard as it can`}>
               <span className={m.tag}>
                 <Icon name="flame" size={11} className={m.flicker} />
                 Max
@@ -633,15 +634,15 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           {channel !== 'draft' ? <ContextMeter channel={channel} /> : null}
           {/* While you talk, only your voice's control shows: two square buttons side by side stopped Claude by mistake. */}
           {compose.busy && !talking ? (
-            <Tip label={`Stop ${agent} here · your queued messages come back to the box`} keys={shortcutKeys('conv-stop')}>
-              <button type="button" className={s.stop} aria-label={`Stop ${agent}`} onClick={() => stopClaude({ client, ui, actions }, channel)}>
+            <Tip label={`Stop ${agentHere} here · your queued messages come back to the box`} keys={shortcutKeys('conv-stop')}>
+              <button type="button" className={s.stop} aria-label={`Stop ${agentHere}`} onClick={() => stopClaude({ client, ui, actions }, channel)}>
                 <span className={s.stopMark} />
               </button>
             </Tip>
           ) : null}
           {!readOnly ? <MicButton box={ref} /> : null}
           {draftProject ? (
-            <Tip label={worktree.name.trim() && !buffer.trim() ? `Create ${worktree.name.trim()} without a task` : `Make the branch and folder, then ${agent} starts on the task`} keys={sendKeys}>
+            <Tip label={worktree.name.trim() && !buffer.trim() ? `Create ${worktree.name.trim()} without a task` : `Make the branch and folder, then ${worktree.agent ? agentName(worktree.agent) : agent} starts on the task`} keys={sendKeys}>
               <button type="button" className={cx(d.create, canCreate && d.createReady)} onClick={() => send(false)} aria-disabled={!canCreate}>
                 <Icon name="branch" size={12} />
                 Create Worktree
@@ -655,14 +656,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               </button>
             </Tip>
           ) : queueing ? (
-            <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label={`${agent} is working`}>
-              <Tip label={`${agent} is working: this waits its turn in the queue`} keys={sendKeys}>
+            <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label={`${agentHere} is working`}>
+              <Tip label={`${agentHere} is working: this waits its turn in the queue`} keys={sendKeys}>
                 <button type="button" className={s.splitMain} aria-label="Queue" onClick={() => send(false)} disabled={!buffer.trim()}>
                   <Icon name="clock" size={12} />
                   <span className={s.chipLabel}>Queue</span>
                 </button>
               </Tip>
-              <Tip label={`Steer: ${agent} reads this at its next step, without stopping`} keys={shortcutKeys('composer-steer')}>
+              <Tip label={`Steer: ${agentHere} reads this at its next step, without stopping`} keys={shortcutKeys('composer-steer')}>
                 <button type="button" className={s.splitAlt} onClick={() => send(true)} disabled={!buffer.trim()}>
                   Steer
                 </button>

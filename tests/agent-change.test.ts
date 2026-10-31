@@ -91,7 +91,8 @@ describe('a task’s agent, changed (BLG-498)', () => {
     const args = BOARD_API['board.setAgent'].args;
     expect(args.parse(['BOB-1', CODEX])[1]).toEqual(CODEX);
     expect(args.parse(['BOB-1', null])[1]).toBeNull();
-    expect(() => args.parse(['BOB-1'])).toThrow();
+    // Over the socket a null arrives as undefined (daemon/dispatch.ts): left out is your default too.
+    expect(args.parse(['BOB-1', undefined])[1]).toBeUndefined();
     expect(() => args.parse(['BOB-1', { runtime: 'Bad one', label: 'x' }])).toThrow();
     const start = BOARD_API['board.start'].args;
     expect(start.parse(['BOB-1', { claude: true, agent: LOCAL }])[1]!.agent).toEqual(LOCAL);
@@ -148,7 +149,8 @@ describe('a plan’s agent for its work, changed (BLG-498)', () => {
     const args = PLANS_API['plans.setWorkAgent'].args;
     expect(args.parse(['plan-1', LOCAL])[1]).toEqual(LOCAL);
     expect(args.parse(['plan-1', null])[1]).toBeNull();
-    expect(() => args.parse(['plan-1'])).toThrow();
+    // Over the socket a null arrives as undefined (daemon/dispatch.ts): left out is your default too.
+    expect(args.parse(['plan-1', undefined])[1]).toBeUndefined();
     expect(typeof PLANS_HANDLERS['plans.setWorkAgent']).toBe('function');
   });
 });
