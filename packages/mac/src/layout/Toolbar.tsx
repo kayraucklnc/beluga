@@ -1,5 +1,5 @@
 import { planForHome } from '@beluga/core/plans/model.js';
-import { ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
+import { ASSISTANT_TITLE, THIS_COMPUTER } from '@beluga/shared/assistant.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { agentOfWorktree, agentTitle, isAgentWorktree } from '../claude-code/subagents-model.js';
 import { activityOf, findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
@@ -292,7 +292,7 @@ export function Toolbar() {
   if (view.kind === 'conversation') return <ConversationBar id={view.id} headerRef={headerRef} />;
 
   if (view.kind === 'assistant') {
-    return <Shell headerRef={headerRef} title={<span className={s.name}>{ASSISTANT_TITLE}</span>} subtitle={<span className={s.meta}>Your Claude for this whole Mac · the open chat is the one on your phone</span>} />;
+    return <Shell headerRef={headerRef} title={<span className={s.name}>{ASSISTANT_TITLE}</span>} subtitle={<span className={s.meta}>Your Claude for {THIS_COMPUTER} as a whole · the open chat is the one on your phone</span>} />;
   }
 
   if (view.kind === 'room') {
@@ -331,7 +331,7 @@ export function Toolbar() {
         headerRef={headerRef}
         title={
           <>
-            <span className={s.crumb}>{project?.name ?? (item ? 'Your Mac' : 'Sentinel')}</span>
+            <span className={s.crumb}>{project?.name ?? (item ? ASSISTANT_TITLE : 'Sentinel')}</span>
             <span className={s.name}>{view.kind === 'sentinel_run' ? `${item?.name ?? 'Sentinel'} · Run` : (item?.name ?? 'Sentinel')}</span>
           </>
         }

@@ -1,6 +1,7 @@
 import type { Row, Source } from '../../shared/view-spec.js';
 import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
+import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 
 /**
  * Sentinel (docs/sentinel.md): watchers that run on a schedule, by hand, or when something
@@ -1140,7 +1141,7 @@ const quoteLine = (text: string, max = 60): string => {
 export function stepSentence(step: Step, nameOf: (id: string) => string | undefined = () => undefined): string {
   switch (step.kind) {
     case 'claude': {
-      const where = step.where === 'worktree' ? 'in a new worktree' : step.where === 'mac' ? 'on Your Mac' : 'in the project';
+      const where = step.where === 'worktree' ? 'in a new worktree' : step.where === 'mac' ? `on ${ASSISTANT_TITLE}` : 'in the project';
       const what = quoteLine(step.prompt);
       return what ? `Claude ${where}: “${what}”` : `Claude ${where}`;
     }

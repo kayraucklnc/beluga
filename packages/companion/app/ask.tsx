@@ -69,7 +69,7 @@ export default function Ask() {
     const t: Target[] = [];
     // Your Mac: the chat open on the Mac (it has tabs since BLG-102); its other chats working now are below, by their names.
     const mac = home?.data.assistant?.topic && isMacTopic(home.data.assistant.topic) ? home.data.assistant.topic : ASSISTANT;
-    if (store.supports('assistant')) t.push({ kind: 'mac', topic: mac, label: 'Your Mac' });
+    if (store.supports('assistant')) t.push({ kind: 'mac', topic: mac, label: home?.data.assistant?.title?.split(' · ')[0] || 'Your Mac' });
     // Only your own projects take a new chat: not the room, a friend's shared project or "Asked of
     // friends" (views.ts groups those under 'room', 'shared:…' and 'asked').
     for (const p of work?.data.projects ?? []) if (p.id !== 'room' && p.id !== 'asked' && !p.id.startsWith('shared:')) t.push({ kind: 'project', id: p.id, label: p.name, ...(p.icon ? { icon: p.icon } : {}) });

@@ -10,6 +10,7 @@ import { LOOK_WORDS, NEW_SOURCES, type NewSourceId, TILE_SIZES, type TileLook, t
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
 import n from './numbers.module.css';
 import x from './add-tile.module.css';
+import { ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
 
 /**
  * Add to the board (BLG-308). One box on top: say what you want to see and your Claude puts it
@@ -39,7 +40,7 @@ export function AddTileSheet({ dashboardId, close }: { dashboardId: string; clos
   const [size, setSize] = useState<TileSizeId>('small');
   const [title, setTitle] = useState('');
   const [what, setWhat] = useState('');
-  const projectName = (id: string | undefined): string => projects.find((p) => p.id === id)?.name ?? 'Your Mac';
+  const projectName = (id: string | undefined): string => projects.find((p) => p.id === id)?.name ?? ASSISTANT_TITLE;
   const metrics = useMemo(() => metricChoices(state, projectName, d), [state, projects, d]);
   const steps = useMemo(() => stepChoices(state, projectName), [state.items, projects]);
   // Everything kept, by project and sentinel, as the list shows them.

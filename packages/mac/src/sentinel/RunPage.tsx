@@ -21,6 +21,7 @@ import t from '../tasks/tasks.module.css';
 import s from './sentinel.module.css';
 import { shortcutKeys } from '../lib/shortcuts.js';
 import { chordLabel, primaryKey } from '../lib/shortcuts-model.js';
+import { ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
 
 /**
  * One run: its headline, who started it and how long it took, each step with how it went (its
@@ -237,7 +238,7 @@ function Session({ channel, live, where, worktree, open }: { channel: string; li
     <div className={s.session} data-run-session={channel} data-live={live || undefined}>
       <div className={s.sessionBar}>
         {live ? <LiveDot /> : <Icon name="claude" size={12} />}
-        <span className={s.sessionWhere}>{where === 'worktree' ? 'In its own worktree' : where === 'mac' ? 'On Your Mac' : 'In the project, reading only'}</span>
+        <span className={s.sessionWhere}>{where === 'worktree' ? 'In its own worktree' : where === 'mac' ? `On ${ASSISTANT_TITLE}` : 'In the project, reading only'}</span>
         {where === 'worktree' && worktree ? <WorktreeChip id={worktree} /> : null}
         <span className={t.grow} />
         {chatPlaceOf(channel) ? (

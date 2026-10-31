@@ -40,6 +40,7 @@ import {
 } from '../../../../src/core/sentinel/model.js';
 import type { IconName } from '../components/Icon.js';
 import { ago } from '../tasks/tasks-model.js';
+import { ASSISTANT_TITLE } from '../../../../src/shared/assistant.js';
 
 /**
  * Sentinel's window, its plain parts (docs/sentinel.md §3): the list's rows and groups, the
@@ -182,7 +183,7 @@ export function groupSentinels(items: readonly Sentinel[], projects: ReadonlyArr
   }
   const known = new Set(projects.map((p) => p.id));
   const mac = items.filter((s) => !s.projectId || !known.has(s.projectId));
-  if (mac.length) out.push({ name: 'Your Mac', items: [...mac].sort(byName) });
+  if (mac.length) out.push({ name: ASSISTANT_TITLE, items: [...mac].sort(byName) });
   return out;
 }
 
@@ -858,7 +859,7 @@ export function scopesOf(items: readonly Sentinel[], projects: ReadonlyArray<{ r
       const count = items.filter((s) => s.projectId === p.id).length;
       return count ? [{ value: p.id, label: p.name, count }] : [];
     }),
-    ...(mac ? [{ value: MAC_SCOPE, label: 'Your Mac', count: mac }] : []),
+    ...(mac ? [{ value: MAC_SCOPE, label: ASSISTANT_TITLE, count: mac }] : []),
   ];
 }
 

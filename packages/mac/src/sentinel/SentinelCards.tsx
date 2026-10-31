@@ -69,6 +69,7 @@ import { useDraft } from './use-draft.js';
 import { sentinelGraph } from '@beluga/core/sentinel/workflow.js';
 import { GraphBlock } from '../components/graph/GraphBlock.js';
 import s from './sentinel.module.css';
+import { ASSISTANT_TITLE, THIS_COMPUTER } from '@beluga/shared/assistant.js';
 
 /** The sentinel page's editor: When it runs, and its Steps. Everything saves as you change it. */
 
@@ -383,7 +384,7 @@ function StepItem({
 const WHERE_INFO: ReadonlyArray<{ readonly value: ClaudeStep['where']; readonly label: string; readonly description: string }> = [
   { value: 'project', label: 'In the project', description: 'A new chat in the project’s main folder; Claude reads and reports, never changes files' },
   { value: 'worktree', label: 'In a new worktree', description: 'Its own branch: Claude edits, commits and runs the tests; later steps share it' },
-  { value: 'mac', label: 'On Your Mac', description: 'A chat in Your Mac, for things about the Mac itself' },
+  { value: 'mac', label: `On ${ASSISTANT_TITLE}`, description: `A chat in ${ASSISTANT_TITLE}, for things about ${THIS_COMPUTER} itself` },
 ];
 
 function ClaudeFields({ step, item, change }: { step: ClaudeStep; item: Sentinel; change: (patch: Partial<ClaudeStep>) => void }) {

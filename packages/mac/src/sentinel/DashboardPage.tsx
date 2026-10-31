@@ -24,6 +24,7 @@ import { TINTS, setTintChoice, tintChoiceOf, useProjectTint } from './tint.js';
 import { SHOW_TILE } from '../lib/widget-links.js';
 import { useSentinelActions, useSentinelState } from './use-sentinel.js';
 import n from './numbers.module.css';
+import { ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
 
 /**
  * At a glance (docs/sentinel.md §10, BLG-300): the board on Sentinel's page. Anything your
@@ -64,7 +65,7 @@ function tileProject(state: SentinelState, tile: Tile, projects: ReadonlyArray<{
   const item = sid ? state.items.find((i) => i.id === sid) : undefined;
   if (!item) return undefined;
   const p = item.projectId ? projects.find((x) => x.id === item.projectId) : undefined;
-  return p ? { id: p.id, name: p.name, sentinel: item.name } : { name: 'Your Mac', sentinel: item.name };
+  return p ? { id: p.id, name: p.name, sentinel: item.name } : { name: ASSISTANT_TITLE, sentinel: item.name };
 }
 
 /** No board yet: a quiet strip that says what goes here, and Add (the first board is made for it). */

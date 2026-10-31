@@ -6,3 +6,6 @@ import path from 'node:path';
 process.env.BELUGA_HOME = mkdtempSync(path.join(os.tmpdir(), 'beluga-test-home-'));
 // Nor the old name, for a test that clears BELUGA_HOME (an inherited KLAUD_HOME is real data).
 delete process.env.KLAUD_HOME;
+
+// The tests are a Mac's wherever they run ("Your Mac"; shared/assistant.ts).
+process.env.BELUGA_COMPUTER ??= 'mac';

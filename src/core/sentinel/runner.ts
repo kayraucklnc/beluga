@@ -37,6 +37,7 @@ import type { Row, Source } from '../../shared/view-spec.js';
 import { type Measured, keptWords, measureFrom, readOutput } from './metrics.js';
 import { sentinelRunPrompt, stepMaterial } from './prompt.js';
 import { type RenderContext, dateText, jsonInside, render } from './render.js';
+import { ASSISTANT_TITLE } from '../../shared/assistant.js';
 
 /**
  * A run's steps, one after the other (docs/sentinel.md §4, "Runner"): Ask Claude, Run a script,
@@ -841,7 +842,7 @@ export class SentinelRunner {
     let place: SentinelPlace | undefined;
     if (step.where === 'mac') place = places.macChat();
     else {
-      if (!s.projectId) return 'it needs a project: pick one on the sentinel’s page, or have Claude work on Your Mac';
+      if (!s.projectId) return `it needs a project: pick one on the sentinel’s page, or have Claude work on ${ASSISTANT_TITLE}`;
       const at = this.deps.now();
       place = step.where === 'worktree' ? await places.worktree(s.projectId, `sentinel ${s.name} ${yymmdd(at)}`) : await places.projectChat(s.projectId, `${s.name} · ${dateText(at)}`);
     }

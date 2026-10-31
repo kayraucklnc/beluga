@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { type AssistantChat, assistantChatTitle } from '@beluga/shared/assistant.js';
+import { ASSISTANT_TITLE, type AssistantChat, assistantChatTitle } from '@beluga/shared/assistant.js';
 import { Icon } from '../components/Icon.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -31,13 +31,13 @@ export function AssistantTabs() {
   const open = shown ?? active;
   const fail = (err: unknown): void => toast(client, err instanceof Error ? err.message : String(err), 'error');
   return (
-    <div className={s.bar} role="tablist" aria-label="Your Mac’s chats">
+    <div className={s.bar} role="tablist" aria-label={`${ASSISTANT_TITLE}’s chats`}>
       <div className={s.tabs}>
         {chats.map((c) => (
           <ChatTab key={c.id} chat={c} open={c.id === open} only={chats.length === 1} onOpen={() => actions.run({ type: 'view', view: { kind: 'assistant', chat: c.id } })} onDelete={(title, last) => confirmDelete(title, last, () => api.assistant.deleteChat(c.id).catch(fail))} />
         ))}
       </div>
-      <IconButton icon="plus" label="New chat with Your Mac" className={s.add} onClick={() => api.assistant.newChat().catch(fail)} />
+      <IconButton icon="plus" label={`New chat with ${ASSISTANT_TITLE}`} className={s.add} onClick={() => api.assistant.newChat().catch(fail)} />
     </div>
   );
 }
@@ -66,7 +66,7 @@ function confirmDelete(title: string, last: boolean, run: () => void): void {
   openSheet({
     kind: 'confirm',
     title: `Delete “${title}”?`,
-    message: `Its messages go from this Mac and your phone for good, and Claude forgets the conversation. Files it made stay in Your Mac’s folder.${last ? ' A fresh chat takes its place.' : ''}`,
+    message: `Its messages go from this Mac and your phone for good, and Claude forgets the conversation. Files it made stay in ${ASSISTANT_TITLE}’s folder.${last ? ' A fresh chat takes its place.' : ''}`,
     confirm: 'Delete Chat',
     destructive: true,
     run,
