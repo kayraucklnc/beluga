@@ -210,9 +210,9 @@ export default function SentinelPage() {
                             </T>
                           )}
                           {r.chat ? (
-                            <Press onPress={() => router.push(`/conv/${encodeURIComponent(r.chat!)}`)} accessibilityLabel="Claude’s session" style={{ marginTop: 10, alignSelf: 'flex-start' }}>
+                            <Press onPress={() => router.push(`/conv/${encodeURIComponent(r.chat!)}`)} accessibilityLabel="The agent’s session" style={{ marginTop: 10, alignSelf: 'flex-start' }}>
                               <T v="callout" c={color.info} style={{ fontWeight: '600' }}>
-                                Claude’s session
+                                The agent’s session
                               </T>
                             </Press>
                           ) : null}

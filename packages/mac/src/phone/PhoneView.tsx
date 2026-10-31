@@ -5,6 +5,7 @@ import type { Macro } from '../../../../src/companion/phone-macros.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Empty, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
+import { useMyAgentName } from '../lib/agent-words.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
 import { openSettings } from '../lib/native-routes.js';
 import { showPanelTab } from '../lib/panel.js';
@@ -71,6 +72,7 @@ function Ready({ phone, compact }: { phone: DeviceView; compact: boolean }) {
   const routes = phone.control?.routes ?? [];
   const how = routes.length ? `Reached ${routes[0] === 'link' ? 'through Beluga' : `over ${ROUTE_WORDS[routes[0]!] ?? routes[0]}`}` : (phone.control?.note ?? 'Not reachable right now');
   const busy = phone.control?.busy === true;
+  const agent = useMyAgentName();
   const askClaude = (): void => {
     showPanelTab({ view: { kind: 'assistant' }, projects: client.store.getState().projects }, 'phone');
     actions.run({ type: 'view', view: { kind: 'assistant' } });
@@ -79,7 +81,7 @@ function Ready({ phone, compact }: { phone: DeviceView; compact: boolean }) {
     <div className={s.setup}>
       <Empty
         icon="phone"
-        title={busy ? `Claude is using ${phone.name}` : `Claude can use ${phone.name}`}
+        title={busy ? `${agent} is using ${phone.name}` : `${agent} can use ${phone.name}`}
         detail={`${how}. Ask in the chat: “get me the newest photo”, “install Spotify”, “what did the bank text me?”. The screen stays off unless you want to watch.`}
         action={
           <div className={s.levels}>
@@ -95,7 +97,7 @@ function Ready({ phone, compact }: { phone: DeviceView; compact: boolean }) {
             </Button>
             {compact ? null : (
               <Button variant="quiet" icon="claude" onClick={askClaude}>
-                Ask Claude
+                Ask {agent}
               </Button>
             )}
           </div>
@@ -113,8 +115,8 @@ function SetUp({ phone }: { phone: DeviceView }) {
     <div className={s.setup}>
       <Empty
         icon="phone"
-        title={`Let Claude use ${phone.name}`}
-        detail="Pick how freely Claude can act on this phone. You can always change it in Settings › Phone, and Stop it from the phone any time."
+        title={`Let your agent use ${phone.name}`}
+        detail="Pick how freely your agent can act on this phone. You can always change it in Settings › Phone, and Stop it from the phone any time."
         action={
           <div className={s.levels}>
             {LEVELS.filter((l) => l.value !== 'off').map((l) => (
@@ -148,6 +150,7 @@ const CAPTION_MS = 1800;
 function Mirror({ phone, compact = false }: { phone: DeviceView; compact?: boolean }) {
   const { client } = useBeluga();
   const actions = useActions();
+  const agent = useMyAgentName();
   const [frame, setFrame] = useState<{ url: string; w: number; h: number }>();
   /** Live video (BLG-184) once its first picture is drawn: the phone's screen size, for taps. */
   const [video, setVideo] = useState<{ w: number; h: number }>();
@@ -334,7 +337,7 @@ function Mirror({ phone, compact = false }: { phone: DeviceView; compact?: boole
             </button>
           ))}
         </span>
-        <IconButton icon="eyeOff" label="Hide the screen (Claude can still use the phone)" onClick={() => setPrefs({ phoneScreen: false })} />
+        <IconButton icon="eyeOff" label="Hide the screen (your agent can still use the phone)" onClick={() => setPrefs({ phoneScreen: false })} />
         {compact ? <IconButton icon="expand" label="Open Your Phone" onClick={() => actions.run({ type: 'view', view: { kind: 'phone' } })} /> : null}
       </header>
 
@@ -391,8 +394,8 @@ function Mirror({ phone, compact = false }: { phone: DeviceView; compact?: boole
                 Send
               </Button>
               <span className={s.spacer} />
-              <Button size="small" variant="quiet" onClick={askClaude} title="Ask your Mac's Claude, with the phone beside the chat">
-                <Icon name="claude" size={14} /> Ask Claude
+              <Button size="small" variant="quiet" onClick={askClaude} title={`Ask your ${agent}, with the phone beside the chat`}>
+                <Icon name="claude" size={14} /> Ask {agent}
               </Button>
             </>
           )}

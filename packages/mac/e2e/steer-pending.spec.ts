@@ -42,7 +42,7 @@ test('a steered message is sent, not read, until Claude reads it; Send now stops
   const waiting = message.locator('[data-steer-waiting="next_step"]');
   await expect(waiting).toContainText('Sent · waiting for Claude to read it');
   // No note card of its own; the one working line is the chat's last row, below your message.
-  await expect(page.getByText('Claude reads this after its current step')).toHaveCount(0);
+  await expect(page.getByText('Your agent reads this after its current step')).toHaveCount(0);
   await expect(page.locator('[data-working]')).toHaveCount(1);
   let rows = await rowsInOrder(page);
   expect(rows.at(-1)?.working).toBe(true);

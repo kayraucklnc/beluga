@@ -3,6 +3,7 @@ import { type EnvVar, envProblems, importEnv, parseEnvText } from '@beluga/share
 import { Icon } from '../components/Icon.js';
 import { Button, Tip, cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
+import { useMyAgentName } from '../lib/agent-words.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import e from './env-settings.module.css';
@@ -347,17 +348,17 @@ export function EnvEditor({ projectId }: { projectId: string }) {
         </Group>
       ) : null}
       <DatabaseTest projectId={projectId} />
-      <Group title="Your Claude">
+      <Group title="Your agent">
         <Row
           label="Read .env files without asking"
           detail={
             projectId
               ? 'In this project, and it gets the .env values above too. Off: it asks you each time it wants one. A friend’s request never gets them.'
-              : 'In every project. Off: your Claude asks you each time (or as each project says). A friend’s request never gets them.'
+              : 'In every project. Off: your agent asks you each time (or as each project says). A friend’s request never gets them.'
           }
         >
           <Switch
-            label="Your Claude reads .env files without asking"
+            label="Your agent reads .env files without asking"
             on={claudeDotenv}
             onChange={(v) => {
               setClaudeDotenv(v);
@@ -390,7 +391,7 @@ function DatabaseTest({ projectId }: { projectId: string }) {
   return (
     <Group title="Database">
       <Row
-        label="Postgres for your Claude’s views"
+        label="Postgres for your agent’s views"
         detail={
           result === undefined || result === 'testing'
             ? 'Uses DATABASE_URL (or POSTGRES_URL…), or a Supabase project’s URL and SUPABASE_DB_PASSWORD, from here or the project’s .env.'
@@ -409,20 +410,21 @@ function DatabaseTest({ projectId }: { projectId: string }) {
 
 /**
  * Settings › Environment: variables Beluga gives your shells, setup and run commands, and your
- * Claude. Yours apply everywhere; a project's apply in its workspaces, over yours.
+ * agent. Yours apply everywhere; a project's apply in its workspaces, over yours.
  */
 export function EnvironmentSettings() {
   const projects = useApp((st) => st.projects).filter((p) => p.root);
   const envKeys = useApp((st) => st.envKeys);
   const [scope, setScope] = useState('');
   const count = (n: number): string => (n ? ` · ${n}` : '');
+  const agent = useMyAgentName();
   return (
     <>
       <p className={e.intro}>
-        Given to your shells, setup and run commands, and your Claude, never to a friend’s request. They stay on this Mac. Changes apply right away to your Claude’s next message and to new shells; a shell or dev server already running offers to restart with them.
+        Given to your shells, setup and run commands, and your {agent}, never to a friend’s request. They stay on this Mac. Changes apply right away to your {agent}’s next message and to new shells; a shell or dev server already running offers to restart with them.
       </p>
       <Group>
-        <Row label="Variables for" detail={scope ? 'This project’s workspaces. They win over yours.' : 'Every shell, script and Claude run.'}>
+        <Row label="Variables for" detail={scope ? 'This project’s workspaces. They win over yours.' : 'Every shell, script and agent run.'}>
           <Select
             label="Variables for"
             value={scope}

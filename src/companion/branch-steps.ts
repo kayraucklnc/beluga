@@ -21,7 +21,7 @@ export async function branchStep(s: Session, topic: string, step: PhoneBranchSte
   const ws = s.workspaces!;
   const bench = s.workbench;
   const name = ws.manager.find(id)?.name ?? 'The worktree';
-  const claude = (what: string): BranchStepResult => ({ ok: true, message: `Claude is ${what} in this conversation` });
+  const claude = (what: string): BranchStepResult => ({ ok: true, message: `Your agent is ${what} in this conversation` });
   const needBench = (): NonNullable<typeof bench> => {
     if (!bench) throw new Error('Pull requests aren’t ready on your Mac yet');
     return bench;

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from './fixtures.js';
-import { pick } from './helpers.js';
+import { pick, openPersonCard, personRow } from './helpers.js';
 
 /** Inviting, people and sharing, the Mac way: sheets, cards and real controls (against the demo). */
 
@@ -14,11 +14,13 @@ test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
-  await expect(sidebar(page).getByRole('button', { name: 'bob', exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(personRow(page, 'bob')).toBeVisible({ timeout: 15_000 });
 });
 
 test('the Invite sheet copies a link, lists it, and revokes it', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'Invite', exact: true }).click();
+  // The sidebar's Invite adds a friend; the room's own links are in its details (the people count).
+  await sidebar(page).getByRole('button', { name: /room: room details$/ }).click();
+  await page.getByRole('button', { name: 'Invite People…' }).click();
   const sheet = page.getByRole('dialog', { name: 'Invite People' });
   await expect(sheet).toBeVisible();
   await pick(sheet, 'Invite to', 'bob-api');
@@ -40,41 +42,30 @@ test('the Invite sheet copies a link, lists it, and revokes it', async ({ page }
   await expect(sheet).toBeHidden();
 });
 
-test("a person's card changes how much you trust them, and remembers it", async ({ page }) => {
-  const row = sidebar(page).getByRole('button', { name: 'mia', exact: true });
-  await row.click();
-  const card = page.getByRole('dialog', { name: 'mia' });
-  const trust = card.getByRole('radiogroup', { name: 'Trust mia' });
-  await trust.getByRole('radio', { name: 'Trusted' }).click();
-  await expect(trust.getByRole('radio', { name: 'Trusted' })).toHaveAttribute('aria-checked', 'true');
-  await expect(card.getByText(/Requests run without asking/)).toBeVisible();
-  // Clicking the row again closes the card; opening it again shows the new level.
-  await row.click();
+test("a person's card says how much you trust them; trust is set once they're a friend", async ({ page }) => {
+  // In your room but not a friend yet: the card says the level in words and offers to add them.
+  const card = await openPersonCard(page, 'mia');
+  await expect(card.getByText('Ask me each time.')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Add mia as a friend' })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(card).toBeHidden();
-  await row.click();
-  await expect(card.getByRole('radio', { name: 'Trusted' })).toHaveAttribute('aria-checked', 'true');
-  await card.getByRole('radio', { name: 'Ask' }).click();
-  await expect(card.getByRole('radio', { name: 'Ask' })).toHaveAttribute('aria-checked', 'true');
 });
 
-test('right-click a person: Trust is a submenu', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'mia', exact: true }).click({ button: 'right' });
-  await page.getByRole('menuitem', { name: /^Trust/ }).hover();
-  await page.getByRole('menuitemradio', { name: /^Full trust/ }).click();
-  await sidebar(page).getByRole('button', { name: 'mia', exact: true }).click({ button: 'right' });
-  await expect(page.getByRole('menuitem', { name: /^Trust/ })).toContainText('Full trust');
-  await page.getByRole('menuitem', { name: /^Trust/ }).hover();
-  await page.getByRole('menuitemradio', { name: /^Ask me each time/ }).click();
+test('right-click a person: Trust shows where it stands, and is set on a friend’s card', async ({ page }) => {
+  await personRow(page, 'mia').click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: /^Trust Ask me each time/ })).toBeDisabled();
+  await expect(page.getByRole('menuitem', { name: /^Add as Friend/ })).toContainText('Trust is set on a friend’s card');
+  await page.keyboard.press('Escape');
 });
 
 test("Ask Claude addresses the message with a chip, not typed text", async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'bob', exact: true }).click();
-  await page.getByRole('dialog', { name: 'bob' }).getByRole('button', { name: 'Ask Claude' }).click();
-  await expect(page.getByLabel('To bob’s Claude')).toBeVisible();
+  const card = await openPersonCard(page, 'bob');
+  await card.getByRole('button', { name: 'Ask Claude' }).click();
+  await expect(page.getByLabel('To bob’s agent')).toBeVisible();
   await expect(composer(page)).toHaveValue('');
-  await expect(composer(page)).toHaveAttribute('placeholder', 'Message bob’s Claude');
+  await expect(composer(page)).toHaveAttribute('placeholder', 'Message bob’s agent');
   await page.getByRole('button', { name: 'Don’t address it' }).click();
-  await expect(page.getByLabel('To bob’s Claude')).toBeHidden();
+  await expect(page.getByLabel('To bob’s agent')).toBeHidden();
 });
 
 test('Share a Folder: share with one person, see it listed, stop sharing', async ({ page }) => {
@@ -97,7 +88,10 @@ test('Share a Folder: share with one person, see it listed, stop sharing', async
 });
 
 test("a workspace shared with you: its conversation, and a search over its files (no shell tab)", async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'payments' }).click();
+  // bob's workspace sits in his shared bob-api, under "bob's conversations".
+  const payments = sidebar(page).getByRole('button', { name: 'payments' });
+  if (!(await payments.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api, shared by bob' }).getByRole('button', { name: "Show what's in bob-api" }).click();
+  await payments.click();
   await expect(page.getByText(/retries keep double-charging, can you look at the webhook handler\?/)).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Terminal' })).toHaveCount(0);
   await page.getByRole('tab', { name: 'Files' }).click();

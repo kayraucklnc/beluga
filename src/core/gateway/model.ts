@@ -1,5 +1,6 @@
+import type { AgentRef } from '../../protocol.js';
 import { type Capabilities, DEFAULT_CAPABILITIES, type Rule } from './access.js';
-import type { Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
+import type { DialogueEnvelope, Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
 
 /**
  * Tasks between Claudes in the shared state (the Mac app draws them): what you sent and what
@@ -47,6 +48,8 @@ export interface TaskOutcome {
   readonly problems?: readonly string[];
   /** The file is a secret its owner approved sending, that one time ("private SSH key id_ed25519"). */
   readonly secret?: string;
+  /** An ask: the agent that answered on their Mac (their pick, never the asker's; BLG-448). */
+  readonly agent?: AgentRef;
 }
 
 /** What kind of secret a file is (core/shares.ts secretKindOf decides). */
@@ -98,6 +101,10 @@ export interface TaskView {
   readonly chat?: string;
   /** Sent: the friend's Claude's chat answer it came from (its message id): its card stays under that answer (BLG-353). */
   readonly answer?: string;
+  /** A turn of a chaired dialogue (BLG-468): the chair waits for it, and nothing resumes a conversation with it. */
+  readonly dialogue?: DialogueEnvelope;
+  /** Sent: which of their agents it asks for (BLG-503); their Mac says so when another one does it. */
+  readonly onAgent?: AgentRef;
   readonly state: TaskState;
   /** The latest steps (short lines). */
   readonly steps: readonly string[];
@@ -219,7 +226,7 @@ export const oneLine = (text: string, max = 120): string => {
 
 /** The approval card's title for a request that reached you (screens find the card by it). */
 export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary' | 'secret'>>): string => {
-  const who = `${t.peerName}${t.by === 'agent' ? "'s Claude" : ''}`;
+  const who = `${t.peerName}${t.by === 'agent' ? "'s agent" : ''}`;
   if (t.kind === 'file' && t.secret) return `${who} wants ${t.secret.label}`;
   if (t.kind === 'run' && t.command) return `${who} wants to run on your Mac: ${oneLine(t.command)}`;
   if (t.kind === 'file' && t.path) return `${who} wants a file from your Mac: ${oneLine(t.path)}`;
@@ -233,7 +240,7 @@ export const requestGist = (t: Pick<TaskView, 'ask'> & Partial<Pick<TaskView, 's
 export const tasksIn = (state: GatewaySlice, channel: string): readonly TaskView[] => state.gateway.tasks.filter((t) => t.direction === 'sent' && t.conversation === channel);
 
 /** "bob's Claude", or "bob's Mac" for a command or a file. */
-export const targetLabel = (t: Pick<TaskView, 'peerName' | 'kind'>): string => (t.kind === 'ask' ? `${t.peerName}’s Claude` : `${t.peerName}’s Mac`);
+export const targetLabel = (t: Pick<TaskView, 'peerName' | 'kind'>): string => (t.kind === 'ask' ? `${t.peerName}’s agent` : `${t.peerName}’s Mac`);
 
 /** A received request waiting for your answer. */
 export const awaitingYou = (t: Pick<TaskView, 'direction' | 'state'>): boolean => t.direction === 'received' && t.state === 'awaiting_approval';
@@ -251,7 +258,7 @@ export function stateLabel(t: TaskView): string {
       case 'awaiting_approval':
         return 'Waiting for you to approve';
       case 'working':
-        return t.kind === 'run' ? 'Running' : t.kind === 'file' ? 'Sending the file' : 'Your Claude is working';
+        return t.kind === 'run' ? 'Running' : t.kind === 'file' ? 'Sending the file' : 'Your agent is working';
       case 'done':
         return 'Done';
       case 'declined':
@@ -274,9 +281,9 @@ export function stateLabel(t: TaskView): string {
     case 'awaiting_approval':
       return `Waiting for ${them} to approve`;
     case 'working':
-      if (t.question) return `${them}’s Claude has a question`;
+      if (t.question) return `${them}’s agent has a question`;
       if (t.incoming) return `Receiving files from ${them}`;
-      return t.kind === 'run' ? `Running on ${them}’s Mac` : t.kind === 'file' ? `Getting the file from ${them}’s Mac` : `${them}’s Claude is working`;
+      return t.kind === 'run' ? `Running on ${them}’s Mac` : t.kind === 'file' ? `Getting the file from ${them}’s Mac` : `${them}’s agent is working`;
     case 'done':
       return 'Done';
     case 'declined':

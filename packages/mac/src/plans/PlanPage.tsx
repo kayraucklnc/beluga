@@ -14,7 +14,13 @@ import { ResizeHandle } from '../layout/panel/ResizeHandle.js';
 import { taskChatsItem } from '../layout/plan-task-chats.js';
 import { Button, Empty, IconButton, Segmented, Working, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useBeluga } from '../lib/beluga.js';
+import { toast, useApp, useBeluga } from '../lib/beluga.js';
+import { YOUR_AGENT, agentMenuItems, useAgentEntries, useStartWith } from '../components/agent-options.js';
+import { SplitButton } from '../components/SplitButton.js';
+import { agentName, useMyAgent } from '../lib/agent-words.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
+import { agentForChoice } from '@beluga/ui/agent-choice.js';
+import type { AgentRef } from '@beluga/protocol.js';
 import { openSheet } from '../lib/sheets.js';
 import { mod, openExternal } from '../lib/system.js';
 import { MilestoneBar, PlanProgress, Said, TonePill } from './marks.js';
@@ -117,6 +123,11 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     return () => document.removeEventListener(PLAN_CHAT_TOGGLE, toggle);
   }, [plan.id, setPrefs]);
   const { api, act, openList, openWorktree } = usePlanActions();
+  const { client } = useBeluga();
+  const runtimes = useApp((s) => s.runtimes);
+  const agents = useAgentEntries();
+  const startWith = useStartWith();
+  const mine = useMyAgent();
   // The plan's conversation (its chat, the head Claude's last turn) loads with the page, the chat shown or not.
   useConversationLoaded(plan.home);
   const uiPrefs = usePrefs();
@@ -145,7 +156,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   }, []);
   const chatWidth = drag ?? clampChatWidth(prefs.chatWidth, areaWidth || window.innerWidth);
   const start = useCallback(
-    (taskId: string) => (view.ready.some((t) => t.task.id === taskId && t.forYou) ? showChat(true) : void act(() => api.startTask(plan.id, taskId))),
+    (taskId: string, agent?: AgentRef) => (view.ready.some((t) => t.task.id === taskId && t.forYou) ? showChat(true) : void act(() => api.startTask(plan.id, taskId, agent))),
     [plan.id, act, api, view, showChat],
   );
   // Decide… on a task of yours (the outline, its details): the conversation, where its card is.
@@ -166,16 +177,32 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const pr = plan.pr;
   const conflictWaits = Boolean(plan.mainMerge?.conflict?.stuck || Object.values(plan.merging ?? {}).some((m) => m.conflict?.stuck));
   const conflictHere = Boolean(plan.mainMerge?.conflict || Object.values(plan.merging ?? {}).some((m) => m.conflict) || Object.values(plan.combining ?? {}).some((c) => c.conflict));
-  const askAgain = (): void => void step.run('ask Claude to fix the conflict again', 'Asking Claude…', () => api.retryConflicts(plan.id), 'Claude is on the conflict again');
+  // Conflicts go to the plan's head agent: yours.
+  const who = agentName(mine);
+  const askAgain = (): void => void step.run(`ask ${who} to fix the conflict again`, `Asking ${who}…`, () => api.retryConflicts(plan.id), `${who} is on the conflict again`);
   const mergeNow = (auto: boolean): void =>
     void step.run(auto ? `turn on Merge When Checks Pass for #${pr?.number}` : `merge #${pr?.number} on GitHub`, auto ? 'Turning On…' : 'Merging…', () => api.mergePr(plan.id, auto ? { auto: true } : {}), auto ? `#${pr?.number} merges once its checks pass` : `Merged #${pr?.number}: the plan’s tasks are Done`);
   const openPr = (): void => void step.run('open the plan’s pull request', 'Opening PR…', () => api.openPr(plan.id), 'Opened the plan’s pull request');
 
-  const primary = ((): { label: string; run?: () => void; icon?: IconName; busy?: boolean } | undefined => {
+  // Start with ▸ (BLG-506): "Your agent" over a plan with its own agent is yours by name (none would mean the plan's again).
+  const startTasks = (tasks: readonly { readonly task: { readonly id: string } }[], agent?: AgentRef): void => tasks.forEach((t) => void act(() => api.startTask(plan.id, t.task.id, agent)));
+  // `with`: the same action by another agent, as the ▾ of a split button.
+  const primary = ((): { label: string; run?: () => void; icon?: IconName; busy?: boolean; with?: { readonly label: string; readonly items: ActionItem[] } } | undefined => {
     if (step.busy) return { label: step.busy, busy: true };
     switch (next.kind) {
       case 'approve':
-        return body?.milestones.length ? { label: 'Approve Plan', icon: 'check', run: () => void act(() => api.approve(plan.id), 'Plan approved: its tasks are on the board') } : undefined;
+        // Approve, worked by ▸: who works its milestones and tasks, set as it's approved.
+        return body?.milestones.length
+          ? {
+              label: 'Approve Plan',
+              icon: 'check',
+              run: () => void act(() => api.approve(plan.id), 'Plan approved: its tasks are on the board'),
+              with: {
+                label: 'Approve, worked by another agent',
+                items: startWith(plan.agent, (a) => void act(async () => (await api.setWorkAgent(plan.id, a ?? null), api.approve(plan.id)), 'Plan approved: its tasks are on the board'), 'Approve, worked by'),
+              },
+            }
+          : undefined;
       case 'review_changes':
         return { label: 'Apply Changes', icon: 'check', run: () => void act(() => api.approve(plan.id), 'Changes applied') };
       case 'resume':
@@ -183,7 +210,12 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       case 'start':
         // Yours: the plan's conversation, where its card asks you; Claude's: started.
         if (next.tasks.every((t) => t.forYou)) return { label: words.title, run: () => showChat(true) };
-        return { label: words.title, icon: 'play', run: () => next.tasks.filter((t) => !t.forYou).forEach((t) => void act(() => api.startTask(plan.id, t.task.id))) };
+        return {
+          label: words.title,
+          icon: 'play',
+          run: () => startTasks(next.tasks.filter((t) => !t.forYou)),
+          with: { label: 'Start with another agent', items: startWith(plan.agent, (a) => startTasks(next.tasks.filter((t) => !t.forYou), a ?? (plan.agent ? mine : undefined))) },
+        };
       case 'pass': {
         const again = Boolean(next.milestone.run.mergeFailed);
         return { label: again ? 'Pass Again' : 'Pass Milestone', icon: 'check', run: () => void step.run(`pass “${next.milestone.milestone.title}”`, 'Passing…', () => api.pass(plan.id, next.milestone.milestone.id)) };
@@ -191,8 +223,8 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       case 'merging': {
         // Merging runs by itself; a conflict goes to Claude, and only one it couldn't fix waits for you.
         const c = next.milestone.merging?.conflict;
-        if (c?.stuck) return { label: 'Ask Claude Again', icon: 'claude', run: askAgain };
-        return { label: c ? 'Claude Is Fixing the Conflict' : 'Merging…', busy: true };
+        if (c?.stuck) return { label: `Ask ${who} Again`, icon: agentMark(mine), run: askAgain };
+        return { label: c ? `${who} Is Fixing the Conflict` : 'Merging…', busy: true };
       }
       case 'failed':
         return { label: 'Not Yet…', run: () => openSheet({ kind: 'plan_send_back', planId: plan.id, milestone: next.milestone.milestone.id }) };
@@ -205,9 +237,9 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           case 'catching_up':
             return { label: 'Bringing Main In…', busy: true };
           case 'fixing':
-            return { label: 'Claude Is Fixing the Conflict', busy: true };
+            return { label: `${who} Is Fixing the Conflict`, busy: true };
           case 'stuck':
-            return { label: 'Ask Claude Again', icon: 'claude', run: askAgain };
+            return { label: `Ask ${who} Again`, icon: agentMark(mine), run: askAgain };
           case 'resolve':
             return { label: 'Resolve Conflicts', icon: 'merge', run: () => void step.run(`bring main into ${next.branch}`, 'Bringing Main In…', () => api.bringInMain(plan.id)) };
           case 'draft':
@@ -230,9 +262,15 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   })();
 
   const teamItems = usePlanTeamItems(plan.id, plan.projectId);
+  // Agent for Its Work ▸ (BLG-498): who works what starts from now on; milestones at work keep theirs (the toast says so).
+  const workAgent = (v: string): void =>
+    void act(() => api.setWorkAgent(plan.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes))).then((said) => {
+      if (typeof said === 'string') toast(client, said, 'success');
+    });
   const more: ActionItem[] = [
     ...(plan.body && plan.status === 'active' ? [{ label: plan.paused ? 'Resume' : 'Pause', onSelect: () => void act(() => api.setPaused(plan.id, !plan.paused)) }] : []),
     { label: 'Run at Once', submenu: [1, 2, 3, 4, 6, MAX_PARALLEL].map((n) => ({ label: `${n} ${n === 1 ? 'milestone' : 'milestones'}`, checked: plan.maxParallel === n, onSelect: () => void act(() => api.setParallel(plan.id, n)) })), onSelect: () => undefined },
+    ...(plan.status !== 'done' ? [{ label: 'Agent for Its Work', submenu: agentMenuItems(agents, plan.agent, workAgent), onSelect: () => undefined }] : []),
     { label: 'When to Run Tests', submenu: TESTS_AT.map((t) => ({ label: TESTS_AT_INFO[t].label, hint: TESTS_AT_INFO[t].hint, checked: plan.testsAt === t, onSelect: () => void act(() => api.setTestsAt(plan.id, t), t === 'end' ? 'From now on, milestone checks skip the test suites; they all run once, in the final step' : 'From now on, each milestone’s check runs the full suites once, on its combined work') })), onSelect: () => undefined },
     ...(next.kind === 'stalled' ? next.tasks.flatMap((t) => (t.worktree ? [{ label: `Open ${t.issue?.key ?? 'Its'} Chat`, onSelect: () => openWorktree(t.worktree!) }] : [])) : []),
     ...(next.kind === 'pass' ? [{ label: 'Not Yet…', onSelect: () => openSheet({ kind: 'plan_send_back', planId: plan.id, milestone: next.milestone.milestone.id }) }] : []),
@@ -250,7 +288,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           { label: 'Merge into Main Locally', onSelect: () => openSheet({ kind: 'confirm', title: `Merge ${next.branch} into main here?`, message: 'The main folder must be on main with no uncommitted changes. The plan’s tasks go to Done.', confirm: 'Merge', run: () => void step.run(`merge ${next.branch} into main here`, 'Merging…', () => api.mergeLocal(plan.id), 'Merged into main: the plan’s tasks are Done') }) },
         ]
       : []),
-    ...(conflictWaits && primary?.run !== askAgain ? [{ label: 'Ask Claude Again', onSelect: askAgain }] : []),
+    ...(conflictWaits && primary?.run !== askAgain ? [{ label: `Ask ${who} Again`, onSelect: askAgain }] : []),
     ...(conflictHere ? [{ label: 'Show Conflict in Finder', onSelect: () => void act(() => api.showConflict(plan.id)) }] : []),
     ...(plan.status === 'active' ? [taskChatsItem(plan.id, uiPrefs)] : []),
     ...teamItems,
@@ -296,7 +334,13 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           <ActionsDropdown items={more}>
             <IconButton icon="more" label="Plan Options" />
           </ActionsDropdown>
-          {primary ? (
+          {primary?.with && !primary.busy ? (
+            <SplitButton label={primary.with.label} items={primary.with.items}>
+              <Button variant="primary" size="small" {...(primary.icon ? { icon: primary.icon } : {})} onClick={primary.run}>
+                {primary.label}
+              </Button>
+            </SplitButton>
+          ) : primary ? (
             <Button variant="primary" size="small" {...(primary.icon && !primary.busy ? { icon: primary.icon } : {})} disabled={primary.busy} aria-busy={primary.busy || undefined} className={primary.busy ? p.busyButton : undefined} onClick={primary.run}>
               {primary.busy ? <Working /> : null}
               {primary.label}
@@ -328,7 +372,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       {plan.body && plan.draft ? (
         <div className={p.changes} role="status">
           <Icon name="wand" size={13} />
-          <strong>Claude proposes changes</strong>
+          <strong>Your agent proposes changes</strong>
           <span>{changeWords(plan)}</span>
           <span className={p.grow} />
           <Button size="small" variant="quiet" onClick={() => void act(() => api.discard(plan.id))}>
@@ -467,10 +511,10 @@ function Drafting({ plan }: { plan: Plan }) {
   const since = activity.startedAt ?? plan.createdAt;
   const fresh = now - plan.createdAt < 20_000;
   const line = activity.running
-    ? `Claude is reading ${project ?? 'the code'} and writing the plan · ${formatDuration(Math.max(0, now - since))}`
+    ? `Your agent is reading ${project ?? 'the code'} and writing the plan · ${formatDuration(Math.max(0, now - since))}`
     : fresh
-      ? 'Claude is starting on the plan…'
-      : 'Claude isn’t writing the plan right now. Tell it what to plan in the conversation.';
+      ? 'Your agent is starting on the plan…'
+      : 'Your agent isn’t writing the plan right now. Tell it what to plan in the conversation.';
   return (
     <div className={p.writing}>
       <div className={p.skeleton} data-live={activity.running || fresh ? 'true' : undefined} aria-hidden="true">
@@ -552,7 +596,7 @@ function ConflictLine({ view, onShow }: { view: PlanView; onShow: (id: string) =
   return (
     <div className={cx(p.changes, c.stuck ? p.trouble : undefined)} role="status" aria-label="Merge conflict">
       <Icon name="merge" size={13} />
-      <strong>{c.stuck ? 'Conflict: needs you' : 'Claude is fixing a conflict'}</strong>
+      <strong>{c.stuck ? 'Conflict: needs you' : 'Your agent is fixing a conflict'}</strong>
       <span className={p.troubleWhy} title={c.files.join('\n')}>
         Merging {what} · {shown.map((f) => (
           <code key={f} className={p.conflictFile}>{f}</code>

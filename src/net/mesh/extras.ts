@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
+import { AgentRef } from '../../protocol.js';
 import { PeerIdSchema } from './schemas.js';
 import type { ChatExtras, ChatFile } from './views.js';
 
@@ -44,6 +45,8 @@ export const ExtrasSchema = z.object({
       for: z.string().min(1).max(80),
       // Older Macs drop `request` (zod strips what it doesn't know) and show the answer alone.
       request: z.object({ ask: z.string().min(1).max(MAX_REQUEST_ASK), needs: z.array(z.enum(['project', 'shell', 'files', 'screen', 'device'])).max(5).optional() }).optional(),
+      // Older Macs drop it and say "Claude"; a malformed one is dropped alone, never the answer.
+      agent: AgentRef.optional().catch(undefined),
     })
     .optional(),
   // Older Macs drop it and show the text ("kay asked bob's Claude: …").
@@ -60,7 +63,7 @@ export function parseExtras(raw: unknown): ChatExtras | undefined {
   if (task) out.task = { id: task.id, role: task.role };
   if (files?.length) out.files = files.map((f) => ({ sha: f.sha, name: f.name, size: f.size, ...(f.mime ? { mime: f.mime } : {}), ...(f.image ? { image: true } : {}) }));
   if (ask) out.ask = ask;
-  if (claude) out.claude = { for: claude.for, ...(claude.request ? { request: { ask: claude.request.ask, ...(claude.request.needs?.length ? { needs: [...new Set(claude.request.needs)] } : {}) } } : {}) };
+  if (claude) out.claude = { for: claude.for, ...(claude.agent ? { agent: claude.agent } : {}), ...(claude.request ? { request: { ask: claude.request.ask, ...(claude.request.needs?.length ? { needs: [...new Set(claude.request.needs)] } : {}) } } : {}) };
   return Object.keys(out).length ? out : undefined;
 }
 

@@ -1,5 +1,5 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_PROJECT_CONTEXT } from '../core/board/model.js';
+import type { Complete } from './runtime/types.js';
 import { LOOK_TOOLS, lookVerdict } from './task-drafter.js';
 
 /** A quick look, not an investigation: a few minutes and a handful of reads at most. */
@@ -33,32 +33,23 @@ export function parseDescription(raw: string): string | undefined {
  * What a project is about, from a quick read-only look at its folder (BLG-298): on your own Claude
  * login, no saved session. Undefined on any trouble.
  */
-export async function describeProject(dir: string, project: string, opts: { claudePath?: string; model?: string; timeoutMs?: number } = {}): Promise<string | undefined> {
+export async function describeProject(dir: string, project: string, opts: { complete: Complete; model?: string; timeoutMs?: number }): Promise<string | undefined> {
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), opts.timeoutMs ?? DESCRIBE_TIMEOUT_MS);
   timer.unref();
-  const verdict = (permissionDecision: 'allow' | 'deny') => ({ hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: permissionDecision === 'allow' ? 'Reading the project.' : 'Only reading the files in this folder is allowed here.' } });
+  const verdict = (decision: 'allow' | 'deny') => ({ allow: decision === 'allow', reason: decision === 'allow' ? 'Reading the project.' : 'Only reading the files in this folder is allowed here.' });
   try {
-    const q = query({
+    const said = await opts.complete({
       prompt: `Write the note for the project "${project}" in this folder.`,
-      options: {
-        cwd: dir,
-        model: opts.model ?? 'sonnet',
-        tools: [...LOOK_TOOLS],
-        maxTurns: DESCRIBE_TURNS,
-        settingSources: [],
-        persistSession: false,
-        abortController,
-        systemPrompt: SYSTEM,
-        hooks: {
-          PreToolUse: [{ hooks: [async (h) => (h.hook_event_name === 'PreToolUse' ? verdict(lookVerdict(dir, h.tool_name, (h.tool_input ?? {}) as Record<string, unknown>)) : {})] }],
-        },
-        ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
-      },
+      cwd: dir,
+      model: opts.model ?? 'sonnet',
+      tools: LOOK_TOOLS,
+      vetTool: (tool, input) => verdict(lookVerdict(dir, tool, input)),
+      maxTurns: DESCRIBE_TURNS,
+      signal: abortController.signal,
+      system: SYSTEM,
     });
-    for await (const msg of q) {
-      if (msg.type === 'result' && msg.subtype === 'success') return parseDescription(msg.result);
-    }
+    return parseDescription(said);
   } catch {
     // No note: people write it themselves.
   } finally {

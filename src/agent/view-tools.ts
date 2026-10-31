@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool, toolSuite } from './tool-kit.js';
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
@@ -107,7 +107,7 @@ function preview(page: ViewPage): string {
 }
 
 export function createViewTools(shelf: ViewShelf, cwd: string) {
-  return createSdkMcpServer({
+  return toolSuite({
     name: 'beluga_view',
     version: '0.1.0',
     tools: [

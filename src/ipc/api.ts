@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
+import { AgentRef, ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { BRANCH_PREFIX_RE, EFFORTS, KEEP_AWAKE, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_MAX, PARALLEL_RUNS_MIN } from '../shared/run-slots.js';
@@ -15,6 +15,7 @@ import { CI_API } from './ci-api.js';
 import { DASHBOARD_API } from './dashboard-api.js';
 import { SENTINEL_API } from './sentinel-api.js';
 import { PLANS_API } from './plans-api.js';
+import { DIALOGUES_API } from './dialogues-api.js';
 import { ISSUES_API } from './issues-api.js';
 import { TEAM_API } from './team-api.js';
 import { GIT_API } from './git-api.js';
@@ -63,6 +64,9 @@ export const PrefsPatch = z
     // null: back to the default (JSON can't carry undefined, so "unset" travels as null).
     model: z.string().max(80).nullable().optional(),
     effort: z.enum(EFFORTS).nullable().optional(),
+    // Who answers "@you" (null: back to Claude), and per-project ones by project name (BLG-444).
+    defaultAgent: AgentRef.nullable().optional(),
+    projectAgents: z.record(z.string().min(1).max(80), AgentRef),
     autoSetup: bool,
     branchPrefix: z.string().regex(BRANCH_PREFIX_RE, 'Use letters, digits and . _ - / only'),
     contextMeter: bool,
@@ -217,18 +221,19 @@ export const API = {
   // Load a workspace's saved conversation without going there (the Mac Overview's read-only look at an archived one).
   'workspaces.load': args(id),
   'workspaces.refresh': args(),
-  'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)) }))),
+  'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)), agent: opt(AgentRef) }))),
   'workspaces.newChat': args(id, z.string().max(200), opt(path)),
   'workspaces.startChat': args(id, str, opt(path)),
   // → the new worktree's id. `plan`: its Claude plans first. `quiet`: started from the phone, the Mac's window stays put.
-  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), quiet: opt(bool) }))),
+  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), plan: opt(bool), quiet: opt(bool), agent: opt(AgentRef) }))),
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),
   // Edit a message you sent (workspace, message id, its new words, how): 'here' rewinds this conversation to it (files too), 'fork' goes on in a new worktree or chat → the conversation it went on in.
   'workspaces.editPrompt': args(id, id, str, z.enum(['here', 'fork'])),
   // Carry a conversation (an ask chat in a main folder, or any chat) into a new worktree and go on there → the new workspace's id.
-  'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }).strict())),
+  // `agent` (BLG-506): who goes on there; unset: the conversation's own. One that can't resume the conversation starts fresh, handed it.
+  'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)), agent: opt(AgentRef) }).strict())),
   'workspaces.archive': args(id, opt(bool)),
   'workspaces.restore': args(id),
   // What archiving (or freeing space) would throw away and keep → ArchivePreview (none: not a worktree that's there).
@@ -289,6 +294,8 @@ export const API = {
   'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000), opt(bool)),
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
+  /** A conversation's agent (BLG-446): its runtime and model; null goes back to your default agent (nullish: over the socket a null arrives as undefined, see daemon/dispatch.ts). */
+  'workbench.setAgent': args(channel, AgentRef.nullish()),
   'workbench.createPr': args(id, opt(str)),
   // Create PR without Claude: commit what's left, push, open it titled from the commits → { ok, message, trouble? }.
   // https: push this once over HTTPS with gh's login (the SSH key isn't working; origin stays as it is).
@@ -322,6 +329,10 @@ export const API = {
   'workbench.editPrPrompt': args(),
   'workbench.resetPrPrompt': args(),
   'workbench.measureDisk': args(),
+  // Check Again (BLG-507): every agent asked now (Claude Code signed in? Codex installed and signed in?) → RuntimeChoice[].
+  'workbench.checkAgents': args(),
+  // An agent's own sign-in (claude auth login, codex login), opened in Terminal → true when it opened.
+  'workbench.agentSignIn': args(z.string().regex(/^[a-z][\w-]{0,31}$/)),
   'workbench.search': args(z.string().max(500)),
   'workbench.openHit': args(z.number().int().min(0)),
   'workbench.saveTemplate': args(str, opt(bool)),
@@ -346,6 +357,13 @@ export const API = {
   'env.importDotenv': args(id),
   // Keys a worktree adds go into the project's main .env on their own (on by default).
   'env.newKeysBack': args(id, bool),
+  // Local and bring-your-own endpoints (BLG-449): → each with its URL and models, never its key (hasKey).
+  'env.endpoints': args(),
+  // Add (no id) or change one; key unset keeps it, '' removes it → its id.
+  'env.saveEndpoint': args(z.object({ id: opt(z.string().max(20)), label: z.string().min(1).max(40), baseUrl: z.string().min(1).max(500), key: opt(z.string().max(4000)), models: opt(z.array(z.string().max(40)).max(20)) })),
+  'env.removeEndpoint': args(z.string().max(20)),
+  // Look at every endpoint again now → the list, with which answer.
+  'env.checkEndpoints': args(),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
@@ -399,6 +417,7 @@ export const API = {
   // ---- Dashboards: the numbers sentinels keep, arranged in tiles (dashboard-api.ts)
   ...DASHBOARD_API,
   ...PLANS_API,
+  ...DIALOGUES_API,
   // ---- a project's GitHub issues, and handing one to Claude (issues-api.ts)
   ...ISSUES_API,
   // ---- a project's GitHub Actions: its runs, a run's jobs and steps, its workflows (ci-api.ts)

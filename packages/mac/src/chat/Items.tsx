@@ -17,6 +17,9 @@ import { useClock } from '../lib/window-active.js';
 import { countRender } from '../lib/render-count.js';
 import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
+import { agentBadge, agentName, useMyAgentName } from '../lib/agent-words.js';
+import type { AgentRef } from '@beluga/protocol.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { brandText } from '../lib/brand.js';
 import { messageItems } from './message-menu.js';
 import { Markdown } from './Markdown.js';
@@ -49,6 +52,17 @@ export const useNow = useClock;
 const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** What a message's right-click menu needs: the box to quote into, and how to reach Claude here. */
+/** What runs the agent and its model, small and quiet beside its name ("Opus", "Codex · GPT-5"). */
+function AgentBadge({ agent }: { agent: AgentRef | undefined }) {
+  const text = agentBadge(agent);
+  return text ? (
+    <span className={s.agentBadge} title={`${agent!.label}: ${agent!.runtime}${agent!.model ? `, ${agent!.model}` : ''}`}>
+      <Icon name={agentMark(agent)} size={10} />
+      {text}
+    </span>
+  ) : null;
+}
+
 function useMenuContext() {
   const { ui, client } = useBeluga();
   // In a group room only a mention reaches Claude; elsewhere quoting already asks it.
@@ -95,12 +109,13 @@ function Folding({ children }: { children: ReactNode }) {
 function SteerWaiting({ steer }: { steer: SteeredMessage }) {
   const { client } = useBeluga();
   const stopping = steer.waiting === 'stopping';
+  const agent = useMyAgentName();
   return (
     <div className={s.steerWaiting} data-steer-waiting={steer.waiting} role="status">
       <Icon name="clock" size={11} />
-      <span>{stopping ? 'Sent · Claude is stopping its step to read it' : 'Sent · waiting for Claude to read it'}</span>
+      <span>{stopping ? `Sent · ${agent} is stopping its step to read it` : `Sent · waiting for ${agent} to read it`}</span>
       {stopping ? null : (
-        <Tip label="Stop Claude’s current step so it reads this now" keys={shortcutKeys('composer-send-now')}>
+        <Tip label={`Stop ${agent}’s current step so it reads this now`} keys={shortcutKeys('composer-send-now')}>
           <button type="button" className={s.steerNow} onClick={() => sendSteerNow(client, steer.request)}>
             <Icon name="send" size={10} />
             Send now
@@ -215,13 +230,14 @@ export const ChatRow = memo(function ChatRow({ item, continued, ends = true, min
   return (
     <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
       <div ref={row} className={cx(s.message, continued && s.continued, steer && s.unread)} data-steer={steer ? 'waiting' : undefined}>
-        <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} size={26} />}</div>
+        <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} agent={item.agent} size={26} />}</div>
         <div className={s.body}>
           {continued ? null : (
             <div className={s.meta}>
               <span className={cx(s.author, item.byAgent && s.claudeName)} style={item.byAgent && claudeColor(item.from) ? { color: claudeColor(item.from) } : undefined}>
                 {item.name}
               </span>
+              {item.byAgent ? <AgentBadge agent={item.agent} /> : null}
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
           )}
@@ -258,7 +274,7 @@ export const SystemRow = memo(function SystemRow({ item }: { item: SystemItem })
 });
 
 /** What a steered message's card says once Claude read it: the turn's answer comes after it (see live-tail.ts). */
-const STEERED_BELOW = 'Claude read this while it worked; the answer below covers it.';
+const STEERED_BELOW = 'The agent read this while it worked; the answer below covers it.';
 
 /** The card's header status, when there's one to say (working is said by the working line at the bottom). */
 function statusOf(item: AgentItem): { label: string; tone: 'claude' | 'ok' | 'error' | 'warn' | 'muted' } {
@@ -266,7 +282,7 @@ function statusOf(item: AgentItem): { label: string; tone: 'claude' | 'ok' | 'er
     case 'awaiting_approval':
       return { label: `Waiting for ${item.ownerName} to approve`, tone: 'warn' };
     case 'queued':
-      return { label: item.slotWait ? 'Waiting for a free Claude' : 'Queued', tone: 'muted' };
+      return { label: item.slotWait ? `Waiting for a free ${agentName(item.agent)}` : 'Queued', tone: 'muted' };
     case 'done':
       // The answer itself says it's done: no "Done in 3m" on every message.
       return { label: '', tone: 'ok' };
@@ -319,13 +335,14 @@ function TurnHead({ item, part, mine }: { item: AgentItem; part: TurnPart; mine:
   return (
     <div className={cx(s.message, s.agent, s.turnHead)} data-turn={item.status} data-turn-part="head">
       <div className={s.gutter}>
-        <Avatar name="Claude" id={item.owner} claude size={26} />
+        <Avatar name={agentName(item.agent)} id={item.owner} claude agent={item.agent} size={26} />
       </div>
       <div className={s.body}>
         <div className={s.meta}>
           <span className={cx(s.author, s.claudeName)} style={claudeColor(item.owner) ? { color: claudeColor(item.owner) } : undefined}>
-            {mine ? 'Claude' : `${item.ownerName}'s Claude`}
+            {mine ? agentName(item.agent) : `${item.ownerName}'s ${agentName(item.agent)}`}
           </span>
+          <AgentBadge agent={item.agent} />
         </div>
         <StepsFold folded={folded}>
           <AgentSteps item={item} running={false} part={part} />
@@ -439,7 +456,7 @@ function TurnCard({
   const hasSteps = item.steps.length > 0 || item.subagents.length > 0;
   const folded = answered && prefs.doneSteps === 'fold' && !steps.shown;
   const lead: ActionItem[] = stoppable
-    ? [{ label: 'Stop Claude', icon: 'stop', ...(shortcutKeys('conv-stop') ? { keys: shortcutKeys('conv-stop') } : {}), onSelect: stop }]
+    ? [{ label: `Stop ${agentName(item.agent)}`, icon: 'stop', ...(shortcutKeys('conv-stop') ? { keys: shortcutKeys('conv-stop') } : {}), onSelect: stop }]
     : answered && hasSteps && prefs.doneSteps === 'fold'
       ? [{ label: steps.shown ? 'Hide Steps' : 'Show Steps', icon: 'rows', onSelect: () => steps.setShown(!steps.shown) }]
       : [];
@@ -447,13 +464,14 @@ function TurnCard({
     <ActionsContext items={() => messageItems({ ...menu, text: item.text, lead })}>
       <div className={cx(s.message, s.agent)} data-turn={item.status} data-turn-part={part ? 'tail' : undefined}>
         <div className={s.gutter}>
-          <Avatar name="Claude" id={item.owner} claude size={26} />
+          <Avatar name={agentName(item.agent)} id={item.owner} claude agent={item.agent} size={26} />
         </div>
         <div className={s.body}>
           <div className={s.meta}>
             <span className={cx(s.author, s.claudeName)} style={claudeColor(item.owner) ? { color: claudeColor(item.owner) } : undefined}>
-              {mine ? 'Claude' : `${item.ownerName}'s Claude`}
+              {mine ? agentName(item.agent) : `${item.ownerName}'s ${agentName(item.agent)}`}
             </span>
+            <AgentBadge agent={item.agent} />
             {forSomeoneElse ? <span className={s.time}>for {item.requesterName}</span> : null}
             {!running && item.text && item.status === 'done' && !steeredIn ? (
               <span className={s.hoverActions}>
@@ -465,7 +483,7 @@ function TurnCard({
               </span>
             ) : stoppable ? (
               <span className={s.hoverActions}>
-                <Button size="small" variant="quiet" icon="stop" onClick={stop} title={`Stop Claude here${shortcutKeys('conv-stop') ? ` (${shortcutKeys('conv-stop')})` : ''}`}>
+                <Button size="small" variant="quiet" icon="stop" onClick={stop} title={`Stop ${agentName(item.agent)} here${shortcutKeys('conv-stop') ? ` (${shortcutKeys('conv-stop')})` : ''}`}>
                   Stop
                 </Button>
               </span>
@@ -500,15 +518,16 @@ function TurnCard({
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>
           ) : null}
-          {limited && failure?.kind === 'signed_out' ? (
+          {/* Sign In runs Claude Code's own login: only for a Claude run (Codex says how to sign in on its card). */}
+          {limited && failure?.kind === 'signed_out' && (failure.runtime ?? 'claude') === 'claude' ? (
             <div className={s.limitActions}>
-              <Button size="small" icon="person" onClick={signIn} title="Sign in to Claude in your browser; then Claude picks up where it stopped">
+              <Button size="small" icon="person" onClick={signIn} title="Sign in to Claude Code in your browser; then the run picks up where it stopped">
                 Sign In
               </Button>
             </div>
           ) : limited ? (
             <div className={s.limitActions}>
-              <Button size="small" icon="play" onClick={resume} title="Send “continue”: Claude picks up where it stopped">
+              <Button size="small" icon="play" onClick={resume} title={`Send “continue”: ${agentName(item.agent)} picks up where it stopped`}>
                 Continue
               </Button>
             </div>

@@ -9,6 +9,8 @@ import { type MilestoneView, planView } from './plans/progress.js';
 import { isDecisionQid } from './plans/decisions.js';
 import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 import { allNeeds, needMatches } from '../companion/needs-you.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import { agentLabel, agentName } from '../shared/agent-label.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
@@ -198,11 +200,11 @@ function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
         continue;
       }
       if (run.check?.verdict === 'fail' && run.check.at !== oldRun?.check?.at) {
-        out.push({ kind: 'problems', tag: 'milestone', title: `${name}: “${m.milestone.title}” didn’t pass its check`, body: firstLine(run.check.notes) || 'See what Claude found', ...at, key: `plan:${plan.id}:${id}:failed:${run.check.at}` });
+        out.push({ kind: 'problems', tag: 'milestone', title: `${name}: “${m.milestone.title}” didn’t pass its check`, body: firstLine(run.check.notes) || 'See what your agent found', ...at, key: `plan:${plan.id}:${id}:failed:${run.check.at}` });
         continue;
       }
       if (yoursToPass(m) && !yoursToPass(was.get(id))) {
-        const body = run.check?.verdict === 'pass' ? 'Claude checked it: pass it to go on' : 'Its tasks are finished: pass it to go on';
+        const body = run.check?.verdict === 'pass' ? 'Your agent checked it: pass it to go on' : 'Its tasks are finished: pass it to go on';
         out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${m.milestone.title}” is ready for you`, body, ...at, need: `plan:${plan.id}:pass:${id}`, key: `plan:${plan.id}:${id}:yours:${run.checkAsked ?? 0}:${run.check?.at ?? 0}` });
       }
     }
@@ -243,12 +245,22 @@ function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
     const mine = item.owner === selfId;
     // A friend's Claude matters when it was working for you.
     if (!mine && item.requesterName !== selfName) continue;
-    const who = mine ? 'Claude' : `${item.ownerName}'s Claude`;
+    const who = mine ? agentName(item.agent ?? defaultAgentOf(next.self)) : agentLabel(item.agent, item.ownerName, false);
     const where = placeName(next, item.channel);
     if (item.status === 'done') out.push({ kind: 'done', title: `${who} finished in ${where}`, body: firstLine(item.text) || 'Done', channel: item.channel, ...(mine && allDone(next, item) ? { watched: true } : {}) });
     else if (!QUIET_ERRORS.test(item.text)) out.push({ kind: 'problems', title: `${who} stopped in ${where}`, body: firstLine(item.text) || item.status, channel: item.channel });
   }
   return [...out, ...finishedTasks(next, before)];
+}
+
+/** The agent of your latest run in a conversation (the one asking there now, BLG-503); none: your default. */
+function speakerIn(state: DomainState, channel: string | undefined): AgentRef {
+  const selfId = state.self?.peerId;
+  const run = state.log
+    .slice(-RECENT_LOG)
+    .reverse()
+    .find((l): l is AgentItem => l.type === 'agent' && l.channel === channel && l.owner === selfId);
+  return run?.agent ?? defaultAgentOf(state.self);
 }
 
 /** A long run of yours ended and nothing else runs or waits its turn in that conversation: everything there is finished. */
@@ -357,11 +369,23 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
     if (fresh.length > MESSAGE_BURST * 4) continue;
     const group = conversation.startsWith('group:') ? after.groups.find((g) => `group:${g.id}` === conversation) : undefined;
     for (const m of fresh) {
-      const who = m.claude ? `${m.name}’s Claude` : m.name;
+      const who = m.claude ? agentLabel(m.claude.agent, m.name, false) : m.name;
       const title = group ? (mention.test(m.text) ? `${who} mentioned you in ${group.name}` : `${who} in ${group.name}`) : who;
       const body = firstLine(m.text) || (m.files?.length ? `Sent ${m.files.map((f) => f.name).join(', ')}` : '');
       out.push({ kind: 'mentions', tag: group && mention.test(m.text) ? 'mention' : 'message', title, body, channel: conversation, ...(quiet ? { quiet: true } : {}) });
     }
+  }
+  return out;
+}
+
+/** A dialogue between your agents that just paused at its cap: it waits for your Continue. */
+function dialogueNews(prev: DomainState, next: DomainState): NoticeEvent[] {
+  if (prev.dialogues === next.dialogues) return [];
+  const out: NoticeEvent[] = [];
+  for (const d of Object.values(next.dialogues)) {
+    if (d.remoteChair || d.status !== 'paused' || prev.dialogues[d.id]?.status === 'paused') continue;
+    const channel = d.channel ?? 'room';
+    out.push({ kind: 'needsYou', tag: 'question', title: `Your agents paused in ${placeName(next, channel)}`, body: `${firstLine(d.topic)}: continue, or stop`, channel, need: `dialogue:${d.id}`, key: `dialogue:${d.id}:paused:${d.pauseAt}` });
   }
   return out;
 }
@@ -371,7 +395,7 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
  * stopped, needs an answer or approval, a merge conflict, someone joined or invited you.
  */
 export function detectNotices(prev: DomainState, next: DomainState, now = Date.now()): NoticeEvent[] {
-  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...taskMentions(prev, next, now), ...networkMessages(prev, next, now), ...planNews(prev, next)];
+  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...taskMentions(prev, next, now), ...networkMessages(prev, next, now), ...planNews(prev, next), ...dialogueNews(prev, next)];
   if (prev.approvals !== next.approvals) {
     const seen = new Set(prev.approvals.map((a) => a.id));
     // Someone else's request waits for you either way; on Do Not Disturb it just doesn't make a sound.
@@ -389,12 +413,13 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     for (const q of next.questions) {
       if (seen.has(q.qid)) continue;
       const where = placeName(next, q.channel);
+      const who = agentName(speakerIn(next, q.channel));
       out.push(
         q.question.kind === 'plan'
-          ? { kind: 'needsYou', tag: 'plan', ref: q.qid, title: `Claude has a plan for ${where}`, body: 'Approve it, or say what to change', channel: q.channel }
+          ? { kind: 'needsYou', tag: 'plan', ref: q.qid, title: `${who} has a plan for ${where}`, body: 'Approve it, or say what to change', channel: q.channel }
           : isDecisionQid(q.qid)
             ? { kind: 'needsYou', tag: 'question', ref: q.qid, title: `Your call in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel }
-            : { kind: 'needsYou', tag: 'question', ref: q.qid, title: `Claude asks in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel },
+            : { kind: 'needsYou', tag: 'question', ref: q.qid, title: `${who} asks in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel },
       );
     }
   }
@@ -409,18 +434,19 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
     const seen = new Set(prev.peers.map((p) => p.peerId));
     const still = new Set(next.peers.map((p) => p.peerId));
     const selfId = next.self?.peerId;
-    for (const p of next.peers) if (!seen.has(p.peerId) && p.peerId !== selfId) out.push({ kind: 'people', tag: 'joined', title: `${p.name} joined`, body: p.agent ? 'They brought their Claude' : 'Say hi in the group chat', channel: 'room' });
+    for (const p of next.peers) if (!seen.has(p.peerId) && p.peerId !== selfId) out.push({ kind: 'people', tag: 'joined', title: `${p.name} joined`, body: p.agent ? `They brought their ${agentName(defaultAgentOf(p))}` : 'Say hi in the group chat', channel: 'room' });
     // Only while you're still in the room: losing the room isn't news about each person.
     if (next.status === 'connected' && next.peers.some((p) => p.peerId === selfId)) {
-      for (const p of prev.peers) if (!still.has(p.peerId) && p.peerId !== selfId) out.push({ kind: 'people', tag: 'left', title: `${p.name} left`, body: p.agent ? 'Their Claude left with them' : 'They left the room', channel: 'room' });
+      for (const p of prev.peers) if (!still.has(p.peerId) && p.peerId !== selfId) out.push({ kind: 'people', tag: 'left', title: `${p.name} left`, body: p.agent ? `Their ${agentName(defaultAgentOf(p))} left with them` : 'They left the room', channel: 'room' });
     }
   }
   if (prev.shared !== next.shared) {
     const seen = new Set(prev.shared.map((w) => `${w.owner}:${w.id}`));
     for (const w of next.shared) {
       if (seen.has(`${w.owner}:${w.id}`)) continue;
-      const owner = next.peers.find((p) => p.peerId === w.owner)?.name ?? 'Someone';
-      out.push({ kind: 'people', tag: 'invited', title: `${owner} invited you to ${w.name}`, body: w.role === 'contribute' ? 'You can work there with their Claude' : 'You can follow along', channel: `ws:${w.id}` });
+      const peer = next.peers.find((p) => p.peerId === w.owner);
+      const owner = peer?.name ?? 'Someone';
+      out.push({ kind: 'people', tag: 'invited', title: `${owner} invited you to ${w.name}`, body: w.role === 'contribute' ? `You can work there with their ${agentName(defaultAgentOf(peer))}` : 'You can follow along', channel: `ws:${w.id}` });
     }
   }
   return next.plans.plans.length ? out.map((e) => scopeToPlan(next, e)) : out;
@@ -481,7 +507,7 @@ export class Notifier {
 
   /** Show a test notification whatever the settings say (you asked for it). */
   test(): void {
-    const e: NoticeEvent = { kind: 'done', tag: 'test', title: 'Notifications work', body: 'This is how Beluga tells you Claude finished or needs you' };
+    const e: NoticeEvent = { kind: 'done', tag: 'test', title: 'Notifications work', body: 'This is how Beluga tells you your agent finished or needs you' };
     this.deps.store.dispatch({ type: 'notice_add', notice: { kind: e.kind, tag: e.tag, title: e.title, body: e.body } });
     this.queue.push(e);
     this.flush();

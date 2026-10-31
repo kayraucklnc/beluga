@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cleanName, cleanPlanTitle, slugify } from '../src/agent/namer.js';
-import { toQuestion } from '../src/agent/runner.js';
+import { toQuestion } from '../src/agent/runtime/claude/runner.js';
 import { cleanQuestion } from '../src/core/questions.js';
 import { type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';

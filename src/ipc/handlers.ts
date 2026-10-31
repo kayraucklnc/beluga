@@ -25,6 +25,7 @@ import { BOARD_HANDLERS } from './board-handlers.js';
 import { DASHBOARD_HANDLERS } from './dashboard-handlers.js';
 import { SENTINEL_HANDLERS } from './sentinel-handlers.js';
 import { PLANS_HANDLERS } from './plans-handlers.js';
+import { DIALOGUES_HANDLERS } from './dialogues-handlers.js';
 import { ISSUES_HANDLERS } from './issues-handlers.js';
 import { CI_HANDLERS } from './ci-handlers.js';
 import { TEAM_HANDLERS } from './team-handlers.js';
@@ -176,16 +177,16 @@ export const HANDLERS = {
   'workspaces.open': (s, id, tab, o) => ctl(s)?.open(id, tab, o?.req),
   'workspaces.load': (s, id) => void ctl(s)?.ensureLoaded(id),
   'workspaces.refresh': (s) => ctl(s)?.refresh(),
-  'workspaces.newWorktree': async (s, projectId, name, opts) => (await ctl(s)?.newWorktree(projectId, name, opts?.base ? { base: opts.base } : {}))?.id,
+  'workspaces.newWorktree': async (s, projectId, name, opts) => (await ctl(s)?.newWorktree(projectId, name, { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.agent ? { agent: opts.agent } : {}) }))?.id,
   'workspaces.newChat': async (s, projectId, title, dir) => (await ctl(s)?.newChat(projectId, title, dir))?.id,
   'workspaces.startChat': (s, projectId, text, dir) => ctl(s)?.startChat(projectId, text, dir),
-  'workspaces.startWorktree': async (s, projectId, text, opts) => (await ctl(s)?.startWorktree(projectId, text, (prompt) => s.nameTask(prompt), { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), ...(opts?.plan ? { plan: true } : {}), ...(opts?.quiet ? { quiet: true } : {}), nameLater: true }))?.id,
+  'workspaces.startWorktree': async (s, projectId, text, opts) => (await ctl(s)?.startWorktree(projectId, text, (prompt) => s.nameTask(prompt), { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), ...(opts?.plan ? { plan: true } : {}), ...(opts?.quiet ? { quiet: true } : {}), ...(opts?.agent ? { agent: opts.agent } : {}), nameLater: true }))?.id,
   'workspaces.branches': (s, projectId) => ctl(s)?.branches(projectId),
   'workspaces.fork': async (s, id, name) => (await ctl(s)?.fork(id, name))?.id,
   'workspaces.editPrompt': (s, id, line, text, mode) => ctl(s)?.editPrompt(id, line, text, mode),
   'workspaces.continueInWorktree': async (s, id, opts) =>
     // Claude starts there once whatever runs in the conversation now has finished (its session is complete then).
-    (await ctl(s)?.continueInWorktree(id, (prompt) => s.nameTask(prompt), { ...(opts?.task ? { task: opts.task } : {}), ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), after: s.host.idle(`ws:${id}`) }))?.id,
+    (await ctl(s)?.continueInWorktree(id, (prompt) => s.nameTask(prompt), { ...(opts?.task ? { task: opts.task } : {}), ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), ...(opts?.agent ? { agent: opts.agent } : {}), after: s.host.idle(`ws:${id}`) }))?.id,
   'workspaces.archive': (s, id, force) => ctl(s)?.archive(id, force),
   'workspaces.restore': (s, id) => ctl(s)?.restore(id),
   'workspaces.archivePlan': (s, id) => ctl(s)?.archivePlan(id),
@@ -231,6 +232,7 @@ export const HANDLERS = {
   'workbench.runSetup': (s, wsId) => bench(s)?.runSetup(wsId),
   'workbench.setScript': (s, projectId, kind, command, team) => bench(s)?.setScript(projectId, kind, command, team),
   'workbench.shareScripts': (s, projectId) => bench(s)?.shareScripts(projectId),
+  'workbench.setAgent': (s, channel, agent) => s.workbench?.setAgent(channel, agent ?? undefined) ?? false,
   'workbench.setModel': (s, channel, value) => (s.workbench ? s.workbench.setModel(channel, value) : s.setPrefs({ model: value || undefined })),
   'workbench.createPr': (s, id, extra) => bench(s)?.createPr(id, extra),
   'workbench.quickPr': (s, id, opts) => bench(s)?.quickPr(id, opts),
@@ -253,6 +255,8 @@ export const HANDLERS = {
   'workbench.editPrPrompt': (s) => bench(s)?.editPrPrompt(),
   'workbench.resetPrPrompt': (s) => bench(s)?.resetPrPrompt(),
   'workbench.measureDisk': (s) => bench(s)?.measureDisk(),
+  'workbench.checkAgents': async (s) => (await bench(s)?.checkAgents()) ?? s.store.getState().runtimes,
+  'workbench.agentSignIn': (s, runtime) => bench(s)?.agentSignIn(runtime) ?? false,
   'workbench.search': (s, query) => bench(s)?.search(query),
   'workbench.openHit': (s, index) => bench(s)?.openHit(index),
   'workbench.saveTemplate': (s, text, plan) => bench(s)?.saveTemplate(text, plan),
@@ -271,6 +275,20 @@ export const HANDLERS = {
   'env.testDatabase': (s, projectId) => testDatabase(s.env.viewEnvOf(projectId)),
   'env.importDotenv': (s, projectId) => s.env.importDotenv(projectId),
   'env.newKeysBack': (s, projectId, on) => s.env.setNewKeysBack(projectId, on),
+  'env.endpoints': (s) => s.local.views(),
+  'env.saveEndpoint': async (s, change) => {
+    const saved = s.env.saveEndpoint(change);
+    await s.local.look();
+    return saved;
+  },
+  'env.removeEndpoint': async (s, id) => {
+    s.env.removeEndpoint(id);
+    await s.local.look();
+  },
+  'env.checkEndpoints': async (s) => {
+    await s.local.look();
+    return s.local.views();
+  },
 
   'attachments.add': async (_s, ext, base64) => {
     const bytes = Buffer.from(base64, 'base64');
@@ -352,6 +370,7 @@ export const HANDLERS = {
   ...SENTINEL_HANDLERS,
   ...DASHBOARD_HANDLERS,
   ...PLANS_HANDLERS,
+  ...DIALOGUES_HANDLERS,
   ...ISSUES_HANDLERS,
   ...CI_HANDLERS,
   ...TEAM_HANDLERS,

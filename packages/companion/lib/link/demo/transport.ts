@@ -1,6 +1,8 @@
+import { demoPicker } from './agents';
 import * as Device from 'expo-device';
 import { toB64, utf8 } from '../../b64';
 import {
+  type AgentRefView,
   COMPANION_PIECE,
   COMPANION_PROTO,
   type ConvSummary,
@@ -20,7 +22,7 @@ import {
 } from '../protocol';
 import type { DeviceSecret, LinkPhase } from '../rpc';
 import { Emitter, type PairInput, type PairStep, type Transport } from '../transport';
-import { type DemoWorld, e2eLine, makeWorld, ref, turn } from './data';
+import { CLAUDE_AGENT, MY_AGENT_LABEL, MY_AGENT_NAME, type DemoWorld, agentOf, demoAgent, e2eLine, makeWorld, ref, turn } from './data';
 import { demoRows } from './render-demo';
 import type { ViewQuery } from '../../render';
 import { DEMO_IMAGES } from './images.generated';
@@ -233,7 +235,7 @@ export class DemoTransport implements Transport {
       // 1.15: the plan this chat writes and runs, and its decisions asked here too (views.ts).
       const plan = w.plans.find((p) => p.topic === topic);
       const planT = plan ? (`plan:${plan.id}` as Topic) : undefined;
-      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic || (planT && n.topic === planT)), ...this.projectOf(c), outputs, ...(plan && planT ? { plan: { topic: planT, title: plan.title, state: plan.state, ...count(plan), milestones: plan.milestones.length } } : {}), ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true } : {}), ...(merge ? { merge } : {}) };
+      return { ...c, needsYou: w.needs.filter((n) => n.topic === topic || (planT && n.topic === planT)), ...this.projectOf(c), outputs, ...(plan && planT ? { plan: { topic: planT, title: plan.title, state: plan.state, ...count(plan), milestones: plan.milestones.length } } : {}), ...(c.topic.startsWith('conv:beluga.') ? { mergeable: true, agent: c.agent ?? demoPicker(c.topic === 'conv:beluga.push' ? 'codex' : 'claude', c.topic === 'conv:beluga.push' ? 'gpt-5-codex' : '') } : {}), ...(merge ? { merge } : {}) };
     }
     if (topic.startsWith('plan:')) {
       const p = w.plans.find((x) => x.id === topic.slice(5));
@@ -371,6 +373,12 @@ export class DemoTransport implements Transport {
       case 'needs.dismiss':
         this.resolve(this.world.needs.find((n) => n.id === str(0)));
         return ok();
+      // ---- usage (BLG-459): one provider becomes your default agent
+      case 'companion.defaultAgent':
+        if (!w.usage.some((u) => u.runtime === str(0))) return this.frames.emit({ t: 'result', id, ok: false, error: `No ${str(0)} agent on this Mac` });
+        w.usage = w.usage.map((u) => ({ ...u, isDefault: u.runtime === str(0) })).sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+        this.touch('home');
+        return ok();
       case 'gateway.cancel':
       case 'gateway.forget':
         return ok();
@@ -380,7 +388,7 @@ export class DemoTransport implements Transport {
         return ok();
       case 'gateway.decide':
         this.resolve(item);
-        if (item?.id === 'n-mia' && (args[1] as { answer?: string })?.answer !== 'no') this.later(1800, () => this.chatReply('chat:dm:mia', "Mia's Claude", 'Got it, thank you! Sending Mia the screenshot now.', true));
+        if (item?.id === 'n-mia' && (args[1] as { answer?: string })?.answer !== 'no') this.later(1800, () => this.chatReply('chat:dm:mia', agentOf('Mia'), 'Got it, thank you! Sending Mia the screenshot now.', demoAgent('Mia')));
         return ok();
       case 'gateway.answer':
       case 'gateway.confirm':
@@ -483,13 +491,25 @@ export class DemoTransport implements Transport {
             const asked = a.ask === 'all' ? members : members.filter((m) => (a.ask as string[]).includes(m.peerId));
             asked.forEach((m, i) =>
               this.later(2200 + i * 1400, () =>
-                this.chatReply(topic, m.me ? 'Your Claude' : `${m.name}'s Claude`, m.me ? 'From your Mac: the radar fix is merged on main and the phone build passed.' : `From ${m.name}'s Mac: the radar build there is from this morning, with the cross-fade in. Tests pass.`, true),
+                this.chatReply(topic, m.me ? MY_AGENT_LABEL : agentOf(m.name), m.me ? 'From your Mac: the radar fix is merged on main and the phone build passed.' : `From ${m.name}'s Mac: the radar build there is from this morning, with the cross-fade in. Tests pass.`, m.me ? CLAUDE_AGENT : demoAgent(m.name)),
               ),
             );
           }
           else this.later(2400, () => this.chatReply(topic, who, files.length ? 'oh nice photo 😍' : pick(['ha, nice', 'on it 👍', 'can you send a screenshot?', 'looks great from here', 'ok, give me 5 min'])));
         }
         return ok();
+      }
+      // 1.32 (BLG-446): the agent picker: a model of the same runtime, or another runtime's agent.
+      case 'workbench.setModel':
+      case 'workbench.setAgent': {
+        const c = w.convs.get(`conv:${str(0)}`);
+        if (c) {
+          const ref = args[1] as { runtime: string; model?: string } | null;
+          const runtime = method === 'workbench.setModel' ? (c.agent?.runtime ?? 'claude') : (ref?.runtime ?? 'claude');
+          w.convs.set(c.topic, { ...c, agent: demoPicker(runtime, method === 'workbench.setModel' ? str(1) : (ref?.model ?? '')) });
+          this.touch(c.topic);
+        }
+        return ok(method === 'workbench.setAgent' ? true : null);
       }
       case 'host.stopRun': {
         const c = w.convs.get(`conv:${str(0)}`);
@@ -759,7 +779,7 @@ export class DemoTransport implements Transport {
           subjects: ['Seal pushes to the phone’s box key', 'Sign requests with the relay key', 'Deploy to staging', 'Tests for the relay'],
           checks: [
             { id: 'folder', tone: 'ok', text: 'Your main folder is on main, with no uncommitted changes' },
-            ...(conflicts.length ? [{ id: 'conflicts', tone: 'block', text: `2 files would conflict: ${conflicts.join(', ')}. Claude can merge it and resolve them.`, fix: 'claude' }] : [{ id: 'conflicts', tone: 'ok', text: 'No conflicts' }]),
+            ...(conflicts.length ? [{ id: 'conflicts', tone: 'block', text: `2 files would conflict: ${conflicts.join(', ')}. Your agent can merge it and resolve them.`, fix: 'claude' }] : [{ id: 'conflicts', tone: 'ok', text: 'No conflicts' }]),
             { id: 'newer', tone: 'info', text: 'main has 2 newer commits that beluga/push-relay doesn’t. The merge keeps both.' },
           ],
           canMerge: !conflicts.length,
@@ -975,7 +995,7 @@ export class DemoTransport implements Transport {
     }
     const now = Date.now();
     const you: TurnView = { ...turn({ id: `y${now}`, who: 'you', name: 'You' }, text, now), ...(files.length ? { outputs: files } : {}) };
-    const claude: TurnView = turn({ id: `c${now}`, who: 'claude', name: 'Claude', status: 'working', step: 'Thinking', steps: 0, live: { phase: 'thinking', since: now }, trail: [] }, '', now + 1);
+    const claude: TurnView = turn({ id: `c${now}`, who: 'claude', name: MY_AGENT_NAME, status: 'working', step: 'Thinking', steps: 0, live: { phase: 'thinking', since: now }, trail: [] }, '', now + 1);
     conv.turns = [...conv.turns, you, claude];
     conv.working = true;
     this.touch(topic, 'work');
@@ -994,7 +1014,7 @@ export class DemoTransport implements Transport {
       outputs = [view];
     }
     const steps = isMacTopic(topic) ? (shot ? ['Taking a screenshot', 'Writing the answer'] : ['Running ps -Ao pid,pcpu,pmem,comm', 'Writing the answer']) : ['Reading the code', 'Running the tests · 12/40', 'Running the tests · 40/40', 'Writing the answer'];
-    this.work(topic, claude.id, 'Claude', steps, answer, outputs);
+    this.work(topic, claude.id, MY_AGENT_NAME, steps, answer, outputs);
     return topic;
   }
 
@@ -1005,7 +1025,7 @@ export class DemoTransport implements Transport {
     const topic = `conv:task:${task}` as Topic;
     const title = screen ? `Screenshot of ${name}'s desktop` : text.length > 60 ? `${text.slice(0, 59)}…` : text;
     const now = Date.now();
-    const theirs: TurnView = turn({ id: `f${now}`, who: 'friend', name: `${name}'s Claude`, status: 'working', step: `Waiting for ${name}'s Claude`, steps: 1 }, '', now + 1);
+    const theirs: TurnView = turn({ id: `f${now}`, who: 'friend', name: agentOf(name), status: 'working', step: `Waiting for ${agentOf(name)}`, steps: 1 }, '', now + 1);
     w.convs.set(topic, { topic, title, project: `Asked of friends · ${name}`, turns: [turn({ id: `y${now}`, who: 'you', name: 'You' }, text, now), theirs], more: false, needsYou: [], canSend: true, working: true });
     w.projects.find((x) => x.id === 'asked')?.convs.unshift(topic);
     this.touch(topic, 'work');
@@ -1015,7 +1035,7 @@ export class DemoTransport implements Transport {
       w.files.set(view.ref, { view, mime: 'image/jpeg', image: 'desktop' });
       outputs = [view];
     }
-    this.work(topic, theirs.id, `${name}'s Claude`, screen ? [`${name} approved`, 'Taking the screenshot', 'Sending it'] : [`${name} approved`, 'Looking into it', 'Writing the answer'], screen ? `Here's ${name}'s desktop: the radar build on the left, the forecast chart on the right.` : `${name} is on the radar fix; the cross-fade is in and they're testing on a Pixel 7 now.`, outputs);
+    this.work(topic, theirs.id, agentOf(name), screen ? [`${name} approved`, 'Taking the screenshot', 'Sending it'] : [`${name} approved`, 'Looking into it', 'Writing the answer'], screen ? `Here's ${name}'s desktop: the radar build on the left, the forecast chart on the right.` : `${name} is on the radar fix; the cross-fade is in and they're testing on a Pixel 7 now.`, outputs);
     return { topic, task };
   }
 
@@ -1069,14 +1089,14 @@ export class DemoTransport implements Transport {
     const c = this.world.convs.get(topic);
     if (!c) return;
     const now = Date.now();
-    c.turns = [...c.turns, turn({ id: `s${now}`, who: 'claude', name: 'Claude', status: 'done', endTs: now }, text, now)];
+    c.turns = [...c.turns, turn({ id: `s${now}`, who: 'claude', name: MY_AGENT_NAME, status: 'done', endTs: now }, text, now)];
     this.touch(topic);
   }
 
-  private chatReply(topic: Topic, from: string, text: string, claude = false): void {
+  private chatReply(topic: Topic, from: string, text: string, agent?: AgentRefView): void {
     const chat = this.world.chats.get(topic);
     if (!chat) return;
-    chat.messages = [...chat.messages, { id: `r${Date.now()}`, from, mine: false, text, ts: Date.now(), ...(claude ? { claude } : {}) }];
+    chat.messages = [...chat.messages, { id: `r${Date.now()}`, from, mine: false, text, ts: Date.now(), ...(agent ? { claude: true, agent } : {}) }];
     if (!this.subs.has(topic)) {
       chat.unread += 1;
       this.frames.emit({ t: 'nudge', kind: 'mentions', title: chat.name, body: `${from}: ${text}`, topic });

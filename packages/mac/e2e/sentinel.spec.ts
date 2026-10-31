@@ -62,7 +62,7 @@ test('Morning brief’s page: When, Steps, Properties, History; Run Now starts a
   // A step unfolds its fields: the presets over the prompt.
   await steps.getByRole('button', { name: 'Show its fields' }).first().click();
   await expect(steps.getByRole('button', { name: 'Write a brief of what changed' })).toBeVisible();
-  await expect(main(page).getByRole('complementary', { name: 'Properties' })).toContainText('Claude can look and tell you');
+  await expect(main(page).getByRole('complementary', { name: 'Properties' })).toContainText('Your agent can look and tell you');
   const history = main(page).getByRole('region', { name: 'History' });
   // A week of runs, as seeded (the demo's start catches nothing up).
   await expect(history.locator('[data-run]')).toHaveCount(7);
@@ -82,7 +82,7 @@ test('a run’s page: the line, the steps, the report', async ({ page }) => {
   await expect(main(page).getByRole('region', { name: 'Report' })).toBeVisible();
   await main(page).getByRole('button', { name: 'Show output' }).first().click();
   // Its Claude's session, watched right in the run (BLG-330).
-  await main(page).getByRole('button', { name: 'Claude’s session' }).click();
+  await main(page).getByRole('button', { name: 'The agent’s session' }).click();
   const session = main(page).locator('[data-run-session]');
   await expect(session).toContainText('3 commits landed');
   await expect(session.getByRole('button', { name: 'Open the Chat' })).toBeVisible();
@@ -137,7 +137,7 @@ test('Describe it: Claude writes the sentinel, the page shows it working, then i
   await sheet.getByRole('button', { name: 'Write It' }).click();
   await expect(main(page).locator('[data-sentinel-page]')).toBeVisible();
   const box = main(page).getByTestId('sentinel-ask');
-  await expect(box).toContainText('Claude is writing…');
+  await expect(box).toContainText('Your agent is writing…');
   await expect(box).toContainText('Set it up: every weekday at 8:00', { timeout: 30_000 });
   await expect(main(page).getByTestId('sentinel-sentence')).toHaveText('Every weekday at 8:00');
   await expect(main(page).getByRole('region', { name: 'Steps' }).getByRole('textbox', { name: 'Step 1’s name' })).toHaveValue('Read what changed');
@@ -501,7 +501,7 @@ test('Add a Tile takes a description: Claude adds it, and sets up a draft sentin
   const sheet = page.getByRole('dialog', { name: 'Add to Ops' });
   await sheet.getByRole('textbox', { name: 'What should it show?' }).fill('the open PR count');
   await shoot(page, 'add-tile-describe');
-  await sheet.getByRole('button', { name: 'Ask Claude' }).click();
+  await sheet.getByRole('button', { name: 'Ask Your Agent' }).click();
   // Nothing kept it: Claude set up a draft that fetches it, and the tile says so until it's on.
   const draft = main(page).getByTestId('dashboard-draft');
   await expect(draft).toContainText('Open pull requests', { timeout: 30_000 });

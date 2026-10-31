@@ -72,7 +72,7 @@ function belugaTool(name: string, input: Readonly<Record<string, unknown>>): Hum
     case 'ask_person':
     case 'ask_agent': {
       const ask = firstLine(str(input.ask) || str(input.prompt), 64);
-      return both(`Asked ${possessive(who)} Claude${ask ? `: ${ask}` : ''}`, `Asking ${possessive(who)} Claude${ask ? `: ${ask}` : ''}`, person ? { person } : {});
+      return both(`Asked ${possessive(who)} agent${ask ? `: ${ask}` : ''}`, `Asking ${possessive(who)} agent${ask ? `: ${ask}` : ''}`, person ? { person } : {});
     }
     case 'wait_for':
       return both('Heard back', 'Waiting for an answer', { wait: true, ...(str(input.task) ? { task: str(input.task) } : {}) });
@@ -81,7 +81,7 @@ function belugaTool(name: string, input: Readonly<Record<string, unknown>>): Hum
     case 'cancel':
       return same('Cancelled the task', str(input.task) ? { task: str(input.task) } : {});
     case 'answer_question':
-      return both(input.skip === true ? 'Let them decide' : 'Answered their Claude’s question', 'Answering their Claude’s question', str(input.task) ? { task: str(input.task) } : {});
+      return both(input.skip === true ? 'Let them decide' : 'Answered their agent’s question', 'Answering their agent’s question', str(input.task) ? { task: str(input.task) } : {});
     case 'run_on':
     case 'run_on_peer': {
       const cmd = clip(str(input.command), 56);

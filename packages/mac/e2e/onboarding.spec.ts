@@ -11,6 +11,9 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   // The beluga opens the welcome, and comes back on the last step.
   await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
   await welcome.getByRole('button', { name: /Get Started/ }).click();
+  // Your agents (BLG-507, its own spec: onboarding-agents.spec.ts), then the tour.
+  await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(welcome.getByRole('heading', { name: 'Work on everything at once.' })).toBeVisible();
 
   // Skip Tour goes straight to the look.
@@ -43,15 +46,15 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
   // The permissions (BLG-101): one a step, each optional; the button opens its pane.
-  await expect(welcome.getByRole('heading', { name: 'Let Claude see your screen.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Let your agent see your screen.' })).toBeVisible();
   await welcome.getByRole('button', { name: 'Allow in System Settings' }).click();
   await expect.poll(() => page.evaluate(() => window.__BELUGA_PRIVACY_CALLS__ ?? [])).toEqual(['screen']);
   await welcome.getByRole('button', { name: 'Not Now', exact: true }).click();
-  await expect(welcome.getByRole('heading', { name: 'Let Claude use your other apps.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Let your agent use your other apps.' })).toBeVisible();
   await welcome.getByRole('button', { name: 'Skip Permissions' }).click();
 
   // On-screen popups (BLG-9): a sample shows on the pop-up, and notifications are asked for.
-  await expect(welcome.getByRole('heading', { name: 'Never miss it when Claude needs you.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Never miss it when your agent needs you.' })).toBeVisible();
   await expect(welcome.getByRole('switch', { name: 'Show on-screen popups when something needs me' })).toHaveAttribute('aria-checked', 'true');
   const popup = await page.context().newPage();
   await popup.goto('/popup.html');
@@ -64,7 +67,7 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
 
   // The phone app: Android for now, and the real Pair a Phone….
-  await expect(welcome.getByRole('heading', { name: 'Claude in your pocket.' })).toBeVisible();
+  await expect(welcome.getByRole('heading', { name: 'Your agent in your pocket.' })).toBeVisible();
   await expect(welcome.getByText('Android only for now')).toBeVisible();
   await expect(welcome.getByRole('button', { name: /Pair a Phone/ })).toBeVisible();
   await welcome.getByRole('button', { name: 'Finish', exact: true }).click();
@@ -98,6 +101,9 @@ test('a permission macOS already allows shows as allowed, and the tour shows a r
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await welcome.getByRole('button', { name: /Get Started/ }).click();
+  // Your agents, then the tour's first two.
+  await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   // The table weave: Claude picks Postgres, connects, and the answer is a table that sorts.
@@ -122,7 +128,9 @@ test('the tour explains Sentinel: a sentence becomes a sentinel, then real ones 
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await welcome.getByRole('button', { name: /Get Started/ }).click();
-  for (const heading of ['Work on everything at once.', 'See every agent work. Steer any of them.', 'Answers you can sort, not just read.', 'Your Claude, and your friends’ Claudes.']) {
+  await expect(welcome.getByRole('heading', { name: 'Which agent is yours?' })).toBeVisible();
+  await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
+  for (const heading of ['Work on everything at once.', 'See every agent work. Steer any of them.', 'Answers you can sort, not just read.', 'Your agent, and your friends’ agents.']) {
     await expect(welcome.getByRole('heading', { name: heading })).toBeVisible();
     await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   }
@@ -140,7 +148,7 @@ test('the tour explains Sentinel: a sentence becomes a sentinel, then real ones 
   // Sentinel at work: its page's films, each with the sentence that sets it up.
   await expect(welcome.getByRole('heading', { name: 'Real work, done while you sleep.' })).toBeVisible();
   await welcome.getByRole('tab', { name: 'Failing tests' }).click();
-  await expect(welcome.getByText('When the tests break, Claude fixes them and asks you to merge')).toBeVisible();
+  await expect(welcome.getByText('When the tests break, your agent fixes them and asks you to merge')).toBeVisible();
   await expect(welcome.getByText(/When the tests fail on GitHub for one of my projects/)).toBeVisible();
   await welcome.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(welcome.getByRole('heading', { name: 'Know what every project earns.' })).toBeVisible();

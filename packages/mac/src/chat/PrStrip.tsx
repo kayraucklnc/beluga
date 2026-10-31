@@ -17,7 +17,7 @@ function CommentsButton({ workspaceId }: { workspaceId: string }) {
   const counts = conversationCounts(data);
   if (!data || !counts.said) return null;
   return (
-    <Tip label="The PR’s page: what reviewers said, with the code they mean; reply, resolve, or ask Claude">
+    <Tip label="The PR’s page: what reviewers said, with the code they mean; reply, resolve, or ask your agent">
       <button type="button" className={cx(s.status, s.toggle, counts.open ? s.wait : undefined)} data-pr-comments={counts.said} onClick={() => openPrPage(workspaceId)}>
         <Icon name="chat" size={11} />
         {counts.open ? `${counts.open} open` : `${counts.said} ${counts.said === 1 ? 'comment' : 'comments'}`}

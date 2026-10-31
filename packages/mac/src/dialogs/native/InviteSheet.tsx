@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { GuestCan } from '@beluga/protocol.js';
 import { CAN_INFO, DAY_MS, expiresIn } from '@beluga/shared/invites.js';
+import { fallbackFor } from '@beluga/shared/runtime-fallbacks.js';
+import { useMyAgent } from '../../lib/agent-words.js';
 import { CAN_ORDER, type InviteChoice } from '@beluga/ui/invite-menus.js';
 import { Icon } from '../../components/Icon.js';
 import { BELUGA } from '../../components/beluga-path.js';
@@ -44,6 +46,8 @@ function HostInvite({ menu, close }: NativeMenuProps<'invite_link'>) {
   const [copied, flash] = useFlash();
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<InviteChoice>): void => setC((x) => ({ ...x, ...patch }));
+  // Your agent is Codex: guests who prompt it are turned away, so the sheet says so before you share (BLG-461).
+  const noGuests = fallbackFor(useMyAgent().runtime, 'guests');
   const invitable = projects.filter((p) => p.root);
   const scopes = [{ value: 'room', label: 'Everything (the whole room)' }, ...invitable.map((p) => ({ value: p.id, label: p.id === c.from ? `This project · ${p.name}` : p.name }))];
   const fail = (err: unknown): void => toast(client, err instanceof Error ? err.message : String(err), 'error');
@@ -95,7 +99,9 @@ function HostInvite({ menu, close }: NativeMenuProps<'invite_link'>) {
       </Field>
       <Field label="They can">
         <Choice<GuestCan> label="They can" value={c.can} options={CAN_ORDER.map((can) => ({ value: can, label: CAN_INFO[can].label, icon: can === 'watch' ? 'eye' : can === 'prompt' ? 'chat' : 'pencil' }))} onChange={(can) => set({ can })} />
-        <span className={s.hint}>{sentence(CAN_INFO[c.can].detail)}.</span>
+        <span className={s.hint}>
+          {sentence(CAN_INFO[c.can].detail)}.{noGuests && c.can !== 'watch' ? ` ${noGuests}` : ''}
+        </span>
       </Field>
       <Field label="The link">
         <Check checked={c.knock} onChange={(knock) => set({ knock })} label="Knock first" detail={c.knock ? 'You let them in from a card in the chat.' : 'They come straight in.'} />

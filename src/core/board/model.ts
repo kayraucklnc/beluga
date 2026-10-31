@@ -6,7 +6,9 @@
  * Browser-safe: the Mac app runs it. See docs/tasks-and-plans.md.
  */
 
+import type { AgentRef } from '../../protocol.js';
 import type { LabelDef } from './labels.js';
+import { agentLabel } from '../../shared/agent-label.js';
 
 export const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled'] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
@@ -65,7 +67,13 @@ export const ESTIMATES = [1, 2, 3, 5, 8] as const;
  */
 export type Actor =
   | { readonly kind: 'person'; readonly id: string; readonly name: string }
-  | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string }
+  | {
+      readonly kind: 'claude';
+      readonly owner: string;
+      readonly ownerName: string;
+      /** Which agent it was (BLG-498: Codex, a local model…); left out on older entries: Claude, as before. */
+      readonly agent?: AgentRef;
+    }
   | { readonly kind: 'beluga' };
 
 /**
@@ -227,6 +235,8 @@ export interface Issue {
   readonly link?: IssueLink;
   /** The GitHub issue it's for (made from it in Issues): its pull request says "Fixes #n", so merging closes the issue. */
   readonly github?: IssueGitHub;
+  /** The agent (and model) that works it when it starts (BLG-497): its worktree's own. None: your default agent. */
+  readonly agent?: AgentRef;
   /**
    * Only you see it (BLG-501): it stays on this Mac, never reaching teammates on a team board or
    * another tracker (Linear), until Share with Team. A private task's sub-tasks are private too.
@@ -601,7 +611,7 @@ export function actorName(actor: Actor, selfId: string): string {
     case 'person':
       return actor.id === selfId ? 'You' : actor.name;
     case 'claude':
-      return actor.owner === selfId ? 'Your Claude' : `${actor.ownerName}’s Claude`;
+      return agentLabel(actor.agent, actor.ownerName, actor.owner === selfId, { capital: true });
     default:
       return 'Beluga';
   }
@@ -609,7 +619,7 @@ export function actorName(actor: Actor, selfId: string): string {
 
 export function assigneeName(assignee: AnyAssignee | undefined, selfId: string): string {
   if (!assignee) return 'No one';
-  return assignee.kind === 'person' ? (assignee.id === selfId ? 'You' : assignee.name) : assignee.owner === selfId ? 'Your Claude' : `${assignee.ownerName}’s Claude`;
+  return assignee.kind === 'person' ? (assignee.id === selfId ? 'You' : assignee.name) : agentLabel(undefined, assignee.ownerName, assignee.owner === selfId, { capital: true });
 }
 
 /** An activity line in words from where you look ("assigned this to your Claude"). */
@@ -617,7 +627,8 @@ export function activityText(entry: Activity, selfId: string): string {
   if (entry.kind !== 'assignee' || entry.assignee === undefined) return entry.text;
   if (entry.assignee === null) return 'unassigned this';
   const name = assigneeName(entry.assignee, selfId);
-  return `assigned this to ${name === 'You' ? 'you' : name === 'Your Claude' ? 'your Claude' : name}`;
+  const mine = entry.assignee.kind === 'claude' && entry.assignee.owner === selfId;
+  return `assigned this to ${name === 'You' ? 'you' : mine ? agentLabel(undefined, undefined, true) : name}`;
 }
 
 /** A label's color, the same everywhere (a few calm hues). */

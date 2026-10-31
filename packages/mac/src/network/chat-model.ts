@@ -1,6 +1,7 @@
 import type { ChatFile, GroupView, LiveClaude, MessageView, NetworkState } from '../../../../src/net/mesh/views.js';
 import { type Suggestion, friendMention, typedMention } from '../../../../src/ui/suggest.js';
 import { MENTION, type MentionWorld } from '../chat/mentions.js';
+import { agentName } from '../../../../src/shared/agent-label.js';
 import { continues } from './net-model.js';
 import { type TaskMention, matchTasks } from '../../../../src/shared/task-refs.js';
 import type { Issue } from '../../../../src/core/board/model.js';
@@ -18,9 +19,9 @@ export type Ask = { readonly kind: 'me' } | { readonly kind: 'all' } | { readonl
 
 /** "Asking your Claude" (or, short for the button: "Your Claude"). */
 export function askLabel(ask: Ask, short = false): string {
-  if (ask.kind === 'me') return short ? 'Your Claude' : 'Asking your Claude';
-  if (ask.kind === 'all') return short ? 'Everyone’s Claude' : 'Asking everyone’s Claude';
-  return short ? `${ask.name}’s Claude` : `Asking ${ask.name}’s Claude`;
+  if (ask.kind === 'me') return short ? 'Your agent' : 'Asking your agent';
+  if (ask.kind === 'all') return short ? 'Everyone’s agent' : 'Asking everyone’s agent';
+  return short ? `${ask.name}’s agent` : `Asking ${ask.name}’s agent`;
 }
 
 /** What the message tells the network: everyone, or these people's Claudes. */
@@ -46,8 +47,8 @@ export interface ChannelSuggestion extends Suggestion {
 }
 
 const COMMANDS: ReadonlyArray<{ name: ChannelCommand; hint: string; when?: 'others' | 'admin' }> = [
-  { name: 'claude', hint: 'Your Claude answers this message' },
-  { name: 'claudes', hint: 'Everyone’s Claude answers, each from their own Mac', when: 'others' },
+  { name: 'claude', hint: 'Your agent answers this message' },
+  { name: 'claudes', hint: 'Everyone’s agent answers, each from their own Mac', when: 'others' },
   { name: 'files', hint: 'Send files from your Mac…' },
   { name: 'add-people', hint: 'Add people to this channel…', when: 'admin' },
 ];
@@ -75,10 +76,10 @@ export function channelSuggestions(text: string, ctx: { people: readonly Member[
   if (typed === undefined) return [];
   const before = text.slice(0, text.length - typed.length - 1);
   const options = [
-    { label: 'Claude (yours)', insert: '@claude', hint: 'answers here, from your Mac' },
-    ...ctx.people.map((p) => ({ label: `${p.name}’s Claude`, insert: `@claude:${handle(p.name)}`, hint: `answers from ${p.name}’s Mac` })),
-    ...(ctx.people.length ? [{ label: 'Everyone’s Claude', insert: '@claudes', hint: 'each answers from their own Mac' }] : []),
-    ...ctx.people.filter((p) => handle(p.name)).map((p) => ({ label: p.name, insert: `@${handle(p.name)}`, hint: 'the person, not their Claude' })),
+    { label: 'Your agent', insert: '@claude', hint: 'answers here, from your Mac' },
+    ...ctx.people.map((p) => ({ label: `${p.name}’s agent`, insert: `@claude:${handle(p.name)}`, hint: `answers from ${p.name}’s Mac` })),
+    ...(ctx.people.length ? [{ label: 'Everyone’s agent', insert: '@claudes', hint: 'each answers from their own Mac' }] : []),
+    ...ctx.people.filter((p) => handle(p.name)).map((p) => ({ label: p.name, insert: `@${handle(p.name)}`, hint: 'the person, not their agent' })),
   ];
   const t = typed.toLowerCase();
   const named: ChannelSuggestion[] = options
@@ -138,16 +139,16 @@ export const channelWorld = (me: Member | undefined, people: readonly Member[], 
 export function askedLine(m: Pick<MessageView, 'ask' | 'mine' | 'from'>, nameOf: (peerId: string) => string, me: string | undefined): string | undefined {
   const to = m.ask?.to;
   if (!to) return undefined;
-  if (to === 'all') return 'Asked everyone’s Claude';
+  if (to === 'all') return 'Asked everyone’s agent';
   const names = to.map((p) => (p === me ? (m.mine ? 'their own' : 'your') : `${nameOf(p)}’s`));
-  if (m.mine) return `Asked ${to.length === 1 && to[0] === me ? 'your' : names.join(' and ')} Claude`;
-  if (to.length === 1 && to[0] === m.from) return 'Asked their Claude';
-  return `Asked ${names.join(' and ')} Claude`;
+  if (m.mine) return `Asked ${to.length === 1 && to[0] === me ? 'your' : names.join(' and ')} agent`;
+  if (to.length === 1 && to[0] === m.from) return 'Asked their agent';
+  return `Asked ${names.join(' and ')} agent`;
 }
 
 /** Who wrote it, as the chat shows it: "You", "bob", "Your Claude", "bob’s Claude". */
 export function authorLabel(m: Pick<MessageView, 'mine' | 'name' | 'claude'>): string {
-  if (m.claude) return m.mine ? 'Your Claude' : `${m.name}’s Claude`;
+  if (m.claude) return m.mine ? `Your ${agentName(m.claude.agent)}` : `${m.name}’s ${agentName(m.claude.agent)}`;
   return m.mine ? 'You' : m.name;
 }
 
@@ -171,7 +172,7 @@ export function liveIn(state: Pick<NetworkState, 'live'>, conversation: string, 
 
 /** "bob’s Claude is answering…", "Your Claude and mia’s Claude are answering…". */
 export function liveLine(live: readonly LiveClaude[], me: string | undefined): string {
-  const names = [...new Set(live.map((l) => (l.peerId === me ? 'Your Claude' : `${l.name}’s Claude`)))];
+  const names = [...new Set(live.map((l) => (l.peerId === me ? 'Your agent' : `${l.name}’s agent`)))];
   if (!names.length) return '';
   const list = names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
   return `${list} ${names.length === 1 ? 'is' : 'are'} answering…`;

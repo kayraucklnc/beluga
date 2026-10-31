@@ -33,15 +33,15 @@ describe('a task’s card in the chat both people share', () => {
     const t = kay.gw.ask({ person: 'bobC', ask: 'tidy the hero copy', summary: 'tidy the hero copy', by: 'agent', conversation: 'ws:abc' });
     expect(task(kay, t.id)?.chat).toBe(`dm:${bob.id}`);
     // Kay's own DM with bob holds the card at once; bob's when it arrives.
-    expect(cardIn(kay, `dm:${bob.id}`, t.id)).toMatchObject({ mine: true, text: "kayC's Claude asked bobC's Claude: tidy the hero copy", task: { id: t.id, role: 'request' } });
+    expect(cardIn(kay, `dm:${bob.id}`, t.id)).toMatchObject({ mine: true, text: "kayC's agent asked bobC's agent: tidy the hero copy", task: { id: t.id, role: 'request' } });
     await settle(() => cardIn(bob, `dm:${kay.id}`, t.id));
-    expect(cardIn(bob, `dm:${kay.id}`, t.id)?.text).toBe("kayC's Claude asked bobC's Claude: tidy the hero copy");
+    expect(cardIn(bob, `dm:${kay.id}`, t.id)?.text).toBe("kayC's agent asked bobC's agent: tidy the hero copy");
     await settle(() => task(kay, t.id)?.state === 'done');
     expect(task(bob, t.id)?.chat).toBe(`dm:${kay.id}`);
     // The result posts nothing more: the card is the one message.
     expect(kay.person.mesh.conversation(`dm:${bob.id}`).filter((m) => m.task)).toHaveLength(1);
     await settle(() => heard.some((e) => e.tag === 'task' && /finished/.test(e.title)));
-    expect(heard.find((e) => /finished/.test(e.title))).toMatchObject({ title: "Your Claude's work for kayC finished", channel: `dm:${kay.id}` });
+    expect(heard.find((e) => /finished/.test(e.title))).toMatchObject({ title: "Your agent's work for kayC finished", channel: `dm:${kay.id}` });
   }, 60_000);
 
   it('goes in the channel it was asked from when they’re in it; someone else there sees only the words', async () => {
@@ -62,7 +62,7 @@ describe('a task’s card in the chat both people share', () => {
     expect(task(kay, t.id)?.answer).toBe('m_answer01');
     await settle(() => task(bob, t.id)?.chat === chat);
     await settle(() => cardIn(bob, chat, t.id) && cardIn(cat, chat, t.id));
-    expect(cardIn(cat, chat, t.id)?.text).toBe("kayG asked bobG's Claude: check the build");
+    expect(cardIn(cat, chat, t.id)?.text).toBe("kayG asked bobG's agent: check the build");
     expect(task(cat, t.id)).toBeUndefined();
     // Nothing in their DM.
     expect(cardIn(kay, `dm:${bob.id}`, t.id)).toBeUndefined();
@@ -117,6 +117,6 @@ describe('the card on the wire and on the phone', () => {
     const messages = { ...state.network.messages, [conversation]: kay.person.mesh.conversation(conversation) };
     const ctx = { refs: { output: () => undefined } } as unknown as Parameters<typeof chatMessages>[1];
     const view = chatMessages({ ...state, network: { ...state.network, messages } }, ctx, conversation).messages.find((m) => m.task);
-    expect(view?.task).toMatchObject({ id: t.id, title: 'To bobP’s Claude', ask: 'say hi', state: 'Done', tone: 'ok', summary: 'Done: say hi' });
+    expect(view?.task).toMatchObject({ id: t.id, title: 'To bobP’s agent', ask: 'say hi', state: 'Done', tone: 'ok', summary: 'Done: say hi' });
   }, 60_000);
 });

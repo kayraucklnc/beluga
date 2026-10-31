@@ -27,7 +27,7 @@ const KIND_ICON: Record<SuggestionKind, IconName> = {
 export function sectionOf(sug: Suggestion, prev: Suggestion | undefined): string | undefined {
   if (sug.task?.elsewhere && !prev?.task?.elsewhere) return 'In other projects, not this one';
   if (sug.task && !sug.task.elsewhere && !prev?.task) return 'Tasks';
-  if (sug.kind === 'skill' && prev?.kind !== 'skill') return 'Claude’s skills and commands';
+  if (sug.kind === 'skill' && prev?.kind !== 'skill') return 'Your agent’s skills and commands';
   return undefined;
 }
 
@@ -36,9 +36,10 @@ export function SuggestionBody({ sug, asking = false }: { sug: Suggestion; askin
   if (sug.task) return <TaskOption task={sug.task} asking={asking} />;
   return (
     <>
-      {sug.kind ? (
+      {sug.kind || sug.mark ? (
         <span className={s.sugIcon} aria-hidden="true">
-          <Icon name={KIND_ICON[sug.kind]} size={12} />
+          {/* An agent's tag shows its own mark (BLG-520): Claude Code's, Codex's, a local model's. */}
+          <Icon name={sug.mark ?? KIND_ICON[sug.kind!]} size={12} />
         </span>
       ) : null}
       <span className={s.sugLabel}>{sug.label}</span>

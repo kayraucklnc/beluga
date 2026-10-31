@@ -4,6 +4,7 @@ import { belugaHome } from '../home.js';
 import type { Store } from '../store.js';
 import type { NoticeEvent } from '../notify.js';
 import { ClaudeCodeWatcher } from './watch.js';
+import { CodexSessionsWatcher } from './codex-watch.js';
 import { belugaEnv } from '../beluga-env.js';
 
 /**
@@ -26,8 +27,17 @@ export function claudeCodeOf(session: object): ClaudeCodeWatcher {
   return watcher;
 }
 
+/** Codex's folder: ~/.codex, or $CODEX_HOME; BELUGA_CODEX_HOME points elsewhere (tests). */
+export function codexHome(env: NodeJS.ProcessEnv = process.env): string {
+  return belugaEnv('CODEX_HOME', env) || env.CODEX_HOME || path.join(os.homedir(), '.codex');
+}
+
 export function launchClaudeCode(host: { readonly session: object; readonly store: Store; readonly demo: boolean; readonly notify?: (event: NoticeEvent) => void }): () => void {
-  if (host.demo && !belugaEnv('CLAUDE_HOME')) return () => undefined;
+  // Codex's outside sessions show in Activity too (BLG-455); the demo only with BELUGA_CODEX_HOME.
+  const codex = !host.demo || belugaEnv('CODEX_HOME') ? new CodexSessionsWatcher({ home: codexHome(), store: host.store }) : undefined;
+  codex?.start();
+  const stopCodex = (): void => codex?.stop();
+  if (host.demo && !belugaEnv('CLAUDE_HOME')) return stopCodex;
   const watcher = new ClaudeCodeWatcher({
     home: claudeHome(),
     store: host.store,
@@ -37,5 +47,8 @@ export function launchClaudeCode(host: { readonly session: object; readonly stor
   });
   attachClaudeCode(host.session, watcher);
   watcher.start();
-  return () => watcher.stop();
+  return () => {
+    watcher.stop();
+    stopCodex();
+  };
 }

@@ -3,7 +3,7 @@ import { existsSync, promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
-import { claudeConfigDir, encodeProjectDir, pathVariants } from '../../agent/claude-sessions.js';
+import { claudeConfigDir, encodeProjectDir, pathVariants } from '../../agent/runtime/claude/claude-sessions.js';
 import { MAX_DOWNLOAD_BYTES } from '../../protocol.js';
 import { SCRATCH_DIR } from '../../shared/scratch-dir.js';
 import { findEnvFiles, parseDotenv } from '../../workspaces/env.js';

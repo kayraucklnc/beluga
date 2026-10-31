@@ -21,6 +21,11 @@ import { sameDeep } from '../lib/stable.js';
 import { askAboutTask } from '../network/chat-model.js';
 import { draftIn } from '../network/NetComposer.js';
 import { IssueMark } from '../issues/task-bits.js';
+import { YOUR_AGENT, agentMenuItems, useAgentEntries, useStartWith } from '../components/agent-options.js';
+import { useMyAgent } from '../lib/agent-words.js';
+import { agentName } from '@beluga/shared/agent-label.js';
+import type { AgentRef } from '@beluga/protocol.js';
+import { agentForChoice } from '@beluga/ui/agent-choice.js';
 import t from './tasks.module.css';
 
 const NONE: readonly never[] = [];
@@ -72,7 +77,7 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
       {issue.drafting ? (
         <span className={t.writing} aria-live="polite">
           <Dot tone="claude" live />
-          Claude is writing…
+          The agent is writing…
         </span>
       ) : null}
       {issue.needsChecks && STATUS_INFO[issue.status].open ? (
@@ -133,7 +138,7 @@ export function IssueMeta({ issue, compact, labels = true, progress: ring = true
         </span>
       ) : null}
       {!presence ? null : running ? (
-        <Tip label={doing ? `Claude: ${doing}` : 'Claude is working on it'}>
+        <Tip label={doing ? `Agent: ${doing}` : 'The agent is working on it'}>
           <span className={t.working}>
             <Dot tone="claude" live />
             {doing ? <span className={t.nowStep}>{doing}</span> : null}
@@ -161,7 +166,7 @@ export function OnItLine({ issue, self }: { issue: Issue; self: { readonly id: s
   const last = worktreeOf(issue);
   const worktree = useApp((s) => (last && STATUS_INFO[issue.status].open && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
-  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined));
+  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined), sameDeep);
   // What it's doing is only in the tooltip, as of now: the card just says working (no ticking step and timer on every card).
   const pulse = running ? pulseOf(run, false, undefined) : undefined;
   const doing = pulse ? pulseWords(pulse, Date.now()).sub : undefined;
@@ -281,6 +286,29 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const projects = useApp((s) => s.projects);
   const team = useApp((s) => s.team);
   const friends = useApp((s) => s.network.friends);
+  const runtimes = useApp((s) => s.runtimes);
+  const agents = useAgentEntries();
+  const startWith = useStartWith();
+  const mine = useMyAgent();
+  const plans = useApp((s) => s.plans.plans);
+  /** Its own agent, else its plan's (BLG-497); none: yours. */
+  const ownAgent = (issue: Issue): AgentRef | undefined => issue.agent ?? (issue.plan ? plans.find((p) => p.id === issue.plan!.id)?.agent : undefined);
+  const startIt = (issue: Issue, agent: AgentRef | undefined): void => void act(() => api.start(issue.id, { claude: true, ...(agent ? { agent } : {}) }));
+  /** Start with ▸ (BLG-506): every agent and model, this start only; "your agent" over its own is yours by name. */
+  const startWithMenu = (issue: Issue): ActionItem => {
+    const own = ownAgent(issue);
+    return { label: 'Start with', icon: 'play', submenu: startWith(own, (a) => startIt(issue, a ?? (own ? mine : undefined)), ''), onSelect: () => undefined };
+  };
+  /** Agent ▸ (BLG-498): who works it from its next start, the task page's Agent list as a submenu. */
+  const agentMenu = (issue: Issue): ActionItem => ({
+    label: 'Agent',
+    submenu: agentMenuItems(agents, issue.agent, (v) =>
+      void act(() => api.setAgent(issue.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes))).then((said) => {
+        if (typeof said === 'string') toast(client, said, 'success');
+      }),
+    ),
+    onSelect: () => undefined,
+  });
   const sharedWith = useSharedWith();
   /** Your chat with a teammate, the task in the box (BLG-263: you ask, nothing is given to their Claude). */
   const askIn = (issue: Issue): ActionItem[] => {
@@ -297,7 +325,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         icon: 'chat',
         separate: true,
         submenu: mates.flatMap((m) => [
-          { label: `${m.name}’s Claude`, hint: `@claude:… @${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, true)) },
+          { label: `${m.name}’s agent`, hint: `@claude:… @${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, true)) },
           { label: m.name, hint: `@${issue.key}`, onSelect: () => go(m.peerId, askAboutTask(issue.key, m.name, false)) },
         ]),
         onSelect: () => undefined,
@@ -323,8 +351,9 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         ? [{ label: 'Open Worktree', icon: 'branch' as const, onSelect: () => openWorktree(worktree) }]
         : startable
           ? [
-              { label: 'Start', icon: 'play' as const, hint: 'A new worktree, Claude working on it', onSelect: () => void act(() => api.start(issue.id, { claude: true })) },
-              { label: 'Start Worktree Only', icon: 'branch' as const, hint: 'Without Claude', onSelect: () => void act(() => api.start(issue.id, {})) },
+              { label: 'Start', icon: 'play' as const, hint: `A new worktree, ${ownAgent(issue) ? agentName(ownAgent(issue)) : 'your agent'} working on it`, onSelect: () => startIt(issue, ownAgent(issue)) },
+              startWithMenu(issue),
+              { label: 'Start Worktree Only', icon: 'branch' as const, hint: 'Without the agent', onSelect: () => void act(() => api.start(issue.id, {})) },
             ]
           : []),
       // Finished (or canceled) work starts again only deliberately: back to Ready, then Start.
@@ -341,6 +370,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         submenu: PRIORITIES.map((p) => ({ label: PRIORITY_INFO[p].label, checked: issue.priority === p, onSelect: () => void act(() => api.update(issue.id, { priority: p })) })),
         onSelect: () => undefined,
       },
+      ...(startable ? [agentMenu(issue)] : []),
       { label: 'Add Sub-task…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_task', projectId: issue.projectId, parent: issue.id }) },
       ...privacyItem(issue, sharedWith(issue.projectId), (on) => void act(() => api.setPrivate(issue.id, on), on ? `${issue.key} is private: only you see it` : `Shared ${issue.key} with the team`)),
       ...(isOpen(issue.status) ? [] : [{ label: 'Archive', icon: 'archive' as const, hint: 'Off the board; its proof files let go', onSelect: () => void act(() => api.archive(issue.id), `Archived ${issue.key}`) }]),

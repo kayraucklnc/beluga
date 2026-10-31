@@ -109,8 +109,8 @@ export function commandState(state: AppState, id: CommandId): CommandState {
   const ws = currentWorkspace(state);
   switch (id) {
     case 'conv-stop':
-      if (!channel || channel === 'draft') return OFF('Open a conversation where Claude is working');
-      return claudeWorkingIn(state, channel) ? ON : OFF("Your Claude isn't working here");
+      if (!channel || channel === 'draft') return OFF('Open a conversation where your agent is working');
+      return claudeWorkingIn(state, channel) ? ON : OFF("Your agent isn't working here");
     case 'conv-plan':
       if (!channel || channel === 'draft' || state.view.kind === 'shared') return OFF('Plan mode is for your own conversations');
       if (isPlanHome(state.plans, channel)) return OFF('A plan’s own conversation has no plan mode: the plan is its plan');
@@ -120,7 +120,7 @@ export function commandState(state: AppState, id: CommandId): CommandState {
     case 'conv-find-prev':
       return chatShowing(state) && state.view.kind !== 'draft' && state.view.kind !== 'draft_worktree' ? ON : OFF('Open a conversation to find in it');
     case 'conv-copy':
-      return state.log.some((l) => l.type === 'agent' && l.status === 'done') ? ON : OFF('No Claude answer to copy yet');
+      return state.log.some((l) => l.type === 'agent' && l.status === 'done') ? ON : OFF('No answer to copy yet');
     case 'conv-clear':
       return channel && channel !== 'draft' && state.view.kind !== 'shared' ? ON : OFF('Open a conversation to clear it');
     case 'ws-next':
@@ -167,7 +167,7 @@ export function stopClaude({ client, ui }: CommandCtx, channel: string): void {
       ui.patch({ buffer, cursor: buffer.length });
       document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
     },
-    (err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't stop Claude: ${errorText(err)}`, level: 'error' }),
+    (err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't stop the agent: ${errorText(err)}`, level: 'error' }),
   );
 }
 

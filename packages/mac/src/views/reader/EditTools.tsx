@@ -173,7 +173,7 @@ function ConflictAlert({ session, onCancel, onOverwrite }: { session: EditSessio
   return (
     <Alert
       title={`${session.path.split('/').pop()} changed since you started editing`}
-      message="Someone (or Claude) saved it in the meantime. Saving yours replaces their changes."
+      message="Someone (or an agent) saved it in the meantime. Saving yours replaces their changes."
       tone="caution"
       confirm={{ label: 'Save Anyway', destructive: true, onClick: onOverwrite }}
       onCancel={onCancel}

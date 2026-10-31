@@ -51,7 +51,7 @@ export function FixItButton({ issue, size = 'small' }: { issue: Issue; size?: 's
   if (!investigated || !issue.github) return null;
   const n = issue.github.number;
   return (
-    <Tip label={`Claude fixes #${n} here and opens a pull request that closes it`}>
+    <Tip label={`The agent fixes #${n} here and opens a pull request that closes it`}>
       <Button
         variant="primary"
         size={size}
@@ -64,7 +64,7 @@ export function FixItButton({ issue, size = 'small' }: { issue: Issue; size?: 's
           setBusy(false);
         }}
       >
-        {busy ? 'Asking Claude…' : 'Fix It'}
+        {busy ? 'Asking the agent…' : 'Fix It'}
       </Button>
     </Tip>
   );

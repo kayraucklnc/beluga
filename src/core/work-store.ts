@@ -1,3 +1,4 @@
+import { type RuntimeChoice, runtimeChoices } from '../shared/agent-runtimes.js';
 import type { NoticeKind, NoticeTag } from './notify.js';
 import type { ArchivePhase } from '../workspaces/archive.js';
 import type { Settings } from './settings.js';
@@ -154,6 +155,8 @@ export interface Template {
 export interface WorkState {
   readonly inbox: readonly Notice[];
   readonly models: readonly ModelChoice[];
+  /** The agent picker's runtimes (BLG-446): which run on this Mac, and why the others don't. */
+  readonly runtimes: readonly RuntimeChoice[];
   /** Folder size in bytes per workspace (worktrees and chats). */
   readonly disk: Readonly<Record<string, number>>;
   /** Worktrees being archived now, and how far along (see workspaces/archive.ts). */
@@ -191,6 +194,7 @@ export type WorkAction =
   /** Clear one notice, or all of them. */
   | { type: 'notice_clear'; id?: number }
   | { type: 'models'; models: readonly ModelChoice[] }
+  | { type: 'runtimes'; runtimes: readonly RuntimeChoice[] }
   | { type: 'disk'; sizes: Readonly<Record<string, number>> }
   /** No phase: done (or it failed). */
   | { type: 'archiving'; id: string; phase?: ArchivePhase }
@@ -219,6 +223,7 @@ export const FALLBACK_MODELS: readonly ModelChoice[] = [
 export const initialWork: WorkState = {
   inbox: [],
   models: FALLBACK_MODELS,
+  runtimes: runtimeChoices((id) => (id === 'claude' ? {} : undefined)),
   disk: {},
   archiving: {},
   prs: {},
@@ -260,6 +265,8 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
       return state.inbox.some((n) => n.id === action.id) ? { ...state, inbox: state.inbox.filter((n) => n.id !== action.id) } : state;
     case 'models':
       return { ...state, models: action.models.length ? action.models : FALLBACK_MODELS };
+    case 'runtimes':
+      return { ...state, runtimes: action.runtimes };
     case 'disk':
       return { ...state, disk: { ...state.disk, ...action.sizes } };
     case 'archiving':

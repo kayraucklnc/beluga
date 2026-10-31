@@ -33,7 +33,7 @@ const WAYS: Readonly<Record<Way, WayInfo>> = {
   investigate: {
     label: 'Investigate',
     icon: 'search',
-    hint: 'Claude finds out why it happens and reproduces it; nothing is fixed yet',
+    hint: 'The agent finds out why it happens and reproduces it; nothing is fixed yet',
     placeholder: 'Anything to look at first? “It only fails behind the proxy”',
     what: () => 'In a new worktree: why it happens, and a reproduction. Nothing is fixed yet.',
     whatIcon: 'branch',
@@ -42,7 +42,7 @@ const WAYS: Readonly<Record<Way, WayInfo>> = {
   fix: {
     label: 'Fix It',
     icon: 'wrench',
-    hint: 'Claude fixes it and opens a pull request that closes the issue',
+    hint: 'The agent fixes it and opens a pull request that closes the issue',
     placeholder: 'Anything the fix should do or avoid? “Keep the public API as it is”',
     what: (n) => `In a new worktree, with a pull request that closes #${n}.`,
     whatIcon: 'pr',
@@ -51,9 +51,9 @@ const WAYS: Readonly<Record<Way, WayInfo>> = {
   task: {
     label: 'Make a Task',
     icon: 'task',
-    hint: 'On the board, written up by Claude, for later',
+    hint: 'On the board, written up by the agent, for later',
     placeholder: 'Anything to add to the task?',
-    what: () => 'On the board as Ready, written up by Claude.',
+    what: () => 'On the board as Ready, written up by the agent.',
     whatIcon: 'task',
     go: 'Make Task',
   },
@@ -91,11 +91,11 @@ export function IssueComposer({ projectId, number, task }: { projectId: string; 
   };
 
   return (
-    <section className={cx(h.composer, s.composer)} aria-label={`Hand #${number} to Claude`}>
+    <section className={cx(h.composer, s.composer)} aria-label={`Hand #${number} to your agent`}>
       <div className={h.composerHead}>
-        <h2 className={cx(h.prompt, s.composerPrompt)}>{task ? `${task.key} is on the board. What should Claude do?` : 'What should Claude do?'}</h2>
+        <h2 className={cx(h.prompt, s.composerPrompt)}>{task ? `${task.key} is on the board. What should your agent do?` : 'What should your agent do?'}</h2>
         <Segmented<Way>
-          label="What Claude does"
+          label="What the agent does"
           value={shown}
           onChange={(w) => {
             setWay(w);
@@ -108,7 +108,7 @@ export function IssueComposer({ projectId, number, task }: { projectId: string; 
         <textarea
           ref={box}
           className={cx(h.input, s.composerInput, 'selectable')}
-          aria-label="Anything Claude should know (optional)"
+          aria-label="Anything the agent should know (optional)"
           placeholder={info.placeholder}
           value={note}
           rows={2}
@@ -125,7 +125,7 @@ export function IssueComposer({ projectId, number, task }: { projectId: string; 
         <div className={h.bar}>
           <span className={h.note}>
             <Icon name={writing ? 'pencil' : info.whatIcon} size={12} />
-            {writing ? `Claude is still writing ${task!.key} up; then it can start.` : info.what(number)}
+            {writing ? `The agent is still writing ${task!.key} up; then it can start.` : info.what(number)}
           </span>
           <span className={h.flex} />
           {shown === 'task' ? (
@@ -133,7 +133,7 @@ export function IssueComposer({ projectId, number, task }: { projectId: string; 
               <Checkbox checked={look} onChange={setLook} label="Look at the code first" />
             </span>
           ) : null}
-          <Tip label={shown === 'task' && look ? 'Claude reads the code first (read-only), then writes the task with where it is and the likely cause' : info.hint} keys={sendKeys}>
+          <Tip label={shown === 'task' && look ? 'The agent reads the code first (read-only), then writes the task with where it is and the likely cause' : info.hint} keys={sendKeys}>
             <button type="button" className={cx(d.create, ready && d.createReady)} aria-disabled={!ready} onClick={() => void go()} data-testid="issue-go">
               <Icon name={info.icon} size={12} />
               {busy ? 'Starting…' : info.go}

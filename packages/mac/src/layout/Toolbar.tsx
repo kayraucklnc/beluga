@@ -1,3 +1,5 @@
+import { agentLabel } from '@beluga/shared/agent-label.js';
+import { agentMark } from '@beluga/shared/agent-marks.js';
 import { planForHome } from '@beluga/core/plans/model.js';
 import { ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -210,7 +212,7 @@ export function Toolbar() {
                 <span className={s.ellipsis}>{ws.branch}</span>
               </span>
             ) : ws.kind === 'chat' ? (
-              <span className={s.meta}>{ws.askOnly ? (planForHome(state.plans, `ws:${ws.id}`) ? 'The plan’s conversation · main folder' : 'Questions only · main folder') : 'Claude chat'}</span>
+              <span className={s.meta}>{ws.askOnly ? (planForHome(state.plans, `ws:${ws.id}`) ? 'The plan’s conversation · main folder' : 'Questions only · main folder') : 'Agent chat'}</span>
             ) : null}
             {pr && !branch ? (
               <span className={cx(s.meta, s.metaPr, pr.state === 'MERGED' && s.metaMerged)} title={describePr(pr)} data-pr-state={pr.state}>
@@ -265,7 +267,14 @@ export function Toolbar() {
       <Shell
         headerRef={headerRef}
         title={w?.name ?? 'Shared workspace'}
-        subtitle={<span className={s.meta}>{`${owner}'s ${w?.project ?? 'project'} · ${w?.role === 'contribute' ? 'you can work here' : 'you’re following along'}`}</span>}
+        // Whose machine and which agent runs there: the owner's (BLG-448), never yours.
+        subtitle={
+          <span className={s.meta}>
+            {`${owner}'s ${w?.project ?? 'project'} ·`}
+            <Icon name={agentMark(w?.agent)} size={11} />
+            {`${agentLabel(w?.agent, owner, false, { model: true })} on their Mac · ${w?.role === 'contribute' ? 'you can work here' : 'you’re following along'}`}
+          </span>
+        }
         center={
           <Segmented
             label="Views"
@@ -292,12 +301,12 @@ export function Toolbar() {
   if (view.kind === 'conversation') return <ConversationBar id={view.id} headerRef={headerRef} />;
 
   if (view.kind === 'assistant') {
-    return <Shell headerRef={headerRef} title={<span className={s.name}>{ASSISTANT_TITLE}</span>} subtitle={<span className={s.meta}>Your Claude for this whole Mac · the open chat is the one on your phone</span>} />;
+    return <Shell headerRef={headerRef} title={<span className={s.name}>{ASSISTANT_TITLE}</span>} subtitle={<span className={s.meta}>Your agent for this whole Mac · the open chat is the one on your phone</span>} />;
   }
 
   if (view.kind === 'room') {
     const solo = state.peers.length <= 1;
-    return <Shell headerRef={headerRef} title={solo ? 'Chat' : state.room} subtitle={<span className={s.meta}>{solo ? 'You and your Claude' : `${state.peers.length} people · everyone’s Claude can join in`}</span>} />;
+    return <Shell headerRef={headerRef} title={solo ? 'Chat' : state.room} subtitle={<span className={s.meta}>{solo ? 'You and your agent' : `${state.peers.length} people · everyone’s agent can join in`}</span>} />;
   }
 
   if (view.kind === 'draft' || view.kind === 'draft_worktree') {
@@ -312,7 +321,7 @@ export function Toolbar() {
             <span className={s.name}>{worktree ? 'New Worktree' : 'New Chat'}</span>
           </>
         }
-        subtitle={<span className={s.meta}>{worktree ? 'Its own branch and folder; Claude starts on your task right away' : project ? `Claude works in ${project.name}’s main folder` : 'Nothing is created until you send the first message'}</span>}
+        subtitle={<span className={s.meta}>{worktree ? 'Its own branch and folder; your agent starts on your task right away' : project ? `Your agent works in ${project.name}’s main folder` : 'Nothing is created until you send the first message'}</span>}
       />
     );
   }
@@ -346,7 +355,7 @@ export function Toolbar() {
 
   if (view.kind === 'plans') return <Shell headerRef={headerRef} title={<span className={s.name}>Plans</span>} />;
 
-  if (view.kind === 'issues') return <Shell headerRef={headerRef} title={<span className={s.name}>Issues</span>} subtitle={<span className={s.meta}>From GitHub · Claude investigates, fixes, or writes them up as tasks</span>} />;
+  if (view.kind === 'issues') return <Shell headerRef={headerRef} title={<span className={s.name}>Issues</span>} subtitle={<span className={s.meta}>From GitHub · your agent investigates, fixes, or writes them up as tasks</span>} />;
 
   if (view.kind === 'actions') return <Shell headerRef={headerRef} title={<span className={s.name}>Actions</span>} subtitle={<span className={s.meta}>From GitHub · runs as they go, and each workflow as a graph</span>} />;
 

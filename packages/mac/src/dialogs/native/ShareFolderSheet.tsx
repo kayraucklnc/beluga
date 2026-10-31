@@ -172,8 +172,8 @@ export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuK
         )}
         {who === 'some' && people.some((p) => p.friend && only.has(p.peerId)) ? <span className={s.hint}>Friends find it in their Files, even when no room is open. Secrets never go.</span> : null}
       </Field>
-      <Field label="Claude">
-        <Check checked={writable} onChange={setWritable} label="Your Claude may edit files here" detail={writable ? 'When friends ask your Claude, it can change files in this folder.' : 'Read-only: nothing in it changes.'} />
+      <Field label="Your agent">
+        <Check checked={writable} onChange={setWritable} label="Your agent may edit files here" detail={writable ? 'When friends ask your agent, it can change files in this folder.' : 'Read-only: nothing in it changes.'} />
       </Field>
       <Section title="Shared now">
         <div className={s.list} role="list" aria-label="Shared folders">
@@ -183,7 +183,7 @@ export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuK
                 <Icon name="folder" size={15} className={f.folderIcon} />
                 <div className={s.itemText}>
                   <span className={s.itemTitle}>
-                    {x.name} {x.writable ? <Tag tone="claude">Claude may edit</Tag> : null}
+                    {x.name} {x.writable ? <Tag tone="claude">Agent may edit</Tag> : null}
                   </span>
                   <span className={s.itemDetail}>
                     {shortPath(tilde(home, x.root))} · {x.private ? `only ${(x.allowed ?? []).map(nameOf).join(', ') || 'nobody'}` : 'everyone'}

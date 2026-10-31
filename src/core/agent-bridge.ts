@@ -54,7 +54,7 @@ export function createRoomBridge(session: Session, cwd: () => string, channel?: 
     readPeerFile: async (name, share, p) => (await session.files.readFile({ owner: requirePeer(name).peerId, share, path: p })).content,
     // In a workspace's conversation, its own folder: the room's may be "/" when the app starts the daemon.
     writeReport: (title, markdown) => writeReport(session, (channel && session.workspaces?.inChannel(channel)?.path) || cwd(), title, markdown),
-    reportUsage: (usage) => session.updateUsage(usage),
+    reportUsage: (usage, agent) => session.updateUsage(usage, agent),
     getPeerFile: (name, file, saveTo, why) => session.remote.getFile(requirePeer(name).peerId, file, saveTo, why),
     sendFile: (name, file, note) => session.remote.sendFile(requirePeer(name).peerId, file, note),
     gateway: gatewayBridge(session, channel),
@@ -67,7 +67,7 @@ export function gatewayBridge(session: Session, channel?: string): GatewayBridge
   const conversation = (): string => channel ?? session.host.currentChannel;
   const gw = () => needGateway(session);
   const told = (t: TaskView): string => {
-    const target = t.kind === 'ask' ? `${t.peerName}'s Claude` : `${t.peerName}'s Mac`;
+    const target = t.kind === 'ask' ? `${t.peerName}'s agent` : `${t.peerName}'s Mac`;
     const next = `Call wait_for with task "${t.id}" to wait for the answer, or end your turn saying you asked: the answer comes back into this conversation when it arrives.`;
     if (t.state === 'confirm') return `Task ${t.id}: your user is asked first ("Ask ${target}?"), because they haven't marked ${t.peerName} as trusted. ${next} (wait_for waits through their answer too.)`;
     const offline = t.steps.some((s) => s.includes('offline')) ? ` ${t.peerName} is offline right now; it goes out when they're back.` : '';
@@ -107,8 +107,8 @@ export function gatewayBridge(session: Session, channel?: string): GatewayBridge
       ),
     answerQuestion: (task, answers) => {
       const t = gw().answer(task, answers, 'agent');
-      if (t.answerDraft) return `Your user hadn't seen task ${t.id}, so they see your answer before it goes to ${t.peerName}'s Claude (they can send it, change it, or let them decide). End your turn or call wait_for: the result comes back here.`;
-      return `Answer sent to ${t.peerName}'s Claude for task ${t.id}. Call wait_for to wait for the result (or end your turn: it comes back here).`;
+      if (t.answerDraft) return `Your user hadn't seen task ${t.id}, so they see your answer before it goes to ${t.peerName}'s agent (they can send it, change it, or let them decide). End your turn or call wait_for: the result comes back here.`;
+      return `Answer sent to ${t.peerName}'s agent for task ${t.id}. Call wait_for to wait for the result (or end your turn: it comes back here).`;
     },
     waitFor: async (task, timeoutSec) => {
       await gw().wait(task, timeoutSec * 1000);
@@ -134,7 +134,7 @@ export function describePeers(session: Session): PeerSummary[] {
       agent: p.agent,
       shares: p.shares.map((s) => s.name),
       projects: p.projects ?? [],
-      workspaces: state.shared.filter((w) => w.owner === p.peerId).map((w) => ({ name: w.name, project: w.project, role: w.role === 'contribute' ? 'can ask their Claude there' : 'follow only' })),
+      workspaces: state.shared.filter((w) => w.owner === p.peerId).map((w) => ({ name: w.name, project: w.project, role: w.role === 'contribute' ? 'can ask their agent there' : 'follow only' })),
       ...(!you && grant ? { lets_you: { trust: grant.level, means: GRANT_INFO[grant.level].detail } } : {}),
     };
   });

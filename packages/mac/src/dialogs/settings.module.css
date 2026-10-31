@@ -220,3 +220,68 @@
   align-items: center;
   gap: 8px;
 }
+/* Settings › Claude › Local models: one endpoint's form (LocalModelsSettings.tsx). */
+.endpointForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 0.5px solid var(--hairline);
+}
+.endpointField {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.endpointField > span {
+  width: 64px;
+  color: var(--text-2);
+}
+.endpointField .text {
+  flex: 1;
+  width: auto;
+}
+.endpointBar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.endpointError {
+  padding: 0 14px 10px;
+  color: var(--error);
+  font-size: 0.88rem;
+}
+
+/* Opened from the welcome (onboarding's Set Up…): above it (onboarding.module.css .overlay is 85), under pop-ups (90). */
+.overlay[data-over-welcome] {
+  z-index: 86;
+}
+.window[data-over-welcome] {
+  z-index: 87;
+}
+
+/* Settings › Agent › Your agents (BLG-507). */
+.agentYours {
+  font-weight: 400;
+  color: var(--text-3);
+}
+.agentCommand {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
+  vertical-align: middle;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  cursor: pointer;
+}
+.agentCommand code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.agentCommand:hover {
+  color: var(--text);
+}

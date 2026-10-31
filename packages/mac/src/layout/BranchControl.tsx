@@ -101,7 +101,7 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
   const methods: ActionItem[] = main?.id === 'merge_pr' ? MERGE_METHODS.map((m) => ({ label: m.label, hint: m.hint, checked: m.method === method, onSelect: () => void merge(m.method) })) : [];
   const items: ActionItem[] = [
     ...methods,
-    ...rest.map((step, i) => ({ label: labelOf(step), hint: step.claude ? `Claude · ${step.hint}` : step.hint, icon: iconOf(step), ...(step.danger ? { danger: true } : {}), separate: i === 0 && methods.length > 0, onSelect: () => requestAnimationFrame(() => run(step)) })),
+    ...rest.map((step, i) => ({ label: labelOf(step), hint: step.claude ? `Agent · ${step.hint}` : step.hint, icon: iconOf(step), ...(step.danger ? { danger: true } : {}), separate: i === 0 && methods.length > 0, onSelect: () => requestAnimationFrame(() => run(step)) })),
   ];
   const hidePill = pillHidden(branch, fold);
   const variant = main && (main.id === 'merge_pr' || main.id === 'merge') ? 'merge' : 'primary';
@@ -128,7 +128,7 @@ export function BranchControl({ wsId, branch, fold = 'none' }: { wsId: string; b
       )}
       {main ? (
         <span className={s.split}>
-          <Tip label={`${hidePill ? `${branch.detail} · ` : ''}${fold === 'all' ? `${labelOf(main)}: ` : ''}${main.claude ? `Claude · ${main.hint}` : main.hint}`}>
+          <Tip label={`${hidePill ? `${branch.detail} · ` : ''}${fold === 'all' ? `${labelOf(main)}: ` : ''}${main.claude ? `Agent · ${main.hint}` : main.hint}`}>
             <Button variant={variant} icon={iconOf(main)} aria-label={fold === 'all' ? labelOf(main) : undefined} className={cx(s.main, items.length > 0 && s.mainSplit, branch.tone === 'error' && s.mainError, branch.tone === 'merged' && s.mainMerged)} disabled={busy} data-branch-step={main.id} data-tool-ws={wsId} onClick={() => run(main)}>
               {busy ? (fold === 'all' ? '…' : 'Working…') : fold === 'all' ? shortLabel(main) : labelOf(main)}
             </Button>

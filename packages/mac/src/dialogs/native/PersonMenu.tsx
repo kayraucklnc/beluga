@@ -1,6 +1,8 @@
 import * as Context from '@radix-ui/react-context-menu';
 import { type ReactNode, useState } from 'react';
 import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
+import { defaultAgentOf } from '@beluga/protocol.js';
+import { agentName } from '@beluga/shared/agent-label.js';
 import { cx } from '../../components/ui.js';
 import { befriend, openFriendCard } from '../../network/use-net.js';
 import { useActions } from '../../lib/actions.js';
@@ -69,13 +71,13 @@ function Items({ index, onRemove, onRun }: { index: number; onRemove: (r: { name
   const grant = state.granted[peer.peerId];
   const items: Item[] = me
     ? [
-        { label: 'Ask My Claude', run: () => addressTo(ui, actions, state.view, { peerId: peer.peerId, name: peer.name, claude: true, self: true }) },
+        { label: `Ask My ${agentName(defaultAgentOf(peer))}`, run: () => addressTo(ui, actions, state.view, { peerId: peer.peerId, name: peer.name, claude: true, self: true }) },
         { label: 'Share a Folder…', run: () => pick('share-folder') },
         { label: 'Settings…', run: () => ui.patch({ settings: 'general' }) },
       ]
     : [
         { label: 'Message', run: () => addressTo(ui, actions, state.view, { peerId: peer.peerId, name: peer.name, claude: false }) },
-        ...(peer.agent ? [{ label: `Ask ${peer.name}’s Claude`, run: () => addressTo(ui, actions, state.view, { peerId: peer.peerId, name: peer.name, claude: true }) }] : []),
+        ...(peer.agent ? [{ label: `Ask ${peer.name}’s ${agentName(defaultAgentOf(peer))}`, run: () => addressTo(ui, actions, state.view, { peerId: peer.peerId, name: peer.name, claude: true }) }] : []),
         ...(!guest && canRunOn(grant?.level) ? [{ label: `Run a Command on ${peer.name}’s Mac…`, run: onRun }] : []),
         ...(guest ? [] : [{ label: state.follow === peer.peerId ? `Stop Following ${peer.name}` : `Follow ${peer.name}`, run: () => pick(state.follow === peer.peerId ? 'unfollow' : 'follow') }]),
         ...(!guest && peer.shares[0] ? [{ label: `Browse ${peer.name}’s Files`, run: () => pick('browse') }] : []),

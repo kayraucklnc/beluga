@@ -36,7 +36,8 @@ async function nudgeMia(page: Page, text: string): Promise<void> {
 }
 
 async function openReceived(page: Page): Promise<void> {
-  await sidebar(page).getByRole('button', { name: /^Requests/ }).click();
+  // The row comes with the first request (mia's, a moment after you wrote to her).
+  await sidebar(page).getByRole('button', { name: /^Requests/ }).click({ timeout: 30_000 });
   await page.getByRole('radio', { name: /^Received/ }).or(page.getByRole('tab', { name: /^Received/ })).first().click();
 }
 
@@ -45,17 +46,17 @@ async function openPeopleSettings(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'People & access' }).click();
 }
 
-const rowsFromMia = (page: Page) => received(page).getByRole('button', { name: /^From mia’s Claude: / });
+const rowsFromMia = (page: Page) => received(page).getByRole('button', { name: /^From mia’s agent: / });
 
 test('the request sheet: Always for this project for a week makes a rule you see in Settings', async ({ page }) => {
   await networkOn(page);
   await nudgeMia(page, 'Claude, can you help me with something?');
   await openReceived(page);
   await expect(rowsFromMia(page).first()).toHaveAccessibleName(/Waiting for you to approve$/, { timeout: 20_000 });
-  const card = page.getByRole('region', { name: /^Task: From mia’s Claude/ }).first();
+  const card = page.getByRole('region', { name: /^Task: From mia’s agent/ }).first();
   await card.getByRole('button', { name: 'Review…' }).click();
 
-  const sheet = page.getByRole('dialog', { name: 'mia’s Claude wants your Claude to do something' });
+  const sheet = page.getByRole('dialog', { name: 'mia’s agent wants your agent to do something' });
   await expect(sheet).toBeVisible();
   const about = sheet.getByRole('list', { name: 'About this request' });
   await expect(about).toContainText('ask me each time');
@@ -76,7 +77,7 @@ test('the request sheet: Always for this project for a week makes a rule you see
   await openPeopleSettings(page);
   const rules = page.getByRole('listitem', { name: 'Rules for mia' });
   await expect(rules).toBeVisible();
-  const rule = rules.getByRole('listitem', { name: /^Rule: Requests to your Claude that need at most: work in your projects · in bob-api$/ });
+  const rule = rules.getByRole('listitem', { name: /^Rule: Requests to your agent that need at most: work in your projects · in bob-api$/ });
   await expect(rule).toContainText(/until /);
   await page.keyboard.press('Escape');
 });
@@ -98,8 +99,8 @@ test('with the rule her next request runs without asking; once it’s deleted, t
   await expect(rowsFromMia(page)).toHaveCount(3, { timeout: 20_000 });
   await expect(rowsFromMia(page).first()).toHaveAccessibleName(/Waiting for you to approve$/, { timeout: 20_000 });
   // Decline it, with a reason she sees.
-  await page.getByRole('region', { name: /^Task: From mia’s Claude/ }).first().getByRole('button', { name: 'Review…' }).click();
-  const sheet = page.getByRole('dialog', { name: 'mia’s Claude wants your Claude to do something' });
+  await page.getByRole('region', { name: /^Task: From mia’s agent/ }).first().getByRole('button', { name: 'Review…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'mia’s agent wants your agent to do something' });
   await sheet.getByRole('button', { name: 'Decline…' }).click();
   await sheet.getByRole('textbox', { name: 'Reason (optional)' }).fill('Busy today');
   await sheet.getByRole('button', { name: 'Decline', exact: true }).click();
@@ -110,7 +111,7 @@ test('with the rule her next request runs without asking; once it’s deleted, t
 
 test('what friends’ Claudes can do here: a capability set by trust level sticks', async ({ page }) => {
   await openPeopleSettings(page);
-  const table = page.getByRole('table', { name: 'What friends’ Claudes can do here' });
+  const table = page.getByRole('table', { name: 'What friends’ agents can do here' });
   const screen = table.getByRole('combobox', { name: 'See the screen for Trusted' });
   await expectPicked(screen, 'ask');
   await pick(table, 'See the screen for Trusted', 'Off');

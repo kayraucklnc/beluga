@@ -1,3 +1,5 @@
+import { talkReadOnly } from '../../agent/dialogue-tools.js';
+import type { AgentRef } from '../../protocol.js';
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -86,6 +88,12 @@ export interface ServeContext {
   readonly serveShell?: ServeShell;
   readonly projectRoot: (name: string) => string | undefined;
   readonly model: () => { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' };
+  /** The agent that answers friends' asks here: your default, with your default model (you choose it, never the asker). */
+  readonly agentRef?: () => AgentRef;
+  /** The agents your card lists (an asker may pick one of those, BLG-503). */
+  readonly agents?: () => readonly AgentRef[];
+  /** Whether this Mac can run that agent now (its runtime is here). Unset: only your default. */
+  readonly runs?: (agent: AgentRef) => boolean;
   readonly notify: (title: string, body: string) => void;
   /** Where scratch folders go when the book has no folder. */
   readonly scratch: string;
@@ -99,6 +107,8 @@ export interface ServeContext {
   readonly questionWaitMs?: number;
   /** How long a friend's task may run in all (default 20 minutes; sooner if its deadline is). */
   readonly runLimitMs?: number;
+  /** Chaired dialogues (BLG-468): a turn came in or ended, and whether one was stopped here. */
+  readonly dialogues?: import('./gateway.js').GatewayDialogues;
   /** The chat its card is in here (BLG-208): the channel it names if you're both in it, else your DM with them (friends only). */
   readonly chatOf?: (from: string, chat: string | undefined) => string | undefined;
 }
@@ -136,6 +146,18 @@ const toolNeeds = (tool: string, input: Record<string, unknown>): Need[] => {
 };
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * The agent a friend's ask runs on here (BLG-503): the one they asked for when your card lists it
+ * (same runtime, and model when they named one) and it runs here, with your own pick of its model;
+ * else your default, with a note saying so.
+ */
+export function agentForAsk(asked: AgentRef | undefined, mine: AgentRef, listed: readonly AgentRef[], runs?: (agent: AgentRef) => boolean): { readonly agent: AgentRef; readonly note?: string } {
+  if (!asked || (asked.runtime === mine.runtime && (!asked.model || asked.model === mine.model))) return { agent: mine };
+  const found = listed.find((a) => a.runtime === asked.runtime && (!asked.model || a.model === asked.model)) ?? listed.find((a) => a.runtime === asked.runtime);
+  if (found && (runs?.(found) ?? false)) return { agent: found };
+  return { agent: mine, note: `${asked.label} isn’t set up here, so ${mine.label} does it` };
+}
 const SKIP: ClaudeAnswer = { kind: 'skip' };
 
 type QuestionWaiter = { readonly task: string; readonly from: string; readonly resolve: (a: ClaudeAnswer) => void };
@@ -157,6 +179,8 @@ export class TaskServer {
   private readonly shots = new Map<string, number>();
   /** Steps a task asked you to approve, and your declines in a row. */
   private readonly toolAsks = new Map<string, { asked: number; declined: number }>();
+  /** The agent each ask ran on (its result names it). */
+  private readonly ranOn = new Map<string, AgentRef>();
   readonly offers: FileOffers;
 
   constructor(private readonly ctx: ServeContext) {
@@ -217,7 +241,13 @@ export class TaskServer {
       ...(req.cwd ? { cwd: req.cwd } : {}),
       ...(req.timeoutSec ? { timeoutSec: req.timeoutSec } : {}),
       ...(req.path ? { path: req.path } : {}),
+      ...(req.dialogue && req.kind === 'ask' ? { dialogue: req.dialogue } : {}),
     });
+    if (task.dialogue) {
+      // A dialogue you stopped here takes no more turns; one going on shows in your thread too.
+      if (ctx.dialogues?.isStopped(task.dialogue.id)) return this.finish(task, 'declined', `${me} stopped this dialogue`);
+      ctx.dialogues?.turn(task);
+    }
     try {
       await this.admit(task, req, level);
     } catch (err) {
@@ -283,15 +313,15 @@ export class TaskServer {
       } else allowedBy = 'you approved it';
     } else {
       allowedBy = decided.by === 'rule' ? 'a rule of yours allows it' : 'you trust them';
-      const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on your Mac` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from your Mac` : `ask your Claude to: ${requestGist(req, 80)}`;
-      ctx.notify(`${name}${req.by === 'agent' ? "'s Claude" : ''} wants to ${what}`, `It runs without asking: ${allowedBy}`);
+      const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on your Mac` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from your Mac` : `ask your agent to: ${requestGist(req, 80)}`;
+      ctx.notify(`${name}${req.by === 'agent' ? "'s agent" : ''} wants to ${what}`, `It runs without asking: ${allowedBy}`);
     }
     if (this.isOver(task.id)) return;
     this.update(task.id, { allowedBy });
     if (req.kind === 'run') return this.runCommand(this.current(task), req);
     if (req.kind === 'file') return this.sendFile(this.current(task), req, facts, youChose, secret?.label);
     this.queue.push({ task: this.current(task), req, facts });
-    if (this.running >= MAX_RUNNING) this.update(task.id, { state: 'queued' }, 'Waiting for your Claude to finish another request');
+    if (this.running >= MAX_RUNNING) this.update(task.id, { state: 'queued' }, 'Waiting for your agent to finish another request');
     void this.pump();
   }
 
@@ -374,7 +404,7 @@ export class TaskServer {
     const where = req.kind === 'file' ? `from ${req.path}` : req.project ? `in your project ${req.project}` : req.kind === 'run' ? `in ${req.cwd ?? 'your shared folder'}` : 'in a new scratch folder (~/.beluga/tasks/work)';
     const needs = req.needs.length ? req.needs.map((n) => NEED_WORDS[n]).join(', ') : 'nothing special';
     const back = req.kind === 'run' ? 'the output' : req.kind === 'file' ? 'the file' : req.expects === 'files' ? 'files' : req.expects ? 'structured data (JSON)' : 'a summary';
-    const why = decided.by === 'rule' ? ' · a rule of yours says to ask' : decided.caps?.length ? ` · you asked to be asked before friends’ Claudes ${decided.caps.map((n) => NEED_WORDS[n]).join(' or ')}` : '';
+    const why = decided.by === 'rule' ? ' · a rule of yours says to ask' : decided.caps?.length ? ` · you asked to be asked before friends’ agents ${decided.caps.map((n) => NEED_WORDS[n]).join(' or ')}` : '';
     return [
       req.kind === 'run' ? `$ ${req.command ?? ''}${req.ask !== req.command ? `\nwhy: ${req.ask.slice(0, 500)}` : ''}` : req.ask.slice(0, 2000),
       '',
@@ -388,7 +418,7 @@ export class TaskServer {
     return [
       `${req.path ?? ''}${req.ask && !req.ask.startsWith('Send me ') ? `\nwhy: ${req.ask.slice(0, 500)}` : ''}`,
       '',
-      `This is a secret (${secretNoun(label)}). If you allow it, Beluga sends this one file to ${name}, and ${name}'s Claude is told you approved it.`,
+      `This is a secret (${secretNoun(label)}). If you allow it, Beluga sends this one file to ${name}, and ${name}'s agent is told you approved it.`,
       "You're asked each time: trust, your rules and Always never cover a secret.",
     ].join('\n');
   }
@@ -465,14 +495,25 @@ export class TaskServer {
   private async runAsk(task: TaskView, req: TaskRequest): Promise<void> {
     const { ctx } = this;
     const agent = ctx.agent();
-    if (!agent) return this.finish(task, 'failed', `${ctx.selfName()}'s Claude isn't running`);
-    const { place, where, folders } = this.place(task, req);
+    if (!agent) return this.finish(task, 'failed', `${ctx.selfName()}'s agent isn't running`);
+    const found = this.place(task, req);
+    const { where, folders } = found;
+    // On the agent its card says (your default), or the one they asked for when it runs here (BLG-503).
+    const picked = ctx.agentRef ? agentForAsk(req.agent, ctx.agentRef(), ctx.agents?.() ?? [], ctx.runs) : undefined;
+    if (picked) this.ranOn.set(task.id, picked.agent);
+    // A talk (or cross-reference) dialogue's turn changes nothing, on any agent: no edits, even in a scratch folder.
+    const withAgent = picked ? { ...found.place, agent: picked.agent } : found.place;
+    const place = task.dialogue && task.dialogue.mode !== 'work' ? { ...withAgent, autoEdit: false } : withAgent;
+    // Settings' model is Claude's: another agent takes its own pick, or its default.
+    const settings = ctx.model();
+    const model = picked ? (picked.agent.model ?? (picked.agent.runtime === 'claude' ? settings.model : undefined)) : settings.model;
+    const runModel = { ...(model ? { model } : {}), ...(settings.effort ? { effort: settings.effort } : {}) };
     const full = ctx.trustFor(task.peerId) === 'full';
     const tools = this.toolsFor(task, req);
     const toolNames = [...(tools.screenshot ? ['screenshot'] : []), ...(tools.deviceInfo ? ['device_info'] : [])];
     const controller = new AbortController();
     this.controllers.set(task.id, controller);
-    this.update(task.id, { state: 'working', startedAt: ctx.now(), where });
+    this.update(task.id, { state: 'working', startedAt: ctx.now(), where }, picked?.note);
     let lastSent = 0;
     let held: string | undefined;
     let timer: NodeJS.Timeout | undefined;
@@ -515,11 +556,12 @@ export class TaskServer {
           if (kind === 'tool' && text) step(text.slice(0, 300));
         },
         onFileTouched: () => undefined,
-        vetTool: (tool, input) => this.vetTool(this.current(task), tool, input),
+        // A talk (or cross-reference) dialogue's turn only looks, here too; then their limits as for any task.
+        vetTool: (tool, input) => (task.dialogue && task.dialogue.mode !== 'work' ? talkReadOnly(tool, input) : undefined) ?? this.vetTool(this.current(task), tool, input),
         canUseTool: (tool, input) => this.authorizeTool(task, tool, input, full, place.cwd),
         askUser: (question) => this.askRequester(task, question, controller.signal),
         ...(toolNames.length ? { taskTools: tools } : {}),
-        ...ctx.model(),
+        ...runModel,
         maxTurns: MAX_TURNS,
       });
       clearTimeout(timer);
@@ -608,7 +650,7 @@ export class TaskServer {
     const access = this.toolAccess(task, tool, input);
     if (access?.decided.verdict !== 'decline') return undefined;
     const off = access.decided.caps?.length ? access.decided.caps : access.needs;
-    return `${this.ctx.selfName()} doesn't let friends' Claudes ${off.map((n) => CAP_INFO[n].doing).join(' or ')} here${access.decided.by === 'rule' ? ' (a rule for this person)' : ''}. Don't try another way; say so in your answer.`;
+    return `${this.ctx.selfName()} doesn't let friends' agents ${off.map((n) => CAP_INFO[n].doing).join(' or ')} here${access.decided.by === 'rule' ? ' (a rule for this person)' : ''}. Don't try another way; say so in your answer.`;
   }
 
   private async authorizeTool(task: TaskView, tool: string, input: Record<string, unknown>, full: boolean, cwd: string): Promise<boolean> {
@@ -631,12 +673,12 @@ export class TaskServer {
     // A file that runs code later (a git hook, npm scripts…; BLG-413): asked each time, once.
     if (writesCode(tool, input, cwd)) {
       const file = String(input.file_path ?? input.notebook_path);
-      return (await this.askTool(task, `Your Claude (working on ${task.peerName}'s request) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, { once: true })) !== 'no';
+      return (await this.askTool(task, `Your agent (working on ${task.peerName}'s request) wants to change ${path.basename(file)}, a file that can run commands on your Mac`, file, { once: true })) !== 'no';
     }
     const scope = `${task.peerId}:${tool}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input).slice(0, 2000);
-    const answer = await this.askTool(task, `Your Claude (working on ${task.peerName}'s request) wants to use ${tool.replace(/^mcp__beluga__/, '')}`, detail);
+    const answer = await this.askTool(task, `Your agent (working on ${task.peerName}'s request) wants to use ${tool.replace(/^mcp__beluga__/, '')}`, detail);
     if (answer === 'always') this.alwaysTools.add(scope);
     return answer !== 'no';
   }
@@ -758,6 +800,7 @@ export class TaskServer {
     const result: TaskOutcome = {
       status,
       summary,
+      ...(t.kind === 'ask' && this.ctx.agentRef ? { agent: this.ranOn.get(t.id) ?? this.ctx.agentRef() } : {}),
       // What's offered for fetching stays known (the result may have to be sent again); inline bytes don't.
       files: files.map((f) => ({ name: f.name, size: f.size, ...(f.image ? { image: true } : {}), ...(f.ref ? { ref: f.ref } : {}), ...(f.sha256 ? { sha256: f.sha256 } : {}) })),
       log: t.steps,
@@ -765,8 +808,10 @@ export class TaskServer {
       ...(extra.problems?.length ? { problems: extra.problems } : {}),
       ...(extra.secret ? { secret: extra.secret } : {}),
     };
+    this.ranOn.delete(t.id);
     const done = this.ctx.put({ ...t, state: status, result, endedAt: this.ctx.now(), updatedAt: this.ctx.now() });
     this.sendResult(done, result, files);
+    if (done.dialogue) this.ctx.dialogues?.turn(done);
   }
 
   /** Tell the friend who asked how their task ended (also: one that ended when Beluga quit). */
@@ -784,6 +829,7 @@ export class TaskServer {
           ts: this.ctx.now(),
           ...(result.data !== undefined ? { data: result.data } : {}),
           ...(result.secret ? { secret: result.secret } : {}),
+          ...(result.agent ? { agent: result.agent } : {}),
         },
         true,
       );

@@ -1,5 +1,5 @@
 /**
- * The first time Beluga opens: a welcome, a short tour (Sentinel's two steps among it, BLG-362), a look (and another terminal's, BLG-212), a few settings, the macOS permissions
+ * The first time Beluga opens: a welcome, your agents found and one picked as yours (BLG-507), a short tour (Sentinel's two steps among it, BLG-362), a look (and another terminal's, BLG-212), a few settings, the macOS permissions
  * (each optional), notifications, the phone app, then the app. It shows
  * once per Mac. Updating the app never brings it back (the mark is kept with this window's own
  * storage, which an update leaves alone), and someone who used Beluga before it existed never
@@ -20,7 +20,7 @@ export const FORCE_PARAM = 'welcome';
 /** The document event File › Onboard Again, Help › Welcome to Beluga and the palette send to show it again. */
 export const SHOW_WELCOME = 'beluga:welcome';
 
-export const STEPS = ['hello', 'parallel', 'agents', 'tables', 'friends', 'sentinel', 'uses', 'earnings', 'archive', 'look', 'terminal', 'fire', 'setup', 'screen', 'accessibility', 'disk', 'automation', 'popups', 'phone', 'ready'] as const;
+export const STEPS = ['hello', 'yourAgents', 'parallel', 'agents', 'tables', 'friends', 'sentinel', 'uses', 'earnings', 'archive', 'look', 'terminal', 'fire', 'setup', 'screen', 'accessibility', 'disk', 'automation', 'popups', 'phone', 'ready'] as const;
 
 /** The last step before the app (its button says Finish). */
 export const LAST_SETTING: Step = 'phone';

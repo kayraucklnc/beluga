@@ -3,10 +3,12 @@ import { channelOf } from '@beluga/core/store.js';
 import { currentQuestion } from '@beluga/ui/collab-actions.js';
 import { isDecisionQid } from '@beluga/core/plans/decisions.js';
 import { TRUST_INFO } from '@beluga/core/trust.js';
+import { defaultAgentOf } from '@beluga/protocol.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { agentName } from '../lib/agent-words.js';
 import { brandText } from '../lib/brand.js';
 import { sameDeep, sameFields } from '../lib/stable.js';
 import { hostToBefriend } from '../network/net-model.js';
@@ -68,7 +70,7 @@ function Approvals({ channel }: { channel?: string }) {
             Allow once
           </Button>
           {first.project ? (
-            <Tip label="Your Claude reads this project’s .env files without asking. Change it in Settings › Environment.">
+            <Tip label="Your agent reads this project’s .env files without asking. Change it in Settings › Environment.">
               <Button onClick={() => void api.host.answerApproval('project', first.id)}>Always for {first.project}</Button>
             </Tip>
           ) : null}
@@ -128,10 +130,11 @@ function Question({ channel }: { channel?: string }) {
   const actions = useActions();
   const { ui } = useBeluga();
   // Only the question shown and who asked, so other events don't draw the card again.
-  const { q, owner, selfId } = useApp((st) => {
+  const { q, owner, agent, selfId } = useApp((st) => {
     const first = st.questions[0];
     const q = channel ? st.questions.find((x) => x.channel === channel) : first?.channel === channelOf(st.view) ? first : undefined;
-    return { q, owner: q ? st.peers.find((p) => p.peerId === q.owner)?.name : undefined, selfId: st.selfId };
+    const peer = q ? st.peers.find((p) => p.peerId === q.owner) : undefined;
+    return { q, owner: peer?.name, agent: agentName(peer ? defaultAgentOf(peer) : defaultAgentOf(st.self)), selfId: st.selfId };
   }, sameFields);
   if (!q) return null;
   if (q.question.kind === 'plan') {
@@ -139,7 +142,7 @@ function Question({ channel }: { channel?: string }) {
       <div className={s.card}>
         <div className={s.head}>
           <Icon name="wand" size={13} className={s.claude} />
-          <span className={s.title}>{owner && q.owner !== selfId ? `${owner}'s Claude` : 'Claude'} has a plan</span>
+          <span className={s.title}>{owner && q.owner !== selfId ? `${owner}'s ${agent}` : agent} has a plan</span>
           <Button size="small" variant="quiet" onClick={() => ui.patch({ planFull: q.qid })}>
             Read in full
           </Button>
@@ -165,7 +168,7 @@ function Question({ channel }: { channel?: string }) {
     <div className={s.card}>
       <div className={s.head}>
         <Icon name="claude" size={13} className={s.claude} />
-        <span className={s.title}>{current.header || 'Claude asks'}</span>
+        <span className={s.title}>{current.header || `${agent} asks`}</span>
         {total > 1 ? <span className={s.more}>{index + 1} of {total}</span> : null}
         {/* A decision of yours in a plan waits until you answer it (core/plans/decisions.ts). */}
         {isDecisionQid(q.qid) ? null : (

@@ -3,7 +3,7 @@ import { open, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { getSessionMessages, listSessions } from '@anthropic-ai/claude-agent-sdk';
-import { type Conversation, type ConversationSummary, type TranscriptMessage, transcriptToTurns, typedText } from './transcript.js';
+import { type Conversation, type ConversationSummary, type TranscriptMessage, transcriptToTurns, typedText } from '../../transcript.js';
 
 /**
  * Finding the Claude Code conversations that ran in a folder (a worktree made by Conductor or

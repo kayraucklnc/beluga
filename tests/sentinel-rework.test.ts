@@ -149,7 +149,7 @@ describe('tiles', () => {
     const call = async (name: string, args: unknown) => (await (defs.find((x) => x.name === name)!.handler as (a: unknown, e: unknown) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>)(args, {}));
     expect((await call('dashboard_create', { name: 'Ops' })).content[0]!.text).toMatch(/^Made the dashboard “Ops”/);
     expect((await call('dashboard_add_tile', { dashboard: 'Ops', kind: 'output', sentinel: 'Brief', step: 'Read what changed', width: 6, height: 2 })).isError).toBeUndefined();
-    expect(await call('dashboard_add_tile', { dashboard: 'Ops', kind: 'output', sentinel: 'Brief', step: 'Tell me' })).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/shows what an Ask Claude, Call a service or Run a script step said/) }] });
+    expect(await call('dashboard_add_tile', { dashboard: 'Ops', kind: 'output', sentinel: 'Brief', step: 'Tell me' })).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/shows what an Ask your agent, Call a service or Run a script step said/) }] });
     expect((await call('dashboard_add_tile', { dashboard: 'Ops', kind: 'chart', sentinel: 'Brief', metric: 'by-day' })).isError).toBeUndefined();
     const ops = s.sentinels.dashboards.get('Ops')!;
     expect(ops.tiles.map((t) => [t.kind, t.width, t.height])).toEqual([['output', 6, 2], ['series', 3, undefined]]);

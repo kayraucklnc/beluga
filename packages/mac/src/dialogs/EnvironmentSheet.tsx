@@ -17,7 +17,7 @@ export function EnvironmentSheet({ projectId, close }: { projectId: string; clos
     <FormSheet
       title={`Environment for ${name}`}
       icon="lock"
-      intro="Given to shells, setup and run commands in its workspaces, and your Claude. They stay on this Mac."
+      intro="Given to shells, setup and run commands in its workspaces, and your agent. They stay on this Mac."
       submitLabel="Done"
       hideSubmit
       cancelLabel="Done"

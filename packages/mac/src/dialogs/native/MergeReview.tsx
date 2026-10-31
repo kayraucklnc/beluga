@@ -130,7 +130,7 @@ function Body({ ws, close, children }: { ws: Workspace; close: () => void; child
             <span className={s.checkText}>{c.text}</span>
             {c.fix ? (
               <Button size="small" onClick={() => fix(c.fix!)}>
-                {c.fix === 'commit' ? 'Commit…' : 'Ask Claude…'}
+                {c.fix === 'commit' ? 'Commit…' : 'Ask Your Agent…'}
               </Button>
             ) : null}
           </li>

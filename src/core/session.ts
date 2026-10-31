@@ -1,11 +1,24 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { agentLabel } from '../shared/agent-label.js';
+import { KNOWN_RUNTIMES } from '../shared/agent-runtimes.js';
 import { isAssistant } from '../shared/assistant.js';
 import { assistantOf } from './assistant/registry.js';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
+import type { AgentRuntime, RuntimeCapabilities, RuntimeId, RuntimeOptions } from '../agent/runtime/types.js';
+import { guardedBackend } from '../agent/runtime/guard.js';
+import { type SideRoute, routeSideCall, routedBackend } from '../agent/runtime/router.js';
+import { sideCalls } from '../agent/side-calls.js';
+import type { ChatAnswerRequest } from './chat/claude-prompt.js';
+import { localRuntime } from '../agent/runtime/local.js';
+import { LOCAL_RUNTIME } from '../shared/local-endpoints.js';
+import type { LocalEndpoints } from './local-endpoints.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { Body, type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
+import { type AgentRef, Body, type BodyInput, type BodyOf, CLAUDE_AGENT, defaultAgentOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile } from '../protocol.js';
+import { type UsageUpdate, withUsage } from '../agent/usage.js';
+import { dialoguesOf } from './dialogues/registry.js';
+import { agentName } from '../shared/agent-label.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { networkOf } from './network.js';
 import { mentionNote, personMentions } from './person-mentions.js';
@@ -21,7 +34,7 @@ import type { ScriptFix, SetupFix, WorkedOutScripts } from '../agent/setup-fixer
 import type { DraftContext, TaskDraft } from '../agent/task-drafter.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
-import type { Settings } from './settings.js';
+import { chosenAgent, publishedAgents, type Settings } from './settings.js';
 import { runCommand } from './commands.js';
 import { People } from './people.js';
 import { ReplayGuard } from './replay.js';
@@ -54,6 +67,20 @@ export interface SessionOptions {
   readonly shares: ShareService;
   /** Factory so the backend can receive this session's RoomBridge. */
   readonly createAgent?: (bridge: RoomBridge) => AgentBackend;
+  /**
+   * Your agent through the runtime seam (agent/runtime): `agent` (an AgentRef's runtime, 'claude'
+   * when unset) picked from `runtimes`, made with `options`. createAgent, when given, wins (the demo, tests).
+   */
+  /**
+   * With createAgent: other runtimes beside it, each turn whose place picked one of them run there
+   * (the demo's scripted Codex, so the Mac e2e can drive a Codex worktree: BLG-462).
+   */
+  readonly alsoRuntimes?: readonly AgentRuntime[];
+  readonly runtime?: {
+    readonly runtimes: (id?: RuntimeId) => AgentRuntime | undefined;
+    readonly agent?: RuntimeId;
+    readonly options: Omit<RuntimeOptions, 'bridge'>;
+  };
   readonly agentCwd: string;
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
@@ -161,6 +188,7 @@ export class Session {
   readonly workspaces?: WorkspaceController;
   private workspaceTimer?: NodeJS.Timeout;
   private readonly agent?: AgentBackend;
+  private readonly runtime?: AgentRuntime;
   private readonly agentWaiters = new Map<string, AgentWaiter>();
   /** Messages a screen sent with an id (a plan chat's), and the request each went as: a Retry of one that went doesn't go twice. */
   private readonly sentById = new Map<string, string>();
@@ -189,11 +217,18 @@ export class Session {
   readonly diff: SharedDiff;
   /** Your environment variables for shells, scripts and your Claude (never sent to the room). */
   readonly env: EnvVars;
+  /** Your local and bring-your-own endpoints (BLG-449), as they answer now. */
+  readonly local: LocalEndpoints;
   private projectsTimer?: NodeJS.Timeout;
   /** What this session asks screens to do (see core/intents.ts). */
   readonly intents = new IntentBus();
   /** What the attached screens look at (unread counts and notifications follow it). */
   readonly attention: AttentionRegistry;
+
+  /** Backends for your other agents' runtimes (a dialogue's Codex beside your Claude), made when first needed. */
+  private readonly otherBackends = new Map<string, AgentBackend>();
+  /** Room asks that named an agent ("@bob:codex", BLG-520), until their run says which one answers. */
+  private readonly namedAsks = new Map<string, { readonly peer: string; readonly agent: AgentRef }>();
 
   constructor(private readonly opts: SessionOptions) {
     if (opts.workspaces) opts.workspaces.branchPrefix = () => opts.store.getState().prefs.branchPrefix;
@@ -214,15 +249,67 @@ export class Session {
     this.shell = parts.shell;
     this.diff = parts.diff;
     this.env = parts.env;
-    this.agent = opts.createAgent?.(this.bridge);
+    this.local = parts.local;
+    this.runtime = opts.createAgent ? undefined : opts.runtime?.runtimes(opts.runtime.agent);
+    // The session layer runs a runtime only as its capabilities allow (the safety rule: see guard.ts).
+    this.agent = opts.createAgent ? this.beside(opts.createAgent(this.bridge), opts.alsoRuntimes ?? []) : this.runtime && opts.runtime ? this.routed(this.runtime, opts.runtime) : undefined;
     this.attention = new AttentionRegistry(opts.store);
     opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room), home: os.homedir() });
     this.publishShares();
     this.wire();
   }
 
+  /** A made agent (the demo's, a test's) with `also` beside it: a turn whose place picked one of them runs there. */
+  private beside(agent: AgentBackend, also: readonly AgentRuntime[]): AgentBackend {
+    if (!also.length) return agent;
+    const options = { cwd: this.opts.agentCwd, autoEdit: true, additionalDirectories: [], bridge: this.bridge };
+    return routedBackend(agent, 'claude', (id) => {
+      const rt = also.find((r) => r.id === id);
+      return rt ? guardedBackend(rt.create(options), rt.capabilities) : undefined;
+    });
+  }
+
+  /** Your default agent's backend, sending each turn whose place picked another runtime to that one's (agent/runtime/router.ts). */
+  private routed(main: AgentRuntime, rt: NonNullable<SessionOptions['runtime']>): AgentBackend {
+    const make = (r: AgentRuntime): AgentBackend => guardedBackend(r.create({ ...rt.options, bridge: this.bridge }), r.capabilities);
+    // Every other runtime that has plan usage reports it too (Codex's windows on the usage tab).
+    const withUsage = KNOWN_RUNTIMES.map((r) => r.id).filter((id) => id !== main.id && rt.runtimes(id)?.capabilities.hasUsage);
+    return routedBackend(
+      make(main),
+      main.id,
+      (id) => {
+        // A local endpoint is Claude Code pointed elsewhere (BLG-449): it runs wherever Claude does.
+        const other = id === LOCAL_RUNTIME ? (rt.runtimes('claude') ? localRuntime((v) => this.local.resolve(v)) : undefined) : rt.runtimes(id);
+        return other ? make(other) : undefined;
+      },
+      withUsage,
+    );
+  }
+
   get store(): Store {
     return this.opts.store;
+  }
+
+  /**
+   * The backend for one of your agents' runtimes: your default agent's own, or one made for that
+   * runtime (guarded the same way). The demo's fake agent answers for all of them.
+   */
+  backendFor(runtime: string): AgentBackend | undefined {
+    if (!this.runtime || runtime === this.runtime.id) return this.agent;
+    const made = this.otherBackends.get(runtime);
+    if (made) return made;
+    // A local endpoint is Claude Code pointed elsewhere (BLG-449), as in routed(): it runs wherever Claude does.
+    const rt = runtime === LOCAL_RUNTIME ? (this.opts.runtime?.runtimes('claude') ? localRuntime((v) => this.local.resolve(v)) : undefined) : this.opts.runtime?.runtimes(runtime);
+    if (!rt || !this.opts.runtime) return undefined;
+    const backend = guardedBackend(rt.create({ ...this.opts.runtime.options, bridge: this.bridge }), rt.capabilities);
+    this.otherBackends.set(runtime, backend);
+    return backend;
+  }
+
+  /** Whether this Mac can run that agent now: its runtime is here (a local model: its endpoint is set up). */
+  runsAgent(agent: AgentRef): boolean {
+    if (agent.runtime === LOCAL_RUNTIME && this.runtime) return Boolean(this.opts.runtime?.runtimes(CLAUDE_AGENT.runtime) && this.local.resolve(agent.model));
+    return Boolean(this.backendFor(agent.runtime));
   }
 
   get selfId(): string {
@@ -237,6 +324,11 @@ export class Session {
   /** Your Claude (undefined when it's off). */
   get backend(): AgentBackend | undefined {
     return this.agent;
+  }
+
+  /** What your agent's runtime can do (undefined for a backend made without one: the demo, tests). */
+  get capabilities(): RuntimeCapabilities | undefined {
+    return this.runtime?.capabilities;
   }
 
   get approvalTimeoutMs(): number {
@@ -281,6 +373,7 @@ export class Session {
     clearInterval(this.workspaceTimer);
     this.workspaces?.stop();
     this.workbench?.stop();
+    this.local.stop();
     this.notifier.stop();
     this.replay.flush();
     this.remote.stop();
@@ -333,7 +426,10 @@ export class Session {
       this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
       return true;
     }
-    const parsed = parseInput(raw, this.selfId, state.peers);
+    // A dialogue between your agents: started here (proposed, you confirm its caps), or what you say into one (core/dialogues).
+    if (dialoguesOf(this)?.fromComposer(raw, channel)) return true;
+    // "@codex": your own Codex when it runs here, listed on your card or not (BLG-520).
+    const parsed = parseInput(raw, this.selfId, state.peers, { runs: (runtime) => this.runsAgent({ runtime, label: runtime }) });
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
       // A leading "@claude" is just you talking to your Claude; "@claude:ata" stays in the words, so your
@@ -358,7 +454,7 @@ export class Session {
     if (toWorkspace) {
       this.askOwnClaude(toWorkspace.prompt, `ws:${toWorkspace.id}`, urgent);
       this.store.dispatch({ type: 'chat', id: randomUUID(), from: this.selfId, text: raw.slice(0, MAX_TEXT), ts: Date.now(), byAgent: false });
-      this.system(`Sent to the Claude in ${toWorkspace.label.slice(1)}. Open it in the sidebar to follow along.`);
+      this.system(`Sent to the agent in ${toWorkspace.label.slice(1)}. Open it in the sidebar to follow along.`);
       return true;
     }
     switch (parsed.kind) {
@@ -374,9 +470,12 @@ export class Session {
         return true;
       case 'agent':
         this.sendChat(parsed.text, false);
-        for (const name of parsed.unknown) this.toast(`Nobody named "${name}" is here`, 'warn');
-        for (const target of parsed.targets) this.requestAgent(target, parsed.prompt, false, 'room', urgent && target === this.selfId);
-        if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No Claude is online', 'warn');
+        for (const line of parsed.notes) this.toast(line, 'warn');
+        // A named agent ("@codex", "@bob:codex") rides the ask; "@bob" and the "@claude…" forms leave it to their default.
+        for (const t of parsed.to) this.requestAgent(t.peerId, parsed.prompt, false, 'room', urgent && t.peerId === this.selfId, undefined, undefined, t.named ? t.agent : undefined);
+        // On your own, a name nobody has is still a line for your agent, as plain chat always is.
+        if (parsed.to.length === 0 && state.peers.length <= 1 && this.agent) this.requestAgent(this.selfId, parsed.text, false, 'room', urgent);
+        else if (parsed.to.length === 0 && parsed.notes.length === 0) this.toast('No agent is online', 'warn');
         return true;
     }
   }
@@ -396,7 +495,7 @@ export class Session {
       return;
     }
     const ws = channel.startsWith('ws:') ? state.projects.flatMap((p) => p.workspaces.map((w) => ({ w, p }))).find(({ w }) => w.id === channel.slice(3)) : undefined;
-    const where = ws ? `${ws.w.name} (${ws.p.name})` : 'a conversation with their Claude';
+    const where = ws ? `${ws.w.name} (${ws.p.name})` : 'a conversation with their agent';
     const me = state.self?.name ?? state.network.self?.name ?? 'A friend';
     for (const f of people) {
       try {
@@ -436,10 +535,10 @@ export class Session {
   async copyLastAnswer(): Promise<void> {
     const last = [...this.store.getState().log].reverse().find((l) => l.type === 'agent' && l.status === 'done');
     if (!last || last.type !== 'agent') {
-      this.toast('No Claude answer to copy yet', 'warn');
+      this.toast('No agent answer to copy yet', 'warn');
       return;
     }
-    await this.copyOrShow(last.text, `Copied ${last.ownerName}'s Claude answer`);
+    await this.copyOrShow(last.text, `Copied ${agentLabel(last.agent, last.ownerName, false)}'s answer`);
   }
 
   /** Copy text for you to paste (shown in the chat when there's no clipboard). */
@@ -462,27 +561,34 @@ export class Session {
    * show on it); `steer`: it steers the turn your Claude is on (shown as not read yet from the start).
    */
   sendChat(text: string, byAgent: boolean, channel = 'room', request?: string, steer = false): void {
+    const agent = byAgent ? { agent: this.agentRef } : {};
     if (channel !== 'room') {
       // Workspace conversations stay on this computer, plus the people you invited into them.
       const id = randomUUID();
-      this.store.dispatch({ type: 'chat', id, from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel, ...(request ? { request } : {}), ...(steer ? { steer: true as const } : {}) });
-      for (const to of this.sharing.recipients(channel)) this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, channel }, { to });
+      this.store.dispatch({ type: 'chat', id, from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel, ...agent, ...(request ? { request } : {}), ...(steer ? { steer: true as const } : {}) });
+      for (const to of this.sharing.recipients(channel)) this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, channel, ...agent }, { to });
       return;
     }
     if (this.store.getState().self?.guest && !this.store.getState().peers.find((p) => p.peerId === this.selfId && !p.guest)) {
       this.toast("You came in with a link to a project, so there's no group chat here. Open it in Projects", 'warn');
       return;
     }
-    if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent }, { keep: true })) {
+    if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, ...agent }, { keep: true })) {
       this.toast('Not connected, so the message was not sent', 'error');
     }
   }
 
   /** Ask an agent (ours or a peer's) to do something. Returns the request id. */
-  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID()): string {
+  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID(), agent?: AgentRef): string {
     const plan = this.store.getState().planMode[channel] === true;
     this.questions.track(requestId, target, channel);
-    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}) }, { to: target });
+    // "@bob:codex" (BLG-520): the agent rides the ask, in the room only; their Mac runs it or says which one did (see namedAsks).
+    const named = agent && channel === 'room' ? { agent: { runtime: agent.runtime, label: agent.label, ...(agent.model ? { model: agent.model } : {}) } } : {};
+    if (named.agent) {
+      this.namedAsks.set(requestId, { peer: target, agent: named.agent });
+      if (this.namedAsks.size > 200) this.namedAsks.delete(this.namedAsks.keys().next().value!);
+    }
+    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}), ...named }, { to: target });
     return requestId;
   }
 
@@ -495,7 +601,7 @@ export class Session {
   askOwnClaude(prompt: string, channel: string, urgent = false, echo: boolean | string = true): string | undefined {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
-      this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
+      this.toast(`You can follow ${shared.name}, but not ask its agent. Ask the owner to let you contribute`, 'warn');
       return undefined;
     }
     // Load the saved conversation first, so what's said now is kept with it.
@@ -562,7 +668,7 @@ export class Session {
         : this.requestAgent(peerId, prompt, true, 'room', false, opts.project);
       const timer = setTimeout(() => {
         this.agentWaiters.delete(requestId);
-        reject(new Error(`${name}'s Claude did not finish in time`));
+        reject(new Error(`${name}'s agent did not finish in time`));
       }, this.opts.agentTimeoutMs ?? 15 * 60_000);
       const mirror = !shared && opts.mirror && opts.mirror !== 'room' ? opts.mirror : undefined;
       this.agentWaiters.set(requestId, { peer: peerId, resolve, reject, timer, ...(mirror ? { mirror } : {}) });
@@ -615,7 +721,7 @@ export class Session {
       const requestId = this.requestAgent(this.selfId, prompt, false, channel);
       const timer = setTimeout(() => {
         this.agentWaiters.delete(requestId);
-        reject(new Error('Claude did not finish in time'));
+        reject(new Error('The agent did not finish in time'));
       }, timeoutMs);
       this.agentWaiters.set(requestId, { peer: this.selfId, resolve, reject, timer });
     });
@@ -637,59 +743,124 @@ export class Session {
     this.toast(value === 'ask' ? 'Friends can ask to start work on this computer; you approve each request' : 'Friends can no longer start work on this computer', 'success');
   }
 
-  /** A worktree name for a task: from a small model when your Claude is on, else from its words. */
+  /** Whether Claude is signed in here, asked once in a while (a local model's side calls go to Claude only then). */
+  private claudeReadyAt?: { readonly at: number; readonly ready: Promise<boolean> };
+
+  /**
+   * Where a side call goes now (BLG-503): your default agent (the project's own, when one is named)
+   * decides each time, so a change in Settings counts at once. Codex: its own one-shot call, then
+   * Claude's when it fails. A local model: Claude's only when Claude is signed in here (its side calls
+   * can't run on the endpoint yet), never quietly to Anthropic otherwise. Claude, the demo, tests: the backend's.
+   */
+  private sideRoute(project?: string): SideRoute {
+    const rt = this.opts.runtime;
+    if (!this.runtime || !rt) return { claude: () => this.agent };
+    const claude = (): AgentBackend | undefined => (this.runtime?.id === CLAUDE_AGENT.runtime ? this.agent : this.backendFor(CLAUDE_AGENT.runtime));
+    const agent = this.agentFor(project);
+    if (agent.runtime === CLAUDE_AGENT.runtime) return { claude };
+    if (agent.runtime === LOCAL_RUNTIME) return { claude: async () => ((await this.claudeSignedIn()) ? claude() : undefined) };
+    const own = rt.runtimes(agent.runtime);
+    if (!own) return { claude };
+    // Claude's aliases ('haiku': quick) are the runtime's to map (Codex: its small model, else its default).
+    return { own: { complete: own.complete, cwd: this.opts.agentCwd, ...(agent.model ? { model: agent.model } : {}) }, claude };
+  }
+
+  /** Claude's runtime is here and, when it can say, signed in (asked again after a minute). */
+  private claudeSignedIn(): Promise<boolean> {
+    const claude = this.opts.runtime?.runtimes(CLAUDE_AGENT.runtime);
+    if (!claude) return Promise.resolve(false);
+    if (!claude.status) return Promise.resolve(true);
+    if (!this.claudeReadyAt || Date.now() - this.claudeReadyAt.at > 60_000) {
+      this.claudeReadyAt = { at: Date.now(), ready: claude.status().then((s) => s.state === 'ready', () => false) };
+    }
+    return this.claudeReadyAt.ready;
+  }
+
+  /** A worktree name for a task: from a small model on your agent (Claude when it can't), else from its words. */
   async nameTask(prompt: string): Promise<string> {
-    return this.agent?.nameTask ? this.agent.nameTask(prompt).catch(() => slugify(prompt)) : slugify(prompt);
+    return routeSideCall(this.sideRoute(), (on) => on.nameTask?.(prompt), slugify(prompt));
   }
 
-  /** A short name for a new plan (undefined without your Claude, or when the model couldn't). */
+  /** A short name for a new plan (undefined without an agent to ask, or when the model couldn't). */
   async titlePlan(goal: string): Promise<string | undefined> {
-    return this.agent?.titlePlan ? this.agent.titlePlan(goal).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.titlePlan?.(goal), undefined);
   }
 
-  /** What a project's setup should be after it failed in a worktree (undefined without your Claude). */
+  /** What a project's setup should be after it failed in a worktree (undefined without an agent to ask). */
   async fixSetup(dir: string, failed: string, output: string): Promise<SetupFix | undefined> {
-    return this.agent?.fixSetup ? this.agent.fixSetup(dir, failed, output).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.fixSetup?.(dir, failed, output), undefined);
   }
 
-  /** What a project's run command should be after it failed in a worktree (undefined without your Claude). */
+  /** What a project's run command should be after it failed in a worktree (undefined without an agent to ask). */
   async fixRun(dir: string, failed: string, output: string): Promise<ScriptFix | undefined> {
-    return this.agent?.fixRun ? this.agent.fixRun(dir, failed, output).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.fixRun?.(dir, failed, output), undefined);
   }
 
-  /** Whether your Claude can work out a project's setup and run commands. */
+  /** Some agent here can answer in a friends' chat. */
+  get answersChats(): boolean {
+    return Boolean(this.agent?.answerChat);
+  }
+
+  /**
+   * A friends' chat answer (core/chat/claude.ts) on your default agent, or on Claude when that one has
+   * no one-shot call or it failed, with the agent that really answered (its name goes on the answer).
+   * Its trouble is said, not swallowed: the chat tells you why it couldn't.
+   */
+  async answerChat(req: ChatAnswerRequest): Promise<{ readonly text: string; readonly agent: AgentRef }> {
+    const route = this.sideRoute();
+    const mine = this.agentFor();
+    let trouble: unknown;
+    if (route.own) {
+      try {
+        return { text: await sideCalls(route.own.complete, route.own.cwd, route.own.model).answerChat(req), agent: mine };
+      } catch (err) {
+        if (req.signal.aborted) throw err;
+        trouble = err;
+      }
+    }
+    const claude = await route.claude?.();
+    if (!claude?.answerChat) throw trouble ?? new Error(mine.runtime === LOCAL_RUNTIME ? 'a local model can’t answer in chats yet, and Claude isn’t signed in here' : 'no agent here can answer');
+    // Not your default's model on Claude: Settings' (Claude's) one.
+    const asClaude = this.runtime && mine.runtime !== CLAUDE_AGENT.runtime;
+    const model = asClaude ? this.store.getState().prefs.model : req.model;
+    const { model: _m, ...rest } = req;
+    const text = await claude.answerChat({ ...rest, ...(model ? { model } : {}) });
+    return { text, agent: asClaude ? { ...CLAUDE_AGENT, ...(model ? { model } : {}) } : mine };
+  }
+
+  /** Whether an agent here can work out a project's setup and run commands. */
   get worksOutScripts(): boolean {
     return Boolean(this.agent?.workOutScripts);
   }
 
-  /** A project's setup and/or run command from its files (undefined without your Claude, or on trouble). */
+  /** A project's setup and/or run command from its files (undefined without an agent to ask, or on trouble). */
   async workOutScripts(dir: string, want: { setup: boolean; run: boolean }): Promise<WorkedOutScripts | undefined> {
-    return this.agent?.workOutScripts ? this.agent.workOutScripts(dir, want).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.workOutScripts?.(dir, want), undefined);
   }
 
-  /** Your Claude can write a task from a description (Tasks' New Task). */
+  /** An agent here can write a task from a description (Tasks' New Task). */
   get draftsTasks(): boolean {
     return Boolean(this.agent?.draftTask);
   }
 
-  /** A task written from a description by your Claude (undefined on any trouble, or without it). */
+  /** A task written from a description by the project's agent (undefined on any trouble, or without one). */
   async draftTask(text: string, ctx: DraftContext): Promise<TaskDraft | undefined> {
-    return this.agent?.draftTask ? this.agent.draftTask(text, ctx).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.draftTask?.(text, ctx), undefined);
   }
 
-  /** Your Claude can write what a project is about (About This Project). */
+  /** An agent here can write what a project is about (About This Project). */
   get describesProjects(): boolean {
     return Boolean(this.agent?.describeProject);
   }
 
-  /** What a project is about, from a quick look at its folder by your Claude (undefined on any trouble, or without it). */
+  /** What a project is about, from a quick look at its folder by its agent (undefined on any trouble, or without one). */
   async describeProject(dir: string, project: string): Promise<string | undefined> {
-    return this.agent?.describeProject ? this.agent.describeProject(dir, project).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.describeProject?.(dir, project), undefined);
   }
 
-  /** A pull request reviewed before a sentinel merges it (undefined without your Claude, or on trouble). */
+  /** A pull request reviewed before a sentinel merges it (undefined without an agent to ask, or on trouble). */
   async reviewPr(input: import('../agent/pr-reviewer.js').PrReviewInput): Promise<import('../agent/pr-reviewer.js').PrReview | undefined> {
-    return this.agent?.reviewPr ? this.agent.reviewPr(input).catch(() => undefined) : undefined;
+    return routeSideCall(this.sideRoute(), (on) => on.reviewPr?.(input), undefined);
   }
 
   /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */
@@ -697,7 +868,7 @@ export class Session {
     // A plan's own conversation: its head Claude runs the plan, and stopping to have a plan of its own approved would stall it.
     if (on && isPlanHome(this.store.getState().plans, channel)) return this.toast('A plan’s own conversation has no plan mode: talk the plan through on its page', 'info');
     this.store.dispatch({ type: 'plan_mode', channel, on });
-    this.toast(on ? 'Plan mode: Claude looks first and asks you to approve a plan before changing anything' : 'Plan mode off: Claude works right away', 'success');
+    this.toast(on ? 'Plan mode: your agent looks first and asks you to approve a plan before changing anything' : 'Plan mode off: your agent works right away', 'success');
   }
 
   openLocation(at: Location, opts: { by?: string; broadcast?: boolean } = {}): Promise<void> {
@@ -750,7 +921,7 @@ export class Session {
     const peer = this.findPeer(name);
     if (!peer) return this.toast(`Nobody named "${name}" is here`, 'warn');
     this.store.dispatch({ type: 'follow', peerId: peer.peerId });
-    this.toast(`Following ${peer.name} and their Claude. /unfollow to stop`, 'success');
+    this.toast(`Following ${peer.name} and their agent. /unfollow to stop`, 'success');
     const state = this.store.getState();
     const latest = [state.focus[peer.peerId], state.focus[`${peer.peerId}:agent`]]
       .filter((f) => f !== undefined)
@@ -816,7 +987,7 @@ export class Session {
       this.workspaces?.forgetConversation(channel.slice(3));
       this.store.dispatch({ type: 'context_reset', channel });
       this.host.forgetContext(channel);
-      this.toast('Cleared. Claude starts a fresh conversation here', 'success');
+      this.toast('Cleared. Your agent starts a fresh conversation here', 'success');
       return;
     }
     if (opts.fresh && isAssistant(channel)) {
@@ -826,7 +997,7 @@ export class Session {
       this.toast('Cleared. Your Mac starts a fresh conversation', 'success');
       return;
     }
-    this.toast(channel.startsWith('ws:') || isAssistant(channel) ? 'Messages cleared. Claude still remembers the conversation' : 'Cleared on your screen', 'success');
+    this.toast(channel.startsWith('ws:') || isAssistant(channel) ? 'Messages cleared. Your agent still remembers the conversation' : 'Cleared on your screen', 'success');
   }
 
   findPeer(name: string): PeerInfo | undefined {
@@ -1017,7 +1188,7 @@ export class Session {
         // Workspace chats only reach people in that workspace, and only contributors may post.
         if (body.channel !== 'room' && !this.sharing.canPost(from, body.channel)) return;
         if (body.channel?.startsWith('ws:')) this.workspaces?.ensureLoaded(body.channel.slice(3));
-        this.store.dispatch({ type: 'chat', id, from, text: body.text, ts, byAgent: body.byAgent, channel: body.channel });
+        this.store.dispatch({ type: 'chat', id, from, text: body.text, ts, byAgent: body.byAgent, channel: body.channel, ...(body.agent ? { agent: body.agent } : {}) });
         return;
       case 'focus':
         return this.onFocus(from, ts, body);
@@ -1047,7 +1218,7 @@ export class Session {
         return;
       }
       case 'report':
-        this.system(`${peerName(this.store.getState(), from)}'s Claude wrote a report. Open it with /open ${peerName(this.store.getState(), from)}:${body.share}/${body.path}`);
+        this.system(`${peerName(this.store.getState(), from)}'s agent wrote a report. Open it with /open ${peerName(this.store.getState(), from)}:${body.share}/${body.path}`);
         return;
     }
   }
@@ -1058,7 +1229,7 @@ export class Session {
     this.store.dispatch({ type: 'focus', actorKey: key, focus });
     const state = this.store.getState();
     if (state.follow === from && from !== this.selfId) {
-      const by = `${peerName(state, from)}${body.actor === 'agent' ? "'s Claude" : ''}`;
+      const by = `${peerName(state, from)}${body.actor === 'agent' ? "'s agent" : ''}`;
       await this.openLocation(focus, { by, broadcast: false });
     }
   }
@@ -1109,6 +1280,25 @@ export class Session {
     const forScreens = Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === undefined ? null : v]));
     this.store.dispatch({ type: 'prefs', prefs: forScreens });
     this.opts.saveSettings?.(Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === null ? undefined : v])) as Partial<Settings>);
+    // Your default agent rides on your peer card: friends see the change at once, no reconnect.
+    if ('defaultAgent' in prefs || 'projectAgents' in prefs) {
+      const chosen = this.store.getState().prefs;
+      this.updateProfile({ defaultAgent: chosenAgent(chosen), agents: publishedAgents(chosen) });
+    }
+  }
+
+  /** Whether `/name` is a skill or command of your own in this conversation's folder (it wins over a Claude Code built-in of that name). */
+  async ownSkill(name: string, channel: string): Promise<boolean> {
+    const dir = channel === 'room' ? undefined : this.workspaces?.inChannel(channel)?.path;
+    if (!dir) return false;
+    const { findSkill } = await import('./claude-code/skills.js');
+    const { claudeHome } = await import('./claude-code/launch.js');
+    return Boolean(await findSkill(name, dir, claudeHome()).catch(() => undefined));
+  }
+
+  /** The agent that answers for work in `project` (its own default over yours; BLG-444). */
+  agentFor(project?: string): AgentRef {
+    return chosenAgent(this.store.getState().prefs, project);
   }
 
   /** Share a folder with the room (read-only unless `writable`). */
@@ -1128,7 +1318,7 @@ export class Session {
     for (const to of only ?? []) this.send({ kind: 'share_offer', name: config.name, writable: config.writable, active: true }, { to });
     const state = this.store.getState();
     const who = only?.length ? only.map((id) => peerName(state, id)).join(', ') : 'the room';
-    this.toast(`Sharing ${spec.name} with ${who}${writable ? ' (your Claude may edit it)' : ' (read-only)'}`, 'success');
+    this.toast(`Sharing ${spec.name} with ${who}${writable ? ' (your agent may edit it)' : ' (read-only)'}`, 'success');
   }
 
   unshareFolder(name: string, quiet = false): void {
@@ -1161,20 +1351,43 @@ export class Session {
     this.store.dispatch({ type: 'access', peerId, scope });
   }
 
+  /** The agent this Mac answers with (its profile's default; Claude until it names one). */
+  get agentRef(): AgentRef {
+    return defaultAgentOf(this.opts.client.currentProfile);
+  }
+
   private updateProfile(patch: Partial<Profile>): void {
     this.opts.client.updateProfile({ ...this.opts.client.currentProfile, ...patch });
   }
 
-  /** Merge new plan-usage numbers and share them with the room. */
-  updateUsage(update: Partial<Usage>): void {
-    const prev = this.opts.client.currentProfile.usage;
-    this.updateProfile({ usage: { ...prev, ...update, updatedAt: Date.now() } });
+  /** Merge new usage numbers into that provider's (Claude's unless named) and share them with the room. */
+  updateUsage(update: UsageUpdate, agent: AgentRef = CLAUDE_AGENT): void {
+    this.updateProfile(withUsage(this.opts.client.currentProfile, agent, update));
   }
 
   /** Ask the agent backend for fresh plan usage (no prompt is sent). */
   async refreshUsage(): Promise<void> {
     const usage = await this.agent?.refreshUsage?.().catch(() => undefined);
-    if (usage) this.updateUsage(usage);
+    if (usage) this.updateUsage(usage, CLAUDE_AGENT);
+  }
+
+  /**
+   * A room ask that named an agent, at its first word back (BLG-520): when another agent answers,
+   * a line says which and why: it isn't set up there, or their Mac is older and runs its default.
+   */
+  private sayWhoAnswers(from: string, body: BodyOf<'agent_event'>): void {
+    const asked = this.namedAsks.get(body.requestId);
+    if (!asked || asked.peer !== from) return;
+    this.namedAsks.delete(body.requestId);
+    const by = body.agent ?? CLAUDE_AGENT;
+    if (by.runtime === asked.agent.runtime && !body.fallback) return;
+    const mine = from === this.selfId;
+    const name = peerName(this.store.getState(), from);
+    const wanted = agentName(asked.agent);
+    const answered = agentName(by);
+    if (mine) this.system(`Your ${wanted} isn’t set up on this Mac, so your ${answered} answers`, 'warn');
+    else if (body.fallback) this.system(`${name}’s ${wanted} isn’t set up on their Mac, so their ${answered} answers`, 'warn');
+    else this.system(`${name}’s Mac can’t pick an agent by name yet (an older Beluga), so their ${answered} answers`, 'warn');
   }
 
   private onAgentEvent(from: string, ts: number, body: BodyOf<'agent_event'>): void {
@@ -1194,9 +1407,10 @@ export class Session {
       }
       return;
     }
+    this.sayWhoAnswers(from, body);
     // Your Claude asked from a workspace: follow the friend's Claude there (only from the one you asked).
     const channel = waiter?.mirror && waiter.peer === from && body.requester === this.selfId ? waiter.mirror : body.channel;
-    this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel, ...(body.slotWait ? { slotWait: body.slotWait } : {}) });
+    this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel, ...(body.slotWait ? { slotWait: body.slotWait } : {}), ...(body.agent ? { agent: body.agent } : {}) });
     if (!waiter || waiter.peer !== from || !['done', 'error', 'denied'].includes(body.event)) return;
     clearTimeout(waiter.timer);
     this.agentWaiters.delete(body.requestId);

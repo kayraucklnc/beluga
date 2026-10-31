@@ -102,8 +102,8 @@ export function claudePill(p: Pick<ChatPerson, 'claude' | 'version' | 'update'>)
 export function claudeLine(p: Pick<ChatPerson, 'claude' | 'doing' | 'update' | 'me'>): string {
   if (p.claude === 'update') return p.update === 'you' ? 'Update Beluga to reach them' : 'Offline to you · their Beluga needs an update';
   if (p.claude === 'offline') return 'Offline · messages wait';
-  if (p.claude === 'working') return p.doing && p.doing !== 'answering' ? `Claude: ${p.doing}` : p.doing === 'answering' ? 'Claude answering' : 'Claude working';
-  return 'Claude idle';
+  if (p.claude === 'working') return p.doing && p.doing !== 'answering' ? `Agent: ${p.doing}` : p.doing === 'answering' ? 'Agent answering' : 'Agent working';
+  return 'Agent idle';
 }
 
 /** The panel's version chip: "1.3.0", or "needs 1.3" when they're behind (your version, when known). */
@@ -143,7 +143,7 @@ export interface WaitingApproval {
   readonly task?: string;
 }
 
-const who = (t: Pick<TaskView, 'peerName' | 'by'>): string => `${t.peerName}${t.by === 'agent' ? '’s Claude' : ''}`;
+const who = (t: Pick<TaskView, 'peerName' | 'by'>): string => `${t.peerName}${t.by === 'agent' ? '’s agent' : ''}`;
 
 /** What waits in this conversation: on you first (oldest first), then on the others. */
 export function waitingIn(opts: { readonly conversation: string; readonly tasks: readonly TaskView[]; readonly approvals?: readonly WaitingApproval[] }): WaitingItem[] {
@@ -157,17 +157,17 @@ export function waitingIn(opts: { readonly conversation: string; readonly tasks:
       const text = t.secret ? `${who(t)} wants ${t.secret.label}` : t.kind === 'run' && t.command ? `${who(t)} wants to run ${oneLine(t.command, 60)}` : t.kind === 'file' && t.path ? `${who(t)} wants ${t.path.split('/').pop() || 'a file'}` : `${who(t)} wants to: ${requestGist(t, 70)}`;
       you.push({ on: 'you', onName: 'you', text, kind: t.secret ? 'secret' : 'approval', target });
     } else if (t.direction === 'sent' && t.state === 'confirm') {
-      you.push({ on: 'you', onName: 'you', text: `Your Claude wants to ask ${targetLabel(t)}`, kind: 'confirm', target });
+      you.push({ on: 'you', onName: 'you', text: `Your agent wants to ask ${targetLabel(t)}`, kind: 'confirm', target });
     } else if (t.direction === 'sent' && t.question) {
       const q = t.question.questions[0]?.question ?? 'a question';
-      you.push({ on: 'you', onName: 'you', text: `${t.peerName}’s Claude asks: ${oneLine(q, 70)}`, kind: 'question', target });
+      you.push({ on: 'you', onName: 'you', text: `${t.peerName}’s agent asks: ${oneLine(q, 70)}`, kind: 'question', target });
     } else if (t.direction === 'sent' && (t.state === 'sent' || t.state === 'queued' || t.state === 'awaiting_approval')) {
       them.push({ on: t.peerId, onName: t.peerName, text: requestGist(t, 70), kind: 'request', target });
     }
   }
   for (const a of opts.approvals ?? []) {
     if (a.channel !== conversation || a.task) continue;
-    you.push({ on: 'you', onName: 'you', text: `Your Claude: ${oneLine(a.title, 70)}`, kind: 'approval', target: { kind: 'attention', id: a.id } });
+    you.push({ on: 'you', onName: 'you', text: `Your agent: ${oneLine(a.title, 70)}`, kind: 'approval', target: { kind: 'attention', id: a.id } });
   }
   return [...you, ...them];
 }

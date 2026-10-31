@@ -40,12 +40,12 @@ function workspaceCommands({ ui, actions, state }: Ctx): PaletteCommand[] {
   const project = state.projects.find((p) => p.id === ws.projectId);
   const worktree = ws.kind === 'worktree';
   const list: Array<[WorkspaceAction, PaletteCommand, boolean]> = [
-    ['pr', cmd('pr', 'pr', state.prs[ws.id] ? 'Pull Request…' : 'Create Pull Request…', 'pr', act('pr'), 'Claude pushes and opens one'), worktree],
+    ['pr', cmd('pr', 'pr', state.prs[ws.id] ? 'Pull Request…' : 'Create Pull Request…', 'pr', act('pr'), 'Your agent pushes and opens one'), worktree],
     ['fork', cmd('fork', 'fork', 'Fork This Workspace…', 'branch', act('fork'), 'A copy with its conversation'), ws.kind !== 'chat'],
-    ['handoff', cmd('handoff', 'handoff', 'Hand Off to Someone…', 'hand', act('handoff'), 'Their Claude continues it'), worktree],
+    ['handoff', cmd('handoff', 'handoff', 'Hand Off to Someone…', 'hand', act('handoff'), 'Their agent continues it'), worktree],
     ['commit', cmd('commit', 'commit', 'Commit All Changes…', 'commit', act('commit')), worktree && Boolean(ws.status?.changed)],
     ['merge', cmd('merge', 'merge', 'Merge into the Main Folder…', 'merge', act('merge')), worktree],
-    ['compact', cmd('compact', 'compact', 'Compact the Conversation…', 'wand', act('compact'), 'Claude keeps what matters'), true],
+    ['compact', cmd('compact', 'compact', 'Compact the Conversation…', 'wand', act('compact'), 'Your agent keeps what matters'), true],
     ['run', cmd('run', 'run', 'Run the Project', 'play', act('run')), Boolean(project?.scripts?.run)],
     ['setup', cmd('setup', 'setup', 'Run Setup Again', 'refresh', act('setup')), Boolean(project?.scripts?.setup)],
     ['finder', cmd('finder', 'finder', 'Show in Finder', 'folder', act('finder')), true],
@@ -74,26 +74,26 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     ...(talking
       ? [
           cmd('clear', 'clear', state.view.kind === 'room' ? 'Clear the Group Chat…' : 'Clear This Conversation…', 'x', () => ui.openMenu({ kind: 'clear', channel, host: state.isHost })),
-          cmd('plan', 'plan', state.planMode[channel] ? 'Turn Off Plan First' : 'Turn On Plan First', 'claude', () => ctx.actions.run({ type: 'plan_toggle', channel }), 'Claude plans, you approve, then it works'),
-          cmd('visualize', 'visualize', 'Draw This as a Graph', 'grid', () => void api.session.submit('/visualize', { channel }), 'Claude draws this conversation as an interactive diagram'),
+          cmd('plan', 'plan', state.planMode[channel] ? 'Turn Off Plan First' : 'Turn On Plan First', 'claude', () => ctx.actions.run({ type: 'plan_toggle', channel }), 'Your agent plans, you approve, then it works'),
+          cmd('visualize', 'visualize', 'Draw This as a Graph', 'grid', () => void api.session.submit('/visualize', { channel }), 'Your agent draws this conversation as an interactive diagram'),
           cmd('model', 'model', 'Choose the Model…', 'spark', () => ui.openMenu({ kind: 'model', ...(channel === 'room' ? {} : { channel }) }), 'For this conversation'),
         ]
       : []),
     ...(state.board.enabled
       ? [
           { id: 'tasks:new', label: 'New Task…', icon: 'task' as const, hint: 'Plan a piece of work', keywords: ['task', 'issue', 'todo', 'ticket'], run: () => openSheet({ kind: 'new_task' }) },
-          { id: 'plans:new', label: 'New Plan…', icon: 'flag' as const, hint: 'Plan big work with Claude: milestones, tasks, what runs side by side', keywords: ['plan', 'milestone', 'roadmap', 'project'], run: () => openSheet({ kind: 'new_plan' }) },
+          { id: 'plans:new', label: 'New Plan…', icon: 'flag' as const, hint: 'Plan big work with your agent: milestones, tasks, what runs side by side', keywords: ['plan', 'milestone', 'roadmap', 'project'], run: () => openSheet({ kind: 'new_plan' }) },
           { id: 'plans:open', label: 'Go to Plans', icon: 'flag' as const, hint: 'Your plans, project by project', keywords: ['plans', 'milestones', 'roadmap'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'plans' } }) },
           { id: 'tasks:open', label: 'Go to Tasks', icon: 'task' as const, hint: 'Every project’s board', keywords: ['tasks', 'board', 'issues', 'backlog', 'kanban'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'tasks' } }) },
-          { id: 'issues:open', label: 'Go to Issues', icon: 'issue' as const, hint: 'A project’s GitHub issues: Claude investigates, fixes, or writes them up as tasks', keywords: ['issues', 'github', 'bugs', 'triage', 'investigate', 'fix'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'issues' } }) },
+          { id: 'issues:open', label: 'Go to Issues', icon: 'issue' as const, hint: 'A project’s GitHub issues: your agent investigates, fixes, or writes them up as tasks', keywords: ['issues', 'github', 'bugs', 'triage', 'investigate', 'fix'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'issues' } }) },
           { id: 'actions:open', label: 'Go to Actions', icon: 'pulse' as const, hint: 'A project’s GitHub Actions: runs as they go, and each workflow as a graph', keywords: ['actions', 'github', 'ci', 'workflows', 'runs', 'builds', 'checks', 'pipeline'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'actions' } }) },
         ]
       : []),
     ...(state.sentinel.enabled
       ? [
-          { id: 'sentinel:open', label: 'Go to Sentinel', icon: 'sentinel' as const, hint: 'Watchers that run Claude, a script or a notification on a schedule', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'every morning', 'brief', 'recurring'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'sentinel' } }) },
+          { id: 'sentinel:open', label: 'Go to Sentinel', icon: 'sentinel' as const, hint: 'Watchers that run your agent, a script or a notification on a schedule', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'every morning', 'brief', 'recurring'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'sentinel' } }) },
           { id: 'dashboard:open', label: 'Go to Dashboard', icon: 'gauge' as const, hint: 'Sentinel’s dashboard: what your sentinels keep, as tiles', keywords: ['dashboard', 'numbers', 'metrics', 'kpi', 'stats', 'revenue', 'subscribers', 'tiles'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'dashboard' } }) },
-          { id: 'sentinel:chat', label: 'Go to Sentinel Chat', icon: 'chat' as const, hint: 'Talk to your Claude about all of Sentinel', keywords: ['sentinel', 'chat', 'ask', 'watchers'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'sentinel_chat', ...(ctx.state.sentinel.chats?.active ? { chat: ctx.state.sentinel.chats.active } : {}) } }) },
+          { id: 'sentinel:chat', label: 'Go to Sentinel Chat', icon: 'chat' as const, hint: 'Talk to your agent about all of Sentinel', keywords: ['sentinel', 'chat', 'ask', 'watchers'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'sentinel_chat', ...(ctx.state.sentinel.chats?.active ? { chat: ctx.state.sentinel.chats.active } : {}) } }) },
           { id: 'sentinel:new', label: 'New Sentinel…', icon: 'sentinel' as const, hint: 'Say what it should do, start from a recipe, or build it yourself', keywords: ['sentinel', 'schedule', 'cron', 'watch', 'recipe', 'automate'], run: () => openSheet({ kind: 'new_sentinel' }) },
         ]
       : []),
@@ -103,16 +103,16 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     ...(following ? [cmd('unfollow', 'unfollow', `Stop Following ${following.name}`, 'eye', () => void api.session.follow(undefined))] : []),
     ...(state.myShares.length ? [cmd('unshare', 'unshare', 'Stop Sharing a Folder…', 'share', () => ui.openMenu({ kind: 'share_folder', launchDir: client.launchDir, mine: state.myShares }))] : []),
     cmd('name', 'name', 'Change Your Name…', 'person', () => openSettings(ui, 'general', 'settings-name'), state.self?.name ? `Now: ${state.self.name}` : undefined),
-    cmd('people', 'people', 'People & Access…', 'people', () => openSettings(ui, 'people'), 'Who can use your Claude, and how'),
+    cmd('people', 'people', 'People & Access…', 'people', () => openSettings(ui, 'people'), 'Who can use your agent, and how'),
     stripeCommand(state),
     { id: 'cmd:support', label: 'Support Beluga…', icon: 'cup', hint: 'Buy the maker a coffee, or star Beluga on GitHub', keywords: ['support', 'coffee', 'donate', 'tip', 'sponsor', 'star', 'github'], run: () => openSupport('coffee') },
-    cmd('env', 'env', 'Environment Variables…', 'lock', () => openSettings(ui, 'environment'), 'For your shells, scripts and Claude'),
+    cmd('env', 'env', 'Environment Variables…', 'lock', () => openSettings(ui, 'environment'), 'For your shells, scripts and agents'),
     cmd('shell', 'shell', 'Terminal Settings…', 'terminal', () => openSettings(ui, 'terminal'), 'Which shell, and how it starts'),
     {
       id: 'cmd:popup-preview',
       label: 'Preview Request Pop-up',
       icon: 'bell',
-      hint: 'The card a friend’s request, or Claude needing you, gets on top of other apps (a pretend one)',
+      hint: 'The card a friend’s request, or your agent needing you, gets on top of other apps (a pretend one)',
       keywords: ['popup', 'pop-up', 'request', 'notification', 'preview', 'test', 'friend'],
       run: previewRequestPopup,
     },

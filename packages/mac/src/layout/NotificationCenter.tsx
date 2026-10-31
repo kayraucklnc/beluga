@@ -218,7 +218,7 @@ function WaitingRow({ w, now, close }: { w: Waiting; now: number; close: () => v
 
 function Empty({ filter, any }: { filter: NoticeFilter; any: boolean }) {
   const title = !any ? 'You’re all caught up' : filter === 'unread' ? 'Nothing unread' : filter === 'needsYou' ? 'Nothing waiting for you' : 'No mentions';
-  const detail = !any ? 'Beluga lists here when Claude finishes or needs you, and when friends come and go.' : 'The rest are under All.';
+  const detail = !any ? 'Beluga lists here when your agent finishes or needs you, and when friends come and go.' : 'The rest are under All.';
   return (
     <div className={s.empty}>
       <Icon name="bell" size={20} />

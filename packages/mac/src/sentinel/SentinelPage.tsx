@@ -4,6 +4,7 @@ import { activityOf } from '@beluga/ui/workspace-models.js';
 import { recipeById } from '@beluga/core/sentinel/recipes.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
+import { useAgentEntries } from '../components/agent-options.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
@@ -34,9 +35,9 @@ import {
   pauseAfterLabel,
   perDayLabel,
   runDuration,
-  sharedModel,
+  sharedAgent,
   whenText,
-  withModel,
+  withAgent,
 } from './sentinel-model.js';
 import { useDraft } from './use-draft.js';
 import { useClock } from '../lib/window-active.js';
@@ -189,14 +190,14 @@ function AskBox({ item }: { item: Sentinel }) {
     setText('');
   };
   return (
-    <section className={s.ask} aria-label="Ask Claude" data-testid="sentinel-ask">
+    <section className={s.ask} aria-label="Ask your agent" data-testid="sentinel-ask">
       <div className={s.askRow}>
         <ClaudeMark />
         <input
           className={s.askInput}
           value={text}
-          placeholder="Ask Claude about this sentinel: “make it weekly”, “why did it fail?”…"
-          aria-label="Ask Claude about this sentinel"
+          placeholder="Ask your agent about this sentinel: “make it weekly”, “why did it fail?”…"
+          aria-label="Ask your agent about this sentinel"
           spellCheck
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -206,7 +207,7 @@ function AskBox({ item }: { item: Sentinel }) {
             }
           }}
         />
-        <Tip label="The Sentinel chat opens beside this page; Claude changes it there" keys="↩">
+        <Tip label="The Sentinel chat opens beside this page; your agent changes it there" keys="↩">
           <Button size="small" icon="arrowRight" disabled={!text.trim()} onClick={send}>
             Ask
           </Button>
@@ -335,9 +336,9 @@ function History({ item }: { item: Sentinel }) {
 function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatch) => void }) {
   const a = useSentinelActions();
   const all = useApp((st) => st.projects);
-  const models = useApp((st) => st.models);
+  const agents = useAgentEntries();
   const projects = all.filter((p) => p.root && !p.error);
-  const model = sharedModel(item.steps);
+  const agent = sharedAgent(item.steps);
   const claudeSteps = item.steps.some((x) => x.kind === 'claude');
   const limits: number[] = TIME_LIMITS.includes(item.limits.minutes as (typeof TIME_LIMITS)[number]) ? [...TIME_LIMITS] : [...TIME_LIMITS, item.limits.minutes].sort((x, y) => x - y);
   const perDay: number[] = PER_DAY_CHOICES.includes(item.limits.perDay ?? 0) ? [...PER_DAY_CHOICES] : [...PER_DAY_CHOICES, item.limits.perDay!].sort((x, y) => x - y);
@@ -373,19 +374,12 @@ function Properties({ item, save }: { item: Sentinel; save: (patch: SentinelPatc
         {accessSentence(item.access, item.steps)}.
       </p>
       {claudeSteps ? (
-        <Prop label="Model">
-          <Select
-            label="Model for every Claude step"
-            size="small"
-            value={model ?? 'mixed'}
-            placeholder="Mixed"
-            options={(models.length ? models : [{ value: '', label: 'Default', description: '' }]).map((m) => ({ value: m.value, label: m.label || 'Default', ...(m.description ? { description: m.description } : {}) }))}
-            onChange={(m) => save({ steps: withModel(item.steps, m) })}
-          />
+        <Prop label="Agent">
+          <Select label="Agent and model for every agent step" size="small" value={agent ?? 'mixed'} placeholder="Mixed" options={agents} onChange={(v) => save({ steps: withAgent(item.steps, v) })} />
         </Prop>
       ) : null}
       <Prop label="Time limit">
-        <Select label="Time limit" size="small" value={String(item.limits.minutes)} options={limits.map((n) => ({ value: String(n), label: n < 60 ? `${n} minutes` : n === 60 ? '1 hour' : `${n / 60} hours`, description: 'Per run; Claude is stopped and the run fails as timed out' }))} onChange={(v) => save({ limits: { minutes: Number(v) } })} />
+        <Select label="Time limit" size="small" value={String(item.limits.minutes)} options={limits.map((n) => ({ value: String(n), label: n < 60 ? `${n} minutes` : n === 60 ? '1 hour' : `${n / 60} hours`, description: 'Per run; the agent is stopped and the run fails as timed out' }))} onChange={(v) => save({ limits: { minutes: Number(v) } })} />
       </Prop>
       <Prop label="Runs per day">
         <Select label="Runs per day" size="small" value={String(item.limits.perDay ?? 0)} options={perDay.map((n) => ({ value: String(n), label: perDayLabel(n) }))} onChange={(v) => save({ limits: { perDay: Number(v) } })} />

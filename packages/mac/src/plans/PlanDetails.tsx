@@ -13,6 +13,10 @@ import { TaskChatMark, TaskStateIcon, TonePill } from './marks.js';
 import { openDecision } from './plan-ask-model.js';
 import { PlanFeed } from './PlanFeed.js';
 import { useClock, usePlanActions } from './use-plans.js';
+import { useStartWith } from '../components/agent-options.js';
+import { SplitButton } from '../components/SplitButton.js';
+import { useMyAgent } from '../lib/agent-words.js';
+import type { AgentRef } from '@beluga/protocol.js';
 import { WaitingLine } from './WaitingLine.js';
 import p from './plans.module.css';
 
@@ -144,14 +148,25 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
   // The board's checklist when it has one (ticked, or explained with its reason: deferred, not done), else the plan's.
   const onBoard = criteria(t.issue?.brief.acceptance);
   const checks: readonly Criterion[] = onBoard.length ? onBoard : t.task.acceptance.map((text) => ({ text, state: 'open' as const }));
+  const startWith = useStartWith();
+  const mine = useMyAgent();
+  // Its own agent, else the plan's: who Start uses. The ▾ (BLG-506): another, this start only.
+  const own = t.issue?.agent ?? view.plan.agent;
+  const startIt = (agent?: AgentRef): void => void act(() => api.startTask(view.plan.id, t.task.id, agent));
   return (
     <>
       {t.why && (t.state === 'blocked' || t.state === 'later') ? <p className={p.muted}>{t.why}</p> : null}
       <div className={p.detailsActions}>
-        {canStart ? (
-          <Button size="small" variant="primary" icon={t.forYou ? 'hand' : 'play'} onClick={() => (t.forYou ? openDecision() : void act(() => api.startTask(view.plan.id, t.task.id)))}>
-            {t.forYou ? 'Decide…' : 'Start'}
+        {canStart && t.forYou ? (
+          <Button size="small" variant="primary" icon="hand" onClick={() => openDecision()}>
+            Decide…
           </Button>
+        ) : canStart ? (
+          <SplitButton label="Start with another agent" items={startWith(own, (a) => startIt(a ?? (own ? mine : undefined)))}>
+            <Button size="small" variant="primary" icon="play" onClick={() => startIt()}>
+              Start
+            </Button>
+          </SplitButton>
         ) : null}
         {canResume ? (
           <Button size="small" variant="primary" icon="play" onClick={() => void act(() => api.resumeTask(view.plan.id, t.task.id))}>
@@ -272,11 +287,11 @@ function GateDetails({ plan, m }: { plan: Plan; m: MilestoneView }) {
     <>
       {m.state === 'merging' ? (
         <section className={p.detailsSection} aria-label="Merging">
-          <h4>{conflict ? (conflict.stuck ? 'Merge conflict: needs you' : 'Merge conflict: Claude is fixing it') : `Merging into ${plan.branch ?? 'the plan’s branch'}`}</h4>
+          <h4>{conflict ? (conflict.stuck ? 'Merge conflict: needs you' : 'Merge conflict: your agent is fixing it') : `Merging into ${plan.branch ?? 'the plan’s branch'}`}</h4>
           {conflict ? (
             <>
               <p className={p.muted}>
-                Merging {conflict.key ?? conflict.merging} into {plan.branch}. {conflict.stuck ? 'Claude couldn’t fix it: ask it again, or fix the files yourself in their folder (Beluga commits the merge once no conflict markers are left).' : 'The milestone passes once it’s fixed.'}
+                Merging {conflict.key ?? conflict.merging} into {plan.branch}. {conflict.stuck ? 'Your agent couldn’t fix it: ask it again, or fix the files yourself in their folder (Beluga commits the merge once no conflict markers are left).' : 'The milestone passes once it’s fixed.'}
               </p>
               <ul className={p.plainList} aria-label="Conflicted files">
                 {conflict.files.map((f) => (
@@ -287,7 +302,7 @@ function GateDetails({ plan, m }: { plan: Plan; m: MilestoneView }) {
               </ul>
               <div className={p.detailsActions}>
                 {conflict.stuck ? (
-                  <Button size="small" variant="primary" icon="claude" onClick={() => void act(() => api.retryConflicts(plan.id), 'Claude is on the conflict again')}>
+                  <Button size="small" variant="primary" icon="claude" onClick={() => void act(() => api.retryConflicts(plan.id), 'Your agent is on the conflict again')}>
                     Ask Claude Again
                   </Button>
                 ) : null}
@@ -346,7 +361,7 @@ function GateDetails({ plan, m }: { plan: Plan; m: MilestoneView }) {
       </section>
       {check ? (
         <section className={p.detailsSection}>
-          <h4>{check.verdict === 'pass' ? 'Claude’s check: passes' : 'Claude’s check: not yet'}</h4>
+          <h4>{check.verdict === 'pass' ? 'The agent’s check: passes' : 'The agent’s check: not yet'}</h4>
           <Markdown text={check.notes} />
         </section>
       ) : null}

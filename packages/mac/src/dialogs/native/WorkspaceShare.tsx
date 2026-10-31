@@ -51,7 +51,7 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
   return (
     <Sheet
       title={`Share “${ws.name}”`}
-      subtitle="Only this worktree: people you add see its conversation, files and Scratch, and can ask your Claude here. Friends get it over the Beluga network, so nobody needs to be in your room."
+      subtitle="Only this worktree: people you add see its conversation, files and Scratch, and can ask your agent here. Friends get it over the Beluga network, so nobody needs to be in your room."
       icon="share"
       close={close}
       footer={
@@ -78,7 +78,7 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
               <Avatar name={self.name} id={self.peerId} size={24} />
               <div className={s.itemText}>
                 <span className={s.itemTitle}>{self.name} (you)</span>
-                <span className={s.itemDetail}>Your Claude does the work here, on this Mac</span>
+                <span className={s.itemDetail}>Your agent does the work here, on this Mac</span>
               </div>
               <Tag>Owner</Tag>
             </div>
@@ -108,7 +108,7 @@ export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>
           )}
         </div>
       </Section>
-      <p className={s.hint}>Your Claude runs on your computer. Risky steps still ask you, unless you fully trust the person asking.</p>
+      <p className={s.hint}>Your agent runs on your computer. Risky steps still ask you, unless you fully trust the person asking.</p>
     </Sheet>
   );
 }
@@ -128,7 +128,7 @@ export function InvitePersonSheet({ menu, close }: NativeMenuProps<'invite_perso
   return (
     <Sheet
       title={`Invite ${peer.name} to a Workspace`}
-      subtitle={`${peer.name} sees its conversation and files${role === 'contribute' ? ', and can ask your Claude there' : ''}.`}
+      subtitle={`${peer.name} sees its conversation and files${role === 'contribute' ? ', and can ask your agent there' : ''}.`}
       badge={<Avatar name={peer.name} id={peer.peerId} size={36} />}
       close={close}
       footer={

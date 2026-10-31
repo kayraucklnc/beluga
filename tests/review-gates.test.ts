@@ -284,7 +284,7 @@ describe("a friend's command", () => {
 
 describe('a run that stays open for background agents', () => {
   it("hands the original request's first answer over right away, once", async () => {
-    const { TurnRouter } = await import('../src/agent/live-run.js');
+    const { TurnRouter } = await import('../src/agent/runtime/claude/live-run.js');
     const answered: string[] = [];
     const turns = new TurnRouter({ onEvent: () => undefined, onDone: (t) => answered.push(t) });
     turns.current();

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { encodeProjectDir } from '../../src/agent/claude-sessions.js';
+import { encodeProjectDir } from '../../src/agent/runtime/claude/claude-sessions.js';
 import { createDemoWorkspaces } from '../../src/demo.js';
 import type { LogItem } from '../../src/core/store.js';
 import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';

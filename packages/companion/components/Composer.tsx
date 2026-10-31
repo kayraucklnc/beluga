@@ -11,6 +11,31 @@ import { useVoice, voiceAvailable } from '../lib/voice';
 import { type Option, Options } from './Options';
 import { Card, haptic, Press, T } from './ui';
 import { VoiceButton, VoiceNote, VoiceStage, voiceActive } from './Voice';
+import { matchTags, withTag } from '../../../src/shared/agent-tags';
+import { AgentMarkIcon, agentMark } from './AgentMark';
+import type { ConvView } from '../lib/link/protocol';
+
+/** The room's agent tags (BLG-520): "@codex", "@bob:codex", each with its mark. */
+type Tag = NonNullable<ConvView['tags']>[number];
+
+/** As you type "@" in the room: each agent by name with its mark, one tap puts it in the words. */
+function TagChips({ tags, onPick }: { readonly tags: readonly Tag[]; readonly onPick: (tag: string) => void }) {
+  if (!tags.length) return null;
+  return (
+    <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6, paddingHorizontal: 4 }}>
+        {tags.map((t) => (
+          <Press key={t.tag} onPress={() => (haptic.tap(), onPick(t.tag))} accessibilityLabel={`${t.tag}: ${t.hint}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: tint.peach }}>
+            <AgentMarkIcon mark={agentMark(t.agent)} size={14} color={ink.peach} />
+            <T v="caption" c={ink.peach} style={{ fontWeight: '700' }}>
+              {t.tag}
+            </T>
+          </Press>
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
+}
 
 /**
  * Write to your Mac: a field that takes the width and grows with what you write (up to seven
@@ -39,7 +64,7 @@ export function QueueTray({ queue, onSteer, onRemove }: { readonly queue: readon
           <T v="caption" style={{ fontWeight: '600', flex: 1 }}>
             Queued · {queue.length}
           </T>
-          <T v="caption">{queue[0]?.waiting ? 'waiting for a free Claude' : 'after what Claude is doing'}</T>
+          <T v="caption">{queue[0]?.waiting ? 'waiting for a free agent' : 'after what your agent is doing'}</T>
         </View>
         {queue[0]?.waiting ? (
           <View style={{ marginHorizontal: 6, marginBottom: 2, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: tint.sky }}>
@@ -103,6 +128,7 @@ export function Composer({
   more = [],
   above,
   photos: canAttach,
+  tags = [],
 }: {
   readonly placeholder: string;
   /** Send (and, while Claude works, queue) what you wrote, with the photos you attached. */
@@ -119,6 +145,8 @@ export function Composer({
   readonly above?: React.ReactNode;
   /** Photos can go with a message: the photo button, there whatever you've written. */
   readonly photos?: boolean;
+  /** The room's agent tags (BLG-520): offered as chips while "@…" is being typed. */
+  readonly tags?: readonly Tag[];
 }) {
   const [text, setText] = useState('');
   const [h, setH] = useState(fieldHeight(0));
@@ -174,7 +202,7 @@ export function Composer({
   const One = adds.length === 1 ? adds[0]!.Icon : undefined;
   const recording = voiceActive(voice.view);
   // While Claude works, one quiet line says what the button does (no second button).
-  const hint = plan.more.length ? 'Goes after what Claude is doing · hold ↑ to steer now' : working && plan.tap === 'queue' && pics.length ? 'Photos go after what Claude is doing' : undefined;
+  const hint = plan.more.length ? 'Goes after what your agent is doing · hold ↑ to steer now' : working && plan.tap === 'queue' && pics.length ? 'Photos go after what your agent is doing' : undefined;
   return (
     <View style={{ paddingHorizontal: 10, paddingBottom: bottom + 8, paddingTop: 6, gap: 6 }}>
       {above}
@@ -186,6 +214,7 @@ export function Composer({
           </T>
         </Animated.View>
       ) : null}
+      <TagChips tags={matchTags(text, tags)} onPick={(tag) => setText((t) => withTag(t, tag))} />
       <Card r={24} style={{ paddingHorizontal: 4, paddingVertical: 4, gap: 2 }}>
         {voiceAvailable() ? (
           <View style={{ paddingHorizontal: 10 }}>
@@ -271,8 +300,8 @@ export function Composer({
                   onLongPress={plan.more.length ? () => (haptic.commit(), Keyboard.dismiss(), setMenu(true)) : undefined}
                   delayLongPress={320}
                   disabled={!live}
-                  accessibilityLabel={plan.tap === 'queue' ? 'Queue: after what Claude is doing' : 'Send'}
-                  accessibilityHint={plan.more.length ? 'Hold to steer Claude now instead' : undefined}
+                  accessibilityLabel={plan.tap === 'queue' ? 'Queue: after what your agent is doing' : 'Send'}
+                  accessibilityHint={plan.more.length ? 'Hold to steer your agent now instead' : undefined}
                   style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: live ? color.primary : color.sunken }}
                 >
                   <ArrowUp color={live ? color.onPrimary : color.text3} size={20} strokeWidth={2} />
@@ -287,10 +316,10 @@ export function Composer({
         window
         visible={menu}
         onClose={() => setMenu(false)}
-        title="While Claude works"
+        title="While your agent works"
         options={[
-          { Icon: Navigation, label: 'Steer now', sub: 'Claude reads it at its next step', tone: 'sky', onPress: () => send('steer') },
-          { Icon: ListPlus, label: 'Queue', sub: 'After what Claude is doing', tone: 'mint', onPress: () => send('send') },
+          { Icon: Navigation, label: 'Steer now', sub: 'Your agent reads it at its next step', tone: 'sky', onPress: () => send('steer') },
+          { Icon: ListPlus, label: 'Queue', sub: 'After what your agent is doing', tone: 'mint', onPress: () => send('send') },
         ]}
       />
       <Options window visible={adding} onClose={() => setAdding(false)} title="Add" options={adds} />

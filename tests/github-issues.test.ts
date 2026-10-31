@@ -253,7 +253,7 @@ describe('handing an issue to Claude', () => {
     expect(task.github).toEqual({ repo: 'acme/bob-api', number: 48, url: 'https://github.com/acme/bob-api/issues/48', step: 'investigate', investigated: true });
     expect(task.brief.goal).toMatch(/#48/);
     expect(task.brief.context).toContain('> Signing in with');
-    expect(task.activity.map((a) => a.text)).toEqual(expect.arrayContaining(['made this task from GitHub issue #48', 'asked Claude to investigate #48']));
+    expect(task.activity.map((a) => a.text)).toEqual(expect.arrayContaining(['made this task from GitHub issue #48', 'asked the agent to investigate #48']));
     expect(out.ws).toBe('w1');
     expect(newOpts).toEqual([{ quiet: true }]);
     expect(asked).toHaveLength(1);

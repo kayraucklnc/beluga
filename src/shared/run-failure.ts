@@ -19,7 +19,15 @@ export interface RunFailure {
   readonly exitCode?: number;
   /** The raw error, with Claude Code's last stderr lines (Show details). */
   readonly detail: string;
+  /** The runtime that failed ('codex'); unset: Claude Code. */
+  readonly runtime?: string;
 }
+
+/** Who a failure's words name: the agent, its app, and whose API it calls. */
+const WHO: Readonly<Record<string, { readonly agent: string; readonly app: string; readonly vendor: string }>> = {
+  claude: { agent: 'Claude', app: 'Claude Code', vendor: 'Anthropic' },
+  codex: { agent: 'Codex', app: 'Codex', vendor: 'OpenAI' },
+};
 
 /** What Continue (and an automatic resume) sends: the same session goes on. */
 export const CONTINUE_PROMPT = 'Continue where you left off.';
@@ -39,17 +47,18 @@ export function resetWords(at: number, now = Date.now()): string {
 
 /** The card's headline: "Claude hit your usage limit · resets at 15:00". */
 export function failureTitle(f: RunFailure, now = Date.now()): string {
+  const who = WHO[f.runtime ?? 'claude'] ?? WHO.claude!;
   switch (f.kind) {
     case 'usage_limit':
-      return `Claude hit your usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
+      return `You hit your ${who.agent} plan usage limit${f.resetsAt ? ` · resets at ${resetWords(f.resetsAt, now)}` : ''}`;
     case 'signed_out':
-      return 'Claude Code isn’t signed in on this Mac';
+      return `${who.app} isn’t signed in on this Mac`;
     case 'crash':
-      return `Claude Code stopped unexpectedly${f.exitCode !== undefined ? ` (exit ${f.exitCode})` : ''}`;
+      return `${who.app} stopped unexpectedly${f.exitCode !== undefined ? ` (exit ${f.exitCode})` : ''}`;
     case 'network':
-      return 'Claude lost its connection to Anthropic';
+      return `${who.app} lost its connection to ${who.vendor}`;
     case 'api':
-      return `Anthropic's API failed: ${firstLine(f.detail).slice(0, 120) || 'unknown error'}`;
+      return `${who.vendor}'s API failed: ${firstLine(f.detail).slice(0, 120) || 'unknown error'}`;
     case 'stopped':
       return 'Stopped by you';
   }
@@ -87,6 +96,8 @@ const firstLine = (s: string): string => s.trim().split('\n')[0]?.trim() ?? '';
 export function resetFromText(text: string, now = Date.now()): number | undefined {
   const epoch = /limit reached\|(\d{9,13})/i.exec(text);
   if (epoch) return epoch[1]!.length > 10 ? Number(epoch[1]) : Number(epoch[1]) * 1000;
+  const codex = codexRetryAt(text, now);
+  if (codex) return codex;
   const clock = /resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i.exec(text);
   if (clock && (clock[2] || clock[3])) {
     let h = Number(clock[1]);
@@ -108,8 +119,46 @@ export function resetFromText(text: string, now = Date.now()): number | undefine
   return undefined;
 }
 
+/**
+ * Codex's limit words (BLG-503): "…try again at 3:15 PM.", "…try again at Oct 24th, 2025 3:15 PM.",
+ * or "Try again in 2 days 3 hours 5 minutes." The time it names, after `now`.
+ */
+function codexRetryAt(text: string, now: number): number | undefined {
+  const at = /try again at\s+(?:([A-Z][a-z]{2,8})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?/i.exec(text);
+  if (at) {
+    let h = Number(at[4]);
+    const m = Number(at[5]);
+    const ampm = at[6]?.toLowerCase();
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    if (h > 23 || m > 59) return undefined;
+    if (at[1]) {
+      const t = Date.parse(`${at[1]} ${at[2]} ${at[3] ?? new Date(now).getFullYear()}`);
+      if (Number.isNaN(t)) return undefined;
+      const d = new Date(t);
+      d.setHours(h, m, 0, 0);
+      return d.getTime();
+    }
+    const d = new Date(now);
+    d.setHours(h, m, 0, 0);
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  const within = /try again in\s+((?:\d+\s*(?:days?|hours?|minutes?|mins?|seconds?|secs?)[\s,and]*)+)/i.exec(text);
+  if (!within) return undefined;
+  const UNIT: Record<string, number> = { d: 86_400_000, h: 3_600_000, m: 60_000, s: 1000 };
+  let ms = 0;
+  for (const part of within[1]!.matchAll(/(\d+)\s*(d|h|m|s)/gi)) ms += Number(part[1]) * UNIT[part[2]!.toLowerCase()]!;
+  return ms ? now + ms : undefined;
+}
+
+/** Codex's own error kind for a turn over the plan's limit (its app-server's codexErrorInfo). */
+const CODEX_LIMIT_INFO = 'usageLimitExceeded';
+/** Codex's limit words: "You've hit your usage limit. …" (longer than Claude's notice, so not one of those). */
+const CODEX_LIMIT = /you['’]ve hit your usage limit/i;
 // Claude Code has no login here ("Not logged in · Please run /login"), or the one it had stopped working.
 const SIGNED_OUT = /\bnot logged in\b|please run \/login|oauth token (has )?(expired|been revoked)/i;
+
 const NETWORK = /\b(ECONNRESET|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|socket hang up|fetch failed|network error|connection error|getaddrinfo)\b/i;
 const EXIT = /exited with code (-?\d+)|terminated by signal (\w+)/i;
 const API_ERRORS = new Set(['authentication_failed', 'oauth_org_not_allowed', 'account_on_hold', 'verification_required', 'billing_error', 'overloaded', 'invalid_request', 'model_not_found', 'server_error', 'cloud_credential_error']);
@@ -128,6 +177,8 @@ export interface RunEnd {
   readonly stderr?: readonly string[];
   /** You (or a newer message) stopped it. */
   readonly stopped?: boolean;
+  /** Codex's error kind on a failed turn (its app-server's `codexErrorInfo`: 'usageLimitExceeded'…). */
+  readonly errorInfo?: unknown;
 }
 
 /** How a run ended, in one of six kinds; never a bare "exit code 1". */
@@ -137,8 +188,8 @@ export function classifyRun(end: RunEnd, now = Date.now()): RunFailure {
   const detail = [said, stderr && !said.includes(stderr) ? `stderr:\n${stderr}` : ''].filter(Boolean).join('\n\n').slice(0, 8000) || 'No error text';
   if (end.stopped) return { kind: 'stopped', detail };
   const all = [said, stderr].join('\n');
-  const limitLine = all.split('\n').find((l) => isLimitNotice(l));
-  if (end.rejectedUntil !== undefined || end.apiError === 'rate_limit' || limitLine) {
+  const limitLine = all.split('\n').find((l) => isLimitNotice(l) || CODEX_LIMIT.test(l));
+  if (end.rejectedUntil !== undefined || end.apiError === 'rate_limit' || end.errorInfo === CODEX_LIMIT_INFO || limitLine) {
     const resetsAt = end.rejectedUntil || (limitLine ? resetFromText(limitLine, now) : undefined) || resetFromText(all, now);
     return { kind: 'usage_limit', ...(resetsAt ? { resetsAt } : {}), detail };
   }

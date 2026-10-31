@@ -1,8 +1,12 @@
+import { dialogueHeader } from '../core/dialogues/view.js';
+import { agentPicker } from '../shared/agent-picker.js';
+import { roomAgentTags } from '../shared/agent-tags.js';
 import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning } from '../core/store.js';
+import { agentLabel, agentName } from '../shared/agent-label.js';
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
 import { OFFER_DETAIL, offerWords, waitingOn, waitingWords, workingOn, workingWords } from '../core/team/model.js';
-import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, boardName, boardOf, byStatus, isArchived, isEpic, isOwnBoard, issueById, progressOf as boardProgress, reposOf } from '../core/board/model.js';
+import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, boardName, boardOf, byStatus, isArchived, isEpic, isOwnBoard, isStartable, issueById, progressOf as boardProgress, reposOf } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
 import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
@@ -21,13 +25,15 @@ import { type PlanView as PlanProgress, planView } from '../core/plans/progress.
 import { shortVersion } from '../net/mesh/features.js';
 import type { MessageView, PersonView } from '../net/mesh/views.js';
 import { chatPeople, claudePill, offlineNote, waitingIn, waitingLabel } from '../core/chat-people.js';
-import type { Usage } from '../protocol.js';
+import { type AgentRef, CLAUDE_AGENT, type Profile, defaultAgentOf } from '../protocol.js';
+import { providerCards } from '../ui/usage-cards.js';
 import {
   type BranchView,
   type ChatMessageView,
   type ChatsView,
   type ChatView,
   type ConvSummary,
+  type AgentPickerView,
   type ConvView,
   type HomeView,
   type LiveView,
@@ -136,14 +142,29 @@ const myName = (state: DomainState): string => state.self?.name ?? state.network
 
 // ---- usage
 
-/** Your allowance as a list of providers (Claude Code today; other agents later). */
-export function usageViews(usage: Usage | undefined): UsageView[] {
-  if (!usage) return [];
-  const windows = [
-    ...(usage.fiveHour ? [{ label: '5 hours', pct: usage.fiveHour.pct, ...(usage.fiveHour.resetsAt !== undefined ? { resetsAt: Math.round(usage.fiveHour.resetsAt) } : {}) }] : []),
-    ...(usage.week ? [{ label: 'Week', pct: usage.week.pct, ...(usage.week.resetsAt !== undefined ? { resetsAt: Math.round(usage.week.resetsAt) } : {}) }] : []),
-  ].map((w) => ({ ...w, pct: Math.max(0, Math.min(100, w.pct)) }));
-  return [{ provider: 'Claude Code', ...(usage.plan ? { plan: clip(usage.plan, 40) } : {}), windows, updatedAt: Math.round(usage.updatedAt) }];
+/** The phone's words for Claude's windows (the Mac says "5-hour" and "Weekly"). */
+const PHONE_WINDOW: Readonly<Record<string, string>> = { '5-hour': '5 hours', Weekly: 'Week' };
+
+/**
+ * Someone's providers as the phone's usage cards (src/ui/usage-cards.ts, as the Mac draws them):
+ * plan windows where they have them, tokens and speed where not; their default first. A provider
+ * that has said nothing yet is left out, unless it's signed out.
+ */
+export function usageViews(p: Pick<Profile, 'usage' | 'usages' | 'agents'> | undefined, defaultAgent: AgentRef | undefined): UsageView[] {
+  const cards = providerCards(p, defaultAgent)
+    .filter((c) => c.shape !== 'empty' || !c.signedIn)
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+  return cards.slice(0, 8).map((c) => ({
+    provider: c.key === CLAUDE_AGENT.runtime ? 'Claude Code' : clip(c.agent.label, 40),
+    ...(c.plan ? { plan: clip(c.plan, 40) } : {}),
+    windows: c.windows.slice(0, 8).map((w) => ({ label: clip(PHONE_WINDOW[w.label] ?? w.label, 40), pct: Math.max(0, Math.min(100, w.pct)), ...(w.resetsAt !== undefined ? { resetsAt: Math.round(w.resetsAt) } : {}) })),
+    updatedAt: Math.round(c.updatedAt ?? 0),
+    runtime: c.key,
+    isDefault: c.isDefault,
+    ...(c.tokens ? { tokens: c.tokens } : {}),
+    ...(c.tokensPerSec !== undefined ? { tokensPerSec: c.tokensPerSec } : {}),
+    ...(c.signedIn ? {} : { signedIn: false }),
+  }));
 }
 
 // ---- conversations
@@ -255,7 +276,7 @@ function taskTurns(state: DomainState, ctx: ViewContext, t: GwTask): TurnView[] 
     {
       id: `${t.id}:answer`,
       who: 'friend',
-      name: clip(`${t.peerName}'s Claude`, 100),
+      name: clip(`${t.peerName}'s agent`, 100),
       prose: proseOf(said),
       ts: t.startedAt ?? t.updatedAt,
       status,
@@ -416,10 +437,24 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
     const who = item.byAgent ? 'claude' : item.from === me ? 'you' : 'friend';
     const prose = who === 'claude' ? pictures(proseOf(item.text)) : proseOf(item.text);
     const edit = who === 'you' && !steer ? editOf(state, item.channel, item.text, prose) : undefined;
-    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose, ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}), ...(edit ? { edit } : {}) };
+    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), ...(who === 'claude' ? { agent: item.agent ?? CLAUDE_AGENT } : {}), prose, ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}), ...(edit ? { edit } : {}) };
   }
   if (item.type === 'system') {
     // Earlier lines of a shared workspace's conversation ("bob: …") read as that person's turn.
+    // A dialogue's header (BLG-466): the card the Mac draws, in words, with Stop / Continue.
+    if (item.dialogue) {
+      const d = state.dialogues[item.dialogue.id];
+      if (!d) return undefined;
+      const h = dialogueHeader(d);
+      return {
+        id: item.id,
+        who: 'system',
+        name: 'Dialogue',
+        prose: proseOf(clip(h.topic, 500)),
+        ts: item.ts,
+        dialogue: { id: clip(d.id, 200), topic: clip(h.topic, 500), mode: h.mode, who: clip(h.who, 200), progress: h.progress, ...(h.budget ? { budget: h.budget } : {}), status: clip(h.status, 300), tone: h.tone, canStop: h.actions.includes('stop') || h.actions.includes('cancel'), canContinue: h.actions.includes('continue') },
+      };
+    }
     if (item.said) return { id: item.id, who: item.said.byAgent ? 'claude' : item.said.from === me ? 'you' : 'friend', name: clip(item.said.name, 100), prose: proseOf(item.said.text), ts: item.said.ts };
     if (item.level === 'info') return undefined;
     return { id: item.id, who: 'system', name: 'Beluga', prose: proseOf(item.text), ts: item.ts };
@@ -444,7 +479,8 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
   return {
     id: item.id,
     who: 'claude',
-    name: clip(item.owner === me || !item.owner ? 'Claude' : `${item.ownerName}'s Claude`, 100),
+    name: clip(item.owner === me || !item.owner ? agentName(item.agent) : agentLabel(item.agent, item.ownerName, false), 100),
+    agent: item.agent ?? CLAUDE_AGENT,
     prose: pictures(proseOf(item.text)),
     ts: item.ts,
     ...(status ? { status } : {}),
@@ -578,7 +614,7 @@ export function homeView(state: DomainState, ctx: ViewContext): HomeView {
     // 1.14: all of Your Mac's chats, for the phone's chat list.
     ...(macChats.length ? { macChats } : {}),
     me: { name: clip(myName(state), 64), peerId: myId(state) },
-    usage: usageViews(state.self?.usage),
+    usage: usageViews(state.peers.find((p) => p.peerId === state.self?.peerId) ?? state.self, state.prefs.defaultAgent),
     needsYou: items,
     running: running.slice(0, 20),
     // Outputs live with their conversation now (ConvView `outputs`); Home only hints (`fresh`).
@@ -665,6 +701,50 @@ export function convView(state: DomainState, ctx: ViewContext, topic: Topic): Co
     ...mergeOf(state, ctx, channel),
     ...(plan && planT ? { plan: planBand(state, plan, planT) } : {}),
     ...waitingOf(state, channel),
+    ...pickerOf(state, channel, conv?.mine ?? false),
+    ...tagsOf(state, channel),
+  };
+}
+
+/** The room's agent tags for "@" (BLG-520): yours that run here, and each person's their card lists. */
+function tagsOf(state: DomainState, channel: string): Pick<ConvView, 'tags'> {
+  if (channel !== 'room') return {};
+  const tags = roomAgentTags(state.peers, state.selfId, state.runtimes).slice(0, 40);
+  return tags.length ? { tags: tags.map((t) => ({ tag: clip(t.tag, 80), hint: clip(t.hint, 200), agent: agentRefView(t.agent) })) } : {};
+}
+
+/** Your own worktree or chat: its agent picker, as the Mac's composer shows it (efforts stay the Mac's). */
+function pickerOf(state: DomainState, channel: string, mine: boolean): { agent?: AgentPickerView } {
+  const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  if (!mine || !id || !state.projects.some((p) => p.workspaces.some((w) => w.id === id))) return {};
+  return { agent: pickerView(agentPicker(state, channel)) };
+}
+
+/**
+ * 1.35 (BLG-498): the list a task's or a plan's agent is picked from: your default agent's runtime
+ * first, `ref` (the task's or plan's own pick; none: your default) the one marked on.
+ */
+function workPicker(state: DomainState, ref: AgentRef | undefined): AgentPickerView {
+  const p = pickerView(agentPicker(state, 'draft', defaultAgentOf(state.self).runtime, ref));
+  // None picked: the phone's "Your agent" row is the one on, not your default's model.
+  return ref ? p : { ...p, groups: p.groups.map((g) => ({ ...g, models: g.models.map((m) => ({ ...m, on: false })) })) };
+}
+
+const agentRefView = (a: AgentRef): AgentRef => ({ runtime: clip(a.runtime, 32), label: clip(a.label, 64), ...(a.model ? { model: clip(a.model, 64) } : {}) });
+
+function pickerView(p: ReturnType<typeof agentPicker>): AgentPickerView {
+  return {
+    runtime: clip(p.runtime, 32),
+    label: clip(p.label, 120),
+    groups: p.groups.slice(0, 8).map((g) => ({
+      runtime: clip(g.runtime, 32),
+      label: clip(g.label, 64),
+      available: g.available,
+      ...(g.why ? { why: clip(g.why, 200) } : {}),
+      isDefault: g.isDefault,
+      current: g.current,
+      models: g.models.slice(0, 30).map((m) => ({ value: clip(m.value, 80), label: clip(m.label, 80), description: clip(m.description, 200), on: m.on })),
+    })),
   };
 }
 
@@ -789,6 +869,10 @@ export function planPageView(state: DomainState, id: string): PlanView | undefin
     needsYou: needsYou(state)
       .filter((n) => n.topic === topic || (home && n.topic === home))
       .slice(0, 20),
+
+    // 1.35 (BLG-498): who works its milestones and tasks (none: your default), and the list to change it from.
+    ...(plan.agent ? { agent: agentRefView(plan.agent) } : {}),
+    ...(plan.status !== 'done' ? { agents: workPicker(state, plan.agent) } : {}),
   };
 }
 
@@ -910,6 +994,8 @@ export function taskPageView(state: DomainState, id: string, ctx?: ViewContext):
       id: clip(a.id, 200),
       at: Math.round(a.at),
       who: clip(actorName(a.by, me), 80),
+      // An agent's line says which agent (BLG-498); an entry from before agents were named: Claude.
+      ...(a.by.kind === 'claude' ? { agent: a.by.agent ?? CLAUDE_AGENT } : {}),
       text: clip(plainLine(activityText(a, me), 500), 500),
       ...(a.body ? { body: words(a.body, 8000) } : {}),
       ...(a.kind === 'comment' ? { comment: true } : {}),
@@ -917,6 +1003,9 @@ export function taskPageView(state: DomainState, id: string, ctx?: ViewContext):
     ...(worktree ? { worktree: clip(worktree, 200) } : {}),
     ...(i.pr ? { pr: { number: i.pr.number, state: i.pr.state, title: clip(plainLine(i.pr.title, 300), 300), checks: i.pr.checks } } : {}),
     moves: MOVES.filter((s) => s !== i.status).map((s) => ({ status: s, label: STATUS_INFO[s].label })),
+    // 1.35 (BLG-498): who works it (none: your default), and while it can still start, the list to change it from.
+    ...(i.agent ? { agent: agentRefView(i.agent) } : {}),
+    ...(isStartable(i) ? { agents: workPicker(state, i.agent) } : {}),
   };
 }
 
@@ -1102,7 +1191,7 @@ function runBy(s: SentinelState, r: RunSummary): string {
     return clip(name ? `after ${name}` : 'after another sentinel', 120);
   }
   if (r.by === 'event') return firstLine(r.trigger.summary, 120) || 'an event';
-  return r.by === 'phone' ? 'your phone' : r.by === 'claude' ? 'your Claude' : r.by;
+  return r.by === 'phone' ? 'your phone' : r.by === 'claude' ? 'your agent' : r.by;
 }
 
 function sentinelRunView(s: SentinelState, sn: Sentinel, r: RunSummary, ctx?: ViewContext): SentinelRunView {
@@ -1202,6 +1291,7 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
     from: clip(m.mine ? myName(state) : m.name, 100),
     mine: m.mine,
     ...(m.claude ? { claude: true } : {}),
+    ...(m.claude?.agent ? { agent: m.claude.agent } : {}),
     text,
     ts: m.ts,
     ...(m.edited ? { edited: m.edited } : {}),
@@ -1216,13 +1306,13 @@ function messageView(state: DomainState, ctx: ViewContext, m: MessageView): Chat
 function chatTaskOf(state: DomainState, m: MessageView): ChatMessageView['task'] {
   const t = m.task ? state.gateway.tasks.find((x) => x.id === m.task?.id) : undefined;
   if (!t) return undefined;
-  const title = t.direction === 'sent' ? `To ${targetLabel(t)}` : `From ${t.peerName}${t.by === 'agent' ? '’s Claude' : ''}`;
+  const title = t.direction === 'sent' ? `To ${targetLabel(t)}` : `From ${t.peerName}${t.by === 'agent' ? '’s agent' : ''}`;
   const summary = t.result?.summary ? plainLine(stripCode(t.result.summary).text, 600) : '';
   const files = (t.result?.files ?? []).map((f) => clip(f.name, 200)).slice(0, 8);
   // Whose it is, as the Mac's chat heads it (BLG-210): "Your Claude · asked ata’s Claude", "mia’s Claude · asked your Mac".
   const sent = t.direction === 'sent';
-  const owner = t.by === 'agent' ? (sent ? 'Your Claude' : `${t.peerName}’s Claude`) : sent ? 'You' : t.peerName;
-  const who = `${owner} · asked ${sent ? targetLabel(t) : t.kind === 'ask' ? 'your Claude' : 'your Mac'}`;
+  const owner = t.by === 'agent' ? (sent ? 'Your agent' : `${t.peerName}’s agent`) : sent ? 'You' : t.peerName;
+  const who = `${owner} · asked ${sent ? targetLabel(t) : t.kind === 'ask' ? 'your agent' : 'your Mac'}`;
   return {
     id: clip(t.id, 200),
     title: clip(title, 200),
@@ -1269,7 +1359,7 @@ export function chatView(state: DomainState, ctx: ViewContext, topic: Topic): Ch
     kind: group || conversation.startsWith('group:') ? 'group' : 'dm',
     messages,
     more,
-    live: (net.live?.[conversation] ?? []).slice(0, 20).map((l) => clip(`${l.name}'s Claude`, 100)),
+    live: (net.live?.[conversation] ?? []).slice(0, 20).map((l) => clip(`${l.name}'s agent`, 100)),
     members: chatMembers(state, dm, group, people),
     ...(waiting.length ? { waiting: waiting.slice(0, 10).map((w) => ({ text: clip(waitingLabel(w), 300), you: w.on === 'you', ...(w.target.kind === 'task' ? { task: clip(w.target.id, 200) } : {}) })) } : {}),
     ...(note ? { note: clip(note, 200) } : {}),
@@ -1307,7 +1397,8 @@ function chatMembers(state: DomainState, dm: { peerId: string; name: string } | 
 export function peopleView(state: DomainState): PeopleView {
   return {
     people: state.network.friends.slice(0, 600).map((f) => {
-      const usage = usageViews(state.peers.find((p) => p.peerId === f.peerId)?.usage)[0];
+      const peer = state.peers.find((p) => p.peerId === f.peerId);
+      const usage = usageViews(peer, defaultAgentOf(peer))[0];
       const card = state.gateway.cards[f.peerId];
       const chat = chatTopic(`dm:${f.peerId}`);
       return {

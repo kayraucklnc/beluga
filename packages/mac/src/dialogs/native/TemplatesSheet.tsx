@@ -124,11 +124,11 @@ export function TemplateEditorSheet({ close }: { close: () => void }) {
       <Field label="Name" htmlFor="tpl-name" error={builtIn ? 'A built-in template has this name. Pick another one.' : undefined} hint={taken ? 'You have a template with this name: saving replaces it.' : undefined}>
         <TextInput id="tpl-name" value={name} onChange={setName} placeholder="Fix a flaky test" maxLength={60} invalid={builtIn} />
       </Field>
-      <Field label="Prompt" htmlFor="tpl-prompt" hint="What Claude should do. Leave two spaces where the details go: the cursor starts there.">
+      <Field label="Prompt" htmlFor="tpl-prompt" hint="What your agent should do. Leave two spaces where the details go: the cursor starts there.">
         <TextArea id="tpl-prompt" value={prompt} onChange={setPrompt} rows={5} placeholder="Find out why this test fails now and then, make it reliable, and run it 20 times to be sure." />
       </Field>
       <Field label="">
-        <Checkbox checked={plan} onChange={setPlan} label="Plan first" detail="Claude shows you a plan and waits for your OK before changing anything" />
+        <Checkbox checked={plan} onChange={setPlan} label="Plan first" detail="Your agent shows you a plan and waits for your OK before changing anything" />
       </Field>
     </FormSheet>
   );

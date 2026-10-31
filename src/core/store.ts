@@ -1,4 +1,5 @@
-import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
+import type { AgentEventKind, AgentRef, FsEntry, PeerInfo } from '../protocol.js';
+import { agentName } from '../shared/agent-label.js';
 import { type AssistantChats, NO_ASSISTANT_CHATS, activeAssistantChannel, assistantChannel } from '../shared/assistant.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
@@ -18,6 +19,7 @@ import { type FriendShareAction, type FriendShareSlice, initialFriendShare, redu
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
 import { FIRST_SENTINEL_CHAT, type SentinelAction, type SentinelSlice, initialSentinel, reduceSentinel, sentinelChatChannel } from './sentinel/model.js';
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
+import { type DialoguesAction, type DialoguesSlice, initialDialogues, reduceDialogues } from './dialogues/model.js';
 import { type TeamAction, type TeamSlice, initialTeam, reduceTeam } from './team/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
@@ -66,12 +68,16 @@ export type LogItem =
       readonly text: string;
       readonly ts: number;
       readonly byAgent: boolean;
+      /** With `byAgent`: which agent wrote it (left out: Claude, from before agents were named). */
+      readonly agent?: AgentRef;
       /** The request this message is to your Claude (its card's requestId): how its card's state shows on it (a steer Claude hasn't read yet). */
       readonly request?: string;
       /** Sent to steer the turn your Claude is on (⌥↩): sent but not read until Claude reads it (see shared/claude-notices.ts steeredMessages). */
       readonly steer?: true;
+      /** A turn of a chaired dialogue (core/dialogues): which one, and its number (0: a person's interjection). */
+      readonly dialogue?: DialogueMark;
     }
-  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark; readonly shipped?: ShippedMark }
+  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark; readonly shipped?: ShippedMark; readonly dialogue?: DialogueMark }
   | {
       readonly id: string;
       readonly type: 'agent';
@@ -83,6 +89,8 @@ export type LogItem =
       readonly requesterName: string;
       /** Who asked (a peer id; missing on items saved before it was kept). */
       readonly requester?: string;
+      /** The agent doing the run (left out: Claude, from before agents were named). */
+      readonly agent?: AgentRef;
       /** What was asked, once known (sent with the "queued" event, for the queue). */
       readonly prompt?: string;
       /** Queued only because your Claude works in as many other conversations as it may at once. */
@@ -124,6 +132,12 @@ export interface ShippedMark {
 
 /** A shipped divider's words, where it's drawn as plain text (the phone, a log). */
 export const shippedText = (number: number, into: string): string => `Above this line went to PR #${number}, merged into ${into}. New work starts here, for a new pull request.`;
+
+/** Where a dialogue shows in a conversation: its header card (a system line) and its turns (chat lines). */
+export interface DialogueMark {
+  readonly id: string;
+  readonly turn?: number;
+}
 
 export interface SaidBy {
   /** Their peer id, when they're in the room (else "history:<name>"). */
@@ -259,6 +273,10 @@ export interface Prefs {
   /** Default model for new conversations (undefined: Claude Code's default). */
   readonly model?: string;
   readonly effort?: Effort;
+  /** Who answers "@you" (core/settings.ts chosenAgent; undefined: Claude). */
+  readonly defaultAgent?: AgentRef;
+  /** Per-project defaults over `defaultAgent`, by project name. */
+  readonly projectAgents?: Readonly<Record<string, AgentRef>>;
   readonly autoSetup: boolean;
   /** What new worktrees' branches start with (`beluga/`; empty: none). */
   readonly branchPrefix: string;
@@ -436,7 +454,7 @@ export interface MyShare {
  * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, SentinelSlice, PlansSlice, CompanionSlice, FriendShareSlice, TeamSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, SentinelSlice, PlansSlice, DialoguesSlice, CompanionSlice, FriendShareSlice, TeamSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -548,12 +566,12 @@ export type Action =
   | { type: 'hosting'; hosting: Hosting }
   | { type: 'welcome'; self: PeerInfo }
   | { type: 'peers'; peers: readonly PeerInfo[] }
-  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string; request?: string; steer?: true }
+  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string; request?: string; steer?: true; agent?: AgentRef; dialogue?: DialogueMark }
   /** `id`/`ts` are stamped before reducing (see stampAction). */
-  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy; shipped?: ShippedMark }
+  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy; shipped?: ShippedMark; dialogue?: DialogueMark }
   | { type: 'shell'; item: ShellItem }
   /** `itemId` (stamped before reducing) names the chat item a new run creates. */
-  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string; slotWait?: SlotWait }
+  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string; slotWait?: SlotWait; agent?: AgentRef }
   /** One owner's waiting requests in a conversation, in their new order (see orderQueued). */
   | { type: 'queue_order'; owner: string; ids: readonly string[] }
   | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[]; order?: readonly string[]; hidden?: readonly string[] }
@@ -609,6 +627,7 @@ export type Action =
   | BoardAction
   | SentinelAction
   | PlansAction
+  | DialoguesAction
   | TeamAction
   | SupportAction;
 
@@ -645,7 +664,7 @@ export const DEFAULT_PREFS: Prefs = {
 
 /** The preference fields out of saved settings. */
 export function prefsFrom(settings: Partial<Settings>): Prefs {
-  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'shell', 'earningsCurrency']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
+  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'defaultAgent', 'projectAgents', 'shell', 'earningsCurrency']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
   return { ...DEFAULT_PREFS, ...picked };
 }
 
@@ -693,6 +712,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialBoard,
     ...initialSentinel,
     ...initialPlans,
+    ...initialDialogues,
     ...initialTeam,
     companion: { devices: [] },
     assistant: NO_ASSISTANT_CHATS,
@@ -823,7 +843,8 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(progress ? { progress } : {}),
     ...(between ? { between, betweenAt } : {}),
     status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? 'started' : a.event,
-    subagents: a.event === 'sub' ? applySub(base.subagents, a.text, a.ts) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
+    // The run ended: ones still running end with it; one that failed or was stopped stays so.
+    subagents: a.event === 'sub' ? applySub(base.subagents, a.text, a.ts) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => (s.status === 'running' ? { ...s, status: 'done' as const } : s)) : base.subagents,
     text:
       // A steered message's note ("reads this after its current step") isn't Claude's words: its own turn starting (or going back in line) ends it, a newer note replaces it.
       noted && (a.event === 'started' || a.event === 'text' || a.event === 'queued')
@@ -841,6 +862,8 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(a.event === 'queued' && a.text ? { prompt: a.text } : {}),
     ...(a.event === 'queued' && a.slotWait ? { slotWait: a.slotWait } : {}),
     ...(existing?.status === 'queued' && a.event !== 'queued' ? { queuedUntil: a.ts } : {}),
+    // Any event may name the agent (the first one an older card saw may not have).
+    ...(a.agent ? { agent: a.agent } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
   // A new message, or a run in a workspace finishing while no screen shows it (Claude's answer is news).
@@ -937,18 +960,20 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
           type: 'chat',
           channel: action.channel ?? 'room',
           from: action.from,
-          name: peerName(state, action.from) + (action.byAgent ? "'s Claude" : ''),
+          name: peerName(state, action.from) + (action.byAgent ? `'s ${agentName(action.agent)}` : ''),
           text: clean(action.text),
           ts: action.ts,
           byAgent: action.byAgent,
+          ...(action.byAgent && action.agent ? { agent: action.agent } : {}),
           ...(action.request ? { request: action.request } : {}),
           ...(action.steer ? { steer: true as const } : {}),
+          ...(action.dialogue ? { dialogue: action.dialogue } : {}),
         }),
       }, action.channel ?? 'room', true);
     case 'system':
       return {
         ...state,
-        log: appendLog(state.log, { id: action.id ?? '', type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: action.ts ?? 0, level: action.level ?? 'info', ...(action.said ? { said: action.said } : {}), ...(action.shipped ? { shipped: action.shipped } : {}) }),
+        log: appendLog(state.log, { id: action.id ?? '', type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: action.ts ?? 0, level: action.level ?? 'info', ...(action.said ? { said: action.said } : {}), ...(action.shipped ? { shipped: action.shipped } : {}), ...(action.dialogue ? { dialogue: action.dialogue } : {}) }),
       };
     case 'conflicts': {
       const { [action.id]: _old, ...rest } = state.conflicts;
@@ -1096,6 +1121,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'notice_unread':
     case 'notice_clear':
     case 'models':
+    // Which agents run here and their models (BLG-462: dropped before, so Codex stayed greyed in the picker).
+    case 'runtimes':
     case 'disk':
     case 'archiving':
     case 'pr':
@@ -1138,6 +1165,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'fx_rates':
       return { ...state, ...reduceEarnings(state, action) };
     case 'claude_code':
+    case 'codex_sessions':
       return ccFinished(state, { ...state, ...reduceClaudeCode(state, action) });
     case 'agent_origins':
       return { ...state, ...reduceClaudeCode(state, action) };
@@ -1189,6 +1217,10 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'plans_style':
     case 'plans_off':
       return offPlanHomes({ ...state, ...reducePlans(state, action) });
+    case 'dialogues_init':
+    case 'dialogue_put':
+    case 'dialogue_remove':
+      return { ...state, ...reduceDialogues(state, action) };
     case 'team_state':
     case 'team_off':
       return { ...state, ...reduceTeam(state, action) };

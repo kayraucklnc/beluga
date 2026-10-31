@@ -343,3 +343,10 @@
   color: var(--text);
   white-space: pre-wrap;
 }
+
+/* An agent's mark before its name, in a tag. */
+.agentOn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}

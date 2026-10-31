@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { AgentRef } from '../../protocol.js';
+import { agentName } from '../../shared/agent-label.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import { type Actor, renamedActors } from '../board/model.js';
 import type { Store } from '../store.js';
@@ -87,6 +89,8 @@ const SavedPlan = z
     autonomy: z.enum(AUTONOMIES).default('gated'),
     maxParallel: z.number().int().min(1).max(MAX_PARALLEL).catch(DEFAULT_PARALLEL),
     testsAt: z.enum(TESTS_AT).catch('milestone'),
+    // Who works it (BLG-497): one that doesn't read is let go (your default works it).
+    agent: AgentRef.optional().catch(undefined),
     body: Body.optional().catch(undefined),
     draft: Body.optional().catch(undefined),
     paused: z.boolean().default(false),
@@ -133,7 +137,7 @@ export class Plans {
   // ------------------------------------------------------------------ drafting
 
   /** A new plan: an empty draft in its conversation (Claude writes it there). Your goal is never its title: a quick model names it (autoTitle), and Claude's plan_write after that. */
-  create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }, by: Actor): Plan {
+  create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt; readonly agent?: AgentRef }, by: Actor): Plan {
     const at = this.now();
     const title = (input.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || UNTITLED;
     const plan: Plan = {
@@ -146,6 +150,7 @@ export class Plans {
       autonomy: input.autonomy ?? DEFAULT_AUTONOMY,
       maxParallel: DEFAULT_PARALLEL,
       testsAt: input.testsAt ?? 'milestone',
+      ...(input.agent ? { agent: input.agent } : {}),
       paused: false,
       runs: {},
       activity: [event(by, 'created', 'started this plan', at)],
@@ -259,10 +264,22 @@ export class Plans {
     return this.change(plan, { testsAt }, [event(by, 'note', testsAt === 'end' ? 'runs the test suites only at the end, in the final step' : 'runs the test suites once per milestone, at its check', this.now())]);
   }
 
+  /**
+   * The agent (and model) its milestones and tasks are worked on by from here on (BLG-498);
+   * undefined: your default. Milestones and tasks already at work keep the agent they opened with.
+   */
+  setWorkAgent(id: string, agent: AgentRef | undefined, by: Actor): Plan {
+    const plan = this.need(id);
+    const was = plan.agent;
+    if (was?.runtime === agent?.runtime && was?.model === agent?.model && was?.label === agent?.label) return plan;
+    const text = agent ? `gave its work to ${agentName(agent, { model: true })} from here on` : 'gave its work to the default agent from here on';
+    return this.change(plan, { agent: agent ? { runtime: agent.runtime, label: agent.label, ...(agent.model ? { model: agent.model } : {}) } : undefined }, [event(by, 'note', text, this.now())]);
+  }
+
   /** The head Claude was asked to check a milestone (a new round of checking). */
   checkAsked(id: string, milestone: string): Plan {
     const plan = this.need(id);
-    return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'beluga' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, Claude is checking its pass criteria`, this.now())]);
+    return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'beluga' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, the agent is checking its pass criteria`, this.now())]);
   }
 
   /** Work came back to a milestone (a task reopened, fix tasks added): its next check is a new one. */

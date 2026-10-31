@@ -3,6 +3,9 @@ import type { Policy } from './store.js';
 import { THEMES, type ThemeName } from '../shared/settings-schema.js';
 import { runEnvCommand, runShellCommand } from './terminal-commands.js';
 import { type InvitePlace, friendNamed, inviteRoute, namesLine, parseInvite } from '../shared/invite-route.js';
+import { defaultAgentOf } from '../protocol.js';
+import { agentLabel, agentName } from '../shared/agent-label.js';
+import { builtInInstead } from '../shared/skills.js';
 
 export interface CommandSpec {
   readonly name: string;
@@ -16,23 +19,23 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'overview', desc: 'see every worktree at a glance' },
   { name: 'room', desc: 'back to the room chat' },
   { name: 'new', args: '<name>', desc: 'new worktree from the latest origin (in the current project)' },
-  { name: 'chat', args: '<title>', desc: 'new Claude chat in the current project, no worktree' },
+  { name: 'chat', args: '<title>', desc: 'new chat with your agent in the current project, no worktree' },
   { name: 'review', desc: "see this workspace's changes" },
-  { name: 'pr', args: '[extra instructions]', desc: 'Claude opens a pull request with a short description (your PR instructions)' },
+  { name: 'pr', args: '[extra instructions]', desc: 'your agent opens a pull request with a short description (your PR instructions)' },
   { name: 'run', args: '[@name <command>]', desc: "start the project's run command in the Terminal tab, or run a command on a friend's computer (/run @bob npm test)" },
   { name: 'terminal', desc: "open this workspace's terminal (elsewhere: your own shell, the Terminal tab)" },
   { name: 'setup', desc: "run the project's setup command again in this workspace" },
-  { name: 'handoff', args: '<name>', desc: 'hand this workspace to someone; their Claude continues it' },
-  { name: 'model', args: '[name]', desc: 'pick the model for this conversation' },
+  { name: 'handoff', args: '<name>', desc: 'hand this workspace to someone; their agent continues it' },
+  { name: 'model', args: '[name | agent[:model]]', desc: 'pick the agent and model for this conversation (another agent hands the conversation off)' },
   { name: 'search', args: '<words>', desc: 'search every conversation' },
-  { name: 'usage', desc: 'disk space and Claude usage per workspace' },
+  { name: 'usage', desc: 'disk space and agent usage per workspace' },
   { name: 'inbox', desc: 'what happened while you were elsewhere' },
   { name: 'template', args: 'save <name>: <prompt>', desc: 'start from a template, or save your own' },
   { name: 'shell', args: '<path>|default|login on|off|args …', desc: 'the shell for the built-in terminal, and how it starts' },
-  { name: 'env', args: '[project] KEY=value', desc: 'set an environment variable for your shells, scripts and Claude (KEY= removes it)' },
-  { name: 'visualize', args: '[what]', desc: 'Claude draws it as an interactive graph: architecture, a flow, what changed' },
+  { name: 'env', args: '[project] KEY=value', desc: 'set an environment variable for your shells, scripts and your agent (KEY= removes it)' },
+  { name: 'visualize', args: '[what]', desc: 'your agent draws it as an interactive graph: architecture, a flow, what changed' },
   { name: 'btw', args: '<question>', desc: 'a side question: Claude answers beside the chat, without stopping or remembering it' },
-  { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (Claude keeps what matters)" },
+  { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (your agent keeps what matters)" },
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
   { name: 'fork', args: '<name>', desc: 'copy this workspace and its conversation' },
@@ -41,14 +44,14 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'restore', desc: 'bring an archived workspace back' },
   { name: 'delete', desc: 'delete this workspace, its branch and conversation' },
   { name: 'project', args: 'add <path>', desc: 'add a project, "folder <path>" to watch a folder, or "setup|run <command>"' },
-  { name: 'copy', desc: "copy the last Claude answer" },
-  { name: 'follow', args: '<name>', desc: "follow someone's screen and their Claude" },
+  { name: 'copy', desc: "copy your agent's last answer" },
+  { name: 'follow', args: '<name>', desc: "follow someone's screen and their agent" },
   { name: 'unfollow', desc: 'stop following' },
   { name: 'open', args: '<file>', desc: 'open a shared file live, e.g. /open bob:api/README.md' },
   { name: 'get', args: '<file>', desc: 'download a shared file to ~/Downloads/Beluga' },
   { name: 'close', desc: 'close the file viewer' },
-  { name: 'stop', desc: 'stop your Claude' },
-  { name: 'policy', args: 'ask|auto|deny', desc: "how friends' requests for your Claude are handled" },
+  { name: 'stop', desc: 'stop your agent' },
+  { name: 'policy', args: 'ask|auto|deny', desc: "how friends' requests for your agent are handled" },
   { name: 'trust', args: '<name>', desc: "auto-approve someone's requests this session" },
   { name: 'untrust', args: '<name>', desc: 'require approval again' },
   { name: 'people', desc: "list everyone and what they share" },
@@ -58,8 +61,8 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'name', args: '<new name>', desc: 'change the name friends see' },
   { name: 'theme', args: 'calm|light|contrast|mono', desc: 'switch the color theme' },
   { name: 'zoom', args: 'in|out|reset', desc: 'make the text bigger or smaller (also Option+↑ / Option+↓)' },
-  { name: 'clear', desc: 'clear this conversation (choose: just you, everyone, or a fresh Claude)' },
-  { name: 'plan', args: 'on|off', desc: 'Claude plans first and asks you to approve before changing anything' },
+  { name: 'clear', desc: 'clear this conversation (choose: just you, everyone, or a fresh agent)' },
+  { name: 'plan', args: 'on|off', desc: 'your agent plans first and asks you to approve before changing anything' },
   { name: 'remove', args: '<name>', desc: 'host: remove someone from the room (the invite link changes)' },
   { name: 'newlink', desc: 'host: make a new invite link; the old one stops working' },
   { name: 'lock', args: 'on|off', desc: 'host: stop (or allow) new people joining' },
@@ -172,6 +175,15 @@ export function runCommand(session: Session, name: string, args: readonly string
       runWorkspaceCommand(session, name, args, channel);
       return;
     case 'model': {
+      // "/model codex" or "/model codex:gpt-5": another runtime for this conversation (a handoff when it's live).
+      const [rt = '', ...rest] = (arg ?? '').split(':');
+      const runtime = state.runtimes.find((r) => r.available && (r.id === rt.toLowerCase() || r.label.toLowerCase() === rt.toLowerCase()));
+      const conversation = channel === 'room' || channel === 'draft' ? undefined : channel;
+      if (runtime && conversation && session.workbench) {
+        const model = rest.join(':');
+        session.workbench.setAgent(conversation, { runtime: runtime.id, label: runtime.label, ...(model ? { model } : {}) });
+        return;
+      }
       const pick = state.models.find((m) => m.value === arg || m.label.toLowerCase() === (arg ?? '').toLowerCase());
       if (!arg || !pick) return session.intend({ type: 'overlay', overlay: 'model' });
       if (session.workbench) session.workbench.setModel(channel === 'room' || channel === 'draft' ? undefined : channel, pick.value);
@@ -230,7 +242,7 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'who':
       for (const p of state.peers) {
         const shares = p.shares.map((s) => `${s.name}${s.writable ? '' : ' (read-only)'}`).join(', ') || 'nothing';
-        session.system(`${p.name}${p.peerId === session.selfId ? ' (you)' : ''} · claude ${p.agent ? 'on' : 'off'} · shares ${shares}`);
+        session.system(`${p.name}${p.peerId === session.selfId ? ' (you)' : ''} · ${agentName(defaultAgentOf(p)).toLowerCase()} ${p.agent ? 'on' : 'off'} · shares ${shares}`);
       }
       return;
     case 'stop':
@@ -248,7 +260,7 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'policy':
       if (!arg || !POLICIES.includes(arg as Policy)) return session.toast(`Policy is "${state.policy}". Use /policy ask, auto or deny`);
       session.setClaudeSharing(arg as Policy);
-      session.toast(`Friends' requests for your Claude: ${arg}`, 'success');
+      session.toast(`Friends' requests for ${agentLabel(session.agentRef, undefined, true)}: ${arg}`, 'success');
       return;
     case 'trust':
     case 'untrust': {
@@ -318,12 +330,23 @@ export function runCommand(session: Session, name: string, args: readonly string
       session.setPrefs({ theme: arg as ThemeName });
       session.toast(`Theme: ${arg}`, 'success');
       return;
-    default:
+    default: {
+      // Claude Code's own commands (/context, /rewind…) do nothing as a message: say what Beluga has instead.
+      // …unless a skill or command of your own has that name: then it's yours.
+      const instead = builtInInstead(name);
+      if (instead) {
+        void session.ownSkill(name, channel).then((own) => {
+          if (own && raw) session.askOwnClaude(raw.trim().replace(/^:/, '/'), channel);
+          else session.toast(instead, 'info');
+        });
+        return;
+      }
       if (raw && channel !== 'room' && session.workspaces?.inChannel(channel)) {
         session.askOwnClaude(raw.trim().replace(/^:/, '/'), channel);
         return;
       }
       session.toast(`Unknown command /${name}. Type /help (or // to send a message starting with /)`, 'warn');
+    }
   }
 }
 

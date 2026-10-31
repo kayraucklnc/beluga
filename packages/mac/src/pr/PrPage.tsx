@@ -26,7 +26,7 @@ function usePost(wsId: string, posted: () => void): (p: Post) => Promise<boolean
   };
 }
 
-/** A thread on the page: the card, then Reply, Ask Claude, and Resolve. */
+/** A thread on the page: the card, then Reply, Ask Your Agent, and Resolve. */
 function PageThread({ wsId, thread, posted }: { wsId: string; thread: PrThread; posted: () => void }) {
   const api = useApi();
   const post = usePost(wsId, posted);
@@ -41,9 +41,9 @@ function PageThread({ wsId, thread, posted }: { wsId: string; thread: PrThread; 
           <Button size="small" icon="chat" onClick={() => setReplying(true)}>
             Reply
           </Button>
-          <Tip label="Back in the chat, Claude reads the code there and addresses this comment">
+          <Tip label="Back in the chat, your agent reads the code there and addresses this comment">
             <Button size="small" icon="claude" onClick={() => void api.workbench.addressPrComments(wsId, thread.id)}>
-              Ask Claude
+              Ask Your Agent
             </Button>
           </Tip>
           <span className={s.grow} />
@@ -97,9 +97,9 @@ export function PrPage({ wsId }: { wsId: string }) {
             <IconButton icon="refresh" label="Read GitHub again" disabled={loading} onClick={refresh} />
             <IconButton icon="external" label="Open on GitHub" onClick={() => actions.openLink({ kind: 'url', url: pr.url })} />
             {counts.open ? (
-              <Tip label="Back in the chat, Claude works through every open comment: changes the code or says why not, then commits">
+              <Tip label="Back in the chat, your agent works through every open comment: changes the code or says why not, then commits">
                 <Button size="small" variant="primary" icon="claude" onClick={() => void api.workbench.addressPrComments(wsId)}>
-                  Address All With Claude
+                  Address All With Your Agent
                 </Button>
               </Tip>
             ) : null}

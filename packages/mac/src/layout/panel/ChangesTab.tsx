@@ -7,6 +7,7 @@ import { ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Empty, IconButton, Segmented, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
 import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
+import { useMyAgentName } from '../../lib/agent-words.js';
 import { focusFor, openFocus, showPanelTab, forgetChangeAsk, peekChangeAsk, usePanelRuntime } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
@@ -102,6 +103,7 @@ function Summary({ data, loading, onReload }: { data: Review; loading: boolean; 
 
 /** Commit, a pull request, Claude's review: what you do with changes, right under them. */
 function Actions({ wsId }: { wsId: string }) {
+  const agent = useMyAgentName();
   const actions = useActions();
   const api = useApi();
   // Shared with the toolbar's Create PR, and kept per worktree when you switch to another.
@@ -138,8 +140,8 @@ function Actions({ wsId }: { wsId: string }) {
           </Tip>
           <ActionsDropdown
             items={[
-              { label: 'Create PR with Claude', hint: 'Claude writes the title and description: what, why, how to test', icon: 'claude', onSelect: () => void api.workbench.createPr(wsId) },
-              { label: 'Create PR with Instructions…', hint: 'Tell Claude anything extra for this one', icon: 'claude', onSelect: () => requestAnimationFrame(() => run('pr')) },
+              { label: `Create PR with ${agent}`, hint: 'Your agent writes the title and description: what, why, how to test', icon: 'claude', onSelect: () => void api.workbench.createPr(wsId) },
+              { label: 'Create PR with Instructions…', hint: 'Tell your agent anything extra for this one', icon: 'claude', onSelect: () => requestAnimationFrame(() => run('pr')) },
               { label: 'Create Draft PR', hint: 'It can’t merge until it’s marked ready', icon: 'pr', onSelect: () => quick(true) },
             ]}
           >
@@ -149,7 +151,7 @@ function Actions({ wsId }: { wsId: string }) {
           </ActionsDropdown>
         </>
       ) : null}
-      <Tip label="Ask Claude to check everything: bugs, security, tests and quality" keys={shortcutKeys('ws-review')}>
+      <Tip label="Ask your agent to check everything: bugs, security, tests and quality" keys={shortcutKeys('ws-review')}>
         <Button size="small" variant="quiet" icon="claude" onClick={() => run('review_claude')}>
           Review
         </Button>
@@ -300,7 +302,7 @@ export function ChangesTab({ wsId }: { wsId: string }) {
   if (!files.length && !data.commits.length) {
     return (
       <div className={s.emptyTab}>
-        <Empty icon="check" title="No changes yet" detail={`Everything matches ${data.base}. Claude’s edits show up here as they happen.`} />
+        <Empty icon="check" title="No changes yet" detail={`Everything matches ${data.base}. Your agent’s edits show up here as they happen.`} />
       </div>
     );
   }

@@ -5,7 +5,7 @@
 
 const STYLES: Readonly<Record<string, (q: string) => string>> = {
   bob: (q) => `From bob’s side: ${/deploy|staging|release|ship/i.test(q) ? 'staging is green and the deploy script passed its dry run, so I’d ship after one smoke test.' : 'I’d keep it small and land it behind a flag first.'}`,
-  mia: (q) => `Mia’s Claude here. ${/copy|landing|text|word/i.test(q) ? 'The landing copy reads well; I’d tighten the headline to six words.' : 'Agreed with the above. One thing to add: write down the decision in the channel so everyone’s Claude has it next time.'}`,
+  mia: (q) => `Mia’s Claude here. ${/copy|landing|text|word/i.test(q) ? 'The landing copy reads well; I’d tighten the headline to six words.' : 'Agreed with the above. One thing to add: write down the decision in the channel so everyone’s agent has it next time.'}`,
 };
 
 const gist = (q: string): string => {
@@ -23,7 +23,7 @@ export function demoAnswer(owner: string, question: string, files: readonly stri
 
 /** What a mock backend's chat answer reads from a prompt built by claude-prompt.ts. */
 export function demoAnswerFromPrompt(system: string, prompt: string): string {
-  const owner = /^You are (.+?)'s Claude/.exec(system)?.[1] ?? 'you';
+  const owner = /^You are (.+?)'s /.exec(system)?.[1] ?? 'you';
   const question = /<message>\n([\s\S]*?)\n<\/message>/.exec(prompt)?.[1] ?? '';
   const files = [...prompt.matchAll(/<file name="([^"]+)">/g)].map((m) => m[1]!);
   return demoAnswer(owner, question.startsWith('(no text') ? '' : question, files);

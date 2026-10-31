@@ -17,7 +17,7 @@ test('Preview Request Pop-up shows a friend’s request and a decision of yours,
   await page.keyboard.press('Enter');
   const cards = popup.getByTestId('request-popup-card');
   await expect(cards).toHaveCount(2, { timeout: 10_000 });
-  await expect(cards.first()).toContainText('Mia’s Claude wants to');
+  await expect(cards.first()).toContainText('Mia’s agent wants to');
   const decision = popup.locator('[data-need="decision"]');
   await expect(decision).toContainText('Your call');
   await expect(decision).toContainText('Which payment providers should checkout offer at launch?');

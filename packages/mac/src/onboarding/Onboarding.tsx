@@ -6,6 +6,7 @@ import { useApp, useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { usePrivacyAccess } from '../lib/privacy.js';
 import { AccessStepView } from './AccessSteps.js';
+import { AgentsStep } from './AgentsStep.js';
 import { accessNext } from './access-copy.js';
 import { Backdrop } from './Backdrop.js';
 import { Glass, GlassBackdrop } from './Glass.js';
@@ -20,7 +21,7 @@ import { Hello, Ready, Tour } from './Steps.js';
 import s from './onboarding.module.css';
 
 /** How lit the backdrop is on each step: bright for the welcome and the end, calm behind settings. */
-const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, tables: 0.9, friends: 0.9, sentinel: 0.9, uses: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, terminal: 0.7, fire: 0.7, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, ready: 1 };
+const ENERGY: Record<Step, number> = { hello: 1, yourAgents: 0.8, parallel: 0.9, agents: 0.9, tables: 0.9, friends: 0.9, sentinel: 0.9, uses: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, terminal: 0.7, fire: 0.7, setup: 0.65, screen: 0.6, accessibility: 0.6, disk: 0.6, automation: 0.6, popups: 0.6, phone: 0.7, ready: 1 };
 
 /** How long the app takes to settle into place as the wormhole clears (Shell.module.css, `arrive`). */
 const ARRIVE_S = 1.6;
@@ -182,6 +183,8 @@ export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly st
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey) e.stopPropagation();
       if (leaving) return;
+      // Settings opened over it (Set Up… on Your agents) has the keys to itself.
+      if (e.target instanceof Element && !e.target.closest('[data-welcome]') && e.target !== document.body) return;
       const field = e.target instanceof HTMLElement && e.target.closest('input, textarea, [role="combobox"], [role="listbox"], [role="radiogroup"], [role="switch"]');
       const onButton = e.target instanceof HTMLButtonElement && !e.target.closest('[role="radiogroup"]');
       if (e.key === 'Enter' && !e.metaKey && !onButton && !(field && e.target instanceof HTMLTextAreaElement)) {
@@ -211,6 +214,7 @@ export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly st
         role="dialog"
         aria-modal="true"
         aria-label="Welcome to Beluga"
+        data-welcome=""
         initial={{ opacity: 0 }}
         animate={finale ? { opacity: inside ? 0 : 1 } : leaving ? { opacity: 0, scale: 1.04, filter: 'blur(14px)' } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
         transition={finale ? { duration: 0.12 } : { duration: leaving ? 0.6 : 0.8, ease: EASE_OUT }}
@@ -246,6 +250,7 @@ export function Onboarding({ start = 'hello', onClose, onArrive }: { readonly st
               transition={{ duration: 0.45, ease: EASE_OUT }}
             >
               {step === 'hello' ? <Hello onStart={next} /> : null}
+              {step === 'yourAgents' ? <AgentsStep /> : null}
               {inTour(step) ? <Tour step={step} /> : null}
               {step === 'look' ? <Look /> : null}
               {step === 'terminal' ? <TerminalStep /> : null}

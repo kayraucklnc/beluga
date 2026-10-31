@@ -1,4 +1,5 @@
 import { expect, test, type Page } from './fixtures.js';
+import { openWork } from './helpers.js';
 
 /** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
 
@@ -7,7 +8,7 @@ const main = (page: Page) => page.locator('main');
 
 async function openPlans(page: Page): Promise<void> {
   await page.goto('/');
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  await openWork(page, 'Plans');
   const project = page.getByRole('button', { name: /^Project: / });
   if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
     await project.click();
@@ -145,7 +146,7 @@ test('the plan’s chat shows what was said there when the plan opens, after a r
   await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
   await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch', { timeout: 20_000 });
   await expect(chat).toContainText('drafted the plan in three milestones', { timeout: 15_000 });
-  await expect(chat.getByRole('textbox', { name: 'Message Claude about the plan' })).toHaveValue('');
+  await expect(chat.getByRole('textbox', { name: 'Message your agent about the plan' })).toHaveValue('');
 });
 
 test('a task’s panel keeps its head and Close in reach while its brief scrolls, and nothing runs off its edge (KLD-32)', async ({ page }, info) => {
@@ -323,7 +324,7 @@ test('New Plan with no project known (⌘K) asks which project, and the title fo
   await expect(picker).toBeVisible();
   await expect(sheet.getByRole('heading', { name: `Plan in ${(await picker.textContent())!.trim()}` })).toBeVisible();
   await expect(sheet.getByLabel('Goal')).toBeFocused();
-  await expect(sheet.getByRole('button', { name: 'Plan with Claude' })).toBeDisabled();
+  await expect(sheet.getByRole('button', { name: 'Plan with Your Agent' })).toBeDisabled();
   await page.keyboard.press('Escape');
   await expect(sheet).toHaveCount(0);
 });
@@ -348,7 +349,7 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   await goal.fill('Export orders as CSV for accounting');
   await runs.getByRole('radio', { name: /Step by Step/ }).click();
   await expect(runs.getByRole('radio', { name: /Step by Step/ })).toHaveAttribute('aria-checked', 'true');
-  await sheet.getByRole('button', { name: 'Plan with Claude' }).click();
+  await sheet.getByRole('button', { name: 'Plan with Your Agent' }).click();
   // Its page, then Claude's draft.
   const approve = page.getByRole('button', { name: 'Approve Plan' }).first();
   await expect(approve).toBeVisible({ timeout: 30_000 });
@@ -361,20 +362,22 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Data model and migration' })).toBeVisible({ timeout: 20_000 });
   // Talk it through: Claude changes the draft.
   const chat = page.getByRole('complementary', { name: 'Conversation' });
-  await chat.getByRole('textbox', { name: 'Message Claude about the plan' }).fill('rate limits on the export endpoint');
-  await chat.getByRole('textbox', { name: 'Message Claude about the plan' }).press('Enter');
+  await chat.getByRole('textbox', { name: 'Message your agent about the plan' }).fill('rate limits on the export endpoint');
+  await chat.getByRole('textbox', { name: 'Message your agent about the plan' }).press('Enter');
   await expect(main(page).locator('.react-flow__node').filter({ hasText: /Rate limits on the export endpoint/i })).toBeVisible({ timeout: 20_000 });
   // Not on the board yet.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await openWork(page, 'Tasks');
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await expect(page.getByRole('grid', { name: 'Tasks' })).not.toContainText('Data model and migration');
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  await openWork(page, 'Plans');
   await main(page).getByRole('button', { name: /^Export orders accounting,/ }).click();
   await page.getByRole('button', { name: 'Approve Plan' }).first().click();
   await expect(page.getByRole('button', { name: 'Approve Plan' })).toHaveCount(0);
   // On the board now, each with its plan.
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await openWork(page, 'Tasks');
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  // The plan is an epic in Tasks (its milestones under it, their tasks under them), all tucked away until opened out.
+  await page.getByRole('button', { name: 'Show All' }).click();
   await expect(page.getByRole('grid', { name: 'Tasks' })).toContainText('Data model and migration');
 });
 
@@ -427,7 +430,7 @@ test('Plans opens on the project you’re in, and says so when it has none', asy
   await page.goto('/');
   await sidebar(page).getByText('landing', { exact: true }).first().click();
   await expect(page.getByRole('heading', { level: 1, name: 'landing' })).toBeVisible();
-  await sidebar(page).getByRole('button', { name: /^Plans/ }).first().click();
+  await openWork(page, 'Plans');
   const project = page.getByRole('button', { name: 'Project: landing' });
   await expect(project).toBeVisible();
   await expect(project).toHaveAttribute('title', 'Switch Project');
@@ -463,7 +466,7 @@ test('the header says who the plan waits for; the run mode says what changes; th
   const sheet = page.getByRole('dialog', { name: 'How It Runs' });
   await sheet.getByRole('radio', { name: /Autopilot/ }).click();
   const changes = sheet.getByRole('status', { name: 'What changes' });
-  await expect(changes).toContainText('From now on Claude passes milestones itself');
+  await expect(changes).toContainText('From now on the agent passes milestones itself');
   await expect(changes).toContainText('It stops only if a check fails.');
   const shot = info.outputPath('mode-autopilot.png');
   await sheet.screenshot({ path: shot });
@@ -495,9 +498,9 @@ test('the header says who the plan waits for; the run mode says what changes; th
   await move('Idempotent webhook retries', 'Refunds and launch');
   // Claude checked: now (and only now) it's yours to pass. Once the demo has run a while, KLD-37's
   // watchdog may have found a demo task that stopped again: resuming it outranks passing (progress.ts nextStep).
-  await expect(head).toContainText(/You: (pass “Safe payments” — Claude checked all 3 criteria|resume BOB-\d+: its Claude stopped again)/, { timeout: 20_000 });
+  await expect(head).toContainText(/You: (pass “Safe payments” — The agent checked all 3 criteria|resume BOB-\d+: its agent stopped again)/, { timeout: 20_000 });
   await head.getByRole('button', { name: /Show what happened$/ }).click();
-  await expect(feed).toContainText('Claude is checking its pass criteria');
+  await expect(feed).toContainText('the agent is checking its pass criteria');
   await expect(feed).toContainText('checked “Safe payments”', { timeout: 20_000 });
   const said = await page.evaluate(() => (window as unknown as { __said: string[] }).__said);
   expect(said.filter((t) => t.includes('Waiting for you'))).toEqual([]);

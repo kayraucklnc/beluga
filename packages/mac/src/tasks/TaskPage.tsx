@@ -6,7 +6,13 @@ import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp } from '../lib/beluga.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
+import { Select } from '../components/Select.js';
+import { YOUR_AGENT, useAgentEntries } from '../components/agent-options.js';
+import { SplitButton } from '../components/SplitButton.js';
+import type { AgentRef } from '@beluga/protocol.js';
+import { useTaskStart } from './use-task-start.js';
+import { agentForChoice, choiceForAgent } from '@beluga/ui/agent-choice.js';
 import { usePlanActions } from '../plans/use-plans.js';
 import { ActivityFeed } from './Activity.js';
 import { Brief } from './Brief.js';
@@ -331,15 +337,16 @@ function WorktreeLinks({ issue, ws, live, secondary }: { issue: Issue; ws: Works
 
 /** What to do next: open the worktree doing it (and its pull request), or start one; finished work shows how it ended. */
 function NextStep({ issue }: { issue: Issue }) {
-  const { api, act } = useTaskActions();
   const { ws, live, had } = useTaskWorktree(issue);
   const [starting, setStarting] = useState(false);
   // Its GitHub issue investigated: Fix It (there) is the one main action.
   const fixFirst = useInvestigated(issue);
-  // One click: a new worktree named after it, In Progress, your Claude on it with its brief, and you there (BLG-55).
-  const start = async (): Promise<void> => {
+  const { who, start: startWith, items } = useTaskStart(issue);
+  // One click: a new worktree named after it, In Progress, its agent on it with its brief, and you there (BLG-55).
+  // Start with… (BLG-506): another agent, this start only.
+  const start = async (agent?: AgentRef): Promise<void> => {
     setStarting(true);
-    await act(() => api.start(issue.id, { claude: true }));
+    await startWith(agent);
     setStarting(false);
   };
   if (isFinished(issue.status)) return <Outcome issue={issue} ws={ws} live={live} />;
@@ -353,10 +360,12 @@ function NextStep({ issue }: { issue: Issue }) {
         </>
       ) : (
         <>
-          <Button variant="primary" size="small" icon="play" disabled={starting} onClick={() => void start()}>
-            {starting ? 'Starting…' : 'Start'}
-          </Button>
-          <span className={t.nextInfo}>A new worktree from the latest origin, with Claude working on {issue.key}{issue.brief.goal ? ' from this brief' : ''}</span>
+          <SplitButton label="Start with another agent" disabled={starting} items={items((a) => void start(a))}>
+            <Button variant="primary" size="small" icon="play" disabled={starting} onClick={() => void start()}>
+              {starting ? 'Starting…' : 'Start'}
+            </Button>
+          </SplitButton>
+          <span className={t.nextInfo}>A new worktree from the latest origin, with {who} working on {issue.key}{issue.brief.goal ? ' from this brief' : ''}</span>
         </>
       )}
       <span className={t.grow} />
@@ -474,6 +483,7 @@ function Properties({ issue }: { issue: Issue }) {
           </button>
         </AssigneePicker>
       </Prop>}
+      <AgentProp issue={issue} />
       <Prop label="Labels">
         <div className={t.propLabels}>
           {issue.labels.map((l) => (
@@ -542,6 +552,26 @@ function Properties({ issue }: { issue: Issue }) {
         <span className={t.propStatic}>{ago(issue.updatedAt)}</span>
       </Prop>
     </aside>
+  );
+}
+
+/**
+ * Who works the task (BLG-498): your default agent, or an agent and model of its own, each with its
+ * mark. It takes effect at the next start: a worktree already on it keeps its agent (the toast says so).
+ */
+function AgentProp({ issue }: { issue: Issue }) {
+  const { api, act } = useTaskActions();
+  const { client } = useBeluga();
+  const runtimes = useApp((s) => s.runtimes);
+  const agents = useAgentEntries();
+  const pick = async (v: string): Promise<void> => {
+    const said = await act(() => api.setAgent(issue.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes)));
+    if (typeof said === 'string') toast(client, said, 'success');
+  };
+  return (
+    <Prop label="Agent">
+      <Select label="Agent and model that work this task" size="small" value={issue.agent ? choiceForAgent(issue.agent) : YOUR_AGENT} options={agents} onChange={(v) => void pick(v)} />
+    </Prop>
   );
 }
 

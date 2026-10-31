@@ -1,5 +1,7 @@
-import os from 'node:os';
 import { existsSync } from 'node:fs';
+import { chmod, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { type PtyProcess, type TerminalManager, listShells, scriptShell } from '../terminal/index.js';
 import { type ShellChoice, shellArgs } from '../shared/shells.js';
@@ -23,11 +25,15 @@ import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store, shippedText } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
 import type { ModelChoice, PrConversation, PrThread, PullRequest } from './work-store.js';
+import type { RuntimeStatus } from '../agent/runtime/types.js';
 import { type PrPost, addressCommentsPrompt, postOnPr, prConversation } from '../workspaces/pr-review.js';
 import { type Excerpt, readExcerpt } from '../workspaces/excerpt.js';
 import { openCode } from '../workspaces/open-code.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { Intent } from './intents.js';
+import { agentName } from '../shared/agent-label.js';
+import { type AgentRef, defaultAgentOf } from '../protocol.js';
+import type { RuntimeChoice } from '../shared/agent-runtimes.js';
 import { type GitFixId, type GitSetup, type GitTrouble, explainGitTrouble, httpsRemoteOf, troubleLine } from '../shared/git-trouble.js';
 
 export interface WorkbenchDeps {
@@ -48,6 +54,14 @@ export interface WorkbenchDeps {
   readonly open?: (target: string) => void;
   /** Models your Claude Code offers (asked once). */
   readonly listModels?: () => Promise<readonly ModelChoice[] | undefined>;
+  /** Another runtime on a live conversation hands it off (core/agent-switch.ts, BLG-447); unset: a plain switch. */
+  readonly switchAgent?: (channel: string, agent: AgentRef | undefined) => Promise<unknown>;
+  /** The agent picker's runtimes: which run on this Mac, and why the others don't (BLG-446). */
+  readonly listRuntimes?: () => readonly RuntimeChoice[];
+  /** Whether each runtime that can say so is ready here (Codex: installed, signed in) and its models (BLG-455). */
+  readonly runtimeStatus?: () => Promise<ReadonlyArray<{ readonly id: string } & RuntimeStatus>>;
+  /** How to sign in to a runtime, as a command for Terminal (BLG-507); undefined: it has none. */
+  readonly signInCommand?: (id: string) => Promise<readonly string[] | undefined>;
   /** Look for a pull request (injected in tests). */
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   /** A repository's recent PRs by branch, in one call (injected in tests; without it, with an injected findPr, PRs are looked up one by one). */
@@ -92,6 +106,23 @@ export interface WorkbenchDeps {
   readonly hasClaude?: () => boolean;
 }
 
+/**
+ * The picker's runtimes with what each said about itself: ready (its models), or greyed with why
+ * and what to do. A runtime that lists no models of its own (Claude: they come from Claude Code,
+ * the state's `models`) keeps whatever the list had.
+ */
+export function withRuntimeStatus(runtimes: readonly RuntimeChoice[], found: ReadonlyArray<{ readonly id: string } & RuntimeStatus>): RuntimeChoice[] {
+  return runtimes.map((r) => {
+    const st = found.find((f) => f.id === r.id);
+    if (!st) return r;
+    const models = st.models.length ? st.models : r.models;
+    if (st.state === 'ready') return { id: r.id, label: r.label, available: true, ...(models ? { models } : {}), state: 'ready' };
+    return { id: r.id, label: r.label, available: false, why: [st.state === 'missing' ? `${r.label} isn't installed on this Mac` : `${r.label} isn't signed in`, st.fix].filter(Boolean).join(': '), state: st.state, ...(st.fix ? { fix: st.fix } : {}) };
+  });
+}
+
+/** An agent that isn't ready yet (Codex not signed in) is asked about again this often. */
+const RUNTIME_RECHECK_MS = 60_000;
 const DISK_EVERY_MS = 5 * 60_000;
 /** How often to see which PRs are due a look (cheap: no gh unless one is). */
 const PR_TICK_MS = 5_000;
@@ -203,8 +234,16 @@ const envText = (vars: Readonly<Record<string, string>>): string => JSON.stringi
  * scripts, pull requests, models, how much space and usage it takes, search, templates.
  */
 export class Workbench {
+  /** This Mac's agent by name ("Claude", "Codex"). */
+  private agent(): string {
+    return agentName(defaultAgentOf(this.deps.store.getState().self));
+  }
   private diskTimer?: NodeJS.Timeout;
   private prTimer?: NodeJS.Timeout;
+  private runtimeTimer?: NodeJS.Timeout;
+  /** What the runtimes last said about themselves, kept so a new list (a local endpoint answering) doesn't wipe it. */
+  private runtimeFound: ReadonlyArray<{ readonly id: string } & RuntimeStatus> = [];
+  private runtimeCheck?: Promise<void>;
   private readonly watchers = new Map<string, () => void>();
   /**
    * What each terminal started with: where (for its variables now) and the variables as text.
@@ -260,7 +299,10 @@ export class Workbench {
       this.deps.store.dispatch({ type: 'gh', ok });
       if (ok) void this.refreshPrs();
     });
+    const runtimes = this.deps.listRuntimes?.();
+    if (runtimes) this.deps.store.dispatch({ type: 'runtimes', runtimes });
     void this.deps.listModels?.().then((models) => models && this.deps.store.dispatch({ type: 'models', models }), () => undefined);
+    void this.checkRuntimes();
     setTimeout(() => void this.measureDisk(), 3000).unref();
     this.diskTimer = setInterval(() => void this.measureDisk(), DISK_EVERY_MS);
     this.diskTimer.unref();
@@ -271,6 +313,7 @@ export class Workbench {
   stop(): void {
     clearInterval(this.diskTimer);
     clearInterval(this.prTimer);
+    clearTimeout(this.runtimeTimer);
     for (const off of this.watchers.values()) off();
     this.deps.terminals?.closeAll();
   }
@@ -289,6 +332,19 @@ export class Workbench {
     }
     this.deps.setPrefs({ model: value || undefined });
     this.deps.toast(`New conversations use ${label}`, 'success');
+  }
+
+  /** Pick the agent for one conversation (undefined: your default); every run from there uses it. */
+  setAgent(channel: string, agent: AgentRef | undefined): boolean {
+    const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+    if (!id || !this.manager.find(id)) return false;
+    // Another runtime on a live conversation is a handoff (the old agent's note seeds the new one), never a silent swap.
+    if (this.deps.switchAgent) void this.deps.switchAgent(channel, agent).finally(() => void this.deps.controller.refresh());
+    else {
+      this.manager.setAgent(id, agent);
+      void this.deps.controller.refresh();
+    }
+    return true;
   }
 
   // ----------------------------------------------------------- pull requests
@@ -315,7 +371,7 @@ export class Workbench {
     if (!this.deps.store.getState().prs[ws.id]) this.prAsked.add(ws.id);
     this.deps.controller.open(ws.id);
     this.deps.askClaude(prompt, `ws:${ws.id}`);
-    this.deps.toast('Claude is preparing the pull request…');
+    this.deps.toast(`${this.agent()} is preparing the pull request…`);
   }
 
   /**
@@ -400,7 +456,7 @@ export class Workbench {
       if (!result.ok) {
         if (result.reason === 'moved') return warn(`Someone pushed to ${base} just now: nothing was pushed, try again`);
         const files = result.files.slice(0, 3).join(', ') + (result.files.length > 3 ? '…' : '');
-        return warn(`${branch} conflicts with origin/${base} (${files}): nothing was pushed. Create a PR, or ask Claude to bring ${base} in first`);
+        return warn(`${branch} conflicts with origin/${base} (${files}): nothing was pushed. Create a PR, or ask your agent to bring ${base} in first`);
       }
       void this.deps.controller.refresh();
       void this.refreshPrs(id);
@@ -564,7 +620,7 @@ export class Workbench {
     if (!ws || !pr) return;
     this.deps.controller.open(id);
     this.deps.askClaude(resolvePrConflictsPrompt(pr, this.prBase(ws)), `ws:${id}`);
-    this.deps.toast(`Claude is resolving PR #${pr.number}’s conflicts…`);
+    this.deps.toast(`${this.agent()} is resolving PR #${pr.number}’s conflicts…`);
   }
 
   /**
@@ -603,7 +659,7 @@ export class Workbench {
     await this.deps.controller.refresh();
     this.deps.controller.open(id);
     this.deps.askClaude(catchUpPrompt(pr, base), `ws:${id}`);
-    this.deps.toast(`${ws.branch} has work since PR #${pr.number}: Claude is bringing in the latest ${base}`);
+    this.deps.toast(`${ws.branch} has work since PR #${pr.number}: ${this.agent()} is bringing in the latest ${base}`);
   }
 
   fixChecks(id: string): void {
@@ -1161,7 +1217,7 @@ export class Workbench {
     const byClaude = setup.source === 'claude';
     if (auto && (fromRepo || byClaude) && !this.manager.isScriptApproved(project.id, command)) {
       if (!this.deps.confirm) return;
-      const [title, from] = byClaude ? [`Claude worked out ${project.name}'s setup for new worktrees`, 'Claude read it from the repository'] : [`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, 'This comes from the repository'];
+      const [title, from] = byClaude ? [`${this.agent()} worked out ${project.name}'s setup for new worktrees`, `${this.agent()} read it from the repository`] : [`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, 'This comes from the repository'];
       // Worktrees made together share one question.
       const key = `${project.id}\n${command}`;
       let asking = this.askingSetup.get(key);
@@ -1373,7 +1429,7 @@ export class Workbench {
       if (looking && ws) {
         void looking.then(() => {
           if (this.manager.find(wsId) && project && this.manager.scripts(project.id).run) this.run(wsId);
-          else this.deps.toast("Claude couldn't find a way to run this project. Set one in its ⋯ menu (Setup and run commands)", 'warn');
+          else this.deps.toast(`${this.agent()} couldn't find a way to run this project. Set one in its ⋯ menu (Setup and run commands)`, 'warn');
         });
         return undefined;
       }
@@ -1463,9 +1519,9 @@ export class Workbench {
     const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
     if (!id) return;
     try {
-      const u = JSON.parse(json) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number; session?: string };
+      const u = JSON.parse(json) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number; session?: string; free?: boolean; tps?: number };
       const num = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : 0);
-      this.manager.addUsage(id, { input: num(u.input), output: num(u.output), cacheRead: num(u.cacheRead), cacheWrite: num(u.cacheWrite), cost: num(u.cost), session: typeof u.session === 'string' ? u.session : undefined });
+      this.manager.addUsage(id, { input: num(u.input), output: num(u.output), cacheRead: num(u.cacheRead), cacheWrite: num(u.cacheWrite), cost: num(u.cost), session: typeof u.session === 'string' ? u.session : undefined, ...(u.free === true ? { free: true, ...(num(u.tps) ? { tps: num(u.tps) } : {}) } : {}) });
       void this.deps.controller.refresh();
     } catch {
       // Not usage we understand.
@@ -1473,6 +1529,63 @@ export class Workbench {
   }
 
   /** How much disk each worktree and chat folder takes. */
+  /**
+   * The picker's runtimes made true: one that can say whether it's ready here (Codex: installed,
+   * signed in) is greyed with what to do until it is, then lists its models. Asked again a while
+   * later until every one is (you may sign in meanwhile).
+   */
+  private checkRuntimes(): Promise<void> {
+    // One look at a time (onboarding, Settings and the timer may ask together: Codex's costs a process).
+    this.runtimeCheck ??= this.lookAtRuntimes().finally(() => (this.runtimeCheck = undefined));
+    return this.runtimeCheck;
+  }
+
+  private async lookAtRuntimes(): Promise<void> {
+    const found = await this.deps.runtimeStatus?.().catch(() => undefined);
+    if (!found?.length) return;
+    // Merged over what was found before: a runtime that didn't answer this time keeps its last word.
+    this.runtimeFound = [...found, ...this.runtimeFound.filter((old) => !found.some((f) => f.id === old.id))];
+    this.runtimesChanged();
+    clearTimeout(this.runtimeTimer);
+    if (found.some((r) => r.state !== 'ready')) {
+      this.runtimeTimer = setTimeout(() => void this.checkRuntimes(), RUNTIME_RECHECK_MS);
+      this.runtimeTimer.unref();
+    }
+  }
+
+  /**
+   * The runtimes' list changed (a local endpoint started or stopped answering): listed again, with
+   * what each said about itself last kept, so Codex doesn't lose its sign-in state and models.
+   */
+  runtimesChanged(): void {
+    const listed = this.deps.listRuntimes?.() ?? this.deps.store.getState().runtimes;
+    this.deps.store.dispatch({ type: 'runtimes', runtimes: withRuntimeStatus(listed, this.runtimeFound) });
+  }
+
+  /** Check Again (onboarding, Settings › Agent): every runtime asked now → the runtimes as the pickers have them. */
+  async checkAgents(): Promise<readonly RuntimeChoice[]> {
+    await this.checkRuntimes();
+    return this.deps.store.getState().runtimes;
+  }
+
+  /**
+   * Sign in to a runtime (Claude Code, Codex): its own sign-in, in Terminal, since it asks there
+   * (a browser page, then back). A `.command` file Terminal opens; Check Again sees the result.
+   */
+  async agentSignIn(id: string): Promise<boolean> {
+    const command = await this.deps.signInCommand?.(id);
+    if (!command || !this.deps.open) {
+      this.deps.toast('Signing in from here isn’t available. Run its sign-in in Terminal.', 'warn');
+      return false;
+    }
+    const file = path.join(os.tmpdir(), `beluga-sign-in-${id.replace(/[^\w-]/g, '')}.command`);
+    const quote = (arg: string): string => (/^[\w./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`);
+    await writeFile(file, `#!/bin/sh\nclear\n${command.map(quote).join(' ')}\necho\necho 'Done? Go back to Beluga and press Check Again.'\n`, { mode: 0o700 });
+    await chmod(file, 0o700);
+    this.deps.open(file);
+    return true;
+  }
+
   async measureDisk(): Promise<void> {
     const dirs = this.manager.list
       .flatMap((p) => p.workspaces)
@@ -1541,7 +1654,7 @@ export class Workbench {
     const name = at > 0 ? text.slice(0, at).trim() : text.trim().split(/\s+/).slice(0, 4).join(' ');
     const prompt = at > 0 ? text.slice(at + 1).trim() : text.trim();
     if (!name || !prompt) {
-      this.deps.toast('Usage: /template save <name>: <what Claude should do>', 'warn');
+      this.deps.toast('Usage: /template save <name>: <what the agent should do>', 'warn');
       return;
     }
     this.deps.store.dispatch({ type: 'templates', templates: addTemplate(name, prompt, plan) });

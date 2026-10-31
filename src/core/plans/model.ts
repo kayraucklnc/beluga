@@ -1,3 +1,4 @@
+import type { AgentRef } from '../../protocol.js';
 import type { Actor, IssuePr, Priority } from '../board/model.js';
 
 /**
@@ -17,9 +18,9 @@ export type Autonomy = (typeof AUTONOMIES)[number];
  * `summary` the one sentence a choice of it shows, `hint` the longer how-it-runs.
  */
 export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly summary: string; readonly hint: string }>> = {
-  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Claude lines up what can start; you start each task' },
+  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Your agent lines up what can start; you start each task' },
   gated: { label: 'Check-ins', summary: 'Runs, then waits for you at each milestone', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
-  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
+  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: your agent checks each one; it stops only when something fails' },
 };
 
 /** When a plan runs its e2e and full test suites: once per milestone at its check, or only at the end. */
@@ -256,6 +257,8 @@ export interface Plan {
   readonly maxParallel: number;
   /** When the e2e and full test suites run (tasks only run typecheck and the tests they touched). */
   readonly testsAt: TestsAt;
+  /** The agent (and model) its milestones and tasks are worked on by (BLG-497); none: your default. A task's own agent beats it. */
+  readonly agent?: AgentRef;
   readonly paused: boolean;
   readonly runs: Readonly<Record<string, MilestoneRun>>;
   /** Tasks whose start is being combined from several branches (by plan task id). */

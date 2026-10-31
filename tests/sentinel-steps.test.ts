@@ -131,7 +131,7 @@ describe('Open a pull request', () => {
     const s = setup({ github: fakeGitHub().github });
     const run = s.sentinels.start(s.sentinels.create({ name: 'PR', projectId: 'api', access: 'work', steps: [{ kind: 'pr' }] }).id, 'you');
     await until(ended(s, run.id));
-    expect(s.sentinels.runGet(run.id).run.why).toBe('there’s no worktree to open a pull request from: an “Ask Claude” step in a new worktree comes first');
+    expect(s.sentinels.runGet(run.id).run.why).toBe('there’s no worktree to open a pull request from: an “Ask your agent” step in a new worktree comes first');
   });
 
   it('access: a pull request needs Work, a merge Ship, when added and when it runs', async () => {
@@ -181,7 +181,7 @@ describe('Merge if acceptable', () => {
     // Three looks while the checks ran, and one more right before merging.
     expect(gh.looked()).toBe(4);
     expect(r).toMatchObject({ state: 'done', headline: 'Merged #7' });
-    expect(r.steps[2]).toMatchObject({ state: 'done', why: 'All 3 checks passed · Claude’s review: ship, a two-line fix with a test', output: 'Merged #7 (squashed); its worktree is archived' });
+    expect(r.steps[2]).toMatchObject({ state: 'done', why: 'All 3 checks passed · The agent’s review: ship, a two-line fix with a test', output: 'Merged #7 (squashed); its worktree is archived' });
     expect(gh.merged).toEqual([{ workspaceId: 'w1', number: 7, method: 'squash', head: HEAD }]);
     expect(s.archived).toEqual(['w1']);
     expect(s.notices.some((n) => n.kind === 'needsYou')).toBe(false);
@@ -194,7 +194,7 @@ describe('Merge if acceptable', () => {
     await until(waiting(s, run.id));
     const r = s.sentinels.runGet(run.id).run;
     expect(r).toMatchObject({ headline: 'Merge #7?', pr: { number: 7 } });
-    expect(r.steps[2]).toMatchObject({ state: 'running', why: 'All 3 checks passed · Claude’s review: ship, a two-line fix with a test' });
+    expect(r.steps[2]).toMatchObject({ state: 'running', why: 'All 3 checks passed · The agent’s review: ship, a two-line fix with a test' });
     expect(s.notices.find((n: NoticeEvent) => n.kind === 'needsYou')).toMatchObject({ tag: 'sentinel', title: 'Fix it: merge #7?', key: `${run.id}:merge` });
     expect(s.store.getState().sentinel.live[run.id]).toMatchObject({ state: 'needs-you' });
     expect(gh.merged).toEqual([]);
@@ -211,7 +211,7 @@ describe('Merge if acceptable', () => {
     const s = setup({ github: gh.github, reply: () => 'Fixed it', changes: true });
     const run = s.sentinels.start(s.sentinels.create(shipping({ approval: false })).id, 'you');
     await until(waiting(s, run.id));
-    expect(s.sentinels.runGet(run.id).run.headline).toBe('#7: Claude says hold. Merge it anyway?');
+    expect(s.sentinels.runGet(run.id).run.headline).toBe('#7: the agent says hold. Merge it anyway?');
     await s.sentinels.decide(run.id, 'skip');
     await until(ended(s, run.id));
     expect(s.sentinels.runGet(run.id).run).toMatchObject({ state: 'stopped', headline: 'Not now: #7 stays open' });
@@ -243,9 +243,9 @@ describe('Merge if acceptable', () => {
     const asked = s.sentinels.runGet(run.id).run;
     expect(asked).toMatchObject({ prHead: HEAD });
     expect(asked.waitingSince).toBeTypeOf('number');
-    await expect(s.sentinels.decide(run.id, 'merge')).rejects.toThrow('the branch changed since Claude reviewed it; run it again');
+    await expect(s.sentinels.decide(run.id, 'merge')).rejects.toThrow('the branch changed since the agent reviewed it; run it again');
     await until(ended(s, run.id));
-    expect(s.sentinels.runGet(run.id).run).toMatchObject({ state: 'failed', why: 'the branch changed since Claude reviewed it; run it again' });
+    expect(s.sentinels.runGet(run.id).run).toMatchObject({ state: 'failed', why: 'the branch changed since the agent reviewed it; run it again' });
     expect(gh.merged).toEqual([]);
   });
 
@@ -255,8 +255,8 @@ describe('Merge if acceptable', () => {
     const run = s.sentinels.start(s.sentinels.create(shipping({ approval: false })).id, 'you');
     await until(waiting(s, run.id));
     const r = s.sentinels.runGet(run.id).run;
-    expect(r.headline).toBe('#7: Claude says hold. Merge it anyway?');
-    expect(r.steps[2]!.why).toBe('All 3 checks passed · Claude reviewed bbbbbbb, not #7’s head a1b2c3d');
+    expect(r.headline).toBe('#7: the agent says hold. Merge it anyway?');
+    expect(r.steps[2]!.why).toBe('All 3 checks passed · The agent reviewed bbbbbbb, not #7’s head a1b2c3d');
     expect(gh.merged).toEqual([]);
     // You said Merge: it merges what the checks passed on, pinned to it.
     await s.sentinels.decide(run.id, 'merge');
@@ -308,8 +308,8 @@ describe('Merge after Beluga was closed (decide on a run nobody runs)', () => {
     const moved = fakeGitHub({ looks: [look({ head: 'c'.repeat(40) })] });
     const s1 = setup({ github: moved.github });
     const one = closedUnder(s1);
-    await expect(s1.sentinels.decide(one.run.id, 'merge')).rejects.toThrow('The branch changed since Claude reviewed it; run it again');
-    expect(s1.sentinels.runGet(one.run.id).run).toMatchObject({ state: 'failed', why: 'the branch changed since Claude reviewed it; run it again' });
+    await expect(s1.sentinels.decide(one.run.id, 'merge')).rejects.toThrow('The branch changed since the agent reviewed it; run it again');
+    expect(s1.sentinels.runGet(one.run.id).run).toMatchObject({ state: 'failed', why: 'the branch changed since the agent reviewed it; run it again' });
     expect(s1.sentinels.need(one.made.id).failures).toBe(1);
     expect(moved.merged).toEqual([]);
 

@@ -1,5 +1,5 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import type { Complete } from './runtime/types.js';
 import { LOOK_TOOLS, lookVerdict } from './task-drafter.js';
 
 /**
@@ -96,32 +96,23 @@ const SYSTEM = [
 ].join('\n');
 
 /** Ask a small model to review a pull request. Undefined on any trouble (the gate then asks you, with a hold). */
-export async function reviewPr(input: PrReviewInput, opts: { claudePath?: string; model?: string; timeoutMs?: number } = {}): Promise<PrReview | undefined> {
+export async function reviewPr(input: PrReviewInput, opts: { complete: Complete; model?: string; timeoutMs?: number }): Promise<PrReview | undefined> {
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), opts.timeoutMs ?? REVIEW_TIMEOUT_MS);
   timer.unref();
-  const verdict = (permissionDecision: 'allow' | 'deny') => ({ hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: permissionDecision === 'allow' ? 'Reviewing the change.' : 'Only reading the code and git diff are allowed here.' } });
+  const verdict = (decision: 'allow' | 'deny') => ({ allow: decision === 'allow', reason: decision === 'allow' ? 'Reviewing the change.' : 'Only reading the code and git diff are allowed here.' });
   try {
-    const q = query({
+    const said = await opts.complete({
       prompt: reviewPrompt(input),
-      options: {
-        cwd: input.dir,
-        model: opts.model ?? 'haiku',
-        tools: [...LOOK_TOOLS, 'Bash'],
-        maxTurns: REVIEW_TURNS,
-        settingSources: [],
-        persistSession: false,
-        abortController,
-        systemPrompt: SYSTEM,
-        hooks: {
-          PreToolUse: [{ hooks: [async (h) => (h.hook_event_name === 'PreToolUse' ? verdict(reviewVerdict(input.dir, h.tool_name, (h.tool_input ?? {}) as Record<string, unknown>)) : {})] }],
-        },
-        ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
-      },
+      cwd: input.dir,
+      model: opts.model ?? 'haiku',
+      tools: [...LOOK_TOOLS, 'Bash'],
+      vetTool: (tool, toolInput) => verdict(reviewVerdict(input.dir, tool, toolInput)),
+      maxTurns: REVIEW_TURNS,
+      signal: abortController.signal,
+      system: SYSTEM,
     });
-    for await (const msg of q) {
-      if (msg.type === 'result' && msg.subtype === 'success') return parseReview(msg.result);
-    }
+    return parseReview(said);
   } catch {
     // No review: the gate asks you, with a hold.
   } finally {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentRef } from '../protocol.js';
 import { LABEL_COLORS, LABEL_ICONS } from '../core/board/labels.js';
 import { BRIEF_SECTIONS, ISSUE_STATUSES, MAX_PROJECT_CONTEXT, PRIORITIES, SYNC_PROVIDERS, personOf } from '../core/board/model.js';
 
@@ -44,6 +45,8 @@ export const BOARD_API = {
         parent: ref.optional(),
         blockedBy: z.array(ref).max(20).optional(),
         goal: z.string().max(20_000).optional(),
+        // The agent (and model) that works it when it starts (BLG-497); none: your default.
+        agent: AgentRef.optional(),
         // Only you see it (BLG-501). Left out: private when the description asks for it ("just for me").
         private: z.boolean().optional(),
       }).refine((t) => Boolean(t.title?.trim() || t.describe?.trim()), 'A task needs a title or a description'),
@@ -79,8 +82,12 @@ export const BOARD_API = {
   'board.addProof': { args: z.tuple([ref, z.object({ kind: z.enum(['image', 'url', 'file', 'graph', 'text']), title: z.string().min(1).max(120), path: z.string().min(1).max(4096).optional(), url: z.string().url().max(2000).optional(), body: z.string().max(60_000).optional(), context: z.boolean().optional() })]) },
   'board.removeProof': { args: z.tuple([ref, z.string().min(1).max(40)]) },
   'board.remove': { args: z.tuple([ref]) },
-  // Start a worktree for a task (and open it); with claude, your Claude starts on it there → the workspace id.
-  'board.start': { args: z.tuple([ref, z.object({ claude: z.boolean().optional(), base: z.string().min(1).max(200).optional() }).optional()]) },
+  // Who works a task (BLG-498): an agent (and model), or null for your default. It takes effect at the
+  // task's next start; a worktree already working it keeps its agent → what happened, in words.
+  'board.setAgent': { args: z.tuple([ref, AgentRef.nullish()]) },
+  // Start a worktree for a task (and open it); with claude, your agent starts on it there → the workspace id.
+  // `agent`: this start only, instead of the task's own agent (or your default).
+  'board.start': { args: z.tuple([ref, z.object({ claude: z.boolean().optional(), base: z.string().min(1).max(200).optional(), agent: AgentRef.optional() }).optional()]) },
   // The Archive: one finished task (and its finished sub-tasks), or every Done one (in a project); back out; deleted for good.
   'board.archive': { args: z.tuple([ref]) },
   'board.archiveDone': { args: z.tuple([projectId.optional()]) },

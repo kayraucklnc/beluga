@@ -38,7 +38,7 @@ async function openGuide(page: Page): Promise<void> {
   await openWorkspace(page);
   const region = await preview(page, 'docs', 'GUIDE.md');
   await expect(region.getByRole('heading', { name: 'bob-api guide' })).toBeVisible();
-  await region.getByRole('button', { name: 'Open in full' }).click();
+  await region.getByRole('button', { name: 'Open in full', exact: true }).click();
   await expect(center(page).getByRole('region', { name: 'GUIDE.md' })).toBeVisible();
 }
 
@@ -188,10 +188,11 @@ test('a relative .md link opens in the reader at its section; other files open i
 test('mermaid draws its diagrams, KaTeX typesets math, and images next to the file show', async ({ page }) => {
   await openGuide(page);
   const doc = center(page).locator('[data-markdown-doc]');
-  const diagrams = doc.getByRole('img', { name: 'Diagram' });
+  // Mermaid is drawn as Beluga's own interactive graph (BLG-87): pan, zoom, Open in Full Window.
+  const diagrams = doc.getByRole('application');
   await expect(diagrams).toHaveCount(2);
-  await expect(diagrams.first().locator('svg')).toBeAttached({ timeout: 20_000 });
-  await expect(diagrams.nth(1).locator('svg')).toBeAttached({ timeout: 20_000 });
+  await expect(diagrams.first().locator('svg').first()).toBeAttached({ timeout: 20_000 });
+  await expect(diagrams.nth(1).locator('svg').first()).toBeAttached({ timeout: 20_000 });
   await expect(diagrams.first()).toContainText('charge.succeeded');
   // No script from a diagram ran, and nothing it left behind is in the page.
   await expect(page.locator('body > [id^="dbeluga-mermaid"], body > [id^="beluga-mermaid"]')).toHaveCount(0);
@@ -206,7 +207,7 @@ test('mermaid draws its diagrams, KaTeX typesets math, and images next to the fi
 test('a long code file full size: line numbers, scrolling, wrap, and ⌘F', async ({ page }) => {
   await openWorkspace(page);
   const region = await preview(page, 'src', 'payments.ts');
-  await region.getByRole('button', { name: 'Open in full' }).click();
+  await region.getByRole('button', { name: 'Open in full', exact: true }).click();
   const file = center(page).getByRole('region', { name: 'payments.ts' });
   await expect(file.locator('[data-n="120"]')).toBeAttached();
   const pageEl = reading(page);
@@ -238,7 +239,7 @@ test('a diff full size: the panel steps aside, with no second copy of it', async
   await panel(page).getByRole('tab', { name: 'Changes', exact: true }).click();
   await panel(page).getByRole('option', { name: /server\.ts/ }).click();
   const diff = panel(page).getByRole('region', { name: 'Changes in server.ts' });
-  await diff.getByRole('button', { name: 'Open in full' }).click();
+  await diff.getByRole('button', { name: 'Open in full', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Back to Chat' })).toBeVisible();
   await expect(aside(page)).toHaveAttribute('aria-hidden', 'true');
   await page.keyboard.press('Meta+Alt+0');

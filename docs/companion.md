@@ -1,7 +1,7 @@
 # Beluga for phones (the companion)
 
 A phone app for one person: you. It shows what your Mac's Beluga is doing and lets you answer,
-ask and chat from it. It has no daemon, no Claude and no projects of its own: every screen is a
+ask and chat from it. It has no daemon, no agent and no projects of its own: every screen is a
 view of your Mac, and every button is a call to your Mac. Android first; iOS from the same code.
 
 Code: `src/companion/` (the Mac side: pairing, the device link, views, what the phone may call),
@@ -12,15 +12,15 @@ two in step.
 
 | On the phone | Not on the phone |
 |---|---|
-| What needs you: approvals, Claude's questions, friends' requests, plan decisions, with a push notification | Code in conversations: no diffs, no code blocks in answers (they show as a "code · 24 lines" chip) |
-| Live work: conversations, Claude's answers, sub-agents and their steps | Changes, review, commit; git writes beyond Merge |
+| What needs you: approvals, your agent's questions, friends' requests, plan decisions, with a push notification | Code in conversations: no diffs, no code blocks in answers (they show as a "code · 24 lines" chip) |
+| Live work: conversations, your agent's answers, sub-agents and their steps | Changes, review, commit; git writes beyond Merge |
 | Outputs: screenshots, images, logs, test output, reports, PDFs (anything `isArtifact` calls an output) | Editing any file, from anywhere |
 | A worktree's **Files**, read-only: browse, search by name, read source with colours (BLG-42) | Secrets (`isSecretPath`), whatever the screen |
 | A worktree's **Terminal**, interactive: the same session as the Mac's terminal dock, both typing (BLG-42) | The Mac's other shells, or files outside a worktree |
 | Plans as they're designed and run: milestones, tasks, decisions | Editing plans' structure (approve, decide and comment only) |
 | Asking your Mac to do anything (Your Mac, a new worktree, plan or question in a project, or a message in a conversation), and getting the answer, images and files back | Settings beyond the phone's own (notifications, sign out) |
-| Chats with friends (DMs, channels, files, Ask Claude); asking a friend's Claude (`ask_person`) | Hosting rooms, invites |
-| Your Claude allowance (5-hour and weekly windows), and your friends' | Billing |
+| Chats with friends (DMs, channels, files, Ask your agent); asking a friend's agent (`ask_person`) | Hosting rooms, invites |
+| Your Claude plan allowance (5-hour and weekly windows), and your friends' | Billing |
 
 Text is never blocked: a `.log`, `.txt`, `.json`, `.md`, `.csv` an agent wrote or a test produced
 opens in the text viewer. In a conversation's outputs, source code is held back, with the same rule the Mac's Outputs tab
@@ -151,10 +151,10 @@ already cut down for the phone (code stripped, steps in words, paths as opaque r
   the chats and worktrees you started. A project's main checkout has no conversation of its own
   (BLG-70): one from before became an ordinary chat in its project, listed like any other, and
   `conv:ws:<main>` isn't a conversation the phone can send to. Your Mac isn't a project either.
-- `conv:<channel>`: one conversation (`conv:mac:assistant` is Your Mac, 1.5): turns (your messages, Claude's answers), what a running turn
+- `conv:<channel>`: one conversation (`conv:mac:assistant` is Your Mac, 1.5): turns (your messages, your agent's answers), what a running turn
   is doing now (`live`: thinking, writing, the step with its tool, time and count) and its steps in
   words with their tools (`trail`), sub-agents (title, status, steps, their own live step, kind,
-  outputs), everything its worktree made (`outputs`: scratch files, reports, its Claude's and
+  outputs), everything its worktree made (`outputs`: scratch files, reports, its agent's and
   sub-agents' outputs, newest first), your queued messages (`queue`), where a merge started from the
   phone stands (`merge`), its pending question or approval.
 - `plans` and `plan:<id>`: milestones, tasks and their status, decisions waiting. Since 1.5 a plan
@@ -167,15 +167,15 @@ already cut down for the phone (code stripped, steps in words, paths as opaque r
   as on the Mac: `task:BLG-12` in inline code, a bare `BLG-12` the board has, `@BLG-12`, read by
   the Mac's own `linkTaskKeys` (src/shared/task-refs.ts). An older Mac leaves it out.
 
-**Drawn blocks (1.3).** What Claude drew for the screen in an answer (a `beluga-view`: table,
+**Drawn blocks (1.3).** What your agent drew for the screen in an answer (a `beluga-view`: table,
 chart, stats, code, colors; a `beluga-graph`; `beluga-tasks`) goes along with its code chip entry
 (`code[n].block`, its JSON as written). The phone reads it with the Mac's own parsers and models
 (`src/shared/view-spec.ts`, `graph-spec.ts`, `src/shared/render/`) and draws it natively. A view's
 source never runs on the phone: `companion.viewFetch` names the view (conversation, turn, block) and
-the Mac runs its source as `view.fetch` does for the window, only for your own Claude's answers and
+the Mac runs its source as `view.fetch` does for the window, only for your own agent's answers and
 only sources the view names. Any other code still never leaves the Mac.
 
-**Tables written as text (BLG-71).** Claude often draws a table as text: box characters
+**Tables written as text (BLG-71).** The agent often draws a table as text: box characters
 (`┌─┬─┐ │ ├─┼─┤`), a `+---+---+` grid, pipes over a rule, or columns lined up over dashes. The Mac
 reads them (`src/shared/render/text-table.ts`, in `stripCode`), in the prose or as a fenced block
 that is only a table, and sends each as a table view block (the spec Markdown tables make,
@@ -206,13 +206,13 @@ topic it doesn't know. 1.7 brought a worktree's Files and Terminal (`SINCE.files
 1.8 brought a branch's every step from the phone (`SINCE.branchSteps`): the band at the top of a
 worktree's conversation shows its state (Merged #7, Conflicts…), the step it needs next as a button
 and the rest under Other Steps, the very steps of the Mac's toolbar (`BranchView.steps`), done with
-`companion.branchStep`. Steps Claude does, and the ones that can't be undone, ask first; Merge into
+`companion.branchStep`. Steps the agent does, and the ones that can't be undone, ask first; Merge into
 the main folder keeps its sheet, and Open PR opens GitHub. That band is the one place for them: the
 conversation's ••• doesn't repeat Merge. An older Mac's band only says the next step.
 1.10 (BLG-110) brought a sub-agent opened on the phone (`SINCE.subAgent`): `companion.subAgent(topic,
-turn, id)` → `SubAgentDetailView`, its whole activity in words (up to 200 steps, from your Claude's
+turn, id)` → `SubAgentDetailView`, its whole activity in words (up to 200 steps, from your agent's
 step records of the turn, else the transcript Claude Code keeps of it) and, once it ended, the report
-it gave back, through `stripCode` like any answer of Claude's (never its prompt, its tools' input or
+it gave back, through `stripCode` like any answer of the agent's (never its prompt, its tools' input or
 output, or a file). A sub-agent Claude Code still sees working stays `running` in the view though its
 turn ended (one left working in the background). An older Mac's sheet shows the view's steps.
 1.21 (BLG-237) brought Sentinel (`SINCE.sentinel`, docs/sentinel.md): `sentinels` (every sentinel,
@@ -233,7 +233,7 @@ draws them; a kept array comes with its points' `labels`) and `output` (a step's
 Markdown without its code, or JSON for a tree or a table), a tile's real size (`span`, `tall`;
 `width` stays 1 to 3), the `draft` state, and in `sentinels` the Sentinel chat's open conversation
 (`chat`), a `conv:sentinel-chat:<id>` topic the phone writes and answers in as any conversation. A
-delete Claude asks for there is an `approval` like any other.
+delete the agent asks for there is an `approval` like any other.
 1.24 (BLG-322) brought New Task from one message (`SINCE.severalTasks`): `companion.draftTask`
 with `several` drafts every task the words ask for (`more`, under the first when `epic`), each with
 the teammate it names (`for`); `companion.addTask` with them adds them all and answers their keys
@@ -262,8 +262,14 @@ refs, so its cells stay plain text and Kept data isn't shown.
 Delete it (yours: for your friend too) or Edit your own (`network.messages.delete`, `network.messages.edit`;
 only one whose words reach the phone whole, `ChatMessageView.editable`), and Clear chat from the
 chat's ••• (`network.clear`, on the Mac only: your friend keeps theirs). An older Mac offers none of them.
+1.31 (BLG-500): boards and repos are many to many. `TasksView.projects` are boards (a repo's own, or one
+covering several), a task on a board of several says which repo it runs in (`TaskSummary.repo`), and
+`companion.draftTask` / `addTask` take a board's id too.
+1.32 (BLG-446) gives the phone the composer's agent picker: a conversation's ••• › Agent opens runtimes as
+groups with their models (`ConvView.agent`), your default agent first, one your Mac doesn't run greyed with
+what's missing. A model of the same runtime is `workbench.setModel`; another runtime, `workbench.setAgent`.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
-- `people`: friends, presence, their usage and what they let your Claude do.
+- `people`: friends, presence, their usage and what they let your agent do.
 
 A view is sent whole when it changes (by a hash), at most every 500 ms per topic: whole views are
 simpler than patches and can't drift. A conversation view carries its last 40 turns; older ones come
@@ -286,13 +292,13 @@ through `companion.files.*` and `companion.terminals` / `termOpen` / `termClose`
 - `companion.ask {target: {project} | {topic}, text, files?}` → `{topic}`: a question in a project
   (what New Chat does on the Mac, then `session.submit`) or a message in a conversation you can
   write in (Your Mac too: `{topic: 'conv:mac:assistant'}`). `files` are `up:` refs from `put` (25 MB a file, 10 a message): pictures go where
-  pasted images go (`attachments.ts`, made smaller if they're too big for Claude), other files are
+  pasted images go (`attachments.ts`, made smaller if they're too big for the agent), other files are
   named by their path in `~/.beluga/attachments/phone`. A ref works only for the phone that sent it.
 - `companion.post {conversation, text, files?, ask?}`: a friends' chat message, files taken in as
   chat files.
-- `companion.askPerson {peerId, text, needs?, project?}` → `{topic, task}`: a friend's Claude, as
+- `companion.askPerson {peerId, text, needs?, project?}` → `{topic, task}`: a friend's agent, as
   from their card on the Mac (`gateway.ask`; their approval and trust rules apply). It reads as the
-  conversation `conv:task:<id>`: what you asked, their Claude's steps and answer, its files.
+  conversation `conv:task:<id>`: what you asked, their agent's steps and answer, its files.
 - `companion.signOut`: the calling phone's own certificate goes (never another's), its link closes.
 - `companion.openOnMac {topic | need}` (1.3): every screen is told where to go (a navigate intent)
   and the Mac app's window comes to the front (its `raise` capability) → `{opened, why?}`.
@@ -300,14 +306,14 @@ through `companion.files.*` and `companion.terminals` / `termOpen` / `termClose`
   checksum views carry; the phone keeps it by that checksum.
 - `companion.mergeCheck` / `merge` / `resolve` (1.3): a worktree's merge, the Mac's own way (the
   Merge sheet's checks, the controller's merge, Solve merge conflict), followed in its `merge`.
-- `companion.draftTask` / `addTask` (1.3): a task described in words, Claude's draft shown first.
+- `companion.draftTask` / `addTask` (1.3): a task described in words, the agent's draft shown first.
 - `companion.viewFetch` (1.3): a live view's rows (above).
 - `workspaces.startWorktree(project, text, {plan?, quiet: true})` → the worktree's id, and
   `plans.create({projectId, goal})` → the plan (1.5): the Ask sheet's Worktree and Plan, the same
-  calls as the Mac's project home (`plan`: Plan first, the Mac's Plan mode, on in it before Claude
+  calls as the Mac's project home (`plan`: Plan first, the Mac's Plan mode, on in it before the agent
   reads your words). A phone checks `SINCE.askModes` first; an older Mac gets a question.
 - Also `phone` since 1.3: `board.move` and `board.start` (a task moved along, or started in a new
-  worktree with Claude), and `session.submit` with `urgent` (Steer) next to `host.promote` and
+  worktree with your agent), and `session.submit` with `urgent` (Steer) next to `host.promote` and
   `host.cancelQueued` for the queue.
 - `companion.voice` / `voicePrepare(model)` / `transcribe {audio, model, language, prompt?}` (1.16,
   BLG-140): the Mac writes down what you said on the phone, one phrase at a time (BLG-160: the phone
@@ -321,9 +327,9 @@ through `companion.files.*` and `companion.terminals` / `termOpen` / `termClose`
 
 **Answering.** Every needs-you item carries its buttons as calls (`actions`), and, when it takes
 picks or words, an `answer` template: call `method` with `args` after putting the answer at
-`slot` (a path into the args; several picks joined with `join`). Claude's questions use
+`slot` (a path into the args; several picks joined with `join`). Your agent's questions use
 `questions.pick` for the earlier questions of a prompt and `questions.answer` for the last; a
-friend's Claude's question `gateway.answer`; a milestone sent back `plans.sendBack`. Someone at the
+friend's agent's question `gateway.answer`; a milestone sent back `plans.sendBack`. Someone at the
 door with your link: `invites.letIn` / `invites.decline`; someone asking to join a channel you
 run: `network.groups.approve` / `decline`. Nothing appears without a way to answer it.
 
@@ -345,7 +351,7 @@ the worktree, or onto a secret under another name: refused, and not listed); `is
 files, keys, credential stores, Beluga's own files) is refused by name and by real path; secrets a
 file holds are redacted as logs are. On the phone: a folder browser (breadcrumbs, folder and file
 icons, search by name) and a viewer (monospace, line numbers, colours by language from a cheap
-per-line tokenizer, wrap, find). There is no way to change a file. Claude's answers still go
+per-line tokenizer, wrap, find). There is no way to change a file. The agent's answers still go
 through `stripCode`.
 
 **Terminal, shared with the Mac.** The daemon runs one PTY per terminal (`src/terminal/pty-host.ts`);
@@ -501,7 +507,7 @@ Beluga Push isn't built yet, so with the app closed nothing can reach the phone.
   topic, so the Mac sends no views; only pings and `nudge`s. Back in front, the link is checked
   with one ping (not replaced for having been away) and the screen's topics come back.
 - **What notifies.** Needs you, the runs you asked from the phone, and, for a phone away with the
-  link open, every run of yours that finishes or stops (the Mac's own "Claude finished in …"
+  link open, every run of yours that finishes or stops (the Mac's own "… finished in …"
   notices, `Nudge.away`, never pushed). Each nudge becomes a notification in its channel, as set in
   Notify me about; tapping it opens its conversation.
 - **A slower heartbeat while away.** Over the relay (TCP; Cloudflare drops a socket idle for 100 s)
@@ -527,7 +533,7 @@ Worker), so the peer-to-peer design holds.
 - Without the relay (not set up, or you turn it off), the app works the same while open; it just
   can't tell you anything while closed.
 
-What notifies (each can be turned off on the phone): **Needs you** (approvals, Claude's questions,
+What notifies (each can be turned off on the phone): **Needs you** (approvals, your agent's questions,
 friends' requests, plan decisions: with Approve / Decline or a reply right on the notification),
 **Done** (a conversation you asked from the phone finished), **Mentions** (friends' chats).
 
@@ -553,7 +559,7 @@ Advanced at the bottom. Learn it once and it works everywhere.
   Always. Then **Running now**: each live conversation as a card with its project's icon, its step
   ticking over, its sub-agents as dots and a small count of new outputs. Then tasks **for your
   review**.
-- **Work**: Conversations · Plans · Tasks. A conversation reads as cards: your message, Claude's
+- **Work**: Conversations · Plans · Tasks. A conversation reads as cards: your message, the agent's
   answer (code folded into chips; views and graphs drawn), and while it works a live panel: thinking
   or writing with a soft shimmer, the step it's on with its tool, time and progress, the steps
   before it sliding in. Sub-agents are rows in the turn that started them, with their own live step
@@ -561,7 +567,7 @@ Advanced at the bottom. Learn it once and it works everywhere.
   running" with a chip each, wherever their turn has scrolled to. Tap one for a sheet with what it's
   doing now, its activity, the report it gave back and its outputs (BLG-110). The composer's field
   takes the width and grows to seven lines; its photo button is always there (photos go along as
-  `companion.ask` files). While Claude works its one round button queues (after) and a long-press
+  `companion.ask` files). While the agent works its one round button queues (after) and a long-press
   offers Steer (now, words only); what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
   worktree made; ••• › Merge… checks, merges and gets conflicts resolved; ••• › Files reads the
   worktree's files and ••• › Terminal is its terminal, shared with the Mac (BLG-42). Images open full screen from where they are (shared
@@ -571,9 +577,9 @@ Advanced at the bottom. Learn it once and it works everywhere.
   search, wrap and "follow" for logs.
 - **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes
   as one pill: **Your Mac** first and by default (a laptop), then a project, an open conversation,
-  or a friend's Claude. A project offers three icon chips, as the Mac's project home: **Worktree**
-  (the default: a new worktree with Claude on your words, then it opens), **Advanced plan**
-  (Beluga's Plans, `plans.create`: Claude drafts milestones, tasks and what waits on what; the draft
+  or a friend's agent. A project offers three icon chips, as the Mac's project home: **Worktree**
+  (the default: a new worktree with your agent on your words, then it opens), **Advanced plan**
+  (Beluga's Plans, `plans.create`: the agent drafts milestones, tasks and what waits on what; the draft
   opens to approve) and **Question** (a read-only chat in its main folder). **Plan first** beside
   Worktree is Claude Code's plan mode (it proposes before it acts), nothing to do with Advanced plans. Attach a photo
   or a file from the phone. The answer comes back into that conversation, with a notification if you
@@ -599,10 +605,10 @@ Advanced at the bottom. Learn it once and it works everywhere.
   gate), how many run side by side, and how it runs as one chip (Step by Step, Check-ins, Autopilot:
   `plans.setAutonomy`).
 - **Chats**: your friends' DMs and channels, as on the Mac, with photos and files both ways and
-  Ask Claude. A task between you and a friend's Claude shows as a small card there (`ChatMessageView.task`:
+  Ask your agent. A task between you and a friend's agent shows as a small card there (`ChatMessageView.task`:
   who asks whom, where it is, the result's summary and files; BLG-208); a phone too old for it shows the
   message's words.
-- **People**: friends, their presence and allowance; tap one for Message, Ask their Claude, Take a
+- **People**: friends, their presence and allowance; tap one for Message, Ask their agent, Take a
   screenshot of their desktop.
 
 Everything has a state for "your Mac is asleep": the last views stay (cached on the phone, marked
@@ -613,7 +619,7 @@ in a conversation or chat is drawn as yours straight away ("Sending…"). It cou
 the Mac answers the call, and its bubble goes only when the Mac's view has the message, so it is never
 missing in between. A refusal leaves it "Not sent" with Retry and Remove, your words kept. If the link
 drops before the answer, it says "Checking…" until the Mac's next view shows whether it arrived. A
-start from Ask (a new worktree, a plan, a question, a friend's Claude) closes the sheet and opens its
+start from Ask (a new worktree, a plan, a question, a friend's agent) closes the sheet and opens its
 Starting screen at once. That screen becomes the conversation or the plan when the Mac answers, or
 goes back to Ask with your words and the reason. While the Mac is away, sends wait (kept across
 launches) and go when it answers. `workspaces.startWorktree` answers once the worktree is made; the
@@ -621,14 +627,14 @@ model's name for it follows (the id stays).
 
 ## Your Mac (BLG-47)
 
-One conversation with your own Claude for the whole Mac, not one project or worktree: "Take a
+One conversation with your own agent for the whole Mac, not one project or worktree: "Take a
 screenshot and send it to me", "What's using my CPU?", "Start a worktree in beluga for the login
 bug", "Open a task to fix X". The same conversation on both screens: the Ask sheet's first target
 and Home's compact **Ask your Mac** row on the phone (`conv:mac:assistant`, live steps, Steer and
 Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `assistant` view).
 
 - **Its chats (BLG-102).** Several at once, tabs on its page on the Mac: + starts one, × deletes
-  one for good after asking (its messages here and on the phone, its folder, its Claude transcript;
+  one for good after asking (its messages here and on the phone, its folder, its agent's transcript;
   there's no archive; deleting the last leaves a fresh one). Each is its own conversation: the first
   keeps `conv:mac:assistant`, the others are `conv:mac:assistant:<id>` (`isMacTopic`). The tab open
   on the Mac is Home's `assistant` (its topic), so Ask your Mac talks to it; the others are listed
@@ -641,20 +647,20 @@ Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `ass
   Mac too, opened on the phone), a chat to switch to, a long-press to delete one for good after
   asking (`assistant.deleteChat`; also under •••). Opening a chat on the phone doesn't move the
   Mac's open tab (`assistant.openChat` stays the Mac's).
-- **Where it runs.** `~/.beluga/assistant/work/` is its Claude's folder, shared by its chats; its
-  scratch folder is `work/.beluga/scratch/`. Each chat's Claude session id and history sit beside
+- **Where it runs.** `~/.beluga/assistant/work/` is its agent's folder, shared by its chats; its
+  scratch folder is `work/.beluga/scratch/`. Each chat's agent session id and history sit beside
   it (`chats/<id>/state.json`, `history.json`; `chats.json` lists them in tab order with the one
   open). The one chat from before BLG-102 (`state.json`, `history.json`) moves into `chats/main/`
   on the first start. Everything in Beluga's home is secret to the phone (`isSecretPath`) except the folders
-  Claude works in (`workspaces`, `chats`, `tasks/work`…): `assistant/work` joins them, narrowly, the
+  the agent works in (`workspaces`, `chats`, `tasks/work`…): `assistant/work` joins them, narrowly, the
   way friends' tasks' `tasks/work` did, and nothing beside it does. Credentials are secret anywhere,
   so a `.env` in it still never leaves. Outside the home (`~/Beluga Assistant`) would have put a
   folder in your home you didn't make; inside, it's with Beluga's own and goes with it.
-- **Whose Claude.** Yours, with your approvals as anywhere (commands ask unless you set never);
+- **Whose agent.** Yours, with your approvals as anywhere (commands ask unless you set never);
   edits only in its own folder go without asking. Nobody else can write in it.
 - **Its tools** (`src/agent/mac-tools.ts`, server `beluga_mac`): `screenshot` (the main display or
   an app's window, with the gateway's `captureScreen`: saved in its scratch folder, so it reaches
-  the phone as an output, and Claude sees a smaller copy; macOS's Screen Recording permission still
+  the phone as an output, and the agent sees a smaller copy; macOS's Screen Recording permission still
   applies), `device_info` (the gateway's), `list_work` (projects, worktrees and chats with ids, what
   runs, plans), `start_worktree` (a project, a first message, plan first), `start_task` (a board
   task in its own worktree), `start_plan`; and the board's tools (`task_create` in a named project,
@@ -666,9 +672,9 @@ Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `ass
 
 ## Your phone, from your Mac (BLG-150)
 
-The other direction: ask Claude on the Mac to do something on your *own* paired Android phone —
+The other direction: ask your agent on the Mac to do something on your *own* paired Android phone —
 look at the screen, tap, type, open apps, install a build, read logs, debug. Only your own phone,
-only your own runs; never a friend's Claude, never a guest. Off by default.
+only your own runs; never a friend's agent, never a guest. Off by default.
 
 - **Routes, best first** (`src/companion/phone-control.ts`, `PhoneControl.reach`). USB; Wireless
   debugging carried through the Beluga link (from any network, and the only way it's reached, BLG-187);
@@ -702,7 +708,7 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   finds it). Its icon is Beluga's beluga in ink on a soft pastel with a link badge
   (`scripts/make-link-icon.mjs`), so it never looks like a second Beluga.
 - **Setting up Beluga Link from the Mac** (BLG-391). Settings › Phone › **Set Up Beluga Link**
-  (`companion.phone.setUpLink`), or Claude's `phone_setup_link`: with adb reaching the phone (a
+  (`companion.phone.setUpLink`), or the agent's `phone_setup_link`: with adb reaching the phone (a
   cable or Wireless debugging), the Mac downloads the latest `Beluga-Link.apk`, installs it
   (`adb install --user 0`, which Play Protect doesn't block), and adds its service to
   `enabled_accessibility_services`, keeping the others and dropping Beluga's own from before 1.6.0.
@@ -729,7 +735,7 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   Android asks "Allow wireless debugging on this network?", behind the lock screen if it's locked;
   tap Allow, not Always) and **Turn Off**; turned on by Beluga, it goes off after 15 minutes unused.
   The phone's own switch and its notification's **Stop** cut every route, adb's included, and the
-  Mac keeps that no on the device record (`DeviceRecord.stopped`). adb in Claude's Bash only at Full.
+  Mac keeps that no on the device record (`DeviceRecord.stopped`). adb in the agent's Bash only at Full.
 - **A phone on the cable** (BLG-190). The daemon looks at macOS's own USB list every 4 s
   (`ioreg -p IOUSB`, read-only; Android vendors or "Android" in the name) and asks adb only once a
   phone is there. Settings › Phone › **On the cable** says what's next: USB debugging is off (the
@@ -740,10 +746,10 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   app routes to its pairing screen, `app/+native-intent.tsx`); the four pictures are checked as ever.
 - **The phone beside the chat** (BLG-186). The right panel has a **Phone** tab (⌥⌘8) wherever it
   shows, while an Android phone is paired: the same live mirror, fitted to the panel, beside any
-  conversation or Your Mac. What Claude does shows on it as it happens: a ripple where it taps, a
-  trail along a swipe, a caption ("Claude pressed Back"; never what it typed), from `phone_touch`
-  frames; and the tab has a dot while Claude is acting (`PhoneControlView.busy`, 15 s after its last
-  move). The Phone page's Ask Claude opens Your Mac with the Phone tab beside it.
+  conversation or Your Mac. What the agent does shows on it as it happens: a ripple where it taps, a
+  trail along a swipe, a caption ("The agent pressed Back"; never what it typed), from `phone_touch`
+  frames; and the tab has a dot while the agent is acting (`PhoneControlView.busy`, 15 s after its last
+  move). The Phone page's Ask your agent opens Your Mac with the Phone tab beside it.
 - **The mirror on the Mac** (Your phone, BLG-173/BLG-184). Live H.264 video when the phone can
   (`control.video`, 1.18): the Mac asks with `req mirror {on, max, fps, kbps}`; the first time,
   the phone shows Android's "Start now" sheet (MediaProjection, from a see-through screen, or a
@@ -754,14 +760,14 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
   app decodes with WebCodecs (`packages/mac/src/phone/h264.ts`, rewritten to AVCC for WebKit).
   When the mirror closes the encoder stops and the capture is kept 90 s (reopening doesn't ask
   again). Until video flows, or without it, the mirror shows pictures: `screencap` over adb, or
-  the Accessibility screenshot at most one per 340 ms (Android's minimum is 333 ms). Claude's own
+  the Accessibility screenshot at most one per 340 ms (Android's minimum is 333 ms). The agent's own
   `phone_screenshot` stays a full-quality capture and `phone_screen` reads the UI, so the
   mirror's video is only for your eyes.
 - **What the phone says** (`control`, 1.16): `allowed` (its own switch), `accessibility`,
   `screenshots`, `video` (1.18), `adb {on, port, pairing}` (found over mDNS, `_adb-tls-connect._tcp`), `wifi {ip}`,
   and the device. Samsung turns debugging off on network changes and the port changes each toggle,
   so the phone re-finds it and re-sends `control`.
-- **Claude's tools** (`src/agent/phone-tools.ts`, server `beluga_phone`): `phone_status`,
+- **The agent's tools** (`src/agent/phone-tools.ts`, server `beluga_phone`): `phone_status`,
   `phone_screenshot` (an image, saved as an output), `phone_screen`, `phone_tap`, `phone_swipe`,
   `phone_type`, `phone_key`, `phone_scroll`, `phone_open`, `phone_apps`, `phone_info`,
   `phone_install`, `phone_shell`, `phone_logcat`. Given only to the owner's own runs (like
@@ -782,7 +788,7 @@ only your own runs; never a friend's Claude, never a guest. Off by default.
 - **The sidebar's footer** shows a phone mark when a phone is paired: lit with a dot while it's
   linked, outlined when it's away ("Pixel 9 · last seen 12 min ago" on hover). Click: the Phone
   popover (the devices, Pair a Phone…, Remove).
-- **Settings › Phone › Let Claude use your phone** (BLG-150): the adb line, and each phone with its
+- **Settings › Phone › Let your agent use your phone** (BLG-150): the adb line, and each phone with its
   route and an **Off · Ask · Use · Full** preset, plus **Connect** when Wireless debugging needs the
   pairing code. Nothing shows here when no phone is paired.
 - **Settings › Phone**: pair (QR and code), the devices (name, platform, app version, last seen,
@@ -810,7 +816,7 @@ The Mac app changes quickly; the phone must not fall behind silently.
    draws an unknown needs-you item as a generic card with "Open on your Mac". A breaking change bumps
    the major; the Mac keeps answering the previous major for one release, and the phone says "Update
    Beluga on your Mac" (or "Update the app") rather than misbehaving.
-5. **CLAUDE.md** says it in words for every change (Claude reads it before working here).
+5. **CLAUDE.md** says it in words for every change (the agent reads it before working here).
 
 ## Phases
 
@@ -821,7 +827,7 @@ The Mac app changes quickly; the phone must not fall behind silently.
    Mentions.
 3. **iOS**: the same app; Keychain, APNs, the Notification Service Extension.
 4. **Later**: screen sharing (ScreenCaptureKit → H.264 over the same link, on demand only), voice
-   asks, a home-screen widget for usage and Needs you (board tiles came first: BLG-361), other agents' allowance next to Claude's
+   asks, a home-screen widget for usage and Needs you (board tiles came first: BLG-361), other agents' allowance next to Claude's plan
    (the usage view is a list of providers, not one).
 
 ## Risks
@@ -832,6 +838,6 @@ The Mac app changes quickly; the phone must not fall behind silently.
 - **The relay is Cloudflare's quick tunnel.** It has no uptime promise; when it's down the record
   says no relay and the phone explains. It only ever sees ciphertext.
 - **A sleeping Mac can't answer.** The phone shows the last views and queues actions. Keeping the
-  Mac awake while plugged in and Claude is working is already the Mac's choice to make, not the
+  Mac awake while plugged in and the agent is working is already the Mac's choice to make, not the
   phone's.
 - **Push needs a server.** Beluga Push sees which phone tokens get pushed, and when; never what.

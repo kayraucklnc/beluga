@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { overviewNews } from '@beluga/ui/workspace-models.js';
 import { macTabs } from '../lib/go.js';
 import { newShares } from '@beluga/core/store.js';
+import { usageFor } from '@beluga/agent/usage.js';
+import { windowsOf } from '@beluga/ui/usage-cards.js';
+import { myRuntime } from '../chat/ModelPicker.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Badge, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -149,7 +152,7 @@ export function Sidebar() {
           {liveChats.map((w) => (
             <WorkspaceRow key={w.id} ws={w} indent={0} />
           ))}
-          {liveChats.length ? null : <Row className={s.hintRow} icon={<Icon name="plus" size={13} />} label="Talk to Claude about anything" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />}
+          {liveChats.length ? null : <Row className={s.hintRow} icon={<Icon name="plus" size={13} />} label="Talk to your agent about anything" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />}
         </Section>
 
         <Section id="projects" title="Projects" action={<ProjectsAddMenu />}>
@@ -171,10 +174,18 @@ export function Sidebar() {
   );
 }
 
-/** Usage as an icon above the sidebar: how much of this week's Claude you've used, and the Usage page. */
+/**
+ * Usage as an icon above the sidebar: how much of your agent's plan you've used (BLG-507: your
+ * default agent's, Codex's when it's Codex: its week, else its tightest window), and the Usage page.
+ */
 function UsageButton() {
   const actions = useActions();
-  const week = useApp((st) => st.self?.usage?.week?.pct);
+  const week = useApp((st) => {
+    const u = usageFor(st.self, myRuntime(st.prefs));
+    if (u?.week) return u.week.pct;
+    const windows = windowsOf(u);
+    return windows.length ? Math.max(...windows.map((w) => w.pct)) : undefined;
+  });
   const selected = useApp((st) => st.view.kind === 'usage');
   return (
     <span className={s.usage} data-level={week === undefined ? undefined : week >= 90 ? 'high' : week >= 70 ? 'mid' : 'low'}>

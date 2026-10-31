@@ -226,10 +226,10 @@ describe('Sentinel on the Mac', () => {
     expect(stepSentence({ id: 'h', kind: 'http', name: 'x', method: 'GET', url: '', headers: {}, timeoutSec: 30 })).toBe('GET a URL');
     expect(presetFields('slack')).toMatchObject({ method: 'POST', url: '$SLACK_WEBHOOK_URL', headers: { 'Content-Type': 'application/json' } });
     const merge = { id: 'm', kind: 'merge' as const, name: 'Merge', require: { checks: true as const, approval: true }, method: 'squash' as const };
-    expect(mergeWords(merge)).toBe('It merges once the checks pass, Claude’s review says ship, and you tap Merge (here or on your phone).');
+    expect(mergeWords(merge)).toBe('It merges once the checks pass, the agent’s review says ship, and you tap Merge (here or on your phone).');
     expect(mergeWords({ require: { checks: true, approval: false } })).toMatch(/^It merges by itself/);
-    expect(accessSentence('ship', [merge])).toBe('Claude can change code in a worktree, open pull requests, and merge when the checks pass and you’ve approved');
-    expect(accessSentence('ship', [{ ...merge, require: { checks: true, approval: false } }])).toBe('Claude can change code in a worktree, open pull requests, and merge by itself when the checks pass');
+    expect(accessSentence('ship', [merge])).toBe('Your agent can change code in a worktree, open pull requests, and merge when the checks pass and you’ve approved');
+    expect(accessSentence('ship', [{ ...merge, require: { checks: true, approval: false } }])).toBe('Your agent can change code in a worktree, open pull requests, and merge by itself when the checks pass');
     const network = { friends: [{ peerId: 'p2', name: 'Zoe' }, { peerId: 'p1', name: 'Ata' }], groups: [{ id: 'g1', name: 'Launch crew', active: true }, { id: 'g2', name: 'Old', active: false }] };
     expect(chatChoices(network).map((c) => [c.value, c.label])).toEqual([
       ['dm:p1', 'Ata'],
@@ -248,10 +248,10 @@ describe('Sentinel on the Mac', () => {
   it('the page’s box: Claude’s last line while it writes, then its answer', () => {
     const ask = { channel: 'ws:c1', startedAt: NOW, state: 'writing' as const, text: 'make it weekly' };
     expect(askLine(undefined, undefined)).toBeUndefined();
-    expect(askLine(ask, { running: true, last: 'mcp__beluga_sentinel__sentinel_update' })).toEqual({ who: 'claude', text: 'Claude is writing… changing the sentinel' });
-    expect(askLine(ask, { running: true, last: 'make it weekly' })).toEqual({ who: 'claude', text: 'Claude is writing…' });
+    expect(askLine(ask, { running: true, last: 'mcp__beluga_sentinel__sentinel_update' })).toEqual({ who: 'claude', text: 'Your agent is writing… changing the sentinel' });
+    expect(askLine(ask, { running: true, last: 'make it weekly' })).toEqual({ who: 'claude', text: 'Your agent is writing…' });
     expect(askLine({ ...ask, state: 'done', answer: 'Made it weekly' }, undefined)).toEqual({ who: 'done', text: 'Made it weekly' });
-    expect(askLine({ ...ask, state: 'failed', answer: 'usage limit' }, undefined)).toEqual({ who: 'failed', text: 'Claude stopped: usage limit' });
+    expect(askLine({ ...ask, state: 'failed', answer: 'usage limit' }, undefined)).toEqual({ who: 'failed', text: 'Your agent stopped: usage limit' });
     expect(describedName('Every weekday morning, read yesterday’s commits and open issues, write me a brief')).toBe('Read yesterday’s commits and open');
     expect(describedName('Read the commits and the issues')).toBe('Read the commits');
     expect(describedName('Every weekday at 8, read yesterday’s commits')).toBe('Read yesterday’s commits');
@@ -340,7 +340,7 @@ describe('Sentinel’s events on the Mac', () => {
   it('says when every kind of trigger runs, in the design’s words', () => {
     const cases: Array<[Trigger, string]> = [
       [{ kind: 'beluga', what: 'task-done' }, 'When a task is done'],
-      [{ kind: 'beluga', what: 'claude-finished' }, 'When a worktree’s Claude finishes'],
+      [{ kind: 'beluga', what: 'claude-finished' }, 'When a worktree’s agent finishes'],
       [{ kind: 'github', what: 'workflow-failed' }, 'When a workflow fails on GitHub'],
       [{ kind: 'github', what: 'issue-labelled', label: 'bug' }, 'When an issue gets the label “bug” on GitHub'],
       [{ kind: 'stripe', what: 'payment-failed' }, 'When a payment fails in Stripe'],

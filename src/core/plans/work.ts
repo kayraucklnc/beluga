@@ -1,4 +1,6 @@
 import type { PlanTools } from '../../agent/types.js';
+import type { AgentRef } from '../../protocol.js';
+import { agentName } from '../../shared/agent-label.js';
 import type { Actor, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { CombineResult } from '../../workspaces/git.js';
@@ -74,7 +76,12 @@ export class PlansWork {
       // Each milestone's check: a conversation of its own in the project (folded into the plan), archived once it passed.
       ...(deps.controller
         ? {
-            checkerChat: async (plan, milestone) => (await deps.controller!.newChat(plan.projectId, `Check: ${milestone.title}`.slice(0, 40), undefined, { quiet: true }))?.id,
+            // On the plan's agent (BLG-503), like its workers; none picked: the project's.
+            checkerChat: async (plan, milestone) => {
+              const ws = await deps.controller!.newChat(plan.projectId, `Check: ${milestone.title}`.slice(0, 40), undefined, { quiet: true });
+              if (ws && plan.agent) deps.controller!.manager.setAgent(ws.id, plan.agent);
+              return ws?.id;
+            },
             retireChat: (id) => void deps.controller!.archive(id, false, { quiet: true }).catch(() => undefined),
           }
         : {}),
@@ -110,7 +117,7 @@ export class PlansWork {
    * the code there and changes nothing), and the plan's page. Claude starts planning from `goal`.
    */
   /** `quiet`: started from elsewhere (Your Mac), so the Mac's window stays where it is. */
-  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }, opts: { readonly quiet?: boolean } = {}): Promise<Plan> {
+  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt; readonly agent?: AgentRef }, opts: { readonly quiet?: boolean } = {}): Promise<Plan> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Plans need a project folder');
     const goal = input.goal.trim();
@@ -118,7 +125,7 @@ export class PlansWork {
     const chat = await controller.newChat(input.projectId, UNTITLED, undefined, { quiet: true });
     if (!chat) throw new Error('Couldn’t start the plan’s conversation');
     const home = `${WS}${chat.id}`;
-    const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}), ...(input.testsAt ? { testsAt: input.testsAt } : {}) }, this.me());
+    const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}), ...(input.testsAt ? { testsAt: input.testsAt } : {}), ...(input.agent ? { agent: input.agent } : {}) }, this.me());
     if (!opts.quiet) this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
     this.deps.askClaude(goal, home, true);
     // Named in a moment by a quick model (your message is never its name); Claude's plan_write names it after that.
@@ -217,6 +224,18 @@ export class PlansWork {
     return this.plans.setTestsAt(id, testsAt, this.me());
   }
 
+  /**
+   * Who works the plan's milestones and tasks (BLG-498): `agent`, or your default (null). Work that
+   * starts from now on gets it; milestones and tasks already at work keep the agent they opened with
+   * (switching mid-run would lose their sessions). A task's own agent still beats it. → in words.
+   */
+  setWorkAgent(id: string, agent: AgentRef | null): string {
+    const plan = this.plans.setWorkAgent(id, agent ?? undefined, this.me());
+    const who = agent ? agentName(agent, { model: true }) : 'your default agent';
+    const busy = Object.values(plan.runs).filter((r) => r?.agent && !r.passedAt).length;
+    return busy ? `${who} works what starts next; the ${busy === 1 ? 'milestone' : `${busy} milestones`} already at work keep${busy === 1 ? 's' : ''} ${busy === 1 ? 'its' : 'their'} agent` : `${who} works this plan’s milestones and tasks`;
+  }
+
   pass(id: string, milestone: string): Plan {
     return this.pilot.pass(id, milestone, this.me());
   }
@@ -272,8 +291,9 @@ export class PlansWork {
     return this.pilot.bringInMain(id);
   }
 
-  startTask(id: string, task: string): Promise<string> {
-    return this.pilot.startNow(id, task, this.me());
+  /** `agent` (Start with…, BLG-506): who works it this once; none: the task's own, the plan's, or your default. */
+  startTask(id: string, task: string, agent?: AgentRef): Promise<string> {
+    return this.pilot.startNow(id, task, this.me(), agent);
   }
 
   /** Wake a task whose Claude stopped without finishing (Resume on its card). */
@@ -449,13 +469,13 @@ export class PlansWork {
         if (!w || issue.worktreeGone) throw new Error(`${issue.key} hasn't started: nothing to tell yet (start it, or change its brief)`);
         const steer = mode === 'steer';
         // Shown there as the plan's message, not as yours.
-        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `${steer ? 'Urgent, from' : 'From'} the plan’s Claude: ${text.trim().slice(0, 2000)}`, level: 'info' });
-        const prompt = `${steer ? 'An urgent message' : 'A message'} from the head of the plan “${plan.body?.title ?? ''}” (another Claude coordinating the plan, not the user):\n\n${text.trim()}`;
+        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `${steer ? 'Urgent, from' : 'From'} the plan’s agent: ${text.trim().slice(0, 2000)}`, level: 'info' });
+        const prompt = `${steer ? 'An urgent message' : 'A message'} from the head of the plan “${plan.body?.title ?? ''}” (another agent coordinating the plan, not the user):\n\n${text.trim()}`;
         const id = this.deps.askClaude(prompt, `${WS}${w}`, false);
-        if (!steer) return `Queued for the Claude working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
+        if (!steer) return `Queued for the agent working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
         // Steered: in now (interrupting a long command or a dead run), and followed until it's read.
         if (id) this.pilot.steer(planId, hit.task.id, id, prompt);
-        return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Beluga delivers it again`;
+        return `Steered into ${issue.key}: its agent gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Beluga delivers it again`;
       },
       stop: (task) => {
         const plan = plans.need(planId);
@@ -465,8 +485,8 @@ export class PlansWork {
         if (!issue || !w || issue.worktreeGone) throw new Error(`There's no started task "${task}" in this plan`);
         if (!this.deps.stopRun) throw new Error('Stopping isn’t available here');
         this.deps.stopRun(`${WS}${w}`);
-        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: 'Stopped by the plan’s Claude.', level: 'info' });
-        return `Stopped the Claude working on ${issue.key}. It waits: tell it what to do with plan_message_task, or start it again from the plan`;
+        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: 'Stopped by the plan’s agent.', level: 'info' });
+        return `Stopped the agent working on ${issue.key}. It waits: tell it what to do with plan_message_task, or start it again from the plan`;
       },
       pause: (paused) => {
         this.setPaused(planId, paused);

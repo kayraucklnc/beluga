@@ -39,7 +39,7 @@ test('a channel: each person and their Claude in the header, what waits, who get
   await expect(pills).toContainText('You');
   await expect(pills).toContainText(/ata\s*offline/, { timeout: 20_000 });
   const band = page.getByRole('region', { name: 'Waiting' });
-  await expect(band).toContainText('Waiting on you: mia’s Claude wants your private SSH key id_ed25519', { timeout: 30_000 });
+  await expect(band).toContainText('Waiting on you: mia’s agent wants your private SSH key id_ed25519', { timeout: 30_000 });
   await expect(page.getByRole('note')).toHaveText('ata is offline: this waits for them');
   // Your words on the right, a friend's on the left in their colour.
   await expect(log.locator('[data-mine="true"]').filter({ hasText: 'Sure, just this once.' })).toBeVisible();

@@ -3,6 +3,8 @@ import { existsSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
+import { AgentRef } from '../../protocol.js';
+import { agentName } from '../../shared/agent-label.js';
 import type { Store } from '../store.js';
 import { unexplained } from './criteria.js';
 import { LABEL_COLORS, LABEL_ICONS, LABEL_NAME, type LabelColor, type LabelDef, type LabelIcon, MAX_CUSTOM_LABELS, cleanLabelName, inSet, labelsFor } from './labels.js';
@@ -88,6 +90,8 @@ export interface NewIssue {
   readonly plan?: IssuePlan;
   /** The GitHub issue it's made from. */
   readonly github?: IssueGitHub;
+  /** The agent that works it (BLG-497); none: your default. */
+  readonly agent?: AgentRef;
   /** Only you see it (BLG-501); a private parent's sub-tasks are private whatever this says. */
   readonly private?: boolean;
 }
@@ -183,6 +187,8 @@ const SavedIssue = z
     createdAt: z.number(),
     updatedAt: z.number(),
     origin: z.enum(['manual', 'worktree', 'claude', 'plan', 'sync', 'github']).default('manual'),
+    // The agent that works it (BLG-497): one that doesn't read is let go (your default works it).
+    agent: AgentRef.optional().catch(undefined),
   })
   .passthrough();
 
@@ -337,6 +343,7 @@ export class Board {
       ...(parent ? { parent: parent.id } : {}),
       ...(input.plan ? { plan: input.plan } : {}),
       ...(input.github ? { github: input.github } : {}),
+      ...(input.agent ? { agent: input.agent } : {}),
       ...(input.private || parent?.private ? { private: true as const } : {}),
       blockedBy: [...new Set(blockers)],
       related: [],
@@ -532,6 +539,18 @@ export class Board {
     const same = issue.plan?.id === link?.id && issue.plan?.milestone === link?.milestone && issue.plan?.task === link?.task;
     if (same) return issue;
     return this.change(issue, { plan: link }, text ? [this.entry(by, 'plan', text)] : [], Boolean(text));
+  }
+
+  /**
+   * The agent (and model) that works the task from its next start (BLG-498); undefined: your
+   * default agent. A worktree already working it keeps the agent it opened with.
+   */
+  setAgent(ref: string, agent: AgentRef | undefined, by: Actor): Issue {
+    const issue = this.need(ref);
+    const was = issue.agent;
+    if (was?.runtime === agent?.runtime && was?.model === agent?.model && was?.label === agent?.label) return issue;
+    const text = agent ? `chose ${agentName(agent, { model: true })} to work this` : 'left this to the default agent';
+    return this.change(issue, { agent: agent ? { runtime: agent.runtime, label: agent.label, ...(agent.model ? { model: agent.model } : {}) } : undefined }, [this.entry(by, 'note', text)]);
   }
 
   /** Drop a card in a column, between two others (the board): its status and its place. */

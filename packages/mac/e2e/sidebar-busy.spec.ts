@@ -9,7 +9,7 @@ test('a folded project shows Claude working inside it', async ({ page }) => {
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
   await expect(sidebar.getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
   // Projects start folded: show what's in bob-api first.
-  const show = sidebar.getByRole('button', { name: /^Show what's in bob-api/ });
+  const show = sidebar.getByRole('button', { name: /^Show what's in bob-api/ }).first();
   if (await show.isVisible()) await show.click();
   await sidebar.getByRole('button', { name: 'webhook-retries', exact: true }).click();
   const box = page.locator('textarea:not(.xterm-helper-textarea)');
@@ -21,7 +21,7 @@ test('a folded project shows Claude working inside it', async ({ page }) => {
   const row = sidebar.getByRole('button', { name: 'bob-api', exact: true });
   await expect(row.locator('[data-busy] [data-dot-matrix]')).toBeVisible({ timeout: 10_000 });
   // Unfold it again for the other tests.
-  await sidebar.getByRole('button', { name: /^Show what's in bob-api/ }).click();
+  await sidebar.getByRole('button', { name: /^Show what's in bob-api/ }).first().click();
 });
 
 test('a folded project shows Claude Code working in one of its folders', async ({ page }) => {
@@ -90,7 +90,7 @@ test('after a force-quit mid-run and a restart, the run left "started" in saved 
     const run = { id: 'quit-1', type: 'agent', channel: `ws:${id}`, requestId: 'quit-req', owner: selfId, ownerName: 'you', requesterName: 'you', requester: selfId, prompt: 'deep dive, take your time', status: 'started', text: '', steps: ['Read src/server.ts'], subagents: [], ts: at, lastAt: at };
     writeFileSync(path.join(history, `${id.replace(/[^\w.-]/g, '_')}.json`), JSON.stringify([run]));
 
-    const show = sidebar.getByRole('button', { name: /^Show what's in bob-api/ });
+    const show = sidebar.getByRole('button', { name: /^Show what's in bob-api/ }).first();
     if (await show.isVisible()) await show.click();
     const row = sidebar.getByRole('button', { name: 'force-quit-left', exact: true });
     await row.click();
@@ -102,7 +102,7 @@ test('after a force-quit mid-run and a restart, the run left "started" in saved 
     await page.getByRole('button', { name: /^Fold bob-api/ }).first().click();
     await expect(sidebar.getByRole('button', { name: 'bob-api', exact: true }).locator('[data-busy]')).toHaveCount(0);
     expect(await daemon<number>(page, `(c, ch) => c.store.getState().log.filter((l) => l.channel === ch && ['started', 'text', 'tool', 'sub', 'queued', 'awaiting_approval'].includes(l.status)).length`, `ws:${id}`)).toBe(0);
-    await sidebar.getByRole('button', { name: /^Show what's in bob-api/ }).click();
+    await sidebar.getByRole('button', { name: /^Show what's in bob-api/ }).first().click();
   } finally {
     execFileSync('git', ['worktree', 'remove', '--force', tree], { cwd: root, stdio: 'pipe' });
     execFileSync('git', ['branch', '-D', 'force-quit-left'], { cwd: root, stdio: 'pipe' });

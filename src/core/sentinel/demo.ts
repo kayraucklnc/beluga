@@ -226,7 +226,7 @@ function seed(sentinels: Sentinels, travel: (msAgo: number) => void, api: string
       steps: [
         { id: ids[0]!, state: 'done', startedAt: t2, endedAt: t2 + 9 * MIN },
         { id: ids[1]!, state: 'done', startedAt: t2 + 9 * MIN, endedAt: t2 + 10 * MIN },
-        { id: ids[2]!, state: 'running', startedAt: t2 + 10 * MIN, why: 'Checks passed · Claude’s review: ship, a two-line fix with a test' },
+        { id: ids[2]!, state: 'running', startedAt: t2 + 10 * MIN, why: 'Checks passed · The agent’s review: ship, a two-line fix with a test' },
         { id: ids[3]!, state: 'waiting' },
       ],
       pr: { number: 53, url: 'https://github.com/acme/bob-api/pull/53' },
@@ -596,7 +596,7 @@ function seedNumbers(sentinels: Sentinels, travel: (msAgo: number) => void, api:
   add(revenue.id, { kind: 'number', metric: m(speed.id, 'home'), title: 'Site speed' });
   add(revenue.id, { kind: 'series', width: 3, chart: 'area', metrics: [m(stripe.id, 'revenue')], title: 'Revenue this week' });
   add(revenue.id, { kind: 'series', width: 3, chart: 'line', metrics: [m(yt.id, 'subscribers')] });
-  add(revenue.id, { kind: 'divider', title: 'What Claude said' });
+  add(revenue.id, { kind: 'divider', title: 'What the agent said' });
   add(revenue.id, { kind: 'text', width: 3, sentinelId: stripe.id, text: 'report' });
   add(revenue.id, { kind: 'table', width: 3, metric: m(jobs.id, 'last-jobs') });
   const ops = d.create('Ops', [], { compare: 'day' });

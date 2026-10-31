@@ -10,7 +10,7 @@ import { CLAUDE_CODE_HANDLERS } from '../src/ipc/claude-code-handlers.js';
 import { parseArgs } from '../src/ipc/api.js';
 import { MAX_OUTPUTS, MAX_RESULT_PATHS, OutputLog, isArtifact, outputKind, pathsInText, refsOfTool } from '../src/core/claude-code/outputs.js';
 import { AGENT_SCRATCH_DIR, agentScratchName } from '../src/shared/scratch-dir.js';
-import { withAgentScratch } from '../src/agent/subagents.js';
+import { withAgentScratch } from '../src/agent/runtime/claude/subagents.js';
 
 const CWD = '/work/app';
 const TS = 1000;

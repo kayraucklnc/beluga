@@ -5,9 +5,11 @@ import { ArrowUp, ChevronDown, Folder, GitBranch, ImagePlus, Laptop, ListChecks,
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { AgentChoice, type PickedAgent } from '../components/AgentChoice';
 import { convHref } from '../components/Conv';
 import { Sheet } from '../components/Sheet';
 import { Avatar, haptic, IconBadge, Press, T, type Tone, toneBg, toneInk } from '../components/ui';
+import { agentPicksSupported } from '../lib/agent-picks';
 import { useView } from '../lib/hooks';
 import { type Call, calls } from '../lib/link/calls';
 import { type HomeView, type PeopleView, type Topic, type WorkView, isMacTopic } from '../lib/link/protocol';
@@ -58,6 +60,10 @@ export default function Ask() {
   const [picking, setPicking] = useState(false);
   const [mode, setMode] = useState<Mode>(() => MODES.find((m) => m.mode === back?.how)?.mode ?? 'worktree');
   const [planFirst, setPlanFirst] = useState(false);
+  // Who works a new worktree (BLG-506) or an advanced plan's milestones and tasks (BLG-498): none is your default agent.
+  const [agent, setAgent] = useState<PickedAgent | undefined>();
+  // Sent only to a Mac that takes it (SINCE.workAgents); an older one starts with your default.
+  const picked = agent && agentPicksSupported() ? agent : undefined;
   // An older Mac (before 1.5) has neither Your Mac nor worktrees and plans from here.
   const modes = store.supports('askModes');
   // Speaking (BLG-161): ■ puts the words in the box to edit; ↑ sends them as you said them, once written down.
@@ -74,7 +80,7 @@ export default function Ask() {
     // friends" (views.ts groups those under 'room', 'shared:…' and 'asked').
     for (const p of work?.data.projects ?? []) if (p.id !== 'room' && p.id !== 'asked' && !p.id.startsWith('shared:')) t.push({ kind: 'project', id: p.id, label: p.name, ...(p.icon ? { icon: p.icon } : {}) });
     for (const c of home?.data.running ?? []) if (c.topic !== mac) t.push({ kind: 'conv', topic: c.topic, label: c.title, ...(c.project ? { project: c.project } : {}), ...(c.icon ? { icon: c.icon } : {}) });
-    for (const p of people?.data.people ?? []) if (p.presence !== 'offline') t.push({ kind: 'friend', id: p.peerId, name: p.name, label: `${p.name}'s Claude` });
+    for (const p of people?.data.people ?? []) if (p.presence !== 'offline') t.push({ kind: 'friend', id: p.peerId, name: p.name, label: `${p.name}'s agent` });
     return t;
   }, [work, home, people]);
   const [sel, setSel] = useState<string | undefined>();
@@ -122,9 +128,9 @@ export default function Ask() {
         target.kind === 'friend'
           ? make(() => calls.askPerson(target.id, target.name, words))
           : how === 'worktree'
-            ? make((files) => (files.length ? calls.startWorktreeWith(target.id, words, planFirst, files) : calls.startWorktree(target.id, words, planFirst)))
+            ? make((files) => (files.length ? calls.startWorktreeWith(target.id, words, planFirst, files, picked) : calls.startWorktree(target.id, words, planFirst, picked)))
             : how === 'plan'
-              ? make(() => calls.createPlan(target.id, words))
+              ? make(() => planCall(target.id, words, agent))
               : make((files) => calls.ask(target.id, words, files));
       const id = sends.start({ kind, label: target.label, target: keyOf(target), ...(target.kind === 'project' ? { project: target.label, ...(target.icon ? { icon: target.icon } : {}) } : {}), ...(kind === 'worktree' && planFirst ? { plan: true } : {}) }, words, call, opts);
       href = `/starting/${id}`;
@@ -144,7 +150,7 @@ export default function Ask() {
     { title: '', kind: 'mac' },
     { title: 'New in a project', kind: 'project' },
     { title: 'Add to a conversation', kind: 'conv' },
-    { title: "A friend's Claude", kind: 'friend' },
+    { title: "A friend's agent", kind: 'friend' },
   ];
 
   return (
@@ -205,7 +211,7 @@ export default function Ask() {
                   value={text}
                   onChangeText={setText}
                   multiline
-                  placeholder={target?.kind === 'friend' ? `What should ${target.name}'s Claude do?` : target?.kind === 'project' && modes ? MODES.find((m) => m.mode === how)!.hint : target?.kind === 'mac' ? 'Take a screenshot and send it to me' : 'Run the tests and send me a screenshot'}
+                  placeholder={target?.kind === 'friend' ? `What should ${target.name}'s agent do?` : target?.kind === 'project' && modes ? MODES.find((m) => m.mode === how)!.hint : target?.kind === 'mac' ? 'Take a screenshot and send it to me' : 'Run the tests and send me a screenshot'}
                   placeholderTextColor={color.text3}
                   style={{ color: color.text, fontSize: 19, lineHeight: 26, minHeight: 92, maxHeight: 200, textAlignVertical: 'top', ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}) }}
                 />
@@ -220,7 +226,7 @@ export default function Ask() {
               ) : null}
               <VoiceNote voice={voice} />
             </View>
-            {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} planFirst={planFirst} onPlanFirst={setPlanFirst} /> : null}
+            {target?.kind === 'project' && modes ? <ModeChips mode={mode} onMode={setMode} planFirst={planFirst} onPlanFirst={setPlanFirst} agent={agent} onAgent={setAgent} /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 10 }}>
               <Press onPress={() => setPicking(true)} accessibilityLabel="Where it goes" style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingLeft: 6, paddingRight: 12, borderRadius: 22, backgroundColor: color.sunken }}>
                 {target ? mark(target, 32) : null}
@@ -263,8 +269,18 @@ export default function Ask() {
   );
 }
 
-/** A project's three ways in, as icon chips (as the Mac's project home offers them), and Plan first beside a worktree's (wrapping on a narrow phone, so the send row keeps only where it goes, a photo, the mic and send). */
-function ModeChips({ mode, onMode, planFirst, onPlanFirst }: { readonly mode: Mode; readonly onMode: (m: Mode) => void; readonly planFirst: boolean; readonly onPlanFirst: (on: boolean) => void }) {
+/** A new plan, with who works it when picked (plans.create takes `agent` from 1.34; an older Mac, just the goal). */
+function planCall(project: string, goal: string, agent: PickedAgent | undefined): Call {
+  const c = calls.createPlan(project, goal) as Call<'plans.create'>;
+  if (!agent || !agentPicksSupported()) return c as unknown as Call;
+  return { ...c, args: [{ ...c.args[0], agent }] } as Call<'plans.create'> as unknown as Call;
+}
+
+/**
+ * A project's three ways in, as icon chips (as the Mac's project home offers them), and Plan first beside a worktree's (wrapping on a narrow phone, so the send row keeps only where it goes, a photo, the mic and send).
+ * Who works a new worktree (BLG-506) or an advanced plan (BLG-498) sits beside them the same way: Your agent unless you pick another.
+ */
+function ModeChips({ mode, onMode, planFirst, onPlanFirst, agent, onAgent }: { readonly mode: Mode; readonly onMode: (m: Mode) => void; readonly planFirst: boolean; readonly onPlanFirst: (on: boolean) => void; readonly agent: PickedAgent | undefined; readonly onAgent: (a: PickedAgent | undefined) => void }) {
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 10 }}>
       {MODES.map((m) => {
@@ -286,6 +302,7 @@ function ModeChips({ mode, onMode, planFirst, onPlanFirst }: { readonly mode: Mo
         );
       })}
       {mode === 'worktree' ? <PlanFirst on={planFirst} onChange={onPlanFirst} /> : null}
+      {mode !== 'question' && agentPicksSupported() ? <AgentChoice value={agent} onChange={onAgent} /> : null}
     </View>
   );
 }
@@ -297,7 +314,7 @@ function PlanFirst({ on, onChange }: { readonly on: boolean; readonly onChange: 
       onPress={() => (haptic.tap(), onChange(!on))}
       accessibilityRole="switch"
       accessibilityState={{ checked: on }}
-      accessibilityLabel="Plan mode: Claude plans first"
+      accessibilityLabel="Plan mode: the agent plans first"
       style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 10, borderRadius: 17, backgroundColor: on ? toneBg('lavender') : color.sunken }}
     >
       <ListChecks color={on ? toneInk('lavender') : color.text2} size={15} strokeWidth={1.9} />

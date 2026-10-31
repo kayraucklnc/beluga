@@ -57,7 +57,7 @@ export function ShareProjectSheet({ projectId, close }: { readonly projectId: st
             const only = grants?.[f.peerId]?.only;
             const presence = presenceOf({ network, peers }, f.peerId);
             const why = access === 'none' ? cannotTake(f.name, f.beluga, 'share.project', f.online) : undefined;
-            const detail = why ?? (access === 'contribute' ? 'Talks to your Claude in its worktrees' : access === 'view' ? 'Follows along, read-only' : 'Not shared with them');
+            const detail = why ?? (access === 'contribute' ? 'Talks to your agent in its worktrees' : access === 'view' ? 'Follows along, read-only' : 'Not shared with them');
             return (
               <div key={f.peerId} role="listitem" className={s.item}>
                 <Avatar name={f.name} id={f.peerId} size={24} />
@@ -74,7 +74,7 @@ export function ShareProjectSheet({ projectId, close }: { readonly projectId: st
           {friends.length ? null : <div className={s.empty}>{network.enabled ? 'No friends yet. Add a friend first, then share with them here.' : 'Turn on the Beluga network in Settings to share with friends.'}</div>}
         </div>
       </Section>
-      <p className={s.hint}>Your Claude does the work, on this Mac. Risky steps still ask you, unless you fully trust the person asking.</p>
+      <p className={s.hint}>Your agent does the work, on this Mac. Risky steps still ask you, unless you fully trust the person asking.</p>
     </Sheet>
   );
 }

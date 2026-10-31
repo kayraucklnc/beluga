@@ -1,4 +1,4 @@
-import type { ClaudeQuestion, GuestCan, WsRole } from '../protocol.js';
+import type { AgentRef, ClaudeQuestion, GuestCan, WsRole } from '../protocol.js';
 
 /** Claude (yours or a friend's) is waiting for an answer from you. */
 export interface PendingQuestion {
@@ -30,6 +30,8 @@ export interface SharedWorkspace {
   readonly projectId?: string;
   /** Over the network: there's earlier conversation to scroll back to (BLG-259). */
   readonly earlier?: boolean;
+  /** The owner's agent that runs there (BLG-448): theirs, never yours. Unset: an older Mac's, Claude. */
+  readonly agent?: AgentRef;
 }
 
 export interface RosterEntry {

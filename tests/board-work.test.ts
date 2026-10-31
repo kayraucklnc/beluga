@@ -56,7 +56,7 @@ describe('Claude writes what a project is about, in the background (BLG-298)', (
     expect(looked).toEqual([['/tmp/bob-api', 'bob-api']]);
     finish('Bob is a payments API for bakeries: the server in src/, the app in web/.');
     await tick();
-    expect(board.state().projects.api?.context).toMatchObject({ text: 'Bob is a payments API for bakeries: the server in src/, the app in web/.', by: 'Kay’s Claude' });
+    expect(board.state().projects.api?.context).toMatchObject({ text: 'Bob is a payments API for bakeries: the server in src/, the app in web/.', by: "Kay's Claude" });
     expect(toasts).toEqual(['Claude wrote what bob-api is about: Tasks › ⋯ › About This Project']);
     // Not a main folder's chat; and a project someone already wrote it for isn't looked at.
     board.setContext('land', 'A landing page.', 'Kay');
@@ -228,7 +228,7 @@ describe('Claude and the board', () => {
     expect(run.brief).toContain('Only signed-in users pay.');
     expect(run.tools?.current).toBe('BOB-2');
     expect(run.tools!.editBrief(undefined, 'decisions', '- Signed cookies', 'chosen', 'append')).toBe('Updated the decisions of BOB-2');
-    expect(board.need('BOB-2').activity.at(-1)?.by).toEqual({ kind: 'claude', owner: 'p-me', ownerName: 'Kay' });
+    expect(board.need('BOB-2').activity.at(-1)?.by).toEqual({ kind: 'claude', owner: 'p-me', ownerName: 'Kay', agent: { runtime: 'claude', label: 'Claude' } });
     expect(run.tools!.create({ title: 'Expired sessions', parent: 'BOB-2', acceptance: '- [ ] 401' })).toBe('Created BOB-3: Expired sessions (todo)');
     expect(board.need('BOB-3').origin).toBe('claude');
     expect(run.tools!.relate(undefined, 'blocks', 'BOB-3')).toBe('BOB-2 now blocks BOB-3');
@@ -339,8 +339,8 @@ describe('plan mode defines the task', () => {
     open(ws('w2', 'api', 'retries'));
     store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: 'r1', requester: 'p-me', event: 'started', text: '', ts: 1, channel: 'ws:w2' });
     const brief = work.forRun('ws:w1', 'p-me')!.brief!;
-    expect(brief).toContain('BOB-2 “Retries” (in progress) in worktree retries on beluga/retries, its Claude is working now');
-    expect(work.forRun('ws:w1', 'p-me')!.tools!.get('BOB-2')).toContain('Being worked on in worktree retries (beluga/retries), its Claude is working there now');
+    expect(brief).toContain('BOB-2 “Retries” (in progress) in worktree retries on beluga/retries, its agent is working now');
+    expect(work.forRun('ws:w1', 'p-me')!.tools!.get('BOB-2')).toContain('Being worked on in worktree retries (beluga/retries), its agent is working there now');
     void board;
   });
 

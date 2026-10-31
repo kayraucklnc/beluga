@@ -5,6 +5,7 @@ import { type ViewContext, convTurns, homeView, needsYou, sentinelDone, viewOf }
 import { NO_SENTINEL, type Sentinel, type SentinelState } from '../src/core/sentinel/model.js';
 import { type Action, type DomainState, Store, initialState } from '../src/core/store.js';
 import type { Plan } from '../src/core/plans/model.js';
+import { createDialogue } from '../src/core/dialogues/model.js';
 import type { Issue } from '../src/core/board/model.js';
 
 /**
@@ -324,7 +325,7 @@ describe('the views of a known Mac', () => {
 
   it('home: you, your allowance, what needs you with its buttons, what runs, outputs', () => {
     const home = HomeView.parse(homeView(state, ctx));
-    expect(home.usage).toEqual([{ provider: 'Claude Code', plan: 'max', windows: [{ label: '5 hours', pct: 12, resetsAt: T0 + 3_600_000 }, { label: 'Week', pct: 38 }], updatedAt: T0 }]);
+    expect(home.usage).toEqual([{ provider: 'Claude Code', plan: 'max', windows: [{ label: '5 hours', pct: 12, resetsAt: T0 + 3_600_000 }, { label: 'Week', pct: 38 }], updatedAt: T0, runtime: 'claude', isDefault: true }]);
     expect(home.needsYou.map((n) => n.id)).toEqual(['approval:ap1', 'confirm:t_confirm000001', 'request:t_request00001', 'knock:' + ZOE, 'join:' + GROUP + ':' + ZOE, 'plan:pl_auth:approve:3', 'sentinel:run_f1', 'question:q1', 'question:q2']);
     const knock = home.needsYou.find((n) => n.id.startsWith('knock:'))!;
     expect(knock.actions.map((a) => [a.method, a.args])).toEqual([
@@ -353,6 +354,17 @@ describe('the views of a known Mac', () => {
     expect(home.running.find((r) => r.topic === 'conv:ws:w2')).toMatchObject({ fresh: 2, projectId: 'p1', icon: ICON });
     expect(home.review).toEqual({ count: 1, first: { topic: 'task:i1', key: 'LND-1', title: 'Protect the payment routes' } });
     expect(home.unread).toEqual({ work: expect.any(Number), chats: 2 });
+  });
+
+  it("a conversation of yours carries its agent picker (1.32), runtimes as groups", () => {
+    const w1 = ConvView.parse(viewOf(state, ctx, 'conv:ws:w1'));
+    expect(w1.agent?.runtime).toBe('claude');
+    expect(w1.agent?.groups.map((g) => [g.runtime, g.available])).toEqual([
+      ['claude', true],
+      ['codex', false],
+      ['local', false],
+    ]);
+    expect(w1.agent?.groups[1]?.why).toMatch(/Codex/);
   });
 
   it('a conversation: code folded, steps in words, sub-agents with their outputs', () => {
@@ -410,6 +422,8 @@ describe('the views of a known Mac', () => {
       ['You', 'created this', undefined, undefined],
       ['Your Claude', 'commented', 'Done, see:\n(code)', true],
     ]);
+    // BLG-498: an agent's line says which agent (an entry from before agents were named: Claude); a person's says none.
+    expect(page.activity.map((a) => a.agent)).toEqual([undefined, { runtime: 'claude', label: 'Claude' }]);
     expect(page.moves.map((m) => m.status)).toEqual(['todo', 'in_progress', 'done', 'backlog', 'canceled']);
     expect(viewOf(state, ctx, 'task:nope')).toBeUndefined();
   });
@@ -442,7 +456,7 @@ describe('the views of a known Mac', () => {
     const conv = ConvView.parse(viewOf(state, ctx, 'conv:task:t_screen000001'));
     expect(conv.turns.map((t) => [t.who, t.name, t.prose.text, t.status])).toEqual([
       ['you', 'kayra', 'Take a screenshot of your desktop', undefined],
-      ['friend', "bob's Claude", 'Here it is.', 'done'],
+      ['friend', "bob's agent", 'Here it is.', 'done'],
     ]);
     expect(conv.turns[1]!.outputs?.map((o) => [o.name, o.kind])).toEqual([['desktop.png', 'image']]);
     expect(conv.canSend).toBe(false);
@@ -453,14 +467,14 @@ describe('the views of a known Mac', () => {
     const store = new Store(state);
     store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r9', requester: ME, event: 'started', text: '', ts: T0 + 20, channel: 'ws:w1' });
     store.dispatch({ type: 'chat', id: 'c9', from: ME, text: 'look at the retries first', ts: T0 + 21, byAgent: false, channel: 'ws:w1', request: 'r10', steer: true });
-    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'text', text: 'Claude reads this after its current step', ts: T0 + 21, channel: 'ws:w1' });
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'text', text: 'Your agent reads this after its current step', ts: T0 + 21, channel: 'ws:w1' });
     const conv = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1'));
     expect(conv.turns.slice(-2).map((t) => [t.who, t.prose.text, t.steer])).toEqual([
       ['claude', '', undefined],
       ['you', 'look at the retries first', { request: 'r10', waiting: 'next_step' }],
     ]);
     // Read: your turn reads as any other.
-    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'done', text: 'Claude read this while it worked; the answer above covers it.', ts: T0 + 22, channel: 'ws:w1' });
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r10', requester: ME, event: 'done', text: 'Your agent read this while it worked; the answer above covers it.', ts: T0 + 22, channel: 'ws:w1' });
     expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.at(-1)).toMatchObject({ who: 'you', prose: { text: 'look at the retries first' } });
     expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.at(-1)?.steer).toBeUndefined();
   });
@@ -475,6 +489,28 @@ describe('the views of a known Mac', () => {
     expect(turns.find((t) => t.id === 'c20')?.edit).toBeUndefined();
     expect(turns.find((t) => t.id === 'c21')?.edit).toBeUndefined();
     expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:mac:assistant')).turns.find((t) => t.id === 'ca1')?.edit).toBeUndefined();
+  });
+
+  it('a dialogue between agents shows its header with Stop, and its turns named for their agent (BLG-466)', () => {
+    const store = new Store(state);
+    const d = createDialogue({ id: 'dlg1', topic: 'Retries or a queue?', participants: [{ agent: { runtime: 'claude', label: 'Claude' } }, { agent: { runtime: 'codex', label: 'Codex' } }], turnCap: 6, channel: 'ws:w1' }, T0);
+    store.dispatch({ type: 'dialogue_put', dialogue: d });
+    store.dispatch({ type: 'system', id: 'dh', channel: 'ws:w1', level: 'info', text: 'Dialogue: Retries or a queue?', ts: T0 + 40, dialogue: { id: 'dlg1' } });
+    store.dispatch({ type: 'chat', id: 'dt1', from: ME, text: 'A queue.', ts: T0 + 41, byAgent: true, agent: { runtime: 'codex', label: 'Codex' }, channel: 'ws:w1', dialogue: { id: 'dlg1', turn: 1 } });
+    const turns = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns;
+    expect(turns.find((t) => t.id === 'dh')?.dialogue).toMatchObject({ id: 'dlg1', mode: 'Talk', who: 'Claude and Codex', progress: 'Turn 1 of 6', canStop: true, canContinue: false });
+    expect(turns.find((t) => t.id === 'dt1')).toMatchObject({ who: 'claude', name: expect.stringContaining('Codex'), agent: { runtime: 'codex', label: 'Codex' } });
+    store.dispatch({ type: 'dialogue_put', dialogue: { ...d, status: 'stopped', note: 'Stopped by kayra' } });
+    expect(ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.find((t) => t.id === 'dh')?.dialogue).toMatchObject({ status: 'Stopped by kayra', canStop: false });
+  });
+
+  it('an agent’s turn says which agent answered, so the phone draws its mark (BLG-498)', () => {
+    const store = new Store(state);
+    store.dispatch({ type: 'agent_event', owner: ME, requestId: 'rx1', requester: ME, event: 'started', text: '', ts: T0 + 50, channel: 'ws:w1', agent: { runtime: 'codex', label: 'Codex' } });
+    const turn = ConvView.parse(viewOf(store.getState(), ctx, 'conv:ws:w1')).turns.find((t) => t.who === 'claude' && t.ts === T0 + 50);
+    expect(turn).toMatchObject({ name: 'Codex', agent: { runtime: 'codex', label: 'Codex' } });
+    // A run from before agents were named: Claude's.
+    expect(ConvView.parse(viewOf(state, ctx, 'conv:ws:w1')).turns.filter((t) => t.who === 'claude').every((t) => t.agent?.runtime === 'claude')).toBe(true);
   });
 
   it('pages back through older turns', () => {
@@ -556,11 +592,11 @@ describe('the views of a known Mac', () => {
       ['bob', 'offline', 'offline'],
     ]);
     expect(chat.waiting).toEqual([
-      { text: 'Waiting on you: bob’s Claude wants your private SSH key id_ed25519', you: true, task: secret.id },
+      { text: 'Waiting on you: bob’s agent wants your private SSH key id_ed25519', you: true, task: secret.id },
       { text: 'Waiting on bob: Run the tests in bob-api', you: false, task: sent.id },
     ]);
     expect(chat.note).toBe('bob is offline: this waits for them');
-    expect(chat.messages.at(-1)?.task).toMatchObject({ who: 'bob’s Claude · asked your Mac', secret: true });
+    expect(chat.messages.at(-1)?.task).toMatchObject({ who: 'bob’s agent · asked your Mac', secret: true });
     // Nothing waiting, everyone online: no band, no note.
     const calm = ChatView.parse(viewOf(state, ctx, `chat:${conv}`));
     expect(calm.waiting).toBeUndefined();

@@ -37,7 +37,7 @@ export function blockOf(state: DomainState, a: Pick<ViewFetchArgs, 'topic' | 'tu
   const channel = a.topic.startsWith('conv:') ? phoneChannel(state, a.topic.slice(5)) : '';
   const item = state.log.find((l) => l.channel === channel && l.id === a.turn);
   if (!item || item.type !== 'agent') throw new Error('That view is no longer there');
-  if (item.owner !== me(state)) throw new Error('Only your own Claude’s views run on your Mac');
+  if (item.owner !== me(state)) throw new Error('Only your own agent’s views run on your Mac');
   const code = stripCode(item.text).code[a.block];
   if (!code?.block || code.block.kind !== 'view') throw new Error('That isn’t a view');
   return { ...(code.lang ? { lang: code.lang } : {}), text: code.block.text };

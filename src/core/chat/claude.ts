@@ -1,6 +1,8 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { type AgentRef, CLAUDE_AGENT } from '../../protocol.js';
+import { agentLabel } from '../../shared/agent-label.js';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
 import { asks } from '../../net/mesh/extras.js';
@@ -40,8 +42,11 @@ const HEARTBEAT_MS = 60_000;
 export interface ChatClaudeOptions {
   readonly mesh: Mesh;
   readonly files?: ChatFiles;
-  /** Your Claude's answer (undefined: this Beluga has no Claude to answer with). */
-  readonly answer: ((req: ChatAnswerRequest) => Promise<string>) | undefined;
+  /**
+   * Your agent's answer (undefined: this Beluga has no agent to answer with); with `agent`, the one
+   * that really answered (Claude, when your default couldn't), named on the answer instead.
+   */
+  readonly answer: ((req: ChatAnswerRequest) => Promise<string | { readonly text: string; readonly agent?: AgentRef }>) | undefined;
   /**
    * Your own asks of your own Claude (BLG-207): a real turn with its tools in this conversation
    * (agent-host runChat), its final answer back for the chat. Missing: they're answered like
@@ -55,8 +60,10 @@ export interface ChatClaudeOptions {
   /** Is this person your friend? (default: the mesh says) */
   readonly isFriend?: (peerId: string) => boolean;
   readonly model?: () => string | undefined;
+  /** Which agent answers (named on each answer; default: Claude). */
+  readonly agent?: () => AgentRef;
   /** Your Claude started or stopped answering (the others hear it over the network). */
-  readonly onLive?: (conversation: string, id: string, state: 'thinking' | 'idle') => void;
+  readonly onLive?: (conversation: string, id: string, state: 'thinking' | 'idle', agent: AgentRef) => void;
   /** Something you should know (your Claude couldn't answer). */
   readonly onProblem?: (conversation: string, text: string) => void;
   /** Words as this Mac reads them (a team task by its own key: core/team/mentions.ts). */
@@ -73,9 +80,9 @@ interface Job {
 
 /** Why an attached file isn't in what Claude reads. */
 function whyNot(file: ChatFile, wanted: boolean, here: boolean): string {
-  if (wanted && here) return `more pictures than Claude looks at in one answer (${MAX_IMAGES})`;
+  if (wanted && here) return `more pictures than an agent looks at in one answer (${MAX_IMAGES})`;
   if (wanted) return 'didn’t arrive in time';
-  return isTextFile(file) || isImageFile(file) ? `too big (${sizeLabel(file.size)})` : 'a kind Claude can’t read in a chat';
+  return isTextFile(file) || isImageFile(file) ? `too big (${sizeLabel(file.size)})` : 'a kind an agent can’t read in a chat';
 }
 
 export class ChatClaude {
@@ -86,6 +93,13 @@ export class ChatClaude {
   private readonly perPerson = new Map<string, number[]>();
   private readonly off: () => void;
   private stopped = false;
+
+  private agentRef(): AgentRef {
+    const ref = this.opts.agent?.() ?? CLAUDE_AGENT;
+    // Settings' model is Claude's: another agent without its own model answers on its default.
+    const model = ref.model ?? (ref.runtime === CLAUDE_AGENT.runtime ? this.opts.model?.() : undefined);
+    return model ? { ...ref, model } : ref;
+  }
 
   constructor(private readonly opts: ChatClaudeOptions) {
     const saved = opts.handledFile ? readJson(opts.handledFile) : undefined;
@@ -162,8 +176,9 @@ export class ChatClaude {
   }
 
   private live(conversation: string, id: string, state: 'thinking' | 'idle'): void {
-    this.opts.mesh.sendLive(conversation, id, state);
-    this.opts.onLive?.(conversation, id, state);
+    const agent = this.agentRef();
+    this.opts.mesh.sendLive(conversation, id, state, agent);
+    this.opts.onLive?.(conversation, id, state, agent);
   }
 
   private async run(job: Job): Promise<void> {
@@ -177,16 +192,18 @@ export class ChatClaude {
       // You asked your own Claude: a real turn, with its tools (BLG-207). Anyone else: one answer, no tools.
       const acting = m.from === mesh.peerId && this.acts();
       const request = await this.request(m, job.abort.signal, acting);
-      const answer = acting ? await this.opts.act!(conversation, `${request.system}\n\n${request.prompt}`) : await this.opts.answer!(request);
+      const said = acting ? await this.opts.act!(conversation, `${request.system}\n\n${request.prompt}`) : await this.opts.answer!(request);
+      const answer = typeof said === 'string' ? said : said.text;
+      const by = (typeof said === 'string' ? undefined : said.agent) ?? this.agentRef();
       if (this.stopped || job.abort.signal.aborted) return;
       // Still in the conversation? (you may have left the group, or they unfriended you, meanwhile)
       if (!mesh.conversations().includes(conversation)) return;
       // What needs this Mac comes back as a request the asker's Mac offers to send (gateway), on the last part.
       const { text, request: offer } = acting ? { text: answer } : parseRequest(answer);
       const parts = splitAnswer(text);
-      parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
+      parts.forEach((part, i) => mesh.post(conversation, part, { claude: { for: m.id, agent: by, ...(offer && i === parts.length - 1 ? { request: offer } : {}) } }));
     } catch (err) {
-      if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
+      if (!this.stopped) this.opts.onProblem?.(conversation, `${agentLabel(this.agentRef(), undefined, true, { capital: true })} couldn’t answer ${m.mine ? 'you' : m.name}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       clearInterval(beat);
       if (!this.stopped) this.live(conversation, m.id, 'idle');
@@ -208,10 +225,10 @@ export class ChatClaude {
       .act(conversation, prompt)
       .then((answer) => {
         if (this.stopped || !mesh.conversations().includes(conversation)) return;
-        for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: about } });
+        for (const part of splitAnswer(answer)) mesh.post(conversation, part, { claude: { for: about, agent: this.agentRef() } });
       })
       .catch((err: unknown) => {
-        if (!this.stopped) this.opts.onProblem?.(conversation, `Your Claude couldn’t carry on: ${err instanceof Error ? err.message : String(err)}`);
+        if (!this.stopped) this.opts.onProblem?.(conversation, `${agentLabel(this.agentRef(), undefined, true, { capital: true })} couldn’t carry on: ${err instanceof Error ? err.message : String(err)}`);
       })
       .finally(() => {
         if (!this.stopped) this.live(conversation, about, 'idle');
@@ -252,7 +269,7 @@ export class ChatClaude {
     // (read_earlier), a turn with its tools has none and gets the longer window instead.
     const earlier = !tools && olderThanWindow(before, owner) > 0;
     return {
-      system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all', ...(tools ? { tools: true } : {}) }),
+      system: systemPrompt({ owner, where: group ? `the group “${group.name}”` : `a direct message with ${friend ?? 'a friend'}`, people, asker, askedAll: m.ask?.to === 'all', agent: this.agentRef(), ...(tools ? { tools: true } : {}) }),
       prompt: userPrompt({
         history: historyLines(before, owner, tools ? ACT_HISTORY : undefined),
         ask: m,
@@ -263,7 +280,7 @@ export class ChatClaude {
       }),
       images,
       ...(earlier ? { earlier: (ask: EarlierAsk) => earlierPage(this.before(m.conversation, m.id), owner, ask) } : {}),
-      ...(this.opts.model?.() ? { model: this.opts.model() } : {}),
+      ...(this.agentRef().model ? { model: this.agentRef().model } : {}),
       signal,
     };
   }

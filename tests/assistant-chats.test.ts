@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { encodeProjectDir } from '../src/agent/claude-sessions.js';
+import { encodeProjectDir } from '../src/agent/runtime/claude/claude-sessions.js';
 import { MacAssistant } from '../src/core/assistant/assistant.js';
 import { attachAssistant } from '../src/core/assistant/registry.js';
 import { pretendSystem } from '../src/core/gateway/demo-system.js';

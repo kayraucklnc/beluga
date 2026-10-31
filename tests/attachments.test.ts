@@ -15,7 +15,7 @@ import {
   publishForRoom,
   registerAttachment,
 } from '../src/core/attachments.js';
-import { imageContent } from '../src/agent/runner.js';
+import { imageContent } from '../src/agent/runtime/claude/runner.js';
 
 describe('image chips', () => {
   it('inserts a chip at the cursor with spacing', () => {

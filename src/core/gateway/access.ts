@@ -64,7 +64,7 @@ export function capabilitiesFrom(raw: unknown): Capabilities {
 export const CAP_INFO: Readonly<Record<Need, { label: string; detail: string; doing: string }>> = {
   shell: { label: 'Run commands', detail: 'Commands in a terminal on this Mac, with no input, stopped after a time limit.', doing: 'run commands' },
   files: { label: 'Read and write files', detail: 'In the folders you choose below (and the task’s own folder). Secrets never.', doing: 'read or write files' },
-  project: { label: 'Work in projects', detail: 'Your Claude works in one of your projects (as for your own requests).', doing: 'work in your projects' },
+  project: { label: 'Work in projects', detail: 'Your agent works in one of your projects (as for your own requests).', doing: 'work in your projects' },
   screen: { label: 'See the screen', detail: 'Screenshots of the main display or one app’s window, read-only.', doing: 'see the screen' },
   device: { label: 'Device info', detail: 'macOS version, Mac model, processor, memory, disk space, apps, network basics and battery. No secrets.', doing: 'read device information' },
 };
@@ -231,7 +231,7 @@ export function ruleFor(facts: RequestFacts, peerName: string, decision: Pick<De
 
 // ------------------------------------------------------------------ words for screens
 
-const KIND_WORDS: Readonly<Record<RuleKind, string>> = { task: 'Requests to your Claude', command: 'Commands', file: 'Files sent from this Mac' };
+const KIND_WORDS: Readonly<Record<RuleKind, string>> = { task: 'Requests to your agent', command: 'Commands', file: 'Files sent from this Mac' };
 
 /** "Requests to your Claude needing: run commands, see the screen · in landing". */
 export function ruleLabel(rule: Rule): string {

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { McpServerStatus } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it } from 'vitest';
-import { McpConnect, type McpSession, type OpenMcpSession } from '../src/agent/mcp-connect.js';
+import { McpConnect, type McpSession, type OpenMcpSession } from '../src/agent/runtime/claude/mcp-connect.js';
 
 /** A home with one server of yours, one plugin's and one a project sets. */
 function home(): { home: string; project: string } {

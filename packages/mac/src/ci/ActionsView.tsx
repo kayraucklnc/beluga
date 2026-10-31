@@ -178,7 +178,7 @@ function Workflows({ projectId, flows, runs }: { projectId: string; flows: Retur
   if (flows.error && !flows.data) return <Empty icon="alert" title="Couldn’t read the workflows" detail={flows.error} action={<Button onClick={flows.refresh}>Try Again</Button>} />;
   if (!flows.data) return <Empty icon="graph" title="Reading the workflows…" detail="From the project’s folder, and GitHub" />;
   const list = flows.data.workflows;
-  if (!list.length) return <Empty icon="graph" title="No workflows yet" detail="Workflows live in .github/workflows. Ask Claude to set one up, then push it." />;
+  if (!list.length) return <Empty icon="graph" title="No workflows yet" detail="Workflows live in .github/workflows. Ask your agent to set one up, then push it." />;
   return (
     <div className={cx(s.flows, late && arr.arrive)}>
       {list.map((f) => (

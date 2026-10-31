@@ -1,3 +1,6 @@
+import type { AgentRef } from '../../protocol.js';
+import { KNOWN_RUNTIMES } from '../../shared/agent-runtimes.js';
+import { EFFORTS, type Effort } from '../../shared/settings-schema.js';
 import type { Row, Source } from '../../shared/view-spec.js';
 import type { MetricColumn } from './columns.js';
 import type { Dashboard } from './dashboard-model.js';
@@ -110,8 +113,28 @@ export interface ClaudeStep extends StepBase {
   readonly kind: 'claude';
   readonly prompt: string;
   readonly where: ClaudeWhere;
+  /** The agent that does it (BLG-497): a runtime ("claude", "codex", "local"); with neither it nor a model, your default agent. */
+  readonly runtime?: string;
+  /** Its model ('' or none: the agent's own default); a model without a runtime is Claude's (older steps). */
   readonly model?: string;
   readonly effort?: string;
+}
+
+/** The agent a step asked for (BLG-497); undefined: your default agent. */
+export function stepAgent(step: Pick<ClaudeStep, 'runtime' | 'model'>): AgentRef | undefined {
+  if (!step.runtime && !step.model) return undefined;
+  const runtime = step.runtime ?? 'claude';
+  const label = KNOWN_RUNTIMES.find((r) => r.id === runtime)?.label ?? runtime;
+  return { runtime, label, ...(step.model ? { model: step.model } : {}) };
+}
+
+/**
+ * The thinking effort a step's run takes: its own, when it's one Beluga knows and its model takes
+ * it (`efforts`: the model's levels, when known). Undefined: Settings' effort, as any run.
+ */
+export function stepEffort(step: Pick<ClaudeStep, 'effort'>, efforts: readonly string[] | undefined): Effort | undefined {
+  const effort = EFFORTS.find((e) => e === step.effort);
+  return effort && (!efforts || efforts.includes(effort)) ? effort : undefined;
 }
 
 /** The languages a script step's own code runs in (BLG-350), with what runs it. */
@@ -851,16 +874,16 @@ export const TRIGGER_INFO: Readonly<Record<TriggerKind, { readonly label: string
 };
 
 export const STEP_INFO: Readonly<Record<StepKind, { readonly label: string; readonly hint: string; readonly needs: Access; readonly phase: 1 | 2 | 3 | 5 }>> = {
-  claude: { label: 'Ask Claude', hint: 'Claude reads, writes a brief, fixes, makes tasks', needs: 'look', phase: 1 },
+  claude: { label: 'Ask your agent', hint: 'The agent reads, writes a brief, fixes, makes tasks', needs: 'look', phase: 1 },
   script: { label: 'Run a script', hint: 'One shell line or a script, in the project or your home folder', needs: 'look', phase: 1 },
   notify: { label: 'Notify me', hint: 'On the Mac, and the phone if you like, with the report', needs: 'look', phase: 1 },
   http: { label: 'Call a service', hint: 'A web request: Groqbot, Slack, Discord, any URL', needs: 'look', phase: 2 },
-  pr: { label: 'Open a pull request', hint: 'From the worktree the run’s Claude step made', needs: 'work', phase: 2 },
+  pr: { label: 'Open a pull request', hint: 'From the worktree the run’s agent step made', needs: 'work', phase: 2 },
   merge: { label: 'Merge if acceptable', hint: 'When the checks pass and you’ve approved', needs: 'ship', phase: 2 },
   message: { label: 'Message a chat', hint: 'A friend or a group, as you', needs: 'look', phase: 2 },
-  friend: { label: 'Ask a friend’s Claude', hint: 'As you; their trust applies', needs: 'look', phase: 2 },
+  friend: { label: 'Ask a friend’s agent', hint: 'As you; their trust applies', needs: 'look', phase: 2 },
   trigger: { label: 'Run another sentinel', hint: 'Starts it with this run’s last output', needs: 'look', phase: 2 },
-  measure: { label: 'Keep the numbers', hint: 'Numbers or rows from the step before, a source, or Claude, kept over time', needs: 'look', phase: 5 },
+  measure: { label: 'Keep the numbers', hint: 'Numbers or rows from the step before, a source, or the agent, kept over time', needs: 'look', phase: 5 },
 };
 
 /** The steps and triggers this Beluga runs (phase 5: every one); later ones show, but a run says they aren't available yet. */
@@ -869,9 +892,9 @@ export const stepAvailable = (kind: StepKind): boolean => STEP_INFO[kind].phase 
 export const triggerAvailable = (kind: TriggerKind): boolean => TRIGGER_INFO[kind].phase <= SENTINEL_PHASE;
 
 export const ACCESS_INFO: Readonly<Record<Access, { readonly label: string; readonly sentence: string }>> = {
-  look: { label: 'Look', sentence: 'Claude can look and tell you' },
-  work: { label: 'Work', sentence: 'Claude can change code in a worktree and open pull requests' },
-  ship: { label: 'Ship', sentence: 'Claude can change code in a worktree, open pull requests, and merge when the checks pass and you’ve approved' },
+  look: { label: 'Look', sentence: 'Your agent can look and tell you' },
+  work: { label: 'Work', sentence: 'Your agent can change code in a worktree and open pull requests' },
+  ship: { label: 'Ship', sentence: 'Your agent can change code in a worktree, open pull requests, and merge when the checks pass and you’ve approved' },
 };
 
 /** Access ranked: Look < Work < Ship. */
@@ -883,11 +906,11 @@ export const CLAUDE_CHANGED = 'claude-changed';
 /** Why a sentinel is paused, in words (none: you paused it, or it's new). */
 export function pausedWords(s: Pick<Sentinel, 'paused' | 'pausedWhy'>): string | undefined {
   if (!s.paused || !s.pausedWhy) return undefined;
-  return s.pausedWhy === CLAUDE_CHANGED ? 'Claude changed what it can do' : s.pausedWhy;
+  return s.pausedWhy === CLAUDE_CHANGED ? 'Your agent changed what it can do' : s.pausedWhy;
 }
 
 /** The banner on a sentinel Claude changed. */
-export const CLAUDE_CHANGED_BANNER = 'Claude changed what this sentinel can do. Turn On to let it run.';
+export const CLAUDE_CHANGED_BANNER = 'Your agent changed what this sentinel can do. Turn On to let it run.';
 
 /** Steps whose change by Claude pauses the sentinel (they run things, call out, or ship). */
 export const GUARDED_STEPS: ReadonlySet<StepKind> = new Set(['script', 'http', 'pr', 'merge']);
@@ -1056,7 +1079,7 @@ const WORDS: Readonly<Record<string, string>> = {
   'pr-opened': 'a pull request opens',
   'pr-merged': 'a pull request merges',
   'milestone-passed': 'a milestone passes',
-  'claude-finished': 'a worktree’s Claude finishes',
+  'claude-finished': 'a worktree’s agent finishes',
   'friend-asks': 'a friend asks something',
   'issue-opened': 'an issue opens',
   'issue-labelled': 'an issue gets a label',
@@ -1142,7 +1165,7 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
     case 'claude': {
       const where = step.where === 'worktree' ? 'in a new worktree' : step.where === 'mac' ? 'on Your Mac' : 'in the project';
       const what = quoteLine(step.prompt);
-      return what ? `Claude ${where}: “${what}”` : `Claude ${where}`;
+      return what ? `Agent ${where}: “${what}”` : `Agent ${where}`;
     }
     case 'script':
       if (step.code?.trim()) return `Runs its ${SCRIPT_LANGUAGE_INFO[step.language ?? 'sh'].label} script (${step.code.split('\n').length} lines) in ${step.cwd === 'home' ? 'your home folder' : 'the project'}`;
@@ -1161,7 +1184,7 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
     }
     case 'friend': {
       const name = nameOf(step.peerId);
-      return name ? `Asks ${name}’s Claude` : 'Asks a friend’s Claude';
+      return name ? `Asks ${name}’s agent` : 'Asks a friend’s agent';
     }
     case 'trigger': {
       const name = nameOf(step.sentinelId);
@@ -1169,9 +1192,9 @@ export function stepSentence(step: Step, nameOf: (id: string) => string | undefi
     }
     case 'measure': {
       const names = step.metrics.map((m) => m.label || m.name).filter(Boolean);
-      const what = names.length ? (names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', ')) : step.from === 'claude' ? 'the numbers Claude measures' : 'every number';
+      const what = names.length ? (names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', ')) : step.from === 'claude' ? 'the numbers the agent measures' : 'every number';
       const from = step.from === 'previous' ? ' from the step before' : step.from === 'source' ? ` from ${step.source ? `a ${step.source.kind} source` : 'a source (pick one)'}` : '';
-      return `Keeps ${what}${step.from === 'claude' && names.length ? ' that Claude measures' : from}`;
+      return `Keeps ${what}${step.from === 'claude' && names.length ? ' that the agent measures' : from}`;
     }
   }
 }

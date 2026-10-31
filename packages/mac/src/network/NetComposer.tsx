@@ -5,6 +5,8 @@ import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { inApp } from '../lib/boot.js';
 import { useApp, useBeluga } from '../lib/beluga.js';
+import { useMyAgent } from '../lib/agent-words.js';
+import { type AgentMark, agentMark } from '@beluga/shared/agent-marks.js';
 import { handleInvite } from '../lib/invite-command.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
@@ -64,6 +66,9 @@ async function pickFiles(client: ReturnType<typeof useBeluga>['client'], id: str
   if (paths.length) await addPaths(client, id, paths);
 }
 
+/** Whose agent answers, as a mark: yours by its runtime, everyone's as people, someone else's as the agent glyph (their runtime isn't known here). */
+const askMark = (ask: Ask | undefined, mine: AgentMark): AgentMark | 'people' | 'claude' => (!ask || ask.kind === 'me' ? mine : ask.kind === 'all' ? 'people' : 'claude');
+
 /**
  * The Claude button, for the next message only: "Ask: your Claude" (BLG-210). Alone with your
  * Claude: one toggle. With others: the same toggle, and beside it a chevron for everyone's or one
@@ -71,27 +76,28 @@ async function pickFiles(client: ReturnType<typeof useBeluga>['client'], id: str
  */
 function AskButton({ ask, setAsk, people, me }: { ask: Ask | undefined; setAsk: (a: Ask | undefined) => void; people: readonly Person[]; me?: Person }) {
   const mine = ask?.kind === 'me';
-  const whose = ask && ask.kind !== 'me' ? askLabel(ask, true) : 'your Claude';
+  const myMark = agentMark(useMyAgent());
+  const whose = ask && ask.kind !== 'me' ? askLabel(ask, true) : 'your agent';
   const toggle = (
-    <Tip label={ask ? `${askLabel(ask, true)} answers this message · click to just send it` : 'Your Claude answers this message, from this conversation · or type @claude'}>
+    <Tip label={ask ? `${askLabel(ask, true)} answers this message · click to just send it` : 'Your agent answers this message, from this conversation · or type @claude, which asks your agent whichever it is'}>
       <button type="button" className={cx(c.chip, people.length > 0 && s.askMain, ask && c.chipOn)} aria-pressed={Boolean(ask)} disabled={!me} onClick={() => setAsk(ask ? undefined : { kind: 'me' })}>
-        <Icon name="claude" size={13} />
+        <Icon name={askMark(ask, myMark)} size={13} />
         Ask: {whose}
       </button>
     </Tip>
   );
   if (!people.length) return toggle;
   const items: ActionItem[] = [
-    { label: 'Your Claude', icon: 'claude', checked: mine, hint: 'It answers here, from your Mac', onSelect: () => setAsk({ kind: 'me' }) },
-    { label: people.length === 1 ? 'Both Claudes' : 'Everyone’s Claude', icon: 'people', checked: ask?.kind === 'all', hint: 'Each answers from their own Mac', onSelect: () => setAsk({ kind: 'all' }) },
-    ...people.map((p, i) => ({ label: `${p.name}’s Claude`, separate: i === 0, checked: ask?.kind === 'person' && ask.peerId === p.peerId, hint: `From ${p.name}’s Mac`, onSelect: () => setAsk({ kind: 'person', peerId: p.peerId, name: p.name }) })),
-    ...(ask ? [{ label: 'Don’t Add a Claude', separate: true, onSelect: () => setAsk(undefined) }] : []),
+    { label: 'Your Agent', icon: myMark, checked: mine, hint: 'It answers here, from your Mac', onSelect: () => setAsk({ kind: 'me' }) },
+    { label: people.length === 1 ? 'Both Agents' : 'Everyone’s Agent', icon: 'people', checked: ask?.kind === 'all', hint: 'Each answers from their own Mac', onSelect: () => setAsk({ kind: 'all' }) },
+    ...people.map((p, i) => ({ label: `${p.name}’s Agent`, separate: i === 0, checked: ask?.kind === 'person' && ask.peerId === p.peerId, hint: `From ${p.name}’s Mac`, onSelect: () => setAsk({ kind: 'person', peerId: p.peerId, name: p.name }) })),
+    ...(ask ? [{ label: 'Don’t Ask an Agent', separate: true, onSelect: () => setAsk(undefined) }] : []),
   ];
   return (
-    <span className={s.askSplit} role="group" aria-label="Ask a Claude">
+    <span className={s.askSplit} role="group" aria-label="Ask an agent">
       {toggle}
       <ActionsDropdown items={items} align="start">
-        <button type="button" className={cx(c.chip, s.askMore, ask && c.chipOn)} aria-label="Ask Someone Else’s Claude" disabled={!me}>
+        <button type="button" className={cx(c.chip, s.askMore, ask && c.chipOn)} aria-label="Ask Someone Else’s Agent" disabled={!me}>
           <Icon name="chevronDown" size={9} />
         </button>
       </ActionsDropdown>
@@ -109,6 +115,7 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
   const prefs = usePrefs();
   const [text, setText] = useState(() => drafts.get(id) ?? '');
   const [ask, setAsk] = useState<Ask>();
+  const myMark = agentMark(useMyAgent());
   const pending = usePending(id);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -199,9 +206,9 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
       <div className={cx(c.box, ask && c.asking)}>
         {ask ? (
           <span className={c.askChip}>
-            <Icon name="claude" size={12} />
+            <Icon name={askMark(ask, myMark)} size={12} />
             {askLabel(ask)}
-            <button type="button" aria-label="Don’t ask Claude" onClick={() => setAsk(undefined)}>
+            <button type="button" aria-label="Don’t ask an agent" onClick={() => setAsk(undefined)}>
               <Icon name="x" size={10} />
             </button>
           </span>
@@ -245,7 +252,7 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople, note
         <div className={c.bar}>
           <AskButton ask={ask} setAsk={setAsk} people={people} {...(me ? { me } : {})} />
           {people.length ? (
-            <Tip label="Mention someone here, or their Claude · or type @">
+            <Tip label="Mention someone here, or their agent · or type @">
               <button
                 type="button"
                 className={c.chip}

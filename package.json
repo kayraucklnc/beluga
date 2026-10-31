@@ -29,6 +29,7 @@
     "@fugood/whisper.node": "1.2.0-rc.1",
     "@hyperswarm/secret-stream": "^6.9.2",
     "@lydell/node-pty": "1.2.0-beta.15",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@resvg/resvg-js": "^2.6.2",
     "@xterm/addon-unicode11": "^0.9.0",
     "@xterm/headless": "^6.0.0",

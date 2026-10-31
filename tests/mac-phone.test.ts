@@ -50,10 +50,10 @@ describe('the mirror’s live video (BLG-184)', () => {
 
 describe('what Claude does on the phone, in words (BLG-186)', () => {
   it('says the move, never what was typed', () => {
-    expect(touchCaption({ op: 'tap', x: 1, y: 2 })).toBe('Claude tapped');
-    expect(touchCaption({ op: 'key', what: 'back' })).toBe('Claude pressed Back');
-    expect(touchCaption({ op: 'scroll', what: 'down' })).toBe('Claude scrolled down');
-    expect(touchCaption({ op: 'open', what: 'com.instagram.android' })).toBe('Claude opened com.instagram.android');
-    expect(touchCaption({ op: 'type' })).toBe('Claude typed');
+    expect(touchCaption({ op: 'tap', x: 1, y: 2 })).toBe('The agent tapped');
+    expect(touchCaption({ op: 'key', what: 'back' })).toBe('The agent pressed Back');
+    expect(touchCaption({ op: 'scroll', what: 'down' })).toBe('The agent scrolled down');
+    expect(touchCaption({ op: 'open', what: 'com.instagram.android' })).toBe('The agent opened com.instagram.android');
+    expect(touchCaption({ op: 'type' })).toBe('The agent typed');
   });
 });

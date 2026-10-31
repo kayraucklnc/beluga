@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { agentMark, isAgentActor, markIcon, markOfName, runtimeMark } from '../../components/AgentMark';
+import { AgentChoiceSheet, agentOfRow } from '../../components/AgentPicker';
 import { Composer } from '../../components/Composer';
 import { convHref, Prose } from '../../components/Conv';
 import { KeyboardLift } from '../../components/KeyboardLift';
@@ -16,9 +18,11 @@ import { Avatar, Button, Card, haptic, IconBadge, More, Pill, Press, T, toneBg, 
 import { ago, useSupports, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { TaskPageView, Topic } from '../../lib/link/protocol';
+import { agentPicksSupported } from '../../lib/agent-picks';
 import { openOnMac } from '../../lib/mac';
 import { store } from '../../lib/store';
 import { color } from '../../lib/theme';
+import { agentName } from '../../../../src/shared/agent-label';
 
 /**
  * One task (BLG-48): its goal (code folded), the acceptance criteria with their ticks, the
@@ -36,20 +40,39 @@ export default function Task() {
   const [menu, setMenu] = useState(false);
   const [moving, setMoving] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [picking, setPicking] = useState(false);
+  // Start with… (BLG-506): this start only, by another agent; the task's own stays as it is.
+  const [startWith, setStartWith] = useState(false);
   const st = t ? statusOf(t.status) : undefined;
   const pr = t ? PRIORITY[t.priority] : undefined;
   const canStart = t && !t.conv && (t.status === 'todo' || t.status === 'backlog' || t.status === 'in_progress');
 
-  const start = async () => {
+  /** Start it in a new worktree: by its own agent (else your default), or by `agent` this once (a Mac with SINCE.workAgents). */
+  const start = async (agent?: { runtime: string; label: string; model?: string }) => {
     if (!t || starting) return;
     haptic.commit();
     setStarting(true);
-    const ws = await store.call<string>(calls.start(t.key), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
+    const ws = await store.call<string>(calls.start(t.key, agent), { queue: false }).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
     setStarting(false);
     if (typeof ws === 'string') {
-      store.toast({ text: `${t.key} started: Claude is on it`, tone: 'ok' });
+      store.toast({ text: `${t.key} started: ${agent ? agent.label : t.agent ? agentName(t.agent) : 'your agent'} is on it`, tone: 'ok' });
       router.push(convHref(`conv:ws:${ws}`));
     }
+  };
+
+  // Who works it (1.35, BLG-498): its own agent, else your default; changed from ⋯ › Agent.
+  const defaultLabel = t?.agents?.groups.find((g) => g.isDefault)?.label;
+  const agentWords = t?.agent ? agentName(t.agent, { model: true }) : defaultLabel ? `Your agent (${defaultLabel})` : 'Your agent';
+  const agentRuntime = t?.agent?.runtime ?? t?.agents?.groups.find((g) => g.isDefault)?.runtime;
+  // The main Start is its own agent's (else yours); Start with… lists every agent, from ⋯.
+  const startLabel = t?.agent ? `Start with ${agentName(t.agent)}` : 'Start with your agent';
+  const canStartWith = Boolean(canStart && t?.agents && agentPicksSupported());
+  const setAgent = (agent: { runtime: string; label: string; model?: string } | null, label: string): void => {
+    if (!t) return;
+    void store.call<string>(calls.setTaskAgent(t.key, agent, label)).then(
+      (said) => store.toast({ text: typeof said === 'string' ? said : `${label} works ${t.key}`, tone: 'ok' }),
+      (e: Error) => store.toast({ text: e.message, tone: 'error' }),
+    );
   };
 
   return (
@@ -76,12 +99,13 @@ export default function Task() {
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {pr && t.priority !== 'none' ? <Pill label={pr.label} tone={pr.tone} /> : null}
                 <Pill label={t.assignee ?? 'No one'} Icon={User} tone={t.assignee ? 'lavender' : 'plain'} />
+                {t.agent || t.agents ? <Pill label={agentWords} Icon={markIcon(runtimeMark(agentRuntime))} tone="plain" /> : null}
                 {t.working ? <Pill label={t.working} Icon={User} tone="mint" /> : null}
                 {t.waiting ? <Pill label={t.waiting} Icon={Clock} tone="butter" /> : null}
                 {t.checks ? <Pill label={`${t.checks.done} of ${t.checks.total} checked`} Icon={Check} tone={t.checks.done === t.checks.total ? 'mint' : 'plain'} /> : null}
               </View>
 
-              {canStart ? <Button label={starting ? 'Starting…' : 'Start with Claude'} Icon={Play} disabled={starting} onPress={() => void start()} /> : null}
+              {canStart ? <Button label={starting ? 'Starting…' : startLabel} Icon={Play} disabled={starting} onPress={() => void start()} /> : null}
               {t.conv ? <Button label="Open its conversation" Icon={MessageSquare} quiet onPress={() => router.push(convHref(t.conv!))} /> : null}
 
               {t.goal?.text.trim() ? (
@@ -155,7 +179,7 @@ export default function Task() {
                   </T>
                   {t.activity.map((a) => (
                     <Animated.View key={a.id} entering={FadeIn.duration(220)} layout={LinearTransition.duration(180)} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-                      <Avatar name={a.who} size={26} claude={/Claude/.test(a.who)} />
+                      <Avatar name={a.who} size={26} {...(a.agent ? { mark: agentMark(a.agent) } : isAgentActor(a.who) ? { mark: markOfName(a.who, 'claude') } : {})} />
                       <View style={{ flex: 1, gap: 4 }}>
                         <T v="callout">
                           <T v="callout" c={color.text} style={{ fontWeight: '600' }}>
@@ -191,7 +215,9 @@ export default function Task() {
         onClose={() => setMenu(false)}
         title={t ? `${t.key} ${t.title}` : undefined}
         options={[
-          { Icon: Play, label: 'Start with Claude', sub: 'A new worktree, Claude working on it', tone: 'peach', hidden: !canStart, onPress: () => void start() },
+          { Icon: Play, label: startLabel, sub: `A new worktree, ${t?.agent ? agentName(t.agent) : 'your agent'} working on it`, tone: 'peach', hidden: !canStart, onPress: () => void start() },
+          { Icon: markIcon(runtimeMark(agentRuntime)), label: 'Start with…', sub: 'Another agent or model, for this start only', tone: 'mint', hidden: !canStartWith, onPress: () => setStartWith(true) },
+          { Icon: markIcon(runtimeMark(agentRuntime)), label: 'Agent', sub: `${agentWords}, from its next start`, tone: 'lavender', hidden: !t?.agents, onPress: () => setPicking(true) },
           { Icon: ArrowRightLeft, label: 'Move to…', sub: st ? `Now ${st.label}` : undefined, tone: 'sky', hidden: !t?.moves.length, onPress: () => setMoving(true) },
           { Icon: Monitor, label: 'Open on your Mac', sub: 'Its brief, proof and history', tone: 'plain', onPress: () => void openOnMac({ topic }) },
         ]}
@@ -204,6 +230,23 @@ export default function Task() {
           const s = statusOf(m.status);
           return { Icon: s.Icon, label: m.label, tone: s.tone, onPress: () => void store.call(calls.move(t!.key, m.status, m.label)).then(() => store.toast({ text: `${t!.key} is ${m.label}`, tone: 'ok' }), (e: Error) => store.toast({ text: e.message, tone: 'error' })) };
         })}
+      />
+      <AgentChoiceSheet
+        title="Agent"
+        caption={t?.conv ? 'For its next start: the worktree on it keeps its agent' : 'Works this task when it starts'}
+        picker={t?.agents}
+        visible={picking}
+        onClose={() => setPicking(false)}
+        yours={{ on: !t?.agent, onPick: () => setAgent(null, 'Your agent') }}
+        onPick={(g, value, label) => setAgent(agentOfRow(g, value), value ? `${g.label} · ${label}` : g.label)}
+      />
+      <AgentChoiceSheet
+        title="Start with"
+        caption={`A new worktree for ${t?.key ?? 'it'}, worked by the agent you pick. Its own agent stays ${agentWords}.`}
+        picker={t?.agents}
+        visible={startWith}
+        onClose={() => setStartWith(false)}
+        onPick={(g, value) => void start(agentOfRow(g, value))}
       />
     </Screen>
   );

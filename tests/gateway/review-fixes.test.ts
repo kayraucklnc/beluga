@@ -91,7 +91,7 @@ describe('capabilities hold on every tool call', () => {
     const t = kay.gw.ask({ person: 'fixA2', ask: 'look around', by: 'agent' });
     await settle(() => task(kay, t.id)?.state === 'done');
     expect(seen[0]![0]).toBe('Bash');
-    expect(seen[0]![1]).toContain("doesn't let friends' Claudes run commands");
+    expect(seen[0]![1]).toContain("doesn't let friends' agents run commands");
     expect(seen[0]![2]).toBe(false);
     expect(seen.slice(1).map(([tool, veto, ok]) => [tool, veto, ok])).toEqual([
       ['Write', undefined, true],

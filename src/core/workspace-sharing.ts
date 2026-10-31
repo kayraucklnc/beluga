@@ -1,4 +1,7 @@
+import { defaultAgentOf } from '../protocol.js';
+import { placeAgent } from '../shared/agent-picker.js';
 import type { BodyInput, BodyOf, GuestCan, WsRole } from '../protocol.js';
+import { agentLabel } from '../shared/agent-label.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { ShareService } from './shares.js';
 import { type DomainState, type LogItem, type SaidBy, type Store, clean, peerName } from './store.js';
@@ -41,7 +44,7 @@ export function historyFor(log: readonly LogItem[], channel: string, nameOf: (id
     .map((l) =>
       l.type === 'chat'
         ? { from: nameOf(l.from), text: l.text.slice(0, 8000), ts: l.ts, byAgent: l.byAgent }
-        : { from: l.type === 'agent' ? `${l.ownerName}'s Claude` : '', text: l.type === 'agent' ? l.text.slice(0, 8000) : '', ts: l.ts, byAgent: true },
+        : { from: l.type === 'agent' ? agentLabel(l.agent, l.ownerName, false) : '', text: l.type === 'agent' ? l.text.slice(0, 8000) : '', ts: l.ts, byAgent: true },
     );
 }
 
@@ -51,7 +54,7 @@ export function historyFor(log: readonly LogItem[], channel: string, nameOf: (id
  */
 export function saidBy(state: DomainState, owner: string, h: BodyOf<'ws_invite'>['history'][number]): SaidBy {
   const name = clean(h.from).slice(0, 80);
-  const person = h.byAgent ? name.replace(/'s Claude$/, '') : name;
+  const person = h.byAgent ? name.replace(/'s .+$/, '') : name;
   const from = state.peers.find((p) => p.name === person)?.peerId ?? (person === peerName(state, owner) ? owner : `history:${person}`);
   return { from, name, text: clean(h.text), byAgent: h.byAgent, ts: h.ts };
 }
@@ -116,7 +119,7 @@ export class WorkspaceSharing {
     this.syncShare(wsId);
     const project = state.projects.find((p) => p.id === ws.projectId)?.name ?? '';
     const history = historyFor(state.log, `ws:${wsId}`, (id) => peerName(state, id));
-    this.deps.send({ kind: 'ws_invite', ws: { id: wsId, name: ws.name, project, ...(ws.branch ? { branch: ws.branch } : {}) }, role, ...(opts.can ? { can: opts.can } : {}), share: shareNameOf(wsId), history }, { to: peerId });
+    this.deps.send({ kind: 'ws_invite', ws: { id: wsId, name: ws.name, project, ...(ws.branch ? { branch: ws.branch } : {}), agent: placeAgent(ws, defaultAgentOf(state.self)) }, role, ...(opts.can ? { can: opts.can } : {}), share: shareNameOf(wsId), history }, { to: peerId });
     this.broadcastRoster(wsId);
     this.onChange?.();
     if (!opts.quiet) this.deps.toast(`${peer.name} ${role === 'contribute' ? 'can now work with you' : 'can now follow along'} in ${ws.name}`, 'success');
@@ -180,7 +183,7 @@ export class WorkspaceSharing {
     if (state.shared.some((w) => w.id === body.ws.id && w.owner !== from)) return;
     this.deps.store.dispatch({
       type: 'shared_add',
-      ws: { owner: from, id: body.ws.id, name: clean(body.ws.name), project: clean(body.ws.project), branch: body.ws.branch ? clean(body.ws.branch) : undefined, role: body.role, ...(body.can ? { can: body.can } : {}), share: body.share },
+      ws: { owner: from, id: body.ws.id, name: clean(body.ws.name), project: clean(body.ws.project), branch: body.ws.branch ? clean(body.ws.branch) : undefined, role: body.role, ...(body.can ? { can: body.can } : {}), share: body.share, ...(body.ws.agent ? { agent: body.ws.agent } : {}) },
     });
     const channel = `ws:${body.ws.id}`;
     this.deps.store.dispatch({ type: 'clear', channel });

@@ -1,5 +1,7 @@
 import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
 import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, asksPrivate, boardForRepo, boardOf, issueById, reposOf } from '@beluga/core/board/model.js';
+import { agentForChoice } from '@beluga/ui/agent-choice.js';
+import { YOUR_AGENT, useAgentEntries } from '../components/agent-options.js';
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
 import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
@@ -24,7 +26,8 @@ const SCALE: readonly Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
  * (BLG-319), no chat in between. "@" in the box names a teammate or a friend, so Claude knows who
  * you mean (BLG-342). It goes on the
  * board and in the column you opened it from, running in the repo you pick when the board covers
- * several. Start with Claude makes the worktree (in that repo) and puts Claude on it.
+ * several. Start with your agent makes the worktree (in that repo) and puts your agent on it.
+ * Agent (BLG-497): who works it when it starts (Codex, a local model…); your default unless you pick.
  */
 export function NewTaskSheet({ boardId, projectId, status, parent, close }: { boardId?: string; projectId?: string; status?: IssueStatus; parent?: string; close: () => void }) {
   const board = useBoard();
@@ -58,6 +61,9 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
   const choices = assigneeChoices(self, people);
   const [assignee, setAssignee] = useState('');
   const [start, setStart] = useState(false);
+  const agents = useAgentEntries();
+  const runtimes = useApp((s) => s.runtimes);
+  const [agent, setAgent] = useState(YOUR_AGENT);
   // Only you see it (BLG-501): words asking for it pick it, until you pick yourself.
   const [only, setOnly] = useState<boolean>();
   const sharedWith = useSharedWith()(project);
@@ -84,7 +90,7 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
       canSubmit={Boolean((mine ? title.trim() : describe.trim()) && project)}
       width={560}
       onCancel={close}
-      footer={<Checkbox checked={start} onChange={setStart} label="Start with Claude" detail="A new worktree, with Claude working on it" />}
+      footer={<Checkbox checked={start} onChange={setStart} label="Start with your agent" detail="A new worktree, with your agent working on it" />}
       onSubmit={async () => {
         const who = choices.find((c) => c.key === assignee)?.assignee;
         const created = await api.create({
@@ -95,6 +101,7 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
           priority,
           ...(who ? { assignee: who } : {}),
           ...(parentIssue ? { parent: parentIssue.id } : {}),
+          ...(agent !== YOUR_AGENT ? { agent: agentForChoice(agent, runtimes) } : {}),
           private: isPrivate,
         });
         close();
@@ -129,7 +136,7 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
               onChange={setDescribe}
               rows={4}
               maxLength={8000}
-              placeholder={solo ? 'Say what you want done: one task, or a few. Claude writes them.' : 'Say what you want done: one task, or a few and who each is for. Claude writes them.'}
+              placeholder={solo ? 'Say what you want done: one task, or a few. Your agent writes them.' : 'Say what you want done: one task, or a few and who each is for. Your agent writes them.'}
               onInput={(e) => grow(e.currentTarget)}
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing) return;
@@ -148,7 +155,7 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
       )}
       <button type="button" className={n.disclosure} aria-expanded={mine} onClick={() => setMine(!mine)}>
         <Icon name={mine ? 'chevronDown' : 'chevronRight'} size={10} />
-        {mine ? 'Let Claude write the title and goal' : 'Write title and goal myself'}
+        {mine ? 'Let your agent write the title and goal' : 'Write title and goal myself'}
       </button>
       {pickBoard ? (
         <Field label="Board">
@@ -185,6 +192,9 @@ export function NewTaskSheet({ boardId, projectId, status, parent, close }: { bo
           <Popup label="Assignee" value={assignee} options={[{ value: '', label: 'No one' }, ...choices.map((c) => ({ value: c.key, label: c.label }))]} onChange={setAssignee} />
         </Field>
       )}
+      <Field label="Agent" hint="Who works on it when it starts: its worktree runs this agent and model.">
+        <Popup label="Agent" value={agent} options={agents} onChange={setAgent} />
+      </Field>
     </FormSheet>
   );
 }

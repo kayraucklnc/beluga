@@ -262,7 +262,7 @@ describe('setup and run scripts', () => {
     // Its runs get them.
     kay.session.askOwnClaude('hi', `ws:${ws!.id}`);
     await waitFor(() => kay.runs.length === 1, 4000);
-    expect(kay.runs[0]?.setup?.brief).toContain('`true && (cd app && npm install)` (worked out by Claude)');
+    expect(kay.runs[0]?.setup?.brief).toContain('`true && (cd app && npm install)` (worked out by an agent)');
   }, 60_000);
 
   it("when the run fails it asks whether to fix it; yes has Claude find the right command, which starts", async () => {

@@ -67,13 +67,13 @@ export function ScratchEmpty({ working, off, dir, onReveal }: ScratchEmptyProps)
         icon="image"
         mark={<BelugaMark />}
         title="Nothing in scratch yet"
-        detail={off ? 'Claude isn’t given a scratch folder (Settings › Claude), so nothing lands here.' : 'Screenshots, logs, JSON and notes Claude saves while it works show up here, newest first.'}
+        detail={off ? 'Your agent isn’t given a scratch folder (see Settings), so nothing lands here.' : 'Screenshots, logs, JSON and notes your agent saves while it works show up here, newest first.'}
         action={
           <>
             {working ? (
               <div className={k.emptyWorking} role="status">
                 <DotMatrix size={12} />
-                <span>Claude is working · its files show up here as they’re saved</span>
+                <span>Your agent is working · its files show up here as they’re saved</span>
               </div>
             ) : null}
             {onReveal ? (
@@ -93,7 +93,7 @@ export function NextFileRow() {
   return (
     <div className={cx(k.next, k.live)} role="status">
       <DotMatrix size={12} />
-      <span>Claude is working</span>
+      <span>Your agent is working</span>
       <span className={k.bar} aria-hidden />
     </div>
   );

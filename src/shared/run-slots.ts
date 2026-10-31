@@ -15,16 +15,16 @@ export interface SlotWait {
   readonly limit: number;
 }
 
-export const SLOT_WAIT_TITLE = 'Waiting for a free Claude';
+export const SLOT_WAIT_TITLE = 'Waiting for a free agent';
 
 /** The queue's one line: "waiting for a free Claude: 10 other conversations are working". */
 export function slotWaitNote(wait: SlotWait): string {
   const n = Math.max(wait.running, wait.limit);
-  return `waiting for a free Claude: ${n} other conversation${n === 1 ? ' is' : 's are'} working`;
+  return `waiting for a free agent: ${n} other conversation${n === 1 ? ' is' : 's are'} working`;
 }
 
 /** "Your Claude is working in 10 other conversations (your limit). This one starts as soon as one finishes." */
 export function slotWaitDetail(wait: SlotWait): string {
   const n = Math.max(wait.running, wait.limit);
-  return `Your Claude is working in ${n} other conversation${n === 1 ? '' : 's'}, your limit at once. This one starts as soon as one of them finishes.`;
+  return `Your agent is working in ${n} other conversation${n === 1 ? '' : 's'}, your limit at once. This one starts as soon as one of them finishes.`;
 }

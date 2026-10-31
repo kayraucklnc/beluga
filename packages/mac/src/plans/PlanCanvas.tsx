@@ -477,7 +477,7 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
       </div>
     );
   }
-  const sub = info.sub ?? (t.state === 'asking' ? 'Claude asked you something' : t.forYou && t.state === 'ready' ? 'For you' : undefined);
+  const sub = info.sub ?? (t.state === 'asking' ? 'Your agent asked you something' : t.forYou && t.state === 'ready' ? 'For you' : undefined);
   return (
     <div
       className={cx(p.task, p[`task_${t.state}`], c.taskCard, data.selected && p.taskSelected, data.linked && p.taskLinked, data.mark && p.taskMarked)}
@@ -591,7 +591,7 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
             {data.starting ? (
               <span className={c.starting} role="status">
                 <Working />
-                Starting its Claude…
+                Starting its agent…
               </span>
             ) : null}
             {/* Where its work starts: the plan's branch, with what it waited on merged in. */}

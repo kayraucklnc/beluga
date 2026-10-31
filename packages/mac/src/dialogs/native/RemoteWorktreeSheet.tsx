@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Checkbox, Field, FormSheet, Popup, TextArea } from '../../components/FormSheet.js';
+import { defaultAgentOf } from '@beluga/protocol.js';
+import { agentName } from '@beluga/shared/agent-label.js';
 import { useApi, useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 
@@ -20,7 +22,7 @@ export function RemoteWorktreeForm({ peerId, project, close }: { peerId: string;
     <FormSheet
       title={`New Worktree on ${peer.name}’s Computer`}
       icon="branch"
-      intro={`${peer.name} approves it, then ${peer.name}’s Claude does the work there. You both see it in the sidebar.`}
+      intro={`${peer.name} approves it, then ${peer.name}’s ${agentName(defaultAgentOf(peer))} does the work there. You both see it in the sidebar.`}
       submitLabel={`Ask ${peer.name}`}
       canSubmit={Boolean(picked && task.trim())}
       onSubmit={() => {
@@ -33,11 +35,11 @@ export function RemoteWorktreeForm({ peerId, project, close }: { peerId: string;
       <Field label="Project" htmlFor="rws-project">
         <Popup id="rws-project" label="Project" value={picked} onChange={setPicked} options={projects.map((p) => ({ value: p, label: p }))} />
       </Field>
-      <Field label="Task" htmlFor="rws-task" hint="What their Claude should do. ⌘Return asks.">
+      <Field label="Task" htmlFor="rws-task" hint={`What their ${agentName(defaultAgentOf(peer))} should do. ⌘Return asks.`}>
         <TextArea id="rws-task" value={task} onChange={setTask} rows={4} placeholder="Add a health check endpoint and a test for it" data-autofocus />
       </Field>
       <Field label="">
-        <Checkbox checked={plan} onChange={setPlan} label="Plan first" detail={`${peer.name}’s Claude shows a plan before changing anything`} />
+        <Checkbox checked={plan} onChange={setPlan} label="Plan first" detail={`${peer.name}’s ${agentName(defaultAgentOf(peer))} shows a plan before changing anything`} />
       </Field>
     </FormSheet>
   );
