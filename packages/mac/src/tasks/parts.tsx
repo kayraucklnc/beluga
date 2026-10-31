@@ -261,9 +261,9 @@ export function PrivateMark({ issue, labelled }: { readonly issue: Pick<Issue, '
 
 /** Make Private or Share with Team, as the one item a task's menu has for it (BLG-501). */
 export function privacyItem(issue: Issue, sharedWith: string | undefined, setPrivate: (on: boolean) => void): ActionItem[] {
-  if (issue.private) return [{ label: 'Share with Team', icon: 'people', hint: sharedWith ? `${sharedWith} will see it` : 'Teammates will see it once you team up', onSelect: () => setPrivate(false) }];
+  if (issue.private) return [{ label: 'Share with Team', icon: 'people', hint: sharedWith ? 'Everyone on the team will see it' : 'Teammates will see it once you team up', onSelect: () => setPrivate(false) }];
   if (!sharedWith) return [];
-  return [{ label: 'Make Private', icon: 'lock', hint: `Only you; ${sharedWith} won’t see it`, onSelect: () => setPrivate(true) }];
+  return [{ label: 'Make Private', icon: 'lock', hint: 'Only you; the team won’t see it', onSelect: () => setPrivate(true) }];
 }
 
 export function useIssueMenu(): (issue: Issue) => ActionItem[] {

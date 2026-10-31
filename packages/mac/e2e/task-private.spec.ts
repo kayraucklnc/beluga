@@ -31,7 +31,7 @@ test('a task asked for “just for me” is private until shared with the team',
   await sheet.getByRole('textbox', { name: 'Describe the task' }).fill('Draft the X launch thread, just for me');
   const who = sheet.getByRole('radiogroup', { name: 'Who sees it' });
   await expect(who.getByRole('radio', { name: 'Only You' })).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
-  await expect(who.getByRole('radio', { name: /You and bob/ })).toHaveAttribute('aria-checked', 'false');
+  await expect(who.getByRole('radio', { name: 'Your Team' })).toHaveAttribute('aria-checked', 'false');
   await expect(sheet).toContainText('Your words asked to keep it to yourself');
   if (SHOT) await sheet.screenshot({ path: `${SHOT}-new-task.png` });
   await sheet.getByRole('button', { name: 'Create Task' }).click();

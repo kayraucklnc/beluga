@@ -147,11 +147,11 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
       </Field>
       {/* Only worth asking when someone else would see it (teammates, Linear), or it's under a private task. */}
       {sharedWith || forced ? (
-        <Field label="Who Sees It" hint={forced ? 'Its parent is private, so it is too' : isPrivate && only === undefined ? 'Your words asked to keep it to yourself' : undefined}>
+        <Field label="Who Sees It" hint={forced ? 'Its parent is private, so it is too' : isPrivate ? (only === undefined ? 'Your words asked to keep it to yourself' : undefined) : sharedWith ? `Everyone on the team: ${sharedWith}, and whoever they team up with` : undefined}>
           <div className={n.scale} role="radiogroup" aria-label="Who sees it">
             <button type="button" role="radio" aria-checked={!isPrivate} disabled={forced} className={cx(n.step, !isPrivate && n.stepOn)} onClick={() => setOnly(false)}>
               <Icon name="people" size={12} />
-              {sharedWith ? `You and ${sharedWith}` : 'The team'}
+              Your Team
             </button>
             <button type="button" role="radio" aria-checked={isPrivate} className={cx(n.step, isPrivate && n.stepOn)} onClick={() => setOnly(true)}>
               <Icon name="lock" size={12} />

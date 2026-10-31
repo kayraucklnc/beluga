@@ -201,10 +201,10 @@ function PrivateBanner({ issue }: { issue: Issue }) {
     <div className={t.banner} role="status">
       <Icon name="lock" size={14} />
       <span className={t.bannerText}>
-        <strong>Private.</strong> Only you see it{sharedWith ? `; ${sharedWith} won’t until you share it` : ''}.
+        <strong>Private.</strong> Only you see it{sharedWith ? '; your team won’t until you share it' : ''}.
       </span>
       {sharedWith ? (
-        <Button size="small" onClick={() => void act(() => api.setPrivate(issue.id, false), `Shared ${issue.key}${kids ? ' and its sub-tasks' : ''} with ${sharedWith}`)}>
+        <Button size="small" onClick={() => void act(() => api.setPrivate(issue.id, false), `Shared ${issue.key}${kids ? ' and its sub-tasks' : ''} with the team`)}>
           Share with Team
         </Button>
       ) : null}
