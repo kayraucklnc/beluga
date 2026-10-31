@@ -16,6 +16,10 @@ import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
 import { runId, setupId } from '../src/core/workbench.js';
 import { attach, waitFor } from './helpers.js';
+import { posixSh } from '../src/terminal/pty.js';
+
+/** bash, or Git Bash on Windows. */
+const BASH = process.platform === 'win32' ? (posixSh() ?? 'bash') : '/bin/bash';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -480,13 +484,13 @@ describe('your shell, its names and your variables', () => {
     const kay = await solo(dir);
     const project = projectOf(kay.workspaces);
     await waitFor(() => kay.state().projects.some((p) => p.id === project.id), 4000);
-    kay.session.setPrefs({ shell: '/bin/bash', shellLogin: false, shellArgs: ['--norc', '--noprofile'] });
+    kay.session.setPrefs({ shell: BASH, shellLogin: false, shellArgs: ['--norc', '--noprofile'] });
     kay.session.env.set(undefined, [{ key: 'KLAUD_T_MINE', value: 'mine' }, { key: 'KLAUD_T_BOTH', value: 'mine' }]);
     kay.session.env.set(project.id, [{ key: 'KLAUD_T_BOTH', value: 'project' }]);
     const shell = kay.bench.globalShell('shell:1', dir)!;
     shell.run('echo "got:$KLAUD_T_MINE:$KLAUD_T_BOTH:$0"');
     await waitFor(() => shell.backlog().includes('got:mine:project:'), 8000);
-    expect(shell.shell).toBe('/bin/bash');
+    expect(shell.shell).toBe(BASH);
 
     // Setup and run commands get them too (alongside Beluga's own).
     const ws = await kay.session.workspaces!.newWorktree(project.id, 'envy');

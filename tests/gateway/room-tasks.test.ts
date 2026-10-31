@@ -103,7 +103,8 @@ describe('tasks between Claudes in a room', () => {
     expect(zoe.state().log.some((l) => JSON.stringify(l).includes('README for typos'))).toBe(false);
   });
 
-  it('run_on: full trust runs, trusted asks (the request card), secrets never, blocked is declined', async () => {
+  // Not on Windows: the temp folder is under home there, so it shows as ~\….
+  it.skipIf(process.platform === 'win32')('run_on: full trust runs, trusted asks (the request card), secrets never, blocked is declined', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
     const bob = peer('bob');

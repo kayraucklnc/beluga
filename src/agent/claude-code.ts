@@ -109,7 +109,7 @@ export async function installClaudeCode(pin: ClaudeCodePin, opts: { home?: strin
     if ((await sha512(tgz)) !== pin.integrity) throw new Error('The Claude Code download didn’t match what this build expects');
     await rm(unpack, { recursive: true, force: true });
     mkdirSync(unpack, { recursive: true });
-    await promisify(execFile)('tar', ['-xzf', tgz, '-C', unpack, '--strip-components=1', 'package/claude']);
+    await promisify(execFile)('tar', ['-xzf', tgz, '-C', unpack, '--strip-components=1', `package/${CLAUDE_EXE}`]);
     await chmod(path.join(unpack, CLAUDE_EXE), 0o755);
     await rm(path.dirname(bin), { recursive: true, force: true });
     await rename(unpack, path.dirname(bin));

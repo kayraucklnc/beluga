@@ -2,6 +2,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { folderSize } from './disk.js';
+import { parseWorktreeList } from './git.js';
 import { removeWorktreeKeepingBranch } from './others.js';
 import { ArchiveError, LONG_MS, RAW_ARGS, RAW_ENV, assertSettled, fingerprint, git, gitLiteral, ignoredByProject, ignoredIn, pack, run, snapshot, submoduleOnlyHere, submodulesIn, tryGit, unpackKeeping, untrackedDirs } from './archive-git.js';
 import { type RegenRule, regenRule, remakeSteps } from './regenerable.js';
@@ -277,7 +278,7 @@ export function restoreWorktree(o: Omit<ArchiveOptions, 'onPhase'>): Promise<Arc
     const folder = folderOf(o.archivesDir, o.id);
     if (existsSync(o.dir)) {
       // What an archive couldn't remove (or something put there since): set aside, never deleted.
-      const registered = (await git(o.repo, ['worktree', 'list', '--porcelain'])).split('\n').some((l) => l === `worktree ${o.dir}`);
+      const registered = parseWorktreeList(await git(o.repo, ['worktree', 'list', '--porcelain'])).some((w) => w.path === o.dir);
       if (registered) throw new ArchiveError(`${o.dir} is already there`);
       renameSync(o.dir, `${o.dir}.left-${Date.now()}`);
     }

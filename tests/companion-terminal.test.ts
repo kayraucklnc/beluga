@@ -20,6 +20,7 @@ import { generateIdentity } from '../src/net/crypto.js';
 import { globalShellId, isGlobalShell } from '../src/shared/terminal-keys.js';
 import { TerminalManager } from '../src/terminal/pty-host.js';
 import { waitFor } from './helpers.js';
+import { posixSh } from '../src/terminal/pty.js';
 
 /**
  * A worktree's terminal on the phone (BLG-42), over the real companion link on a local testnet:
@@ -39,8 +40,8 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 
-/** An interactive /bin/sh with a fixed prompt, so output is predictable. */
-const SHELL = { shell: '/bin/sh', args: ['-i'], env: { PS1: '$ ', ENV: '' } };
+/** An interactive sh (Git Bash on Windows) with a fixed prompt, so output is predictable. */
+const SHELL = { shell: posixSh() ?? '/bin/sh', args: ['-i'], env: { PS1: '$ ', ENV: '' } };
 
 async function setup() {
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'beluga-companion-term-')));

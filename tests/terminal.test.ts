@@ -293,7 +293,8 @@ describe('helpers', () => {
     expect(env).toEqual({ PATH: '/bin', TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'beluga', FOO: 'bar' });
   });
 
-  it('defaultShell prefers $SHELL when it exists', () => {
+  // Not on Windows: Windows picks PowerShell (tests/platform-shells.test.ts).
+  it.skipIf(process.platform === 'win32')('defaultShell prefers $SHELL when it exists', () => {
     expect(defaultShell({ SHELL: '/bin/sh' })).toBe('/bin/sh');
     expect(defaultShell({ SHELL: '/nope/zsh' })).not.toBe('/nope/zsh');
   });

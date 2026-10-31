@@ -436,9 +436,9 @@ describe('sub-agents get a scratch folder of their own', () => {
     const cwd = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-run-')));
     try {
       script.turns = [() => [text('ok'), result('ok')]];
-      await createClaudeBackend({ cwd, autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ scratchDir: '.klaud/scratch' }));
+      await createClaudeBackend({ cwd, autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ scratchDir: '.beluga/scratch' }));
       const out = (await call('Agent', { description: 'Check the UI', prompt: 'Look at it.' })) as { hookSpecificOutput: { permissionDecision: string; updatedInput: { prompt: string; description: string } } };
-      const dir = path.join(cwd, '.klaud/scratch/agents/0123456789');
+      const dir = path.join(cwd, '.beluga/scratch/agents/0123456789');
       expect(out.hookSpecificOutput.permissionDecision).toBe('allow');
       expect(out.hookSpecificOutput.updatedInput.prompt).toContain(`Look at it.`);
       expect(out.hookSpecificOutput.updatedInput.prompt).toContain(`${dir}/`);

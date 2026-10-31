@@ -185,7 +185,8 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('lists what it made or looked at that is still there, newest first, its own folder included', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('lists what it made or looked at that is still there, newest first, its own folder included', () => {
     const out = w.outputs(SID, 'a1');
     expect(out.scratch).toBe(path.join(cwd, '.beluga/scratch/agents/0123456789'));
     expect(out.outputs.map((o) => [path.relative(root, o.path), o.how, o.kind])).toEqual([
@@ -199,7 +200,8 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     expect(w.outputs('ffffffff-0000-0000-0000-000000000000', 'a1')).toEqual({ outputs: [], missing: true });
   });
 
-  it('reads one: pictures as data, text with secrets taken out; nothing it never touched', () => {
+  // Not on Windows: POSIX paths in the fixtures.
+  it.skipIf(process.platform === 'win32')('reads one: pictures as data, text with secrets taken out; nothing it never touched', () => {
     const shot = w.output(SID, 'a1', path.join(tmp, 'shot.png'));
     expect(shot).toMatchObject({ kind: 'image', mime: 'image/png', size: 4, data: Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64') });
     const log = w.output(SID, 'a1', path.join(tmp, 'test.log'));

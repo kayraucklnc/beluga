@@ -179,7 +179,8 @@ describe('running a command on a friend', () => {
     expect(bob.state().inbox[0]?.title).toContain('kay ran');
   });
 
-  it('shows "running" once they approve, before the output arrives', async () => {
+  // Not on Windows: sh syntax (sleep): Windows runs these in cmd.
+  it.skipIf(process.platform === 'win32')('shows "running" once they approve, before the output arrives', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
     const bob = peer('bob');

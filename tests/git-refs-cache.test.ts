@@ -10,6 +10,8 @@ const shim = await vi.hoisted(async () => {
   const fs = await import('node:fs');
   const { default: p } = await import('node:path');
   const { default: o } = await import('node:os');
+  // The shim is a shell script: not on Windows (the tests below skip there).
+  if (process.platform === 'win32') return { dir: '', log: '' };
   const real = run('/usr/bin/which', ['git']).toString().trim();
   const dir = fs.mkdtempSync(p.join(o.tmpdir(), 'beluga-gitshim-'));
   const log = p.join(dir, 'calls.log');
@@ -45,10 +47,12 @@ beforeAll(() => {
 
 afterAll(() => {
   rmSync(base, { recursive: true, force: true });
-  rmSync(shim.dir, { recursive: true, force: true });
+  if (shim.dir) rmSync(shim.dir, { recursive: true, force: true });
 });
 
-describe('a worktree’s commits against its base, counted only when its refs moved (BLG-407)', () => {
+// Not on Windows: git is watched through a shell-script shim.
+
+describe.skipIf(process.platform === 'win32')('a worktree’s commits against its base, counted only when its refs moved (BLG-407)', () => {
   it('reuses the count while nothing git keeps refs in changed, and counts again the moment one does', async () => {
     await settle();
     expect(await status(wt, 'main')).toEqual({ branch: 'beluga/x', changed: 0, ahead: 1, behind: 0 });
