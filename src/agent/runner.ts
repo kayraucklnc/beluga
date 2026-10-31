@@ -118,6 +118,17 @@ function planServer(input: AgentRunInput): { beluga_plan?: ReturnType<typeof cre
   return input.planTools ? { beluga_plan: createPlanTools(input.planTools) } : {};
 }
 
+/**
+ * Which settings files a run loads. Your own runs get your Claude Code as you set it up: your
+ * user settings (~/.claude/settings.json: hooks, permission rules, plugins) and your skills and
+ * commands. A project's .claude/ is never loaded, for anyone: it sits in the folder a friend with
+ * :rw access may write to, so they could plant hooks or permission rules there. A friend's or a
+ * guest's run loads nothing of yours.
+ */
+export function ownerSettings(input: Pick<AgentRunInput, 'ownerMcp' | 'guest'>): { settingSources: Array<'user'>; skills?: 'all' } {
+  return input.ownerMcp && !input.guest ? { settingSources: ['user'], skills: 'all' } : { settingSources: [] };
+}
+
 /** Tokens and cost of a run, summed over every model it used (sub-agents included). */
 export function usageOf(modelUsage: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }>, cost: number, session: string) {
   const all = Object.values(modelUsage);
@@ -275,8 +286,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           ],
         },
         systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.macBrief ?? '') + (input.phoneBrief ?? '') + (input.sentinelBrief ?? '') + (input.setup && !askOnly ? input.setup.brief : '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (input.env?.KLAUD_WORKTREE && !input.planBrief && !askOnly ? buildCommitAppend() : '') + (input.place?.shipped && !askOnly ? buildShippedAppend(input.place.shipped) : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
-        // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
-        settingSources: [],
+        ...ownerSettings(input),
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
         // Set, this replaces Claude Code's whole environment, so it starts from ours.

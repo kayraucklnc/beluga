@@ -6,9 +6,10 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 /**
  * Your own MCP servers, as your Claude Code has them, for your own runs.
  *
- * Runs load no settings files (settingSources: [], so a friend with :rw access can't plant hooks
- * or permission rules), and with them went every MCP server. These are read straight from the
- * files Claude Code keeps in your home folder, never from a shared folder:
+ * Runs never load a project's settings (a friend with :rw access could plant hooks or permission
+ * rules there; your own runs load only your user settings, see ownerSettings in runner.ts), and
+ * with them went the project's MCP servers. These are read straight from the files Claude Code
+ * keeps in your home folder, never from a shared folder:
  *  - user scope: `mcpServers` in ~/.claude.json
  *  - local scope: `projects[<folder>].mcpServers` in ~/.claude.json, for the run's folder and,
  *    in a worktree, its main checkout (minus the ones you turned off there, `disabledMcpServers`)
