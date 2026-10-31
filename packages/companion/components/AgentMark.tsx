@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import Svg, { Path } from 'react-native-svg';
-import { AGENT_MARK_PATHS, type AgentMark, runtimeMark } from '../../../src/shared/agent-marks';
+import { AGENT_MARKS, AGENT_MARK_VIEWBOX, type AgentMark, runtimeMark } from '../../../src/shared/agent-marks';
 import { color as palette } from '../lib/theme';
 
 export type { AgentMark };
@@ -8,14 +8,14 @@ export { agentMark, modelMark, runtimeMark } from '../../../src/shared/agent-mar
 
 /**
  * An agent's or a model maker's mark (BLG-497): Claude Code, Codex, a local model, Anthropic,
- * OpenAI. The same path data as the Mac (src/shared/agent-marks.ts), on its 16×16 grid with 1.5
- * strokes, round caps and joins, no fill, in the ink it's given (the text's, by default). Always
- * beside the agent's name, never instead of it.
+ * OpenAI. The makers' own logos, the same data as the Mac (src/shared/agent-marks.ts): filled, in
+ * the brand's colour when it has one (Claude Code's orange), else the ink it's given (the text's,
+ * by default). Always beside the agent's name, never instead of it.
  */
 export function AgentMarkIcon({ mark, size = 16, color }: { readonly mark: AgentMark; readonly size?: number; readonly color?: string }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <Path d={AGENT_MARK_PATHS[mark]} stroke={color ?? palette.text} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <Svg width={size} height={size} viewBox={AGENT_MARK_VIEWBOX} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Path d={AGENT_MARKS[mark].d} fill={AGENT_MARKS[mark].color ?? color ?? palette.text} {...(AGENT_MARKS[mark].evenOdd ? { fillRule: 'evenodd' as const, clipRule: 'evenodd' as const } : {})} />
     </Svg>
   );
 }

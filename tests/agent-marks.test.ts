@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_MARK_PATHS, agentMark, modelMark, runtimeMark } from '../src/shared/agent-marks.js';
+import { AGENT_MARKS, agentMark, modelMark, runtimeMark } from '../src/shared/agent-marks.js';
 import { runtimeChoices } from '../src/shared/agent-runtimes.js';
 import { agentChoices, agentForChoice, choiceForAgent } from '../src/ui/agent-choice.js';
 
@@ -9,7 +9,7 @@ describe('agent marks', () => {
     expect(runtimeMark('codex')).toBe('codex');
     expect(runtimeMark('local')).toBe('localModel');
     expect(agentMark(undefined)).toBe('claudeCode');
-    for (const mark of ['claudeCode', 'codex', 'localModel', 'anthropic', 'openai'] as const) expect(AGENT_MARK_PATHS[mark]).toMatch(/^M/);
+    for (const mark of ['claudeCode', 'codex', 'localModel', 'anthropic', 'openai'] as const) expect(AGENT_MARKS[mark].d).toMatch(/^M/);
   });
 
   it("a model's maker, by its id", () => {
