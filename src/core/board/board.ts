@@ -332,7 +332,8 @@ export class Board {
       labels: this.allowedLabels(boardId, input.labels ?? [], [], by, origin),
       ...(input.estimate ? { estimate: input.estimate } : {}),
       ...(input.due && DAY.test(input.due) ? { due: input.due } : {}),
-      ...(input.assignee ? { assignee: personOf(input.assignee as AnyAssignee) } : {}),
+      // A sub-task is for whoever has its parent, unless it's given to someone else (BLG-512).
+      ...(input.assignee ? { assignee: personOf(input.assignee as AnyAssignee) } : parent?.assignee ? { assignee: parent.assignee } : {}),
       ...(parent ? { parent: parent.id } : {}),
       ...(input.plan ? { plan: input.plan } : {}),
       ...(input.github ? { github: input.github } : {}),
@@ -362,6 +363,7 @@ export class Board {
 
   update(ref: string, patch: IssuePatch, by: Actor): Issue {
     let issue = this.need(ref);
+    const before = issue;
     const notes: Note[] = [];
     const next: { -readonly [K in keyof Issue]?: Issue[K] } = {};
     if (patch.title !== undefined) {
@@ -444,12 +446,30 @@ export class Board {
       const back = was === only.now;
       const text = only.kind === 'status' ? statusText(was, only.now!) : only.text;
       const entries = back ? [] : [this.entry(by, only.kind, text, undefined, at, only.assignee, { was, now: only.now! })];
-      return this.change(issue, next, entries, true, true);
+      issue = this.change(issue, next, entries, true, true);
+      if ('assignee' in next) this.passAssignee(issue, before.assignee, by);
+      return issue;
     }
     issue = this.change(issue, next, notes.map((n) => this.entry(by, n.kind, n.text, undefined, at, n.assignee, n.was !== undefined ? { was: n.was, now: n.now! } : undefined)));
     // Under a private task now: private like the rest of it (BLG-501).
     if (next.parent && !issue.private && this.get(next.parent)?.private) issue = this.setPrivate(issue.id, true, by);
+    if ('assignee' in next) this.passAssignee(issue, before.assignee, by);
+    // Under an assigned task now, with no one of its own: its parent's person's (BLG-512).
+    const parent = next.parent ? this.get(next.parent) : undefined;
+    if (parent?.assignee && !issue.assignee) issue = this.update(issue.id, { assignee: parent.assignee }, by);
     return issue;
+  }
+
+  /**
+   * A task given to someone else: its open sub-tasks, all the way down, go with it (BLG-512),
+   * except one given to another person, which keeps them. Finished ones keep who did them.
+   */
+  private passAssignee(issue: Issue, was: Assignee | undefined, by: Actor): void {
+    for (const kid of this.issues.filter((i) => i.parent === issue.id && isOpen(i.status) && !isArchived(i))) {
+      if (kid.assignee && !sameAssignee(kid.assignee, was)) continue;
+      if (sameAssignee(kid.assignee, issue.assignee)) continue;
+      this.update(kid.id, { assignee: issue.assignee ?? null }, by);
+    }
   }
 
   /**
