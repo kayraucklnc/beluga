@@ -8,7 +8,9 @@ const KEY = `lin_api_${'d'.repeat(40)}`;
 
 test('connects a project to Linear and brings its issues over', async ({ page }) => {
   await page.goto('/');
-  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  // Tasks lives under Work (BLG-197).
+  await sidebar(page).getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('tablist', { name: 'Work' }).getByRole('tab', { name: 'Tasks' }).click();
   await expect(page.getByRole('tablist', { name: 'Show' })).toBeVisible();
   await page.getByRole('button', { name: 'Tasks Options' }).click();
   await page.getByRole('menuitem', { name: 'Sync with Linear…' }).click();

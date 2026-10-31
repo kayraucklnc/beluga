@@ -430,8 +430,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `gateway.removeRule` | ✓ Settings › People & access › Rules, and a friend's card: Delete |
 | `gateway.setCapabilities` | ✓ Settings › People & access › What your friends’ Claudes can do here (per capability and trust level, the folders) |
 | `gateway.image` | ✓ screenshots on a task card's result |
-| `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…), sub-tasks on a task page |
-| `board.update` | ✓ a task's properties (status, priority, assignee, labels, estimate, due date, parent), its title in place, row and card menus |
+| `board.create` | ✓ New Task (⌘N in Tasks, C, the + in a status group, ⌘K › New Task…; on a board of several repos, its Repo picker), sub-tasks on a task page |
+| `board.update` | ✓ a task's properties (status, priority, assignee, labels, estimate, due date, parent, and the repo it runs in on a board of several), its title in place, row and card menus |
 | `board.setPrivate` | ✓ a task's ⋯ › Make Private / Share with Team (only offered when teammates or Linear would see it), the Share with Team button on a private task's page, New Task's Who Sees It |
 | `board.move` | ✓ dragging a card between columns on the board, or within one |
 | `board.editBrief` | ✓ a section of the brief on a task page (click to edit, ⌘↩ saves) |
@@ -448,6 +448,9 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.unarchive` | ✓ an archived task's banner (Restore), ⋯ › Restore from Archive |
 | `board.emptyArchive` | ✓ Tasks › Archive › Empty Archive |
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
+| `board.createBoard` | ✓ Tasks › the board switcher › New Board… (a name, the repos it covers, its keys) |
+| `board.editBoard` | ✓ Tasks › the board switcher › Board Settings…, ⋯ › Board Settings… / Repos on This Board…, the Repos filter's Repos on This Board…, a task's Repo menu |
+| `board.removeBoard` | ✓ a board of its own's settings sheet › Delete Board… (only once nothing is on it) |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
 | `board.createLabel` | ✓ a task's Labels menu › New Label… (a name, an icon, a color) |
 | `board.removeLabel` | ✓ the New Label sheet: a project label's remove button (under Labels of this project) |

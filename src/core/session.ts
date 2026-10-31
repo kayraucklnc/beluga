@@ -196,6 +196,7 @@ export class Session {
   readonly attention: AttentionRegistry;
 
   constructor(private readonly opts: SessionOptions) {
+    if (opts.workspaces) opts.workspaces.branchPrefix = () => opts.store.getState().prefs.branchPrefix;
     this.bridge = createRoomBridge(this, () => opts.agentCwd);
     const parts = createSessionParts(this, opts);
     this.workspaces = parts.workspaces;

@@ -1,7 +1,7 @@
 import type { Board } from '../board/board.js';
 import { criteria, criterionLine } from '../board/criteria.js';
 import { labelsFor } from '../board/labels.js';
-import { type Actor, type Assignee, type BriefSection, type Issue, isOpen } from '../board/model.js';
+import { type Actor, type Assignee, type BriefSection, type Issue, boardOf, isOpen } from '../board/model.js';
 import { PlanError } from './edit.js';
 import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, milestoneDeps, taskById } from './model.js';
 
@@ -33,7 +33,7 @@ export class ApplyError extends Error {
 }
 
 const inPlanSet = (board: Board, issue: Issue, labels: readonly string[]): string[] => {
-  const set = new Set(labelsFor(board.state(), issue.projectId).map((l) => l.name));
+  const set = new Set(labelsFor(board.state(), boardOf(issue)).map((l) => l.name));
   return labels.map((l) => l.toLowerCase()).filter((l) => set.has(l) || issue.labels.includes(l));
 };
 

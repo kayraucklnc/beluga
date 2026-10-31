@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 30 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 31 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -75,6 +75,10 @@ export const COMPANION_PROTO = { major: 1, minor: 30 } as const;
  * 1.30 (BLG-429): a direct message deleted (`network.messages.delete`, yours from your friend's Mac
  * too), your own edited (`network.messages.edit`, only one whose words reach the phone whole:
  * `ChatMessageView.editable`), and a direct chat cleared on the Mac (`network.clear`).
+ * 1.31 (BLG-500): boards and repos are many to many. `TasksView.projects` are boards (a repo's own,
+ * by its project id, or one covering several, `board_…`), and a task on a board of several says
+ * which repo it runs in (`TaskSummary.repo`). `companion.draftTask` / `addTask` take a board's id
+ * too (the task runs in its first repo).
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10, gone: 11, worktreePhotos: 12, keepAwake: 13, awayBeat: 13, macChats: 14, voice: 16, control: 17, video: 18, proof: 19, sentinel: 21, dashboard: 22, sentinelChat: 23, severalTasks: 24, documents: 25, widgets: 26, forget: 27, dismiss: 27, editPrompt: 28, docRefs: 29, keptData: 29, chatEdits: 30 } as const;
 
@@ -572,6 +576,8 @@ export const TaskSummary = z.object({
   epic: z.object({ done: z.number().int().min(0), total: z.number().int().min(0) }).optional(),
   /** The epic it's part of: its key. */
   epicKey: z.string().max(40).optional(),
+  /** The repo it runs in (its name), when its board covers several (1.31). */
+  repo: z.string().max(200).optional(),
   /** Only you see it (BLG-501): it never reaches teammates or Linear. */
   private: z.literal(true).optional(),
   updatedAt: ts,

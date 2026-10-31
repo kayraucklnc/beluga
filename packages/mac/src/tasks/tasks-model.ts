@@ -1,5 +1,5 @@
 import type { Assignee, BoardState, Issue, IssueStatus } from '../../../../src/core/board/model.js';
-import { ISSUE_STATUSES, STATUS_INFO, childrenOf, filterIssues, isOpen, openBlockers } from '../../../../src/core/board/model.js';
+import { ISSUE_STATUSES, STATUS_INFO, boardForRepo, boardName, boardOf, childrenOf, filterIssues, isArchived, isOpen, isOwnBoard, openBlockers, reposOf } from '../../../../src/core/board/model.js';
 import { type Tally, parseCriterion, tally } from '../../../../src/core/board/criteria.js';
 import type { Graph, GraphNode, GraphEdge } from '../../../../src/shared/graph-spec.js';
 
@@ -14,8 +14,12 @@ export type Display = 'list' | 'board' | 'graph';
 export interface TasksPrefs {
   readonly scope: Scope;
   readonly display: Display;
-  /** The project you were last in (Tasks opens on it). Tasks never mix projects. */
+  /** The project you were last in (Tasks opens on a board that covers it). */
   readonly project: string;
+  /** The board you last looked at in Tasks (a board covers one repo or several). */
+  readonly board: string;
+  /** The repos a board of several shows ([] = all of them): those not on the board you're on are left aside. */
+  readonly repos: readonly string[];
   /** Whose tasks ('' = everyone's): an assignee key (assigneeKey), 'nobody', or 'private' (BLG-501). */
   readonly who: string;
   /** Status groups folded in the list. */
@@ -27,7 +31,7 @@ export interface TasksPrefs {
   readonly opened: readonly string[];
 }
 
-export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'board', project: '', who: '', folded: ['canceled'], opened: [] };
+export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'board', project: '', board: '', repos: [], who: '', folded: ['canceled'], opened: [] };
 
 export const SCOPES: ReadonlyArray<{ readonly value: Scope; readonly label: string; readonly hint: string }> = [
   { value: 'active', label: 'Active', hint: 'Ready, In Progress and In Review' },
@@ -44,6 +48,8 @@ export function readTasksPrefs(raw: string | null): TasksPrefs {
       scope: SCOPES.some((s) => s.value === p.scope) ? p.scope! : DEFAULT_TASKS_PREFS.scope,
       display: p.display === 'board' || p.display === 'graph' || p.display === 'list' ? p.display : DEFAULT_TASKS_PREFS.display,
       project: typeof p.project === 'string' ? p.project : '',
+      board: typeof p.board === 'string' ? p.board : '',
+      repos: Array.isArray(p.repos) ? p.repos.filter((r): r is string => typeof r === 'string') : [],
       who: typeof p.who === 'string' ? p.who : '',
       folded: Array.isArray(p.folded) ? p.folded.filter((s): s is IssueStatus => (ISSUE_STATUSES as readonly string[]).includes(s)) : DEFAULT_TASKS_PREFS.folded,
       opened: Array.isArray(p.opened) ? p.opened.filter((id): id is string => typeof id === 'string') : DEFAULT_TASKS_PREFS.opened,
@@ -112,19 +118,85 @@ export const toggleOpened = (opened: readonly string[], epicId: string): string[
 /** Whether a task is for `who` ('' = anyone, 'nobody' = unassigned, 'private' = only you see it, else an assignee key). */
 export const isFor = (issue: Issue, who: string): boolean => (!who ? true : who === 'nobody' ? !issue.assignee : who === 'private' ? Boolean(issue.private) : assigneeKey(issue.assignee) === who);
 
-/** One project's tasks in a scope, for someone, matching words, in list order. */
-export function scoped(board: BoardState, prefs: Pick<TasksPrefs, 'scope' | 'project' | 'who'>, selfId: string, query = '', now = Date.now()): Issue[] {
-  return filterIssues(board, { scope: prefs.scope, selfId, now, projectId: prefs.project, ...(query.trim() ? { query } : {}) }).filter((i) => isFor(i, prefs.who));
+/**
+ * One board's tasks in a scope, for someone, matching words, in list order (`project` is the board;
+ * `repos`: only those running in these, none or empty: all).
+ */
+export function scoped(board: BoardState, prefs: Pick<TasksPrefs, 'scope' | 'project' | 'who'> & { readonly repos?: readonly string[] }, selfId: string, query = '', now = Date.now()): Issue[] {
+  return filterIssues(board, { scope: prefs.scope, selfId, now, boardId: prefs.project, ...(prefs.repos?.length ? { repos: prefs.repos } : {}), ...(query.trim() ? { query } : {}) }).filter((i) => isFor(i, prefs.who));
 }
 
-/** How many unfinished tasks each scope has in a project (for someone), and how many are archived: the tabs' counts. */
-export function scopeCounts(board: BoardState, project: string, who: string, selfId: string, now = Date.now()): Readonly<Record<Scope, number>> {
-  const count = (scope: Scope): number => scoped(board, { scope, project, who }, selfId, '', now).filter((i) => isOpen(i.status)).length;
-  return { active: count('active'), backlog: count('backlog'), all: count('all'), archived: scoped(board, { scope: 'archived', project, who }, selfId, '', now).length };
+/** How many unfinished tasks each scope has on a board (for someone, in some repos), and how many are archived: the tabs' counts. */
+export function scopeCounts(board: BoardState, project: string, who: string, selfId: string, now = Date.now(), repos: readonly string[] = []): Readonly<Record<Scope, number>> {
+  const count = (scope: Scope): number => scoped(board, { scope, project, who, repos }, selfId, '', now).filter((i) => isOpen(i.status)).length;
+  return { active: count('active'), backlog: count('backlog'), all: count('all'), archived: scoped(board, { scope: 'archived', project, who, repos }, selfId, '', now).length };
 }
 
-/** Done tasks a project has on its board (not archived yet): what Archive Done takes. */
-export const doneCount = (board: BoardState, projectId: string | undefined): number => board.issues.filter((i) => i.status === 'done' && i.projectId === projectId && i.archivedAt === undefined).length;
+/** Done tasks on a board (not archived yet): what Archive Done takes. */
+export const doneCount = (board: BoardState, boardId: string | undefined): number => board.issues.filter((i) => i.status === 'done' && boardOf(i) === boardId && i.archivedAt === undefined).length;
+
+// ---- boards (many to many with repos)
+
+export interface BoardChoice {
+  readonly id: string;
+  readonly name: string;
+  /** The repos it covers (project ids), its own first; those no longer here left out. */
+  readonly repos: readonly string[];
+  /** A board of its own (made in Tasks), not one repo's. */
+  readonly own: boolean;
+}
+
+/**
+ * The boards Tasks offers: every repo's own board, then boards of their own, by name. A repo's
+ * board with nothing on it whose repo another board covers is left out (its work is on that one),
+ * unless it's the one you're on.
+ */
+export function boardChoices(board: BoardState, projects: ReadonlyArray<{ readonly id: string; readonly name: string }>, showing?: string): BoardChoice[] {
+  const name = (id: string): string | undefined => projects.find((p) => p.id === id)?.name;
+  const here = (repos: readonly string[]): string[] => repos.filter((r) => projects.some((p) => p.id === r));
+  const used = new Set(board.issues.filter((i) => !isArchived(i)).map(boardOf));
+  const own = Object.keys(board.projects).filter(isOwnBoard);
+  const covered = new Set(own.flatMap((id) => reposOf(board, id)).concat(Object.keys(board.projects).filter((id) => !isOwnBoard(id)).flatMap((id) => reposOf(board, id).slice(1))));
+  const repoBoards = projects.filter((p) => p.id === showing || used.has(p.id) || !covered.has(p.id)).map((p) => ({ id: p.id, name: boardName(board, p.id, name), repos: here(reposOf(board, p.id)), own: false }));
+  const made = own.map((id) => ({ id, name: boardName(board, id, name), repos: here(reposOf(board, id)), own: true })).sort((a, b) => a.name.localeCompare(b.name));
+  return [...repoBoards, ...made];
+}
+
+/**
+ * The board Tasks shows: the one asked for (a repo asked for: the board its work goes on), else the
+ * one you last looked at while it covers the repo you were last in, else that repo's, else the one
+ * with the most unfinished tasks, else the first.
+ */
+export function boardToShow(board: BoardState, boards: readonly BoardChoice[], asked: string | undefined, lastRepo: string, lastBoard = ''): string | undefined {
+  const known = (id: string | undefined): id is string => Boolean(id && boards.some((b) => b.id === id));
+  const forRepo = (id: string): string | undefined => {
+    const to = boardForRepo(board, id);
+    return known(to) ? to : known(id) ? id : undefined;
+  };
+  if (known(asked)) return asked;
+  if (asked && !isOwnBoard(asked) && forRepo(asked)) return forRepo(asked);
+  if (known(lastBoard) && (!lastRepo || boards.find((b) => b.id === lastBoard)!.repos.includes(lastRepo))) return lastBoard;
+  if (lastRepo && forRepo(lastRepo)) return forRepo(lastRepo);
+  if (known(lastBoard)) return lastBoard;
+  const open = (id: string): number => board.issues.filter((i) => boardOf(i) === id && isOpen(i.status)).length;
+  return [...boards].sort((a, b) => open(b.id) - open(a.id))[0]?.id;
+}
+
+/** The repos a board shows tasks from: the ones it covers, and any its tasks still run in (a repo taken off it). */
+export function boardRepos(board: BoardState, boardId: string | undefined, projects: ReadonlyArray<{ readonly id: string }>): string[] {
+  if (!boardId) return [];
+  const running = board.issues.filter((i) => boardOf(i) === boardId).map((i) => i.projectId);
+  return [...new Set([...reposOf(board, boardId), ...running])].filter((r) => projects.some((p) => p.id === r));
+}
+
+/** The repos you picked that are on this board (none left: all of them). */
+export const pickedRepos = (picked: readonly string[], repos: readonly string[]): string[] => picked.filter((r) => repos.includes(r));
+
+/** A repo filter's words: "All repos", one's name, or "2 repos". */
+export function reposLabel(picked: readonly string[], name: (id: string) => string | undefined): string {
+  if (!picked.length) return 'All repos';
+  return picked.length === 1 ? (name(picked[0]!) ?? '1 repo') : `${picked.length} repos`;
+}
 
 /**
  * The project Tasks shows: the one asked for, else the one you were last in, else the one with
@@ -143,13 +215,13 @@ export function projectToShow(board: BoardState, projects: ReadonlyArray<{ reado
  */
 export function isSolo(board: BoardState, projectId: string | undefined, selfId: string, others: number): boolean {
   if (others > 0) return false;
-  return !board.issues.some((i) => i.projectId === projectId && i.assignee && i.assignee.id !== selfId);
+  return !board.issues.some((i) => (i.projectId === projectId || boardOf(i) === projectId) && i.assignee && i.assignee.id !== selfId);
 }
 
-/** The people a project's tasks are for, for the filter: you first, then the rest by name. */
-export function assigneesIn(board: BoardState, projectId: string | undefined, selfId: string): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
+/** The people a board's tasks are for, for the filter: you first, then the rest by name. */
+export function assigneesIn(board: BoardState, boardId: string | undefined, selfId: string): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
   const seen = new Map<string, Assignee>();
-  for (const i of board.issues) if (i.projectId === projectId && i.assignee) seen.set(assigneeKey(i.assignee), i.assignee);
+  for (const i of board.issues) if (boardOf(i) === boardId && i.assignee) seen.set(assigneeKey(i.assignee), i.assignee);
   const label = (a: Assignee): string => (a.id === selfId ? 'You' : a.name);
   const mine = (a: Assignee): number => (a.id === selfId ? 0 : 1);
   return [...seen.entries()].map(([key, assignee]) => ({ key, label: label(assignee), assignee })).sort((x, y) => mine(x.assignee) - mine(y.assignee) || x.label.localeCompare(y.label));

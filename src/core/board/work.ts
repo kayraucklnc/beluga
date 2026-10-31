@@ -11,8 +11,8 @@ import { Board, type IssuePatch, type NewIssue } from './board.js';
 import type { IssuePr } from './model.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { inSet, labelsFor } from './labels.js';
-import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine } from './prompt.js';
-import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isArchived, isFinished, isOpen, issueForWorkspace, titleFromName, worktreeDoing } from './model.js';
+import { aboutPrompt, briefPrompt, boardNote, definePrompt, describeIssue, describeList, gitHubLine, reposPrompt } from './prompt.js';
+import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, boardForRepo, boardName, boardOf, filterIssues, isArchived, isFinished, isOpen, isOwnBoard, issueForWorkspace, reposOf, titleFromName, worktreeDoing } from './model.js';
 
 /** How a name is written after "@" (as the message box completes it: src/ui/suggest.ts friendMention). */
 const handleOf = (name: string): string => `@${name.replace(/[^\p{L}\p{N}_.-]+/gu, '')}`;
@@ -166,14 +166,26 @@ export class BoardWork {
    * What your Claude writes for a task described in words, without adding it yet (the phone shows
    * the draft first, then adds it with addDraft). Without your Claude: the first line as the title.
    */
-  async draft(projectId: string, describe: string, opts: { readonly several?: boolean } = {}): Promise<TaskDraft> {
+  async draft(place: string, describe: string, opts: { readonly several?: boolean } = {}): Promise<TaskDraft> {
+    const { projectId, board } = this.placeOf(place);
     const text = describe.trim();
     if (!text) throw new Error('Say what the task is');
     const title = firstLineTitle(text);
     const plain: TaskDraft = { title, goal: text, acceptance: [], labels: [] };
     if (!this.deps.draftTask) return plain;
     // `several` (a phone that shows them all, BLG-322): the words may ask for several tasks, an epic, and who does each.
-    return (await this.deps.draftTask(text, this.draftContext(projectId, text, undefined, opts.several)).catch(() => undefined)) ?? plain;
+    return (await this.deps.draftTask(text, this.draftContext(projectId, text, undefined, opts.several, board)).catch(() => undefined)) ?? plain;
+  }
+
+  /**
+   * Where a task goes from a board's or a repo's id (the phone lists boards): a repo runs it on the
+   * board its work goes on; a board of its own runs it in its first repo.
+   */
+  private placeOf(id: string): { readonly projectId: string; readonly board: string } {
+    if (!isOwnBoard(id)) return { projectId: id, board: boardForRepo(this.board.state(), id) };
+    const repo = reposOf(this.board.state(), id)[0];
+    if (!repo) throw new Error('That board covers no repo');
+    return { projectId: repo, board: id };
   }
 
   /**
@@ -181,10 +193,10 @@ export class BoardWork {
    * its labels; with `several` (BLG-319), who on its team a task can be for (you first); and who
    * the words' "@mia"s are, teammates and friends (BLG-342).
    */
-  private draftContext(projectId: string, text: string, look?: string, several = false): DraftContext {
-    const labels = labelsFor(this.board.state(), projectId).map((l) => l.name);
+  private draftContext(projectId: string, text: string, look?: string, several = false, boardId = boardForRepo(this.board.state(), projectId)): DraftContext {
+    const labels = labelsFor(this.board.state(), boardId).map((l) => l.name);
     const project = this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
-    const about = this.board.state().projects[projectId]?.context?.text;
+    const about = this.board.state().projects[boardId]?.context?.text ?? this.board.state().projects[projectId]?.context?.text;
     const people = several ? this.people(projectId).map((p) => p.name) : [];
     const named = this.named(projectId, text);
     return {
@@ -216,9 +228,10 @@ export class BoardWork {
    * A draft (from draft, maybe changed) added as a task: its title, goal, criteria, labels and
    * priority, for whoever it names on the team; with `more`, those too (under it when `epic`). → the first (or the epic), then the rest.
    */
-  addDraft(projectId: string, d: TaskDraft): Issue[] {
+  addDraft(place: string, d: TaskDraft): Issue[] {
+    const { projectId, board } = this.placeOf(place);
     const who = d.epic ? undefined : this.whom(projectId, d.for);
-    const first = this.board.create({ projectId, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), ...(who ? { assignee: who } : {}), brief: draftBrief(d) }, this.me());
+    const first = this.board.create({ projectId, board, title: d.title, labels: d.labels, ...(d.priority ? { priority: d.priority } : {}), ...(who ? { assignee: who } : {}), brief: draftBrief(d) }, this.me());
     return [first, ...this.addMore(first, {}, d)];
   }
 
@@ -242,7 +255,7 @@ export class BoardWork {
     // Without your Claude: the first line, and what was said as the goal if it says more.
     if (!draft) return this.board.create({ ...input, title, ...(text.replace(/\s+/g, ' ') !== title ? { brief: { goal: text } } : {}) }, this.me(), opts.origin);
     const issue = this.board.create({ ...input, title, drafting: true }, this.me(), opts.origin);
-    const done = draft(text, this.draftContext(issue.projectId, text, opts.look, opts.several))
+    const done = draft(text, this.draftContext(issue.projectId, text, opts.look, opts.several, boardOf(issue)))
       .catch(() => undefined)
       .then((d) => {
         try {
@@ -276,6 +289,7 @@ export class BoardWork {
       return this.board.create(
         {
           projectId: first.projectId,
+          board: boardOf(first),
           title: m.title,
           status: first.status,
           labels: [...new Set([...(input.labels ?? []), ...m.labels])],
@@ -388,8 +402,11 @@ export class BoardWork {
     const tools = this.toolsFor(channel, issue, Boolean(opts.plan));
     const parallel = this.parallelNote(channel, issue);
     const projectId = this.runProject(channel, issue);
-    const about = projectId ? aboutPrompt(this.board.state(), projectId) : '';
-    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + about + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
+    const boardId = issue ? boardOf(issue) : projectId ? boardForRepo(this.board.state(), projectId) : undefined;
+    const about = projectId ? aboutPrompt(this.board.state(), projectId, boardId) : '';
+    // A board of several repos: where its tasks go, so a task made here lands in the right one.
+    const repos = projectId && boardId ? reposPrompt(this.board.state(), boardId, projectId, this.repoName) : '';
+    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + repos + about + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
     if (!opts.plan) return { tools, brief };
     this.pending.delete(channel);
     return {
@@ -586,6 +603,9 @@ export class BoardWork {
     this.board.carry(issueId, ws, (id) => this.workspaces().some((w) => w.id === id && !w.archived));
   }
 
+  /** A repo's (project's) name, if it's here. */
+  private readonly repoName = (projectId: string): string | undefined => this.deps.store.getState().projects.find((p) => p.id === projectId)?.name;
+
   private workspaces(): Workspace[] {
     return this.deps.store.getState().projects.flatMap((p) => p.workspaces);
   }
@@ -607,12 +627,19 @@ export class BoardWork {
     };
     const projectByName = (name: string): string => {
       const p = this.deps.store.getState().projects.find((x) => x.name.toLowerCase() === name.trim().toLowerCase());
-      if (!p) throw new Error(`There's no project called ${name}`);
+      if (!p) throw new Error(`There's no repo called ${name}`);
       return p.id;
     };
-    // Labels come from the project's set: what wasn't in it is said, with the set, so Claude picks again.
-    const leftOut = (projectId: string, wanted: readonly string[] | undefined, had: readonly string[] = []): string => {
-      const set = labelsFor(state(), projectId);
+    /** A board by its name (a repo's board goes by the repo's) or its key prefix. */
+    const boardByName = (name: string): string | undefined => {
+      const want = name.trim().toLowerCase();
+      const ids = Object.keys(state().projects);
+      return ids.find((id) => boardName(state(), id, this.repoName).toLowerCase() === want) ?? ids.find((id) => state().projects[id]!.prefix.toLowerCase() === want);
+    };
+    const named = (repo: string | undefined): string => this.repoName(repo ?? '') ?? 'its repo';
+    // Labels come from the board's set: what wasn't in it is said, with the set, so Claude picks again.
+    const leftOut = (boardId: string, wanted: readonly string[] | undefined, had: readonly string[] = []): string => {
+      const set = labelsFor(state(), boardId);
       const { unknown } = inSet(set, wanted ?? []);
       const dropped = unknown.filter((l) => !had.includes(l));
       return dropped.length ? `. Left out ${dropped.join(', ')}: labels come from the board's set (${set.map((l) => l.name).join(', ')}); people add new ones` : '';
@@ -639,23 +666,31 @@ export class BoardWork {
       get: (key) => {
         const issue = pick(key);
         const at = where(issue);
-        return describeIssue(state(), issue, this.deps.selfId()) + (at ? `\n\nBeing worked on in ${at}.` : '');
+        return describeIssue(state(), issue, this.deps.selfId(), this.repoName) + (at ? `\n\nBeing worked on in ${at}.` : '');
       },
       list: (f) => {
         // open (the default): every unfinished task; mine: yours and your Claude's; all: recently finished too.
-        // In this worktree's project unless another is named (tasks don't mix projects).
-        const projectId = f.project ? projectByName(f.project) : (current?.projectId ?? wsProject());
+        // A board named: its tasks; a repo named: those running in it and on its board. Neither: this
+        // task's board and this repo's tasks (a board may cover several repos, a repo be on several boards).
+        const asBoard = f.project ? boardByName(f.project) : undefined;
+        const repo = f.project ? (asBoard ? undefined : projectByName(f.project)) : (current?.projectId ?? wsProject());
+        const onBoard = asBoard ?? (f.project ? repo : current ? boardOf(current) : repo ? boardForRepo(state(), repo) : undefined);
         const found = filterIssues(state(), {
           scope: f.scope === 'mine' ? 'mine' : 'all',
           selfId: this.deps.selfId(),
-          ...(projectId ? { projectId } : {}),
           ...(f.query ? { query: f.query } : {}),
-        });
-        return describeList(f.scope === 'all' || f.scope === 'mine' ? found : found.filter((i) => isOpen(i.status)), state());
+        }).filter((i) => (!onBoard && !repo) || boardOf(i) === onBoard || (repo !== undefined && i.projectId === repo));
+        return describeList(f.scope === 'all' || f.scope === 'mine' ? found : found.filter((i) => isOpen(i.status)), state(), this.repoName);
       },
       create: (input) => {
-        const projectId = input.project ? projectByName(input.project) : input.parent ? board.need(input.parent).projectId : (current?.projectId ?? wsProject());
-        if (!projectId) throw new Error('Say which project (project: its name)');
+        const parent = input.parent ? board.need(input.parent) : undefined;
+        const boardId = input.board ? boardByName(input.board) : undefined;
+        if (input.board && !boardId) throw new Error(`There's no board called ${input.board}`);
+        const projectId = input.project ? projectByName(input.project) : (parent?.projectId ?? current?.projectId ?? wsProject() ?? (boardId ? reposOf(state(), boardId)[0] : undefined));
+        if (!projectId) throw new Error('Say which repo it runs in (project: its name)');
+        // On this task's board when it covers the repo (a sub-task goes on its parent's), else the board the repo's work goes on.
+        const onBoard = boardId ?? (parent ? boardOf(parent) : current && reposOf(state(), boardOf(current)).includes(projectId) ? boardOf(current) : undefined);
+        const covered = onBoard ? reposOf(state(), onBoard).includes(projectId) : true;
         const brief: Partial<Record<BriefSection, string>> = {
           ...(input.goal ? { goal: input.goal } : {}),
           ...(input.acceptance ? { acceptance: checklistOf(input.acceptance) } : {}),
@@ -666,6 +701,7 @@ export class BoardWork {
         const issue = board.create(
           {
             projectId,
+            ...(onBoard ? { board: onBoard } : {}),
             title: input.title,
             status: input.status ?? 'todo',
             ...(input.priority ? { priority: input.priority } : {}),
@@ -679,7 +715,9 @@ export class BoardWork {
           by(),
           'claude',
         );
-        return `Created ${issue.key}: ${issue.title} (${issue.status}${issue.private ? ', private: only the user sees it' : ''})${leftOut(projectId, input.labels)}`;
+        const repos = reposOf(state(), boardOf(issue));
+        const where = repos.length > 1 ? ` on ${boardName(state(), boardOf(issue), this.repoName)}, running in ${named(issue.projectId)}${covered ? '' : ` (the board covers ${named(issue.projectId)} from now on)`}` : '';
+        return `Created ${issue.key}: ${issue.title} (${issue.status}${issue.private ? ', private: only the user sees it' : ''})${where}${leftOut(boardOf(issue), input.labels)}`;
       },
       update: (key, patch) => {
         const issue = pick(key);
@@ -692,8 +730,9 @@ export class BoardWork {
         }
         // Moved along from a worktree that isn't doing it: that worktree's pull request ships it (see Board.carry).
         if (patch.status === 'in_progress' || patch.status === 'in_review') this.carryHere(channel, issue.id);
-        const next = board.update(issue.id, { ...(patch.title ? { title: patch.title } : {}), ...(patch.status ? { status: patch.status } : {}), ...(patch.priority ? { priority: patch.priority } : {}), ...(patch.labels ? { labels: patch.labels } : {}), ...(patch.estimate !== undefined ? { estimate: patch.estimate } : {}), ...(assignee !== undefined ? { assignee } : {}) }, by());
-        return `${next.key} is now: ${next.title} · ${next.status} · priority ${next.priority}${next.estimate ? ` · ${next.estimate} points` : ''}${next.labels.length ? ` · labels ${next.labels.join(', ')}` : ''}${leftOut(next.projectId, patch.labels, issue.labels)}`;
+        const repo = patch.project ? projectByName(patch.project) : undefined;
+        const next = board.update(issue.id, { ...(patch.title ? { title: patch.title } : {}), ...(patch.status ? { status: patch.status } : {}), ...(patch.priority ? { priority: patch.priority } : {}), ...(patch.labels ? { labels: patch.labels } : {}), ...(patch.estimate !== undefined ? { estimate: patch.estimate } : {}), ...(assignee !== undefined ? { assignee } : {}), ...(repo ? { projectId: repo } : {}) }, by());
+        return `${next.key} is now: ${next.title} · ${next.status} · priority ${next.priority}${next.estimate ? ` · ${next.estimate} points` : ''}${next.labels.length ? ` · labels ${next.labels.join(', ')}` : ''}${repo ? ` · runs in ${named(next.projectId)}` : ''}${leftOut(boardOf(next), patch.labels, issue.labels)}`;
       },
       editBrief: (key, section, content, reason, mode) => {
         if (!BRIEF_SECTIONS.includes(section)) throw new Error(`Sections: ${BRIEF_SECTIONS.join(', ')}`);

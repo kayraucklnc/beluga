@@ -68,13 +68,13 @@ export function createBoardToolDefs(board: BoardTools) {
     tool('task_get', 'A task in full: status, priority, who it’s for, its parent, sub-tasks, blockers, pull request, its brief and recent activity.', { key }, (a) => guarded(() => board.get(a.key))),
     tool(
       'task_list',
-      'Tasks, one per line (key · status · priority · title). scope: open (default: every unfinished task), mine (yours and your Claude’s), all (recently finished too).',
-      { scope: z.enum(['open', 'mine', 'all']).optional(), project: z.string().max(80).optional().describe('A project’s name'), query: z.string().max(200).optional().describe('Words in the title, key, labels or brief') },
+      'Tasks, one per line (key · status · priority · title, and the repo when its board covers several). scope: open (default: every unfinished task), mine (yours and your Claude’s), all (recently finished too). Without project: this task’s board and this repo’s tasks.',
+      { scope: z.enum(['open', 'mine', 'all']).optional(), project: z.string().max(80).optional().describe('A board’s or a repo’s name (or a board’s key prefix, like BOB)'), query: z.string().max(200).optional().describe('Words in the title, key, labels or brief') },
       (a) => guarded(() => board.list({ ...(a.scope ? { scope: a.scope } : {}), ...(a.project ? { project: a.project } : {}), ...(a.query ? { query: a.query } : {}) })),
     ),
     tool(
       'task_create',
-      'Create a task (a sub-task with parent). It goes in this worktree’s project unless you name one. Write its goal in your own words, with acceptance criteria as a "- [ ]" checklist, and an estimate.',
+      'Create a task (a sub-task with parent). A task is on a board and runs in one repo (its worktree is made there); a board can cover several repos. It goes on this task’s board (a sub-task: its parent’s), running in this worktree’s repo, unless you name another: project for work in another repo, board for another board. Write its goal in your own words, with acceptance criteria as a "- [ ]" checklist, and an estimate.',
       {
         title: z.string().min(1).max(200),
         goal: z.string().max(4000).optional(),
@@ -83,7 +83,8 @@ export function createBoardToolDefs(board: BoardTools) {
         decisions: z.string().max(4000).optional(),
         questions: z.string().max(4000).optional(),
         estimate: ESTIMATE.optional(),
-        project: z.string().max(80).optional(),
+        project: z.string().max(80).optional().describe('The repo it runs in (a project’s name), when the work is in another repo than this one'),
+        board: z.string().max(80).optional().describe('The board it goes on (its name or key prefix), when not this task’s board'),
         parent: z.string().max(40).optional().describe('The parent task’s key'),
         blocked_by: z.array(z.string().max(40)).max(10).optional().describe('Keys of tasks that must be done first'),
         status: z.enum(['backlog', 'todo']).optional(),
@@ -102,6 +103,7 @@ export function createBoardToolDefs(board: BoardTools) {
             ...(a.questions ? { questions: a.questions } : {}),
             ...(a.estimate ? { estimate: a.estimate } : {}),
             ...(a.project ? { project: a.project } : {}),
+            ...(a.board ? { board: a.board } : {}),
             ...(a.parent ? { parent: a.parent } : {}),
             ...(a.blocked_by ? { blockedBy: a.blocked_by } : {}),
             ...(a.status ? { status: a.status } : {}),
@@ -113,8 +115,8 @@ export function createBoardToolDefs(board: BoardTools) {
     ),
     tool(
       'task_update',
-      'Change a task: its title, status, priority, estimate, labels (the full list), or who it’s for (me: the user; nobody). A task is for a person, never a Claude. Mark a task done or canceled only when the user asked or said its work shipped (its sub-tasks still open go Done with it). in_review is refused while an acceptance criterion is neither ticked nor explained.',
-      { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), estimate: ESTIMATE.optional(), labels: LABELS(12), assign: z.enum(['me', 'nobody']).optional() },
+      'Change a task: its title, status, priority, estimate, labels (the full list), the repo it runs in (project), or who it’s for (me: the user; nobody). A task is for a person, never a Claude. Mark a task done or canceled only when the user asked or said its work shipped (its sub-tasks still open go Done with it). in_review is refused while an acceptance criterion is neither ticked nor explained.',
+      { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), estimate: ESTIMATE.optional(), labels: LABELS(12), assign: z.enum(['me', 'nobody']).optional(), project: z.string().max(80).optional().describe('The repo it runs in from now on (a project’s name): it stays on its board') },
       (a) =>
         guarded(() =>
           board.update(a.key, {
@@ -124,6 +126,7 @@ export function createBoardToolDefs(board: BoardTools) {
             ...(a.labels ? { labels: a.labels } : {}),
             ...(a.estimate ? { estimate: a.estimate } : {}),
             ...(a.assign ? { assign: a.assign } : {}),
+            ...(a.project ? { project: a.project } : {}),
           }),
         ),
     ),

@@ -68,7 +68,8 @@ function sideScroller(el: HTMLElement): HTMLElement {
 
 const order = (a: Issue, b: Issue): number => byRank(a, b) || PRIORITY_INFO[a.priority].rank - PRIORITY_INFO[b.priority].rank;
 
-export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string }) {
+/** `projectId`: the board shown; `repo`: the one repo you're looking at on a board of several (new tasks run there). */
+export function TaskBoard({ issues, statuses, projectId, repo }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; repo?: string }) {
   const { api, act } = useTaskActions();
   const reduce = useReducedMotion() ?? false;
   const [lift, setLift] = useState<Lift>();
@@ -325,6 +326,7 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
             reduce={reduce}
             popFrom={popFrom}
             {...(projectId ? { projectId } : {})}
+            {...(repo ? { repo } : {})}
             onPress={press}
             onNudge={nudge}
             suppressClick={justDragged}
@@ -360,6 +362,7 @@ const Column = memo(function Column({
   reduce,
   popFrom,
   projectId,
+  repo,
   onPress,
   onNudge,
   suppressClick,
@@ -379,6 +382,7 @@ const Column = memo(function Column({
   /** How many cards popping in come before this column's (the stagger carries on across). */
   popFrom: number;
   projectId?: string;
+  repo?: string;
   onPress: (e: ReactPointerEvent<HTMLElement>, issue: Issue, index: number) => void;
   onNudge: (issue: Issue, key: string) => void;
   suppressClick: { current: boolean };
@@ -402,7 +406,7 @@ const Column = memo(function Column({
         <span className={t.grow} />
         {status === 'in_plan' ? <PlanPrs issues={items} /> : null}
         {status === 'done' ? <ArchiveDoneButton projectId={projectId} /> : null}
-        <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { projectId } : {}) })} />
+        <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { boardId: projectId } : {}), ...(repo ? { projectId: repo } : {}) })} />
       </header>
       <div ref={(el) => register('stacks', status, el)} className={t.cards}>
         {shown.map((item) =>

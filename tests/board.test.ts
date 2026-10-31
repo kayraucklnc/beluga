@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
 import { labelDef, labelsFor } from '../src/core/board/labels.js';
-import { type Actor, type Issue, asksPrivate, filterIssues, isEpic, issueForWorkspace } from '../src/core/board/model.js';
+import { type Actor, type Issue, asksPrivate, boardForRepo, boardOf, filterIssues, isEpic, isOwnBoard, issueForWorkspace, reposOf } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -43,12 +43,91 @@ describe('making tasks', () => {
     expect(store.getState().board.projects.api).toEqual({ prefix: 'BOB', next: 3 });
   });
 
-  it('refuses a task with no title, in an unknown project, or under a parent elsewhere', () => {
+  it('refuses a task with no title, in an unknown project, or under a parent on another board', () => {
     const { board } = setup();
     expect(() => board.create({ projectId: 'api', title: '   ' }, me)).toThrow(/title/);
     expect(() => board.create({ projectId: 'nope', title: 'x' }, me)).toThrow(/project/);
     const p = board.create({ projectId: 'api', title: 'Parent' }, me);
-    expect(() => board.create({ projectId: 'land', title: 'x', parent: p.key }, me)).toThrow(/parent/);
+    expect(() => board.create({ projectId: 'land', board: 'land', title: 'x', parent: p.key }, me)).toThrow(/parent/);
+  });
+});
+
+describe('boards and repos, many to many (BLG-500)', () => {
+  it('a sub-task in another repo stays on its parent’s board, which covers that repo from then on', () => {
+    const { board, store } = setup();
+    const p = board.create({ projectId: 'api', title: 'Launch' }, me);
+    const kid = board.create({ projectId: 'land', title: 'Hero copy', parent: p.key }, me);
+    expect(kid).toMatchObject({ key: 'BOB-2', projectId: 'land', board: 'api', parent: p.id });
+    expect(boardOf(kid)).toBe('api');
+    expect(reposOf(store.getState().board, 'api')).toEqual(['api', 'land']);
+  });
+
+  it('a board of its own covers the repos it names, keys its tasks, and runs each in its repo', () => {
+    const { board, store } = setup();
+    const id = board.createBoard({ name: 'Launch Week', repos: ['api', 'land', 'nope'] });
+    expect(isOwnBoard(id)).toBe(true);
+    expect(store.getState().board.projects[id]).toMatchObject({ name: 'Launch Week', prefix: 'LW', repos: ['api', 'land'] });
+    const a = board.create({ projectId: 'land', board: id, title: 'Hero' }, me);
+    const b = board.create({ projectId: 'api', board: id, title: 'Pricing API' }, me);
+    expect([a.key, b.key]).toEqual(['LW-1', 'LW-2']);
+    expect(a).toMatchObject({ projectId: 'land', board: id });
+    expect(filterIssues(store.getState().board, { boardId: id }).map((i) => i.title).sort()).toEqual(['Hero', 'Pricing API']);
+    expect(filterIssues(store.getState().board, { boardId: id, repos: ['api'] }).map((i) => i.title)).toEqual(['Pricing API']);
+    // The repos' own boards stay empty: their work is on Launch Week now.
+    expect(filterIssues(store.getState().board, { boardId: 'api' })).toEqual([]);
+    expect(boardForRepo(store.getState().board, 'land')).toBe(id);
+    expect(() => board.createBoard({ name: 'x', repos: [] })).toThrow(/one repo/);
+    expect(() => board.createBoard({ name: 'Other', repos: ['api'], prefix: 'LW' })).toThrow(/already/);
+  });
+
+  it('new work in a repo goes on its own board while that has tasks, else on a board that covers it', () => {
+    const { board, store } = setup();
+    board.create({ projectId: 'api', title: 'Old' }, me);
+    const id = board.createBoard({ name: 'Launch', repos: ['api', 'land'] });
+    expect(board.create({ projectId: 'api', title: 'Next' }, me).key).toBe('BOB-2');
+    expect(board.create({ projectId: 'land', title: 'Hero' }, me)).toMatchObject({ board: id, key: 'LNC-1' });
+    expect(boardForRepo(store.getState().board, 'api')).toBe('api');
+  });
+
+  it('moving a task to another repo keeps its board and key, and says so', () => {
+    const { board, store } = setup();
+    const t = board.create({ projectId: 'api', title: 'Hero' }, me);
+    const moved = board.update(t.key, { projectId: 'land' }, me);
+    expect(moved).toMatchObject({ key: t.key, projectId: 'land', board: 'api' });
+    expect(moved.activity.at(-1)!.text).toBe('moved this to run in landing');
+    expect(reposOf(store.getState().board, 'api')).toEqual(['api', 'land']);
+    // Back home: no board field again (it's its repo's own).
+    expect(board.update(t.key, { projectId: 'api' }, me).board).toBeUndefined();
+    expect(() => board.update(t.key, { projectId: 'nope' }, me)).toThrow(/project/);
+  });
+
+  it('a board is renamed and given repos; one of its own goes only once it is empty', () => {
+    const { board, store } = setup();
+    board.editBoard('api', { name: 'Payments', repos: ['land', 'api'] });
+    expect(store.getState().board.projects.api).toMatchObject({ name: 'Payments', repos: ['land'] });
+    expect(reposOf(store.getState().board, 'api')).toEqual(['api', 'land']);
+    board.editBoard('api', { name: '', repos: [] });
+    expect(store.getState().board.projects.api).toEqual({ prefix: 'BOB', next: 1 });
+    const id = board.createBoard({ name: 'Launch', repos: ['land'] });
+    expect(() => board.editBoard(id, { repos: [] })).toThrow(/one repo/);
+    const t = board.create({ projectId: 'land', board: id, title: 'x' }, me);
+    expect(() => board.removeBoard(id)).toThrow(/still has tasks/);
+    board.remove(t.id);
+    board.removeBoard(id);
+    expect(store.getState().board.projects[id]).toBeUndefined();
+    expect(() => board.removeBoard('api')).toThrow(/Only a board you made/);
+  });
+
+  it('keeps boards and where tasks run across a restart', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-boards-'));
+    dirs.push(dir);
+    const first = setup({ dir });
+    const id = first.board.createBoard({ name: 'Launch', repos: ['api', 'land'] });
+    first.board.create({ projectId: 'land', board: id, title: 'Hero' }, me);
+    first.board.flush();
+    const again = setup({ dir });
+    expect(again.store.getState().board.projects[id]).toMatchObject({ name: 'Launch', repos: ['api', 'land'] });
+    expect(again.board.list()[0]).toMatchObject({ projectId: 'land', board: id });
   });
 
   it('a new prefix applies to new tasks only, and is unique', () => {
@@ -347,7 +426,8 @@ describe('what screens show', () => {
     expect(titles({ scope: 'active' })).toEqual(['Theirs', 'Mine']);
     expect(titles({ scope: 'backlog' })).toEqual(['Later']);
     expect(titles({ scope: 'all' })).not.toContain(old.title);
-    expect(titles({ scope: 'all', projectId: 'land' })).toEqual(['Theirs']);
+    expect(titles({ scope: 'all', boardId: 'land' })).toEqual(['Theirs']);
+    expect(titles({ scope: 'all', repos: ['land'] })).toEqual(['Theirs']);
     expect(titles({ query: 'lat' })).toEqual(['Later']);
   });
 });
@@ -460,6 +540,40 @@ describe('work carried by another worktree, and sub-tasks done with their parent
     board.carry(t.key, { id: 'w1' }, () => false);
     board.worktreeMerged('w1');
     expect(board.need(t.key).status).toBe('done');
+  });
+
+  it('a merge finishes only the work done in that worktree: sub-tasks filed for later, or done elsewhere, stay open', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'Fix sign-in', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'w1', {}, me);
+    const later = board.create({ projectId: 'api', title: 'Found: retry on 429', parent: t.key }, claude);
+    const elsewhere = board.create({ projectId: 'api', title: 'Other fix', status: 'in_progress', parent: t.key }, claude);
+    board.linkWorktree(elsewhere.key, 'w2', {}, claude);
+    const here = board.create({ projectId: 'api', title: 'Also here', parent: t.key }, claude);
+    board.carry(here.key, { id: 'w1' }, () => false);
+    board.update(here.key, { status: 'in_review' }, claude);
+    board.prChanged('w1', pr('MERGED'));
+    expect([t, here, later, elsewhere].map((i) => board.need(i.key).status)).toEqual(['done', 'done', 'todo', 'in_progress']);
+
+    const t2 = board.create({ projectId: 'api', title: 'y', status: 'in_progress' }, me);
+    board.linkWorktree(t2.key, 'w3', {}, me);
+    const kid = board.create({ projectId: 'api', title: 'z', parent: t2.key }, me);
+    const underway = board.create({ projectId: 'api', title: 'moved along by hand', status: 'in_progress', parent: t2.key }, me);
+    board.worktreeMerged('w3');
+    expect([t2, kid, underway].map((i) => board.need(i.key).status)).toEqual(['done', 'todo', 'done']);
+    expect(board.need(underway.key).activity.at(-1)?.text).toBe(`done with its parent ${t2.key}: moved this from In Progress to Done`);
+  });
+
+  it('a carried task moved back out of the work no longer ships with that worktree', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.carry(t.key, { id: 'w1', branch: 'beluga/buglist' }, () => false);
+    board.update(t.key, { status: 'backlog' }, me);
+    expect(board.need(t.key).carriedBy).toBeUndefined();
+    expect(board.need(t.key).branch).toBeUndefined();
+    board.prChanged('w1', pr('MERGED'));
+    board.worktreeMerged('w1');
+    expect(board.need(t.key).status).toBe('backlog');
   });
 
   it('a parent reaching Done takes its open sub-tasks with it, all the way down; canceled ones stay', () => {

@@ -238,6 +238,31 @@ describe('Claude and the board', () => {
     expect(run.tools!.attachProof(undefined, { kind: 'url', title: 'Preview', url: 'https://preview.example' })).toBe('Attached “Preview” to BOB-2');
   });
 
+  it('on a board of several repos, a run knows them, and its tasks land on its board in the right repo (BLG-500)', () => {
+    const { board, work, open } = setup({ autoTasks: true });
+    open(ws('w1', 'api', 'add-auth'));
+    const one = work.forRun('ws:w1', 'p-me')!;
+    // A board of one repo: nothing about repos to say.
+    expect(one.brief).not.toContain('covers');
+    board.editBoard('api', { name: 'Payments', repos: ['land'] });
+    const run = work.forRun('ws:w1', 'p-me')!;
+    expect(run.brief).toContain('This work\'s board is "Payments" (keys BOB-…), and it covers these repos: bob-api (this one), landing.');
+    expect(run.brief).toContain('pass project');
+    // In this repo by default; another of the board's repos by name; the board stays.
+    expect(run.tools!.create({ title: 'Webhooks' })).toBe('Created BOB-2: Webhooks (todo) on Payments, running in bob-api');
+    expect(run.tools!.create({ title: 'Pricing page', project: 'landing' })).toBe('Created BOB-3: Pricing page (todo) on Payments, running in landing');
+    expect(board.need('BOB-3')).toMatchObject({ projectId: 'land', board: 'api' });
+    expect(run.tools!.list({})).toContain('BOB-3 · Ready · in landing · Pricing page');
+    expect(run.tools!.get('BOB-3')).toContain('Board: Payments · Runs in the repo: landing');
+    // Moved to another repo: it keeps its key.
+    expect(run.tools!.update('BOB-2', { project: 'landing' })).toContain('runs in landing');
+    // A board of its own, by name; a repo it didn't cover is added (and said).
+    const id = board.createBoard({ name: 'Launch', repos: ['land'] });
+    expect(run.tools!.create({ title: 'Billing API', board: 'Launch' })).toBe('Created LNC-1: Billing API (todo) on Launch, running in bob-api (the board covers bob-api from now on)');
+    expect(board.need('LNC-1')).toMatchObject({ board: id, projectId: 'api' });
+    expect(() => run.tools!.create({ title: 'x', board: 'Nope' })).toThrow(/no board called Nope/);
+  });
+
   it('runs in a project read what it is about, with or without a task (BLG-298)', () => {
     const { board, work, open } = setup({ autoTasks: true });
     open(ws('w1', 'api', 'add-auth'));
@@ -250,7 +275,7 @@ describe('Claude and the board', () => {
   it('elsewhere: a note that the board is there, and tools that need a key', () => {
     const { work } = setup();
     const run = work.forRun('room', 'p-me')!;
-    expect(run.brief).toContain('Beluga has a task board');
+    expect(run.brief).toContain('Beluga has task boards');
     expect(() => run.tools!.note(undefined, 'x')).toThrow(/Name a task/);
   });
 
@@ -411,6 +436,23 @@ describe('work that ships from another task’s worktree (BLG-29)', () => {
     store.dispatch({ type: 'pr', id: 'w1', pr: { number: 3, url: 'u', state: 'MERGED', title: 'Buglist', draft: false, checks: 'passing' } });
     await tick();
     expect(board.need(t.key).status).toBe('done');
+  });
+
+  it('a merge finishes the worktree’s task and what Claude moved along there, never what it only filed or mentioned', async () => {
+    const { store, board, work, open } = setup();
+    open(ws('w1', 'api', 'buglist'));
+    const own = board.create({ projectId: 'api', title: 'Buglist', status: 'in_progress' }, work.me());
+    board.linkWorktree(own.key, 'w1', {}, work.me());
+    const mentioned = board.create({ projectId: 'api', title: 'Someone else’s' }, work.me());
+    const tools = work.forRun('ws:w1', 'p-me')!.tools!;
+    const key = (said: string) => /Created (\S+):/.exec(said)![1]!;
+    const later = key(tools.create({ title: 'Found for later', parent: own.key }));
+    const done = key(tools.create({ title: 'Fixed here too', parent: own.key }));
+    tools.update(done, { status: 'in_progress' });
+    tools.note(mentioned.key, 'Related to the buglist');
+    store.dispatch({ type: 'pr', id: 'w1', pr: { number: 3, url: 'u', state: 'MERGED', title: 'Buglist', draft: false, checks: 'passing' } });
+    await tick();
+    expect([own.key, done, later, mentioned.key].map((k) => board.need(k).status)).toEqual(['done', 'done', 'todo', 'todo']);
   });
 
   it('the sweep finds a merged pull request for a task whose worktree went, and leaves live ones to the workbench', async () => {

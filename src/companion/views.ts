@@ -2,7 +2,7 @@ import { type Approval, type DomainState, type LogItem, type SubAgent, isRunning
 import { waitingNote } from '../core/friend-share-people.js';
 import { criteria, tally } from '../core/board/criteria.js';
 import { OFFER_DETAIL, offerWords, waitingOn, waitingWords, workingOn, workingWords } from '../core/team/model.js';
-import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, byStatus, isArchived, isEpic, issueById, progressOf as boardProgress } from '../core/board/model.js';
+import { type Issue, STATUS_INFO, actorName, activityText, assigneeName, boardName, boardOf, byStatus, isArchived, isEpic, isOwnBoard, issueById, progressOf as boardProgress, reposOf } from '../core/board/model.js';
 import type { CcAgent } from '../core/claude-code/model.js';
 import type { PendingQuestion } from '../core/collab-store.js';
 import { type TaskView as GwTask, isFinal, requestGist, stateLabel, stateTone, targetLabel } from '../core/gateway/model.js';
@@ -821,6 +821,8 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
   const working = workingWords(workingOn(state.team, i.id).map((p) => p.name));
   const waiting = waitingWords(waitingOn(state.team, i.id));
   const epicKey = i.parent ? issueById(state.board, i.parent)?.key : undefined;
+  // On a board of several repos: which one it runs in.
+  const repo = reposOf(state.board, boardOf(i)).length > 1 ? state.projects.find((p) => p.id === i.projectId)?.name : undefined;
   return {
     id: clip(i.id, 200),
     topic,
@@ -836,6 +838,7 @@ function taskSummary(state: DomainState, i: Issue): TaskSummary | undefined {
     ...(waiting ? { waiting: clip(waiting, 240) } : {}),
     ...(isEpic(state.board, i) ? { epic: boardProgress(state.board, i) } : {}),
     ...(epicKey ? { epicKey: clip(epicKey, 40) } : {}),
+    ...(repo ? { repo: clip(repo, 200) } : {}),
     ...(i.private ? { private: true as const } : {}),
     updatedAt: Math.round(i.updatedAt),
   };
@@ -848,8 +851,11 @@ const PER_GROUP = 100;
 
 export function tasksView(state: DomainState, ctx?: ViewContext): TasksView {
   const issues = boardIssues(state);
-  const projects = state.projects.flatMap((p) => {
-    const mine = issues.filter((i) => i.projectId === p.id);
+  // By board (a repo's own, then boards covering several): boards and repos are many to many (1.31).
+  const repoName = (id: string): string | undefined => state.projects.find((p) => p.id === id)?.name;
+  const boards = [...state.projects.map((p) => p.id), ...Object.keys(state.board.projects).filter(isOwnBoard)];
+  const projects = boards.flatMap((id) => {
+    const mine = issues.filter((i) => boardOf(i) === id);
     if (!mine.length) return [];
     const groups = byStatus(mine)
       .filter((g) => (LISTED as readonly string[]).includes(g.status) && g.issues.length)
@@ -861,10 +867,11 @@ export function tasksView(state: DomainState, ctx?: ViewContext): TasksView {
         const tasks = list.slice(0, max).flatMap((i) => taskSummary(state, i) ?? []);
         return { status: g.status, label: STATUS_INFO[g.status].label, tasks, ...(list.length > max ? { more: list.length - max } : {}) };
       });
-    return [{ id: clip(p.id, 200), name: clip(p.name, 200), ...iconOf(ctx, p.id), groups }];
+    const icon = reposOf(state.board, id)[0] ?? id;
+    return [{ id: clip(id, 200), name: clip(boardName(state.board, id, repoName), 200), ...iconOf(ctx, icon), groups }];
   });
-  // The project with the latest change first.
-  const latest = (id: string): number => Math.max(0, ...issues.filter((i) => i.projectId === id).map((i) => i.updatedAt));
+  // The board with the latest change first.
+  const latest = (id: string): number => Math.max(0, ...issues.filter((i) => boardOf(i) === id).map((i) => i.updatedAt));
   const sorted = projects.sort((a, b) => latest(b.id) - latest(a.id)).slice(0, 100);
   // Every other task by key, title and status (BLG-109): a key in Claude's words is a chip even when the list leaves it out.
   const listed = new Set(sorted.flatMap((p) => p.groups.flatMap((g) => g.tasks.map((t) => t.id))));
