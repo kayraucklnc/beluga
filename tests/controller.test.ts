@@ -134,7 +134,7 @@ describe('WorkspaceController', () => {
     const unsub = store.subscribe(() => {
       // The pending row is up: the message is on its page already.
       const making = store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.pending);
-      if (making && store.getState().log.some((l) => l.channel === `ws:${making.id}` && l.text === 'fix it')) shownBefore = true;
+      if (making && store.getState().log.some((l) => l.channel === `ws:${making.id}` && 'text' in l && l.text === 'fix it')) shownBefore = true;
     });
     const ws = (await c.startWorktree(projectId(), 'fix it', async () => 'fix', { name: 'early' }))!;
     unsub();
