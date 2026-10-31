@@ -117,10 +117,13 @@ describe('approvals', () => {
     const bob = await person('bob');
     await together(kay, bob);
     for (const f of ['a', 'b', 'c', 'd', 'e']) writeFileSync(path.join(base, `${f}.txt`), f);
-    const asks = ['a', 'b', 'c', 'd', 'e'].map((f) => kay.session.remote.getFile(bob.id(), path.join(base, `${f}.txt`)).catch((e: Error) => e.message));
-    await waitFor(() => bob.state().approvals.length === 3, 4000);
-    const results = await Promise.race([Promise.all(asks.slice(3)), new Promise((r) => setTimeout(() => r('waiting'), 10_000))]);
-    expect(results).toEqual(['bob declined', 'bob declined']);
+    // Which three get a slot depends on which request bob's Mac reaches first (each looks its path up
+    // before it asks), so: any two of the five are declined at once, the other three wait for bob.
+    const answered: string[] = [];
+    for (const f of ['a', 'b', 'c', 'd', 'e']) void kay.session.remote.getFile(bob.id(), path.join(base, `${f}.txt`)).catch((e: Error) => void answered.push(e.message));
+    await waitFor(() => bob.state().approvals.length === 3 && answered.length === 2, 10_000);
+    expect(answered).toEqual(['bob declined', 'bob declined']);
+    expect(bob.state().approvals).toHaveLength(3);
     for (let i = 0; i < 3; i++) bob.session.answerApproval('no');
   });
 });
