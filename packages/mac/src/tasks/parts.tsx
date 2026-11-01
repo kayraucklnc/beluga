@@ -21,11 +21,10 @@ import { sameDeep } from '../lib/stable.js';
 import { askAboutTask } from '../network/chat-model.js';
 import { draftIn } from '../network/NetComposer.js';
 import { IssueMark } from '../issues/task-bits.js';
-import { YOUR_AGENT, agentMenuItems, useAgentEntries, useStartWith } from '../components/agent-options.js';
+import { useStartWith } from '../components/agent-options.js';
 import { useMyAgent } from '../lib/agent-words.js';
 import { agentName } from '@beluga/shared/agent-label.js';
 import type { AgentRef } from '@beluga/protocol.js';
-import { agentForChoice } from '@beluga/ui/agent-choice.js';
 import t from './tasks.module.css';
 
 const NONE: readonly never[] = [];
@@ -289,8 +288,6 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const projects = useApp((s) => s.projects);
   const team = useApp((s) => s.team);
   const friends = useApp((s) => s.network.friends);
-  const runtimes = useApp((s) => s.runtimes);
-  const agents = useAgentEntries();
   const startWith = useStartWith();
   const mine = useMyAgent();
   const plans = useApp((s) => s.plans.plans);
@@ -302,16 +299,6 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
     const own = ownAgent(issue);
     return { label: 'Start with', icon: 'play', submenu: startWith(own, (a) => startIt(issue, a ?? (own ? mine : undefined)), ''), onSelect: () => undefined };
   };
-  /** Agent ▸ (BLG-498): who works it from its next start, the task page's Agent list as a submenu. */
-  const agentMenu = (issue: Issue): ActionItem => ({
-    label: 'Agent',
-    submenu: agentMenuItems(agents, issue.agent, (v) =>
-      void act(() => api.setAgent(issue.id, v === YOUR_AGENT ? null : agentForChoice(v, runtimes))).then((said) => {
-        if (typeof said === 'string') toast(client, said, 'success');
-      }),
-    ),
-    onSelect: () => undefined,
-  });
   const sharedWith = useSharedWith();
   /** Your chat with a teammate, the task in the box (BLG-263: you ask, nothing is given to their Claude). */
   const askIn = (issue: Issue): ActionItem[] => {
@@ -373,7 +360,6 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         submenu: PRIORITIES.map((p) => ({ label: PRIORITY_INFO[p].label, checked: issue.priority === p, onSelect: () => void act(() => api.update(issue.id, { priority: p })) })),
         onSelect: () => undefined,
       },
-      ...(startable ? [agentMenu(issue)] : []),
       { label: 'Add Sub-task…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_task', projectId: issue.projectId, parent: issue.id }) },
       ...privacyItem(issue, sharedWith(issue.projectId), (on) => void act(() => api.setPrivate(issue.id, on), on ? `${issue.key} is private: only you see it` : `Shared ${issue.key} with the team`)),
       ...(isOpen(issue.status) ? [] : [{ label: 'Archive', icon: 'archive' as const, hint: 'Off the board; its proof files let go', onSelect: () => void act(() => api.archive(issue.id), `Archived ${issue.key}`) }]),
