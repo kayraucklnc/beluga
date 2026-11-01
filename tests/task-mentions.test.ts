@@ -37,13 +37,13 @@ describe('which tasks a typed "@…" may mean', () => {
     expect(keys('BLG24')[0]).toBe('BLG-24');
     expect(keys('blg-24')[0]).toBe('BLG-24');
     expect(keys('blg24')[0]).toBe('BLG-24');
-    // The number alone: every project's task with that number, then longer numbers.
-    expect(keys('24')).toEqual(['BLG-24', 'OPS-24', 'BLG-240']);
+    // The number alone: every project's task with that number (Ready ones first), then longer numbers.
+    expect(keys('24')).toEqual(['OPS-24', 'BLG-24', 'BLG-240']);
     expect(keys('bl24')[0]).toBe('BLG-24');
   });
 
-  it('a project prefix lists its tasks, open ones first and newest first', () => {
-    expect(keys('BLG')).toEqual(['BLG-240', 'BLG-24', 'BLG-9', 'BLG-2', 'BLG-20']);
+  it('a project prefix lists its tasks, Ready ones first, each group by number', () => {
+    expect(keys('BLG')).toEqual(['BLG-2', 'BLG-9', 'BLG-240', 'BLG-24', 'BLG-20']);
     expect(keys('ops')).toEqual(['OPS-24']);
   });
 
@@ -52,6 +52,24 @@ describe('which tasks a typed "@…" may mean', () => {
     expect(keys('coffee')).toEqual(['BLG-9']);
     expect(keys('dark-mode')).toEqual(['BLG-20']);
     expect(keys('ogin')).toEqual(['BLG-240', 'BLG-24']);
+  });
+
+  it('Ready tasks first, then those under way, then the Backlog, then closed ones (BLG-575)', () => {
+    const board = [
+      t('BLG-1', 'Old idea', 'backlog'),
+      t('BLG-3', 'Shipped', 'done', false),
+      t('BLG-4', 'Being built', 'in_progress'),
+      t('BLG-5', 'Ready to go'),
+      t('BLG-6', 'Up for review', 'in_review'),
+      t('BLG-7', 'Also ready'),
+      t('BLG-8', 'Dropped', 'canceled', false),
+    ];
+    expect(matchTasks('BLG', board, 10).map((x) => x.key)).toEqual(['BLG-5', 'BLG-7', 'BLG-4', 'BLG-6', 'BLG-1', 'BLG-3', 'BLG-8']);
+    // The very key typed still comes first, whatever its status.
+    expect(matchTasks('BLG-1', [...board, t('BLG-10', 'Ready ten')], 10).map((x) => x.key)).toEqual(['BLG-1', 'BLG-10']);
+    // Only six fit: they are the Ready ones.
+    const many = Array.from({ length: 12 }, (_, i) => t(`BLG-${i + 1}`, `Task ${i + 1}`, i < 6 ? 'backlog' : 'todo'));
+    expect(matchTasks('BLG', many).map((x) => x.key)).toEqual(['BLG-7', 'BLG-8', 'BLG-9', 'BLG-10', 'BLG-11', 'BLG-12']);
   });
 
   it('nothing for nothing, and never too many', () => {
@@ -77,7 +95,7 @@ describe('the "@" list offers tasks', () => {
     const list = suggest('look at @BLG-2', ctx);
     expect(list.map((s) => s.label)).toEqual(['@BLG-2', '@BLG-240', '@BLG-24', '@BLG-20']);
     expect(list[2]).toMatchObject({ value: 'look at @BLG-24 ', hint: 'Fix the login redirect', task: { key: 'BLG-24', status: 'in_progress' } });
-    expect(suggest('@24', ctx)[0]).toMatchObject({ value: '@BLG-24 ' });
+    expect(suggest('@bl24', ctx)[0]).toMatchObject({ value: '@BLG-24 ' });
     const mixed = suggest('@mi', { ...ctx, tasks: [t('BLG-3', 'Mirror the menu')] });
     expect(mixed.map((s) => [s.label, Boolean(s.task)])).toEqual([['@mia', false], ['@claude:mia', false], ['@BLG-3', true]]);
   });
@@ -100,8 +118,8 @@ describe('another project’s tasks in the "@" list (BLG-397)', () => {
 
   it('not for the first couple of letters, nor for a number alone', () => {
     expect(labels('@ra')).toEqual(['@Ratel']);
-    expect(labels('@lo')).toEqual(['@BLG-25', '@BLG-24']);
-    expect(labels('@log')).toEqual(['@BLG-25', '@BLG-24']);
+    expect(labels('@lo')).toEqual(['@BLG-24', '@BLG-25']);
+    expect(labels('@log')).toEqual(['@BLG-24', '@BLG-25']);
     expect(labels('@4')).toEqual([]);
     expect(labels('@24')).toEqual(['@BLG-24']);
   });
@@ -109,8 +127,8 @@ describe('another project’s tasks in the "@" list (BLG-397)', () => {
   it('its whole prefix, or four letters of a word of the title, offers it, always last', () => {
     expect(labels('@RAT-4')).toEqual(['@RAT-4']);
     expect(labels('@rat12')).toEqual(['@RAT-12']);
-    expect(labels('@RAT')).toEqual(['@Ratel', '@RAT-240', '@RAT-12', '@RAT-4']);
-    expect(labels('@login')).toEqual(['@BLG-25', '@BLG-24', '@RAT-4']);
+    expect(labels('@RAT')).toEqual(['@Ratel', '@RAT-4', '@RAT-12', '@RAT-240']);
+    expect(labels('@login')).toEqual(['@BLG-24', '@BLG-25', '@RAT-4']);
     expect(suggest('@login', ctx).at(-1)).toMatchObject({ task: { key: 'RAT-4', elsewhere: 'Ratel' } });
   });
 

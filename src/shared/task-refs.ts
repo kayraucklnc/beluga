@@ -171,19 +171,32 @@ function rankOf(typed: string, task: TaskMention, strict = false): number | unde
 }
 
 /**
- * The tasks a typed "@…" (without the @) may mean, best first: the very key, then near misses
- * ("BLG24", "24" → BLG-24), keys it starts ("BLG-2" → BLG-21…), then title words. Open tasks
- * ahead of closed ones, newer ahead of older.
+ * Which tasks come first in the "@" list (BLG-575): Ready ones (to start), then the ones under way
+ * (In Progress, In Review…), then the Backlog, then closed ones (Done, Canceled).
+ */
+function statusOrder(task: TaskMention): number {
+  if (task.open === false || task.status === 'done' || task.status === 'canceled') return 3;
+  if (task.status === 'todo') return 0;
+  if (task.status === 'backlog') return 2;
+  return 1;
+}
+
+/**
+ * The tasks a typed "@…" (without the @) may mean, best first: the very key (and its near misses,
+ * "BLG24", "24" → BLG-24), then the rest by status (Ready, under way, Backlog, closed), each of
+ * those by how well it matches (keys it starts, "BLG-2" → BLG-21…, then title words) and number.
  */
 export function matchTasks(typed: string, tasks: readonly TaskMention[], max = MAX_TASK_SUGGESTIONS, { strict = false }: { readonly strict?: boolean } = {}): TaskMention[] {
   if (!typed) return [];
   const num = (t: TaskMention): number => Number(partsOf(t.key).digits) || 0;
+  // 0 the very key, 1 its near misses, 2 everything else (sorted by status first).
+  const tier = (rank: number): number => Math.min(rank, 2);
   return tasks
     .flatMap((task) => {
       const rank = rankOf(typed, task, strict);
       return rank === undefined ? [] : [{ task, rank }];
     })
-    .sort((a, b) => a.rank - b.rank || Number(b.task.open !== false) - Number(a.task.open !== false) || num(b.task) - num(a.task))
+    .sort((a, b) => tier(a.rank) - tier(b.rank) || statusOrder(a.task) - statusOrder(b.task) || a.rank - b.rank || num(a.task) - num(b.task))
     .slice(0, max)
     .map((m) => m.task);
 }
