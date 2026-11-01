@@ -15,6 +15,7 @@ import { type LogItem, type Store, settleRun } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
 import { type AgentRef, CLAUDE_AGENT } from '../../protocol.js';
 import { chosenAgent } from '../settings.js';
+import { chatFits, chatLimitMessage } from '../../shared/chat-limit.js';
 
 /**
  * "Your Mac" (BLG-47, docs/companion.md): one conversation with your own Claude that isn't tied to
@@ -66,8 +67,6 @@ interface ChatsFile {
 
 /** The most items kept of its history (as a worktree's). */
 const KEEP = 500;
-/** The most chats at once (each a tab). */
-export const MAX_CHATS = 30;
 
 /**
  * Your Mac's chats (BLG-102): several conversations at once, tabs on the Mac. Each has its own
@@ -204,7 +203,9 @@ export class MacAssistant {
 
   /** A new chat, after the others, open now → its id. */
   newChat(): string {
-    if (this.list.chats.length >= MAX_CHATS) throw new Error(`Up to ${MAX_CHATS} chats at once: delete one you’re done with first`);
+    // How many chats at once is yours to choose (Settings › Agent › Open chats; 0: no limit).
+    const limit = this.deps.store.getState().prefs.chatLimit;
+    if (!chatFits(this.list.chats.length, limit)) throw new Error(chatLimitMessage(this.list.chats.length, limit, 'Your Mac chats'));
     let id = '';
     do id = randomBytes(5).toString('hex');
     while (this.has(id) || id === FIRST_CHAT);

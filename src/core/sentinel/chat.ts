@@ -6,6 +6,7 @@ import { claudeConfigDir, dropSession } from '../../agent/runtime/claude/claude-
 import type { AgentPlace } from '../../agent/types.js';
 import { HistorySaver } from '../history-saver.js';
 import { type LogItem, type Store, settleRun } from '../store.js';
+import { chatFits, chatLimitMessage } from '../../shared/chat-limit.js';
 import { FIRST_SENTINEL_CHAT, SENTINEL_CHAT_ID, type SentinelChats as ChatsState, sentinelChatChannel, sentinelChatOf } from './model.js';
 
 /**
@@ -33,8 +34,6 @@ interface ChatsFile {
   readonly active: string;
 }
 
-/** The most chats kept at once. */
-export const MAX_SENTINEL_CHATS = 20;
 /** The most items kept of each chat's history. */
 const KEEP = 500;
 
@@ -142,7 +141,9 @@ export class SentinelChats {
 
   /** A new chat, after the others, open now → its id. */
   newChat(): string {
-    if (this.list.chats.length >= MAX_SENTINEL_CHATS) throw new Error(`Up to ${MAX_SENTINEL_CHATS} Sentinel chats: delete one you’re done with first`);
+    // The same limit as Your Mac's chats (Settings › Agent › Open chats; 0: no limit).
+    const limit = this.deps.store.getState().prefs.chatLimit;
+    if (!chatFits(this.list.chats.length, limit)) throw new Error(chatLimitMessage(this.list.chats.length, limit, 'Sentinel chats'));
     let id = '';
     do id = randomBytes(5).toString('hex');
     while (this.has(id) || id === FIRST_SENTINEL_CHAT);

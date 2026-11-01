@@ -24,6 +24,7 @@ import { type TeamAction, type TeamSlice, initialTeam, reduceTeam } from './team
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
 import { PARALLEL_RUNS_DEFAULT, type SlotWait } from '../shared/run-slots.js';
+import { CHAT_LIMIT_DEFAULT } from '../shared/chat-limit.js';
 import { READS_AFTER_STEP, STOPPING_FOR } from '../shared/claude-notices.js';
 import type { CompanionSlice } from '../companion/protocol.js';
 
@@ -286,6 +287,8 @@ export interface Prefs {
   readonly autoCompactAt: number;
   /** How many conversations your Claude works in at once (see shared/run-slots.ts). */
   readonly parallelRuns: number;
+  /** How many chats Your Mac and Sentinel each keep open; 0: no limit (see shared/chat-limit.ts). */
+  readonly chatLimit: number;
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder (watched live in the Mac app). */
   readonly scratchFolder: boolean;
   readonly subagents: Settings['subagents'];
@@ -655,6 +658,7 @@ export const DEFAULT_PREFS: Prefs = {
   autoCompact: false,
   autoCompactAt: AUTO_COMPACT_DEFAULT,
   parallelRuns: PARALLEL_RUNS_DEFAULT,
+  chatLimit: CHAT_LIMIT_DEFAULT,
   scratchFolder: true,
   subagents: 'full',
   hiddenButtons: [],
