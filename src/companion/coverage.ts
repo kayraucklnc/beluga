@@ -117,7 +117,7 @@ export const PHONE: Record<Method, Side> = {
   'workspaces.refresh': 'mac',
   'workspaces.newWorktree': 'mac',
   'workspaces.newChat': 'mac',
-  'workspaces.startChat': 'phone',
+  'workspaces.startChat': 'phone', // Includes the optional first-message plan mode.
   'workspaces.startWorktree': 'phone',
   'workspaces.branches': 'mac',
   'workspaces.fork': 'mac',
