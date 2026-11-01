@@ -161,6 +161,10 @@ export interface SentinelTools {
   update(ref: string, patch: import('../core/sentinel/tool-draft.js').ToolPatch): string | Promise<string>;
   /** Delete it (through your approval: never in ALWAYS_OK). */
   remove(ref: string): string;
+  /** Its runs, newest first: id, when, how it ended, its line, whether its agent's chat is kept (BLG-577). */
+  runs(ref: string): string;
+  /** Delete some of its runs' chats, or the runs themselves (through your approval, always) → what was done. */
+  deleteRuns(ref: string, which: { readonly runs?: readonly string[]; readonly state?: string; readonly before?: string }, what: 'chat' | 'run'): Promise<string>;
   /** This conversation changes that sentinel (sentinel.ask): its id. */
   readonly asking?: string;
 }

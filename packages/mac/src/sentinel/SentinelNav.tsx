@@ -1,6 +1,4 @@
-import { assistantChannel } from '@beluga/shared/assistant.js';
-import type { View } from '@beluga/core/store.js';
-import { Icon } from '../components/Icon.js';
+import { Icon, type IconName } from '../components/Icon.js';
 import { Dot, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useUi } from '../lib/beluga.js';
@@ -9,7 +7,7 @@ import { DotMark } from '../layout/signal-marks.js';
 import { sameDeep } from '../lib/stable.js';
 import { ago } from '../tasks/tasks-model.js';
 import { useClock } from '../lib/window-active.js';
-import { SIDE_CHATS, type SideChat, type SideSentinel, anyRunning, iconOf, isSentinelView, needsALook, sidebarLine, sidebarSentinels } from './sentinel-model.js';
+import { SIDE_RUNS, type SideRun, type SideSentinel, anyRunning, iconOf, isSentinelView, needsALook, sidebarLine, sidebarSentinels } from './sentinel-model.js';
 import { useSentinelActions } from './use-sentinel.js';
 import g from '../layout/project-groups.module.css';
 import side from '../layout/Sidebar.module.css';
@@ -64,20 +62,13 @@ export function SentinelNav() {
 /** Every sentinel that's on shows under the Sentinel row while this key is in the folds; else only those that need a look. */
 const ROWS_KEY = 'sentinel-rows';
 
-/** A sentinel's chats are unfolded under it while this key is in the folds (folded by default). */
-const chatsKey = (id: string): string => `sentinel-chats:${id}`;
-
-/** The channel a view shows (a worktree or chat's, a Your Mac chat's), to mark its row. */
-function channelOf(view: View, active: string): string | undefined {
-  if (view.kind === 'workspace') return `ws:${view.id}`;
-  if (view.kind === 'assistant') return assistantChannel(view.chat ?? active);
-  return undefined;
-}
+/** A sentinel's runs are unfolded under it while this key is in the folds (folded by default). */
+const runsKey = (id: string): string => `sentinel-runs:${id}`;
 
 /**
  * Under the Sentinel row (BLG-570), as running plans are under Work: the sentinels, each opening its
- * page and unfolding to the chats its runs kept (Keep chats on its page), newest first. `all`: every
- * one that's on; else only those running, waiting for you, or whose last run failed.
+ * page and unfolding to its runs (BLG-576), newest first. `all`: every one that's on; else only
+ * those running, waiting for you, or whose last run failed.
  */
 export function SentinelSideRows({ all }: { all: boolean }) {
   const enabled = useApp((st) => st.sentinel.enabled);
@@ -95,11 +86,11 @@ export function SentinelSideRows({ all }: { all: boolean }) {
 function SentinelSideRow({ item }: { item: SideSentinel }) {
   const actions = useActions();
   const a = useSentinelActions();
-  const { sentinel, live, needs, failed, chats } = item;
-  const open = useUi((u) => u.collapsed.includes(chatsKey(sentinel.id)));
-  const selected = useApp((st) => (st.view.kind === 'sentinel_page' && st.view.id === sentinel.id) || (st.view.kind === 'sentinel_run' && st.sentinel.runs.some((r) => r.id === (st.view as { runId: string }).runId && r.sentinelId === sentinel.id)));
-  const toggle = (): void => actions.run({ type: 'toggle_fold', key: chatsKey(sentinel.id) });
-  const tip = needs ? `${sentinel.name} waits for you` : live ? `${sentinel.name} is running` : failed ? `${sentinel.name}: its last run failed` : `${sentinel.name}: ${chats.length ? `${chats.length} chat${chats.length === 1 ? '' : 's'} kept` : 'no chats kept'}`;
+  const { sentinel, live, needs, failed, runs } = item;
+  const open = useUi((u) => u.collapsed.includes(runsKey(sentinel.id)));
+  const selected = useApp((st) => st.view.kind === 'sentinel_page' && st.view.id === sentinel.id);
+  const toggle = (): void => actions.run({ type: 'toggle_fold', key: runsKey(sentinel.id) });
+  const tip = needs ? `${sentinel.name} waits for you` : live ? `${sentinel.name} is running` : failed ? `${sentinel.name}: its last run failed` : `${sentinel.name}: ${runs.length ? `${runs.length} run${runs.length === 1 ? '' : 's'}` : 'no runs yet'}`;
   return (
     <>
       <Row
@@ -107,12 +98,12 @@ function SentinelSideRow({ item }: { item: SideSentinel }) {
         selected={selected}
         className={side.foldRow}
         aria-label={sentinel.name}
-        aria-expanded={chats.length ? open : undefined}
+        aria-expanded={runs.length ? open : undefined}
         data-sentinel-side={sentinel.id}
         icon={
           <span className={s.sideIcon}>
-            {chats.length ? (
-              <button type="button" className={g.foldButton} aria-label={open ? `Fold ${sentinel.name}’s chats` : `Show ${sentinel.name}’s chats`} onClick={(e) => (e.stopPropagation(), toggle())}>
+            {runs.length ? (
+              <button type="button" className={g.foldButton} aria-label={open ? `Fold ${sentinel.name}’s runs` : `Show ${sentinel.name}’s runs`} onClick={(e) => (e.stopPropagation(), toggle())}>
                 <Icon name="chevronRight" size={9} className={cx(g.disclosure, open && g.disclosureOpen)} />
               </button>
             ) : (
@@ -126,39 +117,43 @@ function SentinelSideRow({ item }: { item: SideSentinel }) {
         onClick={() => a.open(sentinel.id)}
         onKeyDown={(e) => {
           // ← folds, → unfolds (as a project does).
-          if (chats.length && e.target === e.currentTarget && ((e.key === 'ArrowLeft' && open) || (e.key === 'ArrowRight' && !open))) {
+          if (runs.length && e.target === e.currentTarget && ((e.key === 'ArrowLeft' && open) || (e.key === 'ArrowRight' && !open))) {
             e.preventDefault();
             toggle();
           }
         }}
         trailing={live ? <DotMark tone="claude" live signal="working" /> : needs ? <DotMark tone="warn" signal="needs" /> : failed ? <Icon name="alert" size={12} className={s.alert} /> : null}
       />
-      {open ? <SideChats sentinelId={sentinel.id} chats={chats} /> : null}
+      {open ? <SideRuns sentinelId={sentinel.id} runs={runs} /> : null}
     </>
   );
 }
 
-function SideChats({ sentinelId, chats }: { sentinelId: string; chats: readonly SideChat[] }) {
+/** A run's mark in the sidebar: how it went, as its page's timeline marks steps. */
+const RUN_ICON: Readonly<Record<SideRun['state'], IconName>> = { done: 'check', failed: 'x', stopped: 'stop', skipped: 'minus', queued: 'clock', running: 'clock', 'needs-you': 'merge' };
+
+function SideRuns({ sentinelId, runs }: { sentinelId: string; runs: readonly SideRun[] }) {
   const a = useSentinelActions();
   const now = useClock(true, 60_000);
-  const here = useApp((st) => channelOf(st.view, st.assistant.active));
+  const here = useApp((st) => (st.view.kind === 'sentinel_run' ? st.view.runId : undefined));
   return (
     <>
-      {chats.slice(0, SIDE_CHATS).map((c) => (
+      {runs.slice(0, SIDE_RUNS).map((r) => (
         <Row
-          key={c.runId}
+          key={r.runId}
           indent={2}
-          selected={here === c.channel}
-          aria-label={c.headline}
-          data-sentinel-chat={c.runId}
-          icon={<Icon name={c.channel.startsWith('mac:') ? 'laptop' : 'chat'} size={12} />}
-          label={<span className={s.chatLine}>{c.headline}</span>}
-          detail={`${c.headline} · ${ago(c.startedAt, now)}`}
-          onClick={() => a.openChannel(c.channel)}
-          trailing={c.state === 'running' || c.state === 'queued' ? <DotMark tone="claude" live signal="working" /> : c.state === 'needs-you' ? <DotMark tone="warn" signal="needs" /> : c.state === 'failed' ? <DotMark tone="error" signal="failed" /> : <span className={s.when}>{ago(c.startedAt, now)}</span>}
+          selected={here === r.runId}
+          aria-label={r.headline}
+          data-sentinel-run={r.runId}
+          data-state={r.state}
+          icon={<Icon name={RUN_ICON[r.state]} size={12} className={s.runMark} data-state={r.state} />}
+          label={<span className={s.runLine}>{r.headline}</span>}
+          detail={`${r.headline} · ${ago(r.startedAt, now)}${r.chat ? '' : ' · no agent chat kept'}`}
+          onClick={() => a.openRun(r.runId)}
+          trailing={r.state === 'running' || r.state === 'queued' ? <DotMark tone="claude" live signal="working" /> : r.state === 'needs-you' ? <DotMark tone="warn" signal="needs" /> : <span className={s.when}>{ago(r.startedAt, now)}</span>}
         />
       ))}
-      {chats.length > SIDE_CHATS ? <Row indent={2} className={s.more} label={`All ${chats.length} on its page`} onClick={() => a.open(sentinelId)} /> : null}
+      {runs.length > SIDE_RUNS ? <Row indent={2} className={s.more} label={`All ${runs.length} on its page`} onClick={() => a.open(sentinelId)} /> : null}
     </>
   );
 }

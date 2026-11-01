@@ -2,6 +2,7 @@ import { belugaHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import { assistantOf } from '../assistant/registry.js';
+import { busyChannels } from '../board/work.js';
 import { assistantChannel, assistantChatOf } from '../../shared/assistant.js';
 import { commandEnv, fetchSource } from '../views/sources.js';
 import type { Source } from '../../shared/view-spec.js';
@@ -191,6 +192,16 @@ function places(session: Session): SentinelPlaces | undefined {
       const chats = mac?.chats();
       // Only one of Beluga's own, and never the one you have open.
       if (mac && id && chats && chats.active !== id && chats.chats.some((c) => c.id === id && c.auto)) await mac.deleteChat(id);
+    },
+    deleteChat: async (channel) => {
+      if (busyChannels(session.store.getState().log).has(channel)) session.host.stopRun(channel);
+      if (channel.startsWith('ws:')) {
+        const ws = ctl.manager.find(channel.slice(3));
+        if (ws && ws.kind === 'chat') await ctl.remove(ws.id, { quiet: true });
+        return;
+      }
+      const id = assistantChatOf(channel);
+      if (id) await assistantOf(session)?.deleteChat(id);
     },
     madeChanges: async (workspaceId) => {
       const ws = ctl.manager.find(workspaceId);

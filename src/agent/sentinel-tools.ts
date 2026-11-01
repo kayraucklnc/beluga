@@ -11,7 +11,7 @@ import { ASSISTANT_TITLE } from '../shared/assistant.js';
  * delete one (deleting asks you), and inside a sentinel's run, stop it when there's nothing to do.
  */
 
-export const SENTINEL_TOOL_NAMES = ['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_run', 'sentinel_test', 'sentinel_try_source', 'sentinel_update', 'sentinel_pause', 'sentinel_remove'].map((n) => `mcp__beluga_sentinel__${n}`);
+export const SENTINEL_TOOL_NAMES = ['sentinel_stop', 'sentinel_list', 'sentinel_get', 'sentinel_create', 'sentinel_run', 'sentinel_test', 'sentinel_try_source', 'sentinel_update', 'sentinel_pause', 'sentinel_remove', 'sentinel_runs', 'sentinel_delete_runs'].map((n) => `mcp__beluga_sentinel__${n}`);
 
 const ref = z.string().min(1).max(80).describe('The sentinel’s id (from sentinel_list) or its name');
 
@@ -72,6 +72,19 @@ export function createSentinelToolDefs(sentinel: SentinelTools) {
     ),
     tool('sentinel_pause', 'Pause a sentinel: nothing runs until the user turns it back on. You can pause one but never turn one on: that is the user’s, from the Mac or the phone.', { id: ref }, (a) => guarded(() => sentinel.pause(a.id))),
     tool('sentinel_remove', 'Delete a sentinel (only when the user asks): it stops watching and a run going now stops. The user is asked to approve it first.', { id: ref }, (a) => guarded(() => sentinel.remove(a.id))),
+    tool('sentinel_runs', 'A sentinel’s runs, newest first: id, when, how it ended (done, failed, skipped, stopped…), its line, and whether its agent’s chat is still kept. To show the user what ran, or before offering to clear some away.', { id: ref }, (a) => guarded(() => sentinel.runs(a.id))),
+    tool(
+      'sentinel_delete_runs',
+      'Delete some of a sentinel’s runs, only when the user asks (or agrees to your offer): what "chat" deletes is their agent’s conversations for good, the reports and outputs staying on each run’s page; "run" deletes the runs themselves (chats, reports, outputs, their folders). Pick them by ids (sentinel_runs), by how they ended (state) and/or started before a time (before: a date or "7d", "2 weeks"). A run still going is never deleted; worktrees and kept numbers stay. The user approves it first, every time.',
+      {
+        id: ref,
+        what: z.enum(['chat', 'run']),
+        runs: z.array(z.string().min(1).max(80)).max(200).optional(),
+        state: z.enum(['done', 'failed', 'skipped', 'stopped']).optional(),
+        before: z.string().max(40).optional(),
+      },
+      (a) => guarded(() => sentinel.deleteRuns(a.id, { ...(a.runs ? { runs: a.runs } : {}), ...(a.state ? { state: a.state } : {}), ...(a.before ? { before: a.before } : {}) }, a.what)),
+    ),
   ];
 }
 

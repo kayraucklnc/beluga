@@ -91,6 +91,11 @@ export interface SentinelPlaces {
    * restored), a Your Mac one deleted (its report and outputs stay with the run). Never a worktree.
    */
   putAway?(channel: string): Promise<unknown>;
+  /**
+   * Delete a run's chat for good, as you asked (BLG-577): a project chat and its conversation, a Your
+   * Mac chat; its agent stops first. Never a worktree.
+   */
+  deleteChat?(channel: string): Promise<unknown>;
   /** Whether a worktree has commits or changes of its own (undefined: can't tell, so it stays). */
   madeChanges(workspaceId: string): Promise<boolean | undefined>;
   /** Archive a worktree quietly (nothing of yours is lost). */

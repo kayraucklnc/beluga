@@ -929,42 +929,50 @@ export function latestOf(state: Pick<SentinelState, 'items' | 'runs'>, scope: st
 
 // ---------------------------------------------------------------- in the sidebar (BLG-570)
 
-/** A run's kept conversation, as a row under its sentinel in the sidebar. */
-export interface SideChat {
+/**
+ * A run as a row under its sentinel in the sidebar (BLG-576): the whole pipeline, its agent one step
+ * of it. It opens the run's page (every step, its output, the agent's session). `chat`: its agent's
+ * conversation while it's kept.
+ */
+export interface SideRun {
   readonly runId: string;
-  readonly channel: string;
   readonly state: RunSummary['state'];
   readonly startedAt: number;
   readonly headline: string;
+  readonly chat?: string;
 }
 
-/** A sentinel under the Sentinel row: how it's doing, and its runs' chats it kept, newest first. */
+/** A sentinel under the Sentinel row: how it's doing, and its runs, newest first. */
 export interface SideSentinel {
   readonly sentinel: Sentinel;
   readonly live: boolean;
   readonly needs: boolean;
   readonly failed: boolean;
-  readonly chats: readonly SideChat[];
+  readonly runs: readonly SideRun[];
 }
 
 /** Folded, the Sentinel row keeps these under it: running, waiting for you, or its last run failed. */
 export const needsALook = (x: Pick<SideSentinel, 'live' | 'needs' | 'failed'>): boolean => x.live || x.needs || x.failed;
 
-/** The chats a sentinel row unfolds to at most; the rest are on its page. */
-export const SIDE_CHATS = 5;
+/** The runs a sentinel row unfolds to at most; the rest are on its page. */
+export const SIDE_RUNS = 5;
 
-/** A run's conversation the sidebar opens: the last agent step's (its worktree's too), unless it was put away. */
-function sideChatOf(run: RunSummary): SideChat | undefined {
+/** A run's agent conversation: the last agent step's (its worktree's too), unless it was put away. */
+export function runChatOf(run: Pick<RunSummary, 'putAway' | 'channel' | 'steps'>): string | undefined {
   if (run.putAway) return undefined;
   const steps = run.steps.map((st) => st.channel).filter((c): c is string => chatPlaceOf(c) !== undefined);
-  const channel = chatPlaceOf(run.channel) ? run.channel! : steps.at(-1);
-  return channel ? { runId: run.id, channel, state: run.state, startedAt: run.startedAt, headline: headlineOf(run) } : undefined;
+  return chatPlaceOf(run.channel) ? run.channel! : steps.at(-1);
+}
+
+function sideRunOf(run: RunSummary): SideRun {
+  const chat = runChatOf(run);
+  return { runId: run.id, state: run.state, startedAt: run.startedAt, headline: headlineOf(run), ...(chat ? { chat } : {}) };
 }
 
 /**
  * The sentinels the sidebar lists under its Sentinel row (BLG-570): every one that's on, and a
  * paused one while a run of it still goes or waits for you. The one that ran last first; one that
- * never ran last, by name. Each with its kept run chats (Keep chats says how many it keeps).
+ * never ran last, by name. Each with its runs, newest first (every one the index keeps).
  */
 export function sidebarSentinels(state: Pick<SentinelState, 'items' | 'runs'>): SideSentinel[] {
   const out: Array<SideSentinel & { readonly last: number }> = [];
@@ -974,8 +982,7 @@ export function sidebarSentinels(state: Pick<SentinelState, 'items' | 'runs'>): 
     const needs = runs.some((r) => r.state === 'needs-you');
     if (sentinel.paused && !live && !needs) continue;
     const ended = runs.find((r) => r.state !== 'running' && r.state !== 'queued');
-    const chats = runs.flatMap((r) => sideChatOf(r) ?? []);
-    out.push({ sentinel, live, needs, failed: ended?.state === 'failed', chats, last: runs[0]?.startedAt ?? 0 });
+    out.push({ sentinel, live, needs, failed: ended?.state === 'failed', runs: runs.map(sideRunOf), last: runs[0]?.startedAt ?? 0 });
   }
   return out.sort((a, b) => b.last - a.last || a.sentinel.name.localeCompare(b.sentinel.name)).map(({ last: _l, ...rest }) => rest);
 }

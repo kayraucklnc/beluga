@@ -452,6 +452,8 @@ export interface Run {
   readonly chain?: readonly string[];
   /** Its conversations were put away, as its sentinel keeps them (or it was the oldest of 200). */
   readonly putAway?: true;
+  /** You deleted its conversations (BLG-577): put away too, and its page says you did. */
+  readonly chatDeleted?: true;
 }
 
 /** A run in the index and the state: no outputs, no trigger payload. */
@@ -700,6 +702,8 @@ export type SentinelAction =
   | { type: 'sentinel_remove'; id: string }
   /** One run changed or began. */
   | { type: 'sentinel_run'; run: RunSummary }
+  /** Runs you deleted (BLG-577): out of the history. */
+  | { type: 'sentinel_runs_gone'; ids: readonly string[] }
   /** Your Claude changing a sentinel: began, or ended (none: forgotten). */
   | { type: 'sentinel_ask'; id: string; ask?: SentinelAsk }
   /** An event sentinel can't watch (none: it watches again). */
@@ -793,6 +797,10 @@ export function reduceSentinel(state: SentinelSlice, action: SentinelAction): Se
     case 'sentinel_ask': {
       const { [action.id]: _was, ...asks } = s.asks ?? {};
       return { sentinel: { ...s, asks: action.ask ? { ...asks, [action.id]: action.ask } : asks } };
+    }
+    case 'sentinel_runs_gone': {
+      const gone = new Set(action.ids);
+      return { sentinel: { ...s, runs: s.runs.filter((r) => !gone.has(r.id)), live: Object.fromEntries(Object.entries(s.live).filter(([id]) => !gone.has(id))) } };
     }
     case 'sentinel_run': {
       const run = action.run;

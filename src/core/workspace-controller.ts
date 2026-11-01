@@ -1208,7 +1208,8 @@ export class WorkspaceController {
     if (back && manifest?.dropped.length) this.deps.onWorktreeRestored?.(back, manifest.remake);
   }
 
-  async remove(id: string): Promise<void> {
+  /** Delete for good. `quiet`: a sentinel clearing away a run's chat (no toast). */
+  async remove(id: string, opts: { readonly quiet?: boolean } = {}): Promise<void> {
     const agents = this.agentWorktreesOf(id);
     const ws = this.deps.manager.find(id);
     // Gone from the sidebar now; the folder, its branch and the conversation follow.
@@ -1232,7 +1233,7 @@ export class WorkspaceController {
       // Its views' rows go, and their scripts and handed-over rows unless another conversation shows them.
       forgetViews(answers, 'deleted', () => this.answersElsewhere(id));
       const also = await this.removeAgentWorktrees(agents);
-      this.deps.toast(['Deleted.', also].filter(Boolean).join(' '), 'success');
+      if (!opts.quiet) this.deps.toast(['Deleted.', also].filter(Boolean).join(' '), 'success');
       this.emit({ kind: 'removed', id });
     }
   }

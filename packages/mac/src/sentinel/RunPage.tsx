@@ -67,13 +67,21 @@ function Run({ detail, summary }: { detail: RunDetail; summary: RunSummary | und
   const swipe = useSwipeBack(wrap, back);
   // Put away as its sentinel keeps chats (BLG-566): the report and outputs stay, the chat doesn't.
   const chat = run.putAway ? undefined : (run.channel ?? run.steps.find((x) => x.channel)?.channel);
-  const keptNote = run.putAway ? `Its chat was put away: ${sentinel ? `${sentinel.name} ${KEEP_CHATS_INFO[sentinel.keepChats ?? DEFAULT_KEEP_CHATS].keeps}` : 'its sentinel keeps fewer chats'}. The report and outputs stay here.` : undefined;
+  const keptNote = run.chatDeleted ? 'You deleted its chat. The report and outputs stay here.' : run.putAway ? `Its chat was put away: ${sentinel ? `${sentinel.name} ${KEEP_CHATS_INFO[sentinel.keepChats ?? DEFAULT_KEEP_CHATS].keeps}` : 'its sentinel keeps fewer chats'}. The report and outputs stay here.` : undefined;
   const waiting = run.state === 'needs-you';
+  const ended = run.state !== 'queued' && run.state !== 'running' && !waiting;
+  // Its own chats (a project or Your Mac chat), not its worktree's: what Delete Chat deletes.
+  const ownChat = !run.chatDeleted && !run.putAway && [run.channel, ...run.steps.map((x) => x.channel)].some((c) => c && c !== (run.worktreeId ? `ws:${run.worktreeId}` : undefined));
   const why = run.steps.find((x) => x.why && x.state === 'running')?.why;
   const more: ActionItem[] = [
     ...(isRunning(run.state) ? [{ label: 'Stop', icon: 'stop' as const, danger: true, onSelect: () => void a.act(() => a.api.stop(run.id), 'Stopped') }] : []),
     ...(chat && chatPlaceOf(chat) ? [{ label: 'Open Chat', icon: 'chat' as const, keys: chordLabel('Cmd+Enter'), onSelect: () => a.openChannel(chat) }] : []),
     ...(sentinel ? [{ label: `Open ${sentinel.name}`, icon: 'sentinel' as const, onSelect: () => a.open(sentinel.id) }] : []),
+    // Its folder: trigger.json, each step's output, report.md, its documents (BLG-578).
+    { label: 'Show in Finder', icon: 'folder' as const, separate: true, onSelect: () => void a.act(() => a.api.dataReveal(run.sentinelId, run.id)) },
+    // What it left, deleted as you ask (BLG-577); a run still going is stopped first.
+    ...(ended && ownChat ? [{ label: 'Delete Chat…', icon: 'trash' as const, danger: true, separate: true, onSelect: () => a.deleteRun(run, 'chat') }] : []),
+    ...(ended ? [{ label: 'Delete Run…', icon: 'trash' as const, danger: true, ...(ownChat ? {} : { separate: true }), onSelect: () => a.deleteRun(run, 'run', back) }] : []),
   ];
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {

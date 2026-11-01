@@ -67,6 +67,7 @@ import {
   keepRuns,
   keepsChat,
   DEFAULT_KEEP_CHATS,
+  RUN_STATES,
   lastRunOf,
   scheduleSentence,
   sentinelLabel,
@@ -1324,6 +1325,41 @@ export class Sentinels {
     if (now) this.recordSummary({ ...now, putAway: true });
   }
 
+  /**
+   * Delete what a run left, as you asked (BLG-577). `chat`: its agents' conversations, for good (the
+   * run, its report and outputs stay). `run`: those, and the run itself: its folder (report, outputs,
+   * documents) and its line in the history. A worktree it made stays (it's work, archived or not on
+   * its own); numbers it kept stay on their charts. Not while it runs: stop it first.
+   */
+  async runDelete(runId: string, what: RunDeleteWhat): Promise<void> {
+    const run = this.runs.find((r) => r.id === runId);
+    if (!run) throw new Error('That run is gone (only the last 200 of each sentinel are kept)');
+    if (isLive(run.state)) throw new Error(run.state === 'needs-you' ? 'This run waits for you: Merge it or Not Now first' : 'This run is still going: stop it first');
+    const deleteChat = this.deps.places?.deleteChat;
+    for (const channel of run.chatDeleted ? [] : chatsOf(run)) await deleteChat?.(channel).catch(() => undefined);
+    if (what === 'chat') {
+      const now = this.runs.find((r) => r.id === runId);
+      if (now && !now.chatDeleted) this.recordSummary({ ...now, putAway: true, chatDeleted: true });
+      return;
+    }
+    this.runs = this.runs.filter((r) => r.id !== runId);
+    this.folders.remove(runId);
+    this.deps.store.dispatch({ type: 'sentinel_runs_gone', ids: [runId] });
+    this.save();
+  }
+
+  /**
+   * Delete several of a sentinel's runs at once (your agent's sentinel_delete_runs, always through your
+   * approval): by id, or those that ended in a state and/or started before a time → how many.
+   */
+  async runsDelete(ref: string, which: RunsWhich, what: RunDeleteWhat): Promise<number> {
+    const s = this.need(ref);
+    const ids = which.runs ? new Set(which.runs) : undefined;
+    const picked = this.runs.filter((r) => r.sentinelId === s.id && !isLive(r.state) && (!ids || ids.has(r.id)) && (!which.state || r.state === which.state) && (which.before === undefined || r.startedAt < which.before) && (what === 'run' || (!r.chatDeleted && chatsOf(r).length > 0)));
+    for (const r of picked) await this.runDelete(r.id, what);
+    return picked.length;
+  }
+
   private prune(): void {
     const { kept, gone } = pruneRuns(this.runs);
     if (!gone.length) return;
@@ -2133,8 +2169,35 @@ export class Sentinels {
         this.remove(s.id);
         return `Deleted “${s.name}”. Its past runs’ reports go with the next clean-up.`;
       },
+      runs: (ref: string) => {
+        const s = this.need(ref);
+        const mine = this.runs.filter((r) => r.sentinelId === s.id).sort((a, b) => b.startedAt - a.startedAt);
+        if (!mine.length) return `“${s.name}” hasn’t run yet.`;
+        const lines = mine.slice(0, 100).map((r) => `- ${r.id} · ${new Date(r.startedAt).toLocaleString()} · ${r.state}${r.headline ? ` · ${firstLine(r.headline, 120)}` : ''} · ${chatsOf(r).length && !r.putAway ? 'chat kept' : 'no chat kept'}`);
+        return [`“${s.name}”: ${mine.length} run${mine.length === 1 ? '' : 's'}, newest first${mine.length > 100 ? ' (the newest 100)' : ''}. Each has its page and folder (report, outputs).`, ...lines].join('\n');
+      },
+      deleteRuns: async (ref, which, what) => {
+        const s = this.need(ref);
+        const before = which.before !== undefined ? sinceOf(which.before, this.now()) : undefined;
+        if (which.before !== undefined && before === undefined) throw new Error(`“${which.before}” isn’t a time: say a date (2026-10-01) or how long ago (7d, 2 weeks)`);
+        if (which.state !== undefined && !(RUN_STATES as readonly string[]).includes(which.state)) throw new Error(`A run’s state is one of ${RUN_STATES.join(', ')}`);
+        if (!which.runs?.length && which.state === undefined && before === undefined) throw new Error('Say which runs: their ids, a state, or before when (all of them: before "0d")');
+        if (active?.sentinel.id === s.id) throw new Error('This run is that sentinel’s: ask from another conversation');
+        const n = await this.runsDelete(s.id, { ...(which.runs ? { runs: which.runs } : {}), ...(which.state ? { state: which.state as RunSummary['state'] } : {}), ...(before !== undefined ? { before } : {}) }, what);
+        if (!n) return 'No run matched (one still going is never deleted).';
+        return what === 'chat' ? `Deleted the agent chats of ${n} run${n === 1 ? '' : 's'} of “${s.name}”. Their reports and outputs stay on their pages.` : `Deleted ${n} run${n === 1 ? '' : 's'} of “${s.name}”: their chats, reports and outputs. Worktrees they made and numbers they kept stay.`;
+      },
     };
   }
+}
+
+/** What deleting a run takes: its agents' chats only, or the whole run (BLG-577). */
+export type RunDeleteWhat = 'chat' | 'run';
+/** Which of a sentinel's runs: these ids, those that ended so, those that started before then. */
+export interface RunsWhich {
+  readonly runs?: readonly string[];
+  readonly state?: RunSummary['state'];
+  readonly before?: number;
 }
 
 /** A run's own chats (a project chat, a Your Mac chat): never its worktree, which keeps its work. */

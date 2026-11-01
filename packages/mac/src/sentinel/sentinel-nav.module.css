@@ -6,8 +6,17 @@
   align-items: center;
   gap: 5px;
 }
-.chatLine {
+.runLine {
   color: var(--text-2);
+}
+.runMark {
+  color: var(--text-3);
+}
+.runMark[data-state='done'] {
+  color: var(--ok);
+}
+.runMark[data-state='failed'] {
+  color: var(--error);
 }
 .when {
   font-size: 11px;

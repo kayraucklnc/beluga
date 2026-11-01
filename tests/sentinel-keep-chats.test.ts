@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MacAssistant } from '../src/core/assistant/assistant.js';
 import { pretendSystem } from '../src/core/gateway/demo-system.js';
+import { ALWAYS_ASK_YOU } from '../src/agent/policy.js';
 import { SentinelChats } from '../src/core/sentinel/chat.js';
 import { type RunSummary, type Sentinel, keepsChat, sentinelChatChannel } from '../src/core/sentinel/model.js';
 import { needsALook, sidebarSentinels } from '../packages/mac/src/sentinel/sentinel-model.js';
@@ -252,12 +253,83 @@ describe('the sidebar’s sentinels', () => {
     expect(sidebarSentinels({ items, runs }).filter(needsALook).map((x) => x.sentinel.id)).toEqual(['c', 'b', 'w']);
   });
 
-  it('its chats: newest first, none of a run whose chat was put away, a Your Mac chat too', () => {
+  it('its runs (BLG-576): every one, newest first, scripts-only too, each with its chat while it’s kept', () => {
     const runs = [run('r1', 'a', 10, 'done', { putAway: true }), run('r2', 'a', 20, 'failed'), run('r3', 'a', 30, 'done', { channel: 'mac:assistant:abc12', steps: [] }), run('r4', 'a', 40, 'skipped', { steps: [] })];
     const [a] = sidebarSentinels({ items: [item('a', 'Alpha')], runs });
-    expect(a!.chats.map((c) => [c.runId, c.channel])).toEqual([
+    expect(a!.runs.map((r) => [r.runId, r.chat])).toEqual([
+      ['r4', undefined],
       ['r3', 'mac:assistant:abc12'],
       ['r2', 'ws:r2'],
+      ['r1', undefined],
     ]);
+  });
+});
+
+/** BLG-577: delete a run's chat, or the whole run, as you ask: on its page or through your agent. */
+describe('deleting what a run left', () => {
+  const step = { kind: 'claude' as const, name: 'Look', where: 'project' as const, prompt: 'Look' };
+
+  function withDelete() {
+    const p = places();
+    const deleted: string[] = [];
+    const all: SentinelPlaces = { ...p.places, deleteChat: async (channel) => void deleted.push(channel) };
+    return { places: all, deleted };
+  }
+
+  it('Delete Chat: its conversation goes for good, the run and its report stay', async () => {
+    const p = withDelete();
+    const s = setup({ reply: () => 'All good', places: p.places });
+    const made = s.sentinels.create({ name: 'Hourly', projectId: 'api', steps: [step] });
+    const id = await runOnce(s, made.id);
+    const channel = s.sentinels.runGet(id).run.channel!;
+    await s.sentinels.runDelete(id, 'chat');
+    expect(p.deleted).toEqual([channel]);
+    const after = s.sentinels.runGet(id);
+    expect(after.run).toMatchObject({ chatDeleted: true, putAway: true });
+    expect(after.report).toContain('All good');
+    // Twice: nothing more to delete.
+    await s.sentinels.runDelete(id, 'chat');
+    expect(p.deleted).toHaveLength(1);
+  });
+
+  it('Delete Run: its chat, folder and line in the history go', async () => {
+    const p = withDelete();
+    const s = setup({ reply: () => 'ok', places: p.places });
+    const made = s.sentinels.create({ name: 'Hourly', projectId: 'api', steps: [step] });
+    const id = await runOnce(s, made.id);
+    await s.sentinels.runDelete(id, 'run');
+    expect(p.deleted).toHaveLength(1);
+    expect(() => s.sentinels.runGet(id)).toThrow(/gone/);
+    expect(s.store.getState().sentinel.runs.some((r) => r.id === id)).toBe(false);
+  });
+
+  it('never a run still going', async () => {
+    const p = withDelete();
+    const s = setup({ reply: () => undefined, places: p.places });
+    const made = s.sentinels.create({ name: 'Slow', projectId: 'api', steps: [step] });
+    const run = s.sentinels.start(made.id, 'you');
+    await until(() => s.asked.length === 1);
+    await expect(s.sentinels.runDelete(run.id, 'run')).rejects.toThrow(/still going: stop it first/);
+  });
+
+  it('your agent: lists the runs, then deletes those that went fine, through your approval', async () => {
+    const p = withDelete();
+    let n = 0;
+    const s = setup({
+      places: p.places,
+      reply: (a: Asked) => {
+        if (++n !== 2) return 'ok';
+        queueMicrotask(() => a.fail('It broke'));
+        return undefined;
+      },
+    });
+    const made = s.sentinels.create({ name: 'Hourly', projectId: 'api', steps: [step] });
+    for (let i = 0; i < 3; i++) await runOnce(s, made.id);
+    const tools = s.sentinels.forRun('ws:elsewhere', 'p-me')!.tools;
+    expect(tools.runs('Hourly')).toMatch(/3 runs, newest first/);
+    expect(await tools.deleteRuns('Hourly', { state: 'done' }, 'run')).toMatch(/Deleted 2 runs/);
+    expect(s.store.getState().sentinel.runs.filter((r) => r.sentinelId === made.id).map((r) => r.state)).toEqual(['failed']);
+    await expect(tools.deleteRuns('Hourly', {}, 'chat')).rejects.toThrow(/Say which runs/);
+    expect(ALWAYS_ASK_YOU.has('mcp__beluga_sentinel__sentinel_delete_runs')).toBe(true);
   });
 });

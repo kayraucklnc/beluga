@@ -16,6 +16,7 @@ export const SENTINEL_HANDLERS = {
   'sentinel.create': (s, draft) => needSentinel(s).create(draft),
   'sentinel.update': (s, id, patch) => needSentinel(s).update(id, patch),
   'sentinel.remove': (s, id) => needSentinel(s).remove(id),
+  'sentinel.runDelete': (s, id, what) => needSentinel(s).runDelete(id, what),
   'sentinel.duplicate': (s, id) => needSentinel(s).duplicate(id),
   // Run Now from the phone says so in the run's history ("You ran it from your phone").
   'sentinel.run': (s, id) => needSentinel(s).start(id, fromPhone() ? 'phone' : 'you'),
