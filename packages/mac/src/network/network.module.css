@@ -398,6 +398,34 @@
   height: 0.5px;
   background: var(--hairline);
 }
+/* What came in since you last read (BLG-573): a line where it starts, a soft band under it. */
+.unreadLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: var(--chat-max);
+  margin: 14px auto 0;
+  padding: 0 24px 4px;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.unreadLine::before,
+.unreadLine::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.unread {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+:root[data-theme='dark'] .unread {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.unreadEnd {
+  padding-bottom: 8px;
+}
 .mine .author {
   color: var(--text);
 }
