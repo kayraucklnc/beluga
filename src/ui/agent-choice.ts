@@ -3,6 +3,7 @@ import type { RuntimeChoice, RuntimeModel } from '../shared/agent-runtimes.js';
 import { type AgentMark, runtimeMark } from '../shared/agent-marks.js';
 
 /** protocol.ts's CLAUDE_AGENT, repeated so the phone bundles this file without the daemon's protocol (types only from there). */
+// agent-wording: claude (the Claude runtime's own name)
 const CLAUDE_AGENT: AgentRef = { runtime: 'claude', label: 'Claude' };
 
 /**
