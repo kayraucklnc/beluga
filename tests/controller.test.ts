@@ -10,6 +10,8 @@ import { Store, initialState } from '../src/core/store.js';
 import { WorkspaceController, shareNameOf, workspaceIdOf } from '../src/core/workspace-controller.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
+import { API } from '../src/ipc/api.js';
+import { HANDLERS } from '../src/ipc/handlers.js';
 import { screenOver, waitFor } from './helpers.js';
 import type { ClientStore } from '../src/client/client-store.js';
 
@@ -22,6 +24,7 @@ let ctl: WorkspaceController;
 let toasts: string[];
 let trashed: string[];
 let asked: Array<{ prompt: string; channel: string }>;
+let askedInPlan: boolean[];
 let repo: string;
 let claude: string;
 
@@ -47,6 +50,7 @@ beforeEach(async () => {
   toasts = [];
   trashed = [];
   asked = [];
+  askedInPlan = [];
   const shown = screenOver(store);
   screen = shown.screen;
   ctl = new WorkspaceController({
@@ -56,7 +60,10 @@ beforeEach(async () => {
     selfId: () => 'me',
     toast: (t) => void toasts.push(t),
     intend: shown.intend,
-    askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
+    askClaude: (prompt, channel) => {
+      asked.push({ prompt, channel });
+      askedInPlan.push(store.getState().planMode[channel] === true);
+    },
     claudeHome: claude,
     moveToTrash: async (dir) => void trashed.push(dir),
   });
@@ -371,6 +378,15 @@ describe('WorkspaceController', () => {
     expect(asked.at(-1)).toEqual({ prompt: 'explain   this repo please', channel: `ws:${chat.id}` });
     await ctl.remove(chat.id);
     expect(existsSync(launch)).toBe(true); // never deletes a folder you started a chat in
+  });
+
+  it.each([true, false, undefined])('starts the first chat message in the selected mode (%s)', async (plan) => {
+    const args = API['workspaces.startChat'].args.parse(['chats', 'Explain this repo', repo, plan === undefined ? undefined : { plan }]);
+    await HANDLERS['workspaces.startChat']({ workspaces: ctl } as Session, ...args);
+    const chat = store.getState().projects.find((p) => p.id === 'chats')!.workspaces[0]!;
+    expect(asked).toEqual([{ prompt: 'Explain this repo', channel: `ws:${chat.id}` }]);
+    expect(askedInPlan).toEqual([plan === true]);
+    expect(store.getState().planMode[`ws:${chat.id}`] === true).toBe(plan === true);
   });
 
   it('organizes projects into groups and hides them', async () => {

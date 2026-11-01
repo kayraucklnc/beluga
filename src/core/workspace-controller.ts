@@ -789,10 +789,13 @@ export class WorkspaceController {
   }
 
   /** Turn a draft into a real chat with your first message, then send it to Claude. */
-  async startChat(projectId: string, firstMessage: string, inDir?: string, opts: { terminal?: boolean } = {}): Promise<void> {
+  async startChat(projectId: string, firstMessage: string, inDir?: string, opts: { terminal?: boolean; plan?: boolean } = {}): Promise<void> {
     const title = firstMessage.replace(/\s+/g, ' ').trim().slice(0, 40);
     const ws = await this.newChat(projectId, title, inDir);
-    if (ws) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`, opts.terminal ? { terminal: true } : undefined);
+    if (!ws) return;
+    const channel = `${WS_PREFIX}${ws.id}`;
+    if (opts.plan) this.deps.store.dispatch({ type: 'plan_mode', channel, on: true });
+    this.deps.askClaude(firstMessage, channel, opts.terminal && !opts.plan ? { terminal: true } : undefined);
   }
 
   /** The branches a new worktree can start from, the project's default base first. */
