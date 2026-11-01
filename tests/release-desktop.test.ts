@@ -6,6 +6,7 @@ interface Desktop {
   assetName(file: string, productName: string): string;
   pickBuilt(os: string, files: string[]): { offered: string[]; update?: string };
   platformsOf(entries: Array<{ key: string; signature: string; url: string }>): Record<string, { signature: string; url: string }>;
+  updateTargets(key: string, file: string): string[];
 }
 interface Mac {
   mergeLatest(existing: unknown, next: { version: string; platforms: Record<string, unknown> }): { version: string; platforms: Record<string, unknown> };
@@ -34,5 +35,13 @@ describe('Linux and Windows releases (BLG-528)', () => {
     // An older version's entries would offer an older build: they go.
     expect(Object.keys(mergeLatest({ ...macs, version: '1.8.0' }, { version: '1.9.0', platforms: { 'windows-x86_64': {} } }).platforms)).toEqual(['windows-x86_64']);
     expect(mergeLatest(undefined, { version: '1.9.0', platforms: { a: 1 } }).platforms).toEqual({ a: 1 });
+  });
+
+  it('gives every signed package the updater name its installs look for', async () => {
+    const { updateTargets } = await desktop();
+    expect(updateTargets('linux-x86_64', 'b/appimage/Beluga_1.9.0_amd64.AppImage')).toEqual(['linux-x86_64', 'linux-x86_64-appimage']);
+    expect(updateTargets('linux-x86_64', 'b/deb/Beluga_1.9.0_amd64.deb')).toEqual(['linux-x86_64-deb']);
+    expect(updateTargets('linux-x86_64', 'b/rpm/Beluga-1.9.0-1.x86_64.rpm')).toEqual(['linux-x86_64-rpm']);
+    expect(updateTargets('windows-x86_64', 'b/nsis/Beluga_1.9.0_x64-setup.exe')).toEqual(['windows-x86_64', 'windows-x86_64-nsis']);
   });
 });

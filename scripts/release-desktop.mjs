@@ -4,7 +4,8 @@
 //
 //   node scripts/release-desktop.mjs collect --tag v1.9.0-mac --out release-out
 //       after `tauri build` on a Linux or Windows runner: copy what people download (deb, rpm,
-//       AppImage / the Windows installer) to <out>, named for the app, and write <out>/<platform>.json
+//       AppImage / the Windows installer) to <out>, named for the app, and write <out>/<target>.json
+//       for each signed one (linux-x86_64, linux-x86_64-deb, windows-x86_64-nsis…)
 //       with the update's signature and download URL
 //   node scripts/release-desktop.mjs publish --tag v1.9.0-mac --dir artifacts
 //       once every build is done: upload the files, and add each platform to the release's
@@ -37,6 +38,19 @@ export function pickBuilt(os, files) {
   return { offered, update };
 }
 
+/**
+ * The updater targets a signed package answers to (tauri-plugin-updater looks for
+ * `{os}-{arch}-{installer}`, then `{os}-{arch}`): the AppImage and the Windows installer are also
+ * the plain one; a .deb or .rpm install only takes its own kind, so each gets its own name.
+ */
+export function updateTargets(key, file) {
+  if (file.endsWith('.AppImage')) return [key, `${key}-appimage`];
+  if (file.endsWith('-setup.exe')) return [key, `${key}-nsis`];
+  if (file.endsWith('.deb')) return [`${key}-deb`];
+  if (file.endsWith('.rpm')) return [`${key}-rpm`];
+  return [];
+}
+
 /** Every file under a folder (relative paths). */
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.join(e.parentPath ?? e.path, e.name)) : []);
 
@@ -55,13 +69,17 @@ function collect({ tag, out }) {
   mkdirSync(out, { recursive: true });
   for (const f of offered) copyFileSync(f, path.join(out, assetName(path.basename(f), conf.productName)));
   const key = platformKey(os, process.arch);
-  // Installed copies update from the signed build (the AppImage, the Windows installer): without
-  // its signature (a run that didn't sign) the packages are still offered, and latest.json skips it.
-  if (update && existsSync(`${update}.sig`)) {
-    const name = assetName(path.basename(update), conf.productName);
-    copyFileSync(`${update}.sig`, path.join(out, `${name}.sig`));
-    writeFileSync(path.join(out, `${key}.json`), `${JSON.stringify({ key, version: conf.version, signature: readFileSync(`${update}.sig`, 'utf8').trim(), url: assetUrl(tag, name) }, null, 2)}\n`);
-  } else console.warn(`release-desktop: no signed update for ${os}; installed copies won't update to this one`);
+  // Each signed package updates the installs of its own kind (an AppImage, a .deb, an .rpm, the
+  // Windows installer). Without signatures (a run that didn't sign) the packages are still offered,
+  // and latest.json skips them.
+  const signed = offered.filter((f) => existsSync(`${f}.sig`));
+  for (const file of signed) {
+    const name = assetName(path.basename(file), conf.productName);
+    const signature = readFileSync(`${file}.sig`, 'utf8').trim();
+    copyFileSync(`${file}.sig`, path.join(out, `${name}.sig`));
+    for (const target of updateTargets(key, file)) writeFileSync(path.join(out, `${target}.json`), `${JSON.stringify({ key: target, version: conf.version, signature, url: assetUrl(tag, name) }, null, 2)}\n`);
+  }
+  if (!update || !signed.includes(update)) console.warn(`release-desktop: no signed update for ${os}; installed copies won't update to this one`);
   console.log(`Collected for ${key}:\n${readdirSync(out).map((f) => `  ${f}`).join('\n')}`);
 }
 
@@ -72,7 +90,7 @@ export function platformsOf(entries) {
 
 function publish({ tag, dir }) {
   const files = walk(dir);
-  const entries = files.filter((f) => /\/(linux|windows)-[\w]+\.json$/.test(f.replaceAll('\\', '/'))).map((f) => JSON.parse(readFileSync(f, 'utf8')));
+  const entries = files.filter((f) => /\/(linux|windows)-[\w-]+\.json$/.test(f.replaceAll('\\', '/'))).map((f) => JSON.parse(readFileSync(f, 'utf8')));
   const uploads = files.filter((f) => !f.endsWith('.json'));
   if (!uploads.length) throw new Error(`No builds in ${dir}`);
   execFileSync('gh', ['release', 'upload', tag, ...uploads, '--repo', REPO, '--clobber'], { stdio: 'inherit' });
