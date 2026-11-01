@@ -10,7 +10,8 @@ import { openSheet } from '../lib/sheets.js';
 import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
-import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
+import { AssigneeMark, PriorityIcon, StatusIcon, assigneeWords } from './marks.js';
+import { AssigneePicker } from './pickers.js';
 import { ArchiveDoneButton, EpicBar, IssueMeta, OnItLine, PrivateMark, useIssueMenu } from './parts.js';
 import { WaitingMark } from '../team/Team.js';
 import { isSolo } from './tasks-model.js';
@@ -345,7 +346,7 @@ export function TaskBoard({ issues, statuses, projectId, repo }: { issues: reado
       {lift && lifted
         ? createPortal(
             <motion.div className={t.cardLifted} style={{ x, y, width: lift.width, rotate: lean }} initial={reduce ? false : { scale: 1 }} animate={{ scale: settling ? 1 : 1.035 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }} aria-hidden="true">
-              <CardFace issue={lifted} selfId={selfId} solo={soloIn.split('\n').includes(lifted.projectId)} />
+              <CardFace issue={lifted} selfId={selfId} solo={soloIn.split('\n').includes(lifted.projectId)} lifted />
             </motion.div>,
             document.body,
           )
@@ -442,8 +443,26 @@ const Column = memo(function Column({
   );
 });
 
-/** What a card shows (on the board, and lifted under the pointer). */
-const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue; selfId: string; solo: boolean }) {
+/**
+ * Who a card's task is for, and a click picks someone else without opening the task (or starting
+ * a drag): the same menu as a row in the list and the task's page.
+ */
+function CardAssignee({ issue, selfId }: { issue: Issue; selfId: string }) {
+  const { api, act } = useTaskActions();
+  const stop = (e: { stopPropagation: () => void }): void => e.stopPropagation();
+  return (
+    <span className={t.cardAssignee} onPointerDown={stop} onClick={stop} onKeyDown={stop}>
+      <AssigneePicker projectId={issue.projectId} value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
+        <button type="button" className={t.iconHit} aria-label={`${assigneeWords(issue.assignee, selfId)}. Change who it's for`}>
+          <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} changeable />
+        </button>
+      </AssigneePicker>
+    </span>
+  );
+}
+
+/** What a card shows (on the board, and lifted under the pointer: `lifted`, nothing in it to press). */
+const CardFace = memo(function CardFace({ issue, selfId, solo, lifted }: { issue: Issue; selfId: string; solo: boolean; lifted?: boolean }) {
   const self = useSelf();
   const epic = useApp((s) => isEpic(s.board, issue));
   return (
@@ -460,7 +479,7 @@ const CardFace = memo(function CardFace({ issue, selfId, solo }: { issue: Issue;
         <span className={t.grow} />
         <WaitingMark issueId={issue.id} />
         <PriorityIcon priority={issue.priority} labelled />
-        {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
+        {solo ? null : lifted ? <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} /> : <CardAssignee issue={issue} selfId={selfId} />}
       </div>
       <div className={cx(t.cardTitle, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</div>
       <IssueMeta issue={issue} compact progress={!epic} presence={false} />

@@ -670,6 +670,17 @@
 .cardTop .key {
   min-width: 0;
 }
+/* The avatar on a card is a button: its press area reaches past the row without making it taller. */
+.cardAssignee {
+  display: inline-flex;
+  margin: -3px -3px -3px 0;
+}
+.cardAssignee .iconHit {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  padding: 0;
+}
 .cardTitle {
   font-size: 13px;
   font-weight: 500;

@@ -487,6 +487,35 @@ test('the board: a card picked up lifts, the column makes room, and it lands whe
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
 });
 
+test('the board: a card’s avatar changes who it’s for, without opening the task (BLG-596)', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  if (!(await page.getByRole('button', { name: 'Board: bob-api' }).isVisible())) {
+    await page.getByRole('button', { name: /^Board: / }).click();
+    await page.getByRole('menuitem', { name: /bob-api/ }).click();
+  }
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+  // Not bob's task: with no one else's task on it, the project reads as yours alone and avatars hide.
+  const card = page.getByRole('list', { name: 'Board' }).getByRole('button', { name: /Move secrets to the keychain/ });
+  const avatar = card.getByRole('button', { name: /^For .*Change who it's for$/ });
+  await avatar.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Click to change');
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: `${process.env.BELUGA_SHOTS}/card-assignee-hover.png` });
+  await avatar.click();
+  const menu = page.getByRole('menu', { name: /Change who it's for/ });
+  await expect(menu).toBeVisible();
+  // The task didn't open: still on the board.
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveCount(0);
+  if (process.env.BELUGA_SHOTS) await page.screenshot({ path: `${process.env.BELUGA_SHOTS}/card-assignee-menu.png` });
+  await menu.getByRole('menuitem', { name: /^No one/ }).click();
+  await expect(card.getByRole('button', { name: "For no one yet. Change who it's for" })).toBeVisible();
+  await card.getByRole('button', { name: /^For .*Change who it's for$/ }).click();
+  await page.getByRole('menu', { name: /Change who it's for/ }).getByRole('menuitem', { name: /^You/ }).click();
+  await expect(card.getByRole('button', { name: "For you. Change who it's for" })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveCount(0);
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+});
+
 test('Done’s one click puts every Done task in the Archive; an archived task reads as it was and comes back (BLG-27)', async ({ page }) => {
   await openTasks(page);
   await allAsList(page);

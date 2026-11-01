@@ -5,7 +5,7 @@ import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
-import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
+import { AssigneeMark, PriorityIcon, StatusIcon, assigneeWords } from './marks.js';
 import { ArchiveDoneButton, IssueMeta, PrivateMark, TuckButton, useIssueMenu } from './parts.js';
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
@@ -128,8 +128,8 @@ const Row = memo(function Row({ issue, pop, out, cursor, onCursor }: { issue: Is
         <WorkingMark issueId={issue.id} />
         {solo ? null : <span className={t.rowCell} onClick={stop}>
           <AssigneePicker projectId={issue.projectId} value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
-            <button type="button" className={t.iconHit}>
-              <AssigneeMark assignee={issue.assignee} selfId={selfId} />
+            <button type="button" className={t.iconHit} aria-label={`${assigneeWords(issue.assignee, selfId)}. Change who it's for`}>
+              <AssigneeMark assignee={issue.assignee} selfId={selfId} changeable />
             </button>
           </AssigneePicker>
         </span>}
