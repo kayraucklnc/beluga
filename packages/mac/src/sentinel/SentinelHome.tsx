@@ -50,7 +50,13 @@ export function SentinelHome() {
   // Ask Sentinel stays docked on the right (it opens with the page) until you close it.
   const docked = useAskDocked();
   const any = state.items.length > 0;
+  // The last sentinel just went (deleted, with the chat docked beside the list): back to the first
+  // visit, not into a conversation that was only open beside the page.
+  const hadAny = useRef(any);
   useLayoutEffect(() => {
+    const emptied = hadAny.current && !any;
+    hadAny.current = any;
+    if (emptied && asking) return void actions.run({ type: 'view', view: { kind: 'sentinel' } });
     if (asking) setAskDocked(true);
     else if (docked && any && (view.kind === 'sentinel' || view.kind === 'dashboard')) actions.run({ type: 'view', view: { kind: 'sentinel_chat', chat: active } });
   }, [view, docked, any]);
@@ -60,9 +66,20 @@ export function SentinelHome() {
   };
 
   if (!state.enabled) return <Empty icon="sentinel" title="Sentinel needs the Beluga app" detail="Sentinels run on your Mac, as you: open Beluga for Mac to make one." />;
+  // Nothing set up yet: the conversation is the page (BLG-590). Once your agent makes the first
+  // sentinel, the page shows it and the chat moves aside, docked on the right.
+  if (!any && asking) {
+    return (
+      <div className={s.home} data-asking>
+        <div className={s.middle} data-testid="sentinel-first-chat">
+          <SentinelChat key={view.chat ?? 'main'} onClose={() => actions.run({ type: 'view', view: { kind: 'sentinel' } })} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={s.home} data-asking={asking || undefined}>
-      <div className={s.page}>{state.items.length ? <Lived state={state} scope={scope} setScope={setScope} board={board} setBoard={setBoard} /> : <FirstVisit />}</div>
+      <div className={s.page}>{any ? <Lived state={state} scope={scope} setScope={setScope} board={board} setBoard={setBoard} /> : <FirstVisit />}</div>
       {asking ? (
         <AskPanel>
           <SentinelChat key={view.chat ?? 'main'} onClose={close} />
@@ -413,6 +430,7 @@ const Message = memo(function Message({ sentinel, run, now, a }: { sentinel: Sen
 /** One-tap ideas under the box: the first lets Claude look at your projects and suggest. */
 const IDEAS: ReadonlyArray<{ readonly label: string; readonly icon: Parameters<typeof Icon>[0]['name']; readonly prompt: string }> = [
   { label: 'Suggest Some for Me', icon: 'sparkles', prompt: 'I’m new to Sentinel. Look at my projects and what they use, and suggest three watchers that would help me, each in one plain line. Set them up, with a board for their numbers, when I say yes.' },
+  { label: 'Make Me a Dashboard', icon: 'gauge', prompt: 'Make me a dashboard with the numbers that matter for my projects, and set up what keeps them fresh.' },
   { label: 'A Morning Brief', icon: 'clock', prompt: 'Every weekday morning, tell me on my phone what changed in my projects and what needs me first.' },
   { label: 'Watch My Website', icon: 'pulse', prompt: 'Check my website every 5 minutes and tell me the moment it stops answering, and when it’s back.' },
   { label: 'Fix Failing Tests', icon: 'wrench', prompt: 'When the tests fail on GitHub for one of my projects, have the agent fix it and open a pull request for me to merge.' },
@@ -425,6 +443,11 @@ const IDEAS: ReadonlyArray<{ readonly label: string; readonly icon: Parameters<t
  */
 function FirstVisit() {
   const ask = useAsk();
+  // A conversation already under way (you went back to this page from it): one click returns to it.
+  const talked = useApp((st) => {
+    const channel = sentinelChatChannel(st.sentinel.chats?.active ?? FIRST_SENTINEL_CHAT);
+    return st.log.some((l) => l.channel === channel);
+  });
   const [words, setWords] = useState('');
   const send = (): void => {
     if (!words.trim()) return;
@@ -434,7 +457,7 @@ function FirstVisit() {
   return (
     <div className={s.first} data-testid="sentinel-first">
       <h1 className={s.firstTitle}>Let your agent keep an eye on things</h1>
-      <p className={s.lede}>Say what you want in your own words. Your agent sets it up; nothing runs until you turn it on.</p>
+      <p className={s.lede}>Say what you want to see or keep an eye on. Your agent builds the dashboard, watcher or pipeline for you; nothing runs until you turn it on.</p>
       <Showcase onPick={(slide) => ask(slide.prompt)} />
       <div className={s.composer}>
         <textarea
@@ -466,6 +489,11 @@ function FirstVisit() {
         ))}
       </div>
       <div className={s.firstFoot}>
+        {talked ? (
+          <button type="button" className={s.link} onClick={() => ask()}>
+            Back to your conversation
+          </button>
+        ) : null}
         <button type="button" className={s.link} onClick={() => openSheet({ kind: 'new_sentinel', way: 'recipe' })}>
           Every recipe
         </button>

@@ -212,6 +212,24 @@ const LEAD_LINES = [
 ];
 
 /**
+ * Ask Sentinel builds (BLG-590): people type here as they would to any chat ("how many signups this
+ * week?") without knowing it makes dashboards. A question about their data gets a board that keeps
+ * answering it, not a table in the conversation.
+ */
+const BUILD_LINES = [
+  'This chat builds things that last; it is not a place for one-off answers. You can make three kinds, from any words: a dashboard',
+  '(any numbers, series, tables or reports they care about, kept fresh), a watcher (a sentinel on any schedule, event or',
+  'condition they name, doing what they say), and a pipeline (steps in one sentinel, fetch → agent → notify, or sentinels chained',
+  'with after). When someone asks about their data or projects (“how many signups this week?”, “which pull requests are open?”,',
+  '“how is revenue doing?”), build it without being asked: a sentinel that fetches it with a Keep the numbers step (prefer a source',
+  'the step reads itself), sentinel_test so it fills now, and a tile on a dashboard (make one named for it when none fits); then answer',
+  'in a line or two with the number itself and where it is now. Don’t put a table, chart or view in this chat (no mcp__beluga_view__show,',
+  'no beluga-view or Markdown table): rows and trends go on a dashboard as a table or series tile. Plain questions about Sentinel or',
+  'what you can do are answered in words. When someone is new or vague, say in one line that you can make a dashboard, a watcher or',
+  'a pipeline, with an example that fits their projects, then lead as above.',
+];
+
+/**
  * What your Claude is told in the Sentinel chat (§12): what Sentinel is and how it works, what's
  * safe, the sentinels, dashboards and numbers as they are now (material), and its tools.
  */
@@ -223,6 +241,7 @@ export function sentinelChatBrief(items: readonly Sentinel[], dashboards: readon
     '',
     'You are the Sentinel chat in Beluga: the user talks to you about the whole of Sentinel, from the Mac or their phone. Answer short and',
     'plainly, and do what they ask with your tools rather than describing how.',
+    ...BUILD_LINES,
     ...LEAD_LINES,
     'Sentinel watches so the user doesn’t have to. A sentinel is one watcher: it runs when something is due or happens (a schedule, an',
     'event, a webhook, by hand, or after another sentinel), does a short list of steps in order, and leaves a report (its last agent',
