@@ -57,6 +57,12 @@ rmSync(path.join(out, 'package-lock.json'), { force: true });
 // the relay fallback first needs it), mathjax's es5 build (math-svg.ts uses mathjax-full/js), and
 // whisper's C++ sources and wasm fallback (the native build is there).
 for (const dir of ['cloudflared/bin', 'mathjax-full/es5', '@fugood/whisper.node/src', '@fugood/node-whisper-wasm']) rmSync(path.join(out, 'node_modules', dir), { recursive: true, force: true });
+// Nor whisper's GPU builds (CUDA, Vulkan, Snapdragon): voice.ts loads its default build. On Linux
+// they're most of the app's size, and the CUDA one needs NVIDIA's libcudart, which the AppImage can't find.
+{
+  const fugood = path.join(out, 'node_modules', '@fugood');
+  if (existsSync(fugood)) for (const name of readdirSync(fugood)) if (/^node-whisper-.+-(cuda|vulkan|snapdragon)$/.test(name)) rmSync(path.join(fugood, name), { recursive: true, force: true });
+}
 // Nor type declarations, source maps, TypeScript sources or docs (licenses stay).
 const junk = /\.(d\.[cm]?ts|[cm]?ts|map|md|markdown)$/i;
 const strip = (dir) => {
