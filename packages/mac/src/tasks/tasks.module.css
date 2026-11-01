@@ -1226,6 +1226,103 @@
   gap: 4px;
   margin-bottom: 22px;
 }
+/*
+ * A task its agent is still writing (BLG-598): the goal and criteria in outline, each line coming
+ * in after the one before, and a soft light passing over them (a transform, so only the light moves).
+ */
+.writingStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  margin-bottom: 2px;
+  color: var(--claude);
+  font-size: 12.5px;
+}
+.briefWriting .section:hover {
+  background: none;
+}
+.ghostLines {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-width: var(--prose);
+  padding-top: 4px;
+}
+.ghostCheck {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  animation: ghostIn 420ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+.ghostBox {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px var(--hairline-strong);
+}
+.ghostLine {
+  position: relative;
+  display: block;
+  height: 9px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--hairline);
+  animation: ghostIn 420ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+.ghostCheck .ghostLine {
+  animation: none;
+}
+.ghostLine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--claude) 16%, var(--hairline-strong)), transparent);
+  transform: translateX(-100%);
+  animation: ghostSweep 1.8s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+@keyframes ghostIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@keyframes ghostSweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+/* The written brief takes the skeleton's place with a short fade. */
+.briefArrived {
+  animation: ghostIn 360ms var(--ease-out);
+}
+/* Its title is a stand-in until the agent names it: quieter, and not for typing in. */
+.pageTitleWriting,
+.pageTitleWriting:hover,
+.pageTitleWriting:focus {
+  background: none;
+  box-shadow: none;
+  color: var(--text-3);
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ghostLine,
+  .ghostCheck,
+  .ghostLine::after,
+  .briefArrived {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .ghostLine,
+:root[data-motion='reduce'] .ghostCheck,
+:root[data-motion='reduce'] .ghostLine::after,
+:root[data-motion='reduce'] .briefArrived {
+  animation: none;
+}
 .section {
   padding: 10px 12px 12px;
   margin: 0 -12px;

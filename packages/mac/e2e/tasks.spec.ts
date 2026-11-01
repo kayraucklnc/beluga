@@ -17,7 +17,7 @@ async function openTasks(page: Page): Promise<void> {
 async function allAsList(page: Page): Promise<void> {
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
-  const showAll = page.getByRole('button', { name: 'Show All' });
+  const showAll = page.getByRole('button', { name: 'Show All', exact: true });
   if (await showAll.isVisible()) await showAll.click();
 }
 
@@ -37,7 +37,7 @@ test('lists the demo’s tasks by status; scopes and the board', async ({ page }
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   const list = page.getByRole('grid', { name: 'Tasks' });
   // Sub-tasks start tucked under their epic: open them out.
-  await page.getByRole('button', { name: 'Show All' }).click();
+  await page.getByRole('button', { name: 'Show All', exact: true }).click();
   await expect(list.getByRole('region', { name: 'In Review' })).toBeVisible();
   await expect(list.getByRole('row', { name: /Add auth to the payment routes, In Review/ })).toBeVisible();
   await expect(list.getByRole('row', { name: /Refund endpoint/ })).toContainText('Blocked by');
