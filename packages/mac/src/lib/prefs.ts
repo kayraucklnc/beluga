@@ -101,6 +101,8 @@ export interface UiPrefs {
   readonly groupIcons: Readonly<Record<string, string>>;
   /** Plans (by id) whose task chats you asked to see in the sidebar under them (a plan is one row otherwise). */
   readonly planTaskChats: readonly string[];
+  /** The sentinels that are on, under the sidebar's Sentinel row with their kept run chats (BLG-570). */
+  readonly sentinelRows: boolean;
   /** How the message box burns on Max effort (Settings › Max Fire). */
   readonly maxFire: FireLook;
   /** The menu-bar whale: what its number counts and when it spouts (Settings › Menu Bar). */
@@ -182,6 +184,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   scratchSort: 'newest',
   groupIcons: {},
   planTaskChats: [],
+  sentinelRows: true,
   maxFire: DEFAULT_FIRE,
   menuBar: DEFAULT_MENU_BAR,
   voiceModel: 'suggested',

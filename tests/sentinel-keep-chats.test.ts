@@ -1,10 +1,12 @@
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MacAssistant } from '../src/core/assistant/assistant.js';
 import { pretendSystem } from '../src/core/gateway/demo-system.js';
-import { keepsChat } from '../src/core/sentinel/model.js';
+import { SentinelChats } from '../src/core/sentinel/chat.js';
+import { type RunSummary, type Sentinel, keepsChat, sentinelChatChannel } from '../src/core/sentinel/model.js';
+import { sidebarSentinels } from '../packages/mac/src/sentinel/sentinel-model.js';
 import type { SentinelPlaces } from '../src/core/sentinel/runner.js';
 import { ToolDraftSchema, ToolPatchSchema } from '../src/core/sentinel/tool-draft.js';
 import { fromToolDraft } from '../src/core/sentinel/sentinels.js';
@@ -181,5 +183,75 @@ describe('your agent sets it up too', () => {
     expect(made.steps?.[0]).toMatchObject({ runtime: 'codex', model: 'gpt-5.5' });
     expect(ToolPatchSchema.parse({ keepChats: 'latest' }).keepChats).toBe('latest');
     expect(() => ToolPatchSchema.parse({ keepChats: 'some' })).toThrow();
+  });
+});
+
+/** BLG-571: deleting a chat that ran on Codex drops Codex's thread, as Claude's transcript is dropped. */
+describe('a deleted chat takes its agent’s record with it', () => {
+  function rollout(home: string, thread: string): string {
+    const dir = path.join(home, 'sessions', '2026', '11', '01');
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `rollout-2026-11-01T10-00-00-${thread}.jsonl`);
+    writeFileSync(file, `${JSON.stringify({ type: 'session_meta', payload: { id: thread, cwd: '/w' } })}\n`);
+    return file;
+  }
+
+  function codexStore(): Store {
+    const s = store(30);
+    s.dispatch({ type: 'prefs', prefs: { defaultAgent: { runtime: 'codex', label: 'Codex' } } });
+    return s;
+  }
+
+  it('Your Mac: Codex’s thread goes, another thread stays', async () => {
+    const codex = tmp();
+    const mine = rollout(codex, 'thread-mine');
+    const other = rollout(codex, 'thread-other');
+    const m = new MacAssistant({ store: codexStore(), dir: tmp(), selfId: () => 'me', system: pretendSystem(), claudeDir: tmp(), codexDir: codex });
+    const id = m.newChat();
+    m.place(`mac:assistant:${id}`).onSession?.('thread-mine');
+    await m.deleteChat(id);
+    expect(existsSync(mine)).toBe(false);
+    expect(existsSync(other)).toBe(true);
+  });
+
+  it('the Sentinel chat: runs on your default agent, remembers it, and drops Codex’s thread', async () => {
+    const codex = tmp();
+    const file = rollout(codex, 'thread-s');
+    const s = codexStore();
+    const chats = new SentinelChats({ store: s, dir: tmp(), selfId: () => 'me', claudeDir: tmp(), codexDir: codex });
+    const id = chats.newChat();
+    const place = chats.place(sentinelChatChannel(id), 'me')!;
+    expect(place.agent?.runtime).toBe('codex');
+    place.onSession?.('thread-s');
+    // Back on Claude: Codex's thread can't be resumed there, so it starts afresh.
+    s.dispatch({ type: 'prefs', prefs: { defaultAgent: { runtime: 'claude', label: 'Claude' } } });
+    expect(chats.place(sentinelChatChannel(id), 'me')!.resume).toBeUndefined();
+    await chats.deleteChat(id);
+    expect(existsSync(file)).toBe(false);
+  });
+});
+
+/** BLG-570: the sentinels that are on, under the sidebar's Sentinel row, each with its runs' kept chats. */
+describe('the sidebar’s sentinels', () => {
+  const item = (id: string, name: string, paused = false) => ({ id, name, paused }) as unknown as Sentinel;
+  const run = (id: string, sentinelId: string, startedAt: number, state: RunSummary['state'], extra: Partial<RunSummary> = {}) =>
+    ({ id, sentinelId, startedAt, state, headline: `${id} done`, steps: [{ id: 's1', state: 'done', channel: `ws:${id}` }], tasks: [], by: 'schedule', trigger: { kind: 'schedule', summary: '' }, ...extra }) as unknown as RunSummary;
+
+  it('lists the ones that are on (and a paused one still running or waiting), the one that ran last first', () => {
+    const items = [item('a', 'Alpha'), item('b', 'Beta'), item('p', 'Paused', true), item('w', 'Waits', true), item('n', 'Never ran')];
+    const runs = [run('r1', 'a', 10, 'done'), run('r2', 'b', 20, 'failed'), run('r3', 'p', 30, 'done'), run('r4', 'w', 5, 'needs-you')];
+    const side = sidebarSentinels({ items, runs });
+    expect(side.map((x) => x.sentinel.id)).toEqual(['b', 'a', 'w', 'n']);
+    expect(side[0]).toMatchObject({ failed: true, live: false, needs: false });
+    expect(side.find((x) => x.sentinel.id === 'w')?.needs).toBe(true);
+  });
+
+  it('its chats: newest first, none of a run whose chat was put away, a Your Mac chat too', () => {
+    const runs = [run('r1', 'a', 10, 'done', { putAway: true }), run('r2', 'a', 20, 'failed'), run('r3', 'a', 30, 'done', { channel: 'mac:assistant:abc12', steps: [] }), run('r4', 'a', 40, 'skipped', { steps: [] })];
+    const [a] = sidebarSentinels({ items: [item('a', 'Alpha')], runs });
+    expect(a!.chats.map((c) => [c.runId, c.channel])).toEqual([
+      ['r3', 'mac:assistant:abc12'],
+      ['r2', 'ws:r2'],
+    ]);
   });
 });

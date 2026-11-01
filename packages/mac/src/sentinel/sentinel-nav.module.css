@@ -1,3 +1,20 @@
 .alert {
   color: var(--error);
 }
+.sideIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.chatLine {
+  color: var(--text-2);
+}
+.when {
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.more {
+  color: var(--text-3);
+  font-size: 12px;
+}
